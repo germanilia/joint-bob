@@ -3,6 +3,11 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.248.0 — 2026-11-09
+
+- Automatic updates now check the private `germanilia/joint-bob` release feed hourly. Each machine uses its own read-only GitHub token, saved with `joint-bob update-token` on stdin; tokens never leave that machine or follow GitHub's download redirect.
+- Failed private update checks stay visible and cannot install stale public releases. CI mirrors the same verified release assets to the public legacy repository during migration, without copying private source history.
+
 ## 2.246.3 — 2026-11-08
 
 - A failed private update check remains visible in Settings even when a previous check cached a release. Update buttons no longer offer a stale release while access is failing.
