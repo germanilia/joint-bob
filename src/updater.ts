@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { supervisorRequest } from "../scripts/supervisor-client.mjs";
+import { fetchReleaseResource, isGithubReleaseApi, releaseApiBase } from "../scripts/release-auth.mjs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,7 @@ import { peerFetch } from "./relay/transport.js";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = resolveDataDirectory();
 const CHECK_FRESH_MS = 5 * 60_000;
-const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60_000;
+const AUTO_CHECK_INTERVAL_MS = 60 * 60_000;
 const AUTO_FAILURE_BACKOFF_MS = 6 * 60 * 60_000;
 const JOB_STALE_MS = 30 * 60_000;
 const PEER_HEALTH_TIMEOUT_MS = 10 * 60_000;
@@ -64,16 +65,8 @@ export function compareVersions(candidate: string, baseline: string): number {
   return 0;
 }
 
-function releaseApiBase(): string {
-  const configured = (process.env.JOINT_BOB_RELEASE_API ?? "https://api.github.com/repos/iliagerman/joint-bob").replace(/\/+$/, "");
-  const url = new URL(configured);
-  const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new ReleaseFeedError("Release feed URL must be HTTPS or loopback");
-  return configured;
-}
-
 /** Accepts only a published, non-prerelease release tagged v<semantic version> carrying both release assets. */
-export function validateReleasePayload(payload: unknown): ReleaseInfo {
+export function validateReleasePayload(payload: unknown, apiBase?: string): ReleaseInfo {
   if (!payload || typeof payload !== "object") throw new ReleaseFeedError("Release feed returned no release");
   const release = payload as Record<string, unknown>;
   if (release.draft === true) throw new ReleaseFeedError("Latest release is a draft");
@@ -85,8 +78,10 @@ export function validateReleasePayload(payload: unknown): ReleaseInfo {
   const urlFor = (name: string): string | undefined => {
     for (const asset of assets) {
       if (!asset || typeof asset !== "object" || (asset as { name?: unknown }).name !== name) continue;
-      const url = (asset as { browser_download_url?: unknown }).browser_download_url;
-      if (typeof url === "string" && /^https:\/\//.test(url)) return url;
+      const github = apiBase && isGithubReleaseApi(apiBase);
+      const url = github ? (asset as { url?: unknown }).url : (asset as { browser_download_url?: unknown }).browser_download_url;
+      if (typeof url !== "string") continue;
+      if (github ? isReleaseAssetUrl(url, apiBase) : /^https:\/\//.test(url)) return url;
     }
     return undefined;
   };
@@ -103,13 +98,15 @@ export function validateReleasePayload(payload: unknown): ReleaseInfo {
   };
 }
 
+function isReleaseAssetUrl(url: string, base: string): boolean {
+  return url.startsWith(`${base}/releases/assets/`) && /^\d+$/.test(url.slice(`${base}/releases/assets/`.length));
+}
+
 async function fetchRelease(feedPath: string): Promise<ReleaseInfo> {
-  const response = await fetch(`${releaseApiBase()}/${feedPath}`, {
-    headers: { Accept: "application/vnd.github+json", "User-Agent": "joint-bob-updater" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) throw new ReleaseFeedError(`Release feed returned ${response.status}`);
-  return validateReleasePayload(await response.json());
+  const base = releaseApiBase();
+  const response = await fetchReleaseResource(`${base}/${feedPath}`, dataDir, "application/vnd.github+json", 15_000);
+  if (!response.ok) throw new ReleaseFeedError(`Release feed returned ${response.status}. Check this machine's GitHub update token and repository access.`);
+  return validateReleasePayload(await response.json(), base);
 }
 
 let database: DatabaseSync | undefined;
@@ -161,7 +158,10 @@ function cachedLatestRelease(): ReleaseInfo | null {
   const row = preferencesRow();
   if (!row.latest_version || !row.latest_json) return null;
   // The stored JSON is the ReleaseInfo this node already validated, not the raw feed payload.
-  return JSON.parse(row.latest_json) as ReleaseInfo;
+  const release = JSON.parse(row.latest_json) as ReleaseInfo;
+  const base = releaseApiBase();
+  if (isGithubReleaseApi(base) && (!isReleaseAssetUrl(release.archiveUrl, base) || !isReleaseAssetUrl(release.checksumUrl, base))) return null;
+  return release;
 }
 
 export interface LatestCheck { release: ReleaseInfo | null; checkedAt: string | null; error: string | null }
@@ -170,7 +170,7 @@ export interface LatestCheck { release: ReleaseInfo | null; checkedAt: string | 
 export async function checkForLatestRelease(force: boolean): Promise<LatestCheck> {
   const row = preferencesRow();
   const checkedAt = row.latest_checked_at;
-  if (!force && checkedAt && Date.now() - Date.parse(checkedAt) < CHECK_FRESH_MS) {
+  if (!force && checkedAt && cachedLatestRelease() && Date.now() - Date.parse(checkedAt) < CHECK_FRESH_MS) {
     return { release: cachedLatestRelease(), checkedAt, error: row.latest_error };
   }
   try {
@@ -186,8 +186,7 @@ export async function checkForLatestRelease(force: boolean): Promise<LatestCheck
 
 /** Resolves an explicit version without trusting a caller-supplied URL: known latest, or the feed by tag. */
 export async function releaseForVersion(version: string): Promise<ReleaseInfo> {
-  const cached = cachedLatestRelease();
-  if (cached && cached.version === version) return cached;
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new ReleaseFeedError("Invalid release version");
   return fetchRelease(`releases/tags/v${version}`);
 }
 
@@ -254,6 +253,10 @@ export function installLocalRelease(release: ReleaseInfo, options: { fromFleetRu
   if (fleetInProgress() && !options.fromFleetRun) throw new UpdateRefusalError("A cluster-wide update is already running on this node");
   const current = appVersion();
   if (compareVersions(release.version, current) <= 0) throw new UpdateRefusalError(`Version ${release.version} is not newer than ${current}`);
+  const base = releaseApiBase();
+  if (isGithubReleaseApi(base) && (!isReleaseAssetUrl(release.archiveUrl, base) || !isReleaseAssetUrl(release.checksumUrl, base))) {
+    throw new UpdateRefusalError("Release assets do not belong to the configured GitHub repository; check for updates again");
+  }
   const active = activeUpdateJob();
   if (active) throw new UpdateRefusalError(`An update to ${active.targetVersion} is already ${active.state}`);
   const job = insertJob(release.version);
@@ -527,10 +530,8 @@ async function scheduledTick(): Promise<void> {
   if (!getAutoUpdate() || !selfUpdateSupported() || activeUpdateJob()) return;
   const failed = lastJob();
   if (failed?.state === "failed" && Date.now() - Date.parse(failed.updatedAt) < AUTO_FAILURE_BACKOFF_MS) return;
-  const row = preferencesRow();
-  if (row.latest_checked_at && Date.now() - Date.parse(row.latest_checked_at) < AUTO_CHECK_INTERVAL_MS) return;
-  const { release } = await checkForLatestRelease(true);
-  if (release && compareVersions(release.version, appVersion()) > 0) installLocalRelease(release);
+  const { release, error } = await checkForLatestRelease(true);
+  if (!error && release && compareVersions(release.version, appVersion()) > 0) installLocalRelease(release);
 }
 
 export function startUpdateScheduler(): void {
@@ -542,5 +543,5 @@ export function startUpdateScheduler(): void {
     void scheduledTick().catch((error) => console.warn("Automatic update check failed", error)).finally(() => { schedulerTicking = false; });
   };
   setTimeout(tick, 2 * 60_000).unref();
-  setInterval(tick, 60 * 60_000).unref();
+  setInterval(tick, AUTO_CHECK_INTERVAL_MS).unref();
 }

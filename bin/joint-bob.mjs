@@ -107,6 +107,20 @@ async function install() {
 if (command === "install") {
   try { await install(); }
   catch (error) { console.error(error.message); process.exitCode = 1; }
+} else if (command === "update-token") {
+  try {
+    if (process.stdin.isTTY) throw new Error("Pass the GitHub update token on stdin, not as a command argument");
+    if (process.argv.length !== 3) throw new Error("Usage: joint-bob update-token (token on stdin)");
+    let token = "";
+    for await (const chunk of process.stdin) {
+      token += chunk;
+      if (token.length > 4097) throw new Error("Invalid GitHub update token");
+    }
+    const { saveReleaseToken } = await import("../scripts/release-auth.mjs");
+    const dataDirectory = path.resolve(process.env.JOINT_BOB_DATA_DIR ?? process.env.PI_WEB_DATA_DIR ?? path.join(os.homedir(), ".joint-bob"));
+    saveReleaseToken(dataDirectory, token);
+    console.log("GitHub update token saved for this machine. Check for updates in Settings → Updates.");
+  } catch (error) { console.error(error.message); process.exitCode = 1; }
 } else if (command === "doctor") run(path.join(packageRoot, "scripts", "check-prerequisites.sh"));
 else if (command === "claude-event") {
   let input = "";
@@ -114,7 +128,7 @@ else if (command === "claude-event") {
   const runtime = await import("../dist/claude-runtime.js");
   runtime.recordClaudeHookEvent(JSON.parse(input));
 } else if (["help", "--help", "-h"].includes(command)) {
-  console.log("Usage: joint-bob <install|doctor>");
+  console.log("Usage: joint-bob <install|doctor|update-token>");
 } else {
   console.error(`Unknown command: ${command}`);
   process.exit(2);

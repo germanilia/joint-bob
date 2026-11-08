@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { fetchReleaseResource } from "./release-auth.mjs";
 
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 // Trust root: the release feed and both assets come from the same GitHub release, exactly
@@ -34,10 +35,10 @@ export function describeError(error) {
   return parts.length ? parts.join(": ") : String(error);
 }
 
-export async function downloadFile(url) {
+export async function downloadFile(url, dataDirectory = process.env.JOINT_BOB_DATA_DIR) {
   let response;
   try {
-    response = await fetch(url, { redirect: "follow", headers: { "User-Agent": "joint-bob-updater" }, signal: AbortSignal.timeout(600_000) });
+    response = await fetchReleaseResource(url, dataDirectory, "application/octet-stream", 600_000);
   } catch (error) {
     throw new Error(`Could not download ${url}`, { cause: error });
   }

@@ -3,6 +3,12 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.246.2 — 2026-11-08
+
+- Updates now use the private `germanilia/joint-bob` release feed with a machine-local GitHub token, configured through `joint-bob update-token` on stdin. Tokens stay off download redirects and out of shared settings.
+- Automatic update checks run hourly. Missing or revoked access is reported without falling back to cached public downloads.
+- The private repository's release pipeline can mirror verified release packages to `iliagerman/joint-bob` during migration, without pushing private source history there.
+
 ## 2.246.1 — 2026-11-08
 
 - An update no longer fails with a bare "Installation failed with status 1" while this machine is still finishing a conversation turn that an earlier update interrupted: it stops before downloading anything, says what it waits for, and that stopping the turn lets it update now. The service's own reason for refusing an update is kept in the message too.
