@@ -318,7 +318,8 @@ export interface UpdateStatusView {
 
 export function updateStatusView(): UpdateStatusView {
   reconcileUpdateJobs();
-  const latest = { release: cachedLatestRelease(), checkedAt: preferencesRow().latest_checked_at, error: preferencesRow().latest_error };
+  const row = preferencesRow();
+  const latest = { release: row.latest_error ? null : cachedLatestRelease(), checkedAt: row.latest_checked_at, error: row.latest_error };
   return {
     currentVersion: appVersion(),
     release: selfUpdateSupported() ? process.env.JOINT_BOB_RELEASE! : null,

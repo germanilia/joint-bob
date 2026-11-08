@@ -160,6 +160,9 @@ test("hourly automatic checks use the private feed and ignore cached public rele
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetch.mock.callCount(), 1, "a check 61 minutes ago is due, not delayed six hours");
   assert.match(updater.updateStatusView().latest.error ?? "", /401/);
+  db.prepare("UPDATE update_preferences SET latest_json = ?, latest_version = ?").run(JSON.stringify({ ...old, archiveUrl: `${apiBase}/releases/assets/1`, checksumUrl: `${apiBase}/releases/assets/2` }), old.version);
+  assert.equal(updater.updateStatusView().latest.release, null, "a cached version must not hide an authentication error in the Updates panel");
+  assert.equal(updater.updateStatusView().updateAvailable, false);
   db.prepare("UPDATE update_preferences SET latest_checked_at = ?").run(new Date(Date.now() - 59 * 60_000).toISOString());
   tick();
   await new Promise(resolve => setImmediate(resolve));

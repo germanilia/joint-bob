@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.246.3 — 2026-11-08
+
+- A failed private update check remains visible in Settings even when a previous check cached a release. Update buttons no longer offer a stale release while access is failing.
+
 ## 2.246.2 — 2026-11-08
 
 - Updates now use the private `germanilia/joint-bob` release feed with a machine-local GitHub token, configured through `joint-bob update-token` on stdin. Tokens stay off download redirects and out of shared settings.
