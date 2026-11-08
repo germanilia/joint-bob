@@ -25,7 +25,7 @@
     <span class="links">
       <a class="ghost" href="#fleet">Features</a>
       <button class="ghost" type="button" data-watch="monday">A day with it</button>
-      <a class="ghost" href="https://github.com/iliagerman/joint-bob">GitHub</a>
+      <a class="ghost" href="https://www.linkedin.com/in/iliagerman/">LinkedIn</a>
     </span>
     <button class="ghost icon-button" type="button" id="soundButton" aria-pressed="false" aria-label="Sound" title="Sound">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.5 7.5 0 0 1 0 10.4"/></svg>
@@ -33,7 +33,7 @@
     <button class="ghost icon-button" type="button" id="themeButton" aria-label="Light or dark" title="Light or dark">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg>
     </button>
-    <a class="primary go" href="#install">Install</a>
+    <a class="primary go" href="#contact">Get in touch</a>
     <i class="progress" id="progress"></i>
   </header>
 
@@ -47,13 +47,11 @@
           <p class="eyebrow">A private workspace for coding agents</p>
           <h1>Close the laptop. <em>Your agent keeps running.</em></h1>
           <p class="lede">Joint Bob runs Claude Code, Pi and Kiro conversations on machines you own. Start one on your laptop, let your server carry it, and pick it up from your phone.</p>
-          <!-- The install command here too, so nobody has to reach the foot of the page for it. -->
-          <div class="os" role="group" aria-label="Your system"><button type="button" data-os="unix" aria-pressed="true">macOS · Linux</button><button type="button" data-os="windows" aria-pressed="false">Windows</button></div>
-          <div class="quick">
-            <div class="composer-input" data-install data-prompt="$">curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | bash</div>
-            <button class="primary go" type="button" data-copy>Copy</button>
+          <p class="quick-note">Want to try Joint Bob? Message me by email or on LinkedIn.</p>
+          <div class="actions">
+            <a class="primary go" href="mailto:iliag@sela.co.il">iliag@sela.co.il</a>
+            <a class="primary" href="https://www.linkedin.com/in/iliagerman/">Message me on LinkedIn</a>
           </div>
-          <p class="quick-note"><span data-install-note>Paste it in a terminal on macOS or Linux. No sudo.</span> <a href="#install">More about installing</a></p>
           <div class="actions">
             <a class="primary" href="#fleet">See what it does</a>
             <button class="primary" type="button" data-watch="monday">▶ Watch with sound</button>
@@ -116,27 +114,21 @@
       </div>
     </section>
 
-    <section class="install" id="install">
+    <section class="install" id="contact">
       <div class="wrap">
-        <p class="eyebrow" data-flow="bottom">Install</p>
-        <h2 class="big" data-split data-delay="0.1">One command, on a machine you own</h2>
-        <p class="lede" data-flow="bottom" data-delay="0.2">No sudo. The installer downloads the latest release, checks its checksum and sets up a service for your user. Then open the local address it prints and create your account.</p>
-        <div class="composer" data-flow="bottom" data-delay="0.3">
-          <div class="command-strip"><div class="os" role="group" aria-label="Your system"><button type="button" data-os="unix" aria-pressed="true">macOS · Linux</button><button type="button" data-os="windows" aria-pressed="false">Windows</button></div><span>MIT licensed</span><a href="https://github.com/iliagerman/joint-bob">GitHub</a></div>
-          <div class="composer-row">
-            <div class="composer-input" data-install data-prompt="$">curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | bash</div>
-            <button class="send" type="button" data-copy aria-label="Copy the install command" title="Copy the install command">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 10.5 13.5M21 3l-6.5 18-4-7.5L3 9.5z"/></svg>
-            </button>
-          </div>
+        <p class="eyebrow" data-flow="bottom">Get in touch</p>
+        <h2 class="big" data-split data-delay="0.1">Want to try Joint Bob?</h2>
+        <p class="lede" data-flow="bottom" data-delay="0.2">Message me to ask a question, see a demo, or get started.</p>
+        <div class="actions" data-flow="bottom" data-delay="0.3">
+          <a class="primary go" href="mailto:iliag@sela.co.il">iliag@sela.co.il</a>
+          <a class="primary" href="https://www.linkedin.com/in/iliagerman/">Message me on LinkedIn</a>
         </div>
-        <p class="install-note" data-install-note>Paste it in a terminal on macOS or Linux. No sudo.</p>
         <p class="fine">Every screen in these films is the app itself, on throwaway machines with invented projects; the people and places around them are drawn. The agent's replies in them are scripted, and the narration is the open-source Kokoro voice Joint Bob installs. © 2026 Ilia German</p>
       </div>
     </section>
   </main>
   <!-- An offer that stays at the foot of the window through the use cases. -->
-  <a class="install-pill" id="installPill" href="#install"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></i><span>Install now</span></a>
+  <a class="install-pill" id="installPill" href="#contact"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></i><span>Get in touch</span></a>
 
   <!-- The theater: any film, large, with its sound; one after another. -->
   <dialog class="theater" id="theater" aria-label="Films, with sound">

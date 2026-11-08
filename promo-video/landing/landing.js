@@ -37,7 +37,7 @@ const pageTop = (element) => { let top = 0; for (let node = element; node; node 
 
 const flows = [...document.querySelectorAll("[data-flow]")].map((element) => ({ element, from: element.dataset.flow, delay: Number(element.dataset.delay ?? 0), top: 0, height: 0 }));
 const pill = document.querySelector("#installPill");
-const install = document.querySelector("#install");
+const install = document.querySelector("#contact");
 const progress = document.querySelector("#progress");
 const sky = document.querySelector("#sky");
 const pen = sky.getContext("2d");
@@ -147,8 +147,8 @@ function draw() {
     }
     progress.style.transform = `scaleX(${furthest ? clamp(smooth / furthest) : 0})`;
 
-    // The offer at the foot of the window: install, once the hero's own command has gone by and
-    // until the install section is on screen. On a narrow screen it would cover the fleet's
+    // The contact offer appears once the hero has gone by and
+    // stays until the contact section is on screen. On a narrow screen it would cover the fleet's
     // buttons, so it waits until the fleet has gone by.
     const overFleet = width < 980 && smooth > fleetSpan.top && smooth < fleetSpan.bottom - height * 0.8;
     pill.classList.toggle("show", smooth > height * 1.75 && smooth + height < installTop + 160 && !overFleet);
@@ -317,27 +317,6 @@ document.querySelector("#themeButton").addEventListener("click", () => {
   document.documentElement.dataset.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   accent = getComputedStyle(document.documentElement).getPropertyValue("--accent");
   drawn = -1;
-});
-// The install command for the reader's system: the shell installer on macOS and Linux, and on
-// Windows the PowerShell one, which sets up WSL 2 and Ubuntu first and runs the same installer there.
-const installers = {
-  unix: { prompt: "$", command: "curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | bash", note: "Paste it in a terminal on macOS or Linux. No sudo." },
-  windows: { prompt: "PS>", command: "irm https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install-windows.ps1 | iex", note: "Paste it in PowerShell as yourself, not as administrator. On Windows 10 or 11 it sets up WSL 2 and Ubuntu if they are missing." },
-};
-let system = /Windows/.test(navigator.userAgent) ? "windows" : "unix";
-function showInstaller() {
-  const { prompt, command, note } = installers[system];
-  for (const input of document.querySelectorAll("[data-install]")) { input.textContent = command; input.dataset.prompt = prompt; }
-  for (const line of document.querySelectorAll("[data-install-note]")) line.textContent = note;
-  for (const button of document.querySelectorAll("[data-os]")) button.setAttribute("aria-pressed", String(button.dataset.os === system));
-}
-document.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-os]");
-  if (button) { system = button.dataset.os; showInstaller(); }
-});
-showInstaller();
-for (const button of document.querySelectorAll("[data-copy]")) button.addEventListener("click", () => {
-  navigator.clipboard.writeText(installers[system].command).then(() => toast("Command copied"), () => toast("Select the command and copy it"));
 });
 // A link down the page travels there slowly enough for the page to flow past.
 for (const link of document.querySelectorAll('a[href^="#"]')) {
