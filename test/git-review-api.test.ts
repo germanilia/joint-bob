@@ -252,7 +252,7 @@ test("story mode settings, narration status and podcast routes answer what a pro
     const headers = await session(node);
     const view = await jsonBody(await fetch(`${node.baseUrl}/api/story-settings`, { headers })) as {
       settings: { locations: string[]; hostVoice: string; moods: boolean; voiceProvider: string; elevenHostVoice: string }; defaultInstructions: string;
-      locations: Array<{ id: string; label: string }>; voices: Array<{ id: string; label: string }>; voice: { allowed: boolean; installed: boolean; installing: boolean };
+      locations: Array<{ id: string; label: string }>; voices: Array<{ id: string; label: string }>; voice: { allowed: boolean; installed: boolean; installing: boolean; reason: string | null };
     };
     assert.equal(view.locations.length, 9);
     assert.equal(view.settings.locations.length, 9);
@@ -307,7 +307,12 @@ test("story mode settings, narration status and podcast routes answer what a pro
     assert.equal(badProvider.status, 400);
     const kokoroOnly = await jsonBody(await fetch(`${node.baseUrl}/api/projects/${project.id}/git/story-voice?voiceProvider=kokoro`, { headers })) as { available: boolean; reason: string };
     assert.equal(kokoroOnly.available, false);
-    assert.match(kokoroOnly.reason, /Local voice is not installed on .+, the computer that narrates this project/);
+    if (view.voice.allowed) {
+      assert.match(kokoroOnly.reason, /Local voice is not installed on .+, the computer that narrates this project/);
+    } else {
+      assert.match(view.voice.reason!, /Local voice needs 8 GB and 4 cores/);
+      assert.equal(kokoroOnly.reason, view.voice.reason, "small runners must report the hardware restriction, not missing installation");
+    }
   } finally {
     if (node) await stopNode(node);
     sync.server.close();
