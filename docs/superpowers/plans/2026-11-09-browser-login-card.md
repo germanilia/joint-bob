@@ -66,14 +66,14 @@
 
 Implemented the ordinary credential card and human-only opaque DOM-bound steps. The card fetches fresh session state before taking control, never persists its inputs, clears inputs before submission, offers explicit browser takeover and a return-to-card action, and requires verified human completion. Unsupported forms and challenges remain in the existing viewer. Website diagnostics emitted during pending login are excluded from later agent snapshots because sites can echo credentials in their console output.
 
-Verification:
-- Final runtime/API/agent/instruction/login/native handoff/cross-node suites: 71 passed.
-- Final card/lifecycle/mobile/focus/fullscreen/embedded/dismissal/unavailable UI run: 22 passed and one 90-second dismissal timeout under concurrent load. Both dismissal cases passed on isolated rerun, completing the 23 checks.
-- Real loopback end-to-end username → password → verified completion: passed.
-- Existing conversation login lifecycle/stale response tests: 2 passed.
-- Existing mobile/focus/fullscreen/embedded/dismissal/unavailable viewer checks: 17 passed (explicit takeover now precedes viewer assertions).
-- Runtime/API/native handoff/cross-node suite: 65 passed; the two separate direct-viewer multi-step fixture cases timed out waiting for a frame. `public/app/browser-viewer.js` is unchanged. Those failures are not claimed fixed or proven pre-existing.
-- `npm run typecheck` and `npm run build`: passed.
+Final verification: 100 tests passed, zero failures/cancellations, in one `npm run test:file -- --test-concurrency=2` run. Includes runtime/API/agent/instruction/login/native handoff/cross-node suites and all targeted login UI tests. `npm run typecheck`, `npm run build`, and `git diff --check` passed.
+
+Follow-up investigation and fixes:
+- Both manual multi-step test timeouts came from registering Playwright's WebSocket interceptor after navigation. Register before navigation and assert Live before waiting for a frame. Both now pass.
+- Real challenge takeover exposed a phone capture issue: native Chrome emits padded/cropped frames for a viewport narrower than its minimum window size. Exact viewport screenshots replace those mismatched frames; matching native frames still stream unchanged. Keep the caret unchanged during capture so capture cannot trigger its own repaint loop. Resize and restoring the agent viewport restart the capture dimensions.
+- Focusing the viewer's typing input could scroll the image before click coordinates were computed. Compute its rectangle before focusing.
+- New real-loopback challenge journeys at 412px and 1280px verify explicit takeover, no proxied challenge fields, rejection of premature Done, return to the card and reopening the viewer, manual alternate-method clicks over the viewer WebSocket, and verified completion returning control to the agent.
+- New native-runtime checks verify JPEG dimensions after phone resize, keyboard-height resize, desktop resize, reopening a static viewer, and restoration to the agent viewport, plus bounded idle frame production. Existing popup capture and cross-node checks also pass.
 
 Review: attempted a fresh read-only reviewer; the configured child model failed before producing any review (unsupported model for that account). Performed an author review instead; no independent security-review claim.
 

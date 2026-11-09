@@ -6,7 +6,6 @@ import { nativeUiFixture } from "./native-ui-fixture.js";
 for (const width of [412, 1280]) {
   test(`live sign-in preserves manual multi-step authentication at ${width}px`, { timeout: 120_000 }, async t => {
     const { page, node } = await nativeUiFixture(t);
-    await page.goto(`${node.url}/browser.html`);
     await page.setViewportSize({ width, height: 800 });
     const frame = await page.evaluate(() => {
       const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 800;
@@ -37,6 +36,8 @@ for (const width of [412, 1280]) {
       ws.send(JSON.stringify({ type: "browserState", session }));
       ws.send(JSON.stringify({ type: "browserFrame", pageId: "website", width: 1200, height: 800, data: frame }));
     });
+    // Install the WebSocket interceptor before loading the document that creates the viewer.
+    await page.goto(`${node.url}/browser.html`);
     await page.evaluate("window.__name = (value) => value");
     await page.evaluate(async () => {
       const { createBrowserViewer } = await import("/app/browser-viewer.js");
@@ -49,6 +50,7 @@ for (const width of [412, 1280]) {
       });
     });
     const root = page.locator("#multistep-login"), screen = root.getByTestId("browser-screen");
+    await root.getByTestId("browser-connection-status").filter({ hasText: "Live" }).waitFor({ state: "attached" });
     await screen.waitFor({ state: "visible" });
     assert.equal(await root.getByTestId("browser-login-form").count(), 0);
     // The website moves from credentials to a challenge, then changes challenge method

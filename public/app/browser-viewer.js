@@ -754,8 +754,10 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
   function click(event, button) {
     if (!canType()) { if (running() && event.type === "click") error(human() ? "Another viewer controls this browser. Take over control to type." : "Take control to type into the page."); return; }
     if (!frameSize) return;
-    event.preventDefault(); focusTyping();
+    // Focusing the typing input can scroll the viewer. Map the tap against the
+    // image position the human clicked, not its position after focus moves it.
     const rect = screen.getBoundingClientRect();
+    event.preventDefault(); focusTyping();
     sendInput({ action: "click", x: Math.max(0, Math.min(frameSize.width, (event.clientX - rect.left) / rect.width * frameSize.width)), y: Math.max(0, Math.min(frameSize.height, (event.clientY - rect.top) / rect.height * frameSize.height)), button, clickCount: Math.min(event.detail || 1, 3) });
   }
   screen.addEventListener("click", (event) => click(event, "left"));

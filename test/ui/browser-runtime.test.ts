@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { WebSocket, WebSocketServer } from "ws";
-import { BrowserRuntime } from "../../src/browser-runtime.js";
+import { BrowserRuntime, jpegMatchesViewport } from "../../src/browser-runtime.js";
 
 const agent = { kind: "agent" } as const;
 const human = { kind: "human", id: "alice" } as const;
@@ -140,6 +140,53 @@ test("real browser isolates profiles, enforces ownership, streams popups, retain
     assert.equal((await runtime.get(blank.id)).state, "closed");
   } finally {
     viewer?.terminate(); for (const socket of wss.clients) socket.terminate();
+    await runtime.close(); wss.close(); server.closeAllConnections(); server.close();
+  }
+});
+
+test("static browser frames track phone resize, viewer reopen and restored agent viewport", { timeout: 60_000 }, async () => {
+  const server = http.createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end("<h1>Static capture fixture</h1>"); });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const url = `http://127.0.0.1:${(server.address() as net.AddressInfo).port}`;
+  const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" }); await once(wss, "listening");
+  const runtime = new BrowserRuntime();
+  const viewers: WebSocket[] = [], frames: any[] = [];
+  try {
+    const session = await runtime.create({ projectId: randomUUID(), engine: "pi", conversationId: randomUUID(), appNodeId: randomUUID(), url });
+    await runtime.execute(session.id, { action: "takeControl" }, human);
+    const attach = async () => {
+      const connection = once(wss, "connection");
+      const viewer = new WebSocket(`ws://127.0.0.1:${(wss.address() as net.AddressInfo).port}`); viewers.push(viewer);
+      viewer.on("message", raw => { const message = JSON.parse(raw.toString()); if (message.type === "browserFrame" || message.type === "browserError") frames.push(message); });
+      await runtime.attachViewer(session.id, (await connection)[0], human);
+      return viewer;
+    };
+    const expectFrame = async (offset: number, width: number, height: number) => {
+      await waitFor(() => frames.slice(offset).some(frame => frame.type === "browserFrame" && frame.width === width && frame.height === height && jpegMatchesViewport(frame.data, width, height))).catch(error => {
+        throw new Error(`${error.message}; expected ${width}x${height}; frames ${JSON.stringify(frames.slice(offset).slice(-10).map(({ data, ...frame }) => frame))}`);
+      });
+    };
+    let viewer = await attach();
+    await expectFrame(0, 1512, 945);
+    for (const [width, height] of [[412, 900], [412, 360], [1280, 800]]) {
+      const offset = frames.length;
+      await runtime.execute(session.id, { action: "setViewport", width, height }, human);
+      await expectFrame(offset, width, height);
+      // A viewport screenshot must not generate its own endless screencast/repaint loop.
+      const settledOffset = frames.length;
+      await new Promise(resolve => setTimeout(resolve, 500));
+      assert.ok(frames.length - settledOffset < 10, `static viewport generated ${frames.length - settledOffset} extra frames in 500ms`);
+      const reopenOffset = frames.length;
+      viewer.close(); await once(viewer, "close"); viewer = await attach();
+      await expectFrame(reopenOffset, width, height);
+    }
+    const offset = frames.length;
+    await runtime.execute(session.id, { action: "resumeAgent" }, human);
+    await expectFrame(offset, 1512, 945);
+    assert.deepEqual(await runtime.execute(session.id, { action: "evaluate", expression: "({width:innerWidth,height:innerHeight})" }, agent), { width: 1512, height: 945 });
+  } finally {
+    for (const viewer of viewers) viewer.terminate();
+    for (const socket of wss.clients) socket.terminate();
     await runtime.close(); wss.close(); server.closeAllConnections(); server.close();
   }
 });

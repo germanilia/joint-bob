@@ -687,7 +687,12 @@ export class BrowserRuntime {
       case "key": await page.keyboard.press(command.key); break;
       case "text": await page.keyboard.insertText(command.text); break;
       case "scroll": await page.mouse.wheel(command.x, command.y); break;
-      case "setViewport": await page.setViewportSize({ width: command.width, height: command.height }); session.viewportOverrides.add(page); break;
+      case "setViewport":
+        await page.setViewportSize({ width: command.width, height: command.height });
+        session.viewportOverrides.add(page);
+        // Capture dimensions belong to the stream; replace it when the page resizes.
+        this.restartStream(session);
+        break;
       case "clickElement": await this.locator(page, command.selector).click(); break;
       case "fill":
         if (command.expectedOrigin) {
@@ -762,6 +767,7 @@ export class BrowserRuntime {
     const pages = [...session.viewportOverrides];
     session.viewportOverrides.clear();
     await Promise.all(pages.filter(page => !page.isClosed()).map(page => page.setViewportSize(defaultViewport).catch(() => {})));
+    if (pages.length) this.restartStream(session);
   }
 
   private async stagingRoot(session: LiveSession): Promise<string> {
@@ -973,22 +979,26 @@ export class BrowserRuntime {
       await page.bringToFront();
       const viewport = page.viewportSize();
       if (viewport) {
-        // Popup features set outer window bounds, while Playwright emulates the
-        // requested content size. Screencasts capture the native content area,
-        // which can be shorter by the browser chrome even in headless Chrome.
+        // Popup features set outer window bounds; capture the complete content area.
         const { windowId } = await cdp.send("Browser.getWindowForTarget");
         await cdp.send("Browser.setContentsSize", { windowId, ...viewport });
       }
-      let captureReady = !viewport;
       cdp.on("Page.screencastFrame", frame => {
-        // Acknowledge stale cached frames, but never show cropped pixels under new coordinates.
-        if (!captureReady && viewport) captureReady = frame.metadata.deviceWidth === viewport.width
-          && frame.metadata.deviceHeight === viewport.height && jpegMatchesViewport(frame.data, viewport.width, viewport.height);
-        if (captureReady && generation === session.streamGeneration) for (const ws of session.viewers) {
-          if (!shouldSendFrame(ws.bufferedAmount)) continue;
-          this.send(ws, { type: "browserFrame", pageId: id, data: frame.data, width: frame.metadata.deviceWidth, height: frame.metadata.deviceHeight });
-        }
-        void cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => {});
+        void (async () => {
+          if (generation !== session.streamGeneration || ![...session.viewers].some(ws => shouldSendFrame(ws.bufferedAmount))) return;
+          let data = frame.data;
+          const size = viewport || { width: frame.metadata.deviceWidth, height: frame.metadata.deviceHeight };
+          // Native Chrome enforces minimum window dimensions (500px wide on macOS).
+          // A narrower emulated page can therefore stream padded/cropped pixels forever.
+          // Capture that viewport exactly rather than discard every frame and leave it blank.
+          if (!jpegMatchesViewport(data, size.width, size.height)) data = (await page.screenshot({ type: "jpeg", quality: 60, caret: "initial", timeout: 10000 })).toString("base64");
+          if (generation !== session.streamGeneration) return;
+          for (const ws of session.viewers) {
+            if (shouldSendFrame(ws.bufferedAmount)) this.send(ws, { type: "browserFrame", pageId: id, data, ...size });
+          }
+        })().catch(error => {
+          if (generation === session.streamGeneration && !session.stopped) for (const ws of session.viewers) this.send(ws, { type: "browserError", error: message(error) });
+        }).finally(() => { void cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => {}); });
       });
       // Keep the page's requested viewport and capture it without output scaling.
       // Static pages may repaint only once. Capture that frame too; JPEG quality
