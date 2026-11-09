@@ -136,6 +136,11 @@
 .control-badge.running { display: inline-flex; align-items: center; gap: 5px; color: #5fd47f; border-color: color-mix(in srgb, #5fd47f 55%, transparent); font-weight: 600; white-space: nowrap; }
 .control-running-ring { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; animation: control-running-spin 1s linear infinite; }
 @keyframes control-running-spin { to { transform: rotate(360deg); } }
+/* A press being carried out: in place of the item's buttons until the answer comes. */
+.control-busy { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12.5px; color: var(--text); }
+.control-busy .control-pending-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.control-spinner { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); animation: control-running-spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .control-spinner { animation: none; border-color: var(--accent); } }
 @media (prefers-reduced-motion: reduce) { .control-running-ring { animation: none; background: currentColor; border-color: currentColor; } }
 .control-card[data-column="review"]:not(.colored) { border-color: color-mix(in srgb, #7b8cff 60%, transparent); box-shadow: inset 3px 0 0 #7b8cff; }
 .control-overview-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }

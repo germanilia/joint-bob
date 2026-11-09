@@ -13,16 +13,16 @@ import { app } from "./state.js";
 
 const PRESS_TIMEOUT_MS = 60_000;
 const pressSchema = z.object({ accountId: z.string().min(1).max(240), messageId: z.string().min(1).max(100), actionId: z.string().min(1).max(100), note: z.string().max(4_000).optional() }).strict();
-const messagesSchema = z.object({
-  messages: z.array(z.object({
-    id: z.string().min(1).max(100), role: z.enum(["user", "bob", "system"]), text: z.string().max(60_000), via: z.string().max(2_000).nullable(),
-    projectId: z.string().max(240).nullable(), projectName: z.string().max(500).nullable(), importance: z.enum(BOB_IMPORTANCE),
-    actions: z.array(z.object({ id: z.string().min(1).max(100), label: z.string().max(200), style: z.enum(["primary", "warn"]).optional(), data: z.record(z.string(), z.unknown()).optional() })).max(12),
-    createdAt: z.string().min(1).max(40),
-    // A machine on an older version does not say whether the item was cleared.
-    resolvedAt: z.string().max(40).nullable().default(null), resolution: z.string().max(500).nullable().default(null),
-  })),
+const messageSchema = z.object({
+  id: z.string().min(1).max(100), role: z.enum(["user", "bob", "system"]), text: z.string().max(60_000), via: z.string().max(2_000).nullable(),
+  projectId: z.string().max(240).nullable(), projectName: z.string().max(500).nullable(), importance: z.enum(BOB_IMPORTANCE),
+  actions: z.array(z.object({ id: z.string().min(1).max(100), label: z.string().max(200), style: z.enum(["primary", "warn"]).optional(), data: z.record(z.string(), z.unknown()).optional() })).max(12),
+  createdAt: z.string().min(1).max(40),
+  // A machine on an older version does not say whether the item was cleared.
+  resolvedAt: z.string().max(40).nullable().default(null), resolution: z.string().max(500).nullable().default(null),
 });
+// The pressed message as that machine has it now; a machine on an older version does not send it.
+const messagesSchema = z.object({ messages: z.array(messageSchema), pressed: messageSchema.nullable().optional() });
 
 async function pressOnOrigin(originNodeId: string, accountId: string, messageId: string, actionId: string, note: string): Promise<BobMessage[]> {
   const peer = await getRuntimePeer(originNodeId);
@@ -47,10 +47,11 @@ async function pressOnOrigin(originNodeId: string, accountId: string, messageId:
     const body = await reply.json().catch(() => ({})) as { error?: string };
     throw new BobActionError(reply.status >= 500 ? 502 : reply.status, body.error ?? `The machine that wrote this message refused the press (${reply.status})`);
   }
-  const { messages } = messagesSchema.parse(await reply.json());
-  // Shown here at once; the same messages, and the pressed message without its buttons, also arrive through replication.
+  const { messages, pressed } = messagesSchema.parse(await reply.json());
+  // Shown here at once, as replication would bring them: the pressed message as it is there now (cleared, as a rule), and the
+  // answer. Without the pressed message, or when this copy is newer, its buttons are hidden until replication brings the rest.
   const db = await bobDatabase();
-  hideBobActions(db, accountId, messageId);
+  if (!pressed || storeReplicatedBobMessage(db, accountId, pressed as BobMessage, pressed.resolvedAt ?? new Date().toISOString(), originNodeId) === "stale") hideBobActions(db, accountId, messageId);
   for (const message of messages) storeReplicatedBobMessage(db, accountId, message as BobMessage, message.createdAt, originNodeId);
   return messages as BobMessage[];
 }
@@ -68,7 +69,8 @@ app.post(["/api/cluster/control-center/bob/action", "/api/cluster/v2/runtime/con
     if (!session || !getBobMessage(db, press.accountId, press.messageId)) { sendError(response, 404, "That button is no longer available"); return; }
     // A message this machine only holds a copy of is not run here: that would send the press round in a circle.
     if (bobMessageOrigin(db, press.accountId, press.messageId)) { sendError(response, 409, "This machine did not write that message"); return; }
-    response.json({ messages: await runBobAction(db, session, press.messageId, press.actionId, press.note ?? "") });
+    const messages = await runBobAction(db, session, press.messageId, press.actionId, press.note ?? "");
+    response.json({ messages, pressed: getBobMessage(db, press.accountId, press.messageId) ?? null });
   } catch (error) {
     if (error instanceof z.ZodError) { sendError(response, 400, "Invalid press"); return; }
     if (error instanceof BobActionError) { sendError(response, error.status, error.message); return; }
