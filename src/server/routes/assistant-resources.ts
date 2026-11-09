@@ -2,7 +2,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { NextFunction, Request, Response } from "express";
 import { ASSISTANT_FILE_MAX_BYTES, assistantFilePath, deleteAssistantFile, listAssistantFiles, saveAssistantFile } from "../../assistant-capabilities.js";
-import { assistantMemoryEnabled } from "../../assistant-resources.js";
+import { assistantMemoryEnabled, teamAssistantForConversation } from "../../assistant-resources.js";
 import { readWebhookMemory, setWebhookMemoryEnabled, WEBHOOK_MEMORY_MAX_BYTES, writeWebhookMemory } from "../../webhook-memory.js";
 import { WebhookResourceError } from "../../webhook-resources.js";
 import { discoverWebhookGitSkills, importWebhookGitSkill, listWebhookSkills, removeWebhookSkill, uploadWebhookSkill, WEBHOOK_SKILL_MAX_FILES } from "../../webhook-skills.js";
@@ -30,7 +30,7 @@ export async function assistantResourcePreferences(assistantId: string): Promise
   return row ? { disabledSkills: JSON.parse(row.skills) as string[], disabledPlugins: JSON.parse(row.plugins) as string[] } : { disabledSkills: [], disabledPlugins: [] };
 }
 
-async function saveResourcePreferences(assistantId: string, preferences: AssistantResourcePreferences): Promise<void> {
+export async function saveResourcePreferences(assistantId: string, preferences: AssistantResourcePreferences): Promise<void> {
   const db = await personalAssistantDatabase();
   db.prepare(`INSERT INTO personal_assistant_resources (assistant_id, disabled_skills, disabled_plugins) VALUES (?,?,?)
     ON CONFLICT(assistant_id) DO UPDATE SET disabled_skills=excluded.disabled_skills, disabled_plugins=excluded.disabled_plugins`)
@@ -83,7 +83,7 @@ function accountOf(response: Response): string { return (response.locals.authSes
 
 async function visibleAssistant(response: Response, id: string): Promise<PersonalAssistant | undefined> {
   const entry = await getPersonalAssistant(accountOf(response), id);
-  return entry && await projectVisible(entry.projectId) ? entry : undefined;
+  return entry && !teamAssistantForConversation(entry.projectId, entry.sessionId) && await projectVisible(entry.projectId) ? entry : undefined;
 }
 
 /** Logins live where the assistant runs: its browser profiles must be on that machine. */

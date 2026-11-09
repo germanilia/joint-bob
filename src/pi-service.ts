@@ -18,6 +18,9 @@ import { canonicalPiTranscriptName, piSessionIdFromFileName } from "./harnesses/
 import { createPiProviderCatalog, type PiProviderCatalog } from "./harnesses/pi/provider-catalog.js";
 import { forgetTranscriptSummary, storeTranscriptSummary, storedTranscriptSummary } from "./transcript-summary-store.js";
 import { getScopedResourcePaths, getSettings } from "./settings.js";
+import { teamAssistantForConversation } from './assistant-resources.js';
+import { personalAssistantDatabase } from './personal-assistants.js';
+import { listWebhookSkills } from './webhook-skills.js';
 import { agentResourcePaths, piAgentResourcePaths } from "./agent-resources.js";
 import { agentInstructionFiles } from "./agent-instructions.js";
 import { prepareProjectMemory } from "./agent-memory.js";
@@ -686,6 +689,7 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
   const conversation = (sessionId: string): SecretConversation => ({ engine: "pi", sessionId });
   const credentials = (sessionId: string, conversationId: string): PiCredentials => {
     try {
+      if (teamAssistantForConversation(options.projectId, conversationId)) return { environment: {}, capabilityEnvironment: {}, credentialContext: '' };
       return {
         environment: agentEnvironment(options.projectId, conversation(sessionId)),
         capabilityEnvironment: agentCapabilityEnvironment(options.projectId, "pi", conversationId, conversation(sessionId)),
@@ -705,6 +709,15 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
     credentials: async (sessionId, conversationId) => credentials(sessionId, conversationId),
     credentialsNow: credentials,
     resources: async (conversationId) => {
+      const teamAssistant = teamAssistantForConversation(options.projectId, conversationId);
+      if (teamAssistant) {
+        const db = await personalAssistantDatabase();
+        const { assistantDisabledResources } = await import('./assistant-resources.js');
+        const disabled = assistantDisabledResources(options.projectId, conversationId).skills;
+        return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: [], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [],
+          skillRoots: listWebhookSkills(db, teamAssistant).filter(skill => !disabled.includes(skill.name)).map(skill => skill.path),
+          managedSkillRoot: '', blockedSkillNames: disabled };
+      }
       const strict = getSettings().strictResourceIsolation;
       const configured = withProjectFolderResources(getScopedResourcePaths(options.projectId, conversationId, "pi"), options.cwd);
       const memory = strict ? await prepareProjectMemory(options.projectId, conversationId) : undefined;

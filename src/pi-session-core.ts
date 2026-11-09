@@ -36,6 +36,7 @@ export interface PiCredentials {
 }
 
 export interface PiResources {
+  isolatedTeam?: boolean;
   managedMcpServers?: string[];
   nativeMcp?: { accountId: string; servers: Record<string, ManagedMcpServer> };
   strictResourceIsolation: boolean;
@@ -185,7 +186,7 @@ export async function createCoreSession(modelRuntime: ModelRuntime, inputs: PiCo
       ...(hooks.guardian ? [guardianPiExtension((request) => hooks.guardian!(conversationId, request))] : []),
     ],
     ...(!safeguardsEnabled ? { extensionsOverride: (base) => ({ ...base, extensions: base.extensions.filter((extension) => !isPermissionSafeguardExtension(extension.resolvedPath)) }) } : {}),
-  }, resources.strictResourceIsolation, resources.packagesFile);
+  }, resources.strictResourceIsolation, resources.packagesFile, resources.isolatedTeam);
   await resourceLoader.reload();
   const saved = sessionManager.buildSessionContext();
   const desiredModel = inputs.sessionPath ? saved.model : { provider: inputs.defaults.provider, modelId: inputs.defaults.modelId };

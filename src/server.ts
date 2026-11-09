@@ -92,6 +92,7 @@ import "./server/routes/personal-assistants.js";
 import "./server/routes/assistant-resources.js";
 import "./server/routes/assistant-telegram.js";
 import "./server/routes/social.js";
+import "./server/routes/assistant-teams.js";
 import { cleanupAbandonedByTheWayConversations } from "./server/routes/sessions.js";
 import { sweepConversationRetention } from "./server/conversation-retention.js";
 import { sweepWorktrees } from "./server/worktree-cleanup.js";

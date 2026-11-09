@@ -109,7 +109,7 @@ function item(row: { image_names: string } & Record<string, unknown>): SavedItem
 }
 export async function listPersonalAssistants(accountId: string): Promise<PersonalAssistant[]> {
   const db = await database();
-  return (db.prepare("SELECT id, account_id accountId, project_id projectId, engine, session_id sessionId, node_id nodeId, name, instructions, classifier_id classifierId, allow_browser allowBrowser, allow_terminal allowTerminal, mcp_server_names mcpServerNames, execution_settings executionSettings, created_at createdAt FROM personal_assistants WHERE account_id = ? ORDER BY created_at DESC").all(accountId) as unknown as unknown[]).map(entry => assistant(entry)!);
+  return (db.prepare("SELECT id, account_id accountId, project_id projectId, engine, session_id sessionId, node_id nodeId, name, instructions, classifier_id classifierId, allow_browser allowBrowser, allow_terminal allowTerminal, mcp_server_names mcpServerNames, execution_settings executionSettings, created_at createdAt FROM personal_assistants WHERE account_id = ? ORDER BY created_at DESC").all(accountId) as unknown as unknown[]).map(entry => assistant(entry)!).filter(entry => !isTeamAssistant(db, entry.id));
 }
 export async function getPersonalAssistant(accountId: string, id: string): Promise<PersonalAssistant | undefined> {
   const db = await database();
@@ -158,8 +158,13 @@ export async function addPersonalAssistantTopic(accountId: string, assistantId: 
   return topic;
 }
 
+function isTeamAssistant(db: DatabaseSync, id: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name='assistant_team_agents'").get() && db.prepare('SELECT 1 FROM assistant_team_agents WHERE assistant_id=?').get(id));
+}
+
 export async function getPersonalAssistantSourceHistory(accountId: string, assistantId: string): Promise<PersonalAssistantHistoryMessage[] | null | undefined> {
   const db = await database();
+  if (isTeamAssistant(db, assistantId)) return await getPersonalAssistant(accountId, assistantId) ? [] : undefined;
   const row = db.prepare("SELECT source_history sourceHistory FROM personal_assistants WHERE id=? AND account_id=?").get(assistantId, accountId) as { sourceHistory: string | null } | undefined;
   return row ? row.sourceHistory === null ? null : JSON.parse(row.sourceHistory) as PersonalAssistantHistoryMessage[] : undefined;
 }

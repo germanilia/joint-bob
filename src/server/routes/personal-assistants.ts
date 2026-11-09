@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { teamAssignmentDestination, teamConversation, teamAgentReadiness, validateTeamAssignment } from '../../assistant-teams/runtime.js';
+import { TeamError, type TeamAssignment } from '../../assistant-teams/store.js';
 import type { AutoRespondConfig } from "../../conversation-auto-respond.js";
 import { listLocalUsers, replicatedUserByAccount, type AuthSession } from "../../auth.js";
 import { getClusterNode } from "../../cluster.js";
@@ -51,6 +53,7 @@ async function serializeAssistantTurn<T>(id: string, action: () => Promise<T>): 
   finally { release(); if (assistantTurnQueues.get(id) === current) assistantTurnQueues.delete(id); }
 }
 async function sourceHistory(accountId: string, assistantId: string, entry: Awaited<ReturnType<typeof getPersonalAssistant>> & {}, session: AuthSession, project: NonNullable<Awaited<ReturnType<typeof getProject>>>, persist: boolean, forceCurrent = false) {
+  if (await teamConversation(entry.projectId, entry.sessionId)) return [];
   const saved = forceCurrent ? null : await getPersonalAssistantSourceHistory(accountId, assistantId);
   if (saved !== null && saved !== undefined) return saved;
   const listed = await sharedProjectSessions(project, session.userId, session.accountId);
@@ -176,6 +179,8 @@ async function assistantDestination(accountId: string, entry: AssistantEntry, co
     : startAssistantTopic(accountId, entry, route, input, localId, context.history, words);
 }
 export interface AssistantAutomationTurnOptions {
+  /** Internal only; validated against the live assignment, never parsed from personal HTTP input. */
+  team?: { assignment: TeamAssignment };
   scheduledAutoRespond?: AutoRespondConfig;
   label: string;
   origin: TurnOrigin;
@@ -232,6 +237,7 @@ async function executeAssistantTurn(accountId: string, entry: AssistantEntry, se
 }
 async function processAssistantTurn(accountId: string, entry: AssistantEntry, session: AuthSession, input: z.infer<typeof turnSchema>, origin: TurnOrigin, options?: AssistantAutomationTurnOptions): Promise<Awaited<ReturnType<typeof getPersonalAssistantTurn>> & {}> {
   return serializeAssistantTurn(entry.id, async () => {
+    if (options?.team) await validateTeamAssignment(options.team.assignment);
     const repeated = await getPersonalAssistantTurn(accountId, entry.id, input.requestId);
     if (repeated) {
       if (repeated.message !== input.message) throw new Error("Assistant request ID was already used for another message");
@@ -239,6 +245,18 @@ async function processAssistantTurn(accountId: string, entry: AssistantEntry, se
     }
     const local = await getClusterNode();
     if (entry.nodeId && entry.nodeId !== local.id) throw new Error("Open this assistant on its execution node");
+    if (options?.team) {
+      const { team, member, profile, destination } = await teamAssignmentDestination(options.team.assignment);
+      if (profile.id !== entry.id || team.executorAccountId !== accountId || input.requestId !== options.team.assignment.requestId) throw new Error('Team assignment does not match assistant turn');
+      const problems = await teamAgentReadiness(profile);
+      if (problems.length) throw new TeamError(problems.join('\n'), 503);
+      if (profile.executionSettings) await validateExecutionSettings(profile.executionSettings);
+      const project = await getProject(team.projectId);
+      if (!project) throw new Error('Team project unavailable');
+      const initiator: AuthSession = { ...session, accountId: member.accountId, username: member.username, email: null, homeNodeId: member.homeNodeId };
+      return executeAssistantTurn(accountId, profile, initiator, input, { ...destination, message: input.message, isNew: false }, project, 'assistant', { label: options.label, origin: 'assistant', team: options.team, automationProfile: { accountId, profileId: null } });
+    }
+    if (await teamConversation(entry.projectId, entry.sessionId)) throw new Error('Team assistant requires a team assignment');
     const context = await assistantRoutingContext(accountId, entry, session, true);
     const routingInput = options?.recentMessages ? { ...input, recentMessages: await options.recentMessages() } : input;
     const scope = options?.routing?.scope;
@@ -266,6 +284,10 @@ function automationSession(accountId: string): AuthSession {
 export async function runPersonalAssistantAutomationTurn(accountId: string, assistantId: string, requestId: string, message: string, options: AssistantAutomationTurnOptions): Promise<Awaited<ReturnType<typeof getPersonalAssistantTurn>> & {}> {
   const entry = await getPersonalAssistant(accountId, assistantId);
   if (!entry) throw new Error("Assistant not found");
+  if (options.team) {
+    const checked = await validateTeamAssignment(options.team.assignment);
+    if (checked.profile.id !== assistantId || checked.team.executorAccountId !== accountId || checked.assignment.requestId !== requestId) throw new Error('Team assignment does not match assistant turn');
+  } else if (await teamConversation(entry.projectId, entry.sessionId)) throw new Error('Team assistant requires a team assignment');
   const session = automationSession(accountId);
   const recentMessages = async () => {
     const project = await getProject(entry.projectId);
@@ -288,7 +310,7 @@ const itemSchema = z.object({
 function actor(response: { locals: { authSession?: AuthSession } }): string { return response.locals.authSession!.accountId; }
 async function visible(accountId: string, id: string) {
   const entry = await getPersonalAssistant(accountId, id);
-  return entry && await projectVisible(entry.projectId) ? entry : undefined;
+  return entry && !await teamConversation(entry.projectId, entry.sessionId) && await projectVisible(entry.projectId) ? entry : undefined;
 }
 app.get("/api/personal-assistants", async (_request, response, next) => {
   try {
@@ -299,6 +321,7 @@ app.get("/api/personal-assistants", async (_request, response, next) => {
 app.post("/api/personal-assistants", async (request, response, next) => {
   try {
     const input = profileSchema.parse(request.body);
+    if (await teamConversation(input.projectId, input.sessionId)) { sendError(response, 403, 'Use the team configuration API'); return; }
     const project = await getProject(input.projectId);
     if (!project || !await projectVisible(project.id)) { sendError(response, 404, "Conversation not found"); return; }
     const session = response.locals.authSession as AuthSession;

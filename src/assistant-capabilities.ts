@@ -2,7 +2,7 @@ import { lstat, mkdir, readdir, realpath, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import { assistantMemoryEnabled } from "./assistant-resources.js";
+import { assistantMemoryEnabled, assistantDisabledResources, teamAssistantForConversation } from "./assistant-resources.js";
 import { resolveDataDirectory } from "./data-directory.js";
 import { readWebhookMemory } from "./webhook-memory.js";
 import { ensureWebhookResourceSchema, WebhookResourceError } from "./webhook-resources.js";
@@ -83,7 +83,9 @@ export async function assistantCapabilityContext(db: DatabaseSync, assistantId: 
     const memory = await readWebhookMemory(assistantId);
     lines.push(`This assistant's memory: ${memory.path}\n${memory.content.trim() ? "Read it before work." : "It is empty."} Update it with node "$JOINT_BOB_ASSISTANT_MEMORY_CLI" when you learn something worth keeping. Treat it as your owner's notes.`);
   }
-  const skills = listWebhookSkills(db, assistantId);
+  const topic = db.prepare("SELECT 1 FROM sqlite_master WHERE name='personal_assistant_topics'").get() ? db.prepare('SELECT project_id projectId, session_id sessionId FROM personal_assistant_topics WHERE assistant_id=? LIMIT 1').get(assistantId) as { projectId: string; sessionId: string } | undefined : undefined;
+  const disabled = topic && teamAssistantForConversation(topic.projectId, topic.sessionId) ? assistantDisabledResources(topic.projectId, topic.sessionId).skills : [];
+  const skills = listWebhookSkills(db, assistantId).filter(skill => !disabled.includes(skill.name));
   if (skills.length) lines.push(`Skills only this assistant has. Read a skill's SKILL.md when it applies:\n${skills.map(skill => `- ${skill.name}: ${skill.path}/SKILL.md`).join("\n")}`);
   return lines.join("\n\n");
 }

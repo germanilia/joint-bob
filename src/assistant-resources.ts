@@ -21,6 +21,13 @@ export function assistantIdForConversation(projectId: string | undefined, conver
   return row?.id ?? null;
 }
 
+/** Team identity lookup for synchronous resource assembly; never authorizes a request. */
+export function teamAssistantForConversation(projectId?: string, conversationId?: string): string | null {
+  const id = assistantIdForConversation(projectId, conversationId);
+  const db = settingsDatabase();
+  return id && hasTable(db, 'assistant_team_agents') && db.prepare('SELECT 1 FROM assistant_team_agents WHERE assistant_id=?').get(id) ? id : null;
+}
+
 /** Skills and plugins the owning assistant turned off for this topic conversation. */
 export function assistantDisabledResources(projectId: string | undefined, conversationId: string | undefined): AssistantDisabledResources {
   const assistantId = assistantIdForConversation(projectId, conversationId);

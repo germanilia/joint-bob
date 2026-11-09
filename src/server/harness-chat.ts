@@ -4,6 +4,7 @@ import { resourceOwner, ownerAsActor } from "../ownership.js";
 import { actingAccount, runAsAccount, type ActingAccount } from "../account-context.js";
 import { withoutAutomationProfile } from "../provider-profiles/context.js";
 import { filterPersonalAssistantTools, personalAssistantContext, personalAssistantSettings, personalAssistantToolBaseline } from "../personal-assistants.js";
+import { teamQueuedTurn, teamConversation } from '../assistant-teams/runtime.js';
 import { revokeBrowserAgentTokens } from "../browser-agent.js";
 import { attachMessageAuthors, authoredPromptText, recordMessageAuthor, type MessageAuthor } from "../message-authors.js";
 import { internalTaskPrompt } from "../background-task-messages.js";
@@ -466,6 +467,7 @@ function routingClassifierInput(connection: HarnessChatConnection, queued: Queue
 async function routePromptByDifficulty(connection: HarnessChatConnection, queued: QueuedPrompt, poolActive = false): Promise<UsageDifficulty> {
   const base: UsageDifficulty = { turnId: queued.id, projectId: connection.project.id, conversationId: connection.conversationId, sessionId: connection.shared.session.id, engine: connection.engine, occurredAt: new Date().toISOString(), status: "not-classified", level: null, confidence: null, startedAt: null, endedAt: null };
   const result = (status: string, extra: Partial<UsageDifficulty> = {}): UsageDifficulty => ({ ...base, status, ...extra });
+  if (await teamConversation(connection.project.id, connection.conversationId)) return result('team-selected');
   if (queued.systemEventId) return result("internal");
   let policy: StoredRoutingConfig | null = null;
   try { policy = activeRoutingConfig(routingConfigDatabase(), conversationOwner(connection)); }
@@ -597,6 +599,9 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
   let enteredPrompt = false;
   let pool: TurnSubscriptionPool | undefined;
   try {
+    const teamTurn = await teamQueuedTurn(connection.project.id, connection.conversationId, queued.requestId, queued.author?.accountId, queued.automationProfile?.accountId, queued.messageText);
+    if (teamTurn && (queued.settings?.harnessId !== teamTurn.profile.executionSettings?.harnessId || queued.settings?.provider !== teamTurn.profile.executionSettings?.provider || queued.settings?.modelId !== teamTurn.profile.executionSettings?.modelId)) throw new Error('Team queue settings do not match the configured role');
+    if (teamTurn && queued.scheduledAutoRespond) throw new Error('Team turns cannot enable automatic responses');
     if (queued.scheduledAutoRespond) {
       await writable(connection);
       const current = await getAutoRespond(connection.project.id, connection.conversationId);
@@ -606,7 +611,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
         publishAutoRespond(connection, await enableAutoRespond(connection.project.id, connection.conversationId, queued.scheduledAutoRespond, queued.author ?? null, accountId, queued.id, queued.requestId ?? null));
       }
     }
-    pool = await resolveTurnSubscriptionPool(connection, queued);
+    pool = teamTurn ? undefined : await resolveTurnSubscriptionPool(connection, queued);
     if (!pool && !queued.systemEventId) await announceTurnConnection(connection, queued);
     if (queued.settings) await applyQueuedSettings(connection, queued.settings, Boolean(pool));
     const difficulty = await routePromptByDifficulty(connection, queued, Boolean(pool));
@@ -633,27 +638,28 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
       saveDifficulty(activeDifficulty, origin);
       // Once a second person writes, the agent sees who wrote each prompt.
       const authored = queued.systemEventId ? attachments.text : authoredPromptText(connection.project.id, connection.conversationId, attachments.text, queued.author);
-      const assistantSettings = queued.author && !queued.systemEventId
+      const assistantSettings = teamTurn?.profile ?? (queued.author && !queued.systemEventId
         ? await personalAssistantSettings(queued.author.accountId, connection.project.id, connection.engine, connection.shared.session.id)
-        : undefined;
+        : undefined);
+      const assistantAccountId = teamTurn?.team.executorAccountId ?? queued.author?.accountId;
       if (assistantSettings) {
         const available = connection.shared.session.tools();
         const active = available.filter(tool => tool.active).map(tool => tool.name);
-        const baseline = await personalAssistantToolBaseline(queued.author!.accountId, assistantSettings.id, connection.engine, connection.shared.session.id, active);
+        const baseline = await personalAssistantToolBaseline(assistantAccountId!, assistantSettings.id, connection.engine, connection.shared.session.id, active);
         // A topic's baseline may predate Joint Bob's own tools; they are always offered when the session has them.
         const builtIn = JOINT_BOB_AGENT_TOOL_NAMES.filter(name => !baseline.includes(name) && available.some(tool => tool.name === name));
-        const allowed = filterPersonalAssistantTools([...baseline, ...builtIn], assistantSettings);
+        const allowed = filterPersonalAssistantTools([...baseline, ...builtIn], assistantSettings).filter(name => !teamTurn || !JOINT_BOB_AGENT_TOOL_NAMES.includes(name));
         if (allowed.length !== active.length || allowed.some(name => !active.includes(name))) await connection.shared.session.setTools(allowed);
         if (!assistantSettings.allowBrowser) revokeBrowserAgentTokens(connection.project.id, connection.conversationId);
       }
       const assistantContext = assistantSettings
-        ? await personalAssistantContext(queued.author!.accountId, connection.project.id, connection.engine, connection.shared.session.id)
+        ? await personalAssistantContext(assistantAccountId!, connection.project.id, connection.engine, connection.shared.session.id)
         : "";
       const toolPolicy = assistantSettings ? `\n\nPersonal assistant tool policy: Browser access ${assistantSettings.allowBrowser ? "allowed" : "disabled"}; terminal access ${assistantSettings.allowTerminal ? "allowed" : "disabled"}; MCP servers ${assistantSettings.mcpServerNames === null ? "inherit the conversation's installed servers" : `allowlisted to ${assistantSettings.mcpServerNames.join(", ") || "none"}`}. Treat these as access restrictions, not preferences.` : "";
       const text = `${assistantContext ? `${assistantContext}${toolPolicy}\n\n` : ""}${connection.handoffContext ?? ""}${authored}`;
       const finishSilentReview = queued.requestId && (isScheduledPromptText(queued.promptText) || isSilentWebhookRequest(queued.requestId))
         ? await silentScheduledReview(connection.project, connection.engine, connection.shared.session.id, queued.requestId) : undefined;
-      const promptInput = { text: queued.systemEventId ? internalTaskPrompt(queued.systemEventId, text) : text, images: attachments.images, beforeStart: async () => { await writable(connection); promptSent = true; }, onStarted: () => {
+      const promptInput = { text: queued.systemEventId ? internalTaskPrompt(queued.systemEventId, text) : text, images: attachments.images, beforeStart: async () => { await writable(connection); if (teamTurn) await teamQueuedTurn(connection.project.id, connection.conversationId, queued.requestId, queued.author?.accountId, queued.automationProfile?.accountId, queued.messageText); promptSent = true; }, onStarted: () => {
         armAutoCompactAfterPrompt(connection.shared.session);
         if (claimed) return;
         claimed = claimQueuedPrompt(queued.id, currentSettings(connection));

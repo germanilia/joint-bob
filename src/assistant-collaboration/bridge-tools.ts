@@ -67,6 +67,7 @@ const collaboration = () => Promise.all([import("./ask.js"), import("./directory
 
 /** Only an assistant's topic conversations get the tools; the bridge lists none anywhere else. */
 export async function listJointBobTools(identity: McpAgentIdentity): Promise<Tool[]> {
+  if ((await import('../assistant-resources.js')).teamAssistantForConversation(identity.projectId, identity.conversationId)) return [];
   const [{ assistantForConversation }] = await collaboration();
   return await assistantForConversation(identity.projectId, identity.conversationId) ? jointBobTools() : [];
 }
@@ -77,6 +78,7 @@ export async function callJointBobTool(identity: McpAgentIdentity, tool: string,
   const deadline = Date.now() + 85_000;
   const [ask, { askableHelpers }] = await collaboration();
   try {
+    if ((await import('../assistant-resources.js')).teamAssistantForConversation(identity.projectId, identity.conversationId)) throw new Error('Private collaboration is unavailable in team conversations');
     const { assistant, requestId } = await ask.askingTurn(identity);
     if (tool === "list_assistants") {
       // Enough to choose a helper; its instructions stay with it.

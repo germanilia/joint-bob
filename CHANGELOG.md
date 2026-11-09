@@ -7,6 +7,7 @@ Every deployment is a version. The newest section must always match the
 
 - Fixed secrets shared with a third node not arriving when a workspace secret came from a twin node.
 - Bob now looks at a finished conversation about 3 seconds after its turn ends instead of 20, so its verdict on whether it waits for you shows up sooner.
+- Added shared assistant teams: a cluster can now set up one team of six role assistants (Bob, product, designer, QA, PR reviewer, support) whose skills, files and model settings stay separate from your personal assistants, and whose conversations never reach your private collaboration tools.
 
 ## 2.253.2 — 2026-11-09
 

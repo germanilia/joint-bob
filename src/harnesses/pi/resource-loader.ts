@@ -71,14 +71,14 @@ function configureCursorProviderPolicy(): void {
  * The project is untrusted, so Pi reads no `.pi/settings.json` or project packages. Only packages
  * explicitly installed in the personal settings are included, with skills/prompts/themes filtered out.
  */
-export function createPiResourceLoader(options: LoaderOptions, strict: boolean, packagesFile?: string): DefaultResourceLoader {
+export function createPiResourceLoader(options: LoaderOptions, strict: boolean, packagesFile?: string, isolatedTeam = false): DefaultResourceLoader {
   configureCursorProviderPolicy();
   if (!strict) return new DefaultResourceLoader(options);
   // Validate before SDK storage; it tolerates read errors by falling back to defaults.
-  globalResourceSettings(packagesFile, options.agentDir);
+  if (!isolatedTeam) globalResourceSettings(packagesFile, options.agentDir);
   const settingsManager = SettingsManager.fromStorage({
     withLock(scope, read) {
-      read(scope === "global" ? globalResourceSettings(packagesFile, options.agentDir) : undefined);
+      read(scope === "global" ? isolatedTeam ? JSON.stringify({ packages: [], extensions: ['!**/*'], skills: ['!**/*'], prompts: ['!**/*'], themes: ['!**/*'] }) : globalResourceSettings(packagesFile, options.agentDir) : undefined);
     },
   }, { projectTrusted: false });
   return new DefaultResourceLoader({
@@ -86,9 +86,9 @@ export function createPiResourceLoader(options: LoaderOptions, strict: boolean, 
     settingsManager,
     systemPrompt: "",
     appendSystemPrompt: [],
-    systemPromptOverride: () => readOptional(path.join(options.cwd, ".pi/SYSTEM.md")),
+    systemPromptOverride: () => isolatedTeam ? undefined : readOptional(path.join(options.cwd, ".pi/SYSTEM.md")),
     appendSystemPromptOverride: () => {
-      const content = readOptional(path.join(options.cwd, ".pi/APPEND_SYSTEM.md"));
+      const content = isolatedTeam ? undefined : readOptional(path.join(options.cwd, ".pi/APPEND_SYSTEM.md"));
       return content === undefined ? [] : [content];
     },
     // Pi would read AGENTS.md and CLAUDE.md from the agent folder and every parent of the project.

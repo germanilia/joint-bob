@@ -2,6 +2,7 @@ import { access } from "node:fs/promises";
 import { agentRunDescriptor } from "../../agent-run-monitor.js";
 import { recordConversationWork } from "../../conversation-work.js";
 import { getSettings } from "../../settings.js";
+import { teamAssistantForConversation } from '../../assistant-resources.js';
 import { UpdateRefusalError } from "../../updater.js";
 import { listRunningPiSessions } from "../../pi-runtime.js";
 import * as service from "../../pi-service.js";
@@ -112,6 +113,7 @@ export class PiSession implements HarnessSession {
     if (this.handle.reloadingSkills) throw new Error("Pi session is reloading skills");
     let started = false;
     await service.promptIdlePiSession(this.handle, async () => {
+      if (teamAssistantForConversation(this.options.projectId, this.options.conversationId ?? this.id)) await service.reloadPiSkills(this.handle);
       const send = async () => {
       await input.beforeStart?.();
       const previousLastMessage = this.handle.session.messages.at(-1);
