@@ -2058,6 +2058,9 @@ textarea.activity-rule-text { min-height: 54px; }
 .command-strip button:hover { color: var(--accent); border-color: var(--accent); background: var(--field); }
 .conversation-lock { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--amber) 8%, var(--header)); }
 .conversation-lock[hidden] { display: none; }
+#conversationLock { flex-wrap: wrap; }
+.conversation-lock-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-inline-start: auto; max-width: 100%; }
+.conversation-lock-actions:not(:has(button:not([hidden]))) { display: none; }
 .conversation-lock-copy { display: grid; gap: 2px; min-width: 0; }
 .conversation-lock-copy strong { color: var(--amber); font-size: 12px; font-weight: 600; }
 .done-conversation-notice { background: color-mix(in srgb, var(--accent) 8%, var(--header)); }
