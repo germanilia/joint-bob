@@ -18,6 +18,7 @@ import { browserCommandSchema, browserStartSchema, type BrowserAccess, type Brow
 import { BrowserCommandQueue } from "./browser-command-queue.js";
 import { detectBrowserLogin } from "./browser-login-detection.js";
 import { readBrowserLoginForm } from "./browser-login-form.js";
+import { readLoginStep, submitLoginStep } from "./browser-login-step.js";
 import { describeImage } from "./attachment-digest.js";
 import { getSettings } from "./settings.js";
 
@@ -583,6 +584,12 @@ export class BrowserRuntime {
       && (command.action === "resumeAgent" || command.action === "completeLogin" || (actor.kind === "agent" && command.action !== "close"))) {
       throw new Error("Browser profile grant was revoked for this conversation");
     }
+    if (command.action === "readLoginStep" || command.action === "submitLoginStep") {
+      if (actor.kind !== "human" || session.human !== actor.id) throw new Error("Only the controlling human can use the sign-in card");
+      if (!pending || pending.id !== command.requestId || session.activePageId !== command.expectedPageId) throw new Error("Browser login request or page changed");
+      if (session.profileId && !this.store.profileUsable(session.profileId, this.store.sessionAccess(this.store.get(session.id)))) throw new Error("Browser profile grant was revoked for this conversation");
+      return;
+    }
     if (command.action === "requestLogin") {
       if (actor.kind === "agent" && session.human) throw new Error("Browser is under human control; agent input paused");
       if (actor.kind === "human" && session.human !== actor.id) throw new Error("Take control before browser input");
@@ -703,6 +710,8 @@ export class BrowserRuntime {
       case "wait": await this.locator(page, command.selector).waitFor({ state: command.state }); break;
       case "evaluate": return page.evaluate(command.expression);
       case "loginForm": return { ...await readBrowserLoginForm(page), challenge: await detectBrowserLogin(page) === "challenge" };
+      case "readLoginStep": return readLoginStep(page, command.requestId);
+      case "submitLoginStep": await submitLoginStep(page, command); return { submitted: true };
       case "snapshot": return { pageId: session.activePageId, url: page.url(), title: await page.title(), accessibility: (await page.locator("body").ariaSnapshot({ timeout: 5000 })).slice(0, 50000), errors: [...session.errors] };
       case "screenshot": {
         const data = (await page.screenshot({ timeout: 10000 })).toString("base64");
@@ -809,7 +818,12 @@ export class BrowserRuntime {
     const id = randomUUID();
     session.pages.set(id, page); session.activePageId = id; session.loginVerificationEpoch++;
     this.detectGmailLogin(session, page);
-    const report = (error: string) => { session.errors.push(error.slice(0, 2000)); if (session.errors.length > 50) session.errors.shift(); };
+    const report = (error: string) => {
+      // Sites can echo credentials in console/errors during a human sign-in. Never
+      // retain those diagnostics for a later agent snapshot after the handoff.
+      if (this.store.loginRequest(session.id)) return;
+      session.errors.push(error.slice(0, 2000)); if (session.errors.length > 50) session.errors.shift();
+    };
     page.on("console", entry => { if (entry.type() === "error" || entry.type() === "warning") report(`${entry.type()}: ${entry.text()}`); });
     page.on("pageerror", error => report(`JavaScript: ${error.message}`));
     page.on("requestfailed", request => report(`Request: ${request.url()} ${request.failure()?.errorText}`));

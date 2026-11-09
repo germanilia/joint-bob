@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { createBrowserViewer } from "./browser-viewer.js";
+import { createBrowserLoginCard } from "./browser-login-card.js";
 import { elements } from "./elements.js";
 import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
@@ -77,41 +78,51 @@ function mount(session) {
     dismiss();
   };
   document.addEventListener("keydown", current.escape, true);
-  current.viewer = createBrowserViewer(host, {
-    api, identity: sessionIdentity(session), sessionId: session.id, nodeId: session.nodeId,
-    confirm: confirmAction, loginMode: true, onClose: dismiss,
-    isCurrent: () => state.authenticated && popup === current && !current.closed && identityKey(identity()) === current.identityKey && host.isConnected && !document.hidden,
-    onSession(next) {
-      if (popup !== current || current.closed) return;
-      if (!state.authenticated) { close(current, false); return; }
-      if (identityKey(identity()) !== current.identityKey) { close(current, false); return; }
-      if (next?.id !== current.sessionId || next?.nodeId !== current.nodeId) return;
-      if (next.state !== "running" || !next.loginRequest) {
-        dismissed.add(current.requestKey);
-        close(current, false);
-      } else if (next.loginRequest.id !== current.requestId) {
-        close(current, false);
-        queueMicrotask(schedule);
-      }
-    },
-  });
-  // A phone keyboard leaves little room above it; full screen drops the app
-  // chrome so the remote page keeps every remaining pixel while typing. The
-  // panel reparents to <body>: an ancestor's containment would otherwise pin
-  // position:fixed to the chat column instead of the screen.
-  const expandButton = host.querySelector('[data-testid="browser-login-expand"]');
-  expandButton.addEventListener("click", () => {
-    const on = host.classList.toggle("browser-login-fullscreen");
-    expandButton.textContent = on ? "Exit full screen" : "Full screen";
-    expandButton.setAttribute("aria-pressed", String(on));
-    if (on) document.body.append(host);
-    else elements.composer.before(host);
-  });
-  // The actual website needs room for multi-step sign-in on every screen.
-  // Desktop can return to the compact conversation view; phones stay full screen.
-  if (window.innerWidth >= 700) expandButton.style.display = "revert";
-  expandButton.click();
-  host.querySelector('[data-testid="browser-login-done"]')?.focus();
+  const onSession = next => {
+    if (popup !== current || current.closed) return;
+    if (!state.authenticated || identityKey(identity()) !== current.identityKey) { close(current, false); return; }
+    if (next?.id !== current.sessionId || next?.nodeId !== current.nodeId) return;
+    if (next.state !== "running" || !next.loginRequest) {
+      dismissed.add(current.requestKey); close(current, false);
+    } else if (next.loginRequest.id !== current.requestId) { close(current, false); queueMicrotask(schedule); }
+  };
+  function showViewer() {
+    current.viewer?.dispose();
+    host.classList.remove("browser-login-card");
+    current.viewer = createBrowserViewer(host, {
+      api, identity: sessionIdentity(session), sessionId: session.id, nodeId: session.nodeId,
+      confirm: confirmAction, loginMode: true, onClose: dismiss,
+      isCurrent: () => state.authenticated && popup === current && !current.closed && identityKey(identity()) === current.identityKey && host.isConnected && !document.hidden,
+      onSession,
+    });
+    // Explicit takeover needs the whole screen, especially above a phone keyboard.
+    // Reparent so ancestor containment cannot pin the fixed panel to the chat column.
+    const expandButton = host.querySelector('[data-testid="browser-login-expand"]');
+    expandButton.addEventListener("click", () => {
+      const on = host.classList.toggle("browser-login-fullscreen");
+      expandButton.textContent = on ? "Exit full screen" : "Full screen";
+      expandButton.setAttribute("aria-pressed", String(on));
+      if (on) document.body.append(host);
+      else elements.composer.before(host);
+    });
+    if (window.innerWidth >= 700) expandButton.style.display = "revert";
+    expandButton.click();
+    const back = document.createElement("button");
+    back.type = "button"; back.textContent = "Back to sign-in card"; back.dataset.testid = "browser-login-back-to-card";
+    back.addEventListener("click", showCard); expandButton.before(back);
+    host.querySelector('[data-testid="browser-login-done"]')?.focus();
+  }
+  function showCard() {
+    current.viewer?.dispose();
+    host.classList.remove("browser-login-fullscreen");
+    elements.composer.before(host);
+    current.viewer = createBrowserLoginCard(host, {
+      api, session,
+      isCurrent: () => state.authenticated && popup === current && !current.closed && identityKey(identity()) === current.identityKey && host.isConnected,
+      onSession, onTakeover: showViewer, onDismiss: dismiss,
+    });
+  }
+  showCard();
 }
 
 async function discover() {

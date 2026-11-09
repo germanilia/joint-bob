@@ -62,6 +62,7 @@ test("Focus mode leaves sign-in taps and typing with the browser viewer", { time
   }));
   await page.evaluate(() => document.dispatchEvent(new Event("browserSessionsChanged")));
   const panel = page.getByTestId("browser-login-panel");
+  await panel.getByTestId("browser-login-takeover").click();
   const screen = panel.getByTestId("browser-screen");
   await screen.waitFor({ state: "visible" });
   assert.equal(await panel.evaluate(element => element.parentElement === document.body), true, "phone popup is outside the regular Browser panel");

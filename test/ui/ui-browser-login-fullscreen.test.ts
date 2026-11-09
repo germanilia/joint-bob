@@ -63,6 +63,7 @@ test("sign-in panel expands to full screen and back", { timeout: 120_000 }, asyn
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   const screen = dialog.getByTestId("browser-screen");
   await screen.waitFor({ state: "visible" });
 

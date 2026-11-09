@@ -65,6 +65,7 @@ test("embedded sign-in panel hides browser chrome until full screen", { timeout:
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   await dialog.getByTestId("browser-screen").waitFor({ state: "visible" });
 
   // Desktop starts full screen; the compact view remains available.

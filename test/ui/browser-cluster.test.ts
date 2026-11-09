@@ -105,8 +105,10 @@ test("conversation browser runs independently of its agent node and stays pinned
     await viewer.getByTestId('browser-login-done').click();await viewer.getByTestId('browser-error').filter({hasText:/could not be verified/i}).waitFor();
     const premature=await api<{session:BrowserSessionView}>(a,auth,'GET',`/browser/sessions/${session.id}?nodeId=${b.nodeId}`);
     assert.equal(premature.body.session.loginRequest?.id,loginRequestId);assert.equal(premature.body.session.owner,'human');assert.equal(await viewer.getByTestId('browser-resume-agent').isVisible(),false);
-    const fill=await api(a,auth,'POST',`/browser/sessions/${session.id}/command?nodeId=${b.nodeId}`,{action:'fill',selector:'#handoff-password',text:'synthetic-only',expectedPageId:handoffPageId});assert.equal(fill.status,200,JSON.stringify(fill.body));
-    const submit=await api(a,auth,'POST',`/browser/sessions/${session.id}/command?nodeId=${b.nodeId}`,{action:'clickElement',selector:'#handoff-submit',expectedPageId:handoffPageId});assert.equal(submit.status,200,JSON.stringify(submit.body));
+    const loginStep=await api<{result:{stepId:string;origin:string;fields:Array<{type:string}>}}>(a,auth,'POST',`/browser/sessions/${session.id}/command?nodeId=${b.nodeId}`,{action:'readLoginStep',requestId:loginRequestId,expectedPageId:handoffPageId});
+    assert.equal(loginStep.status,200,JSON.stringify(loginStep.body));assert.deepEqual(loginStep.body.result.fields.map(field=>field.type),['password']);
+    const submit=await api(a,auth,'POST',`/browser/sessions/${session.id}/command?nodeId=${b.nodeId}`,{action:'submitLoginStep',requestId:loginRequestId,expectedPageId:handoffPageId,expectedOrigin:loginStep.body.result.origin,stepId:loginStep.body.result.stepId,values:['synthetic-only']});assert.equal(submit.status,200,JSON.stringify(submit.body));
+    assert.ok(!JSON.stringify(submit.body).includes('synthetic-only'),'Cross-node submission must not echo credentials');
     await viewer.getByTestId('browser-login-done').click();await viewer.getByTestId('browser-login-notice').waitFor({state:'hidden'});await viewer.getByTestId('browser-control-status').filter({hasText:'Agent control'}).waitFor();
     const completed=await api<{session:BrowserSessionView}>(a,auth,'GET',`/browser/sessions/${session.id}?nodeId=${b.nodeId}`);assert.equal(completed.body.session.loginRequest,null);
     const verified=await command({action:'evaluate',expression:"Boolean(document.querySelector('#signed-in') && !document.querySelector('#signed-in').hidden)"});assert.equal(verified.result,true);

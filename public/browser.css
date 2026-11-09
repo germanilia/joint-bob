@@ -119,6 +119,19 @@
    Working browser chrome (back/reload, Send Tab, session context) belongs to the
    Browser panel and to full screen, not to the conversation. */
 .browser-login-inline { display: flex; min-width: 0; margin: 0 var(--gap, 8px) 8px; border: 0; border-radius: var(--radius); overflow: hidden; }
+.browser-login-card { flex: 0 0 auto; max-height: min(480px, 65dvh); overflow: auto; }
+.browser-login-card-content { box-sizing: border-box; width: min(100%, 440px); padding: 14px; border: 1px solid var(--border); border-radius: var(--radius, 10px); background: var(--surface, #fff); color: var(--text, #222); }
+.browser-login-card header, .browser-login-card footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.browser-login-card header strong { flex: 1; }
+.browser-login-card p { margin: 8px 0; font-size: 13px; }
+.browser-login-card-origin { font-weight: 600; overflow-wrap: anywhere; }
+.browser-login-card-privacy { color: var(--muted); }
+.browser-login-card form { display: grid; gap: 10px; margin: 10px 0; }
+.browser-login-card label { display: grid; gap: 4px; font-size: 13px; }
+.browser-login-card input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 38px; font-size: 16px; }
+.browser-login-card button { min-height: 34px; }
+.browser-login-card footer { margin-top: 10px; }
+.browser-login-card [hidden] { display: none; }
 .browser-login-inline > .browser-viewer { flex: 1; min-width: 0; border: 0; border-radius: 0; }
 .browser-login-inline .browser-body { padding: 0 0 2px; gap: 6px; }
 .browser-login-inline .browser-login-notice { border: 0; border-radius: 0; background: none; padding: 2px 2px 0; }

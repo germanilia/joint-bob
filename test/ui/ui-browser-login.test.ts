@@ -161,8 +161,10 @@ test("pending browser login popup preserves ownership through failure, dismissal
     assert.equal(await dialog.evaluate(element => element.nextElementSibling?.id ?? ""), "composer", "sign-in must sit directly above the composer");
     assert.equal(await page.locator("#browserPanel").count(), 0, "sign-in must not claim the side browser panel");
     assert.equal(await page.evaluate(() => document.body.classList.contains("browser-visible")), false, "sign-in must not widen the shell for a browser panel");
-    // Only the page content and the sign-in banner: every browsing control stays out.
+    // Explicit browser takeover retains the full manual viewer as a fallback.
+    await dialog.getByTestId("browser-login-takeover").click();
     await dialog.getByTestId("browser-screen").waitFor();
+    await dialog.getByTestId("browser-login-expand").click();
     await dialog.getByTestId("browser-login-done").waitFor();
     await dialog.getByTestId("browser-login-dismiss").waitFor();
     // Embedded, the panel reads like a message: even back/reload waits for full screen.
@@ -277,7 +279,9 @@ test("pending browser login popup preserves ownership through failure, dismissal
 
     const secondRequestId = "66666666-6666-4666-8666-666666666666";
     session.loginRequest = { id: secondRequestId, expectedOrigin: "https://accounts.example.test", label: "Second login" }; session.owner = "agent"; session.canControl = true; verified = false;
-    await page.evaluate(() => document.dispatchEvent(new Event("browserSessionsChanged"))); await dialog.waitFor(); await dialog.getByTestId("browser-screen").waitFor({ state: "visible" });
+    await page.evaluate(() => document.dispatchEvent(new Event("browserSessionsChanged"))); await dialog.waitFor();
+    await dialog.getByTestId("browser-login-takeover").click();
+    await dialog.getByTestId("browser-screen").waitFor({ state: "visible" });
     await dialog.getByTestId("browser-control-status").filter({ hasText: "Human control" }).waitFor({ state: "attached" });
     assert.equal(commands.filter(command => command.action === "takeControl" && command.loginRequestId === secondRequestId).length, 1);
     await dialog.getByTestId("browser-login-dismiss").click(); await dialog.waitFor({ state: "detached" });
@@ -291,7 +295,10 @@ test("pending browser login popup preserves ownership through failure, dismissal
     // the Done action.
     const otherHumanRequestId = "77777777-7777-4777-8777-777777777777";
     session.loginRequest = { id: otherHumanRequestId, expectedOrigin: "https://accounts.example.test", label: "Other viewer login" }; session.owner = "human"; session.canControl = false;
-    await page.evaluate(() => document.dispatchEvent(new Event("browserSessionsChanged"))); await dialog.waitFor(); await dialog.getByTestId("browser-connection-status").filter({ hasText: "Live" }).waitFor({ state: "attached" });
+    await page.evaluate(() => document.dispatchEvent(new Event("browserSessionsChanged"))); await dialog.waitFor();
+    await dialog.getByTestId("browser-login-takeover").click();
+    await dialog.getByTestId("browser-connection-status").filter({ hasText: "Live" }).waitFor({ state: "attached" });
+    await dialog.getByTestId("browser-login-expand").click();
     await page.waitForFunction(requestId => (window as any).__loginHttpCommands.some((command: any) => command.action === "takeControl" && command.loginRequestId === requestId && command.force === true), otherHumanRequestId);
     await dialog.getByTestId("browser-control-status").filter({ hasText: "Human control" }).waitFor({ state: "attached" });
     await page.waitForFunction(element => !(element as HTMLButtonElement).disabled, await dialog.getByTestId("browser-login-done").elementHandle());

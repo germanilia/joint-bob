@@ -54,6 +54,7 @@ for (const dismiss of ["Not now", "Escape"]) {
     };
     const dialog = page.getByTestId("browser-login-panel");
     await discover();
+    await dialog.getByTestId("browser-login-takeover").click();
     await dialog.getByTestId("browser-control-status").filter({ hasText: "Human control" }).waitFor({ state: "attached" });
     if (dismiss === "Not now") await dialog.getByTestId("browser-login-dismiss").click();
     else {

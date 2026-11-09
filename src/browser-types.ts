@@ -116,6 +116,8 @@ export const browserCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("check"), selector, checked: z.boolean() }),
   z.object({ action: z.literal("wait"), selector, state: z.enum(["visible", "hidden", "attached", "detached"]).optional() }),
   z.object({ action: z.literal("loginForm") }),
+  z.object({ action: z.literal("readLoginStep"), requestId: z.string().uuid(), expectedPageId: z.string().uuid() }),
+  z.object({ action: z.literal("submitLoginStep"), requestId: z.string().uuid(), expectedPageId: z.string().uuid(), expectedOrigin: browserWebUrlSchema, stepId: z.string().uuid(), values: z.array(z.string().max(4096)).min(1).max(2) }),
   z.object({ action: z.literal("snapshot") }),
   z.object({ action: z.literal("screenshot") }),
   z.object({ action: z.literal("evaluate"), expression: text }),

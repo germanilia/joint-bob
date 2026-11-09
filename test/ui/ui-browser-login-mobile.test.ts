@@ -72,6 +72,7 @@ test("sign-in on a phone resizes the remote page to phone dimensions", { timeout
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   await dialog.getByTestId("browser-screen").waitFor({ state: "visible" });
 
   // The handoff auto-takes control, then asks for a phone-sized remote page.
@@ -152,6 +153,7 @@ test("a phone sign-in has no inline mode and keeps its actions reachable", { tim
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   await dialog.getByTestId("browser-screen").waitFor({ state: "visible" });
 
   // The popup covers the screen and offers no way back to the cluttered inline view.
@@ -228,6 +230,7 @@ test("a handoff held by a stale controller is taken over automatically", { timeo
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   await dialog.getByTestId("browser-screen").waitFor({ state: "visible" });
 
   for (let i = 0; i < 100 && !commands.some(c => c.action === "setViewport"); i++) await new Promise(r => setTimeout(r, 100));
@@ -288,6 +291,7 @@ test("a handoff already under human control still gets a phone-sized page", { ti
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   await dialog.getByTestId("browser-screen").waitFor({ state: "visible" });
 
   for (let i = 0; i < 100 && !commands.some(c => c.action === "setViewport"); i++) await new Promise(r => setTimeout(r, 100));
@@ -349,6 +353,7 @@ test("typing keeps focus while a slow command is in flight", { timeout: 120_000 
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   const screen = dialog.getByTestId("browser-screen");
   await screen.waitFor({ state: "visible" });
 
@@ -421,6 +426,7 @@ test("a failed phone-size request is retried until it succeeds", { timeout: 120_
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   const screen = dialog.getByTestId("browser-screen");
   await screen.waitFor({ state: "visible" });
 
@@ -491,6 +497,7 @@ test("a finger drag on the remote screen scrolls the remote page", { timeout: 12
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   const screen = dialog.getByTestId("browser-screen");
   await screen.waitFor({ state: "visible" });
 
@@ -566,6 +573,7 @@ test("a fast finger drag is coalesced into few scroll commands", { timeout: 120_
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   const screen = dialog.getByTestId("browser-screen");
   await screen.waitFor({ state: "visible" });
 
@@ -665,6 +673,7 @@ test("a phone sign-in keeps the real page instead of reconstructing login fields
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   await dialog.getByTestId("browser-take-control").filter({ hasText: "You have control" }).waitFor({ state: "attached" });
   assert.equal(await dialog.getByTestId("browser-login-form").count(), 0);
   assert.equal(await dialog.locator(".browser-stage").isVisible(), true);
@@ -717,6 +726,7 @@ test("a desktop sign-in keeps the real page instead of reconstructing login fiel
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   await dialog.getByTestId("browser-take-control").filter({ hasText: "You have control" }).waitFor({ state: "attached" });
   assert.equal(await dialog.getByTestId("browser-login-form").count(), 0);
   assert.equal(await dialog.locator(".browser-stage").isVisible(), true);
@@ -770,6 +780,7 @@ test("a wide window asks for a desktop-sized page when the remote page is phone-
   Object.assign(session, activeIdentity);
   await page.evaluate(() => document.dispatchEvent(new Event("browserSessionsChanged")));
   await page.getByTestId("browser-login-panel").waitFor();
+  await page.getByTestId("browser-login-takeover").click();
   let resize: any;
   for (let i = 0; i < 100 && !resize; i++) { resize = commands.find(c => c.action === "setViewport"); if (!resize) await new Promise(r => setTimeout(r, 100)); }
   assert.ok(resize, "a wide window must request a desktop-sized page");
