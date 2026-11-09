@@ -9,6 +9,15 @@ import type { BobMessage } from "../src/control-center/bob-store.js";
 import { api, seedDevEnvironment, signIn, stopDevNode, waitForDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { serverArgs } from "./server-entry.js";
 
+/** What each node last wrote to stderr, and how it ended: a node that crashed shows in a test only as "fetch failed". */
+const nodeOutput = new WeakMap<ChildProcess, string[]>();
+
+/** The failure, with what the node last wrote and whether it exited. */
+function withNodeOutput(error: unknown, child: ChildProcess | undefined): Error {
+  const output = (child && nodeOutput.get(child)?.join("").slice(-6_000)) || "(none)";
+  return new Error(`${error instanceof Error ? error.message : String(error)}\n--- what the node last wrote ---\n${output}`, { cause: error });
+}
+
 /** A real node with Bob's agent stood in: what it "answers" for a message is the organize.json the test writes. */
 async function startNode(environment: DevEnvironment, node: SeededNode, directory: string): Promise<ChildProcess> {
   const env: NodeJS.ProcessEnv = {
@@ -17,6 +26,10 @@ async function startNode(environment: DevEnvironment, node: SeededNode, director
   };
   delete env.TYPESAFE_AI_API_KEY;
   const child = spawn(process.execPath, serverArgs(env, ["./test/stub-harness-bootstrap.ts", "./test/stub-automation-bootstrap.ts"]), { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe"] });
+  const output: string[] = [];
+  nodeOutput.set(child, output);
+  child.stderr!.on("data", (chunk) => { output.push(String(chunk)); if (output.length > 400) output.shift(); });
+  child.on("exit", (code, signal) => output.push(`\n[the node exited: ${code ?? signal}]`));
   return waitForDevNode(child, node.key, node.url);
 }
 
@@ -96,6 +109,8 @@ test("Bob creates, renames, moves and removes workspaces and projects, each only
     const invented = await say(node, auth, directory, "rename the payments project", { intent: "rename-project", projectId: "made-up", name: "x" });
     assert.match(invented.text, /could not find/);
     assert.deepEqual(invented.actions, []);
+  } catch (error) {
+    throw withNodeOutput(error, child);
   } finally {
     if (child) await stopDevNode(child);
     await rm(root, { recursive: true, force: true });
@@ -192,6 +207,8 @@ test("Bob starts a conversation, asks it something and brings back its answer, o
     assert.equal(remove.actions[0].style, "warn");
     assert.match((await press(node, auth, remove)).text, /Deleted the conversation "check the menu"/);
     assert.equal((await sessionsOf()).some((session) => session.id === started.id), false);
+  } catch (error) {
+    throw withNodeOutput(error, child);
   } finally {
     if (child) await stopDevNode(child);
     await rm(root, { recursive: true, force: true });
