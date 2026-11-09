@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- Reopening a conversation while it was already switching to this node no longer shows a duplicate-transfer error beside the success message.
+
 ## 2.250.0 — 2026-11-09
 
 - Webhook calls no longer go to Bob's chat (or to Telegram): no urgent alerts, snoozes or "needs you" items. Each call is kept in the **webhook log**, opened from the list button in Bob's header, with how the conversation it started ended (settled, in hand or needs you) and a button to open that conversation. Webhook items already in the chat are cleared when the update starts, and calls are no longer rated as they arrive.

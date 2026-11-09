@@ -271,6 +271,8 @@ function openPendingReviewsDialog() {
     .catch((error) => toast.error(error.message));
 }
 
+const listedSessionTransfers = new Set();
+
 export async function openListedSession(session) {
   // Lists render before harness metadata arrives, and the steps below resolve the engine from
   // it. A row tapped in that window threw here, so the tap did nothing at all.
@@ -302,6 +304,10 @@ export async function openListedSession(session) {
   const title = sessionDisplayTitle(session);
   openSession(session.path, title, false, Boolean(state.activeTaskId), reviewHighlightAfter);
   if (!local) return;
+  const transferKey = JSON.stringify([projectId, session.harnessId, session.id]);
+  // Reopening still navigates here, but must not start a second ownership transfer.
+  if (listedSessionTransfers.has(transferKey)) return;
+  listedSessionTransfers.add(transferKey);
   try {
     const result = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions/take-ownership`, {
       method: "POST", body: JSON.stringify({ peerId: local.id, sessionId: session.id, sessionPath: session.path, sessionName: title }),
@@ -313,6 +319,8 @@ export async function openListedSession(session) {
   } catch (error) {
     if (state.activeProjectId === projectId && state.activeSessionId === session.id
       && !await reconcileTranscriptConflict(error, { projectId, engine: session.harnessId, sessionId: session.id })) toast.error(error.message);
+  } finally {
+    listedSessionTransfers.delete(transferKey);
   }
 }
 elements.markAllReviewedButton.addEventListener("click", () => { void markAllSessionsReviewed(); });
