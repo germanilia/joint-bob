@@ -1438,11 +1438,7 @@
                 </div>
                 <div class="webhooks-add-panel" id="webhookSkillPanel" data-testid="webhook-skill-panel" hidden>
                   <div class="relay-head"><div id="webhookSkillMethods"></div><button class="ghost compact" type="button" id="webhookSkillClose" data-testid="webhook-skill-close-button">Close</button></div>
-                  <div data-skill-method="machine">
-                    <input type="search" id="webhookSkillSearch" placeholder="Search skills on this machine…" aria-label="Search skills on this machine" data-testid="webhook-skill-search-input" />
-                    <div class="relay-list" id="webhookSkillInventory" data-testid="webhook-skill-inventory"></div>
-                  </div>
-                  <div data-skill-method="upload" hidden>
+                  <div data-skill-method="upload">
                     <div class="webhooks-drop">
                       <span>A skill folder must contain SKILL.md. Files are stored as-is and never run on upload.</span>
                       <button class="ghost compact" type="button" id="webhookSkillChoose" data-testid="webhook-skill-choose-button">Choose folder…</button>
@@ -1460,6 +1456,12 @@
                 </div>
                 <div class="relay-list" id="webhookSkillList" data-testid="webhook-skill-list"></div>
                 <div class="relay-pager" id="webhookSkillPager" data-testid="webhook-skill-pager" hidden></div>
+                <section class="webhooks-available" data-testid="webhook-skill-available">
+                  <h4>Available in Resources <span id="webhookSkillAvailableCount"></span></h4>
+                  <p class="settings-hint">Skills set up in Resources on this machine. Add one to copy it into this webhook.</p>
+                  <input type="search" id="webhookSkillSearch" placeholder="Search skills in Resources…" aria-label="Search skills in Resources" data-testid="webhook-skill-search-input" />
+                  <div class="relay-list" id="webhookSkillInventory" data-testid="webhook-skill-inventory"></div>
+                </section>
               </div>
             </div>
 

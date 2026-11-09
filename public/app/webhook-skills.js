@@ -1,5 +1,5 @@
-// Settings → Webhooks → Skills. Skills belong to one webhook. "+ Add skill" opens one panel with
-// a choice of source: a skill already on this machine, an uploaded folder, or a Git repository.
+// Settings → Webhooks → Skills. Skills belong to one webhook. The tab lists the skills set up in
+// Resources on this machine to add directly; "+ Add skill" uploads a folder or imports from Git.
 import { api } from "./api.js";
 import { createFittedList, makeBadge, makeButton, makeNode, makeTwoStepButton } from "./relay-ui.js";
 import { byId, encodeFile, makeSegmented } from "./webhook-ui.js";
@@ -15,7 +15,7 @@ export function createWebhookSkills({ url, run, say, onCount }) {
 
   const list = createFittedList({
     list: byId("webhookSkillList"), pager: byId("webhookSkillPager"), testPrefix: "webhook-skills",
-    emptyText: "No skills yet. Add one from this machine, a folder or Git.",
+    emptyText: "No skills yet. Add one from Resources below, a folder or Git.",
     fetchPage: async (page, size) => ({ total: skills.length, items: skills.slice((page - 1) * size, page * size) }),
     renderItem: skillRow,
   });
@@ -66,11 +66,18 @@ export function createWebhookSkills({ url, run, say, onCount }) {
     return row;
   }
 
+  /** One entry per skill name: the same skill set up for several harnesses is listed and added once. */
   function renderInventory() {
     const query = byId("webhookSkillSearch").value.trim().toLowerCase();
-    const matches = inventory.filter((skill) => `${skill.name} ${skill.harness} ${skill.description}`.toLowerCase().includes(query));
-    const rows = matches.slice(0, INVENTORY_ROWS).map((skill) => pickRow(skill.name, `${skill.harness} · ${skill.description}`, makeButton("Add", "webhook-skill-import-existing-button", () => void add({ action: "import-existing", inventoryId: skill.inventoryId }))));
-    if (!inventory.length) rows.push(makeNode("p", "relay-empty", "No skills on this machine. Upload a folder or use Git."));
+    const unique = [...new Map(inventory.map((skill) => [skill.name, skill])).values()];
+    const matches = unique.filter((skill) => `${skill.name} ${skill.description}`.toLowerCase().includes(query));
+    const rows = matches.slice(0, INVENTORY_ROWS).map((skill) => {
+      const added = skills.some((item) => item.source === "existing" && item.name === skill.name);
+      const action = added ? makeBadge("Added", "ok") : makeButton("Add", "webhook-skill-import-existing-button", () => void add({ action: "import-existing", inventoryId: skill.inventoryId }));
+      return pickRow(skill.name, skill.description, action);
+    });
+    byId("webhookSkillAvailableCount").textContent = unique.length ? `(${unique.length})` : "";
+    if (!unique.length) rows.push(makeNode("p", "relay-empty", "No skills in Resources on this machine. Upload a folder or use Git."));
     else if (!matches.length) rows.push(makeNode("p", "relay-empty", "No skills match."));
     if (matches.length > INVENTORY_ROWS) rows.push(makeNode("p", "relay-empty", `${matches.length - INVENTORY_ROWS} more. Search to narrow the list.`));
     byId("webhookSkillInventory").replaceChildren(...rows);
@@ -110,10 +117,9 @@ export function createWebhookSkills({ url, run, say, onCount }) {
   }
 
   byId("webhookSkillMethods").append(makeSegmented([
-    { value: "machine", label: "From this machine", testid: "webhook-skill-method-machine" },
     { value: "upload", label: "Upload a folder", testid: "webhook-skill-method-upload" },
     { value: "git", label: "From Git", testid: "webhook-skill-method-git" },
-  ], "machine", showMethod));
+  ], "upload", showMethod));
   byId("webhookSkillAdd").addEventListener("click", () => { panel.hidden = false; });
   byId("webhookSkillClose").addEventListener("click", () => { panel.hidden = true; });
   byId("webhookSkillSearch").addEventListener("input", renderInventory);
@@ -130,7 +136,7 @@ export function createWebhookSkills({ url, run, say, onCount }) {
       panel.hidden = true;
       byId("webhookSkillGitResults").replaceChildren();
       if (hook) await reload();
-      else { skills = []; onCount(0); }
+      else { skills = []; inventory = []; onCount(0); renderInventory(); }
     },
   };
 }

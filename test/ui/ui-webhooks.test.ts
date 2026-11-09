@@ -270,10 +270,13 @@ test("a webhook made with Accept attachments keeps the option through turning of
   await openTab("skills");
   const inventoryApi = await api<{ skills: Array<{ name: string }> }>(node, session, "GET", `/webhooks/${hook.id}/skills?inventory=1`);
   assert.equal(inventoryApi.status, 200, JSON.stringify(inventoryApi.body));
-  await page.getByTestId("webhook-skill-add-button").click();
+  await page.getByTestId("webhook-skill-available").getByText(/Available in Resources \(\d+\)/).waitFor();
   await page.getByTestId("webhook-skill-search-input").fill("project-review");
-  await page.getByTestId("webhook-skill-inventory").locator(".relay-row").filter({ hasText: "project-review" }).first().getByTestId("webhook-skill-import-existing-button").click();
+  const resourceSkillRow = page.getByTestId("webhook-skill-inventory").locator(".relay-row").filter({ hasText: "project-review" }).first();
+  await resourceSkillRow.getByTestId("webhook-skill-import-existing-button").click();
   await page.getByTestId("webhook-skill-list").getByText(/project-review/).waitFor();
+  await resourceSkillRow.getByText("Added").waitFor();
+  await page.getByTestId("webhook-skill-add-button").click();
   await page.getByTestId("webhook-skill-method-git").click();
   await page.getByTestId("webhook-skill-git-url-input").fill(pathToFileURL(path.join(root, "git-skill-repo")).href);
   await page.getByTestId("webhook-skill-git-discover-button").click();
