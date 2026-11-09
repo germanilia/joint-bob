@@ -487,6 +487,11 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await pushBox.locator("textarea").evaluate((box) => document.activeElement === box), true, "the box takes the focus");
   assert.match(await pushBox.locator("textarea").getAttribute("placeholder") ?? "", /^Anything to tell “Slice 7” as it goes on\? Leave it empty to just push it on\.$/);
   assert.equal((await page.evaluate(() => (window as unknown as { __pressed?: unknown[] }).__pressed ?? [])).length, 1, "nothing is pushed until the box is sent");
+  assert.equal(await stopped.getByRole("button", { name: "Push it on" }).count(), 1, "while the box is open, Push it on is only the box's button");
+  await pushBox.getByRole("button", { name: "Cancel" }).click();
+  await pushBox.waitFor({ state: "detached" });
+  await stopped.getByRole("button", { name: "Push it on" }).click();
+  await pushBox.waitFor();
   await pushBox.locator("textarea").fill("Map the follow-up states first, then wire the nudges.");
   await pushBox.getByRole("button", { name: "Push it on" }).click();
   await stopped.waitFor({ state: "detached" });

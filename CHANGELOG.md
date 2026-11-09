@@ -3,6 +3,11 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.251.1 — 2026-11-09
+
+- **Push it on** shows once while its box is open, under the box; the duplicate button above it did nothing.
+- Pushing with instructions a conversation on a machine that has not updated yet now says so, instead of failing with "Invalid press".
+
 ## 2.251.0 — 2026-11-09
 
 - Reopening a conversation while it was already switching to this node no longer shows a duplicate-transfer error beside the success message.

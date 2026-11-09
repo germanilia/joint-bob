@@ -168,6 +168,8 @@ function renderActions(message, about) {
   if (!message.actions.length && !settleable) return null;
   const actions = element("div", "control-actions");
   for (const action of message.actions) {
+    // While its box is open, Push it on is pressed from the box, so the row does not show it twice.
+    if (action.id === PUSH && replying?.id === message.id && replying.push) continue;
     const button = element("button", `control-action ${action.style ?? ""}`, action.label);
     button.type = "button";
     button.addEventListener("click", () => (action.id === PUSH ? openPush(message, action) : runAction(message, action, button)));

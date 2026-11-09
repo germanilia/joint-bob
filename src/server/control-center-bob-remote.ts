@@ -40,6 +40,9 @@ async function pressOnOrigin(originNodeId: string, accountId: string, messageId:
     const body = await reply.json().catch(() => ({})) as { error?: string };
     throw new BobActionError(404, body.error ?? "That machine runs an older version that cannot take this press; update it first");
   }
+  if (reply.status === 400 && note) {
+    throw new BobActionError(409, "The machine that runs this conversation has an older Joint Bob that cannot take instructions with Push it on yet. Push it on with the box empty, or send your instructions with Reply; it takes them once it is updated.");
+  }
   if (!reply.ok) {
     const body = await reply.json().catch(() => ({})) as { error?: string };
     throw new BobActionError(reply.status >= 500 ? 502 : reply.status, body.error ?? `The machine that wrote this message refused the press (${reply.status})`);
