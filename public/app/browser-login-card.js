@@ -2,14 +2,31 @@
 export function createBrowserLoginCard(host, { api, session: initial, isCurrent, onSession, onTakeover, onDismiss }) {
   let session = initial, step = null, disposed = false, busy = false, completed = false, completionTimer;
   host.classList.add("browser-login-card");
-  host.innerHTML = `<div class="browser-login-card-content">
-    <header><strong>Secure sign-in</strong><button type="button" data-testid="browser-login-dismiss" aria-label="Dismiss sign-in">Dismiss</button></header>
-    <p data-testid="browser-login-origin" class="browser-login-card-origin"></p>
-    <p class="browser-login-card-privacy">Credentials go directly to your browser—not into this conversation.</p>
-    <p data-testid="browser-login-status" role="status" aria-live="polite">Connecting to sign-in…</p>
-    <form data-testid="browser-login-form"></form>
-    <footer><button type="button" data-testid="browser-login-refresh">Refresh step</button><button type="button" data-testid="browser-login-takeover">Open browser</button><button type="button" data-testid="browser-login-done" hidden>I'm signed in</button></footer>
-  </div>`;
+  // Built as nodes, as everywhere in the app: no markup is ever parsed from a string.
+  const node = (tag, attributes = {}, text) => {
+    const element = document.createElement(tag);
+    for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+    if (text !== undefined) element.textContent = text;
+    return element;
+  };
+  const header = node("header");
+  header.append(node("strong", {}, "Secure sign-in"), node("button", { type: "button", "data-testid": "browser-login-dismiss", "aria-label": "Dismiss sign-in" }, "Dismiss"));
+  const footer = node("footer");
+  footer.append(
+    node("button", { type: "button", "data-testid": "browser-login-refresh" }, "Refresh step"),
+    node("button", { type: "button", "data-testid": "browser-login-takeover" }, "Open browser"),
+    node("button", { type: "button", "data-testid": "browser-login-done", hidden: "" }, "I'm signed in"),
+  );
+  const content = node("div", { class: "browser-login-card-content" });
+  content.append(
+    header,
+    node("p", { "data-testid": "browser-login-origin", class: "browser-login-card-origin" }),
+    node("p", { class: "browser-login-card-privacy" }, "Credentials go directly to your browser—not into this conversation."),
+    node("p", { "data-testid": "browser-login-status", role: "status", "aria-live": "polite" }, "Connecting to sign-in…"),
+    node("form", { "data-testid": "browser-login-form" }),
+    footer,
+  );
+  host.replaceChildren(content);
   const get = id => host.querySelector(`[data-testid="browser-login-${id}"]`);
   const form = get("form"), status = get("status"), done = get("done");
   const current = () => !disposed && isCurrent();
