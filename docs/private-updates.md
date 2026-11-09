@@ -31,8 +31,8 @@ needed. Saving another token rotates it; removing the file disables private acce
 Open Settings → Updates on that machine and select Check for updates. Then enable
 Automatic updates if wanted. Every machine needs its own provisioning, including
 machines updated through Update all nodes. Credentials are never forwarded to peers.
-An expired, revoked, or missing token produces an update error. There is no fallback
-to the old public repository.
+An expired, revoked, or missing token produces an update error. Replace the token,
+then select Check for updates again. There is no fallback to the old public repository.
 
 Only the configured GitHub repository's release API receives Authorization.
 Downloads use asset API URLs with `Accept: application/octet-stream`. A GitHub CDN
