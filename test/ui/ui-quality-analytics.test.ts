@@ -3,6 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
+import { QualityStore } from '../../src/quality-analytics.js';
 import type { Browser } from 'playwright-core';
 import { launchChrome } from './launch-chrome.js';
 import { seedDevEnvironment, startDevNode, stopDevNode } from '../dev-nodes.js';
@@ -35,7 +37,7 @@ test('Quality Settings shows the local opt-in, coverage, issues and paginated re
     await page.route('**/api/quality-analytics?*', async route => {
       const url = new URL(route.request().url());
       assert.equal(url.searchParams.get('issue'), 'verification');
-      await route.fulfill({ json: { enabled: false, projects: [], totals: { replies: 1, issues: 1, good: 0, unknown: 0 }, trends: [], issues: [], jobs: [], failures: [], feedback: [], versions: [], lessons: [], page: 0, pageSize: 8, total: 1, rows: [{ projectId: 'p', conversationId: 'c', replyId: '1', at: '2025-01-01', harness: 'claude', model: 'fixture', result: { outcome: 'issue', reason: 'Claim was not verified', confidence: .9, issues: [{ type: 'verification', reason: 'No test evidence', lesson: 'Run tests before claiming success', ruleId: '', adoptedAt: '' }] } }] } });
+      await route.fulfill({ json: { enabled: false, projects: [{ id: 'p', name: 'Fixture project' }], totals: { replies: 1, issues: 1, good: 0, unknown: 0 }, trends: [], issues: [], jobs: [], failures: [], failureGroups: [], sources: [], lastEvaluatedAt: null, feedback: [], versions: [], lessons: [], page: 0, pageSize: 8, total: 1, rows: [{ projectId: 'p', conversationId: 'c', replyId: '1', at: '2025-01-01', harness: 'claude', model: 'fixture', result: { outcome: 'issue', reason: 'Claim was not verified', confidence: .9, issues: [{ type: 'verification', reason: 'No test evidence', lesson: 'Run tests before claiming success', ruleId: '', adoptedAt: '' }] } }] } });
     });
     await page.getByTestId('quality-view').selectOption('rows');
     await page.getByTestId('quality-filters-toggle').click();
@@ -48,6 +50,90 @@ test('Quality Settings shows the local opt-in, coverage, issues and paginated re
     assert.ok(bounds.scroll <= bounds.width + 2, JSON.stringify(bounds));
     assert.deepEqual(errors, []);
   } finally { await browser?.close(); await stopDevNode(server); await rm(root, { recursive: true, force: true }); }
+});
+
+test('Quality explains collection failures and offers working filters and source links', { timeout: 90_000 }, async t => {
+  const { page, node, environment } = await nativeUiFixture(t);
+  const project = node.projects[0];
+  const database = new DatabaseSync(path.join(node.dataDir, 'node.db'));
+  try {
+    const store = new QualityStore(database);
+    for (let i = 0; i < 25; i++) store.jobState(project.id, String(i), 'error', 'Several TypeSafe accounts are saved. Select the system secret in Settings → System AI.');
+    for (const model of ['model-one', 'model-two']) store.put({ projectId: project.id, conversationId: `conversation-${model}`, replyId: model, at: '2026-11-08T12:00:00Z', harness: 'pi', model, fingerprint: model, result: {
+      outcome: 'issue', reason: `Finding for ${model}`, issues: [{ type: 'verification', reason: 'No tests were run', lesson: 'Verify the result', ruleId: '', adoptedAt: '' }], confidence: .9, probabilities: { issue: .9 }, claudeModel: 'claude-evaluator', jevModel: 'jev-evaluator', version: '1', usage: null,
+    } });
+  } finally { database.close(); }
+  await page.goto(node.url);
+  await page.getByTestId('login-username-input').fill(environment.username);
+  await page.getByTestId('login-password-input').fill(environment.password);
+  await page.getByTestId('login-submit-button').click();
+  await page.locator('.project-card').first().waitFor();
+  await page.evaluate(async () => { const { openSettings } = await import('/app/settings.js'); await openSettings('quality'); });
+  await page.getByTestId('quality-summary').getByText('2 evaluated replies', { exact: false }).waitFor();
+  assert.equal(await page.getByTestId('quality-retry').isDisabled(), true, 'disabled collection cannot be scanned');
+  await page.getByTestId('quality-coverage').getByText('25 conversations', { exact: false }).waitFor();
+  assert.equal(await page.getByTestId('quality-coverage').getByText('Several TypeSafe accounts', { exact: false }).count(), 1, 'group repeated setup failures');
+  assert.match(await page.getByTestId('quality-coverage').innerText(), /Last evaluated/);
+  await page.getByTestId('quality-filters-toggle').click();
+  await page.locator('#qualityModel').selectOption('model-two');
+  await page.getByTestId('quality-summary').getByText('1 evaluated replies', { exact: false }).waitFor();
+  await page.getByTestId('quality-view').selectOption('rows');
+  await page.getByText('Finding for model-two', { exact: true }).waitFor();
+  const link = page.getByTestId('quality-source-link');
+  const url = new URL((await link.getAttribute('href'))!, node.url);
+  assert.equal(url.searchParams.get('projectId'), project.id);
+  assert.equal(url.searchParams.get('sessionId'), 'conversation-model-two');
+  assert.ok((await link.innerText()).includes(project.name));
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/quality-analytics?*model=model-one*', async route => {
+    const response = await route.fetch(); await held; await route.fulfill({ response });
+  });
+  try {
+    const oldResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('model') === 'model-one');
+    await page.locator('#qualityModel').selectOption('model-one');
+    await page.locator('#qualityModel').selectOption('model-two');
+    await page.locator('#qualityAnalytics[aria-busy="false"]').waitFor();
+    release(); await oldResponse;
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    assert.equal(await page.getByText('Finding for model-one', { exact: true }).count(), 0, 'late response must not replace the latest filter results');
+    assert.equal(await page.locator('#qualityModel').inputValue(), 'model-two');
+  } finally { release(); await page.unrouteAll({ behavior: 'wait' }); }
+  await page.setViewportSize({ width: 320, height: 844 });
+  const bounds = await page.getByTestId('settings-panel-quality').evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth }));
+  assert.ok(bounds.scroll <= bounds.width + 2, JSON.stringify(bounds));
+  await page.getByTestId('quality-clear-filters').click();
+  await page.getByTestId('quality-summary').getByText('2 evaluated replies', { exact: false }).waitFor();
+  await page.getByTestId('quality-system-ai-link').click();
+  await page.getByTestId('settings-panel-system-ai').waitFor();
+});
+
+test('Quality exposes load failures inline and recovers without presenting stale metrics as current', { timeout: 90_000 }, async t => {
+  const { page, node, environment } = await nativeUiFixture(t);
+  let status = 502;
+  await page.route('**/api/quality-analytics?*', async route => {
+    if (status) await route.fulfill({ status, body: '' });
+    else await route.continue();
+  });
+  await page.goto(node.url);
+  await page.getByTestId('login-username-input').fill(environment.username);
+  await page.getByTestId('login-password-input').fill(environment.password);
+  await page.getByTestId('login-submit-button').click();
+  await page.locator('.project-card').first().waitFor();
+  await page.evaluate(async () => { const { openSettings } = await import('/app/settings.js'); await openSettings('quality'); });
+  const loadStatus = page.getByTestId('quality-load-status');
+  await loadStatus.getByText('Refresh', { exact: false }).waitFor();
+  assert.match(await loadStatus.innerText(), /machine|connection/i);
+  assert.equal(await page.getByTestId('quality-enabled').isDisabled(), true, 'unknown server settings must not be editable');
+  status = 0;
+  await page.getByTestId('quality-refresh').click();
+  await page.getByTestId('quality-summary').getByText('0 evaluated replies', { exact: false }).waitFor();
+  assert.equal(await page.getByTestId('quality-enabled').isDisabled(), false);
+  status = 404;
+  await page.getByTestId('quality-refresh').click();
+  await loadStatus.getByText('404', { exact: false }).waitFor();
+  assert.match(await loadStatus.innerText(), /previous|stale/i);
+  assert.match(await loadStatus.innerText(), /update|version|unavailable/i);
 });
 
 test('Quality controls fit a phone without full-width checkboxes or cramped filters', { timeout: 90_000 }, async t => {

@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- Made Quality analytics faster, applied filters automatically, grouped repeated collection failures with recovery guidance, and linked findings to their source conversations.
+
 ## 2.252.1 — 2026-11-09
 
 - Kept ownership buttons together and moved them below the message on narrow screens, so the message stays readable on phones.

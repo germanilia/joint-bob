@@ -100,28 +100,36 @@ export class QualityStore {
       if (value) { where.push(condition!); args.push(value); }
     }
     const clause = where.join(' AND ');
-    const totals = this.db.prepare(`SELECT COUNT(*) replies,COALESCE(SUM(json_extract(result,'$.outcome')='issue'),0) issues,COALESCE(SUM(json_extract(result,'$.outcome')='good'),0) good,COALESCE(SUM(json_extract(result,'$.outcome')='unknown'),0) unknown FROM quality_observations WHERE ${clause}`).get(...args) as { replies: number; issues: number; good: number; unknown: number };
-    const trends = this.db.prepare(`SELECT CASE WHEN at='' THEN 'undated' ELSE substr(at,1,10) END day,json_extract(result,'$.claudeModel') claudeEvaluator,json_extract(result,'$.jevModel') jevEvaluator,COUNT(*) replies,SUM(json_extract(result,'$.outcome')='issue') issues,SUM(json_extract(result,'$.outcome')='unknown') unknown FROM quality_observations WHERE ${clause} GROUP BY 1,2,3 ORDER BY 1 DESC LIMIT 366`).all(...args);
+    // Count compact materialized values, not full evaluator JSON in every aggregate.
+    const totals = this.db.prepare(`WITH outcomes AS MATERIALIZED (SELECT json_extract(result,'$.outcome') outcome FROM quality_observations WHERE ${clause})
+      SELECT COUNT(*) replies,COALESCE(SUM(outcome='issue'),0) issues,COALESCE(SUM(outcome='good'),0) good,COALESCE(SUM(outcome='unknown'),0) unknown FROM outcomes`).get(...args) as { replies: number; issues: number; good: number; unknown: number };
+    const trends = this.db.prepare(`WITH samples AS MATERIALIZED (SELECT at,json_extract(result,'$.outcome','$.claudeModel','$.jevModel') metric FROM quality_observations WHERE ${clause})
+      SELECT CASE WHEN at='' THEN 'undated' ELSE substr(at,1,10) END day,json_extract(metric,'$[1]') claudeEvaluator,json_extract(metric,'$[2]') jevEvaluator,COUNT(*) replies,SUM(json_extract(metric,'$[0]')='issue') issues,SUM(json_extract(metric,'$[0]')='unknown') unknown FROM samples GROUP BY 1,2,3 ORDER BY 1 DESC LIMIT 366`).all(...args);
     const issues = this.db.prepare(`SELECT json_extract(j.value,'$.type') type,COUNT(DISTINCT o.project_id||':'||o.conversation_id||':'||o.reply_id) replies,MIN(NULLIF(o.at,'')) firstSeen,MAX(NULLIF(o.at,'')) lastSeen FROM (SELECT * FROM quality_observations WHERE ${clause}) o,json_each(o.result,'$.issues') j GROUP BY 1 ORDER BY replies DESC,type LIMIT 200`).all(...args);
     const rows = (this.db.prepare(`SELECT project_id projectId,conversation_id conversationId,reply_id replyId,at,harness,model,result,evaluated_at evaluatedAt FROM quality_observations WHERE ${clause} ORDER BY at DESC,project_id,conversation_id,reply_id LIMIT ? OFFSET ?`).all(...args, filter.pageSize, filter.page * filter.pageSize) as Array<Record<string, unknown> & { result: string }>).map(row => ({ ...row, result: JSON.parse(row.result) as QualityResult }));
     const jobs = this.db.prepare(`SELECT state,COUNT(*) count FROM quality_jobs WHERE project_id IN (${marks}) GROUP BY state`).all(...allowed);
     const failures = this.db.prepare(`SELECT project_id projectId,conversation_id conversationId,state,error FROM quality_jobs WHERE project_id IN (${marks}) AND state IN ('error','unavailable') ORDER BY updated_at DESC LIMIT 20`).all(...allowed);
+    const failureGroups = this.db.prepare(`SELECT state,error,COUNT(*) count FROM quality_jobs WHERE project_id IN (${marks}) AND state IN ('error','unavailable') GROUP BY state,error ORDER BY count DESC,state,error`).all(...allowed);
+    const sources = this.db.prepare(`SELECT DISTINCT model,harness FROM quality_observations WHERE project_id IN (${marks}) ORDER BY model,harness`).all(...allowed);
+    const lastEvaluatedAt = this.db.prepare(`SELECT MAX(evaluated_at) at FROM quality_observations WHERE project_id IN (${marks})`).get(...allowed)!.at as string | null;
     const feedback = this.db.prepare(`SELECT source,rating,COUNT(*) count FROM quality_feedback WHERE project_id IN (${marks}) GROUP BY source,rating`).all(...allowed);
     const cohortWhere = [`project_id IN (${marks})`];
     const cohortArgs = [...allowed];
     for (const [condition, value] of [["at>=?", filter.from], ["at<=?", filter.to], ['model=?', filter.model], ['harness=?', filter.harness], ["json_extract(result,'$.claudeModel')=?", filter.claudeEvaluator], ["json_extract(result,'$.jevModel')=?", filter.jevEvaluator], ["json_extract(result,'$.version')=?", filter.version]]) {
       if (value) { cohortWhere.push(condition!); cohortArgs.push(value); }
     }
-    const lessons = this.db.prepare(`WITH cohort AS (SELECT * FROM quality_observations WHERE ${cohortWhere.join(' AND ')}), rules AS (
+    const lessons = this.db.prepare(`WITH cohort AS MATERIALIZED (
+      SELECT project_id,at,(SELECT json_group_array(json_object('type',json_extract(value,'$.type'),'ruleId',json_extract(value,'$.ruleId'),'adoptedAt',json_extract(value,'$.adoptedAt'))) FROM json_each(result,'$.issues')) issues
+      FROM quality_observations WHERE ${cohortWhere.join(' AND ')}), rules AS (
       SELECT o.project_id projectId,json_extract(j.value,'$.type') type,json_extract(j.value,'$.ruleId') ruleId,MIN(json_extract(j.value,'$.adoptedAt')) adoptedAt
-      FROM cohort o,json_each(o.result,'$.issues') j WHERE json_extract(j.value,'$.ruleId')<>'' AND json_extract(j.value,'$.adoptedAt')<>''
+      FROM cohort o,json_each(o.issues) j WHERE json_extract(j.value,'$.ruleId')<>'' AND json_extract(j.value,'$.adoptedAt')<>''
       GROUP BY 1,2,3)
       SELECT r.*,SUM(c.at<>'' AND substr(c.at,1,10)<r.adoptedAt) beforeReplies,SUM(c.at<>'' AND substr(c.at,1,10)>=r.adoptedAt) afterReplies,
-      SUM(c.at<>'' AND substr(c.at,1,10)<r.adoptedAt AND EXISTS(SELECT 1 FROM json_each(c.result,'$.issues') j WHERE json_extract(j.value,'$.type')=r.type)) beforeIssues,
-      SUM(c.at<>'' AND substr(c.at,1,10)>=r.adoptedAt AND EXISTS(SELECT 1 FROM json_each(c.result,'$.issues') j WHERE json_extract(j.value,'$.type')=r.type)) afterIssues
+      SUM(c.at<>'' AND substr(c.at,1,10)<r.adoptedAt AND EXISTS(SELECT 1 FROM json_each(c.issues) j WHERE json_extract(j.value,'$.type')=r.type)) beforeIssues,
+      SUM(c.at<>'' AND substr(c.at,1,10)>=r.adoptedAt AND EXISTS(SELECT 1 FROM json_each(c.issues) j WHERE json_extract(j.value,'$.type')=r.type)) afterIssues
       FROM rules r JOIN cohort c ON c.project_id=r.projectId WHERE (?='' OR r.type=?) GROUP BY r.projectId,r.type,r.ruleId ORDER BY r.adoptedAt DESC LIMIT 100`).all(...cohortArgs, filter.issue ?? '', filter.issue ?? '');
     const coverage = this.db.prepare(`SELECT COALESCE(SUM(reply_count),0) eligibleReplies FROM quality_coverage WHERE project_id IN (${marks})`).get(...allowed);
     const versions = this.db.prepare(`SELECT DISTINCT json_extract(result,'$.version') version,json_extract(result,'$.claudeModel') claudeModel,json_extract(result,'$.jevModel') jevModel FROM quality_observations WHERE project_id IN (${marks})`).all(...allowed);
-    return { collectionError: String(this.db.prepare('SELECT error FROM quality_health WHERE singleton=1').get()?.error ?? ''), totals, coverage, trends, issues, lessons, rows, total: totals.replies, jobs, failures, feedback, versions, page: filter.page, pageSize: filter.pageSize };
+    return { collectionError: String(this.db.prepare('SELECT error FROM quality_health WHERE singleton=1').get()?.error ?? ''), totals, coverage, trends, issues, lessons, rows, total: totals.replies, jobs, failures, failureGroups, sources, lastEvaluatedAt, feedback, versions, page: filter.page, pageSize: filter.pageSize };
   }
 }

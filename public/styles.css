@@ -5219,4 +5219,8 @@ body:not(.node-admin) [data-admin-only] { display: none !important; }
 .quality-analytics td button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .quality-observation { padding: 12px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: var(--radius-ctl); }
 .quality-error { color: var(--error, #b91c1c); }
+#quality-load-status { font-size: 13px; line-height: 1.5; }
+#quality-load-status.quality-error { padding: 12px; border: 1px solid currentColor; border-radius: var(--radius-ctl); }
+.quality-filter-section > button { margin-bottom: 12px; }
+.quality-observation a { display: inline-block; padding-block: 10px; }
 #quality-summary { font-weight: 600; }

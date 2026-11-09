@@ -64,6 +64,44 @@ test('issue drill-down filters accepted lessons before the result limit', () => 
   assert.equal(store.view(['p'], { page: 0, pageSize: 10, issue: 'old-target' }).lessons.length, 1);
 });
 
+test('collection guidance and filter choices respect project access and include all failures', () => {
+  const store = fixture();
+  try {
+    store.put({ projectId: 'p', conversationId: 'c', replyId: 'r', at: '2025-01-01', harness: 'pi', model: 'visible-model', fingerprint: 'f', result });
+    store.put({ projectId: 'private', conversationId: 'c', replyId: 'r', at: '2025-01-01', harness: 'secret', model: 'hidden-model', fingerprint: 'f', result });
+    for (let i = 0; i < 25; i++) store.jobState('p', String(i), 'error', 'Choose the System AI account');
+    store.jobState('private', 'c', 'error', 'Hidden failure');
+    const view = store.view(['p'], { page: 0, pageSize: 8, model: 'not-a-model' });
+    assert.equal(view.total, 0);
+    assert.deepEqual(view.sources.map(row => ({ ...row })), [{ model: 'visible-model', harness: 'pi' }]);
+    assert.deepEqual(view.failureGroups.map(row => ({ ...row })), [{ state: 'error', error: 'Choose the System AI account', count: 25 }]);
+    assert.match(view.lastEvaluatedAt!, /^\d{4}-\d{2}-\d{2}T/);
+    const denied = store.view(['p'], { page: 0, pageSize: 8, projectId: 'private' });
+    assert.equal(denied.sources.length, 0); assert.equal(denied.failureGroups.length, 0); assert.equal(denied.lastEvaluatedAt, null);
+  } finally { store.db.close(); }
+});
+
+test('Homeserver-sized analytics stays responsive without changing lesson denominators', () => {
+  const store = fixture();
+  try {
+    store.db.exec('BEGIN');
+    for (let i = 0; i < 6000; i++) store.put({ projectId: 'p', conversationId: 'c', replyId: String(i), at: `2025-01-0${i % 4 + 1}T12:00:00Z`, harness: 'claude', model: 'm', fingerprint: String(i), result: {
+      ...result, reason: 'Derived explanation. '.repeat(400), outcome: i % 3 === 0 ? 'issue' : 'good',
+      issues: i % 3 === 0 ? [{ ...result.issues[0], type: `type-${Math.floor(i / 3) % 18}`, ruleId: `r-${Math.floor(i / 3) % 18}`, adoptedAt: '2025-01-03' }] : [],
+    } });
+    store.db.exec('COMMIT');
+    const started = performance.now();
+    const view = store.view(['p'], { page: 0, pageSize: 8, version: '1' });
+    const duration = performance.now() - started;
+    assert.deepEqual({ ...view.totals }, { replies: 6000, issues: 2000, good: 4000, unknown: 0 });
+    assert.equal(view.rows.length, 8);
+    const lesson = view.lessons.find(row => row.type === 'type-0')!;
+    assert.equal(lesson.beforeReplies, 3000); assert.equal(lesson.afterReplies, 3000);
+    assert.equal(lesson.beforeIssues, 56); assert.equal(lesson.afterIssues, 56);
+    assert.ok(duration < 1500, `6000 replies must not block the server for seconds; took ${Math.round(duration)}ms`);
+  } finally { store.db.close(); }
+});
+
 test('reply windows cover long text and subsequent user feedback without copying conversation ratings', () => {
   const windows = replyWindows([{ role: 'user', text: 'request' }, { role: 'assistant', text: 'x'.repeat(17000), timestamp: '2025-01-02T01:00:00Z' }, { role: 'user', text: 'That is wrong' }], 'claude');
   assert.equal(windows.length, 1); assert.equal(windows[0].chunks.map(c => c.assistant).join(''), 'x'.repeat(17000));
