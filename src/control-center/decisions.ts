@@ -40,7 +40,7 @@ const KIND: SystemOneQuestion = {
     question: "The user asks what is happening, what was decided, or something the assistant can answer from what it already knows about their projects.",
     task: "The user asks for work to be done in a project: build, fix, change, investigate, review or research something.",
     automation: "The user asks to create, change, pause or delete a scheduled task or a webhook.",
-    organize: "The user asks to create, rename, move, close or delete a workspace, a project or a conversation itself, or to ask or tell one of their existing conversations something, rather than for new work inside a project.",
+    organize: "The user asks to create, rename, move, close or delete a workspace, a project or a conversation itself, to ask or tell one of their existing conversations something, to stop one, turn its auto respond on or off, change its agent, model or effort, or attach a secret account to it, to see a project's git or act on its pull requests, or to add a task or a quick note to a project, rather than for new work inside a project.",
     display: "The user asks to change how the Joint Bob app itself looks on their screen: its theme, light or dark mode, or how big its text and panels are.",
     other: "Chatting, thanks, or anything that is none of the above.",
   },

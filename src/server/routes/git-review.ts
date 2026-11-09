@@ -14,6 +14,7 @@ import {
   gitFileDiff,
   GitReviewError,
   gitStatus,
+  type GitStatus,
 } from "../../git-review.js";
 import {
   appendGitReviewMessages,
@@ -1033,3 +1034,36 @@ app.post("/api/projects/:projectId/git/reviews/:threadId/ask", async (request, r
     response.json(await performFollowUp(projectId, cwd, request.params.threadId, payload.question, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
+
+// ---- For Bob, as the person, in a project whose folder is on this machine ----
+
+/** An open or closed pull request, as Bob shows and acts on it. */
+export interface ProjectPull { number: number; title: string; head: string; base: string; sha: string; author: string; draft: boolean; url: string }
+
+export type ProjectGithubAction = z.infer<typeof githubAction>;
+
+async function projectPulls(projectId: string, cwd: string, state: "open" | "closed"): Promise<ProjectPull[]> {
+  const pulls = await (await githubClient(projectId, cwd)).pulls(state, 1) as Array<{ number: number; title: string; draft?: boolean; html_url: string; user?: { login: string }; head: { ref: string; sha: string }; base: { ref: string } }>;
+  return pulls.map((pull) => ({ number: pull.number, title: pull.title, head: pull.head.ref, base: pull.base.ref, sha: pull.head.sha, author: pull.user?.login ?? "", draft: Boolean(pull.draft), url: pull.html_url }));
+}
+
+/** Where the project's branch stands, and its open pull requests when GitHub answers (or why it did not). */
+export async function projectGitOverview(projectId: string): Promise<{ status: GitStatus; pulls: ProjectPull[] | null; pullsProblem: string | null }> {
+  const cwd = await reviewCwd(projectId);
+  const status = await gitStatus(cwd);
+  try {
+    return { status, pulls: await projectPulls(projectId, cwd, "open"), pullsProblem: null };
+  } catch (error) {
+    return { status, pulls: null, pullsProblem: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** One pull request among the newest open (or closed) ones. Null when it is not there. */
+export async function projectPull(projectId: string, number: number, state: "open" | "closed"): Promise<ProjectPull | null> {
+  return (await projectPulls(projectId, await reviewCwd(projectId), state)).find((pull) => pull.number === number) ?? null;
+}
+
+/** What the Git panel's pull request buttons do: merge, close, reopen, comment or approve, with the project's GitHub account. */
+export async function projectGithubAction(projectId: string, action: ProjectGithubAction): Promise<unknown> {
+  return githubWrite(projectId, await reviewCwd(projectId), action, {});
+}

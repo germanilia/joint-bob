@@ -19,6 +19,7 @@ import { listTwinRelationships } from "../../cluster-twins.js";
 import { enqueueSecretCredentialSync } from "../../secret-replication.js";
 import { generateSshKeyPair } from "../../github-credentials.js";
 import { Feature, requireFeature } from "../http-auth.js";
+import { FeatureAccessError } from "../../features.js";
 import { ResourceSharingError } from "../../cluster-sharing.js";
 import { setWorkspaceSharing, validateWorkspaceSharing } from "../../workspace-sharing.js";
 
@@ -34,6 +35,19 @@ async function syncToTwins(): Promise<void> {
   if (twins.length > 0) {
     await enqueueSecretCredentialSync(twins.map((t) => t.peer.nodeId));
   }
+}
+
+/**
+ * Attaches one secret account to a conversation as the person, beside those it has, as the conversation's Secrets panel does,
+ * and sends the change to their twins. For Bob, which runs outside the routes and their feature check.
+ */
+export async function attachConversationSecretAsActor(engine: string, sessionId: string, accountId: string): Promise<void> {
+  if (actingAccount()?.isRemoteLogin) throw new FeatureAccessError(Feature.SECRETS_MANAGE);
+  const scopeId = `${engine}:${sessionId}`;
+  const { accountIds } = await getScopeSecretAccounts("conversation", scopeId);
+  if (accountIds.includes(accountId)) return;
+  await setScopeSecretAccounts("conversation", scopeId, [...accountIds, accountId]);
+  await syncToTwins();
 }
 
 app.get("/api/secrets/destinations", async (_request, response, next) => {

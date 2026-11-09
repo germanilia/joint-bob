@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -110,7 +111,7 @@ async function eventually<T>(read: () => Promise<T | undefined>, label: string):
   throw new Error(`Never happened: ${label}`);
 }
 
-test("Bob starts a conversation, asks it something and brings back its answer, then deletes it, each after the button", { timeout: 180_000 }, async () => {
+test("Bob starts a conversation, asks it something and brings back its answer, operates it and its project, then deletes it, each after the button", { timeout: 240_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "control-organize-conversations-"));
   let child: ChildProcess | undefined;
   try {
@@ -121,7 +122,7 @@ test("Bob starts a conversation, asks it something and brings back its answer, t
     await mkdir(directory, { recursive: true });
     child = await startNode(environment, node, directory);
     const auth = await signIn(environment, node);
-    const sessionsOf = async () => (await api<{ sessions: Array<{ id: string; title: string }> }>(node, auth, "GET", `/projects/${project.id}/sessions`)).body.sessions;
+    const sessionsOf = async () => (await api<{ sessions: Array<{ id: string; title: string; harnessId: string }> }>(node, auth, "GET", `/projects/${project.id}/sessions`)).body.sessions;
     const messages = async () => (await api<{ messages: BobMessage[] }>(node, auth, "GET", "/control-center/bob/messages")).body.messages;
 
     await press(node, auth, await say(node, auth, directory, `start a conversation in ${project.name} to check the menu`, { intent: "start-conversation", projectId: project.id, message: "check the menu" }));
@@ -144,6 +145,46 @@ test("Bob starts a conversation, asks it something and brings back its answer, t
     const summary = await eventually(async () => (await messages()).find((message) => message.text.startsWith('"check the menu": summary')), "the summary was posted");
     assert.match(summary.text, /^"check the menu": summary\n\n\*\*Goal\*\* — /);
     assert.deepEqual([summary.importance, summary.via, summary.actions.map((action) => action.id)], ["report", "Organize · summary written", ["open"]]);
+
+    // Bob operates the conversation and its project too, each change after the button. Nothing runs in it now: nothing to stop.
+    const menu = "conversation-titled:check the menu";
+    const operate = (message: BobMessage) => press(node, auth, message, "operate.run");
+    const idle = await say(node, auth, directory, "stop the check the menu conversation", { intent: "stop-conversation", conversation: menu });
+    assert.deepEqual([idle.text, idle.actions], ['"check the menu" is not running anything right now.', []]);
+    // Auto respond, on and then off.
+    const autoOn = await say(node, auth, directory, "turn on auto respond for the check the menu conversation", { intent: "auto-respond", conversation: menu, on: true });
+    assert.match(autoOn.text, /^Turn auto respond on for "check the menu" in .+\? I'll answer its routine questions/);
+    assert.deepEqual(autoOn.actions.map((action) => [action.id, action.label]), [["operate.run", "Turn it on"], ["organize.cancel", "Cancel"]]);
+    assert.match((await operate(autoOn)).text, /^Auto respond is on for "check the menu"\./);
+    assert.match((await say(node, auth, directory, "turn on auto respond for the check the menu conversation", { intent: "auto-respond", conversation: menu, on: true })).text, /already on/);
+    assert.match((await operate(await say(node, auth, directory, "turn auto respond off for the check the menu conversation", { intent: "auto-respond", conversation: menu, on: false }))).text, /^Auto respond is off for "check the menu"/);
+    // Its effort, kept for its next turns.
+    const effort = await say(node, auth, directory, "use high effort in the check the menu conversation", { intent: "change-model", conversation: menu, agent: null, model: null, effort: "high" });
+    assert.match(effort.text, /^Change "check the menu" in .+ to high effort\?$/);
+    assert.equal((await operate(effort)).text, 'Changed "check the menu". Its next turn uses it.');
+    // A secret account, beside what it has.
+    const account = await api<{ account: { id: string } }>(node, auth, "POST", "/secrets/accounts", { label: "Deploy key", provider: "custom", variables: [{ name: "DEPLOY_TOKEN", kind: "value", value: "test-token" }] });
+    assert.equal(account.status, 201, JSON.stringify(account.body));
+    const attach = await say(node, auth, directory, "attach the deploy key secret to the check the menu conversation", { intent: "attach-secret", conversation: menu, accountId: account.body.account.id });
+    assert.match(attach.text, /^Attach the secret account "Deploy key" to "check the menu"/);
+    assert.equal((await operate(attach)).text, 'Attached "Deploy key" to "check the menu".');
+    const scope = await api<{ accountIds: string[] }>(node, auth, "GET", `/secrets/scopes/conversation/${encodeURIComponent(`${started.harnessId}:${started.id}`)}`);
+    assert.deepEqual(scope.body.accountIds, [account.body.account.id]);
+    assert.match((await say(node, auth, directory, "attach the deploy key secret to the check the menu conversation", { intent: "attach-secret", conversation: menu, accountId: account.body.account.id })).text, /already attached/);
+    // The project's git, answered at once: where its branch stands, and why its pull requests could not be read.
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: project.path });
+    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "start"], { cwd: project.path });
+    const git = await say(node, auth, directory, `what's the git status of ${project.name}?`, { intent: "git-status", projectId: project.id });
+    assert.match(git.text, /is on the branch main, with no upstream branch\./);
+    assert.match(git.text, /\nI could not read its pull requests: /);
+    assert.deepEqual([git.actions, git.via], [[], "Organize · git"]);
+    // A task in the project's Tasks list, and a quick note to start later.
+    assert.match((await operate(await say(node, auth, directory, `add a task to ${project.name}'s tasks list to speed up the board`, { intent: "add-task", projectId: project.id, title: "Speed up the board", description: "It takes 3 s to draw", start: false }))).text, /^Added "Speed up the board" to the Tasks list of /);
+    const tasks = (await api<{ tasks: Array<{ title: string; description: string; status: string }> }>(node, auth, "GET", `/projects/${project.id}/tasks`)).body.tasks;
+    assert.deepEqual(tasks.filter((task) => task.title === "Speed up the board").map((task) => [task.description, task.status]), [["It takes 3 s to draw", "backlog"]]);
+    assert.match((await operate(await say(node, auth, directory, `add a quick note in ${project.name} to check the invoices`, { intent: "add-note", projectId: project.id, title: "Check the invoices", content: "the November ones" }))).text, /^Saved the quick note "Check the invoices"/);
+    const notes = (await api<{ notes: Array<{ title: string; content: string; status: string }> }>(node, auth, "GET", `/projects/${project.id}/quick-notes`)).body.notes;
+    assert.deepEqual(notes.filter((entry) => entry.title === "Check the invoices").map((entry) => [entry.content, entry.status]), [["the November ones", "pending"]]);
 
     // Deleting it is a warning button, and it is gone from the project afterwards.
     const remove = await say(node, auth, directory, "delete the check the menu conversation", { intent: "delete-conversation", conversation: "conversation-titled:check the menu" });

@@ -82,6 +82,54 @@ export async function stopConversationTurn(options: { projectId: string; engine:
   });
 }
 
+const CONFIGURE_TIMEOUT_MS = 30_000;
+
+/** What to change in a conversation: its agent, then the model and effort it uses with that agent. */
+export interface ConversationChange { engine?: string; provider?: string; modelId?: string; level?: string }
+
+interface SocketEvent { type?: string; ownership?: unknown; readOnly?: unknown; error?: unknown; nonFatal?: boolean; status?: { model?: { id?: string }; thinkingLevel?: string } }
+
+/**
+ * Changes a local conversation's agent, model or effort through this node's own chat socket, as the conversation's own controls
+ * do: another agent goes on in the conversation's next segment, and a model or effort is kept for its next turns. Resolves
+ * once the conversation shows the change.
+ */
+export async function configureConversation(options: { projectId: string; engine: string; sessionId: string; label: string }, change: ConversationChange): Promise<void> {
+  const steps: Array<{ send: Record<string, unknown>; done: (event: SocketEvent) => boolean }> = [];
+  if (change.engine && change.engine !== options.engine) steps.push({ send: { type: "setEngine", engine: change.engine }, done: (event) => event.type === "engineChanged" });
+  if (change.modelId) steps.push({ send: { type: "setModel", provider: change.provider, modelId: change.modelId, ...(change.level ? { level: change.level } : {}) }, done: (event) => event.type === "status" && event.status?.model?.id === change.modelId });
+  else if (change.level) steps.push({ send: { type: "setThinking", level: change.level }, done: (event) => event.type === "status" && event.status?.thinkingLevel === change.level });
+  const { url, headers } = await localChatSocket(options);
+  await new Promise<void>((resolve, reject) => {
+    const socket = new WebSocket(url, { headers });
+    let settled = false;
+    let step = -1;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer); socket.close();
+      if (error) reject(error); else resolve();
+    };
+    const next = () => {
+      step += 1;
+      if (step >= steps.length) finish(); else socket.send(JSON.stringify(steps[step].send));
+    };
+    const timer = setTimeout(() => finish(new Error(`${options.label} could not change the conversation within ${CONFIGURE_TIMEOUT_MS / 1000} seconds`)), CONFIGURE_TIMEOUT_MS);
+    socket.on("error", finish);
+    socket.on("close", () => finish(new Error(`${options.label} connection closed before the conversation changed`)));
+    socket.on("message", (raw) => {
+      const event = JSON.parse(raw.toString()) as SocketEvent;
+      if (step < 0) {
+        if (event.type !== "ready") return;
+        if (event.ownership || event.readOnly) { finish(new Error(`${options.label} conversation is not writable on this node`)); return; }
+        next();
+        return;
+      }
+      if (event.type === "error" && !event.nonFatal) finish(new Error(String(event.error)));
+      else if (steps[step].done(event)) next();
+    });
+  });
+}
+
 export async function queueConversationPrompt(options: ConversationPromptOptions): Promise<void> {
   const { label } = options;
   const { url, headers } = await localChatSocket(options);
