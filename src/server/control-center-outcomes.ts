@@ -1,18 +1,14 @@
 import type { DatabaseSync } from "node:sqlite";
 import { runAsAccount, type ActingAccount } from "../account-context.js";
 import { automationRunOf, webhookRunsSince } from "../automation-executions.js";
-import { appendBobMessage, listBobAccounts, listOpenBobMessages, readBobSettings, resolveBobMessage, type BobSettings } from "../control-center/bob-store.js";
-import { subjectOf } from "../control-center/recheck.js";
-import type { RatingDeps } from "../control-center/triggers-rate.js";
-import { answerDigest, judgeOutcome, knownOutcome, rememberOutcome, type OutcomeAnswer } from "../control-center/triggers-outcome.js";
-import {
-  dismissTriggers, followedTriggers, followsCallsIn, labelTrigger, matchTriggerRuns, oldestUnmatchedTrigger, type Trigger,
-} from "../control-center/triggers-store.js";
+import { listBobAccounts, readBobSettings, type BobSettings } from "../control-center/bob-store.js";
+import { answerDigest, judgeOutcome, knownOutcome, rememberOutcome, type JudgeDeps, type OutcomeAnswer } from "../control-center/triggers-outcome.js";
+import { followedTriggers, followsCallsIn, matchTriggerRuns, noteTriggerOutcome, oldestUnmatchedTrigger, type Trigger } from "../control-center/triggers-store.js";
 import { conversationsStartedBy } from "../conversation-starts.js";
 import { getProject } from "../store.js";
 import type { ProjectRecord, SessionSummary } from "../types.js";
 import { bobSessionFor } from "./control-center-session.js";
-import { triggerDatabase, triggerRatingDeps } from "./control-center-triggers.js";
+import { triggerDatabase, triggerJudgeDeps } from "./control-center-triggers.js";
 import { loadConversationMessages } from "./conversation-turns.js";
 import { onConversationTurn } from "./harness-sessions.js";
 import { broadcastToAllClients } from "./realtime.js";
@@ -20,11 +16,9 @@ import { sharedProjectSessions } from "./sessions-helpers.js";
 import { flags } from "./state.js";
 
 /**
- * Bob follows each webhook call to the conversation its run started, and settles the call by how that conversation ended:
- * - Settled (it fixed it, found an existing fix, or found nothing wrong): the call leaves the bell, and its alert the chat,
- *   with why under ✓ Cleared.
- * - In progress: the call waits in the bell, labelled with the conversation on it; older calls it also covers leave.
- * - Needs you: one item in Bob's chat about that conversation (Open, Reply, Done), and the call leaves the bell.
+ * Bob follows each call in the webhook log to the conversation its run started, and notes on the call how that ended:
+ * settled (it fixed it, found an existing fix, or found nothing wrong), in hand (still working, or waiting for CI or its own
+ * merge), or needs you (blocked on something only the person can do). The log shows it; nothing goes to Bob's chat.
  * A run that opened a worktree and started another conversation there is followed to that one: the start is recorded
  * (conversation-starts.ts), and for calls from before that, it is the conversation the run's last answer names.
  * The decision model judges the conversation's last answer, and Bob's agent when it is less sure than the threshold; one
@@ -35,7 +29,7 @@ export interface OutcomeSources {
   project(projectId: string, actor: ActingAccount): Promise<ProjectRecord | undefined>;
   sessions(project: ProjectRecord, actor: ActingAccount): Promise<SessionSummary[]>;
   lastAnswer(project: ProjectRecord, conversationId: string): Promise<string>;
-  deps(actor: ActingAccount, settings: BobSettings, project: ProjectRecord): Promise<RatingDeps>;
+  deps(actor: ActingAccount, settings: BobSettings, project: ProjectRecord): Promise<JudgeDeps>;
 }
 
 const realSources: OutcomeSources = {
@@ -48,7 +42,7 @@ const realSources: OutcomeSources = {
     const { messages } = await loadConversationMessages(project, conversationId);
     return [...messages].reverse().find((message) => message.role === "assistant" && message.text.trim())?.text.trim() ?? "";
   },
-  deps: (actor, settings, project) => triggerRatingDeps(actor, settings, project),
+  deps: (actor, settings, project) => triggerJudgeDeps(actor, settings, project),
 };
 
 const idOf = (session: SessionSummary): string => session.conversationId ?? session.id;
@@ -64,34 +58,6 @@ async function investigationOf(db: DatabaseSync, project: ProjectRecord, session
   // Started before starts were recorded: the conversation the run's answer names by its id.
   const answer = await sources.lastAnswer(project, idOf(run));
   return newest(sessions.filter((session) => session !== run && answer.includes(idOf(session)))) ?? run;
-}
-
-const alertsOf = (db: DatabaseSync, accountId: string, trigger: Trigger) =>
-  listOpenBobMessages(db, accountId).filter((message) => message.actions.some((action) => action.data?.triggerId === trigger.id));
-
-function settle(db: DatabaseSync, accountId: string, trigger: Trigger, title: string, judged: OutcomeAnswer): void {
-  dismissTriggers(db, accountId, [trigger.id]);
-  labelTrigger(db, trigger.id, `settled: ${judged.reason}`);
-  for (const alert of alertsOf(db, accountId, trigger)) resolveBobMessage(db, accountId, alert.id, `Settled by “${title}”: ${judged.reason}`);
-}
-
-/** One item in the chat about the conversation, unless one is open already; the call itself leaves the bell. */
-function needsYou(db: DatabaseSync, accountId: string, trigger: Trigger, project: ProjectRecord, investigation: SessionSummary, judged: OutcomeAnswer): void {
-  const conversationId = idOf(investigation);
-  const told = listOpenBobMessages(db, accountId).some((message) => {
-    const subject = subjectOf(message);
-    return subject?.kind === "conversation" && subject.projectId === project.id && subject.conversationId === conversationId;
-  });
-  if (!told) {
-    appendBobMessage(db, accountId, {
-      role: "bob", importance: "needs-you", projectId: project.id, projectName: project.name, via: `Webhook · ${trigger.webhookName} · ${judged.by}`,
-      text: `${trigger.title}\n“${investigation.title}” needs you: ${judged.reason}`,
-      actions: [{ id: "open", label: "Open", data: { open: { projectId: project.id, conversationId, title: investigation.title } } }],
-    });
-  }
-  dismissTriggers(db, accountId, [trigger.id]);
-  labelTrigger(db, trigger.id, `needs you: “${investigation.title}”, in Bob's chat`);
-  for (const alert of alertsOf(db, accountId, trigger)) resolveBobMessage(db, accountId, alert.id, `“${investigation.title}” needs you; Bob's message about it says why.`);
 }
 
 interface Pass { db: DatabaseSync; actor: ActingAccount; settings: BobSettings; sources: OutcomeSources; projects: Map<string, ProjectRecord | undefined>; sessions: Map<string, SessionSummary[]> }
@@ -120,36 +86,20 @@ async function outcomeOf(pass: Pass, trigger: Trigger, project: ProjectRecord, i
   return judged;
 }
 
-/** Still being worked on: the newest call about the conversation says so in the bell, and older ones leave. */
-function inHand(db: DatabaseSync, accountId: string, trigger: Trigger, key: string, title: string, reason: string | null, onIt: Set<string>): boolean {
-  if (onIt.has(key)) {
-    dismissTriggers(db, accountId, [trigger.id]);
-    labelTrigger(db, trigger.id, `in hand: a newer call about “${title}” covers it`);
-    return true;
-  }
-  onIt.add(key);
-  const label = reason ? `in hand: “${title}”: ${reason}` : `in hand: “${title}” is working on it`;
-  // An urgent one is an alert in the chat, which has its own checks; it comes to the bell from there.
-  if (trigger.urgency === "urgent" || trigger.label === label) return false;
-  labelTrigger(db, trigger.id, label);
-  return true;
-}
+const LABELS: Record<OutcomeAnswer["outcome"], string> = { settled: "settled", "in-progress": "in hand", "needs-you": "needs you" };
 
-/** One call, followed to its conversation: true when anything about it changed. */
-async function follow(pass: Pass, trigger: Trigger, onIt: Set<string>): Promise<boolean> {
+/** One call, followed to its conversation: true when what the log says about it changed. */
+async function follow(pass: Pass, trigger: Trigger): Promise<boolean> {
   const found = await investigationFor(pass, trigger);
   if (!found) return false;
   const { project, investigation } = found;
-  // You closed the conversation working on it: that settles the call, with nothing to ask.
-  if (investigation.doneAt && !investigation.running) {
-    settle(pass.db, pass.actor.accountId, trigger, investigation.title, { outcome: "settled", reason: "it was marked done.", by: "you" });
-    return true;
-  }
-  const judged = investigation.running ? null : await outcomeOf(pass, trigger, project, investigation);
-  if (!investigation.running && !judged) return false;
-  if (judged?.outcome === "settled") { settle(pass.db, pass.actor.accountId, trigger, investigation.title, judged); return true; }
-  if (judged?.outcome === "needs-you") { needsYou(pass.db, pass.actor.accountId, trigger, project, investigation, judged); return true; }
-  return inHand(pass.db, pass.actor.accountId, trigger, `${project.id}:${idOf(investigation)}`, investigation.title, judged?.reason ?? null, onIt);
+  const conversation = { conversationId: idOf(investigation), conversationTitle: investigation.title };
+  // Closed by the person, or still working: no answer to judge.
+  if (investigation.doneAt && !investigation.running) return noteTriggerOutcome(pass.db, trigger.id, { label: "settled", reason: "Its conversation was marked done.", ...conversation });
+  if (investigation.running) return noteTriggerOutcome(pass.db, trigger.id, { label: "in hand", reason: "Its conversation is working on it.", ...conversation });
+  const judged = await outcomeOf(pass, trigger, project, investigation);
+  if (!judged) return false;
+  return noteTriggerOutcome(pass.db, trigger.id, { label: LABELS[judged.outcome], reason: `${judged.reason} (${judged.by})`, ...conversation });
 }
 
 /** Follows one person's calls, newest first. Returns whether anything they see changed. */
@@ -157,10 +107,9 @@ export async function settleFollowedCalls(db: DatabaseSync, actor: ActingAccount
   const settings = readBobSettings(db, actor.accountId);
   if (!settings.monitoring) return false;
   const pass: Pass = { db, actor, settings, sources, projects: new Map(), sessions: new Map() };
-  const onIt = new Set<string>();
   let changed = false;
   for (const trigger of followedTriggers(db, actor.accountId)) {
-    try { changed = await follow(pass, trigger, onIt) || changed; }
+    try { changed = await follow(pass, trigger) || changed; }
     catch (error) { console.warn(`Bob could not follow the call "${trigger.title}"`, error instanceof Error ? error.message : error); }
   }
   return changed;

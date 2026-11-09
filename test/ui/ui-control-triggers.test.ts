@@ -15,32 +15,31 @@ async function signIn(page: Page, url: string, environment: { username: string; 
   await page.waitForTimeout(500);
 }
 
-test("the bell counts new triggers that can wait, lists them a page at a time, and each can be opened, triaged by Bob or dismissed", { timeout: 180_000 }, async (t) => {
+test("the webhook log lists every call a page at a time with how it ended; a call opens its conversation, its webhook, a question to Bob, or is cleared", { timeout: 180_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment);
   const projects = await page.evaluate(async () => (await (await fetch("/api/projects")).json()).projects as Array<{ id: string; name: string }>);
   const project = projects[0];
+  // A real conversation of the project, so Open conversation has something to open.
+  const conversation = await page.evaluate(async (id) => {
+    const { sessions } = await (await fetch(`/api/projects/${encodeURIComponent(id)}/sessions`)).json() as { sessions: Array<{ id: string; conversationId?: string; title: string }> };
+    return { id: sessions[0].conversationId ?? sessions[0].id, title: sessions[0].title };
+  }, project.id);
 
   await page.evaluate(`(() => {
     const originalFetch = window.fetch;
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     const project = ${JSON.stringify(project)};
-    const make = (index, state, urgency, rating, extra = {}) => ({
+    const conversation = ${JSON.stringify(conversation)};
+    const make = (index, label, extra = {}) => ({
       id: 't' + index, webhookId: 'w1', webhookName: 'GitHub', projectId: project.id, projectName: project.name, title: 'Issue #' + (480 + index) + ' opened: Problem number ' + index,
-      summary: 'acme/joint-bob · by matan', receivedAt: new Date(Date.now() - index * 600000).toISOString(), state, urgency, snoozedUntil: null, rating, ...extra });
-    const sure = { by: 'decision-model', confidence: 0.93, label: 'not urgent (93%)', reason: '' };
-    const unsure = { by: 'agent', confidence: 0.62, label: 'decision model unsure, Bob checked', reason: 'A docs typo.' };
-    const paused = { by: 'none', confidence: null, label: '', reason: '' };
-    window.__triggers = [
-      make(1, 'new', 'not-urgent', sure), make(2, 'new', 'not-urgent', unsure), make(3, 'new', 'unrated', paused), make(4, 'new', 'not-urgent', sure),
-      make(5, 'new', 'not-urgent', sure), make(6, 'seen', 'not-urgent', sure), make(7, 'seen', 'not-urgent', sure), make(8, 'seen', 'not-urgent', sure), make(9, 'seen', 'not-urgent', sure),
-    ];
-    window.__make = make; window.__sure = sure;
+      summary: 'acme/joint-bob · by matan', receivedAt: new Date(Date.now() - index * 600000).toISOString(),
+      outcome: { label, reason: label ? 'Existing fix found. (decision model 95%)' : '' }, conversation: label ? conversation : null, ...extra });
+    window.__triggers = [make(1, 'settled'), make(2, 'needs you'), make(3, ''), make(4, 'in hand'), make(5, 'settled'), make(6, 'settled'), make(7, 'settled'), make(8, 'settled'), make(9, 'settled')];
+    window.__make = make;
     window.__requests = [];
-    window.__bobMessages = [];
-    window.__timeline = [{ id: 'urgent1', role: 'system', text: 'Alarm ALARM: api-5xx\\n5xx at 14%', via: 'Webhook · GitHub · decision model 95%', projectId: project.id, projectName: project.name, importance: 'urgent', createdAt: new Date().toISOString(),
-      actions: [{ id: 'trigger.investigate', label: 'Investigate (read-only)', style: 'primary', data: { triggerId: 'u1' } }, { id: 'trigger.open', label: 'Open', data: { triggerId: 'u1', projectId: project.id, projectName: project.name } }, { id: 'trigger.snooze', label: 'Snooze 1h', data: { triggerId: 'u1' } }] }];
-    const live = () => window.__triggers.filter((trigger) => trigger.state !== 'dismissed');
+    window.__timeline = [];
+    const live = () => window.__triggers.filter((trigger) => !trigger.cleared);
     window.fetch = async (...args) => {
       const url = new URL(String(args[0]), location.href);
       const method = (args[1]?.method || 'GET').toUpperCase();
@@ -48,18 +47,12 @@ test("the bell counts new triggers that can wait, lists them a page at a time, a
       if (url.pathname === '/api/control-center/triggers' && method === 'GET') {
         const page = Number(url.searchParams.get('page') || 1), size = Number(url.searchParams.get('size') || 10);
         window.__requests.push({ list: { page, size } });
-        return json({ triggers: live().slice((page - 1) * size, page * size), total: live().length, newCount: live().filter((trigger) => trigger.state === 'new').length });
-      }
-      if (url.pathname === '/api/control-center/triggers/seen' && method === 'POST') {
-        window.__requests.push({ seen: body.ids });
-        let marked = 0;
-        for (const trigger of window.__triggers) if (body.ids.includes(trigger.id) && trigger.state === 'new') { trigger.state = 'seen'; marked += 1; }
-        return json({ marked });
+        return json({ triggers: live().slice((page - 1) * size, page * size), total: live().length });
       }
       if (url.pathname === '/api/control-center/triggers/dismiss' && method === 'POST') {
         window.__requests.push({ dismiss: body });
         let dismissed = 0;
-        for (const trigger of window.__triggers) if (trigger.state !== 'dismissed' && (body.all || body.ids.includes(trigger.id))) { trigger.state = 'dismissed'; dismissed += 1; }
+        for (const trigger of window.__triggers) if (!trigger.cleared && (body.all || body.ids.includes(trigger.id))) { trigger.cleared = true; dismissed += 1; }
         return json({ dismissed });
       }
       const triage = /^\\/api\\/control-center\\/triggers\\/([^/]+)\\/triage$/.exec(url.pathname);
@@ -68,7 +61,6 @@ test("the bell counts new triggers that can wait, lists them a page at a time, a
         window.__requests.push({ triage: trigger.id });
         return json({ message: 'Triage this incoming webhook call for me: ' + trigger.title, projectId: trigger.projectId });
       }
-      if (url.pathname === '/api/control-center/bob/action') { window.__requests.push({ action: body }); return json({ messages: [] }); }
       if (url.pathname === '/api/control-center/bob/message') {
         window.__requests.push({ message: body });
         const user = { id: 'm1', role: 'user', text: body.message, via: null, projectId: body.projectId ?? null, projectName: null, importance: 'fyi', actions: [], createdAt: new Date().toISOString() };
@@ -76,7 +68,7 @@ test("the bell counts new triggers that can wait, lists them a page at a time, a
         window.__timeline.push(user, reply);
         return json({ action: 'answer', user, reply, projectId: body.projectId ?? null });
       }
-      if (url.pathname === '/api/control-center/bob/messages') return json({ messages: window.__timeline, waiting: 1 });
+      if (url.pathname === '/api/control-center/bob/messages') return json({ messages: window.__timeline, waiting: 0 });
       if (url.pathname === '/api/control-center/board') return json({ cards: [], projects: ${JSON.stringify(projects)}.map((item) => ({ id: item.id, name: item.name })) });
       return originalFetch(...args);
     };
@@ -85,53 +77,47 @@ test("the bell counts new triggers that can wait, lists them a page at a time, a
   await page.getByTestId("projects-open-control-center-button").click();
   await page.getByTestId("control-chat").waitFor();
 
-  // The bell sits next to the monitoring switch in Bob's header, and counts only what is new and can wait.
-  const bell = page.getByTestId("control-triggers-bell");
-  await bell.waitFor();
-  assert.equal(await bell.evaluate((node) => node.nextElementSibling?.id), "controlChatMonitor");
-  await page.waitForFunction(() => document.querySelector('[data-testid="control-triggers-count"]')?.textContent === "5");
+  // The log's button sits next to the monitoring switch in Bob's header, with nothing counting on it.
+  const button = page.getByTestId("control-triggers-bell");
+  await button.waitFor();
+  assert.equal(await button.evaluate((node) => node.nextElementSibling?.id), "controlChatMonitor");
+  assert.equal(await button.getAttribute("aria-label"), "Webhook log");
+  assert.equal(await button.locator(".control-bell-badge").count(), 0, "no badge: nothing in the log asks for attention");
   assert.equal(await page.getByTestId("control-triggers-panel").isHidden(), true);
 
   // Opening it lists the first page, sized to the panel so nothing scrolls; the rest is on the next pages.
-  await bell.click();
+  await button.click();
   await page.getByTestId("control-triggers-panel").waitFor({ state: "visible" });
   await page.getByTestId("control-trigger").first().waitFor();
+  assert.match(await page.getByTestId("control-triggers-panel").innerText(), /^Webhook log/);
   const rows = page.getByTestId("control-trigger");
   const firstPage = await rows.count();
   assert.ok(firstPage >= 2 && firstPage < 9, `a page holds what fits, got ${firstPage}`);
   assert.equal(await page.getByTestId("control-triggers-list").evaluate((list) => list.scrollHeight <= list.clientHeight + 1), true, "the list fits its box");
-  assert.match(await rows.first().innerText(), /Issue #481 opened: Problem number 1 · .*\n.*acme\/joint-bob · by matan\n.*webhook GitHub · 10 min ago · not urgent \(93%\)/);
-  assert.deepEqual(await rows.first().getByRole("button").allTextContents(), ["Open", "Ask Bob to triage", "Dismiss"]);
-  assert.match(await rows.nth(1).getByTestId("control-trigger-meta").innerText(), /decision model unsure, Bob checked/);
-  assert.equal(await rows.first().getAttribute("data-state"), "new");
+  // Each call says how its conversation ended, and opens it.
+  assert.match(await rows.first().innerText(), new RegExp(`Issue #481 opened: Problem number 1 · .*\\n.*acme/joint-bob · by matan\\n.*webhook GitHub · 10 min ago · settled: “${conversation.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}”`));
+  assert.deepEqual(await rows.first().getByRole("button").allTextContents(), ["Open conversation", "Webhook", "Ask Bob", "Clear"]);
+  assert.equal(await rows.nth(1).getAttribute("data-outcome"), "needs you");
+  assert.match(await rows.first().getByTestId("control-trigger-meta").getAttribute("title") ?? "", /Existing fix found\. \(decision model 95%\)/, "why is on hover");
   assert.match(await page.getByTestId("control-triggers-page-label").innerText(), new RegExp(`^1–${firstPage} of 9$`));
-  assert.equal(await page.getByTestId("control-triggers-page-previous").isDisabled(), true);
-  await page.getByTestId("control-triggers-page-next").click();
-  await page.waitForFunction((count) => document.querySelector('[data-testid="control-trigger"]')?.getAttribute("data-id") === `t${count + 1}`, firstPage);
-  // A trigger that arrived while Bob was paused was not rated; the list says so. Which page holds it depends on how many fit,
-  // so it is looked for from the first page. The pager is drawn anew on each page: each turn waits for the new one.
+  // A call whose conversation is not known yet says so, and has nothing to open.
   const pageLabel = page.getByTestId("control-triggers-page-label");
   const turnPage = async (direction: "previous" | "next") => {
     const was = await pageLabel.innerText();
     await page.getByTestId(`control-triggers-page-${direction}`).click();
     await page.waitForFunction((label) => document.querySelector('[data-testid="control-triggers-page-label"]')?.textContent !== label, was);
   };
-  while (!(await pageLabel.innerText()).startsWith("1–")) await turnPage("previous");
-  while (await page.locator('[data-testid="control-trigger"][data-urgency="unrated"]').count() === 0) await turnPage("next");
-  assert.match(await page.locator('[data-testid="control-trigger"][data-urgency="unrated"] [data-testid="control-trigger-meta"]').innerText(), /not rated yet: Bob was paused/);
+  while (await page.locator('[data-testid="control-trigger"][data-outcome="unknown"]').count() === 0) await turnPage("next");
+  const unknown = page.locator('[data-testid="control-trigger"][data-outcome="unknown"]');
+  assert.match(await unknown.getByTestId("control-trigger-meta").innerText(), /no conversation known yet$/);
+  assert.deepEqual(await unknown.getByRole("button").allTextContents(), ["Webhook", "Ask Bob", "Clear"]);
   while (!(await pageLabel.innerText()).startsWith("1–")) await turnPage("previous");
   await page.waitForFunction(() => document.querySelector('[data-testid="control-trigger"]')?.getAttribute("data-id") === "t1");
 
-  // Closing the panel marks what it showed as seen, and the count follows.
-  await bell.click();
-  await page.getByTestId("control-triggers-panel").waitFor({ state: "hidden" });
-  const seen = (await page.evaluate("window.__requests") as Array<{ seen?: string[] }>).find((entry) => entry.seen)!.seen!;
-  assert.ok(seen.includes("t1") && seen.every((id) => ["t1", "t2", "t3", "t4", "t5"].includes(id)), `only what was new and shown: ${seen}`);
-  await page.waitForFunction((count) => document.querySelector('[data-testid="control-triggers-count"]')?.textContent === String(5 - count) || (count === 5 && document.querySelector<HTMLElement>('[data-testid="control-triggers-count"]')!.hidden), seen.length);
-
-  // Ask Bob to triage: the question goes through Bob's chat like anything typed there, with the trigger's project, and a half-typed message stays.
+  // Ask Bob: the question goes through Bob's chat like anything typed there, with the call's project, and a half-typed message stays.
+  await button.click();
   await page.getByTestId("control-chat-input").fill("half typed message");
-  await bell.click();
+  await button.click();
   await page.getByTestId("control-trigger").first().waitFor();
   await page.getByTestId("control-trigger-triage").first().click();
   await page.getByTestId("control-chat-messages").getByText("It is a routine report; nothing is broken.").waitFor();
@@ -139,61 +125,40 @@ test("the bell counts new triggers that can wait, lists them a page at a time, a
   assert.equal(sent.message, "Triage this incoming webhook call for me: Issue #481 opened: Problem number 1");
   assert.equal(sent.projectId, project.id);
   assert.equal(await page.getByTestId("control-chat-input").inputValue(), "half typed message", "what the person was typing is kept");
-  assert.equal(await page.getByTestId("control-chat-project").inputValue(), "", "the project choice is put back");
   assert.equal(await page.getByTestId("control-triggers-panel").isHidden(), true, "the panel gets out of the way of the answer");
-  assert.match(await page.getByTestId("control-chat-messages").innerText(), /Triage this incoming webhook call for me: Issue #481/);
   await page.getByTestId("control-chat-input").fill("");
 
-  // Dismiss one, then all.
-  await bell.click();
+  // Clear one, then the whole log.
+  await button.click();
   await page.getByTestId("control-trigger").first().waitFor();
   await page.getByTestId("control-trigger-dismiss").first().click();
   await page.waitForFunction(() => document.querySelector('[data-testid="control-trigger"]')?.getAttribute("data-id") === "t2");
-  assert.equal((await page.evaluate("window.__requests") as Array<{ dismiss?: unknown }>).filter((entry) => entry.dismiss).length, 1);
   assert.match(await page.getByTestId("control-triggers-page-label").innerText(), /of 8$/);
   await page.getByTestId("control-triggers-dismiss-all").click();
-  await page.getByText("Nothing is waiting.").waitFor();
+  await page.getByText("No webhook calls yet.").waitFor();
   assert.equal(await page.getByTestId("control-triggers-dismiss-all").isDisabled(), true);
-  assert.equal(await page.getByTestId("control-triggers-count").isHidden(), true);
   assert.deepEqual((await page.evaluate("window.__requests") as Array<{ dismiss?: unknown }>).filter((entry) => entry.dismiss).at(-1), { dismiss: { all: true } });
 
-  // One that arrives while the panel is open appears in it at once; with the panel closed it counts on the bell.
-  await page.evaluate(`(() => { window.__triggers.push(window.__make(0, 'new', 'not-urgent', window.__sure, { title: 'Stripe invoice.payment_failed (test mode)' })); window.dispatchEvent(new CustomEvent('control-center-changed')); })()`);
+  // A call that arrives while the log is open appears in it at once.
+  await page.evaluate(`(() => { window.__triggers.push(window.__make(0, 'in hand', { title: 'Stripe invoice.payment_failed (test mode)' })); window.dispatchEvent(new CustomEvent('control-center-changed')); })()`);
   await page.getByTestId("control-trigger-title").getByText("Stripe invoice.payment_failed (test mode)").waitFor();
-  assert.equal(await page.getByTestId("control-triggers-count").textContent(), "1");
-  await bell.click();
-  await page.getByTestId("control-triggers-panel").waitFor({ state: "hidden" });
-  await page.getByTestId("control-triggers-count").waitFor({ state: "hidden" });
-  await page.evaluate(`(() => { window.__triggers.push(window.__make(10, 'new', 'not-urgent', window.__sure)); window.dispatchEvent(new CustomEvent('control-center-changed')); })()`);
-  await page.waitForFunction(() => document.querySelector('[data-testid="control-triggers-count"]')?.textContent === "1");
 
-  // Open goes to the webhook's own screen in the project; Esc closes the panel without leaving the control center.
-  await bell.click();
-  await page.getByTestId("control-trigger").first().waitFor();
+  // Webhook opens the webhook's own screen in the project; Esc closes the log without leaving the control center.
   await page.keyboard.press("Escape");
   await page.getByTestId("control-triggers-panel").waitFor({ state: "hidden" });
-  assert.equal(await page.locator("body.view-control").count(), 1, "Esc closed the panel, not the control center");
-  await bell.click();
+  assert.equal(await page.locator("body.view-control").count(), 1, "Esc closed the log, not the control center");
+  await button.click();
   await page.getByTestId("control-trigger-open").first().click();
   await page.getByTestId("project-webhooks-dialog").waitFor();
   assert.match(await page.locator("#projectWebhooksHeading").innerText(), new RegExp(`^${project.name} webhooks$`));
   await page.getByTestId("project-webhooks-close").click();
   await page.getByTestId("project-webhooks-dialog").waitFor({ state: "detached" });
-  assert.equal(await page.getByTestId("control-triggers-panel").isHidden(), true, "Open closes the panel");
+  assert.equal(await page.getByTestId("control-triggers-panel").isHidden(), true, "Webhook closes the log");
 
-  // An urgent one is a message in Bob's chat; its Open button is answered by the server and opens the same screen.
-  const urgent = page.getByTestId("control-chat-entry").filter({ hasText: "Alarm ALARM: api-5xx" });
-  assert.deepEqual(await urgent.getByRole("button").allTextContents(), ["Investigate (read-only)", "Open", "Snooze 1h", "Reply", "Dismiss"], "its own buttons, then reply and dismiss");
-  // The message's head names where it came from; how it was decided is the line under it.
-  assert.match(await urgent.innerText(), /^Webhook[\s\S]*Urgent[\s\S]*GitHub · decision model 95%/);
-  await urgent.getByRole("button", { name: "Open" }).click();
-  await page.getByTestId("project-webhooks-dialog").waitFor();
-  assert.deepEqual((await page.evaluate("window.__requests") as Array<{ action?: unknown }>).find((entry) => entry.action)!.action, { messageId: "urgent1", actionId: "trigger.open" });
-  await page.getByTestId("project-webhooks-close").click();
-
-  // A click outside the panel closes it.
-  await bell.click();
-  await page.getByTestId("control-triggers-panel").waitFor({ state: "visible" });
-  await page.getByTestId("control-chat-messages").click({ position: { x: 5, y: 5 } });
-  await page.getByTestId("control-triggers-panel").waitFor({ state: "hidden" });
+  // Open conversation opens the conversation that worked on the call, over the board.
+  await button.click();
+  await page.getByTestId("control-trigger-conversation").first().click();
+  await page.waitForFunction(() => document.body.classList.contains("control-popup"));
+  assert.equal(await page.getByTestId("control-triggers-panel").isHidden(), true);
+  assert.deepEqual(await page.evaluate("window.__timeline"), [{ id: "m1", role: "user", text: "Triage this incoming webhook call for me: Issue #481 opened: Problem number 1", via: null, projectId: project.id, projectName: null, importance: "fyi", actions: [], createdAt: (await page.evaluate("window.__timeline[0].createdAt")) }, (await page.evaluate("window.__timeline[1]"))], "only what the person asked is in Bob's chat");
 });

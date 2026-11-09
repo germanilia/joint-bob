@@ -1,14 +1,26 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import type { SystemOneQuestion } from "../classifiers/typesafe.js";
-import type { RatedText, RatingDeps } from "./triggers-rate.js";
+import type { SystemOneChoice, SystemOneQuestion } from "../classifiers/typesafe.js";
+import type { Trigger } from "./triggers-store.js";
 
 /**
  * How a webhook call's investigation ended, for the person: settled (nothing left for them), still in progress, or it needs
  * them. One Choice question to the decision model reads the call and the investigating conversation's last answer; when it
  * is missing or less sure than the person's threshold, Bob's agent answers as JSON. Both are outside text, read only as data.
  */
+
+/** What judging needs from outside: the decision model, and a small agent step that can answer in words. Either may be missing. */
+export interface JudgeDeps {
+  /** Null when the decision model could not answer. */
+  ask?: (state: string, questions: Record<string, SystemOneQuestion>) => Promise<Record<string, SystemOneChoice> | null>;
+  /** How much state one request to the decision model may carry. */
+  stateCharacters: number;
+  /** A short turn with no tools. Absent when this node has no project to run one in. */
+  agent?: (step: { instructions: string; material: string }) => Promise<string>;
+}
+
+export type CallText = Pick<Trigger, "webhookName" | "projectName" | "title" | "summary">;
 
 export type Outcome = "settled" | "in-progress" | "needs-you";
 export interface Investigation { title: string; answer: string }
@@ -46,7 +58,7 @@ export function parseAgentOutcome(answer: string): z.infer<typeof agentAnswer> {
 }
 
 /** The state the decision model reads, with the agent's answer cut until it fits. */
-export function outcomeState(call: RatedText, investigation: Investigation, stateCharacters: number): string {
+export function outcomeState(call: CallText, investigation: Investigation, stateCharacters: number): string {
   let answer = investigation.answer.slice(-ANSWER_CHARACTERS);
   for (;;) {
     const state = JSON.stringify({ webhook: call.webhookName, project: call.projectName, call: { title: call.title, summary: call.summary }, conversation: investigation.title, last_answer: answer });
@@ -63,7 +75,7 @@ export function firstSentence(text: string): string {
 }
 
 /** Settled, in progress or needs you; null when nothing could tell, and the call stays as it is. */
-export async function judgeOutcome(deps: RatingDeps, call: RatedText, investigation: Investigation, threshold: number): Promise<OutcomeAnswer | null> {
+export async function judgeOutcome(deps: JudgeDeps, call: CallText, investigation: Investigation, threshold: number): Promise<OutcomeAnswer | null> {
   let why = "no decision model";
   if (deps.ask) {
     const answers = await deps.ask(outcomeState(call, investigation, deps.stateCharacters), { outcome: QUESTION });
