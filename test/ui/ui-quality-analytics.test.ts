@@ -59,7 +59,7 @@ test('Quality explains collection failures and offers working filters and source
   try {
     const store = new QualityStore(database);
     for (let i = 0; i < 25; i++) store.jobState(project.id, String(i), 'error', 'Several TypeSafe accounts are saved. Select the system secret in Settings → System AI.');
-    for (const model of ['model-one', 'model-two']) store.put({ projectId: project.id, conversationId: `conversation-${model}`, replyId: model, at: '2026-11-08T12:00:00Z', harness: 'pi', model, fingerprint: model, result: {
+    for (const model of ['model-one', 'model-two']) store.put({ projectId: project.id, conversationId: model === 'model-two' ? 'thread-based-agent-builder' : 'short-one', replyId: model, at: '2026-11-08T12:00:00Z', harness: 'pi', model, fingerprint: model, result: {
       outcome: 'issue', reason: `Finding for ${model}`, issues: [{ type: 'verification', reason: 'No tests were run', lesson: 'Verify the result', ruleId: '', adoptedAt: '' }], confidence: .9, probabilities: { issue: .9 }, claudeModel: 'claude-evaluator', jevModel: 'jev-evaluator', version: '1', usage: null,
     } });
   } finally { database.close(); }
@@ -82,21 +82,35 @@ test('Quality explains collection failures and offers working filters and source
   const link = page.getByTestId('quality-source-link');
   const url = new URL((await link.getAttribute('href'))!, node.url);
   assert.equal(url.searchParams.get('projectId'), project.id);
-  assert.equal(url.searchParams.get('sessionId'), 'conversation-model-two');
+  assert.equal(url.searchParams.get('sessionId'), 'thread-based-agent-builder');
   assert.ok((await link.innerText()).includes(project.name));
-  let release!: () => void;
+  const opened = page.waitForEvent('popup');
+  await link.click();
+  const source = await opened;
+  try {
+    await source.getByText('We keep re-threading the same builder prompt by hand.', { exact: false }).waitFor();
+    await source.getByText('Yes. The thread already stores every turn', { exact: false }).waitFor();
+    assert.equal(new URL(source.url()).searchParams.get('sessionId'), 'thread-based-agent-builder');
+    assert.equal(await page.getByTestId('settings-panel-quality').isVisible(), true, 'source opens separately, keeping Quality available');
+  } finally { await source.close(); }
+  let release!: () => void, markHeld!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
+  const requestHeld = new Promise<void>(resolve => { markHeld = resolve; });
   await page.route('**/api/quality-analytics?*model=model-one*', async route => {
-    const response = await route.fetch(); await held; await route.fulfill({ response });
+    const response = await route.fetch(); markHeld(); await held; await route.fulfill({ response });
   });
   try {
     const oldResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('model') === 'model-one');
     await page.locator('#qualityModel').selectOption('model-one');
+    await requestHeld;
+    assert.equal(await page.locator('#qualityAnalytics').getAttribute('aria-busy'), 'true');
     await page.locator('#qualityModel').selectOption('model-two');
     await page.locator('#qualityAnalytics[aria-busy="false"]').waitFor();
     release(); await oldResponse;
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     assert.equal(await page.getByText('Finding for model-one', { exact: true }).count(), 0, 'late response must not replace the latest filter results');
+    assert.equal(await page.getByText('Finding for model-two', { exact: true }).count(), 1);
+    assert.equal(await page.getByTestId('quality-load-status').getAttribute('data-state'), 'ready');
     assert.equal(await page.locator('#qualityModel').inputValue(), 'model-two');
   } finally { release(); await page.unrouteAll({ behavior: 'wait' }); }
   await page.setViewportSize({ width: 320, height: 844 });
@@ -134,6 +148,18 @@ test('Quality exposes load failures inline and recovers without presenting stale
   await loadStatus.getByText('404', { exact: false }).waitFor();
   assert.match(await loadStatus.innerText(), /previous|stale/i);
   assert.match(await loadStatus.innerText(), /update|version|unavailable/i);
+  assert.equal(await page.getByTestId('quality-enabled').isDisabled(), true);
+  assert.equal(await page.getByTestId('quality-retry').isDisabled(), true);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  const errorBounds = await page.getByTestId('settings-panel-quality').evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth }));
+  assert.ok(errorBounds.scroll <= errorBounds.width + 2, `phone error state must not overflow: ${JSON.stringify(errorBounds)}`);
+  status = 0;
+  await page.getByTestId('quality-refresh').click();
+  await page.locator('#quality-load-status[data-state="ready"]').waitFor();
+  assert.doesNotMatch(await loadStatus.innerText(), /stale|404|502/i);
+  assert.equal(await page.getByTestId('quality-enabled').isDisabled(), false);
+  assert.equal(await page.getByTestId('quality-retry').isDisabled(), true, 'recovery must not enable collection or paid scanning');
 });
 
 test('Quality controls fit a phone without full-width checkboxes or cramped filters', { timeout: 90_000 }, async t => {
@@ -159,6 +185,11 @@ test('Quality controls fit a phone without full-width checkboxes or cramped filt
     assert.ok(project && from && Math.abs(project.x - from.x) < 2 && from.y > project.y, 'phone filters use full-width rows');
     const panel = await page.getByTestId('settings-panel-quality').evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth }));
     assert.ok(panel.scroll <= panel.width + 2, JSON.stringify(panel));
+    const clipped = await page.locator('.quality-filters input, .quality-filters select, .quality-actions button').evaluateAll(controls => controls.filter(control => {
+      const bounds = control.getBoundingClientRect();
+      return bounds.left < 0 || bounds.right > innerWidth;
+    }).map(control => control.id || control.getAttribute('data-testid')));
+    assert.deepEqual(clipped, [], `phone controls must stay inside the ${width}px viewport`);
     await page.getByTestId('quality-filters-toggle').click();
   }
 });
