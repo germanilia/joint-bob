@@ -53,8 +53,9 @@ function renderStateLine(status) {
   if (status.activeJob) {
     lines.push(`Updating to ${status.activeJob.targetVersion} — ${status.activeJob.state}. This page reconnects when the node restarts.`);
   }
+  // A failure stops mattering once this node runs its target version or newer, by a later update or a manual install.
   const failed = status.recentJobs.find((job) => job.state === "failed");
-  if (failed && failed !== status.activeJob) lines.push(`Last update to ${failed.targetVersion} failed: ${failed.error ?? "unknown error"}`);
+  if (failed && versionIsBehind(status.currentVersion, failed.targetVersion)) lines.push(`Last update to ${failed.targetVersion} failed: ${failed.error ?? "unknown error"}`);
   elements.updatesStateLine.textContent = lines.join(" ");
 }
 

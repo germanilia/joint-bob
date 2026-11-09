@@ -130,3 +130,17 @@ test("failed updates stop polling without reloading and show the error", async (
   assert.equal(p.timers.size, 0);
   assert.match(p.elements.updatesStateLine.textContent, /checksum mismatch/);
 });
+
+test("a failed update the node has since moved past is not shown", async () => {
+  const p = await panel();
+  p.fixture.status.currentVersion = "1.4.0";
+  p.fixture.status.recentJobs = [
+    { id: "later", targetVersion: "1.4.0", state: "succeeded", error: null },
+    { id: "old", targetVersion: "1.3.0", state: "failed", error: "returned 504" },
+  ];
+  await p.load();
+  assert.equal(p.elements.updatesStateLine.textContent, "");
+  p.fixture.status.currentVersion = "1.2.0";
+  await p.load();
+  assert.match(p.elements.updatesStateLine.textContent, /Last update to 1\.3\.0 failed: returned 504/);
+});
