@@ -20,11 +20,12 @@ const NOTES = [
   "Each team works from a pool assigned to it: Payments and Mobile share the Product pool, Platform has its own. When Claude runs out, the Product pool moves its teams to ChatGPT before any output, so nothing is paid twice, and the people barely notice. Be ready to say what ships today: pools hold Claude, ChatGPT and Pi provider profiles; Bedrock is reached through Kiro, whose sign-ins stay on their machine; a local model is shown as the idea, not a pool member.",
   "Every level has its own tank: the cluster's month, each team's month, each project's day, each conversation. A turn starts only if every tank has room. Checkout warns at 80%, locks at its $20, and the next turn is refused with the reason and the reset time; queued prompts wait. Be ready: Kiro spend is not priced yet, and costs are list-price estimates, not invoices.",
   "Every lesson the team pays for once floats into the project's hive. When the same problem shows up twice, Joint Bob suggests a rule with its evidence; a person accepts it, and every later agent knows it. Agents read only the subject they need, so the hive grows without growing every prompt. Retries on known problems fall.",
+  "Teams already run it. CaliAlfa, a sports analytics company, runs its whole development process on Joint Bob: planning, feature work, bug fixes, self-healing pipelines and PR review, with cloud monitoring. ezbob uses it for PR review and for watching CI/CD, with failure analysis and automatic fixes. KMS Lighthouse uses it across developers, product and design, from planning to implementation, and runs cross-company agents, a DBA agent and a support agent, on its knowledge base and Mira. CaliAlfa and KMS Lighthouse both share a pool of AI subscriptions between their users and use it to the maximum, and use Joint Bob's project knowledge for sharing and managing what the team learns.",
   "The four cost levers come first, then the rest of what Joint Bob does: machines, phone, teams, schedules, Guardian, Story, the agent browser, secrets. Ship faster. Stay in charge. Scan the code to open joint-bob.bobthebot.io.",
 ];
 
 // When each build step appears, in ms after the slide starts.
-const BUILD = { 2: [900, 5200], 3: [11000], 4: [9000], 5: [8000], 6: [4800, 9500] };
+const BUILD = { 2: [900, 5200], 3: [11000], 4: [9000], 5: [8000], 6: [4800, 9500], 7: [900, 1700, 2500] };
 
 let current = 0;
 let clockStart = 0;
