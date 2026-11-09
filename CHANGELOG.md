@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.252.0 — 2026-11-09
+
+- Bob can now operate more of the app from his chat, each change after your button. He stops what a conversation is doing, turns its auto respond on or off, changes its agent, model or effort ("switch the slice 10 conversation to Opus 5.5 with high effort"), and attaches a secret account to it beside the ones it has. In a project he shows where its git stands with its open pull requests, merges, closes, reopens, approves or comments on a pull request, adds a task to its Tasks list (and starts it when you say so), and saves a quick note to start later.
+
 ## 2.251.2 — 2026-11-09
 
 - Limited rule suggestions to five pending at a time, skipped generic advice, and stopped repeating rules you had already seen or dismissed.
