@@ -3,8 +3,9 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.253.0 — 2026-11-09
 
+- Browser sign-in now appears as a card inside the conversation instead of taking over the screen. It shows the website and the current login step, sends your username and password straight to the browser without passing through chat, the agent, or logs, handles multi-step logins, and lets the agent continue once you finish. CAPTCHAs, passkeys and two-factor prompts still open the browser for you to complete.
 - Made Quality analytics faster, applied filters automatically, grouped repeated collection failures with recovery guidance, and linked findings to their source conversations.
 
 ## 2.252.1 — 2026-11-09
