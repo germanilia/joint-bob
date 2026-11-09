@@ -1,6 +1,6 @@
 # Private GitHub updates
 
-The bridge release uses `germanilia/joint-bob` for release metadata and downloads.
+Bridge release `v2.248.0` uses `germanilia/joint-bob` for release metadata and downloads.
 It checks hourly when automatic updates are enabled. Existing installation,
 checksum verification, service activation, and rollback behavior are unchanged.
 
