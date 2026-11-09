@@ -3,7 +3,7 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.251.2 — 2026-11-09
 
 - Limited rule suggestions to five pending at a time, skipped generic advice, and stopped repeating rules you had already seen or dismissed.
 
