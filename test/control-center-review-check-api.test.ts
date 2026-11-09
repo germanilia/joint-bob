@@ -126,6 +126,19 @@ test("a conversation that stops before its task is done is told to go on, one th
     assert.ok(afterDone.find((session) => session.title === "fix the settings page in Joint Bob")?.doneAt, "the conversation is marked done");
     await eventually(async () => (await api<{ cards: Array<{ title: string }> }>(node, auth, "GET", "/control-center/board")).body.cards.every((entry) => entry.title !== "fix the settings page in Joint Bob") || undefined, "the card left the board");
     assert.equal((await api(node, auth, "POST", "/control-center/cards/done", { projectId: project.id, conversationId: "no-such-conversation", feedback: { rating: "unimportant", description: "" } })).status, 404);
+
+    // Push it on with the person's instructions: they go first in what the conversation is told, then Bob's usual push.
+    const header = await api<{ action: string }>(node, auth, "POST", "/control-center/bob/message", { message: "fix the login page header in Joint Bob" });
+    assert.equal(header.body.action, "started", JSON.stringify(header.body));
+    const waitsHeader = await eventually(async () => (await timeline()).find((message) => message.text.startsWith('"fix the login page header in Joint Bob" waits for you') && message.actions.length), "Bob brought it to the person");
+    assert.ok(waitsHeader.actions.some((action) => action.id === "review.push"));
+    const tooLong = await api(node, auth, "POST", "/control-center/bob/action", { messageId: waitsHeader.id, actionId: "review.push", note: "x".repeat(4_001) });
+    assert.equal(tooLong.status, 400, "a note has a limit");
+    const pushedOn = await api<{ messages: BobMessage[] }>(node, auth, "POST", "/control-center/bob/action", { messageId: waitsHeader.id, actionId: "review.push", note: "Use the blue header from the mock, and keep the logo." });
+    assert.equal(pushedOn.status, 200, JSON.stringify(pushedOn.body));
+    assert.equal(pushedOn.body.messages[0].text, 'Told "fix the login page header in Joint Bob" to go on, with your instructions.');
+    const instructed = await eventually(async () => (await prompts()).find((prompt) => prompt.startsWith("Use the blue header from the mock")), "the conversation got the instructions");
+    assert.match(instructed, /^Use the blue header from the mock, and keep the logo\.\n\nContinue with the task: you stopped before it was done/);
   } finally {
     if (child) await stopDevNode(child);
     classifier.server.close();

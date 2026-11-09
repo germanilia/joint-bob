@@ -68,6 +68,7 @@ test("the control center shows the live board, filters by project, colors cards 
       if (path === '/api/control-center/bob/action') {
         // As the server does for Done: the conversation is closed, so it leaves the board, and the pressed item is cleared.
         const body = JSON.parse(args[1].body);
+        window.__pressed = [...(window.__pressed || []), body];
         const pressed = window.__timeline.find((message) => message.id === body.messageId);
         const action = pressed.actions.find((candidate) => candidate.id === body.actionId);
         Object.assign(pressed, { actions: [], resolvedAt: new Date().toISOString(), resolution: 'You chose “' + action.label + '”.' });
@@ -469,6 +470,27 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await page.getByTestId("quick-note-content-input").inputValue(), "fix the sidebar spacing");
   await page.keyboard.press("Escape");
   await form.waitFor({ state: "hidden" });
+
+  // Push it on asks first what to tell the agent; what is written goes with the press, and the item leaves once pushed.
+  await page.evaluate(() => {
+    // Not on the board: the stand-in server takes a pressed conversation's card off it, and later steps need a card.
+    const conversation = { projectId: "p2", projectName: "DAK Live", conversationId: "c9", engine: "pi", sessionId: "c9", title: "Slice 7" };
+    (window as unknown as { __timeline: unknown[] }).__timeline.push({ id: "pushme", role: "bob", text: '"Slice 7" stopped before it was done.\nShall I tell it to go on?', via: "Review check · Decision model 97%", projectId: "p2", projectName: "DAK Live",
+      importance: "needs-you", createdAt: new Date().toISOString(),
+      actions: [{ id: "review.push", label: "Push it on", style: "primary", data: conversation }, { id: "open", label: "Open", data: { open: { projectId: "p2", conversationId: "c9", title: "Slice 7" } } }] });
+    window.dispatchEvent(new CustomEvent("control-center-changed"));
+  });
+  const stopped = page.getByTestId("control-chat-entry").filter({ hasText: "Shall I tell it to go on?" });
+  await stopped.getByRole("button", { name: "Push it on" }).click();
+  const pushBox = stopped.getByTestId("control-chat-push");
+  await pushBox.waitFor();
+  assert.equal(await pushBox.locator("textarea").evaluate((box) => document.activeElement === box), true, "the box takes the focus");
+  assert.match(await pushBox.locator("textarea").getAttribute("placeholder") ?? "", /^Anything to tell “Slice 7” as it goes on\? Leave it empty to just push it on\.$/);
+  assert.equal((await page.evaluate(() => (window as unknown as { __pressed?: unknown[] }).__pressed ?? [])).length, 1, "nothing is pushed until the box is sent");
+  await pushBox.locator("textarea").fill("Map the follow-up states first, then wire the nudges.");
+  await pushBox.getByRole("button", { name: "Push it on" }).click();
+  await stopped.waitFor({ state: "detached" });
+  assert.deepEqual(await page.evaluate(() => (window as unknown as { __pressed: unknown[] }).__pressed.at(-1)), { messageId: "pushme", actionId: "review.push", note: "Map the follow-up states first, then wire the nudges." });
 
   // Exit and Esc both leave.
   await page.getByTestId("control-center-close-button").click();

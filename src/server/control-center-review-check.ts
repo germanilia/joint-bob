@@ -42,6 +42,12 @@ const pushText = (reason: string): string => [
   "Keep going until it is done, then say what you did. If you need something only I can decide, ask me.",
 ].join(" ");
 
+/**
+ * The push the person sends with Push it on. Their instructions come first: they are what the person asked for now, so the next
+ * check judges the answer against them (Bob's own pushes, which start with PUSH_PREFIX, are passed over).
+ */
+const personPushText = (reason: string, instructions: string): string => instructions ? `${instructions}\n\n${pushText(reason)}` : pushText(reason);
+
 export interface Conversation { projectId: string; projectName: string; conversationId: string; engine: string; sessionId: string; title: string }
 
 async function decide(actor: ActingAccount, settings: BobSettings, conversation: Conversation, cwd: string, input: { request: string; summary: string | null; answer: string }): Promise<{ verdict: ReviewVerdict; reason: string; by: string } | null> {
@@ -66,9 +72,9 @@ async function decide(actor: ActingAccount, settings: BobSettings, conversation:
   });
 }
 
-async function push(actor: ActingAccount, conversation: Conversation, reason: string): Promise<void> {
+async function push(actor: ActingAccount, conversation: Conversation, reason: string, instructions = ""): Promise<void> {
   await runAsAccount(actor, () => queueConversationPrompt({
-    projectId: conversation.projectId, engine: conversation.engine, sessionId: conversation.sessionId, message: pushText(reason),
+    projectId: conversation.projectId, engine: conversation.engine, sessionId: conversation.sessionId, message: personPushText(reason, instructions),
     requestId: randomUUID(), label: "Bob", until: "started",
   }));
 }
@@ -179,13 +185,14 @@ export function startReviewChecks(): void {
 
 const conversationData = z.object({ projectId: z.string().min(1), projectName: z.string(), conversationId: z.string().min(1), engine: z.string().min(1), sessionId: z.string().min(1), title: z.string() });
 
-registerBobAction("review.push", async ({ db, session, action }) => {
+registerBobAction("review.push", async ({ db, session, action, note }) => {
   const conversation = conversationData.parse(action.data);
   if (isLeased(conversation.projectId, conversation.conversationId)) return [bobSays(db, session, `You are in "${conversation.title}" now, so I left it to you.`, { projectId: conversation.projectId, projectName: conversation.projectName })];
   const previous = readReviewCheck(db, conversation.projectId, conversation.conversationId);
-  await push(actingAccountFromSession(session), conversation, previous?.reason ?? "");
-  if (previous) writeReviewCheck(db, { ...previous, pushes: previous.pushes + 1, pushPending: true, needsYou: false });
-  return [bobSays(db, session, `Told "${conversation.title}" to go on.`, { importance: "done", projectId: conversation.projectId, projectName: conversation.projectName, via: "Review check · you pressed the button" })];
+  await push(actingAccountFromSession(session), conversation, previous?.reason ?? "", note);
+  // Instructions are a message from the person: Bob's count of pushes in a row starts again.
+  if (previous) writeReviewCheck(db, { ...previous, pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
+  return [bobSays(db, session, note ? `Told "${conversation.title}" to go on, with your instructions.` : `Told "${conversation.title}" to go on.`, { importance: "done", projectId: conversation.projectId, projectName: conversation.projectName, via: "Review check · you pressed the button" })];
 });
 
 /**

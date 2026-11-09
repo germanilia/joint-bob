@@ -75,8 +75,9 @@ test("the chat with Bob follows the person to their other machine, and a button 
     assert.deepEqual(copy.actions.map((action) => action.id), ["automations.create", "automations.cancel"]);
     await eventually(async () => (await timeline(server, onServer)).some((message) => message.role === "user" && message.text === "also send me an evening report"), "what the person said came along");
 
-    // Pressed on the server, it runs on the Mac, where the report then lives; the answer is shown at once.
-    const pressed = await api<{ messages: BobMessage[] }>(server, onServer, "POST", "/control-center/bob/action", { messageId: ask.id, actionId: "automations.create" });
+    // Pressed on the server, it runs on the Mac, where the report then lives; the answer is shown at once. What the person
+    // wrote with the press goes along (Push it on uses it; this button does not).
+    const pressed = await api<{ messages: BobMessage[] }>(server, onServer, "POST", "/control-center/bob/action", { messageId: ask.id, actionId: "automations.create", note: "goes along" });
     assert.equal(pressed.status, 200, JSON.stringify(pressed.body));
     assert.match(pressed.body.messages[0].text, /^Created "Evening report"/);
     const macRows = (await api<{ rows: AutomationRow[] }>(mac, onMac, "GET", "/control-center/automations")).body.rows;

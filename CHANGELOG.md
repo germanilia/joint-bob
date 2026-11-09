@@ -3,9 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.251.0 — 2026-11-09
 
 - Reopening a conversation while it was already switching to this node no longer shows a duplicate-transfer error beside the success message.
+- **Push it on** in Bob's chat first asks what to tell the agent as it goes on. What you write goes first in what the conversation is told, before Bob's usual push, and Bob's next check judges the work against it; leave it empty to push it on as before.
 
 ## 2.250.0 — 2026-11-09
 

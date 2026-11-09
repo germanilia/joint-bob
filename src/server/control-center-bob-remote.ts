@@ -12,7 +12,7 @@ import { app } from "./state.js";
 // as the person; its answer comes back at once, and the changes reach every machine through replication.
 
 const PRESS_TIMEOUT_MS = 60_000;
-const pressSchema = z.object({ accountId: z.string().min(1).max(240), messageId: z.string().min(1).max(100), actionId: z.string().min(1).max(100) }).strict();
+const pressSchema = z.object({ accountId: z.string().min(1).max(240), messageId: z.string().min(1).max(100), actionId: z.string().min(1).max(100), note: z.string().max(4_000).optional() }).strict();
 const messagesSchema = z.object({
   messages: z.array(z.object({
     id: z.string().min(1).max(100), role: z.enum(["user", "bob", "system"]), text: z.string().max(60_000), via: z.string().max(2_000).nullable(),
@@ -24,13 +24,14 @@ const messagesSchema = z.object({
   })),
 });
 
-async function pressOnOrigin(originNodeId: string, accountId: string, messageId: string, actionId: string): Promise<BobMessage[]> {
+async function pressOnOrigin(originNodeId: string, accountId: string, messageId: string, actionId: string, note: string): Promise<BobMessage[]> {
   const peer = await getRuntimePeer(originNodeId);
   if (!peer) throw new BobActionError(503, "The machine that wrote this message cannot be reached now; press it again when it is back");
   let reply: Response;
   try {
     reply = await runtimeFetch(`${peer.url}/api/cluster/control-center/bob/action`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId, messageId, actionId }), signal: AbortSignal.timeout(PRESS_TIMEOUT_MS),
+      // The note goes only when there is one: a machine on an older version refuses a press with a field it does not know.
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId, messageId, actionId, ...note ? { note } : {} }), signal: AbortSignal.timeout(PRESS_TIMEOUT_MS),
     });
   } catch (error) {
     throw new BobActionError(503, `The machine that wrote this message did not answer: ${error instanceof Error ? error.message : String(error)}`);
@@ -64,7 +65,7 @@ app.post(["/api/cluster/control-center/bob/action", "/api/cluster/v2/runtime/con
     if (!session || !getBobMessage(db, press.accountId, press.messageId)) { sendError(response, 404, "That button is no longer available"); return; }
     // A message this machine only holds a copy of is not run here: that would send the press round in a circle.
     if (bobMessageOrigin(db, press.accountId, press.messageId)) { sendError(response, 409, "This machine did not write that message"); return; }
-    response.json({ messages: await runBobAction(db, session, press.messageId, press.actionId) });
+    response.json({ messages: await runBobAction(db, session, press.messageId, press.actionId, press.note ?? "") });
   } catch (error) {
     if (error instanceof z.ZodError) { sendError(response, 400, "Invalid press"); return; }
     if (error instanceof BobActionError) { sendError(response, error.status, error.message); return; }

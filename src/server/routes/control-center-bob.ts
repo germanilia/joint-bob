@@ -76,12 +76,15 @@ app.get("/api/control-center/bob/messages", async (request, response, next) => {
   }
 });
 
+/** What the person may write with a press: instructions for Push it on. */
+const NOTE_CHARACTERS = 4_000;
+
 app.post("/api/control-center/bob/action", async (request, response, next) => {
   try {
-    const { messageId, actionId } = z.object({ messageId: z.string().min(1).max(100), actionId: z.string().min(1).max(100) }).strict().parse(request.body);
+    const { messageId, actionId, note } = z.object({ messageId: z.string().min(1).max(100), actionId: z.string().min(1).max(100), note: z.string().trim().max(NOTE_CHARACTERS).optional() }).strict().parse(request.body);
     const session = response.locals.authSession as AuthSession;
     const db = await bobDatabase();
-    const messages = await runBobAction(db, session, messageId, actionId);
+    const messages = await runBobAction(db, session, messageId, actionId, note ?? "");
     // The pressed item as it is now: cleared, or (a button that only opens something) still waiting with its buttons.
     response.json({ messages, pressed: getBobMessage(db, session.accountId, messageId) });
   } catch (error) {

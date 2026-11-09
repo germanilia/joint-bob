@@ -131,7 +131,7 @@ A conversation that stops and waits for review is not always finished: the agent
   - *Done*: nothing; the card stays in review, marked **✓ Bob checked: done**.
   - *Not done*: Bob tells the agent to go on ("Continue with the task: you stopped before it was done… If you need something only I can decide, ask me"), says so in his chat, and the card shows **↻ Bob told it to go on (1 of 3)** and **⚙ System drives**. After three pushes in a row with no message from you between them, Bob stops and brings it to you instead.
   - *Waits for you*: the card moves to **Needs you** with what it waits for, and stays there when you open it to look, until you answer it, close it, or press **Leave it** or **Push it on**. Bob's chat has it with:
-    - **Push it on**: tell it to go on anyway.
+    - **Push it on**: tell it to go on anyway. It first opens a box under the message for what to tell the agent as it goes on (**Enter** sends, **Esc** closes); leave it empty to push it on as it is. What you write goes first in what the conversation is told, before Bob's usual push, so Bob's next check judges the work against it, and it counts as a message from you (the three pushes in a row start again).
     - **Done**: close it, as marking it done in its project does.
     - **Abandon**: stop it (its turn, auto respond, a step waiting for an answer) and close it without finishing.
     - **Open**: read it first.

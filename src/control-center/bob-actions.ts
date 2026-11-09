@@ -8,6 +8,8 @@ export interface BobActionContext {
   /** The message that carried the button. */
   message: BobMessage;
   action: BobAction;
+  /** What the person wrote with the press (Push it on takes instructions); empty when nothing. */
+  note: string;
 }
 
 /** What an action answers with: messages to add to Bob's timeline. */
@@ -25,7 +27,7 @@ export class BobActionError extends Error {
 }
 
 /** Runs a press on the machine that wrote the message: its Guardian review, report or conversation lives there. */
-export type RemoteBobAction = (originNodeId: string, accountId: string, messageId: string, actionId: string) => Promise<BobMessage[]>;
+export type RemoteBobAction = (originNodeId: string, accountId: string, messageId: string, actionId: string, note: string) => Promise<BobMessage[]>;
 let remote: RemoteBobAction | null = null;
 
 /** The server's way to reach the person's other machines; without one, only this machine's messages can be pressed. */
@@ -36,21 +38,21 @@ export function setRemoteBobAction(run: RemoteBobAction): void { remote = run; }
  * another of the person's machines wrote is pressed there, where what it acts on lives. A pressed item is cleared: it no longer
  * waits for the person, unless its feature put its buttons back (a button that only opens something). A report keeps its place.
  */
-export async function runBobAction(db: DatabaseSync, session: AuthSession, messageId: string, actionId: string): Promise<BobMessage[]> {
+export async function runBobAction(db: DatabaseSync, session: AuthSession, messageId: string, actionId: string, note = ""): Promise<BobMessage[]> {
   const message = getBobMessage(db, session.accountId, messageId);
   const action = message?.actions.find((candidate) => candidate.id === actionId);
   if (!message || !action) throw new BobActionError(404, "That button is no longer available");
   const origin = bobMessageOrigin(db, session.accountId, messageId);
   if (origin) {
     if (!remote) throw new BobActionError(503, "This message came from your other machine, which cannot be reached from here");
-    return remote(origin, session.accountId, messageId, actionId);
+    return remote(origin, session.accountId, messageId, actionId, note);
   }
   const handler = handlers.get(actionId);
   if (!handler) throw new BobActionError(404, "Bob cannot do that yet");
   clearBobActions(db, session.accountId, messageId);
   let answer: BobMessage[];
   try {
-    answer = (await handler({ session, db, message, action })) ?? [];
+    answer = (await handler({ session, db, message, action, note })) ?? [];
   } catch (error) {
     // The button comes back when the action did not happen.
     setBobActions(db, session.accountId, messageId, message.actions);

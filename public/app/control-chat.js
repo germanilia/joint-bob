@@ -125,7 +125,14 @@ function renderBody(message, text) {
 let replying = null;
 
 function openReply(message) {
-  replying = { id: message.id, text: "", focus: true };
+  replying = { id: message.id, text: "", focus: true, push: null };
+  renderMessages();
+}
+
+/** Push it on asks first what to tell the agent as it goes on, in the same box under the message; it can stay empty. */
+const PUSH = "review.push";
+function openPush(message, action) {
+  replying = { id: message.id, text: "", focus: true, push: action };
   renderMessages();
 }
 
@@ -163,7 +170,7 @@ function renderActions(message, about) {
   for (const action of message.actions) {
     const button = element("button", `control-action ${action.style ?? ""}`, action.label);
     button.type = "button";
-    button.addEventListener("click", () => runAction(message, action, button));
+    button.addEventListener("click", () => (action.id === PUSH ? openPush(message, action) : runAction(message, action, button)));
     actions.append(button);
   }
   if (settleable) actions.append(...itemControls(message, about));
@@ -172,18 +179,21 @@ function renderActions(message, about) {
 
 /** The quick reply box under a message: Enter sends, Shift+Enter starts a new line, Esc closes it. */
 function renderReply(message, about) {
+  const pushing = replying.push;
   const form = element("form", "control-reply");
-  form.dataset.testid = "control-chat-reply";
+  form.dataset.testid = pushing ? "control-chat-push" : "control-chat-reply";
   const box = element("textarea");
   box.rows = 2;
   box.value = replying.text;
-  box.placeholder = about?.open ? `Reply to “${about.title}”. It goes into the conversation, as you.` : "Reply to Bob about this";
+  box.placeholder = pushing
+    ? `Anything to tell ${about?.title ? `“${about.title}”` : "it"} as it goes on? Leave it empty to just push it on.`
+    : about?.open ? `Reply to “${about.title}”. It goes into the conversation, as you.` : "Reply to Bob about this";
   box.addEventListener("input", () => { replying.text = box.value; });
   box.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); form.requestSubmit(); }
     else if (event.key === "Escape") { event.preventDefault(); closeReply(); }
   });
-  const send = element("button", "control-action primary", "Send");
+  const send = element("button", "control-action primary", pushing ? pushing.label : "Send");
   send.type = "submit";
   const cancel = element("button", "control-action", "Cancel");
   cancel.type = "button";
@@ -194,7 +204,8 @@ function renderReply(message, about) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = box.value.trim();
-    if (text) void sendReply(message, about, text, send);
+    if (pushing) void runAction(message, pushing, send, text);
+    else if (text) void sendReply(message, about, text, send);
   });
   return form;
 }
@@ -312,7 +323,7 @@ let drawnPending = 0;
 
 function renderMessages() {
   const visible = messages.filter(matchesFilter);
-  const drawing = JSON.stringify([visible, [...pending.keys()], sendError, replying?.id ?? null, filter.importance]);
+  const drawing = JSON.stringify([visible, [...pending.keys()], sendError, replying?.id ?? null, replying?.push?.id ?? null, filter.importance]);
   if (drawing === drawnMessages) return;
   drawnMessages = drawing;
   const list = elements.controlChatMessages;
@@ -394,7 +405,7 @@ function loadMessages() {
   return reading;
 }
 
-async function runAction(message, action, button) {
+async function runAction(message, action, button, note = "") {
   // Opening a conversation, undoing a display change and the New conversation form happen in the page; every other button is
   // answered by the server.
   if (action.data?.open) { openFrom(message, action.data.open).catch((error) => toast.error(error.message)); return; }
@@ -402,7 +413,8 @@ async function runAction(message, action, button) {
   if (action.data?.create) { newConversation(action.data.create.content).catch((error) => toast.error(error.message)); return; }
   button.disabled = true;
   try {
-    const result = await api("/api/control-center/bob/action", { method: "POST", body: JSON.stringify({ messageId: message.id, actionId: action.id }) });
+    const result = await api("/api/control-center/bob/action", { method: "POST", body: JSON.stringify({ messageId: message.id, actionId: action.id, ...note ? { note } : {} }) });
+    if (replying?.id === message.id) replying = null;
     // A button runs once: the server took the pressed message's buttons away, and so does the page.
     Object.assign(message, result.pressed);
     if (result.messages?.length) messages.push(...result.messages.filter((added) => matchesFilter(added) && !messages.some((shown) => shown.id === added.id)));
