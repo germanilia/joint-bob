@@ -147,12 +147,19 @@ jobs:
           files: |
             joint-bob.tar.gz
             joint-bob.tar.gz.sha256
+      - name: Publish public release packages
+        if: github.repository == 'germanilia/joint-bob'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MIRROR_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          RELEASE_MIRROR_REPOSITORY: germanilia/joint-bob-releases
+        run: node scripts/mirror-release.mjs
       - name: Mirror release for existing installations
         if: github.repository == 'germanilia/joint-bob' && vars.LEGACY_RELEASE_REPOSITORY != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          LEGACY_RELEASE_TOKEN: ${{ secrets.LEGACY_RELEASE_TOKEN }}
-          LEGACY_RELEASE_REPOSITORY: ${{ vars.LEGACY_RELEASE_REPOSITORY }}
+          RELEASE_MIRROR_TOKEN: ${{ secrets.LEGACY_RELEASE_TOKEN }}
+          RELEASE_MIRROR_REPOSITORY: ${{ vars.LEGACY_RELEASE_REPOSITORY }}
         run: node scripts/mirror-release.mjs
       - name: Publish to npm when configured
         if: steps.release.outputs.publish == 'true' && vars.NPM_PUBLISH_ENABLED == 'true'

@@ -6,11 +6,18 @@ import path from "node:path";
 import test from "node:test";
 
 const apiBase = "https://api.github.com/repos/germanilia/joint-bob";
+const publicApi = "https://api.github.com/repos/germanilia/joint-bob-releases";
 const fakeToken = "github_pat_fixture_only";
 
 async function fixture(t: any) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "private-updates-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  const previousApi = process.env.JOINT_BOB_RELEASE_API;
+  process.env.JOINT_BOB_RELEASE_API = apiBase;
+  t.after(async () => {
+    if (previousApi === undefined) delete process.env.JOINT_BOB_RELEASE_API;
+    else process.env.JOINT_BOB_RELEASE_API = previousApi;
+    await rm(directory, { recursive: true, force: true });
+  });
   const auth = await import("../scripts/release-auth.mjs");
   return { directory, ...auth };
 }
@@ -127,7 +134,7 @@ test("GitHub payloads select repository-scoped API asset URLs, not public downlo
   assert.throws(() => validateReleasePayload(payload, apiBase), /missing.*assets/);
 });
 
-test("hourly automatic checks use the private feed and ignore cached public releases", async (t) => {
+test("hourly automatic checks use the public releases-only feed and ignore cached legacy releases", async (t) => {
   const { directory, saveReleaseToken } = await fixture(t);
   saveReleaseToken(directory, fakeToken);
   const previous = { data: process.env.JOINT_BOB_DATA_DIR, release: process.env.JOINT_BOB_RELEASE, api: process.env.JOINT_BOB_RELEASE_API };
@@ -160,7 +167,7 @@ test("hourly automatic checks use the private feed and ignore cached public rele
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetch.mock.callCount(), 1, "a check 61 minutes ago is due, not delayed six hours");
   assert.match(updater.updateStatusView().latest.error ?? "", /401/);
-  db.prepare("UPDATE update_preferences SET latest_json = ?, latest_version = ?").run(JSON.stringify({ ...old, archiveUrl: `${apiBase}/releases/assets/1`, checksumUrl: `${apiBase}/releases/assets/2` }), old.version);
+  db.prepare("UPDATE update_preferences SET latest_json = ?, latest_version = ?").run(JSON.stringify({ ...old, archiveUrl: `${publicApi}/releases/assets/1`, checksumUrl: `${publicApi}/releases/assets/2` }), old.version);
   assert.equal(updater.updateStatusView().latest.release, null, "a cached version must not hide an authentication error in the Updates panel");
   assert.equal(updater.updateStatusView().updateAvailable, false);
   db.prepare("UPDATE update_preferences SET latest_checked_at = ?").run(new Date(Date.now() - 59 * 60_000).toISOString());

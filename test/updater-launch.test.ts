@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-const release = { version: "99.0.0", tag: "v99.0.0", archiveUrl: "https://api.github.com/repos/germanilia/joint-bob/releases/assets/1", checksumUrl: "https://api.github.com/repos/germanilia/joint-bob/releases/assets/2", publishedAt: null, htmlUrl: null };
+const release = { version: "99.0.0", tag: "v99.0.0", archiveUrl: "https://api.github.com/repos/germanilia/joint-bob-releases/releases/assets/1", checksumUrl: "https://api.github.com/repos/germanilia/joint-bob-releases/releases/assets/2", publishedAt: null, htmlUrl: null };
 
 for (const failure of [false, true]) {
   test(failure ? "a failed updater scope launch settles the job instead of leaving it active" : "Linux self-update starts outside the node service cgroup", async (context) => {

@@ -46,12 +46,22 @@ writeFileSync(stateFile, JSON.stringify(state));
 
 test("CI mirrors tested private releases using a separate credential, including repair runs", async () => {
   const workflow = parse(await readFile(".github/workflows/release.yml", "utf8"));
-  const step = workflow.jobs.release.steps.find((s: any) => s.name === "Mirror release for existing installations");
-  assert.ok(step, "private release CI needs a public mirror step");
-  assert.equal(step.env.GH_TOKEN, "${{ github.token }}");
-  assert.equal(step.env.LEGACY_RELEASE_TOKEN, "${{ secrets.LEGACY_RELEASE_TOKEN }}");
-  assert.ok(!step.if.includes("publish"), "a retry must finish a mirror even when the private release already exists");
-  assert.match(step.run, /node scripts\/mirror-release\.mjs/);
+  const steps = workflow.jobs.release.steps;
+  const publicStep = steps.find((s: any) => s.name === "Publish public release packages");
+  const legacyStep = steps.find((s: any) => s.name === "Mirror release for existing installations");
+  assert.ok(publicStep, "new installations need the public releases-only feed");
+  assert.ok(legacyStep, "existing installations need the same migration package");
+  assert.ok(steps.indexOf(publicStep) < steps.indexOf(legacyStep), "publish the new feed before offering the migration on the old feed");
+  assert.equal(publicStep.env.RELEASE_MIRROR_REPOSITORY, "germanilia/joint-bob-releases");
+  assert.equal(publicStep.env.RELEASE_MIRROR_TOKEN, "${{ secrets.PUBLIC_RELEASE_TOKEN }}");
+  assert.equal(legacyStep.env.RELEASE_MIRROR_REPOSITORY, "${{ vars.LEGACY_RELEASE_REPOSITORY }}");
+  assert.equal(legacyStep.env.RELEASE_MIRROR_TOKEN, "${{ secrets.LEGACY_RELEASE_TOKEN }}");
+  for (const step of [publicStep, legacyStep]) {
+    assert.equal(step.env.GH_TOKEN, "${{ github.token }}");
+    assert.match(step.if, /github.repository == 'germanilia\/joint-bob'/);
+    assert.ok(!step.if.includes("publish"), "a retry must finish a mirror even when the private release already exists");
+    assert.match(step.run, /node scripts\/mirror-release\.mjs/);
+  }
 });
 
 test("release mirroring uploads identical assets and creates no private source ref in the public repo", async (t) => {

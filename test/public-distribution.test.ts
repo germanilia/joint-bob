@@ -74,7 +74,7 @@ test("fresh install supports latest verified release and immutable pins", async 
     text(".github/workflows/release.yml"),
   ]);
 
-  assert.match(installer, /iliagerman\/joint-bob\/releases\/latest\/download\/joint-bob\.tar\.gz/);
+  assert.match(installer, /germanilia\/joint-bob-releases\/releases\/latest\/download\/joint-bob\.tar\.gz/);
   assert.match(installer, /joint-bob\.tar\.gz\.sha256/);
   assert.match(installer, /JOINT_BOB_REF/);
   assert.match(installer, /JOINT_BOB_ARCHIVE_SHA256/);

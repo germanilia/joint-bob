@@ -12,8 +12,8 @@ fi
 
 REF="${JOINT_BOB_REF:-${MASTER_BOB_REF:-}}"
 ARCHIVE_SHA256="${JOINT_BOB_ARCHIVE_SHA256:-${MASTER_BOB_ARCHIVE_SHA256:-}}"
-LATEST_ARCHIVE_URL="https://github.com/iliagerman/joint-bob/releases/latest/download/joint-bob.tar.gz"
-LATEST_CHECKSUM_URL="https://github.com/iliagerman/joint-bob/releases/latest/download/joint-bob.tar.gz.sha256"
+LATEST_ARCHIVE_URL="https://github.com/germanilia/joint-bob-releases/releases/latest/download/joint-bob.tar.gz"
+LATEST_CHECKSUM_URL="https://github.com/germanilia/joint-bob-releases/releases/latest/download/joint-bob.tar.gz.sha256"
 if [ -n "${REF}" ] && ! [[ "${REF}" =~ ^[0-9a-fA-F]{40}$ ]]; then
   echo "JOINT_BOB_REF must be a full 40-character Git commit SHA" >&2
   exit 1

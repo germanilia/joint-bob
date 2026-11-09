@@ -105,7 +105,7 @@ function isReleaseAssetUrl(url: string, base: string): boolean {
 async function fetchRelease(feedPath: string): Promise<ReleaseInfo> {
   const base = releaseApiBase();
   const response = await fetchReleaseResource(`${base}/${feedPath}`, dataDir, "application/vnd.github+json", 15_000);
-  if (!response.ok) throw new ReleaseFeedError(`Release feed returned ${response.status}. Check this machine's GitHub update token and repository access.`);
+  if (!response.ok) throw new ReleaseFeedError(`Release feed returned ${response.status}. Check network access and the configured release repository.`);
   return validateReleasePayload(await response.json(), base);
 }
 

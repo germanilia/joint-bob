@@ -1,8 +1,10 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+const PUBLIC_RELEASE_API = "https://api.github.com/repos/germanilia/joint-bob-releases";
+
 export function releaseApiBase() {
-  const configured = (process.env.JOINT_BOB_RELEASE_API ?? "https://api.github.com/repos/germanilia/joint-bob").replace(/\/+$/, "");
+  const configured = (process.env.JOINT_BOB_RELEASE_API ?? PUBLIC_RELEASE_API).replace(/\/+$/, "");
   const url = new URL(configured);
   const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   if (url.username || url.password || url.search || url.hash || (url.protocol !== "https:" && !(url.protocol === "http:" && loopback))) {
@@ -38,15 +40,15 @@ function readReleaseToken(dataDirectory) {
   return validateToken(token.trim());
 }
 
-/** Only the selected GitHub repository receives the token. CDN redirects never do. */
+/** Public updates never read credentials. Explicit private feeds keep tokens off CDN redirects. */
 export async function fetchReleaseResource(url, dataDirectory, accept, timeoutMs) {
   const base = releaseApiBase();
-  const authenticated = isGithubReleaseApi(base) && url.startsWith(`${base}/releases/`);
+  const githubRequest = isGithubReleaseApi(base) && url.startsWith(`${base}/releases/`);
   const headers = { Accept: accept, "User-Agent": "joint-bob-updater" };
-  if (authenticated) headers.Authorization = `Bearer ${readReleaseToken(dataDirectory)}`;
+  if (githubRequest && base !== PUBLIC_RELEASE_API) headers.Authorization = `Bearer ${readReleaseToken(dataDirectory)}`;
   const signal = AbortSignal.timeout(timeoutMs);
-  const response = await fetch(url, { headers, signal, redirect: authenticated ? "manual" : "follow" });
-  if (!authenticated || response.status < 300 || response.status >= 400) return response;
+  const response = await fetch(url, { headers, signal, redirect: githubRequest ? "manual" : "follow" });
+  if (!githubRequest || response.status < 300 || response.status >= 400) return response;
   const location = response.headers.get("location");
   const target = location && new URL(location, url);
   if (accept !== "application/octet-stream" || !target || target.protocol !== "https:" || target.username || target.password

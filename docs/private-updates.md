@@ -1,74 +1,63 @@
-# Private GitHub updates
+# Private source, public updates
 
-Bridge release `v2.248.0` uses `germanilia/joint-bob` for release metadata and downloads.
-It checks hourly when automatic updates are enabled. Existing installation,
-checksum verification, service activation, and rollback behavior are unchanged.
+Development lives in private `germanilia/joint-bob`. Starting with `v2.249.0`,
+installations check public `germanilia/joint-bob-releases` hourly when automatic
+updates are enabled. Customers need no GitHub account, token, GitHub App, or
+Homeserver service. Packages and their included application code are public;
+the development repository and Git history remain private.
 
-## Configure each machine
+## Publishing
 
-Create a separate fine-grained GitHub personal access token for each machine:
+After the full test suite, the private repository's Release workflow publishes
+its package, then copies the verified archive and checksum to:
 
-- Resource owner: `germanilia`.
-- Repository access: only `joint-bob`.
-- Repository permissions: **Contents: Read-only**. Metadata read access is implicit.
-- Set an expiry and replace the token before it expires.
+1. `germanilia/joint-bob-releases`, using the `PUBLIC_RELEASE_TOKEN` Actions secret.
+2. `iliagerman/joint-bob`, while `LEGACY_RELEASE_REPOSITORY` names it, using the
+   separate `LEGACY_RELEASE_TOKEN` Actions secret.
 
-GitHub contents permission also allows reading the repository source. GitHub does
-not offer a release-download-only permission for this direct-token approach.
-Do not use the CI publishing token or a broad account token for installations.
+The new feed publishes first so that the bridge is available there before old
+installations migrate. Both mirrors receive exactly the same bytes. Retries
+verify existing assets and repair partial uploads; different bytes are rejected.
+Only CI holds publishing credentials. Public release tags point at each public
+repository's own `main`; no private source refs are copied. The package's
+`.joint-bob-release` marker identifies its build commit.
 
-Run `joint-bob update-token` as the OS user running Joint Bob, supplying the token
-on stdin from a secret manager or a protected file. Do not put the token in command
-arguments or shell history. For an installation without the CLI on PATH, invoke
-`node <active-release>/bin/joint-bob.mjs update-token`.
+## Existing installations
 
-The command writes `github-update-token` with mode `0600` inside the node's data
-directory, normally `~/.joint-bob`. `JOINT_BOB_DATA_DIR` and `PI_WEB_DATA_DIR` select
-the same directory used by the service. The token is not stored in project files,
-the replicated database, release packages, or browser settings. No restart is
-needed. Saving another token rotates it; removing the file disables private access.
+Keep `iliagerman/joint-bob` public with `v2.249.0` or a newer migration release.
+An old public-feed installation downloads that package normally, then checks
+`germanilia/joint-bob-releases` after restarting. Automatic updates must be enabled
+for an unattended migration; otherwise select Check for updates and install it.
 
-Open Settings → Updates on that machine and select Check for updates. Then enable
-Automatic updates if wanted. Every machine needs its own provisioning, including
-machines updated through Update all nodes. Credentials are never forwarded to peers.
-An expired, revoked, or missing token produces an update error. Replace the token,
-then select Check for updates again. There is no fallback to the old public repository.
+The interim `v2.248.0` build used a private feed. Such an installation needs its
+existing private credential for this one update, or a manual installation of the
+public bridge package. A release on the old public feed cannot repair a client
+that is already checking a different private feed without credentials.
 
-Only the configured GitHub repository's release API receives Authorization.
-Downloads use asset API URLs with `Accept: application/octet-stream`. A GitHub CDN
-redirect is fetched without Authorization. The archive's checksum is verified
-before extracting or installing it.
+The public default ignores `github-update-token`, even if an old token expired.
+Explicit `JOINT_BOB_RELEASE_API` overrides are not silently changed; remove a
+private-feed override to use the new default. The `joint-bob update-token` CLI
+remains compatible for installations deliberately using an explicit private feed.
+No App or token broker is required, and the unused App/private key is not deployed
+or distributed by this migration.
 
-`JOINT_BOB_RELEASE_API` remains available for explicit release-feed overrides and
-isolated loopback tests. The updater does not read general `GH_TOKEN` or
-`GITHUB_TOKEN` environment variables or an agent's secret accounts.
+## Fresh installs and manual migration
 
-## Transitional publishing
+Download the archive and adjacent checksum from:
 
-The Release workflow runs in `germanilia/joint-bob`. After tests, it publishes the
-private release. When the repository variable `LEGACY_RELEASE_REPOSITORY` is set
-to `iliagerman/joint-bob`, it mirrors those exact assets using the Actions secret
-`LEGACY_RELEASE_TOKEN`, which needs permission to publish releases in the old repo.
-The workflow's own `GITHUB_TOKEN` only accesses the private source repository.
+https://github.com/germanilia/joint-bob-releases/releases/latest
 
-The mirror creates a draft in the destination, uploads both verified assets, then
-publishes it. Re-running verifies existing files and repairs missing uploads; it
-refuses to replace different bytes. No private Git refs are pushed to the public
-repository. The public release tag points at its own `main`; the package's
-`.joint-bob-release` marker identifies the private build commit.
+Verify the checksum, extract the archive, and run `node package/bin/joint-bob.mjs install`.
+Alternatively, the public repository's `install.sh` downloads and verifies the
+latest package before invoking its transactional installer. The standalone
+installer's explicit `JOINT_BOB_REF` option still addresses old public source
+commits; new private commits are installed from published packages instead.
 
-Public release packages still include application code. They must be public for
-old updaters to download this bridge release.
+## Retiring the old feed
 
-Before making the old repository private:
-
-1. Verify each intended machine runs the bridge release or newer.
-2. Provision its read-only token and verify a private update check and download.
-3. Remove the `LEGACY_RELEASE_REPOSITORY` Actions variable and
-   `LEGACY_RELEASE_TOKEN` secret from `germanilia/joint-bob` to stop mirroring.
-4. Make `iliagerman/joint-bob` private.
-
-Offline machines that miss the bridge need manual migration. Do not close the
-public feed based on the date alone. Initial public installer URLs also stop
-working after the old repository becomes private; new installations then need
-an authenticated package download followed by `joint-bob install`.
+Do not make the old repository private until every intended installation has
+migrated or has a manual recovery path. Its migration release must remain publicly
+reachable for offline installations that have not returned yet. After migration,
+remove `LEGACY_RELEASE_REPOSITORY` and `LEGACY_RELEASE_TOKEN` from private CI, then
+change the old repository's visibility only with the owner's approval. The new
+releases-only repository stays public permanently.

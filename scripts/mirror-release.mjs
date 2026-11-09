@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copies published assets, never private source refs, into the legacy update repository.
+// Copies verified release assets, never private source refs, into a public update repository.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
@@ -50,9 +50,9 @@ export async function mirrorRelease({ sourceRepository, targetRepository, tag, s
     }
     let target = release(targetRepository, tag, targetToken, true);
     if (!target) {
-      // The old repository does not contain the new private commit. Its release tag
-      // points at its own main; the downloaded package carries the real commit marker.
-      gh(["release", "create", tag, "--repo", targetRepository, "--target", "main", "--draft", "--title", `Joint Bob ${tag}`, "--notes", "Compatibility release for existing installations. Configure a machine-local GitHub update token before private-only updates."], targetToken);
+      // Public tags point at the destination's own main, never the private commit.
+      // The verified package carries the real build commit marker.
+      gh(["release", "create", tag, "--repo", targetRepository, "--target", "main", "--draft", "--title", `Joint Bob ${tag}`, "--notes", "Verified Joint Bob release. Updates use https://github.com/germanilia/joint-bob-releases without GitHub tokens. This package also migrates installations using the old public feed."], targetToken);
       target = { assets: [], draft: true };
     }
     for (const name of assetNames) {
@@ -68,8 +68,8 @@ export async function mirrorRelease({ sourceRepository, targetRepository, tag, s
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const { version } = JSON.parse(await readFile("package.json", "utf8"));
-    await mirrorRelease({ sourceRepository: process.env.GITHUB_REPOSITORY, targetRepository: process.env.LEGACY_RELEASE_REPOSITORY,
-      tag: `v${version}`, sourceToken: process.env.GH_TOKEN, targetToken: process.env.LEGACY_RELEASE_TOKEN });
+    await mirrorRelease({ sourceRepository: process.env.GITHUB_REPOSITORY, targetRepository: process.env.RELEASE_MIRROR_REPOSITORY,
+      tag: `v${version}`, sourceToken: process.env.GH_TOKEN, targetToken: process.env.RELEASE_MIRROR_TOKEN });
     console.log(`Verified release mirror v${version}`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

@@ -3,10 +3,37 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.249.0 — 2026-11-09
+
+- Updates and fresh installations now download public packages from `germanilia/joint-bob-releases`, without a GitHub token, account, or Homeserver connection. Development source and Git history stay private.
+- The same verified migration package is published to the old `iliagerman/joint-bob` feed, so existing public-feed installations switch to the new repository after updating. Old token files and cached releases do not interfere with the public feed.
+- Preserved the latest System AI settings, mobile navigation, and browser sign-in improvements when joining development in the private repository.
+
 ## 2.248.0 — 2026-11-09
 
 - Automatic updates now check the private `germanilia/joint-bob` release feed hourly. Each machine uses its own read-only GitHub token, saved with `joint-bob update-token` on stdin; tokens never leave that machine or follow GitHub's download redirect.
 - Failed private update checks stay visible and cannot install stale public releases. CI mirrors the same verified release assets to the public legacy repository during migration, without copying private source history.
+
+## 2.247.3 — 2026-11-09
+
+- Browser sign-in now uses the actual website throughout multi-step authentication instead of copied login fields, and opens full-screen on desktop with manual confirmation before returning control.
+
+## 2.247.2 — 2026-11-09
+
+- Back on a phone now goes up one level instead of replaying every screen visited, and does nothing on the Projects screen. The control center returns to Projects.
+- The personal assistant page follows the same Back rule: a group or request returns to its list, and the first screen stays put.
+
+## 2.247.1 — 2026-11-09
+
+- Kept browser sign-in popups dismissible while connecting, with a retry button when the browser machine is unavailable.
+
+## 2.247.0 — 2026-11-08
+
+- Added Settings → System AI for internal agent choices, saved system decision credentials and login profiles, shared with trusted twins without exposing keys to project agents.
+- Kept Quality collection enablement and collected insights local to each machine, independently of shared evaluator settings.
+- Fixed the Quality page on phones with an aligned collection checkbox, full-width filters, readable action buttons and collapsible details.
+- Made Quality's automatic saving explicit with inline progress and errors, and removed its unrelated Save settings button.
+- Fixed settings staying on Saving while waiting for conversation-list refreshes after the changes were already saved.
 
 ## 2.246.3 — 2026-11-08
 

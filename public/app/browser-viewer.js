@@ -62,6 +62,7 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
           <button class="primary" type="button" data-testid="browser-login-done">Done</button>
           <button class="ghost compact" type="button" data-testid="browser-login-expand" aria-pressed="false">Full screen</button>
           <button class="ghost compact" type="button" data-testid="browser-login-dismiss">Not now</button>
+          <button class="ghost compact" type="button" data-testid="browser-login-retry" hidden>Retry connection</button>
         </div>
       </section>
       <div class="browser-setup">
@@ -119,14 +120,6 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
         <input type="url" aria-label="Website address" placeholder="https://example.com" data-testid="browser-url" required />
         <button class="ghost compact" type="submit" data-testid="browser-go">Go</button>
         <button class="ghost compact" type="button" data-command="newTab" data-testid="browser-new-tab" aria-label="New browser tab" title="New browser tab">+</button>
-      </form>
-      <form class="browser-login-form" data-testid="browser-login-form" autocomplete="off" hidden>
-        <div class="browser-login-brand"><img data-part="login-logo" alt="" hidden /><strong data-part="login-site"></strong></div>
-        <div class="browser-login-fields" data-part="login-fields"></div>
-        <div class="browser-login-form-actions">
-          <button class="primary" type="submit" data-testid="browser-login-submit">Sign in</button>
-          <button class="ghost compact" type="button" data-testid="browser-login-toggle-page" aria-pressed="false">Show page</button>
-        </div>
       </form>
       <div class="browser-stage">
         <p class="browser-empty browser-blank-help" data-testid="browser-blank-help" hidden>Your profile is open on a blank tab. Take control and enter a website address above. Saved logins apply when you visit the site; a profile name is not a bookmark.</p>
@@ -236,7 +229,14 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
   function render() {
     updateLink();
     const request = session?.loginRequest;
-    get("login-notice").hidden = !request;
+    get("login-notice").hidden = !request && !loginMode;
+    get("login-retry").hidden = !loginMode || Boolean(session);
+    get("login-retry").disabled = busy;
+    if (loginMode && !session) {
+      part("login-label").textContent = "Connecting to sign-in browser…";
+      part("login-help").textContent = "You can dismiss this popup without resuming the agent, or retry if the browser machine is unavailable.";
+      part("frame-hint").textContent = "Connecting to the browser on its original machine…";
+    }
     if (request) {
       part("login-label").textContent = request.label || session.profileLabel || "Browser sign-in";
       part("login-origin").textContent = request.expectedOrigin || "";
@@ -267,7 +267,6 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
     const visibleSessions = sessions.filter((item) => !stopped(item) || get("show-archived").checked);
     get("session-select").replaceChildren(...(visibleSessions.length ? visibleSessions.map((item) => new Option(`${item.profileLabel || "Browser"} · ${machineName(item.nodeId)} · ${item.profileId?.slice(0, 8) || item.id.slice(0, 8)} · ${item.state}`, item.id)) : [new Option("No open browsers", "")]));
     get("session-select").value = session && visibleSessions.includes(session) ? session.id : "";
-    syncLoginForm();
     get("control-status").textContent = human() ? "Human control · agent paused" : request ? "Login required · agent paused" : "Agent control";
     part("control-hint").textContent = human()
       ? session.canControl === false
@@ -687,64 +686,6 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
       return command({ action: "completeLogin", requestId: target.requestId, expectedPageId: target.expectedPageId });
     });
   });
-  // Sign-in is drawn natively from the page's own fields: real inputs, so Tab, autofill and a
-  // phone keyboard work, and the remote page is only filled and submitted behind the scenes. A
-  // challenge (code, captcha) or a page with no form falls back to the live page.
-  const loginForm = get("login-form"), loginFields = part("login-fields");
-  let loginFormKey = "", formShown = false, pageShown = false;
-  function showLoginForm(form) {
-    formShown = Boolean(form);
-    loginForm.hidden = !form;
-    root.classList.toggle("browser-login-form-active", formShown && !pageShown);
-    if (!form) return;
-    part("login-site").textContent = new URL(form.origin).hostname;
-    const logo = part("login-logo");
-    logo.src = `${form.origin}/favicon.ico`; logo.hidden = false; logo.onerror = () => { logo.hidden = true; };
-    get("login-submit").textContent = form.submit?.label || "Continue";
-    loginFields.replaceChildren(...form.fields.map((field) => {
-      const label = document.createElement("label"), input = document.createElement("input");
-      label.textContent = field.label; input.type = field.type; input.dataset.selector = field.selector;
-      input.autocomplete = field.autocomplete || (field.type === "password" ? "current-password" : "off");
-      label.append(input); return label;
-    }));
-    loginForm.dataset.submit = form.submit?.selector || "";
-    loginFields.querySelector("input")?.focus();
-  }
-  async function loadLoginForm() {
-    const tab = session.tabs.find((candidate) => candidate.id === session.activePageId);
-    loginFormKey = `${session.loginRequest.id}:${session.activePageId}:${tab?.url}`;
-    const form = await command({ action: "loginForm" });
-    showLoginForm(form && !form.challenge && form.fields.length ? form : null);
-  }
-  function syncLoginForm() {
-    // The ordinary viewer has no sign-in form to draw.
-    if (!loginMode) return;
-    if (!session?.loginRequest || !canInput() || busy || disposed) { if (!session?.loginRequest) showLoginForm(null); return; }
-    const tab = session.tabs.find((candidate) => candidate.id === session.activePageId);
-    if (loginFormKey !== `${session.loginRequest.id}:${session.activePageId}:${tab?.url}`) void operation(loadLoginForm);
-  }
-  get("login-toggle-page").addEventListener("click", () => {
-    pageShown = !pageShown;
-    get("login-toggle-page").textContent = pageShown ? "Use form" : "Show page";
-    get("login-toggle-page").setAttribute("aria-pressed", String(pageShown));
-    root.classList.toggle("browser-login-form-active", formShown && !pageShown);
-  });
-  loginForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const target = session.loginRequest && { requestId: session.loginRequest.id, expectedPageId: session.activePageId };
-    const inputs = [...loginFields.querySelectorAll("input")];
-    void operation(async () => {
-      for (const input of inputs) if (input.value) await command({ action: "fill", selector: input.dataset.selector, text: input.value });
-      for (const input of inputs) input.value = "";
-      if (loginForm.dataset.submit) await command({ action: "clickElement", selector: loginForm.dataset.submit });
-      else await command({ action: "key", key: "Enter" });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      if (disposed || session?.loginRequest?.id !== target.requestId) return;
-      await loadLoginForm();
-      // No form left: the sign-in may be through. A refusal just leaves the page and Done in view.
-      if (!formShown) await command({ action: "completeLogin", ...target }).catch(() => {});
-    });
-  });
   get("end").addEventListener("click", async () => {
     const id = session.id;
     if (await confirmAction({ title: "Stop this browser?", message: `Takes control and closes only the selected account, ${session?.profileLabel || "this browser"}. Its cookies and browser data stay saved, but it will not restart automatically. Other accounts stay running. Closing the viewer does not end an account.`, confirmLabel: "Stop browser", destructive: true })) await operation(async () => {
@@ -924,6 +865,8 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
     for (const selector of [".browser-setup", ".browser-machines", "[data-testid='browser-profiles-details']", "[data-testid='browser-open-tab']"]) root.querySelector(selector)?.setAttribute("hidden", "");
   }
   updateLink(); controls();
+  if (loginMode) render();
+  get("login-retry").addEventListener("click", () => void refresh());
   if (!identity?.conversationId && !sessionId) {
     error("Open an existing conversation before starting its browser."); get("session-status").textContent = "No conversation selected.";
   } else void refresh();
