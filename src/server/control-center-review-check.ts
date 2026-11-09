@@ -30,10 +30,15 @@ import { projectsWithSharedNames } from "./projects.js";
 import { broadcastToAllClients } from "./realtime.js";
 import { markConversationDoneAsActor } from "./routes/projects.js";
 
-/** Long enough for a queued message or auto respond to start first, so Bob only judges a conversation nothing else is moving. */
-let checkDelayMs = 20_000;
+/**
+ * Bob looks soon after a turn ends, so the chat says what came of it at once. A queued message, auto respond and a running turn
+ * are seen when he looks (he leaves the conversation to them), so a few seconds are enough for them to start. One still
+ * settling is looked at again a while later.
+ */
+let firstCheckMs = 3_000;
+let busyRetryMs = 20_000;
 /** For tests that run a whole node. */
-export function setReviewCheckDelay(ms: number): void { checkDelayMs = ms; }
+export function setReviewCheckDelay(ms: number): void { firstCheckMs = ms; busyRetryMs = ms; }
 
 const pending = new Map<string, NodeJS.Timeout>();
 
@@ -166,7 +171,7 @@ function schedule(shared: SharedHarnessSession, turnAccountId: string | null, tu
       const owner = await ownerOf(shared, turnAccountId);
       if (owner && await check(shared, owner, turnEndedAt) === "busy" && attempt < BUSY_RETRIES) schedule(shared, turnAccountId, turnEndedAt, attempt + 1);
     })().catch((error) => console.warn("Bob's review check failed", error instanceof Error ? error.message : error));
-  }, checkDelayMs).unref());
+  }, attempt === 0 ? firstCheckMs : busyRetryMs).unref());
 }
 
 let started = false;
