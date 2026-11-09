@@ -73,9 +73,9 @@ function scopesForAccount(db:DatabaseSync,local:string,accountId:string,allowed:
    :db.prepare("SELECT DISTINCT project_id id FROM conversation_records WHERE engine||':'||session_id=?").all(row.scope_id) as unknown as Array<{id:string}>;
   const projectIds=projects.map(project=>project.id).filter(id=>allowed.includes(id));
   if(!projectIds.length)return [];
-  // A workspace mirrored from another node has a local-only id no recipient can map, so its projects travel individually.
+  // Mirrored workspaces belong to their source, even on twins. Other recipients map that source's workspace, not ours.
   const mirror=row.scope_type==='workspace'?db.prepare('SELECT owner_node_id FROM cluster_v2_shared_workspaces WHERE workspace_id=?').get(row.scope_id) as {owner_node_id:string}|undefined:undefined;
-  if(mirror&&mirror.owner_node_id!==local&&!isTrustedTwin(db,local,mirror.owner_node_id))return projectIds.map(id=>({type:'project' as const,id,projectIds:[id]}));
+  if(mirror&&mirror.owner_node_id!==local)return projectIds.map(id=>({type:'project' as const,id,projectIds:[id]}));
   return [{type:row.scope_type,id:row.scope_id,projectIds}];
  });
 }

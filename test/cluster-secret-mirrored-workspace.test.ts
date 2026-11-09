@@ -4,12 +4,49 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import {api,seedDevEnvironment,signIn,startDevNode,stopDevNode} from './dev-nodes.js';
+import {api,pairTwinNodes,seedDevEnvironment,signIn,startDevNode,stopDevNode} from './dev-nodes.js';
 
 async function eventually(check:()=>Promise<void>) {
  const until=Date.now()+30000;
  for(;;){try{await check();return;}catch(error){if(Date.now()>until)throw error;await new Promise(resolve=>setTimeout(resolve,250));}}
 }
+
+test('a twin workspace secret does not block a separately granted account from reaching a third node', {timeout:120000}, async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'secret-twin-workspace-'));
+ const children:Awaited<ReturnType<typeof startDevNode>>[]=[];
+ try{
+  const twins=await seedDevEnvironment(path.join(root,'twins'),2),third=await seedDevEnvironment(path.join(root,'third'),1);
+  const [owner,sharer]=twins.nodes,recipient=third.nodes[0];
+  children.push(await startDevNode(twins,owner),await startDevNode(twins,sharer),await startDevNode(third,recipient));
+  const so=await signIn(twins,owner),ss=await signIn(twins,sharer),sr=await signIn(third,recipient);
+  await pairTwinNodes(twins);
+  const cluster=await api<{snapshot:{body:{clusterId:string}}}>(owner,so,'POST','/clusters',{name:'Twin workspace credentials'});
+  const id=cluster.body.snapshot.body.clusterId;
+  for(const [node,session] of [[sharer,ss],[recipient,sr]] as const){
+   const invite=await api<{link:string}>(owner,so,'POST',`/clusters/${id}/invitations`,{expectedEpoch:1});
+   assert.equal((await api(node,session,'POST','/clusters/join',{link:invite.body.link,requestId:randomUUID()})).status,201);
+  }
+  const projects=await api<{projects:Array<{id:string;type:string}>}>(owner,so,'GET','/projects');
+  const project=projects.body.projects.find(p=>p.id===owner.projects[0].id)!;
+  assert.equal((await api(owner,so,'PUT',`/clusters/${id}/sharing`,{projectIds:[],workspaceIds:[project.type],confirmOwnedData:true})).status,200);
+  await eventually(async()=>{
+   const listed=await api<{projects:Array<{id:string;type:string}>}>(recipient,sr,'GET','/projects');
+   assert.ok(listed.body.projects.some(p=>p.id===project.id),'recipient has the owner workspace project');
+  });
+  const inherited=await api<{account:{id:string}}>(sharer,ss,'POST','/secrets/accounts',{label:'Twin workspace secret',provider:'custom',replicate:true,variables:[{name:'WORKSPACE_KEY',kind:'value',value:'synthetic-workspace'}]});
+  assert.equal(inherited.status,201);
+  assert.equal((await api(sharer,ss,'PUT',`/secrets/scopes/workspace/${project.type}`,{accountIds:[inherited.body.account.id]})).status,200);
+  const granted=await api<{account:{id:string}}>(sharer,ss,'POST','/secrets/accounts',{label:'Standalone Jev',provider:'typesafe',variables:[{name:'TYPESAFE_AI_API_KEY',kind:'value',value:'synthetic-jev'}]});
+  assert.equal(granted.status,201);
+  assert.equal((await api(sharer,ss,'PUT',`/secrets/accounts/${granted.body.account.id}/sharing`,{grants:[{clusterId:id,nodeId:recipient.nodeId}]})).status,200);
+  await eventually(async()=>{
+   const secrets=await api<{accounts:Array<{id:string;readOnly?:boolean}>}>(recipient,sr,'GET','/secrets');
+   assert.equal(secrets.body.accounts.find(a=>a.id===granted.body.account.id)?.readOnly,true,'workspace scope must not poison the separately granted account delivery');
+   const assigned=await api<{accountIds:string[]}>(recipient,sr,'GET',`/secrets/scopes/project/${project.id}`);
+   assert.ok(assigned.body.accountIds.includes(inherited.body.account.id),'twin workspace attachment arrives on its authorized project');
+  });
+ }finally{await Promise.all(children.map(stopDevNode));await rm(root,{recursive:true,force:true});}
+});
 
 test('a secret attached to a workspace mirrored from the recipient reaches the recipient', {timeout:90000}, async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'secret-mirrored-'));

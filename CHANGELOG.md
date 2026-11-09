@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- Fixed secrets shared with a third node not arriving when a workspace secret came from a twin node.
+
 ## 2.253.0 — 2026-11-09
 
 - Browser sign-in now appears as a card inside the conversation instead of taking over the screen. It shows the website and the current login step, sends your username and password straight to the browser without passing through chat, the agent, or logs, handles multi-step logins, and lets the agent continue once you finish. CAPTCHAs, passkeys and two-factor prompts still open the browser for you to complete.
