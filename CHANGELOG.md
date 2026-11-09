@@ -6,6 +6,15 @@ Every deployment is a version. The newest section must always match the
 ## Unreleased
 
 - Fixed secrets shared with a third node not arriving when a workspace secret came from a twin node.
+- Bob now looks at a finished conversation about 3 seconds after its turn ends instead of 20, so its verdict on whether it waits for you shows up sooner.
+
+## 2.253.2 — 2026-11-09
+
+- Releases go out again. The secure sign-in card is now drawn the way the rest of the app is, without parsing markup from text, which a release check requires; 2.253.0 and 2.253.1 were held back by it and ship with this version.
+
+## 2.253.1 — 2026-11-09
+
+- Bob's chat says what came of a conversation within a few seconds of its turn ending: Bob now checks it after about 3 seconds instead of 20, and the board moves its card under **Needs you** as soon as he finds it waits for you. When his decision model is unsure, his own agent still takes a little longer to decide.
 
 ## 2.253.0 — 2026-11-09
 
