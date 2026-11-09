@@ -47,7 +47,8 @@ export function telegramConnectionForUrlSecret(db: DatabaseSync, secret: string)
 }
 
 export function telegramBotIsBobs(db: DatabaseSync, botId: string): boolean {
-  return Boolean(db.prepare("SELECT 1 FROM control_center_telegram WHERE bot_id=?").get(botId));
+  return ['control_center_telegram', 'assistant_telegram', 'assistant_team_telegram'].some(table =>
+    Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) && Boolean(db.prepare(`SELECT 1 FROM ${table} WHERE bot_id=?`).get(botId)));
 }
 
 /** The two secrets Telegram is given when the webhook is set: one in the address, one it must send with every call. */

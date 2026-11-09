@@ -63,7 +63,8 @@ export function telegramConnection(db: DatabaseSync, assistantId: string): Teleg
 }
 export function telegramBotInUse(db: DatabaseSync, botId: string): boolean {
   ensureTelegramSchema(db);
-  return Boolean(db.prepare("SELECT 1 FROM assistant_telegram WHERE bot_id=?").get(botId));
+  return ['assistant_telegram', 'control_center_telegram', 'assistant_team_telegram'].some(table =>
+    Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) && Boolean(db.prepare(`SELECT 1 FROM ${table} WHERE bot_id=?`).get(botId)));
 }
 export function telegramConnectionForWebhook(db: DatabaseSync, webhookId: string): TelegramConnection | undefined {
   ensureTelegramSchema(db);
@@ -143,7 +144,7 @@ const FILE_FIELDS: Array<[TelegramFileKind, string, string]> = [
   ["document", "file", "application/octet-stream"], ["audio", "audio.mp3", "audio/mpeg"], ["voice", "voice.ogg", "audio/ogg"],
   ["video", "video.mp4", "video/mp4"], ["video_note", "video-note.mp4", "video/mp4"], ["animation", "animation.mp4", "video/mp4"],
 ];
-function messageFiles(message: Fields | undefined): TelegramFile[] {
+export function messageFiles(message: Fields | undefined): TelegramFile[] {
   if (!message) return [];
   // Telegram lists a photo's sizes from smallest to largest.
   const sizes = Array.isArray(message.photo) ? message.photo as unknown[] : [];
