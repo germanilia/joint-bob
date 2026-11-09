@@ -44,24 +44,17 @@ writeFileSync(stateFile, JSON.stringify(state));
   return { run: () => mirrorRelease({ sourceRepository: "source/app", targetRepository: "target/app", tag: "v1.2.3", sourceToken: "source-fixture", targetToken: "target-fixture" }), state: async () => JSON.parse(await readFile(stateFile, "utf8")) };
 }
 
-test("CI mirrors tested private releases using a separate credential, including repair runs", async () => {
+test("CI publishes only to the public releases feed, including repair runs", async () => {
   const workflow = parse(await readFile(".github/workflows/release.yml", "utf8"));
-  const steps = workflow.jobs.release.steps;
-  const publicStep = steps.find((s: any) => s.name === "Publish public release packages");
-  const legacyStep = steps.find((s: any) => s.name === "Mirror release for existing installations");
-  assert.ok(publicStep, "new installations need the public releases-only feed");
-  assert.ok(legacyStep, "existing installations need the same migration package");
-  assert.ok(steps.indexOf(publicStep) < steps.indexOf(legacyStep), "publish the new feed before offering the migration on the old feed");
-  assert.equal(publicStep.env.RELEASE_MIRROR_REPOSITORY, "germanilia/joint-bob-releases");
+  const mirrors = workflow.jobs.release.steps.filter((step: any) => step.env?.RELEASE_MIRROR_REPOSITORY);
+  assert.deepEqual(mirrors.map((step: any) => step.env.RELEASE_MIRROR_REPOSITORY), ["germanilia/joint-bob-releases"],
+    "new releases must not be published to the retired legacy feed");
+  const [publicStep] = mirrors;
   assert.equal(publicStep.env.RELEASE_MIRROR_TOKEN, "${{ secrets.PUBLIC_RELEASE_TOKEN }}");
-  assert.equal(legacyStep.env.RELEASE_MIRROR_REPOSITORY, "${{ vars.LEGACY_RELEASE_REPOSITORY }}");
-  assert.equal(legacyStep.env.RELEASE_MIRROR_TOKEN, "${{ secrets.LEGACY_RELEASE_TOKEN }}");
-  for (const step of [publicStep, legacyStep]) {
-    assert.equal(step.env.GH_TOKEN, "${{ github.token }}");
-    assert.match(step.if, /github.repository == 'germanilia\/joint-bob'/);
-    assert.ok(!step.if.includes("publish"), "a retry must finish a mirror even when the private release already exists");
-    assert.match(step.run, /node scripts\/mirror-release\.mjs/);
-  }
+  assert.equal(publicStep.env.GH_TOKEN, "${{ github.token }}");
+  assert.match(publicStep.if, /github.repository == 'germanilia\/joint-bob'/);
+  assert.ok(!publicStep.if.includes("publish"), "a retry must finish a mirror even when the private release already exists");
+  assert.match(publicStep.run, /node scripts\/mirror-release\.mjs/);
 });
 
 test("release mirroring uploads identical assets and creates no private source ref in the public repo", async (t) => {

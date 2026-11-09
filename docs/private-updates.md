@@ -9,16 +9,13 @@ the development repository and Git history remain private.
 ## Publishing
 
 After the full test suite, the private repository's Release workflow publishes
-its package, then copies the verified archive and checksum to:
+its package, then copies the verified archive and checksum only to
+`germanilia/joint-bob-releases`, using the `PUBLIC_RELEASE_TOKEN` Actions secret.
 
-1. `germanilia/joint-bob-releases`, using the `PUBLIC_RELEASE_TOKEN` Actions secret.
-2. `iliagerman/joint-bob`, while `LEGACY_RELEASE_REPOSITORY` names it, using the
-   separate `LEGACY_RELEASE_TOKEN` Actions secret.
-
-The new feed publishes first so that the bridge is available there before old
-installations migrate. Both mirrors receive exactly the same bytes. Retries
-verify existing assets and repair partial uploads; different bytes are rejected.
-Only CI holds publishing credentials. Public release tags point at each public
+Legacy publishing has ended. Existing migration releases on `iliagerman/joint-bob`
+remain available, but that repository receives no new packages. Retries verify
+existing assets and repair partial uploads; different bytes are rejected.
+Only CI holds publishing credentials. Public release tags point at the releases
 repository's own `main`; no private source refs are copied. The package's
 `.joint-bob-release` marker identifies its build commit.
 
@@ -57,7 +54,9 @@ commits; new private commits are installed from published packages instead.
 
 Do not make the old repository private until every intended installation has
 migrated or has a manual recovery path. Its migration release must remain publicly
-reachable for offline installations that have not returned yet. After migration,
-remove `LEGACY_RELEASE_REPOSITORY` and `LEGACY_RELEASE_TOKEN` from private CI, then
-change the old repository's visibility only with the owner's approval. The new
+reachable for offline installations that have not returned yet. Stopping new
+publications does not require those installations to have migrated: they can
+still install the retained bridge and then update from the new feed.
+`LEGACY_RELEASE_REPOSITORY` and `LEGACY_RELEASE_TOKEN` are no longer used by CI.
+Change the old repository's visibility only with the owner's approval. The new
 releases-only repository stays public permanently.
