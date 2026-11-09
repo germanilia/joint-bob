@@ -79,7 +79,7 @@ test("pruneOld deletes old notes and proposals only", () => {
     writeNote(root, { conversationId: "old", updatedAt: ago(31), problems: [], dismissed: [] });
     writeNote(root, { conversationId: "fresh", updatedAt: ago(29), problems: [], dismissed: [] });
     writeProposal(root, { id: "old", action: "add", subject: "a", text: "t", evidence: "", created: ago(31), source: "c" });
-    writeProposal(root, { id: "fresh", action: "add", subject: "a", text: "t", evidence: "", created: ago(29), source: "c" });
+    writeProposal(root, { id: "fresh", action: "add", subject: "a", text: "fresh rule", evidence: "", created: ago(29), source: "c" });
     assert.deepEqual(pruneOld(root, now), { notes: 1, proposals: 1 });
     assert.deepEqual(readNotes(root).map((note) => note.conversationId), ["fresh"]);
     assert.deepEqual(listProposals(root).map((proposal) => proposal.id), ["fresh"]);
@@ -95,6 +95,52 @@ test("notes and proposals round-trip, proposals newest first", () => {
     writeProposal(root, { id: "a", action: "add", subject: "db", text: "one", evidence: "", created: "2026-11-01T00:00:00.000Z", source: "c1" });
     writeProposal(root, { id: "b", action: "remove", subject: "db", text: "two", evidence: "", ruleId: "r-1", created: "2026-11-02T00:00:00.000Z", source: "cleanup" });
     assert.deepEqual(listProposals(root).map((proposal) => proposal.id), ["b", "a"]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("proposals are capped at five and deduplicated across conversations and history", () => {
+  const root = projectRoot();
+  const proposal = (id: string, text: string) => ({ id, action: "add" as const, subject: "db", text, evidence: "Repeated failures", created: new Date().toISOString(), source: id });
+  try {
+    writeProposal(root, proposal("first", "Use the tunnel."));
+    writeProposal(root, proposal("duplicate", " USE the tunnel! "));
+    assert.equal(listProposals(root).length, 1);
+    deleteProposal(root, "first");
+    writeProposal(root, proposal("again", "Use the tunnel"));
+    assert.equal(listProposals(root).length, 0);
+    writeNote(root, { conversationId: "old", updatedAt: "2020-01-01", problems: [], dismissed: ["use port 5433"] });
+    pruneOld(root, new Date());
+    writeProposal(root, proposal("dismissed", "Use port 5433."));
+    assert.equal(listProposals(root).length, 0);
+    addRule(root, { subject: "other", text: "Use staging", evidence: "" });
+    writeProposal(root, proposal("existing", "Use staging."));
+    assert.equal(listProposals(root).length, 0);
+    for (let i = 0; i < 8; i++) writeProposal(root, proposal(`p${i}`, `Distinct rule ${i}`));
+    assert.equal(listProposals(root).length, 5);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("legacy proposal backlogs show at most five unique suggestions", () => {
+  const root = projectRoot();
+  try {
+    const directory = path.join(knowledgeDirectory(root), "proposals");
+    mkdirSync(directory, { recursive: true });
+    for (let i = 0; i < 9; i++) writeFileSync(path.join(directory, `${i}.json`), JSON.stringify({ id: `${i}`, action: "add", subject: "db", text: `Rule ${Math.floor(i / 2)}`, created: "2026-11-01", source: "legacy" }));
+    assert.equal(listProposals(root).length, 5);
+    assert.equal(new Set(listProposals(root).map((proposal) => proposal.text)).size, 5);
+    deleteProposal(root, "0");
+    assert.ok(listProposals(root).every((proposal) => proposal.text !== "Rule 0"));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("dismissed cleanup proposals do not return on the next review", () => {
+  const root = projectRoot();
+  try {
+    const proposal = { id: "cleanup1", action: "remove" as const, subject: "db", text: "Old rule", ruleId: "r-old", evidence: "obsolete", created: new Date().toISOString(), source: "cleanup" };
+    writeProposal(root, proposal);
+    deleteProposal(root, proposal.id);
+    writeProposal(root, { ...proposal, id: "cleanup2", action: "merge" });
+    assert.deepEqual(listProposals(root), []);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

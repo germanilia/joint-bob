@@ -65,6 +65,16 @@ test("the prompt folds new messages into the current summary and keeps the panel
   assert.equal(parseDigestAnswer("  plain  "), "plain");
 });
 
+test("rule prompts use remaining capacity, reject generic advice and include proposal history", () => {
+  const knowledge: DigestKnowledge = { subjects: [], otherNotes: [], pending: ["a", "b", "c", "d"], previouslySuggested: ["Use the staging tunnel"], ownProblems: [] };
+  assert.match(digestPrompt(undefined, knowledge), /Write at most 1 rule lines/);
+  knowledge.pending.push("e");
+  const prompt = digestPrompt(undefined, knowledge);
+  assert.match(prompt, /Write at most 0 rule lines/);
+  assert.match(prompt, /Skip generic engineering advice/);
+  assert.match(prompt, /including paraphrases:\n- Use the staging tunnel/);
+});
+
 test("the writer records problems and proposes rules from repeats, and rejects unsafe subjects", () => {
   const knowledge: DigestKnowledge = {
     subjects: [{ slug: "database-access", description: "How agents reach databases", rules: ["Use the tunnel on 5433."] }],

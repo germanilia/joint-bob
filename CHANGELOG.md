@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- Limited rule suggestions to five pending at a time, skipped generic advice, and stopped repeating rules you had already seen or dismissed.
+
 ## 2.251.1 — 2026-11-09
 
 - **Push it on** shows once while its box is open, under the box; the duplicate button above it did nothing.

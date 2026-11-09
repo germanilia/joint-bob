@@ -9,7 +9,7 @@ import { resourceOwner } from "../ownership.js";
 import { relaySummaryPolicies } from "../relay/resource-policy.js";
 import { activeRoutingConfig, routingConfigDatabase } from "../routing-configs.js";
 import { type RoutingMapping } from "../routing-policy.js";
-import { type ConversationNote, type KnowledgeProblem, listProposals, normalizedRuleText, readNotes, readSubjects, writeNote, writeProposal } from "../project-knowledge.js";
+import { type ConversationNote, type KnowledgeProblem, listProposals, normalizedRuleText, proposalHistory, readNotes, readSubjects, writeNote, writeProposal } from "../project-knowledge.js";
 import { systemDecisionKey, withSystemAiProfile } from "../system-ai.js";
 import { systemAiSettings } from "../system-ai-config.js";
 import { getSettings } from "../settings.js";
@@ -123,6 +123,7 @@ function digestKnowledge(project: ProjectRecord, conversationId: string): Digest
       subjects: readSubjects(project.path).map((subject) => ({ slug: subject.slug, description: subject.description, rules: subject.rules.map((rule) => rule.text) })),
       otherNotes: notes.filter((note) => note.conversationId !== conversationId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map((note) => ({ conversationId: note.conversationId, problems: note.problems })),
       pending: listProposals(project.path).map((proposal) => proposal.text),
+      previouslySuggested: proposalHistory(project.path).map((proposal) => proposal.text),
       ownProblems: notes.find((note) => note.conversationId === conversationId)?.problems ?? [],
     };
   } catch (error) {

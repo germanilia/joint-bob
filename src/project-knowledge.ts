@@ -30,6 +30,25 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,59}$/;
 const FILE_ID = /^[A-Za-z0-9_-]{1,120}$/;
 const INDEX = "INDEX.md";
 const LOG = "CLEANUP-LOG.md";
+export const MAX_PENDING_PROPOSALS = 5;
+
+type ProposalHistory = Pick<KnowledgeProposal, "action" | "text" | "ruleId">;
+
+export function proposalHistory(root: string): ProposalHistory[] {
+  const file = path.join(knowledgeDirectory(root), "proposal-history.json");
+  const archived = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) as ProposalHistory[] : [];
+  return [...archived, ...readNotes(root).flatMap((note) => note.dismissed.map((text) => ({ action: "add" as const, text })))];
+}
+
+function proposalKey(proposal: ProposalHistory): string {
+  return `${proposal.action === "add" ? "add" : "cleanup"}:${proposal.ruleId ?? ""}:${normalizedRuleText(proposal.text)}`;
+}
+
+function rememberProposals(root: string, proposals: ProposalHistory[]): void {
+  const history = new Map(proposalHistory(root).map((proposal) => [proposalKey(proposal), proposal]));
+  for (const proposal of proposals) history.set(proposalKey(proposal), { action: proposal.action, text: proposal.text, ...(proposal.ruleId ? { ruleId: proposal.ruleId } : {}) });
+  writeTextAtomically(path.join(knowledgeDirectory(root), "proposal-history.json"), `${JSON.stringify([...history.values()], null, 2)}\n`);
+}
 const DAY_MS = 24 * 3_600_000;
 const newRuleId = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", 8);
 
@@ -175,6 +194,11 @@ export function readNotes(root: string): ConversationNote[] {
 }
 
 export function writeProposal(root: string, proposal: KnowledgeProposal): void {
+  const pending = readAllProposals(root);
+  if (pending.length >= MAX_PENDING_PROPOSALS) return;
+  const key = proposalKey(proposal);
+  if ([...pending, ...proposalHistory(root)].some((previous) => proposalKey(previous) === key)) return;
+  if (proposal.action === "add" && readSubjects(root).some((subject) => subject.rules.some((rule) => normalizedRuleText(rule.text) === normalizedRuleText(proposal.text)))) return;
   writeTextAtomically(proposalPath(root, proposal.id), `${JSON.stringify(proposal, null, 2)}\n`);
 }
 
@@ -190,6 +214,16 @@ export function readProposal(root: string, id: string): KnowledgeProposal | null
 }
 
 export function listProposals(root: string): KnowledgeProposal[] {
+  const seen = new Set(proposalHistory(root).map(proposalKey));
+  return readAllProposals(root).filter((proposal) => {
+    const key = proposalKey(proposal);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, MAX_PENDING_PROPOSALS);
+}
+
+function readAllProposals(root: string): KnowledgeProposal[] {
   const directory = path.join(knowledgeDirectory(root), "proposals");
   return jsonFiles(directory)
     .map((name) => validProposal(readJson<Partial<KnowledgeProposal>>(path.join(directory, name))))
@@ -200,6 +234,8 @@ export function listProposals(root: string): KnowledgeProposal[] {
 export function deleteProposal(root: string, id: string): boolean {
   const file = proposalPath(root, id);
   if (!existsSync(file)) return false;
+  const proposal = readProposal(root, id);
+  if (proposal) rememberProposals(root, [proposal]);
   rmSync(file, { force: true });
   return true;
 }
@@ -217,7 +253,7 @@ export function pruneOld(root: string, now: Date, maxAgeDays = 30): { notes: num
   const old = (stamp: string) => Date.parse(stamp) < cutoff;
   let notes = 0;
   let proposals = 0;
-  for (const note of readNotes(root)) if (old(note.updatedAt)) { rmSync(notePath(root, note.conversationId), { force: true }); notes += 1; }
-  for (const proposal of listProposals(root)) if (old(proposal.created)) { deleteProposal(root, proposal.id); proposals += 1; }
+  for (const note of readNotes(root)) if (old(note.updatedAt)) { if (note.dismissed.length) rememberProposals(root, []); rmSync(notePath(root, note.conversationId), { force: true }); notes += 1; }
+  for (const proposal of readAllProposals(root)) if (old(proposal.created)) { deleteProposal(root, proposal.id); proposals += 1; }
   return { notes, proposals };
 }
