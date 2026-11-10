@@ -73,6 +73,7 @@ import "./server/routes/quality-analytics.js";
 import "./server/routes/system-ai.js";
 import { startQualityCollection } from "./server/quality-service.js";
 import "./server/routes/secrets.js";
+import "./server/routes/ec2-nodes.js";
 import "./server/routes/browser.js";
 import "./server/routes/background-tasks.js";
 import "./server/routes/projects.js";

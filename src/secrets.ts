@@ -190,6 +190,19 @@ export function secretAccountVariable(accountIds: string[], name: string): strin
   return undefined;
 }
 
+/** The credentials of one AWS account, for node-side tooling that acts for the person who picked it. Returns only the
+    AWS variables, never another account's, and refuses an account this person may not see. */
+export function awsAccountCredentials(accountId: string): { AWS_ACCESS_KEY_ID: string; AWS_SECRET_ACCESS_KEY: string; AWS_SESSION_TOKEN?: string } {
+  const row = visibleAccountRow(accountId);
+  if (row.provider !== "aws" || row.website_origin) throw new Error("Choose an AWS secret account");
+  const variables = new Map(storedVariables(row).filter((variable) => variable.kind === "value").map((variable) => [variable.name, variable.value]));
+  const accessKey = variables.get("AWS_ACCESS_KEY_ID");
+  const secretKey = variables.get("AWS_SECRET_ACCESS_KEY");
+  if (!accessKey || !secretKey) throw new Error("This AWS account has no access key pair");
+  const token = variables.get("AWS_SESSION_TOKEN");
+  return { AWS_ACCESS_KEY_ID: accessKey, AWS_SECRET_ACCESS_KEY: secretKey, ...(token ? { AWS_SESSION_TOKEN: token } : {}) };
+}
+
 /** System decisions use an explicit admin-owned account, not a project's agent environment. */
 function systemAccountAllowed(row: AccountRow): boolean {
   if (row.website_origin || row.project_id || !ownedByAdmin("secret", row.id, db())) return false;

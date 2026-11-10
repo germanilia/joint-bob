@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.256.3 — 2026-11-10
+
+- The new-conversation dialog can launch an EC2 node. On the "Choose where it runs" step, tick one AWS secret account, enter a region, instance type and, so you can get in, an existing key pair and security group, and choose **Launch EC2 node**. Joint Bob runs the AWS CLI with only that account's keys and starts an Ubuntu machine that installs Joint Bob on first boot. Joint Bob opens no inbound port itself. You still sign in to the new node, create its administrator and pair it. AgentCore is not supported yet.
+
 ## 2.256.2 — 2026-11-10
 
 - Fixed opening a Pi conversation saved on a model this machine has no sign-in for. On a subscription pool it now opens on its saved model, and the pool sets the model for each turn, instead of failing with *No API key for…* and retrying forever.

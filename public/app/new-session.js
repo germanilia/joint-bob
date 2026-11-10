@@ -84,6 +84,27 @@ elements.newSessionSecretAddButton.addEventListener("click", () => {
   openNewSecretAccount((account) => renderNewSessionSecrets([...ticked, account.id]));
 });
 
+// The ticked AWS account pays for and launches the machine; nothing is stored beyond the instance in the person's own AWS account.
+elements.newSessionEc2Button.addEventListener("click", async () => {
+  const awsIds = checkedNewSessionSecretIds().filter((id) => secretAccounts.find((account) => account.id === id)?.provider === "aws");
+  if (awsIds.length !== 1) { toast("Tick exactly one AWS secret account above"); return; }
+  const status = elements.newSessionEc2Status;
+  elements.newSessionEc2Button.disabled = true;
+  status.textContent = "Launching...";
+  try {
+    const node = await api("/api/ec2-nodes", { method: "POST", body: JSON.stringify({
+      accountId: awsIds[0], region: elements.newSessionEc2Region.value.trim(), instanceType: elements.newSessionEc2Type.value.trim(),
+      keyName: elements.newSessionEc2Key.value.trim() || undefined, securityGroupId: elements.newSessionEc2Group.value.trim() || undefined,
+    }) });
+    status.textContent = `Launched ${node.instanceId} (${node.state}). Joint Bob installs in a few minutes; then sign in to it, create its administrator and pair it with this cluster.`;
+  } catch (error) {
+    status.textContent = "";
+    toast.error(error.message);
+  } finally {
+    elements.newSessionEc2Button.disabled = false;
+  }
+});
+
 /** The dialog is a three-step wizard so a conversation is set up one decision at a
     time, and every step is reachable from the keyboard alone: Enter walks forward,
     Cmd/Ctrl+Enter starts straight away with whatever has been chosen so far. */
