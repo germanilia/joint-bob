@@ -3,9 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.256.0 — 2026-11-10
 
-- Team assistants can now use MCP servers, browser profiles and plugins that the host account shares with the team, chosen per role. Each one is limited to what the host shares, and revoking a share cuts off access on the next call.
+- Team assistants gained access to the MCP servers and plugins that the host account shares with the team, and each role picks which ones it uses. Revoking a share cuts access off on the next call, and a plugin with Claude-only parts is refused rather than half-loaded.
+- Added team browser profiles, which a person signs in to by taking over the browser. Nothing is copied from the host account, and team browsers never receive website credentials.
 
 ## 2.255.0 — 2026-11-10
 
