@@ -16,7 +16,7 @@ import { declareTwinLost, receiveSuccession, successionNoticeSchema } from "../s
 import { peerEndpoint, recordPeerEndpoint } from "../../cluster-peer-endpoints.js";
 import { disconnectRevokedRuntimeSockets } from '../runtime-peers.js';
 import { receiveScopedCredentials } from "../scoped-credentials.js";
-import { acceptOwnerTranscript, forkConflictedTranscript, sharedTranscriptFile, sharedTranscriptInventory, transcriptQuery } from "../shared-transcripts.js";
+import { acceptOwnerTranscript, forkConflictedTranscript, sharedTranscriptFile, sharedTranscriptInventory, sharedTranscriptsChanged, transcriptQuery } from "../shared-transcripts.js";
 import { receiveFileEnrollment } from "../sharing-files.js";
 import { isTrustedTwin } from "../../cluster-sharing-policy.js";
 import { receiveSecretCredentialEvents, type SecretCredentialEvent } from "../../secret-replication.js";
@@ -56,6 +56,9 @@ app.get("/api/cluster/v2/transcripts",handler(async(request,response)=>{
   const query=transcriptQuery.parse(request.query);
   const only=query.engine&&query.sessionId?{engine:query.engine,sessionId:query.sessionId}:undefined;
   response.json({entries:await sharedTranscriptInventory(machineOnly(response),query.projectId,only)});
+}));
+app.post("/api/cluster/v2/transcripts/changed",handler(async(request,response)=>{
+  await sharedTranscriptsChanged(machineOnly(response),request.body);response.json({ok:true});
 }));
 app.get("/api/cluster/v2/transcripts/file",handler(async(request,response)=>{
   const query=transcriptQuery.required().parse(request.query);

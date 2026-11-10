@@ -24,10 +24,10 @@ import type { ProjectRecord } from "../types.js";
 import { listTasks } from '../tasks.js';
 import { getConversationOwnership, type ConversationOwnership } from "../conversation-ownership.js";
 import { deletedConversationKeys, ensureConversationRecord, ensureConversationRecordSchema } from "../conversation-records.js";
-import { presentReplicationPeers, replicationPeers } from "./replication-v2.js";
+import { presentReplicationPeers, replicationPeers, signedPeerPost } from "./replication-v2.js";
 import { mayShareProject, sharedProjectIds } from "./sharing-files.js";
 import { fetchPeer, isPeerUnreachable, PeerUnreachableError, whilePeerOptional } from "./peer-availability.js";
-import { projectListingRevision } from "../session-listing-revisions.js";
+import { onSessionListingChange, projectListingRevision } from "../session-listing-revisions.js";
 
 export const transcriptQuery=z.object({projectId:z.string().min(1).max(300),engine:z.string().min(1).max(80).optional(),sessionId:z.string().min(1).max(300).optional()}).strict();
 const entrySchema=z.object({engine:z.string().min(1).max(80),sessionId:z.string().min(1).max(300),relativePath:z.string().min(1).max(4096),size:z.number().int().min(0).max(1024*1024*1024),hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
@@ -498,16 +498,56 @@ async function acceptOwnerTranscriptNow(db:DatabaseSync,peerId:string,projectId:
 /** Each inventory makes the peer build that project's full conversation catalog, and the
     administration flush runs every 2 s: pulling on every flush kept a large project's
     catalog rebuilding nonstop on the peer, starving everything else it served. */
+/** The least time between two pulls of one project from one peer, however often it says it changed. */
 const PULL_INTERVAL_MS=30_000;
+/** A project whose owner announced nothing is still pulled this often: an owner on an older release
+    sends no notice, and a file watcher can miss a change. Every project used to be pulled from every
+    peer every 30 seconds, changed or not; one pass took 7 s at the median and over a minute at worst. */
+const UNCHANGED_PULL_INTERVAL_MS=10*60_000;
+/** Peer and project pairs whose owner said its conversations changed since the last pull. */
+const changed=new Set<string>();
+const changedSchema=z.union([z.object({projectIds:z.array(z.string().min(1).max(300)).min(1).max(1000)}).strict(),z.object({all:z.literal(true)}).strict()]);
+/** A peer says conversations of these projects changed on it: they are pulled on the next pass. */
+export async function sharedTranscriptsChanged(peer:string,input:unknown):Promise<void>{
+ const body=changedSchema.parse(input),db=await clusterV2Database(),local=await getClusterNode();
+ const shared=sharedProjectIds(db,local.id,peer);
+ for(const id of 'all' in body?shared:body.projectIds.filter(id=>shared.includes(id)))changed.add(`${peer}\n${id}`);
+}
+/** How long changes of one project collect before its peers are told (a running conversation changes constantly). */
+const NOTICE_DELAY_MS=5_000;
+const notices=new Map<string,NodeJS.Timeout>();
+let announcing=false;
+/** Tells the peers a project is shared with that its conversations changed, so they need not ask on a timer. */
+function announceTranscriptChanges():void{
+ if(announcing)return;
+ announcing=true;
+ onSessionListingChange(projectId=>{
+  const key=projectId??'';
+  if(notices.has(key))return;
+  const timer=setTimeout(()=>{notices.delete(key);void sendTranscriptNotice(projectId).catch(error=>console.warn('Conversation change notice failed',error));},NOTICE_DELAY_MS);
+  timer.unref();notices.set(key,timer);
+ });
+}
+async function sendTranscriptNotice(projectId:string|undefined):Promise<void>{
+ const db=await clusterV2Database(),local=await getClusterNode();
+ await Promise.all(presentReplicationPeers(db,local.id).map(async peer=>{
+  if(projectId&&!sharedProjectIds(db,local.id,peer.nodeId).includes(projectId))return;
+  // A peer on an older release has no such route; it keeps asking on its own timer.
+  await signedPeerPost(peer,'/api/cluster/v2/transcripts/changed',projectId?{projectIds:[projectId]}:{all:true}).catch(()=>undefined);
+ }));
+}
 const pulledAt=new Map<string,number>();
 export function resetSharedTranscriptPulls():void{pulledAt.clear();}
 async function runSharedTranscripts():Promise<void>{
  const db=await clusterV2Database(),local=await getClusterNode();ensureSchema(db);
+ announceTranscriptChanges();
  const eligible=async(peer:string,id:string)=>mayShareProject(db,local.id,peer,id)&&Boolean(await getProject(id));
  for(const peer of presentReplicationPeers(db,local.id))for(const projectId of sharedProjectIds(db,local.id,peer.nodeId)){const key=`${peer.nodeId}\n${projectId}`;try{
+  // Decided before the project is read: this runs for every peer and project every two seconds.
+  const age=Date.now()-(pulledAt.get(key)??0);
+  if(age<PULL_INTERVAL_MS||(!changed.has(key)&&age<UNCHANGED_PULL_INTERVAL_MS))continue;
   if(!await getProject(projectId))continue;
-  if(Date.now()-(pulledAt.get(key)??0)<PULL_INTERVAL_MS)continue;
-  pulledAt.set(key,Date.now());
+  pulledAt.set(key,Date.now());changed.delete(key);
   const target='/api/cluster/v2/transcripts?'+new URLSearchParams({projectId});
   // A peer known to be down is skipped until its next probe instead of waited on.
   const payload=inventorySchema.parse(await(await whilePeerOptional(()=>peerGet(peer,target))).json());
