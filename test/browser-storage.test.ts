@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { appSource } from "./source.js";
 
-test("browser storage is limited to legacy migration and request-scoped sign-in dismissal", async () => {
+test("browser storage is limited to legacy migration and request-scoped sign-in notice state", async () => {
   const source = await appSource();
   const dismissalStart = source.indexOf("function isDismissed(key)");
   const dismissalEnd = source.indexOf("let popup =", dismissalStart);
@@ -12,7 +12,10 @@ test("browser storage is limited to legacy migration and request-scoped sign-in 
   assert.match(source, /const DISMISSAL_PREFIX = "joint-bob\.browser-login-dismissed:"/);
   assert.match(dismissal, /localStorage\.getItem\(DISMISSAL_PREFIX \+ key\) === "1"/);
   assert.match(dismissal, /localStorage\.setItem\(DISMISSAL_PREFIX \+ key, "1"\)/);
-  assert.equal((dismissal.match(/\.(?:getItem|setItem|removeItem)\(/g) || []).length, 2);
+  assert.match(source, /const ANNOUNCEMENT_PREFIX = "joint-bob\.browser-login-announced:"/);
+  assert.match(dismissal, /localStorage\.getItem\(ANNOUNCEMENT_PREFIX \+ key\) === "1"/);
+  assert.match(dismissal, /localStorage\.setItem\(ANNOUNCEMENT_PREFIX \+ key, "1"\)/);
+  assert.equal((dismissal.match(/\.(?:getItem|setItem|removeItem)\(/g) || []).length, 4);
   assert.match(source, /const requestKey = session => `\$\{session\.nodeId\}:\$\{session\.id\}:\$\{session\.loginRequest\.id\}`/);
   const app = source.slice(0, dismissalStart) + source.slice(dismissalEnd);
   const migrationStart = app.indexOf("async function migrateLegacyPreferences");
@@ -31,7 +34,7 @@ test("browser storage is limited to legacy migration and request-scoped sign-in 
     // Per-browser display preferences: the activity pane's width and the appearance (theme and text sizes).
     const nearby = app.slice(Math.max(0, match.index! - 120), match.index! + 120);
     const displayPreference = nearby.includes("WIDTH_STORAGE_KEY") || nearby.includes("APPEARANCE_STORAGE_KEY");
-    assert.ok(inMigration || inDismissal || displayPreference, "Web Storage access must be limited to migration, sign-in dismissal, activity width or appearance");
+    assert.ok(inMigration || inDismissal || displayPreference, "Web Storage access must be limited to migration, sign-in notice state, activity width or appearance");
   }
   assert.doesNotMatch(migration, /(?:credential|password|token)/i);
   assert.match(migration, /\["1", "true", "0", "false"\]\.includes\(legacy\.piWebNotifications\)/);

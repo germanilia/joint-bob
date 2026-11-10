@@ -7,7 +7,8 @@ import { state } from "./state.js";
 
 const dismissed = new Set(), announced = new Set();
 const DISMISSAL_PREFIX = "joint-bob.browser-login-dismissed:";
-// Only notification dismissal is saved, never login completion or browser control.
+const ANNOUNCEMENT_PREFIX = "joint-bob.browser-login-announced:";
+// Only notice state is saved, never login completion or browser control.
 // Request IDs keep a later sign-in visible, even for the same profile and session.
 function isDismissed(key) {
   if (dismissed.has(key)) return true;
@@ -18,6 +19,16 @@ function dismissRequest(key) {
   dismissed.add(key);
   try { localStorage.setItem(DISMISSAL_PREFIX + key, "1"); }
   catch { /* Storage may be unavailable; still dismiss for this page. */ }
+}
+function isAnnounced(key) {
+  if (announced.has(key)) return true;
+  try { return localStorage.getItem(ANNOUNCEMENT_PREFIX + key) === "1"; }
+  catch { return false; }
+}
+function markAnnounced(key) {
+  announced.add(key);
+  try { localStorage.setItem(ANNOUNCEMENT_PREFIX + key, "1"); }
+  catch { /* Storage may be unavailable; still announce only once for this page. */ }
 }
 let popup = null, discovering = false, discoveryOutage = false, timer = null;
 // Every open page asked for the browser list every two seconds, and each answer asks every
@@ -143,8 +154,8 @@ async function discover() {
     // Another conversation's sign-in stays there; announce it once instead of taking over this screen.
     for (const row of pending) {
       const key = requestKey(row);
-      if (announced.has(key)) continue;
-      announced.add(key);
+      if (isAnnounced(key)) continue;
+      markAnnounced(key);
       toast(`Sign-in needed for ${row.profileLabel || "the browser"} in project ${row.projectId}, conversation ${row.conversationId}. Open that conversation’s Browser panel to continue.`, 8000);
     }
   } catch {

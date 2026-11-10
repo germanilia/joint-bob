@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- Browser sign-in notices no longer repeat after each page reload. New requests still notify, and pending sign-ins remain available in their own conversations.
+
 ## 2.259.0 — 2026-11-10
 
 - Syncthing is no longer part of Joint Bob. Every project shared with another machine is copied by Joint Bob's own file sync; there is no engine to choose, nothing to move between, and nothing extra to install. The Syncthing settings, the "Move to built-in sync" controls and the installer step are gone.
