@@ -24,6 +24,11 @@ if (!decisionAddress || typeof decisionAddress === "string") throw new Error("Co
 process.env.JOINT_BOB_TYPESAFE_ENDPOINT = `http://127.0.0.1:${decisionAddress.port}/v1/systemone`;
 decisionStub.unref();
 
+// Nodes under test keep the waiting period and the automatic move back, which the suites for moving a project between
+// Syncthing and built-in sync exercise; production finishes the move at once (file-sync/index.ts, `complete`), and
+// file-sync-migration.test.ts covers that path.
+process.env.JOINT_BOB_FILE_SYNC_COMPLETE ??= "0";
+
 // V8 bytecode cache shared by every test process and the nodes they spawn; it only skips recompiling unchanged modules.
 process.env.NODE_COMPILE_CACHE ??= path.join(os.tmpdir(), "joint-bob-test-compile-cache");
 enableCompileCache(process.env.NODE_COMPILE_CACHE);

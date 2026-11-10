@@ -207,6 +207,12 @@ export interface MigrationDeps {
   autoSwitch?: () => AutoSwitchConfig;
   /** Least time between two full checks of one project's automatic move (they ask every peer). */
   autoCheckGapMs?: number;
+  /**
+   * The move away from Syncthing is being finished (decided 2026-11-10): the owner moves every project it
+   * still has on Syncthing as soon as the move is safe, instead of after its files matched for cleanHours.
+   * See forcedChecks for what no longer holds a move back. Off when absent.
+   */
+  complete?: () => boolean;
   /** A line for the server log (a move the owner made by itself). */
   info?: (message: string) => void;
   /** One audit record per move (audit.ts in production). */
@@ -624,7 +630,9 @@ export class Migration {
           this.messages.set(projectId, "File sync is being turned off: this project goes back to Syncthing first");
           return;
         }
-        const problem = this.peerProblem(projectId);
+        // While the move away from Syncthing is being finished, nothing goes back to it: a machine that cannot
+        // take the files yet (an older Joint Bob) gets them once it updates, and the project's status says so.
+        const problem = this.deps.complete?.() ? undefined : this.peerProblem(projectId);
         if (problem) {
           if (this.ownerOf(projectId) === this.local) { await this.autoRollback(projectId, problem); continue; }
           // Only the owner may move it back; until it does, this node holds where it is and says why.
@@ -996,7 +1004,7 @@ export class Migration {
   ownerOf(projectId: string): string { return projectOwnerNode(this.db, projectId) ?? this.local; }
 
   /** Live checks for moving the project to `target` (default: the other engine). */
-  async checks(projectId: string, target?: EngineMode): Promise<ChecksAnswer> {
+  async checks(projectId: string, target?: EngineMode, forced = false): Promise<ChecksAnswer> {
     const engine = target ?? (engineModeOf(this.db, projectId) === "builtin" ? "syncthing" : "builtin");
     const statuses = this.deps.engine.statuses(projectId);
     const cleanSince = projectCleanSince(statuses);
@@ -1023,14 +1031,39 @@ export class Migration {
         : { key: "reachable", ok: true, message: "Every machine answered" });
       return { engine, checks, cleanSince };
     }
-    checks.push(this.capableCheck(answers));
+    // A machine that is away follows the record when it is back, as it does for a move back.
+    checks.push(this.capableCheck(forced ? answers.filter((answer) => answer.shares) : answers));
     checks.push(this.rulesCheck(answers, statuses));
     checks.push(this.differencesCheck(peers, statuses));
     checks.push(this.caughtUpCheck(answers, statuses));
     checks.push(...await this.syncthingChecks(projectId, peers, answers));
+    if (forced) this.forcedChecks(checks);
     const busy = await (this.deps.activity ?? defaultActivity)(projectId).catch((error) => `Could not check for running tasks: ${messageOf(error)}`);
     checks.push(busy ? { key: "activity", ok: false, message: busy } : { key: "activity", ok: true, message: "No task or merge is running in this project" });
     return { engine, checks, cleanSince };
+  }
+
+  /**
+   * Finishing the move away from Syncthing: what only says the two engines have not agreed yet no longer
+   * holds a project back. Files that differ, changes a machine has not seen, and a Syncthing that is still
+   * copying or reports a folder problem are settled by the switch itself: it copies what one side lacks,
+   * keeps both versions of a file that differs, and never reads a missing file as a delete (design §7.3).
+   * What stays a refusal: not the owner, file sync off or starting, a machine whose Joint Bob cannot take
+   * part, different ignore rules, a folder not read yet, a Syncthing folder that is not Joint Bob's over the
+   * project, a Syncthing that does not answer (it has to let go of the folders), a running task or merge.
+   */
+  private forcedChecks(checks: Check[]): void {
+    const waived = (check: Check): boolean => {
+      if (check.ok) return false;
+      if (check.key === "caughtUp") return true;
+      if (check.key === "differences") return !check.message.startsWith("File sync is not checking all");
+      // Of the Syncthing checks, only its answering at all still counts (those two carry `waiting` about an address or an answer).
+      if (check.key === "syncthing") return !check.message.startsWith("Syncthing did not answer") && check.message !== SYNCTHING_UNREACHABLE && check.message !== "This project's folder is not known on this machine";
+      return false;
+    };
+    for (const [index, check] of checks.entries()) {
+      if (waived(check)) checks[index] = { key: check.key, ok: true, message: `${check.message}; built-in sync settles this after the move` };
+    }
   }
 
   /**
@@ -1039,18 +1072,21 @@ export class Migration {
    * a person's move to built-in sync lifts that; `auto` is the owner's own move, which goes only
    * while nothing holds it back.
    */
-  async switchEngine(projectId: string, target: EngineMode, options: { by?: string; actorId?: string; auto?: boolean } = {}): Promise<FileSyncProject> {
+  async switchEngine(projectId: string, target: EngineMode, options: { by?: string; actorId?: string; auto?: boolean; forced?: boolean } = {}): Promise<FileSyncProject> {
     const previous = this.switching.get(projectId) ?? Promise.resolve();
     const run = previous.catch(() => undefined).then(async () => {
       // A person's move just before (the chain runs it first) wins over the automatic one.
       const due = options.auto ? this.autoLocal(projectId) : undefined;
-      if (options.auto && due?.state !== "due") return this.project(projectId);
-      const answer = await this.checks(projectId, target);
+      if (options.auto && (options.forced ? !due : due?.state !== "due")) return this.project(projectId);
+      const answer = await this.checks(projectId, target, Boolean(options.forced));
       if (answer.checks.some((check) => !check.ok)) throw new EngineSwitchRefused(answer.checks);
       // Moving back again re-announces (a peer that missed the first word still on built-in sync hears it now).
       if (engineModeOf(this.db, projectId) !== target || (target === "syncthing" && engineRecordOf(this.db, projectId))) {
         this.record(projectId, target);
-        if (options.auto) {
+        if (options.forced) {
+          (this.deps.info ?? console.log)(`File sync moved ${this.name(projectId)} to built-in sync to finish the move away from Syncthing`);
+          this.deps.metric?.("fileSync.autoSwitch", 0, { peers: projectPeers(this.db, this.local, projectId).length, forced: 1 });
+        } else if (options.auto) {
           const cleanSince = due?.cleanSince ?? answer.cleanSince;
           const matched = cleanSince ? this.clock.now() - Date.parse(cleanSince) : 0;
           (this.deps.info ?? console.log)(`File sync moved ${this.name(projectId)} to built-in sync by itself: every check passed and its files matched on every machine for ${span(matched)}`);
@@ -1058,6 +1094,8 @@ export class Migration {
         } else this.log(`fileSync:switch:${projectId}`, `File sync moves ${this.name(projectId)} to ${target === "builtin" ? "built-in sync" : "Syncthing"}`);
         this.auditMove(projectId, target, { automatic: Boolean(options.auto), ...(options.auto ? {} : { actorId: options.actorId ?? null }) });
       }
+      // A project held on Syncthing by hand moves too; the hold would otherwise outlive the move.
+      if (options.forced) updateProjectHold(this.db, projectId, { stayOnSyncthing: null, cleanAfter: null });
       if (!options.auto) {
         updateProjectHold(this.db, projectId, target === "syncthing"
           ? { stayOnSyncthing: { by: options.by ?? "an admin", at: new Date(this.clock.now()).toISOString() } }
@@ -1186,6 +1224,7 @@ export class Migration {
       this.explained.delete(projectId);
       return;
     }
+    if (this.deps.complete?.()) { await this.autoMove(projectId, local, true); return; }
     if (local.compare) this.askCompare(projectId, local.compare);
     if (local.differing) { await this.autoDiffering(projectId, local); return; }
     this.unexplained.delete(projectId);
@@ -1197,6 +1236,11 @@ export class Migration {
       if (local.at !== undefined) this.armAuto(projectId, local.at); else this.clearAutoTimer(projectId);
       return;
     }
+    await this.autoMove(projectId, local, false);
+  }
+
+  /** The owner's own move, once it is due or (forced) as soon as its checks pass. */
+  private async autoMove(projectId: string, local: AutoDecision, forced: boolean): Promise<void> {
     // A full check asks every peer: one that failed a moment ago is not repeated on every report, but once after the gap.
     const checked = this.autoChecked.get(projectId);
     // fix: a check that keeps failing for a lasting reason waits twice as long each time (up to AUTO_CHECK_GAP_MAX_MS).
@@ -1204,7 +1248,7 @@ export class Migration {
     if (checked && this.clock.now() < checked.at + gap) { this.armAuto(projectId, checked.at + gap); return; }
     this.clearAutoTimer(projectId);
     try {
-      await this.switchEngine(projectId, "builtin", { auto: true });
+      await this.switchEngine(projectId, "builtin", { auto: true, forced });
       this.autoChecked.delete(projectId);
     } catch (error) {
       if (!(error instanceof EngineSwitchRefused)) throw error;
@@ -1504,7 +1548,8 @@ export class Migration {
       const local = this.autoLocal(projectId);
       if (!local) return null;
       // Due, and a full check failed a moment ago: that check's reason until something changes.
-      const checked = local.state === "due" ? this.autoChecked.get(projectId) : undefined;
+      // While the move away from Syncthing is being finished, the check is all that can hold a project back.
+      const checked = local.state === "due" || this.deps.complete?.() ? this.autoChecked.get(projectId) : undefined;
       const shown = checked ? { ...local, state: "blocked" as const, reason: checked.reason } : local;
       return { state: shown.state, reason: shown.reason, cleanSince: shown.cleanSince, cleanHours: shown.cleanHours, decidedBy: null };
     }
@@ -1655,7 +1700,7 @@ export class Migration {
       subscribed.add(peer);
       this.subscribers.set(body.projectId, subscribed);
       const local = this.autoLocal(body.projectId);
-      const decision = local?.state === "due" ? this.autoStates.get(body.projectId) : local;
+      const decision = local?.state === "due" || (local && this.deps.complete?.()) ? this.autoStates.get(body.projectId) : local;
       if (decision && decision.state !== "due") answer.auto = this.wireOf(decision);
     }
     if (!body.blockers || peer !== owner) return answer;

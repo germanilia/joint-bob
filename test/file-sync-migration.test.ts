@@ -1057,6 +1057,64 @@ test("the owner moves a project by itself once its files matched for cleanHours 
   } finally { await f.cleanup(); }
 });
 
+test("finishing the move away from Syncthing: the owner moves a project at once, whatever the two engines have not settled yet", async () => {
+  const moves: Array<{ name: string; set: (f: Fixture) => void }> = [
+    { name: "files matched for a minute only", set: () => undefined },
+    { name: "files differ", set: (f) => { f.engine.tweak.tickets = { peers: [{ ...status("tickets", "syncthing").peers[0], differences: 3, cleanSince: null }] }; } },
+    { name: "Syncthing still copying", set: (f) => { f.syncthing.states[projectTicketSyncFolderId(PROJECT)] = "syncing"; } },
+    { name: "a Syncthing folder in error", set: (f) => { f.syncthing.states[projectTicketSyncFolderId(PROJECT)] = "error"; } },
+    { name: "Syncthing not done copying to the peer", set: (f) => { f.syncthing.peerCaughtUpAnswer = false; } },
+    { name: "a peer that is away", set: (f) => { f.peer.silent.add(PEER); } },
+  ];
+  for (const entry of moves) {
+    const f = await fixture();
+    try {
+      entry.set(f);
+      const machine = f.machine({ complete: () => true });
+      machine.kick();
+      await settle(machine, f.clock, 2);
+      assert.equal(engineModeOf(f.db, PROJECT), "builtin", entry.name);
+      assert.deepEqual(f.infos, ["File sync moved Project alpha to built-in sync to finish the move away from Syncthing"], entry.name);
+    } finally { await f.cleanup(); }
+  }
+  // What protects the files still holds it back.
+  const holds: Array<{ reason: RegExp; set: (f: Fixture) => void }> = [
+    { reason: /update Joint Bob|newer Joint Bob/, set: (f) => { f.capability.set(PEER, capable()); f.peer.shares = { fileSync: { protocol: 1, minProtocol: 1, enabled: true } }; } },
+    { reason: /A task is running/, set: (f) => { f.activity.reason = "A task is running in this project; wait for it to finish"; } },
+    { reason: /file sync to start/, set: (f) => { f.engine.running_ = false; } },
+  ];
+  for (const entry of holds) {
+    const f = await fixture();
+    try {
+      entry.set(f);
+      const machine = f.machine({ complete: () => true });
+      machine.kick();
+      await settle(machine, f.clock, 2);
+      assert.equal(engineRecordOf(f.db, PROJECT), undefined, String(entry.reason));
+      const shown = machine.project(PROJECT).autoSwitch;
+      assert.equal(shown?.state, "blocked", String(entry.reason));
+      assert.match(shown?.reason ?? "", entry.reason);
+    } finally { await f.cleanup(); }
+  }
+});
+
+test("finishing the move away from Syncthing: a project held on Syncthing by hand moves too, and nothing moves back for a peer that cannot take files yet", async () => {
+  const f = await fixture();
+  try {
+    const machine = f.machine({ complete: () => true });
+    await machine.switchEngine(PROJECT, "syncthing", { by: "an admin" });
+    machine.kick();
+    await settle(machine, f.clock, 2);
+    assert.equal(engineModeOf(f.db, PROJECT), "builtin", "the hold by hand no longer keeps it on Syncthing");
+    // A peer whose Joint Bob is too old: the project stays on built-in sync.
+    f.capability.set(PEER, { protocol: 1, minProtocol: 1, enabled: true, origins: [], via: "hello", at: 0 });
+    machine.kick();
+    await settle(machine, f.clock, 2);
+    assert.equal(engineModeOf(f.db, PROJECT), "builtin");
+    assert.doesNotMatch(f.logs.join("\n"), /back to Syncthing: node 2/);
+  } finally { await f.cleanup(); }
+});
+
 test("a failing check holds the automatic move and names the machine; a check that failed is not retried on a timer", async () => {
   const cases: Array<{ reason: string; set: (f: Fixture) => void; asked: boolean }> = [
     // What the peer said in its hello: known without asking anyone.

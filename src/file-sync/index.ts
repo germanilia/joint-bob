@@ -787,6 +787,8 @@ async function startMigration(current: Engine): Promise<void> {
       db: current.db, nodeId: current.nodeId, syncthing, engine: migrationEngine(current, current.db), peerRequest: migrationPeerRequest,
       capability: peerFileSync, log: warnOnChange, settle: settled, ...extras, peerAway: (peer) => peerAway(peer),
       beforeCompare: (projectId) => importStignoreRules(current, [projectId]),
+      // Every project still on Syncthing moves as soon as it is safe (JOINT_BOB_FILE_SYNC_COMPLETE=0 keeps the waiting period).
+      complete: () => process.env.JOINT_BOB_FILE_SYNC_COMPLETE !== "0",
     });
     migration = { engine: current, machine };
     // fix: a built-in project whose folder check passed before this start may write now; the derive before held it.
