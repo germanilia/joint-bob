@@ -1,12 +1,14 @@
+import { managedAntigravityExecutable } from "../antigravity-install.js";
 import { runtimeHome } from "../account-runtime.js";
 import path from "node:path";
 import { defineHarness } from "./contract.js";
 import { antigravityConversationDefault } from "./antigravity.defaults.js";
-import { configuredSessionPath, detectExecutable, localizeTranscript, type HarnessConfiguration } from "./runtime-configuration.js";
+import { configuredSessionPath, localizeTranscript, type HarnessConfiguration } from "./runtime-configuration.js";
 
 const configuration: HarnessConfiguration = {
-  defaults: (home) => ({ executable: detectExecutable("agy"), configPath: path.join(home, ".gemini"), sessionPath: path.join(home, ".joint-bob/antigravity/sessions") }),
+  defaults: (home) => ({ executable: managedAntigravityExecutable(), configPath: path.join(home, ".gemini"), sessionPath: path.join(home, ".joint-bob/antigravity/sessions") }),
   fixedProvider: "antigravity",
+  update: { type: "antigravity" },
   thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
   restartFields: ["executable", "configPath"],
 };

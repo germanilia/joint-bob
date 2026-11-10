@@ -12,6 +12,7 @@ import { save, settingsDatabase, value } from "./settings-store.js";
 import { piSdkStatus, readPiPackage } from "./pi-sdk.js";
 import { pendingPiSdkVersion, piHarnessInstalled } from "./pi-sdk-switch.js";
 import { installManagedKiro, managedKiroExecutable } from "./kiro-install.js";
+import { installManagedAntigravity, managedAntigravityExecutable } from "./antigravity-install.js";
 
 const execute = promisify(execFile);
 const UPDATE_INTERVAL_MS = 24 * 60 * 60_000;
@@ -88,6 +89,13 @@ function activateManagedKiro(): void {
   }
 }
 
+function activateManagedAntigravity(): void {
+  const executable = managedAntigravityExecutable();
+  if (usesBundledExecutable(value("antigravity.executable"), "agy", executable)) {
+    save(settingsDatabase(), "antigravity.executable", executable);
+  }
+}
+
 function kiroDisabled(adapter: HarnessAdapter): boolean {
   return adapter.id === "kiro" && value("kiro.enabled", "true") === "false";
 }
@@ -97,11 +105,12 @@ export function activateManagedHarnesses(adapters = listDiscoveredHarnesses()): 
     const update = adapter.configuration?.update;
     if (update?.type === "npm") activateManagedHarness(adapter.id, update.binaryName);
     if (update?.type === "kiro") activateManagedKiro();
+    if (update?.type === "antigravity") activateManagedAntigravity();
   }
 }
 
 export function harnessUpdateCommand(id: string, executable: string, instructions: HarnessUpdateInstructions): UpdateCommand {
-  if (instructions.type === "kiro") throw new Error("Kiro uses a verified native package, not an update command");
+  if (instructions.type === "kiro" || instructions.type === "antigravity") throw new Error(`${instructions.type} uses a verified native package, not an update command`);
   if (instructions.type === "self") return { executable, args: instructions.args, cwd: os.homedir() };
   const installRoot = managedHarnessRoot(id);
   return {
@@ -122,6 +131,12 @@ export async function runHarnessUpdates(adapters = listDiscoveredHarnesses()): P
     }
     const runtime = configuredRuntime(adapter.id, configuration.defaults(os.homedir()));
     try {
+      if (configuration.update.type === "antigravity") {
+        await installManagedAntigravity();
+        activateManagedAntigravity();
+        results.push(status(adapter, "succeeded"));
+        continue;
+      }
       if (configuration.update.type === "kiro") {
         await installManagedKiro();
         activateManagedKiro();
@@ -214,6 +229,7 @@ export function startHarnessUpdateScheduler(): void {
   schedulerStarted = true;
   const run = (): void => { if (!active) startHarnessUpdates(); };
   const kiroNeedsInstall = value("kiro.enabled", "true") !== "false" && !existsSync(managedKiroExecutable());
-  setTimeout(run, kiroNeedsInstall ? 0 : 5 * 60_000).unref();
+  const antigravityNeedsInstall = !existsSync(managedAntigravityExecutable());
+  setTimeout(run, kiroNeedsInstall || antigravityNeedsInstall ? 0 : 5 * 60_000).unref();
   setInterval(run, UPDATE_INTERVAL_MS).unref();
 }
