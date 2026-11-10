@@ -365,33 +365,63 @@ test("stopping while a resumed download re-hashes its temp ends between chunks, 
   const temp = path.join(s.b.root, transferTempName(SHARE, "big.bin", sha(content)));
   // Reads of the temp are slow from the cut on (a multi-GiB temp on a slow disk): 20 chunks take about two seconds.
   let reads = 0;
+  let rehashStarted!: () => void;
+  const rehashReady = new Promise<void>((resolve) => { rehashStarted = resolve; });
+  // Hold the source open across clock-driver turns, independent of filesystem/CPU speed.
+  let delaySource = false;
+  let sourceWaiting = false;
+  let sourceStartedAt = 0;
+  let releaseSource!: () => void;
+  const sourceGate = new Promise<void>((resolve) => { releaseSource = resolve; });
   const open = fsPromises.open;
   fsPromises.open = (async (file: Parameters<typeof open>[0], ...rest: unknown[]) => {
+    if (delaySource && String(file) === path.join(s.a.root, "big.bin")) {
+      sourceStartedAt = s.clock.now();
+      sourceWaiting = true;
+      await sourceGate;
+    }
     const handle: FileHandle = await (open as (...args: unknown[]) => Promise<FileHandle>)(file, ...rest);
     if (!cutAt || String(file) !== temp || rest[0] !== (fsPromises.constants.O_RDONLY | fsPromises.constants.O_NOFOLLOW)) return handle;
     const read = handle.read.bind(handle) as (...args: unknown[]) => Promise<unknown>;
-    (handle as unknown as { read: (...args: unknown[]) => Promise<unknown> }).read = async (...args: unknown[]) => { reads++; await new Promise((resolve) => setTimeout(resolve, 100)); return read(...args); };
+    (handle as unknown as { read: (...args: unknown[]) => Promise<unknown> }).read = async (...args: unknown[]) => { reads++; rehashStarted(); await new Promise((resolve) => setTimeout(resolve, 100)); return read(...args); };
     return handle;
   }) as typeof open;
   syncBuiltinESMExports();
   t.after(() => { fsPromises.open = open; syncBuiltinESMExports(); });
-  // Real time passes here (50 MiB is written and read), so this waits on the clock of the wall, firing due timers.
-  const waitFor = async (condition: () => boolean) => {
-    // 50 MiB takes far longer on a busy runner.
+  // Real filesystem work must get real time: never jump to a future stall timeout.
+  const clockStart = s.clock.now();
+  const wallStart = performance.now();
+  const waitFor = async (ready: (() => boolean) | Promise<void>) => {
+    let signalled = false;
+    if (typeof ready !== "function") void ready.then(() => { signalled = true; });
+    const condition = typeof ready === "function" ? ready : () => signalled;
     for (let round = 0; round < 9000 && !condition(); round++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      s.clock.fireNext(s.clock.now() + 60_000);
+      const due = clockStart + performance.now() - wallStart;
+      while (s.clock.fireNext(due)) { await tick(); }
+      s.clock.current = Math.max(s.clock.now(), due);
     }
     assert.ok(condition(), `cut at ${cutAt}, ${reads} slow reads`);
   };
   await s.a.scan();
-  await waitFor(() => reads > 0);
+  delaySource = true;
+  try {
+    await waitFor(() => sourceWaiting);
+    let turns = 0;
+    await waitFor(() => ++turns > 10);
+    assert.ok(s.clock.now() - sourceStartedAt < 30_000, `pending filesystem open must not fast-forward the stream stall deadline (cut at ${cutAt}, ${reads} slow reads)`);
+  } finally {
+    delaySource = false;
+    releaseSource();
+  }
+  await waitFor(rehashReady);
   const started = performance.now();
   await s.b.core.close();
   const took = performance.now() - started;
   assert.ok(took < 1000, `stop took ${Math.round(took)} ms with the temp half re-hashed (${reads} of 20 chunks)`);
   assert.ok(reads < 20, "the re-hash stopped early");
   assert.ok(existsSync(temp), "the bytes stay to be resumed after the next start");
+  t.diagnostic(`cut at ${cutAt}, ${reads} slow reads, stop took ${Math.round(took)} ms`);
 });
 
 test("a stalled stream is abandoned after 30 s without bytes and resumed", async (t) => {
