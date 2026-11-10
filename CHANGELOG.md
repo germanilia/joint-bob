@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.259.5 — 2026-11-10
+
+- Updates work again. Versions 2.259.1 to 2.259.4 never reached any machine: a change to what Stop does had been published with two unfinished lines from other work, so the release checks failed each time. This version carries everything those four contained.
+
 ## 2.259.4 — 2026-11-10
 
 - Fixed Pi conversations starting on another node without checking that node's configured default subscription pool.
