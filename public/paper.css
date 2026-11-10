@@ -1,0 +1,106 @@
+/* Paper · Editorial — the look chosen on 2026-11-10 (docs/superpowers/specs/2026-11-10-ui-redo-paper-design.md).
+   Loaded after every other stylesheet. It resets the design tokens for each theme and restyles the
+   shared pieces, so existing screens take the look without markup changes. Reference: mocks/ui-redo. */
+
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("/fonts/dm-sans.woff2") format("woff2"); }
+@font-face { font-family: "Young Serif"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/young-serif.woff2") format("woff2"); }
+
+/* ---------- tokens ---------- */
+:root {
+  --bg: #f2ebdf; --panel: #fffbf4; --header: #fffbf4; --surface: #fffbf4; --field: #f6f0e5;
+  --line: rgba(43, 36, 28, 0.09); --line-strong: rgba(43, 36, 28, 0.2); --raise: none;
+  --text: #2b241c; --muted: #6e6457; --ink: #2b241c; --on-ink: #fffbf4;
+  --btn-bg: #2f6b4f; --btn-fg: #ffffff; --btn-border: transparent; --btn-bg-hover: #285c44;
+  --accent: #2f6b4f; --live: #2e8b57; --amber: #9a5b00; --danger: #c4472f;
+  --focus-ring: color-mix(in srgb, var(--accent) 38%, transparent);
+  --shadow: 0 18px 50px rgba(60, 45, 25, 0.18);
+  --shadow-soft: 0 1px 2px rgba(60, 45, 25, 0.06), 0 6px 20px rgba(60, 45, 25, 0.06);
+  --radius: 20px; --radius-card: 16px; --radius-ctl: 12px;
+  --sans: "DM Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --serif: "Young Serif", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --heading: #2b241c; --heading-soft: #2f6b4f;
+  --paper-raised: #ebe2d3;
+}
+:root[data-theme="dark"] {
+  --bg: #171412; --panel: #211d1a; --header: #211d1a; --surface: #262220; --field: #2b2723;
+  --line: rgba(255, 244, 230, 0.08); --line-strong: rgba(255, 244, 230, 0.18); --raise: none;
+  --text: #f2ede6; --muted: #b5aba0; --ink: #f2ede6; --on-ink: #171412;
+  --btn-bg: #7fcf9f; --btn-fg: #10231a; --btn-border: transparent; --btn-bg-hover: #96dab0;
+  --accent: #7fcf9f; --live: #6fcf97; --amber: #f0b45a; --danger: #f08a76;
+  --shadow: 0 20px 56px rgba(0, 0, 0, 0.5); --shadow-soft: 0 0 0 1px rgba(255, 244, 230, 0.06);
+  --heading: #f7f2eb; --heading-soft: #a5dcbb;
+  --paper-raised: #2e2925;
+}
+:root[data-theme="dark"][data-palette="midnight"] {
+  --bg: #0e1320; --panel: #161d2e; --header: #161d2e; --surface: #1a2236; --field: #1b2338;
+  --line: rgba(220, 232, 255, 0.08); --line-strong: rgba(220, 232, 255, 0.18);
+  --text: #eaf0fa; --muted: #a9b5cc; --ink: #eaf0fa; --on-ink: #0e1320;
+  --btn-bg: #7fcf9f; --btn-fg: #10231a; --btn-border: transparent; --btn-bg-hover: #96dab0;
+  --accent: #7fcf9f; --heading: #f3f6fc; --heading-soft: #a5dcbb;
+  --paper-raised: #212b44;
+}
+:root[data-theme="dark"][data-palette="graphite"] {
+  --bg: #1a1a1b; --panel: #252527; --header: #252527; --surface: #29292c; --field: #2b2b2e;
+  --line: rgba(255, 255, 255, 0.08); --line-strong: rgba(255, 255, 255, 0.18);
+  --text: #efefef; --muted: #b2b2b5; --ink: #efefef; --on-ink: #1a1a1b;
+  --btn-bg: #7fcf9f; --btn-fg: #10231a; --btn-border: transparent; --btn-bg-hover: #96dab0;
+  --accent: #7fcf9f; --heading: #f6f6f6; --heading-soft: #a5dcbb;
+  --paper-raised: #313134;
+}
+:root[data-theme="light"][data-palette="sepia"] {
+  --bg: #efe6d4; --panel: #fbf5e8; --header: #fbf5e8; --surface: #fbf5e8; --field: #f3ebda;
+  --line: rgba(43, 33, 24, 0.1); --line-strong: rgba(43, 33, 24, 0.22);
+  --text: #2b2118; --muted: #6a5b49; --ink: #2b2118; --on-ink: #fbf5e8;
+  --btn-bg: #2f6b4f; --btn-fg: #ffffff; --btn-border: transparent; --btn-bg-hover: #285c44;
+  --accent: #2f6b4f; --heading: #2b2118; --heading-soft: #2f6b4f;
+  --paper-raised: #e4d8c1;
+}
+
+/* The logo's teal follows the accent: forest green on light themes, sage on dark ones. */
+:root img[src^="/icon"], :root[data-palette] img[src^="/icon"] { filter: hue-rotate(-14deg) saturate(0.72); }
+:root[data-theme="dark"] img[src^="/icon"] { filter: hue-rotate(-23deg) saturate(0.8) brightness(1.08); }
+
+/* ---------- type ---------- */
+body { font-family: var(--sans); }
+/* Young Serif has one weight; a bolder setting would be faked by the browser. */
+h1, h2, .app-boot-wordmark, .brand-copy strong, .message-content.md :is(h1, h2, h3, h4, h5, h6),
+.focus-controls > header strong, body.focus-ui .queued-editor-top strong { font-weight: 400; letter-spacing: 0; }
+
+/* Labels drop the monospaced capitals. Group and section labels take the serif; pills and badges stay sans. */
+:is(.eyebrow, .status-pill, .chat-badge, .task-engine, .board-count, .model-dialog-group, .credential-state,
+  .brand-copy span, .chat-project-name, .chat-control > span, .queued-badge, .activity-rule-kind,
+  .harness-switch-notice, .cron-task-kind, .cron-task-details dt, .github-group-default, .skill-option-scope,
+  .git-review-kind, .resources-badge, .budget-head, .focus-setting-label, .activity-usage h3) {
+  font-family: var(--sans); text-transform: none; letter-spacing: 0;
+}
+:is(.section-title, .project-group-summary, .settings-group-label, .phase-settings legend, .panel-rail-label, .cluster-section-title) {
+  font-family: var(--serif); font-weight: 400; text-transform: none; letter-spacing: 0;
+}
+.section-title { font-size: 14px; color: var(--muted); }
+.settings-group-label { font-size: 13.5px; }
+.phase-settings legend { font-size: 14.5px; color: var(--text); }
+.eyebrow { font-size: 12.5px; }
+
+/* ---------- pieces ---------- */
+.primary, .send { border-radius: var(--radius-ctl); }
+.ghost:hover:not(:disabled) { background: var(--field); }
+.status-pill, .chat-badge { border-radius: 999px; }
+
+:is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus-visible {
+  outline: none; box-shadow: 0 0 0 2px var(--accent);
+}
+
+dialog::backdrop { background: color-mix(in srgb, var(--ink) 28%, transparent); backdrop-filter: blur(3px); }
+.dialog-card { border-radius: 24px; box-shadow: var(--shadow); }
+
+/* The new-conversation buttons carry each agent's own colour, so they sit on a quiet fill, not the accent. */
+.new-chat-harness-button { background: var(--paper-raised); border-color: transparent; }
+.new-chat-harness-button:hover:not(:disabled) { background: color-mix(in srgb, var(--paper-raised) 80%, var(--ink)); }
+/* Buttons and counts inside a serif section label stay in the sans. */
+.section-title > :not(:first-child) { font-family: var(--sans); }
+/* Your own messages sit on a warm neutral fill, as in the mock; the accent is kept for what you can act on. */
+.message.user:not(.queued) { background: var(--paper-raised); border-color: transparent; }
+.worktree-subsection-title, .worktree-subsection-title > span { text-transform: none; letter-spacing: 0; font-family: var(--serif); font-weight: 400; font-size: 14px; }
+/* Every dropdown leaves room for its chevron; the control center's compact pickers set their own padding. */
+.control-chat-settings label > select { padding-right: 28px; }
+.control-chat-filters select { padding-right: 26px; }

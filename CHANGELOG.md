@@ -3,6 +3,13 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.260.0 — 2026-11-10
+
+- New look, Paper: warm cream panels on a sand background, headings in a rounded serif (Young Serif), text in DM Sans, and one forest-green accent for what you can act on. All six themes keep working, each with its own Paper colours.
+- Small labels and section titles are no longer set in monospaced capitals: section and group titles use the serif, badges and pills the regular text face.
+- Your own messages sit on a warm neutral fill, and the new-conversation buttons on a quiet fill, so each agent's colour stays visible.
+- The two fonts ship with the app, with their open-font licences, and are cached for offline use like the rest of the app.
+
 ## 2.259.6 — 2026-11-10
 
 - Bob finds a conversation you name by its title, however long it has been idle. Asking him to trigger or message one that was neither on the board nor among its project's latest conversations reached nothing, so he only answered; now he offers to send it (**Send it**), typos in the name included.
