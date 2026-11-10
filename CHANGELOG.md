@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.259.6 — 2026-11-10
+
+- Bob finds a conversation you name by its title, however long it has been idle. Asking him to trigger or message one that was neither on the board nor among its project's latest conversations reached nothing, so he only answered; now he offers to send it (**Send it**), typos in the name included.
+
 ## 2.259.5 — 2026-11-10
 
 - Updates work again. Versions 2.259.1 to 2.259.4 never reached any machine: a change to what Stop does had been published with two unfinished lines from other work, so the release checks failed each time. This version carries everything those four contained.
