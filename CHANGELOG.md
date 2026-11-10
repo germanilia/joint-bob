@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.254.6 — 2026-11-10
+
+- Only you take yourself out of the control center: **Esc** twice, **Exit**, or its shortcut. A page that reloads, after an update for example, used to come back to the control center and then jump to the chat when it took over its open conversation from a machine that looked offline (*Switched to this node*). It now stays in the control center and opens the conversation behind it. A conversation that disappears from the list, or one you take ownership of over the board, no longer takes you out either.
+
 ## 2.254.5 — 2026-11-10
 
 - Success notices are green and appear in the top-right corner, like error notices, instead of a plain grey box. Errors stay red.
