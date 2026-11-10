@@ -3,9 +3,9 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.256.4 — 2026-11-10
 
-- Fixed the team picker in the control center staying empty. It now fills however the control center opens, including after a reload, and it says *No cluster yet: create one under Clusters* when no cluster exists. A failed load is retried the next time you open it.
+- Fixed the team picker in the control center staying empty after a reload or when opened with the shortcut. It now fills however the control center opens, and says *No cluster yet: create one under Clusters* when no cluster exists. A failed load is retried the next time you open it.
 
 ## 2.256.3 — 2026-11-10
 
