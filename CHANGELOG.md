@@ -3,6 +3,13 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.259.2 — 2026-11-10
+
+- Stop now pauses the conversation's queued messages instead of letting them run next, and shows "Stopped. Queued messages paused." Send a new message to resume the queue. The paused state follows the conversation to your other machines.
+- Stop now also ends the conversation's background tasks and auto respond. If some tasks cannot be stopped, the queue stays paused and you are told to check Tasks.
+- Error notices now fade after 8 seconds instead of staying until dismissed.
+- Notices stay visible when a dialog opens or closes, not only errors.
+
 ## 2.259.1 — 2026-11-10
 
 - Fixed browser sign-in notices appearing again after every page reload. New sign-in requests still notify, and pending sign-ins stay available in their own conversations.
