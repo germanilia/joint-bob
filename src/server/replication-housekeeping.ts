@@ -20,7 +20,10 @@ import { clusterV2Database } from "../cluster-v2-store.js";
 import { ensureHubSchema } from "./cluster-hubs.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-export const EVENT_HISTORY_DAYS: Readonly<Record<string, number>> = { "model.usage": 30, "user.recent": 7 };
+// Usage events were kept 30 days and were 78% of the relay log (355,000 rows, 490 MB on 2026-11-10) and most of
+// the outbox. 14 days halves both; a machine away longer than that misses the older usage of its peers, which
+// each peer still holds in its own model_usage_events.
+export const EVENT_HISTORY_DAYS: Readonly<Record<string, number>> = { "model.usage": 14, "user.recent": 7 };
 export const INBOX_DAYS = 14;
 const HUB_QUEUE_DAYS = 1;
 /** Rows handled per transaction. node:sqlite is synchronous, so a page holds the event loop. */
