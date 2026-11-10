@@ -172,3 +172,26 @@ test("a generic pool failure is surfaced without account fallback or a stuck bus
   assert.equal(f.shared.turnInFlight, 0);
   assert.ok(f.events.some(event => event.type === "promptFailed" && event.error === "Invalid request"));
 });
+
+test("a routed model runs on a pool, switched inside each member's attempt", async () => {
+  const f = fixture("pool");
+  let saved: any = null;
+  const routed: any[] = [];
+  const policy = { id: "config", revision: 1, policy: { classifierId: "fixture", confidenceThreshold: 0.5, contextMessages: 10,
+    harnesses: { claude: { levels: { "7": { provider: "claude", modelId: "routed-model", thinkingLevel: "high", description: "Hard work" } } } } } };
+  Object.assign(f.dependencies, {
+    activeRoutingConfig: () => policy, bumpRoutingPromptCount: () => 1, routingEvalDue: () => true, recordRoutingEval: () => {},
+    readRoutingState: () => ({ mode: "auto", lastEvalOrdinal: null, configId: "config", configRevision: 1 }),
+    getDifficultyClassifier: () => ({ id: "fixture", variableName: "FIXTURE_KEY", keyOptional: true, classify: async () => ({ level: 7, confidence: 0.9, abstained: false }) }),
+    automaticRoutingModelAllowed: () => true, getHarness: () => ({ configuration: {} }),
+    readQueueSettings: () => saved, recordQueueSettings: (_key: string, value: unknown) => { saved = value; },
+    getHarnessRuntime: async () => ({ validateSettings: async (value: any) => { routed.push(value.modelId); } }),
+  });
+  await f.exports.dispatch(f.connection, f.queued);
+  assert.deepEqual(routed, ["routed-model"]);
+  assert.ok(f.events.some(event => event.type === "promptRouted" && event.mapped === true && event.modelId === "routed-model"));
+  // The fixture's configure throws outside a member, so the routed model was switched to inside one.
+  assert.equal(f.shared.session.settings().modelId, "routed-model");
+  assert.deepEqual(f.calls.map(call => call.profile), ["first", "second"]);
+  assert.equal(saved.modelId, "routed-model");
+});

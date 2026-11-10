@@ -471,6 +471,20 @@ function routingClassifierInput(connection: HarnessChatConnection, queued: Queue
   return messages.slice(-messageLimit).map((message) => `${message.role === "user" ? "User" : "Assistant"}:\n${message.text}`).join("\n\n");
 }
 
+/**
+ * Puts a routed model in place. A pool switches models only inside a member's signed-in attempt, so
+ * with a pool the routed model becomes the conversation's saved settings, which the pool turn starts from.
+ */
+async function applyRoutedSettings(connection: HarnessChatConnection, settings: HarnessModelSettings, poolActive: boolean): Promise<void> {
+  await (await getHarnessRuntime(connection.engine)).validateSettings(settings);
+  if (poolActive) {
+    recordQueueSettings(queueKey(connection), queuedSettingsSchema.parse({ ...currentSettings(connection), ...settings }));
+    return;
+  }
+  await connection.shared.session.configure(settings);
+  recordQueueSettings(queueKey(connection), currentSettings(connection));
+}
+
 /** Prompt routing: classify recent conversation context and switch the conversation's
     model to the active configuration's mapping for this harness. The active named
     configuration is this node's own choice; manual picks always win; any failure keeps
@@ -530,9 +544,7 @@ async function routePromptByDifficulty(connection: HarnessChatConnection, queued
     const settings = fallback ? { provider: fallback.provider, modelId: fallback.modelId, reasoning: fallback.thinkingLevel } : null;
     if (settings) {
       try {
-        if (!poolActive) await (await getHarnessRuntime(connection.engine)).validateSettings(settings);
-        await connection.shared.session.configure(settings);
-        recordQueueSettings(key, currentSettings(connection));
+        await applyRoutedSettings(connection, settings, poolActive);
         publish(connection, { type: "promptRouted", queueId: queued.id, skipped: "low confidence", fallback: "harness default", level: classification.level, confidence: classification.confidence, provider: settings.provider, modelId: settings.modelId, thinkingLevel: settings.reasoning });
         return result("low-confidence", { ...configured, confidence: classification.confidence });
       } catch (error) {
@@ -554,9 +566,7 @@ async function routePromptByDifficulty(connection: HarnessChatConnection, queued
   };
   if (!automaticRoutingModelAllowed(settings.provider, settings.modelId)) return skip("model not allowed", "classified", classification.level, classification.confidence);
   try {
-    if (!poolActive) await (await getHarnessRuntime(connection.engine)).validateSettings(settings);
-    await connection.shared.session.configure(settings);
-    recordQueueSettings(key, currentSettings(connection));
+    await applyRoutedSettings(connection, settings, poolActive);
   } catch (error) {
     console.warn("Routed model unavailable", error instanceof Error ? error.message.slice(0, 200) : "unknown error");
     return skip("model unavailable", "classified", classification.level, classification.confidence);
