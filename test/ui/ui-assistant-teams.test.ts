@@ -127,6 +127,17 @@ test('team control center shows six shared Pi roles and persists ordered percent
   await other.getByTestId('team-configure-qa').click();
   assert.equal(await other.getByTestId('team-agent-prompt').inputValue(), 'Edited after upload, without losing the draft');
   await other.getByTestId('team-file-row').filter({ hasText: 'team-note.txt' }).waitFor();
+  assert.equal((await api(node, auth, 'POST', '/resources/mcp/managed', { mcpServers: { ui_team_fixture: { command: process.execPath, args: [path.resolve('test/managed-mcp-fixture.mjs')] }, ui_private_sentinel: { command: process.execPath, args: [path.resolve('test/managed-mcp-fixture.mjs')] } } })).status, 200);
+  await page.getByTestId('team-configure-qa').click();
+  await page.getByTestId('team-configure-qa').click();
+  const shareToggle = page.locator('label').filter({ hasText: 'Share ui_team_fixture' }).getByTestId('team-mcp-share');
+  await shareToggle.waitFor();
+  assert.equal(await other.getByTestId('team-mcp-share').count(), 0, 'member cannot see owner inventory');
+  await shareToggle.check();
+  await page.locator('label').filter({ hasText: 'ui_team_fixture (stdio, shared)' }).getByTestId('team-mcp-enabled').check();
+  const uiRole = await api<any>(node, otherAuth, 'GET', `/assistant-teams/${created.body.team.id}/agents/qa/resources`);
+  assert.deepEqual(uiRole.body.mcpServers.map((server: any) => [server.name, server.enabled]), [['ui_team_fixture', true]]);
+  assert.doesNotMatch(JSON.stringify(uiRole.body), /ui_private_sentinel/);
   const staleUpload = await api(node, auth, 'POST', `/assistant-teams/${created.body.team.id}/agents/qa/files`, { expectedRevision: 1, name: 'stale.txt', data: 'eA==' });
   assert.equal(staleUpload.status, 409);
   // Real connect path, with getMe and setWebhook answered by a disposable loopback bot API.

@@ -101,6 +101,23 @@ export async function teamConversation(projectId: string, conversationId: string
     JOIN personal_assistant_topics t ON t.assistant_id=a.assistant_id
     WHERE t.project_id=? AND t.session_id=?`).get(projectId, conversationId) as { teamId: string; role: TeamRole } | undefined ?? null;
 }
+export async function runningTeamMcp(projectId: string, conversationId: string) {
+  const context = await teamConversation(projectId, conversationId);
+  if (!context) return null;
+  const db = await database();
+  const rows = db.prepare(`SELECT a.record FROM assistant_team_assignments a JOIN assistant_team_conversations c
+    ON c.team_id=a.team_id AND c.subject_id=json_extract(a.record,'$.subjectId')
+    JOIN assistant_team_agents g ON g.team_id=a.team_id AND g.role=json_extract(a.record,'$.role') AND g.assistant_id=c.assistant_id
+    WHERE c.project_id=? AND c.conversation_id=? AND a.team_id=? AND json_extract(a.record,'$.state')='running'`).all(projectId, conversationId, context.teamId) as { record: string }[];
+  for (const row of rows) {
+    try {
+      const validated = await validateTeamAssignment(JSON.parse(row.record));
+      const turn = await getPersonalAssistantTurn(validated.team.executorAccountId, validated.profile.id, validated.assignment.requestId);
+      if (turn?.status === 'running' && turn.topicId === `pi:${conversationId}`) return validated;
+    } catch { /* A revoked initiator or stale assignment is never executable. */ }
+  }
+  throw new TeamError('Team MCP requires a running member assignment', 403);
+}
 export async function validateTeamAssignment(assignment: TeamAssignment) {
   const stored = await getTeamAssignment(assignment.id);
   if (!stored || !isDeepStrictEqual(stored, assignment)) throw new TeamError('Invalid or stale team assignment', 403);

@@ -35,7 +35,7 @@ import { managedMcpBridgeConfigs, nativeMcpServerConfigs } from "./mcp/agent.js"
 import { actingAccount, runAsAccount } from "./account-context.js";
 import { mcpAgentEnvironment } from './mcp/agent.js';
 import type { ManagedMcpServer } from "./mcp/store.js";
-import { activeMcpServers } from "./resource-activation.js";
+import { activeMcpServers, activationDecision } from "./resource-activation.js";
 
 export type { PiSessionHandle } from "./pi-session-core.js";
 
@@ -718,7 +718,14 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
         if (!user) throw new Error('Team execution identity unavailable');
         // A server-minted, conversation-scoped MCP capability, not an authenticated human approval/session.
         // Every call independently requires a running assignment and reauthorizes its initiating member.
-        teamToolEnvironment = runAsAccount({ accountId: user.accountId, username: user.username, role: null, homeNodeId: null, isRemoteLogin: false }, () => mcpAgentEnvironment(options.projectId, 'pi', conversationId));
+        teamToolEnvironment = runAsAccount({ accountId: user.accountId, username: user.username, role: null, homeNodeId: null, isRemoteLogin: false }, () => mcpAgentEnvironment(options.projectId, 'pi', conversationId, team.id));
+        const { selectedTeamBrowser } = await import('./assistant-teams/store.js');
+        const { teamBrowserProfile } = await import('./assistant-teams/browser.js');
+        const selectedBrowser = await selectedTeamBrowser(team.id, teamContext.role);
+        if (selectedBrowser && await teamBrowserProfile(team, selectedBrowser)) {
+          const { browserAgentEnvironment } = await import('./browser-agent.js');
+          teamToolEnvironment = { ...teamToolEnvironment, ...browserAgentEnvironment(options.projectId, 'pi', conversationId, [], team.id) };
+        }
       }
       return credentials(sessionId, conversationId);
     },
@@ -730,8 +737,17 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
         const db = await personalAssistantDatabase();
         const { assistantDisabledResources } = await import('./assistant-resources.js');
         const disabled = assistantDisabledResources(options.projectId, conversationId).skills;
-        return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: ['joint_bob'], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [],
-          skillRoots: listWebhookSkills(db, teamAssistant).filter(skill => !disabled.includes(skill.name)).map(skill => skill.path),
+        const { getTeam, selectedTeamMcp } = await import('./assistant-teams/store.js');
+        const { teamConversation } = await import('./assistant-teams/runtime.js');
+        const context = await teamConversation(options.projectId, conversationId);
+        const team = context && await getTeam(context.teamId);
+        const selected = team ? await selectedTeamMcp(team.id, context!.role) : [];
+        const { managedMcpStore } = await import('./mcp/agent.js');
+        const shared = team ? selected.filter(name => managedMcpStore(team.executorAccountId).sharedWith(name, team.id)
+          && activationDecision('mcp', name, 'pi', false).enabled) : [];
+        const pluginSkills = team && context ? await (await import('./assistant-teams/plugins.js')).selectedTeamPluginSkills(team, context.role) : [];
+        return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: ['joint_bob', ...shared], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [],
+          skillRoots: [...listWebhookSkills(db, teamAssistant).filter(skill => !disabled.includes(skill.name)).map(skill => skill.path), ...pluginSkills],
           managedSkillRoot: '', blockedSkillNames: disabled };
       }
       const strict = getSettings().strictResourceIsolation;

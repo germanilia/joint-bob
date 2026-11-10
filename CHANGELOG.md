@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- Team assistants can now use MCP servers, browser profiles and plugins that the host account shares with the team, chosen per role. Each one is limited to what the host shares, and revoking a share cuts off access on the next call.
+
 ## 2.255.0 — 2026-11-10
 
 - Projects still on Syncthing moved to built-in sync as soon as the move is safe, instead of waiting 24 hours for their files to match. Files that differ are kept in both versions, a file a machine lacks is never treated as deleted, and a machine that is away no longer holds the move back. A project held on Syncthing by hand moves too. A move still waits while a machine cannot take part, ignore rules differ, a task or merge is running, or Syncthing does not answer.

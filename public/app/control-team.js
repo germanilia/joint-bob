@@ -84,7 +84,7 @@ async function refresh(force = false) {
   const openSections = [...document.querySelectorAll('.team-control details[open]')].map(node => node.firstChild.textContent);
   for (const panel of Object.values(panels)) panel.replaceChildren();
   settings.replaceChildren(makeNode('h2', '', 'Shared team settings · personal Bob is separate'), error, saved);
-  panels.assistants.append(makeNode('h2', '', 'Shared team assistants'), makeNode('p', '', `Host: ${readiness.host.name}`), tagged(makeNode('p', '', 'Pi only · independent role configuration. Browser, MCP and plugins are unavailable.'), 'team-runtime'));
+  panels.assistants.append(makeNode('h2', '', 'Shared team assistants'), makeNode('p', '', `Host: ${readiness.host.name}`), tagged(makeNode('p', '', 'Pi only · browser profiles and compatible plugin skills require explicit host shares and role selection; MCP uses approved host connections.'), 'team-runtime'));
   const decision = makeNode('p', '', `Central AI decision: ${readiness.decision.model ?? 'not selected'} · ${readiness.decision.ready ? 'ready' : 'unavailable'}. Configure in Settings → System AI.`);
   decision.append(button('System AI settings', 'team-decision-settings', async () => (await import('./settings.js')).openSettings('system-ai')));
   panels.assistants.append(decision);
@@ -234,7 +234,55 @@ async function editAgent(agent, card, url) {
     const resources = await api(`${resourcesUrl}/resources`);
     if (!current(editorGeneration, url) || !form.isConnected) return;
     team.revision = Math.max(team.revision, resources.revision);
-    resourcePanel.replaceChildren(makeNode('h4', '', 'Role uploads only'));
+    resourcePanel.replaceChildren(makeNode('h4', '', 'Role uploads, browser profiles, plugins and approved MCP servers'));
+    if (resources.ownerMcpServers) {
+      const label = input(resourcePanel, 'New persistent team browser profile (human signs in through browser handoff)', 'team-browser-name', '');
+      resourcePanel.append(button('Create team profile', 'team-browser-create', async () => {
+        await api(`${url}/browser-profiles`, { method: 'POST', body: { expectedRevision: resources.revision, label: label.value } });
+        await updateRevision(url, editorGeneration); await showResources();
+      }));
+    }
+    for (const profile of resources.browserProfiles || []) {
+      const enabled = input(resourcePanel, `Host browser profile ${profile.label} for this role`, 'team-browser-enabled', '', 'checkbox');
+      enabled.checked = profile.selected;
+      enabled.addEventListener('change', () => Promise.resolve().then(async () => {
+        await api(`${resourcesUrl}/browser`, { method: 'PUT', body: { expectedRevision: resources.revision, profileId: enabled.checked ? profile.id : null } });
+        await updateRevision(url, editorGeneration); await showResources();
+      }).catch(fail));
+    }
+    for (const plugin of resources.ownerPlugins || []) {
+      const shared = input(resourcePanel, `Share app-configured plugin ${plugin.name} with team`, 'team-plugin-share', '', 'checkbox'); shared.checked = plugin.shared;
+      shared.addEventListener('change', () => Promise.resolve().then(async () => {
+        await api(`${url}/plugin-shares/${encodeURIComponent(plugin.name)}`, { method: 'PUT', body: { expectedRevision: resources.revision, enabled: shared.checked } });
+        await updateRevision(url, editorGeneration); await showResources();
+      }).catch(fail));
+    }
+    for (const plugin of resources.plugins || []) {
+      const enabled = input(resourcePanel, `${plugin.name} for this Pi role (${plugin.status})`, 'team-plugin-enabled', '', 'checkbox'); enabled.checked = plugin.enabled;
+      enabled.addEventListener('change', () => Promise.resolve().then(async () => {
+        const names = new Set(resources.plugins.filter(item => item.enabled).map(item => item.name));
+        if (enabled.checked) names.add(plugin.name); else names.delete(plugin.name);
+        await api(`${resourcesUrl}/plugins`, { method: 'PUT', body: { expectedRevision: resources.revision, names: [...names] } });
+        await updateRevision(url, editorGeneration); await showResources();
+      }).catch(fail));
+    }
+    for (const server of resources.ownerMcpServers || []) {
+      const share = input(resourcePanel, `Share ${server.name} (${server.type}) with this cluster's team using the host account's local connection`, 'team-mcp-share', '', 'checkbox');
+      share.checked = server.shared;
+      share.addEventListener('change', () => Promise.resolve().then(async () => {
+        await api(`${url}/mcp-shares/${encodeURIComponent(server.name)}`, { method: 'PUT', body: { expectedRevision: resources.revision, enabled: share.checked } });
+        await updateRevision(url, editorGeneration); await showResources();
+      }).catch(fail));
+    }
+    for (const server of resources.mcpServers) {
+      const enabled = input(resourcePanel, `${server.name} (${server.type}, ${server.status}) for this role`, 'team-mcp-enabled', '', 'checkbox'); enabled.checked = server.enabled;
+      enabled.addEventListener('change', () => Promise.resolve().then(async () => {
+        const names = new Set(resources.mcpServers.filter(item => item.enabled).map(item => item.name));
+        if (enabled.checked) names.add(server.name); else names.delete(server.name);
+        await api(`${resourcesUrl}/resources`, { method: 'PUT', body: { expectedRevision: resources.revision, disabledSkills: resources.preferences.disabledSkills, mcpServerNames: [...names] } });
+        await updateRevision(url, editorGeneration); await showResources();
+      }).catch(fail));
+    }
     const upload = input(resourcePanel, 'Upload file', 'team-file-upload', '', 'file');
     upload.addEventListener('change', () => Promise.resolve().then(async () => {
       const file = upload.files[0]; if (!file) return;

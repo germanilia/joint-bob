@@ -32,6 +32,9 @@ export function teamDatabase(): Promise<DatabaseSync> {
     CREATE TABLE IF NOT EXISTS assistant_team_agents (team_id TEXT NOT NULL REFERENCES assistant_teams(id), role TEXT NOT NULL, assistant_id TEXT NOT NULL UNIQUE, PRIMARY KEY(team_id,role));
     CREATE TABLE IF NOT EXISTS assistant_team_assignments (id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES assistant_teams(id), request_id TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(team_id,request_id));
     CREATE TABLE IF NOT EXISTS assistant_team_projects (project_id TEXT PRIMARY KEY, cluster_id TEXT NOT NULL, executor_account_id TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS assistant_team_mcp_selection (team_id TEXT NOT NULL, role TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(team_id,role,name));
+    CREATE TABLE IF NOT EXISTS assistant_team_browser_selection (team_id TEXT NOT NULL, role TEXT NOT NULL, profile_id TEXT NOT NULL, PRIMARY KEY(team_id,role));
+    CREATE TABLE IF NOT EXISTS assistant_team_plugins (team_id TEXT NOT NULL, role TEXT NOT NULL, name TEXT NOT NULL, selected INTEGER NOT NULL, PRIMARY KEY(team_id,role,name));
     CREATE TABLE IF NOT EXISTS assistant_team_home_claims (cluster_id TEXT NOT NULL, account_id TEXT NOT NULL, home_node_id TEXT NOT NULL, username TEXT NOT NULL, join_sequence INTEGER NOT NULL, PRIMARY KEY(cluster_id,account_id));`);
     return db;
   }).catch(error => { prepared = undefined; throw error; });
@@ -45,6 +48,36 @@ export async function getTeam(id: string): Promise<AssistantTeam> {
 export async function listTeams(member: ClusterMember): Promise<AssistantTeam[]> {
   await recheckTeamActor(member);
   return (await teamDatabase()).prepare(`SELECT ${teamColumns} FROM assistant_teams WHERE cluster_id=?`).all(member.clusterId).map(decode);
+}
+export async function selectedTeamMcp(teamId: string, role: TeamRole): Promise<string[]> {
+  return (await teamDatabase()).prepare('SELECT name FROM assistant_team_mcp_selection WHERE team_id=? AND role=? ORDER BY name').all(teamId, role).map(row => (row as { name: string }).name);
+}
+export async function saveTeamMcpSelection(teamId: string, role: TeamRole, names: string[], expectedRevision: number): Promise<number> {
+  const db = await teamDatabase();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (!db.prepare('UPDATE assistant_teams SET revision=revision+1 WHERE id=? AND revision=?').run(teamId, expectedRevision).changes) throw new TeamError('Stale team revision', 409);
+    db.prepare('DELETE FROM assistant_team_mcp_selection WHERE team_id=? AND role=?').run(teamId, role);
+    const insert = db.prepare('INSERT INTO assistant_team_mcp_selection VALUES(?,?,?)');
+    for (const name of names) insert.run(teamId, role, name);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  announceTeamChange(teamId);
+  return expectedRevision + 1;
+}
+export async function selectedTeamBrowser(teamId: string, role: TeamRole): Promise<string | null> {
+  const row = (await teamDatabase()).prepare('SELECT profile_id FROM assistant_team_browser_selection WHERE team_id=? AND role=?').get(teamId, role) as { profile_id: string } | undefined;
+  return row?.profile_id ?? null;
+}
+export async function saveTeamBrowserSelection(teamId: string, role: TeamRole, profileId: string | null, expectedRevision: number): Promise<number> {
+  const db = await teamDatabase(); db.exec('BEGIN IMMEDIATE');
+  try {
+    if (!db.prepare('UPDATE assistant_teams SET revision=revision+1 WHERE id=? AND revision=?').run(teamId, expectedRevision).changes) throw new TeamError('Stale team revision', 409);
+    db.prepare('DELETE FROM assistant_team_browser_selection WHERE team_id=? AND role=?').run(teamId, role);
+    if (profileId) db.prepare('INSERT INTO assistant_team_browser_selection VALUES(?,?,?)').run(teamId, role, profileId);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  announceTeamChange(teamId); return expectedRevision + 1;
 }
 export async function listTeamAgents(id: string): Promise<TeamAgent[]> {
   await getTeam(id);

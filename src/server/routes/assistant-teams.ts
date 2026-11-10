@@ -11,6 +11,12 @@ import { assistantResourcePreferences, saveResourcePreferences } from './assista
 import { listAssistantFiles, saveAssistantFile, deleteAssistantFile } from '../../assistant-capabilities.js';
 import { listWebhookSkills, uploadWebhookSkill, removeWebhookSkill } from '../../webhook-skills.js';
 import { asNode } from '../../account-context.js';
+import { managedMcpStore } from '../../mcp/agent.js';
+import { selectedTeamMcp, saveTeamMcpSelection, selectedTeamBrowser, saveTeamBrowserSelection } from '../../assistant-teams/store.js';
+import { teamBrowserProfile } from '../../assistant-teams/browser.js';
+import { browserRuntime } from '../browser.js';
+import { getClusterNode } from '../../cluster.js';
+import { configuredTeamPlugins, teamPlugins } from '../../assistant-teams/plugins.js';
 import { WebhookResourceError } from '../../webhook-resources.js';
 
 const id = z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/);
@@ -80,6 +86,25 @@ app.put('/api/assistant-teams/:id/settings', route(async (request, response) => 
 }));
 
 const roleSchema = z.enum(['bob', 'product', 'designer', 'qa', 'pr_reviewer', 'support']);
+async function browserOwner(response: Response, teamId: string) {
+  await requireTeamMember(session(response), teamId);
+  const team = await getTeam(teamId);
+  if (session(response).accountId !== team.executorAccountId || session(response).isRemoteLogin || team.hostNodeId !== (await getClusterNode()).id || (session(response).homeNodeId && session(response).homeNodeId !== team.hostNodeId))
+    throw new TeamError('Only the local host execution account can create team browser profiles', 403);
+  return team;
+}
+app.post('/api/assistant-teams/:id/browser-profiles', route(async (request, response) => {
+  const team = await browserOwner(response, id.parse(request.params.id));
+  const body = z.object({ expectedRevision: revision, label: z.string().trim().min(1).max(80) }).strict().parse(request.body);
+  // Allocate a fresh persistent profile on this machine, never copy another profile's cookies.
+  // Its first use goes through the normal browser sign-in card and human takeover.
+  if (team.revision !== body.expectedRevision) throw new TeamError('Stale team revision', 409);
+  const profile = browserRuntime().createTeamProfile(team.projectId, body.label);
+  browserRuntime().grantProfileAccess(profile.id, { scope: 'project', projectId: team.projectId }, team.hostNodeId);
+  await changeRevision(team.id, body.expectedRevision);
+  announceTeamChange(team.id);
+  return { profile: { id: profile.id, label: profile.label }, revision: body.expectedRevision + 1 };
+}));
 async function agent(request: Request, response: Response) {
   const teamId = id.parse(request.params.id);
   await requireTeamMember(session(response), teamId);
@@ -111,18 +136,87 @@ app.put('/api/assistant-teams/:id/agents/:role', route(async (request, response)
   wakeTeamWork(team.id);
   return { profile: updated, revision: (await getTeam(team.id)).revision, readiness: await asNode(() => teamAgentReadiness(updated)) };
 }));
+// Only the host execution account can approve its own node-local definition for this exact team.
+app.put('/api/assistant-teams/:id/mcp-shares/:name', route(async (request, response) => {
+  const teamId = id.parse(request.params.id);
+  await requireTeamMember(session(response), teamId);
+  const team = await getTeam(teamId);
+  if (session(response).accountId !== team.executorAccountId || session(response).isRemoteLogin || (session(response).homeNodeId && session(response).homeNodeId !== team.hostNodeId) || team.hostNodeId !== (await (await import('../../cluster.js')).getClusterNode()).id)
+    throw new TeamError('Only the host execution account can share MCP definitions', 403);
+  const name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/).parse(request.params.name);
+  const body = z.object({ enabled: z.boolean(), expectedRevision: revision }).strict().parse(request.body);
+  const store = managedMcpStore(team.executorAccountId);
+  const server = store.servers()[name];
+  if (!server || server.authMode === 'native') throw new TeamError('Shared-connection server not found', 404);
+  await changeRevision(team.id, body.expectedRevision);
+  store.setTeamShare(name, team.id, body.enabled);
+  announceTeamChange(team.id);
+  return { revision: (await getTeam(team.id)).revision };
+}));
+app.put('/api/assistant-teams/:id/plugin-shares/:name', route(async (request, response) => {
+  const team = await browserOwner(response, id.parse(request.params.id));
+  const name = id.parse(request.params.name);
+  if (!configuredTeamPlugins().some(plugin => plugin.name === name)) throw new TeamError('Plugin is not app-configured', 404);
+  const body = z.object({ enabled: z.boolean(), expectedRevision: revision }).strict().parse(request.body);
+  const db = await teamDatabase(); db.exec('BEGIN IMMEDIATE');
+  try {
+    if (!db.prepare('UPDATE assistant_teams SET revision=revision+1 WHERE id=? AND revision=?').run(team.id, body.expectedRevision).changes) throw new TeamError('Stale team revision', 409);
+    db.prepare('DELETE FROM assistant_team_plugins WHERE team_id=? AND name=?').run(team.id, name);
+    if (body.enabled) db.prepare('INSERT INTO assistant_team_plugins VALUES(?,?,?,0)').run(team.id, '', name);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  announceTeamChange(team.id);
+  return { revision: body.expectedRevision + 1 };
+}));
 app.get('/api/assistant-teams/:id/agents/:role/resources', route(async (request, response) => {
   const { team, profile } = await agent(request, response);
   // Only resources uploaded to this role. Never call executor-wide inventory or profile listing.
+  const store = managedMcpStore(team.executorAccountId);
+  const servers = store.servers();
+  const selected = await selectedTeamMcp(team.id, roleSchema.parse(request.params.role));
+  const shared = Object.entries(servers).filter(([name]) => store.sharedWith(name, team.id));
+  const owner = session(response).accountId === team.executorAccountId && !session(response).isRemoteLogin && (!session(response).homeNodeId || session(response).homeNodeId === team.hostNodeId) && team.hostNodeId === (await (await import('../../cluster.js')).getClusterNode()).id;
+  const db = await teamDatabase();
   return { revision: team.revision, preferences: await assistantResourcePreferences(profile.id), files: await listAssistantFiles(profile.id),
-    skills: listWebhookSkills(await personalAssistantDatabase(), profile.id), plugins: [], mcpServers: [], logins: [], savedLogins: [] };
+    skills: listWebhookSkills(await personalAssistantDatabase(), profile.id), plugins: (await teamPlugins(team, roleSchema.parse(request.params.role))).map(({ name, selected, status }) => ({ name, enabled: selected, status })),
+    ...(owner ? { ownerPlugins: configuredTeamPlugins().map(plugin => ({ name: plugin.name, shared: Boolean(db.prepare('SELECT 1 FROM assistant_team_plugins WHERE team_id=? AND role=\'\' AND name=?').get(team.id, plugin.name)) })) } : {}),
+    browserProfiles: await Promise.all(browserRuntime().allProfiles().filter(item => item.projectId === team.projectId || browserRuntime().profileGrants(item.id).some(grant => grant.scope === 'project' && grant.projectId === team.projectId || grant.scope === 'cluster' && grant.clusterId === team.clusterId)).map(async item => await teamBrowserProfile(team, item.id) ? { id: item.id, label: item.label, selected: item.id === await selectedTeamBrowser(team.id, roleSchema.parse(request.params.role)) } : null)).then(items => items.filter(item => item !== null)),
+    selectedBrowserProfileId: await selectedTeamBrowser(team.id, roleSchema.parse(request.params.role)),
+    mcpServers: shared.map(([name, server]) => ({ name, type: server.command ? 'stdio' : 'http', status: 'shared', enabled: selected.includes(name) })),
+    ...(owner ? { ownerMcpServers: Object.entries(servers).filter(([, server]) => server.authMode !== 'native').map(([name, server]) => ({ name, type: server.command ? 'stdio' : 'http', shared: store.sharedWith(name, team.id) })) } : {}),
+    logins: [], savedLogins: [] }; 
+}));
+app.put('/api/assistant-teams/:id/agents/:role/plugins', route(async (request, response) => {
+  const { team } = await agent(request, response);
+  const body = z.object({ expectedRevision: revision, names: z.array(id).max(100) }).strict().parse(request.body);
+  const available = await teamPlugins(team, roleSchema.parse(request.params.role));
+  if (new Set(body.names).size !== body.names.length || body.names.some(name => !available.some(plugin => plugin.name === name && plugin.status === 'ready')))
+    throw new TeamError('Plugin is not shared or compatible with Pi', 400);
+  const db = await teamDatabase(); db.exec('BEGIN IMMEDIATE');
+  try {
+    if (!db.prepare('UPDATE assistant_teams SET revision=revision+1 WHERE id=? AND revision=?').run(team.id, body.expectedRevision).changes) throw new TeamError('Stale team revision', 409);
+    db.prepare('DELETE FROM assistant_team_plugins WHERE team_id=? AND role=?').run(team.id, request.params.role);
+    for (const name of body.names) db.prepare('INSERT INTO assistant_team_plugins VALUES(?,?,?,1)').run(team.id, request.params.role, name);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  announceTeamChange(team.id);
+  return { revision: body.expectedRevision + 1 };
+}));
+app.put('/api/assistant-teams/:id/agents/:role/browser', route(async (request, response) => {
+  const { team } = await agent(request, response);
+  const body = z.object({ expectedRevision: revision, profileId: z.string().uuid().nullable() }).strict().parse(request.body);
+  if (body.profileId && !await teamBrowserProfile(team, body.profileId)) throw new TeamError('Browser profile is not shared with this team on its host', 403);
+  const next = await saveTeamBrowserSelection(team.id, roleSchema.parse(request.params.role), body.profileId, body.expectedRevision);
+  return { revision: next, profileId: body.profileId };
 }));
 app.put('/api/assistant-teams/:id/agents/:role/resources', route(async (request, response) => {
   const { team, profile } = await agent(request, response);
-  const body = z.object({ expectedRevision: revision, disabledSkills: z.array(z.string().min(1).max(200)).max(1000) }).strict().parse(request.body);
+  const body = z.object({ expectedRevision: revision, disabledSkills: z.array(z.string().min(1).max(200)).max(1000), mcpServerNames: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/)).max(100).optional() }).strict().parse(request.body);
+  const names = body.mcpServerNames ?? await selectedTeamMcp(team.id, roleSchema.parse(request.params.role));
+  if (new Set(names).size !== names.length || names.some(name => !managedMcpStore(team.executorAccountId).sharedWith(name, team.id))) throw new TeamError('Unknown or unshared team MCP server', 400);
   const available = listWebhookSkills(await personalAssistantDatabase(), profile.id).map(skill => skill.name);
   if (body.disabledSkills.some(name => !available.includes(name))) throw new TeamError('Unknown team skill', 400);
-  await changeRevision(team.id, body.expectedRevision);
+  await saveTeamMcpSelection(team.id, roleSchema.parse(request.params.role), names, body.expectedRevision);
   await saveResourcePreferences(profile.id, { disabledSkills: body.disabledSkills, disabledPlugins: [] });
   announceTeamChange(team.id);
   return { preferences: await assistantResourcePreferences(profile.id), revision: (await getTeam(team.id)).revision };

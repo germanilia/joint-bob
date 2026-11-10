@@ -5,7 +5,11 @@ One host runs Bob, Product, Designer, QA, PR reviewer and Technical Support in a
 ## Operation and boundaries
 
 - Select the team in the existing control center. Each role has independent instructions, Pi model/effort and uploaded skills/files. Team monitoring thresholds are team-wide: affirmative confidence **>95% acts**, **>80% through 95% asks**, otherwise silent. A confident `none` is silent. The central AI decision setting is authoritative; there is no agent fallback.
-- Supported runtime and knowledge writer: **Pi only**. Resources: **role-uploaded skills/files**. Team MCP, browser profiles/logins and plugins are **not supported**. Do not interpret empty inventories as permission to inherit the executor's private resources. Other harnesses are not silently substituted.
+- Supported runtime and knowledge writer: **Pi only**. Other harnesses are not silently substituted. Each role's resources are its uploaded skills/files plus what the host shares with the team and the role selects:
+  - **MCP:** only the host execution account, signed in on the host, can share one of its shared-connection MCP definitions. No credentials are copied. Every tool list and call rechecks the running assignment, the role selection and the share.
+  - **Browser:** a new persistent profile created for the team on the host, or one explicitly shared to the team project or cluster. Logins are never copied: the first sign-in goes through the normal sign-in card and human takeover.
+  - **Plugins:** only app-configured plugin directories whose contents are Pi skills. Plugins with Claude-only parts (commands, agents, hooks, MCP servers) are rejected rather than half-loaded.
+  - Revoking a share takes effect on the next call. An empty inventory never falls back to the executor's private resources.
 - Use `/bob`, `/product`, `/designer`, `/qa`, `/pr_reviewer`, `/support` (or leading `@` aliases) through one Telegram bot. These are logical aliases, not separate accounts. Explicit calls bypass attention confidence, never membership, readiness or Guardian approval.
 - An accepted request has a durable acknowledgment. A directly requested specialist's final answer is labelled; Bob-delegated results remain internal. Bob alone delegates, with at most ten child turns per root. Persona-specific conversations remain separate even on the same subject.
 - Inquiry Confirm/Dismiss buttons bind to the exact delivered question, chat and forum thread. Current enrolled members may respond once. An explicit reply `yes`/`no` also works; loose confirmation asks for clarification. Forwarded buttons or enrollment links do not confer authority.
@@ -66,7 +70,7 @@ Measure disk space/inodes and growth, available RAM/swap, CPU load, file-descrip
 
 Use the installation's existing reviewed installer/update flow for the approved artifact; restart the existing service and confirm persistent paths and snapshot revision. Verify all six selected Pi models and central decision/knowledge-writer selections are ready locally. Require production Guardian readiness and an actual member's approval for unsafe actions. Do not migrate execution to a laptop if readiness fails.
 
-Create the dedicated empty shared project/team, configure each role and upload only authorized role skills/files. Provider credentials and human provider sign-ins belong on the hosting node using normal secret controls. MCP/browser/plugin attachment is currently unsupported for teams: do not advertise these modalities or copy personal profiles as a workaround. Any later supported node-local sign-in requires separate authorization.
+Create the dedicated empty shared project/team, configure each role and upload only authorized role skills/files. Provider credentials and human provider sign-ins belong on the hosting node using normal secret controls. Share MCP definitions, browser profiles and plugins to the team only from the host execution account on the host, then select them per role. Never copy personal profiles or logins: create a team browser profile and sign it in through human takeover. MCP sign-ins stay the host account's own.
 
 ### 4. Telegram and member acceptance
 

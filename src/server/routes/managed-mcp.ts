@@ -132,6 +132,19 @@ app.post("/api/resources/mcp/native/auth/sign-out", async (request, response) =>
 const agentSchema = z.object({ server: nameSchema, action: z.enum(["tools", "call"]), tool: z.string().min(1).max(300).optional(), arguments: z.record(z.unknown()).optional() }).strict();
 export async function authorizeMcpServer(identity: McpAgentIdentity, name: string): Promise<boolean> {
   if (!await getProject(identity.projectId)) return false;
+  // Team conversations never fall back to personal MCP inventory or policy.
+  const team = await (await import('../../assistant-teams/runtime.js')).runningTeamMcp(identity.projectId, identity.conversationId);
+  if (identity.teamId && team?.team.id !== identity.teamId) return false;
+  // Pre-existing capabilities without a team tag cannot turn a deleted role mapping into personal access.
+  if (!team && (await (await import('../../assistant-teams/store.js')).teamDatabase()).prepare('SELECT 1 FROM assistant_teams WHERE project_id=?').get(identity.projectId)) return false;
+  if (team) {
+    if (identity.account.accountId !== team.team.executorAccountId) return false;
+    if (name === JOINT_BOB_TOOL_SERVER) return true;
+    const { selectedTeamMcp } = await import('../../assistant-teams/store.js');
+    return (await selectedTeamMcp(team.team.id, team.assignment.role)).includes(name)
+      && managedMcpStore(team.team.executorAccountId).sharedWith(name, team.team.id)
+      && activationDecision('mcp', name, identity.engine, false).enabled;
+  }
   // Joint Bob's own tools decide for themselves who may use them.
   if (name === JOINT_BOB_TOOL_SERVER) return true;
   const server = managedMcpStore(identity.account.accountId).servers()[name];

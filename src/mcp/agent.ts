@@ -9,7 +9,7 @@ import { resolveDataDirectory } from "../data-directory.js";
 import type { HarnessId } from "../types.js";
 import { ManagedMcpStore, type ManagedMcpServer } from "./store.js";
 
-export interface McpAgentIdentity { account: ActingAccount; projectId: string; conversationId: string; engine: HarnessId }
+export interface McpAgentIdentity { account: ActingAccount; projectId: string; conversationId: string; engine: HarnessId; teamId?: string }
 let database: DatabaseSync | undefined;
 function db() {
   if (!database) {
@@ -20,10 +20,10 @@ function db() {
   return database;
 }
 export function managedMcpStore(accountId: string) { return new ManagedMcpStore(resolveDataDirectory(), accountId); }
-export function mcpAgentEnvironment(projectId: string, engine: HarnessId, conversationId: string): NodeJS.ProcessEnv {
+export function mcpAgentEnvironment(projectId: string, engine: HarnessId, conversationId: string, teamId?: string): NodeJS.ProcessEnv {
   const account = actingAccount();
   if (!account) return {};
-  const token = randomBytes(32).toString("hex"), identity: McpAgentIdentity = { account, projectId, engine, conversationId };
+  const token = randomBytes(32).toString("hex"), identity: McpAgentIdentity = { account, projectId, engine, conversationId, ...(teamId ? { teamId } : {}) };
   db().prepare("DELETE FROM mcp_agent_tokens WHERE expires <= ?").run(Date.now());
   db().prepare("INSERT INTO mcp_agent_tokens VALUES (?,?,?)").run(createHash("sha256").update(token).digest("hex"), JSON.stringify(identity), Date.now() + 30 * 86400_000);
   return { JOINT_BOB_MCP_API: `http://127.0.0.1:${process.env.PORT ?? "8790"}/api/mcp/agent`, JOINT_BOB_MCP_TOKEN: token };
