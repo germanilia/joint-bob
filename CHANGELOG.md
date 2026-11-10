@@ -3,14 +3,14 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.254.0 — 2026-11-10
 
-- Fixed secrets shared with a third node not arriving when a workspace secret came from a twin node.
-- Bob now looks at a finished conversation about 3 seconds after its turn ends instead of 20, so its verdict on whether it waits for you shows up sooner.
-- Added shared assistant teams: a cluster can now set up one team of six role assistants (Bob, product, designer, QA, PR reviewer, support) whose skills, files and model settings stay separate from your personal assistants, and whose conversations never reach your private collaboration tools.
-- Added Telegram for assistant teams: a team can connect a bot, members enroll their Telegram accounts, and messages from approved groups are saved with their attachments for the team.
-- Added team coordination in Telegram: Bob acknowledges requests to a team's specialists, passes work between them, and posts the final answer, while direct calls go straight to the named specialist. Team members set the thresholds for when Bob acts on or asks about a group conversation, and the team keeps a shared memory of decisions and topics.
-- Bob's chat showed at once that a pressed button was being carried out, with a spinner and the time so far, and **Push it on** was answered as soon as the push was queued instead of when its turn started.
+- Added cluster-shared teams with Bob, Product, Designer, QA, PR reviewer and Technical Support, running on one host with separate Pi settings, uploaded skills and files, without adopting personal assistant history or resources.
+- Added one-bot Telegram setup, expiring QR/link enrollment with account confirmation, explicit group binding and durable discussion history. Only verified current cluster members can start work or read team conversations; received revocations also disconnect live readers.
+- Bob acknowledged accepted requests, coordinated private specialist assignments and posted final results. Direct specialist requests received labelled replies. Configurable monitoring thresholds controlled when Bob acted, asked or stayed silent; uncertain deliveries were retained without automatic replay.
+- Added sourced, revisioned shared subject memory and team configuration, activity, decisions and memory views in the control center, with phone-sized pagination.
+- Fixed shared secrets failing to reach a third node when another credential belonged to a twin-owned workspace mirror.
+- Kept browser login challenges visible with accurate human-control status.
 
 ## 2.253.3 — 2026-11-09
 
