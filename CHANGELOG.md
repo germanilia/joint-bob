@@ -3,9 +3,9 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.258.2 — 2026-11-10
 
-- Fixed the browser sign-in card missing sign-in forms that submit in the same tab, and failing on pages with an invisible password-manager field next to the visible one. It now reads those forms and ignores the hidden field. Forms that open in a new window are still left alone.
+- Fixed the browser sign-in card missing sign-in forms that submit to the same page, such as Microsoft's sign-in, and picking a hidden password-manager field instead of the visible one. Forms that open in a new window are still left alone.
 
 ## 2.258.1 — 2026-11-10
 
