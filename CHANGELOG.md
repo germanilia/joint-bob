@@ -3,9 +3,9 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.257.0 — 2026-11-10
 
-- The browser sign-in card now finds the sign-in step on more pages: a sign-in form inside an open dialog, and fields that are not wrapped in a form. For those pages, System AI (Settings → System AI) picks the username, password and button, and the card uses its choice only when it is confident. If System AI is unavailable, the card stays unsupported as before.
+- Fixed the browser sign-in card failing on pages with more than one form, such as Joint Bob's own login behind a dialog. While a dialog is open, only forms inside it count. When the page rules still find no sign-in step, System AI (Settings → System AI) picks the username, password and button, and the card uses that choice only when it is confident. Typed values are never sent to it, and if System AI is unavailable the card stays unsupported as before.
 
 ## 2.256.4 — 2026-11-10
 
