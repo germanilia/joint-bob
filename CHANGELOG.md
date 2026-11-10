@@ -10,6 +10,12 @@ Every deployment is a version. The newest section must always match the
 - Added shared assistant teams: a cluster can now set up one team of six role assistants (Bob, product, designer, QA, PR reviewer, support) whose skills, files and model settings stay separate from your personal assistants, and whose conversations never reach your private collaboration tools.
 - Added Telegram for assistant teams: a team can connect a bot, members enroll their Telegram accounts, and messages from approved groups are saved with their attachments for the team.
 - Added team coordination in Telegram: Bob acknowledges requests to a team's specialists, passes work between them, and posts the final answer, while direct calls go straight to the named specialist. Team members set the thresholds for when Bob acts on or asks about a group conversation, and the team keeps a shared memory of decisions and topics.
+- Bob's chat showed at once that a pressed button was being carried out, with a spinner and the time so far, and **Push it on** was answered as soon as the push was queued instead of when its turn started.
+
+## 2.253.3 — 2026-11-09
+
+- Pressing a button in Bob's chat shows at once that it is being done. The item's buttons and box give way to a spinner and how long so far (*Telling it to go on, with your instructions… 2 s*), and the item leaves as soon as the press is done. A press that fails brings the buttons back, with what you typed, and says why.
+- **Push it on** is answered as soon as the conversation has the push in its queue, instead of when its turn starts. A press on a message from your other machine clears the item here at once, instead of only after it syncs back.
 
 ## 2.253.2 — 2026-11-09
 

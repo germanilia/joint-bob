@@ -83,6 +83,8 @@ test("the chat with Bob follows the person to their other machine, and a button 
     const macRows = (await api<{ rows: AutomationRow[] }>(mac, onMac, "GET", "/control-center/automations")).body.rows;
     assert.ok(macRows.some((row) => row.kind === "bob" && row.name === "Evening report" && row.nodeId === mac.nodeId), "the report was made on the Mac");
     assert.deepEqual((await timeline(server, onServer)).find((message) => message.id === ask.id)?.actions, [], "the buttons are gone on the server");
+    // The Mac says how the pressed item stands now, so the server clears it at once, without waiting for replication.
+    assert.equal((await timeline(server, onServer)).find((message) => message.id === ask.id)?.resolution, "You chose “Create evening report”.", "cleared on the server at once");
     await eventually(async () => (await timeline(mac, onMac)).find((message) => message.id === ask.id)?.actions.length === 0, "the buttons are gone on the Mac");
     assert.equal((await api(server, onServer, "POST", "/control-center/bob/action", { messageId: ask.id, actionId: "automations.create" })).status, 404, "a button runs once");
 

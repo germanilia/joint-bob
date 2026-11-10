@@ -157,13 +157,15 @@ function itemControls(message, about) {
   const conversation = about?.open ? about : null;
   const controls = [control("Reply", conversation ? `Answer “${conversation.title}” in the conversation, as you` : "Answer Bob about this", () => openReply(message))];
   if (conversation && message.importance !== "report" && !message.actions.some((action) => action.id === "conversation.done")) {
-    controls.push(control("Done", "Close this conversation, as marking it done in its project does, and clear the message", (button) => settle(message, conversation, "done", button)));
+    controls.push(control("Done", "Close this conversation, as marking it done in its project does, and clear the message", () => settle(message, conversation, "done")));
   }
-  controls.push(control("Dismiss", "Clear it from the chat; it stays under ✓ Cleared", (button) => settle(message, conversation, "dismiss", button)));
+  controls.push(control("Dismiss", "Clear it from the chat; it stays under ✓ Cleared", () => settle(message, conversation, "dismiss")));
   return controls;
 }
 
 function renderActions(message, about) {
+  // While a press is carried out, the item says so in place of its buttons.
+  if (busy.has(message.id)) return renderBusy(busy.get(message.id));
   const settleable = message.role !== "user" && !message.resolvedAt && !message.actions.some((action) => action.id.startsWith("guardian."));
   if (!message.actions.length && !settleable) return null;
   const actions = element("div", "control-actions");
@@ -172,7 +174,7 @@ function renderActions(message, about) {
     if (action.id === PUSH && replying?.id === message.id && replying.push) continue;
     const button = element("button", `control-action ${action.style ?? ""}`, action.label);
     button.type = "button";
-    button.addEventListener("click", () => (action.id === PUSH ? openPush(message, action) : runAction(message, action, button)));
+    button.addEventListener("click", () => (action.id === PUSH ? openPush(message, action) : runAction(message, action)));
     actions.append(button);
   }
   if (settleable) actions.append(...itemControls(message, about));
@@ -206,8 +208,8 @@ function renderReply(message, about) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = box.value.trim();
-    if (pushing) void runAction(message, pushing, send, text);
-    else if (text) void sendReply(message, about, text, send);
+    if (pushing) void runAction(message, pushing, text);
+    else if (text) void sendReply(message, about, text);
   });
   return form;
 }
@@ -298,6 +300,39 @@ const elapsed = (since) => {
   return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 };
 
+/**
+ * Items whose press is being carried out, with what is being done and since when. Their buttons and box give way at once to a
+ * line that says so, until the answer comes; a press that fails brings them back, with what was typed.
+ */
+const busy = new Map();
+
+function renderBusy({ words, since }) {
+  const line = element("div", "control-busy");
+  line.dataset.testid = "control-chat-busy";
+  line.setAttribute("role", "status");
+  const time = element("span", "control-pending-time", elapsed(since));
+  time.dataset.since = String(since);
+  line.append(element("span", "control-spinner"), element("span", "", `${words}…`), time);
+  return line;
+}
+
+/** Runs a press on an item, showing at once that it is being done. */
+async function whileBusy(message, words, run) {
+  const typed = replying?.id === message.id ? replying : null;
+  if (typed) replying = null;
+  busy.set(message.id, { words, since: Date.now() });
+  renderMessages();
+  try {
+    await run();
+  } catch (error) {
+    if (typed) replying = { ...typed, focus: true };
+    toast.error(error.message);
+  } finally {
+    busy.delete(message.id);
+    renderMessages();
+  }
+}
+
 /** Bob's acknowledgement: he has the message and is working on it, for how long so far. */
 function renderPending({ text, startedAt }) {
   const wrap = element("div", "control-entry bob control-pending");
@@ -325,7 +360,7 @@ let drawnPending = 0;
 
 function renderMessages() {
   const visible = messages.filter(matchesFilter);
-  const drawing = JSON.stringify([visible, [...pending.keys()], sendError, replying?.id ?? null, replying?.push?.id ?? null, filter.importance]);
+  const drawing = JSON.stringify([visible, [...pending.keys()], [...busy.keys()], sendError, replying?.id ?? null, replying?.push?.id ?? null, filter.importance]);
   if (drawing === drawnMessages) return;
   drawnMessages = drawing;
   const list = elements.controlChatMessages;
@@ -346,7 +381,7 @@ function renderMessages() {
     box.closest(".control-entry").scrollIntoView({ block: "nearest" });
   }
   clearInterval(pendingTicker);
-  pendingTicker = pending.size ? setInterval(tickPending, 1000) : null;
+  pendingTicker = pending.size || busy.size ? setInterval(tickPending, 1000) : null;
 }
 
 /** Whether the chat shows a message: a cleared item only in the cleared view, which shows nothing else. */
@@ -407,16 +442,15 @@ function loadMessages() {
   return reading;
 }
 
-async function runAction(message, action, button, note = "") {
+async function runAction(message, action, note = "") {
   // Opening a conversation, undoing a display change and the New conversation form happen in the page; every other button is
   // answered by the server.
   if (action.data?.open) { openFrom(message, action.data.open).catch((error) => toast.error(error.message)); return; }
   if (action.data?.appearance) { applyAppearance(action.data.appearance); toast("Display settings put back"); return; }
   if (action.data?.create) { newConversation(action.data.create.content).catch((error) => toast.error(error.message)); return; }
-  button.disabled = true;
-  try {
+  const words = action.id === PUSH ? (note ? "Telling it to go on, with your instructions" : "Telling it to go on") : `Working on “${action.label}”`;
+  await whileBusy(message, words, async () => {
     const result = await api("/api/control-center/bob/action", { method: "POST", body: JSON.stringify({ messageId: message.id, actionId: action.id, ...note ? { note } : {} }) });
-    if (replying?.id === message.id) replying = null;
     // A button runs once: the server took the pressed message's buttons away, and so does the page.
     Object.assign(message, result.pressed);
     if (result.messages?.length) messages.push(...result.messages.filter((added) => matchesFilter(added) && !messages.some((shown) => shown.id === added.id)));
@@ -425,56 +459,40 @@ async function runAction(message, action, button, note = "") {
     void refreshControlCenter().catch(() => undefined);
     // A settled item leaves, while the board changes beside it.
     if (message.resolvedAt && entryOf(message.id)) await vanish(entryOf(message.id), settledWord(message), { collapse: true });
-    renderMessages();
-  } catch (error) {
-    toast.error(error.message);
-    button.disabled = false;
-  }
+  });
 }
 
 /** Dismiss clears a message; Done also closes the conversation it is about, whose card leaves the board with the same check. */
-async function settle(message, conversation, how, button) {
-  button.disabled = true;
-  try {
+async function settle(message, conversation, how) {
+  await whileBusy(message, how === "done" ? "Closing it" : "Dismissing it", async () => {
     const result = await api("/api/control-center/bob/item", { method: "POST", body: JSON.stringify({ messageId: message.id, how }) });
     Object.assign(message, result.pressed);
-    if (replying?.id === message.id) replying = null;
     if (how === "done") {
       seeCardOff(conversation.open.projectId, conversation.open.conversationId, "Done");
       void refreshControlCenter().catch(() => undefined);
     }
     if (entryOf(message.id)) await vanish(entryOf(message.id), how === "done" ? "Done" : "Dismissed", { collapse: true });
-    renderMessages();
-  } catch (error) {
-    toast.error(error.message);
-    button.disabled = false;
-  }
+  });
 }
 
 /**
  * Sends a quick reply. About a conversation, it goes into that conversation as the person, and the message is cleared. About
  * anything else, it is a message to Bob that says what it answers, and the message is marked answered.
  */
-async function sendReply(message, about, text, button) {
-  button.disabled = true;
-  try {
+async function sendReply(message, about, text) {
+  await whileBusy(message, about?.open ? `Sending your reply to “${about.title}”` : "Sending your reply", async () => {
     if (about?.open) {
       Object.assign(message, (await api("/api/control-center/bob/reply", { method: "POST", body: JSON.stringify({ messageId: message.id, text }) })).pressed);
       toast(`Sent to “${about.title}”`);
     } else {
       Object.assign(message, (await api("/api/control-center/bob/item", { method: "POST", body: JSON.stringify({ messageId: message.id, how: "answered" }) })).pressed);
     }
-    replying = null;
     if (message.resolvedAt && entryOf(message.id)) await vanish(entryOf(message.id), "Replied", { collapse: true });
-    renderMessages();
     if (!about?.open) {
       const asked = message.text.split("\n")[0].trim();
       void send(`About “${asked.length > 120 ? `${asked.slice(0, 117)}…` : asked}”: ${text}`, [], false);
     }
-  } catch (error) {
-    toast.error(error.message);
-    button.disabled = false;
-  }
+  });
 }
 
 function renderChatAttachments() {

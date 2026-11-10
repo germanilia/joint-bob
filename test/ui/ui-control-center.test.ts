@@ -69,6 +69,9 @@ test("the control center shows the live board, filters by project, colors cards 
         // As the server does for Done: the conversation is closed, so it leaves the board, and the pressed item is cleared.
         const body = JSON.parse(args[1].body);
         window.__pressed = [...(window.__pressed || []), body];
+        // A step can hold the answer, as a press carried to another machine takes a while.
+        if (window.__holdPress) await new Promise((resolve) => { window.__releasePress = resolve; });
+        if (window.__failPress) { window.__failPress = false; return new Response(JSON.stringify({ error: 'The machine that wrote this message did not answer' }), { status: 503, headers: { 'content-type': 'application/json' } }); }
         const pressed = window.__timeline.find((message) => message.id === body.messageId);
         const action = pressed.actions.find((candidate) => candidate.id === body.actionId);
         Object.assign(pressed, { actions: [], resolvedAt: new Date().toISOString(), resolution: 'You chose “' + action.label + '”.' });
@@ -493,7 +496,23 @@ test("the control center shows the live board, filters by project, colors cards 
   await stopped.getByRole("button", { name: "Push it on" }).click();
   await pushBox.waitFor();
   await pushBox.locator("textarea").fill("Map the follow-up states first, then wire the nudges.");
+  // A press that fails brings the box back with what was written, and says why.
+  await page.evaluate(() => { (window as unknown as { __failPress: boolean }).__failPress = true; });
   await pushBox.getByRole("button", { name: "Push it on" }).click();
+  await pushBox.waitFor();
+  assert.equal(await pushBox.locator("textarea").inputValue(), "Map the follow-up states first, then wire the nudges.");
+  const why = page.getByRole("alert").filter({ hasText: "The machine that wrote this message did not answer" });
+  await why.waitFor();
+  await why.getByTestId("toast-close-button").click();
+  // While the press is carried out, the item says so at once in place of its buttons and box, and leaves once it is done.
+  await page.evaluate(() => { (window as unknown as { __holdPress: boolean }).__holdPress = true; });
+  await pushBox.getByRole("button", { name: "Push it on" }).click();
+  const working = stopped.getByTestId("control-chat-busy");
+  await working.waitFor();
+  assert.match(await working.innerText(), /^Telling it to go on, with your instructions…\s*\d+ s$/);
+  assert.equal(await pushBox.count(), 0, "the box gives way at once");
+  assert.equal(await stopped.locator(".control-action").count(), 0, "and so do the buttons");
+  await page.evaluate(() => { const held = window as unknown as { __holdPress: boolean; __releasePress: () => void }; held.__holdPress = false; held.__releasePress(); });
   await stopped.waitFor({ state: "detached" });
   assert.deepEqual(await page.evaluate(() => (window as unknown as { __pressed: unknown[] }).__pressed.at(-1)), { messageId: "pushme", actionId: "review.push", note: "Map the follow-up states first, then wire the nudges." });
 

@@ -78,12 +78,24 @@ async function decide(actor: ActingAccount, settings: BobSettings, conversation:
   });
 }
 
-async function push(actor: ActingAccount, conversation: Conversation, reason: string, instructions = ""): Promise<void> {
+async function push(actor: ActingAccount, conversation: Conversation, reason: string, instructions = "", onQueued?: () => void): Promise<void> {
   if (!await personalContinuationAllowed(conversation.projectId, conversation.conversationId)) throw new Error('Team continuation requires an explicit assignment');
   await runAsAccount(actor, () => queueConversationPrompt({
     projectId: conversation.projectId, engine: conversation.engine, sessionId: conversation.sessionId, message: personPushText(reason, instructions),
-    requestId: randomUUID(), label: "Bob", until: "started",
+    requestId: randomUUID(), label: "Bob", until: "started", onQueued,
   }));
+}
+
+/**
+ * The person's push answers the press as soon as the conversation has it in its queue, as a quick reply does, so the chat
+ * says so at once; the turn starts right after (or after the one running). A turn that then fails to start shows there.
+ */
+async function pushForPerson(actor: ActingAccount, conversation: Conversation, reason: string, instructions: string): Promise<void> {
+  let accepted!: () => void;
+  const queued = new Promise<void>((resolve) => { accepted = resolve; });
+  const started = push(actor, conversation, reason, instructions, accepted);
+  started.catch((error) => console.warn(`Bob's push to "${conversation.title}" did not start`, error instanceof Error ? error.message : error));
+  await Promise.race([queued, started]);
 }
 
 // The open button names the conversation, so Bob's chat can say which one a message is about.
@@ -198,7 +210,7 @@ registerBobAction("review.push", async ({ db, session, action, note }) => {
   const conversation = conversationData.parse(action.data);
   if (isLeased(conversation.projectId, conversation.conversationId)) return [bobSays(db, session, `You are in "${conversation.title}" now, so I left it to you.`, { projectId: conversation.projectId, projectName: conversation.projectName })];
   const previous = readReviewCheck(db, conversation.projectId, conversation.conversationId);
-  await push(actingAccountFromSession(session), conversation, previous?.reason ?? "", note);
+  await pushForPerson(actingAccountFromSession(session), conversation, previous?.reason ?? "", note);
   // Instructions are a message from the person: Bob's count of pushes in a row starts again.
   if (previous) writeReviewCheck(db, { ...previous, pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
   return [bobSays(db, session, note ? `Told "${conversation.title}" to go on, with your instructions.` : `Told "${conversation.title}" to go on.`, { importance: "done", projectId: conversation.projectId, projectName: conversation.projectName, via: "Review check · you pressed the button" })];
