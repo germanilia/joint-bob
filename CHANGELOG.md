@@ -3,6 +3,12 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.256.1 — 2026-11-10
+
+- Asking Bob to have one of your conversations do something now works the way you type it. *I want the internal assistant conversation to fix this*, with typos such as *conversatoin*, reaches Bob's agent when his decision model is unsure, and he offers to send it (**Send it**) instead of only answering.
+- What you attach goes with it: the screenshot or file reaches the conversation with your message (*With image.png.*), and a conversation Bob starts this way gets it too.
+- A conversation that runs on your other machine can be asked from this one. The press carries the message and its attachments to that machine, and the answer comes back to Bob's chat. Update both machines.
+
 ## 2.256.0 — 2026-11-10
 
 - Team assistants gained access to the MCP servers and plugins that the host account shares with the team, and each role picks which ones it uses. Revoking a share cuts access off on the next call, and a plugin with Claude-only parts is refused rather than half-loaded.
