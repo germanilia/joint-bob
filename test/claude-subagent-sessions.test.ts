@@ -17,7 +17,6 @@ test("Claude sub-agent transcripts list as read-only children of their parent", 
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
     const sessionPaths = await import(`../src/session-paths.js?cache=${Date.now()}-${Math.random()}`);
     const claude = await import(`../src/claude-service.js?cache=${Date.now()}-${Math.random()}`);

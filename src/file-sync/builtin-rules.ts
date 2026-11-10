@@ -161,15 +161,6 @@ export function builtinRulesFor(kind: ShareKind): BuiltinRule[] {
   return BUILTIN_RULES.filter((rule) => !rule.kinds || rule.kinds.includes(kind));
 }
 
-/** Syncthing's project/ticket folder list, identical to projectIgnorePatterns in src/syncthing.ts. */
-export const SYNCTHING_PROJECT_PATTERNS: readonly string[] = projectRules.map((rule) => rule.pattern);
-
-/** Syncthing's worktree folder list, identical to worktreeIgnorePatterns in src/syncthing.ts. */
-export const SYNCTHING_WORKTREE_PATTERNS: readonly string[] = [...new Set([
-  ...projectRules.map((rule) => rule.class === "regenerable" ? rule.pattern : `${DELETABLE}${rule.pattern}`),
-  ...BUILTIN_RULES.filter((rule) => rule.kinds?.includes("worktrees") && !rule.engineOnly).map((rule) => rule.pattern),
-])];
-
 /* Names that always sync, whatever matches them: worktree metadata and baselines, attachments, conflict
    copies (so a conflict is visible on every node), and the ticket merge journal outside worktrees.
    Only the name itself is protected; content below it is classified normally. A sync engine's download

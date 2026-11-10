@@ -62,7 +62,6 @@ test("a switched conversation behind 60 newer ones opens with every segment, fou
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-agent"), sessionPath: sessionRoot },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     const piSessionId = "pi-first-segment";
     const piTranscriptPath = path.join(sessionRoot, `${piSessionId}.jsonl`);

@@ -1,5 +1,7 @@
 # Dashboards
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+
 ## Intent
 
 Users want live dashboards inside Joint Bob, built by describing them to an agent ("vibe coding") rather than writing them. The first real one is for the Contigos project: bugs per day, errors per day and bugs by type, so the user can see whether a fix actually holds or the same issue keeps coming back. Joint Bob must not be fitted to Contigos. Joint Bob provides the infrastructure and a dashboard-creator agent; each dashboard carries its own data logic and layout.

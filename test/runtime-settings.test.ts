@@ -20,7 +20,6 @@ test("runtime settings drive Claude session discovery and execution", async () =
     settings.updateSettings({
       pi: { executable: "pi", configPath: piConfigRoot, sessionPath: piSessionRoot },
       claude: { executable: "claude", configPath: configRoot, sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
 
     const sessionPaths = await import(`../src/session-paths.js?runtime=${Date.now()}-${Math.random()}`);
@@ -53,7 +52,6 @@ console.log(JSON.stringify(process.argv[2] === "auth"
     settings.updateSettings({
       pi: { executable: "pi", configPath: piConfigRoot, sessionPath: piSessionRoot },
       claude: { executable: executablePath, configPath: configRoot, sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
 
     const run = claude.runClaudePrompt({ cwd: projectCwd, prompt: "hello", onEvent: () => {} });
@@ -66,7 +64,6 @@ console.log(JSON.stringify(process.argv[2] === "auth"
     settings.updateSettings({
       pi: { executable: "pi", configPath: piConfigRoot, sessionPath: piSessionRoot },
       claude: { executable: executablePath, configPath: path.join(os.homedir(), ".claude"), sessionPath: path.join(os.homedir(), ".claude", "projects") },
-      syncthing: { endpoint: "" },
     });
     const defaultConfigRun = claude.runClaudePrompt({ cwd: projectCwd, prompt: "hello", onEvent: () => {} });
     assert.equal((await defaultConfigRun.done).ok, true);
@@ -81,7 +78,6 @@ console.log(JSON.stringify(process.argv[2] === "auth"
     const validInput = {
       pi: { executable: "missing-pi", configPath: piConfigRoot, sessionPath: piSessionRoot },
       claude: { executable: executablePath, configPath: configRoot, sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     };
     assert.throws(() => settings.updateSettings({ ...validInput, pi: { ...validInput.pi, configPath: "relative" } }), /Pi config path must be blank or absolute/);
     assert.throws(() => settings.updateSettings({ ...validInput, claude: { ...validInput.claude, sessionPath: "relative" } }), /Claude session path must be blank or absolute/);
@@ -113,7 +109,6 @@ test("runtime paths under OS temp are rejected when Joint Bob data is not tempor
     assert.throws(() => settings.updateSettings({
       pi: { executable: "pi", configPath: temporaryRuntimePath, sessionPath: "" },
       claude: { executable: "claude", configPath: "", sessionPath: "" },
-      syncthing: { endpoint: "" },
     }), /Pi config path must not be under the OS temporary directory/);
   } finally {
     if (previousDataDir === undefined) delete process.env.PI_WEB_DATA_DIR;

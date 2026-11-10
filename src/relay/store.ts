@@ -46,7 +46,6 @@ export function ensureRelaySchema(db: DatabaseSync): void {
     revoked_at TEXT);
   CREATE TABLE IF NOT EXISTS relay_usage(node_id TEXT NOT NULL, month TEXT NOT NULL, bytes INTEGER NOT NULL, PRIMARY KEY(node_id, month));
   CREATE TABLE IF NOT EXISTS relay_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, action TEXT NOT NULL, node_id TEXT, detail TEXT NOT NULL DEFAULT '');
-  CREATE TABLE IF NOT EXISTS relay_syncthing_tunnels(device_id TEXT PRIMARY KEY, address TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS relay_peer_routes(node_id TEXT PRIMARY KEY, membership_id TEXT NOT NULL, succeeded_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS relay_machine_settings(singleton INTEGER PRIMARY KEY CHECK(singleton=1), other_users_phone INTEGER NOT NULL DEFAULT 1);
   CREATE TABLE IF NOT EXISTS relay_memberships(
@@ -444,16 +443,3 @@ export class RelayStoreError extends Error {
   constructor(readonly statusCode: number, message: string) { super(message); }
 }
 
-// ---------------------------------------------------------------- Syncthing tunnel addresses
-
-/** The loopback address a relay tunnel added to a Syncthing device, so only it is ever removed. */
-export function tunnelAddresses(db: DatabaseSync): Map<string, string> {
-  ensureRelaySchema(db);
-  return new Map((db.prepare("SELECT device_id, address FROM relay_syncthing_tunnels").all() as Array<{ device_id: string; address: string }>).map((row) => [row.device_id, row.address]));
-}
-
-export function recordTunnelAddress(db: DatabaseSync, deviceId: string, address: string | null): void {
-  ensureRelaySchema(db);
-  if (address === null) db.prepare("DELETE FROM relay_syncthing_tunnels WHERE device_id=?").run(deviceId);
-  else db.prepare("INSERT INTO relay_syncthing_tunnels(device_id,address) VALUES(?,?) ON CONFLICT(device_id) DO UPDATE SET address=excluded.address").run(deviceId, address);
-}

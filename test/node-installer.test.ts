@@ -81,11 +81,10 @@ test("prerequisite validation is non-mutating", async () => {
     "--json --no-refresh",
     "claude --version",
     "claude auth status",
-    "syncthing --version",
-    "syncthing cli show system",
   ]) {
     assert.match(prerequisites, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+  assert.doesNotMatch(prerequisites, /syncthing/i);
   assert.ok(prerequisites.includes('\\"status\\"[[:space:]]*:[[:space:]]*\\"ready\\"'));
   assert.ok(prerequisites.includes('\\"loggedIn\\"[[:space:]]*:[[:space:]]*true'));
   assert.doesNotMatch(prerequisites, /\b(?:npm|brew|apt(?:-get)?|dnf|yum|pacman)\s+(?:install|add)\b/);
@@ -102,7 +101,7 @@ test("service PATH preserves resolved tools and the installer PATH before render
   assert.match(pathBuilder, /dirname "\$\{NPM_BIN\}"/);
   assert.match(pathBuilder, /\$\{PATH\}/);
   assert.match(pathBuilder, /command -v/);
-  for (const tool of ["pi", "claude", "syncthing", "rg", "gh"]) {
+  for (const tool of ["pi", "claude", "rg", "gh"]) {
     assert.match(pathBuilder, new RegExp(`\\b${tool}\\b`));
   }
   assert.match(installer, /chmod \+x .*build-service-path\.sh/);
@@ -118,7 +117,7 @@ test("service installation prepares bundled tools before service mutation", asyn
 
   assert.ok(npmIndex >= 0);
   assert.ok(prerequisiteIndex > npmIndex);
-  assert.ok(installer.lastIndexOf("install-syncthing.sh") > npmIndex);
+  assert.doesNotMatch(installer, /syncthing/i);
   for (const laterStep of ["systemctl --user restart joint-bob.service", "launchctl bootstrap"]) {
     assert.ok(prerequisiteIndex < installer.lastIndexOf(laterStep), `${laterStep} must follow prerequisite validation`);
   }

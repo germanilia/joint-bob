@@ -16,7 +16,7 @@ test("auto compact threshold is node-local, defaults to 70, and can be disabled"
     const initial = await api<Record<string, unknown>>(node, auth, "GET", "/settings");
     assert.equal(initial.body.autoCompactThreshold, 70);
 
-    const base = initial.body as Record<string, unknown> & { syncthing: { endpoint: string } };
+    const base = initial.body as Record<string, unknown>;
     const configured = await api<Record<string, unknown>>(node, auth, "PUT", "/settings", { ...base, autoCompactThreshold: 84 });
     assert.equal(configured.status, 200);
     assert.equal(configured.body.autoCompactThreshold, 84);

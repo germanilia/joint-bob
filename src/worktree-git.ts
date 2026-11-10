@@ -7,7 +7,7 @@ import { execFile, spawn } from "./subprocess.js";
 
 /* A worktree's history lives in its project's repository, never in the worktree: the worktree
    starts as a commit of the remote's default branch, and its pull request is built there too.
-   A node's own HEAD plays no part, since Syncthing moves the files between nodes but not `.git`,
+   A node's own HEAD plays no part, since file sync moves the files between nodes but not `.git`,
    so HEAD can sit days behind the files it describes. */
 
 const execute = promisify(execFile);

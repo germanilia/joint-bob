@@ -967,7 +967,7 @@
             </label>
             <div id="settingsSyncCheckModel"></div>
             <output id="settingsSyncCheckStatus" class="engine-readiness" data-testid="settings-sync-check-status"></output>
-            <p class="settings-hint">Every few minutes this node looks for Syncthing conflict copies in the projects it owns and for folders stuck in an error state. It removes duplicate copies, restores copies whose original is gone, rescans broken folders, and asks the chosen harness and model to merge real two-sided edits. Binary and very large files are left for you.</p>
+            <p class="settings-hint">Every few minutes this node looks for file sync conflict copies in the projects it owns and for folders stuck in an error state. It removes duplicate copies, restores copies whose original is gone, and asks the chosen harness and model to merge real two-sided edits. Binary and very large files are left for you.</p>
           </fieldset>
           <fieldset class="phase-settings" data-testid="settings-dashboards" data-admin-only>
             <legend>Dashboards</legend>
@@ -1646,10 +1646,6 @@
               <button class="ghost" type="button" id="workspaceAddButton" data-testid="workspace-add-button">Add workspace</button>
             </div>
           </fieldset>
-          <fieldset class="phase-settings" data-admin-only>
-            <legend>Syncthing</legend>
-            <p>Syncthing is installed, started, discovered, and configured automatically. Project files, ticket workspaces, shareable engine configuration, and sessions are shared when nodes pair. Authentication and credential-bearing settings stay on each node.</p>
-          </fieldset>
         </section>
 
         <section class="settings-panel" id="settingsPanel-engines" role="tabpanel" aria-labelledby="settingsTab-engines" tabindex="0" hidden>
@@ -1898,7 +1894,7 @@
         <!-- settings-page (P4): Settings → File sync, filled by app/file-sync-settings.js. -->
         <section class="settings-panel relay-panel file-sync-panel" id="settingsPanel-file-sync" role="tabpanel" aria-labelledby="settingsTab-file-sync" tabindex="0" data-testid="settings-panel-file-sync" data-admin-only hidden>
           <div class="relay-head">
-            <p class="settings-hint">Joint Bob can copy project files between your machines itself, instead of Syncthing. Changes here apply at once. Only you, the admin of this node, see this section.</p>
+            <p class="settings-hint">Joint Bob copies the files of every shared project between your machines. Changes here apply at once. Only you, the admin of this node, see this section.</p>
             <button class="ghost compact" type="button" id="fileSyncRefresh" data-testid="file-sync-refresh-button">Refresh</button>
           </div>
           <p class="settings-hint relay-inline-status" id="fileSyncLoadStatus" role="status" data-testid="file-sync-load-status"></p>
@@ -1909,7 +1905,7 @@
 
           <section class="relay-section file-sync-section" id="fileSyncStatusSection" role="tabpanel" aria-labelledby="fileSyncTab-status" data-testid="file-sync-status-section">
             <div class="relay-summary file-sync-engine" data-testid="file-sync-engine">
-              <label class="checkbox-row" hidden><input type="checkbox" id="fileSyncEnabled" data-testid="file-sync-enabled-toggle" /> Built-in file sync on this machine</label>
+              <label class="checkbox-row" hidden><input type="checkbox" id="fileSyncEnabled" data-testid="file-sync-enabled-toggle" /> File sync on this machine</label>
               <span class="cluster-badge" id="fileSyncWorker" data-testid="file-sync-worker">Off</span>
               <button class="ghost compact" type="button" id="fileSyncRetry" data-testid="file-sync-retry-button" hidden>Try again</button>
               <span class="cluster-muted" id="fileSyncAddresses" data-testid="file-sync-addresses"></span>
@@ -1919,14 +1915,9 @@
               <h3 class="file-sync-heading">Machines</h3>
               <div class="relay-list file-sync-peers" id="fileSyncPeerList" data-testid="file-sync-peer-list"></div>
               <div class="relay-pager" id="fileSyncPeerPager" data-testid="file-sync-peer-pager" hidden></div>
-              <!-- auto-transition: which projects this machine compares, and the first index's progress, on the heading's line. -->
+              <!-- The first index's progress, on the heading's line. -->
               <div class="file-sync-detail-head" data-testid="file-sync-projects-head">
                 <h3 class="file-sync-heading">Projects</h3>
-                <span class="checkbox-row cluster-muted" role="radiogroup" aria-labelledby="fileSyncCompareLabel" data-testid="file-sync-compare" title="Joint Bob checks a project's files against the other machines' before it moves the project to built-in sync. A project that is not compared stays on Syncthing.">
-                  <span id="fileSyncCompareLabel">Compare these projects:</span>
-                  <label class="checkbox-row"><input type="radio" name="fileSyncCompare" value="all" id="fileSyncCompareAll" data-testid="file-sync-compare-all" /> All</label>
-                  <label class="checkbox-row"><input type="radio" name="fileSyncCompare" value="chosen" id="fileSyncCompareChosen" data-testid="file-sync-compare-chosen" /> Chosen…</label>
-                </span>
                 <span class="cluster-muted" id="fileSyncIndexing" data-testid="file-sync-indexing" hidden></span>
               </div>
               <p class="settings-hint relay-inline-status" id="fileSyncProjectsStatus" role="status" data-testid="file-sync-projects-status"></p>
@@ -1941,10 +1932,7 @@
               </div>
               <div class="file-sync-facts" id="fileSyncDetailFacts" data-testid="file-sync-detail-facts"></div>
               <div class="relay-row-actions file-sync-detail-actions" id="fileSyncDetailActions" data-testid="file-sync-detail-actions"></div>
-              <p class="settings-hint" id="fileSyncMoveReason" data-testid="file-sync-move-reason" hidden></p>
               <p class="settings-hint relay-inline-status" id="fileSyncDetailStatus" role="status" data-testid="file-sync-detail-status"></p>
-              <ul class="relay-check-list" id="fileSyncChecks" data-testid="file-sync-checks"></ul>
-              <p class="settings-hint" id="fileSyncCleanSince" data-testid="file-sync-clean-since" hidden></p>
               <h3 class="file-sync-heading" id="fileSyncErrorsHeading" hidden>Files with problems</h3>
               <div class="settings-subtabs" id="fileSyncErrorShares" role="group" aria-label="Show problems in" hidden></div>
               <div class="relay-list" id="fileSyncErrorList" data-testid="file-sync-error-list" hidden></div>
@@ -1953,7 +1941,7 @@
           </section>
 
           <section class="relay-section file-sync-section" id="fileSyncDifferencesSection" role="tabpanel" aria-labelledby="fileSyncTab-differences" data-testid="file-sync-differences-section" hidden>
-            <p class="settings-hint">While Syncthing still moves a project's files, Joint Bob compares its own view of them with each machine. A project is ready to move to built-in sync when nothing differs.</p>
+            <p class="settings-hint">Joint Bob compares this machine's view of each project's files with each other machine's. Files listed here differ right now.</p>
             <div class="file-sync-overview" id="fileSyncDiffOverview">
               <div class="relay-list" id="fileSyncDiffList" data-testid="file-sync-diff-list"></div>
               <div class="relay-pager" id="fileSyncDiffPager" data-testid="file-sync-diff-pager" hidden></div>
@@ -2787,7 +2775,7 @@
           <input id="projectBasePathInput" name="basePath" readonly aria-readonly="true" data-testid="project-form-base-path-input" />
         </label>
         <input id="projectMacBasePathInput" name="legacyRemoteBasePath" type="hidden" value="" />
-        <p class="muted compact-copy">Projects synchronize automatically. Local .git and node_modules contents stay on this node and are ignored by Syncthing.</p>
+        <p class="muted compact-copy">Projects synchronize automatically. Local .git and node_modules contents stay on this node and are not synced.</p>
         <div class="dialog-actions">
           <button class="ghost" value="cancel" type="button" id="cancelProjectButton" data-testid="project-form-cancel-button">Cancel</button>
           <button class="primary" value="default" type="submit" data-testid="project-form-save-button">Create project</button>

@@ -4,7 +4,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { Request, Response as HttpResponse, NextFunction } from "express";
 import { z } from "zod";
-import { AGENT_RESOURCES_FOLDER_ID, agentResourcePaths } from "../agent-resources.js";
+import { agentResourcePaths } from "../agent-resources.js";
 import { getClusterNode } from "../cluster.js";
 import { isTrustedTwin, listSharingClusterMembers, listSharingMemberships, getSharingCluster } from "../cluster-sharing-policy.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
@@ -12,7 +12,6 @@ import { resolveDataDirectory } from "../data-directory.js";
 import { signClusterRequest } from "../cluster-protocol.js";
 import { getOrCreateClusterIdentity } from "../cluster-identity.js";
 import { getSettings } from "../settings.js";
-import { pauseSyncthingFolders, requireSyncthingFolders, syncthingConnectionGeneration, syncthingUnreachable, type SyncthingFolder } from "../syncthing.js";
 import { authorizedSkillClusters, buildSkillBundle, ensureSkillSharingSchema, installSkillBundle, listReceivedScopedSkills, listReceivedSkills, setSkillShares, skillBundleDigest, skillClusterIds, skillNodeIds, skillScopeGrants, validateSkillName, type ReceivedScopedSkill, type ReceivedSkill, type SkillConversationGrant, type SkillScopeGrants } from "../skill-sharing.js";
 import { allowSkillImport, backupRemovedSkill, markReceived, receivedOwner, skillSuppressed, suppressSkill, unlinkSkillAliases, unmarkReceived, withSkillMutation } from "../skill-sharing-files.js";
 import { ensureResourceSharingSchema } from "../cluster-sharing.js";
@@ -46,35 +45,9 @@ const scopedManifestSchema = z.object({ ownerNodeId: z.string().uuid(), skills: 
 const bundleReplySchema = z.object({ name: nameSchema, digest: digestSchema, bundle: z.unknown() }).strict();
 const MAX_MANIFEST_BYTES = 128 * 1024;
 const MAX_BUNDLE_RESPONSE_BYTES = 4 * 1024 * 1024;
-let legacyStatus: { verified: boolean; error: string | null } = { verified: false, error: null };
 let refresh: Promise<void> | undefined;
 
 function failure(message: string, status = 409): Error { return Object.assign(new Error(message), { status }); }
-/** The Syncthing connection whose daemon last answered with the folder paused; another daemon is checked afresh. */
-let legacyPauseGeneration: number | undefined;
-export async function ensureLegacySkillSyncPaused(): Promise<void> {
-  const generation = syncthingConnectionGeneration();
-  const refuse = (message: string): never => {
-    legacyStatus = { verified: false, error: message };
-    throw failure(`Cannot verify legacy skill sync is paused: ${message}`, 503);
-  };
-  let folders: SyncthingFolder[];
-  try { folders = await requireSyncthingFolders(); }
-  catch (error) {
-    const message = (error as Error).message;
-    // A daemon that is down cannot sync the folder, and a pause this daemon confirmed stays in its
-    // own configuration; only a reachable Syncthing that never confirmed it keeps refusing.
-    if (syncthingUnreachable(error)) { legacyStatus = { verified: true, error: `Syncthing is unreachable (${message}); a stopped daemon cannot sync the legacy folder` }; return; }
-    if (legacyPauseGeneration === generation) { legacyStatus = { verified: true, error: `Re-checking the pause failed (${message}); it was confirmed earlier` }; return; }
-    return refuse(message);
-  }
-  // The daemon answered: a folder it lists as active stays unverified until the pause itself succeeds.
-  try { await pauseSyncthingFolders([AGENT_RESOURCES_FOLDER_ID], folders); }
-  catch (error) { return refuse((error as Error).message); }
-  legacyPauseGeneration = generation;
-  legacyStatus = { verified: true, error: null };
-}
-
 /** Skills a relay enforces are received from the relay, not from a cluster peer; its owner id says so. */
 export const relayOwnerId = (relayNodeId: string): string => `relay:${relayNodeId}`;
 export const relayOwned = (owner: string | undefined): boolean => Boolean(owner?.startsWith("relay:"));
@@ -158,7 +131,7 @@ async function localView() {
   // Workspaces this node owns; a received "Shared projects" workspace belongs to its owner.
   const registry = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cluster_v2_project_workspaces'").get();
   const workspaces = db.prepare(`SELECT w.id,w.label FROM workspaces w${registry ? " WHERE NOT EXISTS (SELECT 1 FROM cluster_v2_project_workspaces r WHERE r.workspace_id=w.id)" : ""} ORDER BY w.label,w.id`).all() as Array<{ id: string; label: string }>;
-  return { clusters, nodes: [...nodes.values()].sort((left, right) => left.name.localeCompare(right.name)), workspaces, legacy: legacyStatus, skills, peerStatus };
+  return { clusters, nodes: [...nodes.values()].sort((left, right) => left.name.localeCompare(right.name)), workspaces, skills, peerStatus };
 }
 
 /** Where a receiver may load a skill when no cluster or node grant gives it the whole skill. */
@@ -184,7 +157,6 @@ function scopedOnly(db: DatabaseSync, owner: string, receiver: string, name: str
 async function scopedManifestFor(receiver: string) {
   const db = await clusterV2Database(), owner = (await getClusterNode()).id;
   requirePeer(db, owner, receiver);
-  await ensureLegacySkillSyncPaused();
   return withSkillMutation(async () => {
     const skills = [];
     for (const name of await managedNames()) {
@@ -204,7 +176,6 @@ async function scopedManifestFor(receiver: string) {
 async function manifestFor(receiver: string) {
   const db = await clusterV2Database(), owner = (await getClusterNode()).id;
   requirePeer(db, owner, receiver);
-  await ensureLegacySkillSyncPaused();
   return withSkillMutation(async () => {
     const skills = [];
     for (const name of await managedNames()) {
@@ -226,7 +197,6 @@ async function bundleFor(receiver: string, name: string) {
       || await skillSuppressed(agentResourcePaths().sharedSkills, name)) throw failure("Forbidden", 403);
   };
   await authorized();
-  await ensureLegacySkillSyncPaused();
   return withSkillMutation(async () => {
     await authorized();
     const result = await buildSkillBundle(path.join(agentResourcePaths().sharedSkills, name), name);
@@ -414,7 +384,6 @@ async function syncOwner(db: DatabaseSync, local: string, owner: string, cluster
   } catch (error) { recordPeerError(db, owner, error); }
 }
 async function syncSkills(force: boolean): Promise<void> {
-  await ensureLegacySkillSyncPaused();
   const db = await clusterV2Database(), local = (await getClusterNode()).id;
   ensureSkillSharingSchema(db);
   const peers = new Map<string, string>();
@@ -562,7 +531,6 @@ export async function refreshSkillsFrom(owner: string): Promise<void> {
   ensureSkillSharingSchema(db);
   let cluster: string;
   try { cluster = requirePeer(db, local, owner); } catch { return; }
-  await ensureLegacySkillSyncPaused();
   await syncOwner(db, local, owner, cluster);
   writeScopedIndex(db);
 }
@@ -617,7 +585,6 @@ async function ownerChanged(owner: string): Promise<{ accepted: true }> {
   const db = await clusterV2Database(), local = (await getClusterNode()).id;
   const cluster = requirePeer(db, local, owner);
   void (async () => {
-    await ensureLegacySkillSyncPaused();
     await syncOwner(db, local, owner, cluster);
     writeScopedIndex(db);
   })().catch((error) => console.warn(`Skill refresh from ${owner} failed`, error));
@@ -625,7 +592,6 @@ async function ownerChanged(owner: string): Promise<{ accepted: true }> {
 }
 
 async function shareSkill(name: string, ids: string[], nodeIds: string[], scopes: SkillScopeGrants) {
-  await ensureLegacySkillSyncPaused();
   return withSkillMutation(async () => {
     const db = await clusterV2Database(), local = (await getClusterNode()).id;
     const root = agentResourcePaths().sharedSkills;
@@ -638,7 +604,6 @@ async function shareSkill(name: string, ids: string[], nodeIds: string[], scopes
   });
 }
 async function removeSkill(name: string) {
-  await ensureLegacySkillSyncPaused();
   return withSkillMutation(async () => {
     const db = await clusterV2Database(), local = (await getClusterNode()).id;
     const root = agentResourcePaths().sharedSkills, destination = path.join(root, name);
@@ -668,7 +633,7 @@ function route(action: (request: Request, response: HttpResponse) => Promise<unk
   };
 }
 export function registerSkillSharingRoutes(): void {
-registerTwinSkillSyncRoutes(ensureLegacySkillSyncPaused);
+registerTwinSkillSyncRoutes();
 app.get("/api/resources/skills/sharing", route(async () => localView()));
 app.put("/api/resources/skills/:name/sharing", route(async (request) => {
   const selection = selectionSchema.parse(request.body);

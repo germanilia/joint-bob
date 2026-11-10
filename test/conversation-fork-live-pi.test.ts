@@ -16,7 +16,7 @@ before(async () => {
   Object.assign(process.env, environment(root), { PI_CODING_AGENT_DIR: path.join(root, "pi") });
   await mkdir(path.join(root, "pi"));
   const { updateSettings } = await import("../src/settings.js");
-  updateSettings({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, syncthing: { endpoint: "" } });
+  updateSettings({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } });
   ({ server, baseUrl } = await startServer());
   fixture = await configure(baseUrl, root, "");
 });

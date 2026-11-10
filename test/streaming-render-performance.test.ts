@@ -24,7 +24,6 @@ test("Claude session listing returns every transcript when there are more than t
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
 
     const sessionPaths = await import(`../src/session-paths.js?cache=${Date.now()}-${Math.random()}`);

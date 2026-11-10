@@ -17,7 +17,7 @@ test("Claude transcript messages carry their recorded timestamps", async () => {
     const projectCwd = path.join(root, "project");
     await mkdir(projectCwd, { recursive: true });
     const settings = await import("../src/settings.js");
-    settings.updateSettings({ pi: { executable: "pi", configPath: "", sessionPath: "" }, claude: { executable: "claude", configPath: "", sessionPath: sessionRoot }, syncthing: { endpoint: "" } });
+    settings.updateSettings({ pi: { executable: "pi", configPath: "", sessionPath: "" }, claude: { executable: "claude", configPath: "", sessionPath: sessionRoot } });
     const sessionPaths = await import("../src/session-paths.js");
     const claude = await import("../src/claude-service.js");
     const projectDir = sessionPaths.claudeProjectDir(projectCwd, sessionRoot);

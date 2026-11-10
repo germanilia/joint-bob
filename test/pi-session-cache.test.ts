@@ -30,7 +30,6 @@ test("Pi session summaries are cached and old transcripts load only on demand", 
     settings.updateSettings({
       pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: sessionRoot },
       claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") },
-      syncthing: { endpoint: "" },
       projects: { homePath: path.join(root, "JointBob") },
     });
 
@@ -136,7 +135,6 @@ test("a restart resumes Pi summaries from node.db instead of re-reading every tr
     settings.updateSettings({
       pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: sessionRoot },
       claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") },
-      syncthing: { endpoint: "" },
       projects: { homePath: path.join(root, "JointBob") },
     });
     const first = await import(`../src/pi-service.js?cache=${Date.now()}-${Math.random()}`);
@@ -189,7 +187,6 @@ test("a project's listing leaves background runs and other projects' known trans
     settings.updateSettings({
       pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: sessionRoot },
       claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") },
-      syncthing: { endpoint: "" },
       projects: { homePath: path.join(root, "JointBob") },
     });
     const pi = await import(`../src/pi-service.js?cache=${Date.now()}-${Math.random()}`);

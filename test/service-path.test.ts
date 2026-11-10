@@ -7,7 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const binaryNames = ["node", "npm", "pi", "claude", "syncthing", "rg", "gh"];
+const binaryNames = ["node", "npm", "pi", "claude", "rg", "gh"];
 
 async function createFakeExecutable(root: string, name: string) {
   const directory = join(root, name);

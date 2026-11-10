@@ -6,7 +6,7 @@ import test from "node:test";
 import { updateSettings } from "../src/settings.js";
 
 // Parser and native-precedence coverage for the opt-in legacy mode.
-test.before(() => { updateSettings({ syncthing: { endpoint: "" }, strictResourceIsolation: false }); });
+test.before(() => { updateSettings({ strictResourceIsolation: false }); });
 
 async function writeSkill(root: string, name: string, contents: string): Promise<void> {
   await mkdir(path.join(root, name), { recursive: true });

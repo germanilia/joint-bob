@@ -16,12 +16,11 @@ export const ADMIN_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   // Analytics are machine-local and never exposed through peer/agent capabilities.
   { method: "*", path: /^\/quality-analytics(\/|$)/ },
   { method: "*", path: /^\/system-ai(\/|$)/ },
-  // Node settings: harness paths, Syncthing, home folder, limits, sync check, skills publishing.
+  // Node settings: harness paths, home folder, limits, sync check, skills publishing.
   { method: "PUT", path: /^\/settings$/ },
   { method: "*", path: /^\/settings\/(sync-check|runtime-defaults|runtime-check|skills)(\/|$)/ },
   { method: "*", path: /^\/terminal-policy$/ },
-  // The file sync engine's status and switch (GET /file-sync/status, PUT /file-sync/config) and each project's move
-  // between Syncthing and built-in sync (GET /file-sync/projects, GET /file-sync/engine/checks, POST /file-sync/engine);
+  // The file sync engine's status and switch (GET /file-sync/status, PUT /file-sync/config) and its projects (GET /file-sync/projects);
   // peers use /cluster/v2/files.
   { method: "*", path: /^\/file-sync(\/|$)/ },
   { method: "*", path: /^\/node-blocks(\/|$)/ },

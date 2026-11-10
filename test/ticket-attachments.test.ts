@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { chmod, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
 import path from "node:path";
 import test, { after, before } from "node:test";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
@@ -27,23 +26,7 @@ let environment: DevEnvironment;
 let node: SeededNode;
 let session: SignedIn;
 let server: ChildProcess;
-let syncthing: Server;
 let capturePath: string;
-
-async function startFakeSyncthing(): Promise<string> {
-  syncthing = createServer((request, response) => {
-    response.setHeader("Content-Type", "application/json");
-    if (request.method === "GET" && request.url === "/rest/config/folders") { response.end("[]"); return; }
-    if (request.method === "POST" && request.url === "/rest/config/folders") { response.end("{}"); return; }
-    if (request.method === "GET" && request.url === "/rest/system/status") { response.end('{"myID":"LOCAL"}'); return; }
-    if (request.method === "GET" && request.url?.startsWith("/rest/db/ignores")) { response.end('{"ignore":[]}'); return; }
-    if (request.method === "POST" && request.url?.startsWith("/rest/db/ignores")) { response.end("{}"); return; }
-    response.statusCode = 404;
-    response.end();
-  });
-  const port = await new Promise<number>((resolve) => syncthing.listen(0, "127.0.0.1", () => resolve((syncthing.address() as { port: number }).port)));
-  return `http://127.0.0.1:${port}`;
-}
 
 before(async () => {
   root = await temporaryRoot("joint-bob-ticket-attachments-");
@@ -75,17 +58,15 @@ console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "te
 console.log(JSON.stringify({ type: "result", is_error: false }));
 `);
   await chmod(fakeClaude, 0o755);
-  const syncthingUrl = await startFakeSyncthing();
-  server = await startDevNode(environment, node, { PI_MOBILE_WEB_SYNCTHING_URL: syncthingUrl, PI_MOBILE_WEB_SYNCTHING_API_KEY: "test-key", CAPTURE_PATH: capturePath });
+  server = await startDevNode(environment, node, { CAPTURE_PATH: capturePath });
   session = await signIn(environment, node);
-  const settings = await api<{ pi: Record<string, unknown>; claude: Record<string, unknown>; syncthing: Record<string, unknown>; projects: Record<string, unknown> }>(node, session, "GET", "/settings");
+  const settings = await api<{ pi: Record<string, unknown>; claude: Record<string, unknown>; projects: Record<string, unknown> }>(node, session, "GET", "/settings");
   const saved = await api(node, session, "PUT", "/settings", { ...settings.body, claude: { ...settings.body.claude, executable: fakeClaude } });
   assert.equal(saved.status, 200);
 });
 
 after(async () => {
   if (server) await stopDevNode(server);
-  if (syncthing) await new Promise<void>((resolve, reject) => syncthing.close((error) => error ? reject(error) : resolve()));
   if (root) await rm(root, { recursive: true, force: true });
 });
 

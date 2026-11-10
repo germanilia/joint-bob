@@ -219,13 +219,13 @@ test("worktree pull requests enforce the configured file limit", async () => {
   const original = nodeSettings();
   const { root, projectPath } = await repository();
   try {
-    updateSettings({ syncthing: { endpoint: original.syncthing.endpoint }, gitPullFileLimit: 1 });
+    updateSettings({ gitPullFileLimit: 1 });
     const github = fakeGitHub({ knownCommits: [BASE] });
     const request = (writes: ReturnType<typeof changes>["writes"]) => openWorktreePullRequest({ projectPath, branchName: "joint-bob/configured", title: "Fix", body: "", changes: { gitBase: BASE, writes, deletes: [] }, previous: null }, credentials, github.request);
     assert.equal((await request(changes(BASE).writes.slice(0, 1))).files, 1);
     await assert.rejects(request(changes(BASE).writes), /at most 1 files/);
   } finally {
-    updateSettings({ syncthing: { endpoint: original.syncthing.endpoint }, gitPullFileLimit: original.gitPullFileLimit });
+    updateSettings({ gitPullFileLimit: original.gitPullFileLimit });
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -36,7 +36,6 @@ test("Kiro discovers and refreshes the native model catalogue before a session",
     await chmod(executable, 0o700);
     updateSettings({
       runtimes: { ...previousSettings.runtimes, kiro: { executable, configPath, sessionPath } },
-      syncthing: { endpoint: "" },
     });
 
     await writeFile(cataloguePath, JSON.stringify({
@@ -74,14 +73,12 @@ test("Kiro discovers and refreshes the native model catalogue before a session",
     console.warn = (...args: unknown[]) => { warnings.push(args); };
     updateSettings({
       runtimes: { ...previousSettings.runtimes, kiro: { executable: path.join(root, "missing"), configPath, sessionPath } },
-      syncthing: { endpoint: "" },
     });
     assert.deepEqual(await kiroModels(), fallback);
     assert.equal(warnings.length, 1);
 
     updateSettings({
       runtimes: { ...previousSettings.runtimes, kiro: { executable, configPath, sessionPath } },
-      syncthing: { endpoint: "" },
     });
     await writeFile(cataloguePath, "__FAIL__");
     assert.deepEqual(await kiroModels(), fallback);
@@ -94,7 +91,7 @@ test("Kiro discovers and refreshes the native model catalogue before a session",
     await assert.rejects(readFile(path.join(configPath, "opened-login")), { code: "ENOENT" });
   } finally {
     console.warn = originalWarn;
-    updateSettings({ runtimes: previousSettings.runtimes, syncthing: { endpoint: previousSettings.syncthing.endpoint } });
+    updateSettings({ runtimes: previousSettings.runtimes });
     await rm(root, { recursive: true, force: true });
   }
 });

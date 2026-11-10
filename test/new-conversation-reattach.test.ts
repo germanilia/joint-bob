@@ -63,7 +63,7 @@ console.log(JSON.stringify({ type: 'result', is_error: false }));
     const projectPath = path.join(root, "project"); await mkdir(projectPath);
     const created = await fetch(`${base}/api/projects`, { method: "POST", headers: credentials.headers, body: JSON.stringify({ name: "Draft", path: projectPath }) });
     const { project } = await created.json() as { project: { id: string } };
-    await fetch(`${base}/api/settings`, { method: "PUT", headers: credentials.headers, body: JSON.stringify({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable, configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, syncthing: { endpoint: "" } }) });
+    await fetch(`${base}/api/settings`, { method: "PUT", headers: credentials.headers, body: JSON.stringify({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable, configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } }) });
     const ws = (sessionPath: string, id = "") => `ws://127.0.0.1:${address.port}/ws?projectId=${project.id}&sessionPath=${encodeURIComponent(sessionPath)}${id ? `&sessionId=${id}` : ""}`;
     const { getHarness } = await import("../src/harnesses.js");
     const adapter = getHarness("claude");

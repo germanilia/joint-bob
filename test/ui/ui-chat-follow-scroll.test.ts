@@ -101,7 +101,7 @@ async function waitFor(predicate: () => Promise<boolean> | boolean, label: strin
 
 let externalTurnIndex = 0;
 
-/** Appends one user/assistant turn pair to the seeded Claude transcript on disk, the way Syncthing delivers another node's work. */
+/** Appends one user/assistant turn pair to the seeded Claude transcript on disk, the way file sync delivers another node's work. */
 async function appendExternalTurnPair(marker: string): Promise<void> {
   const project = projectNamed(node, PROJECT_NAME);
   const projectsRoot = path.join(environment.home, ".claude", "projects");
@@ -240,12 +240,11 @@ console.log(JSON.stringify({ type: 'result', is_error: false }));
 
 async function configureClaudeExecutable(fake: string): Promise<void> {
   const session = await signIn(environment, node);
-  const settings = await api<{ pi: { executable: string; configPath: string; sessionPath: string }, claude: { executable: string; configPath: string; sessionPath: string }, syncthing: { endpoint: string } }>(node, session, "GET", "/settings");
+  const settings = await api<{ pi: { executable: string; configPath: string; sessionPath: string }, claude: { executable: string; configPath: string; sessionPath: string } }>(node, session, "GET", "/settings");
   const current = settings.body;
   const put = await api(node, session, "PUT", "/settings", {
     pi: { executable: current.pi.executable, configPath: current.pi.configPath, sessionPath: current.pi.sessionPath },
     claude: { executable: fake, configPath: current.claude.configPath, sessionPath: current.claude.sessionPath },
-    syncthing: { endpoint: current.syncthing.endpoint },
   });
   assert.equal(put.status, 200, "settings accept the fake Claude executable");
 }

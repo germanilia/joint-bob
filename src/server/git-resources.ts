@@ -12,7 +12,7 @@ import { peerAway } from "../peer-presence.js";
 import { sendError } from "./http-auth.js";
 import { reloadSharedSkills } from "./realtime.js";
 import { replicationPeers, signedPeerPost } from "./replication-v2.js";
-import { announceSkillChanges, ensureLegacySkillSyncPaused } from "./skill-sharing.js";
+import { announceSkillChanges } from "./skill-sharing.js";
 import { app } from "./state.js";
 import { listSecretAccounts } from "../secrets.js";
 
@@ -100,7 +100,6 @@ async function withNames(sources: GitSourceView[]) {
 }
 
 async function applyOffersFrom(owner: string, offers: GitOffer[]): Promise<void> {
-  await ensureLegacySkillSyncPaused();
   const result = await applyGitOffers(owner, offers);
   if (result.errors.length) console.warn(`Repositories shared by ${owner}: ${result.errors.join("; ")}`);
   if (result.skillsChanged) await reloadSharedSkills().catch((error) => console.warn("Skill reload after a shared repository changed failed", error));
@@ -197,7 +196,6 @@ export function registerGitResourceRoutes(): void {
   }));
   app.put("/api/resources/git/:id/selection", route(async (request) => {
     const id = idSchema.parse(request.params.id);
-    await ensureLegacySkillSyncPaused();
     const result = await applyGitSelection(id, selectionSchema.parse(request.body).keys);
     await afterLocalChange(id, result);
     return { result, source: (await withNames([await gitSourceView(id)]))[0] };
@@ -209,7 +207,6 @@ export function registerGitResourceRoutes(): void {
   app.post("/api/resources/git/:id/update", route(async (request) => {
     z.object({}).strict().parse(request.body);
     const id = idSchema.parse(request.params.id);
-    await ensureLegacySkillSyncPaused();
     const result = await updateGitSource(id);
     await afterLocalChange(id, result);
     return { result, source: (await withNames([await gitSourceView(id)]))[0] };

@@ -59,7 +59,7 @@ test("conversation records provide drafts until a transcript replaces them", asy
     const { getSettings, updateSettings } = await import("../src/settings.js");
     const sessionPath = path.join(root, "sessions");
     const startPrompt = "Check main before doing any work.";
-    updateSettings({ ...getSettings(), pi: { executable: "", configPath: path.join(root, "pi"), sessionPath }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, syncthing: { endpoint: "" }, projects: { homePath: path.join(root, "home") }, conversationCommands: { start: { enabled: true, prompt: startPrompt }, end: { enabled: false, prompt: "" } } });
+    updateSettings({ ...getSettings(), pi: { executable: "", configPath: path.join(root, "pi"), sessionPath }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, projects: { homePath: path.join(root, "home") }, conversationCommands: { start: { enabled: true, prompt: startPrompt }, end: { enabled: false, prompt: "" } } });
     const { listHarnessSessions, refreshHarnessSessions } = await import("../src/harnesses.js");
     assert.equal((await listHarnessSessions(project)).filter((session) => session.id === id).length, 1);
     const draft = (await listHarnessSessions(project)).find((session) => session.path === `draft:pi:${id}`);

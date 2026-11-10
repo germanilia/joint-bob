@@ -27,11 +27,6 @@ export interface RuntimeSettings {
   sessionPath: string;
 }
 
-export interface SyncthingSettings {
-  endpoint: string;
-  apiKey?: string | null;
-}
-
 export const RESOURCE_TYPES = ["skills", "prompts", "rules", "plugins"] as const;
 export type ResourceType = (typeof RESOURCE_TYPES)[number];
 export interface ResourcePaths { skills: string[]; prompts: string[]; rules: string[]; plugins: string[]; }
@@ -56,7 +51,7 @@ export interface RemoteTerminalSettings { twins: boolean; otherNodes: boolean }
 /** Whether nodes other than this node's twins may pick it in Runs on. Twins always may. */
 export interface RunnerAccessSettings { otherNodes: boolean }
 
-/** The background check that finds Syncthing conflict copies and folder errors and fixes them quietly. */
+/** The background check that finds conflict copies and file sync errors and fixes them quietly. */
 export interface SyncCheckSettings extends ConversationDefault { enabled: boolean; harnessId: string }
 
 export const syncCheckSchema = z.object({
@@ -266,7 +261,6 @@ export interface SettingsInput {
   claude?: RuntimeSettings;
   runtimes?: Record<string, RuntimeSettings>;
   /** Absent keeps the configured endpoint and key. */
-  syncthing?: SyncthingSettings;
   projects?: { homePath?: string; rootPath?: string; personalRootPath?: string; workRootPath?: string };
   resources?: ResourcePaths;
   conversationLabels?: string[];
@@ -310,7 +304,6 @@ export interface SettingsResponse {
   /** @deprecated Use runtimes.claude. */ claude: RuntimeSettings;
   runtimes: Record<string, RuntimeSettings>;
   runtimeOverrides: Record<string, RuntimeSettings>;
-  syncthing: { endpoint: string; apiKeyConfigured: boolean };
   projects: { homePath: string };
   resources: ResourcePaths;
   conversationLabels: string[];
@@ -380,9 +373,10 @@ export function getRuntimeDefaults(): Record<string, RuntimeSettings> & { pi: Ru
   return runtimeRecord((adapter) => adapter.configuration.defaults(runtimeHome())) as Record<string, RuntimeSettings> & { pi: RuntimeSettings; claude: RuntimeSettings };
 }
 
-export function syncthingApiKey(): string | undefined {
-  const configured = setting("syncthing.apiKey");
-  return configured ? decrypt(configured.value) : undefined;
+/** The connection to Syncthing an older release stored here, read once to take Joint Bob's folders out of it (file-sync/syncthing-retirement.ts). */
+export function legacySyncthingConnection(): { endpoint?: string; apiKey?: string } {
+  const endpoint = setting("syncthing.endpoint")?.value, key = setting("syncthing.apiKey");
+  try { return { ...(endpoint ? { endpoint } : {}), ...(key ? { apiKey: decrypt(key.value) } : {}) }; } catch { return endpoint ? { endpoint } : {}; }
 }
 
 export function emptyResourcePaths(): ResourcePaths {
@@ -581,10 +575,6 @@ export function nodeSettings(): SettingsResponse {
     runtimes,
     runtimeOverrides: runtimeRecord((adapter) => runtimeOverrides(adapter.id)),
     kiroEnabled: value("kiro.enabled", "true") === "true",
-    syncthing: {
-      endpoint: value("syncthing.endpoint"),
-      apiKeyConfigured: Boolean(setting("syncthing.apiKey")),
-    },
     projects: { homePath: value("projects.homePath", defaultManagedHome()) },
     resources: readResourcePaths("resources."),
     conversationLabels: conversationLabelsSchema.parse(JSON.parse(value("conversationLabels", JSON.stringify(DEFAULT_CONVERSATION_LABELS)))),
@@ -684,7 +674,6 @@ export function checkRuntimeSettings(input: Record<string, RuntimeSettings>): Re
 }
 
 export function updateSettings(input: SettingsInput, actorId?: string): SettingsResponse {
-  if (input.syncthing && !loopbackEndpoint(input.syncthing.endpoint)) throw new Error("Syncthing endpoint must use a loopback host");
   const previous = getSettings();
   const kiroEnabled = input.kiroEnabled === undefined ? previous.kiroEnabled : z.boolean().parse(input.kiroEnabled);
   const suppliedRuntimes = runtimeRecord((adapter) => resolveRuntimeInput(
@@ -741,7 +730,6 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
       save(db, `${id}.sessionPath`, runtimeSettings.sessionPath);
     }
     save(db, "kiro.enabled", String(kiroEnabled));
-    if (input.syncthing) save(db, "syncthing.endpoint", input.syncthing.endpoint);
     save(db, "projects.homePath", path.resolve(homePath));
     save(db, "conversationLabels", JSON.stringify(conversationLabels));
     save(db, "conversationLabelIcons", JSON.stringify({ ...clearedIcons, ...conversationLabelIcons }));
@@ -769,10 +757,6 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
     save(db, "conversationCommands", JSON.stringify(conversationCommands));
     save(db, "conversationDefaults", JSON.stringify(conversationDefaults));
     for (const type of RESOURCE_TYPES) save(db, `resources.${type}`, JSON.stringify(resources[type]));
-    if (input.syncthing?.apiKey !== undefined) {
-      if (input.syncthing.apiKey) save(db, "syncthing.apiKey", input.syncthing.apiKey, true);
-      else db.prepare("DELETE FROM node_settings WHERE key = 'syncthing.apiKey'").run();
-    }
     const settings = getSettings();
     appendAuditEvent(db, {
       eventType: "settings.updated",
@@ -782,7 +766,6 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
       details: {
         runtimesChanged: JSON.stringify(runtimeAdapters().filter((adapter) => JSON.stringify(previous.runtimes[adapter.id]) !== JSON.stringify(settings.runtimes[adapter.id])).map((adapter) => adapter.id)),
         kiroEnabledChanged: previous.kiroEnabled !== settings.kiroEnabled,
-        syncthingChanged: previous.syncthing.endpoint !== settings.syncthing.endpoint || previous.syncthing.apiKeyConfigured !== settings.syncthing.apiKeyConfigured,
         projectHomeChanged: previous.projects.homePath !== settings.projects.homePath,
         resourcesChanged: JSON.stringify(previous.resources) !== JSON.stringify(settings.resources),
         strictResourceIsolationChanged: previous.strictResourceIsolation !== settings.strictResourceIsolation,
@@ -800,7 +783,6 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
         syncCheckChanged: JSON.stringify(previous.syncCheck) !== JSON.stringify(settings.syncCheck),
         remoteTerminalChanged: JSON.stringify(previous.remoteTerminal) !== JSON.stringify(settings.remoteTerminal),
         conversationCommandsChanged: JSON.stringify(previous.conversationCommands) !== JSON.stringify(settings.conversationCommands),
-        apiKeyConfigured: settings.syncthing.apiKeyConfigured,
       },
     });
     db.exec("COMMIT");

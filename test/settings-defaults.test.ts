@@ -37,7 +37,6 @@ test("blank runtime overrides expose effective Pi and Claude paths", async () =>
     settings.updateSettings({
       pi: { executable: "/custom/pi", configPath: path.join(root, "data", "custom-pi"), sessionPath: path.join(root, "data", "custom-pi-sessions") },
       claude: { executable: "/custom/claude", configPath: path.join(root, "data", "custom-claude"), sessionPath: path.join(root, "data", "custom-claude-sessions") },
-      syncthing: { endpoint: "" },
     });
     assert.deepEqual(settings.getRuntimeDefaults(), defaults, "pure defaults ignore stored overrides");
   } finally {

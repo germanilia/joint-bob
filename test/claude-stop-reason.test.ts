@@ -23,7 +23,6 @@ test("a Claude turn Joint Bob stops fails with the stop reason", async () => {
   updateSettings({
     projects: { homePath: path.join(root, "home") },
     claude: { executable: fakeClaude, configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-    syncthing: { endpoint: "" },
   });
   const project = await addProject(`claude-stop-${Date.now()}`, path.join(root, "project"), { writeInstructions: false });
   const runtime = await getHarnessRuntime("claude");

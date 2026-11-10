@@ -27,7 +27,7 @@ const DEFAULT_COLOR_ORDER: ProjectColor[] = ["teal", "violet", "amber", "blue", 
 const BINARY_SNIFF_BYTES = 8192;
 const exec = promisify(execFile);
 const linkedDirectories = new Set<string>(worktreeLinkedDirectories);
-/** Node-local: Syncthing ignores `.joint-bob/` at every depth and the copy never brings one. */
+/** Node-local: file sync ignores `.joint-bob/` at every depth and the copy never brings one. */
 const LOCAL_FILES_MARKER = path.join(".joint-bob", "worktree-local-files.json");
 
 export interface WorktreeCreator { engine: string; conversationId: string }
@@ -177,7 +177,7 @@ export async function listProjectWorktrees(projectId: string, root = worktreeRoo
   const node = await getClusterNode();
   const worktrees: ProjectWorktree[] = [];
   for (const entry of entries.sort()) {
-    // Syncthing keeps .stfolder/.stignore here and a worktree being created is a hidden staging folder.
+    // Other entries can lie here (old sync markers), and a worktree being created is a hidden staging folder.
     if (!WORKTREE_ID.test(entry)) continue;
     const worktree = path.join(directory, entry);
     const metadata = await readMetadata(worktree);

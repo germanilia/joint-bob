@@ -74,7 +74,7 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
       projects: [{ id: 'p1', name: 'Contigos · Julian' }, { id: real.projectId, name: real.projectName }],
       cards: [
         card({ conversationId: 'c1', sessionId: 'c1', column: 'needs-you', pendingReviews: window.__approved ? [] : [review] }),
-        card({ conversationId: 'c2', sessionId: 'c2', title: 'Replace Syncthing', column: 'needs-you', turnRunning: false, autoRespondStop: { kind: 'stop-instruction', reason: 'A plan waits for approval' } }),
+        card({ conversationId: 'c2', sessionId: 'c2', title: 'Replace the build script', column: 'needs-you', turnRunning: false, autoRespondStop: { kind: 'stop-instruction', reason: 'A plan waits for approval' } }),
         { ...card({}), ...real, column: 'running', summary: 'Running the UI tests', autoRespondActive: true, controlledBy: window.__held },
         card({ conversationId: 'c4', sessionId: 'c4', title: 'Community Plus billing', summary: 'Reading the Stripe webhook handler' }),
         card({ conversationId: 'c5', sessionId: 'c5', title: 'Review counter fixed', column: 'review', turnRunning: false, summary: 'Fixed and tested' }),

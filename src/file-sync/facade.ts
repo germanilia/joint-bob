@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { peerAway } from "../peer-presence.js";
 import { getProject } from "../store.js";
-import { assertSyncthingFolderReady, listSyncthingFolders, rescanSyncthingFolder, SYNCTHING_FOLDER_MISSING, syncthingFolderStatuses } from "../syncthing.js";
-import { projectTicketSyncFolderId } from "../task-workspaces.js";
 import type { ProjectRecord, ProjectSyncStatus } from "../types.js";
-import { projectWorktreeSyncFolderId } from "../worktree-filters.js";
 import { controlDatabase, listPhases, type PhaseRecord } from "./control.js";
 import type { FileSyncPeerFacts, FileSyncProjectView } from "./index.js";
 import { FILE_SYNC_SWITCH_PROTOCOL, type ShareStatus } from "./protocol.js";
@@ -12,17 +9,17 @@ import { projectSyncStatus } from "./status.js";
 import type { Phase, ShareKind } from "./types.js";
 import type { StatusAnswer } from "./wire.js";
 
-/* The one place callers ask about a project's files on other machines. The engine is chosen per
-   project by its node-local phase (design §7): "syncthing" keeps Syncthing's answers exactly as they
-   were, "builtin" answers from the built-in engine's in-memory reports, and the phases in between
-   are a move that nothing should start work on. The engine's module loads only for a project that
-   is not on Syncthing, so a node without one pays nothing. */
+/* The one place callers ask about a project's files on other machines. A project shared with another
+   machine is moved by the built-in engine: once this node has taken it over (phase "builtin") the
+   answers come from the engine's in-memory reports; while the take-over runs ("moving") nothing
+   should start work on it. A project with no phase here is shared with nobody ("none"): there is
+   nothing to wait for. */
 
 export type ProjectShareKind = "project" | "tickets";
-/** Which engine moves a project's files on this node; "moving" while it changes engines. */
-export type ProjectFilesEngine = "syncthing" | "builtin" | "moving";
-/** What the UI is told besides the status: which engine, so it can tell Syncthing's waits from the built-in engine's. */
-export type FacadeSyncStatus = ProjectSyncStatus & { engine?: "builtin" | "moving" };
+/** How a project's files reach other machines from this node: "builtin" synced, "moving" being taken over, "none" shared with nobody. */
+export type ProjectFilesEngine = "builtin" | "moving" | "none";
+/** What the UI is told besides the status: whether the project is synced or still being taken over. */
+export type FacadeSyncStatus = ProjectSyncStatus & { engine?: "builtin" | "moving" | "none" };
 
 export class ProjectNotSynchronizedError extends Error {
   constructor() { super("Project is not synchronized"); }
@@ -37,12 +34,8 @@ export class ProjectFilesNotReadyError extends Error {
   get retryable(): boolean { return this.status.state === "syncing"; }
 }
 
-export function unavailableProjectStatus(message = "No Syncthing folder is configured"): ProjectSyncStatus {
+export function unavailableProjectStatus(message = "This project is not shared with another machine"): ProjectSyncStatus {
   return { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message };
-}
-
-function shareFolderId(project: ProjectRecord, kind: ProjectShareKind): string | undefined {
-  return kind === "tickets" ? projectTicketSyncFolderId(project.id) : project.syncFolderId;
 }
 
 /* ---- engine choice ---- */
@@ -67,10 +60,10 @@ export function useFacadeEngineForTests(engine: EngineApi | undefined): void {
 }
 
 export function filesEngineOf(phase: Phase | undefined): ProjectFilesEngine {
-  return !phase || phase === "syncthing" ? "syncthing" : phase === "builtin" ? "builtin" : "moving";
+  return !phase ? "none" : phase === "builtin" ? "builtin" : "moving";
 }
 
-/** Node-local phases; a node.db that cannot be read counts as everything on Syncthing, as before the engine existed. */
+/** Node-local phases; a node.db that cannot be read counts as nothing shared. */
 async function phases(): Promise<Map<string, Phase>> {
   return new Map([...await phaseRecords()].map(([projectId, record]) => [projectId, record.phase]));
 }
@@ -79,9 +72,6 @@ async function phaseRecords(): Promise<Map<string, PhaseRecord>> {
   try { return listPhases(await controlDatabase()); }
   catch { return new Map(); }
 }
-
-/** How long after a move back a missing Syncthing folder is the move still going on (the next sharing pass adds it), not an error. */
-const RESTORE_GRACE_MS = 10 * 60_000;
 
 async function phaseOfProject(projectId: string): Promise<Phase | undefined> {
   return (await phases()).get(projectId);
@@ -98,8 +88,8 @@ export async function projectFilesEngines(projectIds: readonly string[]): Promis
   return new Map(projectIds.map((id) => [id, filesEngineOf(held.get(id))]));
 }
 
-function movingStatus(phase: Phase | undefined): FacadeSyncStatus {
-  return { state: "syncing", remainingFiles: 0, remainingBytes: 0, message: phase === "restoring" ? "Moving back to Syncthing" : "Moving to the built-in file sync", engine: "moving" };
+function movingStatus(): FacadeSyncStatus {
+  return { state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking both machines' files", engine: "moving" };
 }
 
 /* ---- built-in status texts (pure; exported for tests) ---- */
@@ -130,7 +120,7 @@ function peerProblem(view: FileSyncProjectView, facts: PeerFacts): string | unde
   for (const peer of [...new Set(Object.values(view.peers).flat())].sort()) {
     const known = facts.peers.get(peer);
     if (known?.protocol === 0) return `${nameOf(facts, peer)} runs a Joint Bob without the built-in file sync`;
-    // fix (P4+P5): an engine without the switch (2.157, 2.158) stays on Syncthing for the project and receives nothing.
+    // An engine older than the take-over protocol receives nothing.
     if (known?.protocol !== undefined && known.protocol < FILE_SYNC_SWITCH_PROTOCOL) return `${nameOf(facts, peer)} needs a newer Joint Bob to receive these files`;
     if (known?.enabled === false) return `File sync is off on ${nameOf(facts, peer)}`;
   }
@@ -145,8 +135,6 @@ export function builtinProjectStatus(view: FileSyncProjectView, facts: PeerFacts
   if (view.enabled && view.worker === "running" && !view.shares.length) {
     return done({ state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "No other machine shares this project right now" });
   }
-  // fix: nothing is written here until Syncthing answers once: a problem to show, not syncing.
-  if (view.writesHeld) return done({ state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: `Built-in sync is not writing files here yet: ${view.writesHeld}` });
   const status = projectSyncStatus(shares, { enabled: view.enabled, running: view.worker === "running", present: (peer) => presentPeer(facts, peer) }, peerProblem(view, facts));
   if (status.state !== "syncing") return done(status);
   const behind = shares.flatMap((share) => share.peers.filter((peer) => !peer.caughtUp && presentPeer(facts, peer.peer)).map((peer) => peer.peer));
@@ -274,7 +262,7 @@ async function handoffStatusFor(projectId: string, kind: ShareKind, facts: PeerF
 /**
  * The source's part of an eligibility or prepare body: how far its own index of each folder kind
  * reached, after picking up its latest changes (bounded by `flushTimeoutMs`). Undefined for a project
- * not on built-in sync here, so Syncthing projects send exactly what they always did.
+ * this node has not taken over, or shares with nobody.
  */
 export async function projectFilesHandoffPart(project: ProjectRecord, kinds: readonly ShareKind[], flushTimeoutMs: number): Promise<HandoffFiles | undefined> {
   const key = `${project.id}\n${[...kinds].sort().join(",")}\n${flushTimeoutMs}`;
@@ -296,23 +284,16 @@ export async function projectFilesHandoffPart(project: ProjectRecord, kinds: rea
 
 /* ---- the facade ---- */
 
-/** Keyed by project id. Projects on Syncthing get Syncthing's answer, exactly as before; built-in ones are computed in memory. */
-export async function projectSyncStatuses(projects: ProjectRecord[], now = Date.now()): Promise<Record<string, FacadeSyncStatus>> {
-  const records = projects.length ? await phaseRecords() : new Map<string, PhaseRecord>();
-  const held = new Map([...records].map(([projectId, record]) => [projectId, record.phase]));
-  const onSyncthing = projects.filter((project) => filesEngineOf(held.get(project.id)) === "syncthing");
-  const statuses = await syncthingFolderStatuses(onSyncthing.flatMap((project) => project.syncFolderId ? [project.syncFolderId] : []));
-  // fix: just moved back, its folder may not be in Syncthing yet (the next sharing pass adds it): shown as the move going on.
-  const justBack = (projectId: string) => { const record = records.get(projectId); return Boolean(record && now - Date.parse(record.updatedAt) < RESTORE_GRACE_MS); };
-  const result: Record<string, FacadeSyncStatus> = Object.fromEntries(onSyncthing.map((project) => {
-    const status = project.syncFolderId ? statuses[project.syncFolderId] : undefined;
-    if (status?.state === "error" && status.message === SYNCTHING_FOLDER_MISSING && justBack(project.id)) return [project.id, movingStatus("restoring")];
-    return [project.id, project.syncFolderId ? status ?? unavailableProjectStatus("Loading sync status") : unavailableProjectStatus()];
-  }));
-  const elsewhere = projects.filter((project) => filesEngineOf(held.get(project.id)) !== "syncthing");
-  if (!elsewhere.length) return result;
-  const builtin = elsewhere.filter((project) => held.get(project.id) === "builtin");
-  for (const project of elsewhere) if (held.get(project.id) !== "builtin") result[project.id] = movingStatus(held.get(project.id));
+/** Keyed by project id, computed in memory from the engine's reports. */
+export async function projectSyncStatuses(projects: ProjectRecord[]): Promise<Record<string, FacadeSyncStatus>> {
+  const held = projects.length ? await phases() : new Map<string, Phase>();
+  const result: Record<string, FacadeSyncStatus> = {};
+  const builtin: ProjectRecord[] = [];
+  for (const project of projects) {
+    const engine = filesEngineOf(held.get(project.id));
+    if (engine === "builtin") builtin.push(project);
+    else result[project.id] = engine === "moving" ? movingStatus() : { ...unavailableProjectStatus(), engine: "none" };
+  }
   if (!builtin.length) return result;
   const engine = await engineApi();
   const views = await engine.fileSyncProjectViews(builtin.map((project) => project.id));
@@ -325,8 +306,8 @@ export async function projectSyncStatuses(projects: ProjectRecord[], now = Date.
 export async function conversationFilesStatus(project: ProjectRecord, worktreeId?: string): Promise<FacadeSyncStatus> {
   const phase = await phaseOfProject(project.id);
   const engine = filesEngineOf(phase);
-  if (engine === "syncthing") return (await projectSyncStatuses([project]))[project.id];
-  if (engine === "moving") return movingStatus(phase);
+  if (engine === "none") return { ...unavailableProjectStatus(), engine: "none" };
+  if (engine === "moving") return movingStatus();
   const api = await engineApi();
   const view = (await api.fileSyncProjectViews([project.id])).get(project.id)!;
   const kind = worktreeId ? "worktrees" : "project";
@@ -334,7 +315,7 @@ export async function conversationFilesStatus(project: ProjectRecord, worktreeId
   const peers = [...new Set([...(view.peers[kind] ?? []), ...shares.flatMap((share) => share.peers.map((peer) => peer.peer))])];
   const facts = await api.fileSyncPeerFacts(peers);
   const scoped = { ...view, shares, peers: { [kind]: peers } };
-  if (!worktreeId || view.worker !== "running" || !view.enabled || view.writesHeld || !shares.length) return builtinProjectStatus(scoped, facts);
+  if (!worktreeId || view.worker !== "running" || !view.enabled || !shares.length) return builtinProjectStatus(scoped, facts);
   api.fileSyncPrioritize(project.id, "worktrees", worktreeId, Date.now() + WORKTREE_PRIORITY_MS);
   const present = peers.filter((peer) => presentPeer(facts, peer) && facts.peers.get(peer)?.protocol !== 0 && facts.peers.get(peer)?.enabled !== false);
   const pending = await api.fileSyncPendingFiles(project.id, "worktrees", worktreeId, present);
@@ -353,39 +334,26 @@ export async function conversationFilesStatus(project: ProjectRecord, worktreeId
 export async function rescanProjectFiles(projectId: string): Promise<void> {
   const project = await getProject(projectId);
   if (!project) throw new Error("Project not found");
-  const engine = await projectFilesEngine(project.id);
-  if (engine !== "syncthing") {
-    const api = await engineApi();
-    let finished: Array<{ kind: ShareKind; error?: string }>;
-    try { finished = await api.fileSyncRescanProject(project.id); }
-    catch (error) { throw new ProjectFilesUnavailableError(error instanceof Error ? error.message : "File sync is not running on this node"); }
-    // A ticket or worktree folder this node never had is not the project's problem; the project folder's is.
-    const failed = finished.find((scan) => scan.kind === "project" && scan.error);
-    if (failed) throw new ProjectFilesUnavailableError(failed.error!);
-    return;
-  }
-  if (!project.syncFolderId) throw new ProjectNotSynchronizedError();
-  const configured = new Set((await listSyncthingFolders()).map((folder) => folder.id));
-  // The project folder is always asked, so a missing folder or daemon still reports its error.
-  const optional = [projectTicketSyncFolderId(project.id), projectWorktreeSyncFolderId(project.id)].filter((id) => configured.has(id));
-  await Promise.all([project.syncFolderId, ...optional].map(rescanSyncthingFolder));
+  if (await projectFilesEngine(project.id) === "none") throw new ProjectNotSynchronizedError();
+  const api = await engineApi();
+  let finished: Array<{ kind: ShareKind; error?: string }>;
+  try { finished = await api.fileSyncRescanProject(project.id); }
+  catch (error) { throw new ProjectFilesUnavailableError(error instanceof Error ? error.message : "File sync is not running on this node"); }
+  // A ticket or worktree folder this node never had is not the project's problem; the project folder's is.
+  const failed = finished.find((scan) => scan.kind === "project" && scan.error);
+  if (failed) throw new ProjectFilesUnavailableError(failed.error!);
 }
 
 /**
- * Read-only for Syncthing: a handoff check must not rewrite ignore rules (the sync check keeps
- * project, ticket and worktree rules current). Built-in: this node's changes are picked up (10 s at
- * most), then no need, blocked item or error may remain, and a handoff into the project must have
- * arrived; anything still under way is a retryable "syncing".
+ * This node's changes are picked up (10 s at most), then no need, blocked item or error may remain,
+ * and a handoff into the project must have arrived; anything still under way is a retryable "syncing".
+ * A project shared with nobody has nothing to wait for.
  */
 export async function assertProjectFilesReady(project: ProjectRecord, kind: ProjectShareKind): Promise<void> {
   const phase = await phaseOfProject(project.id);
   const engine = filesEngineOf(phase);
-  if (engine === "moving") throw new ProjectFilesNotReadyError(movingStatus(phase));
-  if (engine === "syncthing") {
-    const folderId = shareFolderId(project, kind);
-    if (folderId) await assertSyncthingFolderReady(folderId, false);
-    return;
-  }
+  if (engine === "moving") throw new ProjectFilesNotReadyError(movingStatus());
+  if (engine === "none") return;
   const api = await engineApi();
   let view = (await api.fileSyncProjectViews([project.id])).get(project.id)!;
   const facts = await api.fileSyncPeerFacts(Object.values(view.peers).flat());
@@ -421,41 +389,26 @@ function localShareProblem(share: ShareStatus): ProjectSyncStatus | undefined {
 export async function taskShareStatuses(project: ProjectRecord, targets: Array<{ kind: ProjectShareKind; label: string }>): Promise<Array<ProjectSyncStatus & { label: string }>> {
   const phase = await phaseOfProject(project.id);
   const engine = filesEngineOf(phase);
-  if (engine !== "syncthing") {
-    const unique = targets.filter((target, index) => targets.findIndex(({ kind }) => kind === target.kind) === index);
-    if (engine === "moving") return unique.map((target) => ({ label: target.label, ...withoutEngine(movingStatus(phase)) }));
-    const api = await engineApi();
-    const view = (await api.fileSyncProjectViews([project.id])).get(project.id)!;
-    const facts = await api.fileSyncPeerFacts([...Object.values(view.peers).flat(), ...currentExpectations(project.id).map((expectation) => expectation.peer)]);
-    return Promise.all(unique.map(async (target) => {
-      const own = builtinProjectStatus(view, facts, [target.kind]);
-      const handoff = view.worker === "running" ? await handoffStatusFor(project.id, target.kind, facts) : undefined;
-      return { label: target.label, ...withoutEngine(handoff ? worst<FacadeSyncStatus>([own, handoff])! : own) };
-    }));
-  }
-  const resolved = targets.flatMap((target) => {
-    const folderId = shareFolderId(project, target.kind);
-    return folderId ? [{ folderId, label: target.label }] : [];
-  });
-  const unique = resolved.filter((target, index) => resolved.findIndex(({ folderId }) => folderId === target.folderId) === index);
-  const statuses = await syncthingFolderStatuses(unique.map((target) => target.folderId));
-  return unique.map((target) => ({ label: target.label, ...statuses[target.folderId] }));
+  if (engine === "none") return [];
+  const unique = targets.filter((target, index) => targets.findIndex(({ kind }) => kind === target.kind) === index);
+  if (engine === "moving") return unique.map((target) => ({ label: target.label, ...withoutEngine(movingStatus()) }));
+  const api = await engineApi();
+  const view = (await api.fileSyncProjectViews([project.id])).get(project.id)!;
+  const facts = await api.fileSyncPeerFacts([...Object.values(view.peers).flat(), ...currentExpectations(project.id).map((expectation) => expectation.peer)]);
+  return Promise.all(unique.map(async (target) => {
+    const own = builtinProjectStatus(view, facts, [target.kind]);
+    const handoff = view.worker === "running" ? await handoffStatusFor(project.id, target.kind, facts) : undefined;
+    return { label: target.label, ...withoutEngine(handoff ? worst<FacadeSyncStatus>([own, handoff])! : own) };
+  }));
 }
 
 /**
  * The app wrote under the project's worktree folder (`changed`: the absolute path it wrote or
- * removed). Syncthing's watcher waits before it notices, so the folder is rescanned at once; the
- * built-in engine scans that path now and tells peers after the commit.
+ * removed): the engine scans that path now and tells peers after the commit.
  */
 export function worktreeFilesChanged(projectId: string, changed?: string): void {
   void projectFilesEngine(projectId).then(async (engine) => {
-    if (engine !== "syncthing") {
-      (await engineApi()).fileSyncScanPaths(projectId, "worktrees", changed ? [changed] : []);
-      return;
-    }
-    const folderId = projectWorktreeSyncFolderId(projectId);
-    const folders = await listSyncthingFolders();
-    if (folders.some((folder) => folder.id === folderId)) await rescanSyncthingFolder(folderId);
+    if (engine !== "none") (await engineApi()).fileSyncScanPaths(projectId, "worktrees", changed ? [changed] : []);
   }).catch((error) => console.warn("Worktree folder rescan failed", error));
 }
 
@@ -464,8 +417,7 @@ const WORKTREE_PRIORITY_MS = 10 * 60_000;
 
 /**
  * Whether files of the worktree are still on their way to this node, so merging or sweeping it now
- * would act on an old copy. Syncthing has no per-path answer and keeps today's behaviour (false).
- * The built-in engine holds only while something can still arrive: a present peer whose index of
+ * would act on an old copy. The engine holds only while something can still arrive: a present peer whose index of
  * the worktree folder is ahead of this node's copy (known per folder, and over in moments), or need
  * rows under this worktree that a present peer or a local copy can supply (fix P4+P5: another
  * worktree's files, or files only a machine that is away has, do not hold it). Pending files of the
@@ -476,7 +428,7 @@ export async function worktreeHasPendingFiles(projectId: string, worktreeId: str
   // a worktree this node never used has nothing on its way, and looking must not start a download.
   const use = options.use !== false;
   const engine = await projectFilesEngine(projectId);
-  if (engine === "syncthing") return false;
+  if (engine === "none") return false;
   if (engine === "moving") return true;
   const api = await engineApi();
   const view = (await api.fileSyncProjectViews([projectId])).get(projectId)!;
@@ -549,12 +501,12 @@ export async function worktreeMetadataGone(projectId: string, worktreeId: string
  * may delete it (design §6.5). On built-in sync a deletion here reaches every machine, so it acts on
  * a worktree another machine created only after a completed pull from every eligible peer since this
  * node last started or woke, with none of them ahead: until then its conversation markers may simply
- * not have arrived. Projects on Syncthing keep today's behaviour.
+ * not have arrived. A project shared with nobody has nothing to wait for.
  */
 export async function worktreeSweepRefusal(projectId: string, worktree: { id: string; createdByNodeId: string }): Promise<string | undefined> {
   const engine = await projectFilesEngine(projectId);
-  if (engine === "syncthing") return undefined;
-  if (engine === "moving") return "Worktree kept: file sync is moving this project";
+  if (engine === "none") return undefined;
+  if (engine === "moving") return "Worktree kept: file sync is still checking this project's files";
   if (await worktreeHasPendingFiles(projectId, worktree.id, { use: false })) return "Worktree kept: its files are still arriving from another machine";
   const api = await engineApi();
   const { getClusterNode } = await import("../cluster.js");
@@ -576,8 +528,7 @@ export async function worktreeSweepRefusal(projectId: string, worktree: { id: st
 
 /**
  * Whether this node holds what `peer` has of these projects (a takeover from it, a twin's
- * readiness): Syncthing's own folder state for projects still on Syncthing, and for built-in ones
- * this node's cursor of the peer's index caught up with nothing left to receive. No network request:
+ * readiness): this node's cursor of the peer's index caught up with nothing left to receive. No network request:
  * built-in answers come from the reports main already holds. An away peer cannot send more, so it
  * holds nothing back.
  */
@@ -585,10 +536,7 @@ export async function peerFilesReady(peer: string, projectIds: readonly string[]
   const held = await phases();
   const statuses: Record<string, ProjectSyncStatus> = {};
   const projects = (await Promise.all(projectIds.map((id) => getProject(id)))).filter((project): project is ProjectRecord => Boolean(project));
-  const onSyncthing = projects.filter((project) => filesEngineOf(held.get(project.id)) === "syncthing" && project.syncFolderId);
-  const folders = await syncthingFolderStatuses(onSyncthing.map((project) => project.syncFolderId!));
-  for (const project of onSyncthing) statuses[project.id] = folders[project.syncFolderId!] ?? unavailableProjectStatus("Loading sync status");
-  for (const project of projects) if (filesEngineOf(held.get(project.id)) === "moving") statuses[project.id] = movingStatus(held.get(project.id));
+  for (const project of projects) if (filesEngineOf(held.get(project.id)) === "moving") statuses[project.id] = movingStatus();
   const builtin = projects.filter((project) => held.get(project.id) === "builtin");
   if (builtin.length) {
     const api = await engineApi();

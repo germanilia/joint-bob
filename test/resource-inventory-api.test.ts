@@ -84,10 +84,10 @@ test("the cluster inventory asks each paired node over the signed runtime route"
       assert.equal(reset.body.decision.preference, null);
     }
 
-    assert.equal((await api(a, session, "PUT", "/settings", { strictResourceIsolation: false, syncthing: { endpoint: "" } })).status, 200);
+    assert.equal((await api(a, session, "PUT", "/settings", { strictResourceIsolation: false })).status, 200);
     const nativeMcp = await api(a, session, "PUT", "/resources/activation/item", { kind: "mcp", name: "project-controls", harness: "kiro", enabled: false, projectId: project.id });
     assert.equal(nativeMcp.status, 409, "native discovery cannot promise a per-server disable");
-    assert.equal((await api(a, session, "PUT", "/settings", { strictResourceIsolation: true, syncthing: { endpoint: "" } })).status, 200);
+    assert.equal((await api(a, session, "PUT", "/settings", { strictResourceIsolation: true })).status, 200);
 
     const pluginCollection = path.join(project.path, ".claude-plugins");
     const pluginManifest = path.join(pluginCollection, "kit", ".claude-plugin", "plugin.json");
@@ -133,7 +133,7 @@ test("the cluster inventory asks each paired node over the signed runtime route"
     const globalPlugin = path.join(root, "global-kit");
     await mkdir(path.join(globalPlugin, ".claude-plugin"), { recursive: true });
     await writeFile(path.join(globalPlugin, ".claude-plugin/plugin.json"), '{"name":"global-kit"}');
-    assert.equal((await api(a, session, "PUT", "/settings", { syncthing: { endpoint: "" }, resources: { skills: [], prompts: [], rules: [], plugins: [globalPlugin] } })).status, 200);
+    assert.equal((await api(a, session, "PUT", "/settings", { resources: { skills: [], prompts: [], rules: [], plugins: [globalPlugin] } })).status, 200);
     const globalToggle = await api<{ decision: { enabled: boolean } }>(a, session, "PUT", "/resources/activation/item", { kind: "plugin", name: "global-kit", harness: "claude", enabled: false });
     assert.equal(globalToggle.status, 200, JSON.stringify(globalToggle.body));
     assert.equal(globalToggle.body.decision.enabled, false);

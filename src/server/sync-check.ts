@@ -10,19 +10,17 @@ import type { HarnessModelSettings } from "../harnesses/runtime.js";
 import { getProjectLock } from "../project-locks.js";
 import { getSettings, type SyncCheckSettings } from "../settings.js";
 import { listProjects } from "../store.js";
-import { reconcileSyncthingProjectFolders, rescanSyncthingFolder, syncthingFolderErrors, resetSyncthingConnection, syncthingFolderStatuses } from "../syncthing.js";
 import type { ProjectRecord } from "../types.js";
 import { conflictCopyOriginal } from "../file-sync/conflicts.js";
 import { projectFilesEngines, projectSyncStatuses, type ProjectFilesEngine } from "../file-sync/facade.js";
 import { flags } from "./state.js";
 
-/* Syncthing and the built-in file sync both leave `name.sync-conflict-YYYYMMDD-HHMMSS-DEVICE.ext`
-   beside a file two nodes changed at once, and a folder can wedge in an error state. This check
-   runs in the background, fixes what it safely can without asking, and hands real two-sided
-   edits to an unattended agent chosen in Settings. Only the project's owner node acts,
-   so two nodes never resolve the same conflict copy. For a project on built-in sync it reads
-   the engine's status instead of Syncthing's and never asks for a rescan: the engine scans on
-   events, and a timer-driven walk would be the periodic rescan it does without (design §0.11). */
+/* File sync leaves `name.sync-conflict-YYYYMMDD-HHMMSS-DEVICE.ext` beside a file two nodes changed at
+   once, and a share can stop on an error. This check runs in the background, fixes what it safely
+   can without asking, and hands real two-sided edits to an unattended agent chosen in Settings.
+   Only the project's owner node acts, so two nodes never resolve the same conflict copy. It reads
+   the engine's status from memory and never asks for a rescan: the engine scans on events, and a
+   timer-driven walk would be the periodic rescan it does without (design §0.11). */
 
 const CONFLICT_NAME = /^(.*?)\.sync-conflict-\d{8}-\d{6}-[A-Z0-9]{7}(.*)$/;
 const SKIPPED_DIRECTORIES = new Set(["node_modules", ".venv", "venv", "dist", "build", "coverage", ".joint-bob", ".pi-mobile-web", "__pycache__", ".dev-env", ".stversions", ".stfolder"]);
@@ -31,13 +29,12 @@ const MAX_SCANNED_ENTRIES = 50_000;
    are leftovers from before that rule and never sync again. Only its bulky object
    stores are skipped. */
 const SKIPPED_GIT_DIRECTORIES = new Set(["objects", "lfs", "modules", "worktrees"]);
-/** Syncthing may still be writing a fresh conflict copy; leave it alone until it settles. */
+/** A fresh conflict copy may still be being written; leave it alone until it settles. */
 export const CONFLICT_SETTLE_MS = 2 * 60_000;
 /** An agent that could not resolve a copy is not asked again about it for this long. */
 const AGENT_RETRY_MS = 60 * 60_000;
 const AGENT_TIMEOUT_MS = 10 * 60_000;
 const MAX_AGENT_TEXT_BYTES = 512 * 1024;
-const FOLDER_RESCAN_MS = 10 * 60_000;
 /* A copy the fixer did not reach in time. Its original has moved on since, so merging the
    old version back in could undo newer work; a person chooses. The stamp in the name is
    the creating machine's local time, hence the margin on top of a day. */
@@ -70,7 +67,6 @@ export interface SyncCheckStatus {
 
 const status: SyncCheckStatus = { enabled: true, resolvedTotal: 0, unresolved: [], folderIssues: [] };
 const agentAttempts = new Map<string, number>();
-const folderRescans = new Map<string, number>();
 let checkInProgress = false;
 
 export function syncCheckStatus(): SyncCheckStatus {
@@ -80,7 +76,7 @@ export function syncCheckStatus(): SyncCheckStatus {
 export function conflictOriginalPath(conflictPath: string): string | undefined {
   const match = CONFLICT_NAME.exec(path.basename(conflictPath));
   if (match) return path.join(path.dirname(conflictPath), `${match[1]}${match[2]}`);
-  // The built-in engine's own names (conflicts.ts), should they ever drift from Syncthing's.
+  // The engine's own names (conflicts.ts), should they ever drift from the pattern above.
   const original = conflictCopyOriginal(path.basename(conflictPath));
   return original ? path.join(path.dirname(conflictPath), original) : undefined;
 }
@@ -267,48 +263,15 @@ async function checkProjectConflicts(project: ProjectRecord, settings: SyncCheck
   return { resolved, unresolved };
 }
 
-/** Projects on built-in sync (or moving to it): the engine's status, read from memory. An error or a missing folder is an issue. */
-async function checkBuiltinProjects(projects: ProjectRecord[]): Promise<SyncCheckStatus["folderIssues"]> {
+/** Projects shared with another machine: the engine's status, read from memory. An error or a missing folder is an issue. */
+async function checkFolders(allProjects: ProjectRecord[], engines: ReadonlyMap<string, ProjectFilesEngine>): Promise<SyncCheckStatus["folderIssues"]> {
+  const projects = allProjects.filter((project) => (engines.get(project.id) ?? "none") !== "none");
   if (!projects.length) return [];
   const statuses = await projectSyncStatuses(projects);
   return projects.flatMap((project) => {
     const status = statuses[project.id];
     return status && (status.state === "error" || status.state === "unavailable") ? [{ projectId: project.id, folderId: "", message: `${project.name}: ${status.message ?? status.state}` }] : [];
   });
-}
-
-async function checkFolders(allProjects: ProjectRecord[], now: number, engines: ReadonlyMap<string, ProjectFilesEngine> = new Map()): Promise<SyncCheckStatus["folderIssues"]> {
-  const builtinIssues = await checkBuiltinProjects(allProjects.filter((project) => (engines.get(project.id) ?? "syncthing") !== "syncthing"));
-  // Syncthing no longer holds a folder of a project on built-in sync: nothing of it is reconciled or rescanned there.
-  const projects = allProjects.filter((project) => (engines.get(project.id) ?? "syncthing") === "syncthing");
-  const shared = projects.filter((project) => project.syncFolderId);
-  if (!shared.length) return builtinIssues;
-  // Keeps managed ignore rules current without a restart; a stale rule without `(?d)`
-  // makes remote folder deletions fail with "contains ignored files".
-  try { await reconcileSyncthingProjectFolders(shared); } catch (error) {
-    console.warn(`Sync check could not update Syncthing ignore rules: ${error instanceof Error ? error.message : "update failed"}`);
-  }
-  let statuses = await syncthingFolderStatuses(shared.map((project) => project.syncFolderId!));
-  // A restarted Syncthing can come back on a new port or key; rediscover it once.
-  if (Object.values(statuses).some((folder) => folder.state === "unavailable")) {
-    resetSyncthingConnection();
-    statuses = await syncthingFolderStatuses(shared.map((project) => project.syncFolderId!));
-  }
-  const issues: SyncCheckStatus["folderIssues"] = [];
-  for (const project of shared) {
-    const folderId = project.syncFolderId!;
-    const folder = statuses[folderId];
-    if (!folder || folder.state === "synced" || folder.state === "syncing" || folder.state === "paused") continue;
-    const stuck = folder.state === "error" ? await syncthingFolderErrors(folderId).catch(() => []) : [];
-    const detail = stuck.length ? `: ${stuck.slice(0, 3).map((item) => `${item.path} (${item.error.replace(/^syncing: /, "")})`).join("; ")}${stuck.length > 3 ? `; and ${stuck.length - 3} more` : ""}` : "";
-    issues.push({ projectId: project.id, folderId, message: `${project.name}: ${folder.message ?? folder.state}${detail}` });
-    if (folder.state !== "error" || now - (folderRescans.get(folderId) ?? 0) < FOLDER_RESCAN_MS) continue;
-    folderRescans.set(folderId, now);
-    try { await rescanSyncthingFolder(folderId); } catch (error) {
-      console.warn(`Sync check could not rescan Syncthing folder ${folderId}: ${error instanceof Error ? error.message : "rescan failed"}`);
-    }
-  }
-  return [...issues, ...builtinIssues];
 }
 
 /** One pass of the background sync check. Quiet by design: it logs only what it could not fix. */
@@ -328,11 +291,11 @@ async function syncCheckEveryProject(now: number): Promise<SyncCheckStatus> {
     const unresolved: SyncCheckStatus["unresolved"] = [];
     let resolved = 0;
     for (const project of projects) {
-      const result = await checkProjectConflicts(project, settings, now, await mayResolve(project, local.id), engines.get(project.id) !== "syncthing");
+      const result = await checkProjectConflicts(project, settings, now, await mayResolve(project, local.id), true);
       resolved += result.resolved;
       unresolved.push(...result.unresolved);
     }
-    const folderIssues = await checkFolders(projects, now, engines);
+    const folderIssues = await checkFolders(projects, engines);
     Object.assign(status, { lastCheckAt: new Date(now).toISOString(), lastError: undefined, resolvedTotal: status.resolvedTotal + resolved, unresolved, folderIssues });
     if (resolved) console.log(`Sync check resolved ${resolved} conflict cop${resolved === 1 ? "y" : "ies"}`);
   } catch (error) {

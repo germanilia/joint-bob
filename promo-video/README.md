@@ -221,8 +221,8 @@ To take it down: empty the bucket, then delete the stack.
 - The shop in `browser` is a three-page site served by the capture (`capture/shop.ts`), with
   one bug that the agent's "fix" switches off.
 - Three things the scratch environment puts on screen are hidden with one style rule in
-  `capture/browser.ts`: temp folder paths, the "Unavailable" sync state (no Syncthing runs
-  there), and the "API price unavailable" label on conversations the stand-in ran.
+  `capture/browser.ts`: temp folder paths, the "Unavailable" sync state (the scratch
+  nodes do not synchronize files), and the "API price unavailable" label on conversations the stand-in ran.
 - The dashboard's numbers come from about ten weeks of invented work that `capture/seed.ts`
   writes as transcripts, with token counts the app prices itself.
 - The webhook is made through the real form. The form has no agent picker for a project
@@ -231,8 +231,9 @@ To take it down: empty the bucket, then delete the stack.
 - The scheduled task is made through the real dialog. Its run is started through the API, by
   the command behind "Run now", in place of waiting for the top of the hour.
 - In `secrets` and in the `handoff` take the team's cluster is made through the API before recording.
-  In `team` it is made on screen. That take runs without the twin pairing, because a twin shows
-  as "Twin · error" on the cluster map when no Syncthing runs.
+  In `team` it is made on screen. That take runs without the twin pairing, because a twin with no
+  file synchronization showed as "Twin · error" on the cluster map when the takes were made. This has
+  not been rechecked since Syncthing was removed (2026-11-10).
 - "Runs on" is a native menu, which a headless page does not draw: the pointer goes to it and
   the choice appears.
 - Headless frames carry no pointer, so the page draws one that follows the real mouse events.

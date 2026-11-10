@@ -566,7 +566,7 @@ test("a share the peer does not serve is not noticed until the peer names it", a
   const s = setup(t);
   const a = s.node("node-a", ["node-b"]);
   const b = s.node("node-b", ["node-a"]);
-  // B runs the engine without this project (not in its shadow list): it refuses notices about it with 403.
+  // B runs the engine without this project (it is not shared with B yet): it refuses notices about it with 403.
   await b.configure({ shares: [] });
   await a.configure();
   await a.scan();

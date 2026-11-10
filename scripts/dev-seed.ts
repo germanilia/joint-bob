@@ -42,7 +42,7 @@ const kiroConfigRoot = path.join(home, ".kiro");
 const standInRoot = path.join(root, "bin");
 
 // Both nodes share HOME, the project folders, and the transcript roots. On a real
-// cluster Syncthing keeps those in step between machines; on one machine sharing
+// cluster file sync keeps those in step between machines; on one machine sharing
 // them directly is the closest equivalent, and it is what the mesh tests do.
 interface NodeSpec { key: string; name: string; port: number; dataDir: string; url: string; cookieName: string }
 const nodeSpecs: NodeSpec[] = [

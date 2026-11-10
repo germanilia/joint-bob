@@ -14,8 +14,6 @@ import { mayReplicateEvent, signedPeerPost } from "./replication-v2.js";
 import { pendingEventsForPeer } from "../replication.js";
 import { listProjectMetadataDeliveries } from "../cluster-project-metadata.js";
 import { sessionTitleOverrides } from "../names.js";
-import { resumeSharedProjectFolder } from "../syncthing.js";
-import { FolderOverBuiltinError, whileFilesOnSyncthing } from "../file-sync/control.js";
 import { ensureTwinHttpSchema, pendingTwinDeliveries, bootstrapOwnedTwinPolicies } from "./twins.js";
 import { peerSnapshot, staleSnapshotReason } from "./peer-snapshots.js";
 import { peerFetch } from "../relay/transport.js";
@@ -61,18 +59,6 @@ export function adoptTwinProjects(db: DatabaseSync, local: string, relationshipI
     bootstrapOwnedTwinPolicies(db,local);
     db.exec("RELEASE twin_adoption");
   }catch(error){db.exec("ROLLBACK TO twin_adoption; RELEASE twin_adoption");throw error;}
-}
-
-export async function resumeTwinProjectFolders(db:DatabaseSync,relationshipId:string):Promise<void>{
-  const local=(db.prepare("SELECT id FROM cluster_node LIMIT 1").get() as {id:string}).id;
-  const peer=sharingTwin(db,local,relationshipId);
-  const rows=db.prepare(`SELECT p.id,p.sync_folder_id folder FROM projects p JOIN sharing_resource_owners o
-    ON o.kind='project' AND o.resource_id=p.id WHERE p.sync_folder_id IS NOT NULL`).all() as unknown as Array<{id:string;folder:string}>;
-  // cutover-engine (P5): a project on built-in sync here has no folder to resume, and resuming one Syncthing just let go of would add it back.
-  // fix (P4+P5): nor does one over another project that built-in sync moves here: it stays paused, the others resume.
-  const resume=(id:string,folder:string)=>whileFilesOnSyncthing(id,()=>resumeSharedProjectFolder(folder),db).catch((error)=>{if(!(error instanceof FolderOverBuiltinError))throw error;});
-  try{for(const row of rows)if(mayReceiveResource(db,local,'project',row.id)&&mayReceiveResource(db,peer,'project',row.id))await resume(row.id,row.folder);}
-  catch(error){db.prepare("UPDATE cluster_v2_twin_sharing SET error=? WHERE relationship_id=?").run(error instanceof Error?error.message:"File enrollment failed",relationshipId);}
 }
 
 export async function localTwinSharingStatus(db: DatabaseSync, local: string, relationshipId: string) {
@@ -164,7 +150,6 @@ async function coordinateTwinSharing(db:DatabaseSync,local:string,peer:string,re
   if(!response.ok) throw new ClusterV2HttpError(response.status,"Twin sharing request rejected");
   const inventory=adoptionInventorySchema.parse((await response.json() as {projects:unknown}).projects);
   adoptTwinProjects(db,local,relationshipId,owner,inventory);
-  await resumeTwinProjectFolders(db,relationshipId);
   db.prepare('DELETE FROM cluster_v2_twin_sharing_jobs WHERE relationship_id=?').run(relationshipId);
   return twinSharingStatus(db,local,relationshipId);
 }

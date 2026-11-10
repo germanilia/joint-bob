@@ -16,7 +16,7 @@ test("shell command time limit is node-local, unlimited by default, and bounded 
     const initial = await api<Record<string, unknown>>(node, auth, "GET", "/settings");
     assert.equal(initial.body.shellCommandTimeoutSeconds, null);
 
-    const base = initial.body as Record<string, unknown> & { syncthing: { endpoint: string } };
+    const base = initial.body as Record<string, unknown>;
     const limited = await api<Record<string, unknown>>(node, auth, "PUT", "/settings", { ...base, shellCommandTimeoutSeconds: 600 });
     assert.equal(limited.status, 200);
     assert.equal(limited.body.shellCommandTimeoutSeconds, 600);

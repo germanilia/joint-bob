@@ -81,7 +81,7 @@ function routePeerThrough(node: SeededNode, peer: SeededNode, url: string): void
   } finally { db.close(); }
 }
 
-/** Creates a ticket the way a node does, owned by that node (task creation through the API needs Syncthing). */
+/** Creates a ticket the way a node does, owned by that node. */
 function createTaskOn(environment: DevEnvironment, node: SeededNode, project: SeededNode["projects"][number], title: string): { id: string } {
   const script = `import { createTask } from "./src/tasks.ts"; process.stdout.write(JSON.stringify(await createTask(${JSON.stringify(project.id)}, ${JSON.stringify(project.path)}, ${JSON.stringify(title)}, "", "backlog", "pi", false, false, {}))); process.exit(0);`;
   return JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { env: { ...process.env, HOME: environment.home, JOINT_BOB_DATA_DIR: node.dataDir }, encoding: "utf8" })) as { id: string };

@@ -86,7 +86,7 @@ test("Claude WebSocket streams before finalization and executes queued prompts o
     await mkdir(projectPath);
     const projectResponse = await fetch(`${baseUrl}/api/projects`, { method: "POST", headers, body: JSON.stringify({ name: "Stream", path: projectPath }) });
     const { project } = await projectResponse.json() as { project: { id: string } };
-    await fetch(`${baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable, configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, syncthing: { endpoint: "" } }) });
+    await fetch(`${baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable, configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } }) });
 
     const wsUrl = new URL(`/ws?projectId=${project.id}&sessionPath=claude:new`, baseUrl);
     wsUrl.protocol = "ws:";

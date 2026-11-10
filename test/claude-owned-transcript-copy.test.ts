@@ -17,7 +17,6 @@ test("Claude duplicate transcripts display the copy with the newest recorded eve
     updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
     const { claudeProjectDir } = await import("../src/session-paths.js");
     const { listClaudeSessions, refreshClaudeSessions, loadClaudeMessages } = await import("../src/claude-service.js");

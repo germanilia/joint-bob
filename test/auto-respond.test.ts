@@ -496,7 +496,7 @@ test("a responder cancelled before its turn starts never prompts its harness", a
     await mkdir(sessionPath, { recursive: true });
     await writeFile(executable, fixtureSource.replace("const request = JSON.parse(line);", `const request = JSON.parse(line); require("node:fs").appendFileSync(${JSON.stringify(wire)}, request.method + "\\n");`));
     await chmod(executable, 0o700);
-    updateSettings({ runtimes: { ...previousSettings.runtimes, kiro: { ...previousSettings.runtimes.kiro, executable, configPath, sessionPath } }, syncthing: { endpoint: "" } });
+    updateSettings({ runtimes: { ...previousSettings.runtimes, kiro: { ...previousSettings.runtimes.kiro, executable, configPath, sessionPath } } });
     const project = await addProject("Auto respond cancel", root);
     // Stop pressed while the responder is still opening: a harness with no turn running
     // cannot be cancelled, so the run itself must not start the turn.
@@ -506,7 +506,7 @@ test("a responder cancelled before its turn starts never prompts its harness", a
     const methods = (await readFile(wire, "utf8").catch(() => "")).trim().split("\n");
     assert.equal(methods.includes("session/prompt"), false, `the responder never prompted (${methods.join(", ")})`);
   } finally {
-    updateSettings({ runtimes: previousSettings.runtimes, syncthing: { endpoint: "" } });
+    updateSettings({ runtimes: previousSettings.runtimes });
     await rm(root, { recursive: true, force: true });
   }
 });

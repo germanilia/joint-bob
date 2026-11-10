@@ -15,7 +15,7 @@ async function fixture(root: string) {
   for (const directory of [path.join(app, "scripts"), tools, state]) await mkdir(directory, { recursive: true });
   await writeFile(path.join(app, "scripts/install-service.sh"), await readFile("scripts/install-service.sh", "utf8"));
   await cp("deploy", path.join(app, "deploy"), { recursive: true });
-  for (const script of ["run-node", "install-node-runtime", "check-prerequisites", "build-service-path", "install-syncthing"]) {
+  for (const script of ["run-node", "install-node-runtime", "check-prerequisites", "build-service-path"]) {
     await writeFile(path.join(app, `scripts/${script}.sh`), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
   }
   await writeFile(path.join(app, "scripts/install-claude-hooks.mjs"), "");

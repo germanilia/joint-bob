@@ -915,7 +915,7 @@ export async function updateProjectWorkspaceAndPath(projectId: string, workspace
   return (await getProject(canonicalId))!;
 }
 
-/** The project's folder on this machine becomes `folderPath`; nothing on disk moves (sharing-files adopts Syncthing's folder). */
+/** The project's folder on this machine becomes `folderPath`; nothing on disk moves (used when a project's files already lie elsewhere). */
 export async function updateProjectPath(projectId: string, folderPath: string): Promise<ProjectRecord> {
   const db = await projectDatabase();
   const canonicalId = resolveProjectId(db, projectId);

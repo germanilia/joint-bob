@@ -1,5 +1,7 @@
 # Twin skill synchronization implementation plan
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Initialize Homeserver from the Mac, then synchronize managed skill additions, edits and deletions bidirectionally with offline recovery and protected relay resources.

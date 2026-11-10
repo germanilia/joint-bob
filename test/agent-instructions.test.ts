@@ -21,7 +21,7 @@ async function write(file: string, content: string): Promise<void> {
 test.before(async () => {
   await mkdir(project, { recursive: true });
   assert.equal(getSettings().strictResourceIsolation, true);
-  updateSettings({ syncthing: { endpoint: "" }, projects: { homePath: root } });
+  updateSettings({ projects: { homePath: root } });
 });
 test.after(async () => { await rm(root, { recursive: true, force: true }); });
 
@@ -46,11 +46,11 @@ test("agents read the global AGENTS.md, the app's instructions, then the project
   await rm(path.join(project, "AGENTS.md"));
   assert.ok(agentInstructionFiles(paths, "pi", { cwd: project }).some((file) => file.content === "PROJECT_CLAUDE_WORD" && file.label === "Project instructions (CLAUDE.md)"));
 
-  updateSettings({ syncthing: { endpoint: "" }, strictResourceIsolation: false });
+  updateSettings({ strictResourceIsolation: false });
   try {
     // Without strict isolation the harnesses still read project files themselves; the app must not add them twice.
     assert.equal(agentInstructionFiles(paths, "pi", { cwd: project }).some((file) => file.content === "PROJECT_CLAUDE_WORD"), false);
-  } finally { updateSettings({ syncthing: { endpoint: "" }, strictResourceIsolation: true }); }
+  } finally { updateSettings({ strictResourceIsolation: true }); }
 
   const args = claudeAgentResourceArgs(undefined, undefined, undefined, project);
   const instructions = await readFile(args[args.indexOf("--append-system-prompt-file") + 1], "utf8");

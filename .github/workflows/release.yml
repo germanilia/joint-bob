@@ -67,8 +67,6 @@ jobs:
       - name: Typecheck
         if: matrix.shard == 1
         run: npm run typecheck
-      - name: Install native synchronization test dependency
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends syncthing
       # The agent CLIs under bin/ run from dist, and tests run them.
       - run: npm run build
       - name: Run fast test suite

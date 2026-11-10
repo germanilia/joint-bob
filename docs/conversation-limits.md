@@ -44,7 +44,7 @@ Not limited:
 - The agent process itself (the Claude or Kiro CLI, or the Pi SDK inside the server)
   and the MCP servers it starts directly. Pausing it would stall the turn.
 - Each task's supervisor worker, which must stay awake to own its process group.
-- Terminal shells, the server, the supervisor, Syncthing and browser sessions.
+- Terminal shells, the server, the supervisor and browser sessions.
 
 ## Limits of the method
 

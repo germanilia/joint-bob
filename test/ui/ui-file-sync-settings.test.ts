@@ -1,10 +1,9 @@
 // Browser suite for Settings → File sync. It drives a real Chrome against a seeded node and
 // answers every /api/file-sync/* request from fixtures, so it checks the screen against the
 // engine's answers without running the engine: the tab is the admin's only, lists page instead
-// of scrolling, each project says what its automatic move waits for, the admin compares every
-// project or chosen ones, the first index says where it is, a move waits for its checks and asks
-// twice, a finished move leaves no stale notice or figures, a refusal shows the checks the server
-// names, a quiet engine is not asked again, and the differing files page.
+// of scrolling, a synced project says so, a project being checked says what the check is doing
+// and is refreshed until it is synced, a held check is left alone, the first index says where it
+// is, a quiet engine is not asked again, and the differing files page.
 //
 // Run with `npm run test:file -- test/ui/ui-file-sync-settings.test.ts`. Like the rest of
 // test/ui it needs a Chrome binary, and it fails rather than skipping when there is none.
@@ -23,63 +22,23 @@ const PEER = "node-peer-b";
 const DAY = 86_400_000;
 const DIFFERING = Array.from({ length: 30 }, (_, index) => `src/file-${String(index + 1).padStart(2, "0")}.ts`);
 
-interface PeerPhase { peer: string; name: string; phase: string; error: string | null }
-interface AutoSwitch { state: string; reason: string; cleanSince: string | null; cleanHours: number; decidedBy: string | null }
-interface Project { projectId: string; name: string; owner: boolean; engine: "syncthing" | "builtin"; phase: string; phaseMessage: string | null; phaseError: string | null; cleanSince: string | null; differences: number; shares: string[]; waiting: boolean; peers: PeerPhase[]; autoSwitch: AutoSwitch | null }
+interface Project { projectId: string; name: string; owner: boolean; phase: "builtin" | "bootstrapping"; phaseMessage: string | null; phaseError: string | null; differences: number; shares: string[]; waiting: boolean }
 interface Seen { method: string; path: string; query: string; at: number; body?: unknown }
 
-const HOUR = 3_600_000;
-// The owner's peers read the hold without the owner's own action (fix); the owner reads HELD_REASON.
-const HELD = "Moved back to Syncthing by hand on node-a, so it stays there";
-const HELD_HERE = "Moved back to Syncthing by hand; click Allow automatic move to let it move again";
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 const projects: Project[] = Array.from({ length: 14 }, (_, index) => {
   const id = `p${String(index + 1).padStart(2, "0")}`;
-  return { projectId: id, name: `Project ${id.slice(1)}`, owner: index < 3, engine: "syncthing", phase: "syncthing", phaseMessage: null, phaseError: null, cleanSince: ago(3 * DAY), differences: 0, shares: ["project"], waiting: false, peers: [], autoSwitch: null };
+  return { projectId: id, name: `Project ${id.slice(1)}`, owner: index < 3, phase: "builtin", phaseMessage: null, phaseError: null, differences: 0, shares: ["project"], waiting: false };
 });
 projects[0].differences = DIFFERING.length;
-projects[0].cleanSince = null;
-// auto-transition: what each project's automatic move waits for, as the server words it (migration.ts).
-const auto = (state: string, reason: string, extra: Partial<AutoSwitch> = {}): AutoSwitch => ({ state, reason, cleanSince: null, cleanHours: 24, decidedBy: null, ...extra });
-projects[0].autoSwitch = auto("blocked", "30 files differ with node-peer-b");
-projects[1].autoSwitch = auto("blocked", "Waiting for Syncthing to finish copying");
-projects[2].autoSwitch = auto("blocked", "Waiting for Matans-Sela-MacBook-Pro to update Joint Bob");
-projects[3].autoSwitch = auto("held", HELD, { decidedBy: "node-a" });
-projects[4].autoSwitch = auto("matching", "", { cleanSince: ago(6 * HOUR + 60_000), decidedBy: "node-a" });
-// fix: one this machine owns and someone moved back by hand.
-projects[7].owner = true;
-projects[7].autoSwitch = auto("held", HELD_HERE);
-/** What the PUT /api/file-sync/config stub keeps: the choice, the list kept under "All", and a project its owner asked for. */
-let shadowProjects: "all" | string[] = "all";
-let lastChosenProjects: string[] | null = null;
-const requestedProjects = ["p09"];
 let indexing: { projectId: string; name: string; position: number; total: number } | null = null;
-
-// The server's ten checks for a move to built-in sync, in its order and words (migration.ts).
-const passing = [
-  { key: "owner", ok: true, message: "This machine owns the project" },
-  { key: "shared", ok: true, message: "Shared with node-peer-b" },
-  { key: "engine", ok: true, message: "File sync runs on this machine" },
-  { key: "peers", ok: true, message: "Every machine runs built-in file sync" },
-  { key: "rules", ok: true, message: "Every machine skips the same files" },
-  { key: "differences", ok: true, message: "Every machine has the same files" },
-  { key: "caughtUp", ok: true, message: "Every machine has seen the latest changes" },
-  { key: "folders", ok: true, message: "Only Joint Bob's own Syncthing folders cover this project on every machine" },
-  { key: "syncthing", ok: true, message: "Syncthing has nothing left to copy" },
-  { key: "activity", ok: true, message: "No task or merge is running in this project" },
-];
-const checksFor: Record<string, Array<{ key: string; ok: boolean; message: string }>> = {
-  p01: passing.map((check) => check.key === "differences" ? { key: "differences", ok: false, message: "30 files differ on node-peer-b" } : check),
-  p02: passing,
-  p03: passing,
-};
 
 /** The second project's folder size, as the engine reports it now. */
 let shareBytes = 4_200_000;
 
 function shareStatus(share: string, projectId: string, kind: string, differences: number, cleanSince: string | null) {
   return {
-    share, projectId, kind, state: "idle", phase: "syncthing", maxSeq: 10, indexId: "index", digest: "digest", rulesHash: "rules",
+    share, projectId, kind, state: "idle", phase: "builtin", engine: "builtin", maxSeq: 10, indexId: "index", digest: "digest", rulesHash: "rules",
     liveFiles: 120, liveBytes: projectId === "p02" ? shareBytes : 4_200_000, need: { files: 0, bytes: 0 }, blocked: 0, errors: 0, scanning: false, watch: "watching",
     peers: [{ peer: PEER, cursor: 10, peerMaxSeq: 10, peerIndexId: "peer", peerDigest: "digest", rulesMatch: true, caughtUp: true, differences, cleanSince, route: "direct" }],
   };
@@ -87,7 +46,7 @@ function shareStatus(share: string, projectId: string, kind: string, differences
 
 function statusAnswer() {
   return {
-    enabled: true, worker: "running", config: { enabled: true, enabledBy: "default", shadowProjects, shadowProjectsBy: shadowProjects === "all" ? "default" : "settings", port: 22700, autoSwitch: { enabled: true, cleanHours: 24 }, requestedProjects, lastChosenProjects },
+    enabled: true, worker: "running", leaving: false, config: { enabled: true, enabledBy: "default", shadowProjects: "all", shadowProjectsBy: "default", port: 22700, requestedProjects: [], lastChosenProjects: null },
     origins: ["http://100.64.0.5:22700"], indexing,
     shares: [
       shareStatus("project:p01", "p01", "project", DIFFERING.length, null),
@@ -118,26 +77,8 @@ async function answer(route: Route): Promise<void> {
   const pageNumber = Number(url.searchParams.get("page") ?? 1), pageSize = Number(url.searchParams.get("pageSize") ?? 10);
   switch (`${request.method()} ${url.pathname}`) {
     case "GET /api/file-sync/status": return json(200, statusAnswer());
-    case "PUT /api/file-sync/config": {
-      const patch = JSON.parse(raw!) as { shadowProjects?: "all" | string[] };
-      if (patch.shadowProjects === "all" && Array.isArray(shadowProjects)) lastChosenProjects = shadowProjects;
-      if (patch.shadowProjects !== undefined) shadowProjects = patch.shadowProjects;
-      return json(200, statusAnswer());
-    }
-    case "POST /api/file-sync/engine/allow-auto": {
-      const project = projects.find((candidate) => candidate.projectId === (JSON.parse(raw!) as { projectId: string }).projectId)!;
-      project.autoSwitch = auto("matching", "", { cleanSince: ago(HOUR) });
-      return json(200, { project });
-    }
+    case "PUT /api/file-sync/config": return json(200, statusAnswer());
     case "GET /api/file-sync/projects": return json(200, { projects });
-    case "GET /api/file-sync/engine/checks": return json(200, { engine: url.searchParams.get("engine"), checks: checksFor[url.searchParams.get("projectId")!] ?? passing, cleanSince: ago(3 * DAY) });
-    case "POST /api/file-sync/engine": {
-      const { projectId, engine } = JSON.parse(raw!) as { projectId: string; engine: "builtin" | "syncthing" };
-      if (projectId === "p03") return json(409, { error: "Some machines are not ready to move", checks: [passing[0], { key: "peers-live", ok: false, message: "node-peer-b did not answer just now" }] });
-      const project = projects.find((candidate) => candidate.projectId === projectId)!;
-      Object.assign(project, { engine, phase: "releasing", phaseMessage: `Waiting for Syncthing to release ${project.name}`, autoSwitch: null });
-      return json(200, { project });
-    }
     case "GET /api/file-sync/differences": {
       const items = url.searchParams.get("share") === "project:p01" ? DIFFERING.map((file) => ({ path: file, kind: "content", local: { size: 100, mtimeMs: 1, sha256: "a", deleted: false }, remote: { size: 120, mtimeMs: 2, sha256: "b", deleted: false }, since: ago(DAY) })) : [];
       return json(200, { total: items.length, items: items.slice((pageNumber - 1) * pageSize, pageNumber * pageSize) });
@@ -181,12 +122,11 @@ async function showRow(projectId: string) {
   return row;
 }
 
-/** Pages to the project's row and opens its move. */
-async function openMove(projectId: string): Promise<void> {
+/** Pages to the project's row and opens its details. */
+async function openDetails(projectId: string): Promise<void> {
   const row = await showRow(projectId);
-  await row.getByTestId("file-sync-project-move").click();
+  await row.getByTestId("file-sync-project-details").click();
   await page.getByTestId("file-sync-project-detail").waitFor({ state: "visible" });
-  await page.getByTestId("file-sync-checks").locator("li").first().waitFor();
 }
 
 before(async () => {
@@ -229,8 +169,12 @@ test("the File sync tab sits next to Node and Resources and shows the engine and
   assert.equal(await peer.getByTestId("file-sync-peer-reachable").innerText(), "Reachable");
   assert.match(await peer.getByTestId("file-sync-peer-facts").innerText(), /^Direct connection · Last heard 2 minutes ago$/);
   await page.getByTestId("file-sync-project-row").first().waitFor();
-  assert.equal(await page.locator('[data-project-id="p01"]').getByTestId("file-sync-project-state").innerText(), "Synced by Syncthing");
-  assert.equal(await page.locator('[data-project-id="p04"]').getByTestId("file-sync-project-move").count(), 0, "only the owner can move a project");
+  assert.equal(await page.locator('[data-project-id="p01"]').getByTestId("file-sync-project-state").innerText(), "Synced");
+  // Every shared project is synced: nothing to choose, compare or move.
+  assert.equal(await page.getByTestId("file-sync-project-move").count(), 0);
+  assert.equal(await page.getByTestId("file-sync-compare").count(), 0);
+  assert.equal(await page.getByTestId("file-sync-project-compare").count(), 0);
+  assert.doesNotMatch(await page.getByTestId("settings-panel-file-sync").innerText(), /syncthing/i);
 });
 
 test("the project list pages instead of scrolling at a short height", async () => {
@@ -258,96 +202,21 @@ test("the project list pages instead of scrolling at a short height", async () =
   assert.match(await label.innerText(), /–14 of 14$/);
 });
 
-// auto-transition: nobody picks the moment; each project says what its move waits for, owners' and others' alike.
-test("every project on Syncthing says what its automatic move waits for, naming the machine", async () => {
-  const waiting = async (projectId: string) => (await showRow(projectId)).getByTestId("file-sync-project-waiting").innerText();
-  assert.equal(await waiting("p01"), "30 files differ with node-peer-b");
-  assert.equal(await waiting("p02"), "Waiting for Syncthing to finish copying");
-  assert.equal(await waiting("p03"), "Waiting for Matans-Sela-MacBook-Pro to update Joint Bob");
-  // Another machine owns these: its word, with the owner named on hover; the matching time is worded now.
-  assert.equal(await waiting("p04"), HELD);
-  assert.equal(await (await showRow("p04")).getByTestId("file-sync-project-waiting").getAttribute("title"), "node-a owns this project and moves it");
-  assert.equal(await waiting("p05"), "Files have matched on every machine for 6 h; it moves to built-in sync after 24 h");
-  assert.doesNotMatch(await (await showRow("p05")).locator(".relay-row-meta").first().innerText(), /Same files on every machine/, "the reason says it already");
-  assert.equal(await (await showRow("p05")).getByTestId("file-sync-project-move").count(), 0, "the move stays the owner's");
-  assert.equal(await (await showRow("p06")).getByTestId("file-sync-project-waiting").count(), 0, "nothing said, nothing shown");
-  // The details say it too.
-  await (await showRow("p03")).getByTestId("file-sync-project-details").click();
-  await page.getByTestId("file-sync-project-detail").waitFor({ state: "visible" });
-  assert.equal(await page.getByTestId("file-sync-detail-facts").getByTestId("file-sync-project-waiting").innerText(), "Waiting for Matans-Sela-MacBook-Pro to update Joint Bob");
+test("a synced project says so, with how its files compare and nothing to move", async () => {
+  const same = await showRow("p02");
+  assert.equal(await same.getByTestId("file-sync-project-state").innerText(), "Synced");
+  assert.equal(await same.locator(".relay-row-meta").first().innerText(), "Same files on every machine");
+  assert.equal(await same.getByTestId("file-sync-project-message").count(), 0);
+  assert.equal(await same.locator(".relay-error").count(), 0);
+  assert.equal(await (await showRow("p01")).locator(".relay-row-meta").first().innerText(), "30 files differ right now");
+  // No folder of this one is reported yet, so nothing says its files are the same.
+  assert.equal(await (await showRow("p03")).locator(".relay-row-meta").first().innerText(), "Not compared with the other machines yet");
+  await openDetails("p02");
+  assert.equal(await page.getByTestId("file-sync-detail-name").innerText(), "Project 02");
+  assert.equal(await page.getByTestId("file-sync-detail-state").innerText(), "Synced");
+  await page.getByTestId("file-sync-detail-facts").getByText("120 files, 4.20 MB").waitFor();
+  assert.deepEqual(await page.getByTestId("file-sync-detail-actions").locator("button").allInnerTexts(), ["Rescan files"]);
   await page.getByTestId("file-sync-detail-back").click();
-  await projectListStart();
-});
-
-// fix: a hold by hand can be lifted without moving the project now (the Move button needs every check to pass).
-test("a project moved back by hand on this machine can be allowed to move by itself again", async () => {
-  assert.equal(await (await showRow("p08")).getByTestId("file-sync-project-waiting").innerText(), HELD_HERE);
-  await (await showRow("p08")).getByTestId("file-sync-project-details").click();
-  await page.getByTestId("file-sync-project-detail").waitFor({ state: "visible" });
-  await page.getByTestId("file-sync-allow-auto").click();
-  await page.getByTestId("file-sync-detail-status").filter({ hasText: "Project 08 moves to built-in sync by itself once every machine is ready" }).waitFor();
-  assert.deepEqual(seen.filter((entry) => entry.path === "/api/file-sync/engine/allow-auto").map((entry) => [entry.method, entry.body]), [["POST", { projectId: "p08" }]]);
-  assert.equal(await page.getByTestId("file-sync-allow-auto").count(), 0, "nothing held any more");
-  assert.equal(seen.filter((entry) => entry.method === "POST" && entry.path === "/api/file-sync/engine").length, 0, "nothing moved");
-  // Another machine's hold has no such button here.
-  await page.getByTestId("file-sync-detail-back").click();
-  await (await showRow("p04")).getByTestId("file-sync-project-details").click();
-  await page.getByTestId("file-sync-project-detail").waitFor({ state: "visible" });
-  assert.equal(await page.getByTestId("file-sync-allow-auto").count(), 0);
-  await page.getByTestId("file-sync-detail-back").click();
-  await projectListStart();
-});
-
-test("Compare these projects: every shared one by default, or the ones ticked", async () => {
-  const all = page.getByTestId("file-sync-compare-all"), chosen = page.getByTestId("file-sync-compare-chosen");
-  assert.equal(await all.isChecked(), true);
-  assert.equal(await page.getByTestId("file-sync-project-compare").count(), 0, "no ticks while every project is compared");
-  const puts = () => seen.filter((entry) => entry.method === "PUT" && entry.path === "/api/file-sync/config").map((entry) => entry.body);
-  // Choosing starts from every listed project, so nothing stops being compared by itself.
-  await chosen.check();
-  await page.getByTestId("file-sync-project-compare").first().waitFor();
-  assert.deepEqual(puts().at(-1), { shadowProjects: projects.map((project) => project.projectId).sort() });
-  assert.equal(await chosen.isChecked(), true);
-  const box = (await showRow("p02")).getByTestId("file-sync-project-compare");
-  assert.equal(await box.isChecked(), true);
-  await box.uncheck();
-  await page.getByTestId("file-sync-engine-status").filter({ hasText: "Project 02 is no longer compared on this machine, so it stays on Syncthing." }).waitFor();
-  const unticked = projects.map((project) => project.projectId).filter((id) => id !== "p02").sort();
-  assert.deepEqual(puts().at(-1), { shadowProjects: unticked });
-  assert.equal(await (await showRow("p02")).getByTestId("file-sync-project-compare").isChecked(), false);
-  assert.match(await (await showRow("p02")).locator("label:has([data-testid=file-sync-project-compare])").getAttribute("title") ?? "", /stays on Syncthing/);
-  // fix: one its owner asked this machine to compare is ticked, and says why.
-  shadowProjects = unticked.filter((id) => id !== "p09");
-  await page.getByTestId("file-sync-refresh-button").click();
-  await settle();
-  const asked = (await showRow("p09")).getByTestId("file-sync-project-compare");
-  assert.equal(await asked.isChecked(), true);
-  assert.match(await (await showRow("p09")).locator("label:has([data-testid=file-sync-project-compare])").getAttribute("title") ?? "", /asked this machine to compare it/);
-  shadowProjects = unticked;
-  // fix: "All" over a chosen list asks first; cancelled, the chosen list stays.
-  const before = puts().length;
-  await all.check();
-  await page.getByTestId("confirm-dialog").waitFor({ state: "visible" });
-  await page.getByTestId("confirm-cancel-button").click();
-  await settle();
-  assert.equal(puts().length, before, "nothing saved");
-  assert.equal(await chosen.isChecked(), true);
-  // Accepted: every project; the chosen list is kept and comes back with Chosen….
-  await all.check();
-  await page.getByTestId("confirm-accept-button").click();
-  await page.getByTestId("file-sync-engine-status").filter({ hasText: "Every project shared with another machine is compared" }).waitFor();
-  assert.deepEqual(puts().at(-1), { shadowProjects: "all" });
-  await settle();
-  assert.equal(await page.getByTestId("file-sync-project-compare").count(), 0);
-  await chosen.check();
-  await page.getByTestId("file-sync-project-compare").first().waitFor();
-  assert.deepEqual(puts().at(-1), { shadowProjects: unticked }, "the list chosen before comes back");
-  assert.equal(await (await showRow("p02")).getByTestId("file-sync-project-compare").isChecked(), false);
-  // Back to every project for the tests after this one.
-  await all.check();
-  await page.getByTestId("confirm-accept-button").click();
-  await page.getByTestId("file-sync-engine-status").filter({ hasText: "Every project shared with another machine is compared" }).waitFor();
-  await settle();
   await projectListStart();
 });
 
@@ -370,143 +239,65 @@ test("the first index of the projects says which one it is on, and moves on by i
 test("a quiet engine is not asked again while the tab stays open", { timeout: 30_000 }, async () => {
   const before = statusRequests().length;
   await pause(6_500);
-  assert.equal(statusRequests().length, before, "no project moves or copies, so nothing is refreshed on a timer");
+  assert.equal(statusRequests().length, before, "no project is checked or copied, so nothing is refreshed on a timer");
 });
 
-test("a failing check keeps the move button disabled and says why", async () => {
-  await openMove("p01");
-  const failing = page.locator('[data-testid="file-sync-check-row"][data-key="differences"]');
-  assert.equal(await failing.getAttribute("data-ok"), "false");
-  assert.equal(await failing.getByTestId("file-sync-check-message").innerText(), "30 files differ on node-peer-b");
-  // fix (P4+P5): the ones that passed fold into one line, so the details fit with the server's whole list.
-  assert.equal(await page.locator('[data-testid="file-sync-check-row"][data-ok="true"]').count(), 0);
-  const passed = page.getByTestId("file-sync-checks-passed");
-  assert.equal(await passed.getByTestId("file-sync-checks-passed-text").innerText(), "9 other checks passed");
-  assert.match(await passed.getAttribute("title") ?? "", /^This machine owns the project\nShared with node-peer-b\n[\s\S]*No task or merge is running in this project$/);
-  const move = page.getByTestId("file-sync-move-button");
-  assert.equal(await move.innerText(), "Move to built-in sync");
-  assert.equal(await move.isDisabled(), true);
-  assert.equal(await page.getByTestId("file-sync-move-reason").innerText(), "Every check must pass first.");
-  assert.match(await page.getByTestId("file-sync-clean-since").innerText(), /matched on every machine for 3 days\. Joint Bob moves the project by itself once they have matched for 24 h; you can move it sooner\./);
-  assert.equal(seen.filter((entry) => entry.method === "POST" && entry.path === "/api/file-sync/engine").length, 0, "nothing was moved");
-  const asked = new URLSearchParams(seen.filter((entry) => entry.path === "/api/file-sync/engine/checks").at(-1)!.query);
-  assert.deepEqual([asked.get("projectId"), asked.get("engine")], ["p01", "builtin"], "the checks are asked for the move the button would make");
-});
+test("a project being checked says what the check is doing, and is refreshed at most every 5 seconds until it is synced", { timeout: 60_000 }, async () => {
+  Object.assign(projects[1], { phase: "bootstrapping", phaseMessage: "Comparing Project 02 with node-peer-b" });
+  await page.getByTestId("file-sync-refresh-button").click();
+  const row = await showRow("p02");
+  await row.getByTestId("file-sync-project-state").filter({ hasText: "Checking both machines' files" }).waitFor();
+  assert.equal(await row.getByTestId("file-sync-project-message").innerText(), "Comparing Project 02 with node-peer-b");
+  const opening = statusRequests().length;
+  await openDetails("p02");
+  assert.equal(await page.getByTestId("file-sync-detail-state").innerText(), "Checking both machines' files");
+  assert.equal(await page.getByTestId("file-sync-detail-facts").getByTestId("file-sync-project-message").innerText(), "Comparing Project 02 with node-peer-b");
+  // Opening the details loads once; from then on the page looks again by itself.
+  while (statusRequests().length === opening) await pause(100);
+  const opened = statusRequests().at(-1)!.at;
+  const deadline = Date.now() + 20_000;
+  while (statusRequests().filter((entry) => entry.at > opened).length < 2 && Date.now() < deadline) await pause(250);
+  const times = statusRequests().filter((entry) => entry.at >= opened).map((entry) => entry.at);
+  assert.ok(times.length >= 3, `the project being checked was refreshed: ${times.length} status requests`);
+  for (let index = 1; index < times.length; index += 1) assert.ok(times[index] - times[index - 1] >= 4_900, `at most one status request per 5 s: ${times.map((at) => at - opened).join(", ")}`);
 
-// fix (P4+P5): the move button, its reason and the matching time stay on screen with the server's ten checks.
-test("a project's details fit a laptop screen with the server's whole list of checks", async () => {
-  const fits = async (label: string) => {
-    await settle();
-    const pane = page.getByTestId("file-sync-project-detail");
-    const box = await pane.evaluate((element) => ({ scroll: element.scrollHeight, client: element.clientHeight, bottom: element.getBoundingClientRect().bottom }));
-    assert.ok(box.scroll <= box.client + 1, `${label}: the details do not scroll: ${JSON.stringify(box)}`);
-    const button = await page.getByTestId("file-sync-move-button").boundingBox();
-    assert.ok(button && button.y + button.height <= box.bottom + 1, `${label}: the move button is in view: ${JSON.stringify({ button, box })}`);
-    assert.equal(await page.getByTestId("file-sync-clean-since").isVisible(), true, `${label}: the matching time is shown`);
-  };
-  for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }]) {
-    await page.setViewportSize(viewport);
-    await openMove("p01");
-    await fits(`${viewport.width}x${viewport.height}, one check failing`);
-    await openMove("p02");
-    await fits(`${viewport.width}x${viewport.height}, every check passing`);
-    assert.equal(await page.getByTestId("file-sync-checks-passed-text").innerText(), "All 10 checks passed");
-  }
-  await page.setViewportSize({ width: 1440, height: 640 });
+  Object.assign(projects[1], { phase: "builtin", phaseMessage: null });
+  // The folders' final figures come after the check: they are not left as the checking page showed them.
+  shareBytes = 9_300_000;
+  await page.getByTestId("file-sync-detail-state").filter({ hasText: "Synced" }).waitFor({ timeout: 10_000 });
+  assert.equal(await page.getByTestId("file-sync-detail-facts").getByTestId("file-sync-project-message").count(), 0);
+  const finishedAt = statusRequests().length;
+  await pause(1_500);
+  assert.equal(statusRequests().length, finishedAt + 1, "one more load once the check finished, for the folders' last figures");
+  await page.getByTestId("file-sync-detail-facts").getByText("120 files, 9.30 MB").waitFor();
+  const settled = statusRequests().length;
+  await pause(6_500);
+  assert.equal(statusRequests().length, settled, "once nothing is checked, nothing is refreshed");
+  await page.getByTestId("file-sync-detail-back").click();
   await projectListStart();
 });
 
-test("moving asks twice and posts the project and the engine", async () => {
-  await openMove("p02");
-  const move = page.getByTestId("file-sync-move-button");
-  assert.equal(await move.isEnabled(), true, "every check passes");
-  assert.equal(await page.getByTestId("file-sync-move-reason").isVisible(), false);
-  await move.click();
-  assert.equal(await move.innerText(), "Click again to move");
-  await pause(300);
-  assert.equal(seen.filter((entry) => entry.method === "POST" && entry.path === "/api/file-sync/engine").length, 0, "the first click only asks");
-  const posted = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/file-sync/engine");
-  await move.click();
-  assert.deepEqual((await posted).postDataJSON(), { projectId: "p02", engine: "builtin" });
-  await page.getByTestId("file-sync-detail-status").filter({ hasText: "Project 02 is moving to built-in sync" }).waitFor();
-  assert.equal(await page.getByTestId("file-sync-detail-status").getAttribute("data-state"), "ok");
-  await page.getByTestId("file-sync-detail-state").filter({ hasText: "Waiting for Syncthing to let go of the folders" }).waitFor();
-  await page.getByTestId("file-sync-detail-facts").getByText("Waiting for Syncthing to release Project 02").waitFor();
-});
-
-test("a moving project is refreshed at most every 5 seconds, and only until it has moved", { timeout: 60_000 }, async () => {
-  const moved = seen.find((entry) => entry.method === "POST" && entry.path === "/api/file-sync/engine")!.at;
-  const deadline = Date.now() + 20_000;
-  while (statusRequests().filter((entry) => entry.at > moved).length < 3 && Date.now() < deadline) await pause(250);
-  const times = statusRequests().filter((entry) => entry.at > moved).map((entry) => entry.at);
-  assert.ok(times.length >= 3, `the moving project was refreshed: ${times.length} status requests`);
-  for (let index = 1; index < times.length; index += 1) assert.ok(times[index] - times[index - 1] >= 4_900, `at most one status request per 5 s: ${times.map((at) => at - moved).join(", ")}`);
-
-  Object.assign(projects[1], { phase: "builtin", phaseMessage: null, autoSwitch: null });
-  // fix (P4+P5): the folders' final figures come after the move: they are not left as the moving page showed them.
-  shareBytes = 9_300_000;
-  await page.getByTestId("file-sync-detail-state").filter({ hasText: "Synced by Joint Bob" }).waitFor({ timeout: 10_000 });
-  const finishedAt = statusRequests().length;
-  // The green "moving" notice goes once the move is over.
-  await page.waitForFunction(() => document.querySelector('[data-testid="file-sync-detail-status"]')?.textContent === "");
-  await pause(1_500);
-  assert.equal(statusRequests().length, finishedAt + 1, "one more load once the move finished, for the folders' last figures");
-  const settled = statusRequests().length;
-  await pause(6_500);
-  assert.equal(statusRequests().length, settled, "once nothing moves, nothing is refreshed");
-  const back = page.getByTestId("file-sync-move-button");
-  assert.equal(await back.innerText(), "Move back to Syncthing");
-  assert.equal(await back.isDisabled(), true, "the checks loaded for the move to built-in sync say nothing about moving back");
-  // "Check again" brings the folders' figures up to date as well.
-  shareBytes = 9_400_000;
-  const before = statusRequests().length;
-  await page.getByTestId("file-sync-detail-check").click();
-  await page.getByTestId("file-sync-checks").locator("li").first().waitFor();
-  const asked = new URLSearchParams(seen.filter((entry) => entry.path === "/api/file-sync/engine/checks").at(-1)!.query);
-  assert.deepEqual([asked.get("projectId"), asked.get("engine")], ["p02", "syncthing"]);
-  assert.ok(statusRequests().length > before, "the status was loaded again with the checks");
-  await page.getByTestId("file-sync-detail-facts").getByText("120 files, 9.40 MB").waitFor();
-  assert.equal(await back.isEnabled(), true, "moving back is allowed once its own checks pass");
-});
-
-// fix (P4+P5): a move that waits for a person changes nothing by itself, so nothing is refreshed for it.
-test("a move held by a person is not refreshed, and the owner sees a machine whose own move has not finished", { timeout: 40_000 }, async () => {
-  const autoBefore = [projects[2].autoSwitch, projects[3].autoSwitch];
-  Object.assign(projects[2], { engine: "builtin", phase: "builtin", autoSwitch: null, peers: [{ peer: PEER, name: "node-peer-b", phase: "releasing", error: "Syncthing folder “Photos” (/home/me/alpha/photos) is not Joint Bob's; remove it in Syncthing first" }] });
-  Object.assign(projects[3], { engine: "builtin", phase: "releasing", autoSwitch: null, phaseError: "Syncthing folder “Documents” (/home/me/docs) is not Joint Bob's; remove it in Syncthing first" });
+// A check that waits for a person or for sharing changes nothing by itself, so nothing is refreshed for it.
+test("a check that is held says why and is not refreshed", { timeout: 40_000 }, async () => {
+  Object.assign(projects[2], { phase: "bootstrapping", phaseMessage: "Waiting for node-peer-b to share its folders", waiting: true });
+  Object.assign(projects[3], { phase: "bootstrapping", phaseError: "The folder /home/me/docs could not be read" });
   try {
     await page.getByTestId("file-sync-refresh-button").click();
-    const owned = await showRow("p03");
-    await owned.getByTestId("file-sync-project-state").filter({ hasText: "Still moving on node-peer-b" }).waitFor();
-    assert.match(await owned.locator(".relay-error").innerText(), /^node-peer-b: Syncthing folder “Photos” .* remove it in Syncthing first$/);
-    const held = await showRow("p04");
-    assert.match(await held.locator(".relay-error").innerText(), /“Documents”/);
+    const waiting = await showRow("p03");
+    await waiting.getByTestId("file-sync-project-state").filter({ hasText: "Checking both machines' files" }).waitFor();
+    assert.equal(await waiting.getByTestId("file-sync-project-message").innerText(), "Waiting for node-peer-b to share its folders");
+    const failed = await showRow("p04");
+    assert.equal(await failed.getByTestId("file-sync-project-state").innerText(), "Checking both machines' files");
+    assert.equal(await failed.locator(".relay-error").innerText(), "The folder /home/me/docs could not be read");
     const before = statusRequests().length;
     await pause(6_500);
-    assert.equal(statusRequests().length, before, "nothing moves until someone removes the folders");
+    assert.equal(statusRequests().length, before, "nothing changes until someone acts");
   } finally {
-    Object.assign(projects[2], { engine: "syncthing", phase: "syncthing", peers: [], autoSwitch: autoBefore[0] });
-    Object.assign(projects[3], { engine: "syncthing", phase: "syncthing", phaseError: null, autoSwitch: autoBefore[1] });
+    Object.assign(projects[2], { phase: "builtin", phaseMessage: null, waiting: false });
+    Object.assign(projects[3], { phase: "builtin", phaseError: null });
     await page.getByTestId("file-sync-refresh-button").click();
     await settle();
   }
-});
-
-test("a refused move shows the checks the server names", async () => {
-  await openMove("p03");
-  const move = page.getByTestId("file-sync-move-button");
-  await move.click();
-  await move.click();
-  const refused = page.locator('[data-testid="file-sync-check-row"][data-key="peers-live"]');
-  await refused.waitFor();
-  assert.equal(await refused.getAttribute("data-ok"), "false");
-  assert.equal(await refused.getByTestId("file-sync-check-message").innerText(), "node-peer-b did not answer just now");
-  assert.equal(await page.getByTestId("file-sync-check-row").count(), 1, "the server's checks replace the ones loaded before");
-  assert.equal(await page.getByTestId("file-sync-checks-passed-text").innerText(), "1 other check passed");
-  assert.equal(await page.getByTestId("file-sync-detail-status").innerText(), "Some machines are not ready to move");
-  assert.equal(await page.getByTestId("file-sync-detail-status").getAttribute("data-state"), "error");
-  assert.equal(await page.getByTestId("file-sync-move-button").isDisabled(), true, "the move waits for the failing check");
-  await page.getByTestId("file-sync-detail-back").click();
 });
 
 test("the differing files page, and Repair names the folder and the machine", async () => {
@@ -541,6 +332,7 @@ test("the differing files page, and Repair names the folder and the machine", as
   await page.getByTestId("file-sync-diff-repair").click();
   assert.deepEqual((await repaired).postDataJSON(), { share: "project:p01", peer: PEER });
   await page.getByTestId("file-sync-diff-status").filter({ hasText: "list of files was reloaded" }).waitFor();
+  assert.deepEqual(seen.filter((entry) => entry.path.startsWith("/api/file-sync/engine")).map((entry) => entry.path), [], "the removed engine routes are never asked");
   assert.deepEqual(pageErrors, []);
 });
 

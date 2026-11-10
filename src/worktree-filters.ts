@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 /** Synced metadata inside a worktree. Every file in it has exactly one writer, so
-    Syncthing never has to resolve a conflict between nodes. */
+    file sync never has to resolve a conflict between nodes. */
 export const WORKTREE_META_DIR = ".joint-bob-worktree";
 export const WORKTREE_FOLDER_PREFIX = "joint-bob-worktrees-";
 

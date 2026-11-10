@@ -26,8 +26,6 @@ import { getScopedResourcePaths, getSettings } from "../../settings.js";
 import { defaultSkillRoots, listSkills } from "../../skills.js";
 import { conversationBelongsElsewhere, getConversationRecord } from "../../conversation-records.js";
 import { addProject, getProject, listProjects, listWorkspaces, removeProject, renameProject, updateProjectColor, updateProjectMacPath, WorkspaceError } from "../../store.js";
-import { ensureSyncthingFolder } from "../../syncthing.js";
-import { whileFilesOnSyncthing } from "../../file-sync/control.js";
 import { conversationFilesStatus, ProjectFilesUnavailableError, ProjectNotSynchronizedError, rescanProjectFiles } from "../../file-sync/facade.js";
 import { warnOnChange } from "../quiet-log.js";
 import { listTasks, unmergedWorkspaceBlocksClose } from "../../tasks.js";
@@ -95,7 +93,7 @@ app.post("/api/projects/:projectId/sync/rescan", async (request, response, next)
       // app-integration (P4): a project on built-in sync whose engine cannot scan here says why.
       if (error instanceof ProjectFilesUnavailableError) { sendError(response, 409, error.message); return; }
       if (!(error instanceof ProjectNotSynchronizedError)) throw error;
-      sendError(response, 409, "Project is not synchronized with Syncthing");
+      sendError(response, 409, "This project is not shared with another machine");
       return;
     }
     response.json({ ok: true });
@@ -144,12 +142,6 @@ export async function createProjectAsActor(raw: unknown) {
     writeInstructions: !payload.sourcePath,
   });
   if (grantTo) await grantProjectFolder(grantTo, project.path);
-  // The project exists either way; enrollment creates the folder once a peer shares it.
-  if (payload.synced && project.syncFolderId) {
-    // cutover-engine (P5): only while the project is on Syncthing here (a new project always is; the guard is for its id's history).
-    try { await whileFilesOnSyncthing(project.id, () => ensureSyncthingFolder(project.syncFolderId!, project.name, project.path)); }
-    catch (error) { warnOnChange(`project-folder:${project.id}`, `Syncthing folder for ${project.name} was not created: ${error instanceof Error ? error.message : String(error)}`); }
-  }
   sessionWatcher.ensureProject(project);
   (await projectAudience(project.id))({ type: "projectsChanged" });
   return projectView(project);

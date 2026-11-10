@@ -112,8 +112,9 @@ if (only === "control") routing.TZ = "America/New_York";
 const nodes = await Promise.all(environment.nodes.map((node) => startNode(node, (line) => { nodeLog.push(line); if (nodeLog.length > 400) nodeLog.shift(); }, { JOINT_BOB_BROWSER_EXECUTABLE: browserExecutable, JOINT_BOB_DASHBOARD_AGENT: path.join(here, "dashboard-agent.mjs"), ...routing })));
 let browser: Awaited<ReturnType<typeof openBrowser>> | undefined;
 try {
-  // Without Syncthing a twin shows as "Twin · error" on the cluster map, the one place the
-  // team take looks at; that take is about the laptop and the teammate, so it runs unpaired.
+  // When these takes were made, a twin with no file synchronization showed as "Twin · error" on
+  // the cluster map, the one place the team take looks at. That take is about the laptop and the
+  // teammate, so it runs unpaired. Not rechecked since Syncthing was removed (2026-11-10).
   if (only !== "cluster") await pairTwins(environment);
   browser = await openBrowser(environment);
 

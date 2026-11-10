@@ -79,7 +79,7 @@ test("a Pi conversation runs in a worker under its project's account and writes 
   const sockets: WebSocket[] = [];
   try {
     const settings = await import("../src/settings.js");
-    settings.updateSettings({ pi: { executable: "", configPath: serviceAgent, sessionPath: path.join(serviceAgent, "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, syncthing: { endpoint: "" } });
+    settings.updateSettings({ pi: { executable: "", configPath: serviceAgent, sessionPath: path.join(serviceAgent, "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } });
     const current = settings.getSettings();
     settings.updateSettings({ ...current, conversationDefaults: { ...current.conversationDefaults, pi: { provider: "fixture", modelId: "fixture-model", thinkingLevel: "off" } } });
     const { save, settingsDatabase } = await import("../src/settings-store.js");

@@ -16,7 +16,7 @@ test("attachment digest is node-local, off by default, and persists when switche
     const initial = await api<Record<string, unknown>>(node, auth, "GET", "/settings");
     assert.equal(initial.body.digestAttachments, false);
 
-    const base = initial.body as Record<string, unknown> & { syncthing: { endpoint: string } };
+    const base = initial.body as Record<string, unknown>;
     const enabled = await api<Record<string, unknown>>(node, auth, "PUT", "/settings", { ...base, digestAttachments: true });
     assert.equal(enabled.status, 200);
     assert.equal(enabled.body.digestAttachments, true);

@@ -62,10 +62,7 @@ test("one manifest pins every managed prerequisite", async () => {
   assert.match(versions, /^JOINT_BOB_NODE_VERSION=24\.22\.1$/m);
   assert.match(versions, /^JOINT_BOB_PI_VERSION=0\.84\.2$/m);
   assert.match(versions, /^JOINT_BOB_CLAUDE_VERSION=2\.1\.239$/m);
-  assert.match(versions, /^JOINT_BOB_SYNCTHING_VERSION=2\.1\.3$/m);
-  for (const platform of ["LINUX_AMD64", "LINUX_ARM64", "MACOS_AMD64", "MACOS_ARM64"]) {
-    assert.match(versions, new RegExp(`^JOINT_BOB_SYNCTHING_${platform}_SHA256=[a-f0-9]{64}$`, "m"));
-  }
+  assert.doesNotMatch(versions, /SYNCTHING/);
 });
 
 test("fresh install supports latest verified release and immutable pins", async () => {
@@ -102,7 +99,7 @@ test("bundled authentication status does not block service installation", async 
   const installer = await text("scripts/install-service.sh");
 
   assert.match(installer, /node_modules\/\.bin/);
-  assert.match(installer, /install-syncthing\.sh/);
+  assert.doesNotMatch(installer, /install-syncthing\.sh/);
   assert.match(prerequisites, /Authentication pending/);
   assert.doesNotMatch(prerequisites, /Pi authentication is required/);
   assert.doesNotMatch(prerequisites, /Claude authentication is required/);

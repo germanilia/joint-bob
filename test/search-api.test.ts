@@ -77,7 +77,6 @@ test("one search reaches every project and every conversation in them", async ()
       body: JSON.stringify({
         pi: { executable: "", configPath: "", sessionPath: "" },
         claude: { executable: "", configPath: "", sessionPath: claudeRoot },
-        syncthing: { endpoint: "" },
       }),
     })).status, 200);
 

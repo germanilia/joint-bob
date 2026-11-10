@@ -35,7 +35,7 @@ async function authenticatedHeaders(baseUrl: string): Promise<Record<string, str
   return { Cookie: cookie, "X-CSRF-Token": body.csrfToken, "Content-Type": "application/json" };
 }
 
-test("settings API persists runtime and Syncthing choices without returning secrets", async () => {
+test("settings API persists runtime choices without returning secrets", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "master-bob-settings-api-"));
   const previousDataDir = process.env.PI_WEB_DATA_DIR;
   const previousUsername = process.env.MASTER_BOB_ADMIN_USERNAME;
@@ -76,7 +76,6 @@ test("settings API persists runtime and Syncthing choices without returning secr
       body: JSON.stringify({
         pi: { executable: "/usr/local/bin/pi", ...piRuntime },
         claude: { executable: "/usr/local/bin/claude", ...claudeRuntime },
-        syncthing: { endpoint: "http://127.0.0.1:8384", apiKey: "secret-api-key" },
         conversationDefaults,
         conversationCommands,
         newConversationWorktree: true,
@@ -129,7 +128,6 @@ test("settings API persists runtime and Syncthing choices without returning secr
         claude: { executable: "/usr/local/bin/claude", ...claudeRuntime },
         kiro: { executable: "", configPath: "", sessionPath: "" },
       },
-      syncthing: { endpoint: "http://127.0.0.1:8384", apiKeyConfigured: true },
       projects: { homePath: path.join(root, "JointBob") },
       resources: { skills: [path.join(root, "skills")], prompts: [path.join(root, "prompts")], rules: [path.join(root, "rules")], plugins: [path.join(root, "plugins")] },
       conversationLabels: ["Research", "Bug", "Feature", "POC", "Deploy to prod", "Hotfix"],
@@ -177,7 +175,6 @@ test("settings API persists runtime and Syncthing choices without returning secr
         claude: { executable: "/usr/local/bin/claude", ...claudeRuntime },
         kiro: { executable: "", configPath: "", sessionPath: "" },
       },
-      syncthing: { endpoint: "http://127.0.0.1:8384", apiKeyConfigured: true },
       projects: { homePath: path.join(root, "JointBob") },
       resources: { skills: [path.join(root, "skills")], prompts: [path.join(root, "prompts")], rules: [path.join(root, "rules")], plugins: [path.join(root, "plugins")] },
       conversationLabels: ["Research", "Bug", "Feature", "POC", "Deploy to prod", "Hotfix"],
@@ -188,7 +185,7 @@ test("settings API persists runtime and Syncthing choices without returning secr
     for (const strictResourceIsolation of [false, true, "false", null]) {
       const response = await fetch(`${node.baseUrl}/api/settings`, {
         method: "PUT", headers,
-        body: JSON.stringify({ syncthing: { endpoint: "http://127.0.0.1:8384" }, strictResourceIsolation }),
+        body: JSON.stringify({ strictResourceIsolation }),
       });
       assert.equal(response.status, typeof strictResourceIsolation === "boolean" ? 200 : 400);
       if (response.ok) assert.equal((await response.json()).strictResourceIsolation, strictResourceIsolation);
@@ -200,7 +197,6 @@ test("settings API persists runtime and Syncthing choices without returning secr
       body: JSON.stringify({
         pi: { executable: "/usr/local/bin/pi", ...piRuntime },
         claude: { executable: "/usr/local/bin/claude", ...claudeRuntime },
-        syncthing: { endpoint: "http://127.0.0.1:8384" },
         projects: { homePath: path.join(root, "JointBob") },
       }),
     });
@@ -234,40 +230,52 @@ test("settings API persists runtime and Syncthing choices without returning secr
     for (const limit of [0, 3001, 1.5]) {
       const invalidLimit = await fetch(`${node.baseUrl}/api/settings`, {
         method: "PUT", headers,
-        body: JSON.stringify({ syncthing: { endpoint: "http://127.0.0.1:8384" }, gitPullFileLimit: limit }),
+        body: JSON.stringify({ gitPullFileLimit: limit }),
       });
       assert.equal(invalidLimit.status, 400);
     }
     for (const timeout of [59, 3601, 90.5]) {
       const invalidTimeout = await fetch(`${node.baseUrl}/api/settings`, {
         method: "PUT", headers,
-        body: JSON.stringify({ syncthing: { endpoint: "http://127.0.0.1:8384" }, gitPullTimeoutSeconds: timeout }),
+        body: JSON.stringify({ gitPullTimeoutSeconds: timeout }),
       });
       assert.equal(invalidTimeout.status, 400);
     }
     const timeoutSaved = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT", headers,
-      body: JSON.stringify({ syncthing: { endpoint: "http://127.0.0.1:8384" }, gitPullTimeoutSeconds: 600 }),
+      body: JSON.stringify({ gitPullTimeoutSeconds: 600 }),
     });
     assert.equal(timeoutSaved.status, 200);
     assert.equal((await (await fetch(`${node.baseUrl}/api/settings`, { headers })).json()).gitPullTimeoutSeconds, 600);
 
-    const remoteEndpoint = await fetch(`${node.baseUrl}/api/settings`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({
-        pi: { executable: "", configPath: "", sessionPath: "" },
-        claude: { executable: "", configPath: "", sessionPath: "" },
-        syncthing: { endpoint: "https://not-local.example", apiKey: "must-not-send" },
-        projects: { homePath: path.join(root, "JointBob") },
-      }),
+    // An older page still sends the removed Syncthing fields: the save succeeds and stores none of them.
+    const { legacySyncthingConnection } = await import("../src/settings.js");
+    const { save, settingsDatabase } = await import("../src/settings-store.js");
+    assert.deepEqual(legacySyncthingConnection(), {}, "a node that never used Syncthing has no stored connection");
+    const withRemovedKey = await fetch(`${node.baseUrl}/api/settings`, {
+      method: "PUT", headers,
+      body: JSON.stringify({ syncthing: { endpoint: "https://not-local.example", apiKey: "must-not-store" }, gitPullTimeoutSeconds: 601 }),
     });
-    assert.equal(remoteEndpoint.status, 400);
-    assert.deepEqual(await remoteEndpoint.json(), { error: "Syncthing endpoint must use a loopback host" });
+    assert.equal(withRemovedKey.status, 200, await withRemovedKey.clone().text());
+    const afterRemovedKey = await withRemovedKey.json() as Record<string, unknown>;
+    assert.equal(afterRemovedKey.gitPullTimeoutSeconds, 601, "the rest of the body is saved");
+    assert.equal("syncthing" in afterRemovedKey, false);
+    assert.deepEqual(legacySyncthingConnection(), {});
+
+    // What an older release stored stays readable for taking Joint Bob's folders out of Syncthing, and is never returned.
+    save(settingsDatabase(), "syncthing.endpoint", "http://127.0.0.1:8384");
+    assert.deepEqual(legacySyncthingConnection(), { endpoint: "http://127.0.0.1:8384" });
+    save(settingsDatabase(), "syncthing.apiKey", "stored-api-key", true);
+    assert.deepEqual(legacySyncthingConnection(), { endpoint: "http://127.0.0.1:8384", apiKey: "stored-api-key" });
+    const withOldRows = await (await fetch(`${node.baseUrl}/api/settings`, { headers })).text();
+    assert.doesNotMatch(withOldRows, /syncthing|stored-api-key|8384/i);
+    const savedOverOldRows = await fetch(`${node.baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ gitPullTimeoutSeconds: 600 }) });
+    assert.equal(savedOverOldRows.status, 200);
+    assert.deepEqual(legacySyncthingConnection(), { endpoint: "http://127.0.0.1:8384", apiKey: "stored-api-key" }, "a later save leaves the old rows for the retirement to read");
 
     const relativeResources = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT", headers,
-      body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, syncthing: { endpoint: "http://127.0.0.1:8384" }, projects: { homePath: path.join(root, "JointBob") }, resources: { skills: ["relative"], prompts: [], rules: [], plugins: [] } }),
+      body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, projects: { homePath: path.join(root, "JointBob") }, resources: { skills: ["relative"], prompts: [], rules: [], plugins: [] } }),
     });
     assert.equal(relativeResources.status, 400);
 
@@ -277,7 +285,6 @@ test("settings API persists runtime and Syncthing choices without returning secr
       body: JSON.stringify({
         pi: { executable: "", configPath: "", sessionPath: "" },
         claude: { executable: "", configPath: "", sessionPath: "" },
-        syncthing: { endpoint: "http://127.0.0.1:8384" },
         projects: { homePath: "relative" },
       }),
     });
@@ -286,7 +293,7 @@ test("settings API persists runtime and Syncthing choices without returning secr
 
     const overlappingSessions = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT", headers,
-      body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: path.join(root, "sessions") }, claude: { executable: "", configPath: "", sessionPath: path.join(root, "sessions", "claude") }, syncthing: { endpoint: "" } }),
+      body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: path.join(root, "sessions") }, claude: { executable: "", configPath: "", sessionPath: path.join(root, "sessions", "claude") } }),
     });
     assert.equal(overlappingSessions.status, 400);
     assert.match((await overlappingSessions.json() as { error: string }).error, /must not overlap/);

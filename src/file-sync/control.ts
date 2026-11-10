@@ -23,7 +23,7 @@ export interface FileSyncConfig {
   /** Effective switch: JOINT_BOB_FILE_SYNC overrides the default; a saved switch is ignored. */
   enabled: boolean;
   enabledBy: "default" | "environment";
-  /** Projects indexed in shadow mode beside Syncthing; "all" (the default) or a list of project ids. */
+  /** Kept from the time projects were compared before they were synced; every shared project is synced whatever it says. */
   shadowProjects: "all" | string[];
   /** JOINT_BOB_FILE_SYNC_PROJECTS overrides the stored list, as JOINT_BOB_FILE_SYNC does the switch. */
   shadowProjectsBy: "default" | "settings" | "environment";
@@ -126,22 +126,6 @@ export function comparedProjects(config: Pick<FileSyncConfig, "shadowProjects" |
   return config.shadowProjects === "all" ? "all" : [...new Set([...config.shadowProjects, ...config.requestedProjects])].sort();
 }
 
-/**
- * auto-transition (fix): the project's owner means to move it and asks this node to compare it. A
- * chosen list takes it in unless an admin unticked it here ("declined"); every other project the
- * list leaves out stays left out. "yes": compared already (now, or once its first index ran);
- * "added": compared from now on (`write` false: would be, nothing stored yet).
- */
-export function requestCompare(db: DatabaseSync, projectId: string, env: NodeJS.ProcessEnv = process.env, options: { write?: boolean } = {}): "yes" | "added" | "declined" {
-  const config = readFileSyncConfig(db, env);
-  if (config.shadowProjects === "all" || config.shadowProjects.includes(projectId)) return "yes";
-  if (storedList(db, "declinedProjects").includes(projectId)) return "declined";
-  const requested = storedList(db, "requestedProjects");
-  if (requested.includes(projectId)) return "yes";
-  if (options.write !== false) saveList(db, "requestedProjects", [...requested, projectId]);
-  return "added";
-}
-
 /* Where the direct listener binds. Tailscale's 100.64.0.0/10 is WireGuard-encrypted and reaches
    peers on other networks, so by default the worker listens there and nowhere else. */
 
@@ -190,47 +174,7 @@ export function writeFileSyncConfig(db: DatabaseSync, patch: FileSyncConfigPatch
   return readFileSyncConfig(db, env);
 }
 
-/* auto-transition: per-project state of the automatic move, on the owner, in file_sync_config rows
-   "hold:<projectId>". A manual move back holds the project on Syncthing until someone allows the
-   automatic move again (or moves it by hand); an automatic move back starts the matching time over
-   (cleanAfter). Peers keep the owner's hold too (`from`), so a twin that takes the project over
-   inherits it. */
-
-export interface ProjectHold {
-  /** `from`: the owner that said so, on a peer; absent on the owner where a person moved it back. */
-  stayOnSyncthing?: { by: string; at: string; from?: string };
-  /** The files count as matching only from here on. */
-  cleanAfter?: string;
-  /**
-   * fix: the owner's matching time, carried over differences that were only files on their way (a
-   * machine away, Syncthing still copying). `worker`: the worker's clean-since it last matched, null
-   * while such differences stand; `rules`: the folders' rules it was counted under.
-   */
-  matching?: { since: string; worker: string | null; rules: string };
-}
-
-const holdSchema = z.object({
-  stayOnSyncthing: z.object({ by: z.string().max(300), at: z.string().max(40), from: z.string().max(100).optional() }).optional(),
-  cleanAfter: z.string().max(40).optional(),
-  matching: z.object({ since: z.string().max(40), worker: z.string().max(40).nullable(), rules: z.string().max(200) }).optional(),
-});
-
-export function projectHold(db: DatabaseSync, projectId: string): ProjectHold {
-  ensureControlSchema(db);
-  return storedValue(db, `hold:${projectId}`, holdSchema) ?? {};
-}
-
-/** Merges `change` into the project's hold: a part set to null goes, one left out stays; an empty hold is deleted. */
-export function updateProjectHold(db: DatabaseSync, projectId: string, change: { [K in keyof ProjectHold]?: ProjectHold[K] | null }): ProjectHold {
-  const next: Record<string, unknown> = { ...projectHold(db, projectId) };
-  for (const [key, value] of Object.entries(change)) { if (value === null) delete next[key]; else if (value !== undefined) next[key] = value; }
-  const parsed = holdSchema.parse(next);
-  if (!Object.keys(parsed).length) db.prepare("DELETE FROM file_sync_config WHERE key = ?").run(`hold:${projectId}`);
-  else db.prepare("INSERT INTO file_sync_config VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE value <> excluded.value").run(`hold:${projectId}`, JSON.stringify(parsed));
-  return parsed;
-}
-
-/* auto-transition: projects whose first full index finished here. The first index of the others runs
+/* Projects whose first full index finished here. The first index of the others runs
    one project at a time (first-index.ts); these join every later start at once. Undefined until
    written: a node that compared a chosen list before counts those as indexed (seeded once). */
 
@@ -244,21 +188,6 @@ export function markProjectsIndexed(db: DatabaseSync, projectIds: Iterable<strin
   const held = readIndexedProjects(db) ?? new Set<string>();
   const next = [...new Set([...held, ...projectIds])].sort();
   db.prepare("INSERT INTO file_sync_config VALUES ('indexedProjects', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE value <> excluded.value").run(JSON.stringify(next));
-}
-
-/* fix: the roots a built-in project's folder check last passed for (a fresh Syncthing list with no
-   live folder over them), in "verified:<projectId>", kept until the project leaves built-in sync.
-   With it the worker writes through a later Syncthing outage: Syncthing is not needed to run. */
-
-export function verifiedRoots(db: DatabaseSync, projectId: string): string | undefined {
-  ensureControlSchema(db);
-  return storedValue(db, `verified:${projectId}`, z.string().max(20_000));
-}
-
-export function setVerifiedRoots(db: DatabaseSync, projectId: string, roots: string | null): void {
-  ensureControlSchema(db);
-  if (roots === null) db.prepare("DELETE FROM file_sync_config WHERE key = ?").run(`verified:${projectId}`);
-  else db.prepare("INSERT INTO file_sync_config VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE value <> excluded.value").run(`verified:${projectId}`, JSON.stringify(roots));
 }
 
 /* Records. Engine records come only from a project's owner and settings records only from their
@@ -334,7 +263,7 @@ export function setPhase(db: DatabaseSync, projectId: string, phase: Phase, opti
   db.prepare("INSERT OR REPLACE INTO file_sync_phases VALUES (?, ?, ?, ?, ?)").run(projectId, phase, builtinSince, new Date().toISOString(), options.error ?? null);
 }
 
-/** Phases other than "syncthing" mean the engine owns (or is taking over) the project's files here. */
+/** This node syncs (or is taking over) at least one project. */
 export function holdsEngineProjects(db: DatabaseSync): boolean {
   ensureControlSchema(db);
   if (db.prepare("SELECT 1 FROM file_sync_phases WHERE phase <> 'syncthing' LIMIT 1").get() !== undefined) return true;
@@ -345,29 +274,14 @@ export function holdsEngineProjects(db: DatabaseSync): boolean {
   } catch { return false; }
 }
 
-/* cutover-engine (P5): which engine moves a project's files here, and the one guard every path that
-   creates or resumes a project's Syncthing folders goes through. */
-
 export function engineRecordOf(db: DatabaseSync, projectId: string): EngineRecord | undefined {
   ensureControlSchema(db);
   const row = db.prepare("SELECT * FROM file_sync_engines WHERE project_id = ?").get(projectId) as EngineRow | undefined;
   return row ? engineFromRow(row) : undefined;
 }
 
-/** The owner's latest word; a project nobody switched is on Syncthing. */
-export function engineModeOf(db: DatabaseSync, projectId: string): EngineMode {
-  return engineRecordOf(db, projectId)?.mode ?? "syncthing";
-}
-
 export function phaseOf(db: DatabaseSync, projectId: string): PhaseRecord | undefined {
   return listPhases(db).get(projectId);
-}
-
-/** Only "syncthing" lets Syncthing hold the project's folders on this node; every other phase is the engine's (§7). */
-export function projectFilesOnSyncthing(db: DatabaseSync, projectId: string): boolean {
-  ensureControlSchema(db);
-  const row = db.prepare("SELECT phase FROM file_sync_phases WHERE project_id = ?").get(projectId) as { phase: Phase } | undefined;
-  return (row?.phase ?? "syncthing") === "syncthing";
 }
 
 /** The project's owner as this node knows it: the sharing registry, else its policy. Errors (tables a fresh node lacks) count as unknown. */
@@ -380,71 +294,6 @@ export function projectOwnerNode(db: DatabaseSync, projectId: string): string | 
     const policy = db.prepare("SELECT owner_node_id FROM cluster_v2_resource_policy WHERE kind = 'project' AND resource_id = ?").get(projectId) as { owner_node_id: string } | undefined;
     return policy?.owner_node_id;
   } catch { return undefined; }
-}
-
-/* One lock for every project's folders (fix P4+P5): a folder of one project can cover another's
-   tree (projects inside each other), so a guard that reads the other projects' phases and a switch
-   that moves one on never interleave. Holders are short: Syncthing config calls and a phase write. */
-let filesLock: Promise<unknown> = Promise.resolve();
-
-/** One holder at a time: a switch's phase change and a folder enrollment never interleave. `projectId` names the holder's project. */
-export async function withProjectFilesLock<T>(_projectId: string, work: () => Promise<T>): Promise<T> {
-  const run = filesLock.catch(() => undefined).then(work);
-  filesLock = run.catch(() => undefined);
-  return run;
-}
-
-/** A Syncthing folder at those paths would write in files that built-in sync moves on this node (§0.12: one writer per directory). */
-export class FolderOverBuiltinError extends Error {}
-
-/** A project's three roots here: its folder, its ticket folders and its worktrees. Undefined when this node has no such project. */
-async function projectRoots(db: DatabaseSync, projectId: string): Promise<string[] | undefined> {
-  let row: { path: string } | undefined;
-  try { row = db.prepare("SELECT path FROM projects WHERE id = ?").get(projectId) as { path: string } | undefined; } catch { return undefined; }
-  if (!row) return undefined;
-  // Loaded when needed: neither is wanted by everything that reads this module (the worker's peers.ts, records.ts).
-  const [{ ticketWorkspaceRoot }, { projectWorktreeRoot }] = await Promise.all([import("../task-workspaces.js"), import("../project-worktrees.js")]);
-  try { return [row.path, path.join(ticketWorkspaceRoot(), projectId), projectWorktreeRoot(projectId)]; } catch { return [row.path]; }
-}
-
-/** The first project other than `projectId`, moved by built-in sync here (or moving), with a root at, inside or around one of `paths`. */
-async function builtinTreeAt(db: DatabaseSync, projectId: string, paths: readonly string[]): Promise<{ id: string; name: string; root: string } | undefined> {
-  const others = [...listPhases(db).values()].filter((record) => record.phase !== "syncthing" && record.projectId !== projectId);
-  if (!others.length || !paths.length) return undefined;
-  const { syncthingFoldersCovering } = await import("../syncthing.js");
-  for (const other of others) {
-    const roots = await projectRoots(db, other.projectId);
-    if (!roots) continue;
-    const [hit] = await syncthingFoldersCovering(roots.map((root) => ({ path: root })), paths);
-    if (!hit) continue;
-    let name = other.projectId;
-    try { name = (db.prepare("SELECT name FROM projects WHERE id = ?").get(other.projectId) as { name: string } | undefined)?.name ?? name; } catch { /* the id names it */ }
-    return { id: other.projectId, name, root: hit.path };
-  }
-  return undefined;
-}
-
-/** The project is on Syncthing here but lies inside (or around) one that built-in sync moves: the guard below gives it no Syncthing folder. */
-export async function projectInsideBuiltin(db: DatabaseSync, projectId: string): Promise<boolean> {
-  return projectFilesOnSyncthing(db, projectId) && Boolean(await builtinTreeAt(db, projectId, await projectRoots(db, projectId) ?? []));
-}
-
-/**
- * Runs `work`, which creates, resumes or moves the project's Syncthing folders at `paths` (by default
- * its three roots), only while the project is on Syncthing here, under the files lock: a switch that
- * moves a phase on waits for it, and a folder it releases is never added back by a call that checked
- * just before. Undefined when the project is not on Syncthing here. FolderOverBuiltinError when one of
- * the paths is at, inside or around a root of another project that built-in sync moves here: that
- * project's files would get a second writer (nested projects).
- */
-export async function whileFilesOnSyncthing<T>(projectId: string, work: () => Promise<T>, db?: DatabaseSync, paths?: readonly string[]): Promise<T | undefined> {
-  const handle = db ?? await controlDatabase();
-  return withProjectFilesLock(projectId, async () => {
-    if (!projectFilesOnSyncthing(handle, projectId)) return undefined;
-    const covered = await builtinTreeAt(handle, projectId, paths ?? await projectRoots(handle, projectId) ?? []);
-    if (covered) throw new FolderOverBuiltinError(`This project's folder overlaps “${covered.name}” (${covered.root}), which built-in sync moves on this machine, so Syncthing does not sync it here`);
-    return work();
-  });
 }
 
 /* Revision triggers. Anything a share derives from bumps file_sync_revision in the same write, so

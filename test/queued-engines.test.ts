@@ -44,7 +44,7 @@ before(async () => {
     models: [{ id: "queue-reasoner", name: "Queue reasoner", reasoning: true, input: ["text", "image"], contextWindow: 32000, maxTokens: 1024 }],
   } } }));
   const settings = await import("../src/settings.js");
-  settings.updateSettings({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, syncthing: { endpoint: "" } });
+  settings.updateSettings({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } });
   const defaults = settings.getSettings();
   settings.updateSettings({ ...defaults, conversationDefaults: { ...defaults.conversationDefaults, pi: { provider: "zai", modelId: "queue-reasoner", thinkingLevel: "medium" } } });
   const started = await startServer();

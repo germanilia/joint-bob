@@ -31,7 +31,7 @@ const ports = { a: Number(process.env.JB_PROMO_PORT_A ?? 8891), b: Number(proces
 interface NodeSpec { key: "a" | "b" | "c"; name: string; username: string; home: string; port: number; url: string; dataDir: string; cookieName: string }
 const nodeSpecs: NodeSpec[] = ([
   // The laptop and the home server are the same person's machines; they share HOME the way
-  // Syncthing would keep the two in step on real hardware.
+  // file sync would keep the two in step on real hardware.
   { key: "a", name: "MacBook Pro", username: "alex", home: path.join(root, "home") },
   { key: "b", name: "Home server", username: "alex", home: path.join(root, "home") },
   { key: "c", name: "Maya's MacBook", username: "maya", home: path.join(root, "home-maya") },

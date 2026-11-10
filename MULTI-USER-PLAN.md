@@ -2,6 +2,8 @@
 
 Status: **draft, not implemented.** Mockups: [mockups/multi-user.html](mockups/multi-user.html). Open it in a browser and use "View as" to compare the admin, a member, and the same member signed in on another node.
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Where this plan mentions Syncthing (the admin-only Syncthing settings, the daemon running as the service account, per-project Syncthing folders), it describes the earlier design. Read those points as applying to built-in file sync, which runs inside the Joint Bob server.
+
 ## 1. Goal
 
 Several people sign in to the same node and work at the same time.

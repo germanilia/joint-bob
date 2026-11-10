@@ -20,9 +20,7 @@ import { peerAway } from "../peer-presence.js";
 import { settled, warnOnChange } from "./quiet-log.js";
 import { getRuntimePeer, listRuntimePeers, runtimeFetch } from "./runtime-peers.js";
 import { listProjects } from "../store.js";
-import { reconcileSyncthingProjectFolders as reconcileAllSyncthingProjectFolders } from "../syncthing.js";
-import { controlDatabase, projectFilesOnSyncthing } from "../file-sync/control.js";
-import { ensureLegacySkillSyncPaused, refreshSharedSkills } from "./skill-sharing.js";
+import { refreshSharedSkills } from "./skill-sharing.js";
 import { listTasks, listUnfinishedOutgoingTaskHandoffs, releaseStaleTaskLease } from "../tasks.js";
 import type { HarnessId } from "../types.js";
 import { announceConversationsChanged, broadcastSessionsChangedToAllProjects, broadcastToProject, instructionsChanged, scheduleReviewNotifications, scheduleReviewNotificationsFor, wakeQueuedConversations } from "./realtime.js";
@@ -33,11 +31,6 @@ import { measureOperation } from "./performance-diagnostics.js";
 import { reconcileOutgoingTaskHandoff } from "./task-handoff.js";
 import { harnessTaskRuns } from "./task-runs.js";
 
-/* Syncthing is often still binding its API port when the node boots beside it. A
-   single failed attempt used to leave the node "starting" for its whole lifetime,
-   which silently disables peer project discovery, so the attempt repeats from the
-   maintenance interval until it succeeds. Repeats of the same failure stay quiet;
-   the completion line is what says the node recovered. */
 export async function reconcileTaskConversationRecords(): Promise<void> {
   const local = await getClusterNode();
   for (const project of await listProjects()) {
@@ -59,11 +52,6 @@ export async function reconcileTaskConversationRecords(): Promise<void> {
 }
 
 export async function reconcileManagedAgentResources(): Promise<void> {
-  // The former folder included skills, prompts, plugins and MCP configuration. It
-  // must stay paused: selective skill grants are the only publishing path now. Skill
-  // operations still refuse while it is unverified; local reconciliation and readiness go on.
-  try { await ensureLegacySkillSyncPaused(); settled("legacy-skill-sync"); }
-  catch (error) { warnOnChange("legacy-skill-sync", error instanceof Error ? error.message : String(error)); }
   const resources = await reconcileAgentResources();
   // Checked every 30 seconds; conflicts that wait for a person are reported when their number changes.
   if (resources.conflicts.length) warnOnChange("agent-resources", `Agent resource reconciliation found ${resources.conflicts.length} conflict(s)`);
@@ -76,12 +64,6 @@ export async function reconcileManagedAgentResources(): Promise<void> {
   catch (error) { console.warn("Selective skill refresh failed", error); }
 }
 
-/** cutover-engine (P5): projects on built-in sync here are left out; their Syncthing folders are gone and stay gone. */
-async function reconcileSyncthingProjectFolders(projects: Array<{ id: string; syncFolderId?: string }>): Promise<void> {
-  const db = await controlDatabase();
-  await reconcileAllSyncthingProjectFolders(projects.filter((project) => projectFilesOnSyncthing(db, project.id)));
-}
-
 export async function initializeStartupReadiness(): Promise<void> {
   if (flags.startupReady || flags.startupReadinessInProgress) return;
   flags.startupReadinessInProgress = true;
@@ -90,11 +72,6 @@ export async function initializeStartupReadiness(): Promise<void> {
     flags.startupReady = true;
     flags.startupError = undefined;
     console.log("Startup reconciliation completed.");
-    // A Syncthing that is down or slow must not keep the node "starting" (the 2026-10-06 outage);
-    // the five-minute sync check reconciles the ignore rules again.
-    void listProjects().then((projects) => measureOperation("startup.syncthing", () => reconcileSyncthingProjectFolders(projects)))
-      .then(() => settled("startup-syncthing"))
-      .catch((error) => warnOnChange("startup-syncthing", `Startup Syncthing reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
     // Relay-enforced skills are installed from the stored policy in the background: readiness never waits on a
     // relay download. A relay that is offline keeps them as they are until it pushes its policy again.
     void import("./skill-sharing.js").then(async ({ syncRelaySkills }) => {

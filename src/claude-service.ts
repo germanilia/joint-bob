@@ -442,7 +442,7 @@ async function summarizeClaudeTranscript(project: SessionProjectPaths, filePath:
     agentLabel: "Claude",
     title: `[Claude] ${facts.title}`,
     createdAt: facts.firstEventAt || fileStat.birthtime.toISOString(),
-    // Syncthing rewrites mtime when a peer advertises new metadata, so transcript events own recency.
+    // File sync can rewrite mtime when a peer's copy arrives, so transcript events own recency.
     updatedAt: facts.lastEventAt || fileStat.mtime.toISOString(),
     firstMessage: facts.title,
     ...(subagentParentId ? {

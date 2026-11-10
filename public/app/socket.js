@@ -831,7 +831,7 @@ async function refreshSessionSnapshot(projectId) {
 // ---- Project watch socket (live conversation refresh) ----
 // A lightweight per-project WebSocket subscription. The server watches the Pi
 // and Claude session directories on disk, so conversations synchronized from peers
-// (via Syncthing) show up here without reopening the app.
+// (via file sync) show up here without reopening the app.
 
 export function closeWatchSocket() {
   if (state.watchReconnectTimer) clearTimeout(state.watchReconnectTimer);

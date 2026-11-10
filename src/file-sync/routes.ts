@@ -113,20 +113,6 @@ function route(endpoint: FilesEndpoint, method: "GET" | "POST") {
 
 const ENDPOINTS: ReadonlyArray<[FilesEndpoint, "GET" | "POST"]> = [["shares", "GET"], ["index", "GET"], ["changed", "POST"], ["fetch", "POST"], ["file", "POST"], ["status", "POST"]];
 
-/* fix (P4+P5): the per-project switch between Syncthing and built-in sync (migration.ts) has one
-   endpoint of its own, answered here by main, not the worker: a project's owner asks a peer where
-   its move stands and what would hold it there, and a peer tells the owner when that changes. */
-app.post(`${FILES}/switch`, (request, response, next) => {
-  void (async () => {
-    const peer = machineOnly(response);
-    if (Number(request.header("content-length") ?? 0) > MAX_BODY_BYTES) throw new ClusterV2HttpError(413, "File sync request body is too large");
-    const { fileSyncSwitchAnswer } = await import("./index.js");
-    const answer = await fileSyncSwitchAnswer(peer, request.body ?? {});
-    if (!answer) throw new ClusterV2HttpError(403, "Project is not shared with this node");
-    response.json(answer);
-  })().catch((error) => mapError(error, response, next));
-});
-
 for (const [endpoint, method] of ENDPOINTS) {
   if (method === "GET") app.get(`${FILES}/${endpoint}`, route(endpoint, method));
   else app.post(`${FILES}/${endpoint}`, route(endpoint, method));

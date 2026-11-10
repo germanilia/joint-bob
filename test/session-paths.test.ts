@@ -22,7 +22,6 @@ function useClaudeProjectsRoot(name: string): string {
   settings.updateSettings({
     pi: { executable: "pi", configPath: path.join(settingsRoot, "pi-config"), sessionPath: path.join(settingsRoot, "pi-sessions") },
     claude: { executable: "claude", configPath: path.join(settingsRoot, name), sessionPath: projectsRoot },
-    syncthing: { endpoint: "" },
   });
   return projectsRoot;
 }

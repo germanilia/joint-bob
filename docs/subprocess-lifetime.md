@@ -62,8 +62,8 @@ Deliberate exclusions:
 
 - Joint Bob server, supervisor, and supervisor app worker. No lifetime timer targets
   them, so a six-hour deadline cannot trigger a server restart loop.
-- Joint Bob's update installer in `src/updater.ts`, release/install scripts, service
-  launchers and Syncthing infrastructure. Stopping an installer mid-switch is unsafe.
+- Joint Bob's update installer in `src/updater.ts`, release/install scripts, and service
+  launchers. Stopping an installer mid-switch is unsafe.
   Standalone development/build/release scripts are not application workload launches.
 - Persistent Playwright browser contexts in `src/browser-runtime.ts`. Their existing
   browser lifecycle/idle controls remain; a hard cap would interrupt shared profiles.

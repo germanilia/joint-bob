@@ -81,7 +81,6 @@ async function createFixture(node: TestNode, headers: Record<string, string>): P
     body: JSON.stringify({
       pi: { executable: "", configPath: "", sessionPath: "" },
       claude: { executable: "", configPath: "", sessionPath: claudeRoot },
-      syncthing: { endpoint: "" },
     }),
   });
   assert.equal(settings.status, 200);

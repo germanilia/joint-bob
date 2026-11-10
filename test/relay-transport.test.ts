@@ -19,9 +19,7 @@ import { ChannelHub } from "../src/relay/hub.js";
 import { RelayStream, relayPeerOf } from "../src/relay/stream.js";
 import { peerFetch, peerWebSocket, setRelayTransport } from "../src/relay/transport.js";
 import { WebSocketServer } from "ws";
-import { SyncthingTunnels } from "../src/relay/syncthing-tunnels.js";
 import { ensurePeerEndpointSchema } from "../src/cluster-peer-endpoints.js";
-import net from "node:net";
 import { clusterPublicKeyFingerprint } from "../src/cluster-identity.js";
 import { setTrustedTwin } from "../src/cluster-sharing-policy.js";
 import { onRelayPeersChanged } from "../src/relay/events.js";
@@ -126,8 +124,6 @@ async function machine(name: string, known: () => string[], overrides: Partial<C
   });
   const ownRelay = new RelayServer(db, nodeId, () => name, () => undefined);
   const runtime = new RelayRuntime(db, nodeId, server, {
-    acceptSyncthing: (stream) => stream.end(),
-    syncthingAllowed: () => false,
     knownPeers: known,
     peerOnline: () => undefined,
     membershipsChanged: () => undefined,
@@ -482,47 +478,29 @@ test("a peer whose direct URL is down is reached through a shared relay", async 
   assert.equal(b.requests.at(-1)?.transport, "peer", "the request arrived on a relay channel");
 });
 
-test("a Syncthing tunnel carries bytes to the peer's own Syncthing listener", async () => {
-  // A stand-in for B's Syncthing: echoes what it receives, prefixed.
-  const syncthing = net.createServer((socket) => socket.on("data", (chunk) => socket.write(Buffer.concat([Buffer.from("echo:"), chunk]))));
-  const syncthingPort = await new Promise<number>((resolve) => syncthing.listen(0, "127.0.0.1", () => resolve((syncthing.address() as AddressInfo).port)));
-  const enroll = (db: DatabaseSync, peer: string): void => {
-    db.exec("CREATE TABLE IF NOT EXISTS cluster_v2_file_enrollments(peer_id TEXT NOT NULL,device_id TEXT NOT NULL,folder_id TEXT NOT NULL,project_id TEXT,PRIMARY KEY(peer_id,device_id,folder_id))");
-    db.prepare("INSERT OR IGNORE INTO cluster_v2_file_enrollments VALUES(?,?,?,NULL)").run(peer, "DEVICE-" + peer.slice(0, 4), "folder");
-  };
-  let receiving: SyncthingTunnels | undefined;
-  const g = await machine("sync-source", () => []);
-  const h = await machine("sync-target", () => [], {
-    syncthingAllowed: (from) => receiving!.allowed(from),
-    acceptSyncthing: (stream) => receiving!.accept(stream),
-  });
-  receiving = new SyncthingTunnels(h.db, h.runtime, async () => syncthingPort);
+// A machine on an older release may still ask for a tunnel to its peer's Syncthing. There is nothing
+// to connect it to, so the channel is refused; a peer channel between the same two machines works.
+test("a channel of the old file tunnel kind from a pinned peer is refused", async () => {
+  const g = await machine("tunnel-source", () => []);
+  const h = await machine("tunnel-target", () => []);
   for (const item of [g, h]) item.runtime.addWithToken(token(item.name));
   await eventually(() => { assert.equal(listMemberships(g.db)[0]?.status, "admitted"); assert.equal(listMemberships(h.db)[0]?.status, "admitted"); });
   pin(g, h);
-  enroll(g.db, h.nodeId);
-  ensurePeerEndpointSchema(g.db);
-  g.db.prepare("INSERT OR REPLACE INTO cluster_v2_peer_endpoints(context_kind,context_id,node_id,name,url) VALUES('twin',?,?,?,?)").run(randomUUID(), h.nodeId, "h", virtualRelayUrl(h.nodeId));
-  setRelayTransport(g.runtime);
-  const sending = new SyncthingTunnels(g.db, g.runtime);
+  pin(h, g);
   g.runtime.ensureWatched(h.nodeId);
   await eventually(() => assert.ok(g.runtime.hasRoute(h.nodeId)));
 
-  // H shares no files with G yet, so it refuses the tunnel.
-  await sending.update();
-  const port = sending.ports()[h.nodeId];
-  assert.ok(port, "a tunnel listens for the relay-only peer");
-  const refused = net.connect(port, "127.0.0.1");
-  await new Promise((resolve) => refused.once("close", resolve));
+  const tunnel = g.runtime.openStream(h.nodeId, "syncthing");
+  const outcome = await new Promise<string>((resolve) => {
+    tunnel.once("relay-ready", () => resolve("opened"));
+    tunnel.once("error", (error: Error) => resolve(error.message));
+  });
+  assert.match(outcome, /shares no files with that peer/);
+  assert.equal(h.requests.length, 0, "nothing of the refused channel reaches the machine's HTTP server");
 
-  enroll(h.db, g.nodeId);
-  const client = net.connect(port, "127.0.0.1");
-  client.write("hello-sync");
-  const reply = await new Promise<string>((resolve) => client.once("data", (chunk) => resolve(String(chunk))));
-  assert.equal(reply, "echo:hello-sync");
-  client.destroy();
-  sending.close();
-  syncthing.close();
+  const peer = g.runtime.openStream(h.nodeId, "peer");
+  await new Promise<void>((resolve, reject) => { peer.once("relay-ready", resolve); peer.once("error", reject); });
+  peer.destroy();
 });
 
 test("a machine that cannot use WebSockets connects by long-polling and still reaches peers both ways", async () => {
@@ -740,7 +718,7 @@ test("a removed key cannot come back under a new node ID", async () => {
   cloneDb.prepare("INSERT INTO cluster_v2_identity VALUES (1, ?, ?, ?)").run(otherId, row.public_key, row.private_key_encrypted);
   ensureRelaySchema(cloneDb);
   const clone = new RelayRuntime(cloneDb, otherId, http.createServer(), {
-    acceptSyncthing: () => undefined, syncthingAllowed: () => false, knownPeers: () => [],
+    knownPeers: () => [],
     peerOnline: () => undefined, membershipsChanged: () => undefined, nodeName: () => "comeback",
   }, new RelayServer(cloneDb, otherId, () => "comeback", () => undefined));
   clone.start();

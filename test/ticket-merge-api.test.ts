@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,37 +8,13 @@ import { serverArgs } from "./server-entry.js";
 
 interface StartedNode { baseUrl: string; child: ChildProcess; homeDir: string; output: () => string; }
 
-async function listen(server: Server): Promise<number> {
-  return await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as { port: number }).port)));
-}
-
-async function fakeSyncthing(): Promise<{ server: Server; url: string }> {
-  const folders: unknown[] = [];
-  const server = createServer((request, response) => {
-    let body = "";
-    request.on("data", (chunk: string) => { body += chunk; });
-    request.on("end", () => {
-      response.setHeader("Content-Type", "application/json");
-      if (request.method === "GET" && request.url === "/rest/config/folders") { response.end(JSON.stringify(folders)); return; }
-      if (request.method === "POST" && request.url === "/rest/config/folders") { folders.push(JSON.parse(body)); response.end("{}"); return; }
-      if (request.method === "GET" && request.url === "/rest/system/status") { response.end(JSON.stringify({ myID: "LOCAL" })); return; }
-      if (request.method === "GET" && request.url?.startsWith("/rest/db/ignores?folder=")) { response.end(JSON.stringify({ ignore: [] })); return; }
-      if (request.method === "POST" && request.url?.startsWith("/rest/db/ignores?folder=")) { response.end("{}"); return; }
-      if (request.method === "GET" && request.url?.startsWith("/rest/db/status?folder=")) { response.end(JSON.stringify({ state: "idle", needTotalItems: 0, needBytes: 0 })); return; }
-      response.statusCode = 404;
-      response.end();
-    });
-  });
-  return { server, url: `http://127.0.0.1:${await listen(server)}` };
-}
-
-async function startNode(root: string, syncthingUrl: string): Promise<StartedNode> {
+async function startNode(root: string): Promise<StartedNode> {
   const homeDir = path.join(root, "home");
   await mkdir(homeDir, { recursive: true });
   let output = "";
   const child = spawn(process.execPath, serverArgs(process.env), {
     cwd: path.resolve("."),
-    env: { ...process.env, PATH: "/usr/bin:/bin:/usr/sbin:/sbin", PORT: "0", HOME: homeDir, PI_WEB_DATA_DIR: path.join(root, "data"), MASTER_BOB_ADMIN_USERNAME: "admin", MASTER_BOB_INITIAL_PASSWORD: "initial-password", PI_MOBILE_WEB_SYNCTHING_URL: syncthingUrl, PI_MOBILE_WEB_SYNCTHING_API_KEY: "test-key", JOINT_BOB_MERGE_AGENT: "off" },
+    env: { ...process.env, PATH: "/usr/bin:/bin:/usr/sbin:/sbin", PORT: "0", HOME: homeDir, PI_WEB_DATA_DIR: path.join(root, "data"), MASTER_BOB_ADMIN_USERNAME: "admin", MASTER_BOB_INITIAL_PASSWORD: "initial-password", JOINT_BOB_MERGE_AGENT: "off" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout?.on("data", (chunk) => { output += chunk; });
@@ -78,12 +53,12 @@ async function jsonBody(response: Response): Promise<unknown> {
 
 interface TaskFixture { project: { id: string; path: string }; task: { id: string; worktreePath: string }; headers: Record<string, string>; node: StartedNode; }
 
-async function seededTicket(root: string, syncUrl: string, fileName: string, fileBody: string): Promise<TaskFixture> {
-  const node = await startNode(root, syncUrl);
+async function seededTicket(root: string, fileName: string, fileBody: string): Promise<TaskFixture> {
+  const node = await startNode(root);
   try {
     const headers = await session(node);
     const homePath = path.join(node.homeDir, "JointBob");
-    await fetch(`${node.baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, syncthing: { endpoint: "" }, projects: { homePath } }) });
+    await fetch(`${node.baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, projects: { homePath } }) });
     const created = await fetch(`${node.baseUrl}/api/projects`, { method: "POST", headers, body: JSON.stringify({ name: "Mergeable", type: "work", synced: true }) });
     assert.equal(created.status, 201, node.output());
     const project = (await jsonBody(created) as { project: { id: string; path: string } }).project;
@@ -102,10 +77,9 @@ async function seededTicket(root: string, syncUrl: string, fileName: string, fil
 
 test("a clean ticket merge applies workspace changes to the project", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-merge-clean-"));
-  const sync = await fakeSyncthing();
   let fixture: TaskFixture | undefined;
   try {
-    fixture = await seededTicket(root, sync.url, "config.ts", "export const value = 1;\n");
+    fixture = await seededTicket(root, "config.ts", "export const value = 1;\n");
     const { project, task, headers, node } = fixture;
     await writeFile(path.join(task.worktreePath, "config.ts"), "export const value = 2;\n");
     await writeFile(path.join(task.worktreePath, "new-file.ts"), "export const added = true;\n");
@@ -132,17 +106,15 @@ test("a clean ticket merge applies workspace changes to the project", { timeout:
     if (archived.status !== 200) throw new Error(`archive: ${await archived.text()}`);
   } finally {
     if (fixture) await stopNode(fixture.node);
-    await sync.server.close();
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("a conflicted ticket merge stages markers, accepts resolutions, and blocks archive until merged", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-merge-conflict-"));
-  const sync = await fakeSyncthing();
   let fixture: TaskFixture | undefined;
   try {
-    fixture = await seededTicket(root, sync.url, "notes.md", "alpha\nbeta\ngamma\n");
+    fixture = await seededTicket(root, "notes.md", "alpha\nbeta\ngamma\n");
     const { project, task, headers, node } = fixture;
     // Diverge both sides on the same region.
     await writeFile(path.join(task.worktreePath, "notes.md"), "alpha\nworkspace beta\ngamma\n");
@@ -212,17 +184,15 @@ test("a conflicted ticket merge stages markers, accepts resolutions, and blocks 
     if (archived.status !== 200) throw new Error(`archive: ${await archived.text()}`);
   } finally {
     if (fixture) await stopNode(fixture.node);
-    await sync.server.close();
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("discarding a conflicted ticket drops the workspace and unblocks the board", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-merge-discard-"));
-  const sync = await fakeSyncthing();
   let fixture: TaskFixture | undefined;
   try {
-    fixture = await seededTicket(root, sync.url, "solo.txt", "one\n");
+    fixture = await seededTicket(root, "solo.txt", "one\n");
     const { project, task, headers, node } = fixture;
     await writeFile(path.join(task.worktreePath, "solo.txt"), "two\n");
     await writeFile(path.join(project.path, "solo.txt"), "three\n");
@@ -248,7 +218,6 @@ test("discarding a conflicted ticket drops the workspace and unblocks the board"
     assert.equal(await readFile(path.join(project.path, "solo.txt"), "utf8"), "three\n");
   } finally {
     if (fixture) await stopNode(fixture.node);
-    await sync.server.close();
     await rm(root, { recursive: true, force: true });
   }
 });

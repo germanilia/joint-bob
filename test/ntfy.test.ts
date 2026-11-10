@@ -156,7 +156,6 @@ test("a conversation opts into ntfy publishing with a topic and can opt out agai
       body: JSON.stringify({
         pi: { executable: "", configPath: "", sessionPath: "" },
         claude: { executable: "", configPath: "", sessionPath: claudeRoot },
-        syncthing: { endpoint: "" },
       }),
     });
     assert.equal(settings.status, 200);

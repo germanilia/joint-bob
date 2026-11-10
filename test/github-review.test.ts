@@ -251,7 +251,7 @@ test("PR story reads every changed file and rejects incomplete diffs", async () 
 test("PR details and stories respect the configured file limit", async () => {
   const original = nodeSettings();
   try {
-    updateSettings({ syncthing: { endpoint: original.syncthing.endpoint }, gitPullFileLimit: 150 });
+    updateSettings({ gitPullFileLimit: 150 });
     await fixture("https://github.com/acme/widget.git", async (dir) => {
       const pages: number[] = [];
       const github = await createGitHubReview(dir, "test-token", async (input) => {
@@ -270,7 +270,7 @@ test("PR details and stories respect the configured file limit", async () => {
       assert.deepEqual(pages, [1, 2]);
       await assert.rejects(github.storyPull(42), /more than 150 files/);
     });
-  } finally { updateSettings({ syncthing: { endpoint: original.syncthing.endpoint }, gitPullFileLimit: original.gitPullFileLimit }); }
+  } finally { updateSettings({ gitPullFileLimit: original.gitPullFileLimit }); }
 });
 
 test("job logs are grouped by task timestamps, preserving boundary lines and continuations", async () => {

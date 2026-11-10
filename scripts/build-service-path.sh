@@ -8,7 +8,7 @@ candidates=(
   "$(dirname "${NPM_BIN}")"
 )
 
-for tool in pi claude syncthing rg gh; do
+for tool in pi claude rg gh; do
   if tool_bin="$(command -v "${tool}" 2>/dev/null)"; then
     candidates+=("$(dirname "${tool_bin}")")
   fi

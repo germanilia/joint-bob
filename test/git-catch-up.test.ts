@@ -41,7 +41,7 @@ function pushChange(laptop: string): string {
   return git(laptop, "rev-parse", "HEAD");
 }
 
-/** What Syncthing does: copy the working files, never `.git`. */
+/** What file sync does: copy the working files, never `.git`. */
 function syncFiles(from: string, to: string): void {
   for (const name of ["app.txt", "new.txt", "old.txt"]) rmSync(path.join(to, name), { force: true });
   cpSync(from, to, { recursive: true, filter: (source) => path.basename(source) !== ".git" });
@@ -159,7 +159,7 @@ test("local commits are abandoned when files already match upstream", async (t) 
   writeFileSync(path.join(server, "app.txt"), "local version\n");
   git(server, "add", "-A");
   git(server, "commit", "-q", "-m", "local only");
-  // Laptop pushes a different change and Syncthing delivers the files.
+  // Laptop pushes a different change and file sync delivers the files.
   const pushed = pushChange(laptop);
   syncFiles(laptop, server);
 

@@ -5,6 +5,7 @@ Status: implemented. The current behaviour, API, and upgrade notes are in [docs/
 - There is no member limit, and one mode: the legacy bearer-token pairing, its migration workflow (§8), and the selective-sharing switch were removed rather than migrated.
 - Project events inside a cluster travel through two hubs with origin signatures and catch-up pulls instead of from the origin to every member.
 - A manager that its twin declares lost is replaced by the most senior remaining member (§2 said no failover).
+- Files are moved by built-in file sync, not Syncthing (§6 said to reuse Syncthing). Removed in the release after 2.256.3 (2026-11-10).
 
 ## 1. Product behavior
 
@@ -99,6 +100,8 @@ Preserve a peer's resource sync path if another cluster or a twin still grants a
 A running message retains its credential snapshot, as today. New messages, queued messages, new handoffs, and new remote execution require current access. A local unshare is recorded even if a handoff exists; the handoff is cancelled or settled under its recorded transaction ID without granting new work. A remote agent already holding data cannot be remotely guaranteed to forget it. Existing local repositories and transcripts remain on disk as disconnected copies, hidden from ordinary shared-resource inventories unless explicitly retained as local data. Retention does not grant resharing rights.
 
 ## 6. File and transcript strategy
+
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. This section describes the earlier design. Its decision "Do not build a replacement bidirectional file-sync engine" was superseded by `FILE-SYNC-PLAN.md`. Other mentions of Syncthing in this document are from that design too.
 
 ### Decision
 

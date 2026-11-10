@@ -382,7 +382,8 @@ export const settingsSchema = z.object({
   kiroEnabled: z.boolean().optional(),
   conversationDefaults: conversationDefaultsSchema.optional(),
   runtimes: z.record(z.string(), runtimeSettingsSchema).optional().refine((runtimes) => !runtimes || Object.keys(runtimes).every((id) => configuredRuntimeIds.has(id)), "Runtime is not configured"),
-  syncthing: z.object({ endpoint: z.string().max(500), apiKey: z.string().max(500).nullable().optional() }).optional(),
+  // A page left open from an older release still sends this; it is ignored.
+  syncthing: z.unknown().optional(),
   projects: z.object({
     homePath: z.string().max(1000).optional(),
     rootPath: z.string().max(1000).optional(),

@@ -92,7 +92,6 @@ test("session deletion rejects paths not discovered for the selected project", a
       body: JSON.stringify({
         pi: { executable: "", configPath: "", sessionPath: piSessionsPath },
         claude: { executable: "", configPath: "", sessionPath: claudeSessionsPath },
-        syncthing: { endpoint: "" },
       }),
     });
     assert.equal(configured.status, 200);

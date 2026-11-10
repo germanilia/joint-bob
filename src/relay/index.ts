@@ -10,18 +10,15 @@ import { virtualRelayUrl } from "./protocol.js";
 import { RelayServer } from "./relay-server.js";
 import { RelayRuntime } from "./runtime.js";
 import { listMemberships } from "./store.js";
-import { SyncthingTunnels } from "./syncthing-tunnels.js";
 import { setRelayTransport } from "./transport.js";
 import { onRelayPeersChanged } from "./events.js";
 import { setPhonePolicyDatabase } from "./phone-policy.js";
 
 let relayServer: RelayServer | undefined;
 let runtime: RelayRuntime | undefined;
-let tunnels: SyncthingTunnels | undefined;
 let nodeName = "machine";
 let advertised: string | undefined;
 let starting: Promise<void> | undefined;
-let tunnelTimer: NodeJS.Timeout | undefined;
 
 requestInterceptors.push((request, response) => relayServer?.handleRequest(request, response) ?? false);
 upgradeHandlers.push((request, socket, head) => relayServer?.handleUpgrade(request, socket, head) ?? false);
@@ -72,12 +69,6 @@ async function republishIfAdvertisedChanged(): Promise<void> {
   await publishNodeDescriptor();
 }
 
-function scheduleTunnels(): void {
-  if (tunnelTimer) return;
-  tunnelTimer = setTimeout(() => { tunnelTimer = undefined; void tunnels?.update(); }, 1_000);
-  tunnelTimer.unref();
-}
-
 export function startRelay(): Promise<void> {
   starting ??= (async () => {
     const db = await clusterV2Database();
@@ -93,8 +84,6 @@ export function startRelay(): Promise<void> {
     relayServer.onSkillDigestStale = () => void import("./enabled-snapshot.js").then(({ republishRelayResources }) => republishRelayResources())
       .catch((error) => console.warn("Republishing relay skills failed", error));
     runtime = new RelayRuntime(db, node.id, server, {
-      acceptSyncthing: (stream) => tunnels?.accept(stream),
-      syncthingAllowed: (from) => tunnels?.allowed(from) ?? false,
       knownPeers: () => knownPeers(db),
       peerOnline: (nodeId) => markPeerReachable(nodeId),
       membershipsChanged: () => { void republishIfAdvertisedChanged().catch((error) => console.warn("Publishing this machine's relay address failed", error)); },
@@ -103,8 +92,6 @@ export function startRelay(): Promise<void> {
     }, relayServer);
     setRelayTransport(runtime);
     setPhonePolicyDatabase(db);
-    tunnels = new SyncthingTunnels(db, runtime);
-    runtime.on("changed", scheduleTunnels);
     runtime.on("workspace-sharing-ready", () => {
       void import("../server/shared-workspaces.js").then(({ syncSharedWorkspaces }) => syncSharedWorkspaces())
         .catch((error) => console.warn("Relay workspace sync failed", error));
@@ -121,7 +108,6 @@ export function startRelay(): Promise<void> {
     runtime.on("skill-policy-changed", () => applyPolicy(true));
     runtime.on("skill-policy-received", () => applyPolicy(false));
     runtime.start();
-    scheduleTunnels();
   })();
   return starting;
 }
@@ -136,17 +122,15 @@ export async function relayServingChanged(): Promise<void> {
   await republishIfAdvertisedChanged().catch((error) => console.warn("Publishing this machine's relay address failed", error));
 }
 
-/** Clusters or twins changed: watch the new peer set, re-plan file tunnels, and drop former twins from an own-machines-only relay. */
+/** Clusters or twins changed: watch the new peer set, and drop former twins from an own-machines-only relay. */
 export function relayPeersChanged(): void {
   relayServer?.enforceOwnMachinesOnly();
   runtime?.refreshWatch();
-  scheduleTunnels();
 }
 
 export function setRelayNodeName(name: string): void { nodeName = name; }
 
 export function stopRelay(): void {
   runtime?.stop();
-  tunnels?.close();
   setRelayTransport(undefined);
 }

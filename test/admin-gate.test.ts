@@ -88,10 +88,10 @@ test("every admin route answers a member like an unknown route, and the admin st
     const changed = await api<{ conversationLabels: string[] }>(node, noam, "PUT", "/settings/personal", { conversationLabels: ["noam-only"] });
     assert.equal(changed.status, 200, JSON.stringify(changed.body));
     assert.deepEqual(changed.body.conversationLabels, ["Research", "Bug", "Feature", "POC", "Deploy to prod", "Hotfix", "noam-only"]);
-    const nodeView = await api<{ conversationLabels: string[]; syncthing: unknown }>(node, admin, "GET", "/settings");
-    assert.ok(nodeView.body.syncthing, "the admin sees node settings");
+    const nodeView = await api<{ conversationLabels: string[]; runtimes: unknown }>(node, admin, "GET", "/settings");
+    assert.ok(nodeView.body.runtimes, "the admin sees node settings");
     assert.notDeepEqual(nodeView.body.conversationLabels, ["noam-only"], "a member's labels never change the admin's");
-    assert.equal((await api(node, noam, "PUT", "/settings/personal", { syncthing: { endpoint: "" } })).status, 400, "node fields can't come in through personal settings");
+    assert.equal((await api(node, noam, "PUT", "/settings/personal", { strictResourceIsolation: false })).status, 400, "node fields can't come in through personal settings");
 
     const audit = await api<{ events: Array<{ actorId: string | null; entityId: string | null }> }>(node, admin, "GET", "/audit?limit=200");
     assert.equal(audit.body.events.some((event) => event.actorId === member.userId || event.entityId === member.userId), false, "the admin sees no member activity in the audit log");

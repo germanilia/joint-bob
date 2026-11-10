@@ -1,5 +1,7 @@
 # Webhook files, tools, skills, and memory
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+
 ## Intent
 
 A webhook can carry its own reusable reference files, executable scripts, selected skills, and persistent lessons. Agents know where resources are and what they are for without the app processing static file contents. The user manages these resources in the existing webhook menu.

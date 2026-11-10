@@ -47,7 +47,6 @@ for (const harnessId of ["pi", "claude"] as const) {
       updateSettings({
         pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: harnessId === "pi" ? sessionRoot : path.join(root, "pi-sessions") },
         claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: harnessId === "claude" ? sessionRoot : path.join(root, "claude-sessions") },
-        syncthing: { endpoint: "" },
       });
 
       const directory = harnessId === "pi"
@@ -83,7 +82,7 @@ for (const harnessId of ["pi", "claude"] as const) {
     } finally {
       context.mock.restoreAll();
       syncBuiltinESMExports();
-      updateSettings({ pi: previous.pi, claude: previous.claude, syncthing: { endpoint: previous.syncthing.endpoint } });
+      updateSettings({ pi: previous.pi, claude: previous.claude });
       await rm(root, { recursive: true, force: true });
     }
   });

@@ -6,17 +6,17 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 import {
-  BUILTIN_RULES, builtinRule, SYNCTHING_PROJECT_PATTERNS, SYNCTHING_WORKTREE_PATTERNS,
+  BUILTIN_RULES, builtinRule,
   WORKTREE_BINARY_EXTENSIONS, WORKTREE_HEAVY_DIRECTORIES, WORKTREE_LINKED_DIRECTORIES,
 } from "../src/file-sync/builtin-rules.js";
 import {
-  compileRules, effectiveRuleSettings, effectiveRules, GitignoreTree, hintPattern, parseGitignore, parseUserRules, rulesHash, userRulesFromSyncthingIgnores,
+  compileRules, effectiveRuleSettings, effectiveRules, GitignoreTree, hintPattern, parseGitignore, parseUserRules, rulesHash,
   type GitIgnoredPaths, type IgnoreClass, type IgnoreMatcher,
 } from "../src/file-sync/ignore.js";
 import type { ShareKind } from "../src/file-sync/types.js";
 import { worktreeBinaryExtensions, worktreeHeavyDirectories, worktreeLinkedDirectories } from "../src/worktree-filters.js";
 
-// Copied from test/syncthing.test.ts: Syncthing's managed project list, which the built-in table must reproduce.
+// The project and ticket folders' built-in list, in order. Every machine must hold the same one: a share's rules hash is made from it.
 const managedIgnorePatterns = [
   ".git", ".git/**", "**/.git", "**/.git/**", "(?d)node_modules/", "(?d)node_modules/**", "(?d)**/node_modules", "(?d)**/node_modules/**",
   "(?d).venv/", "(?d)venv/", "(?d)site-packages", "(?d)dist-packages", "(?d)__pypackages__", "(?d).tox", "(?d).nox", "(?d).eggs",
@@ -53,11 +53,14 @@ function everyPrefix(files: string[], prefixes: string[]): string[] {
   return prefixes.flatMap((prefix) => files.map((file) => prefix + file));
 }
 
-test("the built-in table reproduces Syncthing's managed project list line for line", () => {
-  assert.deepEqual(SYNCTHING_PROJECT_PATTERNS, managedIgnorePatterns);
+/** The rules of project and ticket folders that every sync tool applied: all but the engine's own and the worktree-only ones. */
+const projectPatterns = BUILTIN_RULES.filter((rule) => !rule.kinds && !rule.engineOnly).map((rule) => rule.pattern);
+
+test("the built-in table holds the project list line for line", () => {
+  assert.deepEqual(projectPatterns, managedIgnorePatterns);
 });
 
-test("the worktree list is built from the project list exactly as Syncthing builds it", () => {
+test("the worktree list is the project list with everything regenerable, then the worktree-only rules", () => {
   const expected = [...new Set([
     ...managedIgnorePatterns.map((rule) => rule.startsWith("(?d)") ? rule : `(?d)${rule}`),
     ...worktreeHeavyDirectories.filter((name) => !name.startsWith(".st")).map((name) => `(?d)${name}`),
@@ -65,7 +68,11 @@ test("the worktree list is built from the project list exactly as Syncthing buil
     "(?d).joint-bob-merge",
     ...worktreeBinaryExtensions.map((extension) => `(?d)(?i)*.${extension}`),
   ])];
-  assert.deepEqual(SYNCTHING_WORKTREE_PATTERNS, expected);
+  const worktreePatterns = [...new Set([
+    ...projectPatterns.map((rule) => rule.startsWith("(?d)") ? rule : `(?d)${rule}`),
+    ...BUILTIN_RULES.filter((rule) => rule.kinds?.includes("worktrees") && !rule.engineOnly).map((rule) => rule.pattern),
+  ])];
+  assert.deepEqual(worktreePatterns, expected);
 });
 
 test("the worktree lists are copies of src/worktree-filters.ts", () => {
@@ -82,7 +89,7 @@ test("every built-in rule takes its id and class from its pattern", () => {
   assert.equal(new Set(BUILTIN_RULES.map((rule) => rule.id)).size, BUILTIN_RULES.length, "ids are unique");
 });
 
-test("exactly the sync-internal rules are locked, and they cover git, app data, Syncthing files and half-written files", () => {
+test("exactly the sync-internal rules are locked, and they cover git, app data, an older sync tool's files and half-written files", () => {
   const locked = BUILTIN_RULES.filter((rule) => rule.locked).map((rule) => rule.id);
   assert.deepEqual(BUILTIN_RULES.filter((rule) => rule.group === "sync-internal").map((rule) => rule.id), locked);
   for (const [id, ruleClass] of [
@@ -145,7 +152,7 @@ test("Joint Bob's half-written file names are regenerable", () => {
   expectClasses(matcher("project"), [[`.creating-${uuid}`, true, "regenerable"], [`.creating-${uuid}/src/secret.key`, false, "regenerable"]]);
 });
 
-test("Syncthing's temp files are regenerable and its folder files local", () => {
+test("the temp and folder files an older sync tool left behind never sync: temps regenerable, folder files local", () => {
   expectClasses(matcher("project"), [
     [".syncthing.notes.md.tmp", false, "regenerable"], ["src/.syncthing.main.ts.tmp", false, "regenerable"],
     ["~syncthing~notes.md.tmp", false, "regenerable"], ["src/~syncthing~main.ts.tmp", false, "regenerable"],
@@ -211,7 +218,7 @@ test("heavy trees, linked dependency folders and binaries are excluded only in w
 
 test("a linked dependency folder (a symlink, not a directory) is excluded in worktree shares", () => {
   expectClasses(matcher("worktrees"), [["feature/node_modules", false, "regenerable"], ["feature/.venv", false, "regenerable"], ["feature/venv", false, "regenerable"]]);
-  // In a project share `.venv/` matches directories only; Syncthing never followed links either.
+  // In a project share `.venv/` matches directories only: a link is not followed.
   expectClasses(matcher("project"), [["node_modules", false, "regenerable"], [".venv", false, null], [".venv", true, "regenerable"]]);
 });
 
@@ -302,7 +309,7 @@ test("? matches exactly one character other than a separator", () => {
   expectClasses(matcher("project", { userRules: ["frame-??.png"] }), [["frame-01.png", false, "user"], ["frame-1.png", false, null], ["frame-001.png", false, null], ["a/frame-ab.png", false, "user"]]);
 });
 
-test("character classes, negated classes, alternatives and escapes follow Syncthing's glob", () => {
+test("character classes, negated classes, alternatives and escapes", () => {
   expectClasses(matcher("project", { userRules: ["run-[0-9].txt", "tmp-[!a-z]", "*.{mov,mkv}", "\\*literal", "price\\?"] }), [
     ["run-7.txt", false, "user"], ["run-x.txt", false, null], ["tmp-1", false, "user"], ["tmp-b", false, null],
     ["v/clip.mov", false, "user"], ["clip.mkv", false, "user"], ["clip.mp4", false, null], ["*literal", false, "user"], ["xliteral", false, null],
@@ -321,7 +328,7 @@ test("a trailing /** ignores what is below a directory but not the directory its
   expectClasses(matcher("project", { userRules: ["uploads/**"] }), [["uploads", true, null], ["uploads/a.png", false, "user"], ["x/uploads/b/c.png", false, "user"]]);
 });
 
-test("/** alone ignores everything, as in Syncthing", () => {
+test("/** alone ignores everything", () => {
   expectClasses(matcher("project", { userRules: ["!README.md", "/**"] }), [["a", false, "user"], ["src", true, "user"], ["src/a.ts", false, "user"], ["README.md", false, null]]);
 });
 
@@ -336,20 +343,6 @@ test("parseUserRules drops comments and blank lines and reports #include and inv
   assert.deepEqual(parsed.unsupported, ["#include more.stignore"]);
   assert.deepEqual(parsed.errors.map((error) => error.line), ["[abc", "{a,b", "!", "(?d)(?i)"]);
   assert.deepEqual(parsed.rules[1], { line: "!(?i)/Keep/", negate: true, foldCase: true, deletable: false, anchored: true, dirOnly: true, childrenOnly: false, body: "Keep", source: "Keep" });
-});
-
-test("user rules from Syncthing keep exactly the lines setProjectIgnores treats as user rules", () => {
-  assert.deepEqual(userRulesFromSyncthingIgnores(["secrets/", "*.pem", ".git", "__pycache__/", "playwright-report/", "aidlc/.aidlc-*", "secrets/"]), ["secrets/"]);
-  assert.deepEqual(userRulesFromSyncthingIgnores(["!.env", "!**", ...managedIgnorePatterns.slice().reverse()]), ["!.env", "!**"]);
-});
-
-test("user rules from Syncthing drop worktree-list lines even in a project folder, with or without (?d)", () => {
-  assert.deepEqual(userRulesFromSyncthingIgnores(["vendor", "(?d)out", "(?i)*.mp3", "(?d)(?i)*.png", ".env", "(?i)/local_bucket/**.mp3", "(?d)/chords_generator/models", "// note", ""]),
-    ["(?i)/local_bucket/**.mp3", "(?d)/chords_generator/models", "// note", ""]);
-});
-
-test("a null Syncthing ignore list has no user rules", () => {
-  assert.deepEqual(userRulesFromSyncthingIgnores(null), []);
 });
 
 test("switched-off built-ins add up across levels and locked or unknown ids are dropped", () => {

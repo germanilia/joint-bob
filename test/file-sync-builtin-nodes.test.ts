@@ -16,7 +16,8 @@ import { api, freePort, seedDevEnvironment, signIn, startDevNode, stopDevNode, t
    chmodded, renamed and deleted on either side arrive on the other with the same bytes and modes;
    concurrent edits leave exactly one conflict copy, on both nodes; a renamed 1,000-file folder moves
    without its bytes crossing the network; a deletion lands in the receiver's trash; a mass delete reaches
-   the other node at once, with no confirmation; and back in shadow mode nothing is written. */
+   the other node at once, with no confirmation; and a node whose phase is not builtin gets nothing written.
+   The take-over that sets the phase by itself is test/file-sync-adoption-nodes.test.ts. */
 
 const SETTLE_MS = 1_500;
 const SYNC_TIMEOUT_MS = 90_000;
@@ -150,7 +151,7 @@ async function converged(sides: [Node, Node], projectId: string, check?: (trees:
   return done.answers as [FileSyncStatusAnswer, FileSyncStatusAnswer];
 }
 
-async function setPhase(side: Node, projectId: string, phase: "builtin" | "syncthing"): Promise<void> {
+async function setPhase(side: Node, projectId: string, phase: "builtin" | "bootstrapping"): Promise<void> {
   const answer = await api<FileSyncStatusAnswer>(side.node, side.session, "POST", "/file-sync/test-phase", { projectId, phase });
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
   assert.equal(projectShare(answer.body, projectId)?.phase ?? phase, phase);
@@ -209,11 +210,10 @@ async function runPair(t: TestContext): Promise<void> {
     b.root = replica.path;
     assert.notEqual(b.root, a.root);
 
-    // Shadow first (as a node runs before the switch), then builtin on both through the test-only route.
+    // Every shared project is derived without anyone choosing it; builtin on both through the test-only route.
     for (const side of [a, b]) {
-      const configured = await api<FileSyncStatusAnswer>(side.node, side.session, "PUT", "/file-sync/config", { shadowProjects: [projectId] });
-      assert.equal(configured.status, 200, JSON.stringify(configured.body));
-      assert.equal(configured.body.worker, "running");
+      const running = await until(() => status(side), (answer) => answer.worker === "running" && Boolean(projectShare(answer, projectId)), 30_000);
+      assert.deepEqual([running.worker, projectShare(running, projectId)?.engine], ["running", "builtin"], JSON.stringify(running));
     }
     for (const side of [a, b]) await setPhase(side, projectId, "builtin");
 
@@ -278,14 +278,14 @@ async function runPair(t: TestContext): Promise<void> {
     assert.ok(inTrash(b.node, "ballast/10/f1099.txt", "ballast 1099\n"), "every deleted folder's files are in B's trash");
     assert.deepEqual(engineLines.filter((line) => /\b(held|hold|confirm)/i.test(line)), [], "nothing about the deletions waits for anyone");
 
-    // 6. Back in shadow mode: a change on A is a difference on B, and B's tree is not touched.
-    for (const side of [a, b]) await setPhase(side, projectId, "syncthing");
+    // 6. A phase other than builtin (a take-over under way): a change on A is a difference on B, and B's tree is not touched.
+    for (const side of [a, b]) await setPhase(side, projectId, "bootstrapping");
     const untouched = fingerprint(b.root);
     await writeFile(path.join(a.root, "src", "index.ts"), "export const answer = 43;\n");
     const differing = await until(() => status(b), (answer) => peerOf(answer, projectId, a.node.nodeId)?.differences === 1, 30_000);
     assert.equal(peerOf(differing, projectId, a.node.nodeId)?.differences, 1, `B sees the change as a difference: ${describe(differing, projectId)}`);
-    assert.equal(projectShare(differing, projectId)?.phase, "syncthing");
-    assert.deepEqual([...fingerprint(b.root)], [...untouched], "in shadow mode the engine wrote nothing into B's tree");
+    assert.equal(projectShare(differing, projectId)?.phase, "bootstrapping");
+    assert.deepEqual([...fingerprint(b.root)], [...untouched], "before its take-over is done the engine wrote nothing into B's tree");
     if (engineLines.length) t.diagnostic(`engine log lines: ${engineLines.slice(0, 20).join(" | ")}`);
   } finally {
     await Promise.all(children.map(stopDevNode));
@@ -293,4 +293,4 @@ async function runPair(t: TestContext): Promise<void> {
   }
 }
 
-test("two nodes in builtin mode sync edits, conflicts, renames and deletions, and write nothing back in shadow mode", { timeout: 600_000 }, (t) => runPair(t));
+test("two nodes in builtin mode sync edits, conflicts, renames and deletions, and write nothing while a take-over is under way", { timeout: 600_000 }, (t) => runPair(t));

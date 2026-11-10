@@ -24,7 +24,7 @@ function runScript(dataDir: string, home: string, code: string, args: string[] =
   });
 }
 
-// Both nodes share one HOME, which is what Syncthing's wholesale replication of
+// Both nodes share one HOME, which is what a fully replicated
 // ~/.claude looks like from the transcript's point of view. What differs is the
 // project checkout path, and that is exactly what the defect turns on. Node A owns
 // the project; node B records the same project ID at its own checkout, as a twin
@@ -38,7 +38,7 @@ async function initializeNode(root: string, key: string, home: string, projectPa
     const { createAdministrator } = await import('./src/auth.ts');
     const { addProject, importProject } = await import('./src/store.ts');
     const { updateClusterNode } = await import('./src/cluster.ts');
-    updateSettings({ pi: { executable: '', configPath: job.home + '/.pi', sessionPath: job.home + '/.pi/sessions' }, claude: { executable: '', configPath: job.home + '/.claude', sessionPath: job.home + '/.claude/projects' }, syncthing: { endpoint: '' }, projects: { homePath: job.home + '/JointBob' } });
+    updateSettings({ pi: { executable: '', configPath: job.home + '/.pi', sessionPath: job.home + '/.pi/sessions' }, claude: { executable: '', configPath: job.home + '/.claude', sessionPath: job.home + '/.claude/projects' }, projects: { homePath: job.home + '/JointBob' } });
     createAdministrator(job.username, job.password, false);
     const cluster = await updateClusterNode(job.name, job.url);
     const project = job.mirror ? await importProject(job.mirror, job.projectPath) : await addProject('Takeover project', job.projectPath);

@@ -63,7 +63,6 @@ test("runtime audit events are redacted, local, and session-admin readable", asy
       method: "PUT", headers, body: JSON.stringify({
         pi: { executable: "pi", configPath: "/tmp/pi", sessionPath: "/tmp/pi-sessions" },
         claude: { executable: "claude", configPath: "/tmp/claude", sessionPath: "/tmp/claude-sessions" },
-        syncthing: { endpoint: "http://127.0.0.1:8384", apiKey: "fake-syncthing-api-key" },
       }),
     })).status, 200);
     await secrets.saveSecretAccount({ label: "Personal", provider: "github", replicate: true, variables: [{ name: "GH_TOKEN", kind: "value", value: "fake-github-token" }] });
@@ -103,14 +102,14 @@ test("runtime audit events are redacted, local, and session-admin readable", asy
     assert.throws(() => appendAuditEvent(db, { eventType: "bad", actorType: "system", entityType: "test", details: { password: "forbidden" } }), /forbidden key/);
     const rawRows = JSON.stringify(db.prepare("SELECT * FROM audit_events").all());
     const credentialPayloads = JSON.stringify(db.prepare("SELECT payload_encrypted FROM secret_credential_events").all());
-    for (const secret of ["initial-password", password, "fake-syncthing-api-key", "fake-github-token", "fake-transcript-content", loginBody.csrfToken]) {
+    for (const secret of ["initial-password", password, "fake-github-token", "fake-transcript-content", loginBody.csrfToken]) {
       assert.doesNotMatch(rawAudit, new RegExp(secret));
       assert.doesNotMatch(rawRows, new RegExp(secret));
       assert.doesNotMatch(credentialPayloads, new RegExp(secret));
     }
     const rawDatabase = (await readFile(path.join(dataDir, "node.db"))).toString("utf8");
     const rawWal = (await readFile(path.join(dataDir, "node.db-wal"))).toString("utf8");
-    for (const secret of ["fake-syncthing-api-key", "fake-github-token"]) {
+    for (const secret of ["fake-github-token"]) {
       assert.doesNotMatch(rawDatabase, new RegExp(secret));
       assert.doesNotMatch(rawWal, new RegExp(secret));
     }

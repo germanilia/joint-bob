@@ -22,7 +22,7 @@ import { isTrustedTwin } from "../../cluster-sharing-policy.js";
 import { receiveSecretCredentialEvents, type SecretCredentialEvent } from "../../secret-replication.js";
 import { secretCredentialBatchSchema } from "../schemas.js";
 import { acceptTwinRequest, declineTwinRequest, listTwinRequests, receiveTwinRequest, receiveTwinRequestDecline, requestTwin } from "../twin-requests.js";
-import { adoptionInventory, adoptionInventorySchema, adoptTwinProjects, completeTwinSharing, localTwinSharingStatus, resumeTwinProjectFolders, scheduleTwinSharing, sharingTwin, twinSharingStatus } from "../twin-sharing.js";
+import { adoptionInventory, adoptionInventorySchema, adoptTwinProjects, completeTwinSharing, localTwinSharingStatus, scheduleTwinSharing, sharingTwin, twinSharingStatus } from "../twin-sharing.js";
 
 const uuid = z.string().uuid().regex(/^[0-9a-f-]+$/);
 function localOnly(response:Response):void { if(!response.locals.authSession) throw new ClusterV2HttpError(401,"Unauthorized"); }
@@ -123,7 +123,6 @@ app.post("/api/cluster/v2/twins/sharing",handler(async(request,response)=>{
   const payload=z.object({relationshipId:uuid,ownerNodeId:uuid,projects:adoptionInventorySchema}).strict().parse(request.body);
   if(sharingTwin(db,local.id,payload.relationshipId)!==sender||sender>local.id) throw new ClusterV2HttpError(403,"Forbidden");
   adoptTwinProjects(db,local.id,payload.relationshipId,payload.ownerNodeId,payload.projects);
-  await resumeTwinProjectFolders(db,payload.relationshipId);
   response.json({projects:adoptionInventory(db)});
 }));
 

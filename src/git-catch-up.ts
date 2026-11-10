@@ -8,13 +8,13 @@ const execute = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 
-/* Syncthing copies a project's files between nodes but never `.git`, so a commit made
+/* File sync copies a project's files between nodes but never `.git`, so a commit made
    on one node leaves every other node's HEAD behind files it already has. Before a turn,
    HEAD moves to the upstream commit only when this node's files already hold that commit;
    the working tree itself is never touched.
 
    When HEAD has local commits not in upstream but the files already match upstream
-   (Syncthing delivered them), the local commits are stale: someone else pushed equivalent
+   (file sync delivered them), the local commits are stale: someone else pushed equivalent
    or superseding changes. In this case, we log the abandoned commits and reset to upstream.
    The commits remain in git reflog for recovery.
 
@@ -91,7 +91,7 @@ async function filesMatchCommit(root: string, env: NodeJS.ProcessEnv, from: stri
       if (present) return false;
       continue;
     }
-    // A submodule pointer has no file content Syncthing could have delivered.
+    // A submodule pointer has no file content file sync could have delivered.
     if (!present || mode === "160000") return false;
     expected.set(file, blob);
   }
@@ -198,7 +198,7 @@ async function catchUp(root: string, env: NodeJS.ProcessEnv): Promise<GitCatchUp
     return "moved-partway";
   }
   if (!headIsAncestor) {
-    // HEAD has commits not in upstream, but files already match upstream (Syncthing delivered them).
+    // HEAD has commits not in upstream, but files already match upstream (file sync delivered them).
     // The local commits are stale; log them and reset. They remain in reflog for recovery.
     await logAbandonedCommits(root, env, head, upstream);
   }

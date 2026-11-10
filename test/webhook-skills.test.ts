@@ -73,7 +73,7 @@ test("existing webhook skill choices exclude machine defaults", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-skill-scope-"));
   const project = path.join(root, "project"), user = path.join(root, "machine-skills"), shared = path.join(root, "managed-skills");
   const strictResourceIsolation = getSettings().strictResourceIsolation;
-  updateSettings({ syncthing: { endpoint: "" }, strictResourceIsolation: false });
+  updateSettings({ strictResourceIsolation: false });
   try {
     for (const [folder, name] of [[path.join(project, ".agents", "skills", "project-review"), "project-review"], [path.join(user, "machine-review"), "machine-review"], [path.join(shared, "managed-review"), "managed-review"]]) {
       await import("node:fs/promises").then(fs => fs.mkdir(folder, { recursive: true }));
@@ -91,7 +91,7 @@ test("existing webhook skill choices exclude machine defaults", async () => {
       await assert.rejects(importExistingWebhookSkill(db, webhook.id, project, machineInventoryId, { root }, roots), /no longer available/i);
     } finally { db.close(); }
   } finally {
-    updateSettings({ syncthing: { endpoint: "" }, strictResourceIsolation });
+    updateSettings({ strictResourceIsolation });
     await rm(root, { recursive: true, force: true });
   }
 });

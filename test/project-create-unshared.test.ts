@@ -8,12 +8,11 @@ import { serverArgs } from "./server-entry.js";
 
 interface StartedNode { baseUrl: string; child: ChildProcess; homeDir: string; output: () => string; }
 
-// No Syncthing at all: no URL, no key, and a fresh HOME without a Syncthing config to discover.
+// One machine, sharing with nobody, and no sync tool installed.
 async function startNode(root: string): Promise<StartedNode> {
   const homeDir = path.join(root, "home");
   await mkdir(homeDir, { recursive: true });
   const env: NodeJS.ProcessEnv = { ...process.env, PORT: "0", HOME: homeDir, PI_WEB_DATA_DIR: path.join(root, "data"), MASTER_BOB_ADMIN_USERNAME: "admin", MASTER_BOB_INITIAL_PASSWORD: "initial-password" };
-  for (const key of ["JOINT_BOB_SYNCTHING_URL", "JOINT_BOB_SYNCTHING_API_KEY", "PI_MOBILE_WEB_SYNCTHING_URL", "PI_MOBILE_WEB_SYNCTHING_API_KEY"]) delete env[key];
   let output = "";
   const child = spawn(process.execPath, serverArgs(process.env), { cwd: path.resolve("."), env, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout?.on("data", (chunk) => { output += chunk; });
@@ -44,8 +43,8 @@ async function session(node: StartedNode): Promise<Record<string, string>> {
   return headers;
 }
 
-test("synced projects and tickets are created on a node without Syncthing", { timeout: 120_000 }, async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-no-syncthing-"));
+test("a project and its tickets are created on a machine that shares with nobody", { timeout: 120_000 }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-unshared-project-"));
   let node: StartedNode | undefined;
   try {
     node = await startNode(root);
@@ -54,17 +53,16 @@ test("synced projects and tickets are created on a node without Syncthing", { ti
     const saved = await fetch(`${node.baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ projects: { homePath } }) });
     assert.equal(saved.status, 200, node.output());
 
-    const created = await fetch(`${node.baseUrl}/api/projects`, { method: "POST", headers, body: JSON.stringify({ name: "Unsynced node", type: "personal", synced: true }) });
+    const created = await fetch(`${node.baseUrl}/api/projects`, { method: "POST", headers, body: JSON.stringify({ name: "Unshared", type: "personal", synced: true }) });
     assert.equal(created.status, 201, node.output());
-    const project = (await created.json() as { project: { id: string; path: string; syncFolderId?: string } }).project;
-    assert.ok(project.syncFolderId, "the project keeps its share identity for when Syncthing appears");
+    const project = (await created.json() as { project: { id: string; path: string } }).project;
     await access(project.path);
 
     const listed = await fetch(`${node.baseUrl}/api/projects`, { headers });
     assert.equal(listed.status, 200, node.output());
     const listedProject = (await listed.json() as { projects: Array<{ id: string; syncStatus: { state: string; message?: string } }> }).projects.find((candidate) => candidate.id === project.id);
     assert.ok(listedProject, "the new project is listed");
-    assert.deepEqual(listedProject.syncStatus, { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "Syncthing is not configured on this node" });
+    assert.deepEqual(listedProject.syncStatus, { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "This project is not shared with another machine", engine: "none" });
 
     const ticket = await fetch(`${node.baseUrl}/api/projects/${project.id}/tasks`, { method: "POST", headers, body: JSON.stringify({ title: "Works offline", description: "" }) });
     assert.equal(ticket.status, 201, node.output());
@@ -73,7 +71,11 @@ test("synced projects and tickets are created on a node without Syncthing", { ti
     await access(task.worktreePath);
     const tasks = await (await fetch(`${node.baseUrl}/api/projects/${project.id}/tasks`, { headers })).json() as { tasks: Array<{ id: string }> };
     assert.ok(tasks.tasks.some((candidate) => candidate.id === task.id));
-    assert.match(node.output(), /Syncthing folder for Unsynced node was not created: Syncthing is not configured on this node/);
+    // Nothing to send the files to: a rescan says so instead of failing.
+    const rescan = await fetch(`${node.baseUrl}/api/projects/${project.id}/sync/rescan`, { method: "POST", headers, body: "{}" });
+    assert.equal(rescan.status, 409, node.output());
+    assert.deepEqual(await rescan.json(), { error: "This project is not shared with another machine" });
+    assert.doesNotMatch(node.output(), /Syncthing/);
   } finally {
     if (node) await stopNode(node);
     await rm(root, { recursive: true, force: true });

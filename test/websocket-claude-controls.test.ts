@@ -44,7 +44,6 @@ test("Claude tool and compact commands work over the chat WebSocket", async () =
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-agent"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     const { claudeSessionFilePath } = await import(`../src/claude-service.ts?claude-controls=${Date.now()}-${Math.random()}`);
     if (process.env.JOINT_BOB_TEST_ENGINE_LOG) {

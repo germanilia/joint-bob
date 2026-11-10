@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { conflictCopyName } from "../src/file-sync/conflicts.js";
-import { controlDatabase, phaseOf, setPhase } from "../src/file-sync/control.js";
+import { controlDatabase, setPhase } from "../src/file-sync/control.js";
 import {
   assertProjectFilesReady, builtinProjectStatus, type EngineApi, noteHandoffFiles, peerFilesReady, ProjectFilesNotReadyError, projectFilesHandoffPart,
-  conversationFilesStatus, projectSyncStatuses, rescanProjectFiles, taskShareStatuses, useFacadeEngineForTests, worktreeFilesChanged, worktreeHasPendingFiles, worktreeSweepRefusal,
+  conversationFilesStatus, ProjectNotSynchronizedError, projectFilesEngines, projectSyncStatuses, rescanProjectFiles, taskShareStatuses, useFacadeEngineForTests, worktreeFilesChanged, worktreeHasPendingFiles, worktreeSweepRefusal,
 } from "../src/file-sync/facade.js";
 import type { FileSyncPeerFacts, FileSyncProjectView } from "../src/file-sync/index.js";
 import { FILE_SYNC_PROTOCOL, type PeerShareStatus, type PendingFiles, type ShareStatus } from "../src/file-sync/protocol.js";
@@ -17,31 +16,13 @@ import type { ShareKind } from "../src/file-sync/types.js";
 import type { StatusAnswer, StatusBody } from "../src/file-sync/wire.js";
 import type { ProjectRecord, TaskRecord } from "../src/types.js";
 
-/* app-integration (P4): the facade dispatches per project between Syncthing and the built-in engine.
-   The engine's main-thread answers come from a stand-in (useFacadeEngineForTests), Syncthing from a
-   fake REST server, phases from this process's node.db. */
+/* app-integration (P4): the facade answers per project from its phase on this node. A project with no
+   phase is shared with nobody, one being taken over is "moving", and a built-in one is answered from
+   the engine's reports. The engine's main-thread answers come from a stand-in
+   (useFacadeEngineForTests), phases from this process's node.db. */
 
 const PEER = "00000000-0000-4000-8000-0000000000b2";
 const OTHER = "00000000-0000-4000-8000-0000000000b3";
-
-// Syncthing's connection is discovered once per process: the fake must be in place before anything asks.
-const syncthingRequests: string[] = [];
-const syncthingFolders: Array<{ id: string; path: string }> = [];
-const fakeSyncthing = createServer((request, response) => {
-  syncthingRequests.push(`${request.method} ${request.url}`);
-  response.setHeader("Content-Type", "application/json");
-  if (request.url === "/rest/config/folders") { response.end(JSON.stringify(syncthingFolders.map((folder) => ({ ...folder, label: folder.id, type: "sendreceive", devices: [] })))); return; }
-  if (request.url?.startsWith("/rest/db/status?")) { response.end(JSON.stringify({ state: "idle", needTotalItems: 0, needBytes: 0, errors: 0 })); return; }
-  if (request.method === "POST" && request.url?.startsWith("/rest/db/scan?")) { response.end(); return; }
-  response.statusCode = 404;
-  response.end();
-});
-await new Promise<void>((resolve) => fakeSyncthing.listen(0, "127.0.0.1", resolve));
-fakeSyncthing.unref();
-for (const key of ["JOINT_BOB_SYNCTHING_URL", "JOINT_BOB_SYNCTHING_API_KEY", "PI_MOBILE_WEB_SYNCTHING_URL", "PI_MOBILE_WEB_SYNCTHING_API_KEY"]) delete process.env[key];
-process.env.JOINT_BOB_SYNCTHING_URL = `http://127.0.0.1:${(fakeSyncthing.address() as { port: number }).port}`;
-process.env.JOINT_BOB_SYNCTHING_API_KEY = "test-key";
-test.after(() => new Promise<void>((resolve) => fakeSyncthing.close(() => resolve())));
 
 function peerEntry(peer: string, overrides: Partial<PeerShareStatus> = {}): PeerShareStatus {
   return { peer, cursor: 5, peerMaxSeq: 5, peerIndexId: "theirs", peerDigest: null, rulesMatch: true, caughtUp: true, differences: 0, cleanSince: null, route: "direct", ...overrides };
@@ -71,12 +52,13 @@ interface Stand {
   /** The worker's count of a share's need under a prefix; by default the share's whole need, all of it from present peers. */
   pending?: (projectId: string, kind: ShareKind, prefix: string, availablePeers: readonly string[]) => PendingFiles | undefined;
   pulled: Set<string>;
+  engine: EngineApi;
   calls: { flush: unknown[]; rescan: string[]; scan: unknown[]; prioritize: unknown[]; handoff: Array<{ peer: string; body: StatusBody }>; pending: unknown[] };
 }
 
 function standIn(): Stand {
-  const stand: Stand = { views: new Map(), facts: {}, pulled: new Set(), calls: { flush: [], rescan: [], scan: [], prioritize: [], handoff: [], pending: [] } };
-  const engine: EngineApi = {
+  const stand = { views: new Map(), facts: {}, pulled: new Set(), calls: { flush: [], rescan: [], scan: [], prioritize: [], handoff: [], pending: [] } } as unknown as Stand;
+  const engine: EngineApi = stand.engine = {
     fileSyncProjectViews: async (ids) => new Map(ids.map((id) => [id, stand.views.get(id) ?? view(id, { worker: "off", enabled: false }, [])])),
     fileSyncPeerFacts: async (peers) => ({ local: "laptop", peers: new Map([...peers].map((peer) => [peer, stand.facts[peer] ?? { name: peer === PEER ? "homeserver" : peer, present: true, protocol: FILE_SYNC_PROTOCOL, enabled: true }])) }),
     fileSyncFlushProject: async (projectId, kinds, timeoutMs) => { stand.calls.flush.push({ projectId, kinds: [...kinds], timeoutMs }); await stand.flush?.(projectId, kinds, timeoutMs); },
@@ -96,8 +78,8 @@ function standIn(): Stand {
   return stand;
 }
 
-function record(id: string, syncFolderId?: string): ProjectRecord {
-  return { id, name: id, path: path.join(os.tmpdir(), id), ...(syncFolderId ? { syncFolderId } : {}), createdAt: "2026-10-25T00:00:00.000Z", updatedAt: "2026-10-25T00:00:00.000Z" };
+function record(id: string): ProjectRecord {
+  return { id, name: id, path: path.join(os.tmpdir(), id), createdAt: "2026-10-25T00:00:00.000Z", updatedAt: "2026-10-25T00:00:00.000Z" };
 }
 
 const facts = (peers: Record<string, Partial<FileSyncPeerFacts>> = {}) => ({
@@ -105,7 +87,7 @@ const facts = (peers: Record<string, Partial<FileSyncPeerFacts>> = {}) => ({
   peers: new Map(Object.entries({ [PEER]: {}, ...peers }).map(([peer, known]) => [peer, { name: peer === PEER ? "homeserver" : peer, present: true, protocol: FILE_SYNC_PROTOCOL, enabled: true, ...known }])),
 });
 
-// Phases left behind would be switches for a started engine to resume (the last test starts one).
+// Phases left behind would be take-overs for a started engine to go on with (the last test starts one).
 test.afterEach(async () => {
   useFacadeEngineForTests(undefined);
   (await controlDatabase()).prepare("DELETE FROM file_sync_phases").run();
@@ -132,7 +114,7 @@ test("a built-in project's status covers every state, in order, with plain texts
   assert.deepEqual(builtinProjectStatus(view(id, { worker: "failed" }), facts()), { state: "error", remainingFiles: 0, remainingBytes: 0, message: "File sync stopped on this node after repeated failures", engine: "builtin" });
   assert.equal(builtinProjectStatus(view(id), facts({ [PEER]: { enabled: false } })).message, "File sync is off on homeserver");
   assert.equal(builtinProjectStatus(view(id), facts({ [PEER]: { protocol: 0 } })).message, "homeserver runs a Joint Bob without the built-in file sync");
-  // fix (P4+P5): 2.157 and 2.158 have the engine but never leave Syncthing for a switched project.
+  // 2.157 and 2.158 have the engine but cannot take a project over.
   assert.deepEqual(builtinProjectStatus(view(id), facts({ [PEER]: { protocol: 1 } })), { state: "error", remainingFiles: 0, remainingBytes: 0, message: "homeserver needs a newer Joint Bob to receive these files", engine: "builtin" });
   // fix (P4+P5): no machine that could send is around: the files wait for it, nothing is being copied.
   const away = builtinProjectStatus(view(id, {}, [share(id, "worktrees", { need: { files: 1, bytes: 10 } })]), facts({ [PEER]: { present: false } }));
@@ -141,9 +123,7 @@ test("a built-in project's status covers every state, in order, with plain texts
   assert.deepEqual(builtinProjectStatus(view(id, { worker: "off", enabled: false }, []), facts()), { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "File sync is off on this node", engine: "builtin" });
   assert.equal(builtinProjectStatus(view(id, {}, [share(id, "project", { state: "unavailable", message: "The folder is missing" })]), facts()).message, "The folder is missing");
   assert.equal(builtinProjectStatus(view(id, { peers: {} }, []), facts()).message, "No other machine shares this project right now");
-  // fix: writes held until Syncthing answers a first time are a problem to show, not syncing; a move in progress is syncing.
-  assert.deepEqual(builtinProjectStatus(view(id, { writesHeld: "Waiting for Syncthing to answer before writing files" }), facts()),
-    { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "Built-in sync is not writing files here yet: Waiting for Syncthing to answer before writing files", engine: "builtin" });
+  // A folder this node has not taken over yet is not written: that reads as syncing.
   assert.deepEqual([builtinProjectStatus(view(id, {}, [share(id, "project", { phase: "bootstrapping" })]), facts()).state, builtinProjectStatus(view(id, {}, [share(id, "project", { phase: "bootstrapping" })]), facts()).message], ["syncing", "Moving to built-in sync"]);
   // Error beats unavailable beats syncing.
   assert.equal(builtinProjectStatus(view(id, {}, [share(id, "project", { state: "unavailable" }), share(id, "tickets", { blocked: 1 }), share(id, "worktrees", { need: { files: 4, bytes: 4 } })]), facts()).state, "error");
@@ -222,51 +202,62 @@ test("worktree readiness excludes sibling errors and rescans but keeps its own p
   assert.equal((await conversationFilesStatus(project, worktreeId)).state, "error", "root failures affect every worktree");
 });
 
-test("a mixed node asks Syncthing only about projects still on it", async () => {
+test("each project is answered from its phase here: shared with nobody, being taken over, or built-in", async () => {
   const stand = standIn();
   const db = await controlDatabase();
-  const onSyncthing = record("mixed-syncthing", "folder-mixed"), builtin = record("mixed-builtin", "folder-builtin"), moving = record("mixed-moving", "folder-moving"), backward = record("mixed-restoring", "folder-restoring");
+  const unshared = record("mixed-unshared"), builtin = record("mixed-builtin"), moving = record("mixed-moving");
+  // Phases an older release left behind are take-overs still to finish.
+  const older = (["syncthing", "releasing", "restoring"] as const).map((phase) => ({ phase, project: record(`mixed-${phase}`) }));
   setPhase(db, builtin.id, "builtin");
-  setPhase(db, moving.id, "releasing");
-  setPhase(db, backward.id, "restoring");
+  setPhase(db, moving.id, "bootstrapping");
+  for (const { phase, project } of older) setPhase(db, project.id, phase);
   stand.views.set(builtin.id, view(builtin.id, {}, [share(builtin.id, "project", { need: { files: 2, bytes: 2048 } })]));
-  syncthingFolders.push({ id: "folder-mixed", path: onSyncthing.path });
-  syncthingRequests.length = 0;
-  const statuses = await projectSyncStatuses([onSyncthing, builtin, moving, backward]);
-  assert.deepEqual(statuses[onSyncthing.id], { state: "synced", remainingFiles: 0, remainingBytes: 0, message: "Safe to start work" });
+  const asked: string[][] = [];
+  const views = stand.engine.fileSyncProjectViews;
+  stand.engine.fileSyncProjectViews = async (ids) => { asked.push([...ids]); return views(ids); };
+  const statuses = await projectSyncStatuses([unshared, builtin, moving, ...older.map(({ project }) => project)]);
+  assert.deepEqual(statuses[unshared.id], { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "This project is not shared with another machine", engine: "none" });
   assert.deepEqual(statuses[builtin.id], { state: "syncing", remainingFiles: 2, remainingBytes: 2048, message: "Copying 2 files (2.0 KB) from homeserver", engine: "builtin" });
-  assert.deepEqual(statuses[moving.id], { state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Moving to the built-in file sync", engine: "moving" });
-  assert.equal(statuses[backward.id].message, "Moving back to Syncthing");
-  assert.deepEqual(syncthingRequests, ["GET /rest/config/folders", "GET /rest/db/status?folder=folder-mixed"], "Syncthing is never asked about a project it no longer holds");
+  const taking = { state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking both machines' files", engine: "moving" };
+  assert.deepEqual(statuses[moving.id], taking);
+  for (const { phase, project } of older) assert.deepEqual(statuses[project.id], taking, phase);
+  assert.deepEqual(asked, [[builtin.id]], "the engine is asked only about projects it writes here");
+  assert.deepEqual(await projectFilesEngines([unshared.id, builtin.id, moving.id, older[0].project.id]),
+    new Map([[unshared.id, "none"], [builtin.id, "builtin"], [moving.id, "moving"], [older[0].project.id, "moving"]]));
+  // With nothing built-in the engine is not asked at all.
+  asked.length = 0;
+  await projectSyncStatuses([unshared, moving]);
+  assert.deepEqual(asked, []);
+  assert.deepEqual(await projectSyncStatuses([]), {});
 });
 
-test("a project just moved back whose folder Syncthing has not added yet shows the move, not an error, for a while", async () => {
-  standIn();
+test("a ticket's folders: nothing to wait for when the project is shared with nobody, the take-over while it runs", async () => {
+  const stand = standIn();
   const db = await controlDatabase();
-  const back = record("just-back", "folder-just-back"), never = record("never-switched", "folder-never");
-  setPhase(db, back.id, "syncthing");
-  const at = Date.parse(phaseOf(db, back.id)!.updatedAt);
-  // The next sharing pass adds the folders (76 s on the Mac on 2026-10-26); until then Syncthing has none.
-  const soon = await projectSyncStatuses([back, never], at + 76_000);
-  assert.deepEqual(soon[back.id], { state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Moving back to Syncthing", engine: "moving" });
-  assert.deepEqual([soon[never.id].state, soon[never.id].message], ["error", "Syncthing folder is missing from configuration"], "a project that never moved keeps the error");
-  const later = await projectSyncStatuses([back], at + 11 * 60_000);
-  assert.deepEqual([later[back.id].state, later[back.id].message], ["error", "Syncthing folder is missing from configuration"], "still missing after the grace is an error");
-  syncthingFolders.push({ id: "folder-just-back", path: back.path });
-  assert.equal((await projectSyncStatuses([back], at + 76_000))[back.id].state, "synced", "once Syncthing has it, its own status");
+  const targets = [{ kind: "project" as const, label: "Project files" }, { kind: "tickets" as const, label: "Ticket workspace" }, { kind: "tickets" as const, label: "Again" }];
+  const unshared = record("tickets-unshared"), moving = record("tickets-moving");
+  assert.deepEqual(await taskShareStatuses(unshared, targets), []);
+  setPhase(db, moving.id, "bootstrapping");
+  assert.deepEqual(await taskShareStatuses(moving, targets), [
+    { label: "Project files", state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking both machines' files" },
+    { label: "Ticket workspace", state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking both machines' files" },
+  ]);
+  assert.deepEqual(await conversationFilesStatus(unshared), { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "This project is not shared with another machine", engine: "none" });
+  assert.deepEqual(stand.calls, { flush: [], rescan: [], scan: [], prioritize: [], handoff: [], pending: [] }, "the engine was never asked");
 });
 
-test("Rescan files walks the engine's folders for a built-in project and asks Syncthing for the rest", async () => {
+test("Rescan files walks the engine's folders for a shared project and refuses one shared with nobody", async () => {
   const stand = standIn();
   const { addProject } = await import("../src/store.js");
   const root = await mkdtemp(path.join(os.tmpdir(), "jb-facade-rescan-"));
   try {
     const project = await addProject("Rescan builtin", path.join(root, "project"), { writeInstructions: false });
+    await assert.rejects(rescanProjectFiles(project.id), (error: unknown) => error instanceof ProjectNotSynchronizedError);
+    assert.deepEqual(stand.calls.rescan, [], "nothing to scan for");
+    await assert.rejects(rescanProjectFiles("no-such-project"), { message: "Project not found" });
     setPhase(await controlDatabase(), project.id, "builtin");
-    syncthingRequests.length = 0;
     await rescanProjectFiles(project.id);
     assert.deepEqual(stand.calls.rescan, [project.id]);
-    assert.deepEqual(syncthingRequests, []);
     stand.rescan = [{ kind: "tickets", error: "The folder is missing" }];
     await rescanProjectFiles(project.id);
     stand.rescan = [{ kind: "project", error: "The folder is a symbolic link" }];
@@ -301,7 +292,12 @@ test("a handoff check on a built-in project flushes for 10 s at most, then wants
   stand.views.set(project.id, view(project.id, {}, [share(project.id, "project"), share(project.id, "tickets", { need: { files: 9, bytes: 9 } })]));
   await assertProjectFilesReady(project, "project");
   setPhase(await controlDatabase(), project.id, "bootstrapping");
-  await assert.rejects(assertProjectFilesReady(project, "project"), (error: ProjectFilesNotReadyError) => error.retryable && error.status.message === "Moving to the built-in file sync");
+  await assert.rejects(assertProjectFilesReady(project, "project"), (error: ProjectFilesNotReadyError) => error.retryable && error.status.message === "Checking both machines' files");
+  // A project shared with nobody has nothing to wait for, and the engine is not asked.
+  const asked = stand.calls.flush.length;
+  await assertProjectFilesReady(record("ready-unshared"), "project");
+  await assertProjectFilesReady(record("ready-unshared"), "tickets");
+  assert.equal(stand.calls.flush.length, asked);
 });
 
 test("the source's part travels in eligibility and prepare bodies; an old destination drops it and a new one waits for it", async () => {
@@ -316,8 +312,7 @@ test("the source's part travels in eligibility and prepare bodies; an old destin
   const files = await taskHandoffFiles(project, task, 1_500);
   assert.deepEqual(files, { fileSync: { projectId: project.id, shares: [{ kind: "tickets", indexId: "ours-tickets", maxSeq: 7 }] } }, "a synchronized ticket workspace hands over its ticket folder");
   assert.deepEqual(stand.calls.flush.at(-1), { projectId: project.id, kinds: ["tickets"], timeoutMs: 1_500 });
-  const onSyncthing = record("handoff-syncthing");
-  assert.deepEqual(await taskHandoffFiles(onSyncthing, task, 1_500), {}, "a Syncthing project sends exactly what it always did");
+  assert.deepEqual(await taskHandoffFiles(record("handoff-unshared"), task, 1_500), {}, "a project shared with nobody sends no file sync part");
 
   // An older destination parses with today's schemas: the part goes, nothing else changes.
   const { preparedTaskSchema, taskEligibilitySchema } = await import("../src/server/schemas.js");
@@ -371,7 +366,8 @@ test("worktree files still arriving hold merges and are moved up the queue", asy
   const stand = standIn();
   const db = await controlDatabase();
   const id = "pending-project";
-  assert.equal(await worktreeHasPendingFiles(id, "w1"), false, "Syncthing projects keep today's answer");
+  assert.equal(await worktreeHasPendingFiles(id, "w1"), false, "nothing arrives for a project shared with nobody");
+  assert.equal(await worktreeSweepRefusal(id, { id: "w1", createdByNodeId: OTHER }), undefined, "and housekeeping need not wait");
   setPhase(db, id, "builtin");
   stand.views.set(id, view(id));
   assert.equal(await worktreeHasPendingFiles(id, "w1"), false);
@@ -386,8 +382,9 @@ test("worktree files still arriving hold merges and are moved up the queue", asy
   assert.equal(await worktreeHasPendingFiles(id, "w1"), true, "not reported yet");
   stand.views.set(id, view(id, { worker: "off" }));
   assert.equal(await worktreeHasPendingFiles(id, "w1"), false, "an engine that is off sends nothing, and must not hold the worktree for good");
-  setPhase(db, id, "restoring");
-  assert.equal(await worktreeHasPendingFiles(id, "w1"), true, "moving between engines");
+  setPhase(db, id, "bootstrapping");
+  assert.equal(await worktreeHasPendingFiles(id, "w1"), true, "still being taken over");
+  assert.equal(await worktreeSweepRefusal(id, { id: "w1", createdByNodeId: OTHER }), "Worktree kept: file sync is still checking this project's files");
   worktreeFilesChanged(id, "/somewhere/w1/.joint-bob-worktree/worktree.json");
   await new Promise((resolve) => setTimeout(resolve, 50));
   assert.deepEqual(stand.calls.scan, [{ projectId: id, kind: "worktrees", paths: ["/somewhere/w1/.joint-bob-worktree/worktree.json"] }], "the engine scans the written path now");
@@ -423,7 +420,7 @@ test("a merge waits only for its own worktree's files, and only while a machine 
   assert.equal((await projectSyncStatuses([project]))[id].message, "1 file (10 B) waiting for homeserver, which is away");
 });
 
-test("peer readiness reads Syncthing for its projects and this node's cursors for built-in ones", async () => {
+test("peer readiness reads this node's cursors for built-in projects, waits for a take-over, and leaves out projects shared with nobody", async () => {
   const stand = standIn();
   const { addProject } = await import("../src/store.js");
   const root = await mkdtemp(path.join(os.tmpdir(), "jb-facade-peer-"));
@@ -431,10 +428,16 @@ test("peer readiness reads Syncthing for its projects and this node's cursors fo
     const builtin = await addProject("Peer builtin", path.join(root, "b"), { writeInstructions: false });
     setPhase(await controlDatabase(), builtin.id, "builtin");
     stand.views.set(builtin.id, view(builtin.id, { peers: { project: [PEER, OTHER] } }, [share(builtin.id, "project", { peers: [peerEntry(PEER), peerEntry(OTHER, { caughtUp: false })] })]));
-    syncthingRequests.length = 0;
     assert.deepEqual(await peerFilesReady(PEER, [builtin.id]), { ready: true, statuses: { [builtin.id]: { state: "synced", remainingFiles: 0, remainingBytes: 0, message: "Files are up to date" } } }, "another machine being behind does not hold back this one");
     assert.equal((await peerFilesReady(OTHER, [builtin.id])).ready, false);
-    assert.deepEqual(syncthingRequests, [], "no network request for built-in projects");
+    const unshared = await addProject("Peer unshared", path.join(root, "u"), { writeInstructions: false });
+    assert.deepEqual(await peerFilesReady(PEER, [unshared.id, "no-such-project"]), { ready: true, statuses: {} });
+    assert.deepEqual(Object.keys((await peerFilesReady(PEER, [unshared.id, builtin.id])).statuses), [builtin.id]);
+    const moving = await addProject("Peer moving", path.join(root, "m"), { writeInstructions: false });
+    setPhase(await controlDatabase(), moving.id, "bootstrapping");
+    const waiting = await peerFilesReady(PEER, [builtin.id, moving.id]);
+    assert.equal(waiting.ready, false);
+    assert.deepEqual([waiting.statuses[moving.id].state, waiting.statuses[moving.id].message], ["syncing", "Checking both machines' files"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -503,8 +506,8 @@ test("the sync check recognises the built-in engine's conflict copies and times 
     assert.deepEqual([builtin.builtin, builtin.relativePath], [true, path.join("notes", "plan.md")]);
     assert.equal(await resolveTrivialConflict(builtin), "settling", "a copy that just appeared is left alone for a while");
     assert.equal(await resolveTrivialConflict(builtin, Date.now() + 5 * 60_000), "needs-agent", "and is not stale for its losing version's age");
-    const [syncthing] = await findSyncConflicts("p", root);
-    assert.equal(await resolveTrivialConflict(syncthing, Date.now() + 5 * 60_000), "stale", "Syncthing's copies keep their stamp's meaning");
+    const [stamped] = await findSyncConflicts("p", root);
+    assert.equal(await resolveTrivialConflict(stamped, Date.now() + 5 * 60_000), "stale", "without the engine's mark a copy is as old as its name says");
     assert.ok(syncResolverPrompt([]).startsWith(SYNC_FIXER_OPENING));
     assert.equal(/Syncthing/.test(syncResolverPrompt([])), false);
     assert.ok(isInternalSession(randomUUID(), syncResolverPrompt([])));
@@ -520,8 +523,9 @@ test("the engine's calls for the facade reach the worker, bounded, and pulls cou
     import("../src/cluster.js"), import("../src/cluster-v2-store.js"), import("../src/cluster-identity.js"), import("../src/cluster-peer-endpoints.js"), import("../src/cluster-sharing.js"),
     import("../src/cluster-sharing-policy.js"), import("../src/file-sync/bridge.js"), import("../src/file-sync/index.js"),
   ]);
-  const saved = Object.fromEntries(["JOINT_BOB_FILE_SYNC", "JOINT_BOB_FILE_SYNC_PROJECTS", "JOINT_BOB_FILE_SYNC_LISTEN", "JOINT_BOB_FILE_SYNC_PORT"].map((name) => [name, process.env[name]]));
-  Object.assign(process.env, { JOINT_BOB_FILE_SYNC: "1", JOINT_BOB_FILE_SYNC_PROJECTS: "engine-alpha", JOINT_BOB_FILE_SYNC_LISTEN: "127.0.0.1", JOINT_BOB_FILE_SYNC_PORT: "22756" });
+  const saved = Object.fromEntries(["JOINT_BOB_FILE_SYNC", "JOINT_BOB_FILE_SYNC_TEST_PHASES", "JOINT_BOB_FILE_SYNC_LISTEN", "JOINT_BOB_FILE_SYNC_PORT"].map((name) => [name, process.env[name]]));
+  // The phase is set here, not by the take-over, so the worker is asked only what this test asks.
+  Object.assign(process.env, { JOINT_BOB_FILE_SYNC: "1", JOINT_BOB_FILE_SYNC_TEST_PHASES: "1", JOINT_BOB_FILE_SYNC_LISTEN: "127.0.0.1", JOINT_BOB_FILE_SYNC_PORT: "22756" });
   const work = await mkdtemp(path.join(os.tmpdir(), "jb-facade-engine-"));
   const log = path.join(work, "ops.jsonl");
   const cluster = "10000000-0000-4000-8000-0000000000c1";
@@ -541,8 +545,9 @@ test("the engine's calls for the facade reach the worker, bounded, and pulls cou
   policy.registerOwnedResource(db, { kind: "project", id: "engine-alpha", ownerNodeId: local }, local);
   db.prepare("INSERT INTO cluster_v2_resource_policy VALUES ('project', 'engine-alpha', ?, 1, 0)").run(local);
   policy.setResourceShares(db, local, "project", "engine-alpha", [{ clusterId: cluster, projectId: null }]);
+  setPhase(db, "engine-alpha", "builtin");
 
-  const report = (kind: ShareKind, peer: Partial<PeerShareStatus>) => ({ event: "shareState", status: { ...share("engine-alpha", kind, { phase: "syncthing", maxSeq: 9, indexId: `idx-${kind}` }), peers: [peerEntry(PEER, peer)] } });
+  const report = (kind: ShareKind, peer: Partial<PeerShareStatus>) => ({ event: "shareState", status: { ...share("engine-alpha", kind, { maxSeq: 9, indexId: `idx-${kind}` }), peers: [peerEntry(PEER, peer)] } });
   const statusAnswer = { shares: [{ kind: "project", state: "idle", cursor: 4, callerIndexId: "theirs", need: { files: 1, bytes: 5 }, blocked: 0, errors: 0, digest: "b".repeat(64), maxSeq: 9 }] };
   index.useFileSyncWorkerForTests({
     launch: workerLaunch(new URL("./fixtures/file-sync-control-worker.js", import.meta.url)),

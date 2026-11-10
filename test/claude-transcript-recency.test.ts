@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-// Syncthing rewrites a transcript's mtime whenever a peer advertises new metadata, so a
+// File sync can rewrite a transcript's mtime without adding a message, so a
 // synchronized conversation looks freshly active without carrying a single new message.
 // Recency therefore comes from the newest event inside the transcript, not from the file clock.
 test("Claude conversation recency comes from transcript events, not the file mtime", async () => {
@@ -20,7 +20,6 @@ test("Claude conversation recency comes from transcript events, not the file mti
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
 
     const sessionPaths = await import(`../src/session-paths.js?cache=${Date.now()}-${Math.random()}`);

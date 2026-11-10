@@ -99,7 +99,7 @@ export function taskShareKind(task: TaskRecord): ProjectShareKind {
 /**
  * The source's `fileSync` part of an eligibility or prepare body (design §6.5): how far its index of
  * the ticket's folder reached, so a destination on built-in sync waits until it holds that. Absent for
- * projects on Syncthing; older destinations drop it with the rest of the unknown keys.
+ * projects shared with nobody; older destinations drop it with the rest of the unknown keys.
  */
 export async function taskHandoffFiles(project: ProjectRecord, task: TaskRecord, flushTimeoutMs: number): Promise<{ fileSync?: HandoffFiles }> {
   const part = await projectFilesHandoffPart(project, [taskShareKind(task)], flushTimeoutMs);

@@ -13,8 +13,8 @@ import type { CoreEvent, ShareStatus } from "../src/file-sync/protocol.js";
 import { EMPTY_RULE_SETTINGS } from "../src/file-sync/types.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode, type SignedIn } from "./dev-nodes.js";
 
-/* P1 end to end: a real node runs the file sync worker in its own thread, indexes a shared project
-   in shadow mode, follows edits through the watcher, and stops with the node or the switch. */
+/* P1 end to end: a real node runs the file sync worker in its own thread, indexes a shared project,
+   follows edits through the watcher, and stops with the node or the switch. */
 
 async function until<T>(read: () => Promise<T>, done: (value: T) => boolean, timeoutMs: number): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -126,7 +126,7 @@ test("the main thread's bridge drives the real worker thread: configure, scan, s
   assert.equal(existsSync(path.join(dataDir, "data", "file-sync.db-wal")), false, "the worker closed file-sync.db before it ended");
 });
 
-test("a node with file sync on indexes a shared project in shadow mode, follows edits, and stops cleanly", { timeout: 240_000 }, async (t) => {
+test("a node with file sync on indexes a shared project while its peer has file sync off, follows edits, writes nothing, and stops cleanly", { timeout: 240_000 }, async (t) => {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "file-sync-node-")));
   const children: ChildProcess[] = [];
   try {
@@ -159,13 +159,11 @@ test("a node with file sync on indexes a shared project in shadow mode, follows 
     const projectId = created.body.project.id;
     const treeBefore = treeListing(directory);
 
-    // Saving the shadow list derives the shares at once: a shared project outside it is not indexed.
+    // Every shared project is synced. A list of projects saved on an older release is still accepted, and no longer narrows it.
     const before = await api<FileSyncStatusAnswer>(left, sa, "PUT", "/file-sync/config", { shadowProjects: [] });
     assert.equal(before.status, 200, JSON.stringify(before.body));
     assert.deepEqual([before.body.enabled, before.body.config.enabledBy, before.body.worker], [true, "environment", "running"]);
-    assert.equal(projectShare(before.body, projectId), undefined, "a project outside the shadow list is not indexed");
-    const configured = await api<FileSyncStatusAnswer>(left, sa, "PUT", "/file-sync/config", { shadowProjects: [projectId] });
-    assert.equal(configured.status, 200, JSON.stringify(configured.body));
+    // Projects are taken over one at a time, so this one's folders join when its turn comes: the wait below sees them.
 
     const expected = syncedFiles(directory);
     assert.ok(expected.includes("src/index.ts") && expected.includes("README.md"), `synced files: ${expected.join(", ")}`);
@@ -178,7 +176,11 @@ test("a node with file sync on indexes a shared project in shadow mode, follows 
     assert.equal(indexed.worker, "running");
     assert.deepEqual(indexed.shares.filter((candidate) => candidate.projectId === projectId).map((candidate) => candidate.kind).sort(), ["project", "tickets", "worktrees"]);
     assert.equal(share?.state, "idle", JSON.stringify(share));
-    assert.equal(share?.phase, "syncthing");
+    // The other node's file sync is off: this node has no list of its files, so its take-over waits and the engine writes nothing here.
+    const taking = await until(() => api<{ projects: Array<{ projectId: string; phase: string; phaseMessage: string | null }> }>(left, sa, "GET", "/file-sync/projects"),
+      (answer) => answer.body.projects?.find((entry) => entry.projectId === projectId)?.phase === "bootstrapping", 30_000);
+    assert.equal(taking.body.projects?.find((entry) => entry.projectId === projectId)?.phase, "bootstrapping", JSON.stringify(taking.body));
+    assert.notEqual(projectShare(await status(left, sa), projectId)?.phase, "builtin");
     assert.equal(share?.liveFiles, expected.length, `indexed ${share?.liveFiles} of ${expected.length}: ${expected.join(", ")}`);
     assert.deepEqual(share?.peers.map((peer) => peer.peer), [right.nodeId]);
     assert.ok(existsSync(path.join(left.dataDir, "file-sync.db-wal")), "the worker holds file-sync.db open");
@@ -196,7 +198,7 @@ test("a node with file sync on indexes a shared project in shadow mode, follows 
     const settled = await until(() => status(left, sa), (answer) => projectShare(answer, projectId)?.state === "idle", 15_000);
     assert.equal(projectShare(settled, projectId)?.maxSeq, seqBefore + 1, "one edit is one new version; the ignored file is none");
     assert.equal(projectShare(settled, projectId)?.liveFiles, expected.length);
-    // Shadow mode writes nothing into the tree (no .git/info/exclude, no temp files).
+    // Before the take-over is done nothing is written into the tree (no .git/info/exclude, no temp files).
     assert.deepEqual(treeListing(directory), [...treeBefore, "node_modules/pkg/extra.js"].sort());
 
     // Opening the project flushes its shares through the worker (any failure would be logged).

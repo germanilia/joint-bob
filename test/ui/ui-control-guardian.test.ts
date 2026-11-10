@@ -11,7 +11,7 @@ const BOARD = {
   projects: [{ id: "p1", name: "Contigos · Julian" }],
   cards: [
     card({ pendingReviews: [{ id: "r1", title: "Claude wants to run a command", subject: "aws ecs update-service --force-new-deployment", detail: "Production or destructive steps · 98%", expiresAt: "2026-11-05T10:10:00Z" }] }),
-    card({ conversationId: "c2", sessionId: "c2", title: "Replace Syncthing", turnRunning: false, autoRespondStop: { kind: "stop-instruction", reason: "A plan waits for approval" }, startedBy: "you" }),
+    card({ conversationId: "c2", sessionId: "c2", title: "Replace the build script", turnRunning: false, autoRespondStop: { kind: "stop-instruction", reason: "A plan waits for approval" }, startedBy: "you" }),
     card({ conversationId: "c3", sessionId: "c3", title: "Mobile menu", column: "running", startedBy: "you" }),
   ],
 };

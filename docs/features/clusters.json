@@ -132,7 +132,7 @@
           "kind": "callout",
           "variant": "info",
           "title": "Git history on synced projects",
-          "body": "Syncthing never copies `.git`, so a commit pushed from one node leaves the others' HEAD behind files they already have. Before every user message and goal turn, a node whose project is a git repository runs `git fetch` and moves HEAD and the index (never the files) to the upstream commit, but only when the files on disk already hold that commit, this node has no unpushed commits, and nothing is staged. Otherwise HEAD is left alone. A failed fetch is logged and the turn continues."
+          "body": "File sync never copies `.git`, so a commit pushed from one node leaves the others' HEAD behind files they already have. Before every user message and goal turn, a node whose project is a git repository runs `git fetch` and moves HEAD and the index (never the files) to the upstream commit, but only when the files on disk already hold that commit, this node has no unpushed commits, and nothing is staged. Otherwise HEAD is left alone. A failed fetch is logged and the turn continues."
         }
       ]
     },
@@ -161,7 +161,8 @@
             "Update every node of a cluster to this release. Older nodes do not relay or pull, and reject member lists with more than five members.",
             "Legacy bearer-token pairing is removed. A node that still has a legacy pairing loses it and must join through a cluster invitation or pair as a twin.",
             "A node older than 1.59.0 must first upgrade to a release between 1.59.0 and 1.97.x.",
-            "The retired pairing tables are dropped on start; the node keeps its identity."
+            "The retired pairing tables are dropped on start; the node keeps its identity.",
+            "Project files are moved by Joint Bob's built-in file sync. Syncthing is no longer installed or used. A machine upgraded from an earlier release keeps its Syncthing daemon running; Joint Bob removes only its own `joint-bob-*` folders from it, once, and leaves `.stfolder` and `.stignore` files on disk."
           ]
         }
       ]
@@ -174,7 +175,7 @@
           "items": [
             "Every 15 minutes a node prunes its replication tables: usage events leave the outbox and relay log after 30 days, recent-conversation events after 7, inbox receipts after 14, and delivered hub queue rows after a day; a recent-conversation event repeated word for word by a newer one goes at once. Other event types are kept, so a node or project share added later gets only that much usage and recents history from other nodes.",
             "An event a twin was refused and later becomes eligible for is sent at the next full outbox search, within about 5 minutes.",
-            "Shared agent skills (the agent-resources Syncthing folder) do not synchronize between nodes.",
+            "Agent skills reach another node only through selective sharing (Resources > Skills > Share…). There is no blanket skills folder.",
             "A node advertises one URL to all its clusters, so every cluster must reach it at that URL.",
             "Tasks still assigned to a lost machine keep that assignment until they are handed off.",
             "Git catch-up follows commits that reached the remote. A commit that was never pushed stays on its node, and its files appear as uncommitted edits on other nodes until it is pushed. Commits made in a terminal, outside a conversation, are picked up at that project's next user message."

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  BUILTIN_RULES, BUILTIN_RULES_VERSION, builtinRule, builtinRulesFor, isNeverIgnored, SYNCTHING_PROJECT_PATTERNS, SYNCTHING_WORKTREE_PATTERNS,
+  BUILTIN_RULES, BUILTIN_RULES_VERSION, builtinRule, builtinRulesFor, isNeverIgnored,
   type BuiltinRule,
 } from "./builtin-rules.js";
 import type { RuleSettings, ShareKind } from "./types.js";
@@ -483,19 +483,6 @@ export function rulesHash(rules: EffectiveRules): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-/** Earlier releases wrote some managed rules without "(?d)"; those forms are managed too. */
-function withoutDeletable(rule: string): string { return rule.replace(/^\(\?d\)/, ""); }
-
-const managedSyncthingLines = new Set([...SYNCTHING_PROJECT_PATTERNS, ...SYNCTHING_WORKTREE_PATTERNS].flatMap((rule) => [rule, withoutDeletable(rule)]));
-
-/**
- * The user lines of a node's Syncthing ignore list: exactly setProjectIgnores' filter (src/syncthing.ts),
- * so a line Syncthing already treated as managed (in either list, with or without "(?d)") never comes
- * back as a user rule. Comments, blank lines and #include lines pass through as they do there.
- */
-export function userRulesFromSyncthingIgnores(lines: readonly string[] | null | undefined): string[] {
-  return [...new Set((lines ?? []).filter((line) => !managedSyncthingLines.has(line)))];
-}
 
 /* The .gitignore option, matched here instead of through `git ls-files`: a listing is a snapshot of the
    paths that existed when it ran, so files created later slipped through, and its answer depended on each

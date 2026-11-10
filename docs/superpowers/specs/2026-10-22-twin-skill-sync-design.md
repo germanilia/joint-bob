@@ -1,5 +1,7 @@
 # Twin skill synchronization
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+
 ## User-approved behavior
 
 - Twins synchronize skill additions, content changes and deletions automatically in both directions, similar to Syncthing.

@@ -62,7 +62,7 @@ else
 fi
 
 command -v curl >/dev/null 2>&1 || { echo "curl is required" >&2; exit 1; }
-chmod +x "${REPO_ROOT}/scripts/run-node.sh" "${REPO_ROOT}/scripts/install-node-runtime.sh" "${REPO_ROOT}/scripts/check-prerequisites.sh" "${REPO_ROOT}/scripts/build-service-path.sh" "${REPO_ROOT}/scripts/install-syncthing.sh"
+chmod +x "${REPO_ROOT}/scripts/run-node.sh" "${REPO_ROOT}/scripts/install-node-runtime.sh" "${REPO_ROOT}/scripts/check-prerequisites.sh" "${REPO_ROOT}/scripts/build-service-path.sh"
 runtime_bin="$("${REPO_ROOT}/scripts/install-node-runtime.sh")"
 if [ -n "${runtime_bin}" ]; then export PATH="${runtime_bin}:${PATH}"; fi
 NODE_BIN="$(command -v node)" || { echo "Node.js is required after runtime setup" >&2; exit 1; }
@@ -89,8 +89,7 @@ if [ "${mode}" = --build-only ]; then
   fi
 fi
 package_bin="${REPO_ROOT}/node_modules/.bin"
-syncthing_bin="$("${REPO_ROOT}/scripts/install-syncthing.sh")"
-export PATH="${package_bin}:${syncthing_bin}:${PATH}"
+export PATH="${package_bin}:${PATH}"
 "${REPO_ROOT}/scripts/check-prerequisites.sh"
 SERVICE_PATH="$("${REPO_ROOT}/scripts/build-service-path.sh" "${NODE_BIN}" "${NPM_BIN}")"
 [ "${mode}" != --build-only ] || exit 0

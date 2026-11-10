@@ -46,7 +46,6 @@ test("a Pi transcript with a damaged line still lists, and so do the others", as
     settings.updateSettings({
       pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: sessionRoot },
       claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") },
-      syncthing: { endpoint: "" },
       projects: { homePath: path.join(root, "JointBob") },
     });
     const pi = await import(`../src/pi-service.js?damage=${Date.now()}-${Math.random()}`);

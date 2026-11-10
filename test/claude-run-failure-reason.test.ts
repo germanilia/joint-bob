@@ -26,7 +26,6 @@ test("runClaudePrompt reports the CLI failure reason after output", async () => 
     settings.updateSettings({
       projects: { homePath: path.join(root, "home") },
       claude: { executable: fakeClaude, configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     const { runClaudePrompt } = await import(`../src/claude-service.ts?claude-failure=${Date.now()}-${Math.random()}`);
 
@@ -63,7 +62,6 @@ test("runClaudePrompt falls back to stderr when the CLI reports no result", asyn
     settings.updateSettings({
       projects: { homePath: path.join(root, "home") },
       claude: { executable: fakeClaude, configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     const { runClaudePrompt } = await import(`../src/claude-service.ts?claude-stderr=${Date.now()}-${Math.random()}`);
 
@@ -95,7 +93,6 @@ test("runClaudePrompt survives a CLI that exits before reading the prompt", asyn
     settings.updateSettings({
       projects: { homePath: path.join(root, "home") },
       claude: { executable: fakeClaude, configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     const { runClaudePrompt } = await import(`../src/claude-service.ts?claude-epipe=${Date.now()}-${Math.random()}`);
 
@@ -125,7 +122,6 @@ async function runFake(label: string, script: string[]) {
     settings.updateSettings({
       projects: { homePath: path.join(root, "home") },
       claude: { executable: fakeClaude, configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     const { runClaudePrompt } = await import(`../src/claude-service.ts?claude-${label}=${Date.now()}-${Math.random()}`);
     return await runClaudePrompt({ cwd: root, projectId: `${label}-project`, prompt: "hello", onEvent: () => {} }).done;
@@ -189,7 +185,6 @@ test("runClaudePrompt lets background agents run past the CLI's wait ceiling", a
     settings.updateSettings({
       projects: { homePath: path.join(root, "home") },
       claude: { executable: fakeClaude, configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     const { runClaudePrompt } = await import(`../src/claude-service.ts?claude-bg-ceiling=${Date.now()}-${Math.random()}`);
 
@@ -228,7 +223,6 @@ test("runClaudePrompt reports a refused API request as a failure with its status
     settings.updateSettings({
       projects: { homePath: path.join(root, "home") },
       claude: { executable: fakeClaude, configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     const { runClaudePrompt } = await import(`../src/claude-service.ts?claude-api-error=${Date.now()}-${Math.random()}`);
 

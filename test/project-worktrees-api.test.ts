@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { claudeProjectDir } from "../src/harnesses/claude/paths.ts";
-import { createServer, type Server } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
@@ -11,37 +10,13 @@ import { serverArgs } from "./server-entry.js";
 
 interface StartedNode { baseUrl: string; child: ChildProcess; homeDir: string; output: () => string; }
 
-async function listen(server: Server): Promise<number> {
-  return await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as { port: number }).port)));
-}
-
-async function fakeSyncthing(): Promise<{ server: Server; url: string }> {
-  const folders: unknown[] = [];
-  const server = createServer((request, response) => {
-    let body = "";
-    request.on("data", (chunk) => { body += chunk; });
-    request.on("end", () => {
-      response.setHeader("Content-Type", "application/json");
-      if (request.method === "GET" && request.url === "/rest/config/folders") { response.end(JSON.stringify(folders)); return; }
-      if (request.method === "POST" && request.url === "/rest/config/folders") { folders.push(JSON.parse(body)); response.end("{}"); return; }
-      if (request.method === "GET" && request.url === "/rest/system/status") { response.end(JSON.stringify({ myID: "LOCAL" })); return; }
-      if (request.method === "GET" && request.url?.startsWith("/rest/db/ignores?folder=")) { response.end(JSON.stringify({ ignore: [] })); return; }
-      if (request.method === "POST" && request.url?.startsWith("/rest/db/ignores?folder=")) { response.end("{}"); return; }
-      if (request.method === "GET" && request.url?.startsWith("/rest/db/status?folder=")) { response.end(JSON.stringify({ state: "idle", needTotalItems: 0, needBytes: 0 })); return; }
-      response.statusCode = 404;
-      response.end();
-    });
-  });
-  return { server, url: `http://127.0.0.1:${await listen(server)}` };
-}
-
-async function startNode(root: string, syncthingUrl: string): Promise<StartedNode> {
+async function startNode(root: string): Promise<StartedNode> {
   const homeDir = path.join(root, "home");
   await mkdir(homeDir, { recursive: true });
   let output = "";
   const child = spawn(process.execPath, serverArgs(process.env), {
     cwd: path.resolve("."),
-    env: { ...process.env, PORT: "0", HOME: homeDir, PI_WEB_DATA_DIR: path.join(root, "data"), MASTER_BOB_ADMIN_USERNAME: "admin", MASTER_BOB_INITIAL_PASSWORD: "initial-password", PI_MOBILE_WEB_SYNCTHING_URL: syncthingUrl, PI_MOBILE_WEB_SYNCTHING_API_KEY: "test-key" },
+    env: { ...process.env, PORT: "0", HOME: homeDir, PI_WEB_DATA_DIR: path.join(root, "data"), MASTER_BOB_ADMIN_USERNAME: "admin", MASTER_BOB_INITIAL_PASSWORD: "initial-password" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout?.on("data", (chunk) => { output += chunk; });
@@ -93,16 +68,15 @@ type Session = { id: string; title: string; worktree?: { id: string; name: strin
 
 test("worktree API creates, tags conversations, renames, merges and deletes worktrees", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-worktree-api-"));
-  const sync = await fakeSyncthing();
   let node: StartedNode | undefined;
   try {
-    node = await startNode(root, sync.url);
+    node = await startNode(root);
     const headers = await session(node);
     const homePath = path.join(node.homeDir, "JointBob");
     const saved = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT",
       headers,
-      body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, syncthing: { endpoint: "" }, projects: { homePath } }),
+      body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, projects: { homePath } }),
     });
     assert.equal(saved.status, 200, node.output());
     const created = await fetch(`${node.baseUrl}/api/projects`, { method: "POST", headers, body: JSON.stringify({ name: "Dak", type: "personal", synced: true }) });
@@ -163,7 +137,6 @@ test("worktree API creates, tags conversations, renames, merges and deletes work
     assert.deepEqual((await (await fetch(base, { headers })).json() as { worktrees: Worktree[] }).worktrees, []);
   } finally {
     if (node) await stopNode(node);
-    sync.server.close();
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -173,16 +146,15 @@ test("worktree API creates, tags conversations, renames, merges and deletes work
 // plain project conversations meanwhile. The conversation's record names the worktree at once.
 test("a conversation is listed under its worktree before the worktree's files reach the node", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-worktree-record-api-"));
-  const sync = await fakeSyncthing();
   let node: StartedNode | undefined;
   try {
-    node = await startNode(root, sync.url);
+    node = await startNode(root);
     const headers = await session(node);
     const homePath = path.join(node.homeDir, "JointBob");
     const saved = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT",
       headers,
-      body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, syncthing: { endpoint: "" }, projects: { homePath } }),
+      body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, projects: { homePath } }),
     });
     assert.equal(saved.status, 200, node.output());
     const created = await fetch(`${node.baseUrl}/api/projects`, { method: "POST", headers, body: JSON.stringify({ name: "Dak", type: "personal", synced: true }) });
@@ -230,7 +202,6 @@ test("a conversation is listed under its worktree before the worktree's files re
     db.close();
   } finally {
     if (node) await stopNode(node);
-    sync.server.close();
     await rm(root, { recursive: true, force: true });
   }
 });

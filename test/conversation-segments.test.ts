@@ -70,7 +70,6 @@ test("a harness switch keeps one conversation with embedded, ordered segments", 
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-agent"), sessionPath: sessionRoot },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
     });
     // The envelope must strip wherever it sits, including behind credential context.
     const { buildHandoffContext, stripHandoffEnvelope } = await import(`../src/claude-service.ts?segments-strip=${Date.now()}-${Math.random()}`);

@@ -6,19 +6,16 @@ describes the infrastructure available and how to use it.
 ## Commands
 
 ```bash
-npm test          # full suite, including native Syncthing tests; no browser needed
+npm test          # full suite; no browser needed
 npm run test:ui   # browser journey against a seeded node (needs Chrome)
 npm run test:all  # both
 npm run typecheck
 npm run build
 ```
 
-Native sharing tests require `syncthing` on `PATH` (`brew install syncthing` on
-macOS, or `sudo apt-get install syncthing` on Ubuntu). The release workflow
-installs this dependency before testing. Tests launch their own instances with
-disposable configuration and data, loopback listeners, and discovery, relays,
-NAT traversal, and automatic upgrades disabled. They stop those instances on
-cleanup; they never use a running production Syncthing service.
+The tests need no extra program for file synchronization. File sync is off in
+tests unless a test sets `JOINT_BOB_FILE_SYNC=1`; the tests that do start their
+own nodes with disposable folders.
 
 CI divides all `test/*.test.ts` files deterministically across four parallel workers.
 Each worker runs four files at a time, then reruns only its failed files, one at a time.

@@ -29,7 +29,8 @@ type Initialization=z.infer<typeof initSchema>;
 const hash=(value:unknown)=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const error=(message:string,status=409)=>Object.assign(new Error(message),{status});
 const PREFIX="/api/cluster/v2/skills/twin-sync/";
-let legacyBarrier:()=>Promise<void>=async()=>{throw error("Twin skill sync is not registered");};
+let registered=false;
+const legacyBarrier=async():Promise<void>=>{if(!registered)throw error("Twin skill sync is not registered");};
 async function localContext():Promise<{context:TwinSkillContext;session:TwinSkillSession|undefined}>{
  const db=await clusterV2Database(),local=await getClusterNode(),session=twinSkillSession(db),settings=getSettings();
  const context:TwinSkillContext={db,root:agentResourcePaths().sharedSkills,dataDir:resolveDataDirectory(),localNodeId:local.id,
@@ -184,8 +185,8 @@ function route(machine:boolean,action:(req:Request,res:Response)=>Promise<unknow
   res.json(await action(req,res));
  })().catch(e=>{if(e instanceof z.ZodError)res.status(400).json({error:"Invalid twin sync request"});else if(e.status)res.status(e.status).json({error:e.message});else next(e);});
 };}
-export function registerTwinSkillSyncRoutes(ensureLegacyPaused:()=>Promise<void>):void{
- legacyBarrier=ensureLegacyPaused;
+export function registerTwinSkillSyncRoutes():void{
+ registered=true;
  const admin=requireFeature(Feature.SETTINGS);
  app.get("/api/resources/skills/twin-sync",admin,route(false,async()=>{
   const {context:c,session}=await localContext();

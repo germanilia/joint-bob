@@ -11,7 +11,7 @@ import { ensurePeerEndpointSchema, recordPeerEndpoint } from "../src/cluster-pee
 import { ensureResourceSharingSchema } from "../src/cluster-sharing.js";
 import { addSharingMember, createSharingCluster, getSharingCluster, recordRelaySharingHeartbeat, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
 import { workerLaunch } from "../src/file-sync/bridge.js";
-import { comparedProjects, ensureControlSchema, ensureRevisionTriggers, fileSyncListenAddresses, readFileSyncConfig, readRevision, requestCompare, saveSettingsRecord, tailnetAddresses, writeFileSyncConfig } from "../src/file-sync/control.js";
+import { comparedProjects, ensureControlSchema, ensureRevisionTriggers, fileSyncListenAddresses, readFileSyncConfig, readRevision, saveSettingsRecord, tailnetAddresses, writeFileSyncConfig } from "../src/file-sync/control.js";
 import { acceptablePeerOrigin, forgetPeerFileSync, notePeerFileSync, onPeerFileSyncChanged, parseFileSyncPart, peerFileSync, peerSpecs, predatesAutoSwitch } from "../src/file-sync/peers.js";
 import type { ConfigureArgs, ShareStatus } from "../src/file-sync/protocol.js";
 import { deriveShares, droppedShares, fileSyncHostId, shareContaining, type DeriveInput } from "../src/file-sync/shares.js";
@@ -67,8 +67,8 @@ function input(overrides: Partial<DeriveInput> = {}): DeriveInput {
 
 const revision = (db: DatabaseSync): number => readRevision(db).revision;
 
-// auto-transition: nobody has to turn it on or pick projects for a project to move by itself.
-test("file sync is on by default, compares every shared project and moves them by itself after 24 hours of matching files", () => {
+// Nobody has to turn it on or pick projects.
+test("file sync is on by default for every shared project; the settings an older release stored are still read and written", () => {
   const db = database();
   assert.deepEqual(readFileSyncConfig(db, {}), {
     enabled: true, enabledBy: "default", shadowProjects: "all", shadowProjectsBy: "default", port: 22700, autoSwitch: { enabled: true, cleanHours: 24 },
@@ -77,10 +77,10 @@ test("file sync is on by default, compares every shared project and moves them b
   // A saved "off" is ignored (every machine is aligned on); the environment's 0 still turns it off.
   assert.equal(writeFileSyncConfig(db, { enabled: false }, {}).enabled, true);
   assert.equal(readFileSyncConfig(database(), { JOINT_BOB_FILE_SYNC: "0" }).enabled, false);
-  // A chosen list stays in charge until the admin picks every project again.
+  // A list chosen on an older release is kept as stored; it no longer narrows what is synced (index.ts).
   assert.deepEqual(writeFileSyncConfig(db, { shadowProjects: ["alpha"] }, {}).shadowProjects, ["alpha"]);
   assert.equal(writeFileSyncConfig(db, { shadowProjects: "all" }, {}).shadowProjects, "all");
-  // The automatic move's settings merge with what is stored; a test may wait seconds instead of a day.
+  // The older automatic move's settings merge with what is stored.
   assert.deepEqual(writeFileSyncConfig(db, { autoSwitch: { cleanHours: 0.002 } }, {}).autoSwitch, { enabled: true, cleanHours: 0.002 });
   assert.deepEqual(writeFileSyncConfig(db, { autoSwitch: { enabled: false } }, {}).autoSwitch, { enabled: false, cleanHours: 0.002 });
   assert.throws(() => writeFileSyncConfig(db, { autoSwitch: { cleanHours: -1 } }, {}));
@@ -116,26 +116,12 @@ test("the shadow list is stored sorted without duplicates, and an invalid patch 
   assert.equal(readFileSyncConfig(db, { JOINT_BOB_FILE_SYNC_PORT: "22705" }).port, 22705);
 });
 
-// fix: nobody ticks a project on every machine: its owner asks; an untick here stays an untick; "All" keeps the chosen list.
-test("a chosen list takes in the projects their owner asks for, keeps an untick, and comes back after All", () => {
+test("a stored list is what comparedProjects gives, and All keeps the last chosen one", () => {
   const db = database();
-  // Every project compared: nothing to add.
-  assert.equal(requestCompare(db, "gamma", {}), "yes");
-  assert.deepEqual(readFileSyncConfig(db, {}).requestedProjects, []);
-  writeFileSyncConfig(db, { shadowProjects: ["alpha"] }, {});
-  assert.equal(requestCompare(db, "alpha", {}), "yes", "chosen already");
-  assert.equal(requestCompare(db, "gamma", {}), "added");
-  assert.equal(requestCompare(db, "gamma", {}), "yes", "asked once is enough");
+  assert.equal(comparedProjects(readFileSyncConfig(db, {})), "all");
+  writeFileSyncConfig(db, { shadowProjects: ["gamma", "alpha"] }, {});
   const config = readFileSyncConfig(db, {});
-  assert.deepEqual([config.shadowProjects, config.requestedProjects, comparedProjects(config)], [["alpha"], ["gamma"], ["alpha", "gamma"]]);
-  // Unticked in Settings (the list saved without it): left out, whoever asks again.
-  writeFileSyncConfig(db, { shadowProjects: ["alpha"] }, {});
-  assert.deepEqual(comparedProjects(readFileSyncConfig(db, {})), ["alpha"]);
-  assert.equal(requestCompare(db, "gamma", {}), "declined");
-  // Ticked again: chosen now.
-  writeFileSyncConfig(db, { shadowProjects: ["alpha", "gamma"] }, {});
-  assert.equal(requestCompare(db, "gamma", {}), "yes");
-  // "All" keeps the list for when someone chooses again.
+  assert.deepEqual([config.shadowProjects, config.requestedProjects, comparedProjects(config)], [["alpha", "gamma"], [], ["alpha", "gamma"]]);
   assert.deepEqual(writeFileSyncConfig(db, { shadowProjects: "all" }, {}).lastChosenProjects, ["alpha", "gamma"]);
   assert.equal(comparedProjects(readFileSyncConfig(db, {})), "all");
 });
@@ -264,7 +250,7 @@ test("a project without an eligible peer is not shared", () => {
   assert.deepEqual([...new Set(deriveShares(db, input()).map((share) => share.projectId))], ["alpha"]);
 });
 
-test("only projects in the shadow list are shared, unless their phase has left Syncthing", () => {
+test("deriveShares takes every project when told \"all\" (file sync on), else the listed ones and those with a phase here", () => {
   const db = sharedFixture();
   addProject(db, "beta", "/projects/beta");
   setResourceShares(db, LOCAL, "project", "beta", [{ clusterId: CLUSTER, projectId: null }]);
@@ -273,6 +259,9 @@ test("only projects in the shadow list are shared, unless their phase has left S
   assert.deepEqual(projects({ shadowProjects: ["beta"] }), ["beta"]);
   assert.deepEqual(projects({ shadowProjects: "all" }), ["alpha", "beta"]);
   assert.deepEqual(projects({ shadowProjects: [], phases: new Map<string, Phase>([["alpha", "builtin"], ["beta", "syncthing"]]) }), ["alpha"]);
+  assert.deepEqual(projects({ shadowProjects: [], phases: new Map<string, Phase>([["beta", "bootstrapping"]]) }), ["beta"], "a take-over under way keeps its shares with file sync off");
+  // No phase here yet: derived all the same, in the phase the worker writes nothing in, so the take-over finds its folders.
+  assert.deepEqual(deriveShares(db, input()).map((share) => [share.key, share.phase]).slice(0, 3), [["project:alpha", "syncthing"], ["tickets:alpha", "syncthing"], ["worktrees:alpha", "syncthing"]]);
   assert.equal(deriveShares(db, input({ shadowProjects: [], phases: new Map<string, Phase>([["alpha", "builtin"]]) }))[0].phase, "builtin");
 });
 
@@ -468,8 +457,9 @@ test("the engine's configure, its records and capability events, and the admin r
   const [{ default: express }, { app }, { getClusterNode }, { clusterV2Database }, index] = await Promise.all([
     import("express"), import("../src/server/state.js"), import("../src/cluster.js"), import("../src/cluster-v2-store.js"), import("../src/file-sync/index.js"),
   ]);
-  const saved = Object.fromEntries(["JOINT_BOB_FILE_SYNC", "JOINT_BOB_FILE_SYNC_PROJECTS", "JOINT_BOB_FILE_SYNC_LISTEN", "JOINT_BOB_FILE_SYNC_PORT"].map((name) => [name, process.env[name]]));
-  Object.assign(process.env, { JOINT_BOB_FILE_SYNC: "1", JOINT_BOB_FILE_SYNC_PROJECTS: "alpha", JOINT_BOB_FILE_SYNC_LISTEN: "127.0.0.1", JOINT_BOB_FILE_SYNC_PORT: "22755" });
+  const saved = Object.fromEntries(["JOINT_BOB_FILE_SYNC", "JOINT_BOB_FILE_SYNC_PROJECTS", "JOINT_BOB_FILE_SYNC_TEST_PHASES", "JOINT_BOB_FILE_SYNC_LISTEN", "JOINT_BOB_FILE_SYNC_PORT"].map((name) => [name, process.env[name]]));
+  // TEST_PHASES: the take-over (adoption.ts) stays out of it, so the worker's op log holds only what this test asks.
+  Object.assign(process.env, { JOINT_BOB_FILE_SYNC: "1", JOINT_BOB_FILE_SYNC_PROJECTS: "alpha", JOINT_BOB_FILE_SYNC_TEST_PHASES: "1", JOINT_BOB_FILE_SYNC_LISTEN: "127.0.0.1", JOINT_BOB_FILE_SYNC_PORT: "22755" });
   const work = await mkdtemp(path.join(os.tmpdir(), "jb-file-sync-control-"));
   const log = path.join(work, "ops.jsonl");
   const db = await clusterV2Database(), local = (await getClusterNode()).id;
@@ -554,7 +544,7 @@ test("the engine's configure, its records and capability events, and the admin r
   assert.deepEqual([status.body.worker, status.body.origins, (status.body.config as Record<string, unknown>).shadowProjectsBy], ["running", ["http://127.0.0.1:22755"], "environment"]);
   const peers = (status.body.peers as Array<Record<string, unknown>>).map(({ heardAt, ...rest }) => ({ ...rest, heard: typeof heardAt === "string" }));
   assert.deepEqual(peers, [
-    // switchCapable (fix P4+P5): protocol 1 has the engine but not the per-project switch.
+    // switchCapable: protocol 1 has the engine but cannot take a project over.
     { nodeId: PEER, present: true, protocol: 1, switchCapable: false, enabled: true, origins: ["http://192.168.1.20:22700"], route: "direct", heard: true },
     { nodeId: SECOND, present: true, protocol: null, switchCapable: null, enabled: null, origins: [], route: "none", heard: false },
   ]);

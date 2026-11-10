@@ -8,7 +8,7 @@ import WebSocket from "ws";
 import { pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 
 /**
- * Two real twin nodes over one shared transcript filesystem (what Syncthing looks like
+ * Two real twin nodes over one shared transcript filesystem (what file sync looks like
  * between a Mac and a homeserver). Running state must travel as a lease while the
  * turn is in flight, and review watermarks must replicate in both directions.
  */

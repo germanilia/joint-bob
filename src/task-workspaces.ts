@@ -11,7 +11,7 @@ export function projectTicketSyncFolderId(projectId: string): string {
   return `${TICKET_FOLDER_PREFIX}${createHash('sha256').update(projectId).digest('hex')}`;
 }
 
-/** Sync-visible (Syncthing ignores exactly `.joint-bob/`) baseline snapshot inside a ticket workspace. */
+/** Sync-visible (file sync ignores exactly `.joint-bob/`) baseline snapshot inside a ticket workspace. */
 export const TICKET_BASELINE_DIR = ".joint-bob-baseline";
 /** Staged merge tree and conflict state inside a ticket workspace (TICKET-MERGE-PLAN.md §3). */
 export const TICKET_MERGE_DIR = ".joint-bob-merge";

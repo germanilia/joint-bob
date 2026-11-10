@@ -40,7 +40,6 @@ test("Pi tool commands list and change active tools over the chat WebSocket", as
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-agent"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-agent"), sessionPath: path.join(root, "claude-sessions") },
-      syncthing: { endpoint: "" },
     });
     const module = await import(`../src/server.ts?command-controls=${Date.now()}-${Math.random()}`);
     server = module.server;

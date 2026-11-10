@@ -16,12 +16,12 @@ function resetOwnershipWait() {
   renderConversationLock();
 }
 
-// Syncthing gives no answer about when the owner node's latest files are here, so a
-// takeover of a project on Syncthing counts a grace period down before fencing the owner.
-function countdownOwnershipWait(report, waitingFor = "Syncthing") {
+// This page cannot read another node's file sync status, so a takeover that continues
+// there counts a grace period down before fencing the owner.
+function countdownOwnershipWait(report) {
   if (shared.ownershipWait) return shared.ownershipWait.promise;
   let seconds = TAKE_OWNERSHIP_WAIT_SECONDS;
-  report(`Waiting ${seconds}s for ${waitingFor} to finish…`);
+  report(`Waiting ${seconds}s for files to finish…`);
   const wait = { promise: null, resolve: null, settled: false };
   const promise = new Promise((resolve) => {
     const finish = (value) => {
@@ -32,7 +32,7 @@ function countdownOwnershipWait(report, waitingFor = "Syncthing") {
     };
     const interval = setInterval(() => {
       seconds -= 1;
-      report(seconds ? `Waiting ${seconds}s for ${waitingFor} to finish…` : waitingFor === "Syncthing" ? "Syncthing wait finished." : "Wait finished.");
+      report(seconds ? `Waiting ${seconds}s for files to finish…` : "Wait finished.");
       if (!seconds) finish(true);
     }, 1000);
     wait.resolve = finish;
@@ -94,9 +94,10 @@ function waitForLockOwnershipSync(projectId, destination, worktreeId) {
   elements.conversationLockTakeButton.disabled = false;
   const report = (text) => { elements.conversationLockStatus.textContent = text; };
   const engine = state.projects.find((project) => project.id === projectId)?.syncStatus?.engine;
-  if (!engine) return countdownOwnershipWait(report);
+  // A project shared with no other machine has no files on their way.
+  if (!engine || engine === "none") return Promise.resolve(true);
   // The status this page can read is this node's; for another destination only the grace period is left.
-  return destination.local ? waitForConversationFiles(projectId, destination, worktreeId, report) : countdownOwnershipWait(report, "files");
+  return destination.local ? waitForConversationFiles(projectId, destination, worktreeId, report) : countdownOwnershipWait(report);
 }
 
 let takeoverController = null;

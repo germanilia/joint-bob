@@ -8,7 +8,7 @@ import test from "node:test";
 import { updateSettings } from "../src/settings.js";
 
 // These tests cover the opt-in legacy native import/linking mode.
-test.before(() => { updateSettings({ syncthing: { endpoint: "" }, strictResourceIsolation: false }); });
+test.before(() => { updateSettings({ strictResourceIsolation: false }); });
 
 async function write(root: string, relative: string, contents: string): Promise<void> {
   const target = path.join(root, relative);

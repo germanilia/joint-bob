@@ -87,7 +87,7 @@ test("synthetic legacy Kiro ACP covers first turn, resume, frontend events, empt
     const sessionPath = path.join(configPath, "sessions");
     await Promise.all([writeFile(executable, fixtureSource), mkdir(sessionPath, { recursive: true })]);
     await chmod(executable, 0o700);
-    updateSettings({ runtimes: { ...previousSettings.runtimes, kiro: { ...previousSettings.runtimes.kiro, executable, configPath, sessionPath } }, syncthing: { endpoint: "" } });
+    updateSettings({ runtimes: { ...previousSettings.runtimes, kiro: { ...previousSettings.runtimes.kiro, executable, configPath, sessionPath } } });
     const project = await addProject("Wire fixture", root);
     const account = await saveSecretAccount({ label: "fixture", provider: "custom", variables: [{ name: "WIRE_SECRET", kind: "value", value: "test-only-value" }] });
     const adapter = listDiscoveredHarnesses().find(({ id }) => id === "kiro")!;
@@ -185,7 +185,7 @@ test("synthetic legacy Kiro ACP covers first turn, resume, frontend events, empt
   } finally {
     if (session?.status().isStreaming) await session.stopForUpdate();
     session?.dispose();
-    updateSettings({ runtimes: previousSettings.runtimes, syncthing: { endpoint: "" } });
+    updateSettings({ runtimes: previousSettings.runtimes });
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -196,7 +196,7 @@ test("Kiro profile accepts a symlinked skill root and lists credential names and
   try {
     const configPath = path.join(root, "kiro");
     const sessionPath = path.join(configPath, "sessions");
-    updateSettings({ runtimes: { ...previousSettings.runtimes, kiro: { ...previousSettings.runtimes.kiro, configPath, sessionPath } }, syncthing: { endpoint: "" } });
+    updateSettings({ runtimes: { ...previousSettings.runtimes, kiro: { ...previousSettings.runtimes.kiro, configPath, sessionPath } } });
     const target = path.join(root, "skill-target");
     const linked = path.join(root, ".agents", "skills");
     await mkdir(target, { recursive: true });
@@ -209,7 +209,7 @@ test("Kiro profile accepts a symlinked skill root and lists credential names and
     assert.match(profile.prompt, /browser/i);
     assert.equal(profile.resources.includes(`skill://${await (await import("node:fs/promises")).realpath(target)}/**/SKILL.md`), true);
   } finally {
-    updateSettings({ runtimes: previousSettings.runtimes, syncthing: { endpoint: "" } });
+    updateSettings({ runtimes: previousSettings.runtimes });
     await rm(root, { recursive: true, force: true });
   }
 });

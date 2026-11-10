@@ -10,7 +10,7 @@ import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNo
 
 interface TaskView { id: string; title: string; currentNodeId: string; executionState: string; leaseOwnerNodeId: string | null; leaseExpiresAt: string | null }
 
-/** Creates a ticket the way its owner does (creating one through the API needs Syncthing). */
+/** Creates a ticket the way its owner does. */
 function createTaskOn(environment: DevEnvironment, node: SeededNode, projectId: string, title: string, status = "backlog", phaseConfig: Record<string, unknown> = {}): { id: string } {
   const project = node.projects.find((candidate) => candidate.id === projectId)!;
   const script = `import { createTask } from "./src/tasks.ts"; process.stdout.write(JSON.stringify(await createTask(${JSON.stringify(project.id)}, ${JSON.stringify(project.path)}, ${JSON.stringify(title)}, "", ${JSON.stringify(status)}, "pi", false, false, ${JSON.stringify(phaseConfig)}))); process.exit(0);`;
@@ -130,7 +130,7 @@ test("task mutations and task watch sockets route through the recorded owner", {
     assert.match((await merge.json() as { error: string }).error, /no isolated worktree/i);
 
     const handoff = createTaskOn(environment, a, project.id, "Handoff");
-    // Without Syncthing a ticket workspace never reports synchronized, so hand off a ticket that has none.
+    // Hand off a ticket that has no workspace, so the handoff does not wait on file sync.
     updateOwnerRow(a, "UPDATE tasks SET worktree_path = NULL WHERE id = ?", handoff.id);
     await waitForTask(b, bAuth, project.id, handoff.id, (task) => task.currentNodeId === a.nodeId);
     const handedOff = await request(b, bAuth, "POST", `/projects/${project.id}/tasks/${handoff.id}/handoff`, { peerId: b.nodeId });

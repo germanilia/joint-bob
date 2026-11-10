@@ -1,28 +1,24 @@
 #!/usr/bin/env node
-// Measures how fast and how cheaply a file sync engine moves changes from this machine to a peer.
+// Measures how fast and how cheaply built-in file sync moves changes from this machine to a peer.
 //
-// The same scenarios run against Syncthing (the baseline, FILE-SYNC-PLAN.md 10.2) and against the
-// built-in engine, so the two can be compared side by side. Changes are written into a local folder
-// that the engine under test keeps in step with a folder on the peer; a small waiter started over ssh
-// on the peer reports the moment the change is there. Timing is taken on this machine from the end of
-// the local write to the waiter's answer, so the two clocks never need to agree.
+// Changes are written into a local folder that file sync keeps in step with a folder on the peer.
+// A small waiter started over ssh on the peer reports the moment the change is there. Timing is taken
+// on this machine from the end of the local write to the waiter's answer, so the two clocks never
+// need to agree. Use a project made for the benchmark and shared with the peer.
 //
-//   node scripts/sync-bench.mjs --setup syncthing            create a dedicated Syncthing folder pair
-//   node scripts/sync-bench.mjs --engine syncthing [--scenarios a,b] [--out file.json]
-//   node scripts/sync-bench.mjs --engine builtin --local-dir <project path> --remote-dir <peer path>
-//   node scripts/sync-bench.mjs --teardown syncthing         remove the folder pair and its files
+//   node scripts/sync-bench.mjs --local-dir <project path> --remote-dir <peer path> [--scenarios a,b] [--out file.json]
 //
 // Options: --host <ssh host> (default homeserver), --local-dir, --remote-dir (default ~/jb-sync-bench on
-// both), --repeat <n> (default 3, small scenarios only), --timeout <s> (default 900 per scenario).
+// both), --repeat <n> (default 3, small scenarios only), --timeout <s> (default 900 per scenario),
+// --tree-source <repository> (default the current folder, for tree-copy).
 import { spawn, execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, open, readFile, rm, writeFile, cp, stat } from "node:fs/promises";
+import { mkdir, open, rm, writeFile, cp, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
 const { values } = parseArgs({ options: {
-  engine: { type: "string" }, setup: { type: "string" }, teardown: { type: "string" },
   host: { type: "string", default: "homeserver" }, "local-dir": { type: "string" }, "remote-dir": { type: "string" },
   scenarios: { type: "string" }, out: { type: "string" }, repeat: { type: "string", default: "3" }, timeout: { type: "string", default: "900" },
   "tree-source": { type: "string" },
@@ -32,92 +28,21 @@ const localDir = path.resolve(values["local-dir"] ?? path.join(os.homedir(), "jb
 const remoteDir = values["remote-dir"] ?? "jb-sync-bench";          // relative paths are under the peer's home
 const repeat = Number(values.repeat);
 const timeoutMs = Number(values.timeout) * 1000;
-const FOLDER_ID = "jb-sync-bench";
 
 function ssh(command, input) {
   return execFileSync("ssh", ["-o", "ConnectTimeout=10", host, command], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).trim();
 }
 
-// ---- Syncthing REST on both machines ------------------------------------------------------------
-async function localSyncthing() {
-  const file = process.platform === "darwin" ? path.join(os.homedir(), "Library/Application Support/Syncthing/config.xml") : path.join(os.homedir(), ".local/state/syncthing/config.xml");
-  const xml = await readFile(file, "utf8");
-  const gui = xml.match(/<gui[^>]*>([\s\S]*?)<\/gui>/)?.[1] ?? "";
-  const address = gui.match(/<address>([^<]+)<\/address>/)?.[1]?.replace(/^0\.0\.0\.0:/, "127.0.0.1:");
-  const key = gui.match(/<apikey>([^<]+)<\/apikey>/)?.[1];
-  if (!address || !key) throw new Error(`No Syncthing GUI address or API key in ${file}`);
-  return async (endpoint, init = {}) => {
-    const response = await fetch(`http://${address}/rest/${endpoint}`, { ...init, headers: { "X-API-Key": key, "Content-Type": "application/json" } });
-    if (!response.ok) throw new Error(`Local Syncthing ${endpoint}: ${response.status} ${await response.text()}`);
-    const text = await response.text();
-    return text ? JSON.parse(text) : undefined;
-  };
-}
-
-function remoteSyncthing() {
-  const script = `
-const fs=require("fs"),os=require("os");
-const xml=fs.readFileSync(os.homedir()+"/.local/state/syncthing/config.xml","utf8");
-const gui=(xml.match(/<gui[^>]*>([\\s\\S]*?)<\\/gui>/)||[])[1]||"";
-const address=((gui.match(/<address>([^<]+)<\\/address>/)||[])[1]||"127.0.0.1:8384").replace(/^0\\.0\\.0\\.0:/,"127.0.0.1:");
-const key=(gui.match(/<apikey>([^<]+)<\\/apikey>/)||[])[1];
-const [endpoint,method,body]=JSON.parse(process.argv[1]);
-fetch("http://"+address+"/rest/"+endpoint,{method,body:body??undefined,headers:{"X-API-Key":key,"Content-Type":"application/json"}})
-  .then(async r=>{const t=await r.text();if(!r.ok){console.error(r.status+" "+t);process.exit(1)}process.stdout.write(t)});`;
-  return async (endpoint, init = {}) => {
-    const out = ssh(`node -e ${shellQuote(script)} ${shellQuote(JSON.stringify([endpoint, init.method ?? "GET", init.body ?? null]))}`);
-    return out ? JSON.parse(out) : undefined;
-  };
-}
-
 function shellQuote(text) { return `'${text.replaceAll("'", "'\\''")}'`; }
 
-async function setupSyncthing() {
-  const local = await localSyncthing(), remote = remoteSyncthing();
-  const [localId, remoteId] = [(await local("system/status")).myID, (await remote("system/status")).myID];
-  const remoteHome = ssh("printf %s \"$HOME\"");
-  const remotePath = path.posix.isAbsolute(remoteDir) ? remoteDir : `${remoteHome}/${remoteDir}`;
-  await mkdir(localDir, { recursive: true });
-  ssh(`mkdir -p ${shellQuote(remotePath)}`);
-  const devices = [{ deviceID: localId }, { deviceID: remoteId }];
-  // Syncthing's defaults are what Joint Bob's project folders run with (src/syncthing.ts ensureFolder sends no tuning).
-  await local("config/folders", { method: "POST", body: JSON.stringify({ id: FOLDER_ID, label: "Joint Bob sync benchmark", path: localDir, type: "sendreceive", devices }) });
-  await remote("config/folders", { method: "POST", body: JSON.stringify({ id: FOLDER_ID, label: "Joint Bob sync benchmark", path: remotePath, type: "sendreceive", devices }) });
-  const folder = await local(`config/folders/${FOLDER_ID}`);
-  console.log(`Created folder ${FOLDER_ID}: ${localDir} ↔ ${host}:${remotePath} (watcher delay ${folder.fsWatcherDelayS}s, rescan ${folder.rescanIntervalS}s)`);
-}
-
-async function teardownSyncthing() {
-  const local = await localSyncthing(), remote = remoteSyncthing();
-  await local(`config/folders/${FOLDER_ID}`, { method: "DELETE" }).catch((error) => console.warn(String(error)));
-  await remote(`config/folders/${FOLDER_ID}`, { method: "DELETE" }).catch((error) => console.warn(String(error)));
-  await rm(localDir, { recursive: true, force: true });
-  ssh(`rm -rf -- ${shellQuote(remoteDir)}`);
-  console.log(`Removed folder ${FOLDER_ID} and both copies`);
-}
-
-// ---- Engine probes: bytes on the wire and CPU of the sync process ----------------------------------
-async function syncthingProbe() {
-  const local = await localSyncthing(), remote = remoteSyncthing();
-  const remoteId = (await remote("system/status")).myID;
-  const localPid = execFileSync("pgrep", ["-f", "syncthing.*serve|bin/syncthing --no-browser"], { encoding: "utf8" }).trim().split("\n").pop();
-  const remotePid = ssh("pgrep -f 'syncthing serve' | tail -1");
-  return {
-    name: "syncthing",
-    async sample() {
-      const connection = (await local("system/connections")).connections?.[remoteId] ?? {};
-      return { outBytes: connection.outBytesTotal ?? 0, inBytes: connection.inBytesTotal ?? 0, localCpuMs: cpuMs(localPid), remoteCpuMs: remoteCpuMs(remotePid) };
-    },
-  };
-}
-
+// ---- Engine probe: CPU of the Joint Bob process on both machines --------------------------------
 function builtinProbe() {
   const localPid = execFileSync("pgrep", ["-f", "joint-bob/app/releases/.*/dist/server.js"], { encoding: "utf8" }).trim().split("\n")[0];
   const remotePid = ssh("pgrep -f 'joint-bob/app/releases/.*/dist/server.js' | head -1");
   return {
     name: "builtin",
     // The engine runs in a worker thread of the Joint Bob process: CPU here is the whole process.
-    async sample() { return { outBytes: 0, inBytes: 0, localCpuMs: cpuMs(localPid), remoteCpuMs: remoteCpuMs(remotePid) }; },
+    async sample() { return { localCpuMs: cpuMs(localPid), remoteCpuMs: remoteCpuMs(remotePid) }; },
   };
 }
 
@@ -143,7 +68,7 @@ function ok(item){
   const file=path.join(root,item.path);
   if(item.gone){return !fs.existsSync(file);}
   let st;try{st=fs.statSync(file)}catch{return false}
-  if(item.count!==undefined){let n=0,b=0;const walk=d=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(e.isFile()&&!e.name.startsWith(".syncthing.")&&!e.name.startsWith(".joint-bob-sync.")){n++;b+=fs.statSync(p).size}}};try{walk(file)}catch{return false}return n===item.count&&b===item.bytes;}
+  if(item.count!==undefined){let n=0,b=0;const walk=d=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(e.isFile()&&!e.name.startsWith(".joint-bob-sync.")){n++;b+=fs.statSync(p).size}}};try{walk(file)}catch{return false}return n===item.count&&b===item.bytes;}
   if(st.size!==item.size)return false;
   if(item.sha256){const h=crypto.createHash("sha256");const fd=fs.openSync(file,"r");try{const len=item.length??st.size;const buf=Buffer.alloc(Math.min(len,1<<20));let off=item.offset??0,left=len;while(left>0){const n=fs.readSync(fd,buf,0,Math.min(buf.length,left),off);if(!n)return false;h.update(buf.subarray(0,n));off+=n;left-=n}}finally{fs.closeSync(fd)}return h.digest("hex")===item.sha256;}
   return true;
@@ -190,7 +115,6 @@ async function measure(probe, label, items, write, intervalMs) {
   if (!answer.line.ready) throw new Error(`${label}: not on the peer after ${values.timeout}s (${JSON.stringify(answer.line)})`);
   return {
     label, writeMs: Math.round(written - writeStart), arrivalMs: Math.round(answer.at - written),
-    outBytes: after.outBytes - before.outBytes, inBytes: after.inBytes - before.inBytes,
     localCpuMs: after.localCpuMs - before.localCpuMs, remoteCpuMs: after.remoteCpuMs - before.remoteCpuMs,
   };
 }
@@ -238,7 +162,7 @@ const SCENARIOS = {
       const file = await open(path.join(localDir, name), "w");
       try { for (let offset = 0; offset < size; offset += chunk) { const block = randomBytes(chunk); hash.update(block); await file.write(block, 0, block.length, offset); } } finally { await file.close(); }
     }, 250);
-    // 1 MiB changed in the middle, same size: Syncthing sends changed blocks only; whole-file engines send it all.
+    // 1 MiB changed in the middle, same size: shows whether only the changed part is sent.
     const patch = randomBytes(1024 * 1024), offset = 200 * 1024 * 1024;
     const second = await measure(probe, "big-file-1mb-change", [{ path: name, size, offset, length: patch.length, sha256: sha(patch) }], async () => {
       const file = await open(path.join(localDir, name), "r+");
@@ -266,10 +190,7 @@ const SCENARIOS = {
 };
 
 async function main() {
-  if (values.setup === "syncthing") return setupSyncthing();
-  if (values.teardown === "syncthing") return teardownSyncthing();
-  if (!values.engine) throw new Error("Pass --engine syncthing|builtin, --setup syncthing or --teardown syncthing");
-  const probe = values.engine === "syncthing" ? await syncthingProbe() : builtinProbe();
+  const probe = builtinProbe();
   const names = values.scenarios ? values.scenarios.split(",") : Object.keys(SCENARIOS);
   const report = { engine: probe.name, host, localDir, remoteDir, startedAt: new Date().toISOString(), node: process.version, results: [] };
   for (const name of names) {

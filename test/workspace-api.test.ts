@@ -97,11 +97,11 @@ test("workspaces are listed, created, and drive managed project paths", async ()
 
     const homePath = path.join(root, "JointBob");
     const settings = await fetch(`${node.baseUrl}/api/settings`, { headers: { Cookie: cookie } });
-    const current = await settings.json() as { pi: unknown; claude: unknown; syncthing: { endpoint: string } };
+    const current = await settings.json() as { pi: unknown; claude: unknown };
     const saved = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT",
       headers: requestHeaders,
-      body: JSON.stringify({ pi: current.pi, claude: current.claude, syncthing: { endpoint: current.syncthing.endpoint }, projects: { homePath } }),
+      body: JSON.stringify({ pi: current.pi, claude: current.claude, projects: { homePath } }),
     });
     assert.equal(saved.status, 200);
 

@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-// A Syncthing conflict copy of a Claude transcript still ends in ".jsonl", so the
+// A conflict copy of a Claude transcript left by file sync still ends in ".jsonl", so the
 // directory scan listed the same conversation once per copy. This lives in its own
 // file because src/settings.js resolves its data directory once per process.
-test("Claude session listing ignores Syncthing conflict copies of a transcript", async () => {
+test("Claude session listing ignores conflict copies of a transcript", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-claude-conflict-"));
   process.env.PI_WEB_DATA_DIR = root;
   try {
@@ -19,7 +19,6 @@ test("Claude session listing ignores Syncthing conflict copies of a transcript",
     updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
 
     const { claudeProjectDir } = await import("../src/session-paths.js");

@@ -5,27 +5,32 @@ import path from "node:path";
 import {randomUUID} from "node:crypto";
 import test from "node:test";
 import {DatabaseSync} from "node:sqlite";
-import {api,seedDevEnvironment,signIn,startDevNode,stopDevNode} from "./dev-nodes.js";
+import type {FileSyncStatusAnswer} from "../src/file-sync/index.js";
+import {api,freePort,seedDevEnvironment,signIn,startDevNode,stopDevNode,type SeededNode,type SignedIn} from "./dev-nodes.js";
 import {signedNodeRequest} from './signed-node-request.js';
-import {startNativeSyncthing,stopNativeSyncthing} from "./native-syncthing.js";
 
 async function eventually(check:()=>Promise<void>):Promise<void>{
- const deadline=Date.now()+30000;
+ const deadline=Date.now()+90000;
  while(true){try{await check();return;}catch(error){if(Date.now()>deadline)throw error;}await new Promise(r=>setTimeout(r,200));}
 }
-test("selected projects transfer only their files, transcripts and attached eligible secrets; deselection revokes",{timeout:150000},async()=>{
+// Every node runs built-in file sync and takes the projects shared with it over by itself.
+const fileSyncEnvironment=async()=>({JOINT_BOB_FILE_SYNC:'1',JOINT_BOB_FILE_SYNC_SETTLE_MS:'1000',JOINT_BOB_FILE_SYNC_PORT:String(await freePort()),JOINT_BOB_FILE_SYNC_LISTEN:'127.0.0.1'});
+/** The projects whose files this node's file sync exchanges with `peer`. */
+async function projectsSyncedWith(node:SeededNode,session:SignedIn,peer:string):Promise<string[]>{
+ const answer=await api<FileSyncStatusAnswer>(node,session,'GET','/file-sync/status');
+ assert.equal(answer.status,200,JSON.stringify(answer.body));
+ return [...new Set(answer.body.shares.filter(share=>share.peers.some(candidate=>candidate.peer===peer)).map(share=>share.projectId))].sort();
+}
+test("selected projects transfer only their files, transcripts and attached eligible secrets; deselection revokes",{timeout:300000},async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),"selected-runtime-"));
- const children:Awaited<ReturnType<typeof startDevNode>>[]=[],syncs:Awaited<ReturnType<typeof startNativeSyncthing>>[]=[];
+ const children:Awaited<ReturnType<typeof startDevNode>>[]=[];
  try{
   const a=await seedDevEnvironment(path.join(root,"a"),1),b=await seedDevEnvironment(path.join(root,"b"),1),left=a.nodes[0],right=b.nodes[0];
   // Independently seeded nodes reuse demo conversation UUIDs. Start the recipient's
   // transcript roots empty rather than manufacturing cross-project identity collisions.
   await rm(path.join(b.home,'.pi','sessions'),{recursive:true,force:true});
   await rm(path.join(b.home,'.claude','projects'),{recursive:true,force:true});
-  const syncA=await startNativeSyncthing(path.join(root,"st-a"));syncs.push(syncA);
-  const syncB=await startNativeSyncthing(path.join(root,"st-b"));syncs.push(syncB);
-  for(const [local,peer]of[[syncA,syncB],[syncB,syncA]])await local.request(`config/devices/${peer.deviceId}`,{deviceID:peer.deviceId,name:"Selected test peer",addresses:[peer.address]});
-  for(const [env,node,sync]of[[a,left,syncA],[b,right,syncB]]as const)children.push(await startDevNode(env,node,{JOINT_BOB_SYNCTHING_URL:sync.url,JOINT_BOB_SYNCTHING_API_KEY:sync.key}));
+  for(const [env,node]of[[a,left],[b,right]]as const)children.push(await startDevNode(env,node,await fileSyncEnvironment()));
   const sa=await signIn(a,left),sb=await signIn(b,right);
   const cluster=await api<{snapshot:{body:{clusterId:string}}}>(left,sa,"POST","/clusters",{name:"Selected runtime"});assert.equal(cluster.status,201);
   const clusterId=cluster.body.snapshot.body.clusterId;
@@ -65,6 +70,11 @@ test("selected projects transfer only their files, transcripts and attached elig
    const website=(secrets.body.accounts as Array<{id:string;websiteOrigin?:string}>).find(account=>account.id===websiteAccount.body.account.id);
    assert.equal(website?.websiteOrigin,'https://app.example.com','selected website credentials arrive bound to their origin');
   });
+  // File sync on both sides exchanges the selected project only, and the owner refuses locations for any other.
+  assert.deepEqual(await projectsSyncedWith(left,sa,right.nodeId),[shared.id]);
+  assert.deepEqual(await projectsSyncedWith(right,sb,left.nodeId),[shared.id]);
+  const unselectedLocation=await signedNodeRequest(b,right,left,'POST','/api/cluster/v2/files/enroll',{projects:[hidden.id],locations:[{projectId:hidden.id,path:'/elsewhere'}]});
+  assert.equal(unselectedLocation.status,403,'an unselected project is not exchanged');
   const privateSessions=await api<{sessions:Array<{id:string;harnessId:string}>}>(left,sa,'GET',`/projects/${hidden.id}/sessions`);
   const privateSession=privateSessions.body.sessions[0];assert.ok(privateSession);
   const privateTranscript='/api/cluster/v2/transcripts/file?'+new URLSearchParams({projectId:hidden.id,engine:privateSession.harnessId,sessionId:privateSession.id});
@@ -87,9 +97,7 @@ test("selected projects transfer only their files, transcripts and attached elig
   assert.equal((await signedNodeRequest(b,right,left,'GET',fileTarget(shared.id,'private.txt',privateTask.body.task.id))).status,404,'task file roots require matching project');
   const c=await seedDevEnvironment(path.join(root,'c'),1),third=c.nodes[0];
   await rm(path.join(c.home,'.pi','sessions'),{recursive:true,force:true});await rm(path.join(c.home,'.claude','projects'),{recursive:true,force:true});
-  const syncC=await startNativeSyncthing(path.join(root,'st-c'));syncs.push(syncC);
-  for(const [local,peer]of[[syncB,syncC],[syncC,syncB]])await local.request(`config/devices/${peer.deviceId}`,{deviceID:peer.deviceId,name:'Privacy test peer',addresses:[peer.address]});
-  children.push(await startDevNode(c,third,{JOINT_BOB_SYNCTHING_URL:syncC.url,JOINT_BOB_SYNCTHING_API_KEY:syncC.key}));
+  children.push(await startDevNode(c,third,await fileSyncEnvironment()));
   const sc=await signIn(c,third);
   const twin=await api<{link:string}>(right,sb,'POST','/twins/invitations',{confirmOwnedData:true});
   assert.equal((await api(third,sc,'POST','/twins/accept',{link:twin.body.link,confirmOwnedData:true})).status,201);
@@ -101,26 +109,23 @@ test("selected projects transfer only their files, transcripts and attached elig
    const project=inventory.body.projects.find(p=>p.id===canary.body.project.id);assert.ok(project);
    assert.equal(await readFile(path.join(project.path,'canary.txt'),'utf8'),'authorized B-owned bytes');
   });
-  const bFolders=await syncB.request<Array<{id:string;path:string;devices:Array<{deviceID:string}>}>>('config/folders');
-  for(const folder of bFolders.filter(folder=>folder.devices.some(device=>device.deviceID===syncC.deviceId))){
-   assert.notEqual(folder.path,path.join(b.home,'.pi','sessions'),'whole transcript roots leak third-party projects to twins');
-   assert.notEqual(folder.path,path.join(b.home,'.claude','projects'),'whole transcript roots leak third-party projects to twins');
-   assert.notEqual(folder.path,path.join(b.home,'JointBob','tickets'),'whole ticket roots leak third-party projects to twins');
-  }
+  // B's file sync exchanges B's own projects with its twin, and never the project a third party shared with B.
+  const withTwin=await projectsSyncedWith(right,sb,third.nodeId);
+  assert.ok(withTwin.includes(canary.body.project.id),JSON.stringify(withTwin));
+  assert.equal(withTwin.includes(shared.id),false,'a project shared by a third party is not passed on to a twin');
   for(const transcriptRoot of [path.join(c.home,'.pi','sessions'),path.join(c.home,'.claude','projects')]){
    const files=await readdir(transcriptRoot,{recursive:true}).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return [];throw error;});
    assert.equal(files.some(file=>source.body.sessions.some(session=>file.includes(session.id))),false,'third node receives no unauthorized transcript bytes');
   }
   assert.equal((await signedNodeRequest(c,third,right,'GET',ownershipTarget)).status,403,'twin runtime must reject third-party-owned conversation access');
   const thirdSecrets=await api<{accounts:Array<{id:string}>}>(third,sc,'GET','/secrets');assert.equal(thirdSecrets.body.accounts.some(account=>account.id===selectedAccount.body.account.id),false);
-  const nativeFolders=await syncA.request<Array<{id:string;devices:Array<{deviceID:string}>}>>("config/folders");
-  assert.equal(nativeFolders.some(folder=>folder.id.includes('conversations')&&folder.devices.some(d=>d.deviceID===syncB.deviceId)),false,'selected mode never enrolls global transcripts');
+  assert.deepEqual(await projectsSyncedWith(left,sa,third.nodeId),[],'the owner exchanges no files with its member\'s twin');
   assert.equal((await api(left,sa,"PUT",selection,{projectIds:[],workspaceIds:[],confirmOwnedData:true})).status,200);
   await eventually(async()=>{
    const inventory=await api<{projects:Array<{id:string}>}>(right,sb,"GET","/projects");assert.equal(inventory.body.projects.some(p=>p.id===shared.id),false);
-   const folders=await syncA.request<Array<{path:string;devices:Array<{deviceID:string}>}>>("config/folders");assert.equal(folders.some(f=>f.path===shared.path&&f.devices.some(d=>d.deviceID===syncB.deviceId)),false);
+   assert.deepEqual(await projectsSyncedWith(left,sa,right.nodeId),[],'deselection ends the file sync share');
    const secrets=await api<{accounts:Array<{id:string}>}>(right,sb,'GET','/secrets');assert.equal(secrets.body.accounts.some(account=>account.id===selectedAccount.body.account.id),false,'revocation removes only received scoped credential copies');
   });
   assert.equal(await readFile(path.join(remotePath,'selected.txt'),'utf8'),'selected file bytes');
- }finally{await Promise.all(children.map(stopDevNode));await Promise.all(syncs.map(s=>stopNativeSyncthing(s.child)));await rm(root,{recursive:true,force:true});}
+ }finally{await Promise.all(children.map(stopDevNode));await rm(root,{recursive:true,force:true});}
 });

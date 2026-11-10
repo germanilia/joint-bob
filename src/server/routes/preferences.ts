@@ -17,7 +17,6 @@ import { getUserPreferences, normalizeKeymapPreference, readLegacyRecentSessions
 import { listUserRecentSessions, migrateLegacyRecentSessions, removeUserRecentSession, setUserRecentSession, type SyncedRecentSession } from "../../recent-sessions.js";
 import { checkRuntimeSettings, getProjectResourcePaths, getRuntimeDefaults, getSettings, updateProjectResourcePaths, updateSettings } from "../../settings.js";
 import { getProject, listWorkspaces } from "../../store.js";
-import { resetSyncthingConnection } from "../../syncthing.js";
 import { listTasks } from "../../tasks.js";
 import { isHarnessId } from "../../types.js";
 import { listUserPins, setUserPin } from "../../user-pins.js";
@@ -165,7 +164,6 @@ app.post("/api/settings/skills/sync", async (request, response, next) => {
     const { paths } = skillSyncSchema.parse(request.body);
     syncingSkills = true;
     const sharing = await import("../skill-sharing.js");
-    await sharing.ensureLegacySkillSyncPaused();
     const result = await syncLocalSkills(paths);
     response.json(result);
     // Nodes these skills are shared with fetch the new copies now rather than on their next refresh.
@@ -301,7 +299,6 @@ app.put("/api/settings", async (request, response, next) => {
     forgetHarnessReadiness();
     if (payload.conversationCommands) await announceCommandChanges();
     clearHarnessSessionCache();
-    resetSyncthingConnection();
     response.json(settings);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -309,7 +306,6 @@ app.put("/api/settings", async (request, response, next) => {
       return;
     }
     if (error instanceof Error && (
-      error.message === "Syncthing endpoint must use a loopback host" ||
       error.message === "Joint Bob home folder must be absolute" ||
       /^(Pi|Claude) (config path|session path) must be blank or absolute$/.test(error.message) ||
       /^(Pi|Claude) (config|session) path must (not be under the OS temporary directory|be under the current home directory)$/.test(error.message) ||

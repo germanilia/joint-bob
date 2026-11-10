@@ -65,7 +65,6 @@ test("the sweep deletes this node's expired and empty conversations and keeps th
   settings.updateSettings({
     pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
     claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
-    syncthing: { endpoint: "" },
   });
   assert.equal(settings.getSettings().conversationRetentionDays, 40, "retention defaults to 40 days");
   const { addProject } = await import("../src/store.js");
@@ -119,13 +118,13 @@ test("the sweep deletes this node's expired and empty conversations and keeps th
   assert.ok(remaining.has(freshDraft), "a just-opened conversation is kept");
   assert.ok(remaining.has(peerDraft), "a draft another node created is left to that node");
 
-  settings.updateSettings({ ...settings.getSettings(), syncthing: { endpoint: "" }, conversationRetentionDays: 60 });
+  settings.updateSettings({ ...settings.getSettings(), conversationRetentionDays: 60 });
   assert.equal(settings.getSettings().conversationRetentionDays, 60);
   const older = await transcript(50);
   clearHarnessSessionCache(project.id);
   assert.equal(await sweepConversationRetention(), 0, "a longer retention keeps a 50-day-old conversation");
   assert.equal(await exists(older.file), true);
-  assert.throws(() => settings.updateSettings({ ...settings.getSettings(), syncthing: { endpoint: "" }, conversationRetentionDays: 0 }), /retention/);
+  assert.throws(() => settings.updateSettings({ ...settings.getSettings(), conversationRetentionDays: 0 }), /retention/);
 });
 
 test("the node schedules the retention sweep", async () => {

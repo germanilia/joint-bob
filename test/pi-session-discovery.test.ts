@@ -26,7 +26,6 @@ test("Pi discovery includes flat Joint Bob sessions and standard cwd session dir
     updateSettings({
       pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: sessionRoot },
       claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") },
-      syncthing: { endpoint: "" },
       projects: { homePath: path.join(root, "JointBob") },
     });
     const { listPiSessions } = await import("../src/pi-service.js");
@@ -77,7 +76,7 @@ test("Pi conflict recovery selects the newest complete transcript and preserves 
     updateSettings({
       pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: sessionRoot },
       claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") },
-      syncthing: { endpoint: "" }, projects: { homePath: path.join(root, "JointBob") },
+      projects: { homePath: path.join(root, "JointBob") },
     });
     const { listPiSessions } = await import("../src/pi-service.js");
     const sessions = await listPiSessions({ path: projectPath });

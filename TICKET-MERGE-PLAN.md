@@ -3,6 +3,8 @@
 Approved by GPT-5.6 Sol review, rounds 1–12. Status: **implemented** (see
 "Implementation status" at the end for shipped scope and deviations).
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+
 ## 1. Problem
 
 1. `mergeOwnedTask` (src/server.ts) requires `worktreeBranch`; `createTask`

@@ -541,7 +541,6 @@ async function loadSettings() {
   elements.settingsRuntimeStatus.textContent = "";
   elements.settingsSkillsStatus.textContent = "";
   fillResourceFields(globalResourceFields, settings.resources);
-  state.syncthingEndpoint = settings.syncthing.endpoint;
 }
 
 const savedCommandsList = document.querySelector("#savedCommandsList");
@@ -660,7 +659,6 @@ async function saveSettings(event) {
       runtimes: runtime,
       kiroEnabled: kiroEnabledValue(),
       conversationDefaults: conversationDefaultsValue(),
-      syncthing: { endpoint: state.syncthingEndpoint },
       projects: { homePath: elements.settingsProjectHome.value.trim() },
       resources: resourceFieldsValue(globalResourceFields),
       conversationLabels: document.querySelector("#settingsConversationLabels").value.split("\n").map((label) => label.trim()).filter(Boolean),

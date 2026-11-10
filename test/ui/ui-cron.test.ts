@@ -387,11 +387,10 @@ console.log(JSON.stringify({ type: "result", is_error: false }));
   await chmod(fake, 0o755);
   t.after(() => writeFile(release, "").catch(() => {}));
   const admin = await signIn(environment, node);
-  const current = (await api<{ pi: { executable: string; configPath: string; sessionPath: string }; claude: { configPath: string; sessionPath: string }; syncthing: { endpoint: string } }>(node, admin, "GET", "/settings")).body;
+  const current = (await api<{ pi: { executable: string; configPath: string; sessionPath: string }; claude: { configPath: string; sessionPath: string } }>(node, admin, "GET", "/settings")).body;
   const configured = await api(node, admin, "PUT", "/settings", {
     pi: { executable: current.pi.executable, configPath: current.pi.configPath, sessionPath: current.pi.sessionPath },
     claude: { executable: fake, configPath: current.claude.configPath, sessionPath: current.claude.sessionPath },
-    syncthing: { endpoint: current.syncthing.endpoint },
   });
   assert.equal(configured.status, 200, JSON.stringify(configured.body));
   const cron = (command: Record<string, unknown>) => api<any>(node, admin, "POST", "/cron", { nodeId: node.nodeId, command });

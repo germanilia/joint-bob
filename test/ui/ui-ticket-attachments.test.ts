@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test, { after, before } from "node:test";
@@ -13,33 +12,16 @@ let root: string;
 let environment: DevEnvironment;
 let node: SeededNode;
 let server: ChildProcess;
-let syncthing: Server;
 let browser: Browser;
 let page: Page;
 const failedResponses: string[] = [];
 const consoleErrors: string[] = [];
 
-async function startFakeSyncthing(): Promise<string> {
-  syncthing = createServer((request, response) => {
-    response.setHeader("Content-Type", "application/json");
-    if (request.method === "GET" && request.url === "/rest/config/folders") { response.end("[]"); return; }
-    if (request.method === "POST" && request.url === "/rest/config/folders") { response.end("{}"); return; }
-    if (request.method === "GET" && request.url === "/rest/system/status") { response.end('{"myID":"LOCAL"}'); return; }
-    if (request.method === "GET" && request.url?.startsWith("/rest/db/ignores")) { response.end('{"ignore":[]}'); return; }
-    if (request.method === "POST" && request.url?.startsWith("/rest/db/ignores")) { response.end("{}"); return; }
-    response.statusCode = 404;
-    response.end();
-  });
-  const port = await new Promise<number>((resolve) => syncthing.listen(0, "127.0.0.1", () => resolve((syncthing.address() as { port: number }).port)));
-  return `http://127.0.0.1:${port}`;
-}
-
 before(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-ui-ticket-attachments-"));
   environment = await seedDevEnvironment(root, 1);
   node = environment.nodes[0];
-  const syncthingUrl = await startFakeSyncthing();
-  server = await startDevNode(environment, node, { PI_MOBILE_WEB_SYNCTHING_URL: syncthingUrl, PI_MOBILE_WEB_SYNCTHING_API_KEY: "test-key" });
+  server = await startDevNode(environment, node);
   browser = await launchChrome({ headless: process.env.HEADED !== "1" });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
   page.on("response", (response) => { if (response.status() >= 400) void response.text().then((body) => failedResponses.push(`${response.status()} ${response.request().method()} ${response.url()} ${body}`)); });
@@ -49,7 +31,6 @@ before(async () => {
 after(async () => {
   if (browser) await browser.close();
   if (server) await stopDevNode(server);
-  if (syncthing) await new Promise<void>((resolve, reject) => syncthing.close((error) => error ? reject(error) : resolve()));
   if (root) await rm(root, { recursive: true, force: true });
 });
 

@@ -17,7 +17,6 @@ const settings = await import("../src/settings.js");
 settings.updateSettings({
   pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
   claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: projectsRoot },
-  syncthing: { endpoint: "" },
 });
 
 const sessionPaths = await import("../src/session-paths.js");

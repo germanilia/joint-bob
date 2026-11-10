@@ -92,7 +92,6 @@ function relayFailedRecently(nodeId: string): boolean { return (relayFailedUntil
 function markRelayFailed(nodeId: string): void {
   const fresh = !relayFailedRecently(nodeId);
   relayFailedUntil.set(nodeId, Date.now() + RELAY_RETRY_MS);
-  // A peer that moved off the relay no longer needs its Syncthing tunnel.
   if (fresh) runtime?.changed();
 }
 
@@ -107,7 +106,6 @@ function retryAfter(origin: string, code: unknown): number {
 function markDirectFailed(origin: string, code?: unknown): void {
   const fresh = !directFailedRecently(origin);
   directFailedUntil.set(origin, Date.now() + retryAfter(origin, code));
-  // A peer that moved to the relay may now need a Syncthing tunnel.
   if (fresh) runtime?.changed();
 }
 
@@ -329,7 +327,7 @@ export function peerWebSocket(address: string | URL, options: ClientOptions = {}
   return socket;
 }
 
-/** Whether a peer is reached through a relay right now (for Syncthing tunnels and the UI). */
+/** Whether a peer is reached through a relay right now (for the UI). */
 export function peerUsesRelay(nodeId: string, peerUrl: string | undefined): boolean {
   if (!runtime || !runtime.hasRoute(nodeId)) return false;
   if (!peerUrl || virtualRelayNodeId(peerUrl) || !relayFailedRecently(nodeId)) return true;

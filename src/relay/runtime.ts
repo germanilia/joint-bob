@@ -48,10 +48,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const LOCAL_RELAY_ID = "local";
 
 export interface RuntimeHandlers {
-  /** A syncthing channel from a peer was accepted; pipe it into the local Syncthing listener. */
-  acceptSyncthing(stream: RelayStream, from: string): void;
-  /** Whether a peer may open a Syncthing tunnel here (it must already share files with this machine). */
-  syncthingAllowed(from: string): boolean;
   /** Peer IDs this machine knows from its clusters and twins. */
   knownPeers(): string[];
   /** A peer was seen online through a relay. */
@@ -480,7 +476,7 @@ export class RelayRuntime extends EventEmitter {
     this.connections.clear();
   }
 
-  /** Something visible changed: listeners refresh status, and Syncthing tunnels re-plan. */
+  /** Something visible changed: listeners refresh status. */
   changed(): void { this.emit("changed"); }
 
   private connectionFor(id: string): RelayConnection {
@@ -714,12 +710,9 @@ export class RelayRuntime extends EventEmitter {
       initiator: false, identity: this.identity, expectRemote: expectAnnouncedPeer(this.db, incoming.from, incoming.fromKey),
       prologue: channelPrologue(incoming.kind, incoming.from, this.nodeId),
     });
-    if (incoming.kind === "syncthing") {
-      if (!this.handlers.syncthingAllowed(incoming.from)) return "This machine shares no files with that peer";
-      stream.once("relay-ready", () => this.handlers.acceptSyncthing(stream, incoming.from));
-    } else {
-      stream.once("relay-ready", () => this.httpServer.emit("connection", stream));
-    }
+    // A machine on an older release may still ask for a tunnel to an external sync tool: there is none here.
+    if (incoming.kind !== "peer") return "This machine shares no files with that peer";
+    stream.once("relay-ready", () => this.httpServer.emit("connection", stream));
     stream.on("error", () => undefined);
     return stream;
   }

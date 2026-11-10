@@ -57,7 +57,7 @@ console.log(JSON.stringify({type:'system',subtype:'init',session_id:sessionId}))
 console.log(JSON.stringify({type:'result',is_error:false,result:'done'}));
 `);
   await chmod(executable, 0o755);
-  updateSettings({ ...getSettings(), claude: { executable, configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, syncthing: { endpoint: "" } });
+  updateSettings({ ...getSettings(), claude: { executable, configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") } });
   chat = await import("../src/server/chat.js");
   runs = await import("../src/server/task-runs.js");
 });

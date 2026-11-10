@@ -18,7 +18,7 @@ async function write(file: string, content: string): Promise<void> {
   await writeFile(file, content);
 }
 
-test.before(() => { updateSettings({ syncthing: { endpoint: "" }, projects: { homePath: root } }); });
+test.before(() => { updateSettings({ projects: { homePath: root } }); });
 test.after(async () => {
   await rm(root, { recursive: true, force: true });
   await rm(path.join(resolveDataDirectory(), "instruction-backups"), { recursive: true, force: true });

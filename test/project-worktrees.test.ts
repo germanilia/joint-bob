@@ -160,7 +160,7 @@ test("a conflicting worktree merge changes nothing and names the conflicts", asy
   }
 });
 
-test("Syncthing's own files in the worktree folder are never mistaken for worktrees", async () => {
+test("sync marker files left in the worktree folder are never mistaken for worktrees", async () => {
   const { root, worktrees, project } = await fixture();
   try {
     const worktree = await createProjectWorktree(project, { name: "Real" }, worktrees);
@@ -176,7 +176,7 @@ test("Syncthing's own files in the worktree folder are never mistaken for worktr
   }
 });
 
-test("deleting a worktree removes its folder, so Syncthing removes it from every node", async () => {
+test("deleting a worktree removes its folder, so file sync removes it from every node", async () => {
   const { root, worktrees, project } = await fixture();
   try {
     const worktree = await createProjectWorktree(project, { name: "Gone" }, worktrees);

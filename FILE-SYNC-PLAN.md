@@ -1,5 +1,7 @@
 # Built-in file sync (replacing Syncthing) — plan for review
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Every project shared with another machine is moved by built-in file sync, with no choice of engine. Phase P6 (Removal) is done; section 8 says what remains. Sections 3 and 7 and the Syncthing side of 10.2 describe the earlier design and the migration, which no longer exist in the code.
+
 Status: **draft**. Section 9 lists the decisions; D1, D5, D11, D15 and D16 were decided on 2026-10-24. This plan supersedes the file-transport decision in `CLUSTER-SHARING-DESIGN.md` §6 ("Do not build a replacement bidirectional file-sync engine"), which must be amended when this is accepted.
 
 ## 1. Goal
@@ -300,6 +302,8 @@ User requirement (2026-10-25): nobody coordinates the switch with the people who
 
 ### 7.4 Syncthing cleanup (P6)
 
+> **Note, 2026-11-10.** Done differently from the list below. `src/file-sync/syncthing-retirement.ts` runs once per machine and takes Joint Bob's `joint-bob-*` folders out of the local Syncthing's configuration. `.stfolder` and `.stignore` files are left on disk. The daemon is not stopped and no unit is removed, whoever installed it. The per-project switch, the checks, the automatic move and the rollback (7.1 to 7.3a) were deleted: a shared project that is not on built-in sync yet is compared and adopted (`src/file-sync/adoption.ts`).
+
 - Remove every Joint Bob folder from Syncthing's configuration, including the legacy paused ones.
 - Delete `.stfolder` from project roots.
 - Move user rules from `.stignore` into project settings, then delete `.stignore` when only managed rules remain.
@@ -318,6 +322,13 @@ Each phase ships on its own. P0 fixes known incidents even if the rest is never 
 | **P4 Integration** | Handoff gate, twin status, takeover wait, merge guard, badges and texts, `sync-check` on the new status, revocation tests, relay parallelism and byte accounting, agent prompt text | Built-in projects behave fully |
 | **P5 Migration** | Capability, per-project switch, bootstrap, rollback. Dogfood order: one small project → several → `joint_bob` itself (its checkout is edited from both machines at once) → all. Then relay-only peers. | Per project |
 | **P6 Removal** | Delete `src/syncthing.ts`, the tunnels, `install-syncthing.sh`, prerequisite checks, `versions.sh` entries, the CI apt step, the settings field, UI and native Syncthing tests. Run the cleanup in 7.4. Update `README.md`, `agents_readme.md`, `CLUSTER-SHARING-DESIGN.md` §6, `RELAY-PLAN.md` §4.9, `TESTING.md` and `docs/features/clusters.*`. | Syncthing gone |
+
+> **P6 status, 2026-11-10: done**, in the release after 2.256.3. Deleted: `src/syncthing.ts`, the relay tunnels, the migration code, `scripts/install-syncthing.sh`, the prerequisite checks, the `versions.sh` entries, the CI apt step, the settings field, the UI and the Syncthing tests. The documents named above were updated.
+>
+> What remains:
+> - One module, `src/file-sync/syncthing-retirement.ts`. Once per machine it takes Joint Bob's `joint-bob-*` folders out of the local Syncthing. It is to be deleted in a later release.
+> - `.stfolder` and `.stignore` files are left on disk.
+> - The Syncthing daemon is not stopped, and a `joint-bob-syncthing.service` / `com.joint-bob.syncthing` unit from an earlier install is not removed. A runtime download under `~/.local/share/joint-bob/runtime/syncthing-v*` is not deleted.
 
 Each phase passes a gate before the next one starts (10.3).
 
@@ -381,6 +392,8 @@ D1, D5, D11, D15 and D16 were decided on 2026-10-24. The others are proposals th
 - **In production**: the live consistency check (5.4) reports any share whose digests differ while both sides say `synced`.
 
 ### 10.2 Benchmark against Syncthing
+
+> **Note, 2026-11-10.** `scripts/sync-bench.mjs` now measures built-in sync only. Its Syncthing side (`--engine syncthing`, `--setup`, `--teardown`) was removed with Syncthing, and it no longer reports bytes on the wire, which only the Syncthing probe measured.
 
 `scripts/sync-bench.mjs` runs the same scenarios against either engine between the Mac and the homeserver. It uses a dedicated benchmark project with synthetic files, so no real project is touched. Results are written as JSON and compared side by side. **The Syncthing baseline is recorded in P0, before the engine exists.**
 

@@ -70,7 +70,7 @@ rl.on("line", line => {
 });`;
     await Promise.all([mkdir(sessionPath, { recursive: true }), writeFile(executable, fixture)]);
     await chmod(executable, 0o700);
-    updateSettings({ runtimes: { ...previousSettings.runtimes, kiro: { ...previousSettings.runtimes.kiro, executable, configPath, sessionPath } }, syncthing: { endpoint: "" } });
+    updateSettings({ runtimes: { ...previousSettings.runtimes, kiro: { ...previousSettings.runtimes.kiro, executable, configPath, sessionPath } } });
     const project = await addProject("Fork fixture", root);
     const sourceId = "fork_source";
     const forkId = "fork_target";
@@ -102,7 +102,7 @@ rl.on("line", line => {
   } finally {
     if (session?.status().isStreaming) await session.stopForUpdate();
     session?.dispose();
-    updateSettings({ runtimes: previousSettings.runtimes, syncthing: { endpoint: "" } });
+    updateSettings({ runtimes: previousSettings.runtimes });
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -40,7 +40,6 @@ test("adapter transcript localization rehomes synchronized paths and rejects tra
 function restoreRuntimeSettings(previous: ReturnType<typeof getSettings>): void {
   updateSettings({
     runtimes: previous.runtimeOverrides,
-    syncthing: { endpoint: previous.syncthing.endpoint },
   });
 }
 
@@ -96,8 +95,8 @@ test("omitted runtimes preserve stored overrides instead of resolved defaults", 
   const previous = getSettings();
   const overrides = { ...previous.runtimeOverrides, claude: { executable: "", configPath: "", sessionPath: "" } };
   try {
-    updateSettings({ runtimes: overrides, syncthing: { endpoint: previous.syncthing.endpoint } });
-    const updated = updateSettings({ syncthing: { endpoint: previous.syncthing.endpoint } });
+    updateSettings({ runtimes: overrides });
+    const updated = updateSettings({});
     assert.deepEqual(updated.runtimeOverrides.claude, overrides.claude);
   } finally {
     restoreRuntimeSettings(previous);
@@ -108,12 +107,11 @@ test("dynamic runtime schemas retain legacy input and explicit runtime updates",
   const current = getSettings();
   const legacy = { pi: current.pi, claude: current.claude };
   assert.equal(runtimeCheckSchema.safeParse(legacy).success, true);
-  assert.equal(settingsSchema.safeParse({ ...current, syncthing: { endpoint: "" } }).success, true);
+  assert.equal(settingsSchema.safeParse({ ...current }).success, true);
   const updated = updateSettings({
     pi: current.pi,
     claude: current.claude,
     runtimes: legacy,
-    syncthing: { endpoint: current.syncthing.endpoint },
   });
   assert.deepEqual(updated.pi, current.pi);
   assert.deepEqual(updated.claude, current.claude);

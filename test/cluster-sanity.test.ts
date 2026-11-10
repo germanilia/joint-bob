@@ -397,7 +397,7 @@ test("background children keep both nodes running after parent completion for ev
   } finally { db.close(); }
 });
 
-// This verifies peer discovery from the harness's shared managed fixture, not Syncthing transport.
+// This verifies peer discovery from the harness's shared managed fixture, not file transport.
 test("published external skills are discovered by a peer from the shared managed fixture", async () => {
   const source = path.join(root, "external-skills", "cluster-skill");
   await mkdir(source, { recursive: true });
@@ -790,7 +790,7 @@ test("a conversation continues on the other node through takeover", async () => 
   const conversation = sessions.body.sessions.find((candidate) => candidate.harnessId === "pi");
   assert.ok(conversation, "node A lists a Pi conversation to take over");
 
-  // Takeover assumes Syncthing already replicated the transcript, so the
+  // Takeover assumes the transcript was already replicated, so the
   // destination continues from its own filesystem instead of receiving a copy.
   const twin = nodeB.projects.find((candidate) => candidate.name === "Internal Assistant")!;
   const takeover = await api<{ ownership?: { ownerNodeId?: string } }>(nodeB, sessionB, "POST", `/projects/${twin.id}/sessions/take-ownership`, {

@@ -38,7 +38,6 @@ test("Kiro preflight refreshes origin-bound website credential snapshots", async
     process.env.KIRO_CAPTURE = capturePath;
     updateSettings({
       runtimes: { ...previousSettings.runtimes, kiro: { executable, configPath, sessionPath } },
-      syncthing: { endpoint: "" },
     });
 
     const project = await addProject("Kiro credentials", cwd, { writeInstructions: false });
@@ -77,7 +76,7 @@ test("Kiro preflight refreshes origin-bound website credential snapshots", async
     await assert.rejects(async () => browserAgentCredential(removed.browserToken, account.id, "LOGIN_PASSWORD"), /unavailable/);
   } finally {
     session?.dispose();
-    updateSettings({ runtimes: previousSettings.runtimes, syncthing: { endpoint: previousSettings.syncthing.endpoint } });
+    updateSettings({ runtimes: previousSettings.runtimes });
     if (previousCapture === undefined) delete process.env.KIRO_CAPTURE;
     else process.env.KIRO_CAPTURE = previousCapture;
     await rm(root, { recursive: true, force: true });

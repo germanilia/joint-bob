@@ -22,7 +22,6 @@ test("Claude session listing re-reads a transcript only when it changes", async 
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
 
     const sessionPaths = await import(`../src/session-paths.js?cache=${Date.now()}-${Math.random()}`);
@@ -90,7 +89,7 @@ test("Claude titles prefer metadata and skip synthetic command prompts", async (
     const projectCwd = path.join(root, "project");
     await mkdir(projectCwd, { recursive: true });
     const settings = await import("../src/settings.js");
-    settings.updateSettings({ pi: { executable: "pi", configPath: "", sessionPath: "" }, claude: { executable: "claude", configPath: "", sessionPath: sessionRoot }, syncthing: { endpoint: "" } });
+    settings.updateSettings({ pi: { executable: "pi", configPath: "", sessionPath: "" }, claude: { executable: "claude", configPath: "", sessionPath: sessionRoot } });
     const sessionPaths = await import("../src/session-paths.js");
     const claude = await import("../src/claude-service.js");
     const projectDir = sessionPaths.claudeProjectDir(projectCwd, sessionRoot);
@@ -266,7 +265,6 @@ test("a restart resumes Claude session facts from node.db instead of re-reading 
     settings.updateSettings({
       pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
-      syncthing: { endpoint: "" },
     });
     const sessionPaths = await import(`../src/session-paths.js?cache=${Date.now()}-${Math.random()}`);
     const projectDir = sessionPaths.claudeProjectDir(projectCwd, sessionRoot);

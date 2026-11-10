@@ -136,6 +136,8 @@ All of this runs in the same Joint Bob server process, with endpoints under `/ap
 
 ### 4.9 File sync between machines without a direct URL
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. This section describes the earlier design. The Syncthing tunnels are gone: files now travel over the same relay channels as other requests between machines, and Syncthing's public relays are never used. Other mentions of Syncthing in this document (D7, sections 9 and 10) are from that design too.
+
 Every machine is a working machine and its files always sync. When two machines share a relay, their files go **through that relay**. Syncthing's public relays are used only when there is no other path (D7).
 
 Path order for each pair of machines:

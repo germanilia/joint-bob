@@ -15,7 +15,7 @@ Want an AI coding agent to perform the installation? Give it [agents_readme.md](
 - Accounts for each of Pi, Claude, and Kiro that you want to use
 - Tailscale or another private HTTPS network for multi-node operation
 
-The installer provides pinned versions of Node.js, Pi, Claude Code, and Syncthing. You do not need to install them first. Syncthing requires no account. Tailscale is optional and has its own account and installation if you choose to use it.
+The installer provides pinned versions of Node.js, Pi, and Claude Code. You do not need to install them first. Files move between machines through Joint Bob's built-in file sync, which needs no installation and no account. Tailscale is optional and has its own account and installation if you choose to use it.
 
 ## Choose a setup
 
@@ -47,7 +47,7 @@ One command can install and, when Tailscale is already signed in, configure Serv
 curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/bootstrap.sh | bash
 ```
 
-The installer downloads the latest GitHub release, verifies its SHA-256 checksum, installs dependencies, starts Syncthing, and creates a native user service.
+The installer downloads the latest GitHub release, verifies its SHA-256 checksum, installs dependencies, and creates a native user service.
 
 It also registers a node-local Pi extension to report terminal activity to the app. After upgrading, run `/reload` in existing Pi terminals or restart them to load it. Active turns, including long-running tools and automatic retries, stay out of pending reviews until Pi settles. If a terminal crashes, its running heartbeat expires after 30 seconds. Terminals started with extensions disabled cannot report their activity.
 
@@ -273,7 +273,7 @@ Any Joint Bob machine with a public HTTPS address can relay for other machines, 
 
 **Add a machine.** Either create a token under **Settings > Relay > Tokens** and send the one-time link to the machine's owner, who pastes it in **Settings > Relay > Joined relays > Add relay**; or enter the relay's address there and choose **Request access**. The machine then shows a six-digit pairing code, and the operator approves the request in **Settings > Relay** only if the codes match. A machine without a direct URL clears its URL in **Settings > Cluster** and is reached through its relays from then on.
 
-**What the relay can see.** Traffic between machines is encrypted end to end with the Noise protocol, bound to each machine's cluster key; the relay only sees which machines talk, when, and how much. Being on the same relay grants nothing: clusters and twins alone decide what is shared and who may sign in, exactly as with direct URLs. Machines that can reach each other directly keep doing so and use the relay only when the direct path fails. Files sync through the relay too, and through Syncthing's public relays only when no other path works.
+**What the relay can see.** Traffic between machines is encrypted end to end with the Noise protocol, bound to each machine's cluster key; the relay only sees which machines talk, when, and how much. Being on the same relay grants nothing: clusters and twins alone decide what is shared and who may sign in, exactly as with direct URLs. Machines that can reach each other directly keep doing so and use the relay only when the direct path fails. Files sync through the relay too.
 
 **Relay choice is automatic.** When several relays can reach a machine, the one that worked last is tried first and the others take over if it is gone. There is nothing to configure per cluster.
 
@@ -314,17 +314,23 @@ See [docs/features/clusters.html](docs/features/clusters.html) for the full mode
 
 ### How synchronization works
 
-Syncthing is a companion process, not code embedded in the Joint Bob server and not a hosted Joint Bob service. The installer supplies a checksum-verified Syncthing binary. It can adopt a compatible running daemon; otherwise it starts `joint-bob-syncthing.service` on Linux or `com.joint-bob.syncthing` on macOS. Joint Bob discovers the daemon's local API key and controls it through Syncthing's loopback REST API. The API endpoint must stay on a loopback address.
+Joint Bob moves files between machines itself. File sync is part of the Joint Bob server. There is no separate program to install, no account, and nothing to configure. A project's files are sent only to the nodes allowed to see that project, over the same signed connections as everything else, directly or through a relay.
 
-Syncthing has no user accounts. Each node has a cryptographic device ID. Joint Bob exchanges those IDs over its signed cluster API and shares each project's folder only with the nodes allowed to see that project, so users do not need to open the Syncthing GUI, create an account, or configure device and folder sharing by hand. File transport uses Syncthing's encrypted device-to-device protocol. Depending on network reachability, Syncthing may connect directly or through its configured discovery and relay services.
+A project shared with no other machine is not synchronized. When a project is first shared, both machines compare their files before changes flow. Until that finishes the project shows "Checking both machines' files". **Settings > File sync** shows the state of every share, its errors, and the ignore rules.
 
-Joint Bob and Syncthing have separate jobs:
+Earlier releases used Syncthing for project files. Joint Bob no longer installs, starts, or configures Syncthing. On a machine that was installed with an earlier release:
+
+- Joint Bob removes its own `joint-bob-*` folders from the local Syncthing configuration once. Other Syncthing folders are not touched.
+- The Syncthing daemon keeps running. Joint Bob does not stop or remove it, including a `joint-bob-syncthing.service` or `com.joint-bob.syncthing` unit that an earlier installer created. Remove it yourself if you do not use Syncthing for anything else.
+- `.stfolder` and `.stignore` files stay in project folders. They are not synchronized and can be deleted.
+
+What travels how:
 
 - Joint Bob's signed HTTPS API exchanges cluster membership, project policy and metadata, task state, conversation transcripts, and other application events.
-- Syncthing transfers each shared project's files and its ticket workspaces.
+- Built-in file sync transfers each shared project's files, its worktrees, and its ticket workspaces.
 - Each node keeps its own `~/.joint-bob/node.db`. Joint Bob never synchronizes the SQLite database as a file.
-- Pi, Claude, and Kiro configuration, authentication files, OAuth state, MCP authentication, and daemon control keys remain node-local. Joint Bob pauses legacy `dot-pi`, `dot-claude`, whole-transcript, and global ticket folders if they exist.
-- Twins automatically receive all of the node administrator's owned secret accounts, including project-owned accounts, without a per-account opt-in. Accounts received from another node and other local users' accounts are not forwarded through twins. Project-owned accounts keep their project restriction. The per-account sharing checkbox controls export to cluster members for shared projects the account is attached to. In Settings > Secrets, each owned account can also be shared with selected clusters or individual nodes in them, without enabling attached-project cluster sharing. Sharing a workspace sends its assigned accounts to members along with the workspace's projects. Recipients see read-only copies; edits on the owner update them, and removing the last grant removes the copy when the recipient reconnects. Values already copied cannot be recalled. Credential transfer uses the signed Joint Bob cluster API, not Syncthing.
+- Pi, Claude, and Kiro configuration, authentication files, OAuth state, MCP authentication, and daemon control keys remain node-local.
+- Twins automatically receive all of the node administrator's owned secret accounts, including project-owned accounts, without a per-account opt-in. Accounts received from another node and other local users' accounts are not forwarded through twins. Project-owned accounts keep their project restriction. The per-account sharing checkbox controls export to cluster members for shared projects the account is attached to. In Settings > Secrets, each owned account can also be shared with selected clusters or individual nodes in them, without enabling attached-project cluster sharing. Sharing a workspace sends its assigned accounts to members along with the workspace's projects. Recipients see read-only copies; edits on the owner update them, and removing the last grant removes the copy when the recipient reconnects. Values already copied cannot be recalled. Credential transfer uses the signed Joint Bob cluster API, not file sync.
 
 Users still install Joint Bob on every node, create a local Joint Bob administrator on every node, configure mutually reachable private HTTPS origins, choose a Joint Bob home folder, and join clusters or pair twins with a one-time link. Pi, Claude, and Kiro authentication is separate and must be completed on every node that will run that engine. Tailscale authentication is required only when Tailscale provides the private network.
 
@@ -339,13 +345,13 @@ The **Joint Bob home folder** controls where new projects and board-card workspa
 
 A workspace is a folder directly under the home folder. Joint Bob creates `personal` and `work` workspaces by default. Add more under **Settings > Projects > Workspaces**.
 
-Projects created through the UI synchronize through per-project Syncthing folders. To import an existing project, choose its source folder and one of these modes:
+Projects created through the UI are synchronized with the machines they are shared with. To import an existing project, choose its source folder and one of these modes:
 
 - **Move into Joint Bob and leave a symlink** keeps the old path working.
 - **Move into Joint Bob** removes the old path.
 - **Copy into Joint Bob** leaves the original folder unchanged.
 
-Joint Bob copies or moves the complete local folder, including `.git`, `node_modules`, and hidden files. `.git`, `node_modules`, build output, environment files, credentials, and logs are excluded from Syncthing at every depth. Python environments and installed packages (`.venv`, `venv`, `site-packages`, `dist-packages`, `__pypackages__`), npm/pnpm/Yarn caches, pip/uv caches, NuGet's `.nuget` cache and package archives, and Gradle/Maven caches also stay node-local. Source directories named `packages` or `bin`, package-manager configuration, and lockfiles still sync; each node installs its own dependencies.
+Joint Bob copies or moves the complete local folder, including `.git`, `node_modules`, and hidden files. `.git`, `node_modules`, build output, environment files, credentials, and logs are never synchronized, at any depth. Python environments and installed packages (`.venv`, `venv`, `site-packages`, `dist-packages`, `__pypackages__`), npm/pnpm/Yarn caches, pip/uv caches, NuGet's `.nuget` cache and package archives, and Gradle/Maven caches also stay node-local. Source directories named `packages` or `bin`, package-manager configuration, and lockfiles still sync; each node installs its own dependencies.
 
 Because `.git` stays on each node, a commit pushed from one node would leave the other nodes' git HEAD behind the files they already received. Before every user message and goal turn, Joint Bob checks whether the project is a git repository. If it is, it runs `git fetch` and moves HEAD and the index, never the files, to the upstream commit. It does that only when the files on disk already match that commit, the node has no unpushed commits, and nothing is staged. Commit and push from the same node: an unpushed commit stays on the node that made it.
 
@@ -389,7 +395,7 @@ Only the execution owner stores and dispatches the schedule. Management requests
 
 Use Pause/Resume, Edit, Delete, and History in the dialog. Edits and pauses never alter an already claimed run; saved settings apply on its next execution. Different project schedules run concurrently in separate conversations, and their results join the project's conversation history. Conversation schedules targeting one conversation still queue there in order. The **Cron** conversation filter uses persisted provenance, not editable labels. Missed offline runs are skipped without replay, and runs of one task never overlap. Daily and weekly schedules skip nonexistent DST times and run once at repeated DST times. Inspect failed runs in History; schedules pause after failure only when configured to do so.
 
-Schedules and run history stay in the execution node's SQLite database. They do not use Syncthing. Failed runs retry at the next scheduled time by default; select **Pause schedule after a failed run** when a task should stop for review instead. Interrupted dispatches still pause to prevent an uncertain run from overlapping a later one. Deleting a schedule leaves its conversations intact.
+Schedules and run history stay in the execution node's SQLite database. They are not synchronized as files. Failed runs retry at the next scheduled time by default; select **Pause schedule after a failed run** when a task should stop for review instead. Interrupted dispatches still pause to prevent an uncertain run from overlapping a later one. Deleting a schedule leaves its conversations intact.
 
 ## Webhooks
 
@@ -409,7 +415,7 @@ In **Settings > Resources**, enter absolute global skill paths such as `/Users/a
 
 In **Resources > Skills**, use **Share…** to choose clusters, machines, workspaces, projects, or conversations. Workspace, project, and conversation selections limit skill loading to those contexts on the owning node. On a receiver, a broader machine or cluster grant makes the skill available across that machine. No selection leaves an owned skill local-only. Scope grants reach another machine only for projects already shared with it. See [selective skill sharing](docs/skill-sharing.md) for updates, revocation, and native-discovery limits.
 
-Selective sharing uses authenticated node requests, not the legacy blanket Syncthing resource folder. Use **Reload skills** to refresh idle Pi conversations; busy sessions and failures are reported. Previously read instructions cannot be removed from a conversation's history. Claude starts a process per turn and sees changes on its next run.
+Selective sharing uses authenticated node requests. Use **Reload skills** to refresh idle Pi conversations; busy sessions and failures are reported. Previously read instructions cannot be removed from a conversation's history. Claude starts a process per turn and sees changes on its next run.
 
 Skills can execute their included instructions and scripts. Publish only trusted folders, especially when sharing with paired nodes.
 
@@ -471,7 +477,7 @@ The conversation viewer's **Access** panel offers the same shares for this conve
 
 Upgrades never widen access. Old "All projects (global)" grants become **every conversation on this machine**. The old per-profile cross-node toggle is gone: grants on profiles it kept off the relay are pinned to their own machine, and grants on profiles it allowed keep their reach.
 
-Profile metadata, recovery intent, and download records stay in node-local SQLite. Chromium owns its native files under `~/.joint-bob/browser/profiles/<profile-id>`, with owner-only directory permissions. **Native profile files contain sensitive authentication data and are not encrypted by Joint Bob. Use disk encryption, such as LUKS on Ubuntu or FileVault on macOS, to protect them at rest.** Never put these files in Git or Syncthing. Existing encrypted saved-login snapshots import once when explicitly opened; afterward the native profile saves changes automatically. Existing Settings → Secrets credentials remain optional for other tasks.
+Profile metadata, recovery intent, and download records stay in node-local SQLite. Chromium owns its native files under `~/.joint-bob/browser/profiles/<profile-id>`, with owner-only directory permissions. **Native profile files contain sensitive authentication data and are not encrypted by Joint Bob. Use disk encryption, such as LUKS on Ubuntu or FileVault on macOS, to protect them at rest.** Never put these files in Git or in a synchronized folder. Existing encrypted saved-login snapshots import once when explicitly opened; afterward the native profile saves changes automatically. Existing Settings → Secrets credentials remain optional for other tasks.
 
 Deleting a profile removes its local browser data, but requires ending its running or restore-pending session first. To revoke a WhatsApp linked device, also unlink it from the phone. Removing local files is not a server-side account revocation.
 
@@ -616,7 +622,7 @@ Two things the dev script configures that production does not:
 - `JOINT_BOB_SESSION_COOKIE` gives each node its own session cookie name. Cookies ignore the port, so two nodes on `127.0.0.1` would otherwise sign each other out — including your installed node on 8790.
 - `JOINT_BOB_INSECURE_COOKIE=1` drops the `Secure` flag, which browsers reject over plain HTTP. Never set it on a real node.
 
-Dummy projects report their sync state as `Unavailable`: the dev nodes configure no Syncthing endpoint, which is correct for an isolated environment.
+Dummy projects report their sync state as `Unavailable`: the dev script starts the nodes with file sync off (`JOINT_BOB_FILE_SYNC=0`), because both nodes work in the same folders.
 
 ### Sanity suites
 
@@ -677,8 +683,8 @@ The runner uploads the unpublished working tree through EC2 Instance Connect, in
 - Run Joint Bob as a non-root user.
 - Use private networking such as Tailscale for remote access.
 - Authentication uses SQLite-backed sessions.
-- Machine, secret-account, Syncthing, and push secrets are encrypted.
+- Machine, secret-account, and push secrets are encrypted.
 - Joint Bob-owned state stays in node-local SQLite under `~/.joint-bob`.
-- Git repositories, Pi and Claude transcripts, worktrees, and Syncthing data remain filesystem-owned.
+- Git repositories, Pi and Claude transcripts, and worktrees remain filesystem-owned.
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.

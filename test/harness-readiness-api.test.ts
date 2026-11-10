@@ -56,14 +56,13 @@ test("installed and signed-in harnesses are reported ready", { timeout: 60_000 }
 test("a signed-out harness is reported unavailable with the reason", { timeout: 60_000 }, async () => {
   const node = environment.nodes[0];
   const session = await signIn(environment, node);
-  const current = (await api<{ runtimes: Record<string, RuntimeSettings>; syncthing: { endpoint: string } }>(node, session, "GET", "/settings")).body;
+  const current = (await api<{ runtimes: Record<string, RuntimeSettings> }>(node, session, "GET", "/settings")).body;
   const put = await api(node, session, "PUT", "/settings", {
     runtimes: {
       ...current.runtimes,
       claude: { ...current.runtimes.claude, executable: await signedOutCli("claude") },
       kiro: { ...current.runtimes.kiro, executable: await signedOutCli("kiro-cli") },
     },
-    syncthing: { endpoint: current.syncthing.endpoint },
   });
   assert.equal(put.status, 200, JSON.stringify(put.body));
 

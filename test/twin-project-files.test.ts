@@ -5,12 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import {DatabaseSync} from 'node:sqlite';
 import {enqueueReplicationEvent} from '../src/replication.js';
-import { api,seedDevEnvironment,signIn,startDevNode,stopDevNode } from "./dev-nodes.js";
-import { startNativeSyncthing,stopNativeSyncthing } from "./native-syncthing.js";
+import type {FileSyncStatusAnswer} from "../src/file-sync/index.js";
+import { api,freePort,seedDevEnvironment,signIn,startDevNode,stopDevNode } from "./dev-nodes.js";
 
-test("twins enroll new project files using native Syncthing and revoke device access",{timeout:120000},async()=>{
- const root=await mkdtemp(path.join(os.tmpdir(),"twin-native-files-"));
- const children:Awaited<ReturnType<typeof startDevNode>>[]=[],syncs:Awaited<ReturnType<typeof startNativeSyncthing>>[]=[];
+// Both nodes run built-in file sync and take a newly shared project over by themselves.
+test("twins move a new project's files with built-in file sync and stop when they are unpaired",{timeout:240000},async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),"twin-project-files-"));
+ const children:Awaited<ReturnType<typeof startDevNode>>[]=[];
  try{
   const a=await seedDevEnvironment(path.join(root,"a"),1),b=await seedDevEnvironment(path.join(root,"b"),1);
   const left=a.nodes[0],right=b.nodes[0];
@@ -24,30 +25,33 @@ test("twins enroll new project files using native Syncthing and revoke device ac
   // The fixture generator reuses demo session UUIDs across independent environments.
   await rm(path.join(b.home,'.pi','sessions'),{recursive:true,force:true});
   await rm(path.join(b.home,'.claude','projects'),{recursive:true,force:true});
-  const syncA=await startNativeSyncthing(path.join(root,"syncthing-a"));syncs.push(syncA);
-  const syncB=await startNativeSyncthing(path.join(root,"syncthing-b"));syncs.push(syncB);
-  for(const [local,peer] of [[syncA,syncB],[syncB,syncA]]) await local.request(`config/devices/${peer.deviceId}`,{deviceID:peer.deviceId,name:"Test peer",addresses:[peer.address]});
-  for(const [env,sync]of [[a,syncA],[b,syncB]] as const){
-    for(const [id,folder]of [['joint-bob-ticket-workspaces',path.join(env.home,'JointBob','tickets')],['joint-bob-conversations-pi',path.join(env.home,'.pi','sessions')]]){
-      await mkdir(folder,{recursive:true});await sync.request(`config/folders/${id}`,{id,path:folder,type:'sendreceive',paused:true,devices:[]});
-    }
-  }
   const engineLog=path.join(root,'engine.log');
-  for(const [env,node,sync] of [[a,left,syncA],[b,right,syncB]] as const) children.push(await startDevNode(env,node,{JOINT_BOB_SYNCTHING_URL:sync.url,JOINT_BOB_SYNCTHING_API_KEY:sync.key,JOINT_BOB_TEST_ENGINE_LOG:engineLog}));
+  for(const [env,node] of [[a,left],[b,right]] as const) children.push(await startDevNode(env,node,{JOINT_BOB_FILE_SYNC:'1',JOINT_BOB_FILE_SYNC_SETTLE_MS:'1000',JOINT_BOB_FILE_SYNC_PORT:String(await freePort()),JOINT_BOB_FILE_SYNC_LISTEN:'127.0.0.1',JOINT_BOB_TEST_ENGINE_LOG:engineLog}));
   const sa=await signIn(a,left),sb=await signIn(b,right);
   const invitation=await api<{link:string;relationshipId:string}>(left,sa,"POST","/twins/invitations",{confirmOwnedData:true});
   assert.equal((await api(right,sb,"POST","/twins/accept",{link:invitation.body.link,confirmOwnedData:true})).status,201);
-  const directory=path.join(root,"project");await mkdir(directory);await writeFile(path.join(directory,"shared.txt"),"actual native transfer");
-  const created=await api<{project:{id:string}}>(left,sa,"POST","/projects",{name:"Native files",type:"personal",path:directory,synced:true});assert.equal(created.status,201);
+  const directory=path.join(root,"project");await mkdir(directory);await writeFile(path.join(directory,"shared.txt"),"actual file transfer");
+  const created=await api<{project:{id:string}}>(left,sa,"POST","/projects",{name:"Twin files",type:"personal",path:directory,synced:true});assert.equal(created.status,201);
   let transferred=false,remotePath="";
-  const deadline=Date.now()+35000;
+  const deadline=Date.now()+90000;
   while(Date.now()<deadline){
    const projects=await api<{projects:Array<{id:string;path:string}>}>(right,sb,"GET","/projects");
    const project=projects.body.projects.find(p=>p.id===created.body.project.id);
-   if(project){remotePath=project.path;try{transferred=await readFile(path.join(project.path,"shared.txt"),"utf8")==="actual native transfer";}catch(error){if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error;}}
+   if(project){remotePath=project.path;try{transferred=await readFile(path.join(project.path,"shared.txt"),"utf8")==="actual file transfer";}catch(error){if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error;}}
    if(transferred)break;await new Promise(r=>setTimeout(r,200));
   }
-  assert.equal(transferred,true,"actual file bytes must arrive, not merely an idle Syncthing status");
+  if(!transferred){
+   const seen=await Promise.all([[left,sa],[right,sb]].map(async([node,session])=>({projects:(await api(node as typeof left,session as typeof sa,"GET","/file-sync/projects")).body,status:(await api<FileSyncStatusAnswer>(node as typeof left,session as typeof sa,"GET","/file-sync/status")).body})));
+   assert.fail(`actual file bytes must arrive, not merely an idle status: ${JSON.stringify(seen.map(({projects,status})=>({projects,enabled:status.enabled,worker:status.worker,shares:status.shares.map(share=>({share:share.share,phase:share.phase,state:share.state,message:share.message,peers:share.peers.length}))})))}`);
+  }
+  // Each node took the project over by itself and now reports it on built-in sync.
+  const fileSync=async(node:typeof left,session:typeof sa)=>(await api<FileSyncStatusAnswer>(node,session,"GET","/file-sync/status")).body;
+  const shareWith=(answer:FileSyncStatusAnswer,peer:string)=>answer.shares.filter(share=>share.projectId===created.body.project.id&&share.peers.some(candidate=>candidate.peer===peer));
+  for(const [node,session,peer]of[[left,sa,right.nodeId],[right,sb,left.nodeId]]as const){
+   let shares=shareWith(await fileSync(node,session),peer);const phaseDeadline=Date.now()+60000;
+   while(!(shares.length&&shares.every(share=>share.phase==='builtin'))&&Date.now()<phaseDeadline){await new Promise(r=>setTimeout(r,250));shares=shareWith(await fileSync(node,session),peer);}
+   assert.ok(shares.length&&shares.every(share=>share.phase==='builtin'&&share.engine==='builtin'),JSON.stringify(shares.map(share=>({kind:share.kind,phase:share.phase,engine:share.engine,state:share.state}))));
+  }
   const task=await api<{task:{id:string}}>(left,sa,"POST",`/projects/${created.body.project.id}/tasks`,{title:"Shared task",description:"",status:"backlog",engine:"pi",phaseConfig:{}});
   assert.equal(task.status,201,JSON.stringify(task.body));
   const taskDeadline=Date.now()+10000;
@@ -76,7 +80,7 @@ test("twins enroll new project files using native Syncthing and revoke device ac
     await new Promise(r=>setTimeout(r,100));
   }
   assert.ok(executed?.sessionPath&&executed.worktreePath,'task produces an actual ticket workspace and conversation');
-  let handedOff:Awaited<ReturnType<typeof api<{task:ExecutedTask}>>>|undefined;const handoffDeadline=Date.now()+20000;
+  let handedOff:Awaited<ReturnType<typeof api<{task:ExecutedTask}>>>|undefined;const handoffDeadline=Date.now()+60000;
   while(Date.now()<handoffDeadline){
     handedOff=await api<{task:ExecutedTask}>(left,sa,'POST',`/projects/${created.body.project.id}/tasks/${task.body.task.id}/handoff`,{peerId:right.nodeId});
     if(handedOff.status===200)break;await new Promise(r=>setTimeout(r,250));
@@ -85,23 +89,17 @@ test("twins enroll new project files using native Syncthing and revoke device ac
   assert.equal(handedOff?.status,200,JSON.stringify({handoff:handedOff?.body,eligibility}));
   assert.equal(handedOff.body.task.currentNodeId,right.nodeId);
   const targetTask=(await api<{tasks:ExecutedTask[]}>(right,sb,'GET',`/projects/${created.body.project.id}/tasks`)).body.tasks.find(row=>row.id===task.body.task.id)!;
-  assert.equal(await readFile(path.join(targetTask.worktreePath,'shared.txt'),'utf8'),'actual native transfer','ticket workspace bytes survive takeover');
+  assert.equal(await readFile(path.join(targetTask.worktreePath,'shared.txt'),'utf8'),'actual file transfer','ticket workspace bytes survive takeover');
   assert.match(await readFile(targetTask.sessionPath,'utf8'),/stubbed response/,'ticket conversation bytes survive takeover');
-  for(const sync of [syncA,syncB]){
-    const folders=await sync.request<Array<{id:string;paused:boolean;devices:Array<{deviceID:string}>}>>('config/folders');
-    for(const id of ['joint-bob-ticket-workspaces','joint-bob-conversations-pi']){
-      const folder=folders.find(folder=>folder.id===id)!;assert.equal(folder.paused,true);assert.equal(folder.devices.some(device=>device.deviceID===(sync===syncA?syncB:syncA).deviceId),false);
-    }
-  }
   const sharingEndpoint=`/twins/${invitation.body.relationshipId}/sharing`;
   assert.equal((await api(left,sa,"POST",sharingEndpoint,{ownerNodeId:left.nodeId,confirmOwnedData:true})).status,200);
   let ready=false;
-  const readyDeadline=Date.now()+25000;
+  const readyDeadline=Date.now()+60000;
   while(Date.now()<readyDeadline){
    const state=await api<{state:string}>(left,sa,"GET",sharingEndpoint);
    ready=state.body.state==='ready';if(ready)break;await new Promise(r=>setTimeout(r,200));
   }
-  assert.equal(ready,true,"ready requires acknowledged sharing and both native Syncthing indexes caught up");
+  assert.equal(ready,true,"ready requires acknowledged sharing and both nodes holding each other's files");
   for(const [sender,recipient]of[[left,right],[right,left]]){
    const db=new DatabaseSync(path.join(sender.dataDir,'node.db'));
    db.exec('PRAGMA busy_timeout=5000');
@@ -124,14 +122,17 @@ test("twins enroll new project files using native Syncthing and revoke device ac
   assert.ok(sourceSessions.body.sessions.every(session=>remoteSessions.body.sessions.some(remote=>remote.id===session.id&&!remote.draft)),
     'twin discovers transferred transcripts through source project location mapping');
   assert.equal((await api(left,sa,"DELETE",`/twins/${invitation.body.relationshipId}`)).status,200);
-  const revokeDeadline=Date.now()+15000;
-  let enrolled=true;
+  // Unpaired: neither node keeps a file sync share of the project with the other, and a later change stays where it was made.
+  const revokeDeadline=Date.now()+30000;
+  let stillShared=true;
   while(Date.now()<revokeDeadline){
-   const folders=await syncA.request<Array<{path:string;devices:Array<{deviceID:string}>}>>("config/folders");
-   enrolled=folders.some(f=>f.path===directory&&f.devices.some(d=>d.deviceID===syncB.deviceId));
-   if(!enrolled)break;await new Promise(r=>setTimeout(r,200));
+   stillShared=shareWith(await fileSync(left,sa),right.nodeId).length>0||shareWith(await fileSync(right,sb),left.nodeId).length>0;
+   if(!stillShared)break;await new Promise(r=>setTimeout(r,200));
   }
-  assert.equal(enrolled,false,"revocation must remove the peer from native folder devices");
-  assert.equal(await readFile(path.join(remotePath,"shared.txt"),"utf8"),"actual native transfer","revocation preserves files");
- }finally{await Promise.all(children.map(stopDevNode));await Promise.all(syncs.map(s=>stopNativeSyncthing(s.child)));await rm(root,{recursive:true,force:true});}
+  assert.equal(stillShared,false,"revocation must end the file sync share with the former twin");
+  await writeFile(path.join(directory,"after-unpairing.txt"),"stays on the owner");
+  await new Promise(r=>setTimeout(r,5000));
+  await assert.rejects(readFile(path.join(remotePath,"after-unpairing.txt"),"utf8"),{code:'ENOENT'},"nothing is sent to a former twin");
+  assert.equal(await readFile(path.join(remotePath,"shared.txt"),"utf8"),"actual file transfer","revocation preserves files");
+ }finally{await Promise.all(children.map(stopDevNode));await rm(root,{recursive:true,force:true});}
 });

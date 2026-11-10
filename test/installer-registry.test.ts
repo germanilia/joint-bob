@@ -20,7 +20,7 @@ test("installer ignores user, global, scoped and environment private npm registr
     const privateConfig = "registry=http://127.0.0.1:1/\n@earendil-works:registry=http://127.0.0.1:2/\n";
     await Promise.all([writeFile(userConfig, privateConfig), writeFile(globalConfig, privateConfig)]);
     await copyFile("scripts/install-service.sh", path.join(app, "scripts/install-service.sh"));
-    for (const helper of ["run-node.sh", "install-node-runtime.sh", "check-prerequisites.sh", "build-service-path.sh", "install-syncthing.sh"]) {
+    for (const helper of ["run-node.sh", "install-node-runtime.sh", "check-prerequisites.sh", "build-service-path.sh"]) {
       await writeFile(path.join(app, "scripts", helper), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     }
     const realNpm = (await exec("which", ["npm"])).stdout.trim();

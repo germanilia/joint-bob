@@ -132,19 +132,18 @@ test("with file sync off, main's files routes say so: shares answers enabled fal
   assert.equal(unsigned.status, 401, "the routes sit behind cluster authentication");
 });
 
-// fix (P4+P5): the switch's own endpoint is main's, answered whether or not the worker runs, behind the same authentication.
-test("the switch endpoint answers only signed peers the project is shared with, and checks its body", async () => {
-  const notShared = await fromPeer("POST", "/api/cluster/v2/files/switch", { projectId: "nobody-shares-this" });
-  assert.equal(notShared.status, 403);
-  assert.deepEqual(await notShared.json(), { error: "Project is not shared with this node" });
-  const malformed = await fromPeer("POST", "/api/cluster/v2/files/switch", { projectId: "p1", report: { phase: "elsewhere", error: null } });
-  assert.equal(malformed.status, 400);
+// The endpoint an older release's owner asked about a project's move is gone: such a machine gets a plain 404, signed or not past authentication.
+test("the removed switch endpoint answers 404 to a signed peer, and still nothing to an unsigned caller", async () => {
+  for (const body of [{ projectId: "nobody-shares-this" }, { projectId: "p1", report: { phase: "elsewhere", error: null } }]) {
+    const answer = await fromPeer("POST", "/api/cluster/v2/files/switch", body);
+    assert.equal(answer.status, 404, JSON.stringify(body));
+  }
   const unsigned = await fetch(new URL("/api/cluster/v2/files/switch", origin), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: "p1" }) });
   assert.equal(unsigned.status, 401);
 });
 
 test("switched on while its worker does not serve yet (starting, restarting), main's files routes say it is starting, never off", async () => {
-  // A peer reading "off" here would have the owner move its built-in projects back to Syncthing (migration.ts).
+  // A peer reading "off" here would show "File sync is off" for every project it shares with this node.
   const saved = process.env.JOINT_BOB_FILE_SYNC;
   process.env.JOINT_BOB_FILE_SYNC = "1";
   try {

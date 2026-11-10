@@ -39,7 +39,6 @@
     "coding-agent",
     "pi",
     "claude",
-    "syncthing",
     "tailscale"
   ],
   "publishConfig": {

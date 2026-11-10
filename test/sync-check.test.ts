@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { conflictOriginalPath, conflictsForNode, CONFLICT_SETTLE_MS, findSyncConflicts, resolveTrivialConflict, syncResolverPrompt } from "../src/server/sync-check.js";
-import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { api, freePort, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 
-// Syncthing stamps a copy with the time the conflict was found.
+// File sync stamps a copy with the time the conflict was found.
 const stamp = (at: Date): string => `sync-conflict-${at.toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-")}-5CHB2CY`;
 const STAMP = stamp(new Date());
 const old = new Date(Date.now() - CONFLICT_SETTLE_MS - 60_000);
@@ -110,26 +110,13 @@ test("the resolver prompt names every pair and forbids unrelated changes", () =>
   assert.match(prompt, /do not run git commands/);
 });
 
-test("sync check is on by default, is configurable, and merges conflicts through the chosen agent", async () => {
+test("sync check is on by default and is configurable", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-sync-check-"));
-  const resolver = path.join(root, "resolver.mjs");
-  const log = path.join(root, "resolver.json");
-  await writeFile(resolver, `import { appendFile, readFile, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
-export default async (input) => {
-  await appendFile(${JSON.stringify(log)}, JSON.stringify({ harnessId: input.settings.harnessId, modelId: input.settings.modelId, conflicts: input.conflicts }) + "\\n");
-  for (const pair of input.conflicts) {
-    const original = path.join(input.cwd, pair.original), copy = path.join(input.cwd, pair.conflict);
-    await writeFile(original, (await readFile(original, "utf8")) + (await readFile(copy, "utf8")));
-    await unlink(copy);
-  }
-};
-`);
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
   try {
     const environment = await seedDevEnvironment(root, 1);
     const node = environment.nodes[0];
-    server = await startDevNode(environment, node, { JOINT_BOB_SYNC_RESOLVER: resolver });
+    server = await startDevNode(environment, node);
     const auth = await signIn(environment, node);
     const initial = await api<Record<string, any>>(node, auth, "GET", "/settings");
     assert.equal(initial.body.syncCheck.enabled, true);
@@ -150,16 +137,65 @@ export default async (input) => {
     const kept = await api<Record<string, any>>(node, auth, "PUT", "/settings", withoutSync);
     assert.equal(kept.body.syncCheck.modelId, "custom-sync-model", "a save that omits the sync check keeps it");
 
+    // A copy that has only just appeared may still be being written: a run leaves it alone.
     const project = node.projects[0].path;
-    await writeOld(path.join(project, "notes.md"), "mine\n");
-    await writeOld(path.join(project, `notes.${STAMP}.md`), "theirs\n");
-    await writeOld(path.join(project, "copy.txt"), "same");
-    await writeOld(path.join(project, `copy.${STAMP}.txt`), "same");
-
+    await writeFile(path.join(project, "copy.txt"), "same");
+    await writeFile(path.join(project, `copy.${STAMP}.txt`), "same");
     const run = await api<Record<string, any>>(node, auth, "POST", "/settings/sync-check/run");
     assert.equal(run.status, 200, JSON.stringify(run.body));
-    assert.equal(run.body.resolvedTotal, 2, JSON.stringify(run.body));
+    assert.equal(run.body.resolvedTotal, 0, JSON.stringify(run.body));
     assert.deepEqual(run.body.unresolved, []);
+    assert.equal(await present(path.join(project, `copy.${STAMP}.txt`)), true);
+    const status = await api<Record<string, any>>(node, auth, "GET", "/settings/sync-check");
+    assert.ok(status.body.lastCheckAt);
+  } finally {
+    if (server) await stopDevNode(server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// A copy's age is the time it appeared on disk, which a test cannot set, so the pass runs in this
+// process with a clock set past the settling time.
+test("a pass fixes settled copies itself, merges real edits through the chosen agent, and does nothing when switched off", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-sync-check-pass-"));
+  const resolver = path.join(root, "resolver.mjs");
+  const log = path.join(root, "resolver.json");
+  await writeFile(resolver, `import { appendFile, readFile, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
+export default async (input) => {
+  await appendFile(${JSON.stringify(log)}, JSON.stringify({ harnessId: input.settings.harnessId, modelId: input.settings.modelId, conflicts: input.conflicts }) + "\\n");
+  for (const pair of input.conflicts) {
+    const original = path.join(input.cwd, pair.original), copy = path.join(input.cwd, pair.conflict);
+    await writeFile(original, (await readFile(original, "utf8")) + (await readFile(copy, "utf8")));
+    await unlink(copy);
+  }
+};
+`);
+  const [{ runSyncCheck }, { getSettings, updateSettings }, { addProject }, { flags }] = await Promise.all([
+    import("../src/server/sync-check.js"), import("../src/settings.js"), import("../src/store.js"), import("../src/server/state.js"),
+  ]);
+  const previous = { resolver: process.env.JOINT_BOB_SYNC_RESOLVER, ready: flags.startupReady, syncCheck: getSettings().syncCheck };
+  try {
+    const project = path.join(root, "project");
+    await mkdir(project);
+    await addProject("Sync check pass", project);
+    process.env.JOINT_BOB_SYNC_RESOLVER = resolver;
+    flags.startupReady = true;
+    updateSettings({ syncCheck: { ...previous.syncCheck, enabled: true, modelId: "custom-sync-model" } });
+    await writeFile(path.join(project, "notes.md"), "mine\n");
+    await writeFile(path.join(project, `notes.${STAMP}.md`), "theirs\n");
+    await writeFile(path.join(project, "copy.txt"), "same");
+    await writeFile(path.join(project, `copy.${STAMP}.txt`), "same");
+
+    const early = await runSyncCheck();
+    assert.equal(early.lastError, undefined);
+    assert.equal(await present(path.join(project, `copy.${STAMP}.txt`)), true, "copies that just appeared are left to settle");
+    const settled = Date.now() + CONFLICT_SETTLE_MS + 60_000;
+    const run = await runSyncCheck(settled);
+    assert.equal(run.lastError, undefined);
+    assert.equal(run.resolvedTotal - early.resolvedTotal, 2, JSON.stringify(run));
+    assert.deepEqual(run.unresolved, []);
+    assert.deepEqual(run.folderIssues, [], "a project shared with nobody is no folder issue");
     assert.equal(await readFile(path.join(project, "notes.md"), "utf8"), "mine\ntheirs\n");
     assert.equal(await present(path.join(project, `notes.${STAMP}.md`)), false);
     assert.equal(await present(path.join(project, `copy.${STAMP}.txt`)), false);
@@ -168,13 +204,47 @@ export default async (input) => {
     assert.equal(calls[0].modelId, "custom-sync-model");
     assert.deepEqual(calls[0].conflicts, [{ original: "notes.md", conflict: `notes.${STAMP}.md` }]);
 
-    const status = await api<Record<string, any>>(node, auth, "GET", "/settings/sync-check");
-    assert.ok(status.body.lastCheckAt);
-
-    await api(node, auth, "PUT", "/settings", { ...kept.body, syncCheck: { ...kept.body.syncCheck, enabled: false } });
-    await writeOld(path.join(project, `copy.${STAMP}.txt`), "same");
-    await api(node, auth, "POST", "/settings/sync-check/run");
+    updateSettings({ syncCheck: { ...getSettings().syncCheck, enabled: false } });
+    await writeFile(path.join(project, `copy.${STAMP}.txt`), "same");
+    await runSyncCheck(settled + CONFLICT_SETTLE_MS);
     assert.equal(await present(path.join(project, `copy.${STAMP}.txt`)), true, "a disabled check changes nothing");
+  } finally {
+    updateSettings({ syncCheck: previous.syncCheck });
+    flags.startupReady = previous.ready;
+    if (previous.resolver === undefined) delete process.env.JOINT_BOB_SYNC_RESOLVER; else process.env.JOINT_BOB_SYNC_RESOLVER = previous.resolver;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// Folder issues come from the built-in engine's status of each project this node holds on file sync.
+// A project shared with nobody has no such status and is never an issue.
+test("the check reports a folder issue from file sync's status for a shared project and none for an unshared one", { timeout: 120_000 }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-sync-check-folders-"));
+  let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
+  try {
+    const environment = await seedDevEnvironment(root, 1);
+    const node = environment.nodes[0];
+    server = await startDevNode(environment, node, {
+      JOINT_BOB_FILE_SYNC: "1", JOINT_BOB_FILE_SYNC_PORT: String(await freePort()), JOINT_BOB_FILE_SYNC_LISTEN: "127.0.0.1", JOINT_BOB_FILE_SYNC_TEST_PHASES: "1",
+    });
+    const auth = await signIn(environment, node);
+    const [shared, unshared] = node.projects;
+    assert.ok(shared && unshared, "the seed has at least two projects");
+
+    const before = await api<Record<string, any>>(node, auth, "POST", "/settings/sync-check/run");
+    assert.equal(before.status, 200, JSON.stringify(before.body));
+    assert.deepEqual(before.body.folderIssues, [], "no project is on file sync yet");
+
+    // This node took the project over for a peer that is not there: the engine has no one to send it to.
+    const phased = await api(node, auth, "POST", "/file-sync/test-phase", { projectId: shared.id, phase: "builtin" });
+    assert.equal(phased.status, 200, JSON.stringify(phased.body));
+    const listed = await api<{ projects: Array<{ id: string; syncStatus: { state: string; message?: string } }> }>(node, auth, "GET", "/projects");
+    const engineStatus = listed.body.projects.find((project) => project.id === shared.id)!.syncStatus;
+    assert.equal(engineStatus.state, "unavailable", JSON.stringify(engineStatus));
+    const run = await api<Record<string, any>>(node, auth, "POST", "/settings/sync-check/run");
+    assert.equal(run.status, 200, JSON.stringify(run.body));
+    assert.deepEqual(run.body.folderIssues, [{ projectId: shared.id, folderId: "", message: `${shared.name}: ${engineStatus.message}` }]);
+    assert.equal(run.body.lastError, undefined);
   } finally {
     if (server) await stopDevNode(server);
     await rm(root, { recursive: true, force: true });

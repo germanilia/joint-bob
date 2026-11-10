@@ -123,7 +123,7 @@ function applyRecentSessionActivity(sessionsByProject) {
 
 /**
  * Conversations keep moving while the recents dialog is closed — a ticket run, or
- * another node writing through Syncthing — so every session-list render refreshes
+ * another node writing through file sync — so every session-list render refreshes
  * the stored activity time for the project it just listed.
  */
 export function syncRecentSessionActivity() {

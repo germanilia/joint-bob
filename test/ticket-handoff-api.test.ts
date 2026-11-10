@@ -1,17 +1,15 @@
-// Two real twin nodes, each with its own HOME and a fake Syncthing, hand a ticket
-// across only once both sides report the shared project folder synchronized.
+// Two real twin nodes, each with its own HOME, hand a ticket across only once
+// neither side is still taking the shared project's files over.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer, type Server } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
 import type { TaskRecord } from "../src/types.js";
-import { projectTicketSyncFolderId } from "../src/task-workspaces.js";
-import { freePort, pairTwinNodes, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { api, freePort, pairTwinNodes, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
 
 interface TwinNode extends SeededNode { home: string }
@@ -25,18 +23,10 @@ interface TaskReadyPayload {
   executionNodeId: string;
   readOnly: boolean;
 }
-interface SyncthingStatus { state: string; needTotalItems: number; needBytes: number; errors?: unknown[] | number; }
 interface Job { root: string; key: string; claudeExecutable: string; project?: { name: string; path: string }; mirror?: { project: SeededNode["projects"][number]; path: string }; events?: unknown[] }
 
 const username = "admin";
-const password = "syncthing-handoff-password";
-// Syncthing device IDs are eight groups of seven base32 characters.
-const SOURCE_DEVICE = Array(8).fill("SOURCEA").join("-");
-const DESTINATION_DEVICE = Array(8).fill("DESTINA").join("-");
-
-async function listen(server: Server): Promise<number> {
-  return await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as { port: number }).port)));
-}
+const password = "ticket-handoff-password";
 
 function runScript(dataDir: string, home: string, code: string, args: string[] = []): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -56,7 +46,7 @@ function runScript(dataDir: string, home: string, code: string, args: string[] =
 async function seedNode(job: Job): Promise<TwinNode> {
   const port = await freePort();
   const home = path.join(job.root, `${job.key}-home`);
-  const node = { key: job.key, name: `Node ${job.key}`, port, url: `http://127.0.0.1:${port}`, dataDir: path.join(job.root, `${job.key}-data`), cookieName: `mb_session_syncthing_${job.key}` };
+  const node = { key: job.key, name: `Node ${job.key}`, port, url: `http://127.0.0.1:${port}`, dataDir: path.join(job.root, `${job.key}-data`), cookieName: `mb_session_handoff_${job.key}` };
   await mkdir(home, { recursive: true });
   const output = await runScript(node.dataDir, home, `
     const job = JSON.parse(process.argv[1]);
@@ -65,7 +55,7 @@ async function seedNode(job: Job): Promise<TwinNode> {
     const { addProject, importProject } = await import('./src/store.ts');
     const { updateClusterNode } = await import('./src/cluster.ts');
     const { receiveReplicationBatch } = await import('./src/replication.ts');
-    updateSettings({ pi: { executable: '', configPath: '', sessionPath: '' }, claude: { executable: job.claudeExecutable, configPath: '', sessionPath: '' }, syncthing: { endpoint: '' }, projects: { homePath: job.home + '/JointBob' } });
+    updateSettings({ pi: { executable: '', configPath: '', sessionPath: '' }, claude: { executable: job.claudeExecutable, configPath: '', sessionPath: '' }, projects: { homePath: job.home + '/JointBob' } });
     createAdministrator(job.username, job.password, false);
     const cluster = await updateClusterNode(job.name, job.url);
     const project = job.mirror ? await importProject(job.mirror.project, job.mirror.path) : await addProject(job.project.name, job.project.path, { synced: true });
@@ -82,8 +72,8 @@ function nodeEnvironment(root: string, nodes: TwinNode[]): DevEnvironment {
 }
 
 // Each node runs with its own HOME, so its conversation roots differ from its twin's.
-async function startNode(node: TwinNode, syncthingUrl: string): Promise<ChildProcess> {
-  return startDevNode({ root: path.dirname(node.home), home: node.home, username, password, nodes: [node] }, node, { PI_MOBILE_WEB_SYNCTHING_URL: syncthingUrl, PI_MOBILE_WEB_SYNCTHING_API_KEY: "test-key" });
+async function startNode(node: TwinNode, extraEnv: Record<string, string> = {}): Promise<ChildProcess> {
+  return startDevNode({ root: path.dirname(node.home), home: node.home, username, password, nodes: [node] }, node, extraEnv);
 }
 
 function headers(session: SignedIn): Record<string, string> {
@@ -154,152 +144,76 @@ function taskEvent(task: Record<string, unknown>): Record<string, unknown> {
   return { id: randomUUID(), originNodeId: "__NODE__", entityType: "task", entityKey: `__PROJECT__:${task.id}`, operation: "upsert", payload: { projectId: "__PROJECT__", task, originNodeId: "__NODE__" }, createdAt: task.updatedAt };
 }
 
-class FakeSyncthing {
-  readonly requests: Array<{ method: string; url: string }> = [];
-  readonly folders: Array<{ id: string; label: string; path: string; type: string; paused?: boolean; devices: Array<{ deviceID: string }> }> = [];
-  readonly devices: Array<{ deviceID: string; name: string; addresses: string[] }> = [];
-  statusSequence: SyncthingStatus[] = [];
-  status: SyncthingStatus = { state: "idle", needTotalItems: 0, needBytes: 0 };
-  server!: Server;
+interface EligibilityEntry { node: { id: string }; eligible: boolean; waitingForSync: boolean; syncStatuses: Array<{ label: string; state: string; remainingFiles: number; remainingBytes: number; message?: string }> }
 
-  async start(deviceId: string): Promise<string> {
-    this.server = createServer((request, response) => {
-      const url = request.url ?? "";
-      this.requests.push({ method: request.method ?? "", url });
-      let body = "";
-      request.on("data", (chunk) => { body += chunk; });
-      request.on("end", () => {
-        response.setHeader("Content-Type", "application/json");
-        if (request.method === "GET" && url === "/rest/config/folders") { response.end(JSON.stringify(this.folders)); return; }
-        if (request.method === "GET" && url === "/rest/config/devices") { response.end(JSON.stringify(this.devices)); return; }
-        if (request.method === "POST" && url === "/rest/config/devices") { this.devices.push(JSON.parse(body)); response.end("{}"); return; }
-        if (request.method === "POST" && url === "/rest/config/folders") { this.folders.push(JSON.parse(body)); response.end("{}"); return; }
-        if (request.method === "PUT" && url.startsWith("/rest/config/folders/")) {
-          const folder = JSON.parse(body) as { id: string };
-          const index = this.folders.findIndex((candidate) => candidate.id === folder.id);
-          this.folders[index] = folder;
-          response.end("{}");
-          return;
-        }
-        if (request.method === "GET" && url === "/rest/system/status") { response.end(JSON.stringify({ myID: deviceId })); return; }
-        if (request.method === "GET" && url.startsWith("/rest/db/ignores?folder=")) { response.end(JSON.stringify({ ignore: [] })); return; }
-        if (request.method === "POST" && url.startsWith("/rest/db/ignores?folder=")) { response.end("{}"); return; }
-        if (request.method === "GET" && url.startsWith("/rest/db/status?folder=")) { response.end(JSON.stringify(this.statusSequence.shift() ?? this.status)); return; }
-        if (request.method === "DELETE" && url.startsWith("/rest/config/folders/")) {
-          const id = decodeURIComponent(url.slice("/rest/config/folders/".length));
-          this.folders.splice(this.folders.findIndex((candidate) => candidate.id === id), 1);
-          response.end("{}");
-          return;
-        }
-        if (request.method === "GET" && url === "/rest/system/connections") { response.end(JSON.stringify({ connections: Object.fromEntries(this.devices.map((device) => [device.deviceID, { connected: true }])) })); return; }
-        if (request.method === "GET" && url.startsWith("/rest/db/completion?")) { response.end(JSON.stringify({ completion: 100, needItems: 0, needBytes: 0, needDeletes: 0, remoteState: "valid" })); return; }
-        response.statusCode = 404;
-        response.end();
-      });
-    });
-    return `http://127.0.0.1:${await listen(this.server)}`;
-  }
-
-  async stop(): Promise<void> {
-    await new Promise<void>((resolve, reject) => this.server.close((error) => error ? reject(error) : resolve()));
-  }
-
-  ignoreRequests(): number {
-    return this.requests.filter((request) => request.url.startsWith("/rest/db/ignores?folder=")).length;
-  }
-}
-
-test("Syncthing readiness fences handoff ownership until both nodes are synchronized", { timeout: 180_000 }, async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "jb-syncthing-handoff-"));
+// The built-in engine runs on both nodes and the test sets each node's phase for the project itself
+// (POST /api/file-sync/test-phase): any phase before "builtin" means the node is still taking the files over.
+test("a ticket is handed off only once neither node is still taking the project's files over", { timeout: 180_000 }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "jb-ticket-handoff-gate-"));
   const children: ChildProcess[] = [];
-  const sourceSyncthing = new FakeSyncthing();
-  const destinationSyncthing = new FakeSyncthing();
   try {
-    const [sourceUrl, destinationUrl] = await Promise.all([sourceSyncthing.start(SOURCE_DEVICE), destinationSyncthing.start(DESTINATION_DEVICE)]);
     const seededTask = { id: "synced-task", title: "Synced", description: "No Git", status: "backlog", engine: "pi", planMode: false, reviewMode: false, phaseConfig: {}, sessionPath: null, worktreePath: null, worktreeBranch: null, mergedAt: null, currentNodeId: "__NODE__", leaseOwnerNodeId: null, leaseExpiresAt: null, executionState: "idle", handoffContext: null, originNodeId: "__NODE__", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
     const source = await seedNode({ root, key: "source", claudeExecutable: "", project: { name: "shared", path: path.join(root, "source-project") }, events: [taskEvent(seededTask)] });
-    const project = source.projects[0] as SeededNode["projects"][number] & { syncFolderId?: string };
-    assert.ok(project.syncFolderId);
+    const project = source.projects[0];
     const destination = await seedNode({ root, key: "destination", claudeExecutable: "", mirror: { project, path: path.join(root, "destination-home", "project") } });
     const [sourceId, destinationId] = [source.nodeId, destination.nodeId];
     const task = { ...seededTask, currentNodeId: sourceId, originNodeId: sourceId };
-    children.push(await startNode(source, sourceUrl), await startNode(destination, destinationUrl));
+    const engine = async () => ({
+      JOINT_BOB_FILE_SYNC: "1", JOINT_BOB_FILE_SYNC_SETTLE_MS: "500", JOINT_BOB_FILE_SYNC_PORT: String(await freePort()),
+      JOINT_BOB_FILE_SYNC_LISTEN: "127.0.0.1", JOINT_BOB_FILE_SYNC_TEST_PHASES: "1",
+    });
+    children.push(await startNode(source, await engine()), await startNode(destination, await engine()));
     await pairTwinNodes(nodeEnvironment(root, [source, destination]));
     const [sourceAuth, destinationAuth] = await Promise.all([signIn(nodeEnvironment(root, [source]), source), signIn(nodeEnvironment(root, [destination]), destination)]);
     await Promise.all([waitForTask(source, sourceAuth, project.id, task.id, () => true), waitForTask(destination, destinationAuth, project.id, task.id, () => true)]);
-    // Each twin enrolls the shared project's own Syncthing folders with the other's device.
-    await waitUntil("per-project folder enrollment", async () => [[sourceSyncthing, DESTINATION_DEVICE], [destinationSyncthing, SOURCE_DEVICE]].every(([syncthing, peer]) =>
-      (syncthing as FakeSyncthing).folders.find((folder) => folder.id === project.syncFolderId)?.devices.some((device) => device.deviceID === peer)));
+    const setPhase = async (node: TwinNode, auth: SignedIn, phase: "bootstrapping" | "builtin"): Promise<void> => {
+      const answer = await api(node, auth, "POST", "/file-sync/test-phase", { projectId: project.id, phase });
+      assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    };
+    const eligibility = async (node: TwinNode, auth: SignedIn): Promise<{ source: EligibilityEntry; nodes: EligibilityEntry[] }> => {
+      const response = await fetch(`${node.url}/api/projects/${project.id}/tasks/${task.id}/eligibility`, { headers: headers(auth) });
+      assert.equal(response.status, 200);
+      return await response.json() as { source: EligibilityEntry; nodes: EligibilityEntry[] };
+    };
+    const handoff = () => fetch(`${source.url}/api/projects/${project.id}/tasks/${task.id}/handoff`, { method: "POST", headers: headers(sourceAuth), body: JSON.stringify({ peerId: destinationId }) });
+    const moving = { label: "shared", state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking both machines' files" };
 
-    destinationSyncthing.status = { state: "syncing", needTotalItems: 1, needBytes: 2048 };
-    const readiness = await fetch(`${source.url}/api/projects/${project.id}/tasks/${task.id}/eligibility`, { headers: headers(sourceAuth) });
-    assert.equal(readiness.status, 200);
-    const destinationEntry = (await readiness.json() as { nodes: Array<{ node: { id: string }; eligible: boolean; waitingForSync: boolean; syncStatuses: Array<{ state: string; remainingFiles: number; remainingBytes: number }> }> }).nodes.find((entry) => entry.node.id === destinationId);
+    // The destination is still taking the project over: it is not eligible, and the ticket stays put.
+    await setPhase(source, sourceAuth, "builtin");
+    await setPhase(destination, destinationAuth, "bootstrapping");
+    const destinationEntry = (await eligibility(source, sourceAuth)).nodes.find((entry) => entry.node.id === destinationId);
     assert.ok(destinationEntry);
     assert.equal(destinationEntry.eligible, false);
     assert.equal(destinationEntry.waitingForSync, true);
-    assert.deepEqual(destinationEntry.syncStatuses.find((status) => status.state === "syncing"), { label: "shared", state: "syncing", remainingFiles: 1, remainingBytes: 2048, message: "Syncthing is synchronizing this folder" });
-    const rejected = await fetch(`${source.url}/api/projects/${project.id}/tasks/${task.id}/handoff`, { method: "POST", headers: headers(sourceAuth), body: JSON.stringify({ peerId: destinationId }) });
-    assert.equal(rejected.status, 409);
+    assert.deepEqual(destinationEntry.syncStatuses.find((status) => status.state === "syncing"), moving);
+    assert.equal((await handoff()).status, 409);
     assert.equal((await waitForTask(source, sourceAuth, project.id, task.id, (candidate) => candidate.executionState === "idle")).currentNodeId, sourceId);
 
-    destinationSyncthing.status = { state: "idle", needTotalItems: 0, needBytes: 0, errors: 1 };
-    const errorReadiness = await fetch(`${source.url}/api/projects/${project.id}/tasks/${task.id}/eligibility`, { headers: headers(sourceAuth) });
-    assert.equal(errorReadiness.status, 200);
-    const errorDestinationEntry = (await errorReadiness.json() as { nodes: Array<{ node: { id: string }; eligible: boolean; waitingForSync: boolean; syncStatuses: Array<{ state: string }> }> }).nodes.find((entry) => entry.node.id === destinationId);
-    assert.ok(errorDestinationEntry);
-    assert.equal(errorDestinationEntry.eligible, false);
-    assert.equal(errorDestinationEntry.waitingForSync, true);
-    assert.equal(errorDestinationEntry.syncStatuses.find((status) => status.state === "error")?.state, "error");
-
-    destinationSyncthing.status = { state: "idle", needTotalItems: 0, needBytes: 0 };
-    sourceSyncthing.status = { state: "scanning", needTotalItems: 0, needBytes: 0 };
-    const sourceReadiness = await fetch(`${source.url}/api/projects/${project.id}/tasks/${task.id}/eligibility`, { headers: headers(sourceAuth) });
-    assert.equal(sourceReadiness.status, 200);
-    const sourceEntry = (await sourceReadiness.json() as { source: { node: { id: string }; eligible: boolean; waitingForSync: boolean; syncStatuses: Array<{ state: string }> } }).source;
+    // The source is: both nodes report it as the one being waited for.
+    await setPhase(destination, destinationAuth, "builtin");
+    await setPhase(source, sourceAuth, "bootstrapping");
+    const sourceEntry = (await eligibility(source, sourceAuth)).source;
     assert.equal(sourceEntry.node.id, sourceId);
     assert.equal(sourceEntry.eligible, false);
     assert.equal(sourceEntry.waitingForSync, true);
-    assert.equal(sourceEntry.syncStatuses.find((status) => status.state === "syncing")?.state, "syncing");
-    const remoteReadiness = await fetch(`${destination.url}/api/projects/${project.id}/tasks/${task.id}/eligibility`, { headers: headers(destinationAuth) });
-    assert.equal(remoteReadiness.status, 200);
-    const remoteSourceEntry = (await remoteReadiness.json() as { source: { node: { id: string }; waitingForSync: boolean; syncStatuses: Array<{ state: string }> } }).source;
+    assert.deepEqual(sourceEntry.syncStatuses.find((status) => status.state === "syncing"), moving);
+    const remoteSourceEntry = (await eligibility(destination, destinationAuth)).source;
     assert.equal(remoteSourceEntry.node.id, sourceId);
     assert.equal(remoteSourceEntry.waitingForSync, true);
     assert.equal(remoteSourceEntry.syncStatuses.find((status) => status.state === "syncing")?.state, "syncing");
-
-    assert.ok(sourceSyncthing.ignoreRequests() > 0);
-    assert.ok(destinationSyncthing.ignoreRequests() > 0);
-    for (const [syncthing, peerDevice] of [[sourceSyncthing, DESTINATION_DEVICE], [destinationSyncthing, SOURCE_DEVICE]] as const) {
-      assert.ok(!syncthing.folders.some((folder) => folder.id === "dot-pi"));
-      assert.ok(!syncthing.folders.some((folder) => folder.id === "dot-claude"));
-      // A twin never receives whole transcript roots or the global ticket folder; it gets the
-      // shared project's folder and that project's ticket folder.
-      for (const id of ["joint-bob-conversations-pi", "joint-bob-conversations-claude", "joint-bob-ticket-workspaces"]) {
-        assert.equal(syncthing.folders.find((folder) => folder.id === id)?.devices.some((device) => device.deviceID === peerDevice) ?? false, false, id);
-      }
-      assert.ok(syncthing.folders.find((folder) => folder.id === project.syncFolderId)?.devices.some((device) => device.deviceID === peerDevice));
-      assert.ok(syncthing.folders.find((folder) => folder.id === projectTicketSyncFolderId(project.id))?.devices.some((device) => device.deviceID === peerDevice));
-    }
-
-    sourceSyncthing.status = { state: "idle", needTotalItems: 0, needBytes: 0 };
-    destinationSyncthing.statusSequence = [destinationSyncthing.status, { state: "syncing", needTotalItems: 1, needBytes: 0 }];
-    const pending = await fetch(`${source.url}/api/projects/${project.id}/tasks/${task.id}/handoff`, { method: "POST", headers: headers(sourceAuth), body: JSON.stringify({ peerId: destinationId }) });
-    assert.equal(pending.status, 202);
-    const restored = await waitForTask(source, sourceAuth, project.id, task.id, (candidate) => candidate.currentNodeId === sourceId && candidate.executionState === "idle");
-    assert.equal(restored.currentNodeId, sourceId);
     assert.equal((await waitForTask(destination, destinationAuth, project.id, task.id, (candidate) => candidate.executionState === "idle")).currentNodeId, sourceId);
 
-    destinationSyncthing.statusSequence = [];
-    const completed = await fetch(`${source.url}/api/projects/${project.id}/tasks/${task.id}/handoff`, { method: "POST", headers: headers(sourceAuth), body: JSON.stringify({ peerId: destinationId }) });
-    assert.equal(completed.status, 200);
+    // Both nodes are on built-in sync: the handoff goes through once their copies agree.
+    await setPhase(source, sourceAuth, "builtin");
+    let completed = await handoff();
+    for (const deadline = Date.now() + 60_000; completed.status !== 200 && Date.now() < deadline; completed = await handoff()) await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.equal(completed.status, 200, `${await completed.text()} ${JSON.stringify(await eligibility(source, sourceAuth))}`);
     await Promise.all([
       waitForTask(source, sourceAuth, project.id, task.id, (candidate) => candidate.currentNodeId === destinationId && candidate.executionState === "idle"),
       waitForTask(destination, destinationAuth, project.id, task.id, (candidate) => candidate.currentNodeId === destinationId && candidate.executionState === "idle"),
     ]);
   } finally {
     await Promise.all(children.map(stopDevNode));
-    await Promise.all([sourceSyncthing.stop(), destinationSyncthing.stop()]);
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -307,10 +221,7 @@ test("Syncthing readiness fences handoff ownership until both nodes are synchron
 test("task handoff preserves an undiscovered Claude ticket transcript and moves its ownership", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "jb-ticket-handoff-"));
   const children: ChildProcess[] = [];
-  const sourceSyncthing = new FakeSyncthing();
-  const destinationSyncthing = new FakeSyncthing();
   try {
-    const [sourceUrl, destinationUrl] = await Promise.all([sourceSyncthing.start(SOURCE_DEVICE), destinationSyncthing.start(DESTINATION_DEVICE)]);
     const sessionId = randomUUID();
     const sourceSessionFile = path.join(root, "source-home", ".claude", "projects", "-legacy-ticket", `${sessionId}.jsonl`);
     const destinationSessionFile = path.join(root, "destination-home", ".claude", "projects", "-legacy-ticket", `${sessionId}.jsonl`);
@@ -339,7 +250,7 @@ test("task handoff preserves an undiscovered Claude ticket transcript and moves 
     const [sourceId, destinationId] = [source.nodeId, destination.nodeId];
     const environment = nodeEnvironment(root, [source, destination]);
     const task = { ...seededTask, currentNodeId: sourceId, originNodeId: sourceId } as TaskRecord;
-    children.push(await startNode(source, sourceUrl), await startNode(destination, destinationUrl));
+    children.push(await startNode(source), await startNode(destination));
     await pairTwinNodes(environment);
     const [sourceAuth, destinationAuth] = await Promise.all([signIn(nodeEnvironment(root, [source]), source), signIn(nodeEnvironment(root, [destination]), destination)]);
     await Promise.all([waitForTask(source, sourceAuth, project.id, task.id, () => true), waitForTask(destination, destinationAuth, project.id, task.id, () => true)]);
@@ -391,7 +302,6 @@ test("task handoff preserves an undiscovered Claude ticket transcript and moves 
     assert.equal(ownership.ownership.status, "owned");
   } finally {
     await Promise.all(children.map(stopDevNode));
-    await Promise.all([sourceSyncthing.stop(), destinationSyncthing.stop()]);
     await rm(root, { recursive: true, force: true });
   }
 });

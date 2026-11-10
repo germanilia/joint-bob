@@ -41,7 +41,6 @@ test("all harness listings hide new, empty and legacy fixer sessions, including 
     const piRoot = path.join(root, "pi");
     const claudeRoot = path.join(root, "claude");
     updateSettings({
-      syncthing: { endpoint: "" },
       pi: { executable: "", configPath: piRoot, sessionPath: piRoot },
       claude: { executable: "", configPath: claudeRoot, sessionPath: claudeRoot },
     });

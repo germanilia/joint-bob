@@ -43,7 +43,6 @@ test("a Claude turn keeps every spoken block and tool result as its own message"
     await chmod(executable, 0o755);
     updateSettings({
       runtimes: { ...previous.runtimes, claude: { ...previous.runtimes.claude, executable } },
-      syncthing: { endpoint: "" },
     });
     const project = await addProject("Claude fixture", root, { writeInstructions: false });
     const adapter = listDiscoveredHarnesses().find(({ id }) => id === "claude")!;
@@ -69,7 +68,7 @@ test("a Claude turn keeps every spoken block and tool result as its own message"
       session.dispose();
     }
   } finally {
-    updateSettings({ runtimes: previous.runtimes, syncthing: { endpoint: previous.syncthing.endpoint } });
+    updateSettings({ runtimes: previous.runtimes });
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -81,7 +80,6 @@ test("a reloaded Claude transcript keeps the tool bubbles between the spoken blo
     const sessions = path.join(root, "claude-projects");
     updateSettings({
       runtimes: { ...previous.runtimes, claude: { ...previous.runtimes.claude, sessionPath: sessions } },
-      syncthing: { endpoint: "" },
     });
     const transcript = path.join(sessions, "project", "session.jsonl");
     await mkdir(path.dirname(transcript), { recursive: true });
@@ -130,7 +128,7 @@ test("a reloaded Claude transcript keeps the tool bubbles between the spoken blo
     assert.equal(context.some((message) => message.text === "check the plan"), false, "old turns already summarized must not fill the model window again");
     assert.deepEqual(context.slice(1), messages.slice(1), "keep every message and tool result after compaction");
   } finally {
-    updateSettings({ runtimes: previous.runtimes, syncthing: { endpoint: previous.syncthing.endpoint } });
+    updateSettings({ runtimes: previous.runtimes });
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -143,7 +141,6 @@ test("a reloaded Claude transcript shows a refused API request as an error, neve
     const sessions = path.join(root, "claude-projects");
     updateSettings({
       runtimes: { ...previous.runtimes, claude: { ...previous.runtimes.claude, sessionPath: sessions } },
-      syncthing: { endpoint: "" },
     });
     const transcript = path.join(sessions, "project", "session.jsonl");
     await mkdir(path.dirname(transcript), { recursive: true });
@@ -161,7 +158,7 @@ test("a reloaded Claude transcript shows a refused API request as an error, neve
     ]);
     assert.deepEqual((await loadClaudeMessages(`claude:${transcript}`, { contextOnly: true })).map(({ role }) => role), ["user"]);
   } finally {
-    updateSettings({ runtimes: previous.runtimes, syncthing: { endpoint: previous.syncthing.endpoint } });
+    updateSettings({ runtimes: previous.runtimes });
     await rm(root, { recursive: true, force: true });
   }
 });

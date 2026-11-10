@@ -34,7 +34,6 @@ rl.on("close", () => process.exit(0));
 function useKiroExecutable(executable: string): () => void {
   const previous = getSettings();
   const base = {
-    syncthing: { endpoint: previous.syncthing.endpoint },
     projects: previous.projects,
     resources: previous.resources,
     conversationLabels: previous.conversationLabels,

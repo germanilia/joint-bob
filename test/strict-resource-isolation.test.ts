@@ -34,7 +34,7 @@ async function extension(file: string, name: string): Promise<void> {
 test.before(async () => {
   await mkdir(project, { recursive: true });
   assert.equal(getSettings().strictResourceIsolation, true);
-  updateSettings({ syncthing: { endpoint: "" }, projects: { homePath: root } });
+  updateSettings({ projects: { homePath: root } });
 });
 test.after(async () => { await rm(root, { recursive: true, force: true }); });
 
@@ -76,7 +76,7 @@ test("strict Pi sessions use the same isolation on open and reload", async () =>
   await write(path.join(pi, "APPEND_SYSTEM.md"), "NATIVE_APPEND");
   await skill(agentResourcePaths().sharedSkills, "session-managed");
   const defaults = getSettings().conversationDefaults;
-  updateSettings({ syncthing: { endpoint: "" }, conversationDefaults: { ...defaults, pi: { provider: "openai", modelId: "gpt-4o", thinkingLevel: "off" } } });
+  updateSettings({ conversationDefaults: { ...defaults, pi: { provider: "openai", modelId: "gpt-4o", thinkingLevel: "off" } } });
   const record = await addProject("Isolation fixture", project, { writeInstructions: false });
   const handle = await createPiSession({ cwd: project, projectId: record.id, conversationId: "isolation-session" });
   try {
@@ -171,9 +171,9 @@ test("strict maintenance neither imports native resources nor rewrites native fi
 });
 
 test("isolation setting validates API boundary values", () => {
-  const input = { syncthing: { endpoint: "" }, strictResourceIsolation: false };
+  const input = { strictResourceIsolation: false };
   assert.equal(settingsSchema.parse(input).strictResourceIsolation, false);
   assert.equal(updateSettings(input).strictResourceIsolation, false);
   assert.equal(updateSettings({ ...input, strictResourceIsolation: true }).strictResourceIsolation, true);
-  assert.throws(() => updateSettings({ syncthing: { endpoint: "" }, strictResourceIsolation: "false" as never }), /boolean/i);
+  assert.throws(() => updateSettings({ strictResourceIsolation: "false" as never }), /boolean/i);
 });

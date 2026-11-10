@@ -1,5 +1,7 @@
 # Ownership sync scope implementation plan
 
+> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+
 **Goal:** Ownership takeover waits for the conversation's working folder, not every worktree in its project.
 
 **Spec:** User approved the chat description: normal conversations check only the main project; worktree conversations check and prioritize only their worktree; the banner shows that scope; transcript and ownership checks stay unchanged. Background synchronization continues.

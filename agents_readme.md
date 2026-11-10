@@ -4,15 +4,17 @@ Use this file when a human asks an AI agent to install or upgrade Joint Bob. Rea
 
 ## Goal
 
-Choose one deployment route with the human, install Joint Bob as a native user service, ensure its local Syncthing companion is running, verify both, and hand browser-only steps back to the human.
+Choose one deployment route with the human, install Joint Bob as a native user service, verify it, and hand browser-only steps back to the human.
 
-## Syncthing ownership
+## File synchronization
 
-The installer handles Syncthing. It supplies a pinned, checksum-verified binary, adopts a compatible running daemon or starts one, and lets Joint Bob discover its loopback REST API and API key. Syncthing has no user account. Do not ask the human to create one or to configure the Syncthing GUI.
+Joint Bob moves files between machines itself. File sync is part of the Joint Bob server: there is nothing to install, start, or configure for it, and no account. Do not install Syncthing for Joint Bob.
 
-When a project is shared, Joint Bob exchanges Syncthing device IDs and configures that project's folders through the local REST API, only for the nodes allowed to see it. Syncthing transfers project and ticket-workspace files. Joint Bob's signed HTTPS API transfers cluster membership, conversation transcripts, and application events. Node SQLite databases and engine configuration and authentication remain node-local. A secret account marked to replicate reaches twins, and cluster members only for shared projects it is attached to.
+When a project is shared, its files, worktrees, and ticket workspaces go only to the nodes allowed to see it. Files and everything else travel over the same signed Joint Bob connections: cluster membership, conversation transcripts, and application events too. Node SQLite databases and engine configuration and authentication remain node-local. A secret account marked to replicate reaches twins, and cluster members only for shared projects it is attached to.
 
-Treat Joint Bob HTTPS and Syncthing file transport as separate network paths. Every cluster node still needs a stable, mutually reachable private HTTPS origin for Joint Bob. Syncthing uses its encrypted device protocol and may connect directly or through its configured discovery and relay services.
+There is one network path. Every cluster node needs a stable, mutually reachable private HTTPS origin for Joint Bob, or a relay it has joined.
+
+A machine upgraded from an earlier release may still run Syncthing. Joint Bob takes its own `joint-bob-*` folders out of that Syncthing once and does not use it afterwards. It does not stop or remove the daemon. Leave it alone unless the human asks: they may use it for their own folders.
 
 ## Present the deployment options
 
@@ -172,25 +174,13 @@ Linux:
 
 ```bash
 systemctl --user status joint-bob.service --no-pager
-systemctl --user status joint-bob-syncthing.service --no-pager
 ```
 
 macOS:
 
 ```bash
 launchctl print "gui/$(id -u)/com.joint-bob.node"
-launchctl print "gui/$(id -u)/com.joint-bob.syncthing"
 ```
-
-The Syncthing unit may be absent when the installer adopts an already running Syncthing daemon. In that case, verify the daemon with the installed CLI:
-
-```bash
-syncthing_bin="$(command -v syncthing || find "$HOME/.local/share/joint-bob/runtime" -path '*/bin/syncthing' -type f -print -quit)"
-test -n "$syncthing_bin"
-"$syncthing_bin" cli show system
-```
-
-Do not expose Syncthing's REST API or copy its API key into chat. Joint Bob discovers the API locally. Manual configuration under **Settings** is a recovery path, and the endpoint accepts loopback hosts only.
 
 If verification fails, collect the shortest relevant logs before proposing a fix.
 
@@ -198,7 +188,6 @@ Linux:
 
 ```bash
 journalctl --user -u joint-bob.service -n 100 --no-pager
-journalctl --user -u joint-bob-syncthing.service -n 100 --no-pager
 ```
 
 macOS:
@@ -309,7 +298,7 @@ Joining a cluster and pairing twins are human-controlled browser steps:
 7. Confirm every node has a **Joint Bob home folder** under **Settings > Projects**.
 8. Confirm shared projects and ticket workspaces report a healthy sync state before handing work between nodes.
 
-Joint Bob configures Syncthing device and folder sharing per shared project. Do not send the human to the Syncthing GUI or ask for a Syncthing account.
+Joint Bob synchronizes the files of each shared project itself. A project that was just shared shows "Checking both machines' files" until the first comparison finishes. **Settings > File sync** lists every share and its errors.
 
 Treat each one-time link as a secret. Do not print it in logs, shell history, or your completion report.
 
@@ -362,7 +351,7 @@ Report:
 - New install or upgrade for each node
 - Target OS and architecture for each node; for Windows, the WSL distribution and whether the logon task is registered
 - Local URL and private HTTPS origin where applicable
-- Joint Bob and Syncthing health and service names for each node
+- Joint Bob health and service name for each node
 - Install path: `~/.local/share/joint-bob/app`
 - State path: `~/.joint-bob`
 - Human confirmation status for Pi and Claude authentication

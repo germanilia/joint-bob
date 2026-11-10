@@ -15,8 +15,8 @@ export async function openBrowser(environment: PromoEnvironment): Promise<Browse
 export interface Stage { context: BrowserContext; page: Page; node: PromoNode }
 
 // Two things on screen come from the scratch environment and say nothing about the product:
-// temp folder paths and the "Unavailable" sync state (no Syncthing runs here). They are
-// hidden; nothing else on the page is touched.
+// temp folder paths and the "Unavailable" sync state (the scratch nodes do not synchronize
+// files). They are hidden; nothing else on the page is touched.
 // A third: the stand-in agent names a model the price list does not know, so a conversation
 // it ran is labelled "API price unavailable" (its tooltip counts 0 priced requests).
 const stagingStyle = '.project-card > span, #projectPath, .project-sync-status, .usage-cost[title*=". 0/"] { display: none !important; }';

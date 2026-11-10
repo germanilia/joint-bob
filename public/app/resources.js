@@ -962,7 +962,6 @@ function renderShareBar() {
     remove.disabled = view.bulkBusy || !removableSkills.length;
     remove.title = "Back up and remove selected managed copies. Relay-imposed skills and independent native copies stay untouched.";
     line.append(count, all, clear, open, remove);
-    if (!view.sharing.legacy.verified) line.append(emptyRow(view.sharing.legacy.error || "Legacy sync status not yet verified. Sharing verifies it before proceeding."));
   } else if (view.tab === "mcp" && view.mcpAuth.flow && !view.nodeId) {
     // A sign-in waiting for its browser owns the bar until it is done or cancelled.
     bar.append(mcpSignInLine());

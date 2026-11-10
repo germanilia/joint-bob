@@ -69,7 +69,6 @@ test("runClaudePrompt restricts tools and reports the session tool list", async 
       projects: { homePath },
       pi: { executable: "pi", configPath: path.join(root, "pi-agent"), sessionPath: path.join(root, "pi-sessions") },
       claude: { executable: fakeClaude, configPath: claudeConfigPath, sessionPath: path.join(root, "claude-projects") },
-      syncthing: { endpoint: "" },
       resources: { skills: [globalSkill], prompts: [globalPrompt], rules: [globalRule], plugins: [globalPlugin] },
     });
     const projectId = "resource-project";

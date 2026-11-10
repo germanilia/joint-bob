@@ -238,7 +238,7 @@ test("a Kiro turn that ends without a reply is reported and stays visible after 
   }
 });
 
-// Syncthing delivers a project's files to every node but never `.git`, so a commit
+// File sync delivers a project's files to every node but never `.git`, so a commit
 // pushed from another node leaves this node's HEAD behind. Each user message first
 // moves HEAD to the pushed commit once the files on disk already hold it.
 test("a user message first moves a synced project's git HEAD to the commit another node pushed", async () => {

@@ -57,7 +57,7 @@ test("reopening a deleted conversation closes the socket instead of killing the 
     await mkdir(projectPath);
     const created = await fetch(`${base}/api/projects`, { method: "POST", headers, body: JSON.stringify({ name: "Deleted", path: projectPath }) });
     const { project } = await created.json() as { project: { id: string } };
-    await fetch(`${base}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, syncthing: { endpoint: "" } }) });
+    await fetch(`${base}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } }) });
 
     const wsUrl = (sessionPath: string, sessionId = "") => `ws://127.0.0.1:${(server!.address() as { port: number }).port}/ws?projectId=${project.id}&sessionPath=${encodeURIComponent(sessionPath)}${sessionId ? `&sessionId=${sessionId}` : ""}`;
     opened = new WebSocket(wsUrl("new"), { origin: base, headers: { Cookie: cookie } });

@@ -141,7 +141,7 @@ export const codemirrorDir = path.resolve(dirname, "../../node_modules/codemirro
 export const execFileAsync = promisify(execFile);
 export const idleSessionTimeoutMs = 30 * 60 * 1000;
 // A session file change within this window of local agent activity is our own
-// write, not an external Syncthing sync.
+// write, not a file another machine sent.
 export const localWriteGraceMs = 15_000;
 export const watchClients = new Map<string, Set<WebSocket>>();
 /** The person each browser socket belongs to, so personal events reach only them. */

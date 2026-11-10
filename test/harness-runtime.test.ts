@@ -16,7 +16,6 @@ function replaceSettings(overrides: {
   const current = getSettings();
   updateSettings({
     runtimes: { ...current.runtimes, ...(overrides.claudeRuntime ? { claude: overrides.claudeRuntime } : {}) },
-    syncthing: { endpoint: current.syncthing.endpoint },
     projects: current.projects,
     resources: current.resources,
     conversationLabels: current.conversationLabels,

@@ -64,7 +64,6 @@ test("a conversation holding only the automatic start command can still be opene
       ...settings.getSettings(),
       pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") },
       claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") },
-      syncthing: { endpoint: "" },
       conversationCommands: { ...settings.getSettings().conversationCommands, start: { enabled: false, prompt: START_PROMPT } },
     });
 

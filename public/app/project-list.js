@@ -213,7 +213,8 @@ function projectRow(project) {
     const syncLabels = { synced: "Synced", syncing: "Syncing", paused: "Paused", error: "Error", unavailable: "Unavailable" };
     syncStatus.className = `project-sync-status project-sync-status-${status.state}`;
     syncStatus.dataset.testid = "project-sync-status";
-    syncStatus.textContent = status.state === "error" && status.message ? `Error: ${status.message}` : syncLabels[status.state] || syncLabels.unavailable;
+    // A project shared with no other machine has nothing to sync: that is not a fault.
+    syncStatus.textContent = status.engine === "none" ? "Not shared" : status.state === "error" && status.message ? `Error: ${status.message}` : syncLabels[status.state] || syncLabels.unavailable;
     syncStatus.title = status.message || "";
     button.append(heading, projectPath, syncStatus, usageBadge(project.usage, "project-usage-cost"));
     const clusterBadge = projectClusterBadge(project);

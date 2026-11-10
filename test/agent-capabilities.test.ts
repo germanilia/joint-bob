@@ -211,10 +211,10 @@ test("the node's shell time limit reaches every harness shell through the shared
     // Claude's own Bash tool would stop a command after two minutes; the shared environment lifts that to a week so the shim decides.
     const week = String(7 * 24 * 60 * 60 * 1000);
     for (const engine of engines) assert.deepEqual(shellLimits(engine), { shim: undefined, claudeDefault: week, claudeMax: week }, `${engine} starts unlimited`);
-    updateSettings({ ...getSettings(), syncthing: { endpoint: "" }, shellCommandTimeoutSeconds: 90 });
+    updateSettings({ ...getSettings(), shellCommandTimeoutSeconds: 90 });
     // Claude's tool gets a few seconds of slack so the shim stops the command and reports the limit first.
     for (const engine of engines) assert.deepEqual(shellLimits(engine), { shim: "90000", claudeDefault: "95000", claudeMax: "95000" }, `${engine} receives the limit`);
-    updateSettings({ ...getSettings(), syncthing: { endpoint: "" }, shellCommandTimeoutSeconds: null });
+    updateSettings({ ...getSettings(), shellCommandTimeoutSeconds: null });
     for (const engine of engines) assert.deepEqual(shellLimits(engine), { shim: undefined, claudeDefault: week, claudeMax: week }, `${engine} returns to unlimited`);
   } finally {
     if (previousData === undefined) delete process.env.JOINT_BOB_DATA_DIR;
