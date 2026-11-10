@@ -517,9 +517,10 @@ export class FileSyncDb {
   }
 
   /** Tombstones that may be pruned: acknowledged by every eligible peer and old enough (§5.2.8). */
-  prunableTombstones(share: string, maxSeq: number, deletedBefore: number): Array<{ path: string; seq: number }> {
-    return this.statement("SELECT path, seq FROM entries WHERE share = ? AND deleted = 1 AND seq <= ? AND deleted_at IS NOT NULL AND deleted_at <= ?")
-      .all(share, maxSeq, deletedBefore) as Array<{ path: string; seq: number }>;
+  /** The oldest of them by seq, `limit` at most: a worktrees share can hold most of a million (806,507 on 2026-11-10, 305 MB as one array). */
+  prunableTombstones(share: string, maxSeq: number, deletedBefore: number, limit: number): Array<{ path: string; seq: number }> {
+    return this.statement("SELECT path, seq FROM entries INDEXED BY entries_seq WHERE share = ? AND deleted = 1 AND seq <= ? AND deleted_at IS NOT NULL AND deleted_at <= ? ORDER BY seq LIMIT ?")
+      .all(share, maxSeq, deletedBefore, limit) as Array<{ path: string; seq: number }>;
   }
 
   acks(share: string): Array<{ peer: string; indexId: string; seq: number }> {

@@ -50,6 +50,10 @@ export const SCANNER_DEFAULTS: ScannerOptions = {
 
 /** Tombstones removed per transaction by pruneTombstones. */
 const PRUNE_BATCH = 5_000;
+/** Tombstones one pruneTombstones call takes; the full scan calls it again, with a pause, while a call comes back full. */
+export const PRUNE_PAGE = 20_000;
+/** Pages one full scan prunes at most (2 million rows); the next full scan goes on. */
+const PRUNE_PAGES_PER_SCAN = 100;
 
 export const REPLACED_MESSAGE = "This folder looks replaced; confirm in Settings → File sync";
 const ENGINE_TEMP = /^\.joint-bob-sync\..+\.tmp$/;
@@ -431,7 +435,8 @@ export class ShareScanner {
         this.settleDeletes(run);
       }
       if (run.conflicts.size) this.deps.recheck?.([...run.conflicts], 0);
-      if (full) this.pruneTombstones();
+      // In pages, with a pause between two: the worker answers its other requests while a large backlog goes.
+      if (full) for (let page = 0; page < PRUNE_PAGES_PER_SCAN && this.pruneTombstones() === PRUNE_PAGE; page++) await new Promise<void>((resolve) => setImmediate(resolve));
       return result();
     } catch (error) {
       run.pending.length = 0;
@@ -1054,7 +1059,7 @@ export class ShareScanner {
     if (peers.some((peer) => !acks.has(peer))) return 0;
     const acknowledged = peers.reduce((min, peer) => Math.min(min, acks.get(peer)!), Number.MAX_SAFE_INTEGER);
     const retention = this.ctx.kind === "worktrees" ? this.options.worktreeTombstoneRetentionMs : this.options.tombstoneRetentionMs;
-    const rows = db.prunableTombstones(this.ctx.key, acknowledged, this.now() - retention);
+    const rows = db.prunableTombstones(this.ctx.key, acknowledged, this.now() - retention, PRUNE_PAGE);
     if (!rows.length) return 0;
     const holders = [...new Set([...peers, ...db.cursors(this.ctx.key).map((cursor) => cursor.peer)])];
     let highest = share.prunedBelow;

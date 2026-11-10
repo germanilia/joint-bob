@@ -12,7 +12,7 @@ import { FileSyncDb, type LocalEntry } from "../src/file-sync/db.js";
 import { digestOf } from "../src/file-sync/digest.js";
 import { compileRules, effectiveRules } from "../src/file-sync/ignore.js";
 import type { CoreEvent } from "../src/file-sync/protocol.js";
-import { REPLACED_MESSAGE, ShareScanner, SliceScheduler, Slicer, type ScannerOptions, type ShareContext } from "../src/file-sync/scanner.js";
+import { REPLACED_MESSAGE, ShareScanner, SliceScheduler, Slicer, type ScannerOptions, type ShareContext, PRUNE_PAGE } from "../src/file-sync/scanner.js";
 import type { Clock, Phase, RuleSettings, ShareKind } from "../src/file-sync/types.js";
 import { compareVectors } from "../src/file-sync/vectors.js";
 
@@ -624,6 +624,28 @@ test("a worktrees share prunes its tombstones after hours, not a month, and each
   assert.equal(s.row("wt1/gone.txt"), undefined);
   assert.equal(s.db.remote(s.key, "peer-a", "wt1/gone.txt"), undefined, "the peer's tombstone went with ours");
   assert.equal(s.db.remote(s.key, "peer-a", "wt1/kept.txt")?.deleted, false, "a live peer row stays");
+});
+
+test("a large backlog of tombstones is pruned a page at a time, oldest first, never as one list", async (t) => {
+  const s = setup(t, { kind: "worktrees" });
+  s.write("wt1/kept.txt");
+  await s.scanner.scan("full");
+  const indexId = s.db.share(s.key)!.indexId;
+  const total = PRUNE_PAGE + 5;
+  const deletedAt = s.clock.now();
+  s.db.writeTx(() => {
+    const insert = (s.db as unknown as { statement(sql: string): { run(...values: Array<string | number>): unknown } }).statement(`INSERT INTO entries(share, path, parent, type, size, mtime_ms, mode, deleted, version, modified_by, seq, deleted_at)
+      VALUES (?, ?, 'wt1', 0, 1, 1, 420, 1, '{}', 'node-a', ?, ?)`);
+    for (let index = 0; index < total; index++) insert.run(s.key, `wt1/gone-${String(index).padStart(6, "0")}.txt`, 1000 + index, deletedAt);
+    s.db.updateShare(s.key, { maxSeq: 1000 + total });
+    s.db.setAck(s.key, "peer-a", indexId, 1000 + total, s.clock.now());
+  });
+  s.clock.advance(13 * 3_600_000);
+  assert.equal(s.db.prunableTombstones(s.key, 1000 + total, s.clock.now(), 3).map((row) => row.seq).join(","), "1000,1001,1002", "oldest first, as many as asked for");
+  assert.equal(s.scanner.pruneTombstones(["peer-a"]), PRUNE_PAGE, "one page");
+  assert.equal(s.scanner.pruneTombstones(["peer-a"]), 5, "then the rest");
+  assert.equal(s.scanner.pruneTombstones(["peer-a"]), 0);
+  assert.equal(s.row("wt1/kept.txt")?.deleted, false);
 });
 
 test("a project share still keeps its tombstones for a month", async (t) => {
