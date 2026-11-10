@@ -65,6 +65,7 @@ test("Settings persist per-harness defaults and reject invalid thinking", async 
       pi: { provider: "anthropic", modelId: "claude-sonnet-4-5", thinkingLevel: "low" },
       claude: { provider: "claude", modelId: "sonnet", thinkingLevel: "high" },
       kiro: previous.conversationDefaults.kiro,
+      antigravity: previous.conversationDefaults.antigravity,
     };
     const sessionRoot = path.join(root, "claude-sessions");
     updateSettings({ ...previous, claude: { ...previous.claude, sessionPath: sessionRoot }, conversationDefaults });

@@ -54,6 +54,15 @@ test("settings API persists runtime choices without returning secrets", async ()
     assert.equal(defaults.status, 200);
     const runtimeDefaults = await defaults.json() as Record<string, { executable: string; configPath: string; sessionPath: string }>;
     const kiroRuntime = runtimeDefaults.kiro;
+    // These assertions also verify an omitted harness retains all its defaults.
+    function withAntigravity(expected: Record<string, any>) {
+      return { ...expected, antigravity: runtimeDefaults.antigravity,
+        conversationDefaults: { ...expected.conversationDefaults, antigravity: initialSettings.conversationDefaults.antigravity },
+        runtimes: { ...expected.runtimes, antigravity: runtimeDefaults.antigravity },
+        runtimeOverrides: { ...expected.runtimeOverrides, antigravity: { executable: "", configPath: "", sessionPath: "" } },
+        restartRequired: { ...expected.restartRequired, antigravity: false },
+      };
+    }
     const checked = await fetch(`${node.baseUrl}/api/settings/runtime-check`, {
       method: "POST", headers,
       body: JSON.stringify({ pi: { executable: "missing-pi", configPath: path.join(root, "missing"), sessionPath: path.join(root, "missing") }, claude: { executable: "claude", configPath: "", sessionPath: "" } }),
@@ -92,7 +101,7 @@ test("settings API persists runtime choices without returning secrets", async ()
     const presetId = JSON.parse(savedText).conversationCommands.presets[0].id;
     assert.match(presetId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, "legacy presets receive a stable ID");
     Object.assign(conversationCommands.presets[0], { id: presetId });
-    assert.deepEqual(JSON.parse(savedText), {
+    assert.deepEqual(JSON.parse(savedText), withAntigravity({
       kiroEnabled: true,
       strictResourceIsolation: true,
       autoActivateSharedSkills: true,
@@ -133,13 +142,13 @@ test("settings API persists runtime choices without returning secrets", async ()
       conversationLabels: ["Research", "Bug", "Feature", "POC", "Deploy to prod", "Hotfix"],
       conversationLabelIcons: { Research: "🔬", Bug: "🐞", Feature: "✨", POC: "🧪", "Deploy to prod": "🚀", Hotfix: "🔥" },
       restartRequired: { pi: true, claude: true, kiro: false },
-    });
+    }));
 
     const read = await fetch(`${node.baseUrl}/api/settings`, { headers });
     assert.equal(read.status, 200);
     const readText = await read.text();
     assert.doesNotMatch(readText, /secret-api-key/);
-    assert.deepEqual(JSON.parse(readText), {
+    assert.deepEqual(JSON.parse(readText), withAntigravity({
       kiroEnabled: true,
       strictResourceIsolation: true,
       autoActivateSharedSkills: true,
@@ -180,7 +189,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       conversationLabels: ["Research", "Bug", "Feature", "POC", "Deploy to prod", "Hotfix"],
       conversationLabelIcons: { Research: "🔬", Bug: "🐞", Feature: "✨", POC: "🧪", "Deploy to prod": "🚀", Hotfix: "🔥" },
       restartRequired: { pi: false, claude: false, kiro: false },
-    });
+    }));
 
     for (const strictResourceIsolation of [false, true, "false", null]) {
       const response = await fetch(`${node.baseUrl}/api/settings`, {

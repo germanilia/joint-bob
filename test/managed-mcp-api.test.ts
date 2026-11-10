@@ -22,7 +22,7 @@ test("install once exposes all harnesses, native bridge calls work and revoked a
     assert.equal((await api(node, session, "POST", endpoint, definition)).status, 200);
     assert.equal((await api(node, session, "POST", endpoint, definition)).status, 400);
     const inventory = await api<{ nodes: Array<{ inventory: { mcpServers: Array<{ name: string; harnesses: string[] }> } }> }>(node, session, "GET", "/resources/inventory");
-    assert.deepEqual(inventory.body.nodes[0].inventory.mcpServers.find(row => row.name === "fixture")?.harnesses.sort(), ["claude", "kiro", "pi"]);
+    assert.deepEqual(inventory.body.nodes[0].inventory.mcpServers.find(row => row.name === "fixture")?.harnesses.sort(), ["antigravity", "claude", "kiro", "pi"]);
     const list = await api(node, session, "GET", endpoint); assert.doesNotMatch(JSON.stringify(list.body), /synthetic-private-header/);
     const unauthenticated = await fetch(`${node.url}/api${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(definition) }); assert.equal(unauthenticated.status, 401);
     const csrf = await fetch(`${node.url}/api${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: session.cookie }, body: JSON.stringify(definition) }); assert.equal(csrf.status, 403);

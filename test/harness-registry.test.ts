@@ -16,6 +16,7 @@ test("harness registry exposes adapters instead of UI-specific engine checks", (
     { id: "pi", label: "Pi", newSessionPath: "new" },
     { id: "claude", label: "Claude", newSessionPath: "claude:new" },
     { id: "kiro", label: "Kiro", newSessionPath: "kiro:new" },
+    { id: "antigravity", label: "Google Antigravity", newSessionPath: "antigravity:new" },
   ]);
   for (const harness of harnesses) {
     assert.equal(typeof harness.paths.sessionId, "function");
@@ -35,13 +36,15 @@ test("harness registry exposes adapters instead of UI-specific engine checks", (
   assert.equal(harnessForSessionPath("claude:/tmp/session.jsonl").id, "claude");
   assert.equal(harnessForSessionPath("kiro:/tmp/session.jsonl").id, "kiro");
   assert.equal(harnessForSessionPath("draft:kiro:session").id, "kiro");
+  assert.equal(harnessForSessionPath("antigravity:/tmp/session.jsonl").id, "antigravity");
   assert.equal(harnessForSessionPath("/tmp/2026-01-01T00-00-00-000Z_123e4567-e89b-42d3-a456-426614174000.jsonl").paths.sessionId("/tmp/2026-01-01T00-00-00-000Z_123e4567-e89b-42d3-a456-426614174000.jsonl"), "123e4567-e89b-42d3-a456-426614174000");
   assert.equal(harnessForSessionPath("/tmp/123e4567-e89b-42d3-a456-426614174000.jsonl").paths.sessionId("/tmp/123e4567-e89b-42d3-a456-426614174000.jsonl"), "123e4567-e89b-42d3-a456-426614174000");
   assert.equal(harnessForSessionPath("claude:/tmp/root/id.jsonl").paths.sessionId("claude:/tmp/root/id.jsonl"), "id");
   assert.equal(harnessForSessionPath("kiro:/tmp/root/id.jsonl").paths.sessionId("kiro:/tmp/root/id.jsonl"), "id");
-  assert.deepEqual(listHarnessSyncFolders().map(({ id }) => id), ["joint-bob-conversations-pi", "joint-bob-conversations-claude", "joint-bob-conversations-kiro"]);
+  assert.deepEqual(listHarnessSyncFolders().map(({ id }) => id), ["joint-bob-conversations-pi", "joint-bob-conversations-claude", "joint-bob-conversations-kiro", "joint-bob-conversations-antigravity"]);
   assert.equal(conversationSyncFolderId("pi"), "joint-bob-conversations-pi");
   assert.equal(conversationSyncFolderId("kiro"), "joint-bob-conversations-kiro");
+  assert.equal(conversationSyncFolderId("antigravity"), "joint-bob-conversations-antigravity");
 });
 
 function fixtureAdapter(id: string, ownsSession = 'value === "fake:session"'): string {

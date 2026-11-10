@@ -29,7 +29,7 @@ function replaceSettings(overrides: {
 
 test("built-in harnesses expose lazy runtime sessions", async () => {
   const adapters = listDiscoveredHarnesses();
-  assert.deepEqual(adapters.map(({ id }) => id), ["pi", "claude", "kiro"]);
+  assert.deepEqual(adapters.map(({ id }) => id), ["pi", "claude", "kiro", "antigravity"]);
   for (const adapter of adapters) {
     assert.equal(typeof adapter.runtime, "function");
     assert.equal(typeof adapter.models, "function", `${adapter.id}.models`);
