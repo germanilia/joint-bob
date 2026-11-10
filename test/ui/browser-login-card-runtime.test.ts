@@ -19,6 +19,8 @@ async function fixture(t: test.TestContext, chooseLoginStep?: LoginStepChooser) 
     if (req.url === "/reject") return void res.end('<form onsubmit="event.preventDefault();document.querySelector(\'aside\').textContent=\'Incorrect password\'"><input type="password" autocomplete="current-password"><button>Sign in</button></form><aside role="alert"></aside>');
     if (req.url === "/modal") return void res.end('<form id="composer"><input type="file"><textarea></textarea></form><dialog><form action="/ready" method="post"><label>Username<input name="username" autocomplete="username"></label><label>Password<input type="password" autocomplete="current-password"></label><button>Sign in</button></form></dialog><script>document.querySelector("dialog").showModal()</script>');
     if (req.url === "/formless") return void res.end('<h1>Welcome back</h1><input placeholder="Search" name="q"><div><input placeholder="Email" name="who" value="typed@example.test"><input type="password" placeholder="Secret"><div role="button" onclick="location.href=\'/ready\'">Log in</div><button type="button">Help</button></div>');
+    if (req.url === "/top-target") return void res.end('<form action="/ready" target="_top"><input type="email" name="loginfmt" autocomplete="username webauthn" placeholder="Email, phone, or Skype"><input type="password" name="passwd" aria-hidden="true" style="opacity:0;position:fixed;right:0;bottom:0;width:10px"><input type="submit" value="Next"></form><form action="/other" target="_top"></form>');
+    if (req.url === "/new-window") return void res.end('<form action="/ready" target="_blank"><input type="email" name="email"><button>Next</button></form>');
     if (req.url === "/username") return void res.end('<form action="/password"><label>Email<input type="email" name="email"></label><button>Next</button></form>');
     res.end('<form action="/ready" method="post" onsubmit="console.error(document.querySelector(\'input\').value)"><label>Password<input type="password" autocomplete="current-password" name="password"></label><button>Sign in</button></form>');
   });
@@ -138,4 +140,15 @@ test("card stays unsupported when the chooser fails", { timeout: 45_000 }, async
   const f = await fixture(t, async () => { throw new Error("model unavailable"); });
   await f.execute({ action: "navigate", url: f.origin + "/formless" });
   const step = await f.read(); assert.equal(step.stepId, null); assert.equal(step.challenge, false);
+});
+
+test("card reads a form that targets the top window, skips a decoy field nobody can see, and refuses a new-window form", { timeout: 45_000 }, async t => {
+  const f = await fixture(t);
+  await f.execute({ action: "navigate", url: f.origin + "/top-target" });
+  const step = await f.read();
+  assert.ok(step.stepId); assert.deepEqual(step.fields.map((x: any) => [x.type, x.label]), [["email", "Email, phone, or Skype"]]); assert.equal(step.submitLabel, "Next");
+  await f.submit(step, ["synthetic@example.test"]);
+  await waitForAssertion(async () => assert.match((await f.runtime.get(f.session.id)).tabs[0].url, /\/ready/), 10_000);
+  await f.execute({ action: "navigate", url: f.origin + "/new-window" });
+  assert.equal((await f.read()).stepId, null);
 });

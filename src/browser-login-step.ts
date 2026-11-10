@@ -18,15 +18,21 @@ interface BoundForm {
 interface Candidates { inputs: HTMLInputElement[]; buttons: HTMLElement[]; described: LoginStepCandidates; observe: () => string | null }
 const steps = new WeakMap<Page, { id: string; requestId: string; handle: JSHandle<BoundForm | null> }>();
 
+// The card reads the top page, so these form targets all keep the submission in it.
+const SAME_WINDOW = /^(_self|_top|_parent)?$/i;
+
 // Keep exact DOM references in the browser, not selectors that a new document could reuse.
 const readScript = `(() => {
+  const sameWindow = ${SAME_WINDOW};
   const observe = () => ${browserLoginDetectionScript};
   if (observe() !== "credentials") return null;
   const visible = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden";
+  // Some pages keep a decoy field for password managers: transparent and hidden from assistive technology.
+  const shown = e => visible(e) && getComputedStyle(e).opacity !== "0" && !e.closest('[aria-hidden="true"]');
   // A modal dialog makes the page behind it unreachable, so only its forms count.
   const modal = [...document.querySelectorAll("dialog:modal")].pop();
   const forms = [...document.forms].filter(root => visible(root) && (!modal || modal.contains(root))).map(root => {
-    const fields = [...root.querySelectorAll("input")].filter(e => visible(e) && e.type !== "hidden" && e.type !== "submit" && e.type !== "button");
+    const fields = [...root.querySelectorAll("input")].filter(e => shown(e) && e.type !== "hidden" && e.type !== "submit" && e.type !== "button");
     const buttons = [...root.querySelectorAll('button,input[type="submit"]')].filter(e => visible(e) && e.type === "submit" && !e.disabled);
     return { root, fields, buttons };
   }).filter(form => form.fields.length);
@@ -36,7 +42,7 @@ const readScript = `(() => {
   if (fields.some(e => !["email", "text", "password"].includes(e.type) || e.disabled || e.readOnly || /one-time-code|new-password/.test(e.autocomplete))) return null;
   if (fields.filter(e => e.type === "password").length > 1) return null;
   const button = buttons[0], action = new URL(button.getAttribute("formaction") || root.action, document.URL).href;
-  if (new URL(action).origin !== location.origin || root.target && root.target !== "_self" || button.formTarget && button.formTarget !== "_self") return null;
+  if (new URL(action).origin !== location.origin || !sameWindow.test(root.target) || !sameWindow.test(button.formTarget)) return null;
   return { origin: location.origin, url: document.URL, root, fields, button, action, types: fields.map(field => field.type), observed: "credentials", observe };
 })()`;
 
@@ -45,7 +51,7 @@ const candidatesScript = `(() => {
   const observe = () => ${browserLoginDetectionScript};
   if (observe() === "challenge") return null;
   const modal = [...document.querySelectorAll("dialog:modal")].pop();
-  const visible = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden" && (!modal || modal.contains(e));
+  const visible = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden" && getComputedStyle(e).opacity !== "0" && !e.closest('[aria-hidden="true"]') && (!modal || modal.contains(e));
   const text = value => (value || "").replace(/\\s+/g, " ").trim().slice(0, 80);
   const inputs = [...document.querySelectorAll("input")].filter(e => visible(e) && ["email", "text", "password"].includes(e.type) && !e.disabled && !e.readOnly && !/one-time-code|new-password/.test(e.autocomplete)).slice(0, 12);
   const buttons = [...document.querySelectorAll('button,input[type="submit"],input[type="button"],[role="button"]')].filter(e => visible(e) && !e.disabled && e.getAttribute("aria-disabled") !== "true").slice(0, 20);
@@ -67,7 +73,8 @@ async function chooseStep(page: Page, choose: LoginStepChooser): Promise<JSHandl
     if (!described) return null;
     const choice = await choose(described);
     if (!choice) return null;
-    return await candidates.evaluateHandle((found, choice) => {
+    return await candidates.evaluateHandle((found, { choice, sameWindowSource }) => {
+      const sameWindow = new RegExp(sameWindowSource, "i");
       const fields = [choice.identity, choice.password].filter(index => index !== null).map(index => found!.inputs[index!]);
       const button = found!.buttons[choice.button];
       if (!button || fields.some(field => !field) || new Set(fields).size !== fields.length) return null;
@@ -76,9 +83,9 @@ async function chooseStep(page: Page, choose: LoginStepChooser): Promise<JSHandl
       const form = (button as HTMLButtonElement).form ?? null;
       const root = form && fields.every(field => field.form === form) ? form : null;
       const action = root ? new URL(button.getAttribute("formaction") || root.action, document.URL).href : null;
-      if (root && (new URL(action!).origin !== location.origin || root.target && root.target !== "_self" || (button as HTMLButtonElement).formTarget && (button as HTMLButtonElement).formTarget !== "_self")) return null;
+      if (root && (new URL(action!).origin !== location.origin || !sameWindow.test(root.target) || !sameWindow.test((button as HTMLButtonElement).formTarget ?? ""))) return null;
       return { origin: location.origin, url: document.URL, root, fields, button, action, types: fields.map(field => field.type), observed: found!.observe(), observe: found!.observe };
-    }, choice) as JSHandle<BoundForm | null>;
+    }, { choice, sameWindowSource: SAME_WINDOW.source }) as JSHandle<BoundForm | null>;
   } finally { await candidates.dispose(); }
 }
 
@@ -122,11 +129,12 @@ export async function submitLoginStep(page: Page, input: { requestId: string; st
   try {
     await step.handle.evaluate((form, input) => {
       if (!form) throw new Error("changed");
+      const sameWindow = new RegExp(input.sameWindowSource, "i");
       for (let index = 0; index <= form.fields.length; index++) {
         const root = form.root, button = form.button as HTMLButtonElement;
         const formIntact = !root || root.isConnected && button.form === root
           && new URL(button.getAttribute("formaction") || root.action, document.URL).href === form.action
-          && (!root.target || root.target === "_self") && (!button.formTarget || button.formTarget === "_self");
+          && sameWindow.test(root.target) && sameWindow.test(button.formTarget ?? "");
         const valid = document.URL === form.url && form.observe() === form.observed && form.origin === input.expectedOrigin && location.origin === form.origin
           && formIntact && button.isConnected && !button.disabled && button.getAttribute("aria-disabled") !== "true"
           && form.fields.length === input.values.length && form.fields.every((field, index) => field.type === form.types[index] && field.isConnected && (!root || field.form === root) && !field.disabled && !field.readOnly && ["text", "email", "password"].includes(field.type) && !/one-time-code|new-password/.test(field.autocomplete));
@@ -137,7 +145,7 @@ export async function submitLoginStep(page: Page, input: { requestId: string; st
         field.dispatchEvent(new Event("input", { bubbles: true }));
         field.dispatchEvent(new Event("change", { bubbles: true }));
       }
-    }, { expectedOrigin: new URL(input.expectedOrigin).origin, values: input.values });
+    }, { expectedOrigin: new URL(input.expectedOrigin).origin, values: input.values, sameWindowSource: SAME_WINDOW.source });
   } catch {
     // Playwright call logs and website exceptions may contain entered credentials.
     throw new Error("Sign-in step changed or submission could not be confirmed. Check the current step; nothing will be retried automatically.");
