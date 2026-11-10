@@ -93,6 +93,37 @@ syncBuiltinESMExports();\n`);
   } finally { await f.runtime.close(); await rm(f.root, { recursive: true, force: true }); }
 });
 
+test("a plain command never claims a background child, however late its task ends", { timeout: 30_000 }, async () => {
+  const f = await fixture();
+  try {
+    // The worker stays alive 2 s after recording the exit, as a busy machine's supervisor might report it late.
+    const preload = path.join(f.root, "slow-task-end.mjs");
+    await writeFile(preload, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const original = fs.writeFileSync;
+fs.writeFileSync = function(file, ...args) {
+  const result = original.call(this, file, ...args);
+  if (String(file).includes('shell-exits')) setTimeout(() => {}, 2000);
+  return result;
+};
+syncBuiltinESMExports();\n`);
+    const result = await wrapper(f, "printf short; exit 7", { NODE_OPTIONS: `--import=${preload}` });
+    assert.equal(result.code, 7, result.stderr);
+    assert.equal(result.stdout, "short", "a late task end is not evidence of a background process");
+  } finally { await f.runtime.close(); await rm(f.root, { recursive: true, force: true }); }
+});
+
+test("a command that leaves a child running returns at once and says the child stays in Tasks", { timeout: 30_000 }, async () => {
+  const f = await fixture();
+  try {
+    const started = Date.now();
+    const result = await wrapper(f, "sleep 4 & printf started");
+    assert.equal(result.code, 0, result.stderr);
+    assert.ok(Date.now() - started < 4000, "the shell's result does not wait for its background child");
+    assert.match(result.stdout, /^started\nJoint Bob task [0-9a-f-]+ left a background process running\./);
+  } finally { await f.runtime.close(); await rm(f.root, { recursive: true, force: true }); }
+});
+
 test("actual shell wrapper waits past five seconds and returns the command's real exit code and output", { timeout: 30_000 }, async () => {
   const f = await fixture();
   try {

@@ -86,7 +86,8 @@ async function main() {
     let commandsRemain = await groupHasCommands(groupId);
     const exits = process.env.JOINT_BOB_SHELL_EXITS || path.join(process.env.JOINT_BOB_TASK_DATA_DIR, "shell-exits");
     mkdirSync(exits, { recursive: true, mode: 0o700 });
-    writeFileSync(path.join(exits, id), String(code ?? 1), { mode: 0o600 });
+    // "children" tells the shim the task outlives the shell; without it the task ends with this worker.
+    writeFileSync(path.join(exits, id), `${code ?? 1}${commandsRemain ? " children" : ""}`, { mode: 0o600 });
     while (commandsRemain) {
       await pause(100);
       commandsRemain = await groupHasCommands(groupId);

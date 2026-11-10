@@ -102,13 +102,14 @@ export async function runSupervisedShell({ args, cwd, env, onData, signal, timeo
   const tasks = backend(env);
   const id = randomUUID();
   const exitFile = path.join(tasks.exits, id);
-  // The worker records the shell's own exit code here the moment the shell ends;
-  // the task itself stays alive while any background child it left keeps running.
+  // The worker records the shell's own exit code here the moment the shell ends, and
+  // whether background children it left keep the task alive.
   const shellExit = () => {
     let text;
     try { text = readFileSync(exitFile, "utf8"); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
     rmSync(exitFile, { force: true });
-    return /^\d+$/.test(text.trim()) ? Number(text.trim()) : 1;
+    const match = /^(\d+)( children)?$/.exec(text.trim());
+    return match ? { code: Number(match[1]), children: Boolean(match[2]) } : { code: 1, children: false };
   };
   let accepted = false;
   let visible = false;
@@ -175,8 +176,11 @@ export async function runSupervisedShell({ args, cwd, env, onData, signal, timeo
         return { exitCode: status.status === "stopped" ? 130 : (Number.isInteger(status.exitCode) ? status.exitCode : 1), taskId: id };
       }
       if (shellCode === undefined && !timedOut) {
-        shellCode = shellExit();
-        if (shellCode !== undefined) lingerAt = Date.now() + 1000;
+        const exit = shellExit();
+        shellCode = exit?.code;
+        // Without children the task ends with the worker; waiting for that keeps a slow
+        // supervisor from making a plain command look like it left something running.
+        if (exit?.children) lingerAt = Date.now() + 1000;
       }
       if (Date.now() >= lingerAt) {
         // The shell is done but left children behind: hand back its result and
