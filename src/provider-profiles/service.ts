@@ -69,12 +69,16 @@ export async function bootstrapPiProfile(projectId: string, conversationId: stri
 /** Whether Pi turns of this conversation run on a subscription pool (chosen for its project, workspace, cluster or by default). */
 export async function piTurnsOnPool(projectId: string, conversationId: string | undefined): Promise<boolean> {
   if (poolProfileContext()) return true;
+  const project = await asNode(() => getProject(projectId));
+  if (!project) return false;
+  const [{ clusterV2Database }, { getClusterNode }, { resolveClusterSubscriptionPools }] = await Promise.all([
+    import("../cluster-v2-store.js"), import("../cluster.js"), import("./pool-sharing.js"),
+  ]);
+  if (resolveClusterSubscriptionPools(await clusterV2Database(), (await getClusterNode()).id, projectId).length) return true;
   const automation = automationProfileContext();
   if (automation?.profileId) return false;
   const accountId = automation?.accountId ?? actingAccount()?.accountId;
   if (!accountId) return false;
-  const project = await asNode(() => getProject(projectId));
-  if (!project) return false;
   const { resolveSubscriptionChoice } = await import("./pools.js");
   const scope = await projectScope(project.id, project.type!, conversationId);
   // A pool chosen for Pi itself, or for one of the subscriptions a Pi turn can run on.

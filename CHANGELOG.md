@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.259.4 — 2026-11-10
+
+- Fixed Pi conversations starting on another node without checking that node's configured default subscription pool.
+
 ## 2.259.3 — 2026-11-10
 
 - A team's member roster is reachable on wide screens again. The Assistants tab was hidden at 1700 px and wider, which hid where a team's members are picked; in a team it now stays, named Team members. Creating a team opens it there.

@@ -40,6 +40,7 @@ export interface RemoteSessionState {
   steering: string[];
   followUp: string[];
   header: unknown;
+  leafId: string | null;
   branch: unknown[];
   messages?: unknown[];
 }
@@ -237,6 +238,9 @@ export class RemoteAgentSession {
     return {
       getHeader: () => this.state.header,
       getBranch: () => this.state.branch,
+      getLeafId: () => this.state.leafId,
+      branch: async (leafId: string) => { await this.call("branch", leafId); },
+      resetLeaf: async () => { await this.call("resetLeaf"); },
       appendCustomEntry: (customType: string, data: unknown) => { void this.call("appendCustomEntry", customType, data); },
     };
   }
@@ -308,6 +312,7 @@ function pinnedHooks(hooks: PiCoreHooks, expectedSessionId: string | undefined):
     },
     modelCredentialList: () => hooks.modelCredentialList!(),
     modelProfileIsolated: async () => hooks.modelProfileIsolated ? hooks.modelProfileIsolated() : false,
+    modelFromPool: async () => hooks.modelFromPool ? hooks.modelFromPool() : false,
     guardian: async (logical, request) => { conversation(logical); return hooks.guardian!(logical, request); },
   };
 }

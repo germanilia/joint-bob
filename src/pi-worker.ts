@@ -81,6 +81,7 @@ function state(handle: PiSessionHandle, full: boolean) {
     steering: [...session.getSteeringMessages()],
     followUp: [...session.getFollowUpMessages()],
     header: clone(session.sessionManager.getHeader()),
+    leafId: session.sessionManager.getLeafId(),
     branch: full ? clone(session.sessionManager.getBranch()) : clone(session.sessionManager.getBranch()),
     ...(full ? { messages: clone(session.messages) } : {}),
   };
@@ -97,6 +98,7 @@ async function open(key: string, inputs: PiCoreInputs) {
     persistAccounts: async (sessionId) => { await hook(key, "persistAccounts", [sessionId]); },
     credentials: async (sessionId, logical) => await hook(key, "credentials", [sessionId, logical]) as PiCredentials,
     resources: async (logical) => await hook(key, "resources", [logical]) as Awaited<ReturnType<PiCoreHooks["resources"]>>,
+    modelFromPool: async () => await hook(key, "modelFromPool", []) as boolean,
     guardian: async (logical, request) => await hook(key, "guardian", [logical, request]) as Awaited<ReturnType<NonNullable<PiCoreHooks["guardian"]>>>,
   };
   const models = await createSessionModelRuntime(
@@ -144,6 +146,8 @@ async function call(key: string, op: string, args: unknown[]): Promise<unknown> 
     case "setActiveToolsByName": session.setActiveToolsByName(args[0] as string[]); break;
     case "setSessionName": session.setSessionName(args[0] as string); break;
     case "appendCustomEntry": session.sessionManager.appendCustomEntry(args[0] as string, args[1]); break;
+    case "branch": session.sessionManager.branch(args[0] as string); break;
+    case "resetLeaf": session.sessionManager.resetLeaf(); break;
     case "compact": await session.compact(args[0] as string | undefined); break;
     case "refreshResources": await handle.refreshResources?.(); break;
     case "reload": await handle.refreshResources?.(); await session.reload(); break;

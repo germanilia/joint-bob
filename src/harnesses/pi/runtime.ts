@@ -157,7 +157,7 @@ export class PiSession implements HarnessSession {
     if (this.isBusy()) throw new Error("Cannot restore a busy Pi session");
     const { leafId } = checkpoint as { leafId: string | null };
     const manager = this.handle.session.sessionManager;
-    if (leafId) manager.branch(leafId); else manager.resetLeaf();
+    if (leafId) await manager.branch(leafId); else await manager.resetLeaf();
   }
 
   async configure(settings: HarnessModelSettings): Promise<void> {

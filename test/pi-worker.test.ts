@@ -64,7 +64,12 @@ test("a Pi conversation runs in a worker under its project's account and writes 
   await writeFile(path.join(dependencyRoot, "index.js"), `exports.marker = process.env.JOINT_BOB_PI_WORKER || "service";`);
   await writeFile(path.join(packageRoot, "extensions", "provider.ts"), `import { marker } from "pi-worker-dependency";
     import { writeFileSync } from "node:fs";
-    export default pi => { writeFileSync(${JSON.stringify(providerMarker)}, marker); pi.registerCommand("worker-provider", { description: marker, handler: async () => {} }); };`);
+    export default pi => {
+      writeFileSync(${JSON.stringify(providerMarker)}, marker);
+      pi.registerCommand("worker-provider", { description: marker, handler: async () => {} });
+      pi.registerProvider("pool-only", { api: "openai-completions", baseUrl: ${JSON.stringify(model.url)},
+        models: [{ id: "pool-model", name: "Pool model", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32000, maxTokens: 512 }] });
+    };`);
   await writeFile(path.join(serviceAgent, "settings.json"), JSON.stringify({
     defaultProvider: "native-setting-must-not-copy", shellPath: "native-shell-must-not-copy",
     packages: [{ source: "npm:pi-worker-provider@1.0.0", skills: ["skills/**"], prompts: ["prompts/**"], themes: ["themes/**"] }],
@@ -114,6 +119,32 @@ test("a Pi conversation runs in a worker under its project's account and writes 
     await assert.rejects(readFile(nativeMarker), { code: "ENOENT" }, "the worker never executes native extensions");
     assert.ok(model.authorizations.includes("Bearer node-signed-in-key"), "with the node's sign-in, read through the server");
     await assert.rejects(readFile(path.join(admin, ".pi", "agent", "auth.json")), "the account never holds the node's sign-ins");
+
+    // A conversation arriving from another node can name a provider absent here.
+    // Opening must reach the destination's default pool before checking that sign-in.
+    const { createProviderProfile } = await import("../src/provider-profiles/store.js");
+    const { createSubscriptionPool, setSubscriptionPoolChoice } = await import("../src/provider-profiles/pools.js");
+    const { adminAccountId } = await import("../src/ownership.js");
+    const owner = adminAccountId();
+    const unavailable = createProviderProfile(owner, { provider: "pi", label: "Signed-out destination account" });
+    const profile = createProviderProfile(owner, { provider: "pi", label: "Destination account" });
+    const pool = createSubscriptionPool(owner, { name: "Destination default", profileIds: [unavailable.id, profile.id] });
+    setSubscriptionPoolChoice(owner, { scope: "default", scopeId: "", poolId: pool.id });
+    const configured = settings.getSettings();
+    settings.updateSettings({ ...configured, conversationDefaults: { ...configured.conversationDefaults, pi: { provider: "pool-only", modelId: "pool-model", thinkingLevel: "off" } } });
+    const pooled = openChat(started.baseUrl, fixture.cookie, fixture.projectId, "new");
+    sockets.push(pooled.socket);
+    await waitFor(pooled.messages, () => pooled.messages.some(frame => frame.type === "ready" || frame.type === "error"), 60_000);
+    assert.deepEqual(pooled.messages.filter(frame => frame.type === "error"), [], "the execution node's default pool allows startup without a node-local key for the previous provider");
+    assert.ok(pooled.messages.some(frame => frame.type === "ready"));
+    const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
+    await mkdir(path.dirname(openAIAuthPath(profile)), { recursive: true });
+    await writeFile(openAIAuthPath(profile), JSON.stringify({ "pool-only": { type: "api_key", key: "destination-profile-key" } }), { mode: 0o600 });
+    pooled.socket.send(JSON.stringify({ type: "prompt", message: "use destination pool", queueSettings: { harnessId: "pi", provider: "pool-only", modelId: "pool-model", reasoning: "off" } }));
+    await waitFor(pooled.messages, () => pooled.messages.some(frame => frame.type === "assistantFinal" || frame.type === "assistantError" || frame.type === "error"), 60_000);
+    assert.deepEqual(pooled.messages.filter(frame => frame.type === "error" || frame.type === "assistantError"), []);
+    assert.equal(pooled.messages.find(frame => frame.type === "assistantFinal")?.text, "hi from the worker");
+    assert.ok(model.authorizations.includes("Bearer destination-profile-key"), "the turn uses the execution node's default pool profile, not its ambient sign-in");
   } finally {
     for (const socket of sockets) socket.terminate();
     const { stopPiWorkers } = await import("../src/harnesses/pi/remote.js");
