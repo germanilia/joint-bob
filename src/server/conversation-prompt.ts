@@ -117,6 +117,8 @@ export async function configureConversation(options: { projectId: string; engine
     socket.on("error", finish);
     socket.on("close", () => finish(new Error(`${options.label} connection closed before the conversation changed`)));
     socket.on("message", (raw) => {
+      // Frames already received keep arriving after the last step closed the socket; there is no step left to check them against.
+      if (settled) return;
       const event = JSON.parse(raw.toString()) as SocketEvent;
       if (step < 0) {
         if (event.type !== "ready") return;
