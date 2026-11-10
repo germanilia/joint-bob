@@ -254,7 +254,7 @@ export async function handleBobMessage(session: AuthSession, input: { message: s
   const automation = input.answerOnly ? null : await handleBobAutomation(turn, decision);
   if (automation) return { action: "answer", user, reply: automation, projectId: null };
   // Creating, renaming, moving, closing or deleting a workspace, project or conversation is carried out in control-center-organize.ts.
-  const organized = input.answerOnly ? null : await handleBobOrganize(turn, decision);
+  const organized = input.answerOnly ? null : await handleBobOrganize(turn, decision, attachments);
   if (organized) return { action: "answer", user, reply: organized, projectId: organized.projectId };
 
   if (!input.answerOnly && sure && sure.kind === "task" && project) {

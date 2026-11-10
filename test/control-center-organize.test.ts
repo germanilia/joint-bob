@@ -44,6 +44,18 @@ test("a message is about arranging work when the decision model says so, it asks
   assert.equal(mayBeAboutOrganizing("update the summaries of these three cards", decision("question"), 0.9), true, "writing summaries");
   assert.equal(mayBeAboutOrganizing("summarize the slice 10 conversation", decision("task"), 0.9), true);
   assert.equal(mayBeAboutOrganizing("summarize this article for me", null, 0.9), false, "a summary of something else");
+  // As the person types it, when the decision model is not sure what it is: Bob's agent decides whether it is for a conversation.
+  const unsure = { ...decision("task"), confidence: 0.39 };
+  assert.equal(mayBeAboutOrganizing("I want internal assitant conversatoin to fix this the dispay here is very wrong, the conversaotin is under joint-bob", unsure, 0.9), true);
+  assert.equal(mayBeAboutOrganizing("I want the internal assistant conversation to fix this", null, 0.9), true);
+  assert.equal(mayBeAboutOrganizing("ask the slice 10 convresation how to review it", decision("task"), 0.9), true, "a typo does not hide asking a conversation");
+  assert.equal(mayBeAboutOrganizing("fix the display in Joint Bob", unsure, 0.9), false, "no conversation named");
+});
+
+test("a conversation another of the person's machines runs is offered too: the press is sent there", () => {
+  const offered = proposal({ intent: "message-conversation", conversation: "conversation_2", message: "fix this" });
+  assert.equal(offered.text, `Send this to "Mac build" in Joint Bob? I'll bring you its answer here.\nfix this`);
+  assert.deepEqual(offered.operation, { op: "message-conversation", projectId: "jb", engine: "pi", sessionId: "s2", conversationId: "c2", title: "Mac build", message: "fix this", nodeId: "mac-node" });
 });
 
 test("each change is said plainly, carries the exact ids, and a removal is marked as dangerous", () => {
@@ -61,7 +73,7 @@ test("each change is said plainly, carries the exact ids, and a removal is marke
   const asked = proposal({ intent: "message-conversation", conversation: "conversation_1", message: "how do I review this?" });
   assert.match(asked.text, /^Send this to "slice 10" in DAK Live\? I'll bring you its answer here\.\nhow do I review this\?$/);
   assert.equal(asked.button, "Send it");
-  assert.deepEqual(asked.operation, { op: "message-conversation", projectId: "dak", engine: "claude", sessionId: "s1", conversationId: "c1", title: "slice 10", message: "how do I review this?" });
+  assert.deepEqual(asked.operation, { op: "message-conversation", projectId: "dak", engine: "claude", sessionId: "s1", conversationId: "c1", title: "slice 10", message: "how do I review this?", nodeId: null });
   const deleted = proposal({ intent: "delete-conversation", conversation: "conversation_1" });
   assert.equal(deleted.danger, true);
   assert.deepEqual(deleted.operation, { op: "delete-conversation", projectId: "dak", engine: "claude", sessionId: "s1", title: "slice 10" });
@@ -74,7 +86,6 @@ test("a change that cannot be done is said so, and nothing is proposed", () => {
   assert.match(propose({ intent: "rename-project", projectId: "made-up", name: "x" }, world) as string, /could not find/);
   assert.match(propose({ intent: "close-conversation", conversation: "conversation_9" }, world) as string, /could not find that conversation/);
   assert.match(propose({ intent: "create-project", name: "x", workspaceId: "nope" }, world) as string, /could not find the workspace/);
-  assert.match(propose({ intent: "message-conversation", conversation: "conversation_2", message: "hi" }, world) as string, /"Mac build" runs on another machine/);
   assert.match(propose({ intent: "delete-conversation", conversation: "conversation_9" }, world) as string, /could not find that conversation/);
 });
 

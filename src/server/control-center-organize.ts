@@ -1,21 +1,30 @@
 import { randomUUID } from "node:crypto";
+import { readFile, rm } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
+import { isTwinOrigin } from "../account-keys.js";
 import { actingAccountFromSession, runAsAccount, type ActingAccount } from "../account-context.js";
 import type { AuthSession } from "../auth.js";
-import { bobSays, registerBobAction } from "../control-center/bob-actions.js";
+import { BobActionError, bobSays, registerBobAction } from "../control-center/bob-actions.js";
 import { notifyBobExchange, type BobTurn } from "../control-center/bob-hooks.js";
 import { appendBobMessage, bobDatabase, readBobSettings, type BobAction, type BobMessage, type BobSettings } from "../control-center/bob-store.js";
 import { needsAgentDecision, type BobDecision } from "../control-center/decisions.js";
 import { getClusterNode } from "../cluster.js";
+import { resolveDataDirectory } from "../data-directory.js";
 import { deleteWorkspace, getProject, listWorkspaces } from "../store.js";
 import type { HarnessId } from "../types.js";
 import { loadBoard } from "./control-center-board.js";
 import { queueConversationPrompt } from "./conversation-prompt.js";
 import { findHarnessSession } from "./harness-sessions.js";
 import { broadcastToAllClients } from "./realtime.js";
-import { sessionDeleteSchema } from "./schemas.js";
+import { fileAttachmentSchema, imageAttachmentSchema, sessionDeleteSchema } from "./schemas.js";
 import { sharedProjectSessions } from "./sessions-helpers.js";
-import { startBobConversation, titleOf } from "./control-center-start.js";
+import { startBobConversation, titleOf, type BobAttachments } from "./control-center-start.js";
+import { persistTaskAttachments, taskAttachmentFile } from "./chat.js";
+import { bobSessionFor } from "./control-center-session.js";
+import { sendError } from "./http-auth.js";
+import { getRuntimePeer, runtimeFetch } from "./runtime-peers.js";
+import { app } from "./state.js";
 import { writeSummaries } from "./control-center-summaries.js";
 import { offerOperation, OPERATE_INSTRUCTIONS, OPERATE_INTENTS, operateIntentShapes, type OperateIntent } from "./control-center-operate.js";
 import { listDiscoveredHarnesses } from "../harnesses/registry.js";
@@ -91,7 +100,7 @@ const INSTRUCTIONS = [
   '{"intent":"start-conversation","projectId":"<id>","message":"the first message for the agent, in the user\'s words"}',
   '{"intent":"rename-conversation","conversation":"<key>","title":"..."}',
   '{"intent":"close-conversation","conversation":"<key>"} to mark it done.',
-  '{"intent":"message-conversation","conversation":"<key>","message":"what to send it, in the user\'s words"} when the user wants you to ask or tell one of their conversations something.',
+  '{"intent":"message-conversation","conversation":"<key>","message":"what to send it, in the user\'s words"} when the user wants you to ask or tell one of their conversations something, or wants one of them to do some work ("I want the X conversation to fix this").',
   '{"intent":"delete-conversation","conversation":"<key>"} to delete it for good.',
   '{"intent":"summarize-conversations","conversations":["<key>", ...]} to write or bring up to date the summary of one or more listed conversations (at most 10), when the user asks for their summaries or to update them. A question about why a summary is missing is not a request to write one.',
   ...OPERATE_INSTRUCTIONS,
@@ -144,13 +153,35 @@ const NOTE_WORDS = /\b(quick[\s-]?notes?|tasks?\s+(?:list|board|tab)|to\s+(?:the
  */
 export function mayBeAboutOrganizing(message: string, decision: BobDecision | null, threshold: number): boolean {
   if (decision?.kind === "organize") return true;
-  if (CONVERSATION_NOUNS.test(message) && MESSAGE_VERBS.test(message)) return true;
+  const conversation = mentionsConversation(message);
+  if (conversation && MESSAGE_VERBS.test(message)) return true;
   if (SUMMARY_WORDS.test(message) && SUMMARY_NOUNS.test(message)) return true;
-  if (CONVERSATION_NOUNS.test(message) && CONTROL_WORDS.test(message)) return true;
+  if (conversation && CONTROL_WORDS.test(message)) return true;
   if (GIT_WORDS.test(message) || NOTE_WORDS.test(message)) return true;
   const sure = decision && !needsAgentDecision(decision, threshold);
+  // "I want the internal assistant conversation to fix this": unsure what it is, and about a conversation, so the agent decides.
+  if (!sure && conversation) return true;
   if (sure && (decision.kind === "task" || decision.kind === "automation")) return false;
   return ORGANIZE_NOUNS.test(message) && ORGANIZE_VERBS.test(message);
+}
+
+/** The message speaks of a conversation as the person types it: "conversatoin" and "conversaotin" count, within two edits. */
+function mentionsConversation(message: string): boolean {
+  if (CONVERSATION_NOUNS.test(message)) return true;
+  return (message.toLowerCase().match(/[a-z]{9,}/g) ?? []).some((word) => editDistance(word, "conversation") <= 2);
+}
+
+/** Letters added, dropped, changed or swapped with their neighbour, one edit each. */
+function editDistance(left: string, right: string): number {
+  const rows = Array.from({ length: left.length + 1 }, (_, i) => [i, ...Array<number>(right.length).fill(0)]);
+  for (let j = 1; j <= right.length; j += 1) rows[0][j] = j;
+  for (let i = 1; i <= left.length; i += 1) {
+    for (let j = 1; j <= right.length; j += 1) {
+      rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && left[i - 1] === right[j - 2] && left[i - 2] === right[j - 1]) rows[i][j] = Math.min(rows[i][j], rows[i - 2][j - 2] + 1);
+    }
+  }
+  return rows[left.length][right.length];
 }
 
 /** Recent conversations of each project that Bob may name, beside the ones on the board. */
@@ -182,6 +213,26 @@ async function worldFor(session: AuthSession): Promise<OrganizeWorld> {
 
 // ── What each intent asks the person, and what pressing the button does ──────────────────────────────────
 
+/** What the person attached to their message, kept on this machine until they press the button: a button cannot hold a file. */
+const keptAttachment = z.object({ id, kind: z.enum(["image", "file"]), name: z.string().min(1).max(240), mimeType: z.string().min(1).max(120), path: z.string().min(1).max(500) });
+type KeptAttachment = z.infer<typeof keptAttachment>;
+const keptAttachmentsRoot = () => path.join(resolveDataDirectory(), "bob-attachments");
+
+/** The kept files, read back as the attachments of a message. */
+async function readKept(kept: KeptAttachment[]): Promise<BobAttachments> {
+  const read = await Promise.all(kept.map(async (item) => ({ kind: item.kind, name: item.name, mimeType: item.mimeType, data: await readFile(taskAttachmentFile(keptAttachmentsRoot(), item), "base64") })));
+  return { images: read.filter((item) => item.kind === "image").map(({ kind: _kind, ...item }) => item), files: read.filter((item) => item.kind === "file").map(({ kind: _kind, ...item }) => item) };
+}
+
+/** Sent, so this machine no longer keeps them. */
+async function dropKept(kept: KeptAttachment[]): Promise<void> {
+  await Promise.all(kept.map((item) => rm(taskAttachmentFile(keptAttachmentsRoot(), item), { force: true })));
+}
+
+const messageOperation = z.object({ op: z.literal("message-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, conversationId: id, title: z.string(), message: z.string().min(1).max(20_000),
+  /** The machine that runs it, when that is another of the person's machines: the press is sent there. */
+  nodeId: id.nullable().optional(), attachments: z.array(keptAttachment).max(10).optional() });
+
 const operationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("create-workspace"), name: workspaceName }),
   z.object({ op: z.literal("rename-workspace"), workspaceId: id, name: workspaceName }),
@@ -190,10 +241,10 @@ const operationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("rename-project"), projectId: id, name: projectName }),
   z.object({ op: z.literal("move-project"), projectId: id, workspaceId: id, workspaceName: z.string() }),
   z.object({ op: z.literal("delete-project"), projectId: id, name: z.string() }),
-  z.object({ op: z.literal("start-conversation"), projectId: id, message: z.string().min(1).max(20_000) }),
+  z.object({ op: z.literal("start-conversation"), projectId: id, message: z.string().min(1).max(20_000), attachments: z.array(keptAttachment).max(10).optional() }),
   z.object({ op: z.literal("rename-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, title: z.string().min(1).max(200) }),
   z.object({ op: z.literal("close-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, title: z.string() }),
-  z.object({ op: z.literal("message-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, conversationId: id, title: z.string(), message: z.string().min(1).max(20_000) }),
+  messageOperation,
   z.object({ op: z.literal("delete-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, title: z.string() }),
 ]);
 type Operation = z.infer<typeof operationSchema>;
@@ -262,10 +313,9 @@ export function propose(intent: Exclude<OrganizeIntent, { intent: "none" | "summ
     case "message-conversation": {
       const found = conversation(intent.conversation);
       if (!found) return "I could not find that conversation.";
-      if (found.nodeId) return `"${found.title}" runs on another machine, so I cannot send to it from here. Ask me on that machine, or open it there.`;
       return {
         text: `Send this to "${found.title}" in ${found.projectName}? I'll bring you its answer here.\n${intent.message.slice(0, 600)}`, button: "Send it", danger: false,
-        operation: { op: "message-conversation", projectId: found.projectId, engine: found.engine, sessionId: found.sessionId, conversationId: found.conversationId, title: found.title, message: intent.message },
+        operation: { op: "message-conversation", projectId: found.projectId, engine: found.engine, sessionId: found.sessionId, conversationId: found.conversationId, title: found.title, message: intent.message, nodeId: found.nodeId },
         project: { id: found.projectId, name: found.projectName },
       };
     }
@@ -289,7 +339,7 @@ async function say(turn: BobTurn, text: string, extra: { importance?: BobMessage
  * Bob's requests to create or arrange workspaces, projects and conversations. Returns the reply Bob posted, or null when the
  * message is not about that, so Bob answers it in the usual way. Every change waits for the person's button.
  */
-export async function handleBobOrganize(turn: BobTurn, decision: BobDecision | null): Promise<BobMessage | null> {
+export async function handleBobOrganize(turn: BobTurn, decision: BobDecision | null, attachments: BobAttachments): Promise<BobMessage | null> {
   if (!mayBeAboutOrganizing(turn.message, decision, turn.settings.threshold)) return null;
   const world = await worldFor(turn.session);
   const [cwd] = await runAsAccount(actingAccountFromSession(turn.session), () => projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }));
@@ -307,6 +357,11 @@ export async function handleBobOrganize(turn: BobTurn, decision: BobDecision | n
   if (isOperateIntent(intent)) return operate(turn, intent, world);
   const proposal = propose(intent, world);
   if (typeof proposal === "string") return say(turn, proposal, { via: "Organize · nothing to do" });
+  const attached = [...attachments.images, ...attachments.files];
+  if (attached.length && (proposal.operation.op === "message-conversation" || proposal.operation.op === "start-conversation")) {
+    proposal.operation.attachments = await persistTaskAttachments(keptAttachmentsRoot(), attachments.images, attachments.files);
+    proposal.text = `${proposal.text}\nWith ${attached.map((item) => item.name).join(", ")}.`;
+  }
   return say(turn, proposal.text, {
     importance: "needs-you", via: "Organize · waiting for you", project: proposal.project,
     actions: [{ id: "organize.run", label: proposal.button, style: proposal.danger ? "warn" : "primary", data: { operation: proposal.operation } }, { id: "organize.cancel", label: "Cancel" }],
@@ -353,14 +408,14 @@ async function bringAnswer(actor: ActingAccount, operation: Extract<Operation, {
 }
 
 /** Sends the message as the person; the press returns once the conversation has queued it, and its answer follows when the turn is done. */
-async function sendToConversation(session: AuthSession, operation: Extract<Operation, { op: "message-conversation" }>, projectName: string): Promise<void> {
+async function sendToConversation(session: AuthSession, operation: Extract<Operation, { op: "message-conversation" }>, projectName: string, attachments: BobAttachments): Promise<void> {
   const actor = actingAccountFromSession(session);
   const sentAt = Date.now();
   let wasQueued = false;
   let accepted!: () => void;
   const queued = new Promise<void>((resolve) => { accepted = resolve; });
   const completed = queueConversationPrompt({
-    projectId: operation.projectId, engine: operation.engine, sessionId: operation.sessionId, message: operation.message, requestId: randomUUID(), label: "Bob",
+    projectId: operation.projectId, engine: operation.engine, sessionId: operation.sessionId, message: operation.message, ...attachments, requestId: randomUUID(), label: "Bob",
     until: "completed", onQueued: () => { wasQueued = true; accepted(); },
     onCompleted: () => { void bringAnswer(actor, operation, projectName, sentAt).catch((error) => console.warn("Could not bring the conversation's answer to Bob", error)); },
   });
@@ -372,6 +427,54 @@ async function sendToConversation(session: AuthSession, operation: Extract<Opera
   }).catch((error) => console.warn("Could not tell Bob the conversation did not answer", error));
   await Promise.race([queued, completed]);
 }
+
+const SEND_TIMEOUT_MS = 60_000;
+
+/** A conversation another of the person's machines runs: the press goes there with the attachments, and its answer comes back from there. */
+async function sendOnTwin(session: AuthSession, nodeId: string, operation: Extract<Operation, { op: "message-conversation" }>, attachments: BobAttachments): Promise<void> {
+  const peer = await getRuntimePeer(nodeId);
+  if (!peer) throw new BobActionError(503, `The machine that runs "${operation.title}" cannot be reached now; press again when it is back`);
+  const { nodeId: _nodeId, attachments: _kept, ...sent } = operation;
+  let reply: Response;
+  try {
+    reply = await runtimeFetch(`${peer.url}/api/cluster/control-center/bob/send`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: session.accountId, operation: sent, ...attachments }), signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new BobActionError(503, `The machine that runs "${operation.title}" did not answer: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (reply.ok) return;
+  const body = await reply.json().catch(() => ({})) as { error?: string };
+  if (reply.status === 404 && !body.error) throw new BobActionError(404, "That machine runs an older version that cannot take this; update it first");
+  throw new BobActionError(reply.status >= 500 ? 502 : reply.status, body.error ?? `The machine that runs "${operation.title}" refused it (${reply.status})`);
+}
+
+const sendSchema = z.object({
+  accountId: z.string().min(1).max(240), operation: messageOperation.omit({ nodeId: true, attachments: true }).strict(),
+  images: z.array(imageAttachmentSchema).max(10), files: z.array(fileAttachmentSchema).max(10),
+}).strict();
+
+/** One of the person's own machines sends a message they pressed **Send it** for to a conversation that runs here. */
+app.post(["/api/cluster/control-center/bob/send", "/api/cluster/v2/runtime/control-center/bob/send"], async (request, response, next) => {
+  try {
+    if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
+    if (!isTwinOrigin(await bobDatabase(), response.locals.machineNodeId as string)) { sendError(response, 403, "Only the person's own machines can send here"); return; }
+    const { accountId, operation, images, files } = sendSchema.parse(request.body);
+    const session = bobSessionFor(accountId, "twin");
+    if (!session) { sendError(response, 404, "That person is not on this machine"); return; }
+    await runAsAccount(actingAccountFromSession(session), async () => {
+      const project = await getProject(operation.projectId);
+      if (!project) throw new BobActionError(404, "That project is not on the machine that runs the conversation");
+      // Each machine knows a project under its own id: the conversation is queued under this machine's.
+      await sendToConversation(session, { ...operation, projectId: project.id }, project.name, { images, files });
+    });
+    response.status(204).send();
+  } catch (error) {
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid message for the conversation"); return; }
+    if (error instanceof BobActionError) { sendError(response, error.status, error.message); return; }
+    next(error);
+  }
+});
 
 async function run(session: AuthSession, settings: BobSettings, operation: Operation): Promise<{ text: string; project: { id: string; name: string } | null }> {
   switch (operation.op) {
@@ -388,7 +491,9 @@ async function run(session: AuthSession, settings: BobSettings, operation: Opera
     case "start-conversation": {
       const project = await getProject(operation.projectId);
       if (!project) throw new Error("That project is no longer here");
-      const started = await startBobConversation({ session, settings, project, title: titleOf(operation.message), brief: operation.message, harnessId: settings.harnessId || iconHarnessId(), autoRespond: settings.autoRespond === "always" });
+      const kept = operation.attachments ?? [];
+      const started = await startBobConversation({ session, settings, project, title: titleOf(operation.message), brief: operation.message, harnessId: settings.harnessId || iconHarnessId(), autoRespond: settings.autoRespond === "always", attachments: await readKept(kept) });
+      await dropKept(kept);
       return { text: `Started in ${project.name}. It is on the board now.${started.autoRespondNote}`, project: { id: project.id, name: project.name } };
     }
     case "rename-conversation": {
@@ -402,7 +507,11 @@ async function run(session: AuthSession, settings: BobSettings, operation: Opera
     case "message-conversation": {
       const project = await getProject(operation.projectId);
       if (!project) throw new Error("That project is no longer here");
-      await sendToConversation(session, operation, project.name);
+      const kept = operation.attachments ?? [];
+      const attachments = await readKept(kept);
+      if (operation.nodeId) await sendOnTwin(session, operation.nodeId, operation, attachments);
+      else await sendToConversation(session, operation, project.name, attachments);
+      await dropKept(kept);
       return { text: `Sent to "${operation.title}". I'll bring you its answer here when it is done.`, project: { id: project.id, name: project.name } };
     }
     case "delete-conversation": {
