@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.254.2 — 2026-11-10
+
+- A Pi conversation on a subscription pool moves to the next account again when one runs out or loses its sign-in. Rolling back before the next account tried to switch the model with no account signed in, so the turn failed with *Selected subscription pool requires pool-aware execution* and the real failure was hidden. The rollback now only rewinds the conversation, and each account sets its own model.
+
 ## 2.254.1 — 2026-11-10
 
 - Bob answers again when a subscription pool moves his turn to another provider, and so does any Pi conversation. After the switch, the pool's fallback model ran with reasoning off, which Claude Opus 5.5 and GPT-6.1 Sol do not offer, so the turn failed with *Pi reasoning level is not supported*. A turn that switches now keeps its effort, or runs at the nearest one the new model offers.
