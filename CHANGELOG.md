@@ -3,6 +3,12 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.264.0 — 2026-11-11
+
+- Lists, opening a conversation and work between machines ask the database far less. Joint Bob now keeps what it read (a project, who may see it, your settings, conversation names) until something is written, instead of reading it again thousands of times a second. On a busy machine these lookups were about a third of the server's work.
+- Opening a list of conversations no longer writes to the database when nothing changed.
+- Updates arrive sooner. A machine that was finishing a turn when an update came out used to wait six hours before trying again; it now tries every three minutes until the turn ends.
+
 ## 2.263.0 — 2026-11-11
 
 - Joint Bob does much less background work between machines. It no longer reads its whole history of changes again every five minutes to check that another machine has everything (on one machine this took half of the server's time). It also no longer takes one slow answer from another machine as that machine going away and coming back, which restarted the whole catch-up every few seconds.
