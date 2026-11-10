@@ -3,9 +3,9 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.259.1 — 2026-11-10
 
-- Browser sign-in notices no longer repeat after each page reload. New requests still notify, and pending sign-ins remain available in their own conversations.
+- Fixed browser sign-in notices appearing again after every page reload. New sign-in requests still notify, and pending sign-ins stay available in their own conversations.
 
 ## 2.259.0 — 2026-11-10
 
