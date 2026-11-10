@@ -59,6 +59,12 @@ export function isWorktreeMetadata(path: string): boolean {
   return hasSegment(path, (segment) => segment === ".joint-bob-worktree" || isBaseline(segment));
 }
 
+/** The worktree folder a path of a worktrees share lies in; undefined for the folder itself and anything at the share's top. */
+export function worktreeRootOf(path: string): string | undefined {
+  const split = path.indexOf("/");
+  return split > 0 ? path.slice(0, split) : undefined;
+}
+
 /** The disposable bulk of a worktree share: everything but its metadata and baselines. Never trashed (D7). */
 export function isWorktreeBulk(kind: ShareKind | undefined, path: string): boolean {
   return kind === "worktrees" && !isWorktreeMetadata(path);
@@ -212,6 +218,8 @@ export class NeedEngine {
   private readonly needListeners = new Set<(key: string) => void>();
   /** Shares nextNeeds left out because their folder was missing: the scan that finds it back hands their rows out again. */
   private readonly waitingForRoot = new Set<string>();
+  /** Per worktrees share, the worktree folders this node downloads (the `wanted` table, read once). */
+  private readonly wantedRoots = new Map<string, Set<string>>();
 
   constructor(private readonly deps: NeedDeps) {}
 
@@ -660,7 +668,7 @@ export class NeedEngine {
   rootAvailable(key: string): void { if (this.waitingForRoot.has(key)) this.wake(key); }
 
   /** The share stopped running here: its rows stay, the next syncNeed decides again. */
-  forgetNeed(key: string): void { this.ready.delete(key); }
+  forgetNeed(key: string): void { this.ready.delete(key); this.wantedRoots.delete(key); }
 
   /**
    * Every path of the share decided again from the stored rows, replacing stored targets even with older
@@ -731,6 +739,59 @@ export class NeedEngine {
     return share.ignored(path, target.type === DIRECTORY) || (local !== undefined && local.type !== target.type && share.ignored(path, local.type === DIRECTORY));
   }
 
+  private wantedOf(key: string): Set<string> {
+    let roots = this.wantedRoots.get(key);
+    if (!roots) { roots = new Set(this.deps.db.wantedRoots(key)); this.wantedRoots.set(key, roots); }
+    return roots;
+  }
+
+  /**
+   * A download this node does not make yet: a worktree is fetched only by a node that uses it. Every node
+   * used to download every worktree in full, most of them scheduled runs deleted hours later. What always
+   * arrives: a worktree's own metadata (`.joint-bob-worktree`, so it is listed everywhere), a newer version
+   * of a file this node holds, and every delete. The rest waits until the worktree is wanted (want()).
+   */
+  private deferred(share: NeedShare, path: string, local: IndexEntry | undefined, target: IndexEntry): boolean {
+    if (share.kind !== "worktrees" || target.deleted) return false;
+    if (local !== undefined && !local.deleted) return false;
+    const root = worktreeRootOf(path);
+    if (root === undefined || hasSegment(path, (segment) => segment === ".joint-bob-worktree")) return false;
+    return !this.wantedOf(share.key).has(root);
+  }
+
+  /**
+   * This node uses the worktree at `prefix` (created here, a conversation, terminal, merge or takeover in
+   * it): from now on its files are downloaded. Kept in the index database, so it holds across restarts.
+   * The paths peers have under it are decided again at once; returns whether it was new.
+   */
+  want(key: string, prefix: string): boolean {
+    const share = this.deps.share(key);
+    if (this.closed || !share || share.kind !== "worktrees") return false;
+    const trimmed = prefix.replace(/^\/+|\/+$/g, "");
+    if (trimmed === "") return false;
+    const normalized = normalizeRelativePath(trimmed);
+    const root = worktreeRootOf(`${normalized}/`)!;
+    const roots = this.wantedOf(key);
+    if (roots.has(root)) return false;
+    const { db } = this.deps;
+    db.writeTx(() => db.addWanted(key, root, this.now()));
+    roots.add(root);
+    const end = `${root}0`;
+    const seen = new Set<string>();
+    for (const peer of share.peers()) {
+      for (let after = `${root}/`; ;) {
+        const rows = db.remoteAfter(key, peer, after, RECOMPUTE_CHUNK).filter((row) => row.path < end);
+        if (!rows.length) break;
+        after = rows[rows.length - 1]!.path;
+        const paths = rows.map((row) => row.path).filter((path) => !seen.has(path));
+        for (const path of paths) seen.add(path);
+        this.reconcilePaths(key, paths, true);
+        if (rows.length < RECOMPUTE_CHUNK) break;
+      }
+    }
+    return true;
+  }
+
   /** What the rows say about one path now (apply re-derives its target with this, §5.5.1). */
   derive(key: string, path: string): Derived | undefined {
     const share = this.deps.share(key);
@@ -743,7 +804,8 @@ export class NeedEngine {
       if (row) remotes.set(peer, row);
     }
     const { target, decision } = decideGlobal(local, [...remotes.values()]);
-    const wanted = this.needActive(share) && decision.kind === "apply" && target !== undefined && !this.ignoredFor(share, path, local, target);
+    const wanted = this.needActive(share) && decision.kind === "apply" && target !== undefined && !this.ignoredFor(share, path, local, target)
+      && !this.deferred(share, path, local, target);
     return { local, remotes, target, decision, wanted };
   }
 
@@ -763,7 +825,7 @@ export class NeedEngine {
     const key = share.key;
     const { target, decision } = decideGlobal(local, [...rows.values()]);
     const existing = db.needRow(key, path);
-    if (decision.kind !== "apply" || !target || this.ignoredFor(share, path, local, target)) {
+    if (decision.kind !== "apply" || !target || this.ignoredFor(share, path, local, target) || this.deferred(share, path, local, target)) {
       if (existing) this.dropNeedRow(key, existing);
       this.revalidateMoves(key, path, local);
       return decision.kind;

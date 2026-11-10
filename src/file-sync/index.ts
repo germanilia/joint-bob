@@ -1041,11 +1041,11 @@ const PENDING_TIMEOUT_MS = 2_000;
  * now from `availablePeers` or a local copy, and what only other peers have. Undefined when the share
  * is not reported yet; rejects when the worker does not answer in time.
  */
-export async function fileSyncPendingFiles(projectId: string, kind: ShareKind, prefix: string, availablePeers: readonly string[]): Promise<PendingFiles | undefined> {
+export async function fileSyncPendingFiles(projectId: string, kind: ShareKind, prefix: string, availablePeers: readonly string[], peek = false): Promise<PendingFiles | undefined> {
   const current = configuredEngine();
   const [spec] = reportedShares(current, projectId, [kind]);
   if (!spec) return undefined;
-  return neutral(() => current.bridge.call("pending", { share: spec.key, prefix, availablePeers: [...availablePeers] }, { timeoutMs: PENDING_TIMEOUT_MS }));
+  return neutral(() => current.bridge.call("pending", { share: spec.key, prefix, availablePeers: [...availablePeers], ...(peek ? { peek: true } : {}) }, { timeoutMs: PENDING_TIMEOUT_MS }));
 }
 
 /** Need rows of the share under `prefix` go first until `untilMs` (a merge waiting on a worktree's files). */

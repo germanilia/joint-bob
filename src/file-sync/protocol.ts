@@ -211,7 +211,8 @@ export const opSchemas = {
   applyBatch: z.object({ share: z.string(), items: z.array(applyItemSchema).max(1000) }),
   repair: z.object({ share: z.string(), peer: z.string() }),
   /** fix (P4+P5): need rows under `prefix` (a worktree): what can arrive now from `availablePeers` or a local copy, and what only an unavailable peer has. */
-  pending: z.object({ share: z.string(), prefix: z.string(), availablePeers: z.array(z.string()) }),
+  // `peek`: only count; without it, asking about a worktree marks it as used here (its files are downloaded from then on).
+  pending: z.object({ share: z.string(), prefix: z.string(), availablePeers: z.array(z.string()), peek: z.boolean().optional() }),
   /** Answered by the worker's adapter (its network layer), not the core. */
   stats: z.object({}),
   /** Main's event loop is busy (ELU > 70 % for 10 s) or calm again: new relay-fallback transfers wait meanwhile (§6.2). */

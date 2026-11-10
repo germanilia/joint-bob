@@ -71,7 +71,10 @@ test("a worktree reaches the other node through native Syncthing, keeps heavy fi
     await mkdir(path.dirname(marker), { recursive: true });
     await writeFile(marker, "{}\n");
     assert.equal(await until(() => exists(path.join(source.path, ".joint-bob-worktree", "conversations", "pi--remote-conversation.json")), 90_000), true, "conversation markers travel back");
-    assert.equal(await until(() => exists(path.join(source.path, ".joint-bob-worktree", "nodes", `${right.nodeId}.json`)), 90_000), true, "every node publishes its own worktree path");
+    // A node records its path when it uses the worktree (it was created on the left one), not when it lists it:
+    // a listing's write landing after another node's delete used to bring the deleted folder back.
+    assert.equal(await until(() => exists(path.join(remote!.path, ".joint-bob-worktree", "nodes", `${left.nodeId}.json`)), 90_000), true, "the node using the worktree publishes its path there");
+    assert.equal(await exists(path.join(source.path, ".joint-bob-worktree", "nodes", `${right.nodeId}.json`)), false, "listing a worktree writes nothing into it");
 
     const removed = await fetch(`${left.url}/api/projects/${projectId}/worktrees/${source.id}`, { method: "DELETE", headers: { Cookie: sa.cookie, "x-csrf-token": sa.csrfToken } });
     assert.equal(removed.status, 204);

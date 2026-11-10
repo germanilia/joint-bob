@@ -5,7 +5,7 @@ import { getClusterNode } from "./cluster.js";
 import { syncConversationWorktrees } from "./conversation-records.js";
 import { managedHomePaths } from "./managed-home.js";
 import { applyMergeTransaction, recordMergeTransaction, rollbackMergeTransaction, type MergeOp } from "./merge-journal.js";
-import { worktreeFilesChanged, worktreeHasPendingFiles } from "./file-sync/facade.js";
+import { useWorktreeFiles, worktreeFilesChanged, worktreeHasPendingFiles } from "./file-sync/facade.js";
 import { getSettings } from "./settings.js";
 import { promisify } from "node:util";
 import { execFile, spawn } from "./subprocess.js";
@@ -21,7 +21,7 @@ const heavyDirectories = new Set<string>([...worktreeHeavyDirectories, WORKTREE_
 const heavyFiles = new Set<string>(worktreeHeavyFiles);
 
 const MAX_FILE_BYTES = 1024 * 1024;
-const WORKTREE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const WORKTREE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // Vivid hues first: a worktree must stand out in the list, and slate reads as no colour.
 const DEFAULT_COLOR_ORDER: ProjectColor[] = ["teal", "violet", "amber", "blue", "magenta", "green", "red", "slate"];
 const BINARY_SNIFF_BYTES = 8192;
@@ -182,7 +182,9 @@ export async function listProjectWorktrees(projectId: string, root = worktreeRoo
     const worktree = path.join(directory, entry);
     const metadata = await readMetadata(worktree);
     if (!metadata) continue;
-    await registerLocalPath(worktree, node.id).catch((error) => console.warn("Worktree path registration failed", error));
+    // Its path is registered when the worktree is used here (useProjectWorktree), not when it is listed: a
+    // listing wrote one small synced file per worktree per node, and a write that landed after another
+    // node's delete brought the deleted folder back.
     worktrees.push(view(projectId, worktree, metadata));
   }
   return worktrees.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
@@ -192,8 +194,20 @@ export async function getProjectWorktree(projectId: string, worktreeId: string, 
   const worktree = expectedWorktreePath(projectId, worktreeId, root);
   const metadata = await readMetadata(worktree);
   if (!metadata) return undefined;
-  await registerLocalPath(worktree, (await getClusterNode()).id);
-  return view(projectId, worktree, metadata);
+  const found = view(projectId, worktree, metadata);
+  // Asking for one worktree is using it (a terminal, an agent, a new conversation in it).
+  await useProjectWorktree(found).catch((error) => console.warn("Worktree could not be marked as used here", error));
+  return found;
+}
+
+/**
+ * A conversation, terminal or agent works in the worktree on this node: its path here is recorded for the
+ * other nodes (conversations are matched by working directory), and its files are downloaded from now on.
+ * Returns how many files a machine that is present can still send.
+ */
+export async function useProjectWorktree(worktree: ProjectWorktree): Promise<number> {
+  await registerLocalPath(worktree.path, (await getClusterNode()).id);
+  return useWorktreeFiles(worktree.projectId, worktree.id);
 }
 
 async function gitHead(projectPath: string): Promise<string | null> {
@@ -324,6 +338,8 @@ export async function createProjectWorktree(project: ProjectRecord, input: { nam
     await fs.rename(staging, worktree);
     await registerLocalPath(worktree, node.id);
     worktreeFilesChanged(project.id, worktree);
+    // Created here, so used here: what other machines add to it later is downloaded.
+    await useWorktreeFiles(project.id, id).catch((error) => console.warn("Worktree could not be marked as used here", error));
     return view(project.id, worktree, metadata);
   } catch (error) {
     await fs.rm(staging, { recursive: true, force: true });

@@ -45,7 +45,7 @@ export interface ScannerOptions {
 export const SCANNER_DEFAULTS: ScannerOptions = {
   smallFileBytes: 8 * MiB, settleMs: 2000, maxSettleMs: 60_000, batchSize: 1000,
   replacedMinimum: 500, replacedRatio: 0.5,
-  tombstoneRetentionMs: 30 * DAY, worktreeTombstoneRetentionMs: 3 * DAY, staleTempMs: HOUR, fsNames: process.platform !== "darwin", hashChunkBytes: MiB, hashCheckBytes: 64 * MiB,
+  tombstoneRetentionMs: 30 * DAY, worktreeTombstoneRetentionMs: 12 * HOUR, staleTempMs: HOUR, fsNames: process.platform !== "darwin", hashChunkBytes: MiB, hashCheckBytes: 64 * MiB,
 };
 
 /** Tombstones removed per transaction by pruneTombstones. */

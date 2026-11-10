@@ -21,7 +21,7 @@ import { type ConversationEngine, getConversationOwnership } from "../conversati
 import { ensureConversationRecord, getConversationRecord, listConversationSegments, parseConversationDraftPath, setConversationWorktree } from "../conversation-records.js";
 import { findConversation, findHarnessSession, harnessForSessionPath, listHarnesses, listHarnessSessions } from "../harnesses.js";
 import { getProjectLock } from "../project-locks.js";
-import { ensureWorktreeLocalFiles, getProjectWorktree, markWorktreeConversation, worktreeConversationIndex, type ProjectWorktree } from "../project-worktrees.js";
+import { ensureWorktreeLocalFiles, getProjectWorktree, markWorktreeConversation, useProjectWorktree, worktreeConversationIndex, type ProjectWorktree } from "../project-worktrees.js";
 import { resolveLocalSessionPath } from "../session-paths.js";
 import { getProject } from "../store.js";
 import { getSettings } from "../settings.js";
@@ -46,6 +46,24 @@ import { peerWebSocket } from "../relay/transport.js";
 import { onPhonePolicyChanged, otherUsersMayUsePhone } from "../relay/phone-policy.js";
 
 /** A worktree that arrived through sync has no `.env` or dependency links on this node yet. */
+/** A worktree with more than this still to download is not opened for work yet; fewer are small files that arrive within moments. */
+const WORKTREE_ARRIVING_FILES = 50;
+const WORKTREE_ARRIVAL_WAIT_MS = 20_000;
+/**
+ * The conversation runs in this worktree on this node. A node downloads only the worktrees it uses, so the
+ * first use starts the download; an agent must not start in a folder that is mostly missing. Waits a short
+ * while for the files, and says whether too many are still to come.
+ */
+async function worktreeFilesArriving(worktree: ProjectWorktree): Promise<boolean> {
+  const deadline = Date.now() + WORKTREE_ARRIVAL_WAIT_MS;
+  for (;;) {
+    const pending = await useProjectWorktree(worktree).catch((error) => { console.warn("Worktree files could not be checked", error); return 0; });
+    if (!pending) return false;
+    if (Date.now() >= deadline) return pending > WORKTREE_ARRIVING_FILES;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
 async function provisionWorktree(projectPath: string, worktreePath: string): Promise<void> {
   await ensureWorktreeLocalFiles(projectPath, worktreePath).catch((error) => console.warn("Worktree local files could not be provisioned", error));
 }
@@ -519,6 +537,10 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     if (worktree) {
       cwd = worktree.path;
       if (!peerReadOnly) {
+        if (await worktreeFilesArriving(worktree)) {
+          socket.close(1013, "Files of this worktree are still arriving from another machine; open it again in a moment");
+          return;
+        }
         await provisionWorktree(project.path, worktree.path);
         if (!known) await markWorktreeConversation(project.id, worktree.id, sessionRequest.engine, ownershipSessionId);
       }

@@ -11,7 +11,7 @@ import { bump, raiseClock } from "./vectors.js";
    schema from a newer release is dropped and rebuilt rather than migrated down. The node clock in
    meta is the one value kept across such a rebuild: counters must never go back. */
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** Index entry plus what only this node needs: the on-disk spelling and the stat fingerprint. */
 export interface LocalEntry extends IndexEntry {
@@ -163,6 +163,16 @@ export const MIGRATIONS: ReadonlyArray<string> = [
   `
   CREATE INDEX IF NOT EXISTS need_pick ON need(blocked, priority, action = 'delete', t_size, share, path);
   `,
+  // 6: the worktrees this node downloads (need.ts, wanted): one it created or used. Those it already changed
+  // files in start as wanted; any other is fetched when it is first used here.
+  `
+  CREATE TABLE IF NOT EXISTS wanted(share TEXT NOT NULL, root TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(share, root)) WITHOUT ROWID;
+  INSERT OR IGNORE INTO wanted(share, root, at)
+    SELECT DISTINCT e.share, substr(e.path, 1, instr(e.path, '/') - 1), 0 FROM entries e
+    WHERE e.share LIKE 'worktrees:%' AND e.deleted = 0 AND instr(e.path, '/') > 1
+      AND e.modified_by = (SELECT value FROM meta WHERE key = 'node_id')
+      AND e.path NOT LIKE '%/.joint-bob-worktree/%';
+  `,
 ];
 
 /**
@@ -172,8 +182,8 @@ export const MIGRATIONS: ReadonlyArray<string> = [
  */
 export const HIDDEN_DIFF = "ignored";
 
-const INDEX_TABLES = ["shares", "entries", "remote", "cursors", "acks", "need", "diffs", "shadow_clean", "errors", "nonces", "trash_index"];
-const SHARE_TABLES = ["entries", "remote", "cursors", "acks", "need", "diffs", "shadow_clean", "errors"];
+const INDEX_TABLES = ["shares", "entries", "remote", "cursors", "acks", "need", "diffs", "shadow_clean", "errors", "nonces", "trash_index", "wanted"];
+const SHARE_TABLES = ["entries", "remote", "cursors", "acks", "need", "diffs", "shadow_clean", "errors", "wanted"];
 
 type Row = Record<string, unknown>;
 
@@ -566,6 +576,16 @@ export class FileSyncDb {
   /** A peer's rows in path order after `after`, for chunked walks. */
   remoteAfter(share: string, peer: string, after: string, limit: number): IndexEntry[] {
     return (this.statement(`SELECT ${REMOTE_COLUMNS} FROM remote WHERE share = ? AND peer = ? AND path > ? ORDER BY path LIMIT ?`).all(share, peer, after, limit) as Row[]).map(toRemote);
+  }
+
+  /** Worktree folders of the share whose files this node downloads (need.ts). */
+  wantedRoots(share: string): string[] {
+    return (this.statement("SELECT root FROM wanted WHERE share = ?").all(share) as Row[]).map((row) => row.root as string);
+  }
+
+  addWanted(share: string, root: string, at: number): void {
+    this.requireTx();
+    this.statement("INSERT OR IGNORE INTO wanted(share, root, at) VALUES (?, ?, ?)").run(share, root, at);
   }
 
   remoteCount(share: string, peer: string): number {

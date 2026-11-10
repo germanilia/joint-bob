@@ -1,4 +1,4 @@
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { backgroundTaskConversationId, readActiveBackgroundTaskIdentities } from "../background-tasks.js";
 import { listConversationRecords } from "../conversation-records.js";
@@ -6,8 +6,8 @@ import { conversationWorkActive } from "../conversation-work.js";
 import { resolveDataDirectory } from "../data-directory.js";
 import { conversationLeaseRunning } from "../conversation-runtime.js";
 import { sessionDoneOverrides } from "../names.js";
-import { deleteProjectWorktree, listProjectWorktrees, worktreeConversationIndex } from "../project-worktrees.js";
-import { worktreeSweepRefusal } from "../file-sync/facade.js";
+import { deleteProjectWorktree, listProjectWorktrees, projectWorktreeRoot, WORKTREE_ID, worktreeConversationIndex } from "../project-worktrees.js";
+import { worktreeFilesChanged, worktreeMetadataGone, worktreeSweepRefusal } from "../file-sync/facade.js";
 import { listProjects } from "../store.js";
 import { isHarnessId, type ProjectRecord } from "../types.js";
 import { findHarnessSession, harnessSessionBusy, harnessSessions } from "./harness-sessions.js";
@@ -101,6 +101,7 @@ async function cleanup(project: ProjectRecord): Promise<CleanupResult> {
     }
   }
   await cleanupEmptyWorktrees(project, result);
+  await removeDeadWorktreeFolders(project).catch((error) => console.warn(`Removing leftover worktree folders of ${project.id} failed`, error));
   if (result.deletedWorktreeIds.length) {
     broadcastToProject(project.id, { type: "worktreesChanged" });
     broadcastToProject(project.id, { type: "sessionsChanged" });
@@ -134,6 +135,47 @@ async function cleanupEmptyWorktrees(project: ProjectRecord, result: CleanupResu
         : "Worktree kept: cleanup could not be completed";
       if (!(error instanceof ProjectLockedError)) console.warn(`Worktree cleanup failed for ${worktree.id}`, error);
     }
+  }
+}
+
+/** A folder without its worktree.json is looked at again after this long before it may go. */
+const DEAD_FOLDER_GRACE_MS = 30 * 60_000;
+/** A worktree whose creation was cut off leaves its private staging folder behind. */
+const STAGING_GRACE_MS = 24 * 60 * 60_000;
+/** When each folder was first seen without metadata (since this node started). */
+const withoutMetadataSince = new Map<string, number>();
+
+/**
+ * What a deleted worktree leaves behind goes too. A delete arrives file by file, and files that are not
+ * synced (copied .env files, a node's own path file written after the delete) kept the folder alive: 123 of
+ * 133 Contigos folders were such leftovers on 2026-11-10, and every listing read them. It also finishes a
+ * delete made by a node that never downloaded the worktree: that node could only delete the metadata.
+ * A folder goes only when file sync says no machine offers its worktree.json any more (worktreeMetadataGone),
+ * it has been like that for DEAD_FOLDER_GRACE_MS, and nothing works in it.
+ */
+async function removeDeadWorktreeFolders(project: ProjectRecord): Promise<void> {
+  const root = projectWorktreeRoot(project.id);
+  let entries;
+  try { entries = await readdir(root, { withFileTypes: true }); }
+  catch { return; }
+  const listed = new Set((await listProjectWorktrees(project.id)).map((worktree) => worktree.id));
+  const now = Date.now();
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const folder = path.join(root, entry.name);
+    if (entry.name.startsWith(".creating-")) {
+      const info = await lstat(folder).catch(() => undefined);
+      if (info && now - info.mtimeMs > STAGING_GRACE_MS && !await changedSince(folder, now - STAGING_GRACE_MS)) await rm(folder, { recursive: true, force: true });
+      continue;
+    }
+    if (!WORKTREE_ID.test(entry.name) || listed.has(entry.name)) { withoutMetadataSince.delete(folder); continue; }
+    const since = withoutMetadataSince.get(folder);
+    if (since === undefined) { withoutMetadataSince.set(folder, now); continue; }
+    if (now - since < DEAD_FOLDER_GRACE_MS || await worktreeInUse(folder)) continue;
+    if (!await worktreeMetadataGone(project.id, entry.name)) continue;
+    await rm(folder, { recursive: true, force: true });
+    withoutMetadataSince.delete(folder);
+    worktreeFilesChanged(project.id, folder);
   }
 }
 

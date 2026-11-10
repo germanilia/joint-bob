@@ -602,7 +602,7 @@ test("tombstones are pruned only when every peer has them and they are old", asy
   assert.equal(s.db.share(s.key)!.prunedBelow, tombstone.seq);
 });
 
-test("a worktrees share prunes its tombstones after days, not a month, and each peer's tombstone for the path goes too", async (t) => {
+test("a worktrees share prunes its tombstones after hours, not a month, and each peer's tombstone for the path goes too", async (t) => {
   const s = setup(t, { kind: "worktrees" });
   s.write("wt1/gone.txt");
   s.write("wt1/kept.txt");
@@ -617,9 +617,9 @@ test("a worktrees share prunes its tombstones after days, not a month, and each 
     s.db.putRemote(s.key, "peer-a", remote("wt1/gone.txt", true, 1));
     s.db.putRemote(s.key, "peer-a", remote("wt1/kept.txt", false, 2));
   });
-  s.clock.advance(2 * 86_400_000);
-  assert.equal(s.scanner.pruneTombstones(["peer-a"]), 0, "two days is too young");
-  s.clock.advance(2 * 86_400_000);
+  s.clock.advance(6 * 3_600_000);
+  assert.equal(s.scanner.pruneTombstones(["peer-a"]), 0, "six hours is too young");
+  s.clock.advance(7 * 3_600_000);
   assert.equal(s.scanner.pruneTombstones(["peer-a"]), 1);
   assert.equal(s.row("wt1/gone.txt"), undefined);
   assert.equal(s.db.remote(s.key, "peer-a", "wt1/gone.txt"), undefined, "the peer's tombstone went with ours");

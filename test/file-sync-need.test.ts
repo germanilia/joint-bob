@@ -301,6 +301,9 @@ test("priorities: worktree metadata and small files, project, tickets, worktree 
   assert.equal(isWorktreeBulk("project", "src/a.ts"), false);
   const q = queue(t, { kind: "worktrees", peers: ["p1"] });
   const key = "worktrees:p1";
+  // Both worktrees are used on this node, so all their files are downloaded.
+  q.need.want(key, "wt");
+  q.need.want(key, "other");
   await q.pull("p1", [
     { path: "wt/.joint-bob-baseline/a.ts", size: 10, sha256: SHA_X, version: { p1: 1 } },
     { path: "wt/assets/big.bin", size: 100_000, sha256: SHA_Y, version: { p1: 1 } },
@@ -319,10 +322,36 @@ test("priorities: worktree metadata and small files, project, tickets, worktree 
   assert.deepEqual([q.db.needRow(key, "other/assets/huge.bin")?.priority, q.db.needRow(key, "other/late.bin")?.priority], [4, 4]);
 });
 
+test("a worktree this node never used downloads only its metadata, deletes and newer versions of files held here; using it fetches the rest", async (t) => {
+  const q = queue(t, { kind: "worktrees", peers: ["p1"] });
+  const key = "worktrees:p1";
+  q.local({ path: "wt/held.ts", size: 5, sha256: SHA_W, version: { "node-b": 1 }, modifiedBy: "node-b" });
+  await q.pull("p1", [
+    { path: "wt/.joint-bob-worktree/worktree.json", size: 500, sha256: SHA_X, version: { p1: 1 } },
+    { path: "wt/src/a.ts", size: 2000, sha256: SHA_Y, version: { p1: 1 } },
+    { path: "wt/.joint-bob-baseline/a.ts", size: 10, sha256: SHA_Z, version: { p1: 1 } },
+    { path: "wt/held.ts", size: 6, sha256: SHA_Y, version: { "node-b": 1, p1: 1 } },
+    { path: "wt2/src/b.ts", size: 7, sha256: SHA_Z, version: { p1: 1 } },
+  ]);
+  const queued = () => q.need.nextNeeds({ limit: 10 }).items.map((item) => item.path).sort();
+  assert.deepEqual(queued(), ["wt/.joint-bob-worktree/worktree.json", "wt/held.ts"], "the listing and a file this node holds; no bulk, no baseline");
+  assert.equal(q.need.derive(key, "wt/src/a.ts")?.wanted, false, "apply refuses it too");
+  assert.equal(q.db.needSummary(key).files, 2, "what waits for a use is not counted as on its way");
+  assert.equal(q.need.want(key, "wt/"), true);
+  assert.deepEqual(queued(), ["wt/.joint-bob-baseline/a.ts", "wt/.joint-bob-worktree/worktree.json", "wt/held.ts", "wt/src/a.ts"], "used here now: everything of it, the other worktree still not");
+  assert.equal(q.need.want(key, "wt"), false, "already wanted");
+  assert.deepEqual(q.db.wantedRoots(key), ["wt"], "kept in the index database");
+  // What arrives for it later is downloaded as well.
+  await q.pull("p1", [{ path: "wt/src/late.ts", size: 9, sha256: SHA_X, version: { p1: 2 } }]);
+  assert.ok(queued().includes("wt/src/late.ts"));
+});
+
 // fix (P4+P5): a worktree merge asks what of that worktree is still on its way, and from whom.
 test("what is pending under a worktree counts only its own rows, and what only an unavailable machine has waits for it", async (t) => {
   const q = queue(t, { kind: "worktrees", peers: ["p1", "p2"] });
   const key = "worktrees:p1";
+  q.need.want(key, "w1");
+  q.need.want(key, "w2");
   await q.pull("p1", [
     { path: "w1/a.ts", size: 10, sha256: SHA_X, version: { p1: 1 } },
     { path: "w2/b.ts", size: 20, sha256: SHA_Y, version: { p1: 1 } },

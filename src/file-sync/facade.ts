@@ -471,7 +471,10 @@ const WORKTREE_PRIORITY_MS = 10 * 60_000;
  * worktree's files, or files only a machine that is away has, do not hold it). Pending files of the
  * worktree are moved up the queue.
  */
-export async function worktreeHasPendingFiles(projectId: string, worktreeId: string): Promise<boolean> {
+export async function worktreeHasPendingFiles(projectId: string, worktreeId: string, options: { use?: boolean } = {}): Promise<boolean> {
+  // A merge uses the worktree here, so its files are fetched from now on. Housekeeping only looks (use: false):
+  // a worktree this node never used has nothing on its way, and looking must not start a download.
+  const use = options.use !== false;
   const engine = await projectFilesEngine(projectId);
   if (engine === "syncthing") return false;
   if (engine === "moving") return true;
@@ -482,7 +485,7 @@ export async function worktreeHasPendingFiles(projectId: string, worktreeId: str
   if (view.worker !== "running") return true;
   const share = view.shares.find((candidate) => candidate.kind === "worktrees");
   if (!share) return false;
-  const prioritize = () => api.fileSyncPrioritize(projectId, "worktrees", worktreeId, Date.now() + WORKTREE_PRIORITY_MS);
+  const prioritize = () => { if (use) api.fileSyncPrioritize(projectId, "worktrees", worktreeId, Date.now() + WORKTREE_PRIORITY_MS); };
   if (share.state === "starting") { prioritize(); return true; }
   const eligible = [...new Set([...view.peers.worktrees ?? [], ...share.peers.map((peer) => peer.peer)])];
   const facts = await api.fileSyncPeerFacts(eligible);
@@ -491,13 +494,54 @@ export async function worktreeHasPendingFiles(projectId: string, worktreeId: str
   // No machine that could send is around: nothing arrives until one is back, and the merge need not wait for that.
   if (!present.length) return false;
   let pending = share.peers.some((peer) => !peer.caughtUp && sending(peer.peer));
-  if (!pending && share.need.files > 0) {
+  // Asked even when the share needs nothing: a worktree first used now has its rows made by this very question.
+  if (!pending && (use || share.need.files > 0)) {
     // A worker that does not answer in time holds the merge only while a present machine could still send.
-    const counted = await api.fileSyncPendingFiles(projectId, "worktrees", worktreeId, present).catch(() => undefined);
+    const counted = await api.fileSyncPendingFiles(projectId, "worktrees", worktreeId, present, !use).catch(() => undefined);
     pending = counted ? counted.files > 0 : true;
   }
   if (pending) prioritize();
   return pending;
+}
+
+/**
+ * This node uses the worktree now (a conversation, a terminal or an agent works in it): its files are
+ * downloaded from here on, ahead of everything else. Returns how many of them a machine that is present
+ * can still send; 0 when all are here, and for projects that are not on built-in sync.
+ */
+export async function useWorktreeFiles(projectId: string, worktreeId: string): Promise<number> {
+  if (await projectFilesEngine(projectId) !== "builtin") return 0;
+  const api = await engineApi();
+  const view = (await api.fileSyncProjectViews([projectId])).get(projectId)!;
+  if (view.worker !== "running") return 0;
+  const share = view.shares.find((candidate) => candidate.kind === "worktrees");
+  if (!share) return 0;
+  api.fileSyncPrioritize(projectId, "worktrees", worktreeId, Date.now() + WORKTREE_PRIORITY_MS);
+  const eligible = [...new Set([...view.peers.worktrees ?? [], ...share.peers.map((peer) => peer.peer)])];
+  const facts = await api.fileSyncPeerFacts(eligible);
+  const present = eligible.filter((peer) => presentPeer(facts, peer) && facts.peers.get(peer)?.protocol !== 0 && facts.peers.get(peer)?.enabled !== false);
+  if (!present.length) return 0;
+  const counted = await api.fileSyncPendingFiles(projectId, "worktrees", worktreeId, present).catch(() => undefined);
+  return counted?.files ?? 0;
+}
+
+/**
+ * Whether a worktree folder without its worktree.json is what is left of a deleted worktree, rather
+ * than one still arriving: on built-in sync, every present machine's index has been read and none of
+ * them offers the file. Its metadata always arrives first, so a folder that fails this is dead.
+ */
+export async function worktreeMetadataGone(projectId: string, worktreeId: string): Promise<boolean> {
+  if (await projectFilesEngine(projectId) !== "builtin") return false;
+  const api = await engineApi();
+  const view = (await api.fileSyncProjectViews([projectId])).get(projectId)!;
+  const share = view.shares.find((candidate) => candidate.kind === "worktrees");
+  if (view.worker !== "running" || !share || share.state !== "idle" || share.phase !== "builtin") return false;
+  const eligible = [...new Set([...view.peers.worktrees ?? [], ...share.peers.map((peer) => peer.peer)])];
+  const facts = await api.fileSyncPeerFacts(eligible);
+  const present = eligible.filter((peer) => presentPeer(facts, peer) && facts.peers.get(peer)?.protocol !== 0 && facts.peers.get(peer)?.enabled !== false);
+  if (present.some((peer) => !share.peers.find((entry) => entry.peer === peer)?.caughtUp)) return false;
+  const counted = await api.fileSyncPendingFiles(projectId, "worktrees", `${worktreeId}/.joint-bob-worktree/worktree.json`, eligible, true).catch(() => undefined);
+  return Boolean(counted && counted.files === 0 && counted.waiting.files === 0 && counted.blocked === 0);
 }
 
 /**
@@ -511,7 +555,7 @@ export async function worktreeSweepRefusal(projectId: string, worktree: { id: st
   const engine = await projectFilesEngine(projectId);
   if (engine === "syncthing") return undefined;
   if (engine === "moving") return "Worktree kept: file sync is moving this project";
-  if (await worktreeHasPendingFiles(projectId, worktree.id)) return "Worktree kept: its files are still arriving from another machine";
+  if (await worktreeHasPendingFiles(projectId, worktree.id, { use: false })) return "Worktree kept: its files are still arriving from another machine";
   const api = await engineApi();
   const { getClusterNode } = await import("../cluster.js");
   if (worktree.createdByNodeId === (await getClusterNode()).id) return undefined;

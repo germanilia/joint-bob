@@ -324,6 +324,33 @@ for (const hasPickerIndex of [false, true]) {
   });
 }
 
+test("schema 5 upgrades: worktrees this node changed files in start as wanted, the others wait for a use", (t) => {
+  const file = dbFile(t);
+  const raw = new DatabaseSync(file);
+  raw.exec("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)");
+  for (const script of MIGRATIONS.slice(0, 5)) raw.exec(script);
+  raw.exec(`INSERT INTO meta VALUES ('schema_version', '5'), ('node_id', '${NODE}'), ('clock', '5000000')`);
+  const entry = raw.prepare(`INSERT INTO entries(share, path, parent, type, size, mtime_ms, mode, deleted, version, modified_by, seq)
+    VALUES (?, ?, '', 0, 4, 1, 420, ?, '{}', ?, 1)`);
+  entry.run("worktrees:x", "mine/src/a.ts", 0, NODE);
+  entry.run("worktrees:x", "mine/.joint-bob-worktree/worktree.json", 0, NODE);
+  entry.run("worktrees:x", "theirs/src/a.ts", 0, "node-b");
+  // Listing a worktree wrote this node's path file into it: that is not using it.
+  entry.run("worktrees:x", "theirs/.joint-bob-worktree/nodes/node-a.json", 0, NODE);
+  entry.run("worktrees:x", "gone/src/a.ts", 1, NODE);
+  entry.run("worktrees:x", "top-level.txt", 0, NODE);
+  entry.run("project:x", "src/a.ts", 0, NODE);
+  raw.close();
+  const db = new FileSyncDb(file, NODE);
+  try {
+    assert.equal(db.meta("schema_version"), String(SCHEMA_VERSION));
+    assert.deepEqual(db.wantedRoots("worktrees:x"), ["mine"]);
+    assert.deepEqual(db.wantedRoots("project:x"), []);
+    db.writeTx(() => { db.addWanted("worktrees:x", "theirs", 1); db.addWanted("worktrees:x", "theirs", 2); });
+    assert.deepEqual(db.wantedRoots("worktrees:x").sort(), ["mine", "theirs"]);
+  } finally { db.close(); }
+});
+
 test("a data directory moved to another node starts a fresh index", (t) => {
   const file = dbFile(t);
   const first = new FileSyncDb(file, "node-a");

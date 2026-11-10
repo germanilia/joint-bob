@@ -341,12 +341,18 @@ class Core implements WorkerCore {
       case "repair": this.runtime(args.share); this.sync!.repair(args.share, args.peer); return {};
       case "prioritize":
         this.runtime(args.share);
+        // Asking for one worktree's files first is using it: its files are downloaded from now on (need.ts, want).
+        if (args.prefix) this.need.want(args.share, args.prefix);
         if (this.sync) this.sync.prioritize(args.share, args.prefix, args.untilMs);
         else if (isTransferQueue(this.need)) this.need.prioritize?.(args.share, args.prefix, args.untilMs);
         return {};
       case "pace": this.sync?.pace(args.relayPaused); return {};
       // fix (P4+P5): a worktree merge asks what of the worktree is still on its way, and from whom.
-      case "pending": this.runtime(args.share); return this.need.pendingUnder(args.share, args.prefix, args.availablePeers);
+      case "pending":
+        this.runtime(args.share);
+        // Before counting: a worktree nobody used here has no rows yet, and "nothing pending" would be wrong.
+        if (args.prefix && !args.peek) this.need.want(args.share, args.prefix);
+        return this.need.pendingUnder(args.share, args.prefix, args.availablePeers);
       case "nextNeeds": return this.need.nextNeeds(args);
       case "applyBatch": this.runtime(args.share); return this.applier.applyBatch(args);
       case "bootstrap": {
