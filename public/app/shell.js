@@ -101,7 +101,7 @@ export function toast(message, duration = 3200, severity = "info") {
   const existing = [...toastStack.children].find((node) => node.dataset.severity === severity && node.querySelector(".toast-message")?.textContent === message);
   if (existing) return existing;
   const node = document.createElement("div");
-  node.className = severity === "error" ? "toast toast-error" : "toast";
+  node.className = severity === "error" ? "toast toast-error" : "toast toast-success";
   node.dataset.severity = severity;
   node.setAttribute("role", severity === "error" ? "alert" : "status");
   node.setAttribute("aria-live", severity === "error" ? "assertive" : "polite");

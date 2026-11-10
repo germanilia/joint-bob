@@ -2949,6 +2949,13 @@ label { display: grid; gap: 6px; min-width: 0; color: var(--muted); }
   font-weight: 600;
 }
 .toast-success::before { content: "✓"; font-size: 18px; font-weight: 800; line-height: 1; }
+.toast-success {
+  background: #15803d;
+  color: #fff;
+  border: 2px solid #4ade80;
+  font-weight: 600;
+}
+.toast-success::before { content: "✓"; font-size: 18px; font-weight: 800; line-height: 1; }
 .toast-message { min-width: 0; flex: 1; }
 .toast-close {
   flex: 0 0 auto;

@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.254.5 — 2026-11-10
+
+- Success notices are green and appear in the top-right corner, like error notices, instead of a plain grey box. Errors stay red.
+
 ## 2.254.4 — 2026-11-10
 
 - Bob auto now picks the model for Pi conversations on a subscription pool. Routing tried to switch the model before the pool chose an account, which failed with *Selected subscription pool requires pool-aware execution*, so the turn quietly stayed on the current model. The routed model is now saved for the turn, and each pool account switches to it after signing in.
