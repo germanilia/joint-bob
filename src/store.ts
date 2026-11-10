@@ -18,7 +18,7 @@ import {
   applyResourcePolicy, deleteSharedResource, ensureResourceSharingSchema, registerLocalSharingResource,
   ResourceSharingError, hasCurrentResourcePolicyContext, type SignedResourcePolicy,
 } from "./cluster-sharing.js";
-import { resourceClusterIds } from "./cluster-sharing-policy.js";
+import { answerIsNotKept, asOneLookup, resourceClusterIds, untilWriteOrLeaseEnd } from "./cluster-sharing-policy.js";
 import {
   ensureProjectMetadataSchema, projectMetadataEnvelopeSchema, projectMetadataVisible,
   recordProjectMetadataReceipt, storedProjectMetadata, validateProjectMetadataVersion, type ProjectMetadataEnvelope,
@@ -79,15 +79,24 @@ function generatedSyncFolderId(project: Pick<ProjectRecord, "id" | "name">): str
 }
 
 function rowToProject(db: DatabaseSync, row: ProjectRow): ProjectRecord {
-  const locationRows = db.prepare(`
+  // What a record takes from other tables is kept until the next write. The record itself, its
+  // locations and its cluster list are made anew each time, because callers change them.
+  const kept = untilWriteOrLeaseEnd(db, "rowToProject", [row.id], () => {
+    const locationRows = db.prepare(`
     SELECT node_id AS nodeId, path
     FROM project_locations
     WHERE project_id = ?
     ORDER BY node_id
   `).all(row.id) as unknown as ProjectLocationRow[];
-  const locations = locationRows.map((location) => ({ nodeId: location.nodeId, path: location.path }));
-  const sharing = db.prepare("SELECT owner_node_id FROM sharing_resource_owners WHERE kind='project' AND resource_id=?")
-    .get(row.id) as { owner_node_id: string } | undefined;
+    const sharing = db.prepare("SELECT owner_node_id FROM sharing_resource_owners WHERE kind='project' AND resource_id=?")
+      .get(row.id) as { owner_node_id: string } | undefined;
+    return {
+      locations: locationRows.map((location) => ({ nodeId: location.nodeId, path: location.path })),
+      sharing: sharing && { ownerNodeId: sharing.owner_node_id, clusterIds: resourceClusterIds(db, localNodeId, "project", row.id) },
+    };
+  });
+  const locations = kept.locations.map((location) => ({ nodeId: location.nodeId, path: location.path }));
+  const sharing = kept.sharing;
   return {
     id: row.id,
     name: row.name,
@@ -100,9 +109,9 @@ function rowToProject(db: DatabaseSync, row: ProjectRow): ProjectRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(sharing ? {
-      ownerNodeId: sharing.owner_node_id,
-      locallyOwned: sharing.owner_node_id === localNodeId,
-      clusterIds: resourceClusterIds(db, localNodeId, "project", row.id),
+      ownerNodeId: sharing.ownerNodeId,
+      locallyOwned: sharing.ownerNodeId === localNodeId,
+      clusterIds: [...sharing.clusterIds],
     } : {}),
   };
 }
@@ -180,8 +189,17 @@ interface NameState extends VersionRow {
   name?: string;
 }
 
+/* Asked on every visibility check. Tables are made when a feature is first used and are not dropped
+   while the node runs, so one that was found stays found. Only for the opened store database and
+   outside a transaction: the start-up migrations rename and drop tables, and a rollback takes a new
+   table away again. A missing table is looked for every time. */
+const tablesFound = new WeakMap<DatabaseSync, Set<string>>();
 function tableExists(db: DatabaseSync, name: string): boolean {
-  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+  const found = tablesFound.get(db);
+  if (found?.has(name)) return true;
+  const exists = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+  if (exists && db === database && db.isTransaction === false) { if (found) found.add(name); else tablesFound.set(db, new Set([name])); }
+  return exists;
 }
 
 function tableHasColumn(db: DatabaseSync, table: string, column: string): boolean {
@@ -500,7 +518,8 @@ async function initializeProjectDatabase(): Promise<DatabaseSync> {
 export async function listProjects(): Promise<ProjectRecord[]> {
   const db = await projectDatabase();
   const rows = db.prepare("SELECT * FROM projects ORDER BY updated_at DESC").all() as unknown as ProjectRow[];
-  return rows.filter((row) => projectMetadataVisible(db, localNodeId, row.id) && projectVisibleToActor(db, row.id)).map((row) => rowToProject(db, row));
+  // Three kept answers are asked for every row; as one lookup they share one reading of the write counters.
+  return asOneLookup(db, () => rows.filter((row) => projectMetadataVisible(db, localNodeId, row.id) && projectVisibleToActor(db, row.id)).map((row) => rowToProject(db, row)));
 }
 
 /**
@@ -514,8 +533,16 @@ function sharedTeamHostPresent(db: DatabaseSync, clusterId: string): boolean {
 }
 function projectVisibleToActor(db: DatabaseSync, projectId: string, account: ActingAccount | undefined = actingAccount()): boolean {
   if (!account) return true;
+  // Asked for the same person and project on every request. The answer is kept until the next write,
+  // under everything about the person that it is read from.
+  const actor = JSON.stringify([account.accountId, account.username, account.role, account.isRemoteLogin, account.homeNodeId]);
+  return untilWriteOrLeaseEnd(db, "projectVisibleToActor", [actor, projectId], () => visibleToActor(db, projectId, account));
+}
+function visibleToActor(db: DatabaseSync, projectId: string, account: ActingAccount): boolean {
   const team = tableExists(db, 'assistant_team_projects') ? db.prepare('SELECT cluster_id FROM assistant_team_projects WHERE project_id=?').get(projectId) as { cluster_id: string } | undefined : undefined;
   if (team) {
+    // A team's members are read from the sign-in tables through another connection.
+    answerIsNotKept();
     try {
       if (!sharedTeamHostPresent(db, team.cluster_id)) return false;
       verifyReceivedMember(db, { clusterId: team.cluster_id, accountId: account.accountId, username: account.username, homeNodeId: account.homeNodeId ?? canonicalLocalHome(db) });
@@ -526,6 +553,8 @@ function projectVisibleToActor(db: DatabaseSync, projectId: string, account: Act
   const sharedIn = (): string[] => { try { return resourceClusterIds(db, localNodeId, "project", projectId); } catch { return []; } };
   const clusters = () => owner === localNodeId ? [] : sharedIn();
   if (account.isRemoteLogin) {
+    // A visitor's clusters are read from the sign-in tables through another connection.
+    answerIsNotKept();
     // A visitor sees projects shared into the clusters they joined at home, as it states them.
     if (!account.homeNodeId || !tableExists(db, "sharing_memberships")) return false;
     const homeClusters = new Set((db.prepare("SELECT cluster_id FROM sharing_memberships WHERE node_id = ?").all(account.homeNodeId) as unknown as Array<{ cluster_id: string }>).map((row) => row.cluster_id));
@@ -774,9 +803,12 @@ export async function getProject(projectId: string): Promise<ProjectRecord | und
   if (!canonicalId) return undefined;
   const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(canonicalId) as ProjectRow | undefined;
   if (!row) return undefined;
-  if (!projectMetadataVisible(db, localNodeId, row.id)) return undefined;
-  if (!projectVisibleToActor(db, row.id)) return undefined;
-  return rowToProject(db, row);
+  // Three kept answers in a row; as one lookup they share one reading of the write counters.
+  return asOneLookup(db, () => {
+    if (!projectMetadataVisible(db, localNodeId, row.id)) return undefined;
+    if (!projectVisibleToActor(db, row.id)) return undefined;
+    return rowToProject(db, row);
+  });
 }
 
 export async function addProject(name: string, folderPath: string, options: AddProjectOptions = {}): Promise<ProjectRecord> {

@@ -79,13 +79,36 @@ function signedBytes(domain: string, payload: string): Buffer {
   return Buffer.from(JSON.stringify(["joint-bob-v2", domain, payload]), "utf8");
 }
 
+/* The same few keys come back on every signed request: the sender's pinned key and this node's
+   own. Reading a key from its text and writing it out again took 18 microseconds, and a
+   request did that several times. Both answers depend on the text alone, so they are kept by
+   the text, for keys that passed only. Whether a signature is good is worked out every time. */
+const MAX_KEPT_KEYS = 256;
+const canonicalTexts = new Map<string, string>();
+const publicKeys = new Map<string, KeyObject>();
+
+function keepKey<T>(kept: Map<string, T>, text: string, answer: T): T {
+  // Peers are few. Texts nobody pinned (an invitation, a forged header) must not pile up.
+  if (kept.size >= MAX_KEPT_KEYS) kept.clear();
+  kept.set(text, answer);
+  return answer;
+}
+
 /** The SPKI PEM of an Ed25519 public key; throws for anything else (private keys included). */
 export function canonicalPublicKey(publicKey: string): string {
+  const known = canonicalTexts.get(publicKey);
+  if (known !== undefined) return known;
   if (/PRIVATE KEY/.test(publicKey)) throw new Error("Cluster public key must be an Ed25519 public key");
   let key;
   try { key = createPublicKey(publicKey); } catch { throw new Error("Cluster public key is invalid"); }
   if (key.asymmetricKeyType !== "ed25519") throw new Error("Cluster public key must be Ed25519");
-  return key.export({ type: "spki", format: "pem" }).toString();
+  const canonical = key.export({ type: "spki", format: "pem" }).toString();
+  return typeof publicKey === "string" ? keepKey(canonicalTexts, publicKey, canonical) : canonical;
+}
+
+/** The key a text stands for, as `verifyMessage` reads it; throws like `canonicalPublicKey`. */
+function publicKeyFromText(text: string): KeyObject {
+  return publicKeys.get(text) ?? keepKey(publicKeys, text, createPublicKey(canonicalPublicKey(text)));
 }
 
 /** Domain-separated Ed25519 signature (base64url) over `payload`. */
@@ -100,7 +123,7 @@ export function verifyMessage(publicKey: string | KeyObject, domain: string, pay
     if (!SIGNATURE_PATTERN.test(signature)) return false;
     const decoded = Buffer.from(signature, "base64url");
     if (decoded.length !== 64 || decoded.toString("base64url") !== signature) return false;
-    const key = typeof publicKey === "string" ? createPublicKey(canonicalPublicKey(publicKey)) : publicKey;
+    const key = typeof publicKey === "string" ? publicKeyFromText(publicKey) : publicKey;
     if (key.type !== "public" || key.asymmetricKeyType !== "ed25519") return false;
     return verify(null, signedBytes(domain, payload), key, decoded);
   } catch {

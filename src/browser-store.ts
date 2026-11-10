@@ -158,8 +158,16 @@ export class BrowserStore {
     this.db.prepare("INSERT OR IGNORE INTO browser_migrations (id, appliedAt) VALUES ('profile-grants-sharing-scopes', ?)").run(new Date().toISOString());
   }
 
+  /* Asked on every grant check. Tables are made when a feature is first used and are not dropped while
+     the node runs, so one that was found stays found for this store's connection. A missing one is
+     looked for every time. Nothing is remembered inside a transaction: a rollback takes a table made
+     in it away again. */
+  private readonly tablesFound = new Set<string>();
   private tableExists(name: string): boolean {
-    return Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+    if (this.tablesFound.has(name)) return true;
+    const exists = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+    if (exists && this.db.isTransaction === false) this.tablesFound.add(name);
+    return exists;
   }
 
   private localNodeId(): string | null {

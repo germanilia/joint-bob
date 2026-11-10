@@ -5,6 +5,7 @@ import {
   hasCurrentResourcePolicyContext, resourcePolicyDeliveryIsCurrent, resourcePolicySchema,
   type SignedResourcePolicy,
 } from "./cluster-sharing.js";
+import { untilWriteOrLeaseEnd } from "./cluster-sharing-policy.js";
 
 export const portableProjectMetadataSchema = z.object({
   name: z.string().trim().min(1).max(1000),
@@ -153,20 +154,24 @@ export function recordProjectMetadataReceipt(db: DatabaseSync, envelope: Project
       recipientAdmission, body.generation, body.operationId, envelope.revision);
 }
 
+/* Asked for every project on every listing and every project lookup. For a received project it
+   parses and checks each signed statement again, so the answer is kept until the next write. */
 export function projectMetadataVisible(db: DatabaseSync, local: string, id: string): boolean {
-  ensureProjectMetadataSchema(db);
-  const owner = db.prepare("SELECT owner_node_id FROM sharing_resource_owners WHERE kind='project' AND resource_id=?")
-    .get(id) as { owner_node_id: string } | undefined;
-  if (!owner) return true;
-  const policy = db.prepare("SELECT deleted FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?")
-    .get(id) as { deleted: number } | undefined;
-  if (owner.owner_node_id === local) return policy?.deleted === 0;
-  const receipts = db.prepare(`SELECT r.*,c.statement FROM cluster_v2_project_metadata_receipts r
+  return untilWriteOrLeaseEnd(db, "projectMetadataVisible", [local, id], () => {
+    ensureProjectMetadataSchema(db);
+    const owner = db.prepare("SELECT owner_node_id FROM sharing_resource_owners WHERE kind='project' AND resource_id=?")
+      .get(id) as { owner_node_id: string } | undefined;
+    if (!owner) return true;
+    const policy = db.prepare("SELECT deleted FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?")
+      .get(id) as { deleted: number } | undefined;
+    if (owner.owner_node_id === local) return policy?.deleted === 0;
+    const receipts = db.prepare(`SELECT r.*,c.statement FROM cluster_v2_project_metadata_receipts r
     JOIN cluster_v2_resource_contexts c ON c.kind='project' AND c.resource_id=r.project_id
       AND c.context_kind=r.context_kind AND c.context_id=r.context_id AND c.owner_admission=r.owner_admission
       AND c.recipient_admission=r.recipient_admission AND c.recipient_id=? AND c.generation=r.policy_generation
     WHERE r.owner_node_id=? AND r.project_id=? AND r.operation_id=json_extract(c.statement,'$.body.operationId')`)
-    .all(local, owner.owner_node_id, id) as unknown as Array<{ statement: string }>;
-  return receipts.some((row) => hasCurrentResourcePolicyContext(db, local,
-    resourcePolicySchema.parse(JSON.parse(row.statement)) as SignedResourcePolicy));
+      .all(local, owner.owner_node_id, id) as unknown as Array<{ statement: string }>;
+    return receipts.some((row) => hasCurrentResourcePolicyContext(db, local,
+      resourcePolicySchema.parse(JSON.parse(row.statement)) as SignedResourcePolicy));
+  });
 }

@@ -11,28 +11,39 @@ import { DatabaseSync, StatementSync } from "node:sqlite";
  * Sharing is safe for `get`, `all` and `run`, which finish and reset the statement before
  * they return. `iterate` keeps its statement open between rows, so it compiles its own.
  * SQLite recompiles a kept statement by itself when the schema changes under it.
+ *
+ * A connection keeps at most MAX_STATEMENTS and drops the one used longest ago. Each use is
+ * numbered, and the lowest number is looked for only when a statement has to go. Moving the
+ * statement to the end of the map on every use instead cost up to 0.6 microseconds a call
+ * once a connection held a couple of hundred statements, tens of thousands of times a second.
  */
 const MAX_STATEMENTS = 256;
-const statements = new WeakMap<DatabaseSync, Map<string, StatementSync>>();
+interface Kept { statement: StatementSync; used: number }
+const statements = new WeakMap<DatabaseSync, { kept: Map<string, Kept>; uses: number }>();
 const origins = new WeakMap<StatementSync, { db: DatabaseSync; sql: string }>();
 const prepare = DatabaseSync.prototype.prepare;
 const close = DatabaseSync.prototype.close;
 const iterate = StatementSync.prototype.iterate;
 
+function usedLongestAgo(kept: Map<string, Kept>): string {
+  let oldest = "", used = Infinity;
+  for (const [sql, entry] of kept) if (entry.used < used) { oldest = sql; used = entry.used; }
+  return oldest;
+}
+
 DatabaseSync.prototype.prepare = function (this: DatabaseSync, sql: string): StatementSync {
   if (typeof sql !== "string") return prepare.call(this, sql);
-  let kept = statements.get(this);
-  if (!kept) statements.set(this, kept = new Map());
-  let statement = kept.get(sql);
-  // Re-inserting keeps the map ordered by last use, so the oldest entry is the one to drop.
-  if (statement) kept.delete(sql);
-  else {
-    statement = prepare.call(this, sql);
+  let own = statements.get(this);
+  if (!own) statements.set(this, own = { kept: new Map(), uses: 0 });
+  let entry = own.kept.get(sql);
+  if (!entry) {
+    const statement = prepare.call(this, sql);
     origins.set(statement, { db: this, sql });
-    if (kept.size >= MAX_STATEMENTS) kept.delete(kept.keys().next().value!);
+    if (own.kept.size >= MAX_STATEMENTS) own.kept.delete(usedLongestAgo(own.kept));
+    own.kept.set(sql, entry = { statement, used: 0 });
   }
-  kept.set(sql, statement);
-  return statement;
+  entry.used = ++own.uses;
+  return entry.statement;
 };
 
 StatementSync.prototype.iterate = function (this: StatementSync, ...parameters: unknown[]) {
@@ -59,11 +70,21 @@ DatabaseSync.prototype.close = function (this: DatabaseSync): void {
  *
  * Inside a transaction it always runs and is not remembered: a rollback can return the count
  * to a value seen before with the tables gone. Any other script runs as it always did.
+ *
+ * The count is asked from SQLite on every such call, because another process can change the
+ * schema at any moment and nothing cheaper says so. That question is nearly all a skipped
+ * script costs (about 1.4 of 1.6 microseconds), so its statement is compiled once per
+ * connection and kept here, apart from the statements callers share. A caller that runs its
+ * script once per connection (a WeakSet) does not come here at all.
  */
 const exec = DatabaseSync.prototype.exec;
 const ONLY_ENSURES = /^CREATE\s+(?:TABLE|(?:UNIQUE\s+)?INDEX)\s+IF\s+NOT\s+EXISTS\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:\(|ON\b)/i;
 const ensuring = new Map<string, boolean>();
-const ensured = new WeakMap<DatabaseSync, Map<string, number>>();
+const ensured = new WeakMap<DatabaseSync, { ran: Map<string, number>; version: StatementSync }>();
+
+function schemaVersion(version: StatementSync): number {
+  return Number((version.get() as { schema_version: number | bigint }).schema_version);
+}
 
 function onlyEnsures(sql: string): boolean {
   let known = ensuring.get(sql);
@@ -78,13 +99,13 @@ function onlyEnsures(sql: string): boolean {
 
 DatabaseSync.prototype.exec = function (this: DatabaseSync, sql: string): void {
   if (typeof sql !== "string" || this.isTransaction !== false || !onlyEnsures(sql)) { exec.call(this, sql); return; }
-  let ran = ensured.get(this);
-  if (!ran) ensured.set(this, ran = new Map());
-  const version = (): number => Number((this.prepare("PRAGMA schema_version").get() as { schema_version: number }).schema_version);
-  if (ran.get(sql) === version()) { scripts.skipped++; return; }
+  let own = ensured.get(this);
+  if (!own) ensured.set(this, own = { ran: new Map(), version: prepare.call(this, "PRAGMA schema_version") });
+  const seen = own.ran.get(sql);
+  if (seen !== undefined && seen === schemaVersion(own.version)) { scripts.skipped++; return; }
   scripts.ran++;
   exec.call(this, sql);
-  ran.set(sql, version());
+  own.ran.set(sql, schemaVersion(own.version));
 };
 
 const scripts = { ran: 0, skipped: 0 };

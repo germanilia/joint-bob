@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { getClusterNode } from "../cluster.js";
 import { signClusterRequest } from "../cluster-protocol.js";
-import { mayReceiveResource } from "../cluster-sharing-policy.js";
+import { mayReceiveResource, untilWriteOrLeaseEnd } from "../cluster-sharing-policy.js";
 import { ClusterV2HttpError } from "../cluster-v2-errors.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { clearHarnessSessionCache } from "../harnesses.js";
@@ -43,13 +43,20 @@ async function makeNewFolders(db:DatabaseSync,ids:string[]):Promise<void>{
 function ensureSchema(db:DatabaseSync):void {
  db.exec("CREATE TABLE IF NOT EXISTS cluster_v2_file_errors(peer_id TEXT PRIMARY KEY,error TEXT NOT NULL)");
 }
+/* Both are asked for every peer and project on every pass of the background loops and on most peer requests.
+   The answers are kept until the next write. */
 export function mayShareProject(db:DatabaseSync,local:string,peer:string,id:string):boolean {
- const policy=db.prepare("SELECT deleted FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?").get(id) as {deleted:number}|undefined;
- return Boolean(policy&&!policy.deleted&&mayReceiveResource(db,local,"project",id)&&mayReceiveResource(db,peer,"project",id));
+ return untilWriteOrLeaseEnd(db,"mayShareProject",[local,peer,id],()=>{
+  const policy=db.prepare("SELECT deleted FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?").get(id) as {deleted:number}|undefined;
+  return Boolean(policy&&!policy.deleted&&mayReceiveResource(db,local,"project",id)&&mayReceiveResource(db,peer,"project",id));
+ });
 }
 export function sharedProjectIds(db:DatabaseSync,local:string,peer:string):string[]{
- const rows=db.prepare("SELECT resource_id id FROM cluster_v2_resource_policy WHERE kind='project' AND deleted=0").all() as unknown as Array<{id:string}>;
- return rows.filter(p=>mayShareProject(db,local,peer,p.id)).map(p=>p.id);
+ // A copy: callers own the list they get.
+ return untilWriteOrLeaseEnd(db,"sharedProjectIds",[local,peer],()=>{
+  const rows=db.prepare("SELECT resource_id id FROM cluster_v2_resource_policy WHERE kind='project' AND deleted=0").all() as unknown as Array<{id:string}>;
+  return rows.filter(p=>mayShareProject(db,local,peer,p.id)).map(p=>p.id);
+ }).slice();
 }
 export async function receiveFileEnrollment(peer:string,input:unknown){
  const payload=fileEnrollmentSchema.parse(input),db=await clusterV2Database(),local=await getClusterNode();

@@ -107,7 +107,13 @@ function ensureResourceDeletionSchema(db: DatabaseSync): void {
   `);
 }
 
+/* Called at the top of most functions here, and those are called for every project on every
+   listing. It is seven scripts and two column checks that change nothing once the tables are there,
+   and they are not dropped while the node runs, so it is run once per connection. Not remembered
+   inside a transaction: a rollback takes the new tables away again. */
+const sharingSchemaEnsured = new WeakSet<DatabaseSync>();
 export function ensureResourceSharingSchema(db: DatabaseSync): void {
+  if (sharingSchemaEnsured.has(db)) return;
   ensureClusterSharingPolicySchema(db);
   ensureClusterIdentitySchema(db);
   ensureTwinSchema(db);
@@ -152,6 +158,7 @@ export function ensureResourceSharingSchema(db: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS cluster_v2_resource_delivery_resource
       ON cluster_v2_resource_deliveries(kind, resource_id);
   `);
+  if (db.isTransaction === false) sharingSchemaEnsured.add(db);
 }
 
 function transaction<T>(db: DatabaseSync, action: () => T): T {

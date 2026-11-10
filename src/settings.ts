@@ -1,5 +1,5 @@
 import { accessSync, constants as fsConstants, statSync } from "node:fs";
-import { runtimeHome } from "./account-runtime.js";
+import { runtimeHome, usingServiceRuntime } from "./account-runtime.js";
 import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -12,6 +12,7 @@ import { listDiscoveredHarnesses } from "./harnesses/registry.js";
 import { configuredRuntime, detectExecutable, runtimeOverrides } from "./harnesses/runtime-configuration.js";
 import type { HarnessAdapter } from "./harnesses/contract.js";
 import { decrypt, save, setting, settingsDatabase, value } from "./settings-store.js";
+import { untilNextWrite } from "./sqlite-generation.js";
 import { knownReadyHarnesses } from "./harness-readiness.js";
 import { servingSettings } from "./relay/store.js";
 import { commandPresetSchema, identifyCommandPresets } from "./saved-commands.js";
@@ -111,16 +112,17 @@ function resolveBackgroundAgent(choice: BackgroundAgentSettings, defaults: Recor
 }
 
 /** On by default, driven by the background agent. */
-function defaultSyncCheck(defaults: Record<string, ConversationDefault>): SyncCheckSettings {
-  const { source: _source, ...agent } = resolveBackgroundAgent(backgroundAgentSetting(), defaults);
+function defaultSyncCheck(defaults: Record<string, ConversationDefault>, choice: BackgroundAgentSettings): SyncCheckSettings {
+  const { source: _source, ...agent } = resolveBackgroundAgent(choice, defaults);
   return { enabled: true, ...agent };
 }
 
-function syncCheck(defaults: Record<string, ConversationDefault>): SyncCheckSettings {
+/** The saved sync check, or undefined when none is saved or it no longer passes: the default then follows the background agent. */
+function storedSyncCheck(): SyncCheckSettings | undefined {
   const stored = setting("syncCheck");
-  if (!stored) return defaultSyncCheck(defaults);
+  if (!stored) return undefined;
   const parsed = syncCheckSchema.safeParse(JSON.parse(stored.value));
-  return parsed.success ? parsed.data : defaultSyncCheck(defaults);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function labelIcons(): Record<string, string> {
@@ -147,12 +149,11 @@ export function validateSyncCheck(input: SyncCheckSettings): SyncCheckSettings {
 export type DashboardAgentSettings = Omit<SyncCheckSettings, "enabled">;
 export const dashboardAgentSchema = syncCheckSchema.omit({ enabled: true });
 
-function dashboardAgent(defaults: Record<string, ConversationDefault>): DashboardAgentSettings {
+/** The saved dashboard agent, or undefined when the sync check's default applies. */
+function storedDashboardAgent(): DashboardAgentSettings | undefined {
   const stored = setting("dashboards");
   const parsed = stored ? dashboardAgentSchema.safeParse(JSON.parse(stored.value)) : undefined;
-  if (parsed?.success) return parsed.data;
-  const { enabled: _enabled, ...fallback } = defaultSyncCheck(defaults);
-  return fallback;
+  return parsed?.success ? parsed.data : undefined;
 }
 
 export function validateBackgroundAgent(input: BackgroundAgentSettings): BackgroundAgentSettings {
@@ -383,7 +384,12 @@ export function emptyResourcePaths(): ResourcePaths {
   return { skills: [], prompts: [], rules: [], plugins: [] };
 }
 
-function conversationCommands(): ConversationCommandsSettings {
+/**
+ * `unsaved` is set when saved commands could not be given their ids. The defaults returned
+ * then stand in for a failed write, not for what is stored, so that answer must not be kept.
+ */
+function conversationCommands(): { commands: ConversationCommandsSettings; unsaved: boolean } {
+  let unsaved = false;
   try {
     const stored = JSON.parse(value("conversationCommands", JSON.stringify(DEFAULT_CONVERSATION_COMMANDS))) as Partial<ConversationCommandsSettings>;
     const command = (name: "start" | "end") => ({
@@ -393,10 +399,13 @@ function conversationCommands(): ConversationCommandsSettings {
         : DEFAULT_CONVERSATION_COMMANDS[name].prompt,
     });
     const presets = identifyCommandPresets(Array.isArray(stored.presets) ? stored.presets : []);
-    if (JSON.stringify(presets) !== JSON.stringify(stored.presets ?? [])) save(settingsDatabase(), "conversationCommands", JSON.stringify({ ...stored, presets }));
-    return { start: command("start"), end: command("end"), presets };
+    if (JSON.stringify(presets) !== JSON.stringify(stored.presets ?? [])) {
+      try { save(settingsDatabase(), "conversationCommands", JSON.stringify({ ...stored, presets })); }
+      catch (error) { unsaved = true; throw error; }
+    }
+    return { commands: { start: command("start"), end: command("end"), presets }, unsaved };
   } catch {
-    return structuredClone(DEFAULT_CONVERSATION_COMMANDS);
+    return { commands: structuredClone(DEFAULT_CONVERSATION_COMMANDS), unsaved };
   }
 }
 
@@ -473,24 +482,33 @@ function storedPersonal(accountId: string): Record<string, unknown> {
   try { return row ? JSON.parse(row.payload) as Record<string, unknown> : {}; } catch { return {}; }
 }
 
-function personalOverlay(node: SettingsResponse, accountId: string): PersonalSettings {
+/** What one person saved for themselves and still passes its check, and their commands. Whatever is absent here is the node's value. */
+type OwnPersonalSettings = Partial<PersonalSettings> & Pick<PersonalSettings, "conversationCommands">;
+
+function readOwnPersonalSettings(accountId: string): OwnPersonalSettings {
   const stored = storedPersonal(accountId);
-  const result = Object.fromEntries(PERSONAL_SETTING_KEYS.map((key) => [key, node[key]])) as unknown as PersonalSettings;
-  result.conversationCommands = structuredClone(DEFAULT_CONVERSATION_COMMANDS);
+  const own: Record<string, unknown> = {};
   for (const key of PERSONAL_SETTING_KEYS) {
     if (!(key in stored)) continue;
     const parsed = personalSchemas[key].safeParse(stored[key]);
-    if (parsed.success) (result as Record<string, unknown>)[key] = parsed.data;
+    if (parsed.success) own[key] = parsed.data;
   }
   // Missing personal commands must not expose another account's presets.
-  const commands = "conversationCommands" in stored ? result.conversationCommands : structuredClone(DEFAULT_CONVERSATION_COMMANDS);
+  const commands = (own.conversationCommands as ConversationCommandsSettings | undefined) ?? structuredClone(DEFAULT_CONVERSATION_COMMANDS);
   const presets = identifyCommandPresets(commands.presets ?? []);
-  result.conversationCommands = { ...commands, presets };
+  own.conversationCommands = { ...commands, presets };
   if (JSON.stringify(presets) !== JSON.stringify(commands.presets ?? [])) {
     const db = settingsDatabase();
-    db.prepare("UPDATE account_settings SET payload=? WHERE account_id=?").run(JSON.stringify({ ...stored, conversationCommands: result.conversationCommands }), accountId);
+    db.prepare("UPDATE account_settings SET payload=? WHERE account_id=?").run(JSON.stringify({ ...stored, conversationCommands: own.conversationCommands }), accountId);
   }
-  return result;
+  return own as OwnPersonalSettings;
+}
+
+/** A person's own values are kept like the node's (see `storedSettings`), one answer per account. */
+function personalOverlay(node: SettingsResponse, accountId: string): PersonalSettings {
+  const own = untilNextWrite(settingsDatabase(), `settings.personal:${accountId}`, () => readOwnPersonalSettings(accountId));
+  const result = Object.fromEntries(PERSONAL_SETTING_KEYS.map((key) => [key, node[key]])) as unknown as PersonalSettings;
+  return Object.assign(result, ownCopy(own));
 }
 
 export function personalSettings(account: ActingAccount | undefined = actingAccount()): PersonalSettings {
@@ -564,18 +582,69 @@ export function deletePersonalSettings(accountId: string): void {
   db.prepare("DELETE FROM account_settings WHERE account_id = ?").run(accountId);
 }
 
-/** The node's own settings, without anyone's personal values. */
-export function nodeSettings(): SettingsResponse {
-  const runtimes = runtimeRecord((adapter) => configuredRuntime(adapter.id, adapter.configuration.defaults(runtimeHome())));
+/**
+ * What the database says about the node's settings, read and checked.
+ *
+ * `getSettings()` is asked on hot paths (where a transcript folder is, whether isolation is
+ * on, how many days a list goes back), often once per listed conversation. Each call ran
+ * some sixty queries and seven parses to build the whole answer: 0.2 ms, 3% of a busy Mac's
+ * time. What the database alone decides is now read once and kept until the next write to
+ * the database, by this connection or any other (sqlite-generation.ts). The database is
+ * written many times a second, so an answer lives for tens of milliseconds. That is enough:
+ * the calls come a dozen at a time, and all but the first of them find the answer kept.
+ *
+ * Nothing else is kept. Who is asking, the running account's home and whether it is the
+ * service's, the harness defaults (they look at PATH and the data directory), which agents
+ * are signed in and the default home folder are all read again on every call.
+ */
+interface StoredSettings {
+  conversationDefaults: SettingsResponse["conversationDefaults"];
+  runtimeOverrides: Record<string, RuntimeSettings>;
+  kiroEnabled: boolean;
+  /** Absent when no home folder is saved: the default depends on the account's home. */
+  homePath: string | undefined;
+  resources: ResourcePaths;
+  conversationLabels: string[];
+  conversationLabelIcons: Record<string, string>;
+  conversationHistoryDays: number;
+  conversationRetentionDays: number;
+  autoCompactThreshold: number | null;
+  shellCommandTimeoutSeconds: number | null;
+  subprocessMaxLifetimeMinutes: number;
+  conversationCpuLimitCores: number | null;
+  conversationMemoryLimitGb: number | null;
+  digestAttachments: boolean;
+  showProjectsOnOtherNodes: boolean;
+  newConversationWorktree: boolean;
+  strictResourceIsolation: boolean;
+  autoActivateSharedSkills: boolean;
+  gitPullFileLimit: number;
+  gitPullTimeoutSeconds: number;
+  /** Absent when none is saved: the default follows the background agent and which agents are signed in. */
+  syncCheck: SyncCheckSettings | undefined;
+  dashboards: DashboardAgentSettings | undefined;
+  backgroundAgent: BackgroundAgentSettings;
+  remoteTerminal: RemoteTerminalSettings;
+  runnerAccess: RunnerAccessSettings;
+  conversationCommands: ConversationCommandsSettings;
+}
+
+/** A stored setting as `value` gives it, or undefined when there is none. */
+function storedValue(keyName: string): string | undefined {
+  const found = setting(keyName);
+  if (!found) return undefined;
+  return found.isSecret ? decrypt(found.value) : found.value;
+}
+
+function readStoredSettings(): { settings: StoredSettings; unsaved: boolean } {
+  const runtimeOverridesById = runtimeRecord((adapter) => runtimeOverrides(adapter.id));
   const defaults = Object.fromEntries(listDiscoveredHarnesses().map((adapter) => [adapter.id, adapter.defaults]));
   const conversationDefaults = conversationDefaultsSchema.parse(JSON.parse(value("conversationDefaults", JSON.stringify(defaults))));
-  return {
+  const settings: Omit<StoredSettings, "conversationCommands"> = {
     conversationDefaults,
-    ...runtimes,
-    runtimes,
-    runtimeOverrides: runtimeRecord((adapter) => runtimeOverrides(adapter.id)),
+    runtimeOverrides: runtimeOverridesById,
     kiroEnabled: value("kiro.enabled", "true") === "true",
-    projects: { homePath: value("projects.homePath", defaultManagedHome()) },
+    homePath: storedValue("projects.homePath"),
     resources: readResourcePaths("resources."),
     conversationLabels: conversationLabelsSchema.parse(JSON.parse(value("conversationLabels", JSON.stringify(DEFAULT_CONVERSATION_LABELS)))),
     conversationLabelIcons: labelIcons(),
@@ -593,13 +662,99 @@ export function nodeSettings(): SettingsResponse {
     autoActivateSharedSkills: value("autoActivateSharedSkills", "true") === "true",
     gitPullFileLimit: Number(value("gitPullFileLimit", "1000")),
     gitPullTimeoutSeconds: Number(value("gitPullTimeoutSeconds", "360")),
-    syncCheck: syncCheck(conversationDefaults),
-    dashboards: dashboardAgent(conversationDefaults),
+    syncCheck: storedSyncCheck(),
+    dashboards: storedDashboardAgent(),
     backgroundAgent: backgroundAgentSetting(),
     remoteTerminal: remoteTerminalSettings(),
     runnerAccess: runnerAccessSettings(),
-    conversationCommands: conversationCommands(),
-    restartRequired: Object.fromEntries(runtimeAdapters().map((adapter) => [adapter.id, false])),
+  };
+  const { commands, unsaved } = conversationCommands();
+  return { settings: { ...settings, conversationCommands: commands }, unsaved };
+}
+
+/** Carries an answer past `untilNextWrite` without it being kept. */
+class Unkept { constructor(readonly settings: StoredSettings) {} }
+
+function storedSettings(): StoredSettings {
+  try {
+    return untilNextWrite(settingsDatabase(), "settings.stored", () => {
+      const { settings, unsaved } = readStoredSettings();
+      // Its commands are the defaults only because a write failed. The next call must try that write again.
+      if (unsaved) throw new Unkept(settings);
+      return settings;
+    });
+  } catch (error) {
+    if (error instanceof Unkept) return error.settings;
+    throw error;
+  }
+}
+
+/**
+ * A copy the caller owns. Callers hand settings on (to responses, to harness arguments, back
+ * into `updateSettings`) and always got an object of their own, so what is kept is never
+ * given out. Settings are plain data: objects, arrays, strings, numbers, booleans and null.
+ */
+function ownCopy<T>(data: T): T {
+  if (Array.isArray(data)) return data.map(ownCopy) as T;
+  if (data !== null && typeof data === "object") {
+    const copy: Record<string, unknown> = {};
+    for (const key of Object.keys(data)) copy[key] = ownCopy((data as Record<string, unknown>)[key]);
+    return copy as T;
+  }
+  return data;
+}
+
+/** The node's own settings, without anyone's personal values. */
+export function nodeSettings(): SettingsResponse {
+  const adapters = runtimeAdapters();
+  const runtimeDefaults = adapters.map((adapter) => adapter.configuration.defaults(runtimeHome()));
+  const fallbackHome = defaultManagedHome();
+  const stored = ownCopy(storedSettings());
+  // The node's folder overrides apply to the service's own runtime as they are. A person's runtime
+  // goes through configuredRuntime, which ignores them and keeps the folders inside that person's home.
+  const service = usingServiceRuntime();
+  const runtimes = Object.fromEntries(adapters.map((adapter, index) => {
+    const overrides = stored.runtimeOverrides[adapter.id], defaults = runtimeDefaults[index];
+    return [adapter.id, service
+      ? { executable: overrides.executable || defaults.executable, configPath: overrides.configPath || defaults.configPath, sessionPath: overrides.sessionPath || defaults.sessionPath }
+      : configuredRuntime(adapter.id, defaults)];
+  }));
+  const { conversationDefaults } = stored;
+  const dashboardFallback = (): DashboardAgentSettings => {
+    const { enabled: _enabled, ...fallback } = defaultSyncCheck(conversationDefaults, stored.backgroundAgent);
+    return fallback;
+  };
+  return {
+    conversationDefaults,
+    ...runtimes,
+    runtimes,
+    runtimeOverrides: stored.runtimeOverrides,
+    kiroEnabled: stored.kiroEnabled,
+    projects: { homePath: stored.homePath ?? fallbackHome },
+    resources: stored.resources,
+    conversationLabels: stored.conversationLabels,
+    conversationLabelIcons: stored.conversationLabelIcons,
+    conversationHistoryDays: stored.conversationHistoryDays,
+    conversationRetentionDays: stored.conversationRetentionDays,
+    autoCompactThreshold: stored.autoCompactThreshold,
+    shellCommandTimeoutSeconds: stored.shellCommandTimeoutSeconds,
+    subprocessMaxLifetimeMinutes: stored.subprocessMaxLifetimeMinutes,
+    conversationCpuLimitCores: stored.conversationCpuLimitCores,
+    conversationMemoryLimitGb: stored.conversationMemoryLimitGb,
+    digestAttachments: stored.digestAttachments,
+    showProjectsOnOtherNodes: stored.showProjectsOnOtherNodes,
+    newConversationWorktree: stored.newConversationWorktree,
+    strictResourceIsolation: stored.strictResourceIsolation,
+    autoActivateSharedSkills: stored.autoActivateSharedSkills,
+    gitPullFileLimit: stored.gitPullFileLimit,
+    gitPullTimeoutSeconds: stored.gitPullTimeoutSeconds,
+    syncCheck: stored.syncCheck ?? defaultSyncCheck(conversationDefaults, stored.backgroundAgent),
+    dashboards: stored.dashboards ?? dashboardFallback(),
+    backgroundAgent: stored.backgroundAgent,
+    remoteTerminal: stored.remoteTerminal,
+    runnerAccess: stored.runnerAccess,
+    conversationCommands: stored.conversationCommands,
+    restartRequired: Object.fromEntries(adapters.map((adapter) => [adapter.id, false])),
   } as SettingsResponse;
 }
 

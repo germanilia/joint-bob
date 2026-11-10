@@ -25,7 +25,18 @@ const endpointSchema = z.object({
 export type PeerEndpoint = z.infer<typeof endpointSchema>;
 export type PeerEndpointContext = { kind: "cluster" | "twin"; id: string };
 
+/* Asked before nearly every read of a peer. The script makes two tables and then gives an
+   activity row to every endpoint that has none, an INSERT over all endpoints that takes the
+   write lock. The statement wrapper skips only scripts that create tables and indexes, so
+   all of this ran on every call: 0.8% of a busy homeserver's time.
+
+   The tables are never dropped, and recordPeerEndpoint writes an endpoint's activity row
+   itself. The backfill has work only for endpoints recorded before the activity table
+   existed, so a connection runs the script once. */
+const ensuredConnections = new WeakSet<DatabaseSync>();
+
 export function ensurePeerEndpointSchema(db: DatabaseSync): void {
+  if (ensuredConnections.has(db)) return;
   db.exec(`CREATE TABLE IF NOT EXISTS cluster_v2_peer_endpoints(
     context_kind TEXT NOT NULL CHECK(context_kind IN ('cluster','twin')),
     context_id TEXT NOT NULL,node_id TEXT NOT NULL,name TEXT NOT NULL,url TEXT NOT NULL,
@@ -33,6 +44,8 @@ export function ensurePeerEndpointSchema(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS cluster_v2_peer_activity(node_id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,last_seen_at TEXT);
     INSERT OR IGNORE INTO cluster_v2_peer_activity
       SELECT node_id,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now'),NULL FROM cluster_v2_peer_endpoints;`);
+  // Run inside a transaction it can still be rolled back, tables and rows alike.
+  if (!db.isTransaction) ensuredConnections.add(db);
 }
 
 export function recordPeerEndpoint(db: DatabaseSync, context: PeerEndpointContext, input: PeerEndpoint): void {

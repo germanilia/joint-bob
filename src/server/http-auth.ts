@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { DatabaseSync } from "node:sqlite";
 import type { NextFunction, Request, Response } from "express";
 import { type AuthSession, sessionCookieNameFor, sessionForId } from "../auth.js";
 import { getClusterNode } from "../cluster.js";
@@ -117,13 +118,25 @@ export function clusterRequestRawBody(request: Request): Buffer {
   return captured ?? Buffer.alloc(0);
 }
 
+/* Every machine request made sure this node's own identity exists and is pinned: two savepoints,
+   two lookups and four readings of the node's own key, 0.13 ms a request and a quarter of what
+   the homeserver spent admitting requests. Both rows are written once and never changed or
+   removed (cluster-identity.ts only inserts them), so a connection checks once per node id. */
+const localIdentityPinned = new WeakMap<DatabaseSync, string>();
+function ensureLocalIdentityPinned(database: DatabaseSync, nodeId: string): void {
+  if (localIdentityPinned.get(database) === nodeId) return;
+  const identity = getOrCreateClusterIdentity(database, nodeId);
+  pinClusterPublicKey(database, nodeId, identity.publicKey);
+  // Rows written inside a transaction can still be rolled back.
+  if (!database.isTransaction) localIdentityPinned.set(database, nodeId);
+}
+
 async function requireClusterV2Auth(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const captured = clusterRequestRawBody(request);
     const node = await getClusterNode();
     const database = await clusterV2Database();
-    const identity = getOrCreateClusterIdentity(database, node.id);
-    pinClusterPublicKey(database, node.id, identity.publicKey);
+    ensureLocalIdentityPinned(database, node.id);
     // Machines never sign requests through a phone gateway, and a relay channel carries
     // requests only from the machine it proved at its handshake (RELAY-PLAN.md §4.10 rule 4).
     if (relayTransportOf(request.socket) === "gateway") throw new ClusterProtocolError("Machine requests do not use the phone gateway");

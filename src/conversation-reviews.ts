@@ -27,6 +27,7 @@ interface ConversationStateRow {
   last_activity_at: string;
   reviewed_at: string;
   was_running: number;
+  notified: number;
 }
 
 interface ColumnRow {
@@ -152,7 +153,7 @@ function reviewStatements(db: DatabaseSync): ReviewStatements {
       VALUES (?, ?, ?)
     `),
     select: db.prepare(`
-      SELECT last_activity_at, reviewed_at, was_running
+      SELECT last_activity_at, reviewed_at, was_running, notified
       FROM conversation_review_states
       WHERE user_id = ? AND project_id = ? AND session_path = ?
     `),
@@ -175,19 +176,28 @@ function reviewStatements(db: DatabaseSync): ReviewStatements {
  * reviewed watermark is the higher of the local row and any watermark another node
  * replicated for the same (username, project, engine, session id), so marking a
  * conversation reviewed anywhere marks it everywhere.
+ *
+ * Every listing comes through here, and nearly always nothing has changed since the last
+ * one. It used to take the write lock and write every row again all the same: one commit
+ * per listing, which waits for the disk and ends every answer kept until the next write
+ * (sqlite-generation.ts) on every connection. So the rows are first read and compared with
+ * what would be written, in a read transaction. Only when something differs is the write
+ * transaction opened. It then reads again under its lock, as it always did, and writes the
+ * rows that differ.
  */
 export function syncConversationReviewDetails(userId: string, username: string, projectId: string, sessions: ConversationStateInput[]): Map<string, ConversationReviewDetails> {
   const db = reviewDatabase();
   const statements = reviewStatements(db);
   const remote = remoteWatermarks(db, username, projectId);
   const now = new Date().toISOString();
-  const states = new Map<string, ConversationReviewDetails>();
   sessions = sessions.map((session) => ({ ...session, running: session.running || conversationWorkActive(session.engine, session.sessionId) }));
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const tracking = statements.selectTracking.get(userId, projectId) as { initialized_at: string } | undefined;
+  /** One pass over the sessions. Without `write` it changes nothing, and gives up at the first thing that would have to be written. */
+  const reconcile = (write: boolean): Map<string, ConversationReviewDetails> | undefined => {
+    const states = new Map<string, ConversationReviewDetails>();
+    // The writing pass reads the tracking row first, under its lock: a new row takes its baseline from it.
+    const tracking = write ? statements.selectTracking.get(userId, projectId) as { initialized_at: string } | undefined : undefined;
     const initializedAt = tracking?.initialized_at ?? now;
-    if (!tracking) statements.insertTracking.run(userId, projectId, initializedAt);
+    if (write && !tracking) statements.insertTracking.run(userId, projectId, initializedAt);
     for (const session of sessions) {
       const latestAt = activityTime(session.updatedAt, now);
       // Silent runs leave the previous reviewable activity in place. This works
@@ -197,10 +207,12 @@ export function syncConversationReviewDetails(userId: string, username: string, 
         ? session.silentReviewFrom : latestAt;
       const remoteReviewedAt = remote.get(`${session.engine}\n${session.sessionId}`);
       const row = statements.select.get(userId, projectId, session.path) as unknown as ConversationStateRow | undefined;
+      const running = session.running ? 1 : 0;
       if (!row) {
+        if (!write) return undefined;
         const baseline = tracking ? initializedAt : observedAt;
         const reviewedAt = remoteReviewedAt && remoteReviewedAt > baseline ? remoteReviewedAt : baseline;
-        statements.insert.run(userId, projectId, session.path, observedAt, reviewedAt, session.running ? 1 : 0);
+        statements.insert.run(userId, projectId, session.path, observedAt, reviewedAt, running);
         states.set(session.path, {
           state: session.running ? "running" : activityCovered(observedAt, reviewedAt, remoteReviewedAt) ? "reviewed" : "needs_review",
           reviewedAt,
@@ -213,12 +225,35 @@ export function syncConversationReviewDetails(userId: string, username: string, 
       const reviewedAt = remoteReviewedAt && remoteReviewedAt > row.reviewed_at ? remoteReviewedAt : row.reviewed_at;
       // A remote review starts this account's next notification cycle, exactly like a local one.
       const remoteAdvanced = Boolean(remoteReviewedAt && remoteReviewedAt > row.reviewed_at);
-      statements.update.run(observedAt, reviewedAt, session.running ? 1 : 0, session.running ? 1 : 0, remoteAdvanced ? 1 : 0, userId, projectId, session.path);
+      // The update sets four columns. It is left out when each already holds what it would be set to.
+      const clearsNotified = (session.running || remoteAdvanced) && row.notified !== 0;
+      if (row.last_activity_at !== observedAt || row.reviewed_at !== reviewedAt || row.was_running !== running || clearsNotified) {
+        if (!write) return undefined;
+        statements.update.run(observedAt, reviewedAt, running, running, remoteAdvanced ? 1 : 0, userId, projectId, session.path);
+      }
       states.set(session.path, {
         state: session.running ? "running" : activityCovered(observedAt, reviewedAt, remoteReviewedAt) ? "reviewed" : "needs_review",
         reviewedAt,
       });
     }
+    // The reading pass only needs to know that the project is tracked, and asks last: nothing above depends on it there.
+    if (!write && !statements.selectTracking.get(userId, projectId)) return undefined;
+    return states;
+  };
+  // Read first. A read transaction takes no write lock, and shows every row as of one moment, as the write transaction did.
+  db.exec("BEGIN");
+  let unchanged: Map<string, ConversationReviewDetails> | undefined;
+  try {
+    unchanged = reconcile(false);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  if (unchanged) return unchanged;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const states = reconcile(true)!;
     db.exec("COMMIT");
     return states;
   } catch (error) {

@@ -21,8 +21,17 @@ export function validEmail(email: string): boolean {
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+/* Asked several times for every account id that is worked out. Tables are made when a feature is first
+   used and are not dropped while the node runs, so one that was found stays found for the connection.
+   A missing one is looked for every time. Nothing is remembered inside a transaction: a rollback
+   takes a table made in it away again. */
+const tablesFound = new WeakMap<DatabaseSync, Set<string>>();
 function tableExists(db: DatabaseSync, name: string): boolean {
-  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
+  const found = tablesFound.get(db);
+  if (found?.has(name)) return true;
+  const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
+  if (exists && db.isTransaction === false) { if (found) found.add(name); else tablesFound.set(db, new Set([name])); }
+  return exists;
 }
 
 /** Twins are one person's machines, so their local users share a home: the lowest node id

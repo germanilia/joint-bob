@@ -37,8 +37,14 @@ export function signClusterRequest(
 // checks and records the nonce; an expired row with the same nonce is taken over.
 const NONCE_PRUNE_MS = 60_000;
 const noncesPrunedAt = new WeakMap<DatabaseSync, number>();
+// The nonce table is made once and never dropped, so a connection makes sure of it once and not for every request.
+const nonceTableEnsured = new WeakSet<DatabaseSync>();
 function consumeNonce(db: DatabaseSync, senderNodeId: string, nonce: string, now: number): void {
-  ensureClusterProtocolSchema(db);
+  if (!nonceTableEnsured.has(db)) {
+    ensureClusterProtocolSchema(db);
+    // Made inside a transaction it can still be rolled back.
+    if (!db.isTransaction) nonceTableEnsured.add(db);
+  }
   const prunedAt = noncesPrunedAt.get(db);
   if (prunedAt === undefined || now - prunedAt >= NONCE_PRUNE_MS || now < prunedAt) {
     db.prepare("DELETE FROM cluster_v2_request_nonces WHERE expires_at < ?").run(now);

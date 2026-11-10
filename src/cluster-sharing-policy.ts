@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { ownedByAdmin } from "./ownership.js";
 import { notifyRelayPeersChanged } from "./relay/events.js";
+import { untilNextWrite } from "./sqlite-generation.js";
 
 export type SharedResourceKind = "project" | "ticket" | "secret";
 export interface ResourceShare { clusterId: string; projectId: string | null; nodeIds?: string[] }
@@ -84,7 +85,130 @@ function policyResource(db: DatabaseSync, kind: SharedResourceKind, id: string):
 }
 function pair(left: string, right: string): [string, string] { return left < right ? [left, right] : [right, left]; }
 
+/* The sharing lookups are asked thousands of times a second with the same arguments, and each runs
+   several queries. Their answers are kept until the next write to the database.
+
+   sqlite-generation.ts says when that is: it reads SQLite's own counters and keeps an object until
+   one of them moves. The object kept here is one table of answers per connection. A lookup that is
+   asked from outside reads the counters once and gets the table. The lookups it asks while it is
+   computed use the same table without reading the counters again: a peer's shared projects ask
+   about every project twice, and reading the counters for each of those cost more than it saved
+   whenever the answers were needed only once before the next write. So every answer a lookup
+   gives is true of the database as it was when that lookup began, or later. An answer that was
+   put into the table while the counters moved goes with the table: the next lookup from outside
+   reads the counters, sees them moved and starts an empty table. Nothing is put into the table
+   inside a transaction, whose changes may be rolled back.
+
+   A kept answer must rest on the database alone, and two things these lookups read do not:
+
+   - A relay's lease on a sharing group runs out by the clock, with no write.
+   - A visitor's clusters and a team's members are read from the sign-in tables through another
+     module's connection, whose open transaction this connection cannot see.
+
+   So a lookup that is being computed carries the span of time its answer holds for. Reading a
+   lease narrows the span to the moment the lease was read and the moment it ends. Reading through
+   another connection empties it. A kept answer is served only inside its span; outside it the lookup
+   is computed again. A lookup that asks another takes over the other's span, so the outer answer
+   never outlives the inner one. */
+interface Kept { value: unknown; from: number; until: number }
+/** A lookup being computed: its connection, that connection's table of answers, and the span its own answer holds for. */
+interface Lookup { db: DatabaseSync; answers: Map<string, Kept>; from: number; until: number }
+let computing: Lookup | undefined;
+/** No real key comes near this: ids are at most 300 characters. A longer one is computed and not kept, so made-up ids cannot fill the memory. */
+const MAX_KEY_LENGTH = 1024;
+/** Answers held for one connection before the table is emptied: bounds memory on a node with many projects and peers. */
+const MAX_ANSWERS = 20_000;
+const ANSWERS = "cluster-sharing-policy:answers";
+const newAnswers = (): Map<string, Kept> => new Map();
+
+/** The table a lookup on `db` reads and fills: the outer lookup's when that is on the same connection. */
+function answersFor(db: DatabaseSync, outer: Lookup | undefined): Map<string, Kept> {
+  if (outer?.db === db) return outer.answers;
+  // An outer lookup on another connection would rest on this one, which its own counters say nothing about.
+  if (outer) outer.until = -Infinity;
+  return untilNextWrite(db, ANSWERS, newAnswers);
+}
+function narrow(lookup: Lookup, from: number, until: number): void {
+  if (from > lookup.from) lookup.from = from;
+  if (until < lookup.until) lookup.until = until;
+}
+
+/**
+ * `compute()`'s answer, kept until the next write to the database or until a relay lease it read runs
+ * out. `name` is the function's own; `ids` are all the arguments the answer depends on. What is
+ * returned is the very object that was kept, so callers must not change it. `compute` only reads.
+ */
+export function untilWriteOrLeaseEnd<T>(db: DatabaseSync, name: string, ids: readonly unknown[], compute: () => T): T {
+  let key = name;
+  for (const id of ids) {
+    // Kept for text only, which every real id is. Anything else is answered as it always was.
+    if (typeof id !== "string") return compute();
+    // The length keeps the ids apart whatever characters they hold.
+    key += `\0${id.length}\0${id}`;
+  }
+  if (key.length > MAX_KEY_LENGTH) return compute();
+  const outer = computing;
+  const answers = answersFor(db, outer);
+  const kept = answers.get(key);
+  if (kept !== undefined) {
+    const timed = kept.from !== -Infinity || kept.until !== Infinity;
+    const now = timed ? Date.now() : 0;
+    // No write was made since it was kept, so the rows are the same. Only the clock can have moved past a lease, or back.
+    if (!timed || (now >= kept.from && now < kept.until)) {
+      if (outer?.db === db) narrow(outer, kept.from, kept.until);
+      return kept.value as T;
+    }
+  }
+  const mine: Lookup = { db, answers, from: -Infinity, until: Infinity };
+  computing = mine;
+  let value: T;
+  try { value = compute(); }
+  // Also when it throws: a caller that turns the failure into an answer rests on what was read before it.
+  finally { computing = outer; if (outer?.db === db) narrow(outer, mine.from, mine.until); }
+  if (mine.until === -Infinity || db.isTransaction !== false) answers.delete(key);
+  else {
+    if (answers.size >= MAX_ANSWERS) answers.clear();
+    answers.set(key, { value, from: mine.from, until: mine.until });
+  }
+  return value;
+}
+
+/**
+ * Runs `read` as one lookup on `db`, keeping nothing of its own: the lookups it asks share one table
+ * and one reading of the counters. For a function that asks several in a row. `read` only reads.
+ */
+export function asOneLookup<T>(db: DatabaseSync, read: () => T): T {
+  const outer = computing;
+  if (outer?.db === db) return read();
+  computing = { db, answers: answersFor(db, outer), from: -Infinity, until: Infinity };
+  try { return read(); }
+  finally { computing = outer; }
+}
+
+/** For a lookup that reads what no write to this database announces: its answer, and any answer built on it, is computed every time. */
+export function answerIsNotKept(): void {
+  if (computing) computing.until = -Infinity;
+}
+
+/* Tables are made when a feature is first used and are not dropped while the node runs, so a table that
+   was found stays found for the connection. A missing one is looked for again every time. Nothing is
+   remembered inside a transaction: a rollback takes a table made in it away again. */
+const tablesFound = new WeakMap<DatabaseSync, Set<string>>();
+function tableFound(db: DatabaseSync, name: string): boolean {
+  const found = tablesFound.get(db);
+  if (found?.has(name)) return true;
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name)) return false;
+  if (db.isTransaction === false) { if (found) found.add(name); else tablesFound.set(db, new Set([name])); }
+  return true;
+}
+
+/* Called at the top of most sharing functions. The script changes nothing once the tables are there,
+   and they are not dropped while the node runs, so it is run once per connection. Not remembered
+   inside a transaction: a rollback takes the new tables away again. */
+const policySchemaEnsured = new WeakSet<DatabaseSync>();
+
 export function ensureClusterSharingPolicySchema(db: DatabaseSync): void {
+  if (policySchemaEnsured.has(db)) return;
   db.exec(`CREATE TABLE IF NOT EXISTS sharing_clusters(id TEXT PRIMARY KEY, name TEXT NOT NULL, original_node_id TEXT NOT NULL, manager_node_id TEXT, manager_epoch INTEGER NOT NULL CHECK(manager_epoch>0), next_join_sequence INTEGER NOT NULL CHECK(next_join_sequence>0), closed INTEGER NOT NULL CHECK(closed IN (0,1)), CHECK((closed=0 AND manager_node_id IS NOT NULL) OR (closed=1 AND manager_node_id IS NULL)));
 CREATE TABLE IF NOT EXISTS sharing_memberships(cluster_id TEXT NOT NULL REFERENCES sharing_clusters(id), node_id TEXT NOT NULL, auto_share_projects INTEGER NOT NULL DEFAULT 0 CHECK(auto_share_projects IN (0,1)), join_sequence INTEGER NOT NULL CHECK(join_sequence>0), PRIMARY KEY(cluster_id,node_id), UNIQUE(cluster_id,join_sequence));
 CREATE TABLE IF NOT EXISTS sharing_manager_transfers(cluster_id TEXT NOT NULL REFERENCES sharing_clusters(id), transfer_id TEXT NOT NULL, from_node_id TEXT NOT NULL, to_node_id TEXT NOT NULL, expected_epoch INTEGER NOT NULL CHECK(expected_epoch>0), status TEXT NOT NULL CHECK(status IN ('prepared','accepted','committed')), PRIMARY KEY(cluster_id,transfer_id), UNIQUE(cluster_id,expected_epoch));
@@ -100,6 +224,7 @@ CREATE INDEX IF NOT EXISTS sharing_resource_owners_owner_node_id ON sharing_reso
   if (!(db.prepare("PRAGMA table_info(sharing_resource_shares)").all() as Array<{name: string}>).some(column => column.name === "node_ids")) {
     db.exec("ALTER TABLE sharing_resource_shares ADD COLUMN node_ids TEXT");
   }
+  if (db.isTransaction === false) policySchemaEnsured.add(db);
 }
 
 /** INTERNAL topology API. Network callers must first verify a membership invitation or snapshot. */
@@ -119,15 +244,27 @@ export function recordRelaySharingHeartbeat(db: DatabaseSync, relayNodeId: strin
     .run(relayNodeId, relayLeaseEpoch, now + RELAY_SHARING_LEASE_MS);
 }
 
-export function relaySharingGroupActive(db: DatabaseSync, clusterId: string, now = Date.now()): boolean {
+export function relaySharingGroupActive(db: DatabaseSync, clusterId: string, now?: number): boolean {
   const group = db.prepare("SELECT relay_node_id FROM relay_sharing_groups WHERE cluster_id=?").get(clusterId) as {relay_node_id: string}|undefined;
   if (!group) return true;
-  const has = (table: string) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
+  const has = (table: string) => tableFound(db, table);
   const local = has("cluster_v2_identity") ? (db.prepare("SELECT node_id FROM cluster_v2_identity WHERE singleton=1").get() as {node_id: string}|undefined)?.node_id : undefined;
   if (local === group.relay_node_id) return has("relay_serving") && Boolean(db.prepare("SELECT 1 FROM relay_serving WHERE enabled=1 AND origin<>''").get());
   return has("relay_memberships") && has("relay_sharing_live")
     && Boolean(db.prepare("SELECT 1 FROM relay_memberships WHERE relay_node_id=? AND status='admitted'").get(group.relay_node_id))
-    && Boolean(db.prepare("SELECT 1 FROM relay_sharing_live WHERE relay_node_id=? AND epoch=? AND expires_at>?").get(group.relay_node_id, relayLeaseEpoch, now));
+    && relayLeaseLive(db, group.relay_node_id, now);
+}
+/** Whether this process holds a lease from the relay that has not run out. The one answer here that the clock changes. */
+function relayLeaseLive(db: DatabaseSync, relayNodeId: string, at?: number): boolean {
+  const now = at ?? Date.now();
+  const live = Boolean(db.prepare("SELECT 1 FROM relay_sharing_live WHERE relay_node_id=? AND epoch=? AND expires_at>?").get(relayNodeId, relayLeaseEpoch, now));
+  if (!computing) return live;
+  // A caller that names its own time is answered for that time only.
+  if (at !== undefined) { computing.until = -Infinity; return live; }
+  // A live lease holds until it ends. One that is not live stays so, unless the clock is set back.
+  const end = live ? (db.prepare("SELECT expires_at FROM relay_sharing_live WHERE relay_node_id=? AND epoch=?").get(relayNodeId, relayLeaseEpoch) as { expires_at: unknown } | undefined)?.expires_at : Infinity;
+  narrow(computing, now, typeof end === "number" ? end : -Infinity);
+  return live;
 }
 
 export function getSharingCluster(db: DatabaseSync, clusterId: string): SharingClusterState {
@@ -360,14 +497,17 @@ export function shareAllOwnedProjects(db: DatabaseSync, clusterId: string, actor
 
 export function mayReceiveResource(db: DatabaseSync, recipientNodeId: string, kind: SharedResourceKind, resourceId: string, projectId?: string): boolean {
   validateUuid(recipientNodeId, "Recipient node ID"); validateResource(kind, resourceId); if (projectId !== undefined) validateResourceId(projectId);
-  const policy = policyResource(db, kind, resourceId); const owner = ownerOrThrow(db, policy.kind, policy.id);
-  if (recipientNodeId === owner) return true;
-  // Twins are the admin's own machines: they get the admin's things, never a member's.
-  if (isTrustedTwin(db, recipientNodeId, owner)) return twinMayReceive(db, owner, policy.kind, policy.id, projectId);
-  const rows = db.prepare(`SELECT s.cluster_id,s.project_id,s.node_ids FROM sharing_resource_shares s JOIN sharing_memberships om ON om.cluster_id=s.cluster_id AND om.node_id=?
+  // An unknown resource throws and is not kept. A valid project id is never empty, so "" stands for none.
+  return untilWriteOrLeaseEnd(db, "mayReceiveResource", [recipientNodeId, kind, resourceId, projectId ?? ""], () => {
+    const policy = policyResource(db, kind, resourceId); const owner = ownerOrThrow(db, policy.kind, policy.id);
+    if (recipientNodeId === owner) return true;
+    // Twins are the admin's own machines: they get the admin's things, never a member's.
+    if (isTrustedTwin(db, recipientNodeId, owner)) return twinMayReceive(db, owner, policy.kind, policy.id, projectId);
+    const rows = db.prepare(`SELECT s.cluster_id,s.project_id,s.node_ids FROM sharing_resource_shares s JOIN sharing_memberships om ON om.cluster_id=s.cluster_id AND om.node_id=?
     JOIN sharing_memberships rm ON rm.cluster_id=s.cluster_id AND rm.node_id=? WHERE s.kind=? AND s.resource_id=?`).all(owner, recipientNodeId, policy.kind, policy.id) as unknown as ShareRow[];
-  return rows.some((row) => relaySharingGroupActive(db, row.cluster_id) && (row.node_ids === null || (JSON.parse(row.node_ids) as string[]).includes(recipientNodeId))
-    && (policy.kind !== "secret" || row.project_id === "" || (projectId === row.project_id && activeProjectShare(db, recipientNodeId, row.cluster_id, row.project_id))));
+    return rows.some((row) => relaySharingGroupActive(db, row.cluster_id) && (row.node_ids === null || (JSON.parse(row.node_ids) as string[]).includes(recipientNodeId))
+      && (policy.kind !== "secret" || row.project_id === "" || (projectId === row.project_id && activeProjectShare(db, recipientNodeId, row.cluster_id, row.project_id))));
+  });
 }
 
 export function resourceClusterIds(db: DatabaseSync, nodeId: string, kind: SharedResourceKind, resourceId: string): string[] {
@@ -380,9 +520,9 @@ export function resourceClusterIds(db: DatabaseSync, nodeId: string, kind: Share
 }
 
 function twinMayReceive(db: DatabaseSync, owner: string, kind: SharedResourceKind, resourceId: string, projectId?: string): boolean {
-  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cluster_node'").get()) return true;
+  if (!tableFound(db, "cluster_node")) return true;
   const local = (db.prepare("SELECT id FROM cluster_node WHERE singleton = 1").get() as { id: string } | undefined)?.id;
-  if (owner !== local || !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'resource_account_owners'").get()) return true;
+  if (owner !== local || !tableFound(db, "resource_account_owners")) return true;
   if (kind === "project") return ownedByAdmin("project", resourceId, db);
   if (kind === "secret") {
     const row = db.prepare("SELECT project_id FROM secret_accounts WHERE id = ?").get(resourceId) as { project_id: string | null } | undefined;

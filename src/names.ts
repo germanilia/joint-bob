@@ -2,9 +2,10 @@ import { promises as fs } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, StatementSync } from "node:sqlite";
 import { getClusterNode } from "./cluster.js";
 import { enqueueReplicationEvent, ensureReplicationSchema } from "./replication.js";
+import { untilNextWrite } from "./sqlite-generation.js";
 import { canonicalProjectId } from "./store.js";
 import type { ProjectColor } from "./types.js";
 import { closeoutRecordSchema, type CloseoutRecord } from "./conversation-closeout.js";
@@ -35,8 +36,17 @@ function projectsTableExists(db: DatabaseSync): boolean {
   return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'projects'").get());
 }
 
+// Every name lookup comes through here. Once the move to stable project ids is recorded it is
+// recorded for good (the row is never removed), so a connection that has seen it stops asking.
+const stableProjectIdsMigrated = new WeakSet<DatabaseSync>();
+
 function migrateStableProjectIds(db: DatabaseSync): void {
-  if (!projectsTableExists(db) || db.prepare("SELECT source FROM name_override_migrations WHERE source = 'stable-project-id-v1'").get()) return;
+  if (stableProjectIdsMigrated.has(db) || !projectsTableExists(db)) return;
+  if (db.prepare("SELECT source FROM name_override_migrations WHERE source = 'stable-project-id-v1'").get()) {
+    // Seen inside a transaction it might still be rolled back.
+    if (!db.isTransaction) stableProjectIdsMigrated.add(db);
+    return;
+  }
   const projects = db.prepare("SELECT id, path FROM projects").all() as unknown as Array<{ id: string; path: string }>;
   const projectIds = new Set(projects.map((project) => project.id));
   const overrides = db.prepare("SELECT key, name, updated_at, origin_node_id FROM name_overrides WHERE scope = 'projects'").all() as unknown as Array<{ key: string; name: string; updated_at: string; origin_node_id: string }>;
@@ -148,25 +158,72 @@ async function setEntry(scope: OverrideScope, key: string, name: string): Promis
   }
 }
 
-async function entries(scope: OverrideScope): Promise<Record<string, string>> {
-  const db = await namesDatabase();
-  if (scope === "projects" && !projectsTableExists(db)) return {};
-  const query = scope === "projects"
+/** One stored override: its key and its value. */
+type Row = [key: string, name: string];
+
+// Rows as arrays are quicker to make and to compare than rows as objects. An older Node 22 has no switch for them.
+const ROWS_AS_ARRAYS = typeof StatementSync.prototype.setReturnArrays === "function";
+
+function readRows(db: DatabaseSync, scope: OverrideScope): Row[] {
+  if (scope === "projects" && !projectsTableExists(db)) return [];
+  // Only this function runs these two texts, so the statements kept for them are its own to switch.
+  const statement = db.prepare(scope === "projects"
     ? "SELECT name_overrides.key, name_overrides.name FROM name_overrides JOIN projects ON projects.id = name_overrides.key WHERE name_overrides.scope = ?"
-    : "SELECT key, name FROM name_overrides WHERE scope = ?";
-  const rows = db.prepare(query).all(scope) as unknown as Array<{ key: string; name: string }>;
-  return Object.fromEntries(rows.map((row) => [row.key, row.name]));
+    : "SELECT key, name FROM name_overrides WHERE scope = ?");
+  if (!ROWS_AS_ARRAYS) return (statement.all(scope) as unknown as Array<{ key: string; name: string }>).map((row) => [row.key, row.name]);
+  statement.setReturnArrays(true);
+  return statement.all(scope) as unknown as Row[];
 }
 
-export async function projectNameOverrides(): Promise<Record<string, string>> {
+function sameRows(left: Row[], right: Row[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) if (left[index][0] !== right[index][0] || left[index][1] !== right[index][1]) return false;
+  return true;
+}
+
+/**
+ * Every listing asks for five of these, and each answer was built again from all its rows:
+ * two thousand titles took two milliseconds, and the five together nine, a tenth of a busy
+ * Mac's time.
+ *
+ * An answer is kept until the next write to the database (sqlite-generation.ts). That alone
+ * is not enough here: the database is written many times a second (a nonce for every signed
+ * request, review states for every listing), while names change a few times an hour. So
+ * after a write the rows are read again and compared with the rows the last answer was built
+ * from. The same rows give the same answer, and that answer is returned as it is.
+ *
+ * Everyone who asks gets the same object, so it is frozen: no caller can change what the
+ * others read.
+ */
+interface Built { rows: Row[]; answer: unknown }
+const builtByConnection = new WeakMap<DatabaseSync, Map<string, Built>>();
+
+function builtFrom<T>(db: DatabaseSync, name: string, scope: OverrideScope, build: (rows: Row[]) => T): T {
+  return untilNextWrite(db, `names.${name}`, () => {
+    const rows = readRows(db, scope);
+    let built = builtByConnection.get(db);
+    if (!built) builtByConnection.set(db, built = new Map());
+    const last = built.get(name);
+    if (last && sameRows(last.rows, rows)) return last.answer as T;
+    const answer = build(rows);
+    built.set(name, { rows, answer });
+    return answer;
+  });
+}
+
+async function entries(scope: OverrideScope): Promise<Readonly<Record<string, string>>> {
+  return builtFrom(await namesDatabase(), `entries:${scope}`, scope, (rows) => Object.freeze(Object.fromEntries(rows) as Record<string, string>));
+}
+
+export async function projectNameOverrides(): Promise<Readonly<Record<string, string>>> {
   return entries("projects");
 }
 
-export async function sessionTitleOverrides(): Promise<Record<string, string>> {
+export async function sessionTitleOverrides(): Promise<Readonly<Record<string, string>>> {
   return entries("sessions");
 }
 
-export async function sessionClassificationOverrides(): Promise<Record<string, string>> {
+export async function sessionClassificationOverrides(): Promise<Readonly<Record<string, string>>> {
   return entries("session_classifications");
 }
 
@@ -175,7 +232,7 @@ export async function setSessionClassification(conversationId: string, classific
 }
 
 /** Conversations the user has closed out, mapped to when they marked them done. */
-export async function sessionDoneOverrides(): Promise<Record<string, string>> {
+export async function sessionDoneOverrides(): Promise<Readonly<Record<string, string>>> {
   return entries("session_done");
 }
 
@@ -184,17 +241,23 @@ export async function setSessionDone(conversationId: string, done: boolean): Pro
   await setEntry("session_done", conversationId, done ? new Date().toISOString() : "");
 }
 
-export async function sessionFeedbackOverrides(): Promise<Record<string, CloseoutRecord>> {
-  return Object.fromEntries(Object.entries(await entries("session_feedback"))
-    .map(([id, value]) => [id, closeoutRecordSchema.parse(JSON.parse(value))]));
+function frozenCloseout(record: CloseoutRecord): Readonly<CloseoutRecord> {
+  if (record.feedback) Object.freeze(record.feedback);
+  return Object.freeze(record);
+}
+
+/** Kept in its checked form: reading and checking a thousand records took four milliseconds a call. */
+export async function sessionFeedbackOverrides(): Promise<Readonly<Record<string, Readonly<CloseoutRecord>>>> {
+  return builtFrom(await namesDatabase(), "feedback", "session_feedback", (rows) => Object.freeze(Object.fromEntries(rows
+    .map(([id, value]) => [id, frozenCloseout(closeoutRecordSchema.parse(JSON.parse(value)))])) as Record<string, Readonly<CloseoutRecord>>));
 }
 
 export async function setSessionFeedback(conversationId: string, feedback: CloseoutRecord | null): Promise<void> {
   await setEntry("session_feedback", conversationId, feedback ? JSON.stringify(closeoutRecordSchema.parse(feedback)) : "");
 }
 
-export async function sessionColorOverrides(): Promise<Record<string, ProjectColor>> {
-  return await entries("session_colors") as Record<string, ProjectColor>;
+export async function sessionColorOverrides(): Promise<Readonly<Record<string, ProjectColor>>> {
+  return await entries("session_colors") as Readonly<Record<string, ProjectColor>>;
 }
 
 export async function setProjectName(projectId: string, name: string): Promise<void> {

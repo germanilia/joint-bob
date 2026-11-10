@@ -24,6 +24,8 @@ const dataDir = resolveDataDirectory();
 const CHECK_FRESH_MS = 5 * 60_000;
 const AUTO_CHECK_INTERVAL_MS = 60 * 60_000;
 const AUTO_FAILURE_BACKOFF_MS = 6 * 60 * 60_000;
+/** How soon the scheduler looks again while a newer release waits for interrupted turns to end. */
+const BUSY_RECHECK_MS = 3 * 60_000;
 const JOB_STALE_MS = 30 * 60_000;
 const PEER_HEALTH_TIMEOUT_MS = 10 * 60_000;
 const ARCHIVE_ASSET = "joint-bob.tar.gz";
@@ -525,15 +527,43 @@ export async function startFleetUpdate(): Promise<FleetRun> {
 let schedulerStarted = false;
 let schedulerTicking = false;
 
+/**
+ * What the scheduler does next. A machine that is finishing turns an earlier update interrupted
+ * refuses to update, and that refusal says "later", not "broken". It used to count as a failure:
+ * the job failed, and a failed job keeps the scheduler away for six hours. A release published
+ * while one long turn ran therefore reached the machine half a day late (2026-11-10: the turn
+ * ended after forty minutes and the machine would have waited until the morning). So such a
+ * refusal starts no job and leaves no backoff, and the scheduler looks again in a few minutes.
+ */
+export function scheduledUpdateStep(input: { last: Pick<UpdateJob, "state" | "error" | "updatedAt"> | null; now: number; newer: boolean; turnsRecovering: number }): "backoff" | "nothing" | "wait" | "install" {
+  const { last } = input;
+  const refusedBusy = last?.state === "failed" && /still finishing \d+ conversation turn/.test(last.error ?? "");
+  if (last?.state === "failed" && !refusedBusy && input.now - Date.parse(last.updatedAt) < AUTO_FAILURE_BACKOFF_MS) return "backoff";
+  if (!input.newer) return "nothing";
+  return input.turnsRecovering > 0 ? "wait" : "install";
+}
+
+let busyRecheck: NodeJS.Timeout | undefined;
+
 async function scheduledTick(): Promise<void> {
   reconcileUpdateJobs();
   if (fleetInProgress()) return;
   if (!getAutoUpdate() || !selfUpdateSupported() || activeUpdateJob()) return;
-  const failed = lastJob();
-  if (failed?.state === "failed" && Date.now() - Date.parse(failed.updatedAt) < AUTO_FAILURE_BACKOFF_MS) return;
+  const last = lastJob();
+  if (scheduledUpdateStep({ last, now: Date.now(), newer: true, turnsRecovering: 0 }) === "backoff") return;
   const { release, error } = await checkForLatestRelease(true);
-  if (!error && release && compareVersions(release.version, appVersion()) > 0) installLocalRelease(release);
+  const newer = !error && Boolean(release) && compareVersions(release!.version, appVersion()) > 0;
+  const { listPendingUpdateRecoveries } = await import("./update-recovery.js");
+  const turnsRecovering = newer ? (await listPendingUpdateRecoveries()).length : 0;
+  const step = scheduledUpdateStep({ last, now: Date.now(), newer, turnsRecovering });
+  if (step === "install") installLocalRelease(release!);
+  else if (step === "wait" && !busyRecheck) {
+    busyRecheck = setTimeout(() => { busyRecheck = undefined; scheduledCheck?.(); }, BUSY_RECHECK_MS);
+    busyRecheck.unref?.();
+  }
 }
+
+let scheduledCheck: (() => void) | undefined;
 
 export function startUpdateScheduler(): void {
   if (schedulerStarted) return;
@@ -543,6 +573,7 @@ export function startUpdateScheduler(): void {
     schedulerTicking = true;
     void scheduledTick().catch((error) => console.warn("Automatic update check failed", error)).finally(() => { schedulerTicking = false; });
   };
+  scheduledCheck = tick;
   setTimeout(tick, 2 * 60_000).unref();
   setInterval(tick, AUTO_CHECK_INTERVAL_MS).unref();
 }

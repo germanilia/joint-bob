@@ -5,7 +5,7 @@ import { ensurePeerEndpointSchema, type PeerEndpoint } from "../cluster-peer-end
 import { signClusterRequest } from "../cluster-protocol.js";
 import { ensureResourceSharingSchema } from "../cluster-sharing.js";
 import { enqueueSecretCredentialSync, secretCredentialEventsForPeer, recordSecretCredentialReceipt, recordSecretCredentialFailure } from "../secret-replication.js";
-import { isTrustedTwin, mayReceiveResource } from "../cluster-sharing-policy.js";
+import { asOneLookup, isTrustedTwin, mayReceiveResource, untilWriteOrLeaseEnd } from "../cluster-sharing-policy.js";
 import { ClusterV2HttpError } from '../cluster-v2-errors.js';
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { replicationEventProjectId, type ReplicationEvent } from "../replication.js";
@@ -13,10 +13,29 @@ import { fetchPeer, peerAway } from "./peer-availability.js";
 import { settled, warnOnChange } from "./quiet-log.js";
 import { nodesBlockedBetween } from "../node-blocks.js";
 
+/* A table that was found once is not looked for again on that connection: tables are made when a
+   feature is first used and are not dropped while the node runs. A missing one is looked for every
+   time. Nothing is remembered inside a transaction, which may roll a new table back. */
+const tablesFound = new WeakMap<DatabaseSync, Set<string>>();
+function rememberTable(db: DatabaseSync, name: string): void {
+  if (db.isTransaction !== false) return;
+  const found = tablesFound.get(db);
+  if (found) found.add(name); else tablesFound.set(db, new Set([name]));
+}
+function tableFound(db: DatabaseSync, name: string, look: () => unknown): boolean {
+  if (tablesFound.get(db)?.has(name)) return true;
+  if (!look()) return false;
+  rememberTable(db, name);
+  return true;
+}
+
+/* Asked on most peer requests and by every background loop, and it ran two schema scripts and a block
+   check per peer each time. The answer is kept until the next write. Callers get rows of their own, as before. */
 export function replicationPeers(db: DatabaseSync, local: string): PeerEndpoint[] {
-  ensureResourceSharingSchema(db);
-  ensurePeerEndpointSchema(db);
-  const rows = db.prepare(`SELECT e.node_id nodeId,e.name,e.url FROM cluster_v2_peer_endpoints e
+  return untilWriteOrLeaseEnd(db, "replicationPeers", [local], () => {
+    ensureResourceSharingSchema(db);
+    ensurePeerEndpointSchema(db);
+    const rows = db.prepare(`SELECT e.node_id nodeId,e.name,e.url FROM cluster_v2_peer_endpoints e
     WHERE e.node_id<>? AND (
       (e.context_kind='twin' AND EXISTS (SELECT 1 FROM cluster_v2_twin_relationships t
         WHERE t.relationship_id=e.context_id AND t.peer_node_id=e.node_id AND t.status='active'))
@@ -24,7 +43,8 @@ export function replicationPeers(db: DatabaseSync, local: string): PeerEndpoint[
         JOIN sharing_memberships b ON a.cluster_id=b.cluster_id
         WHERE a.cluster_id=e.context_id AND a.node_id=? AND b.node_id=e.node_id)))
     ORDER BY e.context_kind,e.context_id`).all(local, local) as unknown as PeerEndpoint[];
-  return [...new Map(rows.filter((row) => !nodesBlockedBetween(db, local, row.nodeId)).map((row) => [row.nodeId, row])).values()];
+    return [...new Map(rows.filter((row) => !nodesBlockedBetween(db, local, row.nodeId)).map((row) => [row.nodeId, row])).values()];
+  }).map((row) => Object.assign(Object.create(Object.getPrototypeOf(row)) as PeerEndpoint, row));
 }
 
 /** The replication peers to send to now. One that stopped answering is left alone until it is
@@ -38,7 +58,7 @@ export function replicationEventProject(db: DatabaseSync, event: ReplicationEven
   const project = replicationEventProjectId(event);
   if (project || !["conversation.ownership", "name.override"].includes(event.entityType)) return project;
   const payload = event.payload as { sessionId?: string; key?: string };
-  const table = db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversation_records'").get();
+  const table = tableFound(db, "conversation_records", () => db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversation_records'").get());
   const rows = table ? db.prepare("SELECT DISTINCT project_id FROM conversation_records WHERE session_id=?").all(payload.sessionId ?? payload.key ?? "") as unknown as Array<{project_id:string}> : [];
   return rows.length === 1 ? rows[0].project_id : undefined;
 }
@@ -95,8 +115,17 @@ const NEWER_EVENT_TYPES = new Set(["conversation.author", "provider.pool", "prov
 
 function peerUnderstands(db: DatabaseSync, peer: string, entityType: string): boolean {
   if (!NEWER_EVENT_TYPES.has(entityType)) return true;
-  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'account_replication_deliveries'").get()) return false;
+  if (!tableFound(db, "account_replication_deliveries", () => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'account_replication_deliveries'").get())) return false;
   return Boolean(db.prepare("SELECT 1 FROM account_replication_deliveries WHERE peer_id = ?").get(peer));
+}
+
+/** Which of the two account tables exist. Asked for every account event; both are there on any node with users. */
+function accountTables(db: DatabaseSync): { has(name: string): boolean } {
+  const found = tablesFound.get(db);
+  if (found?.has("users") && found.has("account_roaming_nodes")) return found;
+  const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'account_roaming_nodes')").all() as unknown as Array<{ name: string }>).map((row) => row.name));
+  for (const name of tables) rememberTable(db, name);
+  return tables;
 }
 
 /**
@@ -107,7 +136,7 @@ function peerUnderstands(db: DatabaseSync, peer: string, entityType: string): bo
 export function visitorEventRoute(db: DatabaseSync, _local: string, peer: string, event: ReplicationEvent): boolean {
   const account = (event.payload as { username?: unknown } | null)?.username;
   if (typeof account !== "string" || !/^[0-9a-f]{32}$/.test(account)) return false;
-  const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'account_roaming_nodes')").all() as unknown as Array<{ name: string }>).map((row) => row.name));
+  const tables = accountTables(db);
   // A visitor here, whose home is the peer.
   if (tables.has("users") && db.prepare("SELECT 1 FROM users WHERE account_id = ? AND home_node_id = ?").get(account, peer)) return true;
   // One of our people, signed in on the peer: only about a project that node can show them.
@@ -163,7 +192,9 @@ export function visitorHomeNodes(db: DatabaseSync): Set<string> {
     one, and none is taken from one. Rows from before accounts had ids are the admin's. */
 function twinHoldsAccount(db: DatabaseSync, event: ReplicationEvent): boolean {
   const account = (event.payload as { username?: unknown } | null)?.username;
-  return typeof account !== "string" || !/^[0-9a-f]{32}$/.test(account) || !accountOfSomeoneElse(account, db);
+  if (typeof account !== "string" || !/^[0-9a-f]{32}$/.test(account)) return true;
+  // Asked for every account event offered to a twin, and the same few accounts each time: kept until the next write.
+  return untilWriteOrLeaseEnd(db, "replication.twinHoldsAccount", [account], () => !accountOfSomeoneElse(account, db));
 }
 
 function hasMembers(db: DatabaseSync): boolean {
@@ -171,12 +202,31 @@ function hasMembers(db: DatabaseSync): boolean {
   catch { return false; } // No accounts table yet, or one from before roles: nobody but the admin.
 }
 
+/* The two checks below are asked for every event offered to every peer, with the same nodes and
+   project each time. Their answers are kept until the next write. */
+function blockedOnRoute(db: DatabaseSync, local: string, peer: string, origin: string): boolean {
+  return untilWriteOrLeaseEnd(db, "replication.blockedOnRoute", [local, peer, origin],
+    () => nodesBlockedBetween(db, local, peer) || nodesBlockedBetween(db, local, origin, peer));
+}
+function projectSharedBetween(db: DatabaseSync, local: string, peer: string, project: string): boolean {
+  return untilWriteOrLeaseEnd(db, "replication.projectSharedBetween", [local, peer, project], () => {
+    const policy = db.prepare("SELECT deleted FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?")
+      .get(project) as { deleted: number } | undefined;
+    return Boolean(policy && !policy.deleted && mayReceiveResource(db, local, "project", project)
+      && mayReceiveResource(db, peer, "project", project));
+  });
+}
+
 export function mayReplicateEvent(db: DatabaseSync, local: string, peer: string, event: ReplicationEvent): boolean {
   const scope = EVENT_SCOPES[event.entityType];
   if (!scope || scope === "separate") return false;
+  // As one lookup the kept checks below share one reading of the write counters.
+  return asOneLookup(db, () => eventMayPass(db, local, peer, event, scope));
+}
+function eventMayPass(db: DatabaseSync, local: string, peer: string, event: ReplicationEvent, scope: (typeof EVENT_SCOPES)[string]): boolean {
   if (!peerUnderstands(db, peer, event.entityType)) return false;
   // A block between any two of the three nodes involved stops the event, relays included.
-  if (nodesBlockedBetween(db, local, peer) || nodesBlockedBetween(db, local, event.originNodeId, peer)) return false;
+  if (blockedOnRoute(db, local, peer, event.originNodeId)) return false;
   if (scope === "twins-only") return isTrustedTwin(db, local, peer) && twinHoldsAccount(db, event);
   if (scope === "account" || scope === "twins") return isTrustedTwin(db, local, peer) ? twinHoldsAccount(db, event) : visitorEventRoute(db, local, peer, event);
   if (scope === "cluster") {
@@ -191,10 +241,7 @@ export function mayReplicateEvent(db: DatabaseSync, local: string, peer: string,
   // Data outside any project stays on the user's own machines: twins only.
   // With several people here nothing says whose it is, so it stays.
   if (!project) return isTrustedTwin(db, local, peer) && !hasMembers(db);
-  const policy = db.prepare("SELECT deleted FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?")
-    .get(project) as { deleted: number } | undefined;
-  return Boolean(policy && !policy.deleted && mayReceiveResource(db, local, "project", project)
-    && mayReceiveResource(db, peer, "project", project));
+  return projectSharedBetween(db, local, peer, project);
 }
 
 /** A previous release rejects unknown event types as a whole batch. Keep system settings
