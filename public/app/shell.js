@@ -93,7 +93,7 @@ function placeToasts() {
   const parent = topmostOpenDialog() || document.body;
   if (toastStack.parentElement !== parent) parent.append(toastStack);
 }
-// Keep unread errors visible when a dialog opens or closes, including nested dialogs.
+// Keep notifications visible when a dialog opens or closes, including nested dialogs.
 document.addEventListener("focusin", placeToasts);
 document.addEventListener("close", placeToasts, true);
 
@@ -114,7 +114,7 @@ export function toast(message, duration = 3200, severity = "info") {
   close.textContent = "×";
   close.setAttribute("aria-label", "Dismiss");
   close.setAttribute("data-testid", "toast-close-button");
-  const timer = severity === "error" ? undefined : setTimeout(() => node.remove(), duration);
+  const timer = setTimeout(() => node.remove(), duration);
   close.addEventListener("click", () => {
     clearTimeout(timer);
     node.remove();
@@ -125,7 +125,7 @@ export function toast(message, duration = 3200, severity = "info") {
   return node;
 }
 
-toast.error = (message) => toast(message, 0, "error");
+toast.error = (message) => toast(message, 8000, "error");
 
 export function setTheme(theme) {
   document.documentElement.dataset.theme = theme;

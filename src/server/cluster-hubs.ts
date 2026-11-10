@@ -30,7 +30,7 @@ export interface RelayEnvelope { event: ReplicationEvent; signature: string }
 const BATCH = 100;
 const eventSchema = z.object({
   id: z.string().uuid(), originNodeId: z.string().uuid(), entityType: z.string().min(1).max(80),
-  entityKey: z.string().min(1).max(300), operation: z.enum(["upsert", "delete", "settings"]),
+  entityKey: z.string().min(1).max(300), operation: z.enum(["upsert", "delete", "settings", "control"]),
   payload: z.unknown(), createdAt: z.string().datetime(),
 }).strict();
 export const relayRequestSchema = z.object({

@@ -3,6 +3,7 @@ import { autoRespondConfigSchema, type AutoRespondConfig } from "./conversation-
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { nodeDatabaseIsPostgres, openNodeDatabase } from "./node-database.js";
 import { z } from "zod";
 import { resolveDataDirectory } from "./data-directory.js";
 import { isHarnessId } from "./types.js";
@@ -31,7 +32,7 @@ interface Metadata { scheduledAutoRespond?: AutoRespondConfig; automationProfile
 export type SystemPromptState = "pending" | "starting" | "consumed" | "missing";
 interface Row { id: string; queue_key: string; prompt: string; created_at: string; sequence: number; revision: number; origin_node_id: string }
 export interface QueuedPromptRef { id: string; revision: number }
-const eventSchema = z.object({ projectId: z.string().min(1), conversationId: z.string().min(1), id: z.string().uuid(), prompt: promptSchema.nullable(), createdAt: z.string(), sequence: z.number().int().positive(), revision: z.number().int().positive(), activeSettings: queuedSettingsSchema.optional() });
+const eventSchema = z.object({ projectId: z.string().min(1), conversationId: z.string().min(1), id: z.string().uuid(), prompt: promptSchema.nullable(), createdAt: z.string(), sequence: z.number().int().positive(), revision: z.number().int().positive(), activeSettings: queuedSettingsSchema.optional(), paused: z.boolean().optional() });
 let database: DatabaseSync | undefined;
 
 export function ensurePromptQueueSchema(db: DatabaseSync): void {
@@ -42,6 +43,7 @@ export function ensurePromptQueueSchema(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS queued_prompt_sequences (queue_key TEXT PRIMARY KEY, sequence INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS queued_prompt_settings (queue_key TEXT PRIMARY KEY, sequence INTEGER NOT NULL, settings TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS queued_prompt_tombstones (id TEXT PRIMARY KEY, queue_key TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS queued_prompt_control (queue_key TEXT PRIMARY KEY, sequence INTEGER NOT NULL, paused INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS conversation_routing_state (queue_key TEXT PRIMARY KEY, prompt_count INTEGER NOT NULL DEFAULT 0, last_eval_ordinal INTEGER, mode TEXT NOT NULL DEFAULT 'auto' CHECK(mode IN ('auto','manual')), updated_at TEXT NOT NULL, origin_node_id TEXT NOT NULL DEFAULT '');`);
   const routingColumns = db.prepare("PRAGMA table_info(conversation_routing_state)").all() as unknown as Array<{ name: string }>;
   if (routingColumns.some((column) => column.name === "queue_key") && !routingColumns.some((column) => column.name === "mode")) db.exec("ALTER TABLE conversation_routing_state ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'");
@@ -53,7 +55,7 @@ function queueDatabase(): DatabaseSync {
   if (database) return database;
   const directory = resolveDataDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   ensurePromptQueueSchema(db);
   ensureReplicationSchema(db);
@@ -171,6 +173,8 @@ export function systemPromptState(queueKey: string, id: string): SystemPromptSta
 export function listPendingSystemQueues(limit = 100): Array<{ queueKey: string; id: string }> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new RangeError("Invalid system queue limit");
   const file = path.join(resolveDataDirectory(), "node.db");
+  // A PostgreSQL node database always exists; reading it through the shared connection creates nothing on disk.
+  if (!database && nodeDatabaseIsPostgres()) queueDatabase();
   if (!database && !existsSync(file)) return [];
   const db = database ?? new DatabaseSync(file, { readOnly: true });
   const owned = db !== database;
@@ -217,6 +221,23 @@ export function readQueueSettings(queueKey: string): QueuedSettings | null {
   const db = queueDatabase();
   const row = db.prepare("SELECT settings FROM queued_prompt_settings WHERE queue_key = ?").get(logicalQueueKey(queueKey)) as { settings: string } | undefined;
   return row ? queuedSettingsSchema.parse(JSON.parse(row.settings)) : null;
+}
+
+export function promptQueuePaused(queueKey: string): boolean {
+  const db = queueDatabase();
+  const row = db.prepare("SELECT paused FROM queued_prompt_control WHERE queue_key = ?").get(logicalQueueKey(queueKey)) as { paused: number } | undefined;
+  return row?.paused === 1;
+}
+
+export function setPromptQueuePaused(queueKey: string, paused: boolean): void {
+  const db = queueDatabase();
+  const key = logicalQueueKey(queueKey);
+  transaction(db, () => {
+    const sequence = nextSequence(db, key);
+    db.prepare("INSERT INTO queued_prompt_control VALUES (?, ?, ?) ON CONFLICT(queue_key) DO UPDATE SET sequence = excluded.sequence, paused = excluded.paused").run(key, sequence, Number(paused));
+    const separator = key.indexOf(":");
+    enqueueReplicationEvent(db, { originNodeId: origin(db), entityType: "conversation.queue", entityKey: key, operation: "control", payload: { projectId: key.slice(0, separator), conversationId: key.slice(separator + 1), id: randomUUID(), prompt: null, createdAt: new Date().toISOString(), revision: 1, sequence, paused } });
+  });
 }
 
 export function beginQueuedPrompt(id: string, revision: number): boolean {
@@ -390,16 +411,24 @@ export function queuedPromptSnapshot(queueKey: string): ReplicationEvent[] {
   }));
   const settings = db.prepare("SELECT sequence, settings FROM queued_prompt_settings WHERE queue_key = ?").get(key) as { sequence: number; settings: string } | undefined;
   const state: ReplicationEvent[] = settings ? [{ ...base, id: randomUUID(), entityKey: key, operation: "settings", payload: { projectId, conversationId, id: randomUUID(), prompt: null, revision: 1, sequence: settings.sequence, activeSettings: JSON.parse(settings.settings), createdAt: base.createdAt } }] : [];
+  const control = db.prepare("SELECT sequence, paused FROM queued_prompt_control WHERE queue_key = ?").get(key) as { sequence: number; paused: number } | undefined;
+  if (control) state.push({ ...base, id: randomUUID(), entityKey: key, operation: "control", payload: { projectId, conversationId, id: randomUUID(), prompt: null, revision: 1, sequence: control.sequence, paused: control.paused === 1, createdAt: base.createdAt } });
   return [...active, ...removed, ...state];
 }
 
 /** Deletion is terminal, including against a delayed edit with a higher revision. */
 export function applyQueuedPromptEvent(db: DatabaseSync, event: ReplicationEvent): void {
   const payload = eventSchema.parse(event.payload);
-  if (event.entityType !== "conversation.queue" || event.entityKey !== (event.operation === "settings" ? `${payload.projectId}:${payload.conversationId}` : payload.id) || !["upsert", "delete", "settings"].includes(event.operation) || (event.operation === "upsert") !== Boolean(payload.prompt)) throw new Error("Malformed queue replication event");
+  if (event.entityType !== "conversation.queue" || event.entityKey !== (["settings", "control"].includes(event.operation) ? `${payload.projectId}:${payload.conversationId}` : payload.id) || !["upsert", "delete", "settings", "control"].includes(event.operation) || (event.operation === "upsert") !== Boolean(payload.prompt)) throw new Error("Malformed queue replication event");
   if (payload.prompt && (payload.prompt.id !== payload.id || payload.prompt.revision !== payload.revision)) throw new Error("Malformed queue replication revision");
   ensurePromptQueueSchema(db);
   const key = `${resolveProjectAlias(db, payload.projectId)}:${payload.conversationId}`;
+  if (event.operation === "control") {
+    if (payload.paused === undefined) throw new Error("Missing conversation queue control");
+    db.prepare("INSERT INTO queued_prompt_sequences VALUES (?, ?) ON CONFLICT(queue_key) DO UPDATE SET sequence = MAX(sequence, excluded.sequence)").run(key, payload.sequence);
+    db.prepare("INSERT INTO queued_prompt_control VALUES (?, ?, ?) ON CONFLICT(queue_key) DO UPDATE SET sequence = excluded.sequence, paused = excluded.paused WHERE excluded.sequence > sequence").run(key, payload.sequence, Number(payload.paused));
+    return;
+  }
   if (event.operation === "settings") {
     if (!payload.activeSettings) throw new Error("Missing conversation settings");
     db.prepare("INSERT INTO queued_prompt_sequences VALUES (?, ?) ON CONFLICT(queue_key) DO UPDATE SET sequence = MAX(sequence, excluded.sequence)").run(key, payload.sequence);

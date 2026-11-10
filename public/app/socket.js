@@ -541,6 +541,11 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
     state.turnConnection = null;
     return;
   }
+  if (payload.type === "stopped") {
+    state.turnConnection = null;
+    toast("Stopped. Queued messages paused.");
+    return;
+  }
   if (payload.type === "routingMode") {
     updateRoutingMode({ active: payload.active !== false, mode: payload.mode === "manual" ? "manual" : "auto", ...(payload.classifierId ? { classifierId: payload.classifierId } : {}), ...(payload.editable !== undefined ? { editable: payload.editable } : {}), warning: payload.warning || "" });
     return;

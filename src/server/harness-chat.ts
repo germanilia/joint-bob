@@ -40,7 +40,7 @@ import { conversationScopeId, genericSecretEnvironment, getScopeSecretAccounts }
 import { getProjectLock } from "../project-locks.js";
 import { catchUpGitHead } from "../git-catch-up.js";
 import { getSettings } from "../settings.js";
-import { assertQueuedPromptEditor, beginQueuedPrompt, bumpRoutingPromptCount, cancelQueuedPrompt, claimQueuedPrompt, editQueuedPrompt, enqueuePrompt, listQueuedPrompts, mergeQueuedPrompts, prioritizeQueuedPrompt, queuedSettingsSchema, readQueueSettings, readRoutingState, recordQueueSettings, recordRoutingEval, resetQueuedPromptAttempt, setRoutingMode, swapQueuedPrompts, type QueuedPrompt, type QueuedSettings } from "../prompt-queue.js";
+import { promptQueuePaused, setPromptQueuePaused, assertQueuedPromptEditor, beginQueuedPrompt, bumpRoutingPromptCount, cancelQueuedPrompt, claimQueuedPrompt, editQueuedPrompt, enqueuePrompt, listQueuedPrompts, mergeQueuedPrompts, prioritizeQueuedPrompt, queuedSettingsSchema, readQueueSettings, readRoutingState, recordQueueSettings, recordRoutingEval, resetQueuedPromptAttempt, setRoutingMode, swapQueuedPrompts, type QueuedPrompt, type QueuedSettings } from "../prompt-queue.js";
 import { queuedAttachments } from "../queued-attachments.js";
 import { describeImage } from "../attachment-digest.js";
 import { listTurnFailures, recordTurnFailure, withTurnFailures } from "../turn-failures.js";
@@ -91,6 +91,7 @@ const mutations = new Map<string, Promise<void>>();
 const drains = new Map<string, Promise<void>>();
 const idleWakes = new Map<string, () => void>();
 const pausedDrains = new Set<string>();
+const stops = new Map<string, Promise<void>>();
 const startingIds = new Set<string>();
 // A responder decision in progress, so a person typing, Stop, or a settings change can cancel it,
 // and every client, one that reconnects included, can show what it is checking.
@@ -165,7 +166,7 @@ async function compactConversation(connection: HarnessChatConnection, instructio
   return withPromptProfile(connection, identity, async () => {
     const session = connection.shared.session;
     const pool = await resolveTurnSubscriptionPool(connection, { author: identity.author, automationProfile: identity.automationProfile });
-    const run = () => session.compact(instructions, () => writable(connection));
+    const run = () => session.compact(instructions, () => beforeHarnessStart(connection));
     if (!pool) return run();
     if (!session.checkpointPoolAttempt || !session.restorePoolAttempt) throw new Error("This harness cannot safely retry a subscription pool attempt");
     const preferred = profileProviderForRuntime(session.settings().provider);
@@ -180,6 +181,20 @@ async function compactConversation(connection: HarnessChatConnection, instructio
 }
 
 function queueKey(connection: HarnessChatConnection): string { return `${connection.project.id}:${connection.conversationId}`; }
+
+async function beforeHarnessStart(connection: HarnessChatConnection): Promise<void> {
+  await writable(connection);
+  if (promptQueuePaused(queueKey(connection))) throw new Error("You stopped the turn");
+}
+
+async function resumePromptQueue(connection: HarnessChatConnection): Promise<void> {
+  const key = queueKey(connection);
+  await stops.get(key);
+  if (!promptQueuePaused(key)) return;
+  await drains.get(key);
+  setPromptQueuePaused(key, false);
+}
+
 async function ensureCurrentSession(connection: HarnessChatConnection): Promise<void> {
   if (findHarnessSession(connection.project.id, connection.engine, connection.shared.session.id) === connection.shared) return;
   const old = connection.shared;
@@ -430,6 +445,8 @@ async function resumeReviewedTask(connection: HarnessChatConnection): Promise<vo
 async function enqueue(connection: HarnessChatConnection, message: string, images: Array<{ name: string; mimeType: string; data: string }>, files: Array<{ name: string; mimeType: string; data: string }>, requestId?: string, settings?: QueuedSettings | null, scheduledAutoRespond?: AutoRespondConfig): Promise<void> {
   if (!message.trim()) throw new Error("Prompt cannot be empty");
   await writable(connection);
+  // Automated delivery must not undo a person's Stop.
+  if (!scheduledAutoRespond && !connection.automationProfile && !isScheduledPromptText(message)) await resumePromptQueue(connection);
   // A later scheduled run waits for the current driver; only a person interrupts it.
   if (!scheduledAutoRespond) {
     autoDecisions.get(queueKey(connection))?.controller.abort("person-typed");
@@ -643,7 +660,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
     const attachments = await queuedAttachments(connection.cwd, queued, getSettings().digestAttachments ? describeImage : undefined);
     await writable(connection);
     const latest = listQueuedPrompts(queueKey(connection)).find(({ id }) => id === queued.id);
-    if (!latest || latest.revision !== queued.revision || !beginQueuedPrompt(queued.id, queued.revision)) return;
+    if (promptQueuePaused(queueKey(connection)) || !latest || latest.revision !== queued.revision || !beginQueuedPrompt(queued.id, queued.revision)) return;
     startingIds.add(queued.id);
     refreshHarnessPromptQueue(connection);
     enteredPrompt = true;
@@ -686,7 +703,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
       const text = `${assistantContext ? `${assistantContext}${toolPolicy}\n\n` : ""}${connection.handoffContext ?? ""}${authored}`;
       const finishSilentReview = queued.requestId && (isScheduledPromptText(queued.promptText) || isSilentWebhookRequest(queued.requestId))
         ? await silentScheduledReview(connection.project, connection.engine, connection.shared.session.id, queued.requestId) : undefined;
-      const promptInput = { text: queued.systemEventId ? internalTaskPrompt(queued.systemEventId, text) : text, images: attachments.images, beforeStart: async () => { await writable(connection); if (teamTurn) await teamQueuedTurn(connection.project.id, connection.conversationId, queued.requestId, queued.author?.accountId, queued.automationProfile?.accountId, queued.messageText); promptSent = true; }, onStarted: () => {
+      const promptInput = { text: queued.systemEventId ? internalTaskPrompt(queued.systemEventId, text) : text, images: attachments.images, beforeStart: async () => { if (teamTurn) await teamQueuedTurn(connection.project.id, connection.conversationId, queued.requestId, queued.author?.accountId, queued.automationProfile?.accountId, queued.messageText); await beforeHarnessStart(connection); promptSent = true; }, onStarted: () => {
         armAutoCompactAfterPrompt(connection.shared.session);
         if (claimed) return;
         claimed = claimQueuedPrompt(queued.id, currentSettings(connection));
@@ -718,7 +735,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
         if (queued.systemEventId || recovering) claimQueuedPrompt(queued.id);
         else resetQueuedPromptAttempt(queued.id);
       }
-      if (!pausedDrains.has(queueKey(connection))) {
+      if (!pausedDrains.has(queueKey(connection)) && !promptQueuePaused(queueKey(connection))) {
         // An acknowledged or uncertain automatic turn is inspected, never replayed.
         if (claimed || recovering) recordTurnFailure(connection.engine, connection.shared.session.id, chatErrorMessage(error));
         if (!queued.systemEventId) publish(connection, { type: "promptFailed", queueId: queued.id, error: chatErrorMessage(error) });
@@ -780,7 +797,7 @@ async function runGoalTurnWithProfile(connection: HarnessChatConnection): Promis
     await catchUpProjectGit(connection);
     const pool = await resolveTurnSubscriptionPool(connection, connection);
     const session = connection.shared.session;
-    const input = { text: goalPrompt(goal), beforeStart: () => writable(connection), onStarted: () => armAutoCompactAfterPrompt(session) };
+    const input = { text: goalPrompt(goal), beforeStart: () => beforeHarnessStart(connection), onStarted: () => armAutoCompactAfterPrompt(session) };
     if (!pool) {
       await session.preflight();
       await announceRecoveryConnection(connection.shared);
@@ -920,7 +937,7 @@ async function drainLoop(connection: HarnessChatConnection): Promise<void> {
     const responder = await getAutoRespond(connection.project.id, connection.conversationId);
     if (responder?.status === "active" && responder.retry && Date.parse(responder.retry.nextAt) > Date.now()) { armAutoRetry(connection, responder); return; }
     await ensureCurrentSession(connection);
-    if (pausedDrains.has(queueKey(connection))) return;
+    if (pausedDrains.has(queueKey(connection)) || promptQueuePaused(queueKey(connection))) return;
     if (harnessTurnBusy(connection.shared)) { wakeWhenHarnessIdle(connection); return; }
     if (connection.shared.skillsStale) {
       connection.shared.skillsStale = false;
@@ -932,10 +949,11 @@ async function drainLoop(connection: HarnessChatConnection): Promise<void> {
     } catch (error) {
       if (error instanceof ConversationOwnershipError) throw error;
       // A force start cancels the compaction and owns the queue now; its cancellation is not a failure.
-      if (pausedDrains.has(queueKey(connection))) return;
+      if (pausedDrains.has(queueKey(connection)) || promptQueuePaused(queueKey(connection))) return;
       logChatFailure("Automatic compaction", connection, error);
       publish(connection, { type: "error", nonFatal: true, error: `Automatic compaction failed: ${chatErrorMessage(error)}` });
     }
+    if (promptQueuePaused(queueKey(connection))) return;
     const next = listQueuedPrompts(queueKey(connection)).find(prompt => !responder || !deferredAutoPrompt(prompt, responder));
     if (next?.systemEventId && next.dispatchState === "starting") {
       if (startingIds.has(next.id)) return;
@@ -978,6 +996,7 @@ export function drainHarnessPromptQueue(connection: HarnessChatConnection): Prom
   idleWakes.get(key)?.();
   const drain = drainLoop(connection).catch(async error => {
     if (error instanceof ConversationOwnershipError) throw error;
+    if (promptQueuePaused(key)) return;
     const state = await getAutoRespond(connection.project.id, connection.conversationId);
     if (state?.status !== "active") throw error;
     await retryAutoResponse(connection, error);
@@ -1064,12 +1083,35 @@ async function models(connection: HarnessChatConnection): Promise<void> {
   send(connection.socket, { type: "models", models: groups.flat() });
 }
 
-async function cancelCurrentAndResumeQueue(connection: HarnessChatConnection): Promise<void> {
-  const draining = drains.get(queueKey(connection));
-  await connection.shared.session.cancel("You stopped the turn");
+async function stopConversation(connection: HarnessChatConnection): Promise<void> {
+  const key = queueKey(connection);
+  const existing = stops.get(key);
+  if (existing) return existing;
+  setPromptQueuePaused(key, true);
+  idleWakes.get(key)?.();
+  autoDecisions.get(key)?.controller.abort("user-stop");
+  cancelGuardianReviews(connection.project.id, connection.conversationId);
+  const stopping = stopConversationExecution(connection).finally(() => stops.delete(key));
+  stops.set(key, stopping);
+  return stopping;
+}
+
+async function stopConversationExecution(connection: HarnessChatConnection): Promise<void> {
+  await stopAutoRespondFor(connection, "user-stopped", "You stopped the turn");
+  const local = await getClusterNode();
+  const goal = await getConversationGoal(connection.project.id, connection.conversationId);
+  if (goal?.status === "active") publishGoal(connection, await cancelConversationGoal(connection.project.id, connection.conversationId, local.id));
+  const cancel = async () => {
+    try { await connection.shared.session.cancel("You stopped the turn"); }
+    catch (error) { if (!/not running/i.test(chatErrorMessage(error))) throw error; }
+  };
+  const { stopConversationBackgroundTasks } = await import("./background-tasks.js");
+  const [, tasksStopped] = await Promise.all([cancel(), stopConversationBackgroundTasks(connection.conversationId)]);
+  if (!tasksStopped) throw new Error("Could not stop all conversation tasks. The queue remains paused; check Tasks.");
+  await drains.get(queueKey(connection));
+  refreshHarnessPromptQueue(connection);
   sendHarnessStatus(connection.shared);
-  const resume = () => drainHarnessPromptQueue(connection);
-  void (draining ?? Promise.resolve()).then(resume, resume).catch((error) => publish(connection, { type: "error", error: chatErrorMessage(error) }));
+  publish(connection, { type: "stopped" });
 }
 
 /** Closes the live harness session and opens it again from its transcript, keeping the conversation and its settings. */
@@ -1123,13 +1165,7 @@ async function controls(connection: HarnessChatConnection, message: ReturnType<t
     return true;
   }
   if (message.type === "abort" || message.type === "stop") {
-    // Whatever the turn waits on is answered first: a stopped turn runs nothing it was asking about.
-    cancelGuardianReviews(connection.project.id, connection.conversationId);
-    // Stop must also end auto respond, or the responder would restart the agent a moment later.
-    const deciding = autoDecisions.get(queueKey(connection));
-    await stopAutoRespondFor(connection, "user-stopped", "You stopped the turn");
-    if (deciding) { deciding.controller.abort("user-stop"); return true; }
-    await cancelCurrentAndResumeQueue(connection);
+    await stopConversation(connection);
     return true;
   }
   if (message.type === "setTools") { if (!message.toolNames) throw new Error("Tools are required"); await connection.shared.session.setTools(message.toolNames); recordQueueSettings(queueKey(connection), currentSettings(connection)); send(connection.socket, { type: "tools", tools: connection.shared.session.tools(), supported: true }); sendHarnessStatus(connection.shared); return true; }
@@ -1190,6 +1226,7 @@ async function queueCommand(connection: HarnessChatConnection, message: ReturnTy
       // Accept either the attached page's pending revision or a reconnect's starting revision.
       if (message.queueRevision !== starting.revision && message.queueRevision !== starting.revision - 1) throw new Error("Queued prompt changed; refresh and try again");
     } else if (!prioritizeQueuedPrompt(key, message.queueId, message.queueRevision)) throw new Error("Queued prompt changed; refresh and try again");
+    await resumePromptQueue(connection);
     const draining = drains.get(key);
     pausedDrains.add(key);
     refreshHarnessPromptQueue(connection);
@@ -1246,6 +1283,7 @@ async function bobGoalCommand(connection: HarnessChatConnection, text: string, h
   await writable(connection);
   const local = await getClusterNode();
   if (command.action === "start") {
+    await resumePromptQueue(connection);
     const goal = await startConversationGoal(connection.project.id, connection.conversationId, command.objective, local.id);
     publish(connection, { type: "userMessage", text: `/bob-goal ${command.objective}` });
     publishGoal(connection, goal);
@@ -1270,6 +1308,7 @@ async function autoRespondCommand(connection: HarnessChatConnection, request: No
   await runtime.validateSettings({ provider: config.provider, modelId: config.modelId, reasoning: config.thinkingLevel });
   const readiness = await runtime.readiness(connection.cwd);
   if (readiness.length) throw new Error(readiness.join("\n"));
+  await resumePromptQueue(connection);
   autoDecisions.get(key)?.controller.abort("settings-changed");
   publishAutoRespond(connection, await enableAutoRespond(connection.project.id, connection.conversationId, config, connection.author ?? null, connection.author?.accountId ?? null));
   broadcastToProject(connection.project.id, { type: "sessionsChanged" });

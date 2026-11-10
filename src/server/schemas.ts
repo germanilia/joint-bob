@@ -46,7 +46,7 @@ const replicationEventSchema = z.object({
   originNodeId: z.string().uuid(),
   entityType: z.string().min(1).max(80),
   entityKey: z.string().min(1).max(300),
-  operation: z.enum(["upsert", "delete", "settings"]),
+  operation: z.enum(["upsert", "delete", "settings", "control"]),
   payload: z.unknown(),
   createdAt: z.string().datetime(),
 });

@@ -10,7 +10,8 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { nanoid } from "nanoid";
 import { ensureDedicatedSecretTypesMigration, ensureWorkspaceSecretsMigration, rekeySecretAssignments } from "./secrets-migration.js";
 import { getClusterNode } from "./cluster.js";
@@ -281,13 +282,18 @@ function rekeyProjectQueue(db: DatabaseSync, aliasId: string, projectId: string)
     db.prepare(`UPDATE ${table} SET queue_key = ? || substr(queue_key, ?)
       WHERE substr(queue_key, 1, ?) = ?`).run(projectId, prefixLength, prefixLength, `${aliasId}:`);
   }
-  for (const table of ["queued_prompt_sequences", "queued_prompt_settings"]) {
+  for (const table of ["queued_prompt_sequences", "queued_prompt_settings", "queued_prompt_control"]) {
+    if (!tableExists(db, table)) continue;
     const rows = db.prepare(`SELECT * FROM ${table} WHERE substr(queue_key, 1, ?) = ?`).all(prefixLength, `${aliasId}:`);
     for (const row of rows) {
       const key = projectId + String(row.queue_key).slice(aliasId.length);
       if (table === "queued_prompt_sequences") {
         db.prepare(`INSERT INTO queued_prompt_sequences VALUES (?, ?) ON CONFLICT(queue_key)
           DO UPDATE SET sequence = MAX(sequence, excluded.sequence)`).run(key, row.sequence);
+      } else if (table === "queued_prompt_control") {
+        db.prepare(`INSERT INTO queued_prompt_control VALUES (?, ?, ?) ON CONFLICT(queue_key)
+          DO UPDATE SET sequence = excluded.sequence, paused = excluded.paused
+          WHERE excluded.sequence > sequence`).run(key, row.sequence, row.paused);
       } else {
         db.prepare(`INSERT INTO queued_prompt_settings VALUES (?, ?, ?) ON CONFLICT(queue_key)
           DO UPDATE SET sequence = excluded.sequence, settings = excluded.settings
@@ -421,7 +427,7 @@ async function projectDatabase(): Promise<DatabaseSync> {
 
 async function initializeProjectDatabase(): Promise<DatabaseSync> {
   await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(databasePath);
+  const db = openNodeDatabase(databasePath);
   try {
     db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
     // The rename runs before the CREATE TABLE block: otherwise an empty `workspaces`
