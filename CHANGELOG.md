@@ -3,6 +3,14 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.255.0 — 2026-11-10
+
+- Projects still on Syncthing moved to built-in sync as soon as the move is safe, instead of waiting 24 hours for their files to match. Files that differ are kept in both versions, a file a machine lacks is never treated as deleted, and a machine that is away no longer holds the move back. A project held on Syncthing by hand moves too. A move still waits while a machine cannot take part, ignore rules differ, a task or merge is running, or Syncthing does not answer.
+- Worktrees now download their files only on the machines that use them, so every machine no longer fills up with copies of every worktree. Each worktree is still listed everywhere. A conversation opening in a worktree waits up to 20 seconds for its files, and is refused while more than 50 are still arriving. Deleted worktree folders no longer reappear, and their leftovers are cleaned up.
+- Conversation history is pulled from peers only when it changes, and shared skills and scoped credentials are sent only when they change, which cuts background load on every machine. Shared skills with a name conflict are refused before they download.
+- Usage events older than 14 days are no longer copied between machines; each machine keeps all of its own usage history.
+- Fixed Joint Bob exiting when messages arrived just after a conversation change had finished.
+
 ## 2.254.6 — 2026-11-10
 
 - Only you take yourself out of the control center: **Esc** twice, **Exit**, or its shortcut. A page that reloads, after an update for example, used to come back to the control center and then jump to the chat when it took over its open conversation from a machine that looked offline (*Switched to this node*). It now stays in the control center and opens the conversation behind it. A conversation that disappears from the list, or one you take ownership of over the board, no longer takes you out either.
