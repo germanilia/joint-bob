@@ -100,7 +100,7 @@ const INSTRUCTIONS = [
   '{"intent":"start-conversation","projectId":"<id>","message":"the first message for the agent, in the user\'s words"}',
   '{"intent":"rename-conversation","conversation":"<key>","title":"..."}',
   '{"intent":"close-conversation","conversation":"<key>"} to mark it done.',
-  '{"intent":"message-conversation","conversation":"<key>","message":"what to send it, in the user\'s words"} when the user wants you to ask or tell one of their conversations something, or wants one of them to do some work ("I want the X conversation to fix this").',
+  '{"intent":"message-conversation","conversation":"<key>","message":"what to send it, in the user\'s words"} when the user wants you to ask or tell one of their conversations something, or wants one of them to do some work: to fix, build or check something, or to trigger it with or hand it a task ("I want the X conversation to fix this", "trigger X with this"). "message" is then the work itself as the user described it, not their request to you.',
   '{"intent":"delete-conversation","conversation":"<key>"} to delete it for good.',
   '{"intent":"summarize-conversations","conversations":["<key>", ...]} to write or bring up to date the summary of one or more listed conversations (at most 10), when the user asks for their summaries or to update them. A question about why a summary is missing is not a request to write one.',
   ...OPERATE_INSTRUCTIONS,
@@ -138,7 +138,7 @@ export function setOrganizeInterpreter(interpret: OrganizeInterpret): void { dep
 const ORGANIZE_NOUNS = /\b(workspaces?|projects?|conversations?)\b/i;
 const ORGANIZE_VERBS = /\b(create|new|add|make|set\s+up|rename|call|move|close|archive|delete|remove|start)\b/i;
 const CONVERSATION_NOUNS = /\b(conversations?|chats?|sessions?)\b/i;
-const MESSAGE_VERBS = /\b(ask|tell|send|message|write|reply|answer|ping|nudge)\b/i;
+const MESSAGE_VERBS = /\b(ask|tell|send|message|write|reply|answer|ping|nudge|trigger|forward)\b/i;
 const SUMMARY_WORDS = /\b(summar(?:y|ies|ize[sd]?|ise[sd]?))\b/i;
 const SUMMARY_NOUNS = /\b(conversations?|chats?|sessions?|cards?)\b/i;
 /** What Bob can change in a conversation besides arranging it: stop it, its auto respond, agent, model or effort, a secret. */
@@ -184,21 +184,35 @@ function editDistance(left: string, right: string): number {
   return rows[left.length][right.length];
 }
 
-/** Recent conversations of each project that Bob may name, beside the ones on the board. */
+/** Recent conversations of each project that Bob may name, beside the ones on the board and those the message names. */
 const RECENT_PER_PROJECT = 8;
+const NAMED_TITLE_WORDS = 6;
 
-async function worldFor(session: AuthSession): Promise<OrganizeWorld> {
+/**
+ * Whether the message names a conversation by its title, as the person types it: every word of a short title is in it, a long
+ * word within one edit ("internal assitant" names "Internal Assistant"). Auto-made titles are sentences nobody types back.
+ */
+export function namesTitle(message: string, title: string): boolean {
+  const words = (text: string) => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  const wanted = words(title);
+  if (!wanted.length || wanted.length > NAMED_TITLE_WORDS) return false;
+  const said = words(message);
+  return wanted.every((word) => said.some((candidate) => candidate === word || (word.length >= 5 && editDistance(candidate, word) <= 1)));
+}
+
+async function worldFor(session: AuthSession, message: string): Promise<OrganizeWorld> {
   return runAsAccount(actingAccountFromSession(session), async () => {
     const [workspaces, projects, { cards }, here, accounts] = await Promise.all([listWorkspaces(), projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }), loadBoard(session), getClusterNode(), listSecretAccounts()]);
     const onBoard = new Set(cards.map((card) => `${card.projectId}:${card.conversationId}`));
-    // Every conversation on the board, and each project's most recent ones, so one the person names is there even when it is idle.
+    // Every conversation on the board, each project's most recent ones, and any the message names by its title, however old: one
+    // the person names is there even when it is idle.
     // A draft (no transcript listed yet) is left out unless it is on the board: a conversation whose first turn is running before
     // its transcript is listed already has a card, and the person may name it at once.
     const listed = (await Promise.all(projects.map(async (project) => {
       const shown = (entry: { id: string; conversationId?: string }) => onBoard.has(`${project.id}:${entry.conversationId ?? entry.id}`);
       const sessions = (await sharedProjectSessions(project, session.userId, session.accountId)).filter((entry) => !entry.draft || shown(entry))
         .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
-      return sessions.filter((entry, index) => index < RECENT_PER_PROJECT || shown(entry))
+      return sessions.filter((entry, index) => index < RECENT_PER_PROJECT || shown(entry) || namesTitle(message, entry.title))
         .map((entry) => ({ projectId: project.id, projectName: project.name, engine: entry.harnessId, sessionId: entry.id, conversationId: entry.conversationId ?? entry.id, title: entry.title, nodeId: entry.executionNodeId && entry.executionNodeId !== here.id ? entry.executionNodeId : null }));
     }))).flat();
     return {
@@ -341,7 +355,7 @@ async function say(turn: BobTurn, text: string, extra: { importance?: BobMessage
  */
 export async function handleBobOrganize(turn: BobTurn, decision: BobDecision | null, attachments: BobAttachments): Promise<BobMessage | null> {
   if (!mayBeAboutOrganizing(turn.message, decision, turn.settings.threshold)) return null;
-  const world = await worldFor(turn.session);
+  const world = await worldFor(turn.session, turn.message);
   const [cwd] = await runAsAccount(actingAccountFromSession(turn.session), () => projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }));
   if (!cwd) return say(turn, "I need one project to work from before I can arrange anything. Create your first project from the Projects list.", { via: "Organize · no project yet" });
   let answer: string;

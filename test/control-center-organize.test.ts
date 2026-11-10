@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { BobDecision } from "../src/control-center/decisions.js";
 import { gitStatusText, offerOperation, pickModel } from "../src/server/control-center-operate.js";
-import { mayBeAboutOrganizing, parseOrganizeIntent, propose, type OrganizeIntent, type OrganizeWorld } from "../src/server/control-center-organize.js";
+import { mayBeAboutOrganizing, namesTitle, parseOrganizeIntent, propose, type OrganizeIntent, type OrganizeWorld } from "../src/server/control-center-organize.js";
 import type { AuthSession } from "../src/auth.js";
 import type { HarnessModel } from "../src/harnesses/runtime.js";
 
@@ -50,6 +50,16 @@ test("a message is about arranging work when the decision model says so, it asks
   assert.equal(mayBeAboutOrganizing("I want the internal assistant conversation to fix this", null, 0.9), true);
   assert.equal(mayBeAboutOrganizing("ask the slice 10 convresation how to review it", decision("task"), 0.9), true, "a typo does not hide asking a conversation");
   assert.equal(mayBeAboutOrganizing("fix the display in Joint Bob", unsure, 0.9), false, "no conversation named");
+  assert.equal(mayBeAboutOrganizing("trigger the internal assistant conversation with this feature", decision("task"), 0.9), true, "triggering a conversation is asking it");
+});
+
+test("a conversation the message names by its title is found however old it is, as the person types its name", () => {
+  const asked = "I want to delegate full control over conversaotin to bob, need you to tirgger the internal assistant on joint bob covnersatoin";
+  assert.equal(namesTitle(asked, "Internal Assistant"), true);
+  assert.equal(namesTitle("ask the internal assitant how it went", "Internal Assistant"), true, "one letter off in a long word");
+  assert.equal(namesTitle("fix the internal display", "Internal Assistant"), false, "every word of the title");
+  assert.equal(namesTitle("what is short", "Short one"), false);
+  assert.equal(namesTitle("make sure your latest code is from main if you are on main", "[Claude] Make sure your latest code is from main. if you are on main"), false, "an auto-made title is a sentence nobody names");
 });
 
 test("a conversation another of the person's machines runs is offered too: the press is sent there", () => {

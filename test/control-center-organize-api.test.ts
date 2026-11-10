@@ -135,6 +135,13 @@ test("Bob starts a conversation, asks it something and brings back its answer, o
     const [project] = node.projects;
     const directory = path.join(root, "stubs");
     await mkdir(directory, { recursive: true });
+    // A conversation idle for long, behind more than a project's eight most recent and off the board.
+    const transcripts = path.join(environment.home, ".pi", "sessions");
+    await mkdir(transcripts, { recursive: true });
+    const transcript = (id: string, title: string, at: string) => writeFile(path.join(transcripts, `${id}.jsonl`),
+      `${JSON.stringify({ type: "session", version: 3, id, timestamp: at, cwd: project.path })}\n${JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: at, message: { role: "user", content: [{ type: "text", text: title }] } })}\n`);
+    await transcript("old-helper", "Old helper", "2026-01-01T00:00:00.000Z");
+    for (let index = 0; index < 9; index += 1) await transcript(`newer-${index}`, `Newer work ${index}`, new Date(Date.now() - index * 60_000).toISOString());
     child = await startNode(environment, node, directory);
     const auth = await signIn(environment, node);
     const sessionsOf = async () => (await api<{ sessions: Array<{ id: string; title: string; harnessId: string }> }>(node, auth, "GET", `/projects/${project.id}/sessions`)).body.sessions;
@@ -146,6 +153,10 @@ test("Bob starts a conversation, asks it something and brings back its answer, o
     // Asking a conversation, even an idle one off the board, waits for the button; its answer comes back to Bob's chat.
     const ask = await say(node, auth, directory, "ask the check the menu conversation how to review it", { intent: "message-conversation", conversation: "conversation-titled:check the menu", message: "how do I review this?" });
     assert.match(ask.text, /^Send this to "check the menu" in .+\? I'll bring you its answer here\.\nhow do I review this\?$/);
+    // Named by its title, as typed, an old conversation is still one Bob can send to.
+    const old = await say(node, auth, directory, "trigger the old helpr conversatoin to finish its report", { intent: "message-conversation", conversation: "conversation-titled:Old helper", message: "finish your report" });
+    assert.match(old.text, /^Send this to "Old helper" in .+\? I'll bring you its answer here\.\nfinish your report$/);
+    assert.equal((await press(node, auth, old, "organize.cancel")).text, "Okay, nothing was changed.");
     assert.deepEqual(ask.actions.map((action) => action.label), ["Send it", "Cancel"]);
     assert.match((await press(node, auth, ask)).text, /^Sent to "check the menu"\. I'll bring you its answer here when it is done\.$/);
     const answered = await eventually(async () => (await messages()).find((message) => message.text.startsWith('"check the menu" answered:')), "the answer came back to Bob's chat");
