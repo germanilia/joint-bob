@@ -12,6 +12,7 @@ const PROVIDERS = [
 ];
 /** Pools and the failover dry run cover subscription providers; Kiro profiles stand alone. */
 const POOL_PROVIDERS = PROVIDERS.filter((provider) => provider.id !== "kiro");
+const POOL_HARNESSES = [{ id: "claude", name: "Claude" }, { id: "pi", name: "Pi" }];
 const SCOPES = [
   { id: "workspace", label: "Workspace", icon: "folder" },
   { id: "cluster", label: "Cluster", icon: "share" },
@@ -146,8 +147,15 @@ async function fetchStatus(profile) {
 }
 function loadModelCatalog() {
   if (modelCatalogLoad) return modelCatalogLoad;
-  modelCatalogLoad = api("/api/harnesses/pi/model-options").then((body) => { modelCatalog = body.models; })
-    .catch((error) => { modelCatalog = []; modelCatalogError = error.message; })
+  modelCatalogLoad = Promise.all(POOL_HARNESSES.map(async ({ id, name }) => {
+    try {
+      const body = await api(`/api/harnesses/${id}/model-options`);
+      return body.models.map((model) => ({ ...model, harnessId: id }));
+    } catch (error) {
+      modelCatalogError += `${name}: ${error.message}. `;
+      return [];
+    }
+  })).then((groups) => { modelCatalog = groups.flat(); })
     .then(() => { if (root && poolMode === "edit") rerender("pools"); });
   return modelCatalogLoad;
 }
@@ -263,26 +271,24 @@ function iconButton(glyph, label, testid, action) {
 const DATED_SNAPSHOT = /-\d{8}$/;
 const modelVersion = (id) => (id.match(/\d+/g) ?? []).slice(0, 2).map(Number);
 /** Newest first. A dated snapshot is left out when its alias is listed, so each model appears once. */
-function fallbackModelOptions(provider) {
-  // Pi names the Claude provider "anthropic".
-  const piProvider = provider === "claude" ? "anthropic" : provider;
-  const listed = modelCatalog.filter((model) => model.provider === piProvider);
-  const ids = new Set(listed.map((model) => model.id));
+function fallbackModelOptions(harness) {
+  const listed = modelCatalog.filter((model) => model.harnessId === harness);
+  const ids = new Set(listed.map((model) => `${model.provider}/${model.id}`));
   return listed
-    .filter((model) => !DATED_SNAPSHOT.test(model.id) || !ids.has(model.id.replace(DATED_SNAPSHOT, "")))
-    .map((model) => ({ value: model.id, label: (model.label || model.id).replace(/ \(latest\)$/, ""), detail: model.id, version: modelVersion(model.id) }))
+    .filter((model) => !DATED_SNAPSHOT.test(model.id) || !ids.has(`${model.provider}/${model.id.replace(DATED_SNAPSHOT, "")}`))
+    .map((model) => ({ value: harness === "pi" ? `${model.provider}/${model.id}` : model.id, label: (model.label || model.id).replace(/ \(latest\)$/, ""), detail: `${model.provider}/${model.id}`, version: modelVersion(model.id) }))
     .sort((left, right) => (right.version[0] ?? 0) - (left.version[0] ?? 0) || (right.version[1] ?? 0) - (left.version[1] ?? 0) || left.label.localeCompare(right.label))
     .map(({ version: _version, ...option }) => option);
 }
-function fallbackModelControl(provider, mixed) {
+function fallbackModelControl(provider) {
   const id = `subscription-pool-fallback-${provider}`;
   const current = poolEditor.fallbackModels[provider] ?? "";
   const models = fallbackModelOptions(provider);
   if (current && !models.some((model) => model.value === current)) poolEditor.customModels.add(provider);
   const custom = poolEditor.customModels.has(provider);
-  const name = providerOf(provider).name;
-  const picker = createSearchableSelect({ id: `poolFallback${provider}`, testid: id, label: `${name} model after switching`, prompt: "No model chosen", placeholder: "Search models", emptyText: "No models found" });
-  picker.setOptions([{ value: "", label: "No model chosen" }, ...models, { value: "__custom__", label: "Enter model ID…", detail: "Use an ID not listed on this node" }]);
+  const name = POOL_HARNESSES.find(({ id }) => id === provider).name;
+  const picker = createSearchableSelect({ id: `poolFallback${provider}`, testid: id, label: `${name} model after switching`, prompt: "Use default", placeholder: "Search models", emptyText: "No models found" });
+  picker.setOptions([{ value: "", label: "Use default" }, ...models, { value: "__custom__", label: "Enter model ID…", detail: "Use an ID not listed on this node" }]);
   picker.setValue(custom ? "__custom__" : current);
   const input = el("input", { testid: `${id}-custom` }); input.placeholder = "Model ID"; input.autocomplete = "off"; input.value = custom ? current : ""; input.hidden = !custom;
   input.addEventListener("input", () => { poolEditor.fallbackModels[provider] = input.value.trim(); });
@@ -290,13 +296,10 @@ function fallbackModelControl(provider, mixed) {
     if (value === "__custom__") { poolEditor.customModels.add(provider); input.hidden = false; input.focus(); return; }
     poolEditor.customModels.delete(provider); poolEditor.fallbackModels[provider] = value; input.value = ""; input.hidden = true;
   });
-  const hint = mixed ? "Required: this pool mixes providers." : `Optional. Used only when a conversation on another provider moves to this pool's ${name} profiles.`;
+  const hint = "Optional. If blank or incompatible with the next profile, its compatible default is used.";
   const field = el("div", { className: "pool-fallback-field" });
   field.append(labeled(`${name} model after switching`, picker.root), input, el("span", { className: "profile-status-detail", text: hint }));
   return field;
-}
-function editorProviders() {
-  return [...new Set(poolEditor.profileIds.map((id) => profileNamed(id)?.provider).filter((provider) => provider && provider !== "pi"))];
 }
 function poolForm() {
   const form = el("div", { testid: "subscription-pool-form", className: "pool-form" });
@@ -305,11 +308,8 @@ function poolForm() {
   const members = el("div", { className: "pool-member-editors" });
   members.append(...poolEditor.profileIds.map((_, index) => poolMemberRow(index)));
   const addMember = actionButton("Add another profile", "subscription-pool-member-add", () => { poolEditor.profileIds.push(""); rerender("pools"); }, { icon: "plus" });
-  const providers = editorProviders();
-  const mixed = new Set(poolEditor.profileIds.map((id) => profileNamed(id)?.provider).filter(Boolean)).size > 1;
   const fallback = el("div", { className: "pool-fallback-grid" });
-  fallback.append(...providers.map((provider) => fallbackModelControl(provider, mixed)));
-  if (!providers.length) fallback.append(el("p", { className: "profile-status-detail", text: "Choose Claude or ChatGPT profiles above to set the model used after a switch." }));
+  fallback.append(...POOL_HARNESSES.map(({ id }) => fallbackModelControl(id)));
   if (modelCatalogError) fallback.append(el("p", { className: "settings-hint", text: `Model suggestions unavailable: ${modelCatalogError}. You can enter a model ID.` }));
   const save = actionButton(poolEditor.id ? "Save pool" : "Create pool", "subscription-pool-save", savePool, { icon: poolEditor.id ? "check" : "plus", className: "primary profile-action" });
   const cancel = actionButton("Cancel", "subscription-pool-cancel", () => { poolEditor = emptyPoolEditor(); poolMode = "list"; rerender("pools"); });
@@ -317,7 +317,7 @@ function poolForm() {
   form.append(
     poolStep(1, "Name the pool"), name,
     poolStep(2, "Add profiles in the order they are tried", "A turn starts with the first profile of the conversation's provider. If its quota runs out or its sign-in fails before the reply starts, the turn moves to the next profile."), members, addMember,
-    poolStep(3, "Model to use after switching provider", "Listed from Pi's model catalogue on this node, newest first."), fallback, actions);
+    poolStep(3, "Model to use after switching profile", "One optional model per harness. Models come from each harness's catalogue on this node."), fallback, actions);
   return form;
 }
 function poolStep(number, title, hint) {
@@ -332,12 +332,7 @@ async function savePool() {
   if (new Set(profileIds).size !== profileIds.length) throw new Error("Choose each profile only once");
   const members = profileIds.map((id) => profileNamed(id));
   if (members.some((profile) => !profile || profile.shared)) throw new Error("Pools can contain only your private profiles");
-  if (new Set(members.map((profile) => profile.provider)).size > 1 && members.some((profile) => profile.provider !== "pi" && !poolEditor.fallbackModels[profile.provider]?.trim())) {
-    throw new Error("Choose a model after switching for each provider in a mixed pool");
-  }
-  // Only providers the pool holds keep a model; one left from a removed member would never be used.
-  const present = new Set(members.map((profile) => profile.provider));
-  const fallbackModels = Object.fromEntries([...present].filter((id) => id !== "pi").map((id) => [id, poolEditor.fallbackModels[id]?.trim()]).filter(([, value]) => value));
+  const fallbackModels = Object.fromEntries(POOL_HARNESSES.map(({ id }) => [id, poolEditor.fallbackModels[id]?.trim()]).filter(([, value]) => value));
   const payload = { name: poolEditor.name.trim(), profileIds, fallbackModels };
   if (poolEditor.id) await api(`/api/provider-profiles/pools/${poolEditor.id}`, { method: "PUT", body: JSON.stringify(payload) });
   else await api("/api/provider-profiles/pools", { method: "POST", body: JSON.stringify(payload) });
@@ -363,8 +358,8 @@ function poolCard(pool) {
     if (profile) row.lastChild.dataset.poolStatusId = profile.id;
     members.append(row);
   }
-  const switched = Object.entries(pool.fallbackModels).map(([provider, model]) => `${providerOf(provider).name}: ${model}`);
-  const fallback = el("p", { className: "profile-status-detail", text: switched.length ? `After switching provider: ${switched.join(" · ")}` : "No model set for switching provider" });
+  const switched = POOL_HARNESSES.filter(({ id }) => pool.fallbackModels[id]).map(({ id, name }) => `${name}: ${pool.fallbackModels[id]}`);
+  const fallback = el("p", { className: "profile-status-detail", text: switched.length ? `After switching profile: ${switched.join(" · ")}` : "After switching profile: use default" });
   const uses = poolUses(pool);
   const used = el("p", { className: "profile-status-detail pool-card-uses", text: uses.length ? `Used for ${uses.join(", ")}` : "Not used yet. Choose it under Assignments." });
   const actions = el("div", { className: "profile-actions" });

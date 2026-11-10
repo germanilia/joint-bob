@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import test from "node:test";
 import ts from "typescript";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { poolProfileContext, withPoolProfile } from "../src/provider-profiles/context.js";
 
 const require = createRequire(import.meta.url);
@@ -67,7 +67,10 @@ for (const scope of ["project", "workspace", "cluster", "none"] as const) {
       isBusy: () => false, cancel: async () => {}, dispose: () => { disposed = true; },
     };
     const boundaries = new Proxy({
-      runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings,
+      runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel,
+      getSettings: () => ({ conversationDefaults: { claude: { provider: "claude", modelId: "sonnet", thinkingLevel: "medium" } } }),
+      listHarnessModels: async () => [{ provider: "claude", id: "sonnet", thinkingLevels: ["medium"] }],
+      nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
       getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}),
       projectClusterIds: () => ["cluster"],
       resolveClusterSubscriptionPools: () => scope === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],

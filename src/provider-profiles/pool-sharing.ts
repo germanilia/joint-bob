@@ -9,6 +9,7 @@ export const poolProfileProviderSchema = z.enum(["claude", "openai-codex", "pi"]
 const fallbackModelsSchema = z.object({
   claude: z.string().trim().min(1).max(200).optional(),
   "openai-codex": z.string().trim().min(1).max(200).optional(),
+  pi: z.string().trim().min(1).max(500).optional(),
 }).strict();
 const manifestMemberSchema = z.object({
   profileId: uuid,

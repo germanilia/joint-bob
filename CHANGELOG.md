@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- Made the model used after switching subscription profiles optional, with one choice per harness and a compatible default when the chosen model cannot run.
+
 ## 2.266.0 — 2026-11-11
 
 - A node can keep its database in PostgreSQL instead of SQLite. Set `JOINT_BOB_DATABASE_URL` in `~/.joint-bob/env` to a PostgreSQL 16+ database of the node's own and restart; the node starts with that database empty. Without the variable nothing changes. The start-up log names the database without its password. See docs/postgres-node-database.md.

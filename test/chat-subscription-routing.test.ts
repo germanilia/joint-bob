@@ -6,7 +6,7 @@ import test from "node:test";
 import ts from "typescript";
 import { actingAccount, asNode, runAsAccount } from "../src/account-context.js";
 import { automationProfileContext, poolProfileContext, withAutomationProfile, withPoolProfile, withoutAutomationProfile } from "../src/provider-profiles/context.js";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { ConversationOwnershipError } from "../src/conversation-ownership.js";
 
 const require = createRequire(import.meta.url);
@@ -59,7 +59,9 @@ function fixture(selection: Selection, failure?: string) {
   const connection: any = { engine: "claude", project: { id: "project", type: "workspace" }, conversationId: "conversation", cwd: "/synthetic", shared, author: author("viewer"), socket: {}, readOnly: false };
   const dependencies: Record<string, any> = {
     flags: {}, onGuardianEvent: () => {}, actingAccount, asNode, runAsAccount, withPoolProfile, withoutAutomationProfile, automationProfileContext,
-    runPoolAttempts, classifyPoolAttemptFailure, resolvePoolModelSettings, ConversationOwnershipError,
+    runPoolAttempts, classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, ConversationOwnershipError,
+    listHarnessModels: async () => [{ provider: "claude", id: "opus", thinkingLevels: ["high"] }],
+    nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
     ownerAsActor: actor, resourceOwner: () => "project-owner",
     runWithAutomationProfile: (input: any, work: () => any) => withAutomationProfile({ accountId: input.creatorAccountId, profileId: input.providerProfileId }, work),
     getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
@@ -72,7 +74,7 @@ function fixture(selection: Selection, failure?: string) {
     poolCandidates: () => profiles, projectProviderProfile: async () => ({ label: selectedProfile() }),
     getAutoRespond: async () => undefined, findHarnessSession: () => shared,
     teamQueuedTurn: async () => undefined, teamConversation: async () => undefined,
-    getSettings: () => ({ digestAttachments: false }), markHarnessInput: () => {},
+    getSettings: () => ({ digestAttachments: false, conversationDefaults: { claude: { provider: "claude", modelId: "opus", thinkingLevel: "high" } } }), markHarnessInput: () => {},
     activeRoutingConfig: () => null, routingConfigDatabase: () => ({}), readQueueSettings: () => null,
     getProjectLock: async () => undefined, conversationBelongsToDoneTask: async () => false,
     requireLocalConversationOwner: async () => {}, listConversationSegments: async () => [],
@@ -132,19 +134,19 @@ for (const selection of ["profile", "pool", "relay-pool"] as const) {
   });
 }
 
-test("a pool turn restores saved model settings inside the selected member context", async () => {
+test("a pool turn restores saved settings on its first member and uses the default after switching", async () => {
   const f = fixture("pool");
   const saved = { harnessId: "claude", provider: "claude", modelId: "saved-model", reasoning: "high" };
   f.dependencies.readQueueSettings = () => saved;
   await f.exports.dispatch(f.connection, f.queued);
-  assert.equal(f.shared.session.settings().modelId, "saved-model");
+  assert.equal(f.shared.session.settings().modelId, "opus");
   assert.deepEqual(f.calls.map(call => call.profile), ["first", "second"]);
 });
 
 test("a compaction failure cannot strand the next queued prompt", async () => {
   const f = fixture("pool");
   Object.assign(f.dependencies, {
-    getSettings: () => ({ autoCompactThreshold: 70 }),
+    getSettings: () => ({ autoCompactThreshold: 70, conversationDefaults: { claude: { provider: "claude", modelId: "opus", thinkingLevel: "high" } } }),
     getConversationGoal: async () => undefined,
     compactHarnessSession: async (_shared: unknown, compact: () => Promise<void>) => compact(),
     harnessTurnBusy: () => false,
@@ -174,7 +176,7 @@ test("a generic pool failure is surfaced without account fallback or a stuck bus
   assert.ok(f.events.some(event => event.type === "promptFailed" && event.error === "Invalid request"));
 });
 
-test("a routed model runs on a pool, switched inside each member's attempt", async () => {
+test("a routed model runs on the first pool member and the default runs after switching", async () => {
   const f = fixture("pool");
   let saved: any = null;
   const routed: any[] = [];
@@ -192,7 +194,7 @@ test("a routed model runs on a pool, switched inside each member's attempt", asy
   assert.deepEqual(routed, ["routed-model"]);
   assert.ok(f.events.some(event => event.type === "promptRouted" && event.mapped === true && event.modelId === "routed-model"));
   // The fixture's configure throws outside a member, so the routed model was switched to inside one.
-  assert.equal(f.shared.session.settings().modelId, "routed-model");
+  assert.equal(f.shared.session.settings().modelId, "opus");
   assert.deepEqual(f.calls.map(call => call.profile), ["first", "second"]);
-  assert.equal(saved.modelId, "routed-model");
+  assert.equal(saved.modelId, "opus", "saved queue settings reflect the model that completed the turn");
 });

@@ -24,7 +24,9 @@ import {
 
 const fallbackModelsSchema = z.object({
   claude: z.string().trim().min(1).max(200).optional(),
+  // Retained for pools saved before model choices became harness-scoped.
   "openai-codex": z.string().trim().min(1).max(200).optional(),
+  pi: z.string().trim().min(1).max(500).optional(),
 }).strict().default({});
 const poolInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -60,7 +62,7 @@ export interface SubscriptionPool {
   owner: string;
   name: string;
   members: Array<{ profileId: string; position: number }>;
-  fallbackModels: Partial<Record<ProfileProvider, string>>;
+  fallbackModels: Partial<Record<string, string>>;
   createdAt: string;
   updatedAt: string;
 }
@@ -105,7 +107,7 @@ function stamp(db: DatabaseSync, originNodeId: string): PoolStamp {
 function newer(candidate: PoolStamp, held: { updated_at: string; origin_node_id: string } | undefined): boolean {
   return !held || candidate.updatedAt > held.updated_at || candidate.updatedAt === held.updated_at && candidate.originNodeId > held.origin_node_id;
 }
-function fallbackModels(value: string): Partial<Record<ProfileProvider, string>> {
+function fallbackModels(value: string): Partial<Record<string, string>> {
   return fallbackModelsSchema.parse(JSON.parse(value));
 }
 function poolFromRow(db: DatabaseSync, row: Record<string, unknown>): SubscriptionPool {

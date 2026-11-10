@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import test from "node:test";
 import ts from "typescript";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { automationProfileContext, poolProfileContext, withAutomationProfile, withPoolProfile } from "../src/provider-profiles/context.js";
 import { nearestReasoning } from "../src/server/git-review-run.js";
 
@@ -60,9 +60,10 @@ for (const runner of runners) for (const source of ["cluster", "conversation", "
       isBusy: () => false, cancel: async () => {}, dispose: () => { disposed = true; listeners.clear(); },
     };
     const boundaries = new Proxy({
-      runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, nearestReasoning,
+      runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel, nearestReasoning,
+      getSettings: () => ({ conversationDefaults: { claude: { provider: "claude", modelId: "sonnet", thinkingLevel: "medium" }, pi: { provider: "openai-codex", modelId: "gpt-fixture", thinkingLevel: "medium" } } }),
       // The fallback model has no "medium", like Claude Opus 5.5 has no "off".
-      listHarnessModels: async () => [{ provider: "openai-codex", id: "gpt-fixture", thinkingLevels: ["minimal", "low", "high"] }],
+      listHarnessModels: async (harness: string) => harness === "claude" ? [{ provider: "claude", id: "sonnet", thinkingLevels: ["medium"] }] : [{ provider: "openai-codex", id: "gpt-fixture", thinkingLevels: ["minimal", "low", "high"] }],
       getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
       resolveClusterSubscriptionPools: () => source !== "conversation" && source !== "none" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
       resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {

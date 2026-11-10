@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import test from "node:test";
 import ts from "typescript";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { withPoolProfile } from "../src/provider-profiles/context.js";
 
 const require = createRequire(import.meta.url);
@@ -20,7 +20,7 @@ function load(file: string, mocks: Record<string, any>): any {
 }
 
 const pool = {
-  id: "pool", name: "sela-pool", fallbackModels: {}, sameProviderOnly: true,
+  id: "pool", name: "sela-pool", harnessId: "claude", fallbackModels: {}, sameProviderOnly: true,
   candidates: [
     { profileId: "first", provider: "claude" as const, label: "claude - sela", poolId: "pool" },
     { profileId: "second", provider: "claude" as const, label: "claude - illiag2", poolId: "pool" },
@@ -70,6 +70,48 @@ test("update recovery resumes as the turn's account, on that account's pool, nam
   assert.equal(shared.turnAccountId, null, "the account is forgotten once the recovery ends");
 });
 
+for (const harness of ["claude", "pi"]) for (const choice of ["default", "selected", "incompatible", "rejected", "auth"] as const) {
+  test(`${harness} uses ${choice} switch model without replaying work or hiding auth failures`, async () => {
+    const provider = harness === "claude" ? "claude" : "openai-codex";
+    const configured: string[] = [], prompted: string[] = [];
+    let current = "initial";
+    const selected = choice === "default" ? undefined : choice === "incompatible" ? "another-provider/picked" : `${provider}/picked`;
+    const session = {
+      subscribe: () => () => {}, checkpointPoolAttempt: async () => ({}), restorePoolAttempt: async () => {},
+      configure: async (settings: { modelId: string }) => { current = settings.modelId; configured.push(current); },
+      preflight: async () => {
+        if (current === "picked" && choice === "rejected") throw new Error("Model not found: picked");
+        if (current === "picked" && choice === "auth") throw new Error("unauthorized");
+      },
+      prompt: async () => { prompted.push(current); if (current === "initial") throw new Error("rate_limit"); },
+    };
+    const mocks = new Proxy({
+      runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel,
+      getSettings: () => ({ conversationDefaults: { [harness]: { provider, modelId: "default", thinkingLevel: "medium" } } }),
+      listHarnessModels: async () => ["default", "picked"].map(id => ({ provider, id, thinkingLevels: ["medium", "high"] })),
+      nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
+    } as Record<string, any>, {
+      get: (target, key: string) => key in target ? target[key] : key === "flags" ? {} : () => () => {},
+      has: () => true,
+    });
+    const runner = load("server/harness-chat.ts", mocks);
+    const chosenPool = { ...pool, harnessId: harness, sameProviderOnly: harness === "claude", fallbackModels: { [harness]: selected },
+      candidates: pool.candidates.map(candidate => ({ ...candidate, provider })) };
+    const run = () => runner.promptOnSubscriptionPool(session, chosenPool, { provider, modelId: "initial", reasoning: "high" },
+      () => ({ provider, modelId: "initial", reasoning: "high" }), { text: "work" }, () => {});
+    if (choice === "auth") {
+      await assert.rejects(run(), /unauthorized/);
+      assert.deepEqual(configured, ["initial", "picked"]);
+      assert.deepEqual(prompted, ["initial"]);
+    } else {
+      await run();
+      const expected = choice === "selected" ? "picked" : "default";
+      assert.deepEqual(prompted, ["initial", expected]);
+      assert.deepEqual(configured, choice === "rejected" ? ["initial", "picked", "default"] : ["initial", expected]);
+    }
+  });
+}
+
 test("a pool member that hits its limit mid-turn hands the turn to the next, which continues it", async () => {
   const listeners = new Set<(event: any) => void>();
   const prompts: Array<{ text: string; profile: string | undefined }> = [];
@@ -88,7 +130,11 @@ test("a pool member that hits its limit mid-turn hands the turn to the next, whi
       throw Object.assign(new Error("You've hit your 5-hour limit · resets 3:10am (Asia/Jerusalem)"), { status: 429, code: "rate_limit" });
     },
   };
-  const mocks = new Proxy({ runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings } as Record<string, any>, {
+  const mocks = new Proxy({ runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel,
+    getSettings: () => ({ conversationDefaults: { claude: { provider: "claude", modelId: "sonnet", thinkingLevel: "medium" } } }),
+    listHarnessModels: async () => [{ provider: "claude", id: "sonnet", thinkingLevels: ["medium"] }],
+    nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
+  } as Record<string, any>, {
     // Module setup registers listeners and reads settings; none of it is under test here.
     get: (target, key: string) => key in target ? target[key] : (key === "flags" ? {} : () => () => {}),
     has: () => true,

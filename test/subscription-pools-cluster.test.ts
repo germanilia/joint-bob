@@ -21,7 +21,7 @@ const POOL_TWO = "00000000-0000-4000-8000-000000000009";
 const manifest = (poolId: string, label = "Primary"): ClusterSubscriptionPoolManifest => ({
   poolId,
   name: label,
-  fallbackModels: { claude: "claude-sonnet-4" },
+  fallbackModels: { claude: "claude-sonnet-4", pi: "openai-codex/gpt-picked" },
   members: [{ profileId: "00000000-0000-4000-8000-000000000007", provider: "claude" as const, label: "Claude", position: 0 }],
 });
 

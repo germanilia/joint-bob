@@ -45,27 +45,32 @@ test("subscription pools are built in their own tab, editable, testable, and clu
   assert.equal(await page.getByTestId("subscription-pool-form").count(), 0, "the editor stays closed until New pool");
   assert.equal(await page.getByTestId("provider-profile-row").count(), 0, "profile cards live on the Profiles tab");
   await page.getByTestId("subscription-pool-new").click();
-  assert.equal(await page.getByTestId("subscription-pool-fallback-claude").count(), 0, "no switching model before a Claude member is chosen");
+  assert.equal(await page.getByTestId("subscription-pool-fallback-claude").count(), 1);
+  assert.equal(await page.getByTestId("subscription-pool-fallback-pi").count(), 1, "one optional choice per supported harness, regardless of pool providers");
   await page.getByTestId("subscription-pool-name").fill("Team pool");
   await choose(page, "subscription-pool-member-0", "Claude work", "Claude work");
   assert.equal(await page.getByTestId("subscription-pool-fallback-openai-codex").count(), 0, "only providers in the pool get a switching model");
   assert.equal(await page.getByTestId("subscription-pool-name").inputValue(), "Team pool", "choosing a member keeps the typed name");
 
-  // Pi's Claude models (provider "anthropic"), newest first, each listed once.
-  await page.getByTestId("subscription-pool-fallback-claude").click();
-  await page.getByTestId("subscription-pool-fallback-claude-option").filter({ hasText: /claude-/ }).first().waitFor();
-  const listed = await page.getByTestId("subscription-pool-fallback-claude-option").evaluateAll((options) => options.map((option) => option.textContent ?? ""));
+  // Pi offers its own models, including Claude subscriptions, in one unpartitioned picker.
+  await page.getByTestId("subscription-pool-fallback-pi").click();
+  await page.getByTestId("subscription-pool-fallback-pi-option").filter({ hasText: /claude-/ }).first().waitFor();
+  const listed = await page.getByTestId("subscription-pool-fallback-pi-option").evaluateAll((options) => options.map((option) => option.textContent ?? ""));
   await page.keyboard.press("Escape");
   const ids = listed.map((text) => text.match(/claude-[a-z0-9-]+/)?.[0]).filter((id): id is string => Boolean(id));
   assert.ok(ids.length > 3, `Claude models listed: ${listed.join(" | ")}`);
   assert.equal(listed.some((text) => text.includes("(latest)")), false, "alias labels drop Pi's (latest) suffix");
   assert.equal(ids.some((id) => /-\d{8}$/.test(id) && ids.includes(id.replace(/-\d{8}$/, ""))), false, "a dated snapshot is hidden when its alias is listed");
-  const versions = ids.map((id) => (id.match(/\d+/g) ?? []).slice(0, 2).map(Number)).map(([major = 0, minor = 0]) => major * 100 + minor);
-  assert.deepEqual(versions, [...versions].sort((left, right) => right - left), `newest first: ${ids.join(", ")}`);
+  assert.ok(listed.some(text => text.includes("anthropic/")), "Pi models retain their provider identity in the single harness picker");
+  await page.getByTestId("subscription-pool-fallback-claude").click();
+  await page.getByTestId("subscription-pool-fallback-claude-option").filter({ hasText: "claude/" }).first().waitFor();
+  const claudeModels = await page.getByTestId("subscription-pool-fallback-claude-option").allTextContents();
+  assert.equal(claudeModels.some(text => text.includes("anthropic/")), false, "Claude uses its own catalogue, not Pi's");
+  await page.keyboard.press("Escape");
 
   await page.getByTestId("subscription-pool-member-add").click();
   await choose(page, "subscription-pool-member-1", "ChatGPT work", "ChatGPT work");
-  for (const provider of ["claude", "openai-codex"]) {
+  for (const provider of ["claude", "pi"]) {
     await choose(page, `subscription-pool-fallback-${provider}`, "Enter model ID", "Enter model ID…");
     await page.getByTestId(`subscription-pool-fallback-${provider}-custom`).fill(`${provider}-fallback-test-model`);
   }
@@ -78,7 +83,7 @@ test("subscription pools are built in their own tab, editable, testable, and clu
   if (!created) throw new Error(`Pool creation failed: toast=${await page.locator(".toast").last().innerText().catch(() => "none")} ui=${await page.getByTestId("subscription-pools").innerText()} requests=${poolResponses.join(",")} pageErrors=${pageErrors.join(" | ")}`);
   assert.match(await pool.innerText(), /Claude work[\s\S]*ChatGPT work/);
   assert.match(await pool.innerText(), /claude-fallback-test-model/);
-  assert.match(await pool.innerText(), /openai-codex-fallback-test-model/);
+  assert.match(await pool.innerText(), /pi-fallback-test-model/);
   assert.match(await pool.innerText(), /Not used yet/);
 
   await pool.getByTestId("subscription-pool-test").click();
@@ -91,9 +96,13 @@ test("subscription pools are built in their own tab, editable, testable, and clu
 
   await pool.getByTestId("subscription-pool-edit").click();
   await page.getByTestId("subscription-pool-name").fill("Team pool edited");
+  await choose(page, "subscription-pool-fallback-claude", "Use default", "Use default");
+  await choose(page, "subscription-pool-fallback-pi", "Use default", "Use default");
   await page.getByTestId("subscription-pool-save").click();
   const editedPool = page.getByTestId("subscription-pool-card").filter({ hasText: "Team pool edited" });
   await editedPool.waitFor();
+  const savedPools = await page.evaluate(async () => (await fetch("/api/provider-profiles/pools")).json());
+  assert.deepEqual(savedPools.pools.find((item: { name: string }) => item.name === "Team pool edited").fallbackModels, {}, "a mixed-provider pool saves without any selected model");
   const poolId = await editedPool.getAttribute("data-pool-id");
   assert.ok(poolId);
 

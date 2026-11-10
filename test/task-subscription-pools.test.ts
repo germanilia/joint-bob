@@ -6,7 +6,7 @@ import test from "node:test";
 import ts from "typescript";
 import { actingAccount, asNode, runAsAccount } from "../src/account-context.js";
 import { automationProfileContext, poolProfileContext, withPoolProfile } from "../src/provider-profiles/context.js";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 
 const require = createRequire(import.meta.url);
 function load(file: string, dependencies: Record<string, any>, extra = ""): any {
@@ -49,7 +49,10 @@ function fixture(pooled: boolean, failure?: string) {
   const runtime = { open: async () => session, validateSettings: async () => {} };
   const dependencies: Record<string, any> = {
     flags: {}, onGuardianEvent: () => {}, actingAccount, asNode, runAsAccount, automationProfileContext, withPoolProfile,
-    runPoolAttempts, classifyPoolAttemptFailure, resolvePoolModelSettings,
+    runPoolAttempts, classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel,
+    getSettings: () => ({ conversationDefaults: { claude: { provider: "claude", modelId: "opus", thinkingLevel: "high" } } }),
+    listHarnessModels: async () => [{ provider: "claude", id: "opus", thinkingLevels: ["high"] }],
+    nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
     getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => [],
     resolveClusterSubscriptionPools: () => [], resolveSubscriptionChoice: () => pooled ? { kind: "pool", pool } : undefined, poolCandidates: () => profiles,
     getProject: async () => project, ownerAsActor: actor, resourceOwner: () => "project-owner",

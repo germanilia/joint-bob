@@ -19,7 +19,7 @@ import { projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscri
 import { poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
 import { projectProviderProfile } from "../provider-profiles/service.js";
 import { withPoolProfile, type PoolProfileContext } from "../provider-profiles/context.js";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, runPoolAttempts } from "../provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../provider-profiles/pool-execution.js";
 import type { ProfileProvider } from "../provider-profiles/store.js";
 import { getConversationRecord, ensureConversationRecord, listConversationSegments } from "../conversation-records.js";
 import type { DifficultyClassification } from "../classifiers/contract.js";
@@ -258,7 +258,7 @@ function currentSettings(connection: HarnessChatConnection): QueuedSettings {
 }
 function selectedHarness(settings: QueuedSettings): HarnessId { return settings.harnessId ?? harnessForProvider(settings.provider).id; }
 
-export interface TurnSubscriptionPool { id: string; name: string; fallbackModels: Partial<Record<ProfileProvider, string>>; candidates: PoolProfileContext[]; sameProviderOnly: boolean }
+export interface TurnSubscriptionPool { id: string; name: string; harnessId: HarnessId; fallbackModels: Partial<Record<string, string>>; candidates: PoolProfileContext[]; sameProviderOnly: boolean }
 function profileProviderForRuntime(provider: string): ProfileProvider | undefined {
   if (provider === "anthropic" || provider === "claude") return "claude";
   return provider === "openai-codex" ? provider : "pi";
@@ -282,7 +282,7 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
     if (signatures.size > 1) throw new Error("This project has conflicting cluster subscription pools");
     const assignment = assignments[0];
     if (!assignment.manifest) throw new Error("The cluster pool manifest is unavailable");
-    return { id: assignment.poolId, name: assignment.manifest.name, fallbackModels: assignment.manifest.fallbackModels, sameProviderOnly: engine === "claude",
+    return { id: assignment.poolId, name: assignment.manifest.name, harnessId: engine, fallbackModels: assignment.manifest.fallbackModels, sameProviderOnly: engine === "claude",
       candidates: assignment.manifest.members.map((member) => ({ profileId: member.profileId, provider: member.provider, label: member.label,
         poolId: assignment.poolId, clusterId: assignment.clusterId, poolOwnerNodeId: assignment.poolOwnerNodeId })) };
   }
@@ -292,7 +292,7 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
     ?? resolveSubscriptionChoice(accountId, preferred, scope, usage);
   if (choice?.kind !== "pool") return undefined;
   const profiles = poolCandidates(choice.pool, preferred);
-  return { id: choice.pool.id, name: choice.pool.name, fallbackModels: choice.pool.fallbackModels, sameProviderOnly: engine === "claude",
+  return { id: choice.pool.id, name: choice.pool.name, harnessId: engine, fallbackModels: choice.pool.fallbackModels, sameProviderOnly: engine === "claude",
     candidates: profiles.map((profile) => ({ profileId: profile.id, provider: profile.provider, label: profile.label, poolId: choice.pool.id, profile })) };
 }
 function resolveTurnSubscriptionPool(connection: HarnessChatConnection, queued: { settings?: QueuedSettings | null; automationProfile?: QueuedPrompt["automationProfile"]; author?: MessageAuthor }): Promise<TurnSubscriptionPool | undefined> {
@@ -321,6 +321,32 @@ async function offeredReasoning(settings: HarnessModelSettings, initial: Harness
   return model ? { ...settings, reasoning: nearestReasoning(model.thinkingLevels, settings.reasoning) } : settings;
 }
 
+/** Resolve the optional harness model in the destination profile's context, before any work starts. */
+async function preparePoolSwitch(session: HarnessSession, pool: TurnSubscriptionPool, candidate: PoolProfileContext,
+  initial: HarnessModelSettings): Promise<void> {
+  const engine = pool.harnessId;
+  const models = await listHarnessModels(engine);
+  const defaults = getSettings().conversationDefaults[engine];
+  const settingsFor = (selected?: string) => {
+    const settings = resolvePoolSwitchModel(candidate.provider, initial, selected, models, defaults);
+    const model = models.find((model) => model.provider === settings.provider && model.id === settings.modelId)!;
+    return { ...settings, reasoning: nearestReasoning(model.thinkingLevels, settings.reasoning) };
+  };
+  const settings = settingsFor(pool.fallbackModels[engine]);
+  try {
+    await session.configure(settings);
+    await session.preflight();
+  } catch (error) {
+    // A model rejection may use the default, but auth/quota failures must still advance the pool.
+    if (!(error instanceof Error) || !/model.*(?:not found|not available|unavailable|not supported|unsupported|invalid)|(?:unknown|invalid|unsupported) model/i.test(error.message)) throw error;
+    const fallback = settingsFor();
+    if (fallback.provider === settings.provider && fallback.modelId === settings.modelId) throw error;
+    console.warn(`Pool model ${settings.provider}/${settings.modelId} rejected; using ${fallback.provider}/${fallback.modelId}`);
+    await session.configure(fallback);
+    await session.preflight();
+  }
+}
+
 /**
  * Runs one prompt on a subscription pool, member by member (see runPoolAttempts). A member taking
  * over mid-turn gets a continuation prompt instead of the original, which already ran.
@@ -328,8 +354,9 @@ async function offeredReasoning(settings: HarnessModelSettings, initial: Harness
 export async function promptOnSubscriptionPool(session: HarnessSession, pool: TurnSubscriptionPool, initial: HarnessModelSettings,
   settingsFor: (candidate: PoolProfileContext) => HarnessModelSettings, input: HarnessPrompt, announce: (candidate: PoolProfileContext) => void): Promise<void> {
   if (!session.checkpointPoolAttempt || !session.restorePoolAttempt) throw new Error("This harness cannot safely retry a subscription pool attempt");
+  let attempts = 0;
   await runPoolAttempts(pool.candidates, profileProviderForRuntime(initial.provider), async (candidate, continuing) => {
-    const settings = await offeredReasoning(settingsFor(candidate), initial);
+    const switching = attempts++ > 0 || candidate.provider !== "pi" && candidate.provider !== profileProviderForRuntime(initial.provider);
     let started = false;
     const unsubscribe = session.subscribe((event) => {
       if (["textDelta", "thinkingDelta", "toolStart", "assistantFinal"].includes(String(event.type))) started = true;
@@ -337,8 +364,11 @@ export async function promptOnSubscriptionPool(session: HarnessSession, pool: Tu
     try {
       announce(candidate);
       await withPoolProfile(candidate, async () => {
-        await session.configure(settings);
-        await session.preflight();
+        if (switching) await preparePoolSwitch(session, pool, candidate, initial);
+        else {
+          await session.configure(await offeredReasoning(settingsFor(candidate), initial));
+          await session.preflight();
+        }
         await session.prompt(continuing ? { text: POOL_CONTINUATION_PROMPT, beforeStart: input.beforeStart, onStarted: input.onStarted } : input);
       });
     } catch (error) {

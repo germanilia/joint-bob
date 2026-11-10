@@ -65,6 +65,15 @@ test("pool CRUD preserves order, owner, and provider-specific fallback models", 
   assert.throws(() => deleteProviderProfile("pool-alice", aliceClaude.id), /pool/i);
 });
 
+test("pool harness models are optional and Pi's one model survives saving", () => {
+  const claude = createProviderProfile("pool-models", { label: "Claude", provider: "claude" });
+  const codex = createProviderProfile("pool-models", { label: "ChatGPT", provider: "openai-codex" });
+  const pool = poolApi.createSubscriptionPool("pool-models", { name: "Mixed", profileIds: [claude.id, codex.id] });
+  assert.deepEqual(pool.fallbackModels, {});
+  const updated = poolApi.updateSubscriptionPool("pool-models", pool.id, { name: "Mixed", profileIds: [claude.id, codex.id], fallbackModels: { pi: "openai-codex/gpt-picked", claude: "opus" } });
+  assert.deepEqual(poolApi.getSubscriptionPool("pool-models", updated.id).fallbackModels, { pi: "openai-codex/gpt-picked", claude: "opus" });
+});
+
 test("pool creation rejects empty, duplicate, foreign, or nonexistent profiles", () => {
   const create = required(poolApi.createSubscriptionPool);
   const alice = createProviderProfile("pool-validation", { label: "Owned", provider: "claude" });

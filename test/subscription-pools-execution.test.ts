@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { orderPoolCandidates, PoolAttemptFailure, resolvePoolModelSettings, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
+import { orderPoolCandidates, PoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 
 const candidates = [
   { id: "a", provider: "claude" as const },
@@ -126,6 +126,23 @@ test("Pi pool members keep the requested model and remain excluded from Claude-o
   }, async () => async () => {});
   assert.equal(result, "configured");
   assert.deepEqual(tried, ["missing", "configured"]);
+});
+
+test("one optional switch model per harness falls back to a compatible default", () => {
+  const models = [
+    { provider: "anthropic", id: "claude-default", thinkingLevels: ["high"] },
+    { provider: "openai-codex", id: "gpt-default", thinkingLevels: ["medium"] },
+    { provider: "openai-codex", id: "gpt-picked", thinkingLevels: ["high"] },
+  ];
+  const initial = { provider: "anthropic", modelId: "old", reasoning: "high", enabledTools: ["Read"] };
+  const defaults = { provider: "openai-codex", modelId: "gpt-default", thinkingLevel: "medium" };
+  assert.equal(resolvePoolSwitchModel("openai-codex", initial, undefined, models, defaults).modelId, "gpt-default");
+  assert.equal(resolvePoolSwitchModel("openai-codex", initial, "openai-codex/gpt-picked", models, defaults).modelId, "gpt-picked");
+  assert.equal(resolvePoolSwitchModel("claude", initial, "openai-codex/gpt-picked", models, defaults).modelId, "claude-default");
+  assert.equal(resolvePoolSwitchModel("openai-codex", initial, "removed-model", models, defaults).modelId, "gpt-default");
+  assert.deepEqual(resolvePoolSwitchModel("pi", initial, undefined, models, defaults).enabledTools, ["Read"]);
+  assert.equal(resolvePoolSwitchModel("claude", initial, "claude-default", models, defaults).provider, "anthropic");
+  assert.throws(() => resolvePoolSwitchModel("claude", initial, undefined, [], defaults), /No compatible default model/);
 });
 
 test("provider error classification recognizes quota and auth responses only before output", async () => {

@@ -1,4 +1,4 @@
-import type { HarnessModelSettings } from "../harnesses/runtime.js";
+import type { HarnessModel, HarnessModelSettings } from "../harnesses/runtime.js";
 import type { HarnessId } from "../types.js";
 import type { ProfileProvider } from "./store.js";
 
@@ -43,6 +43,16 @@ export function resolvePoolModelSettings(engine: HarnessId, candidateProvider: P
   if (!fallbackModel) throw new Error(`Configure a fallback model for ${candidateProvider} in this pool before cross-provider failover`);
   // The turn keeps its effort; promptOnSubscriptionPool moves it to the nearest one the fallback model offers.
   return { ...initial, provider: candidateProvider === "claude" ? "anthropic" : candidateProvider, modelId: fallbackModel };
+}
+
+/** A single harness choice is optional; an incompatible or removed model uses the destination's default. */
+export function resolvePoolSwitchModel(candidate: ProfileProvider, initial: HarnessModelSettings, selected: string | undefined,
+  models: HarnessModel[], defaults: { provider: string; modelId: string; thinkingLevel: string }): HarnessModelSettings {
+  const compatible = models.filter((model) => candidate === "pi" || model.provider === candidate || candidate === "claude" && model.provider === "anthropic");
+  const chosen = selected ? compatible.find((model) => selected === `${model.provider}/${model.id}` || selected === model.id) : undefined;
+  const model = chosen ?? compatible.find((model) => model.provider === defaults.provider && model.id === defaults.modelId) ?? compatible[0];
+  if (!model) throw new Error(`No compatible default model for ${candidate}`);
+  return { ...initial, provider: model.provider, modelId: model.id, reasoning: chosen ? initial.reasoning : defaults.thinkingLevel };
 }
 
 export function classifyPoolAttemptFailure(error: unknown, started: boolean): PoolAttemptFailure | undefined {
