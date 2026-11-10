@@ -3,6 +3,13 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.263.0 — 2026-11-11
+
+- Joint Bob does much less background work between machines. It no longer reads its whole history of changes again every five minutes to check that another machine has everything (on one machine this took half of the server's time). It also no longer takes one slow answer from another machine as that machine going away and coming back, which restarted the whole catch-up every few seconds.
+- Shared skills are checked by looking at their folders instead of reading every file. Answering another machine's "which skills do you share" took up to ten seconds on a busy machine and now takes well under a second.
+- Commands that agents run get the lowest CPU priority, so Joint Bob and your own apps stay responsive while agents build and test.
+- For work on Joint Bob itself: a machine runs only a few test runs at once (a quarter of its cores); the others wait and say so. See TESTING.md.
+
 ## 2.262.0 — 2026-11-10
 
 - You can delegate work to Bob. Tell him in his chat, for new work ("build the dessert menu in DAK and delegate it to Bob") or for a conversation you name ("take full control of the menu conversation and see it through"), and press **Start and delegate** or **Delegate it**. The agent is told to implement, fix and verify the work end to end, to ask you only for access, a decision only you can make or a risky step, and to end with a review report. Bob answers it, pushes it on and checks its work himself, with his own agent, at every stop.
