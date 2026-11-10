@@ -61,13 +61,16 @@ function input(parent, label, id, value, type = 'text') {
 }
 async function loadTeams() {
   if (select.options.length) return;
+  // Built aside and put in at once: a failed load leaves the list empty, so the next opening tries again.
   const { clusters } = await api('/api/clusters');
-  select.append(new Option('Select a team', ''));
+  const options = [new Option(clusters.length ? 'Select a team' : 'No cluster yet: create one under Clusters', '')];
   for (const cluster of clusters) {
     const { teams } = await api(`/api/assistant-teams?clusterId=${encodeURIComponent(cluster.id)}`);
-    for (const item of teams) select.append(new Option(cluster.name, item.id));
-    if (!teams.length) select.append(new Option(`${cluster.name} — create team on this host`, `create:${cluster.id}`));
+    for (const item of teams) options.push(new Option(cluster.name, item.id));
+    if (!teams.length) options.push(new Option(`${cluster.name} — create team on this host`, `create:${cluster.id}`));
   }
+  if (select.options.length) return;
+  select.replaceChildren(...options);
   syncMobile();
 }
 async function refresh(force = false) {
@@ -371,4 +374,6 @@ select.addEventListener('change', () => {
   refresh(true).catch(fail);
 });
 window.addEventListener('pagehide', () => { ++generation; stream?.close(); stream = undefined; });
+// However the control center opens (its button, the shortcut, a reload that restores it), the team list is filled.
+window.addEventListener('control-center-activated', () => loadTeams().catch(fail));
 document.querySelector('#openControlCenterButton').addEventListener('click', () => loadTeams().catch(fail));

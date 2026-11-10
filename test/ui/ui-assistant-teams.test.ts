@@ -70,6 +70,13 @@ test('team control center shows six shared Pi roles and persists ordered percent
   await other.getByTestId('team-select').selectOption(created.body.team.id);
   await other.getByTestId('team-agent-card').first().waitFor();
   assert.equal(await other.getByTestId('team-agent-card').count(), 6);
+  // A reload brings the control center back without its button being pressed: the team list still fills.
+  await other.reload();
+  await other.waitForFunction(() => !document.body.classList.contains('booting'));
+  await other.waitForFunction((id) => [...document.querySelectorAll('[data-testid="team-select"] option')].some((option) => option.value === id), created.body.team.id);
+  await other.getByTestId('control-tab-assistants').click();
+  await other.getByTestId('team-select').selectOption(created.body.team.id);
+  await other.getByTestId('team-agent-card').first().waitFor();
   await page.goto(node.url);
   await page.locator('#loginDialog[open]').waitFor();
   await page.locator('#loginUsernameInput').fill(environment.username);

@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- Fixed the team picker in the control center staying empty. It now fills however the control center opens, including after a reload, and it says *No cluster yet: create one under Clusters* when no cluster exists. A failed load is retried the next time you open it.
+
 ## 2.256.3 — 2026-11-10
 
 - The new-conversation dialog can launch an EC2 node. On the "Choose where it runs" step, tick one AWS secret account, enter a region, instance type and, so you can get in, an existing key pair and security group, and choose **Launch EC2 node**. Joint Bob runs the AWS CLI with only that account's keys and starts an Ubuntu machine that installs Joint Bob on first boot. Joint Bob opens no inbound port itself. You still sign in to the new node, create its administrator and pair it. AgentCore is not supported yet.
