@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { BigIntStats } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { chmod, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -254,6 +255,132 @@ export async function buildSkillBundle(root: string, name: string): Promise<{ bu
   const bundle = validateSkillBundle({ files: files.sort((left, right) => left.path.localeCompare(right.path)) });
   validateManifest(bundle, name);
   return { bundle, digest: skillBundleDigest(bundle) };
+}
+
+/*
+ * A skill's digest, kept until its files change.
+ *
+ * Peers ask for the digests of every skill shared with them, and a node checks its received copies
+ * against their digests on every sync. Each answer used to read and hash every file of every skill:
+ * about a thousand file calls, one after another, for forty skills. On a busy node each call waits
+ * its turn, and one answer took ten seconds.
+ *
+ * How a change is noticed. Nothing announces an edit made on disk by a person, an agent or file
+ * sync, so the app's own writers are not hooked either. Every request looks at the folder again,
+ * without reading any file. The look lists each directory and takes each entry's size, modification
+ * time, change time, inode and mode. The digest is reused only while all of that is the same.
+ * - Editing a file moves its change time. The system sets that time on every write, and a program
+ *   cannot set it back, so a tool that restores the modification time is noticed too.
+ * - Replacing a file gives it another inode. Adding, removing or renaming changes the list, and
+ *   the directory's own times.
+ * - Two writes inside one tick of the file system's clock would leave the times as they were. So a
+ *   digest is kept only when everything in the folder was last changed more than two seconds before
+ *   the look. Until then every request reads the files, as it always did.
+ * This assumes ordinary writes on a disk that uses this machine's clock. A file changed through a
+ * long-lived memory map could go unnoticed. Skills are text and scripts, and nothing writes them
+ * that way.
+ *
+ * Only digests are kept, never file content. That is a few hundred bytes per skill.
+ */
+interface SkillLook { signature: string; settled: boolean }
+interface KeptSkillDigest { signature: string; digest?: string; failure?: string }
+
+const keptSkillDigests = new Map<string, KeptSkillDigest>();
+const MAX_KEPT_DIGESTS = 2048;
+/** No file system clock ticks slower than this. FAT, the coarsest, counts in two-second steps. */
+const UNSETTLED_NS = 2_000_000_000n;
+/** A folder with more entries than this is not looked at, so a huge one costs no more than before. It is read as it always was. */
+const MAX_LOOK_ENTRIES = 4 * MAX_SKILL_FILES;
+/** File calls of all looks that may wait in Node's small thread pool at once, so other file work is not held up behind them. */
+const LOOK_CALLS = 64;
+let lookCalls = 0;
+const lookQueue: Array<() => void> = [];
+
+async function lookCall<T>(call: () => Promise<T>): Promise<T> {
+  // A call that waited takes over the place of the one that woke it, so the count stays as it is.
+  if (lookCalls >= LOOK_CALLS) await new Promise<void>((resolve) => lookQueue.push(resolve));
+  else lookCalls++;
+  try { return await call(); }
+  finally {
+    const next = lookQueue.shift();
+    if (next) next(); else lookCalls--;
+  }
+}
+
+/**
+ * What the folder looks like now, from the same entries buildSkillBundle visits. The calls of one
+ * directory run together. One at a time, each would wait for its own turn on a busy node.
+ * Throws when the folder cannot be looked at, and the caller then reads it as before.
+ */
+async function lookAtSkill(root: string): Promise<SkillLook> {
+  const lookedAt = BigInt(Date.now()) * 1_000_000n;
+  let settled = true, entries = 0;
+  const lines: string[] = [];
+  const note = (kind: string, relative: string, info: BigIntStats): void => {
+    lines.push(`${kind}\0${relative}\0${info.size}\0${info.mtimeNs}\0${info.ctimeNs}\0${info.ino}\0${info.mode}`);
+    // A modification time can be set to anything, so one far in the future says nothing about a recent write.
+    if (info.ctimeNs >= lookedAt - UNSETTLED_NS || (info.mtimeNs >= lookedAt - UNSETTLED_NS && info.mtimeNs <= lookedAt + UNSETTLED_NS)) settled = false;
+  };
+  const visit = async (directory: string, relative: string): Promise<void> => {
+    const names = (await lookCall(() => readdir(directory))).map((name) => ({ name, next: relative ? `${relative}/${name}` : name })).filter((entry) => !forbidden(entry.next));
+    entries += names.length;
+    if (entries > MAX_LOOK_ENTRIES) throw new Error("Too many entries to look at");
+    await Promise.all(names.map(async ({ name, next }) => {
+      const full = path.join(directory, name);
+      const info = await lookCall(() => lstat(full, { bigint: true }));
+      const kind = info.isSymbolicLink() ? "link" : info.isDirectory() ? "directory" : info.isFile() ? "file" : "other";
+      note(kind, next, info);
+      if (kind === "directory") await visit(full, next);
+    }));
+  };
+  const rootInfo = await lookCall(() => lstat(root, { bigint: true }));
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) throw new Error("Skill root must be a real directory, not a symbolic link");
+  note("root", "", rootInfo);
+  await visit(root, "");
+  return { signature: createHash("sha256").update(JSON.stringify(lines.sort())).digest("hex"), settled };
+}
+
+let skillRead: Promise<unknown> = Promise.resolve();
+/** One skill is read at a time, so many changed skills never hold all their files in memory together. */
+function readSkillInTurn<T>(read: () => Promise<T>): Promise<T> {
+  const result = skillRead.then(read);
+  skillRead = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+function keepSkillDigest(key: string, kept: KeptSkillDigest): void {
+  keptSkillDigests.delete(key);
+  keptSkillDigests.set(key, kept);
+  if (keptSkillDigests.size > MAX_KEPT_DIGESTS) keptSkillDigests.delete(keptSkillDigests.keys().next().value as string);
+}
+
+/**
+ * The digest buildSkillBundle would give, or the error it would throw, without reading the files
+ * when the folder looks as it did the last time they were read.
+ */
+export async function skillDigest(root: string, name: string): Promise<string> {
+  validateSkillName(name);
+  // The name is part of the key, because the same folder under another name fails the SKILL.md check.
+  const key = `${path.resolve(root)}\0${name}`;
+  // Taken before the files are read. A change after it moves a time the next look compares, so a
+  // digest read from changing files is never matched again.
+  const look = await lookAtSkill(root).catch(() => undefined);
+  const kept = look ? keptSkillDigests.get(key) : undefined;
+  if (look && kept?.signature === look.signature) {
+    if (kept.failure !== undefined) throw new Error(kept.failure);
+    return kept.digest as string;
+  }
+  try {
+    const { digest } = await readSkillInTurn(() => buildSkillBundle(root, name));
+    if (look?.settled) keepSkillDigest(key, { signature: look.signature, digest }); else keptSkillDigests.delete(key);
+    return digest;
+  } catch (error) {
+    // A skill that cannot be bundled stays so until its files change: a symbolic link inside, too large,
+    // a bad SKILL.md. A failed file call carries a code and may pass the next time, so it is not kept.
+    if (look?.settled && error instanceof Error && (error as NodeJS.ErrnoException).code === undefined) keepSkillDigest(key, { signature: look.signature, failure: error.message });
+    else keptSkillDigests.delete(key);
+    throw error;
+  }
 }
 
 async function assertRealParent(destination: string): Promise<void> {

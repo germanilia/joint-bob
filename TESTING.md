@@ -17,6 +17,15 @@ The tests need no extra program for file synchronization. File sync is off in
 tests unless a test sets `JOINT_BOB_FILE_SYNC=1`; the tests that do start their
 own nodes with disposable folders.
 
+Only a few test runs go on at once on one machine: a quarter of its cores, one at least.
+Every command above starts through `scripts/run-tests.mjs`, which takes a slot first and
+waits when they are taken, saying so (`[tests] Waiting for a test slot…`). Several agent
+sessions work in this repository at the same time, and six runs at once took a ten-core
+machine to a load of 200: every run timed out and the app stopped answering. A run that
+waits finishes sooner than one that fights the others. If you wrap a run in `timeout`,
+allow for the wait. `JOINT_BOB_TEST_SLOTS=<n>` sets the number of slots and `0` turns the
+wait off; CI never waits.
+
 CI divides all `test/*.test.ts` files deterministically across four parallel workers.
 Each worker runs four files at a time, then reruns only its failed files, one at a time.
 A test that passes alone but not under load still needs fixing; the rerun only keeps it

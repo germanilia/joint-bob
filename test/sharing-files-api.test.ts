@@ -41,21 +41,27 @@ test("twins exchange project locations, with or without an old machine's device 
     const session = await signIn(environment, a);
     const project = a.projects[0];
     const own = (await api<{ projects: Array<{ id: string; path: string }> }>(a, session, "GET", "/projects?syncStatus=false")).body.projects.find((candidate) => candidate.id === project.id)!;
-    // The nodes' own first exchange, so it cannot land between the requests below.
     await until("the twins' own exchange of locations", () => Boolean(peerLocation(a, project.id, b.nodeId)));
+    // Each twin tells the other its real location once, in its own time. One of those can still land right after a
+    // request below and store the real path over the one just sent, so a request is repeated until what it sent is what
+    // is stored: once the twins' own exchanges are over, nothing else writes the row.
+    const sendUntilStored = async (body: Record<string, unknown>, sent: string, why?: string) => {
+      for (let attempt = 1; ; attempt++) {
+        const answer = await signedNodeRequest(environment, b, a, "POST", ENROLL, body);
+        assert.equal(answer.status, 200, await answer.clone().text());
+        assert.deepEqual(await answer.json(), { projects: [project.id], locations: [{ projectId: project.id, path: own.path }] }, why);
+        if (peerLocation(a, project.id, b.nodeId) === sent) return;
+        assert.ok(attempt < 10, `the location ${sent} sent by the peer was never the one stored`);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    };
 
     // A machine on this release sends no device ID.
-    const plain = await signedNodeRequest(environment, b, a, "POST", ENROLL, { projects: [project.id], locations: [{ projectId: project.id, path: "/on-b/current" }] });
-    assert.equal(plain.status, 200, await plain.clone().text());
-    assert.deepEqual(await plain.json(), { projects: [project.id], locations: [{ projectId: project.id, path: own.path }] }, "the answer names this machine's location and no device");
-    assert.equal(peerLocation(a, project.id, b.nodeId), "/on-b/current");
+    await sendUntilStored({ projects: [project.id], locations: [{ projectId: project.id, path: "/on-b/current" }] }, "/on-b/current", "the answer names this machine's location and no device");
 
     // One on an older release still does: the body is accepted and the device ID is not stored anywhere.
     const device = Array(8).fill("OLDPEER").join("-");
-    const old = await signedNodeRequest(environment, b, a, "POST", ENROLL, { deviceId: device, projects: [project.id], locations: [{ projectId: project.id, path: "/on-b/older-release" }] });
-    assert.equal(old.status, 200, await old.clone().text());
-    assert.deepEqual(await old.json(), { projects: [project.id], locations: [{ projectId: project.id, path: own.path }] });
-    assert.equal(peerLocation(a, project.id, b.nodeId), "/on-b/older-release");
+    await sendUntilStored({ deviceId: device, projects: [project.id], locations: [{ projectId: project.id, path: "/on-b/older-release" }] }, "/on-b/older-release");
     const db = new DatabaseSync(path.join(a.dataDir, "node.db"));
     try {
       assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'cluster_v2_file_enrollments'").get(), undefined, "no enrollment table is made");

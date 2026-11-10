@@ -110,7 +110,7 @@ test("background commands and descendants inherit lower priority without lowerin
     await waitFor(async () => (await f.control({ action: "task", id: UUID })).body.result.status === "completed", "priority probe did not finish");
     const priorities = JSON.parse(await readFile(report, "utf8"));
     assert.equal(os.getPriority(appPid), appPriority, "app priority must not change");
-    assert.equal(priorities.task, Math.min(19, Math.max(10, appPriority + 10)), "background priority must be lowered before spawning");
+    assert.equal(priorities.task, 19, "background commands run at the lowest priority, set before spawning");
     assert.equal(priorities.descendant, priorities.task, "descendants must inherit background priority");
   } finally { await cleanup(f); }
 });

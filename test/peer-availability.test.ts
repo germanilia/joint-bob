@@ -97,3 +97,32 @@ test("background sync sends nothing to a peer that is away, whichever way the re
   assert.equal(peerAway(peer), false, "and its answer shows the peer is back");
   assert.equal((await inBackground(() => peerFetch(url, {}, peer))).status, 200);
 });
+
+// One slow route used to count as the peer being gone, and its next answer as a return, which
+// started the whole catch-up again: every eleven seconds for every peer on 2026-11-10.
+test("a request that times out while the peer answers others is a slow request, not an absent peer", async (t) => {
+  const server = createServer((request, response) => { if (request.url === "/fast") response.end("{}"); /* /slow never answers */ });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { peerFetch } = await import("../src/relay/transport.js");
+  let returns = 0;
+  const stop = onPeerReturned(() => { returns += 1; });
+  t.after(stop);
+
+  const slow = assert.rejects(peerFetch(`${base}/slow`, { signal: AbortSignal.timeout(400) }, peer), { name: "TimeoutError" });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal((await peerFetch(`${base}/fast`, {}, peer)).status, 200, "the peer answers something else while the slow request waits");
+  await slow;
+  assert.equal(peerAway(peer), false, "the peer answered meanwhile: it is there");
+  assert.equal((await peerFetch(`${base}/fast`, {}, peer)).status, 200);
+  assert.equal(returns, 0, "nothing came back, so no catch-up starts");
+
+  // With no answer of any kind while it waited, the same timeout does mean the peer is gone.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await assert.rejects(peerFetch(`${base}/slow`, { signal: AbortSignal.timeout(200) }, peer), { name: "TimeoutError" });
+  assert.equal(peerAway(peer), true);
+  assert.equal((await peerFetch(`${base}/fast`, {}, peer)).status, 200);
+  assert.equal(peerAway(peer), false);
+  assert.equal(returns, 1, "its next answer is a return");
+});

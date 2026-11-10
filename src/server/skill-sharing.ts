@@ -12,7 +12,7 @@ import { resolveDataDirectory } from "../data-directory.js";
 import { signClusterRequest } from "../cluster-protocol.js";
 import { getOrCreateClusterIdentity } from "../cluster-identity.js";
 import { getSettings } from "../settings.js";
-import { authorizedSkillClusters, buildSkillBundle, ensureSkillSharingSchema, installSkillBundle, listReceivedScopedSkills, listReceivedSkills, setSkillShares, skillBundleDigest, skillClusterIds, skillNodeIds, skillScopeGrants, validateSkillName, type ReceivedScopedSkill, type ReceivedSkill, type SkillConversationGrant, type SkillScopeGrants } from "../skill-sharing.js";
+import { authorizedSkillClusters, buildSkillBundle, ensureSkillSharingSchema, installSkillBundle, listReceivedScopedSkills, listReceivedSkills, setSkillShares, skillBundleDigest, skillClusterIds, skillDigest, skillNodeIds, skillScopeGrants, validateSkillName, type ReceivedScopedSkill, type ReceivedSkill, type SkillConversationGrant, type SkillScopeGrants } from "../skill-sharing.js";
 import { allowSkillImport, backupRemovedSkill, markReceived, receivedOwner, skillSuppressed, suppressSkill, unlinkSkillAliases, unmarkReceived, withSkillMutation } from "../skill-sharing-files.js";
 import { ensureResourceSharingSchema } from "../cluster-sharing.js";
 import { scopedSkillDirectory, scopedSkillParent, writeScopedSkillIndex } from "../scoped-skills.js";
@@ -67,17 +67,18 @@ async function existing(directory: string): Promise<boolean> {
   try { await lstat(directory); return true; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
 }
+/** Waits for all the reads at once and keeps their order, so the failure thrown is the one that came first when they ran one by one. */
+async function together<T>(reads: Array<Promise<T>>): Promise<T[]> {
+  return (await Promise.allSettled(reads)).map((read) => { if (read.status === "rejected") throw read.reason; return read.value; });
+}
 async function managedNames(): Promise<string[]> {
   const root = agentResourcePaths().sharedSkills;
   if (!await existing(root)) return [];
   if (!(await lstat(root)).isDirectory()) throw failure("Managed skills root must be a real directory");
-  const names: string[] = [];
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    if (!await existing(path.join(root, entry.name, "SKILL.md"))) continue;
-    if (!await skillSuppressed(root, entry.name)) names.push(entry.name);
-  }
-  return names.sort();
+  const folders = (await readdir(root, { withFileTypes: true })).filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
+  // All folders are checked at once. One by one this was two waits per skill on every listing.
+  const listed = await together(folders.map(async (name) => await existing(path.join(root, name, "SKILL.md")) && !await skillSuppressed(root, name)));
+  return folders.filter((_, index) => listed[index]).sort();
 }
 function aliasRoots(): string[] {
   const settings = getSettings();
@@ -87,7 +88,7 @@ async function removeReceived(db: DatabaseSync, prior: ReceivedSkill): Promise<v
   db.prepare("INSERT OR IGNORE INTO revoked_scoped_skills VALUES(?)").run(prior.name);
   const destination = path.join(agentResourcePaths().sharedSkills, prior.name);
   if (await existing(destination)) {
-    if ((await buildSkillBundle(destination, prior.name)).digest !== prior.digest) throw failure(`Modified received skill preserved: ${prior.name}`);
+    if (await skillDigest(destination, prior.name) !== prior.digest) throw failure(`Modified received skill preserved: ${prior.name}`);
     await backupRemovedSkill(destination);
   }
   await unlinkSkillAliases(destination, aliasRoots());
@@ -154,41 +155,71 @@ function scopedOnly(db: DatabaseSync, owner: string, receiver: string, name: str
   return grant.projectIds.length || grant.conversations.length ? grant : undefined;
 }
 
+/** One of this node's own skills as a walk found it. Without `outcome` nobody is granted the skill, so it was not looked at. */
+interface OwnSkill { name: string; outcome?: { digest: string } | { error: unknown } }
+let waitingWalk: Promise<OwnSkill[]> | undefined;
+/**
+ * The digests of this node's own skills, for the manifest routes. Every peer's request needs the
+ * same walk of the skills folder, so requests share it. Before, each one walked the folder alone and
+ * they queued behind one another in the mutation lock.
+ *
+ * A request joins only a walk that has not begun. Once a walk reads the disk, a later request waits
+ * for the next one, so no answer misses a change made before its request arrived. At most one walk
+ * runs and one waits, however many peers ask.
+ *
+ * The walk still runs inside the mutation lock. A skill is never listed while an install has moved
+ * it away, and a walk is a look at each folder (skillDigest), so the lock is held briefly.
+ */
+function ownSkillDigests(db: DatabaseSync): Promise<OwnSkill[]> {
+  waitingWalk ??= withSkillMutation(async () => {
+    waitingWalk = undefined;
+    const root = agentResourcePaths().sharedSkills, names = await managedNames();
+    const owners = await together(names.map((name) => receivedOwner(root, name)));
+    // Every per-receiver check starts from these rows. A name without one is granted to nobody, so its files are left alone.
+    ensureSkillSharingSchema(db);
+    const granted = new Set((db.prepare("SELECT name FROM skill_shares UNION SELECT name FROM skill_node_shares UNION SELECT name FROM skill_scope_shares").all() as Array<{ name: string }>).map((row) => row.name));
+    return Promise.all(names.filter((_, index) => !owners[index]).map(async (name): Promise<OwnSkill> => {
+      if (!granted.has(name)) return { name };
+      try { return { name, outcome: { digest: await skillDigest(path.join(root, name), name) } }; }
+      catch (error) { return { name, outcome: { error } }; }
+    }));
+  });
+  return waitingWalk;
+}
+
 async function scopedManifestFor(receiver: string) {
   const db = await clusterV2Database(), owner = (await getClusterNode()).id;
   requirePeer(db, owner, receiver);
-  return withSkillMutation(async () => {
-    const skills = [];
-    for (const name of await managedNames()) {
-      if (await receivedOwner(agentResourcePaths().sharedSkills, name)) continue;
-      if (!scopedOnly(db, owner, receiver, name)) continue;
-      const built = await buildSkillBundle(path.join(agentResourcePaths().sharedSkills, name), name);
-      const grant = scopedOnly(db, owner, receiver, name);
-      if (grant) skills.push({ name, digest: built.digest, ...grant });
-    }
-    requirePeer(db, owner, receiver);
-    const result = scopedManifestSchema.parse({ ownerNodeId: owner, skills });
-    if (Buffer.byteLength(JSON.stringify(result)) > MAX_MANIFEST_BYTES) throw failure("Skill manifest exceeds limit", 413);
-    return result;
-  });
+  const skills = [];
+  for (const { name, outcome } of await ownSkillDigests(db)) {
+    // A folder whose name is no skill name fails the grant checks. A skill without grants skips them, so its name is checked here.
+    if (!outcome) { validateSkillName(name); continue; }
+    const grant = scopedOnly(db, owner, receiver, name);
+    if (!grant) continue;
+    if ("error" in outcome) throw outcome.error;
+    skills.push({ name, digest: outcome.digest, ...grant });
+  }
+  requirePeer(db, owner, receiver);
+  const result = scopedManifestSchema.parse({ ownerNodeId: owner, skills });
+  if (Buffer.byteLength(JSON.stringify(result)) > MAX_MANIFEST_BYTES) throw failure("Skill manifest exceeds limit", 413);
+  return result;
 }
 
 async function manifestFor(receiver: string) {
   const db = await clusterV2Database(), owner = (await getClusterNode()).id;
   requirePeer(db, owner, receiver);
-  return withSkillMutation(async () => {
-    const skills = [];
-    for (const name of await managedNames()) {
-      if (await receivedOwner(agentResourcePaths().sharedSkills, name)) continue;
-      if (!authorizedSkillClusters(db, owner, receiver, name).length) continue;
-      const built = await buildSkillBundle(path.join(agentResourcePaths().sharedSkills, name), name);
-      if (authorizedSkillClusters(db, owner, receiver, name).length) skills.push({ name, digest: built.digest });
-    }
-    requirePeer(db, owner, receiver);
-    const result = manifestSchema.parse({ ownerNodeId: owner, skills });
-    if (Buffer.byteLength(JSON.stringify(result)) > MAX_MANIFEST_BYTES) throw failure("Skill manifest exceeds limit", 413);
-    return result;
-  });
+  const skills = [];
+  for (const { name, outcome } of await ownSkillDigests(db)) {
+    if (!outcome) { validateSkillName(name); continue; }
+    // Grants are read after the walk, so a skill unshared while it ran is not listed. A skill that cannot be bundled fails only the receivers it is shared with.
+    if (!authorizedSkillClusters(db, owner, receiver, name).length) continue;
+    if ("error" in outcome) throw outcome.error;
+    skills.push({ name, digest: outcome.digest });
+  }
+  requirePeer(db, owner, receiver);
+  const result = manifestSchema.parse({ ownerNodeId: owner, skills });
+  if (Buffer.byteLength(JSON.stringify(result)) > MAX_MANIFEST_BYTES) throw failure("Skill manifest exceeds limit", 413);
+  return result;
 }
 async function bundleFor(receiver: string, name: string) {
   const db = await clusterV2Database(), owner = (await getClusterNode()).id;
@@ -252,7 +283,7 @@ async function installOffered(db: DatabaseSync, local: string, owner: string, cl
     const provenance = await receivedOwner(root, offered.name);
     if (received.some((item) => item.ownerNodeId !== owner) || (provenance && provenance !== owner) || (!prior && await existing(destination))) throw failure(`Skill name conflict: ${offered.name}`);
     if (!prior || !await existing(destination)) return false;
-    if ((await buildSkillBundle(destination, offered.name)).digest !== prior.digest) throw failure(`Modified received skill preserved: ${offered.name}`);
+    if (await skillDigest(destination, offered.name) !== prior.digest) throw failure(`Modified received skill preserved: ${offered.name}`);
     if (prior.digest !== offered.digest) return false;
     db.prepare("DELETE FROM revoked_scoped_skills WHERE name=?").run(offered.name);
     return true;
@@ -268,7 +299,7 @@ async function installOffered(db: DatabaseSync, local: string, owner: string, cl
     if ((prior && prior.ownerNodeId !== owner) || (provenance && provenance !== owner)) throw failure(`Skill name conflict: ${offered.name}`);
     if (await existing(destination)) {
       if (!prior) throw failure(`Skill name conflict: ${offered.name}`);
-      const actual = (await buildSkillBundle(destination, offered.name)).digest;
+      const actual = await skillDigest(destination, offered.name);
       if (actual !== prior.digest) throw failure(`Modified received skill preserved: ${offered.name}`);
       if (actual === offered.digest) return;
     }
@@ -288,7 +319,7 @@ async function removeScoped(db: DatabaseSync, prior: ReceivedScopedSkill): Promi
   if (!listReceivedSkills(db).some((item) => item.name === prior.name)) db.prepare("INSERT OR IGNORE INTO revoked_scoped_skills VALUES(?)").run(prior.name);
   const destination = scopedSkillDirectory(prior.name);
   if (await existing(destination)) {
-    if ((await buildSkillBundle(destination, prior.name)).digest !== prior.digest) throw failure(`Modified received skill preserved: ${prior.name}`);
+    if (await skillDigest(destination, prior.name) !== prior.digest) throw failure(`Modified received skill preserved: ${prior.name}`);
     await backupRemovedSkill(destination);
   }
   await rm(scopedSkillParent(prior.name), { recursive: true, force: true });
@@ -311,7 +342,7 @@ async function installScoped(db: DatabaseSync, local: string, owner: string, clu
     db.prepare("UPDATE received_scoped_skills SET project_ids=?,conversations=? WHERE owner_node_id=? AND name=?").run(...scope, owner, offered.name);
     await assertNoConflict();
     if (!await existing(destination)) return false;
-    if ((await buildSkillBundle(destination, offered.name)).digest !== prior.digest) throw failure(`Modified received skill preserved: ${offered.name}`);
+    if (await skillDigest(destination, offered.name) !== prior.digest) throw failure(`Modified received skill preserved: ${offered.name}`);
     if (prior.digest !== offered.digest) return false;
     db.prepare("DELETE FROM revoked_scoped_skills WHERE name=?").run(offered.name);
     return true;
@@ -325,7 +356,7 @@ async function installScoped(db: DatabaseSync, local: string, owner: string, clu
     const prior = listReceivedScopedSkills(db).find((item) => item.name === offered.name);
     if (await existing(destination)) {
       if (!prior) throw failure(`Skill name conflict: ${offered.name}`);
-      if ((await buildSkillBundle(destination, offered.name)).digest !== prior.digest) throw failure(`Modified received skill preserved: ${offered.name}`);
+      if (await skillDigest(destination, offered.name) !== prior.digest) throw failure(`Modified received skill preserved: ${offered.name}`);
     }
     await installSkillBundle(fetched.bundle, offered.name, destination, path.join(resolveDataDirectory(), "skill-staging"));
     db.prepare("INSERT OR REPLACE INTO received_scoped_skills VALUES(?,?,?,?,?,?)").run(owner, offered.name, offered.digest, new Date().toISOString(), ...scope);
@@ -356,14 +387,43 @@ function recordPeerError(db: DatabaseSync, owner: string, error: unknown): void 
     .run(owner, (error as Error).message);
 }
 /**
- * When each owner was last asked. Owners say when a skill or its sharing changes (/skills/changed)
- * and are asked when they return, so the 30-second maintenance pass asks one again only after
- * OWNER_RECHECK_MS: that catches a skill edited on disk, which nothing announces.
+ * How each owner is asked for what it shares here.
+ *
+ * Owners say when a skill or its sharing changes (/skills/changed) and are asked when they return,
+ * so the 30-second maintenance pass asks one again only after OWNER_RECHECK_MS. That catches a
+ * skill edited on disk, which nothing announces.
+ *
+ * One sync runs per owner at a time. A notice, a return or a refresh that comes during it gets one
+ * more sync after it, because the running one may have read the owner's list before whatever
+ * prompted the request. Ten notices during one sync lead to one more sync, not ten. Before, each
+ * started a sync of its own beside the running one.
  */
-const ownerAsked = new Map<string, number>();
+interface OwnerPace {
+  /** When a sync with this owner last started. */
+  askedAt: number;
+  running?: Promise<void>;
+  /** The one sync that starts when the running one ends, shared by everything that asked meanwhile. */
+  following?: Promise<void>;
+}
+const ownerPaces = new Map<string, OwnerPace>();
 const OWNER_RECHECK_MS = 10 * 60_000;
-async function syncOwner(db: DatabaseSync, local: string, owner: string, cluster: string): Promise<void> {
-  ownerAsked.set(owner, Date.now());
+function paceOf(owner: string): OwnerPace {
+  let pace = ownerPaces.get(owner);
+  if (!pace) ownerPaces.set(owner, pace = { askedAt: 0 });
+  return pace;
+}
+/** Asks one owner, never twice at once. Resolves when a sync that started after this call has ended. */
+function askOwner(db: DatabaseSync, local: string, owner: string, cluster: string): Promise<void> {
+  const pace = paceOf(owner);
+  if (pace.following) return pace.following;
+  if (pace.running) {
+    const next = (): Promise<void> => { pace.following = undefined; return askOwner(db, local, owner, cluster); };
+    return pace.following = pace.running.then(next, next);
+  }
+  return pace.running = syncOwner(db, local, owner, cluster, pace).finally(() => { pace.running = undefined; });
+}
+async function syncOwner(db: DatabaseSync, local: string, owner: string, cluster: string, pace: OwnerPace): Promise<void> {
+  pace.askedAt = Date.now();
   try {
     const manifest = manifestSchema.parse(await signedSkillPost(db, local, owner, cluster, "/api/cluster/v2/skills/manifest", {}, MAX_MANIFEST_BYTES));
     if (manifest.ownerNodeId !== owner) throw failure("Peer returned the wrong owner");
@@ -403,7 +463,7 @@ async function syncSkills(force: boolean): Promise<void> {
   });
   // No mutation lock spans network I/O: two owners can pull from one another.
   // An owner that is away keeps what it shared here; it is asked again when it returns.
-  try { await Promise.all([...peers].filter(([owner]) => !peerAway(owner) && (force || Date.now() - (ownerAsked.get(owner) ?? 0) >= OWNER_RECHECK_MS)).map(([owner, cluster]) => syncOwner(db, local, owner, cluster))); }
+  try { await Promise.all([...peers].filter(([owner]) => !peerAway(owner) && (force || Date.now() - paceOf(owner).askedAt >= OWNER_RECHECK_MS)).map(([owner, cluster]) => askOwner(db, local, owner, cluster))); }
   finally { writeScopedIndex(db); }
 }
 /**
@@ -416,7 +476,7 @@ async function installRelaySkill(db: DatabaseSync, local: string, relay: RelayMe
   const current = async () => {
     const prior = listReceivedSkills(db).find((item) => item.name === name);
     return prior?.ownerNodeId === owner && await receivedOwner(root, name) === owner && !await skillSuppressed(root, name)
-      && await existing(destination) && (await buildSkillBundle(destination, name)).digest === digest;
+      && await existing(destination) && await skillDigest(destination, name) === digest;
   };
   if (await withSkillMutation(current)) return false;
   const bundle = await fetchRelaySkillBundle(db, local, relay, name, digest);
@@ -446,7 +506,7 @@ async function installRelaySkill(db: DatabaseSync, local: string, relay: RelayMe
 async function removeRelaySkill(db: DatabaseSync, prior: ReceivedSkill): Promise<void> {
   const root = agentResourcePaths().sharedSkills, destination = path.join(root, prior.name);
   const replaced = db.prepare("SELECT backup FROM relay_replaced_skills WHERE name=?").get(prior.name) as { backup: string } | undefined;
-  if (await existing(destination) && (await buildSkillBundle(destination, prior.name)).digest !== prior.digest) {
+  if (await existing(destination) && await skillDigest(destination, prior.name) !== prior.digest) {
     await unmarkReceived(root, prior.name);
     db.prepare("DELETE FROM received_skills WHERE owner_node_id=? AND name=?").run(prior.ownerNodeId, prior.name);
     db.prepare("DELETE FROM relay_replaced_skills WHERE name=?").run(prior.name);
@@ -531,7 +591,7 @@ export async function refreshSkillsFrom(owner: string): Promise<void> {
   ensureSkillSharingSchema(db);
   let cluster: string;
   try { cluster = requirePeer(db, local, owner); } catch { return; }
-  await syncOwner(db, local, owner, cluster);
+  await askOwner(db, local, owner, cluster);
   writeScopedIndex(db);
 }
 
@@ -584,10 +644,7 @@ export async function announceSkillChanges(names: string[]): Promise<void> {
 async function ownerChanged(owner: string): Promise<{ accepted: true }> {
   const db = await clusterV2Database(), local = (await getClusterNode()).id;
   const cluster = requirePeer(db, local, owner);
-  void (async () => {
-    await syncOwner(db, local, owner, cluster);
-    writeScopedIndex(db);
-  })().catch((error) => console.warn(`Skill refresh from ${owner} failed`, error));
+  void askOwner(db, local, owner, cluster).then(() => writeScopedIndex(db)).catch((error) => console.warn(`Skill refresh from ${owner} failed`, error));
   return { accepted: true };
 }
 
@@ -597,7 +654,7 @@ async function shareSkill(name: string, ids: string[], nodeIds: string[], scopes
     const root = agentResourcePaths().sharedSkills;
     if (await receivedOwner(root, name)) throw failure("Received skills cannot be reshared", 403);
     if (!(await managedNames()).includes(name)) throw failure("Managed skill not found", 404);
-    if (ids.length || nodeIds.length || scopes.workspaceIds.length || scopes.projectIds.length || scopes.conversations.length) await buildSkillBundle(path.join(root, name), name);
+    if (ids.length || nodeIds.length || scopes.workspaceIds.length || scopes.projectIds.length || scopes.conversations.length) await skillDigest(path.join(root, name), name);
     try { setSkillShares(db, local, name, ids, nodeIds, scopes); }
     catch (error) { throw failure((error as Error).message, 400); }
     return { name, clusterIds: skillClusterIds(db, local, name), nodeIds: skillNodeIds(db, local, name), ...skillScopeGrants(db, name) };
@@ -653,3 +710,14 @@ app.post("/api/cluster/v2/skills/scoped-manifest", route(async (request, respons
 app.post("/api/cluster/v2/skills/bundle", route(async (request, response) => bundleFor(response.locals.machineNodeId, z.object({ name: nameSchema }).strict().parse(request.body).name), true));
 app.post("/api/cluster/v2/skills/changed", route(async (request, response) => { z.object({}).strict().parse(request.body); return ownerChanged(response.locals.machineNodeId); }, true));
 }
+
+/** For tests: what the machine routes call, without a signed request around it, and the pacing state. */
+export const skillSharingForTests = {
+  manifestFor, scopedManifestFor, bundleFor, ownerChanged,
+  /** Forgets when each owner was asked, as after a restart. */
+  forgetOwnerPaces: (): void => ownerPaces.clear(),
+  /** Resolves when no sync with this owner is running or about to follow one. */
+  async ownerSettled(owner: string): Promise<void> {
+    for (let pace = ownerPaces.get(owner); pace?.running || pace?.following;) await (pace.following ?? pace.running);
+  },
+};

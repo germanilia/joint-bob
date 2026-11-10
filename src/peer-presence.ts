@@ -27,6 +27,8 @@ const AWAY_AFTER = 3;
 
 interface Failure { count: number; failedAt: number; retryAt: number; probedAt: number; contactedAt: number; logged: boolean }
 const failures = new Map<string, Failure>();
+/** When each peer last answered a request, whichever it was. */
+const answeredAt = new Map<string, number>();
 const skippable = new AsyncLocalStorage<true>();
 const returnListeners = new Set<(peerId: string) => void>();
 
@@ -107,11 +109,22 @@ export function beforePeerRequest(peerId: string): void {
   if (skippable.getStore() && !peerReachable(peerId)) throw new PeerUnreachableError(peerId);
 }
 
-/** For the transport: records how a request that was sent ended. */
-export function afterPeerRequest(peerId: string, error?: unknown): void {
-  if (error === undefined) markPeerReachable(peerId);
-  else if (isPeerUnreachable(error)) markPeerUnreachable(peerId);
+/**
+ * For the transport: records how a request that was sent ended. `startedAt` is when it was sent.
+ *
+ * A request that ran out of time says the peer is gone only when the peer answered nothing else
+ * meanwhile. One slow route used to count as an absence: the skill list took over ten seconds on a
+ * busy machine (2026-11-10), each such request marked the peer away, the next replication answer a
+ * second later marked it back, and every return started the whole catch-up again (credentials,
+ * queued deliveries, quick notes, assistants, and the skill list itself, which timed out again).
+ * That ran every eleven seconds for every peer, for hours.
+ */
+export function afterPeerRequest(peerId: string, error?: unknown, startedAt?: number): void {
+  if (error === undefined) { answeredAt.set(peerId, Date.now()); markPeerReachable(peerId); return; }
+  if (!isPeerUnreachable(error)) return;
+  if (error instanceof Error && error.name === "TimeoutError" && startedAt !== undefined && (answeredAt.get(peerId) ?? -1) >= startedAt) return;
+  markPeerUnreachable(peerId);
 }
 
 /** Forgets what is known, for instance after this machine slept: its own view is then stale. */
-export function resetPeerAvailability(): void { failures.clear(); }
+export function resetPeerAvailability(): void { failures.clear(); answeredAt.clear(); }

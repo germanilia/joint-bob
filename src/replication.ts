@@ -112,17 +112,50 @@ export function replicationEventProjectId(event: ReplicationEvent): string | und
 }
 
 // Where the search for events a peer has no delivery row for stands. Events newer than
-// `tail` are looked at on every pass. Events the sharing filter refused stay unallocated, and
-// a search of everything older offers them again every few minutes and after a restart, so a
-// later grant still reaches the peer. That search used to run in one go: for a peer that may
-// see little, it read and judged every event in the outbox, a few hundred thousand on a busy
-// node, and froze the server for nine seconds each time. It now advances for a few
-// milliseconds on every pass, behind the new events, and starts again five minutes after it
-// last finished.
-interface OutboxScan { tail: number; older?: { cursor: number; end: number }; finishedAt: number; due?: [string, string] }
+// `tail` are looked at on every pass. Events the sharing filter refused stay unallocated and
+// are offered again every few minutes, so a later grant still reaches the peer.
+//
+// Offering them again used to mean reading the whole outbox for them: first in one go (nine
+// seconds of a frozen server for a peer that may see little), then a window at a time behind
+// the new events. Windows kept each pass short, but the search still read every event again
+// every five minutes, for a twin that already had a delivery row for all of them. Measured on
+// 2026-11-10 on a starved node: 53% of the server's time, a second or more a pass.
+//
+// So the outbox is read through once after a start. What that search and the passes after it
+// refuse is remembered by rowid (`refused`), and only those events are offered again. Nothing
+// else can be without a delivery row: a delivery row goes only with its event, and an event's
+// rowid is never given out twice (housekeeping keeps the newest row for that reason).
+interface OutboxScan {
+  tail: number;
+  /** The one search of history after a start, or the periodic one when the refused events were too many to remember. */
+  older?: { cursor: number; end: number };
+  finishedAt: number;
+  due?: [string, string];
+  /** Rowids of events without a delivery row that this peer was refused. Undefined: too many to keep, and the outbox is searched for them as before. */
+  refused?: number[];
+  /** The refused events being offered again: those of the last round, and how far this round got. */
+  reoffer?: { pending: number[]; index: number };
+  /** Which events the searches looked at: every one ("*"), or those of these accounts. Events outside it were never judged. */
+  scope: string;
+}
 const unallocatedScan = new Map<string, OutboxScan>();
 const FULL_SCAN_MS = 5 * 60_000;
 const SCAN_BUDGET_MS = 40;
+/** Refused events remembered per peer. A peer refused more than this has the outbox searched for them instead. */
+let refusedLimit = 50_000;
+
+/** Tests: forget what was learned about every peer, as a restart does; `refusedLimit` stands in for the production bound. */
+export function forgetOutboxScans(options: { refusedLimit?: number } = {}): void {
+  unallocatedScan.clear();
+  refusedLimit = options.refusedLimit ?? 50_000;
+}
+/** Tests: where a peer's search stands. `searching`: the outbox is being read for it; `refused`: events remembered as refused (undefined: too many, the outbox is read for them). */
+export function outboxScanState(peerId: string): { searching: boolean; reoffering: boolean; refused: number | undefined } | undefined {
+  const scan = unallocatedScan.get(peerId);
+  if (!scan) return undefined;
+  return { searching: Boolean(scan.older), reoffering: Boolean(scan.reoffer), refused: scan.refused ? scan.refused.length + (scan.reoffer ? scan.reoffer.pending.length - scan.reoffer.index : 0) : undefined };
+}
+
 // One query looks at this many events at most. Asking only for "the next hundred without a
 // delivery row" read the whole outbox in a single query for a peer that already has them all.
 const SCAN_WINDOW = 2_000;
@@ -139,15 +172,23 @@ export function ensureOutboxAccountIndex(db: DatabaseSync): void {
   indexedDatabases.add(db);
 }
 
+/** Which events a search for a peer looks at: all of them, or those of these accounts, in any order. */
+function scopeOf(accounts?: string[]): string { return accounts ? JSON.stringify([...accounts].sort()) : "*"; }
+
 /**
  * Whether a pass for this peer would find nothing: it is caught up with the outbox, no search of
  * older events is under way or due, and no delivery is due. The flush asks every two seconds for
  * every peer, and each pass took the database's write lock to find that out; this is two indexed
  * reads, and it leaves the lock to writers.
  */
-function peerIdle(db: DatabaseSync, peerId: string, at: string): boolean {
+function peerIdle(db: DatabaseSync, peerId: string, at: string, accounts?: string[]): boolean {
   const scan = unallocatedScan.get(peerId);
-  if (!scan || scan.older || scan.due || Date.parse(at) - scan.finishedAt >= FULL_SCAN_MS) return false;
+  if (!scan || scan.older || scan.reoffer || scan.due || scan.scope !== scopeOf(accounts)) return false;
+  if (Date.parse(at) - scan.finishedAt >= FULL_SCAN_MS) {
+    // A round is due. With nothing refused there is nothing to offer again, and the round is over before it starts.
+    if (!scan.refused || scan.refused.length) return false;
+    scan.finishedAt = Date.parse(at);
+  }
   const newest = (db.prepare("SELECT max(rowid) id FROM replication_outbox").get() as { id: number | null }).id ?? 0;
   if (newest !== scan.tail) return false;
   return !db.prepare("SELECT 1 FROM replication_deliveries WHERE peer_id=? AND delivered_at IS NULL AND next_attempt_at<=? LIMIT 1").get(peerId, at);
@@ -155,7 +196,7 @@ function peerIdle(db: DatabaseSync, peerId: string, at: string): boolean {
 
 /** One transaction per pass: each delivery row committed on its own costs a disk sync, and a pass has a time budget. */
 function selectiveEventsForPeer(db: DatabaseSync, peerId: string, at: string, filter: (event: ReplicationEvent) => boolean, accounts?: string[]): ReplicationEvent[] {
-  if (peerIdle(db, peerId, at)) return [];
+  if (peerIdle(db, peerId, at, accounts)) return [];
   db.exec("BEGIN IMMEDIATE");
   try {
     const selected = allocateEventsForPeer(db, peerId, at, filter, accounts);
@@ -171,7 +212,12 @@ function allocateEventsForPeer(db: DatabaseSync, peerId: string, at: string, fil
   const selected: ReplicationEvent[] = [];
   const now = Date.parse(at), started = Date.now();
   const newest = (db.prepare("SELECT max(rowid) id FROM replication_outbox").get() as { id: number | null }).id ?? 0;
-  const scan: OutboxScan = unallocatedScan.get(peerId) ?? { tail: newest, older: { cursor: 0, end: newest }, finishedAt: now };
+  // The searches judge only the events the query hands them. When that set changes for a peer (one of our people
+  // signs in there, so their pins and recents must follow; a visitor's home becomes a twin), events it never saw
+  // become deliverable, and no list of refusals knows them: history is searched once more, as after a start.
+  const scope = scopeOf(accounts);
+  const known = unallocatedScan.get(peerId);
+  const scan: OutboxScan = known && known.scope === scope ? known : { tail: newest, older: { cursor: 0, end: newest }, finishedAt: now, refused: [], scope };
   // A revoked grant can leave allocated deliveries in front of eligible ones. Keep a
   // cursor through retries too; limiting before filtering otherwise starves them forever.
   const duePage = db.prepare(`SELECT o.*,d.next_attempt_at FROM replication_deliveries d JOIN replication_outbox o ON o.event_id=d.event_id
@@ -206,11 +252,26 @@ function allocateEventsForPeer(db: DatabaseSync, peerId: string, at: string, fil
   const accountsJson = accounts ? [JSON.stringify(accounts)] : [];
   const allocate = db.prepare(`INSERT OR IGNORE INTO replication_deliveries
     (event_id,peer_id,attempts,next_attempt_at,delivered_at,last_error) VALUES (?,?,0,?,NULL,NULL)`);
-  // After a restart the existing history is searched behind newly appended events.
-  if (!scan.older && now - scan.finishedAt >= FULL_SCAN_MS) scan.older = { cursor: 0, end: scan.tail };
-  const take = (row: OutboxRow): void => {
+  // After a restart the existing history is searched once, behind newly appended events. Later rounds
+  // offer the remembered refusals again; only a peer with too many to remember has the outbox searched again.
+  if (!scan.older && !scan.reoffer && now - scan.finishedAt >= FULL_SCAN_MS) {
+    if (scan.refused) { scan.reoffer = { pending: scan.refused, index: 0 }; scan.refused = []; }
+    else { scan.older = { cursor: 0, end: scan.tail }; scan.refused = []; }
+  }
+  const refuse = (rowid: number): void => {
+    if (!scan.refused) return;
+    if (scan.refused.length + (scan.reoffer ? scan.reoffer.pending.length - scan.reoffer.index : 0) >= refusedLimit) {
+      // Too many to remember: what is left of this round is dropped too, and the next round reads the outbox.
+      scan.refused = undefined;
+      scan.reoffer = undefined;
+      return;
+    }
+    scan.refused.push(rowid);
+  };
+  /** Whether the peer gets the event: allocated when the filter accepts it, remembered as refused otherwise. */
+  const take = (row: OutboxRow & { cursor: number }): void => {
     const event = eventFromRow(row);
-    if (!filter(event)) return;
+    if (!filter(event)) { refuse(row.cursor); return; }
     allocate.run(event.id, peerId, at);
     selected.push(event);
   };
@@ -236,6 +297,16 @@ function allocateEventsForPeer(db: DatabaseSync, peerId: string, at: string, fil
   if (scan.older) {
     scan.older.cursor = search(scan.older.cursor, scan.older.end);
     if (scan.older.cursor >= scan.older.end) { scan.older = undefined; scan.finishedAt = now; }
+  }
+  if (scan.reoffer) {
+    // An event that expired meanwhile, or got its delivery row some other way, is simply not there any more.
+    const byRowid = db.prepare(`SELECT o.rowid cursor, o.* FROM replication_outbox o WHERE o.rowid=?
+      AND NOT EXISTS (SELECT 1 FROM replication_deliveries d WHERE d.event_id=o.event_id AND d.peer_id=?)`);
+    while (scan.reoffer && scan.reoffer.index < scan.reoffer.pending.length && selected.length < 100 && Date.now() - started < SCAN_BUDGET_MS) {
+      const row = byRowid.get(scan.reoffer.pending[scan.reoffer.index++], peerId) as unknown as (OutboxRow & { cursor: number }) | undefined;
+      if (row) take(row);
+    }
+    if (scan.reoffer && scan.reoffer.index >= scan.reoffer.pending.length) { scan.reoffer = undefined; scan.finishedAt = now; }
   }
   unallocatedScan.set(peerId, scan);
   return selected;

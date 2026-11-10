@@ -169,12 +169,13 @@ export async function peerFetch(input: string | URL, init: RequestInit = {}, pee
   if (url.protocol !== "http:" && url.protocol !== "https:") return fetch(input, init);
   if (!peerId) return routedFetch(url, input, init, undefined);
   beforePeerRequest(peerId);
+  const startedAt = Date.now();
   try {
     const response = await routedFetch(url, input, init, peerId);
     afterPeerRequest(peerId);
     return response;
   } catch (error) {
-    afterPeerRequest(peerId, error);
+    afterPeerRequest(peerId, error, startedAt);
     throw error;
   }
 }
