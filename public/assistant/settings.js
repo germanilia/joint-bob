@@ -1,6 +1,6 @@
 import { harnessOption } from "../harness-metadata.js";
-import { put, request } from "./api.js";
-import { app, fail, navigate, notify } from "./context.js";
+import { del, put, request } from "./api.js";
+import { app, closeOverlay, fail, navigate, notify, openSheet } from "./context.js";
 import { h, switchButton } from "./dom.js";
 
 // Settings: instructions, decision model, execution, terminal, default assistant and listing.
@@ -40,7 +40,21 @@ export function fillSettings() {
 }
 
 export async function showSettings() {
+  showDelete();
   await Promise.all([showExecution(), showDefaultAndDiscovery()]);
+}
+
+/** Deleting also takes the assistant out of any team it belongs to. */
+function showDelete() {
+  const name = app.assistant.name;
+  document.querySelector("#settings-delete").replaceChildren(h("h2", {}, "Delete this assistant"),
+    h("p", { class: "muted" }, "Its topics, saved items and settings are removed. If it belongs to a team, it leaves that team, and a Telegram bot it serves is disconnected."),
+    h("button", { type: "button", class: "danger", "data-testid": "assistant-delete", onclick: () => openSheet({ title: `Delete ${name}?`,
+      body: h("p", { style: "font-size:13.5px;color:#c9cdd1" }, "This cannot be undone. Conversations it opened stay in their projects."),
+      foot: [h("button", { type: "button", onclick: closeOverlay }, "Cancel"),
+        h("button", { type: "button", class: "danger", "data-testid": "assistant-delete-confirm", onclick: async () => {
+          try { await del(`/api/personal-assistants/${app.assistant.id}`); location.href = "/assistant.html"; } catch (error) { fail(error); }
+        } }, "Delete")] }) }, "Delete assistant"));
 }
 
 async function showExecution() {

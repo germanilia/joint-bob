@@ -6,6 +6,8 @@ const views = new Map();
 let current = "live";
 let context = "";
 const overrides = new Map();
+/** A team context can rename a tab it takes over, so the tab says what it now shows. */
+const overrideTitles = new Map();
 
 /** Replace only the displayed panel, never the personal view's data or handlers. */
 export function setControlContext(next) {
@@ -13,8 +15,9 @@ export function setControlContext(next) {
   showControlView(current);
 }
 export function controlContext() { return context; }
-export function registerContextView(id, element) {
+export function registerContextView(id, element, title) {
   overrides.set(id, element);
+  if (title) overrideTitles.set(id, title);
   element.hidden = true;
   showControlView(current);
 }
@@ -32,8 +35,9 @@ function renderTabs() {
     tab.dataset.testid = `control-tab-${view.id}`;
     tab.setAttribute("aria-selected", String(view.id === current));
     tab.classList.toggle("active", view.id === current);
-    tab.append(document.createTextNode(view.title));
-    if (view.badge) {
+    const renamed = context && overrideTitles.get(view.id);
+    tab.append(document.createTextNode(renamed || view.title));
+    if (view.badge && !renamed) {
       const badge = document.createElement("span");
       badge.className = "control-tab-badge";
       badge.textContent = String(view.badge);

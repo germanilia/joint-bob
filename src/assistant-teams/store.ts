@@ -98,6 +98,21 @@ export function teamRolesSync(db: DatabaseSync, teamId: string): { roles: TeamRo
   const chosen = (db.prepare('SELECT coordinator_role role FROM assistant_teams WHERE id=?').get(teamId) as { role: string | null } | undefined)?.role ?? null;
   return { roles, coordinator: chosen && roles.includes(chosen) ? chosen : roles[0] ?? null };
 }
+/** A deleted assistant leaves every team it was in: its role goes, and a coordinator role falls back to the first member. */
+export async function removeAssistantFromTeams(assistantId: string): Promise<string[]> {
+  const db = await teamDatabase();
+  const rows = db.prepare('SELECT team_id teamId, role FROM assistant_team_agents WHERE assistant_id=?').all(assistantId) as { teamId: string; role: string }[];
+  for (const { teamId, role } of rows) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.prepare('DELETE FROM assistant_team_agents WHERE team_id=? AND assistant_id=?').run(teamId, assistantId);
+      db.prepare('UPDATE assistant_teams SET revision=revision+1, coordinator_role=CASE WHEN coordinator_role=? THEN NULL ELSE coordinator_role END WHERE id=?').run(role, teamId);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+    announceTeamChange(teamId);
+  }
+  return rows.map(row => row.teamId);
+}
 /** The coordinator monitors, acknowledges and alone delegates. Without one, the first member does. */
 export async function teamCoordinator(team: AssistantTeam): Promise<TeamRole | null> {
   const roles = (await listTeamAgents(team.id)).map(agent => agent.role);

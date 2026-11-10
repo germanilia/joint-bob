@@ -92,6 +92,11 @@ test('team control center shows picked members with free roles and persists orde
   await page.getByTestId('team-select').selectOption(created.body.team.id);
   await page.getByTestId('team-agent-card').first().waitFor();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="team-agent-card"]').length === 6);
+  // On a wide screen the personal Assistants tab gives way to a rail; in a team the tab stays, as the member roster.
+  await page.setViewportSize({ width: 1800, height: 900 });
+  assert.equal(await page.getByTestId('control-tab-assistants').isVisible(), true, 'member roster reachable on wide screens');
+  assert.match(await page.getByTestId('control-tab-assistants').innerText(), /Team members/);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId('control-tab-live').click();
   await page.getByTestId('team-live-view').waitFor({ state: 'visible' });
   assert.equal(await page.getByTestId('team-assistants-view').isVisible(), false);

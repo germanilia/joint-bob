@@ -11,7 +11,7 @@ const panels = Object.fromEntries(['assistants', 'live', 'memory'].map(id => {
   panel.dataset.testid = `team-${id}-view`;
   panel.setAttribute('role', 'tabpanel');
   document.querySelector('#controlViews').append(panel);
-  registerContextView(id, panel);
+  registerContextView(id, panel, id === 'assistants' ? 'Team members' : undefined);
   return [id, panel];
 }));
 const settingsPanel = document.querySelector('#settingsPanel-account');
@@ -277,7 +277,7 @@ select.addEventListener('change', () => {
     const mine = generation;
     api('/api/assistant-teams', { method: 'POST', body: { clusterId } }).then(async result => {
       if (mine !== generation) return;
-      select.replaceChildren(); await loadTeams(); if (mine !== generation) return; select.value = result.team.id; select.dispatchEvent(new Event('change'));
+      select.replaceChildren(); await loadTeams(); if (mine !== generation) return; select.value = result.team.id; select.dispatchEvent(new Event('change')); showControlView('assistants');
     }).catch(fail); return;
   }
   const connection = new EventSource(`${base()}/events`);

@@ -52,6 +52,8 @@
 @media (min-width: 1700px) {
   .control-asst-rail { display: flex; }
   .control-tab[data-view="assistants"] { display: none; }
+  /* In a team, this tab is the member roster, so the wide layout keeps it. */
+  body.team-context-active .control-tab[data-view="assistants"] { display: inline-block; }
 }
 
 /* An assistant's chat. */

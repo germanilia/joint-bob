@@ -442,7 +442,12 @@ app.delete("/api/personal-assistants/:id", async (request, response, next) => {
   try {
     if (!await visible(actor(response), request.params.id)) { sendError(response, 404, "Assistant not found"); return; }
     await disconnectTelegram(request.params.id);
+    // A member leaves its team with the assistant; the bot's command menu follows.
+    const { removeAssistantFromTeams } = await import("../../assistant-teams/store.js");
+    const teams = await removeAssistantFromTeams(request.params.id);
     await deletePersonalAssistant(actor(response), request.params.id);
+    const { refreshTeamCommands } = await import("../../assistant-teams/telegram-commands.js");
+    for (const teamId of teams) await refreshTeamCommands(teamId).catch((error: unknown) => console.warn("Telegram commands were not updated:", error instanceof Error ? error.message : error));
     await removeAssistantCapabilities(await personalAssistantDatabase(), request.params.id);
     announceAssistantChanges();
     response.status(204).end();

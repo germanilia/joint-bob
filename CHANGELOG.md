@@ -3,6 +3,11 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.259.3 — 2026-11-10
+
+- A team's member roster is reachable on wide screens again. The Assistants tab was hidden at 1700 px and wider, which hid where a team's members are picked; in a team it now stays, named Team members. Creating a team opens it there.
+- You can delete an assistant from its Settings. If it belongs to a team it leaves that team, and the next remaining member coordinates if it was the coordinator; a Telegram bot it served is disconnected.
+
 ## 2.259.2 — 2026-11-10
 
 - Stop now pauses the conversation's queued messages instead of letting them run next, and shows "Stopped. Queued messages paused." Send a new message to resume the queue. The paused state follows the conversation to your other machines.
