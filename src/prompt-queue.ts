@@ -3,7 +3,6 @@ import { autoRespondConfigSchema, type AutoRespondConfig } from "./conversation-
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { nodeDatabaseIsPostgres, openNodeDatabase } from "./node-database.js";
 import { z } from "zod";
 import { resolveDataDirectory } from "./data-directory.js";
 import { isHarnessId } from "./types.js";
@@ -55,7 +54,7 @@ function queueDatabase(): DatabaseSync {
   if (database) return database;
   const directory = resolveDataDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const db = openNodeDatabase(path.join(directory, "node.db"));
+  const db = new DatabaseSync(path.join(directory, "node.db"));
   db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   ensurePromptQueueSchema(db);
   ensureReplicationSchema(db);
@@ -173,8 +172,6 @@ export function systemPromptState(queueKey: string, id: string): SystemPromptSta
 export function listPendingSystemQueues(limit = 100): Array<{ queueKey: string; id: string }> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new RangeError("Invalid system queue limit");
   const file = path.join(resolveDataDirectory(), "node.db");
-  // A PostgreSQL node database always exists; reading it through the shared connection creates nothing on disk.
-  if (!database && nodeDatabaseIsPostgres()) queueDatabase();
   if (!database && !existsSync(file)) return [];
   const db = database ?? new DatabaseSync(file, { readOnly: true });
   const owned = db !== database;

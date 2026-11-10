@@ -156,7 +156,7 @@ for (const failFirst of [false, true]) test(`update recovery starts every conver
   } finally { release.resolve(); await recovering; }
 });
 
-test("stopping a Pi turn starts the next queued message", async (context) => {
+for (const beforeStart of [false, true]) test(`Stop holds the Pi queue ${beforeStart ? "before" : "after"} acknowledgement until explicit resume`, async (context) => {
   const opened = openChat(baseUrl, fixture.cookie, fixture.projectId, "new");
   sockets.push(opened.socket);
   await waitForChatSession(opened);
@@ -169,7 +169,7 @@ test("stopping a Pi turn starts the next queued message", async (context) => {
   let promptCount = 0;
   context.mock.method(session, "prompt", async (input) => {
     promptCount += 1;
-    input.onStarted?.();
+    if (!beforeStart || promptCount > 1) input.onStarted?.();
     if (promptCount === 1) {
       await firstTurn;
       throw new Error("Pi turn aborted");
@@ -179,13 +179,36 @@ test("stopping a Pi turn starts the next queued message", async (context) => {
   const engineLog = process.env.JOINT_BOB_TEST_ENGINE_LOG;
   delete process.env.JOINT_BOB_TEST_ENGINE_LOG;
   try {
+    const { harnessChatConnections, handleHarnessChatMessage, drainHarnessPromptQueue } = await import("../src/server/harness-chat.js");
+    const { listQueuedPrompts } = await import("../src/prompt-queue.js");
+    const connection = [...harnessChatConnections].find((candidate) => candidate.shared === shared)!;
     opened.socket.send(JSON.stringify({ type: "prompt", message: "stop this" }));
-    await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "promptStarted"));
+    await waitFor(opened.messages, () => promptCount === 1);
     opened.socket.send(JSON.stringify({ type: "prompt", message: "run next" }));
     await waitFor(opened.messages, () => opened.messages.filter((frame) => frame.type === "userMessage" && frame.queued).length === 2);
-    opened.socket.send(JSON.stringify({ type: "abort" }));
-    await waitFor(opened.messages, () => opened.messages.filter((frame) => frame.type === "promptStarted").length === 2, 1_500);
-    assert.equal(promptCount, 2);
+    const inFlight = drainHarnessPromptQueue(connection).catch(() => {});
+    await handleHarnessChatMessage(connection, Buffer.from(JSON.stringify({ type: "abort" })));
+    await inFlight;
+    await drainHarnessPromptQueue(connection);
+    assert.equal(promptCount, 1, "Stop must neither retry the interrupted prompt nor start the next one");
+    assert.equal(shared.turnInFlight, 0);
+    const queued = listQueuedPrompts(`${fixture.projectId}:${sessionId}`);
+    assert.deepEqual(queued.map((prompt) => prompt.messageText), beforeStart ? ["stop this", "run next"] : ["run next"]);
+    assert.deepEqual(opened.messages.filter((frame) => ["error", "promptFailed"].includes(String(frame.type))), []);
+    // Editing must not silently resume execution.
+    const next = queued.at(-1)!;
+    await handleHarnessChatMessage(connection, Buffer.from(JSON.stringify({ type: "editQueuedPrompt", queueId: next.id, queueRevision: next.revision, message: "run next edited" })));
+    await drainHarnessPromptQueue(connection);
+    assert.equal(promptCount, 1);
+    if (beforeStart) {
+      const forced = listQueuedPrompts(`${fixture.projectId}:${sessionId}`).at(-1)!;
+      await handleHarnessChatMessage(connection, Buffer.from(JSON.stringify({ type: "forceStartQueuedPrompt", queueId: forced.id, queueRevision: forced.revision })));
+    } else {
+      await handleHarnessChatMessage(connection, Buffer.from(JSON.stringify({ type: "prompt", message: "resume now" })));
+    }
+    await drainHarnessPromptQueue(connection);
+    assert.equal(promptCount, 3, "explicit resume releases the preserved queue");
+    assert.deepEqual(listQueuedPrompts(`${fixture.projectId}:${sessionId}`), []);
   } finally { releaseFirst(); process.env.JOINT_BOB_TEST_ENGINE_LOG = engineLog; }
 });
 
@@ -323,7 +346,7 @@ for (const outcome of ["cancelled", "started", "cancel-failed"] as const) {
   });
 }
 
-test("stopping a Claude turn starts the next queued message", async () => {
+test("Stop terminates Claude and holds the next message until force start", async () => {
   const opened = openChat(baseUrl, fixture.cookie, fixture.projectId, "claude:new");
   sockets.push(opened.socket);
   await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "ready"));
@@ -335,7 +358,23 @@ test("stopping a Claude turn starts the next queued message", async () => {
     await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "promptStarted"));
     opened.socket.send(JSON.stringify({ type: "prompt", message: "run after stop" }));
     await waitFor(opened.messages, () => opened.messages.filter((frame) => frame.type === "userMessage" && frame.queued).length === 2);
-    opened.socket.send(JSON.stringify({ type: "abort" }));
+    const { harnessChatConnections, handleHarnessChatMessage, drainHarnessPromptQueue } = await import("../src/server/harness-chat.js");
+    const { listQueuedPrompts } = await import("../src/prompt-queue.js");
+    const sessionId = String(opened.messages.find((frame) => frame.type === "ready")!.sessionId);
+    const connection = [...harnessChatConnections].find((candidate) => candidate.shared.session.id === sessionId)!;
+    await handleHarnessChatMessage(connection, Buffer.from(JSON.stringify({ type: "stop" })));
+    await drainHarnessPromptQueue(connection);
+    assert.equal(connection.shared.session.status().isStreaming, false);
+    const queued = listQueuedPrompts(`${fixture.projectId}:${sessionId}`);
+    assert.deepEqual(queued.map((prompt) => prompt.messageText), ["run after stop"]);
+    assert.equal(opened.messages.filter((frame) => frame.type === "promptStarted").length, 1);
+    assert.deepEqual(opened.messages.filter((frame) => ["error", "promptFailed"].includes(String(frame.type))), []);
+    const reopened = openChat(baseUrl, fixture.cookie, fixture.projectId, connection.shared.session.file!);
+    sockets.push(reopened.socket);
+    await waitForChatSession(reopened);
+    await drainHarnessPromptQueue(connection);
+    assert.deepEqual(listQueuedPrompts(`${fixture.projectId}:${sessionId}`).map((prompt) => prompt.messageText), ["run after stop"], "reconnect must preserve the pause");
+    await handleHarnessChatMessage(connection, Buffer.from(JSON.stringify({ type: "forceStartQueuedPrompt", queueId: queued[0].id, queueRevision: queued[0].revision })));
     await waitFor(opened.messages, () => opened.messages.filter((frame) => frame.type === "promptStarted").length === 2, 3_000);
     await writeFile(nextGate, "");
     await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "promptCompleted"));

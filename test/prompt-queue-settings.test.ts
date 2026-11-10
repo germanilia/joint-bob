@@ -3,7 +3,7 @@ import test from "node:test";
 import { randomUUID } from "node:crypto";
 import { importProject, registerProjectAliases } from "../src/store.js";
 import { receiveReplicationBatch } from "../src/replication.js";
-import { queuedPromptSnapshot, readQueueSettings } from "../src/prompt-queue.js";
+import { queuedPromptSnapshot, readQueueSettings, promptQueuePaused, setPromptQueuePaused } from "../src/prompt-queue.js";
 import { getClusterNode } from "../src/cluster.js";
 import { enqueuePrompt, listQueuedPrompts, editQueuedPrompt, cancelQueuedPrompt, mergeQueuedPrompts, prioritizeQueuedPrompt, swapQueuedPrompts } from "../src/prompt-queue.js";
 
@@ -24,17 +24,30 @@ test("late project aliases rekey replicated pending rows, tombstones and sequenc
   });
   const deleted = { ...events[2], id: randomUUID(), operation: "delete", payload: { ...events[2].payload, prompt: null } };
   const active = { ...deleted, id: randomUUID(), entityKey: `${aliasId}:${conversationId}`, operation: "settings", payload: { ...deleted.payload, sequence: 8, activeSettings: settings } };
-  const batch = [...events, deleted, active];
+  const control = { ...deleted, id: randomUUID(), entityKey: `${aliasId}:${conversationId}`, operation: "control", payload: { ...deleted.payload, sequence: 7, paused: true } };
+  const batch = [...events, deleted, active, control];
   assert.equal((await receiveReplicationBatch({ events: batch })).length, batch.length);
   await registerProjectAliases(projectId, [aliasId]);
   assert.deepEqual(listQueuedPrompts(key).map((prompt) => prompt.messageText), ["1", "3"]);
   assert.deepEqual(readQueueSettings(key), settings);
+  assert.equal(promptQueuePaused(key), true, "alias arrival must preserve Stop");
   const snapshot = queuedPromptSnapshot(key);
   assert.ok(snapshot.some((event) => event.operation === "delete" && event.entityKey === deleted.entityKey), "takeover snapshot must retain aliased tombstones");
   await receiveReplicationBatch({ events: [{ ...events[2], id: randomUUID() }] });
   const added = enqueuePrompt(key, "last", "last", { messageText: "last", promptSuffix: "", displaySuffix: "", attachmentPaths: [] });
   assert.deepEqual(listQueuedPrompts(key).map((prompt) => prompt.messageText), ["1", "3", "last"]);
   assert.equal(queuedPromptSnapshot(key).find((event) => event.entityKey === added.id)?.payload.sequence, 9);
+});
+
+test("a delayed Stop snapshot cannot undo a later explicit resume", async () => {
+  await getClusterNode();
+  const key = `project:${randomUUID()}`;
+  setPromptQueuePaused(key, true);
+  const stopped = queuedPromptSnapshot(key).find(event => event.operation === "control")!;
+  assert.equal(stopped.payload.paused, true, "transfer snapshots must include Stop");
+  setPromptQueuePaused(key, false);
+  await receiveReplicationBatch({ events: [{ ...stopped, id: randomUUID() }] });
+  assert.equal(promptQueuePaused(key), false);
 });
 
 test("same-millisecond prompts retain insertion order", async (context) => {

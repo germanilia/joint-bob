@@ -9,7 +9,7 @@ import WebSocket from "ws";
 import { freePort } from "./dev-nodes.js";
 import { configure, environment, gatedClaude, killNode, login, openChat, queuedTexts, spawnNode, temporaryRoot, waitFor, waitForInvocations } from "./queued-prompt-harness.js";
 
-test("a queued prompt survives a node crash and runs when the node comes back", async () => {
+for (const stopped of [false, true]) test(`a queued prompt survives a node crash and ${stopped ? "stays paused after Stop" : "runs when the node comes back"}`, async () => {
   const root = await temporaryRoot("joint-bob-queue-restart-");
   const previous = { ...process.env };
   Object.assign(process.env, environment(root));
@@ -31,6 +31,10 @@ test("a queued prompt survives a node crash and runs when the node comes back", 
     socket.send(JSON.stringify({ type: "prompt", message: "second" }));
     await waitFor(opened.messages, () => opened.messages.some((message) => message.type === "userMessage" && message.queued === true && message.text === "second"));
 
+    if (stopped) {
+      socket.send(JSON.stringify({ type: "stop" }));
+      await waitFor(opened.messages, () => opened.messages.some((message) => message.type === "stopped"));
+    }
     // Kill the node with the prompt still pending, exactly as a crash would.
     socket.terminate();
     await killNode(node);
@@ -44,6 +48,13 @@ test("a queued prompt survives a node crash and runs when the node comes back", 
     socket = reopened.socket;
     await waitFor(reopened.messages, () => reopened.messages.some((message) => message.type === "queuedPrompts"));
     assert.deepEqual(queuedTexts(reopened.messages), ["second"]);
+    if (stopped) {
+      const db = new DatabaseSync(path.join(root, "data", "node.db"), { readOnly: true });
+      try { assert.equal(db.prepare("SELECT paused FROM queued_prompt_control WHERE queue_key = ?").get(`${fixture.projectId}:${opened.messages.find(message => message.type === "ready")!.sessionId}`)?.paused, 1); }
+      finally { db.close(); }
+      const queued = (reopened.messages.find(message => message.type === "queuedPrompts")!.prompts as Array<{ id: string; revision: number }>)[0];
+      socket.send(JSON.stringify({ type: "forceStartQueuedPrompt", queueId: queued.id, queueRevision: queued.revision }));
+    }
 
     await writeFile(`${process.env.JOINT_BOB_FAKE_GATE}.second`, "");
     await waitForInvocations(["first", "second"]);

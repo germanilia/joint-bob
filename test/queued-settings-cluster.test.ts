@@ -9,7 +9,7 @@ import test from "node:test";
 import { seedDevEnvironment, startDevNode, stopDevNode, pairTwinNodes } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
 
-test("HTTP cluster events accepts emitted queue settings alongside pending prompts", { timeout: 90_000 }, async () => {
+test("HTTP cluster events accepts queue settings and a durable Stop alongside pending prompts", { timeout: 90_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-queue-settings-cluster-"));
   const servers: ChildProcess[] = [];
   try {
@@ -18,17 +18,18 @@ test("HTTP cluster events accepts emitted queue settings alongside pending promp
     const key = `${nodeA.projects[0].id}:settings-http-regression`;
     const settings = { provider: "claude", modelId: "haiku", reasoning: "high" };
     const { stdout } = await promisify(execFile)(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-      import { recordQueueSettings, enqueuePrompt } from './src/prompt-queue.ts';
+      import { recordQueueSettings, enqueuePrompt, setPromptQueuePaused } from './src/prompt-queue.ts';
       import { DatabaseSync } from 'node:sqlite';
       recordQueueSettings(${JSON.stringify(key)}, ${JSON.stringify(settings)});
       const prompt = enqueuePrompt(${JSON.stringify(key)}, 'pending', 'pending', { messageText: 'pending', promptSuffix: '', displaySuffix: '', attachmentPaths: [] });
+      setPromptQueuePaused(${JSON.stringify(key)}, true);
       const db = new DatabaseSync(${JSON.stringify(path.join(nodeA.dataDir, "node.db"))});
       const events = db.prepare("SELECT * FROM replication_outbox WHERE entity_type = 'conversation.queue'").all().map(row => ({ id: row.event_id, originNodeId: row.origin_node_id, entityType: row.entity_type, entityKey: row.entity_key, operation: row.operation, payload: JSON.parse(row.payload), createdAt: row.created_at }));
       console.log(JSON.stringify({ events, promptId: prompt.id }));
       db.close();
     `], { env: { ...process.env, NODE_ENV: "test", HOME: environment.home, JOINT_BOB_DATA_DIR: nodeA.dataDir } });
     const emitted = JSON.parse(stdout) as { events: Array<{ id: string; operation: string }>; promptId: string };
-    assert.deepEqual(emitted.events.map(event => event.operation).sort(), ["settings", "upsert"]);
+    assert.deepEqual(emitted.events.map(event => event.operation).sort(), ["control", "settings", "upsert"]);
     for (const node of environment.nodes) servers.push(await startDevNode(environment, node));
     await pairTwinNodes(environment);
     const response = await signedNodeRequest(environment, nodeA, nodeB, "POST", "/api/cluster/v2/events", { events: emitted.events });
@@ -38,6 +39,7 @@ test("HTTP cluster events accepts emitted queue settings alongside pending promp
     try {
       const row = db.prepare("SELECT settings FROM queued_prompt_settings WHERE queue_key = ?").get(key) as { settings: string };
       assert.deepEqual(JSON.parse(row.settings), settings);
+      assert.deepEqual(db.prepare("SELECT paused FROM queued_prompt_control WHERE queue_key = ?").get(key)?.paused, 1, "the receiving execution node must retain Stop");
       assert.ok(db.prepare("SELECT 1 FROM queued_prompts WHERE id = ?").get(emitted.promptId), "settings must not reject the rest of the batch");
     } finally { db.close(); }
   } finally {
