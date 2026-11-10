@@ -45,6 +45,7 @@ export function resumeDeliveriesOnReturn(): void {
   listening = true;
   onPeerReturned((peerId) => {
     resendScopedCredentials(peerId);
+    void import("./skill-sharing.js").then(({ refreshSkillsFrom }) => refreshSkillsFrom(peerId)).catch((error) => console.warn(`Fetching skills from ${peerId} failed`, error));
     void resumeDeliveriesTo(peerId).catch((error) => console.warn(`Resuming deliveries to ${peerId} failed`, error));
     void quickNotesAfterReturn(peerId).catch((error) => console.warn(`Fetching quick notes from ${peerId} failed`, error));
     void pullTwinAssistants(peerId).catch((error) => console.warn(`Fetching assistants from ${peerId} failed`, error));

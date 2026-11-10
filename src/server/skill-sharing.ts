@@ -275,7 +275,12 @@ async function installOffered(db: DatabaseSync, local: string, owner: string, cl
   // A relay this node follows enforces this name; its copy wins over a cluster peer's.
   if (relayOwned(await receivedOwner(root, offered.name))) return;
   const unchanged = await withSkillMutation(async () => {
-    const prior = listReceivedSkills(db).find((item) => item.name === offered.name && item.ownerNodeId === owner);
+    const received = listReceivedSkills(db).filter((item) => item.name === offered.name);
+    const prior = received.find((item) => item.ownerNodeId === owner);
+    // A name another owner or this node's own skill holds is refused before the download: the
+    // check after it failed the same way on every pass, and each pass fetched the bundle again.
+    const provenance = await receivedOwner(root, offered.name);
+    if (received.some((item) => item.ownerNodeId !== owner) || (provenance && provenance !== owner) || (!prior && await existing(destination))) throw failure(`Skill name conflict: ${offered.name}`);
     if (!prior || !await existing(destination)) return false;
     if ((await buildSkillBundle(destination, offered.name)).digest !== prior.digest) throw failure(`Modified received skill preserved: ${offered.name}`);
     if (prior.digest !== offered.digest) return false;
@@ -380,7 +385,15 @@ function recordPeerError(db: DatabaseSync, owner: string, error: unknown): void 
   db.prepare("INSERT INTO skill_peer_status(owner_node_id,last_error) VALUES(?,?) ON CONFLICT(owner_node_id) DO UPDATE SET last_error=excluded.last_error")
     .run(owner, (error as Error).message);
 }
+/**
+ * When each owner was last asked. Owners say when a skill or its sharing changes (/skills/changed)
+ * and are asked when they return, so the 30-second maintenance pass asks one again only after
+ * OWNER_RECHECK_MS: that catches a skill edited on disk, which nothing announces.
+ */
+const ownerAsked = new Map<string, number>();
+const OWNER_RECHECK_MS = 10 * 60_000;
 async function syncOwner(db: DatabaseSync, local: string, owner: string, cluster: string): Promise<void> {
+  ownerAsked.set(owner, Date.now());
   try {
     const manifest = manifestSchema.parse(await signedSkillPost(db, local, owner, cluster, "/api/cluster/v2/skills/manifest", {}, MAX_MANIFEST_BYTES));
     if (manifest.ownerNodeId !== owner) throw failure("Peer returned the wrong owner");
@@ -400,7 +413,7 @@ async function syncOwner(db: DatabaseSync, local: string, owner: string, cluster
     db.prepare("INSERT OR REPLACE INTO skill_peer_status VALUES(?,?,NULL)").run(owner, new Date().toISOString());
   } catch (error) { recordPeerError(db, owner, error); }
 }
-async function syncSkills(): Promise<void> {
+async function syncSkills(force: boolean): Promise<void> {
   await ensureLegacySkillSyncPaused();
   const db = await clusterV2Database(), local = (await getClusterNode()).id;
   ensureSkillSharingSchema(db);
@@ -421,7 +434,7 @@ async function syncSkills(): Promise<void> {
   });
   // No mutation lock spans network I/O: two owners can pull from one another.
   // An owner that is away keeps what it shared here; it is asked again when it returns.
-  try { await Promise.all([...peers].filter(([owner]) => !peerAway(owner)).map(([owner, cluster]) => syncOwner(db, local, owner, cluster))); }
+  try { await Promise.all([...peers].filter(([owner]) => !peerAway(owner) && (force || Date.now() - (ownerAsked.get(owner) ?? 0) >= OWNER_RECHECK_MS)).map(([owner, cluster]) => syncOwner(db, local, owner, cluster))); }
   finally { writeScopedIndex(db); }
 }
 /**
@@ -536,9 +549,36 @@ async function syncRelaySkillsNow(): Promise<boolean> {
   return changed;
 }
 
-export async function refreshSharedSkills(): Promise<void> {
-  if (!refresh) refresh = syncSkills().then(() => reconcileTwinSkills()).finally(() => { refresh = undefined; });
+/** `force` asks every present owner now (a person pressed refresh); otherwise only owners not asked for OWNER_RECHECK_MS. */
+export async function refreshSharedSkills(force = false): Promise<void> {
+  if (force && refresh) await refresh.catch(() => undefined);
+  if (!refresh) refresh = syncSkills(force).then(() => reconcileTwinSkills()).finally(() => { refresh = undefined; });
   return refresh;
+}
+
+/** A peer that was away answers again: what it shares here is fetched now. */
+export async function refreshSkillsFrom(owner: string): Promise<void> {
+  const db = await clusterV2Database(), local = (await getClusterNode()).id;
+  ensureSkillSharingSchema(db);
+  let cluster: string;
+  try { cluster = requirePeer(db, local, owner); } catch { return; }
+  await ensureLegacySkillSyncPaused();
+  await syncOwner(db, local, owner, cluster);
+  writeScopedIndex(db);
+}
+
+/** Sharing of a skill changed: every present peer in this node's clusters looks again, so a revoked copy goes at once. */
+async function announceSharingChange(): Promise<void> {
+  const db = await clusterV2Database(), local = (await getClusterNode()).id;
+  const peers = new Map<string, string>();
+  for (const membership of listSharingMemberships(db, local)) {
+    if (getSharingCluster(db, membership.clusterId).closed) continue;
+    for (const member of listSharingClusterMembers(db, membership.clusterId)) if (member.nodeId !== local) peers.set(member.nodeId, membership.clusterId);
+  }
+  await Promise.all([...peers].filter(([peer]) => !peerAway(peer)).map(async ([peer, cluster]) => {
+    try { await signedSkillPost(db, local, peer, cluster, "/api/cluster/v2/skills/changed", {}, 4096, true); }
+    catch (error) { console.warn(`Skill sharing notice to ${peer} failed: ${(error as Error).message}`); }
+  }));
 }
 
 /** Peers that receive at least one of these skills from this node, each with a cluster to reach it through. */
@@ -632,14 +672,17 @@ registerTwinSkillSyncRoutes(ensureLegacySkillSyncPaused);
 app.get("/api/resources/skills/sharing", route(async () => localView()));
 app.put("/api/resources/skills/:name/sharing", route(async (request) => {
   const selection = selectionSchema.parse(request.body);
-  return shareSkill(nameSchema.parse(request.params.name), selection.clusterIds, selection.nodeIds, { workspaceIds: selection.workspaceIds, projectIds: selection.projectIds, conversations: selection.conversations });
+  const result = await shareSkill(nameSchema.parse(request.params.name), selection.clusterIds, selection.nodeIds, { workspaceIds: selection.workspaceIds, projectIds: selection.projectIds, conversations: selection.conversations });
+  void announceSharingChange().catch((error) => console.warn("Skill sharing notices failed", error));
+  return result;
 }));
 app.delete("/api/resources/skills/:name", route(async (request) => {
   const result = await removeSkill(nameSchema.parse(request.params.name));
   void reconcileTwinSkills().catch((error) => console.warn(`Twin skill deletion pending: ${(error as Error).message}`));
+  void announceSharingChange().catch((error) => console.warn("Skill sharing notices failed", error));
   return result;
 }));
-app.post("/api/resources/skills/refresh", route(async (request) => { z.object({}).strict().parse(request.body); await refreshSharedSkills(); if (await syncRelaySkills().catch((error) => { console.warn(`Relay skill sync failed: ${(error as Error).message}`); return false; })) await (await import("./realtime.js")).reloadSharedSkills(); return localView(); }));
+app.post("/api/resources/skills/refresh", route(async (request) => { z.object({}).strict().parse(request.body); await refreshSharedSkills(true); if (await syncRelaySkills().catch((error) => { console.warn(`Relay skill sync failed: ${(error as Error).message}`); return false; })) await (await import("./realtime.js")).reloadSharedSkills(); return localView(); }));
 app.post("/api/cluster/v2/skills/manifest", route(async (request, response) => { z.object({}).strict().parse(request.body); return manifestFor(response.locals.machineNodeId); }, true));
 app.post("/api/cluster/v2/skills/scoped-manifest", route(async (request, response) => { z.object({}).strict().parse(request.body); return scopedManifestFor(response.locals.machineNodeId); }, true));
 app.post("/api/cluster/v2/skills/bundle", route(async (request, response) => bundleFor(response.locals.machineNodeId, z.object({ name: nameSchema }).strict().parse(request.body).name), true));
