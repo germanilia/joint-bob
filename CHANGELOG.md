@@ -3,6 +3,13 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.259.0 — 2026-11-10
+
+- Syncthing is no longer part of Joint Bob. Every project shared with another machine is copied by Joint Bob's own file sync; there is no engine to choose, nothing to move between, and nothing extra to install. The Syncthing settings, the "Move to built-in sync" controls and the installer step are gone.
+- After this update each machine removes the folders Joint Bob created in its Syncthing (those named `joint-bob-…`), once. Your files stay where they are, and Syncthing itself and any folders you set up yourself are left alone. A project that was still on Syncthing is checked against the other machines and then synced by Joint Bob; nothing is deleted by that check.
+- Until every machine that shares a project runs this version, a machine on an older version does not receive that project's changes, and the two machines show a file sharing error for each other. Both clear when the older machine updates.
+- A project that is not shared with another machine now reads "Not shared" instead of "Unavailable". A machine that joins with many projects takes them over one at a time instead of scanning all at once.
+
 ## 2.258.2 — 2026-11-10
 
 - Fixed the browser sign-in card missing sign-in forms that submit to the same page, such as Microsoft's sign-in, and picking a hidden password-manager field instead of the visible one. Forms that open in a new window are still left alone.
