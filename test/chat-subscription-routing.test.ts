@@ -78,6 +78,7 @@ function fixture(selection: Selection, failure?: string) {
     requireLocalConversationOwner: async () => {}, listConversationSegments: async () => [],
     catchUpGitHead: async () => {}, genericSecretEnvironment: () => ({}),
     queuedAttachments: async () => ({ text: queued.promptText, images: [] }),
+    promptQueuePaused: () => false,
     listQueuedPrompts: () => queue, beginQueuedPrompt: () => true,
     claimQueuedPrompt: () => { queue = []; return true; }, resetQueuedPromptAttempt: () => {},
     queuedSettingsSchema: { parse: (value: unknown) => value },

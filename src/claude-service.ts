@@ -602,7 +602,7 @@ export async function loadClaudeMessages(sessionPath: string, options?: { contex
 }
 
 /** Every conversation spawn gets the shared capabilities, including tasks and recovery. */
-export async function runClaudeConversationPrompt(options: ClaudeRunOptions & { projectId: string }): Promise<ClaudeRunHandle> {
+export async function runClaudeConversationPrompt(options: ClaudeRunOptions & { projectId: string; beforeStart?: () => Promise<void> }): Promise<ClaudeRunHandle> {
   const sessionId = options.resumeSessionId ?? options.sessionId;
   if (!sessionId) throw new Error("Claude conversation spawn requires a session identity");
   const record = await getConversationRecord(options.projectId, "claude", sessionId);
@@ -611,6 +611,7 @@ export async function runClaudeConversationPrompt(options: ClaudeRunOptions & { 
   const conversationId = record?.conversationId ?? sessionId;
   const { prepareClaudeGuardian } = await import("./guardian/claude.js");
   const guardian = await prepareClaudeGuardian(options.projectId, conversationId, options.cwd, options.prompt);
+  await options.beforeStart?.();
   return runClaudePrompt({
     ...options,
     prompt: guardian.prompt,

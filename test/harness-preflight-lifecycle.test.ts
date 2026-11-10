@@ -11,7 +11,7 @@ import type { HarnessEvent, HarnessSession } from "../src/harnesses/runtime.js";
 import { cancelQueuedPrompt, enqueuePrompt, listQueuedPrompts } from "../src/prompt-queue.js";
 import { addProject } from "../src/store.js";
 import { attachHarnessClient, detachHarnessClient, disposeHarnessSession, harnessSessionKey, harnessSessions, openHarnessSession, refreshHarnessTranscripts } from "../src/server/harness-sessions.js";
-import { drainHarnessPromptQueue, harnessChatConnections, type HarnessChatConnection } from "../src/server/harness-chat.js";
+import { drainHarnessPromptQueue, handleHarnessChatMessage, harnessChatConnections, type HarnessChatConnection } from "../src/server/harness-chat.js";
 import { claimConversationLocally } from "../src/server/sessions-helpers.js";
 
 function deferred(): { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void } {
@@ -66,6 +66,24 @@ function cleanup(fixture: Awaited<ReturnType<typeof setup>>): void {
   const current = harnessSessions.get(harnessSessionKey(fixture.project.id, "kiro", fixture.id));
   if (current && current.turnInFlight === 0) disposeHarnessSession(current);
 }
+
+test("Stop during preflight prevents a late start and leaves the queue intact", async (context) => {
+  const gate = deferred();
+  const entered = deferred();
+  const fixture = await setup(context, gate.promise, entered.resolve);
+  context.mock.method(fixture.shared.session, "cancel", async () => { gate.resolve(); });
+  try {
+    const drain = drainHarnessPromptQueue(fixture.connection);
+    await entered.promise;
+    await handleHarnessChatMessage(fixture.connection, Buffer.from(JSON.stringify({ type: "stop" })));
+    await drain;
+    await drainHarnessPromptQueue(fixture.connection);
+    assert.equal(fixture.events.some(event => event.type === "promptStarted"), false);
+    assert.equal(fixture.events.some(event => event.type === "stopped"), true);
+    assert.equal(fixture.shared.turnInFlight, 0);
+    assert.deepEqual(listQueuedPrompts(`${fixture.project.id}:${fixture.id}`).map(prompt => prompt.messageText), ["hello"]);
+  } finally { gate.resolve(); cleanup(fixture); }
+});
 
 test("preflight pins a shared session against transcript refresh", async (context) => {
   const gate = deferred();

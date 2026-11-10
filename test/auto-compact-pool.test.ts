@@ -50,6 +50,7 @@ function fixture(selection: "cluster" | "conversation" | "none", failure?: Error
     getSettings: () => ({ autoCompactThreshold: 70 }), markHarnessInput: () => {},
     compactHarnessSession: async (_shared: unknown, compact: () => Promise<void>) => compact(),
     sendHarnessStatus: () => { statuses.push(shared.turnInFlight > 0); }, broadcastToProject: () => {},
+    promptQueuePaused: () => false,
     listQueuedPrompts: () => { queueReads++; return queue; }, claimQueuedPrompt: () => queue.shift(),
     getProjectLock: async () => undefined, conversationBelongsToDoneTask: async () => false,
     requireLocalConversationOwner: async () => {}, listConversationSegments: async () => [],

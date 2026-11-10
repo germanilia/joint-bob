@@ -126,6 +126,7 @@ function wrapClaudeSession(session: HarnessSession, options: HarnessOpenOptions)
   const nativeRunPrompt = claude.runPrompt.bind(claude);
   claude.runPrompt = async (input, state, env, context, resumeSessionId) => {
     if (!enabled()) return nativeRunPrompt(input, state, env, context, resumeSessionId);
+    await input.beforeStart?.();
     const maxPromptBytes = Number(process.env.JOINT_BOB_TEST_ENGINE_MAX_PROMPT_BYTES);
     if (maxPromptBytes && Buffer.byteLength(input.text) > maxPromptBytes) throw new Error("Prompt is too long");
     claude.markStarted(input, state);

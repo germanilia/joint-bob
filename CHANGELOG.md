@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.260.1 — 2026-11-10
+
+- Fixed Stop during Claude setup allowing a turn to start after cancellation, and completed the queue-pause checks blocking release of the Pi startup pool fix.
+
 ## 2.260.0 — 2026-11-10
 
 - New look, Paper: warm cream panels on a sand background, headings in a rounded serif (Young Serif), text in DM Sans, and one forest-green accent for what you can act on. All six themes keep working, each with its own Paper colours.
