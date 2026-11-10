@@ -3,6 +3,11 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.262.0 — 2026-11-10
+
+- You can delegate work to Bob. Tell him in his chat, for new work ("build the dessert menu in DAK and delegate it to Bob") or for a conversation you name ("take full control of the menu conversation and see it through"), and press **Start and delegate** or **Delegate it**. The agent is told to implement, fix and verify the work end to end, to ask you only for access, a decision only you can make or a risky step, and to end with a review report. Bob answers it, pushes it on and checks its work himself, with his own agent, at every stop.
+- Delegated work comes back to Bob's chat when it is ready for review, with what Bob checked and the agent's report, and **Open** and **Done**. A reply to it is your review: it goes into the conversation and Bob drives the work on until it is ready again. It also works for a conversation that runs on your other machine.
+
 ## 2.261.1 — 2026-11-10
 
 - Fixed the release check that blocked 2.261.0: the Antigravity sign-in screen is now part of the app's offline copy like every other screen.
