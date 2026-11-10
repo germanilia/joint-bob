@@ -51,6 +51,7 @@ import { conversationBelongsToDoneTask } from "./cluster-helpers.js";
 import { conversationTranscriptPayload, scheduledReportMessages } from "../conversation-segments.js";
 import { isScheduledPromptText } from "../scheduled-prompt.js";
 import { isSilentWebhookRequest, silentScheduledReview } from "./scheduled-review.js";
+import { nearestReasoning } from "./git-review-run.js";
 import { socketMessageSchema } from "./schemas.js";
 import { claimConversationLocally, describeConversationOwner, type ForeignConversationOwner, requireLocalConversationOwner } from "./sessions-helpers.js";
 import { flags } from "./state.js";
@@ -296,6 +297,16 @@ export function resolveRecoverySubscriptionPool(shared: SharedHarnessSession, wo
 const POOL_CONTINUATION_PROMPT = "The subscription account this turn was running on reached its usage limit or lost its sign-in, so the turn moved to another account in the pool. Continue from where it stopped; do not repeat completed side effects.";
 
 /**
+ * A member on another provider runs another model (only Pi switches), which may not offer the turn's effort: Claude Opus 5.5
+ * has no "off" and GPT-6.1 Sol has no "off" either. It runs at the nearest effort that model offers, the next higher one first.
+ */
+async function offeredReasoning(settings: HarnessModelSettings, initial: HarnessModelSettings): Promise<HarnessModelSettings> {
+  if (settings.provider === initial.provider && settings.modelId === initial.modelId) return settings;
+  const model = (await listHarnessModels("pi")).find((entry) => entry.provider === settings.provider && entry.id === settings.modelId);
+  return model ? { ...settings, reasoning: nearestReasoning(model.thinkingLevels, settings.reasoning) } : settings;
+}
+
+/**
  * Runs one prompt on a subscription pool, member by member (see runPoolAttempts). A member taking
  * over mid-turn gets a continuation prompt instead of the original, which already ran.
  */
@@ -303,7 +314,7 @@ export async function promptOnSubscriptionPool(session: HarnessSession, pool: Tu
   settingsFor: (candidate: PoolProfileContext) => HarnessModelSettings, input: HarnessPrompt, announce: (candidate: PoolProfileContext) => void): Promise<void> {
   if (!session.checkpointPoolAttempt || !session.restorePoolAttempt) throw new Error("This harness cannot safely retry a subscription pool attempt");
   await runPoolAttempts(pool.candidates, profileProviderForRuntime(initial.provider), async (candidate, continuing) => {
-    const settings = settingsFor(candidate);
+    const settings = await offeredReasoning(settingsFor(candidate), initial);
     let started = false;
     const unsubscribe = session.subscribe((event) => {
       if (["textDelta", "thinkingDelta", "toolStart", "assistantFinal"].includes(String(event.type))) started = true;

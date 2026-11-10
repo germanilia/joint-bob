@@ -6,6 +6,7 @@ import test from "node:test";
 import ts from "typescript";
 import { classifyPoolAttemptFailure, resolvePoolModelSettings, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { automationProfileContext, poolProfileContext, withAutomationProfile, withPoolProfile } from "../src/provider-profiles/context.js";
+import { nearestReasoning } from "../src/server/git-review-run.js";
 
 const require = createRequire(import.meta.url);
 function load(file: string, dependencies: Record<string, any>, extra = ""): any {
@@ -59,7 +60,9 @@ for (const runner of runners) for (const source of ["cluster", "conversation", "
       isBusy: () => false, cancel: async () => {}, dispose: () => { disposed = true; listeners.clear(); },
     };
     const boundaries = new Proxy({
-      runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings,
+      runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, nearestReasoning,
+      // The fallback model has no "medium", like Claude Opus 5.5 has no "off".
+      listHarnessModels: async () => [{ provider: "openai-codex", id: "gpt-fixture", thinkingLevels: ["minimal", "low", "high"] }],
       getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
       resolveClusterSubscriptionPools: () => source !== "conversation" && source !== "none" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
       resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
@@ -102,7 +105,10 @@ for (const runner of runners) for (const source of ["cluster", "conversation", "
     assert.deepEqual(used, source === "none" ? ["single"] : source === "generic-failure" ? ["first"] : ["first", "second"]);
     assert.equal(restored, ["none", "generic-failure", "mid-turn"].includes(source) ? 0 : 1);
     if (source === "mid-turn") assert.match(prompts[1], /Continue from where it stopped; do not repeat completed side effects/);
-    if (source === "cross-provider") assert.equal(settings.modelId, "gpt-fixture");
+    if (source === "cross-provider") {
+      assert.equal(settings.modelId, "gpt-fixture");
+      assert.equal(settings.reasoning, "high", "the fallback model runs at the nearest effort it offers");
+    }
     if (runner !== "sync") assert.deepEqual(tools, used.map(() => runner === "chat" ? ["Read"] : []), "pool configuration must not re-enable tools");
     if (source === "conversation") {
       assert.equal(lookups[0].account, runner === "responder" ? "creator" : "owner");

@@ -38,10 +38,11 @@ export function resolvePoolModelSettings(engine: HarnessId, candidateProvider: P
   if (engine !== "pi") throw new Error("This harness cannot switch providers while using a subscription pool");
   if (mapping && profileProviderForModel(mapping.provider) === candidateProvider) {
     return { ...initial, provider: candidateProvider === "claude" ? "anthropic" : candidateProvider,
-      modelId: mapping.modelId, reasoning: mapping.reasoning ?? "off" };
+      modelId: mapping.modelId, reasoning: mapping.reasoning ?? initial.reasoning };
   }
   if (!fallbackModel) throw new Error(`Configure a fallback model for ${candidateProvider} in this pool before cross-provider failover`);
-  return { ...initial, provider: candidateProvider === "claude" ? "anthropic" : candidateProvider, modelId: fallbackModel, reasoning: "off" };
+  // The turn keeps its effort; promptOnSubscriptionPool moves it to the nearest one the fallback model offers.
+  return { ...initial, provider: candidateProvider === "claude" ? "anthropic" : candidateProvider, modelId: fallbackModel };
 }
 
 export function classifyPoolAttemptFailure(error: unknown, started: boolean): PoolAttemptFailure | undefined {

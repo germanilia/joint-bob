@@ -105,7 +105,7 @@ test("cross-provider Pi attempts use the classifier mapping or pool fallback, ne
     { provider: "openai-codex", modelId: "gpt-mapped", reasoning: "medium" }, "gpt-fallback"),
   { provider: "openai-codex", modelId: "gpt-mapped", reasoning: "medium" });
   assert.deepEqual(resolvePoolModelSettings("pi", "openai-codex", initial, undefined, "gpt-fallback"),
-    { provider: "openai-codex", modelId: "gpt-fallback", reasoning: "off" });
+    { provider: "openai-codex", modelId: "gpt-fallback", reasoning: "high" });
   assert.deepEqual(resolvePoolModelSettings("pi", "claude", initial), initial);
   assert.throws(() => resolvePoolModelSettings("pi", "openai-codex", initial), /Configure a fallback model/);
   assert.throws(() => resolvePoolModelSettings("claude", "openai-codex", { provider: "claude", modelId: "claude-sonnet", reasoning: "default" }, undefined, "gpt-fallback"), /cannot switch providers/);
