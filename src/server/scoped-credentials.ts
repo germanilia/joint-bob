@@ -65,12 +65,18 @@ function ensureSchema(db:DatabaseSync):void{
  const columns=db.prepare('PRAGMA table_info(cluster_v2_scoped_secret_copies)').all() as Array<{name:string}>;
  if(!columns.some(column=>column.name==='grants'))db.exec("ALTER TABLE cluster_v2_scoped_secret_copies ADD COLUMN grants TEXT NOT NULL DEFAULT '[]'");
 }
+/** A conversation scope id is `engine:sessionId`; matched on its two columns so the lookup uses conversation_records_session. */
+function conversationProjects(db:DatabaseSync,scopeId:string):Array<{id:string}>{
+ const split=scopeId.indexOf(':');
+ if(split<0)return [];
+ return db.prepare('SELECT DISTINCT project_id id FROM conversation_records WHERE engine=? AND session_id=?').all(scopeId.slice(0,split),scopeId.slice(split+1)) as unknown as Array<{id:string}>;
+}
 function scopesForAccount(db:DatabaseSync,local:string,accountId:string,allowed:string[]):Account['scopes']{
  const rows=db.prepare('SELECT scope_type,scope_id FROM secret_assignments WHERE account_id=?').all(accountId) as unknown as Array<{scope_type:'workspace'|'project'|'conversation';scope_id:string}>;
  return rows.flatMap(row=>{
   const projects=row.scope_type==='project'?[{id:row.scope_id}]:row.scope_type==='workspace'
    ?db.prepare('SELECT id FROM projects WHERE workspace_id=?').all(row.scope_id) as unknown as Array<{id:string}>
-   :db.prepare("SELECT DISTINCT project_id id FROM conversation_records WHERE engine||':'||session_id=?").all(row.scope_id) as unknown as Array<{id:string}>;
+   :conversationProjects(db,row.scope_id);
   const projectIds=projects.map(project=>project.id).filter(id=>allowed.includes(id));
   if(!projectIds.length)return [];
   // Mirrored workspaces belong to their source, even on twins. Other recipients map that source's workspace, not ours.
@@ -134,7 +140,7 @@ function applyAccount(db:DatabaseSync,local:string,peer:string,account:Account):
  for(const [index,scope]of scopes.entries()){
   if(scope.type==='project'&&!account.scopes[index].projectIds.includes(scope.id))throw new ClusterV2HttpError(403,'Invalid project credential scope');
   if(scope.type==='workspace'&&account.scopes[index].projectIds.some(id=>!(db.prepare('SELECT 1 FROM projects WHERE id=? AND workspace_id=?').get(id,scope.id))))throw new ClusterV2HttpError(403,'Invalid workspace credential scope');
-  if(scope.type==='conversation'&&!account.scopes[index].projectIds.some(id=>db.prepare("SELECT 1 FROM conversation_records WHERE project_id=? AND engine||':'||session_id=?").get(id,scope.id)))throw new ClusterV2HttpError(403,'Invalid conversation credential scope');
+  if(scope.type==='conversation'&&!account.scopes[index].projectIds.some(id=>conversationProjects(db,scope.id).some(project=>project.id===id)))throw new ClusterV2HttpError(403,'Invalid conversation credential scope');
  }
  db.prepare(`INSERT INTO secret_accounts(id,label,provider,variables_encrypted,replicate,website_origin,origin_node_id,project_id,created_at,updated_at) VALUES(?,?,?,?,0,?,?,?,?,?)
   ON CONFLICT(id) DO UPDATE SET label=excluded.label,provider=excluded.provider,variables_encrypted=excluded.variables_encrypted,replicate=0,website_origin=excluded.website_origin,project_id=excluded.project_id,updated_at=excluded.updated_at`).run(account.id,account.label,account.provider,encryptSecretValue(JSON.stringify(account.variables)),account.websiteOrigin??null,peer,account.projectId??null,account.updatedAt,account.updatedAt);
@@ -165,7 +171,40 @@ export async function flushScopedCredentials():Promise<void>{
  }
  for(const peer of presentReplicationPeers(db,local.id)){
   // One account this node cannot describe must not stop delivery to every other peer.
-  try{const accounts=snapshot(db,local.id,peer.nodeId);await signedPeerPost(peer,'/api/cluster/v2/credentials/scoped',{accounts});db.prepare('DELETE FROM cluster_v2_scoped_secret_errors WHERE peer_id=?').run(peer.nodeId);}
-  catch(error){db.prepare('INSERT OR REPLACE INTO cluster_v2_scoped_secret_errors VALUES(?,?)').run(peer.nodeId,error instanceof Error?error.message:'Scoped credentials failed');}
+  try{
+   // Sent only when what this peer would receive changed. Describing it decrypts every account,
+   // so the comparison is made on the stored rows instead (sentSignature).
+   const signature=sentSignature(db,local.id,peer.nodeId),last=sent.get(peer.nodeId);
+   if(last?.signature===signature&&Date.now()-last.checkedAt<FULL_CHECK_MS)continue;
+   const accounts=snapshot(db,local.id,peer.nodeId),payload=createHash('sha256').update(JSON.stringify(accounts)).digest('hex');
+   // The full description is the authority: the signature can miss a rule it does not read (ownership),
+   // so the description is rebuilt now and then, and still sent only when it differs.
+   if(last?.payload!==payload)await signedPeerPost(peer,'/api/cluster/v2/credentials/scoped',{accounts});
+   sent.set(peer.nodeId,{signature,payload,checkedAt:Date.now()});db.prepare('DELETE FROM cluster_v2_scoped_secret_errors WHERE peer_id=?').run(peer.nodeId);
+  }
+  catch(error){sent.delete(peer.nodeId);db.prepare('INSERT OR REPLACE INTO cluster_v2_scoped_secret_errors VALUES(?,?)').run(peer.nodeId,error instanceof Error?error.message:'Scoped credentials failed');}
  }
+}
+/** What was last delivered to each peer, by sentSignature. Kept in memory: after a restart everything is sent once. */
+const sent=new Map<string,{signature:string;payload:string;checkedAt:number}>();
+const FULL_CHECK_MS=5*60_000;
+/** A peer that was away may have lost or refused the last delivery: it gets the current state again. */
+export function resendScopedCredentials(peer?:string):void{if(peer)sent.delete(peer);else sent.clear();}
+/** A digest of every stored row `snapshot` reads for this peer, without decrypting anything. */
+function sentSignature(db:DatabaseSync,local:string,peer:string):string{
+ const hash=createHash('sha256');
+ const add=(value:unknown)=>hash.update(JSON.stringify(value)).update('\n');
+ add(sharedProjectIds(db,local,peer));add(isTrustedTwin(db,local,peer));
+ add(db.prepare('SELECT id,label,provider,website_origin,variables_encrypted,updated_at,replicate,project_id,origin_node_id FROM secret_accounts ORDER BY id').all());
+ const assignments=db.prepare('SELECT scope_type,scope_id,account_id FROM secret_assignments ORDER BY scope_type,scope_id,account_id').all() as unknown as Array<{scope_type:string;scope_id:string;account_id:string}>;
+ add(assignments);
+ for(const scope of new Set(assignments.filter(row=>row.scope_type==='conversation').map(row=>row.scope_id)))add(conversationProjects(db,scope));
+ add(db.prepare('SELECT id,workspace_id FROM projects ORDER BY id').all());
+ add(db.prepare('SELECT account_id,cluster_id,node_id FROM cluster_v2_secret_grants ORDER BY account_id,cluster_id,node_id').all());
+ add(db.prepare('SELECT account_id FROM cluster_v2_scoped_secret_copies ORDER BY account_id').all());
+ add(db.prepare('SELECT cluster_id,node_id FROM sharing_memberships WHERE node_id IN (?,?) ORDER BY cluster_id,node_id').all(local,peer));
+ add(db.prepare("SELECT resource_id,cluster_id FROM sharing_resource_shares WHERE kind='project' ORDER BY resource_id,cluster_id").all());
+ add(db.prepare("SELECT resource_id,cluster_id FROM cluster_v2_share_selections WHERE kind='workspace' ORDER BY resource_id,cluster_id").all());
+ add(db.prepare('SELECT workspace_id,owner_node_id FROM cluster_v2_shared_workspaces ORDER BY workspace_id').all());
+ return hash.digest('hex');
 }

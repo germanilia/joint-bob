@@ -94,6 +94,9 @@ export function ensureConversationRecordSchema(db: DatabaseSync): void {
       db.exec("COMMIT");
     } catch (error) { db.exec("ROLLBACK"); throw error; }
   }
+  // Finding a conversation's projects by engine and session id is frequent (list placement,
+  // credential scopes); the primary key starts with the project, so it scanned every record.
+  db.exec("CREATE INDEX IF NOT EXISTS conversation_records_session ON conversation_records(engine, session_id)");
 }
 
 function publishLegacyRecords(db: DatabaseSync): void {

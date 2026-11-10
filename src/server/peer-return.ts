@@ -8,6 +8,7 @@ import { pullTwinAssistants } from "../assistant-collaboration/twin-sync.js";
 import { replicationPeers, signedPeerPost } from "./replication-v2.js";
 import { quickNotesAfterReturn, syncSharedQuickNotes } from "./shared-quick-notes.js";
 import { resetSharedTranscriptPulls } from "./shared-transcripts.js";
+import { resendScopedCredentials } from "./scoped-credentials.js";
 
 /**
  * Coming back. Background sync stops sending to a machine that does not answer
@@ -43,6 +44,7 @@ export function resumeDeliveriesOnReturn(): void {
   if (listening) return;
   listening = true;
   onPeerReturned((peerId) => {
+    resendScopedCredentials(peerId);
     void resumeDeliveriesTo(peerId).catch((error) => console.warn(`Resuming deliveries to ${peerId} failed`, error));
     void quickNotesAfterReturn(peerId).catch((error) => console.warn(`Fetching quick notes from ${peerId} failed`, error));
     void pullTwinAssistants(peerId).catch((error) => console.warn(`Fetching assistants from ${peerId} failed`, error));
