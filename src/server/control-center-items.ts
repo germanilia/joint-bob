@@ -5,6 +5,7 @@ import { isTwinOrigin } from "../account-keys.js";
 import { actingAccountFromSession, runAsAccount } from "../account-context.js";
 import type { AuthSession } from "../auth.js";
 import { BobActionError } from "../control-center/bob-actions.js";
+import { DELEGATED_READY_VIA, resumeDelegation } from "../control-center/auto-respond.js";
 import { bobDatabase, bobMessageOrigin, getBobMessage, hideBobActions, resolveBobMessage, type BobMessage } from "../control-center/bob-store.js";
 import { subjectOf } from "../control-center/recheck.js";
 import { getProject } from "../store.js";
@@ -109,6 +110,8 @@ export async function replyToItem(db: DatabaseSync, session: AuthSession, messag
   const conversation = await conversationOf(session, item);
   if (!conversation) throw new BobActionError(404, "That conversation is no longer listed");
   await sendReply(session, conversation, text);
+  // A reply to work handed over to Bob is the person's review: Bob drives it on with their feedback, as before.
+  if (item.via === DELEGATED_READY_VIA) await resumeDelegation(conversation.projectId, conversation.conversationId);
   resolveBobMessage(db, session.accountId, item.id, `You replied: ${text.length > SHOWN_REPLY ? `${text.slice(0, SHOWN_REPLY)}…` : text}`);
   return getBobMessage(db, session.accountId, item.id)!;
 }

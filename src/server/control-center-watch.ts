@@ -1,4 +1,4 @@
-import { personalContinuationAllowed } from '../control-center/auto-respond.js';
+import { DELEGATED_READY_VIA, personalContinuationAllowed, READY_FOR_REVIEW, readyForReview } from '../control-center/auto-respond.js';
 import { actingAccountFromSession, runAsAccount, type ActingAccount } from "../account-context.js";
 import { bobSays, registerBobAction } from "../control-center/bob-actions.js";
 import { appendBobMessage, bobDatabase, listBobAccounts, onBobMessage, onBobTimelineChanged, readBobSettings } from "../control-center/bob-store.js";
@@ -11,9 +11,14 @@ import { titleOf } from "./control-center-start.js";
 import { harnessSessions } from "./harness-sessions.js";
 import { broadcastToAllClients } from "./realtime.js";
 
+/** The conversation as this machine has it open; undefined when it has not opened it. */
+function openConversation(projectId: string, conversationId: string) {
+  return [...harnessSessions.values()].find((entry) => entry.projectId === projectId && entry.conversationId === conversationId);
+}
+
 /** The conversation's title, for saying which one a notice is about: its own title, or its first message. Null when this machine has not opened it. */
 async function conversationTitle(projectId: string, conversationId: string): Promise<string | null> {
-  const shared = [...harnessSessions.values()].find((entry) => entry.projectId === projectId && entry.conversationId === conversationId);
+  const shared = openConversation(projectId, conversationId);
   if (!shared) return null;
   const first = shared.session.messages.find((message) => message.role === "user" && message.text?.trim())?.text;
   return (await sessionTitleOverrides())[shared.session.id] ?? (first ? titleOf(first) : null);
@@ -73,12 +78,39 @@ const STOP_LABELS: Record<NonNullable<AutoRespondState["stopKind"]>, { importanc
   "user-stopped": { importance: "fyi", text: "You stopped auto respond" },
 };
 
+const REPORT_CHARACTERS = 4000;
+
+/**
+ * Work handed over to Bob comes back when it is ready for review: what Bob checked, and the agent's review report (what changed,
+ * how it was verified, what is left). Done closes it; a reply is the person's review, and Bob drives the work on with it.
+ */
+function readyForReviewMessage(state: AutoRespondState, projectName: string | null, title: string | null) {
+  const shared = openConversation(state.projectId, state.conversationId);
+  const report = [...shared?.session.messages ?? []].reverse().find((message) => message.role === "assistant" && message.text?.trim())?.text?.trim();
+  const checked = state.stopReason!.slice(READY_FOR_REVIEW.length).replace(/^[:\s]+/, "");
+  const name = title ?? "The conversation you handed me";
+  const open = { projectId: state.projectId, conversationId: state.conversationId, ...(title ? { title } : {}) };
+  return {
+    role: "bob" as const, importance: "needs-you" as const, projectId: state.projectId, projectName,
+    text: [`"${name}" is ready for review.`, checked && `What I checked: ${checked}`, report && `Its report:\n${report.length > REPORT_CHARACTERS ? `${report.slice(0, REPORT_CHARACTERS)}…` : report}`].filter(Boolean).join("\n\n"),
+    via: DELEGATED_READY_VIA,
+    actions: [
+      { id: "open", label: "Open", style: "primary" as const, data: { open } },
+      ...(shared ? [{ id: "conversation.done", label: "Done", data: { projectId: state.projectId, projectName: projectName ?? "", conversationId: state.conversationId, engine: shared.engine, sessionId: shared.session.id, title: name } }] : []),
+    ],
+  };
+}
+
 async function announceAutoRespondStopped(state: AutoRespondState): Promise<void> {
   if (!await personalContinuationAllowed(state.projectId, state.conversationId)) return;
   if (!state.stopKind || state.stopKind === "user-stopped") return;
   const project = await getProject(state.projectId);
   const title = await conversationTitle(state.projectId, state.conversationId);
   const db = await bobDatabase();
+  if (state.stopKind === "stop-instruction" && readyForReview(state.stopReason)) {
+    for (const actor of await watchers(state.projectId)) appendBobMessage(db, actor.accountId, readyForReviewMessage(state, project?.name ?? null, title));
+    return;
+  }
   const label = STOP_LABELS[state.stopKind];
   for (const actor of await watchers(state.projectId)) {
     appendBobMessage(db, actor.accountId, {

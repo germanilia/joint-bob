@@ -48,5 +48,11 @@ The setting belongs to this node and runs only where the conversation is owned. 
 not replicated to twins. The Auto badge is kept on this node, so a reopened conversation
 still marks the replies the responder wrote.
 
+Delegating a conversation to Bob (see "Delegating work to Bob" in [the control center](control-center.md))
+turns auto respond on with Bob's delegation setup: instructions to drive the work to an end-to-end
+verified finish, stop instructions for a ready-for-review report, access, decisions only you can make
+and risky steps, and a limit of 40 answers. A stop whose reason starts with "Ready for review:" shows in
+Bob's chat as ready for review, with the agent's report.
+
 `/bob-goal` and auto respond can both be set: the goal runs first, and once it
 completes or blocks the responder takes the next stop.

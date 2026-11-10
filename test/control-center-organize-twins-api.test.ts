@@ -49,7 +49,10 @@ test("asked on the Mac, Bob sends a message and its screenshot to a conversation
     // Recent, so it is among the conversations Bob names (each project's latest and those on the board).
     const now = new Date().toISOString();
     await writeFile(transcript, `${JSON.stringify({ type: "session", version: 3, id: "organize-twins", timestamp: now, cwd: project.path })}\n${JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: now, message: { role: "user", content: [{ type: "text", text: "Internal Assistant" }] } })}\n`);
-    for (const node of [mac, server]) children.push(await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: log, JOINT_BOB_TEST_ENGINE_DETAIL_LOG: detail(node), JOINT_BOB_TEST_AUTOMATION_DIR: stubs }));
+    // Bob's responder stood in: it finds handed-over work ready for review at once.
+    const responder = path.join(root, "responder.mjs");
+    await writeFile(responder, 'export default async function () { return "DECISION: STOP\\nREASON: Ready for review: I ran its tests and they pass."; }\n');
+    for (const node of [mac, server]) children.push(await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: log, JOINT_BOB_TEST_ENGINE_DETAIL_LOG: detail(node), JOINT_BOB_TEST_AUTOMATION_DIR: stubs, JOINT_BOB_AUTO_RESPONDER: responder }));
     const prompts = async (node: typeof mac) => (await readFile(detail(node), "utf8").catch(() => "")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { prompt: string; images: number });
     await pairTwinNodes(environment);
     await until("both machines know the person as one account", async () => (await accountIdOn(environment, mac)) === (await accountIdOn(environment, server)), 150_000);
@@ -84,6 +87,20 @@ test("asked on the Mac, Bob sends a message and its screenshot to a conversation
     const answer = await until("its answer to reach the Mac", async () => (await api<{ messages: BobMessage[] }>(mac, onMac, "GET", "/control-center/bob/messages")).body.messages
       .find((message) => message.text.startsWith(`"${listed.title}" answered:`)), 150_000);
     assert.equal(answer.importance, "report");
+
+    // Handed over from the Mac, the conversation is driven where it runs, and comes back to the Mac's chat ready for review.
+    await writeFile(path.join(stubs, "organize.json"), JSON.stringify({ intent: "delegate-conversation", conversation: `conversation-titled:${listed.title}`, message: "see the display fix through" }));
+    const handOver = await api<{ reply: BobMessage }>(mac, onMac, "POST", "/control-center/bob/message", { message: `I delegeate the ${listed.title} conversation to Bob, bring it back for review` });
+    assert.equal(handOver.status, 200, JSON.stringify(handOver.body));
+    assert.deepEqual(handOver.body.reply.actions.map((action) => action.label), ["Delegate it", "Cancel"]);
+    const handed = await api<{ messages: BobMessage[] }>(mac, onMac, "POST", "/control-center/bob/action", { messageId: handOver.body.reply.id, actionId: "organize.run" });
+    assert.equal(handed.status, 200, JSON.stringify(handed.body));
+    assert.equal(handed.body.messages[0].text, `"${listed.title}" is mine to drive now. I'll bring it back when it is ready for review, or when it needs something only you can give.`);
+    const told = await until("the server's conversation to be handed over", async () => (await prompts(server)).find((entry) => entry.prompt.startsWith("see the display fix through")));
+    assert.match(told.prompt, /Bob drives this work for me from here/);
+    const ready = await until("it to come back to the Mac ready for review", async () => (await api<{ messages: BobMessage[] }>(mac, onMac, "GET", "/control-center/bob/messages")).body.messages
+      .find((message) => message.via === "Delegated to Bob · ready for review"), 150_000);
+    assert.match(ready.text, new RegExp(`^"${listed.title}" is ready for review\\.\\n\\nWhat I checked: I ran its tests and they pass\\.`));
   } finally {
     for (const child of children) await stopDevNode(child);
     await rm(root, { recursive: true, force: true });

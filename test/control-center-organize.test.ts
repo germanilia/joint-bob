@@ -155,3 +155,25 @@ test("each operation says what it does and waits for the button; what cannot be 
   assert.match((await offerOperation(session, { intent: "add-note", projectId: "made-up", title: "x", content: "" }, world)).text, /could not find that project/);
   assert.match((await offerOperation(session, { intent: "pull-request", projectId: "jb", number: 4, action: "comment", body: " " }, world)).text, /What should the comment on #4 say\?/);
 });
+
+test("work is handed to Bob, new or a conversation the person names, each after the button, typed as the person types", () => {
+  assert.deepEqual(parseOrganizeIntent('{"intent":"delegate-conversation","conversation":"conversation_1","message":null}'), { intent: "delegate-conversation", conversation: "conversation_1", message: null });
+  assert.deepEqual(parseOrganizeIntent('{"intent":"start-conversation","projectId":"jb","message":"build the menu","delegate":true}'), { intent: "start-conversation", projectId: "jb", message: "build the menu", delegate: true });
+  const asked = "I want to be delegeate full contorl over conversaotin to bob so he will see the fetature e2e after my initla insturcoins and bring it back only for review";
+  assert.equal(mayBeAboutOrganizing(asked, decision("task"), 0.9), true, "a hand-over is Bob's even when the model is sure it is a task");
+  assert.equal(mayBeAboutOrganizing("take full control of the slice 10 work and see it through", decision("question"), 0.9), true);
+  assert.equal(mayBeAboutOrganizing("fix the login page in Joint Bob", decision("task"), 0.9), false, "work in a project is still a task");
+
+  const handed = proposal({ intent: "delegate-conversation", conversation: "conversation_1", message: "add the dessert section" });
+  assert.equal(handed.text, `Hand "slice 10" in DAK Live over to me? I'll drive it through the work, the fixes and an end-to-end check, and bring it back when it is ready for review, or when it needs something only you can give.\nadd the dessert section`);
+  assert.equal(handed.button, "Delegate it");
+  assert.deepEqual(handed.operation, { op: "message-conversation", projectId: "dak", engine: "claude", sessionId: "s1", conversationId: "c1", title: "slice 10", message: "add the dessert section", nodeId: null, delegated: true });
+  assert.equal((proposal({ intent: "delegate-conversation", conversation: "conversation_2", message: null }).operation as { message: string; nodeId: string }).message, "Carry on with this work until it is ready for review.", "handed over with nothing new, it carries on");
+  assert.equal((proposal({ intent: "delegate-conversation", conversation: "conversation_2", message: null }).operation as { nodeId: string }).nodeId, "mac-node", "one on another machine is handed over there");
+
+  const started = proposal({ intent: "start-conversation", projectId: "jb", message: "build the menu", delegate: true });
+  assert.match(started.text, /^Start a conversation in "Joint Bob" and hand it to me\? I'll drive it through the work/);
+  assert.equal(started.button, "Start and delegate");
+  assert.deepEqual(started.operation, { op: "start-conversation", projectId: "jb", message: "build the menu", delegated: true });
+  assert.equal(proposal({ intent: "start-conversation", projectId: "jb", message: "build the menu" }).button, "Start it", "a conversation the person keeps is started as before");
+});

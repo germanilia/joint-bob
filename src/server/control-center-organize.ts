@@ -9,6 +9,8 @@ import { BobActionError, bobSays, registerBobAction } from "../control-center/bo
 import { notifyBobExchange, type BobTurn } from "../control-center/bob-hooks.js";
 import { appendBobMessage, bobDatabase, readBobSettings, type BobAction, type BobMessage, type BobSettings } from "../control-center/bob-store.js";
 import { needsAgentDecision, type BobDecision } from "../control-center/decisions.js";
+import { bobDelegationConfig } from "../control-center/auto-respond.js";
+import { enableAutoRespond } from "../conversation-auto-respond.js";
 import { getClusterNode } from "../cluster.js";
 import { resolveDataDirectory } from "../data-directory.js";
 import { deleteWorkspace, getProject, listWorkspaces } from "../store.js";
@@ -19,7 +21,7 @@ import { findHarnessSession } from "./harness-sessions.js";
 import { broadcastToAllClients } from "./realtime.js";
 import { fileAttachmentSchema, imageAttachmentSchema, sessionDeleteSchema } from "./schemas.js";
 import { sharedProjectSessions } from "./sessions-helpers.js";
-import { startBobConversation, titleOf, type BobAttachments } from "./control-center-start.js";
+import { delegatedBrief, startBobConversation, titleOf, type BobAttachments } from "./control-center-start.js";
 import { persistTaskAttachments, taskAttachmentFile } from "./chat.js";
 import { bobSessionFor } from "./control-center-session.js";
 import { sendError } from "./http-auth.js";
@@ -54,11 +56,12 @@ export const organizeIntentSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("rename-project"), projectId: id, name: projectName }),
   z.object({ intent: z.literal("move-project"), projectId: id, workspaceId: id }),
   z.object({ intent: z.literal("delete-project"), projectId: id }),
-  z.object({ intent: z.literal("start-conversation"), projectId: id, message: z.string().trim().min(1).max(20_000) }),
+  z.object({ intent: z.literal("start-conversation"), projectId: id, message: z.string().trim().min(1).max(20_000), delegate: z.boolean().optional() }),
   z.object({ intent: z.literal("rename-conversation"), conversation: id, title: z.string().trim().min(1).max(200) }),
   z.object({ intent: z.literal("close-conversation"), conversation: id }),
   z.object({ intent: z.literal("message-conversation"), conversation: id, message: z.string().trim().min(1).max(20_000) }),
   z.object({ intent: z.literal("delete-conversation"), conversation: id }),
+  z.object({ intent: z.literal("delegate-conversation"), conversation: id, message: z.string().trim().min(1).max(20_000).nullable() }),
   z.object({ intent: z.literal("summarize-conversations"), conversations: z.array(id).min(1).max(10) }),
   ...operateIntentShapes,
 ]);
@@ -97,11 +100,12 @@ const INSTRUCTIONS = [
   '{"intent":"rename-project","projectId":"<id>","name":"..."}',
   '{"intent":"move-project","projectId":"<id>","workspaceId":"<id>"}',
   '{"intent":"delete-project","projectId":"<id>"}',
-  '{"intent":"start-conversation","projectId":"<id>","message":"the first message for the agent, in the user\'s words"}',
+  '{"intent":"start-conversation","projectId":"<id>","message":"the first message for the agent, in the user\'s words","delegate":false}, with "delegate":true when the user hands the new work to you to drive to the end and bring back for review.',
   '{"intent":"rename-conversation","conversation":"<key>","title":"..."}',
   '{"intent":"close-conversation","conversation":"<key>"} to mark it done.',
   '{"intent":"message-conversation","conversation":"<key>","message":"what to send it, in the user\'s words"} when the user wants you to ask or tell one of their conversations something, or wants one of them to do some work: to fix, build or check something, or to trigger it with or hand it a task ("I want the X conversation to fix this", "trigger X with this"). "message" is then the work itself as the user described it, not their request to you.',
   '{"intent":"delete-conversation","conversation":"<key>"} to delete it for good.',
+  '{"intent":"delegate-conversation","conversation":"<key>","message":"what the user wants done in it, in their words, or null"} when the user hands one of their conversations over to you to drive to the end ("delegate it to Bob", "take full control", "see it through and bring it back for review"). Use message-conversation instead when they only want it asked or told something.',
   '{"intent":"summarize-conversations","conversations":["<key>", ...]} to write or bring up to date the summary of one or more listed conversations (at most 10), when the user asks for their summaries or to update them. A question about why a summary is missing is not a request to write one.',
   ...OPERATE_INSTRUCTIONS,
   "Use only the ids and keys listed below, exactly as written; never invent one. Choose none when you are not sure which one is meant.",
@@ -152,7 +156,7 @@ const NOTE_WORDS = /\b(quick[\s-]?notes?|tasks?\s+(?:list|board|tab)|to\s+(?:the
  * it is work in a project or an automation and the message names one.
  */
 export function mayBeAboutOrganizing(message: string, decision: BobDecision | null, threshold: number): boolean {
-  if (decision?.kind === "organize") return true;
+  if (decision?.kind === "organize" || handsOver(message)) return true;
   const conversation = mentionsConversation(message);
   if (conversation && MESSAGE_VERBS.test(message)) return true;
   if (SUMMARY_WORDS.test(message) && SUMMARY_NOUNS.test(message)) return true;
@@ -167,8 +171,17 @@ export function mayBeAboutOrganizing(message: string, decision: BobDecision | nu
 
 /** The message speaks of a conversation as the person types it: "conversatoin" and "conversaotin" count, within two edits. */
 function mentionsConversation(message: string): boolean {
-  if (CONVERSATION_NOUNS.test(message)) return true;
-  return (message.toLowerCase().match(/[a-z]{9,}/g) ?? []).some((word) => editDistance(word, "conversation") <= 2);
+  return CONVERSATION_NOUNS.test(message) || hasWordNear(message, "conversation", 2);
+}
+
+const HAND_OVER = /\b(delegat\w*|hand\s+(?:it\s+|this\s+)?over|full\s+control|see\s+it\s+through|take\s+it\s+from\s+here)\b/i;
+/** The person hands work over to Bob to drive to the end ("delegeate" too): new work, or a conversation they name. */
+function handsOver(message: string): boolean {
+  return HAND_OVER.test(message) || hasWordNear(message, "delegate", 1);
+}
+
+function hasWordNear(message: string, target: string, edits: number): boolean {
+  return (message.toLowerCase().match(/[a-z]+/g) ?? []).some((word) => Math.abs(word.length - target.length) <= edits && editDistance(word, target) <= edits);
 }
 
 /** Letters added, dropped, changed or swapped with their neighbour, one edit each. */
@@ -245,7 +258,9 @@ async function dropKept(kept: KeptAttachment[]): Promise<void> {
 
 const messageOperation = z.object({ op: z.literal("message-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, conversationId: id, title: z.string(), message: z.string().min(1).max(20_000),
   /** The machine that runs it, when that is another of the person's machines: the press is sent there. */
-  nodeId: id.nullable().optional(), attachments: z.array(keptAttachment).max(10).optional() });
+  nodeId: id.nullable().optional(), attachments: z.array(keptAttachment).max(10).optional(),
+  /** The person hands the conversation over to Bob: his responder drives it to a verified end (see bobDelegationConfig). */
+  delegated: z.boolean().optional() });
 
 const operationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("create-workspace"), name: workspaceName }),
@@ -255,7 +270,7 @@ const operationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("rename-project"), projectId: id, name: projectName }),
   z.object({ op: z.literal("move-project"), projectId: id, workspaceId: id, workspaceName: z.string() }),
   z.object({ op: z.literal("delete-project"), projectId: id, name: z.string() }),
-  z.object({ op: z.literal("start-conversation"), projectId: id, message: z.string().min(1).max(20_000), attachments: z.array(keptAttachment).max(10).optional() }),
+  z.object({ op: z.literal("start-conversation"), projectId: id, message: z.string().min(1).max(20_000), delegated: z.boolean().optional(), attachments: z.array(keptAttachment).max(10).optional() }),
   z.object({ op: z.literal("rename-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, title: z.string().min(1).max(200) }),
   z.object({ op: z.literal("close-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, title: z.string() }),
   messageOperation,
@@ -312,6 +327,9 @@ export function propose(intent: Exclude<OrganizeIntent, { intent: "none" | "summ
     case "start-conversation": {
       const found = project(intent.projectId);
       if (!found) return "I could not find that project.";
+      if (intent.delegate) {
+        return { text: `Start a conversation in "${found.name}" and hand it to me? ${DELEGATION_PROMISE}\n${intent.message.slice(0, 600)}`, button: "Start and delegate", danger: false, operation: { op: "start-conversation", projectId: found.id, message: intent.message, delegated: true }, project: found };
+      }
       return { text: `Start a conversation in "${found.name}" with this message?\n${intent.message.slice(0, 600)}`, button: "Start it", danger: false, operation: { op: "start-conversation", projectId: found.id, message: intent.message }, project: found };
     }
     case "rename-conversation": {
@@ -338,8 +356,22 @@ export function propose(intent: Exclude<OrganizeIntent, { intent: "none" | "summ
       if (!found) return "I could not find that conversation.";
       return { text: `Delete the conversation "${found.title}" in ${found.projectName}? Its whole history goes, and it cannot be brought back.`, button: "Delete it", danger: true, operation: { op: "delete-conversation", projectId: found.projectId, engine: found.engine, sessionId: found.sessionId, title: found.title }, project: { id: found.projectId, name: found.projectName } };
     }
+    case "delegate-conversation": {
+      const found = conversation(intent.conversation);
+      if (!found) return "I could not find that conversation.";
+      return {
+        text: `Hand "${found.title}" in ${found.projectName} over to me? ${DELEGATION_PROMISE}${intent.message ? `\n${intent.message.slice(0, 600)}` : ""}`, button: "Delegate it", danger: false,
+        operation: { op: "message-conversation", projectId: found.projectId, engine: found.engine, sessionId: found.sessionId, conversationId: found.conversationId, title: found.title, message: intent.message ?? CARRY_ON, nodeId: found.nodeId, delegated: true },
+        project: { id: found.projectId, name: found.projectName },
+      };
+    }
   }
 }
+
+/** What Bob promises when the person hands work over to him. */
+const DELEGATION_PROMISE = "I'll drive it through the work, the fixes and an end-to-end check, and bring it back when it is ready for review, or when it needs something only you can give.";
+/** What a delegated conversation is told when the person handed it over without new instructions. */
+const CARRY_ON = "Carry on with this work until it is ready for review.";
 
 async function say(turn: BobTurn, text: string, extra: { importance?: BobMessage["importance"]; via?: string; actions?: BobAction[]; project?: { id: string; name: string } | null } = {}): Promise<BobMessage> {
   const reply = appendBobMessage(await bobDatabase(), turn.session.accountId, {
@@ -424,14 +456,22 @@ async function bringAnswer(actor: ActingAccount, operation: Extract<Operation, {
 /** Sends the message as the person; the press returns once the conversation has queued it, and its answer follows when the turn is done. */
 async function sendToConversation(session: AuthSession, operation: Extract<Operation, { op: "message-conversation" }>, projectName: string, attachments: BobAttachments): Promise<void> {
   const actor = actingAccountFromSession(session);
+  // Handed over, Bob's responder takes each stop from here, and Bob's chat hears from it when the work is ready for review.
+  if (operation.delegated) {
+    const config = await bobDelegationConfig(readBobSettings(await bobDatabase(), session.accountId), operation.engine as HarnessId);
+    await enableAutoRespond(operation.projectId, operation.conversationId, config, null, session.accountId);
+  }
   const sentAt = Date.now();
   let wasQueued = false;
   let accepted!: () => void;
   const queued = new Promise<void>((resolve) => { accepted = resolve; });
   const completed = queueConversationPrompt({
-    projectId: operation.projectId, engine: operation.engine, sessionId: operation.sessionId, message: operation.message, ...attachments, requestId: randomUUID(), label: "Bob",
-    until: "completed", onQueued: () => { wasQueued = true; accepted(); },
-    onCompleted: () => { void bringAnswer(actor, operation, projectName, sentAt).catch((error) => console.warn("Could not bring the conversation's answer to Bob", error)); },
+    projectId: operation.projectId, engine: operation.engine, sessionId: operation.sessionId, message: operation.delegated ? delegatedBrief(operation.message) : operation.message,
+    ...attachments, requestId: randomUUID(), label: "Bob", onQueued: () => { wasQueued = true; accepted(); },
+    ...(operation.delegated ? { until: "started" as const } : {
+      until: "completed" as const,
+      onCompleted: () => { void bringAnswer(actor, operation, projectName, sentAt).catch((error) => console.warn("Could not bring the conversation's answer to Bob", error)); },
+    }),
   });
   // A failure before the conversation queued the message is the press's own error; one after it is told in the chat.
   completed.catch(async (error: unknown) => {
@@ -506,7 +546,7 @@ async function run(session: AuthSession, settings: BobSettings, operation: Opera
       const project = await getProject(operation.projectId);
       if (!project) throw new Error("That project is no longer here");
       const kept = operation.attachments ?? [];
-      const started = await startBobConversation({ session, settings, project, title: titleOf(operation.message), brief: operation.message, harnessId: settings.harnessId || iconHarnessId(), autoRespond: settings.autoRespond === "always", attachments: await readKept(kept) });
+      const started = await startBobConversation({ session, settings, project, title: titleOf(operation.message), brief: operation.message, harnessId: settings.harnessId || iconHarnessId(), autoRespond: settings.autoRespond === "always", delegated: operation.delegated, attachments: await readKept(kept) });
       await dropKept(kept);
       return { text: `Started in ${project.name}. It is on the board now.${started.autoRespondNote}`, project: { id: project.id, name: project.name } };
     }
@@ -526,7 +566,10 @@ async function run(session: AuthSession, settings: BobSettings, operation: Opera
       if (operation.nodeId) await sendOnTwin(session, operation.nodeId, operation, attachments);
       else await sendToConversation(session, operation, project.name, attachments);
       await dropKept(kept);
-      return { text: `Sent to "${operation.title}". I'll bring you its answer here when it is done.`, project: { id: project.id, name: project.name } };
+      const text = operation.delegated
+        ? `"${operation.title}" is mine to drive now. I'll bring it back when it is ready for review, or when it needs something only you can give.`
+        : `Sent to "${operation.title}". I'll bring you its answer here when it is done.`;
+      return { text, project: { id: project.id, name: project.name } };
     }
     case "delete-conversation": {
       const project = await getProject(operation.projectId);
