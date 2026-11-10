@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.261.1 — 2026-11-10
+
+- Fixed the release check that blocked 2.261.0: the Antigravity sign-in screen is now part of the app's offline copy like every other screen.
+
 ## 2.261.0 — 2026-11-10
 
 - Added Google Antigravity as a separate coding agent, with automatic installation and updates for its official CLI and native Google sign-in from Harness settings.
