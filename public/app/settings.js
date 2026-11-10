@@ -120,7 +120,10 @@ function selectSettingsTab(requested) {
     tab.tabIndex = selected ? 0 : -1;
   }
   for (const panel of elements.settingsPanels) panel.hidden = panel.id !== `settingsPanel-${name}`;
-  if (elements.settingsTabsSelect) elements.settingsTabsSelect.value = name;
+  // Phones show either the section list or one section; desktop CSS ignores this.
+  elements.settingsForm.dataset.mobileView = "panel";
+  elements.settingsCurrentTitle.textContent = elements.settingsTabs.find((tab) => tab.dataset.settingsTab === name).querySelector(".settings-tab-label").textContent;
+  document.querySelector(`#settingsPanel-${name}`).scrollTop = 0;
   if (name === "cluster" || name === "browser") void loadBrowserStatus();
   if (name === "browser") void loadBrowserProfileDirectory();
   if (name === "relay") void loadRelayServing();
@@ -157,7 +160,6 @@ export function syncSettingsAccess() {
   const allowed = !state.isRemoteLogin;
   for (const node of document.querySelectorAll("[data-requires-settings]")) {
     node.hidden = !allowed;
-    if (node instanceof HTMLOptionElement) node.disabled = !allowed;
   }
   if (!allowed && ["relay", "webhooks"].includes(elements.settingsForm.dataset.tab)) selectSettingsTab("account");
 }
@@ -448,11 +450,13 @@ export function resourceFieldsValue(fields) { return Object.fromEntries(Object.e
 let settingsLoading = false;
 let settingsReady = false;
 
-export async function openSettings(tab = "account") {
+/** Without a tab, phones open on the section list; desktop shows Account beside the list. */
+export async function openSettings(tab) {
   applyAdminVisibility();
   // Reopening a closed dialog must not wait for its previous request to finish.
   if (!elements.settingsDialog.open) elements.settingsDialog.showModal();
-  selectSettingsTab(tab);
+  selectSettingsTab(tab ?? "account");
+  if (!tab) elements.settingsForm.dataset.mobileView = "menu";
   if (settingsLoading) return;
   settingsLoading = true;
   settingsReady = false;
@@ -742,7 +746,7 @@ for (const tab of elements.settingsTabs) {
     next.focus();
   });
 }
-elements.settingsTabsSelect.addEventListener("change", () => selectSettingsTab(elements.settingsTabsSelect.value));
+elements.settingsBackButton.addEventListener("click", () => { elements.settingsForm.dataset.mobileView = "menu"; });
 // Search sections and saved account metadata. Never index secret values.
 const settingsSearch = createSettingsSearch({
   input: elements.settingsSearchInput,

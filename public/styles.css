@@ -687,8 +687,7 @@ body.booting :is(.shell, .mobile-nav) { visibility: hidden; }
 html.by-the-way-pane body.booting :is(.shell, .mobile-nav) { visibility: visible; }
 html.assistant-automation body { overflow:hidden; background:var(--app-bg); }
 html.assistant-automation body > :not(dialog):not(script):not(form) { display:none !important; }
-html.assistant-automation #settingsDialog .settings-tabs-select,
-html.assistant-automation #settingsDialog .settings-sidebar { display:none !important; }
+html.assistant-automation #settingsDialog :is(.settings-sidebar, .settings-back) { display:none !important; }
 html.assistant-automation #settingsDialog .settings-body { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); }
 
 /* ---- App shell: mobile-first, one full-screen panel at a time ---- */
@@ -2502,7 +2501,6 @@ fieldset:has(> .ntfy-manage) { min-inline-size: 0; }
 }
 .settings-tabs--sidebar::-webkit-scrollbar { display: revert; width: 8px; }
 .settings-tabs--sidebar .settings-tab { text-align: left; }
-.settings-tabs-select { display: none; }
 .settings-tab {
   flex: 0 0 auto;
   min-height: 36px;
@@ -2692,25 +2690,52 @@ fieldset:has(> .ntfy-manage) { min-inline-size: 0; }
 .secret-scope-row { display: flex; align-items: center; gap: 8px; }
 .secret-scope-row .secret-provider-badge { width: 28px; height: 28px; }
 
-/* Too narrow for a side-by-side split: the sidebar folds back into the strip above. */
+.settings-back, .settings-current-title { display: none; }
+/* Phones: a full-screen list of sections; picking one replaces the list with that
+   section and a back button, like a phone's own Settings app. */
 @media (max-width: 720px) {
-  .settings-card { width: calc(100vw - 24px); height: calc(100dvh - 24px); }
-  /* Three rows: the section dropdown, the search box, then the panel, which takes the rest. */
-  .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: 12px; }
-  /* On phones the section list becomes a dropdown instead of a horizontal strip. */
-  .settings-tabs--sidebar { display: none; }
-  .settings-tabs-select {
-    display: block;
-    width: 100%;
-    min-height: 38px;
-    padding: 0 34px 0 10px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-ctl);
-    background-color: var(--panel);
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 550;
+  #settingsDialog { width: 100vw; height: 100dvh; margin: 0; }
+  .settings-card {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    border: 0;
+    border-radius: 0;
   }
+  .settings-card > .dialog-heading { display: flex; align-items: center; gap: 6px; min-height: 40px; }
+  .settings-card > .dialog-heading :is(.eyebrow, p) { display: none; }
+  .settings-card > .dialog-heading h2 { margin: 0; font-size: 22px; }
+  .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0; }
+  .settings-sidebar { min-height: 0; }
+  .settings-sidebar .settings-tab { min-height: 48px; padding: 0 10px; font-size: 15px; color: var(--text); }
+  .settings-sidebar .settings-tab[aria-selected="true"] { background: transparent; box-shadow: none; }
+  .settings-sidebar .settings-tab::after { content: "›"; margin-left: auto; color: var(--muted); font-size: 20px; }
+  .settings-tab-icon { width: 30px; height: 30px; border-radius: 8px; font-size: 16px; }
+  .settings-group-label { padding: 16px 10px 4px; font-size: 11px; }
+  .settings-search-input { min-height: 44px; }
+  .settings-search-results { width: 100%; max-height: 60dvh; }
+  .settings-card[data-mobile-view="menu"] .settings-panel { display: none; }
+  .settings-card[data-mobile-view="menu"] > :is(.dialog-actions, .settings-restart-message) { display: none; }
+  .settings-card[data-mobile-view="panel"] .settings-sidebar { display: none; }
+  .settings-card[data-mobile-view="panel"] > .dialog-heading h2 { display: none; }
+  .settings-card[data-mobile-view="panel"] :is(.settings-back, .settings-current-title) { display: inline-flex; }
+  .settings-back { align-items: center; justify-content: center; width: 40px; min-width: 40px; height: 40px; padding: 0; font-size: 28px; line-height: 1; }
+  .settings-current-title { min-width: 0; overflow: hidden; font-size: 19px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+  /* Section content: give the width back to the content instead of nested padding. */
+  .settings-panel { gap: 10px; padding: 3px; }
+  .settings-panel .engines-card { gap: 10px; padding: 12px; }
+  .settings-panel .engines-card-header { padding-bottom: 10px; }
+  .settings-panel .engines-card-icon { display: none; }
+  .settings-subtabs { justify-self: stretch; }
+  .settings-panel :is(fieldset, .settings-section) { min-width: 0; }
+  /* Sub-tabs stay on one row and scroll sideways rather than wrapping into a block. */
+  .settings-subtabs { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .settings-subtabs::-webkit-scrollbar { display: none; }
+  .settings-card > .dialog-actions { gap: 8px; }
+  .settings-card > .dialog-actions button { flex: 1 1 0; min-height: 44px; }
 }
 @media (max-width: 640px) {
   .secret-account-row { align-items: stretch; flex-wrap: wrap; }
@@ -2917,6 +2942,13 @@ label { display: grid; gap: 6px; min-width: 0; color: var(--muted); }
   font-weight: 600;
 }
 .toast-error::before { content: "!"; font-size: 20px; font-weight: 800; line-height: 1; }
+.toast-success {
+  background: #15803d;
+  color: #fff;
+  border: 2px solid #4ade80;
+  font-weight: 600;
+}
+.toast-success::before { content: "✓"; font-size: 18px; font-weight: 800; line-height: 1; }
 .toast-message { min-width: 0; flex: 1; }
 .toast-close {
   flex: 0 0 auto;

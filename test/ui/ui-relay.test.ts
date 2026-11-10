@@ -106,8 +106,6 @@ test("the Relay tab sits right after Cluster and starts with serving off", async
   await page.getByTestId("settings-open-button").click();
   const tabs = await page.locator("[data-settings-tab]").evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset.settingsTab));
   assert.equal(tabs[tabs.indexOf("cluster") + 1], "relay", `Relay follows Cluster in the tab list: ${tabs.join(", ")}`);
-  const options = await page.locator(".settings-tabs-select option").evaluateAll((items) => items.map((item) => (item as HTMLOptionElement).value));
-  assert.equal(options[options.indexOf("cluster") + 1], "relay", `Relay follows Cluster in the select: ${options.join(", ")}`);
 
   await page.getByTestId("settings-tab-relay").click();
   await page.getByTestId("settingsPanel-relay").waitFor({ state: "visible" });
@@ -464,7 +462,6 @@ test("a replicated user does not see the Relay tab", async () => {
   try {
     await page.getByTestId("settings-open-button").click();
     assert.equal(await page.getByTestId("settings-tab-relay").isVisible(), false, "the tab is hidden");
-    assert.equal(await page.locator('.settings-tabs-select option[value="relay"]').evaluate((option) => (option as HTMLOptionElement).disabled), true, "the narrow-screen menu cannot pick it either");
     assert.equal(await page.getByTestId("settings-tab-cluster").isVisible(), true, "other tabs stay");
   } finally {
     await page.evaluate(async () => {

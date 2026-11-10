@@ -156,6 +156,8 @@ test("Settings uses the desktop viewport and keeps navigation and actions inside
   assert.ok(desktop && desktop.width >= 1600 && desktop.height >= 950, "large screens get a substantially larger Settings workspace");
   const panel = await page.locator("#settingsPanel-account").boundingBox();
   assert.ok(panel && panel.height > 700, "panels fill the larger dialog instead of keeping the old 440px cap");
+  // A phone shows Save inside a section, not on the section list.
+  await page.getByTestId("settings-tab-account").click();
   for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 600 }]) {
     await page.setViewportSize(viewport);
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));

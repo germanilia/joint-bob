@@ -565,7 +565,6 @@ test("a member sees no File sync tab and never asks for it", { timeout: 150_000 
     await memberPage.getByTestId("settings-open-button").click();
     await memberPage.getByTestId("settings-tab-account").waitFor({ state: "visible" });
     assert.equal(await memberPage.getByTestId("settings-tab-file-sync").isVisible(), false, "no File sync tab for a member");
-    assert.equal(await memberPage.locator('.settings-tabs-select option[value="file-sync"]').isDisabled(), true);
     assert.equal(await memberPage.getByTestId("settings-panel-file-sync").isVisible(), false);
     assert.deepEqual(asked, [], "a member's client never asks for file sync");
   } finally {

@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.254.3 — 2026-11-10
+
+- On a phone, Settings opens on a list of sections, and each section opens full screen with a back button in place of the old section dropdown. Section content uses the full width, and the sub-tabs of Connections stay on one row that scrolls sideways.
+
 ## 2.254.2 — 2026-11-10
 
 - A Pi conversation on a subscription pool moves to the next account again when one runs out or loses its sign-in. Rolling back before the next account tried to switch the model with no account signed in, so the turn failed with *Selected subscription pool requires pool-aware execution* and the real failure was hidden. The rollback now only rewinds the conversation, and each account sets its own model.

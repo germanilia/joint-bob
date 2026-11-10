@@ -748,44 +748,16 @@
     </dialog>
 
     <dialog id="settingsDialog" data-testid="settings-dialog">
-      <form method="dialog" class="dialog-card settings-card" id="settingsForm" data-tab="account">
+      <form method="dialog" class="dialog-card settings-card" id="settingsForm" data-tab="account" data-mobile-view="menu">
         <div class="dialog-heading" tabindex="-1" autofocus>
           <span class="eyebrow">Node configuration</span>
           <h2>Settings</h2>
+          <button class="ghost settings-back" type="button" id="settingsBackButton" data-testid="settings-back-button" aria-label="All settings">‹</button>
+          <strong class="settings-current-title" id="settingsCurrentTitle" data-testid="settings-current-title"></strong>
           <p>Paths are node-local. Your twins receive your secret accounts automatically; other cluster machines need sharing permission.</p>
         </div>
 
         <div class="settings-body">
-        <select class="settings-tabs-select" aria-label="Settings sections" data-testid="settings-tab-select">
-          <option value="account">Account</option>
-          <option value="notifications">Notifications</option>
-          <option value="labels">Labels</option>
-          <option value="conversations">Conversations</option>
-          <option value="commands">Commands</option>
-          <option value="secrets">Secrets</option>
-          <option value="cluster">Cluster</option>
-          <option value="relay" data-requires-settings>Relay</option>
-          <option value="webhooks" data-requires-settings>Webhooks</option>
-          <option value="browser">Browser</option>
-          <option value="workspaces">Workspaces</option>
-          <option value="engines">Harnesses</option>
-          <option value="connections">Connections</option>
-          <option value="git">Git</option>
-          <option value="story">Activity overview</option>
-          <option value="classifiers">Classifiers</option>
-          <option value="guardian" data-admin-only>Guardian</option>
-          <option value="system-ai" data-admin-only>System AI</option>
-          <option value="quality" data-admin-only>Quality</option>
-          <option value="resources" data-admin-only>Resources</option>
-          <option value="file-sync" data-admin-only>File sync</option>
-          <option value="shortcuts">Shortcuts</option>
-          <option value="updates" data-admin-only>Updates</option>
-          <option value="logs">Client logs</option>
-          <option value="changelog">Changelog</option>
-          <option value="node" data-admin-only>Node</option>
-          <option value="users" data-admin-only>Users</option>
-        </select>
-
         <div class="settings-sidebar">
         <div class="settings-search">
           <input id="settingsSearchInput" type="search" class="settings-search-input" placeholder="Search settings" aria-label="Search settings" autocomplete="off" spellcheck="false" data-testid="settings-search-input" aria-autocomplete="list" />
