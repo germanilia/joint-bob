@@ -3,6 +3,11 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.256.2 — 2026-11-10
+
+- Fixed opening a Pi conversation saved on a model this machine has no sign-in for. On a subscription pool it now opens on its saved model, and the pool sets the model for each turn, instead of failing with *No API key for…* and retrying forever.
+- Fixed the file sync worker restarting in a loop after many worktree deletion records piled up. The records are now cleaned up a page at a time, oldest first, with pauses in between, so sync keeps running.
+
 ## 2.256.1 — 2026-11-10
 
 - Asking Bob to have one of your conversations do something now works the way you type it. *I want the internal assistant conversation to fix this*, with typos such as *conversatoin*, reaches Bob's agent when his decision model is unsure, and he offers to send it (**Send it**) instead of only answering.
