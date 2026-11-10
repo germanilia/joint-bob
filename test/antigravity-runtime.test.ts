@@ -151,7 +151,7 @@ test("Google Antigravity reports official CLI sign-in instructions without attem
     await writeFile(executable, fixture); await chmod(executable, 0o700);
     updateSettings({ runtimes: { ...previous.runtimes, antigravity: { executable, configPath: path.join(root, ".gemini"), sessionPath: path.join(root, "sessions") } } });
     process.env.AGY_FIXTURE_UNAUTHENTICATED = "1";
-    assert.deepEqual(await runtime.signInProblems(), ["Google Antigravity is not signed in on this node. Sign in through the official Antigravity CLI and try again."]);
+    assert.deepEqual(await runtime.signInProblems(), ["Google Antigravity is not signed in on this node. Open Settings > Harnesses > Google Antigravity and sign in with Google."]);
   } finally {
     if (priorFlag === undefined) delete process.env.AGY_FIXTURE_UNAUTHENTICATED;
     else process.env.AGY_FIXTURE_UNAUTHENTICATED = priorFlag;

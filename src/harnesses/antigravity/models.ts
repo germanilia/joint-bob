@@ -90,6 +90,8 @@ export async function applyAntigravitySettings(connection: Rpc, sessionId: strin
 async function openCatalogSession(cwd: string) {
   const child = spawnAntigravity(cwd, ["acp"], process.env);
   const connection = createAntigravityConnection(child, () => {}, async (method) => { throw new Error(`Unexpected Antigravity ACP request during model discovery: ${method}`); });
+  const deadline = setTimeout(() => child.kill(), 30_000);
+  deadline.unref();
   try {
     const initialized = object(await connection.request("initialize", { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: "joint-bob", version: "1" } }), "initialize response");
     if (initialized.protocolVersion !== 1) throw new Error(`Unsupported Antigravity ACP protocol version: ${String(initialized.protocolVersion)}`);
@@ -98,6 +100,7 @@ async function openCatalogSession(cwd: string) {
     antigravityConfigOptions(opened.configOptions);
     return opened.configOptions;
   } finally {
+    clearTimeout(deadline);
     child.stdin.end();
     let timer: NodeJS.Timeout | undefined;
     try { await Promise.race([connection.closed, new Promise<void>((resolve) => { timer = setTimeout(resolve, 3_000); })]); }
@@ -109,6 +112,10 @@ export async function probeAntigravity(cwd = runtimeHome()): Promise<unknown> { 
 
 const MODEL_CACHE_MS = 10 * 60_000;
 const modelCache = new Map<string, { at: number; models: Promise<HarnessModel[]> }>();
+
+export function invalidateAntigravityModels(): void {
+  for (const key of modelCache.keys()) if (key.startsWith(`${currentRuntime().key}\n`)) modelCache.delete(key);
+}
 
 export async function antigravityModels(): Promise<HarnessModel[]> {
   const settings = antigravitySettings();

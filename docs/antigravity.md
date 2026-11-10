@@ -1,12 +1,20 @@
 # Google Antigravity
 
-Google Antigravity is a separate Joint Bob harness. It runs Google's official `agy acp` CLI, not a Pi provider. Joint Bob automatically installs the official CLI on each execution node at release startup, then checks for updates daily. **Settings > Updates > Update harnesses now** also installs or repairs it. Downloads come from Google's GitHub releases, are SHA-256 verified, and must pass version and ACP checks before replacing the previous installation. Native Google sign-in is still required as the OS user running Joint Bob; an in-app sign-in flow is not implemented yet. See [Google's ACP documentation](https://antigravity.google/docs/cli/acp/) and [headless CLI documentation](https://antigravity.google/docs/cli/headless/).
+Google Antigravity is a separate Joint Bob harness. It runs Google's official `agy acp` CLI, not a Pi provider. Joint Bob automatically installs the official CLI on each execution node at release startup, then checks for updates daily. **Settings > Updates > Update harnesses now** also installs or repairs it. Downloads come from Google's GitHub releases, are SHA-256 verified, and must pass version and ACP checks before replacing the previous installation. Google consent is completed by the person through the in-app sign-in controls described below. See [Google's ACP documentation](https://antigravity.google/docs/cli/acp/) and [headless CLI documentation](https://antigravity.google/docs/cli/headless/).
 
 In **Settings > Harnesses > Google Antigravity**, set the executable, configuration path and transcript root. Defaults are `<Joint Bob data>/harnesses/antigravity/bin/agy`, `~/.gemini`, and `~/.joint-bob/antigravity/sessions`. Explicit custom executable paths are preserved. Managed downloads support macOS and Linux on ARM64 and x64. The CLI's `HOME` is the parent of the configured configuration path. Keep that path at `<CLI home>/.gemini` so native sign-in and Joint Bob use the same home.
 
 Select **Google Antigravity** when creating a conversation. Models and thinking levels come from ACP configuration options. The default model leaves selection to Antigravity. An unavailable CLI or missing sign-in is reported before a turn starts. Model discovery retains a default entry when the CLI cannot be queried and logs non-authentication discovery errors.
 
-The launch environment removes Google API-key, ADC and Vertex AI authentication variables so attached Google SDK credentials cannot silently replace native CLI login. Joint Bob never starts an automatic sign-in or uses Pi OAuth for this harness.
+The launch environment removes Google API-key, ADC and Vertex AI authentication variables so attached Google SDK credentials cannot silently replace native CLI login. Joint Bob starts sign-in only when the node administrator clicks **Sign in with Google**. It does not use Pi OAuth for this harness.
+
+## Sign in from Joint Bob
+
+On the execution node, open **Settings > Harnesses > Google Antigravity** and click **Sign in with Google**. The app runs the official `agy acp --login` terminal authentication flow with the configured native home, without opening a browser on the server. Open the provided Google authorization link, complete Google's sign-in and consent yourself, then paste the authorization code or final redirect URL into the masked field and click **Complete sign-in**. This also works when the execution node is a remote Linux server.
+
+The CLI stores credentials through its native authentication mechanism on that node. Joint Bob sends the submitted response directly to the CLI over stdin. It never includes submitted codes, tokens or raw CLI output in login status responses. The app accepts only Google's authorization URLs, rejects multiline input, verifies the resulting ACP sign-in and refreshes available models and harness readiness. A rejected code is not retried automatically. **Cancel sign-in** terminates the pending CLI process; unfinished sign-ins time out after 15 minutes. New Antigravity turns wait until sign-in finishes.
+
+These controls are restricted to local node administrators, who manage the native node-level CLI login and paths. They do not transfer credentials to another execution node. Save path overrides before starting sign-in. After an app restart, start sign-in from Settings again if needed.
 
 ## Supported behavior
 
@@ -25,4 +33,4 @@ npm run typecheck
 npm run build
 ```
 
-Automated tests use a synthetic ACP executable with disposable data and no real Google account. They cover native login errors, model configuration, first turn, replay-safe resume, tool permission categories, transcript persistence, cancellation and malformed RPC replies. Authenticated smoke testing requires the official `agy` CLI installed and signed in on the execution node.
+Automated tests use a synthetic ACP executable with disposable data and no real Google account. They cover native login errors, model configuration, first turn, replay-safe resume, tool permission categories, transcript persistence, cancellation and malformed RPC replies. `npm run test:file -- test/ui/ui-antigravity-login.test.ts` exercises the real Settings UI and HTTP routes against an isolated node, including sign-in, code rejection, cancellation, verification, CSRF enforcement and readiness refresh. Authenticated smoke testing requires the official `agy` CLI installed and signed in on the execution node.

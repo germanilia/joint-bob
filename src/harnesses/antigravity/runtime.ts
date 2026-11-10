@@ -12,6 +12,7 @@ import { antigravityConfigOptions, antigravityThinkingLevels, applyAntigravitySe
 import { appendAntigravityRecord, initializeAntigravitySession, readAntigravitySession } from "./storage.js";
 import { createAntigravityConnection } from "./transport.js";
 import { spawnAntigravity } from "./process.js";
+import { antigravityLogins } from "./login.js";
 
 type Listener = (event: HarnessEvent) => void;
 type JsonObject = Record<string, unknown>;
@@ -43,7 +44,7 @@ function defaultSettings(): HarnessModelSettings {
 
 function loginProblem(error: unknown): string | undefined {
   return error instanceof Error && error.message.includes("Authentication required")
-    ? "Google Antigravity is not signed in on this node. Sign in through the official Antigravity CLI and try again."
+    ? "Google Antigravity is not signed in on this node. Open Settings > Harnesses > Google Antigravity and sign in with Google."
     : undefined;
 }
 
@@ -128,6 +129,7 @@ class AntigravitySession implements HarnessSession {
   }
 
   async preflight(): Promise<void> {
+    if (antigravityLogins.busy()) throw new Error("Finish Google Antigravity sign-in before starting a turn");
     await checkAntigravityExecutable(this.options.cwd, this.environment());
     try { await probeAntigravity(this.options.cwd); }
     catch (error) { throw new Error(loginProblem(error) ?? (error instanceof Error ? error.message : String(error))); }
@@ -145,6 +147,7 @@ class AntigravitySession implements HarnessSession {
     this.emit({ type: "agent_start" });
     let failure: unknown;
     try {
+      if (antigravityLogins.busy()) throw new Error("Finish Google Antigravity sign-in before starting a turn");
       await this.startProcess();
       await this.initializeNativeSession();
       const text = await guardAntigravityPrompt(this.identity(), input.text);

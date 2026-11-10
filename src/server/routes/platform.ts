@@ -8,7 +8,8 @@ import { deletePushSubscription, getVapidPublicKey, savePushSubscription } from 
 import { projectVisible } from "../../store.js";
 import { actingAccount } from "../../account-context.js";
 import { accountInCluster } from "../../cluster-accounts.js";
-import { isNodeAdmin } from "../admin.js";
+import { isNodeAdmin, requireAdmin } from "../admin.js";
+import { antigravityLogins } from "../../harnesses/antigravity/login.js";
 import { sendError } from "../http-auth.js";
 import { flushPushSubscriptionOutbox } from "../push-flush.js";
 import { ntfyServiceSchema, pushSubscribeSchema, pushUnsubscribeSchema, sharedNtfyServiceSchema } from "../schemas.js";
@@ -280,6 +281,30 @@ app.get("/api/harnesses", async (_request, response, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+const antigravityLoginPath = "/api/harnesses/antigravity/login";
+app.get(antigravityLoginPath, requireAdmin, (_request, response) => {
+  response.json({ login: antigravityLogins.status((response.locals.authSession as AuthSession).accountId) ?? null });
+});
+app.post(antigravityLoginPath, requireAdmin, (request, response) => {
+  try {
+    z.object({}).strict().parse(request.body);
+    response.json({ login: antigravityLogins.start((response.locals.authSession as AuthSession).accountId) });
+  } catch { sendError(response, 400, "Could not start Antigravity sign-in. Check installation or finish the current sign-in first."); }
+});
+app.put(antigravityLoginPath, requireAdmin, (request, response) => {
+  try {
+    const { answer } = z.object({ answer: z.string().min(1).max(8192) }).strict().parse(request.body);
+    antigravityLogins.answer((response.locals.authSession as AuthSession).accountId, answer);
+    response.json({ login: antigravityLogins.status((response.locals.authSession as AuthSession).accountId) });
+  } catch { sendError(response, 400, "No pending Antigravity sign-in prompt, or invalid authorization response."); }
+});
+app.delete(antigravityLoginPath, requireAdmin, async (_request, response) => {
+  try {
+    await antigravityLogins.cancel((response.locals.authSession as AuthSession).accountId);
+    response.json({ login: antigravityLogins.status((response.locals.authSession as AuthSession).accountId) });
+  } catch { sendError(response, 400, "Could not cancel Antigravity sign-in on this node."); }
 });
 
 // The providers and models a harness can use on this node, for the Settings pickers.

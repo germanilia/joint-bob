@@ -1,5 +1,7 @@
 import { api, savePreferencesInBackground } from "./api.js";
 import { loadProviderProfiles } from "./provider-profiles.js";
+import { antigravityLoginControls } from "./antigravity-login.js";
+import { loadHarnesses } from "./chat-controls.js";
 import { brandIcon, menuIcon } from "./icons.js";
 import { applyAdminVisibility, isNodeAdmin, loadNodeBlocks, loadTerminalPolicy, loadUsers, saveChangedTerminalPolicy } from "./node-admin.js";
 import { loadMyNodes } from "./roaming.js";
@@ -226,7 +228,7 @@ function createConversationControls(descriptor, settings, prefix, options = {}) 
   model.setOptions(withSaved([], defaults.modelId));
 
   status.textContent = "Loading available models…";
-  const loaded = api(`/api/harnesses/${encodeURIComponent(descriptor.id)}/model-options`).then((body) => {
+  const refresh = () => api(`/api/harnesses/${encodeURIComponent(descriptor.id)}/model-options`).then((body) => {
     catalog = body;
     provider?.setOptions(withSaved(body.providers.map(({ id, label }) => ({ value: id, label: label || id, detail: id })), provider.value));
     refreshModels();
@@ -234,7 +236,8 @@ function createConversationControls(descriptor, settings, prefix, options = {}) 
   }).catch((error) => { status.textContent = `Could not load ${descriptor.label} models: ${error.message}`; });
 
   const controls = [provider && labeledControl(`${labelPrefix} provider`, provider.root), labeledControl(`${labelPrefix} model`, model.root), status, labeledControl(`${labelPrefix} thinking`, thinking)].filter(Boolean);
-  return { fields: { provider, model, thinking }, controls, loaded };
+  const loaded = refresh();
+  return { fields: { provider, model, thinking }, controls, loaded, refresh };
 }
 
 function createRuntimeControls(descriptor, settings, defaults, prefix) {
@@ -288,6 +291,9 @@ function createHarnessPanel(descriptor, settings, defaults) {
     syncEnabled();
     panel.append(label, hint);
   }
+  if (descriptor.id === "antigravity") panel.append(antigravityLoginControls(descriptor.ready, async () => {
+    await Promise.all([conversation.refresh(), loadHarnesses()]);
+  }));
   panel.append(output, ...conversation.controls, runtime.fieldset); return panel;
 }
 
