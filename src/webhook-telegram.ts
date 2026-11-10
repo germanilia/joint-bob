@@ -98,8 +98,14 @@ export async function telegramBot(token: string): Promise<{ id: string; username
 }
 
 /** Only messages and the bot's own membership reach Joint Bob, and each call carries the secret. */
-export async function telegramSetWebhook(token: string, url: string, secretToken: string): Promise<void> {
-  await requireTelegram(token, "setWebhook", { url, secret_token: secretToken, allowed_updates: ["message", "my_chat_member"], drop_pending_updates: true });
+export async function telegramSetWebhook(token: string, url: string, secretToken: string, allowedUpdates: string[] = ["message", "my_chat_member"]): Promise<void> {
+  await requireTelegram(token, "setWebhook", { url, secret_token: secretToken, allowed_updates: allowedUpdates, drop_pending_updates: true });
+}
+/** A team bot also needs edits and button presses. */
+export const TEAM_TELEGRAM_UPDATES = ["message", "edited_message", "callback_query", "my_chat_member"];
+/** The menu Telegram shows when someone types "/". */
+export async function telegramSetCommands(token: string, commands: { command: string; description: string }[]): Promise<void> {
+  await requireTelegram(token, "setMyCommands", { commands });
 }
 export async function telegramDeleteWebhook(token: string): Promise<void> { await requireTelegram(token, "deleteWebhook", {}); }
 export async function telegramLeaveChat(token: string, chatId: string): Promise<void> { await requireTelegram(token, "leaveChat", { chat_id: chatId }); }

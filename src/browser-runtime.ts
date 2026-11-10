@@ -424,7 +424,6 @@ export class BrowserRuntime {
   profileOrNull(profileId: string | undefined): BrowserProfile | null { if (!profileId) return null; try { return this.profile(profileId); } catch { return null; } }
   usableProfiles(access: BrowserAccess): Promise<BrowserProfile[]> { void this.ready(); return Promise.resolve(this.store.usableProfiles(access)); }
   profileGrants(profileId: string) { void this.ready(); return this.store.profileGrants(profileId); }
-  createTeamProfile(projectId: string, label: string) { void this.ready(); return this.store.createProfile(projectId, label); }
   grantProfileAccess(profileId: string, grant: Omit<BrowserProfileGrant, "createdAt" | "originNodeId">, originNodeId?: string) { void this.ready(); return this.store.grantProfileAccess(profileId, grant, originNodeId); }
   /** Narrowing a share also ends the remote eyes: viewers attached through the cluster
       relay — tracked by their transport, never a caller-supplied id — reconnect and are

@@ -1,3 +1,4 @@
+import { asNode } from "../../account-context.js";
 import { z } from "zod";
 import { teamAssignmentDestination, teamConversation, teamAgentReadiness, validateTeamAssignment } from '../../assistant-teams/runtime.js';
 import { TeamError, type TeamAssignment } from '../../assistant-teams/store.js';
@@ -247,12 +248,14 @@ async function processAssistantTurn(accountId: string, entry: AssistantEntry, se
     if (entry.nodeId && entry.nodeId !== local.id) throw new Error("Open this assistant on its execution node");
     if (options?.team) {
       const { team, member, profile, destination } = await teamAssignmentDestination(options.team.assignment);
-      if (profile.id !== entry.id || team.executorAccountId !== accountId || input.requestId !== options.team.assignment.requestId) throw new Error('Team assignment does not match assistant turn');
+      if (profile.id !== entry.id || profile.accountId !== accountId || input.requestId !== options.team.assignment.requestId) throw new Error('Team assignment does not match assistant turn');
       const problems = await teamAgentReadiness(profile);
       if (problems.length) throw new TeamError(problems.join('\n'), 503);
       if (profile.executionSettings) await validateExecutionSettings(profile.executionSettings);
-      const project = await getProject(team.projectId);
-      if (!project) throw new Error('Team project unavailable');
+      // Team work runs in the assistant's own project.
+      // The initiating member may not see the owner's project; the node reads it for the owner.
+      const project = await asNode(() => getProject(profile.projectId));
+      if (!project) throw new Error('Assistant project unavailable');
       const initiator: AuthSession = { ...session, accountId: member.accountId, username: member.username, email: null, homeNodeId: member.homeNodeId };
       return executeAssistantTurn(accountId, profile, initiator, input, { ...destination, message: input.message, isNew: false }, project, 'assistant', { label: options.label, origin: 'assistant', team: options.team, automationProfile: { accountId, profileId: null } });
     }
@@ -286,7 +289,7 @@ export async function runPersonalAssistantAutomationTurn(accountId: string, assi
   if (!entry) throw new Error("Assistant not found");
   if (options.team) {
     const checked = await validateTeamAssignment(options.team.assignment);
-    if (checked.profile.id !== assistantId || checked.team.executorAccountId !== accountId || checked.assignment.requestId !== requestId) throw new Error('Team assignment does not match assistant turn');
+    if (checked.profile.id !== assistantId || checked.profile.accountId !== accountId || checked.assignment.requestId !== requestId) throw new Error('Team assignment does not match assistant turn');
   } else if (await teamConversation(entry.projectId, entry.sessionId)) throw new Error('Team assistant requires a team assignment');
   const session = automationSession(accountId);
   const recentMessages = async () => {

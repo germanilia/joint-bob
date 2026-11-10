@@ -184,7 +184,8 @@ test('loopback Telegram HTTP → durable queue → Pi tools: four private specia
   const remoteAuth=await signIn(homeEnv,node);
   assert.equal((await api(node,remoteAuth,'GET',base)).status,200);
   assert.equal((await api(node,auth,'PUT','/guardian',{settings:{...DEFAULT_GUARDIAN_SETTINGS,enabled:true,rules:[PRODUCTION_RULE]}})).status,200);
-  for(const [index,role] of ['bob',...roles].entries())assert.equal((await api(node,auth,'PUT',`${base}/agents/${role}`,{expectedRevision:index+1,name:role,instructions:`ROLE_${role}`,allowTerminal:false,executionSettings:{harnessId:'pi',provider:'dev-environment',modelId:'dev-model',reasoning:'off'}})).status,200);
+  // The members are ordinary assistants of the host's owner, picked in with free role names.
+  await (await import('./team-members-fixture.js')).addNodeMembers((method,route,body)=>api<any>(node,auth,method as any,route,body),node.projects.map((p:any)=>p.id),team.id,['bob',...roles].map(role=>({role,instructions:`ROLE_${role}`})),'bob',{harnessId:'pi',provider:'dev-environment',modelId:'dev-model',reasoning:'off'});
   await api(node,auth,'GET',`${base}/telegram`);db=new DatabaseSync(path.join(node.dataDir,'node.db'));
   saveTeamTelegramConnection(db,{teamId:team.id,botId:'integration',botUsername:'integration_bot',tokenAccountId:seeded.stdout.trim().split('\n').at(-1)!,headerSecret:'integration-secret',readsAllGroupMessages:true});
   const hook=(value:unknown)=>fetch(`${node.url}/hooks/teamtelegram-${team.id}`,{method:'POST',headers:{'Content-Type':'application/json','x-telegram-bot-api-secret-token':'integration-secret'},body:JSON.stringify(value)});

@@ -3,6 +3,12 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.258.0 — 2026-11-10
+
+- Teams are now made of your own assistants. Pick any of your assistants on the team's machine and give it a role name you choose; that name is its Telegram command (`/qa`, `@qa`). The fixed six roles are gone, and existing teams keep their six members with Bob coordinating.
+- A picked assistant brings everything it has: its instructions, skills, MCP servers, browser and saved logins, terminal and model. Team work runs as its owner, in its own project, in conversations kept apart from its personal ones. Each member card shows what it uses, and only an assistant's owner can add it to a team. The separate team-level MCP, browser-profile and plugin shares are removed.
+- A Telegram agent can serve a team. In the assistant's Telegram section, choose a team: the team then answers through that bot and the assistant coordinates it. Choosing "No team" gives the bot back. The bot's command menu follows the member list.
+
 ## 2.257.0 — 2026-11-10
 
 - Fixed the browser sign-in card failing on pages with more than one form, such as Joint Bob's own login behind a dialog. While a dialog is open, only forms inside it count. When the page rules still find no sign-in step, System AI (Settings → System AI) picks the username, password and button, and the card uses that choice only when it is confident. Typed values are never sent to it, and if System AI is unavailable the card stays unsupported as before.

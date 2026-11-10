@@ -55,7 +55,7 @@ test('secrets are stripped before persistence; outsider evidence and forged memb
 
 test('all six live roles have scoped memory tools, only Bob has delegation; stale roles have neither',async()=>{
  const f=await fixture();const {acceptTeamAssignment,routeTeamAssignment}=await import('../src/assistant-teams/assignments.js');
- const {getTeamAssignment}=await import('../src/assistant-teams/store.js');const {teamAssignmentDestination,TEAM_ROLES}=await import('../src/assistant-teams/runtime.js');
+ const {getTeamAssignment}=await import('../src/assistant-teams/store.js');const {teamAssignmentDestination}=await import('../src/assistant-teams/runtime.js');const {TEST_ROLES:TEAM_ROLES}=await import('./team-members-fixture.js');
  const {beginPersonalAssistantTurn}=await import('../src/personal-assistants.js');const {promptStarted,promptEnded}=await import('../src/assistant-collaboration/bridge-tools.js');const {listTeamTools,callTeamTool}=await import('../src/assistant-teams/tools.js');
  for(const role of TEAM_ROLES){
   const [a]=await acceptTeamAssignment(f.member,await f.message('/'+role+' memory'),[role],null);await routeTeamAssignment(a.id,{kind:'new'});
@@ -151,7 +151,7 @@ test('real member HTTP paging/edit/revert and live specialist memory tools, with
   const created=await api<any>(node,auth,'POST','/assistant-teams',{clusterId:cluster.body.snapshot.body.clusterId});assert.equal(created.status,201);
   const team=created.body.team,base=`/assistant-teams/${team.id}`;
   assert.equal((await api(node,auth,'PUT','/guardian',{settings:{...DEFAULT_GUARDIAN_SETTINGS,enabled:true,rules:[PRODUCTION_RULE]}})).status,200);
-  assert.equal((await api(node,auth,'PUT',`${base}/agents/qa`,{expectedRevision:1,name:'QA',instructions:'Use shared memory tools.',allowTerminal:false,executionSettings:{harnessId:'pi',provider:'dev-environment',modelId:'dev-model',reasoning:'off'}})).status,200);
+  await (await import('./team-members-fixture.js')).addNodeMembers((method,route,body)=>api<any>(node,auth,method as any,route,body),node.projects.map((p:any)=>p.id),team.id,[{role:'bob'},{role:'qa',instructions:'Use shared memory tools.'}],'bob',{harnessId:'pi',provider:'dev-environment',modelId:'dev-model',reasoning:'off'});
   const turn=await api<any>(node,auth,'POST',`${base}/agents/qa/turn`,{subjectId:'memory-check',requestId:crypto.randomUUID(),message:'Store and read a shared proposal'});assert.equal(turn.status,200,JSON.stringify(turn.body));
   assert.equal(requests.length,3);assert.ok(requests[0].tools.some((t:any)=>t.function.name==='mcp__joint_bob__team_memory_write'));
   assert.ok(!requests[0].tools.some((t:any)=>t.function.name==='mcp__joint_bob__team_delegate'));

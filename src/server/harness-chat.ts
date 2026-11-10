@@ -663,22 +663,18 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
       const assistantSettings = teamTurn?.profile ?? (queued.author && !queued.systemEventId
         ? await personalAssistantSettings(queued.author.accountId, connection.project.id, connection.engine, connection.shared.session.id)
         : undefined);
-      const assistantAccountId = teamTurn?.team.executorAccountId ?? queued.author?.accountId;
+      const assistantAccountId = teamTurn?.profile.accountId ?? queued.author?.accountId;
       if (assistantSettings) {
         const available = connection.shared.session.tools();
         const active = available.filter(tool => tool.active).map(tool => tool.name);
         const baseline = await personalAssistantToolBaseline(assistantAccountId!, assistantSettings.id, connection.engine, connection.shared.session.id, active);
         // A topic's baseline may predate Joint Bob's own tools; they are always offered when the session has them.
         const builtIn = JOINT_BOB_AGENT_TOOL_NAMES.filter(name => !baseline.includes(name) && available.some(tool => tool.name === name));
-        const allowed = filterPersonalAssistantTools([...baseline, ...builtIn], assistantSettings).filter(name => !teamTurn || !JOINT_BOB_AGENT_TOOL_NAMES.includes(name));
+        const allowed = filterPersonalAssistantTools([...baseline, ...builtIn], assistantSettings);
         if (teamTurn) {
-          const { selectedTeamMcp } = await import('../assistant-teams/store.js');
-          const { managedMcpStore } = await import('../mcp/agent.js');
-          const { activationDecision } = await import('../resource-activation.js');
-          const store = managedMcpStore(teamTurn.team.executorAccountId);
-          const selected = (await selectedTeamMcp(teamTurn.team.id, teamTurn.assignment.role)).filter(server => store.sharedWith(server, teamTurn.team.id) && activationDecision('mcp', server, 'pi', false).enabled);
-          for (const tool of available) if (tool.active && selected.some(server => tool.name.startsWith(`mcp__${server.replaceAll('-', '_')}__`)) && !allowed.includes(tool.name)) allowed.push(tool.name);
-          for (const name of TEAM_AGENT_TOOL_NAMES.filter(name => teamTurn.assignment.role === 'bob' || name.startsWith('mcp__joint_bob__team_memory_'))) if (available.some(tool => tool.name === name) && !allowed.includes(name)) allowed.push(name);
+          // A member brings everything it has; team work only adds the team tools.
+          const coordinator = await (await import('../assistant-teams/store.js')).teamCoordinator(teamTurn.team);
+          for (const name of TEAM_AGENT_TOOL_NAMES.filter(name => teamTurn.assignment.role === coordinator || name.startsWith('mcp__joint_bob__team_memory_'))) if (available.some(tool => tool.name === name) && !allowed.includes(name)) allowed.push(name);
         }
         if (allowed.length !== active.length || allowed.some(name => !active.includes(name))) await connection.shared.session.setTools(allowed);
         if (!assistantSettings.allowBrowser) revokeBrowserAgentTokens(connection.project.id, connection.conversationId);
@@ -686,7 +682,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
       const assistantContext = assistantSettings
         ? await personalAssistantContext(assistantAccountId!, connection.project.id, connection.engine, connection.shared.session.id)
         : "";
-      const toolPolicy = teamTurn ? '\n\nTeam tools are limited to the currently approved and selected role resources on this host. Do not use private account resources.' : assistantSettings ? `\n\nPersonal assistant tool policy: Browser access ${assistantSettings.allowBrowser ? "allowed" : "disabled"}; terminal access ${assistantSettings.allowTerminal ? "allowed" : "disabled"}; MCP servers ${assistantSettings.mcpServerNames === null ? "inherit the conversation's installed servers" : `allowlisted to ${assistantSettings.mcpServerNames.join(", ") || "none"}`}. Treat these as access restrictions, not preferences.` : "";
+      const toolPolicy = assistantSettings ? `\n\nPersonal assistant tool policy: Browser access ${assistantSettings.allowBrowser ? "allowed" : "disabled"}; terminal access ${assistantSettings.allowTerminal ? "allowed" : "disabled"}; MCP servers ${assistantSettings.mcpServerNames === null ? "inherit the conversation's installed servers" : `allowlisted to ${assistantSettings.mcpServerNames.join(", ") || "none"}`}. Treat these as access restrictions, not preferences.` : "";
       const text = `${assistantContext ? `${assistantContext}${toolPolicy}\n\n` : ""}${connection.handoffContext ?? ""}${authored}`;
       const finishSilentReview = queued.requestId && (isScheduledPromptText(queued.promptText) || isSilentWebhookRequest(queued.requestId))
         ? await silentScheduledReview(connection.project, connection.engine, connection.shared.session.id, queued.requestId) : undefined;

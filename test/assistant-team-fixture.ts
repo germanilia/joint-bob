@@ -8,7 +8,7 @@ import { createTeam, prepareTeamProject, teamDatabase } from '../src/assistant-t
 import { telegramDatabase, saveTeamTelegramConnection } from '../src/assistant-teams/telegram-store.js';
 import { ingestTeamTelegramUpdate } from '../src/assistant-teams/telegram.js';
 import { saveSecretAccount } from '../src/secrets.js';
-import { initializeTeamAgents } from '../src/assistant-teams/runtime.js';
+import { seedTeamMembers } from './team-members-fixture.js';
 
 export async function fixture() {
  const db = await teamDatabase(), host = await getClusterNode(), username = 'assignment';
@@ -22,6 +22,6 @@ export async function fixture() {
  saveTeamTelegramConnection(db,{teamId:team.id,botId:randomUUID(),botUsername:'fixture_bot',tokenAccountId:secret.id,headerSecret:'secret',readsAllGroupMessages:true});
  db.prepare('INSERT INTO assistant_team_telegram_members VALUES(?,?,?,?)').run(team.id,accountId,'7','human'); db.prepare('INSERT INTO assistant_team_telegram_groups VALUES(?,?)').run(team.id,'-1');
  let id=0; const message=async(text:string,extra:object={})=>(await ingestTeamTelegramUpdate(team.id,{update_id:++id,message:{message_id:id,chat:{id:-1,type:'supergroup'},from:{id:7},date:1,text,...extra}}))!.message;
- await initializeTeamAgents(team);
+ await seedTeamMembers(team);
  return {db,team,member,session,message};
 }

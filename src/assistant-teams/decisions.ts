@@ -3,7 +3,7 @@ import { systemAiSettings } from '../system-ai-config.js';
 import { systemDecisionKey } from '../system-ai.js';
 import { decisionModelTarget } from '../classifiers/conversation-routing.js';
 import { askSystemOneChoices, type SystemOneChoice, type SystemOneTarget, type SystemOneQuestion } from '../classifiers/typesafe.js';
-import { getTeam, announceTeamChange, type AssistantTeam, type TeamMessage, type TeamRole, type TeamRoute, type TeamSettings, type TeamSubject } from './store.js';
+import { getTeam, teamCoordinator, announceTeamChange, type AssistantTeam, type TeamMessage, type TeamRole, type TeamRoute, type TeamSettings, type TeamSubject } from './store.js';
 import { conversationDatabase, getTeamMessage, listTeamHistory, directTeamTargets, teamReplyRoute, teamSubjectCandidates, type StoredTeamMessage } from './conversations.js';
 import { authorizeTeamTelegram } from './telegram.js';
 import { validTeamThresholds, TEAM_ATTENTION_QUESTION, TEAM_MEMORY_QUESTION, teamSubjectQuestion } from './questions.js';
@@ -113,7 +113,8 @@ export async function decideTeamMessage(team: AssistantTeam, input: TeamMessage)
     const route: TeamRoute = reply ?? (answers.subject.choice === 'new' ? { kind: 'new' } : answers.subject.choice === 'clarify' ? { kind: 'clarify' } : { kind: 'continue', subjectId: bounded.subjects[Number(answers.subject.choice.slice('subject_'.length))].id });
     const attention = targets.length ? 'direct' : proactiveDisposition(answers.attention.choice as 'act' | 'none', answers.attention.confidence, currentTeam.settings);
     const requestId = requests.length && answers.request.choice !== 'separate' ? requests[Number(answers.request.choice.slice('request_'.length))].id : undefined;
-    record.result = { ...(requestId ? { requestId } : {}), attention, targets: targets.length ? targets : attention === 'silent' ? [] : ['bob'], route, learn: answers.memory.choice === 'learn' };
+    const coordinator = await teamCoordinator(currentTeam);
+    record.result = { ...(requestId ? { requestId } : {}), attention, targets: targets.length ? targets : attention === 'silent' || !coordinator ? [] : [coordinator], route, learn: answers.memory.choice === 'learn' };
     record.status = 'decided'; record.waitingReason = route.kind === 'clarify' ? 'subject_clarification' : null;
     await persist(record); return record.result;
   } catch {

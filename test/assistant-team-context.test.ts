@@ -21,7 +21,7 @@ test('durable full history, edit versions, pending dedup, scoped reply routing a
  const accountId=localAccountIdForUsername('context')!;
  const session:AuthSession={id:randomUUID(),userId:randomUUID(),accountId,username:'context',homeNodeId:null,isRemoteLogin:false,email:null,role:'admin',csrfToken:'fixture',mustChangePassword:false};
  const clusterId=randomUUID();createMembershipCluster(db,{nodeId:host.id,name:'host',url:'http://127.0.0.1:19001'},{id:clusterId,name:'context'});addClusterLocalMember(db,clusterId,accountId);
- const actor=await requireClusterMember(session,clusterId),team=await createTeam(actor,{projectId:await prepareTeamProject(actor),executorAccountId:accountId});
+ const actor=await requireClusterMember(session,clusterId),team=await createTeam(actor,{projectId:await prepareTeamProject(actor),executorAccountId:accountId});await (await import('./team-members-fixture.js')).seedTeamMembers(team);
  await telegramDatabase();saveTeamTelegramConnection(db,{teamId:team.id,botId:'1',botUsername:'fixture_bot',tokenAccountId:'fixture',headerSecret:'secret',readsAllGroupMessages:true});
  db.prepare('INSERT INTO assistant_team_telegram_members VALUES(?,?,?,?)').run(team.id,accountId,'7','human');db.prepare('INSERT INTO assistant_team_telegram_groups VALUES(?,?)').run(team.id,'-1');
  let notifications=0;const stop=onTeamInbox(()=>{notifications++;});
@@ -45,7 +45,7 @@ test('durable full history, edit versions, pending dedup, scoped reply routing a
  await saveTeamSubject({id:'product-subject',teamId:team.id,title:'Product',summary:'unrelated'},'-1',10);
  const interleaved=await ingestTeamTelegramUpdate(team.id,update(849,'unrelated product',{from:{id:8}}));await bindTeamMessageSubject(team.id,interleaved!.message.id,'product-subject');
  const humanReply=await ingestTeamTelegramUpdate(team.id,update(850,'follow up',{from:{id:8},reply_to_message:{message_id:1}}));assert.deepEqual((await teamSubjectCandidates(team.id,humanReply!.message)).map(s=>s.id),['qa-subject']);
- const {initializeTeamAgents}=await import('../src/assistant-teams/runtime.js');const agents=await initializeTeamAgents(team);const conversationId=randomUUID();
+ const {seedTeamMembers}=await import('./team-members-fixture.js');const agents=await seedTeamMembers(team);const conversationId=randomUUID();
  await bindTeamConversation(team.id,'qa-subject',agents[0].assistantId,conversationId);await bindTeamConversation(team.id,'qa-subject',agents[0].assistantId,conversationId);
  await assert.rejects(bindTeamConversation(team.id,'qa-subject',agents[0].assistantId,randomUUID()));
  assert.equal((db.prepare('SELECT conversation_id FROM assistant_team_conversations WHERE team_id=?').get(team.id) as any).conversation_id,conversationId);
@@ -74,7 +74,7 @@ test('real HTTP enrollment and webhook persist before acknowledgment; startup co
  try{
  const env=await seedDevEnvironment(root,1),node=env.nodes[0];server=await startDevNode(env,node);const login=await signIn(env,node);
  const cluster=await api<any>(node,login,'POST','/clusters',{name:'Telegram fixture'});assert.equal(cluster.status,201);
- const created=await api<any>(node,login,'POST','/assistant-teams',{clusterId:cluster.body.snapshot.body.clusterId});assert.equal(created.status,201);const teamId=created.body.team.id,base=`/assistant-teams/${teamId}/telegram`;
+ const created=await api<any>(node,login,'POST','/assistant-teams',{clusterId:cluster.body.snapshot.body.clusterId});assert.equal(created.status,201);const teamId=created.body.team.id,base=`/assistant-teams/${teamId}/telegram`;{const seed=new DatabaseSync(path.join(node.dataDir,'node.db'));try{(await import('./team-members-fixture.js')).seedNodeMemberRows(seed,teamId);}finally{seed.close();}}
  assert.equal((await api(node,login,'GET',base)).status,200);
  db=new DatabaseSync(path.join(node.dataDir,'node.db'));saveTeamTelegramConnection(db,{teamId,botId:'http-fixture',botUsername:'http_fixture_bot',tokenAccountId:'synthetic',headerSecret:'http-secret',readsAllGroupMessages:true});
  const hook=async(update:unknown,secret='http-secret')=>fetch(`${node.url}/hooks/teamtelegram-${teamId}`,{method:'POST',headers:{'Content-Type':'application/json','x-telegram-bot-api-secret-token':secret},body:JSON.stringify(update)});

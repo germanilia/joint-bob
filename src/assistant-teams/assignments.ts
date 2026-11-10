@@ -2,13 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { asNode } from '../account-context.js';
 import { recheckTeamActor, requireTeamExecution, type TeamMember } from './access.js';
-import { scheduleTeamChange, getTeam, getTeamAssignment, listTeamAgents, TeamError, type TeamAssignment, type TeamMessage, type TeamRole, type TeamRoute } from './store.js';
+import { scheduleTeamChange, getTeam, getTeamAssignment, listTeamAgents, teamRolesSync, TeamError, type TeamAssignment, type TeamMessage, type TeamRole, type TeamRoute } from './store.js';
 import { teamExecutionEvidence, bindTeamMessageSubject, saveTeamSubject, directTeamTargets, getTeamMessage, listPendingTeamEvents, onTeamInbox, type StoredTeamMessage } from './conversations.js';
 import { authorizeTeamTelegram } from './telegram.js';
 import { acknowledgmentConfirmed, bindTeamOutputSubject, deliverTeamOutbox, deliveryDatabase, enqueueTeamOutput, listTeamOutbox } from './delivery.js';
 import { decideTeamMessage, listTeamDecisions } from './decisions.js';
-import { initializeTeamAgents, runTeamTurn, teamAssignmentDestination, teamAgentReadiness } from './runtime.js';
-import { getPersonalAssistantTurn } from '../personal-assistants.js';
+import { runTeamTurn, teamAssignmentDestination, teamAgentReadiness } from './runtime.js';
+import { getPersonalAssistantById, getPersonalAssistantTurn } from '../personal-assistants.js';
 import { runningPromptRequestId } from '../assistant-collaboration/bridge-tools.js';
 
 interface Root { id:string; teamId:string; source:TeamMessage; browser:boolean; subjectId:string|null }
@@ -47,7 +47,10 @@ export async function teamWorkStatus(member:TeamMember) {
   approvals:db.prepare('SELECT p.state,p.record FROM assistant_team_approvals p JOIN assistant_team_assignments a ON a.id=p.assignment_id WHERE a.team_id=?').all(member.teamId).map(row=>({...JSON.parse(row.record as string),state:row.state})),
  };
 }
-function output(db:DatabaseSync,r:Root,id:string,kind:'ack'|'inquiry'|'clarify'|'result',text:string,assignmentId:string|null=null,role:TeamRole='bob') {
+const coordinatorOf=(db:DatabaseSync,teamId:string)=>teamRolesSync(db,teamId).coordinator??'team';
+/** Group-facing notes are signed by the coordinator; the text names it, e.g. "lead: accepted". */
+const say=(db:DatabaseSync,teamId:string,text:string)=>`${coordinatorOf(db,teamId)}: ${text}`;
+function output(db:DatabaseSync,r:Root,id:string,kind:'ack'|'inquiry'|'clarify'|'result',text:string,assignmentId:string|null=null,role:TeamRole=coordinatorOf(db,r.teamId)) {
  if(r.browser)return;
  enqueueTeamOutput(db,{id,teamId:r.teamId,rootId:r.id,kind,text,assignmentId,role,subjectId:r.subjectId,chatId:r.source.chatId,threadId:r.source.threadId,replyTo:r.source.telegramMessageId,requestedBy:r.source.accountId});
 }
@@ -70,12 +73,13 @@ function accept(db:DatabaseSync,r:Root,roles:TeamRole[],requestedBy:string):Team
   db.prepare('INSERT INTO assistant_team_assignments VALUES(?,?,?,?)').run(id,a.teamId,a.requestId,JSON.stringify(a));
   saveWork(db,{assignmentId:id,phase:'queued',message:r.source.text,result:null,conversationId:null,consumed:false,reason:null});result.push(a);
  }
- if(result.length)output(db,r,`${r.id}:ack`,'ack',`Bob: accepted; queued for ${result.map(a=>a.role).join(', ')}. This confirms acceptance, not that work has started.`,result[0].id);
+ if(result.length)output(db,r,`${r.id}:ack`,'ack',say(db,r.teamId,`accepted; queued for ${result.map(a=>a.role).join(', ')}. This confirms acceptance, not that work has started.`),result[0].id);
  return result;
 }
 export async function acceptTeamAssignment(member:TeamMember,message:TeamMessage,roles:TeamRole[],subjectId:string|null):Promise<TeamAssignment[]> {
  const source=await canonical(member,message),db=await assignmentDatabase();
- if(!roles.length||roles.some(r=>!['bob','product','designer','qa','pr_reviewer','support'].includes(r)))throw new TeamError('Known target required',400);
+ const known=teamRolesSync(db,member.teamId).roles;
+ if(!roles.length||roles.some(r=>!known.includes(r)))throw new TeamError('Known target required',400);
  if(subjectId&&!db.prepare('SELECT 1 FROM assistant_team_subjects WHERE team_id=? AND id=? AND chat_id=? AND thread_id IS ?').get(member.teamId,subjectId,source.chatId,source.threadId))throw new TeamError('Unknown scoped subject',403);
  return transaction(db,()=>accept(db,{id:rootKey(source),teamId:source.teamId,source,browser:false,subjectId},roles,member.accountId));
 }
@@ -85,7 +89,7 @@ export async function routeTeamAssignment(assignmentId:string,route:TeamRoute):P
  transaction(db,()=>{
   if(route.kind==='clarify'){
    for(const target of assignments(db,a.teamId).filter(t=>t.rootId===a.rootId&&!t.parentId&&['accepted','waiting_for_human'].includes(t.state))){target.state='waiting_for_human';saveAssignment(db,target);const w=work(db,target.id)!;w.reason='subject_clarification';saveWork(db,w);}
-   output(db,r,`${r.id}:clarify`,'clarify','Bob: which subject and what work should the team handle?');return;
+   output(db,r,`${r.id}:clarify`,'clarify',say(db,r.teamId,'which subject and what work should the team handle?'));return;
   }
   if(!r.subjectId){
    if(route.kind==='continue'){
@@ -122,7 +126,7 @@ export async function createTeamInquiry(member:TeamMember,message:TeamMessage,ro
   const inquiry:TeamInquiry={id,teamId:member.teamId,source,roles,route,state:'pending'};
   db.prepare('INSERT OR IGNORE INTO assistant_team_request_evidence VALUES(?,?,?,?)').run(rootKey(source),member.teamId,source.id,source.accountId);
   db.prepare('INSERT INTO assistant_team_inquiries VALUES(?,?,?,?)').run(id,member.teamId,'pending',JSON.stringify(inquiry));
-  output(db,{id:rootKey(source),teamId:member.teamId,source,browser:false,subjectId:null},`${id}:question`,'inquiry',`Bob: shall I investigate this request? Reply to THIS question with “yes” or “no”.\n${source.text.slice(0,1500)}`);
+  output(db,{id:rootKey(source),teamId:member.teamId,source,browser:false,subjectId:null},`${id}:question`,'inquiry',say(db,member.teamId,`shall I investigate this request? Reply to THIS question with “yes” or “no”.\n${source.text.slice(0,1500)}`));
   scheduleTeamChange(member.teamId);
   return inquiry;
  });
@@ -205,20 +209,22 @@ export async function consumeTeamConfirmation(input:StoredTeamMessage):Promise<b
 }
 /** The running request and real runtime receipt are both required, even for direct internal callers. */
 export async function requireLiveTeamBob(parentId:string) {
- const a=await getTeamAssignment(parentId);if(!a||a.role!=='bob')throw new TeamError('Only live Bob can delegate',403);
- const resolved=await teamAssignmentDestination(a),turn=await getPersonalAssistantTurn(resolved.team.executorAccountId,resolved.profile.id,a.requestId);
- if(!turn||turn.status!=='running'||runningPromptRequestId(resolved.team.projectId,resolved.destination.sessionId)!==a.requestId)throw new TeamError('Live Bob turn required',403);
+ const a=await getTeamAssignment(parentId),db=await assignmentDatabase();
+ if(!a||a.role!==teamRolesSync(db,a.teamId).coordinator)throw new TeamError('Only the live coordinator can delegate',403);
+ const resolved=await teamAssignmentDestination(a),turn=await getPersonalAssistantTurn(resolved.profile.accountId,resolved.profile.id,a.requestId);
+ if(!turn||turn.status!=='running'||runningPromptRequestId(resolved.profile.projectId,resolved.destination.sessionId)!==a.requestId)throw new TeamError('Live coordinator turn required',403);
  return resolved;
 }
-export async function delegateTeamAssignment(parentId:string,role:Exclude<TeamRole,'bob'>,message:string):Promise<TeamAssignment> {
- if(!['product','designer','qa','pr_reviewer','support'].includes(role)||!message.trim()||message.length>18000)throw new TeamError('Known specialist and nonempty request required',400);
+export async function delegateTeamAssignment(parentId:string,role:TeamRole,message:string):Promise<TeamAssignment> {
  const {assignment:parent}=await requireLiveTeamBob(parentId),db=await assignmentDatabase(),id=key(parent.id,parent.requestId,role,message);
+ const {roles,coordinator}=teamRolesSync(db,parent.teamId);
+ if(!roles.includes(role)||role===coordinator||!message.trim()||message.length>18000)throw new TeamError('Known member and nonempty request required',400);
  const child=transaction(db,()=>{
   const all=assignments(db,parent.teamId),existing=all.find(a=>a.id===id);if(existing)return existing;
   if(all.filter(a=>a.rootId===parent.rootId&&a.parentId).length>=10){const w=work(db,parent.id)!;w.reason='delegation_limit';saveWork(db,w);return null;}
   const a:TeamAssignment={...parent,id,parentId:parent.id,role,destination:{kind:'bob',parentAssignmentId:parent.id},state:'queued',requestId:randomUUID()};
   db.prepare('INSERT INTO assistant_team_assignments VALUES(?,?,?,?)').run(id,a.teamId,a.requestId,JSON.stringify(a));
-  saveWork(db,{assignmentId:id,phase:'queued',message:`INTERNAL ONLY — report to Bob, never publish to Telegram.\n${message}`,result:null,conversationId:null,consumed:false,reason:null});return a;
+  saveWork(db,{assignmentId:id,phase:'queued',message:`INTERNAL ONLY — report to ${coordinator}, never publish to Telegram.\n${message}`,result:null,conversationId:null,consumed:false,reason:null});return a;
  });
  if(!child)throw new TeamError('Ten delegated turns reached; human continuation required',409);
  wakeTeamWork(parent.teamId);return child;
@@ -246,7 +252,7 @@ async function dispatch(a:TeamAssignment):Promise<void> {
   // Only pre-dispatch failures are known not to have run. Never reset uncertain runtime effects.
   if(w?.phase==='queued'){
    transaction(db,()=>{a.state='failed';w.phase='held';w.reason='runtime_unavailable';saveAssignment(db,a);saveWork(db,w);
-    output(db,root(db,a.rootId),`${a.id}:runtime-failed`,'clarify','Bob: the selected host runtime is unavailable. No alternative host or model was used. Check team readiness before submitting a new request.',a.id);
+    output(db,root(db,a.rootId),`${a.id}:runtime-failed`,'clarify',say(db,a.teamId,'the selected host runtime is unavailable. No alternative host or model was used. Check team readiness before submitting a new request.'),a.id);
    });
    await deliverTeamOutbox(a.teamId);
   }
@@ -265,7 +271,7 @@ async function advanceParent(a:TeamAssignment):Promise<void> {
   }
  }
  transaction(db,()=>{
-  if(w.reason==='delegation_limit'){a.state='waiting_for_human';w.phase='held';output(db,root(db,a.rootId),`${a.rootId}:limit`,'clarify','Bob: ten delegated turns reached. Please give a new explicit request to continue.');}
+  if(w.reason==='delegation_limit'){a.state='waiting_for_human';w.phase='held';output(db,root(db,a.rootId),`${a.rootId}:limit`,'clarify',say(db,a.teamId,'ten delegated turns reached. Please give a new explicit request to continue.'));}
   else {
    delete w.originalMaterial;
    w.message=`Continue the original request using these stored INTERNAL ONLY child results. Do not repeat completed delegations.\nOriginal request: ${root(db,a.rootId).source.text}\n${unread.map(c=>`${c.role} (${c.id}): ${work(db,c.id)!.result}`).join('\n')}`;
@@ -304,11 +310,11 @@ async function recoverTeamWorkOnce(teamId:string):Promise<void> {
    try{await requireTeamExecution(teamId,a.requestedBy);}catch{a.state='cancelled';w.phase='held';w.reason='membership_removed_before_dispatch';transaction(db,()=>{saveAssignment(db,a);saveWork(db,w);});continue;}
   }
   if(w.phase==='dispatched'||(w.phase==='held'&&w.reason==='dispatch_outcome_unknown')) {
-   const team=await getTeam(teamId),agent=(await listTeamAgents(teamId)).find(t=>t.role===a.role),receipt=agent&&await getPersonalAssistantTurn(team.executorAccountId,agent.assistantId,a.requestId);
+   const agent=(await listTeamAgents(teamId)).find(t=>t.role===a.role),owner=agent&&await getPersonalAssistantById(agent.assistantId),receipt=owner&&await getPersonalAssistantTurn(owner.accountId,owner.id,a.requestId);
    if(receipt?.status==='completed')await complete(a,receipt.response??'',receipt.topicId.slice(receipt.topicId.indexOf(':')+1));
    else{a.state='uncertain';w.phase='held';w.reason='dispatch_outcome_unknown';transaction(db,()=>{saveAssignment(db,a);saveWork(db,w);});continue;}
   }
-  a=(await getTeamAssignment(a.id))!;if(a.role==='bob')await advanceParent(a);
+  a=(await getTeamAssignment(a.id))!;if(a.role===teamRolesSync(db,teamId).coordinator)await advanceParent(a);
   a=(await getTeamAssignment(a.id))!;
   if(a.state==='queued'&&a.subjectId&&work(db,a.id)?.phase==='queued') {
    // Do not wait here: Bob may be running while his child is queued. Completion wakes the durable ledger.
@@ -337,15 +343,15 @@ async function processInbox(teamId:string) {
    if(await consumeTeamConfirmation(message))continue;
    if(/^(yes|no|confirm|dismiss)[.!]?$/i.test(message.text.trim())){
     const r:Root={id:rootKey(message),teamId,source:message,browser:false,subjectId:null};
-    output(db,r,`${r.id}:clarify`,'clarify','Bob: please reply to the exact inquiry question or use its Confirm / Dismiss buttons.');continue;
+    output(db,r,`${r.id}:clarify`,'clarify',say(db,teamId,'please reply to the exact inquiry question or use its Confirm / Dismiss buttons.'));continue;
    }
    const targets=await directTeamTargets(message);
    const emptyCall=/^(?:\s*[/@][\w]+(?:@[\w]+)?\s*)+$/.test(message.text);
    const { teamTelegramConnection }=await import('./telegram-store.js');
    const bot=(await teamTelegramConnection(teamId))?.bot_username.toLowerCase();
    const leading=message.text.match(/^\s*(?:[/@]\S+(?:\s+|$))+/)?.[0].trim().split(/\s+/)??[];
-   const unknownCall=(/^\s*[/@]/.test(message.text)&&!targets.length)||leading.some(token=>{const [alias,suffix]=token.slice(1).toLowerCase().split('@');return !['bob','product','designer','qa','pr_reviewer','support',bot].includes(alias)||(suffix!==undefined&&suffix!==bot);});
-   if(emptyCall||unknownCall){const r:Root={id:rootKey(message),teamId,source:message,browser:false,subjectId:null};output(db,r,`${r.id}:clarify`,'clarify','Bob: name a known team role and describe the work to do.');continue;}
+   const unknownCall=(/^\s*[/@]/.test(message.text)&&!targets.length)||leading.some(token=>{const [alias,suffix]=token.slice(1).toLowerCase().split('@');return ![...teamRolesSync(db,teamId).roles,bot].includes(alias)||(suffix!==undefined&&suffix!==bot);});
+   if(emptyCall||unknownCall){const r:Root={id:rootKey(message),teamId,source:message,browser:false,subjectId:null};output(db,r,`${r.id}:clarify`,'clarify',say(db,teamId,`name a team role (${teamRolesSync(db,teamId).roles.map(role=>'/'+role).join(', ')}) and describe the work to do.`));continue;}
    // Album components share this key. A late component is context only, not another dispatch.
    if(!claim&&db.prepare('SELECT 1 FROM assistant_team_roots WHERE id=?').get(rootKey(message)))continue;
    let accepted=targets.length&&!(await openTeamRequests(message)).length?await acceptTeamAssignment(member,message,targets,null):[];
@@ -362,7 +368,7 @@ async function processInbox(teamId:string) {
     // Persist a held acceptance; never dispatch or guess which existing request it meant.
     if(targets.length&&!accepted.length){accepted=await acceptTeamAssignment(member,message,targets,null);await deliverTeamOutbox(teamId);}
     transaction(db,()=>{for(const a of accepted){a.state='waiting_for_human';saveAssignment(db,a);const w=work(db,a.id)!;w.reason='decision_failed';saveWork(db,w);}
-     if(accepted.length){const r=root(db,accepted[0].rootId);output(db,r,`${r.id}:routing-failed`,'clarify','Bob: accepted, but subject routing is unavailable. No agent has started. Check the decision model status before submitting a new request.');}
+     if(accepted.length){const r=root(db,accepted[0].rootId);output(db,r,`${r.id}:routing-failed`,'clarify',say(db,teamId,'accepted, but subject routing is unavailable. No agent has started. Check the decision model status before submitting a new request.'));}
     });continue;
    }
    if(decision.learn)await (await import('./memory.js')).learnTeamMessage(teamId,message.id);
@@ -420,7 +426,7 @@ export async function bindTeamGuardianReview(projectId:string,conversationId:str
  if(!context||!requestId)throw new TeamError('Live team review required',403);
  const db=await assignmentDatabase(),a=assignments(db,context.teamId).find(a=>a.requestId===requestId);
  if(!a)throw new TeamError('Review assignment missing',403);
- const validated=await validateTeamAssignment(a),receipt=await getPersonalAssistantTurn(validated.team.executorAccountId,validated.profile.id,requestId);
+ const validated=await validateTeamAssignment(a),receipt=await getPersonalAssistantTurn(validated.profile.accountId,validated.profile.id,requestId);
  if(!receipt||receipt.status!=='running'||receipt.topicId!==`pi:${conversationId}`)throw new TeamError('Review does not match running operation conversation',403);
  return {teamId:a.teamId,assignmentId:a.id,requestId,requestedBy:a.requestedBy,operationKey};
 }
@@ -435,7 +441,7 @@ export async function runBrowserTeamAssignment(member:TeamMember,role:TeamRole,s
  await recheckTeamActor(member);await requireTeamExecution(member.teamId,member.accountId);
  if(!message.trim()||message.length>20000)throw new TeamError('Invalid team message',400);
  const db=await assignmentDatabase(),id=key(member.teamId,'browser',requestId);
- await initializeTeamAgents(await getTeam(member.teamId));
+ if(!teamRolesSync(db,member.teamId).roles.includes(role))throw new TeamError('Unknown team role',404);
  const existing=assignments(db,member.teamId).find(a=>a.requestId===requestId||a.rootId===id);
  if(existing){const r=root(db,existing.rootId);if(existing.requestedBy!==member.accountId||existing.role!==role||r.source.text!==message||existing.subjectId!==subjectId)throw new TeamError('Request ID belongs to another assignment',409);}
  const a=existing??transaction(db,()=>{

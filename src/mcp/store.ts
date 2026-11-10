@@ -45,22 +45,6 @@ export class ManagedMcpStore {
     this.directory = path.join(root, "mcp", createHash("sha256").update(accountId).digest("hex"));
   }
   servers(): Record<string, ManagedMcpServer> { return readJson(path.join(this.directory, "servers.json"), {}); }
-  private digest(server: ManagedMcpServer): string { return createHash("sha256").update(JSON.stringify(server)).digest("hex"); }
-  /** Grants contain no credentials or definition. A changed definition cannot inherit a grant. */
-  shares(): Record<string, Record<string, string>> { return readJson(path.join(this.directory, "team-shares.json"), {}); }
-  sharedWith(name: string, teamId: string): boolean {
-    const server = this.servers()[name];
-    return !!server && this.shares()[teamId]?.[name] === this.digest(server);
-  }
-  setTeamShare(name: string, teamId: string, enabled: boolean): void {
-    const server = this.servers()[name];
-    if (!server || server.authMode === "native") throw new Error("Only installed shared-connection MCP servers can be shared with a team");
-    const shares = this.shares();
-    const entries = { ...shares[teamId] };
-    if (enabled) entries[name] = this.digest(server); else delete entries[name];
-    if (Object.keys(entries).length) shares[teamId] = entries; else delete shares[teamId];
-    saveJson(path.join(this.directory, "team-shares.json"), shares);
-  }
   install(servers: Record<string, ManagedMcpServer>): void {
     const current = this.servers();
     for (const name of Object.keys(servers)) if (Object.hasOwn(current, name)) throw new Error(`MCP server ${name} is already installed`);
@@ -74,12 +58,6 @@ export class ManagedMcpStore {
     const servers = this.servers();
     if (!Object.hasOwn(servers, name)) throw new Error("MCP server not found");
     delete servers[name];
-    const shares = this.shares();
-    for (const [teamId, entries] of Object.entries(shares)) {
-      delete entries[name];
-      if (!Object.keys(entries).length) delete shares[teamId];
-    }
-    saveJson(path.join(this.directory, "team-shares.json"), shares);
     saveJson(path.join(this.directory, "servers.json"), servers);
     this.clearAuth(name);
   }

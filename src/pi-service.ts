@@ -18,7 +18,6 @@ import { canonicalPiTranscriptName, piSessionIdFromFileName } from "./harnesses/
 import { createPiProviderCatalog, type PiProviderCatalog } from "./harnesses/pi/provider-catalog.js";
 import { forgetTranscriptSummary, storeTranscriptSummary, storedTranscriptSummary } from "./transcript-summary-store.js";
 import { getScopedResourcePaths, getSettings } from "./settings.js";
-import { teamAssistantForConversation } from './assistant-resources.js';
 import { isTeamMemorySession } from './assistant-teams/runtime.js';
 import { personalAssistantDatabase } from './personal-assistants.js';
 import { listWebhookSkills } from './webhook-skills.js';
@@ -33,6 +32,9 @@ import { createCoreSession, type PiCoreHooks, type PiCoreInputs, type PiCredenti
 import { currentRuntime, runInRuntime, serviceRuntime } from "./account-runtime.js";
 import { managedMcpBridgeConfigs, nativeMcpServerConfigs } from "./mcp/agent.js";
 import { actingAccount, runAsAccount } from "./account-context.js";
+import { teamAssistantForConversation } from "./assistant-resources.js";
+import { settingsDatabase } from "./settings-store.js";
+import { listLocalUsers } from "./auth.js";
 import { mcpAgentEnvironment } from './mcp/agent.js';
 import type { ManagedMcpServer } from "./mcp/store.js";
 import { activeMcpServers, activationDecision } from "./resource-activation.js";
@@ -687,13 +689,24 @@ export async function nodePiCredentialList(): Promise<Array<{ providerId: string
   return (await modelRuntime.listCredentials()).map((entry) => ({ providerId: entry.providerId, type: entry.type }));
 }
 
+/**
+ * Team work runs as the picked assistant's owner, so the owner's MCP servers, sign-ins and
+ * credentials load exactly as in the assistant's own conversations.
+ */
+function asTeamMember<T>(projectId: string, conversationId: string, work: () => T): T {
+  const assistantId = teamAssistantForConversation(projectId, conversationId);
+  if (!assistantId || actingAccount()) return work();
+  const owner = (settingsDatabase().prepare('SELECT account_id accountId FROM personal_assistants WHERE id=?').get(assistantId) as { accountId: string } | undefined)?.accountId;
+  const user = owner && listLocalUsers().find(entry => entry.accountId === owner && !entry.disabled);
+  if (!user) throw new Error("The team member's owner account is unavailable");
+  return runAsAccount({ accountId: user.accountId, userId: user.userId, username: user.username, email: user.email, role: user.role, isRemoteLogin: false, homeNodeId: null }, work);
+}
+
 export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
   const conversation = (sessionId: string): SecretConversation => ({ engine: "pi", sessionId });
-  let teamToolEnvironment: NodeJS.ProcessEnv = {};
-  const credentials = (sessionId: string, conversationId: string): PiCredentials => {
+  const credentials = (sessionId: string, conversationId: string): PiCredentials => asTeamMember(options.projectId, conversationId, () => {
     try {
       if (isTeamMemorySession(options.projectId, conversationId)) return { environment: {}, capabilityEnvironment: {}, credentialContext: '' };
-      if (teamAssistantForConversation(options.projectId, conversationId)) return { environment: {}, capabilityEnvironment: teamToolEnvironment, credentialContext: '' };
       return {
         environment: agentEnvironment(options.projectId, conversation(sessionId)),
         capabilityEnvironment: agentCapabilityEnvironment(options.projectId, "pi", conversationId, conversation(sessionId)),
@@ -704,52 +717,18 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
       console.error(`Pi credential refresh failed in ${sessionId}`, error);
       throw error;
     }
-  };
+  });
   return {
     conversationId: async (sessionId) => options.conversationId
       ?? (await getConversationRecord(options.projectId, "pi", sessionId))?.conversationId
       ?? sessionId,
     persistAccounts: (sessionId) => persistConversationSecretAccounts("pi", sessionId, options.conversation?.accountIds ?? []),
     credentials: async (sessionId, conversationId) => {
-      const teamContext = await (await import('./assistant-teams/runtime.js')).teamConversation(options.projectId, conversationId);
-      if (teamContext) {
-        const team = await (await import('./assistant-teams/store.js')).getTeam(teamContext.teamId);
-        const user = (await import('./auth.js')).listLocalUsers().find(user => user.accountId === team.executorAccountId && !user.disabled);
-        if (!user) throw new Error('Team execution identity unavailable');
-        // A server-minted, conversation-scoped MCP capability, not an authenticated human approval/session.
-        // Every call independently requires a running assignment and reauthorizes its initiating member.
-        teamToolEnvironment = runAsAccount({ accountId: user.accountId, username: user.username, role: null, homeNodeId: null, isRemoteLogin: false }, () => mcpAgentEnvironment(options.projectId, 'pi', conversationId, team.id));
-        const { selectedTeamBrowser } = await import('./assistant-teams/store.js');
-        const { teamBrowserProfile } = await import('./assistant-teams/browser.js');
-        const selectedBrowser = await selectedTeamBrowser(team.id, teamContext.role);
-        if (selectedBrowser && await teamBrowserProfile(team, selectedBrowser)) {
-          const { browserAgentEnvironment } = await import('./browser-agent.js');
-          teamToolEnvironment = { ...teamToolEnvironment, ...browserAgentEnvironment(options.projectId, 'pi', conversationId, [], team.id) };
-        }
-      }
       return credentials(sessionId, conversationId);
     },
     credentialsNow: credentials,
-    resources: async (conversationId) => {
+    resources: (conversationId) => asTeamMember(options.projectId, conversationId, async () => {
       if (isTeamMemorySession(options.projectId, conversationId)) return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: [], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [], skillRoots: [], managedSkillRoot: '', blockedSkillNames: [] };
-      const teamAssistant = teamAssistantForConversation(options.projectId, conversationId);
-      if (teamAssistant) {
-        const db = await personalAssistantDatabase();
-        const { assistantDisabledResources } = await import('./assistant-resources.js');
-        const disabled = assistantDisabledResources(options.projectId, conversationId).skills;
-        const { getTeam, selectedTeamMcp } = await import('./assistant-teams/store.js');
-        const { teamConversation } = await import('./assistant-teams/runtime.js');
-        const context = await teamConversation(options.projectId, conversationId);
-        const team = context && await getTeam(context.teamId);
-        const selected = team ? await selectedTeamMcp(team.id, context!.role) : [];
-        const { managedMcpStore } = await import('./mcp/agent.js');
-        const shared = team ? selected.filter(name => managedMcpStore(team.executorAccountId).sharedWith(name, team.id)
-          && activationDecision('mcp', name, 'pi', false).enabled) : [];
-        const pluginSkills = team && context ? await (await import('./assistant-teams/plugins.js')).selectedTeamPluginSkills(team, context.role) : [];
-        return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: ['joint_bob', ...shared], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [],
-          skillRoots: [...listWebhookSkills(db, teamAssistant).filter(skill => !disabled.includes(skill.name)).map(skill => skill.path), ...pluginSkills],
-          managedSkillRoot: '', blockedSkillNames: disabled };
-      }
       const strict = getSettings().strictResourceIsolation;
       const configured = withProjectFolderResources(getScopedResourcePaths(options.projectId, conversationId, "pi"), options.cwd);
       const memory = strict ? await prepareProjectMemory(options.projectId, conversationId) : undefined;
@@ -778,7 +757,7 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
         blockedSkillNames: blocked,
       };
       });
-    },
+    }),
     guardian: async (conversationId, request) => {
       const { checkGuardian } = await import("./guardian/check.js");
       const { guardianRequestSchema } = await import("./guardian/rules.js");

@@ -9,12 +9,15 @@ import { listLocalUsers } from '../auth.js';
 import { adminAccountId } from '../ownership.js';
 import { asNode } from '../account-context.js';
 import { addProject, saveWorkspace } from '../store.js';
+import { setWorkspaceSharing } from '../workspace-sharing.js';
 import { resolveDataDirectory } from '../data-directory.js';
 import { recheckTeamActor, requireTeamExecution, type ClusterMember, type TeamMember } from './access.js';
 
-export type TeamRole = 'bob' | 'product' | 'designer' | 'qa' | 'pr_reviewer' | 'support';
+/** A free role name chosen when an assistant is picked into a team; it is also its Telegram command. */
+export type TeamRole = string;
+export const TEAM_ROLE_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
 export interface TeamSettings { askThreshold: number; actThreshold: number }
-export interface AssistantTeam { id: string; clusterId: string; hostNodeId: string; projectId: string; executorAccountId: string; settings: TeamSettings; revision: number }
+export interface AssistantTeam { id: string; clusterId: string; hostNodeId: string; projectId: string; executorAccountId: string; settings: TeamSettings; revision: number; coordinatorRole: string | null }
 export interface TeamAgent { teamId: string; role: TeamRole; assistantId: string }
 export interface TeamMessage { id: string; teamId: string; accountId: string; chatId: string; telegramMessageId: number; threadId: number | null; replyToMessageId: number | null; text: string; revision: number; createdAt: string }
 export interface TeamSubject { id: string; teamId: string; title: string; summary: string }
@@ -36,10 +39,16 @@ export function teamDatabase(): Promise<DatabaseSync> {
     CREATE TABLE IF NOT EXISTS assistant_team_browser_selection (team_id TEXT NOT NULL, role TEXT NOT NULL, profile_id TEXT NOT NULL, PRIMARY KEY(team_id,role));
     CREATE TABLE IF NOT EXISTS assistant_team_plugins (team_id TEXT NOT NULL, role TEXT NOT NULL, name TEXT NOT NULL, selected INTEGER NOT NULL, PRIMARY KEY(team_id,role,name));
     CREATE TABLE IF NOT EXISTS assistant_team_home_claims (cluster_id TEXT NOT NULL, account_id TEXT NOT NULL, home_node_id TEXT NOT NULL, username TEXT NOT NULL, join_sequence INTEGER NOT NULL, PRIMARY KEY(cluster_id,account_id));`);
+    const columns = db.prepare('PRAGMA table_info(assistant_teams)').all().map(row => (row as { name: string }).name);
+    if (!columns.includes('coordinator_role')) {
+      db.exec('ALTER TABLE assistant_teams ADD COLUMN coordinator_role TEXT');
+      // Teams from the fixed six-role model keep Bob as their coordinator.
+      db.exec("UPDATE assistant_teams SET coordinator_role='bob' WHERE id IN (SELECT team_id FROM assistant_team_agents WHERE role='bob')");
+    }
     return db;
   }).catch(error => { prepared = undefined; throw error; });
 }
-const teamColumns = 'id, cluster_id clusterId, host_node_id hostNodeId, project_id projectId, executor_account_id executorAccountId, settings, revision';
+const teamColumns = 'id, cluster_id clusterId, host_node_id hostNodeId, project_id projectId, executor_account_id executorAccountId, settings, revision, coordinator_role coordinatorRole';
 function decode(row: unknown): AssistantTeam { const value = row as Omit<AssistantTeam, 'settings'> & { settings: string }; return { ...value, settings: JSON.parse(value.settings) }; }
 export async function getTeam(id: string): Promise<AssistantTeam> {
   const row = (await teamDatabase()).prepare(`SELECT ${teamColumns} FROM assistant_teams WHERE id=?`).get(id);
@@ -81,7 +90,38 @@ export async function saveTeamBrowserSelection(teamId: string, role: TeamRole, p
 }
 export async function listTeamAgents(id: string): Promise<TeamAgent[]> {
   await getTeam(id);
-  return (await teamDatabase()).prepare('SELECT team_id teamId, role, assistant_id assistantId FROM assistant_team_agents WHERE team_id=? ORDER BY role').all(id) as unknown as TeamAgent[];
+  return (await teamDatabase()).prepare('SELECT team_id teamId, role, assistant_id assistantId FROM assistant_team_agents WHERE team_id=? ORDER BY rowid').all(id) as unknown as TeamAgent[];
+}
+/** Synchronous view for ledger transactions: member roles in order and the effective coordinator. */
+export function teamRolesSync(db: DatabaseSync, teamId: string): { roles: TeamRole[]; coordinator: TeamRole | null } {
+  const roles = db.prepare('SELECT role FROM assistant_team_agents WHERE team_id=? ORDER BY rowid').all(teamId).map(row => String((row as { role: string }).role));
+  const chosen = (db.prepare('SELECT coordinator_role role FROM assistant_teams WHERE id=?').get(teamId) as { role: string | null } | undefined)?.role ?? null;
+  return { roles, coordinator: chosen && roles.includes(chosen) ? chosen : roles[0] ?? null };
+}
+/** The coordinator monitors, acknowledges and alone delegates. Without one, the first member does. */
+export async function teamCoordinator(team: AssistantTeam): Promise<TeamRole | null> {
+  const roles = (await listTeamAgents(team.id)).map(agent => agent.role);
+  return team.coordinatorRole && roles.includes(team.coordinatorRole) ? team.coordinatorRole : roles[0] ?? null;
+}
+/** Replaces the member list in one revisioned write. Callers check who may add which assistant. */
+export async function saveTeamMembers(teamId: string, members: { role: TeamRole; assistantId: string }[], coordinatorRole: TeamRole | null, expectedRevision: number): Promise<number> {
+  const roles = members.map(member => member.role);
+  if (roles.some(role => !TEAM_ROLE_PATTERN.test(role)) || new Set(roles).size !== roles.length || new Set(members.map(member => member.assistantId)).size !== members.length) throw new TeamError('Each member needs a unique role name (a-z, 0-9, _) and a different assistant', 400);
+  if (coordinatorRole !== null && !roles.includes(coordinatorRole)) throw new TeamError('The coordinator must be a member', 400);
+  const db = await teamDatabase(); db.exec('BEGIN IMMEDIATE');
+  try {
+    if (!db.prepare('UPDATE assistant_teams SET revision=revision+1, coordinator_role=? WHERE id=? AND revision=?').run(coordinatorRole, teamId, expectedRevision).changes) throw new TeamError('Stale team revision', 409);
+    db.prepare('DELETE FROM assistant_team_agents WHERE team_id=?').run(teamId);
+    const insert = db.prepare('INSERT INTO assistant_team_agents VALUES(?,?,?)');
+    for (const member of members) insert.run(teamId, member.role, member.assistantId);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    if (String(error).includes('UNIQUE')) throw new TeamError('That assistant is already in another team', 409);
+    throw error;
+  }
+  announceTeamChange(teamId);
+  return expectedRevision + 1;
 }
 export async function resolveTeamExecutor(): Promise<string> {
   const accountId = adminAccountId(await teamDatabase());
@@ -94,6 +134,8 @@ export async function prepareTeamProject(member: ClusterMember): Promise<string>
   const executor = await resolveTeamExecutor();
   const project = await asNode(async () => {
     const workspace = await saveWorkspace({ label: `Team ${randomUUID().slice(0, 30)}` });
+    // Shared before the project exists, so the project inherits the share: the team's cluster sees the workspace it works in.
+    setWorkspaceSharing(await clusterV2Database(), (await getClusterNode()).id, workspace.id, { clusterIds: [member.clusterId], nodeIds: [], relayIds: [] });
     return addProject('Assistant team', path.join(resolveDataDirectory(), 'assistant-teams', 'projects', randomUUID()), { type: workspace.id, teamScope: { clusterId: member.clusterId, executorAccountId: executor } });
   });
   return project.id;
@@ -104,8 +146,8 @@ export async function createTeam(member: ClusterMember, input: { projectId: stri
   if (input.executorAccountId !== await resolveTeamExecutor()) throw new TeamError('Invalid host execution identity', 403);
   const dedicated = db.prepare('SELECT 1 FROM assistant_team_projects WHERE project_id=? AND cluster_id=? AND executor_account_id=?').get(input.projectId, member.clusterId, input.executorAccountId);
   if (!dedicated) throw new TeamError('A new dedicated team project is required', 409);
-  const team: AssistantTeam = { id: randomUUID(), clusterId: member.clusterId, hostNodeId: host, ...input, settings: { askThreshold: .8, actThreshold: .95 }, revision: 1 };
-  try { db.prepare('INSERT INTO assistant_teams VALUES(?,?,?,?,?,?,?)').run(team.id, team.clusterId, host, team.projectId, team.executorAccountId, JSON.stringify(team.settings), 1); }
+  const team: AssistantTeam = { id: randomUUID(), clusterId: member.clusterId, hostNodeId: host, ...input, settings: { askThreshold: .8, actThreshold: .95 }, revision: 1, coordinatorRole: null };
+  try { db.prepare('INSERT INTO assistant_teams (id,cluster_id,host_node_id,project_id,executor_account_id,settings,revision,coordinator_role) VALUES(?,?,?,?,?,?,?,NULL)').run(team.id, team.clusterId, host, team.projectId, team.executorAccountId, JSON.stringify(team.settings), 1); }
   catch (error) { if (String(error).includes('UNIQUE')) throw new TeamError('Team already exists for this cluster and host', 409); throw error; }
   announceTeamChange(team.id); return team;
 }

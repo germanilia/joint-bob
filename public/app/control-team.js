@@ -87,7 +87,7 @@ async function refresh(force = false) {
   const openSections = [...document.querySelectorAll('.team-control details[open]')].map(node => node.firstChild.textContent);
   for (const panel of Object.values(panels)) panel.replaceChildren();
   settings.replaceChildren(makeNode('h2', '', 'Shared team settings · personal Bob is separate'), error, saved);
-  panels.assistants.append(makeNode('h2', '', 'Shared team assistants'), makeNode('p', '', `Host: ${readiness.host.name}`), tagged(makeNode('p', '', 'Pi only · browser profiles and compatible plugin skills require explicit host shares and role selection; MCP uses approved host connections.'), 'team-runtime'));
+  panels.assistants.append(makeNode('h2', '', 'Shared team assistants'), makeNode('p', '', `Host: ${readiness.host.name}`), tagged(makeNode('p', '', 'Pick your assistants on this machine and give each a role. A member brings everything it has: instructions, skills, MCP servers, browser logins and tools. Its role is its Telegram command.'), 'team-runtime'));
   const decision = makeNode('p', '', `Central AI decision: ${readiness.decision.model ?? 'not selected'} · ${readiness.decision.ready ? 'ready' : 'unavailable'}. Configure in Settings → System AI.`);
   decision.append(button('System AI settings', 'team-decision-settings', async () => (await import('./settings.js')).openSettings('system-ai')));
   panels.assistants.append(decision);
@@ -103,30 +103,7 @@ async function refresh(force = false) {
     team = (await api(url)).team;
     editingSettings = false; error.textContent = ''; saved.dataset.testid = 'team-saved'; saved.textContent = 'Saved';
   })); settings.append(thresholds);
-  const cards = makeNode('div', 'team-cards');
-  for (const agent of agents.agents) {
-    const card = tagged(makeNode('article', 'team-card'), 'team-agent-card'); card.dataset.role = agent.role; card.dataset.revision = String(team.revision);
-    card.append(makeNode('h3', '', agent.profile.name), makeNode('p', '', agent.readiness.join(' · ') || 'Ready'));
-    card.append(button('Configure', `team-configure-${agent.role}`, () => editAgent(agent, card, url)));
-    cards.append(card);
-  }
-  panels.assistants.append(cards);
-  const cardPager = tagged(makeNode('nav', 'team-pager'), 'team-cards-pager');
-  panels.assistants.append(cardPager);
-  let cardOffset = 0;
-  const pageCards = () => {
-    const mobile = matchMedia('(max-width: 760px)').matches;
-    const size = mobile ? 1 : agents.agents.length;
-    if (cardOffset >= agents.agents.length) cardOffset = 0;
-    [...cards.children].forEach((card, index) => { card.hidden = index < cardOffset || index >= cardOffset + size; });
-    cardPager.hidden = !mobile;
-    const prev = button('Previous role', 'team-cards-prev', () => { cardOffset--; pageCards(); }); prev.disabled = cardOffset === 0;
-    const next = button('Next role', 'team-cards-next', () => { cardOffset++; pageCards(); }); next.disabled = cardOffset + size >= agents.agents.length;
-    cardPager.replaceChildren(prev, makeNode('span', '', `${cardOffset + 1}–${Math.min(cardOffset + size, agents.agents.length)} of ${agents.agents.length}`), next);
-  };
-  pageCards();
-  const resizeCards = () => { if (cards.isConnected) pageCards(); else window.removeEventListener('resize', resizeCards); };
-  window.addEventListener('resize', resizeCards);
+  await renderMembers(panels.assistants, url, agents);
   const telegram = makeNode('details'); telegram.append(tagged(makeNode('summary', '', 'Telegram enrollment and group'), 'team-telegram-toggle'));
   if (openSections.includes('Telegram enrollment and group')) telegram.open = true;
   settings.append(telegram); await renderTeamTelegram(telegram, url, fail, () => refresh(true));
@@ -213,109 +190,45 @@ async function refresh(force = false) {
     section.addEventListener('toggle', () => { if (section.open) show().catch(fail); });
   }
 }
-async function editAgent(agent, card, url) {
-  card.querySelector('.team-editor')?.remove();
-  const editorGeneration = generation;
-  const profile = agent.profile, form = makeNode('div', 'team-editor');
-  const name = input(form, 'Name', 'team-agent-name', profile.name);
-  const prompt = input(form, 'Role instructions', 'team-agent-prompt', profile.instructions, 'textarea');
-  const provider = input(form, 'Pi provider', 'team-agent-provider', profile.executionSettings.provider);
-  const model = input(form, 'Pi model', 'team-agent-model', profile.executionSettings.modelId);
-  const reasoning = input(form, 'Reasoning', 'team-agent-reasoning', profile.executionSettings.reasoning);
-  const terminal = input(form, 'Allow terminal', 'team-agent-terminal', '', 'checkbox'); terminal.checked = profile.allowTerminal;
-  form.append(button('Save role', 'team-agent-save', async () => {
-    if (!current(editorGeneration, url)) return;
-    const updated = await api(`${url}/agents/${agent.role}`, { method: 'PUT', body: { expectedRevision: team.revision, name: name.value, instructions: prompt.value, allowTerminal: terminal.checked, executionSettings: { harnessId: 'pi', provider: provider.value, modelId: model.value, reasoning: reasoning.value } } });
-    if (!current(editorGeneration, url)) return;
-    team.revision = updated.revision;
-    form.remove(); await refresh(true);
-  })); card.append(form);
-  const resourcePanel = makeNode('div'); form.append(resourcePanel);
-  const resourcesUrl = `${url}/agents/${agent.role}`;
-  const showResources = async () => {
-    if (!current(editorGeneration, url)) return;
-    const resources = await api(`${resourcesUrl}/resources`);
-    if (!current(editorGeneration, url) || !form.isConnected) return;
-    team.revision = Math.max(team.revision, resources.revision);
-    resourcePanel.replaceChildren(makeNode('h4', '', 'Role uploads, browser profiles, plugins and approved MCP servers'));
-    if (resources.ownerMcpServers) {
-      const label = input(resourcePanel, 'New persistent team browser profile (human signs in through browser handoff)', 'team-browser-name', '');
-      resourcePanel.append(button('Create team profile', 'team-browser-create', async () => {
-        await api(`${url}/browser-profiles`, { method: 'POST', body: { expectedRevision: resources.revision, label: label.value } });
-        await updateRevision(url, editorGeneration); await showResources();
-      }));
-    }
-    for (const profile of resources.browserProfiles || []) {
-      const enabled = input(resourcePanel, `Host browser profile ${profile.label} for this role`, 'team-browser-enabled', '', 'checkbox');
-      enabled.checked = profile.selected;
-      enabled.addEventListener('change', () => Promise.resolve().then(async () => {
-        await api(`${resourcesUrl}/browser`, { method: 'PUT', body: { expectedRevision: resources.revision, profileId: enabled.checked ? profile.id : null } });
-        await updateRevision(url, editorGeneration); await showResources();
-      }).catch(fail));
-    }
-    for (const plugin of resources.ownerPlugins || []) {
-      const shared = input(resourcePanel, `Share app-configured plugin ${plugin.name} with team`, 'team-plugin-share', '', 'checkbox'); shared.checked = plugin.shared;
-      shared.addEventListener('change', () => Promise.resolve().then(async () => {
-        await api(`${url}/plugin-shares/${encodeURIComponent(plugin.name)}`, { method: 'PUT', body: { expectedRevision: resources.revision, enabled: shared.checked } });
-        await updateRevision(url, editorGeneration); await showResources();
-      }).catch(fail));
-    }
-    for (const plugin of resources.plugins || []) {
-      const enabled = input(resourcePanel, `${plugin.name} for this Pi role (${plugin.status})`, 'team-plugin-enabled', '', 'checkbox'); enabled.checked = plugin.enabled;
-      enabled.addEventListener('change', () => Promise.resolve().then(async () => {
-        const names = new Set(resources.plugins.filter(item => item.enabled).map(item => item.name));
-        if (enabled.checked) names.add(plugin.name); else names.delete(plugin.name);
-        await api(`${resourcesUrl}/plugins`, { method: 'PUT', body: { expectedRevision: resources.revision, names: [...names] } });
-        await updateRevision(url, editorGeneration); await showResources();
-      }).catch(fail));
-    }
-    for (const server of resources.ownerMcpServers || []) {
-      const share = input(resourcePanel, `Share ${server.name} (${server.type}) with this cluster's team using the host account's local connection`, 'team-mcp-share', '', 'checkbox');
-      share.checked = server.shared;
-      share.addEventListener('change', () => Promise.resolve().then(async () => {
-        await api(`${url}/mcp-shares/${encodeURIComponent(server.name)}`, { method: 'PUT', body: { expectedRevision: resources.revision, enabled: share.checked } });
-        await updateRevision(url, editorGeneration); await showResources();
-      }).catch(fail));
-    }
-    for (const server of resources.mcpServers) {
-      const enabled = input(resourcePanel, `${server.name} (${server.type}, ${server.status}) for this role`, 'team-mcp-enabled', '', 'checkbox'); enabled.checked = server.enabled;
-      enabled.addEventListener('change', () => Promise.resolve().then(async () => {
-        const names = new Set(resources.mcpServers.filter(item => item.enabled).map(item => item.name));
-        if (enabled.checked) names.add(server.name); else names.delete(server.name);
-        await api(`${resourcesUrl}/resources`, { method: 'PUT', body: { expectedRevision: resources.revision, disabledSkills: resources.preferences.disabledSkills, mcpServerNames: [...names] } });
-        await updateRevision(url, editorGeneration); await showResources();
-      }).catch(fail));
-    }
-    const upload = input(resourcePanel, 'Upload file', 'team-file-upload', '', 'file');
-    upload.addEventListener('change', () => Promise.resolve().then(async () => {
-      const file = upload.files[0]; if (!file) return;
-      const data = await fileData(file);
-      if (!current(editorGeneration, url)) return;
-      await api(`${resourcesUrl}/files`, { method: 'POST', body: { expectedRevision: resources.revision, name: file.name, data } });
-      await updateRevision(url, editorGeneration); await showResources();
-    }).catch(fail));
-    const skillUpload = input(resourcePanel, 'Upload skill files (include SKILL.md)', 'team-skill-upload', '', 'file'); skillUpload.multiple = true;
-    skillUpload.addEventListener('change', () => Promise.resolve().then(async () => {
-      const files = await Promise.all([...skillUpload.files].map(async file => ({ relativePath: file.webkitRelativePath || file.name, data: await fileData(file) })));
-      if (!current(editorGeneration, url)) return;
-      await api(`${resourcesUrl}/skills`, { method: 'POST', body: { expectedRevision: resources.revision, files } }); await updateRevision(url, editorGeneration); await showResources();
-    }).catch(fail));
-    for (const file of resources.files) {
-      const row = tagged(makeNode('p', '', file.path), 'team-file-row');
-      row.append(button('Delete', 'team-file-delete', async () => { await api(`${resourcesUrl}/files?path=${encodeURIComponent(file.path)}`, { method: 'DELETE', body: { expectedRevision: resources.revision } }); await updateRevision(url, editorGeneration); await showResources(); })); resourcePanel.append(row);
-    }
-    for (const skill of resources.skills) {
-      const enabled = input(resourcePanel, skill.name, 'team-skill-enabled', '', 'checkbox'); enabled.checked = !resources.preferences.disabledSkills.includes(skill.name);
-      enabled.addEventListener('change', () => Promise.resolve().then(async () => {
-        const disabledSkills = new Set(resources.preferences.disabledSkills); if (enabled.checked) disabledSkills.delete(skill.name); else disabledSkills.add(skill.name);
-        await api(`${resourcesUrl}/resources`, { method: 'PUT', body: { expectedRevision: resources.revision, disabledSkills: [...disabledSkills] } }); await updateRevision(url, editorGeneration); await showResources();
-      }).catch(fail));
-      resourcePanel.append(button('Delete skill', 'team-skill-delete', async () => { await api(`${resourcesUrl}/skills/${skill.id}`, { method: 'DELETE', body: { expectedRevision: resources.revision } }); await updateRevision(url, editorGeneration); await showResources(); }));
-    }
+/** Members are picked assistants with a free role name; one of them coordinates. */
+async function renderMembers(parent, url, agents) {
+  const mine = generation;
+  const { assistants } = await api(`${url}/available-assistants`);
+  if (!current(mine, url)) return;
+  const rows = agents.agents.map(agent => ({ role: agent.role, assistantId: agent.assistantId, profile: agent.profile, readiness: agent.readiness }));
+  let coordinator = agents.coordinatorRole;
+  const list = tagged(makeNode('div', 'team-cards'), 'team-members');
+  const save = async () => {
+    const result = await api(`${url}/members`, { method: 'PUT', body: { expectedRevision: team.revision, coordinatorRole: rows.some(row => row.role === coordinator) ? coordinator : null, members: rows.map(({ role, assistantId }) => ({ role, assistantId })) } });
+    team.revision = result.revision; error.textContent = ''; await refresh(true);
   };
-  await showResources();
+  for (const row of rows) {
+    const card = tagged(makeNode('article', 'team-card'), 'team-agent-card'); card.dataset.role = row.role;
+    card.append(makeNode('h3', '', `/${row.role} · ${row.profile?.name ?? 'deleted assistant'}${row.role === coordinator ? ' · coordinator' : ''}`));
+    card.append(tagged(makeNode('p', '', row.profile ? `Uses: ${row.profile.uses.join(', ') || 'no extra resources'}` : ''), 'team-member-uses'));
+    card.append(makeNode('p', '', row.readiness.join(' · ') || 'Ready'));
+    const role = input(card, 'Role (Telegram command)', 'team-member-role', row.role);
+    role.addEventListener('change', () => { if (coordinator === row.role) coordinator = role.value.trim(); row.role = role.value.trim(); });
+    if (row.role !== coordinator) card.append(button('Make coordinator', 'team-member-coordinator', () => { coordinator = row.role; return save(); }));
+    card.append(button('Remove', 'team-member-remove', () => { rows.splice(rows.indexOf(row), 1); return save(); }));
+    list.append(card);
+  }
+  parent.append(list);
+  const add = makeNode('div', 'team-settings');
+  const choices = assistants.filter(item => !item.inTeam);
+  const pick = tagged(makeNode('select'), 'team-member-pick'); pick.setAttribute('aria-label', 'Assistant to add');
+  pick.replaceChildren(...(choices.length ? choices.map(item => new Option(`${item.name} — ${item.uses.join(', ') || 'no extra resources'}`, item.id)) : [new Option('No other assistants of yours on this machine', '')]));
+  const newRole = input(add, 'Role', 'team-member-new-role', '');
+  add.prepend(pick);
+  add.append(button('Add to team', 'team-member-add', () => {
+    if (!pick.value) throw new Error('Create an assistant on this machine first.');
+    if (!newRole.value.trim()) throw new Error('Give the new member a role, for example qa.');
+    rows.push({ role: newRole.value.trim(), assistantId: pick.value });
+    return save();
+  }));
+  add.append(button('Save roles', 'team-members-save', save));
+  parent.append(add);
 }
-const fileData = file => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(file); });
 async function editMemory(url, parent, topic, revision) {
   const mine = generation;
   const current = topic ? await api(`${url}/memory/topics/${encodeURIComponent(topic)}`) : { text: '', revision: 0 };

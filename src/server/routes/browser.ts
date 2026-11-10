@@ -11,7 +11,6 @@ import { acceptBrowserClusterDefault, configureClusterBrowserDefault, configureC
 import { clusterPeerMayAccessProject } from "../cluster-helpers.js";
 import { sendError } from "../http-auth.js";
 import { browserAgentCredential, browserAgentCredentialOrigins } from "../../browser-agent.js";
-import { TeamError } from '../../assistant-teams/store.js';
 
 const id = z.string().uuid();
 const exactOrigin=z.string().url().refine(value=>{const url=new URL(value);return ["http:","https:"].includes(url.protocol)&&url.origin===value;});
@@ -22,7 +21,7 @@ function route(handler: (request: Request, response: Response) => Promise<void>)
     void handler(request, response).catch(error => {
       if (response.headersSent) { response.destroy(); return; }
       const message = error instanceof Error ? error.message.split("\n")[0] : "Browser request failed";
-      const status = error instanceof BrowserRequestError || error instanceof TeamError ? error.status : error instanceof z.ZodError ? 400 : /grant was revoked|not granted to this conversation|not shared with this node/i.test(message) ? 403 : /not found|unknown (browser|session|profile|download)/i.test(message) ? 404 : 409;
+      const status = error instanceof BrowserRequestError ? error.status : error instanceof z.ZodError ? 400 : /grant was revoked|not granted to this conversation|not shared with this node/i.test(message) ? 403 : /not found|unknown (browser|session|profile|download)/i.test(message) ? 404 : 409;
       sendError(response, status, error instanceof z.ZodError ? "Invalid browser request" : message);
     });
   };
@@ -160,27 +159,11 @@ app.post("/api/browser/agent",route(async (request,response)=>{
     z.object({operation:z.literal("loginFill"),selector:z.string().min(1).max(4096),accountId:id,variable:z.string().min(1).max(128).regex(/^[A-Za-z_][A-Za-z0-9_]*$/),profileId:id.optional()}).strict(),
     z.object({operation:z.literal("download"),downloadId:id,profileId:id.optional()}),
   ]).parse(request.body);
-  const teamId = (response.locals.browserAgent as { teamId?: string }).teamId;
-  const teamProfile = teamId ? await (await import('../../assistant-teams/browser.js')).requireTeamBrowser(identity.projectId, identity.conversationId) : null;
-  if (teamProfile) {
-    if (body.operation === 'loginFill') throw new BrowserRequestError(403, 'Team browsers do not inherit website credentials');
-    if (body.operation === 'start' && (body.profileId !== teamProfile || body.nodeId && body.nodeId !== (await getClusterNode()).id || body.profileName))
-      throw new BrowserRequestError(403, 'Team browser must use its selected profile on the host');
-    if ('profileId' in body && body.profileId && body.profileId !== teamProfile) throw new BrowserRequestError(403, 'Team browser profile is not selected');
-  }
-  const actor:BrowserActor={kind:"agent",credentialOrigins:teamProfile ? [] : browserAgentCredentialOrigins(response.locals.browserAgentToken as string)};
+  const actor:BrowserActor={kind:"agent",credentialOrigins:browserAgentCredentialOrigins(response.locals.browserAgentToken as string)};
   if(body.operation==="start") {
-    response.json(await browserOperation({operation:"start",args:{...identity,appNodeId:(await getClusterNode()).id,url:body.url,profileId:body.profileId,profileName:body.profileName,skipLoginPause:body.skipLoginPause}},actor,teamProfile ? (await getClusterNode()).id : body.nodeId,identity));return;
+    response.json(await browserOperation({operation:"start",args:{...identity,appNodeId:(await getClusterNode()).id,url:body.url,profileId:body.profileId,profileName:body.profileName,skipLoginPause:body.skipLoginPause}},actor,body.nodeId,identity));return;
   }
-  const listed=teamProfile
-    ? await browserOperation({operation:'list',args:identity},actor,(await getClusterNode()).id,identity) as BrowserDiscovery
-    : await browserOperation({operation:"list",args:identity},actor,undefined,identity) as BrowserDiscovery;
-  if (teamProfile) listed.sessions = listed.sessions.filter(session => session.profileId === teamProfile);
-  if(body.operation==="profiles" && teamProfile) {
-    const runtime = browserRuntime();
-    const profile = runtime.profile(teamProfile);
-    response.json({profiles:[{...profile, grants: [], nodeId:(await getClusterNode()).id}],unavailableNodes:[]}); return;
-  }
+  const listed=await browserOperation({operation:"list",args:identity},actor,undefined,identity) as BrowserDiscovery;
   if(body.operation==="profiles") {
     const discovered=await discoverBrowserProfiles(identity,actor);
     response.json({profiles:discovered.profiles,unavailableNodes:[...listed.unavailableNodes,...discovered.unavailableNodes.filter(node=>!listed.unavailableNodes.some(entry=>entry.nodeId===node.nodeId))]});return;
@@ -194,7 +177,6 @@ app.post("/api/browser/agent",route(async (request,response)=>{
   const sessions=listed.sessions.filter(session=>(session.state==="running" || (ending && session.restoreOnRestart)) && (!body.profileId || session.profileId===body.profileId));
   if(sessions.length>1) throw new BrowserRequestError(409,"Multiple browser profiles are running. Specify --profile ID.");
   const session=sessions[0];
-  if (teamProfile && session && session.profileId !== teamProfile) throw new BrowserRequestError(403, 'Team browser profile is not selected');
   if(!session) throw new BrowserRequestError(body.profileId ? 404 : 409,body.profileId ? "No running browser for this profile in this conversation. Run browser start --profile ID first." : "No running browser for this conversation. Run browser start first.");
   if(body.operation==="loginFill") {
     try {

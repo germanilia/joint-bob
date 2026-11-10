@@ -22,10 +22,13 @@ export function assistantIdForConversation(projectId: string | undefined, conver
 }
 
 /** Team identity lookup for synchronous resource assembly; never authorizes a request. */
+/** The assistant doing team work in this conversation. Its personal conversations are never team work. */
 export function teamAssistantForConversation(projectId?: string, conversationId?: string): string | null {
-  const id = assistantIdForConversation(projectId, conversationId);
+  if (!projectId || !conversationId) return null;
   const db = settingsDatabase();
-  return id && hasTable(db, 'assistant_team_agents') && db.prepare('SELECT 1 FROM assistant_team_agents WHERE assistant_id=?').get(id) ? id : null;
+  if (!hasTable(db, 'assistant_team_conversations')) return null;
+  const row = db.prepare('SELECT assistant_id assistantId FROM assistant_team_conversations WHERE project_id=? AND conversation_id=?').get(projectId, conversationId) as { assistantId: string } | undefined;
+  return row?.assistantId ?? null;
 }
 
 /** Skills and plugins the owning assistant turned off for this topic conversation. */

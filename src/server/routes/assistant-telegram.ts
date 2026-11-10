@@ -5,6 +5,9 @@ import { WebhookResourceError } from "../../webhook-resources.js";
 import { app } from "../state.js";
 import { connectTelegram, disconnectTelegram, installTelegramVoice, newTelegramPairing, refreshTelegramBot, setTelegramVoiceRepliesFor, telegramStatus } from "../telegram.js";
 import { resourceRoute } from "./assistant-resources.js";
+import type { AuthSession } from "../../auth.js";
+import { assignableTeams, assignTelegramAgentTeam, telegramAgentTeam } from "../../assistant-teams/telegram-agent.js";
+import { TeamError } from "../../assistant-teams/store.js";
 
 const connectSchema = z.object({ token: z.string().trim().regex(/^\d+:[A-Za-z0-9_-]{20,}$/, "That doesn't look like a bot token. Copy it from @BotFather."), baseId: z.string().min(1).max(200).optional() }).strict();
 const accessSchema = z.object({ kind: z.enum(["user", "chat"]), id: z.string().min(1).max(40), state: z.enum(["approved", "blocked"]).nullable() }).strict();
@@ -27,6 +30,16 @@ app.put("/api/personal-assistants/:id/telegram/voice-replies", resourceRoute(asy
   response.json(await setTelegramVoiceRepliesFor(entry, z.object({ enabled: z.boolean() }).strict().parse(request.body).enabled));
 }));
 app.post("/api/personal-assistants/:id/telegram/voice/install", resourceRoute(async (_request, response, entry) => { response.status(202).json(await installTelegramVoice(entry)); }));
+// A Telegram agent can serve a team: the team answers through its bot and the agent coordinates.
+app.get("/api/personal-assistants/:id/telegram/team", resourceRoute(async (_request, response, entry) => {
+  response.json({ teamId: await telegramAgentTeam(entry.id), teams: await assignableTeams(response.locals.authSession as AuthSession) });
+}));
+app.put("/api/personal-assistants/:id/telegram/team", resourceRoute(async (request, response, entry) => {
+  const { teamId } = z.object({ teamId: z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/).nullable() }).strict().parse(request.body);
+  try { await assignTelegramAgentTeam(entry, response.locals.authSession as AuthSession, teamId); }
+  catch (error) { if (error instanceof TeamError) throw new WebhookResourceError(error.message, error.status); throw error; }
+  response.json({ teamId: await telegramAgentTeam(entry.id), teams: await assignableTeams(response.locals.authSession as AuthSession) });
+}));
 app.delete("/api/personal-assistants/:id/telegram", resourceRoute(async (_request, response, entry) => {
   if (!await disconnectTelegram(entry.id)) throw new WebhookResourceError("This assistant has no Telegram bot", 404);
   response.status(204).end();

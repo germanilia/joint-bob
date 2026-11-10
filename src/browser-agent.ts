@@ -7,7 +7,7 @@ import { resolveDataDirectory } from "./data-directory.js";
 import { isHarnessId, type HarnessId } from "./types.js";
 import { decryptSecretValue, encryptSecretValue, type WebsiteCredentialAccount } from "./secrets.js";
 
-type BrowserAgentIdentity = { projectId: string; engine: HarnessId; conversationId: string; teamId?: string };
+type BrowserAgentIdentity = { projectId: string; engine: HarnessId; conversationId: string };
 const lifetime = 30 * 24 * 60 * 60 * 1000;
 let database: DatabaseSync | undefined;
 
@@ -26,7 +26,6 @@ function db(): DatabaseSync {
     if (schema.sql.includes("engine IN ('pi', 'claude')")) database.exec(`BEGIN; ALTER TABLE browser_agent_tokens RENAME TO browser_agent_tokens_old; CREATE TABLE browser_agent_tokens (token_hash TEXT PRIMARY KEY, project_id TEXT NOT NULL, engine TEXT NOT NULL, conversation_id TEXT NOT NULL, expires_at INTEGER NOT NULL); INSERT INTO browser_agent_tokens SELECT token_hash, project_id, engine, conversation_id, expires_at FROM browser_agent_tokens_old; DROP TABLE browser_agent_tokens_old; CREATE INDEX browser_agent_tokens_expiry ON browser_agent_tokens(expires_at); COMMIT;`);
     const columns = (database.prepare("PRAGMA table_info(browser_agent_tokens)").all() as unknown as Array<{ name: string }>).map(({ name }) => name);
     if (!columns.includes("credentials_encrypted")) database.exec("ALTER TABLE browser_agent_tokens ADD COLUMN credentials_encrypted TEXT");
-    if (!columns.includes("team_id")) database.exec("ALTER TABLE browser_agent_tokens ADD COLUMN team_id TEXT");
   }
   database.prepare("DELETE FROM browser_agent_tokens WHERE expires_at <= ?").run(Date.now());
   return database;
@@ -41,13 +40,13 @@ export function revokeBrowserAgentTokens(projectId: string, conversationId?: str
 }
 
 /** Call once when composing an agent environment, not once per shell command. */
-export function browserAgentEnvironment(projectId: string, engine: HarnessId, conversationId: string, credentials: WebsiteCredentialAccount[] = [], teamId?: string): NodeJS.ProcessEnv {
+export function browserAgentEnvironment(projectId: string, engine: HarnessId, conversationId: string, credentials: WebsiteCredentialAccount[] = []): NodeJS.ProcessEnv {
   if (!projectId || !conversationId) throw new Error("Browser agent requires a project and conversation identity");
   if (!isHarnessId(engine)) throw new Error("Browser agent requires a valid harness identity");
   const token = randomBytes(32).toString("hex");
   const encrypted = credentials.length ? encryptSecretValue(JSON.stringify(credentials)) : null;
-  db().prepare("INSERT INTO browser_agent_tokens (token_hash, project_id, engine, conversation_id, expires_at, credentials_encrypted, team_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(hash(token), projectId, engine, conversationId, Date.now() + lifetime, encrypted, teamId ?? null);
+  db().prepare("INSERT INTO browser_agent_tokens (token_hash, project_id, engine, conversation_id, expires_at, credentials_encrypted) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(hash(token), projectId, engine, conversationId, Date.now() + lifetime, encrypted);
   return {
     JOINT_BOB_BROWSER_URL: `http://127.0.0.1:${process.env.PORT || 8790}/api/browser/agent`,
     JOINT_BOB_BROWSER_TOKEN: token,
@@ -58,12 +57,9 @@ export function browserAgentEnvironment(projectId: string, engine: HarnessId, co
 
 export function browserAgentIdentity(token: string): BrowserAgentIdentity | undefined {
   if (!/^[a-f0-9]{64}$/.test(token)) return undefined;
-  const row = db().prepare("SELECT project_id AS projectId, engine, conversation_id AS conversationId, team_id AS teamId FROM browser_agent_tokens WHERE token_hash = ? AND expires_at > ?")
-    .get(hash(token), Date.now()) as (Omit<BrowserAgentIdentity, "teamId"> & { teamId: string | null }) | undefined;
-  if (!row) return undefined;
-  const { teamId, ...identity } = row;
-  // Only a team conversation's token names a team; ordinary identities stay exactly project/engine/conversation.
-  return teamId ? { ...identity, teamId } : identity;
+  const row = db().prepare("SELECT project_id AS projectId, engine, conversation_id AS conversationId FROM browser_agent_tokens WHERE token_hash = ? AND expires_at > ?")
+    .get(hash(token), Date.now()) as BrowserAgentIdentity | undefined;
+  return row ? { ...row } : undefined;
 }
 
 export function browserAgentCredentialOrigins(token: string): string[] {

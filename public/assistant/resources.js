@@ -238,6 +238,21 @@ function telegramVoicePanel(voice) {
   ];
 }
 
+/** A Telegram agent can serve a team: the team answers through this bot and this assistant coordinates. */
+function telegramTeamPanel() {
+  const box = h("div", { class: "res-bar", "data-testid": "assistant-telegram-team" }, h("span", {}, "Team: loading…"));
+  request(`${telegramBase()}/team`).then(({ teamId, teams }) => {
+    const choose = h("select", { "aria-label": "Team for this Telegram agent", "data-testid": "assistant-telegram-team-select" },
+      [h("option", { value: "" }, "No team: answers on its own"), ...teams.map(team => h("option", { value: team.id }, team.label))]);
+    choose.value = teamId ?? "";
+    choose.onchange = () => put(`${telegramBase()}/team`, { teamId: choose.value || null })
+      .then(() => notify(choose.value ? `The team now answers through this bot, and ${app.assistant.name} coordinates it.` : "The bot answers on its own again."))
+      .catch(error => { choose.value = teamId ?? ""; fail(error); });
+    box.replaceChildren(...[h("span", {}, teams.length ? "Team" : "No team on this machine yet. Create one in the control center."), teams.length ? choose : null].filter(Boolean));
+  }).catch(fail);
+  return box;
+}
+
 function telegramConnected(status) {
   const owner = status.owner
     ? h("div", { class: "res-bar", "data-testid": "assistant-telegram-owner" }, h("span", {}, `Linked to ${status.owner.name} (${status.owner.id})`),
@@ -253,7 +268,7 @@ function telegramConnected(status) {
         await del(telegramBase());
         app.resources.telegram = await request(telegramBase());
       }) }, "Disconnect")),
-    owner, linkNotice,
+    owner, linkNotice, telegramTeamPanel(),
     status.readsAllGroupMessages ? null : h("div", { class: "notice", "data-testid": "assistant-telegram-privacy" }, icon("alert"), h("span", {}, "In groups, this bot only sees commands and replies to it. To let it read a whole group, send /setprivacy to @BotFather, turn privacy off, then add the bot to the group again. Or make it a group admin."),
       h("button", { type: "button", onclick: () => telegramAct(() => post(`${telegramBase()}/refresh`, {}), "Checked with Telegram.") }, "Check again")),
     telegramVoicePanel(status.voice),

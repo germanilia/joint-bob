@@ -32,6 +32,7 @@ test('central batched decisions, deterministic replies, scoped evidence and dura
  const session:AuthSession={id:randomUUID(),userId:randomUUID(),accountId,username:'decision',homeNodeId:null,isRemoteLogin:false,email:null,role:'admin',csrfToken:'fixture',mustChangePassword:false};
  const clusterId=randomUUID();createMembershipCluster(db,{nodeId:host.id,name:'host',url:'http://127.0.0.1:19001'},{id:clusterId,name:'decision'});addClusterLocalMember(db,clusterId,accountId);
  const actor=await requireClusterMember(session,clusterId),team=await createTeam(actor,{projectId:await prepareTeamProject(actor),executorAccountId:accountId});
+ await (await import('./team-members-fixture.js')).seedTeamMembers(team);
  await telegramDatabase();saveTeamTelegramConnection(db,{teamId:team.id,botId:'1',botUsername:'fixture_bot',tokenAccountId:'fixture',headerSecret:'secret',readsAllGroupMessages:true});
  db.prepare('INSERT INTO assistant_team_telegram_members VALUES(?,?,?,?)').run(team.id,accountId,'7','human');db.prepare('INSERT INTO assistant_team_telegram_groups VALUES(?,?)').run(team.id,'-1');
  const secret=await saveSecretAccount({label:'central',provider:'typesafe',variables:[{name:'TYPESAFE_AI_API_KEY',kind:'value',value:'synthetic-central-key'}]});
@@ -61,7 +62,7 @@ test('central batched decisions, deterministic replies, scoped evidence and dura
  await recordTeamOutput({teamId:team.id,chatId:'-1',threadId:null,telegramMessageId:901,role:'qa',subjectId:'missing-subject',assignmentId:'dangling',text:'old result'});
  assert.deepEqual((await decideTeamMessage(team,await message('follow up',{reply_to_message:{message_id:901}})))!.route,{kind:'clarify'});assert.ok(!last.questions.subject);
  subject='new';const long=await message('a'.repeat(140000));await decideTeamMessage(team,long);assert.ok(last.state.length<=120000);assert.equal((await getTeamMessage(team.id,long.id))!.text.length,140000);
- const audit=(await listTeamDecisions(team.id))[0];assert.equal(audit.model,'typesafe');assert.equal(audit.settingsRevision,team.revision);assert.ok(audit.evidenceMessageIds.includes(long.id));assert.equal(audit.answers!.attention.confidence,.01);assert.ok(!JSON.stringify(audit).includes('synthetic-central-key'));
+ const audit=(await listTeamDecisions(team.id))[0];assert.equal(audit.model,'typesafe');assert.equal(audit.settingsRevision,(await (await import('../src/assistant-teams/store.js')).getTeam(team.id)).revision);assert.ok(audit.evidenceMessageIds.includes(long.id));assert.equal(audit.answers!.attention.confidence,.01);assert.ok(!JSON.stringify(audit).includes('synthetic-central-key'));
  for(const answer of [null,{}, {attention:{type:'choice',choice:'act',confidence:2}}, {attention:{type:'choice',choice:'act',confidence:NaN}}, {attention:{type:'choice',choice:'unknown',confidence:.99}}]) {malformed=answer;assert.equal(await decideTeamMessage(team,await message('bad answer')),null);assert.equal((await listTeamDecisions(team.id))[0].failure?.code,'decision_unavailable_or_invalid');}
  // Complete but invalid answers isolate confidence/catalog validation from missing-question validation.
  for(const bad of [{choice:'act',confidence:null},{choice:'act',confidence:-.1},{choice:'act',confidence:1.01},{choice:'unexpected',confidence:.99}]){

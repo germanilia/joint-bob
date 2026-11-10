@@ -1,3 +1,4 @@
+import { seedTeamMembers } from './team-members-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
@@ -15,12 +16,12 @@ import { addClusterLocalMember } from '../src/cluster-accounts.js';
 import { createMembershipCluster } from '../src/cluster-membership.js';
 import { requireClusterMember } from '../src/assistant-teams/access.js';
 import { teamDatabase, createTeam, prepareTeamProject, insertTeamAssignment } from '../src/assistant-teams/store.js';
-import { initializeTeamAgents, runTeamTurn, teamConversation, teamAssignmentDestination, teamQueuedTurn } from '../src/assistant-teams/runtime.js';
+import { runTeamTurn, teamConversation, teamAssignmentDestination, teamQueuedTurn } from '../src/assistant-teams/runtime.js';
 import { getPersonalAssistant, getPersonalAssistantSourceHistory, savePersonalAssistant, beginPersonalAssistantTurn } from '../src/personal-assistants.js';
 import { DEFAULT_GUARDIAN_SETTINGS } from '../src/guardian/rules.js';
 import { PRODUCTION_RULE } from '../src/guardian/production-rule.js';
 
-test('six stable isolated configurations; assignment and host checks precede execution', async () => {
+test('picked members with free roles keep their own settings; assignment and machine checks precede execution', async () => {
   const db = await teamDatabase(); const host = await getClusterNode();
   createAdministrator('runtimefixture', 'Synthetic-password-123!', false);
   const account = localAccountIdForUsername('runtimefixture')!;
@@ -30,17 +31,27 @@ test('six stable isolated configurations; assignment and host checks precede exe
   addClusterLocalMember(db, clusterId, account);
   const actor = await requireClusterMember(session, clusterId);
   const team = await createTeam(actor, { projectId: await prepareTeamProject(actor), executorAccountId: account });
-  const [agents, retry] = await Promise.all([initializeTeamAgents(team), initializeTeamAgents(team)]);
+  const [agents, retry] = await Promise.all([seedTeamMembers(team), seedTeamMembers(team)]);
   assert.deepEqual(agents, retry);
   assert.deepEqual(agents.map(a => a.role).sort(), ['bob', 'designer', 'pr_reviewer', 'product', 'qa', 'support']);
   assert.equal(new Set(agents.map(a => a.assistantId)).size, 6);
   const profiles = await Promise.all(agents.map(a => getPersonalAssistant(account, a.assistantId)));
   for (const profile of profiles) {
-    assert.equal(profile!.nodeId, host.id); assert.equal(profile!.projectId, team.projectId);
-    assert.deepEqual(profile!.mcpServerNames, []); assert.equal(profile!.allowBrowser, false);
+    assert.equal(profile!.nodeId, host.id);
     assert.deepEqual(await getPersonalAssistantSourceHistory(account, profile!.id), []);
-    assert.equal((await teamConversation(team.projectId, profile!.sessionId))!.teamId, team.id);
+    assert.equal(await teamConversation(profile!.projectId, profile!.sessionId), null, "an assistant's own conversation is never team work");
   }
+  const { getTeam, saveTeamMembers, teamCoordinator } = await import('../src/assistant-teams/store.js');
+  assert.equal(await teamCoordinator(await getTeam(team.id)), 'bob');
+  const current = agents.map(({ role, assistantId }) => ({ role, assistantId })), revision = (await getTeam(team.id)).revision;
+  await assert.rejects(saveTeamMembers(team.id, [...current, { role: 'qa', assistantId: randomUUID() }], 'bob', revision), /unique role/);
+  await assert.rejects(saveTeamMembers(team.id, [{ ...current[0], role: 'Bad Role' }], null, revision), /unique role/);
+  await assert.rejects(saveTeamMembers(team.id, current, 'nobody', revision), /coordinator/);
+  await assert.rejects(saveTeamMembers(team.id, current, 'bob', revision - 1), /Stale/);
+  const renamed = current.map(member => member.role === 'qa' ? { ...member, role: 'tester' } : member);
+  await saveTeamMembers(team.id, renamed, 'product', revision);
+  assert.equal(await teamCoordinator(await getTeam(team.id)), 'product');
+  await saveTeamMembers(team.id, current, 'bob', revision + 1);
   await savePersonalAssistant(account, { ...profiles[0]!, instructions: 'Only this role' }, profiles[0]!.id);
   assert.notEqual((await getPersonalAssistant(account, profiles[1]!.id))!.instructions, 'Only this role');
   const second = createLocalUser({ username: 'secondruntime', email: 'second@example.test' }).user;
@@ -63,7 +74,7 @@ test('six stable isolated configurations; assignment and host checks precede exe
     await assert.rejects(runTeamTurn({ assignment: blocked, message: 'must not run' }), /not executable/);
   }
   db.prepare('UPDATE assistant_teams SET host_node_id=? WHERE id=?').run(randomUUID(), team.id);
-  await assert.rejects(runTeamTurn({ assignment, message: 'hello' }), /host/i);
+  await assert.rejects(runTeamTurn({ assignment, message: 'hello' }), /host|machine/i);
   db.prepare('UPDATE assistant_teams SET host_node_id=? WHERE id=?').run(host.id, team.id);
   assert.equal(await teamConversation('private', profiles[0]!.sessionId), null);
 });
@@ -116,31 +127,28 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
     const membershipDb = new DatabaseSync(path.join(node.dataDir, 'node.db'));
     try { addClusterLocalMember(membershipDb, team.clusterId, human.accountId); } finally { membershipDb.close(); }
     const humanAuth = await signIn({ ...env, username: 'teamhuman', password: 'Synthetic-member-password-123!' }, node);
+    // Members are the owner's ordinary assistants, picked in with free role names.
+    const settings = { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' };
+    const call = (method: string, route: string, body?: unknown) => api<any>(node, auth, method as any, route, body);
+    const { addNodeMembers } = await import('./team-members-fixture.js');
+    const picked = await addNodeMembers(call, node.projects.map((p: any) => p.id), team.id, [{ role: 'bob', instructions: 'Team bob' }, { role: 'qa', instructions: 'OWN_QA_INSTRUCTIONS' }, { role: 'support', instructions: 'Team support' }], 'bob', settings);
     const agents = await api<any>(node, auth, 'GET', `/assistant-teams/${team.id}/agents`);
-    assert.equal(agents.body.agents.length, 6); assert.equal(requests.length, 0, 'initialization never runs a model');
-    assert.ok(agents.body.agents.every((agent: any) => agent.readiness.some((problem: string) => /production.*guard/i.test(problem))), 'missing production guard blocks effect-capable Pi readiness, including file tools');
+    assert.deepEqual(agents.body.agents.map((a: any) => a.role), ['bob', 'qa', 'support']); assert.equal(agents.body.coordinatorRole, 'bob');
+    assert.equal(requests.length, 0, 'picking members never runs a model');
+    assert.ok(agents.body.agents.every((agent: any) => agent.readiness.some((problem: string) => /production.*guard/i.test(problem))), 'missing production guard blocks effect-capable readiness, including file tools');
     const guard = await api<any>(node, auth, 'PUT', '/guardian', { settings: { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, rules: [PRODUCTION_RULE] } });
     assert.equal(guard.status, 200, JSON.stringify(guard.body));
-    const qa = agents.body.agents.find((a: any) => a.role === 'qa').profile;
-    assert.equal((await api(node, auth, 'GET', `/personal-assistants/${qa.id}/resources`)).status, 404, 'team configuration cannot enter personal resource APIs');
-    assert.equal((await api(node, auth, 'POST', `/personal-assistants/${qa.id}/turn`, { requestId: randomUUID(), message: 'Do not run the source', recentMessages: [] })).status, 404);
-    assert.equal(requests.length, 0);
-    const config = await api<any>(node, auth, 'PUT', `/assistant-teams/${team.id}/agents/qa`, { expectedRevision: 1, name: 'QA', instructions: 'TEAM_ONLY_QA_PROMPT', allowTerminal: false, executionSettings: { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' } });
-    assert.equal(config.status, 200, JSON.stringify(config.body));
-    const resource = await api<any>(node, auth, 'GET', `/assistant-teams/${team.id}/agents/qa/resources`);
-    assert.deepEqual(resource.body.skills, []); assert.deepEqual(resource.body.mcpServers, []); assert.deepEqual(resource.body.savedLogins, []);
-    const skill = Buffer.from('---\nname: team-qa-skill\ndescription: TEAM_QA_SKILL\n---\nCheck the assigned subject.').toString('base64');
-    const uploaded = await api<any>(node, auth, 'POST', `/assistant-teams/${team.id}/agents/qa/skills`, { expectedRevision: 2, files: [{ relativePath: 'SKILL.md', data: skill }] });
-    assert.equal(uploaded.status, 200, JSON.stringify(uploaded.body));
-    assert.equal(uploaded.body.skills.length, 1);
-    const productResources = await api<any>(node, auth, 'GET', `/assistant-teams/${team.id}/agents/product/resources`);
-    assert.deepEqual(productResources.body.skills, [], 'role resources are independent');
-    assert.doesNotMatch(JSON.stringify(resource.body), /private-only/);
+    const qa = picked.qa as any;
+    const available = await api<any>(node, humanAuth, 'GET', `/assistant-teams/${team.id}/available-assistants`);
+    assert.deepEqual(available.body.assistants, [], 'only your own assistants are offered');
+    const revision = (await api<any>(node, auth, 'GET', `/assistant-teams/${team.id}`)).body.team.revision;
+    const unowned = await api<any>(node, humanAuth, 'PUT', `/assistant-teams/${team.id}/members`, { expectedRevision: revision, coordinatorRole: 'bob', members: [...agents.body.agents.map((a: any) => ({ role: a.role, assistantId: a.assistantId })), { role: 'extra', assistantId: picked.bob.id }] });
+    assert.equal(unowned.status, 400, 'one assistant cannot hold two roles');
     const requestId = randomUUID();
     const endpoint = `/assistant-teams/${team.id}/agents/qa/turn`;
     const first = await api<any>(node, humanAuth, 'POST', endpoint, { subjectId: 'alpha', requestId, message: 'First team question' });
     assert.equal(first.status, 200, JSON.stringify(first.body));
-    assert.equal(first.body.text, 'Team fixture answer'); assert.notEqual(first.body.conversationId, qa.sessionId);
+    assert.equal(first.body.text, 'Team fixture answer'); assert.notEqual(first.body.conversationId, qa.sessionId, 'team work gets its own conversation');
     const repeated = await api<any>(node, humanAuth, 'POST', endpoint, { subjectId: 'alpha', requestId, message: 'First team question' });
     assert.deepEqual(repeated.body, first.body); assert.equal(requests.length, 1, 'confirmed receipt is reused');
     const second = await api<any>(node, auth, 'POST', endpoint, { subjectId: 'alpha', requestId: randomUUID(), message: 'Follow up' });
@@ -149,28 +157,10 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
     assert.equal(other.status, 200, JSON.stringify(other.body)); assert.notEqual(other.body.conversationId, first.body.conversationId);
     assert.equal(requests.length, 3, 'only accepted turns, never a private classifier or source placeholder');
     const serialized = JSON.stringify(requests);
-    assert.match(serialized, /TEAM_ONLY_QA_PROMPT/);
-    assert.doesNotMatch(serialized, /list_assistants|ask_assistant|Your owner's other assistants|PRIVATE_SKILL_MUST_NOT_LEAK|PRIVATE_INSTRUCTIONS_MUST_NOT_LEAK|We keep re-threading the same builder prompt|Scroll reference turn/);
-    assert.match(serialized, /TEAM_QA_SKILL/);
-    assert.ok(requests.every(request => !(request.tools ?? []).some((tool: any) => /bash|terminal/.test(tool.function?.name))), 'role terminal policy is applied in the actual queued runtime');
-    const disabled = await api<any>(node, humanAuth, 'PUT', `/assistant-teams/${team.id}/agents/qa/resources`, { expectedRevision: 3, disabledSkills: ['team-qa-skill'] });
-    assert.equal(disabled.status, 200, JSON.stringify(disabled.body));
-    const afterDisable = await api<any>(node, humanAuth, 'POST', endpoint, { subjectId: 'alpha', requestId: randomUUID(), message: 'Continue without that skill' });
-    assert.equal(afterDisable.status, 200, JSON.stringify(afterDisable.body));
-    assert.doesNotMatch(JSON.stringify(requests.at(-1).messages.filter((message: any) => message.role === 'system')), /TEAM_QA_SKILL/, 'an already-open subject reloads its configured role resources');
-    const unavailable = await api<any>(node, auth, 'PUT', `/assistant-teams/${team.id}/agents/qa`, { expectedRevision: 4, name: 'QA', instructions: 'TEAM_ONLY_QA_PROMPT', allowTerminal: false, executionSettings: { harnessId: 'pi', provider: 'not-configured', modelId: 'unavailable', reasoning: 'off' } });
-    assert.equal(unavailable.status, 200, JSON.stringify(unavailable.body));
-    assert.match(unavailable.body.readiness.join(' '), /unavailable/);
-    const refused = await api<any>(node, auth, 'POST', endpoint, { subjectId: 'gamma', requestId: randomUUID(), message: 'Unavailable must not fallback' });
-    assert.equal(refused.status, 503, JSON.stringify(refused.body));
-    assert.equal(requests.length, 4, 'unavailable model never falls back');
-    const after = await api<any>(node, auth, 'GET', `/assistant-teams/${team.id}/agents`);
-    assert.deepEqual(after.body.agents.find((a: any) => a.role === 'product').profile.executionSettings, agents.body.agents.find((a: any) => a.role === 'product').profile.executionSettings, 'model choices are independent');
+    assert.match(serialized, /OWN_QA_INSTRUCTIONS/, 'a member brings its own instructions');
+    assert.doesNotMatch(serialized, /PRIVATE_SKILL_MUST_NOT_LEAK|PRIVATE_INSTRUCTIONS_MUST_NOT_LEAK/, 'machine skills outside the app still stay out');
+    assert.ok(requests.every(request => !(request.tools ?? []).some((tool: any) => /bash|terminal/.test(tool.function?.name))), "the member's own terminal policy applies");
     // Actual Bob Pi tools -> durable child -> stored-result continuation, without an in-memory wait tool.
-    for (const [index, role] of ['bob', 'support'].entries()) {
-      const configured = await api<any>(node, auth, 'PUT', `/assistant-teams/${team.id}/agents/${role}`, { expectedRevision: 5 + index, name: role, instructions: `Team ${role}`, allowTerminal: false, executionSettings: { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' } });
-      assert.equal(configured.status, 200, JSON.stringify(configured.body));
-    }
     const bobRequest = randomUUID();
     const delegated = await api<any>(node, auth, 'POST', `/assistant-teams/${team.id}/agents/bob/turn`, { subjectId: 'delegated', requestId: bobRequest, message: 'LIVE_BOB_DELEGATION' });
     assert.equal(delegated.status, 409, `premature root answer is withheld: ${JSON.stringify(delegated.body)}`);
@@ -188,11 +178,11 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
       const childWork = db.prepare(`SELECT w.record FROM assistant_team_work w JOIN assistant_team_assignments a ON a.id=w.assignment_id WHERE json_extract(a.record,'$.parentId') IS NOT NULL`).all() as any[];
       assert.equal(childWork.length, 1); assert.equal(JSON.parse(childWork[0].record).result, 'CHILD_COMPLETED_EVIDENCE'); assert.equal(JSON.parse(childWork[0].record).consumed, true);
       assert.ok(requests.some(r => JSON.stringify(r.messages).includes('CHILD_COMPLETED_EVIDENCE') && JSON.stringify(r.messages).includes('stored INTERNAL ONLY')));
-      const attribution = db.prepare('SELECT account_id FROM conversation_message_authors WHERE project_id=? AND conversation_id=? AND account_id=?').get(team.projectId, first.body.conversationId, human.accountId) as { account_id: string };
+      const attribution = db.prepare('SELECT account_id FROM conversation_message_authors WHERE project_id=? AND conversation_id=? AND account_id=?').get(qa.projectId, first.body.conversationId, human.accountId) as { account_id: string };
       const assignment = JSON.parse((db.prepare('SELECT record FROM assistant_team_assignments WHERE request_id=?').get(requestId) as { record: string }).record);
       assert.equal(attribution.account_id, assignment.requestedBy);
       assert.equal(attribution.account_id, human.accountId, 'the queued transcript attributes the actual member');
-      assert.notEqual(attribution.account_id, team.executorAccountId, 'execution account is not impersonated');
+      assert.notEqual(attribution.account_id, team.executorAccountId, 'the owner account is not impersonated');
       // Real server restart: confirmed receipts are reconciled; missing dispatch receipts are held, not retried.
       await stopDevNode(child); child = undefined;
       const rootState = JSON.parse(rootWork.record);

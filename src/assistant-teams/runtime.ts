@@ -5,23 +5,10 @@ import { listLocalUsers } from '../auth.js';
 import { getClusterNode } from '../cluster.js';
 import { ensureConversationRecord } from '../conversation-records.js';
 import { getConversationOwnership } from '../conversation-ownership.js';
-import { getSettings } from '../settings.js';
-import { setWebhookMemoryEnabled } from '../webhook-memory.js';
 import { getHarnessRuntime, listHarnessModels } from '../harnesses.js';
-import { addPersonalAssistantTopic, getPersonalAssistant, getPersonalAssistantTurn, listPersonalAssistants, personalAssistantDatabase, savePersonalAssistant, savePersonalAssistantSourceHistory, type PersonalAssistant } from '../personal-assistants.js';
+import { addPersonalAssistantTopic, getPersonalAssistantById, getPersonalAssistantTurn, personalAssistantDatabase, type PersonalAssistant } from '../personal-assistants.js';
 import { requireTeamExecution } from './access.js';
-import { getTeam, getTeamAssignment, listTeamAgents, teamDatabase, TeamError, type AssistantTeam, type TeamAgent, type TeamAssignment, type TeamRole } from './store.js';
-
-export const TEAM_ROLES: readonly TeamRole[] = ['bob', 'product', 'designer', 'qa', 'pr_reviewer', 'support'];
-const instructions: Record<TeamRole, string> = {
-  bob: 'Coordinate the team. Distinguish evidence, proposals and human decisions.',
-  product: 'Help clarify product needs, priorities and acceptance criteria.',
-  designer: 'Help with design, usability and accessible experiences.',
-  qa: 'Check quality and explain reproducible findings and coverage gaps.',
-  pr_reviewer: 'Review changes for correctness, security and maintainability.',
-  support: 'Help diagnose technical problems and explain practical resolutions.',
-};
-const initializing = new Map<string, Promise<TeamAgent[]>>();
+import { getTeam, getTeamAssignment, listTeamAgents, teamDatabase, TeamError, type TeamAssignment, type TeamRole } from './store.js';
 
 // Ephemeral, tool-less knowledge sessions are not assistant turns or personal conversations.
 const memorySessions = new Set<string>();
@@ -62,61 +49,12 @@ async function database() {
     PRIMARY KEY(team_id,subject_id,assistant_id));`);
   return db;
 }
-/** Setup creates configuration only, never opens a runtime or submits a prompt. */
-export function initializeTeamAgents(input: AssistantTeam): Promise<TeamAgent[]> {
-  const existing = initializing.get(input.id); if (existing) return existing;
-  const pending = (async () => {
-    const team = await getTeam(input.id);
-    if (!isDeepStrictEqual(team, input)) throw new TeamError('Team configuration changed', 409);
-    if (team.hostNodeId !== (await getClusterNode()).id) throw new TeamError('Team must initialize on its host', 403);
-    const db = await database(); await personalAssistantDatabase();
-    const defaults = await asNode(() => getSettings().conversationDefaults.pi);
-    for (const role of TEAM_ROLES) {
-      if ((await listTeamAgents(team.id)).some(a => a.role === role)) continue;
-      // A stable source key also recovers a crash between configuration and mapping writes.
-      const sessionId = `team-${team.id}-${role}`;
-      let profile = (await listPersonalAssistants(team.executorAccountId)).find(a => a.projectId === team.projectId && a.sessionId === sessionId);
-      if (!profile) profile = await savePersonalAssistant(team.executorAccountId, {
-        projectId: team.projectId, engine: 'pi', sessionId, nodeId: team.hostNodeId,
-        name: role, instructions: instructions[role], allowBrowser: false, allowTerminal: false, mcpServerNames: [],
-        executionSettings: { harnessId: 'pi', provider: defaults.provider, modelId: defaults.modelId, reasoning: defaults.thinkingLevel },
-      });
-      await ensureConversationRecord(team.projectId, 'pi', sessionId, team.hostNodeId);
-      await savePersonalAssistantSourceHistory(team.executorAccountId, profile.id, []);
-      // Shared subject memory is supplied by the team memory service, not personal notes/tokens.
-      setWebhookMemoryEnabled(db, profile.id, false);
-      await addPersonalAssistantTopic(team.executorAccountId, profile.id, { projectId: team.projectId, engine: 'pi', sessionId, source: true });
-      db.prepare('INSERT OR IGNORE INTO assistant_team_agents VALUES(?,?,?)').run(team.id, role, profile.id);
-    }
-    return listTeamAgents(team.id);
-  })();
-  initializing.set(input.id, pending);
-  void pending.finally(() => initializing.delete(input.id)).catch(() => {});
-  return pending;
-}
-
+/** Only conversations created for team work count; the assistant's personal topics never do. */
 export async function teamConversation(projectId: string, conversationId: string): Promise<{ teamId: string; role: TeamRole } | null> {
-  const db = await database(); await personalAssistantDatabase();
-  return db.prepare(`SELECT a.team_id teamId,a.role FROM assistant_team_agents a
-    JOIN personal_assistant_topics t ON t.assistant_id=a.assistant_id
-    WHERE t.project_id=? AND t.session_id=?`).get(projectId, conversationId) as { teamId: string; role: TeamRole } | undefined ?? null;
-}
-export async function runningTeamMcp(projectId: string, conversationId: string) {
-  const context = await teamConversation(projectId, conversationId);
-  if (!context) return null;
   const db = await database();
-  const rows = db.prepare(`SELECT a.record FROM assistant_team_assignments a JOIN assistant_team_conversations c
-    ON c.team_id=a.team_id AND c.subject_id=json_extract(a.record,'$.subjectId')
-    JOIN assistant_team_agents g ON g.team_id=a.team_id AND g.role=json_extract(a.record,'$.role') AND g.assistant_id=c.assistant_id
-    WHERE c.project_id=? AND c.conversation_id=? AND a.team_id=? AND json_extract(a.record,'$.state')='running'`).all(projectId, conversationId, context.teamId) as { record: string }[];
-  for (const row of rows) {
-    try {
-      const validated = await validateTeamAssignment(JSON.parse(row.record));
-      const turn = await getPersonalAssistantTurn(validated.team.executorAccountId, validated.profile.id, validated.assignment.requestId);
-      if (turn?.status === 'running' && turn.topicId === `pi:${conversationId}`) return validated;
-    } catch { /* A revoked initiator or stale assignment is never executable. */ }
-  }
-  throw new TeamError('Team MCP requires a running member assignment', 403);
+  return db.prepare(`SELECT c.team_id teamId,a.role FROM assistant_team_conversations c
+    JOIN assistant_team_agents a ON a.team_id=c.team_id AND a.assistant_id=c.assistant_id
+    WHERE c.project_id=? AND c.conversation_id=?`).get(projectId, conversationId) as { teamId: string; role: TeamRole } | undefined ?? null;
 }
 export async function validateTeamAssignment(assignment: TeamAssignment) {
   const stored = await getTeamAssignment(assignment.id);
@@ -125,8 +63,9 @@ export async function validateTeamAssignment(assignment: TeamAssignment) {
   if (!stored.subjectId || !['accepted', 'queued', 'running'].includes(stored.state)) throw new TeamError('Assignment is not executable', 409);
   const team = await getTeam(stored.teamId);
   const agent = (await listTeamAgents(team.id)).find(a => a.role === stored.role);
-  const profile = agent && await getPersonalAssistant(team.executorAccountId, agent.assistantId);
-  if (!profile || profile.projectId !== team.projectId || profile.nodeId !== team.hostNodeId) throw new TeamError('Team agent is unavailable on its host', 503);
+  // A member is the picked assistant itself, on the team's machine, with everything it has.
+  const profile = agent && await getPersonalAssistantById(agent.assistantId);
+  if (!profile || profile.nodeId !== team.hostNodeId) throw new TeamError('Team member is unavailable on the team machine', 503);
   return { team, member, profile, assignment: stored };
 }
 /** Rechecked at queue dispatch, including after a wait. No browser-supplied team claim is trusted. */
@@ -137,8 +76,8 @@ export async function teamQueuedTurn(projectId: string, conversationId: string, 
   if (!row) throw new TeamError('Team conversation requires a live assignment', 403);
   const validated = await validateTeamAssignment(JSON.parse(row.record));
   const map = db.prepare('SELECT 1 FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=? AND project_id=? AND conversation_id=?').get(context.teamId, validated.assignment.subjectId!, validated.profile.id, projectId, conversationId);
-  if (!map || validated.member.accountId !== accountId || executionAccountId !== validated.team.executorAccountId) throw new TeamError('Assignment destination or initiating member mismatch', 403);
-  const turn = await getPersonalAssistantTurn(validated.team.executorAccountId, validated.profile.id, requestId!);
+  if (!map || validated.member.accountId !== accountId || executionAccountId !== validated.profile.accountId) throw new TeamError('Assignment destination or initiating member mismatch', 403);
+  const turn = await getPersonalAssistantTurn(validated.profile.accountId, validated.profile.id, requestId!);
   if (!turn || turn.status !== 'running' || turn.message !== message) throw new TeamError('Team queue requires the server-issued running turn', 403);
   return validated;
 }
@@ -147,10 +86,9 @@ export async function teamAgentReadiness(profile: PersonalAssistant): Promise<st
   const { productionGuardStatus } = await import('../guardian/production-rule.js');
   const { getGuardianSettings } = await import('../guardian/settings.js');
   if (productionGuardStatus(getGuardianSettings()) !== 'on') return ['Production-capable team work is blocked: enable the production Guardian guard'];
-  if (profile.nodeId !== (await getClusterNode()).id) return ['Team execution host is unavailable'];
-  if (!listLocalUsers().some(user => user.accountId === profile.accountId && !user.disabled)) return ['Host execution account is unavailable'];
+  if (profile.nodeId !== (await getClusterNode()).id) return ['This assistant is on another machine'];
+  if (!listLocalUsers().some(user => user.accountId === profile.accountId && !user.disabled)) return ["The assistant's owner account is unavailable"];
   if (!profile.executionSettings) return ['Select a local runtime and model'];
-  if (profile.executionSettings.harnessId !== 'pi') return ['Team resource isolation is currently supported only by Pi on this host'];
   try {
     const settings = profile.executionSettings;
     const runtime = await getHarnessRuntime(settings.harnessId);
@@ -166,17 +104,18 @@ export async function teamAgentReadiness(profile: PersonalAssistant): Promise<st
 export async function teamAssignmentDestination(assignment: TeamAssignment) {
   const validated = await validateTeamAssignment(assignment);
   const { team, profile } = validated; const db = await database();
-  let row = db.prepare('SELECT engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { engine: string; sessionId: string } | undefined;
+  let row = db.prepare('SELECT project_id projectId,engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { projectId: string; engine: string; sessionId: string } | undefined;
   if (!row) {
     const engine = profile.executionSettings?.harnessId ?? profile.engine;
-    db.prepare('INSERT OR IGNORE INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(team.id, assignment.subjectId!, profile.id, team.projectId, engine, randomUUID());
-    row = db.prepare('SELECT engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { engine: string; sessionId: string };
+    // Team work runs in the assistant's own project, so its project resources apply.
+    db.prepare('INSERT OR IGNORE INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(team.id, assignment.subjectId!, profile.id, profile.projectId, engine, randomUUID());
+    row = db.prepare('SELECT project_id projectId,engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { projectId: string; engine: string; sessionId: string };
   }
   const ownership = await getConversationOwnership(row.engine, row.sessionId);
   if (ownership && ownership.ownerNodeId !== team.hostNodeId) throw new TeamError('Team conversation is on another execution node', 409);
-  await ensureConversationRecord(team.projectId, row.engine, row.sessionId, team.hostNodeId);
-  await addPersonalAssistantTopic(team.executorAccountId, profile.id, { projectId: team.projectId, ...row, source: false });
-  return { ...validated, destination: row };
+  await ensureConversationRecord(row.projectId, row.engine, row.sessionId, team.hostNodeId);
+  await addPersonalAssistantTopic(profile.accountId, profile.id, { projectId: row.projectId, engine: row.engine, sessionId: row.sessionId, source: false });
+  return { ...validated, destination: { engine: row.engine, sessionId: row.sessionId } };
 }
 export async function runTeamTurn(input: { assignment: TeamAssignment; message: string }): Promise<{ text: string; conversationId: string }> {
   const { team, profile } = await validateTeamAssignment(input.assignment);
@@ -184,7 +123,8 @@ export async function runTeamTurn(input: { assignment: TeamAssignment; message: 
   // Browser entry points enforce their own input bound; never silently cut Telegram evidence.
   if (!input.message.trim()) throw new TeamError('Invalid team message', 400);
   const { runPersonalAssistantAutomationTurn } = await import('../server/routes/personal-assistants.js');
-  const turn = await asNode(() => runPersonalAssistantAutomationTurn(team.executorAccountId, profile.id, input.assignment.requestId, input.message,
+  // Like a webhook or schedule: the turn runs as the assistant's owner, so its own MCP servers and tools load.
+  const turn = await (runPersonalAssistantAutomationTurn(profile.accountId, profile.id, input.assignment.requestId, input.message,
     { label: `Team ${input.assignment.role}`, origin: 'assistant', team: { assignment: input.assignment } }));
   await requireTeamExecution(team.id, input.assignment.requestedBy);
   if (turn.status !== 'completed') throw new TeamError('Team turn has no confirmed result', 409);

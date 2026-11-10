@@ -9,7 +9,7 @@ import path from 'node:path';
 import { addClusterLocalMember } from '../../src/cluster-accounts.js';
 import { createServer } from 'node:http';
 
-test('team control center shows six shared Pi roles and persists ordered percent thresholds', { timeout: 240_000 }, async t => {
+test('team control center shows picked members with free roles and persists ordered percent thresholds', { timeout: 240_000 }, async t => {
   const token = 'fixture-bot-token-not-for-production-123';
   const methods: string[] = [];
   let webhookSecret = '';
@@ -42,6 +42,9 @@ test('team control center shows six shared Pi roles and persists ordered percent
   assert.equal(cluster.status, 201);
   const created = await api<any>(node, auth, 'POST', '/assistant-teams', { clusterId: cluster.body.snapshot.body.clusterId });
   assert.equal(created.status, 201, JSON.stringify(created.body));
+  const devSettings = { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' };
+  const { addNodeMembers, TEST_ROLES } = await import('../team-members-fixture.js');
+  await addNodeMembers((method, route, body) => api<any>(node, auth, method as any, route, body), node.projects.map((p: any) => p.id), created.body.team.id, TEST_ROLES.map(role => ({ role })), 'bob', devSettings);
   const seeded = await promisify(execFile)(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', `
     const { createLocalUser, authenticate, changePassword } = await import('./src/auth.ts');
     const people = ['secondmember', 'outsider'].map(username => {
@@ -69,7 +72,7 @@ test('team control center shows six shared Pi roles and persists ordered percent
   await other.getByTestId('control-tab-assistants').click();
   await other.getByTestId('team-select').selectOption(created.body.team.id);
   await other.getByTestId('team-agent-card').first().waitFor();
-  assert.equal(await other.getByTestId('team-agent-card').count(), 6);
+  await other.waitForFunction(() => document.querySelectorAll('[data-testid="team-agent-card"]').length === 6);
   // A reload brings the control center back without its button being pressed: the team list still fills.
   await other.reload();
   await other.waitForFunction(() => !document.body.classList.contains('booting'));
@@ -88,7 +91,7 @@ test('team control center shows six shared Pi roles and persists ordered percent
   await page.getByTestId('control-tab-assistants').click();
   await page.getByTestId('team-select').selectOption(created.body.team.id);
   await page.getByTestId('team-agent-card').first().waitFor();
-  assert.equal(await page.getByTestId('team-agent-card').count(), 6);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="team-agent-card"]').length === 6);
   await page.getByTestId('control-tab-live').click();
   await page.getByTestId('team-live-view').waitFor({ state: 'visible' });
   assert.equal(await page.getByTestId('team-assistants-view').isVisible(), false);
@@ -96,7 +99,7 @@ test('team control center shows six shared Pi roles and persists ordered percent
   await page.getByTestId('team-memory-view').waitFor({ state: 'visible' });
   assert.equal(await page.getByTestId('memory-topic-list').isVisible(), false, 'personal memory remains hidden, not repurposed');
   await page.getByTestId('control-tab-assistants').click();
-  assert.match(await page.getByTestId('team-runtime').innerText(), /Pi only/);
+  assert.match(await page.getByTestId('team-runtime').innerText(), /brings everything/);
   await page.getByTestId('team-open-settings').click();
   await page.waitForFunction(() => document.querySelector('#settingsDialog')?.open && !document.querySelector('#settingsForm')?.hasAttribute('aria-busy'));
   await page.getByTestId('team-ask').fill('95');
@@ -112,41 +115,18 @@ test('team control center shows six shared Pi roles and persists ordered percent
   assert.deepEqual(saved.body.team.settings, { askThreshold: .8, actThreshold: .95 });
   assert.equal(await page.getByTestId('team-token').getAttribute('type'), 'password');
   await page.getByTestId('settings-cancel-button').click();
-  await page.getByTestId('team-configure-qa').click();
-  await page.getByTestId('team-agent-prompt').fill('Independent synthetic QA prompt');
-  await page.getByTestId('team-agent-model').fill('synthetic-unavailable-model');
-  await page.getByTestId('team-agent-save').click();
-  await page.getByTestId('team-agent-prompt').waitFor({ state: 'detached' });
-  const roleRevision = (await api<any>(node, auth, 'GET', `/assistant-teams/${created.body.team.id}`)).body.team.revision;
-  await page.locator(`[data-testid="team-agent-card"][data-role="qa"][data-revision="${roleRevision}"]`).waitFor();
-  await page.getByTestId('team-configure-qa').click();
-  assert.equal(await page.getByTestId('team-agent-prompt').inputValue(), 'Independent synthetic QA prompt');
-  await page.getByTestId('team-file-upload').setInputFiles({ name: 'team-note.txt', mimeType: 'text/plain', buffer: Buffer.from('Shared role-only fixture') });
-  await page.getByTestId('team-file-row').filter({ hasText: 'team-note.txt' }).waitFor();
-  await page.getByTestId('team-agent-prompt').fill('Edited after upload, without losing the draft');
-  await page.getByTestId('team-agent-save').click();
-  await page.getByTestId('team-agent-prompt').waitFor({ state: 'detached' });
-  const uploadedRoleRevision = (await api<any>(node, auth, 'GET', `/assistant-teams/${created.body.team.id}`)).body.team.revision;
-  await page.locator(`[data-testid="team-agent-card"][data-role="qa"][data-revision="${uploadedRoleRevision}"]`).waitFor();
-  await page.getByTestId('team-configure-qa').click();
-  assert.equal(await page.getByTestId('team-agent-prompt').inputValue(), 'Edited after upload, without losing the draft');
-  await other.locator(`[data-testid="team-agent-card"][data-role="qa"][data-revision="${uploadedRoleRevision}"]`).waitFor();
-  await other.getByTestId('team-configure-qa').click();
-  assert.equal(await other.getByTestId('team-agent-prompt').inputValue(), 'Edited after upload, without losing the draft');
-  await other.getByTestId('team-file-row').filter({ hasText: 'team-note.txt' }).waitFor();
-  assert.equal((await api(node, auth, 'POST', '/resources/mcp/managed', { mcpServers: { ui_team_fixture: { command: process.execPath, args: [path.resolve('test/managed-mcp-fixture.mjs')] }, ui_private_sentinel: { command: process.execPath, args: [path.resolve('test/managed-mcp-fixture.mjs')] } } })).status, 200);
-  await page.getByTestId('team-configure-qa').click();
-  await page.getByTestId('team-configure-qa').click();
-  const shareToggle = page.locator('label').filter({ hasText: 'Share ui_team_fixture' }).getByTestId('team-mcp-share');
-  await shareToggle.waitFor();
-  assert.equal(await other.getByTestId('team-mcp-share').count(), 0, 'member cannot see owner inventory');
-  await shareToggle.check();
-  await page.locator('label').filter({ hasText: 'ui_team_fixture (stdio, shared)' }).getByTestId('team-mcp-enabled').check();
-  const uiRole = await api<any>(node, otherAuth, 'GET', `/assistant-teams/${created.body.team.id}/agents/qa/resources`);
-  assert.deepEqual(uiRole.body.mcpServers.map((server: any) => [server.name, server.enabled]), [['ui_team_fixture', true]]);
-  assert.doesNotMatch(JSON.stringify(uiRole.body), /ui_private_sentinel/);
-  const staleUpload = await api(node, auth, 'POST', `/assistant-teams/${created.body.team.id}/agents/qa/files`, { expectedRevision: 1, name: 'stale.txt', data: 'eA==' });
-  assert.equal(staleUpload.status, 409);
+  // Members show what they bring; renaming a role and removing a member save at once.
+  assert.match(await page.locator('[data-testid="team-agent-card"][data-role="qa"]').getByTestId('team-member-uses').innerText(), /dev-model/);
+  await page.locator('[data-testid="team-agent-card"][data-role="qa"]').getByTestId('team-member-role').fill('tester');
+  await page.getByTestId('team-members-save').click();
+  await page.locator('[data-testid="team-agent-card"][data-role="tester"]').waitFor();
+  await page.locator('[data-testid="team-agent-card"][data-role="support"]').getByTestId('team-member-remove').click();
+  await page.locator('[data-testid="team-agent-card"][data-role="support"]').waitFor({ state: 'detached' });
+  const members = await api<any>(node, otherAuth, 'GET', `/assistant-teams/${created.body.team.id}/agents`);
+  assert.deepEqual(members.body.agents.map((agent: any) => agent.role), ['bob', 'product', 'designer', 'tester', 'pr_reviewer']);
+  assert.equal(await page.getByTestId('team-member-pick').locator('option').filter({ hasText: 'support' }).count(), 1, 'a removed assistant can be picked again');
+  const staleMembers = await api(node, auth, 'PUT', `/assistant-teams/${created.body.team.id}/members`, { expectedRevision: 1, coordinatorRole: null, members: [] });
+  assert.equal(staleMembers.status, 409);
   // Real connect path, with getMe and setWebhook answered by a disposable loopback bot API.
   await page.getByTestId('team-open-settings').click();
   await page.getByTestId('team-telegram-toggle').click();

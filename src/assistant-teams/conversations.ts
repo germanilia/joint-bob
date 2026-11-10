@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { getPersonalAssistant } from '../personal-assistants.js';
+import { getPersonalAssistantById } from '../personal-assistants.js';
 import { getConversationOwnership } from '../conversation-ownership.js';
 import { ensureConversationRecord } from '../conversation-records.js';
 import { telegramDatabase, teamTelegramConnection } from './telegram-store.js';
-import { announceTeamChange, getTeam, listTeamAgents, TeamError, type TeamMessage, type TeamRole, type TeamSubject } from './store.js';
+import { announceTeamChange, getTeam, listTeamAgents, teamRolesSync, TeamError, type TeamMessage, type TeamRole, type TeamSubject } from './store.js';
 import type { TelegramFile } from '../assistant-telegram.js';
 export interface TeamEntity {type:string;offset:number;length:number;url?:string;user?:unknown;language?:string;custom_emoji_id?:string}
 export interface TeamAttachment extends TelegramFile {path?:string;detectedMimeType?:string;extractedText?:string;problem?:string}
@@ -67,12 +67,13 @@ export async function recordTeamOutput(input:{teamId:string;chatId:string;thread
  db.prepare('INSERT INTO assistant_team_message_versions VALUES(?,?,?)').run(message.id,1,JSON.stringify(message));db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
 }
 async function repliedOutput(message:TeamMessage){return (await conversationDatabase()).prepare('SELECT role,subject_id subjectId,assignment_id assignmentId FROM assistant_team_outputs WHERE team_id=? AND chat_id=? AND thread_id IS ? AND message_id=?').get(message.teamId,message.chatId,message.threadId,message.replyToMessageId ?? -1) as {role:TeamRole;subjectId:string;assignmentId:string}|undefined;}
-export const TEAM_ALIASES:readonly TeamRole[]=['bob','product','designer','qa','pr_reviewer','support'];
 export async function directTeamTargets(message:TeamMessage):Promise<TeamRole[]> {
  const stored=decode((await conversationDatabase()).prepare('SELECT record FROM assistant_team_messages WHERE id=? AND team_id=?').get(message.id,message.teamId));
  if(!stored||stored.output)return [];
  const reply=await repliedOutput(stored);if(reply)return [reply.role];
  const known=await teamTelegramConnection(message.teamId), targets:TeamRole[]=[];
+ // Commands come from the member list; the bot's own name addresses the coordinator.
+ const {roles,coordinator}=teamRolesSync(await conversationDatabase(),message.teamId);
  // Only a leading contiguous alias/command sequence. Never substring matching or quoted/code entities.
  const blocked=(start:number,end:number)=>stored.entities.some(e=>['code','pre','blockquote','expandable_blockquote','text_link'].includes(e.type)&&e.offset<end&&e.offset+e.length>start);
  const regex=/\s*([/@][a-zA-Z0-9_]+(?:@[a-zA-Z0-9_]+)?)(?=\s|$)/gy;
@@ -82,11 +83,11 @@ export async function directTeamTargets(message:TeamMessage):Promise<TeamRole[]>
  if(blocked(start,end))break;
  const [alias,suffix]=match[1].slice(1).toLowerCase().split('@');
  if(suffix && suffix!==known?.bot_username.toLowerCase())break;
- const role=alias===known?.bot_username.toLowerCase() ? 'bob' : TEAM_ALIASES.find(r=>r===alias);
+ const role=alias===known?.bot_username.toLowerCase() ? coordinator : roles.find(r=>r===alias);
  if(!role)break;if(!targets.includes(role))targets.push(role);
  }
  for(const entity of stored.entities){
-  if(entity.type==='mention'&&!blocked(entity.offset,entity.offset+entity.length)&&stored.text.slice(entity.offset,entity.offset+entity.length).toLowerCase()===`@${known?.bot_username.toLowerCase()}`&&!targets.includes('bob'))targets.push('bob');
+  if(entity.type==='mention'&&!blocked(entity.offset,entity.offset+entity.length)&&stored.text.slice(entity.offset,entity.offset+entity.length).toLowerCase()===`@${known?.bot_username.toLowerCase()}`&&coordinator&&!targets.includes(coordinator))targets.push(coordinator);
  }
  return targets;
 }
@@ -145,9 +146,9 @@ export async function bindTeamConversation(teamId:string,subjectId:string,assist
  const existing=db.prepare('SELECT conversation_id FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(teamId,subjectId,assistantId) as {conversation_id:string}|undefined;
  if(existing){if(existing.conversation_id!==conversationId)throw new TeamError('Conversation already bound',409);return;}
  if(!/^[0-9a-f-]{36}$/i.test(conversationId))throw new TeamError('New conversation UUID required',400);
- const profile=await getPersonalAssistant(team.executorAccountId,assistantId);if(!profile)throw new TeamError('Unknown team assistant',404);
+ const profile=await getPersonalAssistantById(assistantId);if(!profile)throw new TeamError('Unknown team assistant',404);
  const engine=profile.executionSettings?.harnessId ?? profile.engine;
  if(await getConversationOwnership(engine,conversationId))throw new TeamError('Cannot adopt an existing conversation',409);
- db.prepare('INSERT INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(teamId,subjectId,assistantId,team.projectId,engine,conversationId);
- await ensureConversationRecord(team.projectId,engine,conversationId,team.hostNodeId);
+ db.prepare('INSERT INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(teamId,subjectId,assistantId,profile.projectId,engine,conversationId);
+ await ensureConversationRecord(profile.projectId,engine,conversationId,team.hostNodeId);
 }

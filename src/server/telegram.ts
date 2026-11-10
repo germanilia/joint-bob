@@ -379,6 +379,8 @@ export async function disconnectTelegram(assistantId: string): Promise<boolean> 
   const token = secretAccountVariable([known.tokenAccountId], TELEGRAM_TOKEN_VARIABLE);
   // Removed here whatever Telegram says: without the webhook its calls are refused anyway.
   if (token) await telegramDeleteWebhook(token).catch((error: unknown) => console.warn("Telegram kept the webhook:", withoutToken(error, token)));
+  // A team using this bot loses it too; its members and enrollment stay.
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assistant_team_telegram'").get()) db.prepare("DELETE FROM assistant_team_telegram WHERE bot_id=?").run(known.botId);
   removeTelegramConnection(db, known.webhookId);
   if (getWebhook(db, known.webhookId)) deleteWebhook(db, known.webhookId);
   await deleteSecretAccount(known.tokenAccountId).catch((error: unknown) => console.warn("The bot's secret account stayed:", error instanceof Error ? error.message : error));
