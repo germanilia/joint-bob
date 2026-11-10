@@ -146,17 +146,18 @@ export class PiSession implements HarnessSession {
 
   async checkpointPoolAttempt(): Promise<unknown> {
     if (this.isBusy()) throw new Error("Cannot checkpoint a busy Pi session");
-    const settings = this.settings();
-    return { leafId: this.handle.session.sessionManager.getLeafId(), settings: { ...settings, enabledTools: [...settings.enabledTools!] } };
+    return { leafId: this.handle.session.sessionManager.getLeafId() };
   }
 
+  /**
+   * Rewinds only the transcript. Switching the model back would need a signed-in profile, and a restore
+   * runs between pool attempts, outside any member's profile; the next attempt configures its own model.
+   */
   async restorePoolAttempt(checkpoint: unknown): Promise<void> {
     if (this.isBusy()) throw new Error("Cannot restore a busy Pi session");
-    const value = checkpoint as { leafId: string | null; settings: HarnessModelSettings };
+    const { leafId } = checkpoint as { leafId: string | null };
     const manager = this.handle.session.sessionManager;
-    if (value.leafId) manager.branch(value.leafId); else manager.resetLeaf();
-    await this.configure(value.settings);
-    if (value.leafId) manager.branch(value.leafId); else manager.resetLeaf();
+    if (leafId) manager.branch(leafId); else manager.resetLeaf();
   }
 
   async configure(settings: HarnessModelSettings): Promise<void> {

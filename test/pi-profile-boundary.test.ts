@@ -42,3 +42,30 @@ test("Pi configure authenticates model switching inside the selected profile", a
     assert.equal(pinned, false);
   } finally { harness.dispose(); }
 });
+
+test("a pool restore between attempts rewinds the transcript without a profile", async () => {
+  let pinned = false;
+  const runtime = await createSessionModelRuntime(async (provider) => pinned ? credential(provider) : undefined, async () => pinned ? list() : [], () => pinned);
+  const { session } = await createAgentSession({ modelRuntime: runtime, model: runtime.getModels("zai")[0],
+    sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory(), noTools: "all" });
+  // Outside a pool member's attempt, a selected pool has no profile to switch models with.
+  const handle = { session, safeguardsEnabled: true, dispose: () => session.dispose(),
+    withModelProfile: async <T>(_provider: string, work: () => Promise<T>) => {
+      if (!pinned) throw new Error("Selected subscription pool requires pool-aware execution");
+      return work();
+    } };
+  const harness = new PiSession({ projectId: "fixture", cwd: process.cwd(), sessionId: session.sessionId }, handle as never);
+  const attempt = async <T>(work: () => Promise<T>) => { pinned = true; try { return await work(); } finally { pinned = false; } };
+  try {
+    const leaf = session.sessionManager.getLeafId();
+    const checkpoint = await harness.checkpointPoolAttempt();
+    const switched = runtime.getModels("openai")[0];
+    await attempt(() => harness.configure({ provider: switched.provider, modelId: switched.id, reasoning: "off" }));
+    assert.notEqual(session.sessionManager.getLeafId(), leaf);
+    await harness.restorePoolAttempt(checkpoint);
+    assert.equal(session.sessionManager.getLeafId(), leaf);
+    const original = runtime.getModels("zai")[0];
+    await attempt(() => harness.configure({ provider: original.provider, modelId: original.id, reasoning: "off" }));
+    assert.equal(session.model?.provider, "zai");
+  } finally { harness.dispose(); }
+});
