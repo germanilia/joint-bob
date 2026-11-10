@@ -805,6 +805,7 @@ export async function createPiSession(options: PiSessionOptions): Promise<PiSess
     return profiles.profileAccessCredential(selected);
   };
   hooks.modelProfileIsolated = async () => selected?.provider === "pi";
+  hooks.modelFromPool = () => profiles.piTurnsOnPool(options.projectId, conversationId);
   hooks.modelCredentialList = async () => {
     if (selected?.provider === "pi") return (await (await profiles.profileModelRuntime(selected)).listCredentials()).map(({ providerId, type }) => ({ providerId, type }));
     const entries = await nodePiCredentialList() as Array<{ providerId: string; type: "oauth" | "api_key" }>;

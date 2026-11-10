@@ -66,6 +66,24 @@ export async function bootstrapPiProfile(projectId: string, conversationId: stri
   return choice?.kind === "profile" ? choice.profile : undefined;
 }
 
+/** Whether Pi turns of this conversation run on a subscription pool (chosen for its project, workspace, cluster or by default). */
+export async function piTurnsOnPool(projectId: string, conversationId: string | undefined): Promise<boolean> {
+  if (poolProfileContext()) return true;
+  const automation = automationProfileContext();
+  if (automation?.profileId) return false;
+  const accountId = automation?.accountId ?? actingAccount()?.accountId;
+  if (!accountId) return false;
+  const project = await asNode(() => getProject(projectId));
+  if (!project) return false;
+  const { resolveSubscriptionChoice } = await import("./pools.js");
+  const scope = await projectScope(project.id, project.type!, conversationId);
+  // A pool chosen for Pi itself, or for one of the subscriptions a Pi turn can run on.
+  return (["pi", "claude", "openai-codex"] as const).some((provider) => {
+    try { return resolveSubscriptionChoice(accountId, provider, scope, automation ? "automation" : "interactive")?.kind === "pool"; }
+    catch { return false; }
+  });
+}
+
 export async function projectProviderProfile(projectId: string, conversationId: string | undefined, provider: string, engine: "claude" | "pi" | "kiro" = "claude"): Promise<ProviderProfile | undefined> {
   const targetProvider = provider === "anthropic" ? "claude" : provider;
   const poolProfile = poolProfileContext();

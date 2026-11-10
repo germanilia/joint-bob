@@ -70,6 +70,12 @@ export interface PiCoreHooks {
   modelCredential?(provider: string): Promise<NonNullable<ReturnType<typeof import("@earendil-works/pi-coding-agent").readStoredCredential>> | undefined>;
   modelProfileIsolated?(): Promise<boolean>;
   modelCredentialList?(): Promise<Array<{ providerId: string; type: "oauth" | "api_key" }>>;
+  /**
+   * Whether the conversation's turns run on a subscription pool. A pool gives each attempt its own account
+   * and model when a turn starts; at open nothing of it is in reach, so this machine may hold no sign-in
+   * for the conversation's saved model.
+   */
+  modelFromPool?(): Promise<boolean>;
   /** Guardian's decision on a tool call, a tool's output or a person's message, made by the server. */
   guardian?(conversationId: string, request: GuardianRequest): Promise<GuardianVerdict>;
 }
@@ -219,7 +225,14 @@ export async function createCoreSession(modelRuntime: ModelRuntime, inputs: PiCo
       const selectedModel = modelRuntime.getModel(desiredModel.provider, desiredModel.modelId);
       // A transcript with messages keeps whatever model the SDK restored when its saved model is gone.
       if (!selectedModel && !restoredBySdk) throw new Error(`Model not found: ${desiredModel.provider}/${desiredModel.modelId}`);
-      if (selectedModel && (session.model?.provider !== selectedModel.provider || session.model.id !== selectedModel.id)) await session.setModel(selectedModel);
+      if (selectedModel && (session.model?.provider !== selectedModel.provider || session.model.id !== selectedModel.id)) {
+        try { await session.setModel(selectedModel); }
+        catch (error) {
+          // The saved model's provider has no sign-in on this machine ("No API key for …"). On a pool that is
+          // expected: the conversation opens on the model it has, and the pool sets the model for each turn.
+          if (!await hooks.modelFromPool?.().catch(() => false)) throw error;
+        }
+      }
       if (thinkingLevel !== undefined) await session.setThinkingLevel(thinkingLevel);
     }
     const savedTools = sessionToolSelection(sessionManager);
