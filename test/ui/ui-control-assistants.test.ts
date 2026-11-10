@@ -251,6 +251,7 @@ test("from 1700 px the list is a column between the board and Bob's chat that fo
   const rail = page.getByTestId("control-assistants-rail");
   await rail.waitFor();
   assert.equal(await page.getByTestId("control-tab-assistants").isVisible(), false, "the column replaces the tab");
+  await page.waitForFunction(() => document.querySelector('[data-testid="control-tab-live"]')?.getAttribute('aria-selected') === 'true');
   assert.equal(await page.getByTestId("control-tab-live").getAttribute("aria-selected"), "true", "an open Assistants tab goes back to the board");
   assert.equal(await page.getByTestId("control-assistants-rail-count").innerText(), "4");
   await rail.getByTestId("control-assistant-card").first().waitFor();

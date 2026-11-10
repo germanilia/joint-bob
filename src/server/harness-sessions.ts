@@ -239,7 +239,10 @@ export function dropZombieHarnessSessions(now = Date.now()): SharedHarnessSessio
   return dropped;
 }
 
-export function attachHarnessClient(shared: SharedHarnessSession, socket: WebSocket): void { clearIdle(shared); shared.clients.add(socket); }
+export function attachHarnessClient(shared: SharedHarnessSession, socket: WebSocket): void {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  clearIdle(shared); shared.clients.add(socket);
+}
 export function detachHarnessClient(shared: SharedHarnessSession, socket: WebSocket): void { shared.clients.delete(socket); scheduleIdle(shared); }
 export function sendHarnessStatus(shared: SharedHarnessSession, socket?: WebSocket): void {
   const clients = socket ? [socket] : shared.clients;

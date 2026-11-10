@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+import { teamAssistantForConversation } from '../assistant-resources.js';
+import { productionGuardStatus, PRODUCTION_RULE_ID } from './production-rule.js';
+import { getGuardianSettings } from './settings.js';
 import { recordAuditEvent } from "../audit.js";
 import { getHarness } from "../harnesses.js";
 import { genericSecretEnvironment } from "../secrets.js";
@@ -120,8 +124,13 @@ async function applyFixes(identity: GuardianIdentity, request: GuardianRequest, 
  * applies is asked in one request per group. A block anywhere wins; user approval never overrides it.
  */
 export async function checkGuardian(identity: GuardianIdentity, original: GuardianRequest): Promise<GuardianVerdict> {
-  if (isGuardianExempt(identity.projectId, identity.conversationId)) return { action: "continue" };
+  const team = !!teamAssistantForConversation(identity.projectId, identity.conversationId);
+  const effectCapable = original.kind === 'tool' && (original.category === 'commands' || original.category === 'file-changes');
+  if (team && effectCapable && productionGuardStatus(getGuardianSettings()) !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
+  if (!team && isGuardianExempt(identity.projectId, identity.conversationId)) return { action: "continue" };
   const groups = await guardianGroups();
+  // Team Pi retains write/edit without a shell. The mandatory production rule checks those effects too.
+  if (team && effectCapable) for (const group of groups) group.rules = group.rules.map(rule => rule.id === PRODUCTION_RULE_ID ? { ...rule, check: 'all' } : rule);
   if (!groups.some((group) => group.rules.some((rule) => ruleApplies(rule, original)))) return { action: "continue" };
   let request = original;
   for (let attempt = 0; ; attempt += 1) {
@@ -137,7 +146,7 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
       audit(identity, request, "blocked", acting);
       return announced(identity, `Guardian blocked this ${what(request)}. Rule ${acting.map(describe).join("; ")}.`);
     }
-    if (outcome === "fix" && attempt < MAX_FIX_ATTEMPTS) {
+    if (!team && outcome === "fix" && attempt < MAX_FIX_ATTEMPTS) {
       const fixed = await applyFixes(identity, request, acting);
       if (fixed) { audit(identity, request, "fixed", acting); request = fixed; continue; }
     }
@@ -145,6 +154,7 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
     const reviewed = acting.length ? acting : findings;
     const decision = await requestGuardianReview({
       projectId: identity.projectId, conversationId: identity.conversationId, title: reviewTitle(identity, request), subject: reviewSubject(request),
+      operationKey: createHash('sha256').update(JSON.stringify(request)).digest('hex'),
       detail: reviewed.map((finding) => `${finding.rule.name} rule · ${percent(finding.probability)} sure · ${finding.model}${finding.group.relay ? ` · ${finding.group.source}` : ""}`).join("\n"),
     }, identity.signal);
     audit(identity, request, decision === "allow" ? "allowed" : "denied", reviewed);

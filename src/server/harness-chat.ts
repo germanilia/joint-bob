@@ -4,6 +4,7 @@ import { resourceOwner, ownerAsActor } from "../ownership.js";
 import { actingAccount, runAsAccount, type ActingAccount } from "../account-context.js";
 import { withoutAutomationProfile } from "../provider-profiles/context.js";
 import { filterPersonalAssistantTools, personalAssistantContext, personalAssistantSettings, personalAssistantToolBaseline } from "../personal-assistants.js";
+import { TEAM_AGENT_TOOL_NAMES } from '../assistant-teams/tools.js';
 import { teamQueuedTurn, teamConversation } from '../assistant-teams/runtime.js';
 import { revokeBrowserAgentTokens } from "../browser-agent.js";
 import { attachMessageAuthors, authoredPromptText, recordMessageAuthor, type MessageAuthor } from "../message-authors.js";
@@ -649,6 +650,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
         // A topic's baseline may predate Joint Bob's own tools; they are always offered when the session has them.
         const builtIn = JOINT_BOB_AGENT_TOOL_NAMES.filter(name => !baseline.includes(name) && available.some(tool => tool.name === name));
         const allowed = filterPersonalAssistantTools([...baseline, ...builtIn], assistantSettings).filter(name => !teamTurn || !JOINT_BOB_AGENT_TOOL_NAMES.includes(name));
+        if (teamTurn) for (const name of TEAM_AGENT_TOOL_NAMES.filter(name => teamTurn.assignment.role === 'bob' || name.startsWith('mcp__joint_bob__team_memory_'))) if (available.some(tool => tool.name === name) && !allowed.includes(name)) allowed.push(name);
         if (allowed.length !== active.length || allowed.some(name => !active.includes(name))) await connection.shared.session.setTools(allowed);
         if (!assistantSettings.allowBrowser) revokeBrowserAgentTokens(connection.project.id, connection.conversationId);
       }

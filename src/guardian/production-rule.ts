@@ -24,7 +24,7 @@ export function productionGuardStatus(settings: GuardianSettings): ProductionGua
   if (!settings.enabled) return "guardian-off";
   const rule = settings.rules.find((candidate) => candidate.id === PRODUCTION_RULE_ID);
   if (!rule) return "rule-missing";
-  return rule.enabled && rule.ifYes === "ask" ? "on" : "rule-off";
+  return rule.enabled && rule.ifYes === "ask" && (rule.check === 'commands' || rule.check === 'all') && rule.question === PRODUCTION_RULE.question ? "on" : "rule-off";
 }
 
 /** Guardian on, with the production rule present, on, and set to ask. Everything else in the settings stays as it was. */

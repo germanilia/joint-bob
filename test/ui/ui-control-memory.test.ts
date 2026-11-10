@@ -104,7 +104,10 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
   }, names);
   await page.getByTestId("control-tab-live").click();
   await page.getByTestId("control-tab-memory").click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="memory-topic"]').length > 1);
+  await page.waitForFunction(() => {
+    const list = document.querySelector('[data-testid="memory-topic-list"]');
+    return list && list.clientHeight >= 3 * 46 + 2 * 2 && document.querySelectorAll('[data-testid="memory-topic"]').length >= 3;
+  });
   const shown = (await rowNames(page)).length;
   assert.ok(shown >= 3 && shown < 16, `the rows that fit the height are shown, not all 16: ${shown}`);
   assert.equal(await page.getByTestId("memory-topic-list").evaluate((list) => list.scrollHeight <= list.clientHeight + 1), true, "nothing scrolls");

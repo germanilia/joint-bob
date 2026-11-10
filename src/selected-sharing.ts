@@ -18,7 +18,8 @@ export function ensureSelectedSharingSchema(db: DatabaseSync): void {
 /** Whose selection this is. Each person on the node shares only what they own; without one
     (the node itself) the selection covers everything the node owns. */
 export interface SharingScope { accountId: string }
-const owns = (db: DatabaseSync, kind: "project" | "workspace", id: string, scope?: SharingScope) => !scope || resourceOwner(kind, id, db) === scope.accountId;
+const dedicated = (db: DatabaseSync, id: string) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assistant_team_projects'").get() && db.prepare('SELECT 1 FROM assistant_team_projects WHERE project_id=?').get(id));
+const owns = (db: DatabaseSync, kind: "project" | "workspace", id: string, scope?: SharingScope) => !(kind === 'project' && dedicated(db, id)) && (!scope || resourceOwner(kind, id, db) === scope.accountId);
 
 export function clusterSharingView(db: DatabaseSync, local: string, clusterId: string, scope?: SharingScope) {
   ensureSelectedSharingSchema(db);
@@ -49,6 +50,7 @@ export function clusterSharingView(db: DatabaseSync, local: string, clusterId: s
 
 export function inheritWorkspaceSharing(db: DatabaseSync, local: string, projectId: string, workspaceId: string): void {
   ensureSelectedSharingSchema(db);
+  if (dedicated(db, projectId)) return;
   const state = getResourcePolicyState(db,"project",projectId);
   if(state.ownerNodeId!==local||state.deleted)return;
   const clusters = db.prepare(`SELECT s.cluster_id,s.node_ids FROM cluster_v2_share_selections s JOIN sharing_memberships m

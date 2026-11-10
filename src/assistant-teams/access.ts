@@ -1,3 +1,4 @@
+import type { DatabaseSync } from 'node:sqlite';
 import type { AuthSession } from '../auth.js';
 import { listLocalUsers, listReplicatedUsers, visitorClusterIds, validUsername } from '../auth.js';
 import { accountIdFor, canonicalLocalHome } from '../accounts.js';
@@ -27,7 +28,15 @@ export async function teamMembershipRevision(clusterId: string): Promise<number>
 async function verify(member: ClusterMember): Promise<void> {
   await teamMembershipRevision(member.clusterId);
   const db = await teamDatabase();
+  verifyReceivedMember(db, member);
+}
+
+/** Synchronous form for ordinary project inventory/transcript authorization. */
+export function verifyReceivedMember(db: DatabaseSync, member: ClusterMember): void {
   const snapshot = getMembershipSnapshot(db, member.clusterId);
+  const key = pinnedClusterPublicKey(db, snapshot.signerNodeId);
+  if (!key || snapshot.body.closed || snapshot.signerNodeId !== snapshot.body.managerNodeId
+    || !verifyClusterMessage(key, 'membership-snapshot', JSON.stringify(snapshot.body), snapshot.signature)) throw new TeamError('Invalid membership snapshot', 403);
   if (!validUsername(member.username) || accountIdFor(member.homeNodeId, member.username) !== member.accountId
     || !snapshot.body.members.some(m => m.nodeId === member.homeNodeId)) throw new TeamError('Account home is not a cluster member', 403);
   const localHome = canonicalLocalHome(db);
@@ -35,6 +44,10 @@ async function verify(member: ClusterMember): Promise<void> {
     if (!listLocalUsers().some(u => !u.disabled && u.accountId === member.accountId && u.username === member.username)
       || !accountInCluster(db, member.accountId, member.clusterId)) throw new TeamError('Account is not a cluster member', 403);
   } else {
+    const received = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_replication_received'").get()
+      ? db.prepare('SELECT accounts FROM account_replication_received WHERE home_node_id=?').get(member.homeNodeId) as { accounts: string } | undefined : undefined;
+    if (received && !(JSON.parse(received.accounts) as { accountId: string; clusterIds: string[] }[]).some(a => a.accountId === member.accountId && a.clusterIds.includes(member.clusterId)))
+      throw new TeamError('Received account snapshot denies membership', 403);
     const knownVisitor = listReplicatedUsers().some(u => u.homeNodeId === member.homeNodeId && u.username === member.username);
     const visitor = knownVisitor && visitorClusterIds(member.accountId).includes(member.clusterId);
     const claim = db.prepare('SELECT 1 FROM assistant_team_home_claims WHERE cluster_id=? AND account_id=? AND home_node_id=? AND username=? AND join_sequence=?')

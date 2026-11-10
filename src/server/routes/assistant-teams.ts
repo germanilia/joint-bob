@@ -3,8 +3,9 @@ import { z } from 'zod';
 import type { AuthSession } from '../../auth.js';
 import { app } from '../state.js';
 import { requireClusterMember, requirePeerClusterMember, requireTeamMember, teamMemberFromCluster, teamMembershipRevision, type ClusterMember } from '../../assistant-teams/access.js';
-import { createTeam, getTeam, getTeamAssignment, insertTeamAssignment, listTeamAgents, listTeams, prepareTeamProject, resolveTeamExecutor, saveTeamSettings, announceTeamChange, teamDatabase, TeamError } from '../../assistant-teams/store.js';
-import { initializeTeamAgents, runTeamTurn, teamAgentReadiness } from '../../assistant-teams/runtime.js';
+import { createTeam, getTeam, getTeamAssignment, listTeamAgents, listTeams, prepareTeamProject, resolveTeamExecutor, saveTeamSettings, announceTeamChange, onTeamChange, teamDatabase, TeamError } from '../../assistant-teams/store.js';
+import { runBrowserTeamAssignment, confirmTeamInquiry, wakeTeamWork, resolveTeamApproval, teamWorkStatus, routeTeamAssignment } from '../../assistant-teams/assignments.js';
+import { initializeTeamAgents, teamAgentReadiness } from '../../assistant-teams/runtime.js';
 import { getPersonalAssistant, savePersonalAssistant, personalAssistantDatabase } from '../../personal-assistants.js';
 import { assistantResourcePreferences, saveResourcePreferences } from './assistant-resources.js';
 import { listAssistantFiles, saveAssistantFile, deleteAssistantFile } from '../../assistant-capabilities.js';
@@ -91,7 +92,6 @@ async function agent(request: Request, response: Response) {
 }
 async function changeRevision(teamId: string, expected: number) {
   if (!(await teamDatabase()).prepare('UPDATE assistant_teams SET revision=revision+1 WHERE id=? AND revision=?').run(teamId, expected).changes) throw new TeamError('Stale team revision', 409);
-  announceTeamChange(teamId);
 }
 app.get('/api/assistant-teams/:id/agents', route(async (request, response) => {
   const teamId = id.parse(request.params.id); await requireTeamMember(session(response), teamId);
@@ -107,6 +107,8 @@ app.put('/api/assistant-teams/:id/agents/:role', route(async (request, response)
     allowTerminal: z.boolean(), executionSettings: z.object({ harnessId: z.literal('pi'), provider: z.string().min(1).max(100), modelId: z.string().min(1).max(200), reasoning: z.string().min(1).max(100) }).strict() }).strict().parse(request.body);
   await changeRevision(team.id, body.expectedRevision);
   const updated = await savePersonalAssistant(team.executorAccountId, { ...profile, ...body }, profile.id);
+  announceTeamChange(team.id);
+  wakeTeamWork(team.id);
   return { profile: updated, revision: (await getTeam(team.id)).revision, readiness: await asNode(() => teamAgentReadiness(updated)) };
 }));
 app.get('/api/assistant-teams/:id/agents/:role/resources', route(async (request, response) => {
@@ -122,32 +124,39 @@ app.put('/api/assistant-teams/:id/agents/:role/resources', route(async (request,
   if (body.disabledSkills.some(name => !available.includes(name))) throw new TeamError('Unknown team skill', 400);
   await changeRevision(team.id, body.expectedRevision);
   await saveResourcePreferences(profile.id, { disabledSkills: body.disabledSkills, disabledPlugins: [] });
+  announceTeamChange(team.id);
   return { preferences: await assistantResourcePreferences(profile.id), revision: (await getTeam(team.id)).revision };
 }));
 app.post('/api/assistant-teams/:id/agents/:role/files', route(async (request, response) => {
   const { team, profile } = await agent(request, response);
-  const body = z.object({ name: z.string().min(1).max(240), data: z.string().max(28_000_000) }).strict().parse(request.body);
+  const body = z.object({ expectedRevision: revision, name: z.string().min(1).max(240), data: z.string().max(28_000_000) }).strict().parse(request.body);
+  await changeRevision(team.id, body.expectedRevision);
   await saveAssistantFile(profile.id, body.name, Buffer.from(body.data, 'base64'));
   announceTeamChange(team.id);
   return { files: await listAssistantFiles(profile.id) };
 }));
 app.delete('/api/assistant-teams/:id/agents/:role/files', route(async (request, response) => {
   const { team, profile } = await agent(request, response);
-  await deleteAssistantFile(profile.id, z.string().min(1).max(1000).parse(request.query.path));
+  const filePath = z.string().min(1).max(1000).parse(request.query.path);
+  await changeRevision(team.id, revision.parse(request.body?.expectedRevision));
+  await deleteAssistantFile(profile.id, filePath);
   announceTeamChange(team.id);
   return { files: await listAssistantFiles(profile.id) };
 }));
 app.post('/api/assistant-teams/:id/agents/:role/skills', route(async (request, response) => {
   const { team, profile } = await agent(request, response);
-  const body = z.object({ files: z.array(z.object({ relativePath: z.string().min(1).max(1000), data: z.string().max(5_592_408) }).strict()).max(100) }).strict().parse(request.body);
+  const body = z.object({ expectedRevision: revision, files: z.array(z.object({ relativePath: z.string().min(1).max(1000), data: z.string().max(5_592_408) }).strict()).max(100) }).strict().parse(request.body);
   const db = await personalAssistantDatabase();
+  await changeRevision(team.id, body.expectedRevision);
   await uploadWebhookSkill(db, profile.id, body.files.map(file => ({ ...file, data: Buffer.from(file.data, 'base64') })));
   announceTeamChange(team.id);
   return { skills: listWebhookSkills(db, profile.id) };
 }));
 app.delete('/api/assistant-teams/:id/agents/:role/skills/:skillId', route(async (request, response) => {
   const { team, profile } = await agent(request, response); const db = await personalAssistantDatabase();
-  await removeWebhookSkill(db, profile.id, id.parse(request.params.skillId));
+  const skillId = id.parse(request.params.skillId);
+  await changeRevision(team.id, revision.parse(request.body?.expectedRevision));
+  await removeWebhookSkill(db, profile.id, skillId);
   announceTeamChange(team.id);
   return { skills: listWebhookSkills(db, profile.id) };
 }));
@@ -156,29 +165,127 @@ app.post('/api/assistant-teams/:id/agents/:role/turn', route(async (request, res
   const member = await requireTeamMember(session(response), id.parse(request.params.id));
   const role = roleSchema.parse(request.params.role);
   const body = z.object({ subjectId: id, requestId: z.string().uuid(), message: z.string().trim().min(1).max(20000) }).strict().parse(request.body);
-  const team = await getTeam(member.teamId); await initializeTeamAgents(team);
-  const assignmentId = body.requestId;
-  let assignment = await getTeamAssignment(assignmentId);
-  if (!assignment) {
-    assignment = { id: assignmentId, teamId: team.id, rootId: assignmentId, parentId: null, subjectId: body.subjectId, role, requestedBy: member.accountId, sourceMessageId: body.requestId, destination: { kind: 'group', sourceMessageId: body.requestId }, state: 'accepted', requestId: body.requestId };
-    try { await insertTeamAssignment(assignment); }
-    catch (error) {
-      if (!String(error).includes('UNIQUE')) throw error;
-      const existing = await getTeamAssignment(assignmentId); if (!existing) throw error;
-      assignment = existing;
-    }
-  }
-  if (assignment.teamId !== team.id || assignment.role !== role || assignment.subjectId !== body.subjectId || assignment.requestedBy !== member.accountId) throw new TeamError('Request ID belongs to another assignment', 409);
-  return runTeamTurn({ assignment, message: body.message });
+  return runBrowserTeamAssignment(member, role, body.subjectId, body.requestId, body.message);
 }));
 // Execution of an already accepted, selected-subject assignment. Lifecycle/delivery belongs to Task 6.
 app.post('/api/assistant-teams/:id/assignments/:assignmentId/run', route(async (request, response) => {
   const member = await requireTeamMember(session(response), id.parse(request.params.id));
   const assignment = await getTeamAssignment(id.parse(request.params.assignmentId));
   if (!assignment || assignment.teamId !== member.teamId || assignment.requestedBy !== member.accountId) throw new TeamError('Assignment is not this initiating member\'s', 403);
-  const body = z.object({ message: z.string().trim().min(1).max(20000) }).strict().parse(request.body);
-  return runTeamTurn({ assignment, message: body.message });
+  throw new TeamError('Direct assignment reruns are disabled; submit a new member request through the assignment service', 409);
 }));
+
+app.post('/api/assistant-teams/:id/assignments/:assignmentId/route', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const assignment = await getTeamAssignment(id.parse(request.params.assignmentId));
+  if (!assignment || assignment.teamId !== member.teamId) throw new TeamError('Unknown team assignment', 404);
+  if (assignment.subjectId || !['accepted', 'waiting_for_human'].includes(assignment.state)) throw new TeamError('Assignment is not waiting for a subject', 409);
+  const body = z.discriminatedUnion('kind', [z.object({ kind: z.literal('new') }).strict(), z.object({ kind: z.literal('continue'), subjectId: id }).strict(), z.object({ kind: z.literal('clarify') }).strict()]).parse(request.body);
+  await routeTeamAssignment(assignment.id, body); wakeTeamWork(member.teamId); return { ok: true };
+}));
+app.get('/api/assistant-teams/:id/assignments', route(async (request, response) => {
+  return teamWorkStatus(await requireTeamMember(session(response), id.parse(request.params.id)));
+}));
+app.get('/api/assistant-teams/:id/reviews', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const { allPendingGuardianReviews } = await import('../../guardian/reviews.js');
+  return { reviews: allPendingGuardianReviews().filter(review => review.team?.teamId === member.teamId) };
+}));
+app.post('/api/assistant-teams/:id/assignments/:assignmentId/reviews/:reviewId', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const body = z.object({ allow: z.boolean() }).strict().parse(request.body);
+  await resolveTeamApproval(member, id.parse(request.params.assignmentId), id.parse(request.params.reviewId), body.allow);
+  return { ok: true };
+}));
+app.post('/api/assistant-teams/:id/inquiries/:inquiryId/confirm', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const body = z.object({ decision: z.enum(['confirm', 'dismiss']) }).strict().parse(request.body);
+  await confirmTeamInquiry(member, id.parse(request.params.inquiryId), body.decision);
+  wakeTeamWork(member.teamId); return { ok: true };
+}));
+
+const memoryPage = z.object({ offset: z.coerce.number().int().nonnegative().default(0), limit: z.coerce.number().int().min(1).max(100).default(50) }).strict();
+app.get('/api/assistant-teams/:id/memory/topics', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const p = memoryPage.parse(request.query);
+  return { topics: await (await import('../../assistant-teams/memory.js')).listTeamMemoryTopics(member, p.offset, p.limit) };
+}));
+app.get('/api/assistant-teams/:id/memory/changes', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const p = memoryPage.parse(request.query);
+  return { changes: await (await import('../../assistant-teams/memory.js')).listTeamMemoryChanges(member, p.offset, p.limit) };
+}));
+app.get('/api/assistant-teams/:id/memory/status', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  return { learning: await (await import('../../assistant-teams/memory.js')).teamMemoryStatus(member) };
+}));
+app.get('/api/assistant-teams/:id/memory/topics/:topic', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  return (await import('../../assistant-teams/memory.js')).readTeamMemoryTopic(member, String(request.params.topic));
+}));
+app.put('/api/assistant-teams/:id/memory/topics/:topic', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const memory = await import('../../assistant-teams/memory.js');
+  const body = memory.teamMemoryWriteSchema.omit({ topic: true }).parse(request.body);
+  return memory.writeTeamMemory(member, { ...body, topic: String(request.params.topic) });
+}));
+app.post('/api/assistant-teams/:id/memory/changes/:changeId/revert', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const body = z.object({ expectedRevision: z.number().int().positive() }).strict().parse(request.body);
+  return (await import('../../assistant-teams/memory.js')).revertTeamMemory(member, id.parse(request.params.changeId), body.expectedRevision);
+}));
+app.get('/api/assistant-teams/:id/messages/:messageId', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const message = await (await import('../../assistant-teams/conversations.js')).getTeamMessage(member.teamId, id.parse(request.params.messageId));
+  if (!message) throw new TeamError('Team message not found', 404);
+  return { message };
+}));
+
+app.get('/api/assistant-teams/:id/messages', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const p = memoryPage.parse(request.query);
+  const db = await (await import('../../assistant-teams/conversations.js')).conversationDatabase();
+  return { messages: db.prepare('SELECT record FROM assistant_team_messages WHERE team_id=? ORDER BY rowid DESC LIMIT ? OFFSET ?').all(member.teamId, p.limit, p.offset).map(row => JSON.parse(String(row.record))) };
+}));
+app.get('/api/assistant-teams/:id/decisions', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const p = memoryPage.parse(request.query);
+  const db = await (await import('../../assistant-teams/conversations.js')).conversationDatabase();
+  // Initialize the diagnostics schema through its public read seam.
+  await (await import('../../assistant-teams/decisions.js')).listTeamDecisions(member.teamId, 1);
+  return { decisions: db.prepare('SELECT record FROM assistant_team_decisions WHERE team_id=? ORDER BY rowid DESC LIMIT ? OFFSET ?').all(member.teamId, p.limit, p.offset).map(row => JSON.parse(String(row.record))) };
+}));
+app.get('/api/assistant-teams/:id/readiness', route(async (request, response) => {
+  await requireTeamMember(session(response), id.parse(request.params.id));
+  const { systemAiSettings } = await import('../../system-ai-config.js');
+  const { systemDecisionKey } = await import('../../system-ai.js');
+  const { decisionModelTarget } = await import('../../classifiers/conversation-routing.js');
+  const model = systemAiSettings().decision.model;
+  let ready = false;
+  try { const key = systemDecisionKey(model); ready = Boolean(key && await decisionModelTarget(model, key)); } catch { /* Safe readiness only, never credentials or provider errors. */ }
+  const host = await (await import('../../cluster.js')).getClusterNode();
+  return { host: { id: host.id, name: host.name }, runtime: 'pi', decision: { model, ready } };
+}));
+app.get('/api/assistant-teams/:id/events', async (request, response, next) => {
+  try {
+    const teamId = id.parse(request.params.id), auth = session(response);
+    await requireTeamMember(auth, teamId);
+    response.setHeader('Content-Type', 'text/event-stream');
+    response.setHeader('Cache-Control', 'no-cache, no-store');
+    response.setHeader('X-Accel-Buffering', 'no');
+    response.flushHeaders();
+    let closed = false;
+    const send = async (entityIds: string[] = []) => {
+      try {
+        await requireTeamMember(auth, teamId);
+        if (!closed) response.write(`data: ${JSON.stringify({ teamId, entityIds })}\n\n`);
+      } catch { response.end(); }
+    };
+    const dispose = onTeamChange((changed, entityIds) => { if (changed === teamId) void send(entityIds); });
+    response.on('close', () => { closed = true; dispose(); });
+    await send();
+  } catch (error) { if (error instanceof TeamError) response.status(error.status).json({ error: error.message }); else next(error); }
+});
 
 // Not a generic account proxy: the signed home asserts exactly one account's selected
 // cluster membership. Middleware verifies signature, nonce, recipient and relay sender.

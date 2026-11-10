@@ -9,6 +9,7 @@ Every deployment is a version. The newest section must always match the
 - Bob now looks at a finished conversation about 3 seconds after its turn ends instead of 20, so its verdict on whether it waits for you shows up sooner.
 - Added shared assistant teams: a cluster can now set up one team of six role assistants (Bob, product, designer, QA, PR reviewer, support) whose skills, files and model settings stay separate from your personal assistants, and whose conversations never reach your private collaboration tools.
 - Added Telegram for assistant teams: a team can connect a bot, members enroll their Telegram accounts, and messages from approved groups are saved with their attachments for the team.
+- Added team coordination in Telegram: Bob acknowledges requests to a team's specialists, passes work between them, and posts the final answer, while direct calls go straight to the named specialist. Team members set the thresholds for when Bob acts on or asks about a group conversation, and the team keeps a shared memory of decisions and topics.
 
 ## 2.253.2 — 2026-11-09
 

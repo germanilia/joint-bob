@@ -40,6 +40,7 @@ import "./app/control-moves.js";
 import "./app/control-phone.js";
 import "./app/control-clusters.js";
 import "./app/control-telegram.js";
+import "./app/control-team.js";
 import "./app/project-explorer.js";
 import "./app/git-review.js";
 import "./app/activity-overview.js";

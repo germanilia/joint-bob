@@ -19,6 +19,7 @@ import { createPiProviderCatalog, type PiProviderCatalog } from "./harnesses/pi/
 import { forgetTranscriptSummary, storeTranscriptSummary, storedTranscriptSummary } from "./transcript-summary-store.js";
 import { getScopedResourcePaths, getSettings } from "./settings.js";
 import { teamAssistantForConversation } from './assistant-resources.js';
+import { isTeamMemorySession } from './assistant-teams/runtime.js';
 import { personalAssistantDatabase } from './personal-assistants.js';
 import { listWebhookSkills } from './webhook-skills.js';
 import { agentResourcePaths, piAgentResourcePaths } from "./agent-resources.js";
@@ -31,7 +32,8 @@ import { toolTarget } from "./tool-target.js";
 import { createCoreSession, type PiCoreHooks, type PiCoreInputs, type PiCredentials, type PiSessionHandle } from "./pi-session-core.js";
 import { currentRuntime, runInRuntime, serviceRuntime } from "./account-runtime.js";
 import { managedMcpBridgeConfigs, nativeMcpServerConfigs } from "./mcp/agent.js";
-import { actingAccount } from "./account-context.js";
+import { actingAccount, runAsAccount } from "./account-context.js";
+import { mcpAgentEnvironment } from './mcp/agent.js';
 import type { ManagedMcpServer } from "./mcp/store.js";
 import { activeMcpServers } from "./resource-activation.js";
 
@@ -687,9 +689,11 @@ export async function nodePiCredentialList(): Promise<Array<{ providerId: string
 
 export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
   const conversation = (sessionId: string): SecretConversation => ({ engine: "pi", sessionId });
+  let teamToolEnvironment: NodeJS.ProcessEnv = {};
   const credentials = (sessionId: string, conversationId: string): PiCredentials => {
     try {
-      if (teamAssistantForConversation(options.projectId, conversationId)) return { environment: {}, capabilityEnvironment: {}, credentialContext: '' };
+      if (isTeamMemorySession(options.projectId, conversationId)) return { environment: {}, capabilityEnvironment: {}, credentialContext: '' };
+      if (teamAssistantForConversation(options.projectId, conversationId)) return { environment: {}, capabilityEnvironment: teamToolEnvironment, credentialContext: '' };
       return {
         environment: agentEnvironment(options.projectId, conversation(sessionId)),
         capabilityEnvironment: agentCapabilityEnvironment(options.projectId, "pi", conversationId, conversation(sessionId)),
@@ -706,15 +710,27 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
       ?? (await getConversationRecord(options.projectId, "pi", sessionId))?.conversationId
       ?? sessionId,
     persistAccounts: (sessionId) => persistConversationSecretAccounts("pi", sessionId, options.conversation?.accountIds ?? []),
-    credentials: async (sessionId, conversationId) => credentials(sessionId, conversationId),
+    credentials: async (sessionId, conversationId) => {
+      const teamContext = await (await import('./assistant-teams/runtime.js')).teamConversation(options.projectId, conversationId);
+      if (teamContext) {
+        const team = await (await import('./assistant-teams/store.js')).getTeam(teamContext.teamId);
+        const user = (await import('./auth.js')).listLocalUsers().find(user => user.accountId === team.executorAccountId && !user.disabled);
+        if (!user) throw new Error('Team execution identity unavailable');
+        // A server-minted, conversation-scoped MCP capability, not an authenticated human approval/session.
+        // Every call independently requires a running assignment and reauthorizes its initiating member.
+        teamToolEnvironment = runAsAccount({ accountId: user.accountId, username: user.username, role: null, homeNodeId: null, isRemoteLogin: false }, () => mcpAgentEnvironment(options.projectId, 'pi', conversationId));
+      }
+      return credentials(sessionId, conversationId);
+    },
     credentialsNow: credentials,
     resources: async (conversationId) => {
+      if (isTeamMemorySession(options.projectId, conversationId)) return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: [], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [], skillRoots: [], managedSkillRoot: '', blockedSkillNames: [] };
       const teamAssistant = teamAssistantForConversation(options.projectId, conversationId);
       if (teamAssistant) {
         const db = await personalAssistantDatabase();
         const { assistantDisabledResources } = await import('./assistant-resources.js');
         const disabled = assistantDisabledResources(options.projectId, conversationId).skills;
-        return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: [], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [],
+        return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: ['joint_bob'], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [],
           skillRoots: listWebhookSkills(db, teamAssistant).filter(skill => !disabled.includes(skill.name)).map(skill => skill.path),
           managedSkillRoot: '', blockedSkillNames: disabled };
       }

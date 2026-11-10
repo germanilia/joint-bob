@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { messageFiles } from '../assistant-telegram.js';
 import { persistTeamMessage, type StoredTeamMessage, type TeamEntity } from './conversations.js';
 import { recheckTeamActor, requireTeamExecution, type TeamMember } from './access.js';
-import { TeamError } from './store.js';
+import { TeamError, announceTeamChange } from './store.js';
 import { telegramDatabase, tokenHash, teamTelegramConnection } from './telegram-store.js';
 interface Challenge {id:string;team_id:string;account_id:string;kind:string;expires_at:number;state:string;target:string|null;name:string|null}
 async function issue(member:TeamMember,kind:string) {
@@ -10,6 +10,7 @@ async function issue(member:TeamMember,kind:string) {
  const db=await telegramDatabase(), id=randomUUID(), code=randomBytes(24).toString('base64url'), expires=Date.now()+600000;
  db.prepare("UPDATE assistant_team_telegram_challenges SET state='replaced' WHERE team_id=? AND account_id=? AND kind=? AND state IN ('issued','pending')").run(member.teamId,member.accountId,kind);
  db.prepare('INSERT INTO assistant_team_telegram_challenges VALUES(?,?,?,?,?,?,?,NULL,NULL)').run(id,member.teamId,member.accountId,kind,tokenHash(code),expires,'issued');
+ announceTeamChange(member.teamId);
  return {id,code,expiresAt:new Date(expires).toISOString()};
 }
 export async function issueTeamEnrollment(member:TeamMember): Promise<{id:string;link:string;expiresAt:string}> {
@@ -22,6 +23,7 @@ export async function redeemTeamEnrollment(code:string,telegramUser:{id:string;n
  if(!row) throw new TeamError('Invalid or expired enrollment',403);
  await requireTeamExecution(row.team_id,row.account_id);
  if(!db.prepare("UPDATE assistant_team_telegram_challenges SET state='pending',target=?,name=? WHERE id=? AND state='issued' AND expires_at>?").run(telegramUser.id,telegramUser.name.slice(0,120),row.id,Date.now()).changes) throw new TeamError('Enrollment already redeemed',409);
+ announceTeamChange(row.team_id);
 }
 async function confirm(member:TeamMember,id:string,kind:string): Promise<void> {
  await recheckTeamActor(member); await requireTeamExecution(member.teamId,member.accountId);
@@ -33,6 +35,7 @@ async function confirm(member:TeamMember,id:string,kind:string): Promise<void> {
  else db.prepare('INSERT OR IGNORE INTO assistant_team_telegram_groups VALUES(?,?)').run(member.teamId,row.target);
  db.prepare("UPDATE assistant_team_telegram_challenges SET state='confirmed' WHERE id=?").run(id); db.exec('COMMIT');
  } catch(error) {db.exec('ROLLBACK');throw error;}
+ announceTeamChange(member.teamId);
 }
 export const confirmTeamEnrollment=(member:TeamMember,id:string):Promise<void>=>confirm(member,id,'member');
 export const issueTeamGroupChallenge=(member:TeamMember)=>issue(member,'group');
@@ -43,6 +46,7 @@ export async function redeemTeamGroupChallenge(teamId:string,code:string,chatId:
  if(!binding) throw new TeamError('Enrollment required',403);
  await requireTeamExecution(teamId,binding.account_id);
  if(!db.prepare("UPDATE assistant_team_telegram_challenges SET state='pending',target=? WHERE team_id=? AND account_id=? AND hash=? AND kind='group' AND state='issued' AND expires_at>?").run(chatId,teamId,binding.account_id,tokenHash(code),Date.now()).changes) throw new TeamError('Invalid group challenge',403);
+ announceTeamChange(teamId);
 }
 export async function authorizeTeamTelegram(teamId:string,chatId:string,telegramUserId:string):Promise<TeamMember> {
  const db=await telegramDatabase();

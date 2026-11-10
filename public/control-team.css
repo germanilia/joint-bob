@@ -1,0 +1,37 @@
+.team-control { padding: 16px; overflow: auto; min-width: 0; }
+.team-context-label { display: flex; gap: 8px; align-items: center; padding: 6px 14px; }
+.team-context-label select { max-width: min(100%, 340px); min-height: 44px; }
+.team-settings-area { border-top: 1px solid var(--line); margin-top: 16px; }
+.team-pager { display: flex; align-items: center; gap: 12px; }
+.team-control > select { max-width: 100%; min-height: 44px; }
+.team-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.team-card, .team-record { border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-wrap: anywhere; min-width: 0; }
+.team-field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.team-field input, .team-field textarea { min-width: 0; width: 100%; }
+.team-field textarea { min-height: 120px; }
+.team-settings { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.team-control details { margin-top: 16px; }
+.team-control summary { cursor: pointer; min-height: 44px; }
+.team-control button { min-height: 44px; }
+.team-telegram svg { display: block; width: 220px; max-width: 100%; }
+.team-page { max-width: 100%; height: min(55dvh, 560px); overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
+.team-page .team-record { flex: none; }
+.team-page .team-record-tall { max-height: 100%; overflow: auto; }
+.team-cards [hidden], .team-pager[hidden] { display: none; }
+.team-memory-editor-pane { max-height: min(70dvh, 640px); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.team-memory-editor-pane .team-editor { display: flex; flex-direction: column; align-items: stretch; }
+.team-memory-read { overflow-wrap: anywhere; white-space: pre-wrap; }
+.team-learning { padding: 12px; border: 1px solid var(--border); overflow-wrap: anywhere; }
+.team-pager { flex-wrap: wrap; }
+.team-phone-entry, .team-phone-context, .team-phone-nav { display: none; }
+@media (max-width: 1023px) {
+  body.view-control.team-context-active.team-phone-live #controlViews { display: flex; position: absolute; inset: 0; z-index: 6; background: var(--panel); }
+  .control-chat-head:has(.team-phone-entry) { flex-wrap: wrap; }
+  .control-chat-head .team-phone-entry { display: inline-flex; flex: 0 0 100%; width: fit-content; font-size: 12px; }
+  body:is(.control-phone-view, .team-phone-live) #controlViews > .team-phone-context { display: flex; flex: none; align-items: center; padding: 6px 12px; gap: 8px; }
+  .team-phone-context select { flex: 1; min-width: 0; min-height: 44px; }
+  body.team-context-active:is(.control-phone-view, .team-phone-live) #controlViews > .team-phone-nav { display: flex; flex: none; gap: 6px; padding: 4px 12px; }
+  .team-phone-nav button { min-height: 44px; }
+  .team-control { overflow: auto; }
+}
+@media (max-width: 760px) { .team-cards { grid-template-columns: minmax(0, 1fr); } }

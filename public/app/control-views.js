@@ -4,6 +4,20 @@
  */
 const views = new Map();
 let current = "live";
+let context = "";
+const overrides = new Map();
+
+/** Replace only the displayed panel, never the personal view's data or handlers. */
+export function setControlContext(next) {
+  context = next;
+  showControlView(current);
+}
+export function controlContext() { return context; }
+export function registerContextView(id, element) {
+  overrides.set(id, element);
+  element.hidden = true;
+  showControlView(current);
+}
 
 const tabs = () => document.querySelector("#controlTabs");
 
@@ -34,7 +48,7 @@ function renderTabs() {
 export function registerControlView({ id, title, order, element, onShow }) {
   const view = { id, title, order, element, onShow, badge: 0 };
   views.set(id, view);
-  element.hidden = id !== current;
+  element.hidden = id !== current || Boolean(context && overrides.has(id));
   renderTabs();
   return {
     setBadge(count) { view.badge = count; renderTabs(); },
@@ -46,9 +60,10 @@ export function showControlView(id) {
   const view = views.get(id);
   if (!view) return;
   current = id;
-  for (const candidate of views.values()) candidate.element.hidden = candidate.id !== id;
+  for (const candidate of views.values()) candidate.element.hidden = candidate.id !== id || Boolean(context && overrides.has(candidate.id));
+  for (const [key, element] of overrides) element.hidden = !context || key !== id;
   renderTabs();
-  view.onShow?.();
+  if (!context || !overrides.has(id)) view.onShow?.();
   window.dispatchEvent(new CustomEvent("control-view-changed", { detail: { id } }));
 }
 

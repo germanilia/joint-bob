@@ -222,6 +222,7 @@ export async function getPersonalAssistantTurn(accountId: string, assistantId: s
 export async function finishPersonalAssistantTurn(accountId: string, assistantId: string, requestId: string, response: string | null, failed = false, sourceMessages?: { userId: string | null; responseId: string | null }): Promise<boolean> {
   const db = await database();
   const result = db.prepare("UPDATE personal_assistant_turns SET response=?,status=?,source_message_id=?,source_response_id=? WHERE assistant_id=? AND request_id=? AND status='running' AND EXISTS(SELECT 1 FROM personal_assistants WHERE id=? AND account_id=?)").run(response, failed ? "failed" : "completed", sourceMessages?.userId ?? null, sourceMessages?.responseId ?? null, assistantId, requestId, assistantId, accountId);
+  if (result.changes) void import('./assistant-teams/assignments.js').then(({ teamTurnReceipt }) => teamTurnReceipt(assistantId)).catch(() => {});
   return Boolean(result.changes);
 }
 

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { personalContinuationAllowed } from '../control-center/auto-respond.js';
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type { AuthSession } from "../auth.js";
@@ -78,6 +79,7 @@ async function decide(actor: ActingAccount, settings: BobSettings, conversation:
 }
 
 async function push(actor: ActingAccount, conversation: Conversation, reason: string, instructions = ""): Promise<void> {
+  if (!await personalContinuationAllowed(conversation.projectId, conversation.conversationId)) throw new Error('Team continuation requires an explicit assignment');
   await runAsAccount(actor, () => queueConversationPrompt({
     projectId: conversation.projectId, engine: conversation.engine, sessionId: conversation.sessionId, message: personPushText(reason, instructions),
     requestId: randomUUID(), label: "Bob", until: "started",
@@ -92,6 +94,7 @@ const abandonAction = (conversation: Conversation): BobAction => ({ id: "convers
 
 /** Checks one conversation whose turn ended, as the person whose conversation it is, and acts on what is found. "busy" means the turn is still settling. */
 async function check(shared: SharedHarnessSession, actor: ActingAccount, turnEndedAt: number): Promise<"busy" | void> {
+  if (!await personalContinuationAllowed(shared.projectId, shared.conversationId)) return;
   const db = await bobDatabase();
   const settings = readBobSettings(db, actor.accountId);
   if (!settings.monitoring || settings.reviewCheck === "off") return;
@@ -168,6 +171,7 @@ function schedule(shared: SharedHarnessSession, turnAccountId: string | null, tu
   pending.set(key, setTimeout(() => {
     pending.delete(key);
     void (async () => {
+      if (!await personalContinuationAllowed(shared.projectId, shared.conversationId)) return;
       const owner = await ownerOf(shared, turnAccountId);
       if (owner && await check(shared, owner, turnEndedAt) === "busy" && attempt < BUSY_RETRIES) schedule(shared, turnAccountId, turnEndedAt, attempt + 1);
     })().catch((error) => console.warn("Bob's review check failed", error instanceof Error ? error.message : error));

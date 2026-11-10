@@ -22,6 +22,38 @@ const instructions: Record<TeamRole, string> = {
   support: 'Help diagnose technical problems and explain practical resolutions.',
 };
 const initializing = new Map<string, Promise<TeamAgent[]>>();
+
+// Ephemeral, tool-less knowledge sessions are not assistant turns or personal conversations.
+const memorySessions = new Set<string>();
+export function isTeamMemorySession(projectId: string, conversationId: string): boolean { return memorySessions.has(`${projectId}:${conversationId}`); }
+export async function runTeamKnowledgeWriter(teamId: string, material: string, instructions: string): Promise<string> {
+  const selected = (await import('../system-ai-config.js')).systemAiSettings().operations.knowledge;
+  if (!selected || selected.harnessId !== 'pi') throw new TeamError('Selected knowledge writer unavailable (isolated Pi required)', 503);
+  const team = await getTeam(teamId), project = await (await import('../store.js')).getProject(team.projectId);
+  if (!project || !selected.provider || !selected.modelId) throw new TeamError('Selected knowledge writer unavailable', 503);
+  const id = (await import('../internal-sessions.js')).internalSessionId(), key = `${team.projectId}:${id}`;
+  memorySessions.add(key);
+  try { return await (await import('../system-ai.js')).withSystemAiProfile('pi', selected.provider, async () => {
+    const runtime = await getHarnessRuntime('pi');
+    const session = await runtime.open({ projectId: team.projectId, cwd: project.path, sessionId: id });
+    let answer = ''; let timer: NodeJS.Timeout | undefined;
+    let stop = () => {};
+    try {
+      const settings = { ...session.settings(), provider: selected.provider, modelId: selected.modelId, reasoning: selected.thinkingLevel, enabledTools: [] };
+      await runtime.validateSettings(settings); await session.configure(settings); await session.setTools([]); await session.preflight();
+      const done = new Promise<void>((resolve, reject) => {
+        timer = setTimeout(() => { reject(new Error('Knowledge writer timed out')); void session.cancel().catch(() => {}); }, 120000);
+        stop = session.subscribe(event => {
+          if (event.type === 'textDelta') { answer += event.text ?? ''; if (answer.length > 24000) { reject(new Error('Knowledge output limit')); void session.cancel().catch(() => {}); } }
+          if (event.type === 'agent_end') resolve();
+          if (event.type === 'error') reject(new Error('Knowledge writer failed'));
+        });
+      });
+      await Promise.all([session.prompt({ text: `${instructions}\n\n${material}` }), done]);
+      return answer;
+    } finally { clearTimeout(timer); stop(); if (session.isBusy()) await session.cancel().catch(() => {}); session.dispose(); }
+  }); } finally { memorySessions.delete(key); }
+}
 async function database() {
   const db = await teamDatabase();
   db.exec(`CREATE TABLE IF NOT EXISTS assistant_team_conversations (
@@ -94,6 +126,10 @@ export async function teamQueuedTurn(projectId: string, conversationId: string, 
   return validated;
 }
 export async function teamAgentReadiness(profile: PersonalAssistant): Promise<string[]> {
+  // Pi's built-in write/edit tools are effect-capable even when the terminal is disabled.
+  const { productionGuardStatus } = await import('../guardian/production-rule.js');
+  const { getGuardianSettings } = await import('../guardian/settings.js');
+  if (productionGuardStatus(getGuardianSettings()) !== 'on') return ['Production-capable team work is blocked: enable the production Guardian guard'];
   if (profile.nodeId !== (await getClusterNode()).id) return ['Team execution host is unavailable'];
   if (!listLocalUsers().some(user => user.accountId === profile.accountId && !user.disabled)) return ['Host execution account is unavailable'];
   if (!profile.executionSettings) return ['Select a local runtime and model'];
@@ -127,7 +163,9 @@ export async function teamAssignmentDestination(assignment: TeamAssignment) {
 }
 export async function runTeamTurn(input: { assignment: TeamAssignment; message: string }): Promise<{ text: string; conversationId: string }> {
   const { team, profile } = await validateTeamAssignment(input.assignment);
-  if (!input.message.trim() || input.message.length > 20000) throw new TeamError('Invalid team message', 400);
+  // Internal ledger material includes full authorized text and extracted attachments.
+  // Browser entry points enforce their own input bound; never silently cut Telegram evidence.
+  if (!input.message.trim()) throw new TeamError('Invalid team message', 400);
   const { runPersonalAssistantAutomationTurn } = await import('../server/routes/personal-assistants.js');
   const turn = await asNode(() => runPersonalAssistantAutomationTurn(team.executorAccountId, profile.id, input.assignment.requestId, input.message,
     { label: `Team ${input.assignment.role}`, origin: 'assistant', team: { assignment: input.assignment } }));

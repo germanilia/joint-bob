@@ -148,6 +148,7 @@ export function validateAutoRespondProfile(accountId: string | null, config: Aut
 
 /** Turns auto respond on (resuming a stopped one and zeroing its count) with this configuration. */
 export async function enableAutoRespond(projectId: string, conversationId: string, config: AutoRespondConfig, enabledBy: MessageAuthor | null, creatorAccountId: string | null = enabledBy?.accountId ?? null, sourcePromptId: string | null = null, sourceRequestId: string | null = null): Promise<AutoRespondState> {
+  if (!await (await import('./control-center/auto-respond.js')).personalContinuationAllowed(projectId, conversationId)) throw new Error('Team conversations require explicit assignments, not Auto respond');
   const parsed = autoRespondConfigSchema.parse(config);
   validateAutoRespondProfile(creatorAccountId, parsed);
   return (await change(projectId, conversationId, (current) => ({

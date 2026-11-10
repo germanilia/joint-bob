@@ -1,3 +1,4 @@
+import { personalContinuationAllowed } from '../control-center/auto-respond.js';
 import { actingAccountFromSession, runAsAccount, type ActingAccount } from "../account-context.js";
 import { bobSays, registerBobAction } from "../control-center/bob-actions.js";
 import { appendBobMessage, bobDatabase, listBobAccounts, onBobMessage, onBobTimelineChanged, readBobSettings } from "../control-center/bob-store.js";
@@ -31,6 +32,7 @@ async function watchers(projectId: string): Promise<ActingAccount[]> {
 // ── Guardian: a step that needs the person's OK shows in the chat with the buttons to answer it ──────────
 
 async function announceReview(review: GuardianReview): Promise<void> {
+  if (review.team) return; // Team review API authenticates a real current member, never a private-owner action.
   const project = await getProject(review.projectId);
   const title = await conversationTitle(review.projectId, review.conversationId);
   const db = await bobDatabase();
@@ -72,6 +74,7 @@ const STOP_LABELS: Record<NonNullable<AutoRespondState["stopKind"]>, { importanc
 };
 
 async function announceAutoRespondStopped(state: AutoRespondState): Promise<void> {
+  if (!await personalContinuationAllowed(state.projectId, state.conversationId)) return;
   if (!state.stopKind || state.stopKind === "user-stopped") return;
   const project = await getProject(state.projectId);
   const title = await conversationTitle(state.projectId, state.conversationId);
@@ -96,6 +99,7 @@ async function announceAutoRespondStopped(state: AutoRespondState): Promise<void
  * paused and Bob is the one that turned it on. A responder the person turned on themselves is theirs, and keeps running.
  */
 export async function autoRespondHeldBack(state: AutoRespondState): Promise<boolean> {
+  if (!await personalContinuationAllowed(state.projectId, state.conversationId)) return true;
   if (isLeased(state.projectId, state.conversationId)) return true;
   if (state.enabledBy !== null || !state.creatorAccountId) return false;
   return !readBobSettings(await bobDatabase(), state.creatorAccountId).monitoring;

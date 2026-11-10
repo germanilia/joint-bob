@@ -320,6 +320,9 @@ app.post("/api/clusters/:clusterId/leave", handler(async (request, response) => 
     epochSchema.parse(request.body);
     unshareOwnedProjects(db, local.id, clusterId, person.accountId);
     removeClusterLocalMember(db, clusterId, person.accountId);
+    // A quiet revoked browser must lose its already rendered team data immediately.
+    const { teamDatabase, announceTeamChange } = await import('../../assistant-teams/store.js');
+    for (const team of (await teamDatabase()).prepare('SELECT id FROM assistant_teams WHERE cluster_id=?').all(clusterId) as { id: string }[]) announceTeamChange(team.id, [person.accountId]);
     response.json({ snapshot: getMembershipSnapshot(db, clusterId) });
     return;
   }

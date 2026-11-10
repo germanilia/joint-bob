@@ -8,6 +8,7 @@
  * encrypted machine transport; receivers store them under their own key for offline login.
  * Recovery codes remain at home. Version 2 peers continue to receive only the MFA policy.
  */
+import { invalidateTeamMembership } from './assistant-teams/invalidation.js';
 import { adminAccountId } from "./ownership.js";
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -45,6 +46,7 @@ export type AccountSnapshot = z.infer<typeof accountSnapshotSchema>;
 
 export function ensureAccountReplicationSchema(db: DatabaseSync): void {
   db.exec(`CREATE TABLE IF NOT EXISTS account_replication_deliveries (peer_id TEXT PRIMARY KEY, digest TEXT NOT NULL, delivered_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS account_replication_received (home_node_id TEXT PRIMARY KEY, accounts TEXT NOT NULL);
     DROP TABLE IF EXISTS cluster_v2_user_replication_outbox;`);
 }
 
@@ -107,6 +109,11 @@ export function recordAccountSnapshotDelivered(db: DatabaseSync, peer: string, d
     username or email belongs to someone else here) is skipped, not fatal. */
 export function applyAccountSnapshot(db: DatabaseSync, local: string, sender: string, input: unknown): { applied: string[]; rejected: string[] } {
   const snapshot = accountSnapshotSchema.parse(input);
+  ensureAccountReplicationSchema(db);
+  // Presence of this full snapshot permanently supersedes pre-snapshot facade claims,
+  // including identities that never had a replicated login record.
+  db.prepare('INSERT OR REPLACE INTO account_replication_received VALUES(?,?)').run(sender, '[]');
+  invalidateTeamMembership(db);
   if (isNodeBlocked(db, local, sender)) { removeReplicatedUsersFromNode(sender); return { applied: [], rejected: snapshot.accounts.map((account) => account.username) }; }
   const applied: string[] = [], rejected: string[] = [];
   // A person may sign in here through clusters both nodes are really in, whatever is stated.
@@ -138,6 +145,7 @@ export function applyAccountSnapshot(db: DatabaseSync, local: string, sender: st
   for (const user of listReplicatedUsers()) {
     if (user.homeNodeId === sender && !keep.has(user.username.toLowerCase()) && !rejected.some((name) => name.toLowerCase() === user.username.toLowerCase())) deleteReplicatedUser(sender, user.username);
   }
+  db.prepare('UPDATE account_replication_received SET accounts=? WHERE home_node_id=?').run(JSON.stringify(snapshot.accounts.filter(a => keep.has(a.username.toLowerCase())).map(a => ({ accountId: a.accountId, clusterIds: a.clusterIds.filter(id => shared.has(id)) }))), sender);
   return { applied, rejected };
 }
 

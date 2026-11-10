@@ -28,6 +28,7 @@ function fixture(resume: boolean) {
   const dependency: Record<string, any> = {
     app: { get: () => {}, post: (route: string, handler: any) => routes.set(route, handler), put: () => {}, delete: () => {} },
     registerTwinAssistantRoutes: () => {}, announceAssistantChanges: () => {},
+    teamConversation: async () => undefined,
     getClusterNode: async () => ({ id: "node" }), getPersonalAssistant: async () => entry, projectVisible: async () => true,
     listLocalUsers: () => [session], getProject: async () => project,
     getPersonalAssistantSourceHistory: async () => [], listPersonalAssistantTurns: async () => [],

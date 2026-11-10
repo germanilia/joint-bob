@@ -1,3 +1,4 @@
+import { guardTeamSocket } from './team-socket-access.js';
 import { queuedAutomationProfileSchema } from "../prompt-queue.js";
 import { isTrustedTwin } from "../cluster-sharing-policy.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
@@ -224,6 +225,8 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     socket.close(1008, "Project not found");
     return;
   }
+  await guardTeamSocket(socket, project.id, author);
+  if (socket.readyState !== WebSocket.OPEN) return;
   if(signedPeer){
     if(signedPeer!==(await getClusterNode()).id&&!await clusterPeerMayAccessProject(signedPeer,project.id)){socket.close(1008,'Project is not shared with this node');return;}
     trackRuntimeSocket(socket,signedPeer,project.id);

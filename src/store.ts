@@ -1,4 +1,6 @@
 import { visitorClusterIds } from "./auth.js";
+import { canonicalLocalHome } from './accounts.js';
+import { verifyReceivedMember } from './assistant-teams/access.js';
 import { inheritWorkspaceSharing } from "./selected-sharing.js";
 import { NotFoundError } from "./not-found.js";
 import { actingAccount, type ActingAccount } from "./account-context.js";
@@ -24,6 +26,8 @@ import {
 import type { ProjectRecord, WorkspaceId, WorkspaceRecord } from "./types.js";
 
 interface AddProjectOptions {
+  /** Server-owned team allocation only; never accepted from project HTTP input. */
+  teamScope?: { clusterId: string; executorAccountId: string };
   synced?: boolean;
   macPath?: string;
   syncFolderId?: string;
@@ -144,10 +148,11 @@ function saveProject(db: DatabaseSync, project: ProjectRecord): void {
   `).run(...projectValues(project));
 }
 
-function saveNewLocalProject(db: DatabaseSync, project: ProjectRecord): void {
+function saveNewLocalProject(db: DatabaseSync, project: ProjectRecord, teamScope?: AddProjectOptions['teamScope']): void {
   db.exec("SAVEPOINT project_create");
   try {
     saveProject(db, project);
+    if (teamScope) db.prepare('INSERT INTO assistant_team_projects VALUES(?,?,?)').run(project.id, teamScope.clusterId, teamScope.executorAccountId);
     registerLocalSharingResource(db, localNodeId, { kind: "project", id: project.id });
     inheritWorkspaceSharing(db, localNodeId, project.id, project.type ?? "personal");
     db.exec("RELEASE project_create");
@@ -499,8 +504,19 @@ export async function listProjects(): Promise<ProjectRecord[]> {
  * person's, even one shared into the same cluster. Twin copies are the admin's own machine's.
  * A visitor from another node sees projects shared into a cluster their home node is in.
  */
+function sharedTeamHostPresent(db: DatabaseSync, clusterId: string): boolean {
+  return Boolean(db.prepare('SELECT 1 FROM sharing_memberships WHERE cluster_id=? AND node_id=?').get(clusterId, localNodeId));
+}
 function projectVisibleToActor(db: DatabaseSync, projectId: string, account: ActingAccount | undefined = actingAccount()): boolean {
   if (!account) return true;
+  const team = tableExists(db, 'assistant_team_projects') ? db.prepare('SELECT cluster_id FROM assistant_team_projects WHERE project_id=?').get(projectId) as { cluster_id: string } | undefined : undefined;
+  if (team) {
+    try {
+      if (!sharedTeamHostPresent(db, team.cluster_id)) return false;
+      verifyReceivedMember(db, { clusterId: team.cluster_id, accountId: account.accountId, username: account.username, homeNodeId: account.homeNodeId ?? canonicalLocalHome(db) });
+      return true;
+    } catch { return false; }
+  }
   const owner = (db.prepare("SELECT owner_node_id FROM sharing_resource_owners WHERE kind='project' AND resource_id=?").get(projectId) as { owner_node_id: string } | undefined)?.owner_node_id ?? localNodeId;
   const sharedIn = (): string[] => { try { return resourceClusterIds(db, localNodeId, "project", projectId); } catch { return []; } };
   const clusters = () => owner === localNodeId ? [] : sharedIn();
@@ -795,7 +811,7 @@ export async function addProject(name: string, folderPath: string, options: AddP
     createdAt: now,
     updatedAt: now,
   };
-  saveNewLocalProject(db, project);
+  saveNewLocalProject(db, project, options.teamScope);
   setResourceOwner("project", project.id, newResourceOwner(), db);
   return project;
 }

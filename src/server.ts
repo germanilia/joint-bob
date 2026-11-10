@@ -194,6 +194,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       idle: () => !flags.updatePreparing && ![...harnessSessions.values()].some(harnessSessionBusy),
       restart: async () => { await prepareForUpdate(); process.exit(0); },
     });
+    void import('./assistant-teams/assignments.js').then(({ startTeamWork }) => startTeamWork()).catch(error => console.error('Team work recovery failed', error));
     void recoverAutoResponders().catch(error => console.error("Auto reply recovery failed", error));
     void startCronScheduler().catch(error => console.error("Scheduled task recovery failed; scheduler not started", error));
     startConversationDigests();

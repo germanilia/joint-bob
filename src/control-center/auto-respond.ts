@@ -4,6 +4,11 @@ import type { HarnessId } from "../types.js";
 import type { BobSettings } from "./bob-store.js";
 import type { BobDecision } from "./decisions.js";
 
+/** Team turns, including Bob and source placeholders, advance only through assignments. */
+export async function personalContinuationAllowed(projectId: string, conversationId: string): Promise<boolean> {
+  return !await (await import('../assistant-teams/runtime.js')).teamConversation(projectId, conversationId);
+}
+
 /** What Bob adds to the default stop instructions: the things only the person may decide. */
 const BOB_STOP_EXTRAS = [
   "The agent presents a plan or a design and waits for the user's approval.",

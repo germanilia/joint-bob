@@ -30,5 +30,5 @@ export async function nativeUiFixture(t: TestContext, extraEnv: (root: string) =
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
   context.setDefaultTimeout(20_000);
   const page = await context.newPage();
-  return { page, environment, node };
+  return { page, environment, node, server };
 }

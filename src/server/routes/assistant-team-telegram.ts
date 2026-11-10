@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { app, requestInterceptors } from '../state.js';
 import { requireTeamMember } from '../../assistant-teams/access.js';
-import { TeamError } from '../../assistant-teams/store.js';
+import { TeamError, announceTeamChange } from '../../assistant-teams/store.js';
 import { telegramDatabase, saveTeamTelegramConnection, teamTelegramConnection, teamTelegramHeaderValid } from '../../assistant-teams/telegram-store.js';
 import { issueTeamEnrollment, confirmTeamEnrollment, issueTeamGroupChallenge, confirmTeamGroup, redeemTeamEnrollment, redeemTeamGroupChallenge, ingestTeamTelegramUpdate } from '../../assistant-teams/telegram.js';
 import { telegramBot, telegramSetWebhook, TELEGRAM_TOKEN_VARIABLE } from '../../webhook-telegram.js';
@@ -12,7 +12,7 @@ const wrap=(fn:(req:Request,res:Response)=>Promise<unknown>)=>(req:Request,res:R
 const member=(req:Request,res:Response)=>requireTeamMember(res.locals.authSession,String(req.params.id));
 app.get('/api/assistant-teams/:id/telegram',wrap(async(req,res)=>{
  const actor=await member(req,res), row=await teamTelegramConnection(actor.teamId), db=await telegramDatabase();
- return {connected:!!row,botUsername:row?.bot_username,ready:row?.reads_all===1,visibility:row?.reads_all ? 'Whole-group visibility enabled' : 'Disable BotFather privacy mode and refresh visibility', confidentiality:'Telegram group members can see delivered replies. App enrollment does not hide Telegram history.',pending:db.prepare("SELECT id,kind,target,name,expires_at expiresAt FROM assistant_team_telegram_challenges WHERE team_id=? AND account_id=? AND state='pending'").all(actor.teamId,actor.accountId)};
+ return {members:db.prepare('SELECT account_id accountId,telegram_id telegramId,name FROM assistant_team_telegram_members WHERE team_id=?').all(actor.teamId),groups:db.prepare('SELECT chat_id chatId FROM assistant_team_telegram_groups WHERE team_id=?').all(actor.teamId),connected:!!row,botUsername:row?.bot_username,ready:row?.reads_all===1,visibility:row?.reads_all ? 'Whole-group visibility enabled' : 'Disable BotFather privacy mode and refresh visibility', confidentiality:'Telegram group members can see delivered replies. App enrollment does not hide Telegram history.',pending:db.prepare("SELECT id,kind,target,name,expires_at expiresAt FROM assistant_team_telegram_challenges WHERE team_id=? AND account_id=? AND state='pending'").all(actor.teamId,actor.accountId)};
 }));
 app.post('/api/assistant-teams/:id/telegram/connect',wrap(async(req,res)=>{
  const actor=await member(req,res); const token=req.body?.token;
@@ -27,6 +27,7 @@ app.post('/api/assistant-teams/:id/telegram/connect',wrap(async(req,res)=>{
  catch(error){await deleteSecretAccount(account.id);throw error;}
  try {await telegramSetWebhook(token,`${base.base}/teamtelegram-${actor.teamId}`,headerSecret);}
  catch {db.prepare('DELETE FROM assistant_team_telegram WHERE team_id=?').run(actor.teamId);await deleteSecretAccount(account.id);throw new TeamError('Telegram webhook registration failed',502);}
+ announceTeamChange(actor.teamId);
  return {connected:true,botUsername:bot.username,ready:bot.readsAllGroupMessages};
 }));
 app.post('/api/assistant-teams/:id/telegram/refresh',wrap(async(req,res)=>{
@@ -36,6 +37,7 @@ app.post('/api/assistant-teams/:id/telegram/refresh',wrap(async(req,res)=>{
  let bot;try{bot=await telegramBot(token);}catch{throw new TeamError('Telegram readiness check failed',502);}
  if(bot.id!==known.bot_id)throw new TeamError('Bot identity changed',409);
  (await telegramDatabase()).prepare('UPDATE assistant_team_telegram SET reads_all=?,bot_username=? WHERE team_id=?').run(Number(bot.readsAllGroupMessages),bot.username,actor.teamId);
+ announceTeamChange(actor.teamId);
  return {botUsername:bot.username,ready:bot.readsAllGroupMessages};
 }));
 app.post('/api/assistant-teams/:id/telegram/enrollment',wrap(async(req,res)=>issueTeamEnrollment(await member(req,res))));
@@ -45,6 +47,7 @@ app.post('/api/assistant-teams/:id/telegram/group/:challengeId/confirm',wrap(asy
 
 export async function handleTeamTelegramWebhook(teamId:string,header:unknown,update:unknown):Promise<void> {
  if(!await teamTelegramHeaderValid(teamId,header)) throw new TeamError('Invalid webhook secret',401);
+ if((update as {callback_query?:unknown})?.callback_query){await (await import('../../assistant-teams/assignments.js')).consumeTeamCallback(teamId,(update as {callback_query:unknown}).callback_query);return;}
  const data=update as {message?:{text?:string;from?:{id:number;is_bot?:boolean;first_name?:string};chat?:{id:number;type:string}}};
  if((update as {edited_message?:unknown})?.edited_message){await ingestTeamTelegramUpdate(teamId,update);return;}
  const msg=data?.message; if(!msg?.from || msg.from.is_bot || !msg.chat) return;

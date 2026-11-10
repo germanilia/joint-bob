@@ -390,6 +390,11 @@ export function registerLocalSharingResource(
       return publicState(existing);
     }
     registerOwnedResource(db, { kind, id, ownerNodeId: nodeId }, nodeId);
+    // Resolve dedicated scope before the FIRST policy emission, including legacy auto-share.
+    if (kind === 'project' && db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assistant_team_projects'").get()) {
+      const team = db.prepare('SELECT cluster_id FROM assistant_team_projects WHERE project_id=?').get(id) as { cluster_id: string } | undefined;
+      if (team) setResourceShares(db, nodeId, kind, id, [{ clusterId: team.cluster_id, projectId: null }]);
+    }
     db.prepare(`
       INSERT INTO cluster_v2_resource_policy
         (kind,resource_id,owner_node_id,generation,deleted) VALUES (?,?,?,1,0)
@@ -427,6 +432,10 @@ export function updateResourceSharing(
   validateMutation(local, kind, id, expected);
   if (kind === "ticket") throw new Error("Ticket sharing is inherited from its project");
   const parsedShares = z.array(resourceShare).parse(shares);
+  if (kind === 'project' && db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assistant_team_projects'").get()) {
+    const team = db.prepare('SELECT cluster_id FROM assistant_team_projects WHERE project_id=?').get(id) as { cluster_id: string } | undefined;
+    if (team && parsedShares.some(share => share.clusterId !== team.cluster_id || share.nodeIds || share.projectId)) throw new ResourceSharingError('Dedicated team projects belong only to their selected cluster', 403);
+  }
   return transaction(db, () => {
     const prior = mutablePolicy(db, local, kind, id, expected);
     const generation = prior.generation + 1;

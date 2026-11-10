@@ -67,7 +67,7 @@ const collaboration = () => Promise.all([import("./ask.js"), import("./directory
 
 /** Only an assistant's topic conversations get the tools; the bridge lists none anywhere else. */
 export async function listJointBobTools(identity: McpAgentIdentity): Promise<Tool[]> {
-  if ((await import('../assistant-resources.js')).teamAssistantForConversation(identity.projectId, identity.conversationId)) return [];
+  if ((await import('../assistant-resources.js')).teamAssistantForConversation(identity.projectId, identity.conversationId)) return (await import('../assistant-teams/tools.js')).listTeamTools(identity);
   const [{ assistantForConversation }] = await collaboration();
   return await assistantForConversation(identity.projectId, identity.conversationId) ? jointBobTools() : [];
 }
@@ -75,6 +75,7 @@ export async function listJointBobTools(identity: McpAgentIdentity): Promise<Too
 /** One tool call from an agent. A refusal is a tool error for the agent to read, not a failed request. */
 export async function callJointBobTool(identity: McpAgentIdentity, tool: string, args: unknown, signal?: AbortSignal): Promise<CallToolResult> {
   // Counted from the call's arrival, so the whole call stays under 90 s.
+  if (tool.startsWith('team_')) return (await import('../assistant-teams/tools.js')).callTeamTool(identity, tool, args);
   const deadline = Date.now() + 85_000;
   const [ask, { askableHelpers }] = await collaboration();
   try {

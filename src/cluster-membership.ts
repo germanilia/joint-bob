@@ -6,6 +6,7 @@ import { clusterPublicKeyFingerprint, ensureClusterIdentitySchema, getOrCreateCl
 import { ensurePeerEndpointSchema, recordMembershipEndpoints } from "./cluster-peer-endpoints.js";
 import { reconcileOwnedResourceTopology } from "./cluster-sharing.js";
 import { successorOf } from "./cluster-succession.js";
+import { invalidateTeamMembership } from './assistant-teams/invalidation.js';
 
 const uuid = z.string().uuid().regex(/^[0-9a-f-]+$/);
 const name = z.string().trim().min(1).max(80);
@@ -218,6 +219,7 @@ function clearInvalidSecretScopes(db: DatabaseSync): void {
 }
 
 function install(db: DatabaseSync, localNodeId: string, snapshot: SignedMembershipSnapshot): void {
+  invalidateTeamMembership(db, snapshot.body.clusterId);
   const body = snapshot.body;
   const preferences = new Map((db.prepare("SELECT node_id,join_sequence,auto_share_projects FROM sharing_memberships WHERE cluster_id=?")
     .all(body.clusterId) as unknown as PreferenceRow[]).map((row) => [`${row.node_id}:${row.join_sequence}`, row.auto_share_projects]));

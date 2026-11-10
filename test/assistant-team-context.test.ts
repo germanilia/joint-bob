@@ -69,7 +69,7 @@ test('durable full history, edit versions, pending dedup, scoped reply routing a
  stop();
 });
 
-test('real HTTP enrollment and webhook persist before acknowledgment; pending survives server restart', {timeout:120000}, async()=>{
+test('real HTTP enrollment and webhook persist before acknowledgment; startup consumes pending work without duplicate acceptance', {timeout:120000}, async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'team-telegram-http-'));let server:Awaited<ReturnType<typeof startDevNode>>|undefined;let db:DatabaseSync|undefined;
  try{
  const env=await seedDevEnvironment(root,1),node=env.nodes[0];server=await startDevNode(env,node);const login=await signIn(env,node);
@@ -87,10 +87,14 @@ test('real HTTP enrollment and webhook persist before acknowledgment; pending su
  const challenge=await api<any>(node,login,'POST',`${base}/group`,{});assert.equal((await hook(msg(2,`/bind ${challenge.body.code}`))).status,200);
  assert.equal((await api(node,login,'POST',`${base}/group/${challenge.body.id}/confirm`,{})).status,200);
  assert.equal((await hook(msg(3,'/qa check'))).status,200);
- const count=()=>Number((db!.prepare("SELECT COUNT(*) n FROM assistant_team_inbox WHERE team_id=? AND state='pending'").get(teamId) as {n:number}).n);
+ const count=()=>Number((db!.prepare('SELECT COUNT(*) n FROM assistant_team_inbox WHERE team_id=?').get(teamId) as {n:number}).n);
  assert.equal(count(),1,'durable before HTTP success');
  await stopDevNode(server);server=undefined;server=await startDevNode(env,node);
- assert.equal((await hook(msg(3,'/qa check'))).status,200);assert.equal(count(),1,'deduplicated delivery must not consume pending work after restart');
+ assert.equal((await hook(msg(3,'/qa check'))).status,200);assert.equal(count(),1,'deduplicated delivery must not create another event after restart');
+ const deadline=Date.now()+5000;
+ while(Date.now()<deadline&&db!.prepare("SELECT 1 FROM assistant_team_inbox WHERE team_id=? AND state='pending'").get(teamId))await new Promise(resolve=>setTimeout(resolve,20));
+ assert.equal(db!.prepare('SELECT state FROM assistant_team_inbox WHERE team_id=?').get(teamId)!.state,'decided','real startup/event dispatcher consumed the durable event');
+ assert.equal(db!.prepare('SELECT COUNT(*) n FROM assistant_team_assignments WHERE team_id=?').get(teamId)!.n,1,'one durable acceptance survives restart');
  const unauthorized=msg(4,'/qa outsider');unauthorized.message.from.id=88;assert.equal((await hook(unauthorized)).status,200);assert.equal(count(),1);
  }finally{if(server)await stopDevNode(server);db?.close();await rm(root,{recursive:true,force:true});}
 });

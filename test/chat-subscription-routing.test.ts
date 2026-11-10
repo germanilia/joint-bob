@@ -71,6 +71,7 @@ function fixture(selection: Selection, failure?: string) {
     },
     poolCandidates: () => profiles, projectProviderProfile: async () => ({ label: selectedProfile() }),
     getAutoRespond: async () => undefined, findHarnessSession: () => shared,
+    teamQueuedTurn: async () => undefined, teamConversation: async () => undefined,
     getSettings: () => ({ digestAttachments: false }), markHarnessInput: () => {},
     activeRoutingConfig: () => null, routingConfigDatabase: () => ({}), readQueueSettings: () => null,
     getProjectLock: async () => undefined, conversationBelongsToDoneTask: async () => false,

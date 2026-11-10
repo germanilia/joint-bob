@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { EventEmitter } from 'node:events';
+import { announceTeamChange } from './invalidation.js';
+export { announceTeamChange, onTeamChange, scheduleTeamChange } from './invalidation.js';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { clusterV2Database } from '../cluster-v2-store.js';
@@ -7,7 +8,7 @@ import { getClusterNode } from '../cluster.js';
 import { listLocalUsers } from '../auth.js';
 import { adminAccountId } from '../ownership.js';
 import { asNode } from '../account-context.js';
-import { addProject } from '../store.js';
+import { addProject, saveWorkspace } from '../store.js';
 import { resolveDataDirectory } from '../data-directory.js';
 import { recheckTeamActor, requireTeamExecution, type ClusterMember, type TeamMember } from './access.js';
 
@@ -22,9 +23,6 @@ export type AssignmentState = 'accepted' | 'queued' | 'running' | 'waiting_for_h
 export type ResultDestination = { kind: 'group'; sourceMessageId: string } | { kind: 'bob'; parentAssignmentId: string };
 export interface TeamAssignment { id: string; teamId: string; rootId: string; parentId: string | null; subjectId: string | null; role: TeamRole; requestedBy: string; sourceMessageId: string; destination: ResultDestination; state: AssignmentState; requestId: string }
 export class TeamError extends Error { constructor(message: string, readonly status: number) { super(message); } }
-const events = new EventEmitter();
-export function onTeamChange(listener: (teamId: string) => void): () => void { events.on('change', listener); return () => { events.off('change', listener); }; }
-export function announceTeamChange(teamId: string): void { events.emit('change', teamId); }
 let prepared: Promise<DatabaseSync> | undefined;
 export function teamDatabase(): Promise<DatabaseSync> {
   return prepared ??= clusterV2Database().then(db => {
@@ -61,8 +59,10 @@ export async function resolveTeamExecutor(): Promise<string> {
 export async function prepareTeamProject(member: ClusterMember): Promise<string> {
   await recheckTeamActor(member);
   const executor = await resolveTeamExecutor();
-  const project = await asNode(() => addProject('Assistant team', path.join(resolveDataDirectory(), 'assistant-teams', 'projects', randomUUID())));
-  (await teamDatabase()).prepare('INSERT INTO assistant_team_projects VALUES(?,?,?)').run(project.id, member.clusterId, executor);
+  const project = await asNode(async () => {
+    const workspace = await saveWorkspace({ label: `Team ${randomUUID().slice(0, 30)}` });
+    return addProject('Assistant team', path.join(resolveDataDirectory(), 'assistant-teams', 'projects', randomUUID()), { type: workspace.id, teamScope: { clusterId: member.clusterId, executorAccountId: executor } });
+  });
   return project.id;
 }
 export async function createTeam(member: ClusterMember, input: { projectId: string; executorAccountId: string }): Promise<AssistantTeam> {
