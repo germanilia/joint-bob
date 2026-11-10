@@ -107,8 +107,8 @@ export async function teamAssignmentDestination(assignment: TeamAssignment) {
   let row = db.prepare('SELECT project_id projectId,engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { projectId: string; engine: string; sessionId: string } | undefined;
   if (!row) {
     const engine = profile.executionSettings?.harnessId ?? profile.engine;
-    // Team work runs in the assistant's own project, so its project resources apply.
-    db.prepare('INSERT OR IGNORE INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(team.id, assignment.subjectId!, profile.id, profile.projectId, engine, randomUUID());
+    // Team work lives in the team's shared project, so every member can read it; the assistant brings its own resources.
+    db.prepare('INSERT OR IGNORE INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(team.id, assignment.subjectId!, profile.id, team.projectId, engine, randomUUID());
     row = db.prepare('SELECT project_id projectId,engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { projectId: string; engine: string; sessionId: string };
   }
   const ownership = await getConversationOwnership(row.engine, row.sessionId);
@@ -123,8 +123,8 @@ export async function runTeamTurn(input: { assignment: TeamAssignment; message: 
   // Browser entry points enforce their own input bound; never silently cut Telegram evidence.
   if (!input.message.trim()) throw new TeamError('Invalid team message', 400);
   const { runPersonalAssistantAutomationTurn } = await import('../server/routes/personal-assistants.js');
-  // Like a webhook or schedule: the turn runs as the assistant's owner, so its own MCP servers and tools load.
-  const turn = await (runPersonalAssistantAutomationTurn(profile.accountId, profile.id, input.assignment.requestId, input.message,
+  // The node opens the team conversation; the Pi session itself runs as the member's owner, so its MCP servers and sign-ins load.
+  const turn = await asNode(() => runPersonalAssistantAutomationTurn(profile.accountId, profile.id, input.assignment.requestId, input.message,
     { label: `Team ${input.assignment.role}`, origin: 'assistant', team: { assignment: input.assignment } }));
   await requireTeamExecution(team.id, input.assignment.requestedBy);
   if (turn.status !== 'completed') throw new TeamError('Team turn has no confirmed result', 409);

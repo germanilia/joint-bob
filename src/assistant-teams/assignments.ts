@@ -212,7 +212,7 @@ export async function requireLiveTeamBob(parentId:string) {
  const a=await getTeamAssignment(parentId),db=await assignmentDatabase();
  if(!a||a.role!==teamRolesSync(db,a.teamId).coordinator)throw new TeamError('Only the live coordinator can delegate',403);
  const resolved=await teamAssignmentDestination(a),turn=await getPersonalAssistantTurn(resolved.profile.accountId,resolved.profile.id,a.requestId);
- if(!turn||turn.status!=='running'||runningPromptRequestId(resolved.profile.projectId,resolved.destination.sessionId)!==a.requestId)throw new TeamError('Live coordinator turn required',403);
+ if(!turn||turn.status!=='running'||runningPromptRequestId(resolved.team.projectId,resolved.destination.sessionId)!==a.requestId)throw new TeamError('Live coordinator turn required',403);
  return resolved;
 }
 export async function delegateTeamAssignment(parentId:string,role:TeamRole,message:string):Promise<TeamAssignment> {

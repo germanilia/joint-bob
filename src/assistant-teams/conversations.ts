@@ -149,6 +149,6 @@ export async function bindTeamConversation(teamId:string,subjectId:string,assist
  const profile=await getPersonalAssistantById(assistantId);if(!profile)throw new TeamError('Unknown team assistant',404);
  const engine=profile.executionSettings?.harnessId ?? profile.engine;
  if(await getConversationOwnership(engine,conversationId))throw new TeamError('Cannot adopt an existing conversation',409);
- db.prepare('INSERT INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(teamId,subjectId,assistantId,profile.projectId,engine,conversationId);
- await ensureConversationRecord(profile.projectId,engine,conversationId,team.hostNodeId);
+ db.prepare('INSERT INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(teamId,subjectId,assistantId,team.projectId,engine,conversationId);
+ await ensureConversationRecord(team.projectId,engine,conversationId,team.hostNodeId);
 }

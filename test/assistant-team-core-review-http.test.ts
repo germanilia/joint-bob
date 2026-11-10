@@ -67,7 +67,7 @@ import { PRODUCTION_RULE } from '../src/guardian/production-rule.js';
  assert.equal((await facade(member)).status,200);
  assert.equal((await api(node,remote,'GET',`/projects/${team.projectId}/sessions`)).status,200,'independent member uses ordinary history APIs');
  assert.equal((await api(node,auth,'PUT','/guardian',{settings:{...DEFAULT_GUARDIAN_SETTINGS,enabled:true,rules:[PRODUCTION_RULE]}})).status,200);
- assert.equal((await api(node,auth,'PUT',`${base}/agents/qa`,{expectedRevision:1,name:'QA',instructions:'TEAM_QA_ONLY',allowTerminal:false,executionSettings:{harnessId:'pi',provider:'dev-environment',modelId:'dev-model',reasoning:'off'}})).status,200);
+ const picked=await (await import('./team-members-fixture.js')).addNodeMembers((method,route,body)=>api<any>(node,auth,method as any,route,body),node.projects.map((p:any)=>p.id),team.id,[{role:'bob'},{role:'qa',instructions:'TEAM_QA_ONLY'}],'bob',{harnessId:'pi',provider:'dev-environment',modelId:'dev-model',reasoning:'off'});
  await api(node,auth,'GET',`${base}/telegram`);
  saveTeamTelegramConnection(db,{teamId:team.id,botId:'fixture',botUsername:'regression_bot',tokenAccountId:secrets.bot,headerSecret:'fixture-secret',readsAllGroupMessages:true});
  // Seed through real ingestion, then bind quiet discussion to its classified subjects.

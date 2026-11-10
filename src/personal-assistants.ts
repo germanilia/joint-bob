@@ -109,7 +109,7 @@ function item(row: { image_names: string } & Record<string, unknown>): SavedItem
 }
 export async function listPersonalAssistants(accountId: string): Promise<PersonalAssistant[]> {
   const db = await database();
-  return (db.prepare("SELECT id, account_id accountId, project_id projectId, engine, session_id sessionId, node_id nodeId, name, instructions, classifier_id classifierId, allow_browser allowBrowser, allow_terminal allowTerminal, mcp_server_names mcpServerNames, execution_settings executionSettings, created_at createdAt FROM personal_assistants WHERE account_id = ? ORDER BY created_at DESC").all(accountId) as unknown as unknown[]).map(entry => assistant(entry)!).filter(entry => !isTeamAssistant(db, entry.id));
+  return (db.prepare("SELECT id, account_id accountId, project_id projectId, engine, session_id sessionId, node_id nodeId, name, instructions, classifier_id classifierId, allow_browser allowBrowser, allow_terminal allowTerminal, mcp_server_names mcpServerNames, execution_settings executionSettings, created_at createdAt FROM personal_assistants WHERE account_id = ? ORDER BY created_at DESC").all(accountId) as unknown as unknown[]).map(entry => assistant(entry)!);
 }
 export async function getPersonalAssistant(accountId: string, id: string): Promise<PersonalAssistant | undefined> {
   const db = await database();
@@ -150,7 +150,10 @@ export async function listPersonalAssistantTopics(accountId: string, assistantId
 export async function addPersonalAssistantTopic(accountId: string, assistantId: string, topic: PersonalAssistantTopic): Promise<PersonalAssistantTopic> {
   const db = await database();
   const owner = db.prepare("SELECT project_id projectId FROM personal_assistants WHERE id=? AND account_id=?").get(assistantId, accountId) as { projectId: string } | undefined;
-  if (!owner || owner.projectId !== topic.projectId) throw new Error("Assistant not found");
+  // Team work is the one exception: it lives in the team's project, recorded before the topic.
+  const teamWork = owner && owner.projectId !== topic.projectId && db.prepare("SELECT 1 FROM sqlite_master WHERE name='assistant_team_conversations'").get()
+    && db.prepare("SELECT 1 FROM assistant_team_conversations WHERE assistant_id=? AND project_id=? AND conversation_id=?").get(assistantId, topic.projectId, topic.sessionId);
+  if (!owner || (owner.projectId !== topic.projectId && !teamWork)) throw new Error("Assistant not found");
   const existing = db.prepare("SELECT project_id projectId,engine,session_id sessionId,source FROM personal_assistant_topics WHERE assistant_id=? AND engine=? AND session_id=?").get(assistantId, topic.engine, topic.sessionId) as { projectId: string; engine: string; sessionId: string; source: number } | undefined;
   if (existing) return { ...existing, source: Boolean(existing.source) };
   const next = db.prepare("SELECT COALESCE(MAX(topic_index),-1)+1 AS value FROM personal_assistant_topics WHERE assistant_id=?").get(assistantId) as { value: number };
@@ -158,13 +161,9 @@ export async function addPersonalAssistantTopic(accountId: string, assistantId: 
   return topic;
 }
 
-function isTeamAssistant(db: DatabaseSync, id: string): boolean {
-  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name='assistant_team_agents'").get() && db.prepare('SELECT 1 FROM assistant_team_agents WHERE assistant_id=?').get(id));
-}
 
 export async function getPersonalAssistantSourceHistory(accountId: string, assistantId: string): Promise<PersonalAssistantHistoryMessage[] | null | undefined> {
   const db = await database();
-  if (isTeamAssistant(db, assistantId)) return await getPersonalAssistant(accountId, assistantId) ? [] : undefined;
   const row = db.prepare("SELECT source_history sourceHistory FROM personal_assistants WHERE id=? AND account_id=?").get(assistantId, accountId) as { sourceHistory: string | null } | undefined;
   return row ? row.sourceHistory === null ? null : JSON.parse(row.sourceHistory) as PersonalAssistantHistoryMessage[] : undefined;
 }
@@ -196,7 +195,8 @@ export async function beginPersonalAssistantTurn(accountId: string, assistantId:
       if (existing.topicId !== topicId || existing.message !== message) throw new Error("Assistant request ID was already used for another message");
       db.exec("COMMIT"); return { turn: existing, created: false };
     }
-    const topic = db.prepare("SELECT 1 FROM personal_assistant_topics WHERE assistant_id=? AND project_id=? AND engine||':'||session_id=?").get(assistantId, owner.projectId, topicId);
+    // Topics are added only in the assistant's own project or as its recorded team work.
+    const topic = db.prepare("SELECT 1 FROM personal_assistant_topics WHERE assistant_id=? AND engine||':'||session_id=?").get(assistantId, topicId);
     if (!topic) throw new Error("Assistant topic not found");
     const next = db.prepare("SELECT COALESCE(MAX(turn_index),-1)+1 AS value FROM personal_assistant_turns WHERE assistant_id=?").get(assistantId) as { value: number };
     const createdAt = new Date().toISOString();

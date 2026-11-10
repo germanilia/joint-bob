@@ -211,11 +211,11 @@ async function executeAssistantTurn(accountId: string, entry: AssistantEntry, se
   if (!created) return (await getPersonalAssistantTurn(accountId, entry.id, input.requestId))!;
   try {
     await options?.prepare?.(destination);
-    await queueConversationPrompt({ projectId: entry.projectId, engine: destination.engine, sessionId: destination.sessionId, author: { accountId: session.accountId, email: session.email, username: session.username, homeNodeId: session.homeNodeId }, message: destination.message, requestId: input.requestId, label: options?.label ?? "Assistant", until: "completed", scheduledAutoRespond: options?.scheduledAutoRespond, automationProfile: options?.automationProfile, images: options?.images, files: options?.files, onStarted: () => options?.onStarted?.(destination), ...(entry.executionSettings ? { queueSettings: () => entry.executionSettings! } : {}) });
-    const record = await getConversationRecord(entry.projectId, destination.engine, destination.sessionId);
-    const segments = await listConversationSegments(entry.projectId, record?.conversationId ?? destination.sessionId);
+    await queueConversationPrompt({ projectId: project.id, engine: destination.engine, sessionId: destination.sessionId, author: { accountId: session.accountId, email: session.email, username: session.username, homeNodeId: session.homeNodeId }, message: destination.message, requestId: input.requestId, label: options?.label ?? "Assistant", until: "completed", scheduledAutoRespond: options?.scheduledAutoRespond, automationProfile: options?.automationProfile, images: options?.images, files: options?.files, onStarted: () => options?.onStarted?.(destination), ...(entry.executionSettings ? { queueSettings: () => entry.executionSettings! } : {}) });
+    const record = await getConversationRecord(project.id, destination.engine, destination.sessionId);
+    const segments = await listConversationSegments(project.id, record?.conversationId ?? destination.sessionId);
     const active = segments.at(-1) ?? { engine: destination.engine, sessionId: destination.sessionId };
-    await addPersonalAssistantTopic(accountId, entry.id, { projectId: entry.projectId, engine: active.engine, sessionId: active.sessionId, source: false });
+    await addPersonalAssistantTopic(accountId, entry.id, { projectId: project.id, engine: active.engine, sessionId: active.sessionId, source: false });
     await syncAssistantLoginGrants(entry.id, accountId);
     const updated = await listHarnessSessions(project);
     const transcript = updated.find(candidate => candidate.harnessId === active.engine && candidate.id === active.sessionId)
@@ -253,9 +253,9 @@ async function processAssistantTurn(accountId: string, entry: AssistantEntry, se
       if (problems.length) throw new TeamError(problems.join('\n'), 503);
       if (profile.executionSettings) await validateExecutionSettings(profile.executionSettings);
       // Team work runs in the assistant's own project.
-      // The initiating member may not see the owner's project; the node reads it for the owner.
-      const project = await asNode(() => getProject(profile.projectId));
-      if (!project) throw new Error('Assistant project unavailable');
+      // Team work lives in the team's shared project, read by the node for the member's owner.
+      const project = await asNode(() => getProject(team.projectId));
+      if (!project) throw new Error('Team project unavailable');
       const initiator: AuthSession = { ...session, accountId: member.accountId, username: member.username, email: null, homeNodeId: member.homeNodeId };
       return executeAssistantTurn(accountId, profile, initiator, input, { ...destination, message: input.message, isNew: false }, project, 'assistant', { label: options.label, origin: 'assistant', team: options.team, automationProfile: { accountId, profileId: null } });
     }

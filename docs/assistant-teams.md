@@ -4,7 +4,7 @@ A team is a list of members. Each member is one of your own assistants on the te
 
 ## Operation and boundaries
 
-- Pick members in the control center's team view. **A member brings everything it has**: its instructions, skills, MCP servers, browser and saved logins, terminal, harness and model. Team work runs as that assistant's owner, in its own project, in conversations kept apart from its personal topics. Each member card lists what it uses, because everyone enrolled in the team can ask it for work.
+- Pick members in the control center's team view. **A member brings everything it has**: its instructions, skills, MCP servers, browser and saved logins, terminal, harness and model. Team work runs as that assistant's owner, in the team's shared project so every member can read it, in conversations kept apart from its personal topics. Each member card lists what it uses, because everyone enrolled in the team can ask it for work.
 - Only an assistant's owner can add it to a team, and for now only assistants on the team's machine can be picked. An assistant belongs to one team at a time.
 - **A Telegram agent can serve a team.** In the assistant's Telegram section, choose a team. The team then answers through that bot, and the agent joins as coordinator (role made from its name). Choosing "No team" gives the bot back to the agent with a new webhook secret; the team keeps its members. Disconnecting the bot removes it from the team too. Enrollment and group binding stay the team's own steps.
 - The bot's command menu is rebuilt from the member list whenever it changes. An unknown `/x` gets a reply listing the current roles.

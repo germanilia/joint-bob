@@ -178,7 +178,7 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
       const childWork = db.prepare(`SELECT w.record FROM assistant_team_work w JOIN assistant_team_assignments a ON a.id=w.assignment_id WHERE json_extract(a.record,'$.parentId') IS NOT NULL`).all() as any[];
       assert.equal(childWork.length, 1); assert.equal(JSON.parse(childWork[0].record).result, 'CHILD_COMPLETED_EVIDENCE'); assert.equal(JSON.parse(childWork[0].record).consumed, true);
       assert.ok(requests.some(r => JSON.stringify(r.messages).includes('CHILD_COMPLETED_EVIDENCE') && JSON.stringify(r.messages).includes('stored INTERNAL ONLY')));
-      const attribution = db.prepare('SELECT account_id FROM conversation_message_authors WHERE project_id=? AND conversation_id=? AND account_id=?').get(qa.projectId, first.body.conversationId, human.accountId) as { account_id: string };
+      const attribution = db.prepare('SELECT account_id FROM conversation_message_authors WHERE project_id=? AND conversation_id=? AND account_id=?').get(team.projectId, first.body.conversationId, human.accountId) as { account_id: string };
       const assignment = JSON.parse((db.prepare('SELECT record FROM assistant_team_assignments WHERE request_id=?').get(requestId) as { record: string }).record);
       assert.equal(attribution.account_id, assignment.requestedBy);
       assert.equal(attribution.account_id, human.accountId, 'the queued transcript attributes the actual member');
