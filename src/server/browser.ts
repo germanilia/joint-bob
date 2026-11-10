@@ -11,6 +11,7 @@ import { applyBrowserClusterDefault, applyBrowserConfiguration, browserClusterDe
 import { getSharingCluster, isTrustedTwin, listSharingClusterMembers, listSharingMemberships } from "../cluster-sharing-policy.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { browserCapability, BrowserRuntime } from "../browser-runtime.js";
+import { chooseLoginStepWithSystemAi } from "../browser-login-ai.js";
 import { browserCommandSchema, browserStartSchema, browserIdentitySchema, browserProfileGrantInputSchema, type BrowserActor, type BrowserProfile, type BrowserSessionView } from "../browser-types.js";
 import { enqueueSystemPrompt } from "../prompt-queue.js";
 import { getProject, listProjects, listWorkspaces } from "../store.js";
@@ -22,7 +23,7 @@ import { peerWebSocket } from "../relay/transport.js";
 
 export class BrowserRequestError extends Error { constructor(public status: number, message: string) { super(message); } }
 let runtime: BrowserRuntime | undefined;
-export function browserRuntime(): BrowserRuntime { return runtime ??= new BrowserRuntime(); }
+export function browserRuntime(): BrowserRuntime { return runtime ??= new BrowserRuntime({ chooseLoginStep: chooseLoginStepWithSystemAi }); }
 export async function closeBrowserRuntime(): Promise<void> { await runtime?.close(); runtime = undefined; }
 // Old releases adopt the config in any peer's status reply; peers get one too old to win.
 const unsetBrowserConfiguration = { executorNodeId: null, updatedAt: "1970-01-01T00:00:00.000Z", originNodeId: "00000000-0000-0000-0000-000000000000" };

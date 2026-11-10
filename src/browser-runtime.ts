@@ -19,6 +19,7 @@ import { BrowserCommandQueue } from "./browser-command-queue.js";
 import { detectBrowserLogin } from "./browser-login-detection.js";
 import { readBrowserLoginForm } from "./browser-login-form.js";
 import { readLoginStep, submitLoginStep } from "./browser-login-step.js";
+import type { LoginStepChooser } from "./browser-login-ai.js";
 import { describeImage } from "./attachment-digest.js";
 import { getSettings } from "./settings.js";
 
@@ -190,7 +191,7 @@ export class BrowserRuntime {
   private readonly idleTimeoutMs: number;
   private readonly idleTimer: NodeJS.Timeout;
 
-  constructor(private readonly options: { capability?: () => Promise<BrowserCapability>; idleTimeoutMs?: number } = {}) {
+  constructor(private readonly options: { capability?: () => Promise<BrowserCapability>; idleTimeoutMs?: number; chooseLoginStep?: LoginStepChooser } = {}) {
     this.idleTimeoutMs = options.idleTimeoutMs ?? defaultIdleTimeoutMs;
     if (!Number.isFinite(this.idleTimeoutMs) || this.idleTimeoutMs <= 0) throw new Error("Browser idle timeout must be positive");
     this.idleTimer = setInterval(() => this.expireIdleSessions(), Math.min(this.idleTimeoutMs, 60_000));
@@ -716,7 +717,7 @@ export class BrowserRuntime {
       case "wait": await this.locator(page, command.selector).waitFor({ state: command.state }); break;
       case "evaluate": return page.evaluate(command.expression);
       case "loginForm": return { ...await readBrowserLoginForm(page), challenge: await detectBrowserLogin(page) === "challenge" };
-      case "readLoginStep": return readLoginStep(page, command.requestId);
+      case "readLoginStep": return readLoginStep(page, command.requestId, this.options.chooseLoginStep);
       case "submitLoginStep": await submitLoginStep(page, command); return { submitted: true };
       case "snapshot": return { pageId: session.activePageId, url: page.url(), title: await page.title(), accessibility: (await page.locator("body").ariaSnapshot({ timeout: 5000 })).slice(0, 50000), errors: [...session.errors] };
       case "screenshot": {

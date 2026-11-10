@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## Unreleased
+
+- The browser sign-in card now finds the sign-in step on more pages: a sign-in form inside an open dialog, and fields that are not wrapped in a form. For those pages, System AI (Settings → System AI) picks the username, password and button, and the card uses its choice only when it is confident. If System AI is unavailable, the card stays unsupported as before.
+
 ## 2.256.4 — 2026-11-10
 
 - Fixed the team picker in the control center staying empty after a reload or when opened with the shortcut. It now fills however the control center opens, and says *No cluster yet: create one under Clusters* when no cluster exists. A failed load is retried the next time you open it.
