@@ -20,7 +20,7 @@ function client() {
     sessionNodes: [{ id: "remote", local: false, online: false }, { id: "local", local: true, online: true, mapped: true }],
   };
   const requests: Array<{ body: { peerId: string; sessionId: string; sessionPath: string; sessionName: string }; reply: ReturnType<typeof deferred> }> = [];
-  const messages: string[] = [], errors: string[] = [];
+  const messages: string[] = [], errors: string[] = [], keptView: boolean[] = [];
   const control = { addEventListener() {} };
   const { openListedSession } = runInNewContext(`${source}\n({ openListedSession })`, {
     state, console,
@@ -28,7 +28,7 @@ function client() {
     document: { querySelectorAll: () => [] }, attachDigitShortcuts() {},
     loadSessionNodes: async () => {}, rememberRecentSession() {},
     sessionDisplayTitle: (item: typeof session) => item.title,
-    openSession: (sessionPath: string) => { state.activeSessionPath = sessionPath; },
+    openSession: (sessionPath: string, ...rest: unknown[]) => { state.activeSessionPath = sessionPath; keptView.push(rest[4] === true); },
     reconcileTranscriptConflict: async () => false,
     toast: Object.assign((message: string) => messages.push(message), { error: (message: string) => errors.push(message) }),
     api: (endpoint: string, options: { body: string }) => {
@@ -38,7 +38,7 @@ function client() {
       return reply.promise;
     },
   });
-  return { state, requests, messages, errors, open: openListedSession as (item: typeof session) => Promise<void> };
+  return { state, requests, messages, errors, keptView, open: openListedSession as (item: typeof session, options?: { keepView: boolean }) => Promise<void> };
 }
 
 function complete(request: ReturnType<typeof client>["requests"][number], sessionPath = session.path) {
@@ -106,4 +106,19 @@ test("in-flight transfers do not block other conversations or returning to the f
   await Promise.all([first, returning]);
   assert.deepEqual(page.messages, ["Switched to this node"]);
   assert.deepEqual(page.errors, []);
+});
+
+test("a conversation reopened on page load stays behind the view, through the takeover from an offline machine", async () => {
+  const page = client();
+  const restored = page.open(session, { keepView: true });
+  await setImmediate();
+  complete(page.requests[0]);
+  await restored;
+  assert.deepEqual(page.messages, ["Switched to this node"]);
+  assert.deepEqual(page.keptView, [true, true], "neither the first open nor the reopen after the takeover may switch to the chat");
+  const clicked = page.open(session);
+  await setImmediate();
+  complete(page.requests[1]);
+  await clicked;
+  assert.deepEqual(page.keptView.slice(2), [false, false], "a conversation the person opens is shown");
 });

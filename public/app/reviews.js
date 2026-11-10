@@ -273,7 +273,8 @@ function openPendingReviewsDialog() {
 
 const listedSessionTransfers = new Set();
 
-export async function openListedSession(session) {
+/** `keepView` opens it without showing it: the startup restore leaves the person in the view they were in, the control center too. */
+export async function openListedSession(session, { keepView = false } = {}) {
   // Lists render before harness metadata arrives, and the steps below resolve the engine from
   // it. A row tapped in that window threw here, so the tap did nothing at all.
   if (!state.harnesses.length) {
@@ -302,7 +303,7 @@ export async function openListedSession(session) {
     if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: destinationId });
   }
   const title = sessionDisplayTitle(session);
-  openSession(session.path, title, false, Boolean(state.activeTaskId), reviewHighlightAfter);
+  openSession(session.path, title, false, Boolean(state.activeTaskId), reviewHighlightAfter, keepView);
   if (!local) return;
   const transferKey = JSON.stringify([projectId, session.harnessId, session.id]);
   // Reopening still navigates here, but must not start a second ownership transfer.
@@ -314,7 +315,7 @@ export async function openListedSession(session) {
     });
     if (state.activeProjectId !== projectId || state.activeSessionId !== session.id) return;
     state.activeSessionId = null;
-    openSession(result.sessionPath, title, false, false, reviewHighlightAfter);
+    openSession(result.sessionPath, title, false, false, reviewHighlightAfter, keepView);
     toast(result.pendingPeerIds?.length ? "Switched to this node; offline nodes will update when they return" : "Switched to this node");
   } catch (error) {
     if (state.activeProjectId === projectId && state.activeSessionId === session.id

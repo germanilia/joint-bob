@@ -1,6 +1,6 @@
 # Control center
 
-The control center is one screen for everything that is running. It replaces the canvas: choose **Control center** (the target icon) in the toolbar above the project list, or press the same shortcut (Control+Option+V by default). It takes the whole window: the project and conversation side bars come back when you leave. **Exit**, or **Esc** twice (the first press asks, with a **Leave** button), takes you back to where you were. On a phone it is Bob's chat (see **On a phone**).
+The control center is one screen for everything that is running. It replaces the canvas: choose **Control center** (the target icon) in the toolbar above the project list, or press the same shortcut (Control+Option+V by default). It takes the whole window: the project and conversation side bars come back when you leave. **Exit**, or **Esc** twice (the first press asks, with a **Leave** button), takes you back to where you were. Nothing else takes you out on its own: a page that reloads (after an update, say) comes back to the control center, and the conversation it had open reopens behind it, even when this machine takes it over from one that is offline (*Switched to this node*). On a phone it is Bob's chat (see **On a phone**).
 
 ## The board
 

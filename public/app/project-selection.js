@@ -100,7 +100,10 @@ export async function loadProjects() {
   if ((state.activeSessionPath || state.activeSessionId) && activeSession) {
     // The list renders without harness metadata, but opening a conversation resolves its engine.
     if (!state.harnesses.length) await loadHarnesses().catch(() => undefined);
-    openListedSession(activeSession);
+    // On page load (preferences not loaded yet) without a link to a conversation, the page goes back to the view it was in
+    // (auth.js) and the conversation opens behind it: taking it over from a machine that is offline finishes later, and must
+    // not pull the page out of the control center into the chat. A link to a conversation shows it.
+    openListedSession(activeSession, { keepView: !state.preferencesLoaded && !state.initialSessionPath && !state.initialSessionId });
     return;
   }
   if (state.activeSessionPath) {

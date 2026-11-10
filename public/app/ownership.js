@@ -2,7 +2,7 @@ import { api, savePreferencesInBackground } from "./api.js";
 import { reconcileTranscriptConflict } from "./transcript-conflict.js";
 import { renderConversationLock } from "./chat-controls.js";
 import { elements } from "./elements.js";
-import { shortSessionTitle } from "./layout.js";
+import { currentMobileView, shortSessionTitle } from "./layout.js";
 import { confirmAction, toast } from "./shell.js";
 import { openSession } from "./socket.js";
 import { shared, state, TAKE_OWNERSHIP_WAIT_SECONDS } from "./state.js";
@@ -132,7 +132,8 @@ async function takeLockedConversationOwnership(force = false) {
     state.activeSessionId = null;
     if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: destination.id, activeSessionId: null });
     resetOwnershipWait();
-    openSession(result.sessionPath, shortSessionTitle(session));
+    // Taking it over from a conversation opened over the control center board keeps the board there.
+    openSession(result.sessionPath, shortSessionTitle(session), false, false, null, currentMobileView() === "control");
     toast(force ? `Ownership forced using ${destination.name}'s history. Backup: ${result.saved}.${result.pendingPeerIds.length ? " Some machines could not confirm stopping; they will receive ownership when they reconnect." : " Reachable runs stopped."}` : result.saved ? `Ownership taken using ${owner.nodeName}'s history. Backup: ${result.saved}` : result.pendingPeerIds?.length ? "Ownership taken; offline nodes will update when they return" : "Ownership taken", result.saved ? 12000 : 8000);
   };
   try { await transfer(); }

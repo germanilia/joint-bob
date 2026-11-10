@@ -51,7 +51,7 @@ export function togglePanel(panel) {
 
 const MOBILE_VIEWS = ["projects", "sessions", "board", "chat", "control"];
 
-function currentMobileView() {
+export function currentMobileView() {
   return MOBILE_VIEWS.find((name) => document.body.classList.contains(`view-${name}`)) ?? "projects";
 }
 

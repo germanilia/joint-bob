@@ -14,7 +14,7 @@ import { rememberDraft, restoreDraft, seedPromptHistory, setActiveSessionPath } 
 import { renderToolsDialog } from "./composer-dialogs.js";
 import { elements } from "./elements.js";
 import { syncQuickActionLabels } from "./focus-ui.js";
-import { sessionDisplayTitle, setMobileView, syncChatTitleFromSessions } from "./layout.js";
+import { currentMobileView, sessionDisplayTitle, setMobileView, syncChatTitleFromSessions } from "./layout.js";
 import { withPendingSessionChanges } from "./optimistic-sessions.js";
 import { refreshProjectsQuietly } from "./project-selection.js";
 import { loadRecentSessions } from "./recents.js";
@@ -174,11 +174,11 @@ function websocketUrl(sessionPath) {
   return url.toString();
 }
 
-export function openSession(sessionPath, title = "New conversation", preserveChat = false, preserveTask = false, reviewHighlightAfter = null) {
+export function openSession(sessionPath, title = "New conversation", preserveChat = false, preserveTask = false, reviewHighlightAfter = null, keepView = false) {
   // The list renders before harness metadata arrives, and the engine is resolved from it below.
   // Opening without it threw after "Connecting…" was already on screen, with nothing left to retry.
   if (!state.harnesses.length) {
-    loadHarnesses().then(() => openSession(sessionPath, title, preserveChat, preserveTask, reviewHighlightAfter)).catch((error) => toast.error(error.message));
+    loadHarnesses().then(() => openSession(sessionPath, title, preserveChat, preserveTask, reviewHighlightAfter, keepView)).catch((error) => toast.error(error.message));
     return;
   }
   rememberDraft();
@@ -236,7 +236,7 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
   renderSessions();
   // A reconnect reuses this function. Switching panels there would yank the user
   // off the board (or any other view) every time a socket blips.
-  if (!preserveChat) setMobileView("chat");
+  if (!preserveChat && !keepView) setMobileView("chat");
   setStatus("Connecting…", false, true);
   setComposerEnabled(false);
 
@@ -815,7 +815,8 @@ async function refreshSessionSnapshot(projectId) {
       if (state.preferencesLoaded) savePreferencesInBackground({ activeSessionPath: null, activeSessionId: null });
       elements.sessionTitle.textContent = "Select a conversation";
       setComposerEnabled(false);
-      setMobileView("sessions");
+      // Only the person leaves the control center (Esc twice, or its close button); a list refresh does not.
+      if (currentMobileView() !== "control") setMobileView("sessions");
     }
     renderSessions();
   } catch (error) {
