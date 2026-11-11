@@ -108,6 +108,13 @@ export const REVIEW_QUESTION: SystemOneQuestion = {
 
 /** How Bob's own push to go on starts, so it is never taken for what the person asked. */
 export const PUSH_PREFIX = "Continue with the task: you stopped before it was done";
+/** How Bob's message to a conversation whose turn hung starts. */
+export const STUCK_PREFIX = "Joint Bob stopped your last turn";
+
+/** Whether a message is one Bob sent the conversation: his push after a check, or his restart of a stuck turn. He sends them as the person. */
+export function isBobPrompt(text: string): boolean {
+  return text.includes(PUSH_PREFIX) || text.startsWith(STUCK_PREFIX);
+}
 
 /**
  * What the person last asked for: their latest message, passing over Bob's own pushes. A long conversation's first message was

@@ -9,6 +9,7 @@ import { resolveDataDirectory } from "./data-directory.js";
 import { isHarnessId } from "./types.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, resolveProjectAlias, type ReplicationEvent } from "./replication.js";
 import { messageAuthorSchema, type MessageAuthor } from "./message-author-schema.js";
+import { isBobPrompt } from "./control-center/review-check.js";
 
 export const queuedSettingsSchema = z.object({
   harnessId: z.string().refine(isHarnessId).optional(),
@@ -282,14 +283,16 @@ export function cancelQueuedPrompt(queueKey: string, id: string, expectedRevisio
   });
 }
 
-export function editQueuedPrompt(queueKey: string, id: string, promptText: string, displayText: string, messageText: string, settings?: QueuedSettings | null, expectedRevision?: number): boolean {
+/** `adopt` makes the edited prompt the editor's own: someone else's words they rewrite run as them, never on its automation. */
+export function editQueuedPrompt(queueKey: string, id: string, promptText: string, displayText: string, messageText: string, settings?: QueuedSettings | null, expectedRevision?: number, adopt?: MessageAuthor): boolean {
   const db = queueDatabase();
   const key = logicalQueueKey(queueKey);
   return transaction(db, () => {
     const row = db.prepare("SELECT * FROM queued_prompts WHERE queue_key = ? AND id = ?").get(key, id) as unknown as Row | undefined;
     if (!row || expectedRevision !== undefined && row.revision !== expectedRevision) return false;
     const existing = promptSchema.parse(JSON.parse(row.prompt));
-    const prompt = promptSchema.parse({ ...existing, dispatchState: "pending", promptText, displayText, messageText, settings: settings === undefined ? existing.settings : settings, revision: row.revision + 1 });
+    const owner = adopt ? { author: adopt, automationProfile: undefined } : {};
+    const prompt = promptSchema.parse({ ...existing, ...owner, dispatchState: "pending", promptText, displayText, messageText, settings: settings === undefined ? existing.settings : settings, revision: row.revision + 1 });
     const updated = { ...row, prompt: JSON.stringify(prompt), revision: prompt.revision, origin_node_id: origin(db) };
     insert(db, updated);
     publish(db, updated, prompt);
@@ -340,8 +343,19 @@ export function swapQueuedPrompts(queueKey: string, refs: QueuedPromptRef[]): bo
   });
 }
 
+/**
+ * Who may start, move, edit or delete a queued prompt: its author, the person whose automation queued it, and anyone who may
+ * write the conversation for a prompt with neither (Bob's, or one an older machine queued). Another person's prompt stays theirs.
+ */
 export function assertQueuedPromptEditor(prompt: QueuedPrompt, accountId: string | undefined): void {
-  if (prompt.automationProfile || prompt.author?.accountId !== accountId) throw new Error("Only the prompt's author may change it; automation prompts are managed by their automation");
+  const nobody = !prompt.author && !prompt.automationProfile;
+  const theirs = prompt.author?.accountId === accountId || prompt.automationProfile?.accountId === accountId;
+  if (!accountId || !(theirs || nobody)) throw new Error("Only the prompt's author may change it");
+}
+
+/** The person is changing a prompt they did not write themselves: Bob's, or one their automation queued. */
+export function takesOverQueuedPrompt(prompt: QueuedPrompt, accountId: string | undefined): boolean {
+  return Boolean(prompt.automationProfile) || prompt.author?.accountId !== accountId || isBobPrompt(prompt.messageText ?? prompt.displayText);
 }
 
 export function mergeQueuedPrompts(queueKey: string, refs: QueuedPromptRef[]): QueuedPrompt | null {

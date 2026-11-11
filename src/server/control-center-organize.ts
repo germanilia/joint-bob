@@ -460,6 +460,7 @@ async function sendToConversation(session: AuthSession, operation: Extract<Opera
   if (operation.delegated) {
     const config = await bobDelegationConfig(readBobSettings(await bobDatabase(), session.accountId), operation.engine as HarnessId);
     await enableAutoRespond(operation.projectId, operation.conversationId, config, null, session.accountId);
+    await (await import("./control-center-review-check.js")).resumeBobChecks(operation.projectId, operation.conversationId);
   }
   const sentAt = Date.now();
   let wasQueued = false;

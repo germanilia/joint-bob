@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { runAsAccount } from "../account-context.js";
 import { personalContinuationAllowed } from "../control-center/auto-respond.js";
+import { STUCK_PREFIX } from "../control-center/review-check.js";
 import { getAutoRespond } from "../conversation-auto-respond.js";
 import { ownerAsActor, resourceOwner } from "../ownership.js";
 import { queueConversationPrompt } from "./conversation-prompt.js";
@@ -17,7 +18,7 @@ export const STUCK_RESTART_WINDOW_MS = 6 * 60 * 60_000;
 /** How long Bob waits for a stopped turn to let go: a turn that never does is released as a zombie after its grace. */
 const LET_GO_MS = ZOMBIE_TURN_GRACE_MS + 5 * 60_000;
 
-export const stuckContinuationPrompt = "Joint Bob stopped your last turn: it had no input or output for 30 minutes and looked stuck. Inspect the transcript and the working tree, check for commands or processes it left hanging, continue the unfinished work, and do not repeat completed side effects.";
+export const stuckContinuationPrompt = `${STUCK_PREFIX}: it had no input or output for 30 minutes and looked stuck. Inspect the transcript and the working tree, check for commands or processes it left hanging, continue the unfinished work, and do not repeat completed side effects.`;
 
 const restarts = new Map<string, number[]>();
 const pause = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));

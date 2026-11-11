@@ -171,6 +171,10 @@ test("a conversation that stops before its task is done is told to go on, one th
     await waitFor(opened.messages, () => opened.messages.some(event => event.type === "stopped"));
     assert.equal(opened.messages.some(event => event.type === "error" && /author|permission/.test(String(event.error))), false);
     assert.equal((await prompts()).some(prompt => prompt.includes("My corrected instructions")), false, "the cancelled prompt never ran");
+    // Changing what Bob queued, and stopping the conversation, is the person stepping in: Bob leaves it to them.
+    const steppedIn = await eventually(async () => (await api<{ cards: Array<{ title: string; reviewCheck: { by: string; reason: string } | null }> }>(node, auth, "GET", "/control-center/board")).body.cards
+      .find((entry) => entry.title === "fix the login page header in Joint Bob" && entry.reviewCheck?.by === "you stepped in"), "Bob to stand back");
+    assert.equal(steppedIn.reviewCheck!.reason, "You stepped in, so Bob left it to you.");
   } finally {
     socket?.terminate();
     if (child) await stopDevNode(child);

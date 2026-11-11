@@ -50,6 +50,7 @@ export async function enableSystemControl(projectId: string, conversationId: str
   const session = bobSessionFor(author.accountId, "system-control");
   if (session) rememberBobAccount(db, actingAccountFromSession(session));
   const settings = readBobSettings(db, author.accountId);
+  await (await import("./control-center-review-check.js")).resumeBobChecks(projectId, conversationId);
   return enableAutoRespond(projectId, conversationId, systemControlConfig(settings.systemInstructions, extra, model), author, author.accountId);
 }
 

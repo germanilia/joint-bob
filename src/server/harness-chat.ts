@@ -41,7 +41,7 @@ import { conversationScopeId, genericSecretEnvironment, getScopeSecretAccounts }
 import { getProjectLock } from "../project-locks.js";
 import { catchUpGitHead } from "../git-catch-up.js";
 import { getSettings } from "../settings.js";
-import { promptQueuePaused, setPromptQueuePaused, assertQueuedPromptEditor, beginQueuedPrompt, bumpRoutingPromptCount, cancelQueuedPrompt, claimQueuedPrompt, editQueuedPrompt, enqueuePrompt, listQueuedPrompts, mergeQueuedPrompts, prioritizeQueuedPrompt, queuedSettingsSchema, readQueueSettings, readRoutingState, recordQueueSettings, recordRoutingEval, resetQueuedPromptAttempt, setRoutingMode, swapQueuedPrompts, type QueuedPrompt, type QueuedSettings } from "../prompt-queue.js";
+import { promptQueuePaused, setPromptQueuePaused, assertQueuedPromptEditor, takesOverQueuedPrompt, beginQueuedPrompt, bumpRoutingPromptCount, cancelQueuedPrompt, claimQueuedPrompt, editQueuedPrompt, enqueuePrompt, listQueuedPrompts, mergeQueuedPrompts, prioritizeQueuedPrompt, queuedSettingsSchema, readQueueSettings, readRoutingState, recordQueueSettings, recordRoutingEval, resetQueuedPromptAttempt, setRoutingMode, swapQueuedPrompts, type QueuedPrompt, type QueuedSettings } from "../prompt-queue.js";
 import { queuedAttachments } from "../queued-attachments.js";
 import { describeImage } from "../attachment-digest.js";
 import { listTurnFailures, recordTurnFailure, withTurnFailures } from "../turn-failures.js";
@@ -1140,6 +1140,14 @@ async function stopConversation(connection: HarnessChatConnection): Promise<void
 
 async function stopConversationExecution(connection: HarnessChatConnection): Promise<void> {
   await stopAutoRespondFor(connection, "user-stopped", "You stopped the turn");
+  // The person stopping it is stepping in: Bob does not push it on after, and what he queued goes.
+  if (connection.author) {
+    for (const prompt of listQueuedPrompts(queueKey(connection)).filter((entry) => entry.dispatchState === "pending" && takesOverQueuedPrompt(entry, connection.author!.accountId) && !entry.automationProfile)) {
+      const cancelled = cancelQueuedPrompt(queueKey(connection), prompt.id, prompt.revision);
+      if (cancelled) publish(connection, { type: "queuedPromptCancelled", queueId: cancelled.id });
+    }
+    await (await import("./control-center-review-check.js")).leaveToPerson(connection.project.id, connection.conversationId, connection.author.accountId);
+  }
   const local = await getClusterNode();
   const goal = await getConversationGoal(connection.project.id, connection.conversationId);
   if (goal?.status === "active") publishGoal(connection, await cancelConversationGoal(connection.project.id, connection.conversationId, local.id));
@@ -1255,10 +1263,25 @@ async function queueCommand(connection: HarnessChatConnection, message: ReturnTy
   await writable(connection);
   const ids = message.queueId ? [message.queueId] : message.queueItems?.map(({ id }) => id) ?? [];
   const prompts = listQueuedPrompts(queueKey(connection));
-  for (const id of ids) {
-    const prompt = prompts.find((entry) => entry.id === id);
-    if (prompt) assertQueuedPromptEditor(prompt, connection.author?.accountId);
+  const me = connection.author?.accountId;
+  const touched = ids.flatMap((id) => prompts.filter((entry) => entry.id === id));
+  for (const prompt of touched) assertQueuedPromptEditor(prompt, me);
+  // Changing what Bob or an automation queued is the person stepping in: Bob stands back once the change is made.
+  const takenOver = touched.filter((prompt) => takesOverQueuedPrompt(prompt, me));
+  await applyQueueCommand(connection, message);
+  if (takenOver.length) await standBobDown(connection, takenOver.some((prompt) => prompt.automationProfile));
+}
+
+/** The person stepped in: Bob's review check leaves the conversation to them, and auto respond stops when it was its reply. */
+async function standBobDown(connection: HarnessChatConnection, automation: boolean): Promise<void> {
+  if (automation && (await getAutoRespond(connection.project.id, connection.conversationId))?.status === "active") {
+    autoDecisions.get(queueKey(connection))?.controller.abort("user-stop");
+    await stopAutoRespondFor(connection, "user-stopped", "You took over its message");
   }
+  if (connection.author) await (await import("./control-center-review-check.js")).leaveToPerson(connection.project.id, connection.conversationId, connection.author.accountId);
+}
+
+async function applyQueueCommand(connection: HarnessChatConnection, message: ReturnType<typeof socketMessageSchema.parse>): Promise<void> {
   if (message.type === "forceStartQueuedPrompt") {
     if (!message.queueId || !message.queueRevision) throw new Error("Queued prompt force start is incomplete");
     const key = queueKey(connection);
@@ -1299,8 +1322,9 @@ async function queueCommand(connection: HarnessChatConnection, message: ReturnTy
     if (!message.message.trim()) throw new Error("Queued prompt cannot be empty");
     if (message.queueSettings) await (await getHarnessRuntime(selectedHarness(message.queueSettings))).validateSettings(runtimeSettings(message.queueSettings));
     const edited = editedPrompt(queued, message.message);
-    if (!editQueuedPrompt(queueKey(connection), queued.id, edited.promptText, edited.displayText, message.message, message.queueSettings, message.queueRevision)) throw new Error("Queued prompt changed; refresh and try again");
-    publish(connection, { type: "queuedPromptEdited", queueId: queued.id, text: edited.displayText, editableText: message.message, settings: message.queueSettings === undefined ? queued.settings : message.queueSettings, revision: queued.revision + 1 });
+    const adopt = takesOverQueuedPrompt(queued, connection.author?.accountId) ? connection.author : undefined;
+    if (!editQueuedPrompt(queueKey(connection), queued.id, edited.promptText, edited.displayText, message.message, message.queueSettings, message.queueRevision, adopt)) throw new Error("Queued prompt changed; refresh and try again");
+    publish(connection, { type: "queuedPromptEdited", queueId: queued.id, text: edited.displayText, editableText: message.message, settings: message.queueSettings === undefined ? queued.settings : message.queueSettings, revision: queued.revision + 1, ...(adopt ? { author: adopt } : {}) });
   } else if (message.type === "cancelQueuedPrompt") {
     if (!message.queueId || !message.queueRevision || startingIds.has(message.queueId)) throw new Error("Queued prompt cancellation is incomplete");
     const queued = cancelQueuedPrompt(queueKey(connection), message.queueId, message.queueRevision);

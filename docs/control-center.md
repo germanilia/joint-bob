@@ -175,6 +175,12 @@ Bob checks every minute for conversations that are stuck, and gets them going ag
 - **A stuck turn.** A turn with no input or output for 30 minutes is stopped. Once it lets go (a turn that never does is released 10 minutes later), Bob tells the conversation to check what it left hanging and carry on without repeating what it already did. It goes on as the account the turn ran as, so on the same subscription pool. Bob's chat says which conversation he restarted.
 - **When he leaves it.** A conversation someone wrote to after the stop is left alone, and one under auto respond or system control is pushed on by its responder instead. One that hangs again after 3 restarts in 6 hours is left to you, and Bob's chat says so.
 
+## Stepping in
+
+A conversation is yours first. In its queue you can start now, move, edit or delete any message Bob or one of your automations queued there, as you can your own; one you edit becomes your message and runs as you. Another person's message stays theirs.
+
+Stepping in tells Bob to stand back. When you press **Stop**, or change or delete a message Bob queued, Bob stops pushing that conversation on: his queued pushes are removed on Stop, auto respond ends when it was its reply you changed, and the board says *you stepped in*. Bob starts progressing it again when you hand it back: press **Push it on** on his message, tell Bob to take the conversation over, or turn on **System control** in its Auto respond dialog.
+
 ## Delegating work to Bob
 
 You can hand work over to Bob after your first instructions, and see it again only when it is ready for review. Say so in Bob's chat, for new work ("build the dessert menu in DAK and delegate it to Bob, bring it back for review") or for a conversation you name ("delegate the internal assistant conversation to Bob", "take full control of it and see it through"). Typos are fine ("delegeate"). Bob asks first, as for any change, with **Start and delegate** or **Delegate it**.
