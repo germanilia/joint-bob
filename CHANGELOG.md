@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.271.0 — 2026-11-11
+
+- The control center has a **Dashboard** view next to **Live agents**: one click swaps the conversations for a dashboard of your own, and one click swaps back. These dashboards cover every project and workspace you can see, not one of them.
+- Press **+ New dashboard** and say what you want to see; Bob builds it with the dashboard agent and tells you in the chat when it is ready. Keep as many as you like, switch between them with the chips above the page, and choose the default the view opens with using **Make default**.
+
 ## 2.270.3 — 2026-11-11
 
 - Fixed "Only the prompt's author may change it" when you tried to start now, edit or delete a message Bob or one of your automations queued in your conversation. You can manage those now, and one you edit becomes your own message.
