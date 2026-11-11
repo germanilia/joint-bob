@@ -3,6 +3,13 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.265.0 — 2026-11-11
+
+- Deleting a conversation now removes everything that belongs to it: every copy of its transcript wherever it lies, its sub-agent transcripts and tool results, unfinished transfers, its title, labels, queue, review state and the logs of its background tasks. A machine that holds a copy does the same when it hears of the delete. Before, only the transcript and the record went. Cost history is kept.
+- Fixed the hourly clean-up removing a conversation from the list as "empty" when its transcript lay in a folder the project no longer uses, for example after a project moved. The transcript stayed on disk. Conversations this happened to are left untouched and are counted as "held back".
+- Settings > Account > Conversation history has a new group that says what the clean-up covers. Until now it only checked the conversations a project's list still shows, so most old conversations were never removed. Six boxes, all off, widen it: older conversations, old transcripts without a record, conversations started by schedules and webhooks, conversations of finished tickets, files left behind by earlier deletes, and Joint Bob's own background-run transcripts after 7 days. "Show what would be deleted" lists the numbers first. Nothing more than before is deleted until a box is ticked and saved.
+- The audit log no longer gets a row every time credentials are checked and nothing was sent.
+
 ## 2.264.0 — 2026-11-11
 
 - Lists, opening a conversation and work between machines ask the database far less. Joint Bob now keeps what it read (a project, who may see it, your settings, conversation names) until something is written, instead of reading it again thousands of times a second. On a busy machine these lookups were about a third of the server's work.
