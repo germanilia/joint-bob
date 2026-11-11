@@ -90,8 +90,8 @@ test("the Dashboard view sits beside the board: ask for dashboards in words, swi
   if (process.env.JOINT_BOB_UI_SHOT) await page.screenshot({ path: process.env.JOINT_BOB_UI_SHOT });
 
   // Deleting it leaves the other as the default.
-  page.once("dialog", (dialog) => { void dialog.accept(); });
   await page.getByTestId("control-mydash-delete").click();
+  await page.locator("dialog[open] button", { hasText: "Delete" }).click();
   await chip("★ Attention").waitFor();
   assert.equal(await page.getByTestId("control-mydash-chip").count(), 1);
 });

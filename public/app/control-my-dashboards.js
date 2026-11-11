@@ -1,6 +1,6 @@
 import { api } from "./api.js";
 import { createControlViewElement, currentControlView, registerControlView, showControlView } from "./control-views.js";
-import { toast } from "./shell.js";
+import { confirmAction, toast } from "./shell.js";
 
 /*
  * The control center's Dashboard view: the other side of the board. The board shows the conversations; this shows one of
@@ -227,7 +227,7 @@ async function setDefault() {
 
 async function removeSelected() {
   const dashboard = selected();
-  if (!window.confirm(`Delete the dashboard "${dashboard.title}"?`)) return;
+  if (!await confirmAction({ title: `Delete "${dashboard.title}"?`, message: "The dashboard and its data are removed.", confirmLabel: "Delete", destructive: true })) return;
   await api(`${path(dashboard)}?${hostQuery(dashboard)}`, { method: "DELETE" });
   selectedId = null;
   await load();
