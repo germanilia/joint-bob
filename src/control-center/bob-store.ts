@@ -22,11 +22,16 @@ export interface BobSettings {
   autoRespond: "bob" | "always" | "never";
   /** When a conversation stops for review before its task is done: Bob tells it to go on, asks the person first, or leaves it. */
   reviewCheck: "push" | "ask" | "off";
+  /** Whether new conversations the person starts come under system control (src/server/system-control.ts); off by default. */
+  systemControl: boolean;
+  /** The person's standing instructions for every conversation under system control. */
+  systemInstructions: string;
 }
 
 export const DEFAULT_BOB_SETTINGS: BobSettings = {
   harnessId: "", provider: "", modelId: "", thinkingLevel: "",
   threshold: DEFAULT_BOB_CONFIDENCE, classifier: "typesafe", monitoring: true, askBeforeSaving: false, autoRespond: "bob", reviewCheck: "push",
+  systemControl: false, systemInstructions: "",
 };
 
 /** How much a message matters to the person: the labels the chat can be filtered by. */
@@ -101,6 +106,8 @@ function clean(value: Partial<BobSettings>): BobSettings {
     askBeforeSaving: value.askBeforeSaving === true,
     autoRespond: value.autoRespond === "always" || value.autoRespond === "never" ? value.autoRespond : "bob",
     reviewCheck: value.reviewCheck === "ask" || value.reviewCheck === "off" ? value.reviewCheck : "push",
+    systemControl: value.systemControl === true,
+    systemInstructions: text(value.systemInstructions, 20_000),
   };
 }
 

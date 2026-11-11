@@ -36,6 +36,8 @@ export const autoRespondConfigSchema = z.object({
   maxResponses: z.number().int().min(1).max(500).nullable(),
   /** The responder may read the project and run commands to check the agent's work. */
   useTools: z.boolean().default(true),
+  /** Set when the conversation is under system control (src/server/system-control.ts): what the person added for it. */
+  systemControl: z.object({ instructions: z.string().max(20_000) }).strict().optional(),
 }).strict();
 export type AutoRespondConfig = z.input<typeof autoRespondConfigSchema>;
 

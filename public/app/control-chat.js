@@ -565,6 +565,8 @@ function fillSettingsForm() {
   elements.controlBobAutoRespond.value = settings.autoRespond;
   elements.controlBobReviewCheck.value = settings.reviewCheck;
   elements.controlBobAsk.checked = settings.askBeforeSaving;
+  elements.controlBobSystemControl.checked = settings.systemControl;
+  if (document.activeElement !== elements.controlBobSystemInstructions) elements.controlBobSystemInstructions.value = settings.systemInstructions;
 }
 
 async function saveSettings(change) {
@@ -632,6 +634,8 @@ elements.controlBobClassifier.addEventListener("change", () => { void saveSettin
 elements.controlBobAutoRespond.addEventListener("change", () => { void saveSettings({ autoRespond: elements.controlBobAutoRespond.value }); });
 elements.controlBobReviewCheck.addEventListener("change", () => { void saveSettings({ reviewCheck: elements.controlBobReviewCheck.value }); });
 elements.controlBobAsk.addEventListener("change", () => { void saveSettings({ askBeforeSaving: elements.controlBobAsk.checked }); });
+elements.controlBobSystemControl.addEventListener("change", () => { void saveSettings({ systemControl: elements.controlBobSystemControl.checked }); });
+elements.controlBobSystemInstructions.addEventListener("change", () => { void saveSettings({ systemInstructions: elements.controlBobSystemInstructions.value.trim() }); });
 elements.controlBobThreshold.addEventListener("change", () => {
   const percent = Number(elements.controlBobThreshold.value);
   if (Number.isFinite(percent) && percent >= 0 && percent <= 100) void saveSettings({ threshold: percent / 100 });

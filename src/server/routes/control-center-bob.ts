@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { AuthSession } from "../../auth.js";
 import { BobActionError, runBobAction } from "../../control-center/bob-actions.js";
-import { bobDatabase, countBobMessages, getBobMessage, listBobMessages, readBobSettings, writeBobSettings, type BobImportanceFilter } from "../../control-center/bob-store.js";
+import { actingAccountFromSession } from "../../account-context.js";
+import { bobDatabase, countBobMessages, getBobMessage, listBobMessages, readBobSettings, rememberBobAccount, writeBobSettings, type BobImportanceFilter } from "../../control-center/bob-store.js";
 import { GitReviewRunError, handleBobMessage } from "../bob.js";
 import { sendError } from "../http-auth.js";
 import { QuickNoteLaunchError } from "../quick-note-dispatch.js";
@@ -36,6 +37,8 @@ const settingsSchema = z.object({
   askBeforeSaving: z.boolean(),
   autoRespond: z.enum(["bob", "always", "never"]),
   reviewCheck: z.enum(["push", "ask", "off"]),
+  systemControl: z.boolean(),
+  systemInstructions: z.string().max(20_000),
 }).partial().strict();
 
 const querySchema = z.object({
@@ -54,7 +57,10 @@ app.get("/api/control-center/bob/settings", async (_request, response, next) => 
 app.put("/api/control-center/bob/settings", async (request, response, next) => {
   try {
     const change = settingsSchema.parse(request.body);
-    response.json(writeBobSettings(await bobDatabase(), (response.locals.authSession as AuthSession).accountId, change));
+    const session = response.locals.authSession as AuthSession, db = await bobDatabase();
+    // Setting Bob up makes the person one of Bob's: what he does for them (system control's reports) reaches their chat.
+    rememberBobAccount(db, actingAccountFromSession(session));
+    response.json(writeBobSettings(db, session.accountId, change));
   } catch (error) {
     if (error instanceof z.ZodError) { sendError(response, 400, "Invalid settings for Bob"); return; }
     next(error);

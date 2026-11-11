@@ -1,6 +1,8 @@
 import path from "node:path";
 import type { AuthSession } from "../auth.js";
 import { getClusterNode } from "../cluster.js";
+import { getSettings } from "../settings.js";
+import { systemControlConfig, type ConversationModel } from "./system-control.js";
 import { bobAutoRespondConfig, bobDelegationConfig, DELEGATION_BRIEF } from "../control-center/auto-respond.js";
 import type { BobSettings } from "../control-center/bob-store.js";
 import { recordBobStart } from "../control-center/started.js";
@@ -25,8 +27,11 @@ async function turnOnAutoRespond(session: AuthSession, settings: BobSettings, pr
   if (nodeId && nodeId !== (await getClusterNode()).id) return " Auto respond stays off: it only runs on the machine that owns the conversation.";
   try {
     const record = await getConversationRecord(projectId, harnessId, sessionId);
-    const config = delegated ? await bobDelegationConfig(settings, harnessId) : await bobAutoRespondConfig(settings, harnessId);
+    const controlled = !delegated && settings.systemControl;
+    const config = delegated ? await bobDelegationConfig(settings, harnessId)
+      : controlled ? systemControlConfig(settings.systemInstructions, "", startingModel(harnessId)) : await bobAutoRespondConfig(settings, harnessId);
     await enableAutoRespond(projectId, record?.conversationId ?? sessionId, config, null, session.accountId);
+    if (controlled) return " It is under system control: I drive it with your standing instructions until it is ready for review.";
     return delegated
       ? " I'm driving it: I'll answer it, push it on and check its work end to end, and bring it back when it is ready for review, or when it needs something only you can give."
       : " I turned on auto respond for it: I'll answer its routine questions, and it stops for anything that needs you.";
@@ -38,6 +43,13 @@ async function turnOnAutoRespond(session: AuthSession, settings: BobSettings, pr
 /** The person's instructions with the brief that tells the agent Bob drives the work and what Bob expects at its end. */
 export function delegatedBrief(instructions: string): string {
   return `${instructions.trim()}\n\n---\n${DELEGATION_BRIEF}`;
+}
+
+/** The model a conversation Bob starts runs on: its agent's default here, so system control runs on the same pool. */
+function startingModel(harnessId: string): ConversationModel {
+  const model = getSettings().conversationDefaults[harnessId];
+  if (!model) throw new Error(`No default model for ${harnessId} on this machine`);
+  return { harnessId, provider: model.provider, modelId: model.modelId, reasoning: model.thinkingLevel };
 }
 
 export function titleOf(message: string): string {
@@ -59,7 +71,7 @@ export async function startBobConversation(args: { session: AuthSession; setting
   const note = createQuickNote({ projectId: args.project.id, title: args.title, content: brief, harnessId: args.harnessId, images });
   const started = await launchQuickNote(note.id);
   if (started.sessionId) await recordBobStart(args.project.id, started.sessionId, args.session.accountId);
-  const autoRespondNote = started.sessionId && (args.autoRespond || args.delegated)
+  const autoRespondNote = started.sessionId && (args.autoRespond || args.delegated || args.settings.systemControl)
     ? await turnOnAutoRespond(args.session, args.settings, args.project.id, args.harnessId as HarnessId, started.sessionId, note.nodeId, Boolean(args.delegated))
     : "";
   return { sessionId: started.sessionId ?? null, autoRespondNote };

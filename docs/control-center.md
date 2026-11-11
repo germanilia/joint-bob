@@ -159,6 +159,14 @@ Bob also operates your conversations and projects, the same way, each change aft
 - **Where it runs.** Auto respond and a conversation's agent and model change on the machine that runs it; for a conversation on another machine, Bob says so and you ask him there. Git and pull requests use the project's folder on this machine. Stopping a conversation reaches the machine that runs it.
 - Bob refuses what it cannot find, or a workspace name you already have, without asking.
 
+## System control
+
+System control puts a conversation in Bob's hands with your instructions, and he drives it firmly until it is ready for review.
+
+- **Your standing instructions.** In Bob's settings, **My standing instructions for system control** holds what Bob follows in every conversation under system control (what to always do, what never to do). **New conversations start under system control** puts each new conversation you start (yourself, or through Bob) under it at its first message; it is off by default.
+- **In a conversation.** The conversation's **Auto respond** dialog has **System control**, with **My instructions for this conversation** added to your standing ones. Turn it on in any conversation, or off in one your default put under it. While it is on, the toolbar pill reads *System*.
+- **How hard it drives.** Bob's responder runs on the conversation's own agent and model, and so on the same subscription pool as the agent: when one account reaches its limit or loses its sign-in, both move to the next account in the pool. It has no limit on answers in a row, decides for you (it answers the agent's questions, picks between options and approves plans from your instructions and the request), brings the agent back when it drifts, and after a failed or interrupted turn (a restart, an update, a subscription limit) tells it to check the current state and carry on without repeating side effects. When it cannot run (every account at its limit), it tries again with growing waits of up to a minute, and after a restart or an update it picks up where it was on the machine that runs the conversation. It stops only when the work is ready for review (Bob's chat says so, with what he checked and the agent's report; your reply is your review and it drives on), for something only you can supply (a password, a token, a code, a sign-in), or for an irreversible or production step. Guardian still asks you for production and destructive steps.
+
 ## Delegating work to Bob
 
 You can hand work over to Bob after your first instructions, and see it again only when it is ready for review. Say so in Bob's chat, for new work ("build the dessert menu in DAK and delegate it to Bob, bring it back for review") or for a conversation you name ("delegate the internal assistant conversation to Bob", "take full control of it and see it through"). Typos are fine ("delegeate"). Bob asks first, as for any change, with **Start and delegate** or **Delegate it**.

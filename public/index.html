@@ -282,6 +282,8 @@
               <label>Minimum confidence <input id="controlBobThreshold" type="number" min="0" max="100" step="1" data-testid="control-bob-threshold"> %</label>
               <label>Auto respond <select id="controlBobAutoRespond" data-testid="control-bob-auto-respond"><option value="bob">Bob decides per task</option><option value="always">Bob always answers for the agent</option><option value="never">Never: agents wait for me</option></select></label>
               <label>When work stops unfinished <select id="controlBobReviewCheck" data-testid="control-bob-review-check"><option value="push">Bob tells it to go on</option><option value="ask">Bob asks me first</option><option value="off">Leave it in review</option></select></label>
+              <label class="control-check"><input id="controlBobSystemControl" type="checkbox" data-testid="control-bob-system-control"> New conversations start under system control</label>
+              <label>My standing instructions for system control <textarea id="controlBobSystemInstructions" rows="4" maxlength="20000" placeholder="How Bob drives every conversation under system control: what to always do, what never to do." data-testid="control-bob-system-instructions"></textarea></label>
               <label class="control-check"><input id="controlBobAsk" type="checkbox" data-testid="control-bob-ask"> Ask me before Bob saves anything</label>
               <div class="control-guard" id="controlBobGuard" data-testid="control-bob-guard">
                 <span id="controlBobGuardText"></span>
@@ -2514,6 +2516,8 @@
           <p id="autoRespondStatus" role="status" data-testid="auto-respond-status"></p>
         </div>
         <label class="checkbox-row"><input type="checkbox" id="autoRespondEnabled" data-testid="auto-respond-enabled" /> Auto respond in this conversation</label>
+        <label class="checkbox-row"><input type="checkbox" id="autoRespondSystemControl" data-testid="auto-respond-system-control" /> System control: Bob drives it with my standing instructions until it is ready for review</label>
+        <label id="autoRespondSystemExtra">My instructions for this conversation <textarea id="autoRespondSystemInstructions" rows="3" maxlength="20000" placeholder="Optional. Added to your standing instructions from Bob's settings." data-testid="auto-respond-system-instructions"></textarea></label>
         <label>Preset <select id="autoRespondPreset" data-testid="auto-respond-preset">
           <option value="">Custom</option>
           <option value="review-consent">Review work and reach consent</option>

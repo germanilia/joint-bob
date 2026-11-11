@@ -53,7 +53,8 @@ export function setAutoRespond(autoRespond, decision = null, nextDefaults) {
   if (current) {
     pill.dataset.state = current.status;
     const count = `${current.responses}${current.maxResponses ? `/${current.maxResponses}` : ""}`;
-    pill.textContent = current.status === "active" ? (current.retry ? `Auto retry ${count}` : decision ? `Auto … ${count}` : `Auto ${count}`) : "Auto stopped";
+    const label = current.systemControl ? "System" : "Auto";
+    pill.textContent = current.status === "active" ? (current.retry ? `${label} retry ${count}` : decision ? `${label} … ${count}` : `${label} ${count}`) : `${label} stopped`;
     pill.title = current.status === "stopped" ? current.stopReason || "Stopped" : current.retry ? `Retry at ${new Date(current.retry.nextAt).toLocaleTimeString()}: ${current.retry.error}` : "Auto respond is answering for you";
   }
   elements.autoRespondButton.classList.toggle("active", current?.status === "active");
@@ -111,6 +112,9 @@ async function openAutoRespond() {
   elements.autoRespondLimit.value = saved ? saved.maxResponses ?? "" : defaults?.maxResponses ?? "";
   elements.autoRespondUseTools.checked = saved ? saved.useTools !== false : true;
   elements.autoRespondEnabled.checked = !saved || saved.status !== "off";
+  elements.autoRespondSystemControl.checked = Boolean(saved?.systemControl);
+  elements.autoRespondSystemInstructions.value = saved?.systemControl?.instructions ?? "";
+  showSystemControl();
   renderStatus();
   elements.autoRespondDialog.showModal();
 
@@ -143,10 +147,25 @@ function applyPreset() {
   elements.autoRespondLimit.value = preset.maxResponses ?? "";
 }
 
+/** Under system control the server builds the responder from the person's standing instructions; only their additions are asked. */
+function showSystemControl() {
+  const system = elements.autoRespondSystemControl.checked;
+  elements.autoRespondSystemExtra.hidden = !system;
+  for (const field of [elements.autoRespondPreset, elements.autoRespondHarness, elements.autoRespondModel, elements.autoRespondThinking, elements.autoRespondInstructions, elements.autoRespondStopInstructions, elements.autoRespondUseTools, elements.autoRespondLimit]) {
+    field.closest("label").hidden = system;
+  }
+}
+
 function save(event) {
   event.preventDefault();
   if (!elements.autoRespondEnabled.checked) {
     if (sendSocket({ type: "autoRespond", autoRespond: { enabled: false } })) elements.autoRespondDialog.close();
+    else toast.error("Not connected");
+    return;
+  }
+  if (elements.autoRespondSystemControl.checked) {
+    const systemControl = { instructions: elements.autoRespondSystemInstructions.value.trim() };
+    if (sendSocket({ type: "autoRespond", autoRespond: { enabled: true, systemControl } })) elements.autoRespondDialog.close();
     else toast.error("Not connected");
     return;
   }
@@ -184,6 +203,10 @@ elements.autoRespondModel.addEventListener("change", () => {
   if (harness) fillThinkingOptions(harness, picker.models, elements.autoRespondModel, elements.autoRespondThinking, elements.autoRespondThinking.value);
 });
 elements.autoRespondPreset.addEventListener("change", applyPreset);
+elements.autoRespondSystemControl.addEventListener("change", () => {
+  if (elements.autoRespondSystemControl.checked) elements.autoRespondEnabled.checked = true;
+  showSystemControl();
+});
 
 // Reset to custom preset when instructions are manually changed
 function markAsCustomPreset() {

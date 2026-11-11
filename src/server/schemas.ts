@@ -531,7 +531,11 @@ export const socketMessageSchema = z.object({
   files: z.array(fileAttachmentSchema).max(6).optional(),
   safeguardsEnabled: z.boolean().optional(),
   toolNames: z.array(z.string().trim().min(1).max(120)).max(100).optional(),
-  autoRespond: z.object({ enabled: z.boolean(), config: autoRespondConfigSchema.optional() }).strict().optional(),
+  autoRespond: z.object({
+    enabled: z.boolean(), config: autoRespondConfigSchema.optional(),
+    /** System control instead of a config: the server builds it from the person's standing instructions and these. */
+    systemControl: z.object({ instructions: z.string().max(20_000) }).strict().optional(),
+  }).strict().optional(),
   /** guardianDecision: the person's answer to a paused action. */
   reviewId: z.string().uuid().optional(),
   decision: z.enum(["allow", "block"]).optional(),

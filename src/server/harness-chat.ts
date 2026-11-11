@@ -28,6 +28,7 @@ import { inheritedDifficulty, latestDifficultyForConversation, saveDifficulty } 
 import { getDifficultyClassifier } from "../classifiers/registry.js";
 import { automaticRoutingModelAllowed, routingEvalDue } from "../routing-policy.js";
 import { activeRoutingConfig, routingConfigDatabase, routingConfigWarning, type StoredRoutingConfig } from "../routing-configs.js";
+import { applySystemControlDefault, enableSystemControl, type ConversationModel } from "./system-control.js";
 import { blockConversationGoal, cancelConversationGoal, getConversationGoal, goalPrompt, goalStatusMessage, parseBobGoalCommand, recordConversationGoalResponse, startConversationGoal, type ConversationGoal } from "../conversation-goals.js";
 import { attachAutoReplies, recordAutoReply, DEFAULT_AUTO_RESPOND_INSTRUCTIONS, DEFAULT_AUTO_RESPOND_STOP_INSTRUCTIONS, autoRespondInput, autoRespondConfigSchema, autoRespondMessage, disableAutoRespond, enableAutoRespond, getAutoRespond, parseAutoRespondDecision, recordAutoResponse, resetAutoRespondCount, responderPrompt, retryAutoRespond, stopAutoRespond, type AutoRespondConfig, type AutoRespondState, type AutoRespondStopKind } from "../conversation-auto-respond.js";
 import { runAutoResponder } from "./auto-respond-run.js";
@@ -251,6 +252,11 @@ async function stopAutoRespondFor(connection: HarnessChatConnection, kind: AutoR
 
 function runtimeSettings(settings: QueuedSettings): HarnessModelSettings {
   return { provider: settings.provider, modelId: settings.modelId, reasoning: settings.reasoning, ...(settings.enabledTools !== undefined ? { enabledTools: settings.enabledTools } : settings.claudeTools ? { enabledTools: settings.claudeTools.enabled ?? undefined } : {}) };
+}
+/** The agent and model the conversation runs on now, which system control's responder runs on too (and so on its pool). */
+function conversationModel(connection: HarnessChatConnection): ConversationModel {
+  const { provider, modelId, reasoning } = connection.shared.session.settings();
+  return { harnessId: connection.engine, provider, modelId, reasoning };
 }
 function currentSettings(connection: HarnessChatConnection): QueuedSettings {
   const settings = connection.shared.session.settings();
@@ -494,6 +500,11 @@ async function enqueue(connection: HarnessChatConnection, message: string, image
   const displayText = [message.trim(), suffix].filter(Boolean).join("\n\n");
   const queued = enqueuePrompt(queueKey(connection), promptText, displayText, { automationProfile: connection.automationProfile, scheduledAutoRespond, requestId, author: connection.author, messageText: message, promptSuffix: promptText.slice(message.trim().length).trim(), displaySuffix: suffix, attachmentPaths: absolute.map(({ path: file }) => file), images: imageAttachments.map(({ path: file, mimeType }) => ({ path: file, mimeType })), settings: settings === undefined ? null : settings });
   markHarnessInput(connection.shared);
+  // A person's first message in a new conversation puts it under system control when their default in Bob's settings says so.
+  if (connection.author && !connection.automationProfile && !scheduledAutoRespond && !connection.shared.session.messages.length) {
+    const controlled = await applySystemControlDefault(connection.project.id, connection.conversationId, conversationModel(connection), connection.author);
+    if (controlled) publishAutoRespond(connection, controlled);
+  }
   publish(connection, { type: "userMessage", text: displayText, timestamp: queued.createdAt, ...(queued.author ? { author: queued.author } : {}), scheduled: isScheduledPromptText(message), queued: true, requestId: queued.requestId, queueId: queued.id, revision: queued.revision, editableText: queued.messageText, settings: queued.settings, attachments: absolute.map(({ kind, name, path: attachmentPath }) => ({ kind, name, path: attachmentPath })) });
   refreshHarnessPromptQueue(connection);
   void drainHarnessPromptQueue(connection).catch(promptQueueFailed(connection));
@@ -1332,6 +1343,15 @@ async function autoRespondCommand(connection: HarnessChatConnection, request: No
     autoDecisions.get(key)?.controller.abort("user-stop");
     publishAutoRespond(connection, await disableAutoRespond(connection.project.id, connection.conversationId));
     broadcastToProject(connection.project.id, { type: "sessionsChanged" });
+    return;
+  }
+  if (request.systemControl) {
+    if (!connection.author) throw new Error("System control needs the person whose conversation it is");
+    await resumePromptQueue(connection);
+    autoDecisions.get(key)?.controller.abort("settings-changed");
+    publishAutoRespond(connection, await enableSystemControl(connection.project.id, connection.conversationId, conversationModel(connection), connection.author, request.systemControl.instructions));
+    broadcastToProject(connection.project.id, { type: "sessionsChanged" });
+    void drainHarnessPromptQueue(connection).catch(promptQueueFailed(connection));
     return;
   }
   const config = autoRespondConfigSchema.parse(request.config);

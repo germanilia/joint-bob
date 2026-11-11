@@ -54,5 +54,10 @@ verified finish, stop instructions for a ready-for-review report, access, decisi
 and risky steps, and a limit of 40 answers. A stop whose reason starts with "Ready for review:" shows in
 Bob's chat as ready for review, with the agent's report.
 
+System control (see "System control" in [the control center](control-center.md)) is auto respond with
+Bob's setup built from your standing instructions: it runs on the conversation's own model and pool, has no
+limit, decides for you, and stops only when the work is ready for review, for credentials, or for an
+irreversible step.
+
 `/bob-goal` and auto respond can both be set: the goal runs first, and once it
 completes or blocks the responder takes the next stop.
