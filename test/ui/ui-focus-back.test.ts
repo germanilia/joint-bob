@@ -8,6 +8,16 @@ test("phone titles read in title case at one size, and Back climbs a level inste
   await signIn(fixture.environment, fixture.node);
   const context = await fixture.page.context().browser()!.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, serviceWorkers: "block" });
   t.after(() => context.close());
+  // Chrome's Back skips an entry whose page pushed a new one without a gesture, which closed the installed app.
+  await context.addInitScript(() => {
+    const push = history.pushState.bind(history);
+    Object.assign(window, { pushesWithoutGesture: 0 });
+    history.pushState = (...args: Parameters<History["pushState"]>) => {
+      if (!navigator.userActivation.isActive) Object.assign(window, { pushesWithoutGesture: (window as unknown as { pushesWithoutGesture: number }).pushesWithoutGesture + 1 });
+      push(...args);
+    };
+  });
+  const pushesWithoutGesture = (target: typeof page) => target.evaluate(() => (window as unknown as { pushesWithoutGesture: number }).pushesWithoutGesture);
   const page = await context.newPage();
   page.setDefaultTimeout(20_000);
   await page.goto(fixture.node.url);
@@ -41,10 +51,11 @@ test("phone titles read in title case at one size, and Back climbs a level inste
   assert.ok(sized.tail, "a labelled title has a last-word span");
   assert.equal(sized.tail, sized.title, "the last word is the same size as the rest of the title");
 
-  // Each Back lands on the base entry, and the app puts the entry above it back, so the page never leaves the app.
+  // Each Back lands on the base entry; the entry above it comes back with the next tap, so the base stays reachable.
   const back = async (view: string) => {
-    await page.evaluate(() => history.back());
+    await page.goBack();
     await page.locator(`body.view-${view}`).waitFor();
+    await page.mouse.click(1, 1);
     await page.waitForFunction(() => history.state?.appTop === true);
   };
   await page.locator("#sessionList .session-card").first().click();
@@ -66,4 +77,15 @@ test("phone titles read in title case at one size, and Back climbs a level inste
   await page.evaluate(async () => (await import("/app/layout.js")).setMobileView("control"));
   await page.locator("body.view-control").waitFor();
   await back("projects");
+
+  // Opening the app restores the saved view without a gesture, so the entry above the base waits for the first tap.
+  const opened = await context.newPage();
+  // Playwright's own page polling runs with a gesture, so wait for the start-up view without polling the page.
+  await opened.goto(fixture.node.url);
+  await new Promise(resolve => setTimeout(resolve, 5_000));
+  assert.ok(await opened.evaluate(() => document.body.matches(".view-projects, .view-sessions, .view-control")), "the app restored a view");
+  assert.equal(await pushesWithoutGesture(opened), 0, "opening the app pushes nothing without a gesture");
+  await opened.mouse.click(1, 1);
+  await opened.waitForFunction(() => history.state?.appTop === true);
+  assert.equal(await pushesWithoutGesture(page), 0, "Back never pushes without a gesture");
 });

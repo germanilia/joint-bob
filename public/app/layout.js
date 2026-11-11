@@ -79,10 +79,21 @@ function controlExitView() {
 
 // History holds the base entry and exactly one entry above it for the current view, so Back always climbs one level
 // instead of replaying every place visited, and Back on the projects view stays in the app.
+// Chrome's Back skips an entry whose page pushed a new one without a tap or key press, so pushing at startup or
+// from popstate made the next Back close the installed app. The entry above the base waits for the next gesture.
+let topEntryPending = false;
+
 function recordView(view) {
-  if (history.state?.appTop) history.replaceState({ ...history.state, mobileView: view, appTop: true }, "");
-  else history.pushState({ ...history.state, mobileView: view, appTop: true }, "");
+  if (history.state?.appTop) { history.replaceState({ ...history.state, mobileView: view, appTop: true }, ""); return; }
+  if (!navigator.userActivation.isActive) { topEntryPending = true; return; }
+  topEntryPending = false;
+  history.pushState({ ...history.state, mobileView: view, appTop: true }, "");
 }
+
+function pushPendingTopEntry() {
+  if (topEntryPending && navigator.userActivation.isActive) recordView(currentMobileView());
+}
+for (const type of ["pointerup", "keydown"]) document.addEventListener(type, pushPendingTopEntry, true);
 
 export function setMobileView(view, updateHistory = true) {
   if (state.keepControlView && view !== "control") return;
