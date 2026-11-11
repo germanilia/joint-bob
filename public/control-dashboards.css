@@ -27,3 +27,13 @@
 .control-dash-ask[hidden] { display: none; }
 .control-dash-ask textarea { width: 100%; resize: vertical; }
 .control-dash-ask-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* The Dashboard view: one of the person's dashboards over everything, beside the board. */
+.control-mydash { overflow: hidden; }
+.control-mydash-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.control-mydash-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 240px; min-width: 0; }
+.control-mydash-picker .control-chip { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.control-mydash-picker .control-chip[data-status="building"], .control-mydash-picker .control-chip[data-status="draft"] { border-style: dashed; }
+.control-mydash-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.control-mydash-stage { flex: 1; min-height: 200px; overflow: hidden; display: flex; flex-direction: column; }
+.control-mydash-stage .dashboard-frame { flex: 1; width: 100%; border: 0; }

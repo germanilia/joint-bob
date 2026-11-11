@@ -132,11 +132,11 @@ export function listAllDashboards(): DashboardRecord[] {
   return (db().prepare("SELECT * FROM dashboards ORDER BY created_at, id").all() as unknown as Row[]).map(toRecord);
 }
 
-/** A conversation's or project's dashboard runs in that project; a workspace names one of its own. */
+/** A conversation's or project's dashboard runs in that project; a workspace's, or a person's over everything, names a project. */
 export function hostProjectFor(entity: DashboardEntity, workspaceHost?: string): string {
   if (entity.kind === "conversation") return entity.projectId;
   if (entity.kind === "project") return entity.id;
-  if (!workspaceHost) throw new Error("A workspace dashboard needs one of the workspace's projects to run in");
+  if (!workspaceHost) throw new Error(entity.kind === "account" ? "A dashboard over all your projects needs one of them to run in" : "A workspace dashboard needs one of the workspace's projects to run in");
   return workspaceHost;
 }
 

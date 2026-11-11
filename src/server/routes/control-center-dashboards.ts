@@ -2,7 +2,8 @@ import { z } from "zod";
 import { appendBobMessage, bobDatabase } from "../../control-center/bob-store.js";
 import { runningState } from "../../dashboards/service.js";
 import { buildingDashboardIds, startDashboardBuild, type BuildTarget } from "../control-center-dashboard-builds.js";
-import { listDashboardCards } from "../control-center-dashboard-cards.js";
+import { listDashboardCards, listOverviewDashboards } from "../control-center-dashboard-cards.js";
+import { projectsWithSharedNames } from "../projects.js";
 import { app } from "../state.js";
 import { DashboardError, dashboardRoute, visibleDashboard } from "./dashboards.js";
 
@@ -13,6 +14,33 @@ app.get("/api/control-center/dashboards", dashboardRoute(async (request, _respon
 }));
 
 const askSchema = z.object({ text: z.string().trim().min(1).max(8000) }).strict();
+
+/** The person's dashboards over everything they can see, for the control center's Dashboard view. */
+app.get("/api/control-center/dashboards/overview", dashboardRoute(async (request, _response, auth) => {
+  z.object({}).strict().parse(request.query);
+  return { dashboards: listOverviewDashboards(auth) };
+}));
+
+/**
+ * A new dashboard over all the person's projects and workspaces, from their words: the dashboard-creator agent builds it in
+ * the background, in the project they use most recently, and Bob says so in the chat when it is done.
+ */
+app.post("/api/control-center/dashboards/overview", dashboardRoute(async (request, response, auth) => {
+  const { text } = askSchema.parse(request.body);
+  const host = (await projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }))[0];
+  if (!host) throw new DashboardError(409, "A dashboard needs a project to run in, and you have none yet");
+  const target: BuildTarget = { entity: { kind: "account", id: auth.accountId }, hostProjectId: host.id, label: "All my projects", projectId: null, projectName: null };
+  const brief = `${text}\n\nThis is the person's dashboard for the control center: it covers every project and workspace they can see, listed below, not one of them.`;
+  const record = await startDashboardBuild(auth, target, brief, text);
+  const db = await bobDatabase();
+  const user = appendBobMessage(db, auth.accountId, { role: "user", text: `Create a control center dashboard: ${text}` });
+  const reply = appendBobMessage(db, auth.accountId, {
+    role: "bob", text: "Building your control center dashboard. The dashboard agent works in the background; I will tell you here when it is done.", via: "Dashboards · control center",
+  });
+  response.status(202);
+  return { id: record.id, user, reply };
+}));
+
 
 /**
  * "Ask Bob to change it": the request goes into Bob's chat as the person's message and the dashboard-creator agent

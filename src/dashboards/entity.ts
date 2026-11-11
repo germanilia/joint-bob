@@ -14,6 +14,8 @@ export interface EntityContext {
   /** The conversation's latest harness session, whose secret accounts its dashboard also gets. */
   conversation?: { engine: string; sessionId: string; title: string; transcriptPath: string };
   workspace?: { id: string; label: string; projects: ProjectRecord[] };
+  /** Every project the person can see, by workspace, for a dashboard over all of them. */
+  account?: { workspaces: Array<{ label: string; projects: ProjectRecord[] }> };
 }
 
 async function visibleProject(projectId: string): Promise<ProjectRecord> {
@@ -36,10 +38,22 @@ async function workspaceContext(workspaceId: string, host: ProjectRecord): Promi
   return { id: workspace.id, label: workspace.label, projects: (await listProjects()).filter((project) => project.type === workspace.id) };
 }
 
+async function accountContext(): Promise<EntityContext["account"]> {
+  const visible: ProjectRecord[] = [];
+  for (const project of await listProjects()) if (await projectVisible(project.id)) visible.push(project);
+  const workspaces = (await listWorkspaces()).map((workspace) => ({ label: workspace.label, projects: visible.filter((project) => project.type === workspace.id) }));
+  return { workspaces: workspaces.filter((workspace) => workspace.projects.length) };
+}
+
 /** Resolves the entity and checks the person may see it; the host project carries its work. */
 export async function resolveEntity(entity: DashboardEntity, hostProjectId: string, auth: AuthSession): Promise<EntityContext> {
   const project = await visibleProject(hostProjectId);
   if (entity.kind === "project") return { entity, project, label: project.name };
+  if (entity.kind === "account") {
+    // A person's dashboards over everything are theirs alone.
+    if (entity.id !== auth.accountId) throw new NotFoundError("Dashboard not found");
+    return { entity, project, label: "All my projects", account: await accountContext() };
+  }
   if (entity.kind === "conversation") {
     const conversation = await conversationContext(project, entity.id, auth);
     return { entity, project, label: conversation!.title || "Conversation", conversation };

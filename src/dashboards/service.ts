@@ -94,6 +94,11 @@ export function levelContext(context: EntityContext): string {
     lines.push(`Workspace "${context.workspace.label}". Its projects:`, ...context.workspace.projects.map((project) => `- ${project.name}: ${project.path}`));
     lines.push(`The dashboard runs in the workspace's project "${context.project.name}".`);
   }
+  if (context.account) {
+    lines.push("This dashboard covers every project and workspace the person can see, not one of them:");
+    for (const workspace of context.account.workspaces) lines.push(`Workspace "${workspace.label}":`, ...workspace.projects.map((project) => `- ${project.name}: ${project.path}`));
+    lines.push(`The dashboard runs in the project "${context.project.name}".`);
+  }
   lines.push(`Project "${context.project.name}" at ${context.project.path}.`);
   const names = secretNames(context);
   lines.push(names.length ? `Secret variables available to you and to the refresh script (names only): ${names.join(", ")}.` : "No secret accounts are attached.");

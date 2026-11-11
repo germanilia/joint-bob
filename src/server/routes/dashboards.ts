@@ -83,7 +83,7 @@ const messageSchema = z.object({ text: z.string().trim().min(1).max(20_000), ...
 const refreshSchema = z.object({ target: z.enum(["live", "draft"]), ...projectIdField }).strict();
 const emptySchema = z.object(projectIdField).strict();
 const approveSchema = z.object({ digest: z.string().regex(/^[0-9a-f]{64}$/), ...projectIdField }).strict();
-const listSchema = z.object({ kind: z.enum(["conversation", "project", "workspace"]), id: z.string().min(1).max(300), projectId: z.string().min(1).max(300) }).strict();
+const listSchema = z.object({ kind: z.enum(["conversation", "project", "workspace", "account"]), id: z.string().min(1).max(300), projectId: z.string().min(1).max(300) }).strict();
 
 function dashboardView(record: DashboardRecord) {
   const hasDraft = draftExists(record.id);

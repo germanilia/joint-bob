@@ -20,7 +20,7 @@ The board refreshes from the signals that already keep the running list current,
 
 ## Tabs
 
-The board is the first tab, **Live agents**. **Project overview** shows one project at a glance: its conversations as short headlines (running, ready for review, started by Bob), what changed recently (branch, uncommitted files, last commits), and what its project knowledge holds, with **Ask Bob about this project** and **New task here** pointing Bob's chat at it. More tabs are added by the features below.
+The board is the first tab, **Live agents**. **Project overview** shows one project at a glance: its conversations as short headlines (running, ready for review, started by Bob), what changed recently (branch, uncommitted files, last commits), and what its project knowledge holds, with **Ask Bob about this project** and **New task here** pointing Bob's chat at it. **Dashboard** swaps the board for one of your own dashboards over all your projects (see The Dashboard view). More tabs are added by the features below.
 
 ## Making it yours
 
@@ -206,6 +206,15 @@ The **Dashboards** tab shows the dashboards you can see, as cards, in two groups
 - **Which project, which workspace.** The project comes from the message or from the chat's Project box. A personal dashboard goes to the workspace of that project, or to the only workspace that has projects. If it is not clear, Bob asks and builds nothing.
 - Bob records the dashboards it made, per person, to label them. Saving a dashboard Bob built is the same save as in the creator view, so it is yours to edit, share or delete like any other. Bob does not change a dashboard unless you ask with **Ask Bob to change it**, and a refresh never runs on its own.
 - Dashboards cannot run agents or scripts on a multi-user node yet; Bob says so instead of starting.
+
+## The Dashboard view
+
+The **Dashboard** tab, next to **Live agents**, is the other side of the board: one click swaps the conversations for a dashboard, and one click swaps back. Its dashboards are your own, over every project and workspace you can see, not tied to one of them.
+
+- **Ask for one in words.** **+ New dashboard** opens a box; say what you want to see ("what needs my attention, running agents per project, spend this week"). Bob answers in the chat at once, the dashboard agent builds it in the background with the list of your workspaces and projects, and Bob says when it is ready. A script dashboard is refreshed once so it opens with data; an AI one waits for you to press **Refresh with AI**.
+- **As many as you like.** Each dashboard is a chip above the page; click one to show it. The one with the star is your default, which the view opens with. **Make default** moves the star. The first dashboard you make is the default until you choose another, and deleting the default passes it to the newest of the rest.
+- **On the page.** **Refresh** runs its script (no AI), **Ask Bob to change it** sends your words to the dashboard agent, and **Delete** removes it. **Open dashboards** on Bob's message about one of these opens it here.
+- They are the existing dashboards feature underneath (the same agent, widgets, sandboxed frame and refresh). They are not listed in the **Dashboards** tab, which keeps the project and workspace ones, and they stay on the machine they were made on: they are not shared with other machines.
 
 ## Moving jobs to another machine
 

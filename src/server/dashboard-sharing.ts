@@ -16,6 +16,8 @@ type Peer = Peers["nodes"][number];
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 function offered(context: Peers, peer: Peer, record: DashboardRecord): boolean {
+  // A person's dashboard over everything stays on the node it was made on: older nodes do not know the kind.
+  if (record.entity.kind === "account") return false;
   const sharing = dashboardSharing(record.id);
   return offeredTo({
     saved: record.definitionDigest !== null, origin: record.origin, receiverNodeId: peer.nodeId,
