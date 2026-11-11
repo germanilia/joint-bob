@@ -70,6 +70,8 @@ export interface ApplierDeps {
   share(key: string): ApplyShare | undefined;
   /** "changed": the path is scanned now (on-disk spellings). */
   scanPaths(key: string, fsPaths: string[]): void;
+  /** A folder this batch made or recorded is watched from now on, as a scan watches the folders it walks. */
+  watchDirectory(key: string, path: string, fsPath: string, ino: number): void;
   /** Rows were written: peers are told, the status goes out. */
   committed(key: string): void;
   faults?: { beforeRename?(path: string): void; afterRename?(path: string): void };
@@ -1313,6 +1315,13 @@ export class Applier {
       db.updateShare(key, { maxSeq, digest: digest.toString(), liveFiles, liveBytes });
       need.appliedInTx(key, applied, moved);
     });
+    // A scan watches each folder it walks. The folders made here are not walked (their events are the engine's own, so
+    // they are suppressed), and where every folder needs a watch of its own (Linux) nothing else would watch them.
+    for (const change of section.changes) {
+      if ((change.kind === "target" || change.kind === "folder") && change.st?.isDirectory()) {
+        this.deps.watchDirectory(key, change.path, change.fsName ?? change.path, change.st.ino);
+      }
+    }
     this.deps.committed(key);
   }
 }

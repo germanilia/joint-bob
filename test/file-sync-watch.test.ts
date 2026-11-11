@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -7,9 +8,10 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
+import { tempNameFor } from "../src/file-sync/apply.js";
 import { createWorkerCore } from "../src/file-sync/core.js";
 import type { CoreEvent, ShareStatus } from "../src/file-sync/protocol.js";
-import { systemClock, type Clock } from "../src/file-sync/types.js";
+import { FILE, systemClock, type Clock } from "../src/file-sync/types.js";
 import { BurstMonitor, inotifyBurstLimit, ShareWatcher, SuppressionRegistry, type WatchBatch, type WatchState } from "../src/file-sync/watch.js";
 
 function manualClock(start = 1_000_000) {
@@ -433,4 +435,41 @@ test("the worker thread answers ops, sends events and ends after stop", { timeou
   const code = await Promise.race([exited, new Promise<string>((resolve) => { timer = setTimeout(() => resolve("still running"), 10_000); })]);
   clearTimeout(timer);
   assert.equal(code, 0, "the thread ends by itself once stopped (watchers closed, database closed)");
+});
+
+test("a file written into folders a download made is indexed, where each folder is watched on its own", async (t) => {
+  // The folders a download makes are not walked (their events are the engine's own): on 2026-11-11 a worktree's
+  // .joint-bob-worktree, made that way on Linux, was never watched, and a marker written into it never synced.
+  const dir = mkdtempSync(path.join(os.tmpdir(), "jb-fs-made-"));
+  const root = path.join(dir, "root");
+  mkdirSync(root);
+  const events: CoreEvent[] = [];
+  const core = createWorkerCore({ nodeId: "node-a", dataDir: path.join(dir, "data"), clock: systemClock, random: Math.random, watch: true, watchMode: "directories", emit: (event) => events.push(event) });
+  t.after(async () => { await core.close(); rmSync(dir, { recursive: true, force: true }); });
+  const key = "project:p1";
+  await core.call("configure", {
+    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    shares: [{ key, projectId: "p1", kind: "project", root, phase: "builtin", rules: {}, peers: ["node-b"] }],
+  });
+  await waitFor(events, (status) => status.state === "idle" && status.watch === "watching", 10_000);
+
+  const content = "from the peer";
+  const sha256 = createHash("sha256").update(content).digest("hex");
+  const relative = "made/deeper/a.txt";
+  await core.need.storeRemote(key, "node-b", 0, {
+    indexId: "peer-gen", maxSeq: 1, digest: "0".repeat(64), prunedBelow: 0, builtinSince: null, more: false,
+    entries: [{ path: relative, type: FILE, size: content.length, mtimeMs: 1_700_000_000_000, mode: 0o644, sha256, target: null, deleted: false, version: { "node-b": 1 }, modifiedBy: "node-b", seq: 1 }],
+  });
+  await core.need.idle();
+  const parent = core.applier.ensureParents(key, relative);
+  assert.ok(parent.ok, JSON.stringify(parent));
+  const temp = path.join(parent.directory, tempNameFor(key, relative, sha256));
+  writeFileSync(temp, content);
+  const applied = await core.call("applyBatch", { share: key, items: [{ path: relative, tempPath: temp, source: "node-b" }] });
+  assert.deepEqual(applied.items.map((item) => item.outcome), ["applied"]);
+  await waitFor(events, (status) => status.liveFiles === 1, 10_000);
+
+  writeFileSync(path.join(root, "made", "deeper", "local.txt"), "written here");
+  const status = await waitFor(events, (candidate) => candidate.liveFiles === 2, 10_000);
+  assert.equal(status.watch, "watching");
 });

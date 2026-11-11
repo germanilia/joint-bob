@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.267.4 — 2026-11-11
+
+- Fixed built-in file sync on Linux missing changes inside folders it had created itself while downloading. Those folders were never watched, so a file someone added there later, such as a worktree's conversation marker, was not sent to the other machines until a full rescan.
+
 ## 2.267.3 — 2026-11-11
 
 - Fixed a node that keeps its database in PostgreSQL failing every database call with "PostgreSQL worker answered out of turn" until it restarted. A late wake-up from the database worker was taken as the answer to the next query, and from then on each query read the answer meant for the one before it.

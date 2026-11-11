@@ -183,6 +183,7 @@ class Core implements WorkerCore {
       db: this.db, nodeId: deps.nodeId, clock: deps.clock, need: this.need, trash: this.trash, suppression: this.suppression,
       share: (key) => this.applyShare(key),
       scanPaths: (key, fsPaths) => { const runtime = this.shares.get(key); if (runtime) this.enqueue(runtime, { paths: fsPaths, reason: "apply" }); },
+      watchDirectory: (key, path, fsPath, ino) => this.shares.get(key)?.watcher?.watchDirectory(path, fsPath, ino),
       committed: (key) => this.localChanged(key),
       faults: deps.faults,
       multiUser: () => this.config?.multiUser ?? deps.multiUser ?? false,
