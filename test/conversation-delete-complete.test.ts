@@ -7,8 +7,16 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { after } from "node:test";
 import { createSourceTables } from "./source-schema.js";
+
+// This file loads the server's own delete route, and with it the watcher that follows each project's
+// transcript folders. On Linux a recursive watcher keeps the process alive after the last test (unref
+// does nothing there), so the run never ended in CI. Closing it lets the file finish.
+after(async () => {
+  const { sessionWatcher } = await import("../src/server/chat.js");
+  sessionWatcher.close();
+});
 
 const exists = (file: string) => access(file).then(() => true, () => false);
 
