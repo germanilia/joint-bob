@@ -208,7 +208,9 @@ export async function enqueueSecretCredentialSync(peerIds: string[], actorId?: s
       enrolled += Number(handle.prepare("INSERT OR IGNORE INTO secret_credential_deliveries (event_id, peer_id, attempts, next_attempt_at, delivered_at, last_error) SELECT event_id, ?, 0, ?, NULL, NULL FROM secret_credential_events WHERE origin_node_id=?").run(peerId, at, local.id).changes);
       handle.prepare("UPDATE secret_credential_deliveries SET attempts = 0, next_attempt_at = ?, last_error = NULL WHERE peer_id = ? AND delivered_at IS NULL").run(at, peerId);
     }
-    appendAuditEvent(handle, { eventType: "secrets.credentials.sync", actorType: actorId ? "user" : "system", actorId, entityType: "secrets.credentials", entityId: "sync", details: { peers: peerIds.length, enrolled } });
+    // A row for a pass that queued something for a peer, none for a pass that found nothing new.
+    // Twins are flushed every few seconds, and a row per pass was 27,000 rows a day that said nothing.
+    if (enrolled > 0) appendAuditEvent(handle, { eventType: "secrets.credentials.sync", actorType: actorId ? "user" : "system", actorId, entityType: "secrets.credentials", entityId: "sync", details: { peers: peerIds.length, enrolled } });
     handle.exec("COMMIT");
     return enrolled;
   } catch (error) { handle.exec("ROLLBACK"); throw error; }

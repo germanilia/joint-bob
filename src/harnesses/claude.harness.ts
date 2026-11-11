@@ -51,6 +51,12 @@ export default defineHarness({
       if (!sessionPath.startsWith("claude:") || !file.endsWith(".jsonl") || !isWithin(file, claudeProjectsRoot())) throw new Error("Claude transcript is outside the configured transcript root");
       return file;
     },
+    // Claude keeps `<project folder>/<session id>/` beside `<session id>.jsonl`. A project folder also
+    // holds folders that are no session's (`memory`), so only a name shaped like a session id counts.
+    sessionFolder: (directory) => {
+      const folder = path.resolve(directory), name = path.basename(folder);
+      return path.dirname(path.dirname(folder)) === path.resolve(claudeProjectsRoot()) && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name) ? name : undefined;
+    },
   },
   sync: {
     transcriptRoot: claudeProjectsRoot,

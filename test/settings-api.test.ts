@@ -91,6 +91,8 @@ test("settings API persists runtime choices without returning secrets", async ()
         gitPullFileLimit: 750,
         conversationHistoryDays: 45,
         conversationRetentionDays: 60,
+        // Two of the six boxes; the four that are left out stay off.
+        conversationRetentionScope: { full: true, leftovers: true },
         projects: { homePath: path.join(root, "JointBob") },
         resources: { skills: [path.join(root, "skills"), path.join(root, "skills")], prompts: [path.join(root, "prompts")], rules: [path.join(root, "rules")], plugins: [path.join(root, "plugins")] },
       }),
@@ -113,6 +115,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       conversationDefaults,
       conversationHistoryDays: 45,
       conversationRetentionDays: 60,
+      conversationRetentionScope: { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: true, backgroundRuns: false },
       autoCompactThreshold: 70,
       digestAttachments: false,
       showProjectsOnOtherNodes: true,
@@ -160,6 +163,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       conversationDefaults,
       conversationHistoryDays: 45,
       conversationRetentionDays: 60,
+      conversationRetentionScope: { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: true, backgroundRuns: false },
       autoCompactThreshold: 70,
       digestAttachments: false,
       showProjectsOnOtherNodes: true,
@@ -243,6 +247,16 @@ test("settings API persists runtime choices without returning secrets", async ()
       });
       assert.equal(invalidLimit.status, 400);
     }
+    // The retention boxes: one the setting does not have, or a value that is no yes or no, is refused and changes nothing.
+    for (const scope of [{ everything: true }, { full: "yes" }, true]) {
+      const refusedScope = await fetch(`${node.baseUrl}/api/settings`, {
+        method: "PUT", headers,
+        body: JSON.stringify({ conversationRetentionScope: scope }),
+      });
+      assert.equal(refusedScope.status, 400);
+    }
+    const scopeKept = await (await fetch(`${node.baseUrl}/api/settings`, { headers })).json() as { conversationRetentionScope: Record<string, boolean> };
+    assert.deepEqual(scopeKept.conversationRetentionScope, { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: true, backgroundRuns: false }, "saves that left the boxes out kept them");
     for (const timeout of [59, 3601, 90.5]) {
       const invalidTimeout = await fetch(`${node.baseUrl}/api/settings`, {
         method: "PUT", headers,

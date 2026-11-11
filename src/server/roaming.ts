@@ -8,6 +8,7 @@ import { ClusterV2HttpError } from "../cluster-v2-errors.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { getUserPreferences, updateUserPreferences } from "../preferences.js";
 import { applyUserRecentSessionEvent, deleteUserRecents, userRecentEvents } from "../recent-sessions.js";
+import { eventOfForgottenConversation } from "../conversation-forget.js";
 import { deletePersonalSettings, personalSettings, replacePersonalSettings, updatePersonalSettings, type PersonalSettings } from "../settings.js";
 import { applyUserPinEvent, deleteUserPins, userPinEvents } from "../user-pins.js";
 import { accountSnapshotFor } from "../user-replication.js";
@@ -231,6 +232,8 @@ export async function receiveProfile(sender: string, input: unknown): Promise<vo
   for (const event of profile.events) {
     // Every row a profile writes belongs to the person it is for.
     if (event.payload.username !== profile.accountId) continue;
+    // A recent of a conversation deleted since the profile was built is not brought back.
+    if (eventOfForgottenConversation(db, event)) continue;
     try { (event.entityType === "user.pin" ? applyUserPinEvent : applyUserRecentSessionEvent)(db, event); }
     catch (error) { console.warn(`A profile ${event.entityType} from ${sender} was rejected: ${error instanceof Error ? error.message : "invalid"}`); }
   }

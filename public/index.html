@@ -926,6 +926,36 @@
               days
             </label>
             <p class="settings-hint">Deletion removes the transcript on every node. Pinned, ticket, and scheduled conversations are kept. Conversations that never got a message are deleted after an hour.</p>
+            <div class="retention-scope" data-testid="settings-retention-scope">
+              <p class="settings-hint">Only the conversations a project's list still shows are checked. Older ones stay until you tick the first box.</p>
+              <label class="checkbox-row">
+                <input id="settingsRetentionFull" type="checkbox" data-retention-scope="full" data-testid="settings-retention-full" />
+                Also delete older conversations that the list no longer shows
+              </label>
+              <label class="checkbox-row retention-scope-dependent">
+                <input id="settingsRetentionUnrecorded" type="checkbox" data-retention-scope="includeUnrecorded" data-retention-needs-full data-testid="settings-retention-unrecorded" />
+                …and old transcripts that have no conversation record (in project folders only)
+              </label>
+              <label class="checkbox-row retention-scope-dependent">
+                <input id="settingsRetentionScheduled" type="checkbox" data-retention-scope="includeScheduled" data-retention-needs-full data-testid="settings-retention-scheduled" />
+                …and conversations started by schedules and webhooks
+              </label>
+              <label class="checkbox-row retention-scope-dependent">
+                <input id="settingsRetentionTickets" type="checkbox" data-retention-scope="includeTickets" data-retention-needs-full data-testid="settings-retention-tickets" />
+                …and conversations of finished tickets
+              </label>
+              <label class="checkbox-row">
+                <input id="settingsRetentionLeftovers" type="checkbox" data-retention-scope="leftovers" data-testid="settings-retention-leftovers" />
+                Remove files left behind by conversations that were already deleted
+              </label>
+              <label class="checkbox-row">
+                <input id="settingsRetentionBackgroundRuns" type="checkbox" data-retention-scope="backgroundRuns" data-testid="settings-retention-background-runs" />
+                Remove Joint Bob's own background-run transcripts after 7 days
+              </label>
+              <button class="ghost" id="settingsRetentionPreviewButton" type="button" data-testid="settings-retention-preview-button">Show what would be deleted</button>
+              <p class="settings-hint">Nothing is deleted until you save, and then only at the next hourly check.</p>
+              <div id="settingsRetentionPreview" class="retention-preview" data-testid="settings-retention-preview" aria-live="polite" hidden></div>
+            </div>
             </div>
           </fieldset>
           <fieldset class="phase-settings">

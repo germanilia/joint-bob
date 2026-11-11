@@ -8,6 +8,31 @@ export const UNOWNED_EMPTY_CONVERSATION_GRACE_MS = 7 * 24 * 60 * 60_000;
 
 export type RetentionReason = "empty" | "expired";
 
+/**
+ * What the owner lets the retention sweep delete beyond the conversations a project's list still
+ * shows, and what it may clear up. A machine setting; every box is off until the owner ticks it.
+ */
+export interface ConversationRetentionScope {
+  /** Every conversation on record in a project, not only the ones its list shows. */
+  full: boolean;
+  /** With `full`: transcripts that have no record, when they lie in a current project's folders. */
+  includeUnrecorded: boolean;
+  /** With `full`: the conversations that scheduled tasks and webhooks made, one per run. */
+  includeScheduled: boolean;
+  /** With `full`: the conversations of finished tickets. An unfinished ticket keeps its conversation. */
+  includeTickets: boolean;
+  /** Files and rows that deletes made before the complete delete existed left on this machine. */
+  leftovers: boolean;
+  /** Joint Bob's own background runs, seven days after their last activity. */
+  backgroundRuns: boolean;
+}
+
+export const CONVERSATION_RETENTION_SCOPE_KEYS = ["full", "includeUnrecorded", "includeScheduled", "includeTickets", "leftovers", "backgroundRuns"] as const satisfies ReadonlyArray<keyof ConversationRetentionScope>;
+
+export function defaultConversationRetentionScope(): ConversationRetentionScope {
+  return { full: false, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: false, backgroundRuns: false };
+}
+
 export interface RetentionContext {
   now: number;
   retentionDays: number;

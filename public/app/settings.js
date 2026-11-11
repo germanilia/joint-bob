@@ -531,6 +531,7 @@ async function loadSettings() {
   elements.settingsGitPullTimeoutSeconds.value = settings.gitPullTimeoutSeconds ?? 360;
   elements.settingsProjectHome.value = settings.projects.homePath;
   document.querySelector("#settingsConversationRetentionDays").value = settings.conversationRetentionDays;
+  fillRetentionScope(settings.conversationRetentionScope);
   elements.settingsShellTimeoutEnabled.checked = settings.shellCommandTimeoutSeconds !== null;
   elements.settingsShellTimeoutSeconds.value = settings.shellCommandTimeoutSeconds ?? 600;
   elements.settingsSubprocessMaxLifetimeMinutes.value = settings.subprocessMaxLifetimeMinutes ?? 360;
@@ -671,6 +672,7 @@ async function saveSettings(event) {
       conversationLabelIcons: labelIconsValue(),
       conversationHistoryDays: Number(document.querySelector("#settingsConversationHistoryDays").value),
       conversationRetentionDays: Number(document.querySelector("#settingsConversationRetentionDays").value),
+      conversationRetentionScope: retentionScopeValue(),
       autoCompactThreshold: elements.settingsAutoCompactEnabled.checked ? Number(elements.settingsAutoCompactThreshold.value) : null,
       shellCommandTimeoutSeconds: elements.settingsShellTimeoutEnabled.checked ? Number(elements.settingsShellTimeoutSeconds.value) : null,
       subprocessMaxLifetimeMinutes: Number(elements.settingsSubprocessMaxLifetimeMinutes.value),
@@ -728,6 +730,104 @@ async function reloadSkills() {
   elements.settingsSkillsStatus.textContent = `Reloaded ${result.reloaded}; skipped ${result.skipped}; failed ${result.failed.length}.${failures ? ` ${failures}.` : ""} Busy sessions skipped; retry when idle. Claude loads changes on its next run.`;
 }
 
+/* What the retention sweep may delete beyond the list: six boxes saved as one setting, and a
+   button that asks the node what the ticked boxes would delete. The button changes nothing. */
+const retentionBoxes = () => [...document.querySelectorAll("[data-retention-scope]")];
+
+/** The three boxes that widen the first one do nothing without it. */
+function syncRetentionScope() {
+  const full = document.querySelector("#settingsRetentionFull").checked;
+  for (const box of document.querySelectorAll("[data-retention-needs-full]")) box.disabled = !full;
+}
+
+/** A node that predates the setting sends none: every box is unticked. */
+function fillRetentionScope(scope) {
+  for (const box of retentionBoxes()) box.checked = scope?.[box.dataset.retentionScope] === true;
+  syncRetentionScope();
+  const preview = document.querySelector("#settingsRetentionPreview");
+  preview.hidden = true;
+  preview.replaceChildren();
+}
+
+function retentionScopeValue() {
+  return Object.fromEntries(retentionBoxes().map((box) => [box.dataset.retentionScope, box.checked]));
+}
+
+function retentionSize(bytes) {
+  const megabytes = (Number(bytes) || 0) / 1e6;
+  if (megabytes >= 1000) return `${(megabytes / 1000).toFixed(megabytes >= 10_000 ? 0 : 1)} GB`;
+  return `${megabytes >= 10 || megabytes === 0 ? megabytes.toFixed(0) : megabytes.toFixed(1)} MB`;
+}
+
+function retentionTable(testId, caption, headings, rows) {
+  const table = document.createElement("table");
+  table.dataset.testid = testId;
+  table.createCaption().textContent = caption;
+  const head = table.createTHead().insertRow();
+  for (const heading of headings) { const cell = document.createElement("th"); cell.scope = "col"; cell.textContent = heading; head.append(cell); }
+  const body = table.createTBody();
+  for (const { kind, cells } of rows) {
+    const row = body.insertRow();
+    if (kind) row.dataset.kind = kind;
+    for (const text of cells) row.insertCell().textContent = String(text);
+  }
+  return table;
+}
+
+function retentionPreviewTables(preview) {
+  const count = (total) => [total.conversations.toLocaleString(), total.files.toLocaleString(), retentionSize(total.bytes)];
+  const { totals } = preview;
+  const tables = [retentionTable("settings-retention-preview-totals", "With the boxes ticked above, on this machine", ["", "Conversations", "Files", "Size"], [
+    { kind: "expired", cells: [`Expired: no activity for ${preview.retentionDays} days`, ...count(totals.expired)] },
+    { kind: "empty", cells: ["Empty: never got a message", ...count(totals.empty)] },
+    { kind: "background", cells: ["Background runs", ...count(totals.background)] },
+    { kind: "leftover", cells: ["Left-behind files", ...count(totals.leftover)] },
+    { kind: "held", cells: ["Held back, not deleted", ...count(totals.held)] },
+  ])];
+  const projects = preview.projects.slice(0, 5);
+  if (projects.length) {
+    tables.push(retentionTable("settings-retention-preview-projects", "Largest projects", ["Project", "Conversations", "Size"], projects.map((project) => (
+      { cells: [project.name, (project.expired.conversations + project.empty.conversations).toLocaleString(), retentionSize(project.expired.bytes + project.empty.bytes)] }))));
+  }
+  const kept = Object.entries(preview.kept);
+  if (kept.length) {
+    tables.push(retentionTable("settings-retention-preview-kept", "Old enough, and kept", ["Why", "Conversations"], kept.map(([reason, conversations]) => (
+      { cells: [reason.charAt(0).toUpperCase() + reason.slice(1), conversations.toLocaleString()] }))));
+  }
+  if (totals.expired.conversations + totals.empty.conversations > preview.passLimit) {
+    const note = document.createElement("p");
+    note.className = "settings-hint";
+    note.textContent = `One hourly check deletes at most ${preview.passLimit.toLocaleString()} conversations. The rest go in the checks that follow.`;
+    tables.push(note);
+  }
+  return tables;
+}
+
+async function showRetentionPreview() {
+  const button = document.querySelector("#settingsRetentionPreviewButton");
+  const target = document.querySelector("#settingsRetentionPreview");
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "Checking…";
+  try {
+    // The ticked boxes, not the saved ones: the point is to look before saving.
+    const query = new URLSearchParams(Object.entries(retentionScopeValue()).map(([box, ticked]) => [box, ticked ? "1" : "0"]));
+    target.replaceChildren(...retentionPreviewTables(await api(`/api/settings/retention-preview?${query}`)));
+  } catch (error) {
+    const message = document.createElement("p");
+    message.setAttribute("role", "alert");
+    message.dataset.testid = "settings-retention-preview-error";
+    message.textContent = `Could not work out what would be deleted: ${error.message}`;
+    target.replaceChildren(message);
+  } finally {
+    target.hidden = false;
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
+document.querySelector("#settingsRetentionFull").addEventListener("change", syncRetentionScope);
+document.querySelector("#settingsRetentionPreviewButton").addEventListener("click", () => { void showRetentionPreview(); });
 elements.settingsSyncSkillsButton.addEventListener("click", () => runSkillOperation(syncLocalSkills));
 elements.settingsReloadSkillsButton.addEventListener("click", () => runSkillOperation(reloadSkills));
 elements.settingsCheckRuntimePathsButton.addEventListener("click", () => checkRuntimePaths().catch((error) => toast.error(error.message)));

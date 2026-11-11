@@ -4,7 +4,7 @@ import os from "node:os";
 import { isInternalSession } from "./internal-sessions.js";
 import { titleCase } from "./session-title.js";
 import { sessionClassificationOverrides, sessionColorOverrides, sessionDoneOverrides, sessionFeedbackOverrides, sessionTitleOverrides } from "./names.js";
-import { conversationDraftPath, listConversationRecords, listConversationSegments, parseConversationDraftPath, type ConversationRecord } from "./conversation-records.js";
+import { conversationDraftPath, deletedConversationKeys, listConversationRecords, listConversationSegments, parseConversationDraftPath, type ConversationRecord } from "./conversation-records.js";
 import { listDiscoveredHarnesses, resolveHarnessForSessionPath } from "./harnesses/registry.js";
 import type { HarnessAdapter, HarnessProject } from "./harnesses/contract.js";
 import type { HarnessModel, HarnessRuntime } from "./harnesses/runtime.js";
@@ -409,10 +409,11 @@ export async function findConversation(project: HarnessProject, opened: { engine
 
 /** Lists every registered harness through the shared catalog, then applies Joint Bob metadata. */
 export async function listHarnessSessions(project: HarnessProject, pinnedSessionPaths: string[] = [], pinnedSessionIds: string[] = []): Promise<SessionSummary[]> {
-  const [labels, initialSessions, records] = await Promise.all([
+  const [labels, initialSessions, records, deleted] = await Promise.all([
     conversationLabels(project.id),
     sessionCatalog.list(project),
     listConversationRecords(project.id),
+    deletedConversationKeys(project.id),
   ]);
   const { overrides, classifications } = labels;
   let sessions = initialSessions;
@@ -476,6 +477,9 @@ export async function listHarnessSessions(project: HarnessProject, pinnedSession
     || Boolean(session.segments?.some((segment) => pinnedPaths.has(segment.path) || pinnedIds.has(`${segment.engine}:${segment.sessionId}`)));
   const flat = sessions.filter((session) => {
     if (isInternalSession(session.id, session.firstMessage) || !session.path || seen.has(session.path)) return false;
+    // A deleted conversation is gone from the list at once. Its file, or a sub-agent's, can still be
+    // on disk: the delete removes files after the tombstone is written, and may be interrupted.
+    if (deleted.has(`${session.harnessId}:${session.id.split("/")[0]}`)) return false;
     seen.add(session.path);
     return true;
   }).map((session) => {

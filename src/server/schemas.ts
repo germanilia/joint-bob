@@ -395,6 +395,11 @@ export const settingsSchema = z.object({
   conversationLabelIcons: conversationLabelIconsSchema.optional(),
   conversationHistoryDays: z.number().int().min(1).max(3650).optional(),
   conversationRetentionDays: z.number().int().min(1).max(3650).optional(),
+  // What the retention sweep may delete beyond the list. A box that is left out keeps its saved value; an unknown box is refused.
+  conversationRetentionScope: z.object({
+    full: z.boolean().optional(), includeUnrecorded: z.boolean().optional(), includeScheduled: z.boolean().optional(),
+    includeTickets: z.boolean().optional(), leftovers: z.boolean().optional(), backgroundRuns: z.boolean().optional(),
+  }).strict().optional(),
   autoCompactThreshold: z.number().int().min(1).max(100).nullable().optional(),
   shellCommandTimeoutSeconds: z.number().int().min(1).max(86_400).nullable().optional(),
   subprocessMaxLifetimeMinutes: z.number().int().min(1).max(10_080).optional(),

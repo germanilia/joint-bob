@@ -10,6 +10,7 @@ import { applyGlobalInstructionsEvent, ensureGlobalInstructionsSchema } from "./
 import { applyConversationReviewEvent, ensureConversationReviewReplicaSchema } from "./conversation-reviews.js";
 import { applyConversationNotificationDeliveredEvent, applyConversationNotificationEvent, ensureConversationNotificationSchema } from "./conversation-notifications.js";
 import { applyConversationRecordEvent, ensureConversationRecordSchema } from "./conversation-records.js";
+import { eventOfForgottenConversation } from "./conversation-forget.js";
 import { applyMemoryEvent } from "./control-center/memory-sync.js";
 import { applyBobEvent, applyBobMessageEvent, applyReviewCheckEvent } from "./control-center/bob-sync.js";
 import { applyConversationGoalEvent, ensureConversationGoalSchema } from "./conversation-goals.js";
@@ -537,6 +538,12 @@ export async function receiveReplicationBatch(batch: ReplicationBatch): Promise<
       }
       const applier = REPLICATION_APPLIERS[event.entityType];
       if (!applier) throw new Error("Unsupported replication event");
+      // An event sent before a conversation was deleted can arrive after its tombstone. It is taken
+      // and dropped: applying it would write rows for the deleted conversation again.
+      if (eventOfForgottenConversation(db, event)) {
+        received.push(event.id);
+        continue;
+      }
       const applied = (event.entityType === "task" ? applyTaskEvent(db, event, projectTranscripts.get(taskProject(event) ?? "")) : applier(db, event)) !== false;
       if (!applied) {
         remove.run(event.id);

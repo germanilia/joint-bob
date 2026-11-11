@@ -1,10 +1,9 @@
-import { revokeAgentCapabilities } from "../../agent-capabilities.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
 import { mayReplicateEvent } from "../replication-v2.js";
 import { conversationOfAnotherProject } from "./projects.js";
 import { projectAdditionalPaths } from "../session-scope.js";
 import { randomUUID } from "node:crypto";
-import { copyFile, lstat, unlink } from "node:fs/promises";
+import { copyFile, lstat } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import type { AuthSession } from "../../auth.js";
@@ -13,7 +12,8 @@ import { type ClusterPeer, getClusterNode } from "../../cluster.js";
 import { acceptOwnerTranscript, assertSharedTranscriptReady } from '../shared-transcripts.js';
 import { getRuntimePeer, listRuntimePeers, runtimeFetch } from "../runtime-peers.js";
 import { beginConversationRecovery, compareAndSetConversationOwnership, type ConversationEngine, type ConversationOwnership, finishConversationRecovery, getConversationOwnership, type OwnershipApplyResult, sameConversationOwnership } from "../../conversation-ownership.js";
-import { deleteConversationRecord, getConversationRecord } from "../../conversation-records.js";
+import { getConversationRecord } from "../../conversation-records.js";
+import { deleteConversationCompletely, type ConversationSegment, type FilesByHarness } from "../conversation-delete.js";
 import { dropBrowserConversationGrants } from "../../browser-store.js";
 import { askBobRecheck } from "../../control-center/bob-store.js";
 import { markConversationReviewed, markConversationsReviewed } from "../../conversation-reviews.js";
@@ -895,48 +895,39 @@ export async function deleteLocalConversation(project: ProjectRecord, engine: Co
   const sessions = await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id, tasks) });
   const session = sessions.find((candidate) => candidate.id === sessionId && candidate.harnessId === engine);
   if (!session) throw new ConversationDeleteError(404, "Session not found");
-  await requireLocalConversationOwner(engine, sessionId);
-  const local = await getClusterNode();
-  // Harness-switched segments are one conversation; removing it removes every segment.
-  const targets: Array<{ engine: ConversationEngine; sessionId: string; path: string; draft?: boolean }> = [
-    { engine, sessionId, path: session.path, ...(session.draft ? { draft: true } : {}) },
-    ...(session.segments ?? []).filter((segment) => !(segment.sessionId === sessionId && segment.engine === engine)),
-  ];
-  for (const [index, target] of targets.entries()) {
-    const shared = findHarnessSession(project.id, target.engine, target.sessionId);
-    if (shared && harnessSessionBusy(shared)) throw new ConversationDeleteError(409, "Wait for the current turn to finish before deleting");
-    if (shared) {
-      for (const client of shared.clients) { send(client, { type: "sessionFileChanged" }); client.close(1008, "Conversation deleted"); }
-      disposeHarnessSession(shared);
-    }
-    if (target.draft || target.path.startsWith("draft:")) {
-      await deleteConversationRecord(project.id, target.engine, target.sessionId, local.id);
-      continue;
-    }
-    const adapter = getHarness(target.engine);
-    if (!adapter.paths.transcriptFile) throw new ConversationDeleteError(400, `${adapter.label} does not expose transcript files`);
-    const filePath = adapter.paths.transcriptFile(target.path);
-    try {
-      const fileStats = await lstat(filePath);
-      if (!fileStats.isFile() || fileStats.isSymbolicLink()) throw new ConversationDeleteError(400, "Session path is not a regular file");
-      await unlink(filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        // The primary transcript must exist; an already-synchronized-away segment still drops its record.
-        if (index === 0) throw new ConversationDeleteError(404, "Session not found");
-      } else {
-        throw error;
-      }
-    }
-    await deleteConversationRecord(project.id, target.engine, target.sessionId, local.id);
+  // What the list showed for this conversation must be a transcript of its own. A link, or anything else
+  // that is not a regular file, is refused as it always was: a person's delete must never be the way to
+  // make an entry that points elsewhere vanish. A transcript that is already gone is fine: the record goes.
+  if (!session.draft && !session.path.startsWith("draft:")) {
+    const listed = getHarness(engine).paths.transcriptFile?.(session.path);
+    const found = listed ? await lstat(listed).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT" || error.code === "ENOTDIR") return undefined; throw error; }) : undefined;
+    if (found && (!found.isFile() || found.isSymbolicLink())) throw new ConversationDeleteError(400, "Session path is not a regular file");
   }
+  // Harness-switched segments are one conversation; removing it removes every segment.
+  await deleteOwnedConversation(project, engine, sessionId, (session.segments ?? []).map((segment) => ({ engine: segment.engine, sessionId: segment.sessionId })));
+}
+
+/**
+ * Deletes a conversation this machine owns, with everything it holds about it: records, rows,
+ * transcripts wherever they lie, the Claude session folder, transfer leftovers and background task
+ * logs (conversation-delete.ts has the order). The caller has decided that it may go; this refuses
+ * only what must never be interrupted: a conversation another machine owns, or one with a turn running.
+ * `files` is a reading of the harness folders the caller already has.
+ */
+export async function deleteOwnedConversation(project: ProjectRecord, engine: ConversationEngine, sessionId: string, segments: ConversationSegment[] = [], files?: FilesByHarness): Promise<void> {
+  await requireLocalConversationOwner(engine, sessionId);
+  const targets = [...new Map([{ engine, sessionId }, ...segments].map((target) => [`${target.engine}:${target.sessionId}`, target])).values()];
+  const open = targets.flatMap((target) => { const shared = findHarnessSession(project.id, target.engine, target.sessionId); return shared ? [shared] : []; });
+  if (open.some(harnessSessionBusy)) throw new ConversationDeleteError(409, "Wait for the current turn to finish before deleting");
+  for (const shared of open) {
+    for (const client of shared.clients) { send(client, { type: "sessionFileChanged" }); client.close(1008, "Conversation deleted"); }
+    disposeHarnessSession(shared);
+  }
+  const deleted = await deleteConversationCompletely(project.id, engine, sessionId, targets, files);
   // A deleted conversation's browser profile assignments go with it. Harness-switched
   // segments are one conversation, so every segment id and the logical conversation id
   // drop their grants; the profile entities themselves stay durable.
-  for (const conversationId of new Set([sessionId, ...(session.conversationId ? [session.conversationId] : []), ...targets.map(target => target.sessionId)])) {
-    dropBrowserConversationGrants(project.id, conversationId);
-    revokeAgentCapabilities(project.id, conversationId);
-  }
+  for (const conversationId of new Set([deleted.conversationId, ...deleted.segments.map((segment) => segment.sessionId)])) dropBrowserConversationGrants(project.id, conversationId);
   clearHarnessSessionCache(project.id);
   broadcastToProject(project.id, { type: "sessionsChanged" });
 }

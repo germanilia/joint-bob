@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { ConversationEngine } from "./conversation-ownership.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from "./replication.js";
 import { dropConversationGrantsInDatabase } from "./browser-store.js";
+import { deletedHereEarlier, ensureDeleteQueue, forgetConversationRows, queueDelete } from "./conversation-forget.js";
 import { isHarnessId, PROJECT_COLORS, type ProjectColor } from "./types.js";
 
 /** The worktree a conversation runs in, as much of it as a list needs to show the conversation under it. */
@@ -97,6 +98,8 @@ export function ensureConversationRecordSchema(db: DatabaseSync): void {
   // Finding a conversation's projects by engine and session id is frequent (list placement,
   // credential scopes); the primary key starts with the project, so it scanned every record.
   db.exec("CREATE INDEX IF NOT EXISTS conversation_records_session ON conversation_records(engine, session_id)");
+  // Every replicated event about a conversation asks whether that conversation was deleted.
+  db.exec("CREATE INDEX IF NOT EXISTS conversation_record_tombstones_session ON conversation_record_tombstones(session_id)");
 }
 
 function publishLegacyRecords(db: DatabaseSync): void {
@@ -367,6 +370,56 @@ export async function deleteConversationRecord(projectId: string, engine: Conver
   } catch (error) { db.exec("ROLLBACK"); throw error; }
 }
 
+/**
+ * Resolves once the record store is open and its start-up repairs have run. For code that reads
+ * the record tables through a connection of its own.
+ */
+export async function conversationRecordsReady(): Promise<void> {
+  await database();
+}
+
+export interface DeletedConversation {
+  conversationId: string;
+  segments: Array<{ engine: ConversationEngine; sessionId: string }>;
+}
+
+/**
+ * Deletes a whole conversation from this machine's database in one transaction: every segment's
+ * record goes and gets a tombstone, the rows that describe the conversation go with them, the
+ * delete is queued for the other machines, and each segment is put in the queue of unfinished
+ * deletes until its files are gone. Either all of it happens or none. `known` adds segments
+ * the caller listed that have no record. Returns what was deleted, so the caller can remove the
+ * files; a conversation deleted before is returned again, which lets an interrupted delete finish.
+ */
+export async function deleteConversationRecords(projectId: string, engine: ConversationEngine, sessionId: string, originNodeId: string, known: Array<{ engine: ConversationEngine; sessionId: string }> = []): Promise<DeletedConversation> {
+  const db = await database();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    // Before the first tombstone of a complete delete is written, so that tombstone is not taken for an earlier release's.
+    ensureDeleteQueue(db);
+    const conversationId = selectRecord(db, projectId, engine, sessionId)?.conversationId ?? sessionId;
+    const recorded = (db.prepare("SELECT * FROM conversation_records WHERE project_id = ? AND (conversation_id = ? OR session_id = ?)").all(projectId, conversationId, conversationId) as Record<string, unknown>[]).map(row)
+      .filter((record) => (record.conversationId ?? record.sessionId) === conversationId)
+      .sort((left, right) => (left.segmentIndex ?? 0) - (right.segmentIndex ?? 0) || left.createdAt.localeCompare(right.createdAt));
+    const segments = [...new Map([...recorded, { engine, sessionId }, ...known].map((segment) => [`${segment.engine}:${segment.sessionId}`, { engine: segment.engine, sessionId: segment.sessionId }])).values()];
+    const tombstone = db.prepare("INSERT INTO conversation_record_tombstones (project_id, engine, session_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id, engine, session_id) DO UPDATE SET updated_at = excluded.updated_at, origin_node_id = excluded.origin_node_id");
+    for (const segment of segments) {
+      const existing = recorded.find((record) => record.engine === segment.engine && record.sessionId === segment.sessionId);
+      if (!existing && db.prepare("SELECT 1 FROM conversation_record_tombstones WHERE project_id = ? AND engine = ? AND session_id = ?").get(projectId, segment.engine, segment.sessionId)) continue;
+      // Other machines keep the newer of a record and a tombstone, so the tombstone is never older than the record it ends.
+      const at = new Date(Math.max(Date.now(), existing ? Date.parse(existing.updatedAt) + 1 || 0 : 0)).toISOString();
+      db.prepare("DELETE FROM conversation_records WHERE project_id = ? AND engine = ? AND session_id = ?").run(projectId, segment.engine, segment.sessionId);
+      tombstone.run(projectId, segment.engine, segment.sessionId, at, originNodeId);
+      publish(db, "delete", projectId, segment.engine, segment.sessionId, null, at, originNodeId);
+      // Unfinished until its files and background tasks are gone (conversation-forget.ts, the queue).
+      queueDelete(db, projectId, segment.engine, segment.sessionId, conversationId);
+    }
+    forgetConversationRows(db, [conversationId, ...segments.map((segment) => segment.sessionId)]);
+    db.exec("COMMIT");
+    return { conversationId, segments };
+  } catch (error) { db.exec("ROLLBACK"); throw error; }
+}
+
 /** Conversations of a project that were deleted on some node, as `engine:sessionId`. */
 export async function deletedConversationKeys(projectId: string): Promise<Set<string>> {
   const db = await database();
@@ -418,6 +471,8 @@ export function applyConversationRecordEvent(db: DatabaseSync, event: Replicatio
   // Releases before the sub-agent fix still send these; they are never conversations.
   if (payload.record && payload.engine === "claude" && payload.sessionId.includes("/")) return;
   if (!payload.record) {
+    // Ready before this tombstone is written: the first time, it writes down the deletes this machine already knew.
+    ensureDeleteQueue(db);
     // Deleting a conversation also drops its browser profile assignments on this
     // node, durably: this apply path is the catch-up for peers that were offline
     // when the deletion happened. Harness-switched segments share one logical
@@ -430,10 +485,31 @@ export function applyConversationRecordEvent(db: DatabaseSync, event: Replicatio
     for (const conversationId of new Set([payload.sessionId, ...(logical ? [logical] : []), ...segments])) dropConversationGrantsInDatabase(db, projectId, conversationId);
     db.prepare("DELETE FROM conversation_records WHERE project_id = ? AND engine = ? AND session_id = ?").run(projectId, payload.engine, payload.sessionId);
     db.prepare("INSERT INTO conversation_record_tombstones (project_id, engine, session_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id, engine, session_id) DO UPDATE SET updated_at = excluded.updated_at, origin_node_id = excluded.origin_node_id").run(projectId, payload.engine, payload.sessionId, payload.updatedAt, payload.originNodeId);
+    // A delete that arrives is carried out here, whatever its date: the date says when the
+    // conversation was deleted, not when this machine learned of it. Its rows go with its record
+    // in this same transaction, and it waits in the queue until its files and task logs are gone.
+    // The conversation id's own rows go once no segment of it is left on record here.
+    //
+    // One exception. A conversation this machine itself deleted before the complete delete
+    // existed may still have its transcript here, and that may be the only copy of work nobody
+    // chose to delete (server/conversation-delete.ts, heldBack). Another machine's later delete
+    // of the same conversation settles the tombstone and clears nothing here.
+    if (!deletedHereEarlier(db, payload.engine, payload.sessionId)) {
+      queueDelete(db, projectId, payload.engine, payload.sessionId, logical ?? payload.sessionId);
+      const left = logical && logical !== payload.sessionId
+        ? db.prepare("SELECT 1 FROM conversation_records WHERE project_id = ? AND (conversation_id = ? OR session_id = ?) LIMIT 1").get(projectId, logical, logical)
+        : true;
+      forgetConversationRows(db, [payload.sessionId, ...(left ? [] : [logical!])]);
+    }
     return;
   }
   db.prepare("INSERT INTO conversation_records (project_id, engine, session_id, created_at, updated_at, origin_node_id, task_id, conversation_id, segment_index, cron_task_id, silent_review_from, silent_review_until) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_id, engine, session_id) DO UPDATE SET created_at = excluded.created_at, updated_at = excluded.updated_at, origin_node_id = excluded.origin_node_id, task_id = excluded.task_id, conversation_id = excluded.conversation_id, segment_index = excluded.segment_index, cron_task_id = COALESCE(excluded.cron_task_id, conversation_records.cron_task_id), silent_review_from = CASE WHEN excluded.silent_review_until > COALESCE(conversation_records.silent_review_until, '') THEN excluded.silent_review_from ELSE conversation_records.silent_review_from END, silent_review_until = CASE WHEN excluded.silent_review_until > COALESCE(conversation_records.silent_review_until, '') THEN excluded.silent_review_until ELSE conversation_records.silent_review_until END").run(projectId, payload.engine, payload.sessionId, payload.record.createdAt, payload.updatedAt, payload.originNodeId, payload.record.taskId ?? null, payload.record.conversationId ?? null, payload.record.segmentIndex ?? 0, payload.record.cronTaskId ?? null, payload.record.silentReviewFrom ?? null, payload.record.silentReviewUntil ?? null);
-  db.prepare("DELETE FROM conversation_record_tombstones WHERE project_id = ? AND engine = ? AND session_id = ?").run(projectId, payload.engine, payload.sessionId);
+  const revived = db.prepare("DELETE FROM conversation_record_tombstones WHERE project_id = ? AND engine = ? AND session_id = ?").run(projectId, payload.engine, payload.sessionId).changes;
+  // A newer record ends the delete: nothing of it is left to finish, and what was written down about an earlier delete no longer holds.
+  if (revived && ensureDeleteQueue(db)) {
+    db.prepare("DELETE FROM conversation_deletes_pending WHERE engine = ? AND session_id = ?").run(payload.engine, payload.sessionId);
+    db.prepare("DELETE FROM conversation_deletes_earlier WHERE engine = ? AND session_id = ?").run(payload.engine, payload.sessionId);
+  }
   applyRecordedWorktree(db, projectId, payload);
   applyWebhookHistory(db, projectId, payload);
 }

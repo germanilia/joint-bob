@@ -2416,6 +2416,16 @@ body.terminal-open[data-terminal-orientation="horizontal"] .shell { height: calc
 .checkbox-row input { width: 16px; height: 16px; min-width: auto; accent-color: var(--ink); }
 .phase-settings { display: grid; gap: 10px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-ctl); }
 .phase-settings legend { padding: 0 6px; color: var(--muted); font-family: var(--mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+/* Settings → what the retention sweep may delete: six boxes, a dry-run button and its result. */
+.retention-scope { display: grid; gap: 8px; justify-items: start; }
+.retention-scope-dependent { margin-left: 26px; }
+.retention-scope-dependent:has(input:disabled) { color: var(--muted); }
+.retention-preview { display: grid; gap: 8px; width: 100%; }
+.retention-preview table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.retention-preview th, .retention-preview td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.retention-preview th:not(:first-child), .retention-preview td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.retention-preview caption { text-align: left; padding: 4px 0; color: var(--muted); font-size: 12px; }
+.retention-preview [role="alert"] { margin: 0; color: var(--danger, #b3261e); }
 #ntfyServiceList { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 #ntfyServiceList li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ntfy-service-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }

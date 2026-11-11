@@ -97,6 +97,7 @@ import "./server/routes/assistant-teams.js";
 import "./server/routes/assistant-team-telegram.js";
 import { cleanupAbandonedByTheWayConversations } from "./server/routes/sessions.js";
 import { sweepConversationRetention } from "./server/conversation-retention.js";
+import "./server/routes/retention.js";
 import { sweepWorktrees } from "./server/worktree-cleanup.js";
 import { startCronScheduler } from "./server/cron.js";
 import { recoverAutoResponders } from "./server/auto-respond-recovery.js";

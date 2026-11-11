@@ -18,7 +18,7 @@ export const ADMIN_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "*", path: /^\/system-ai(\/|$)/ },
   // Node settings: harness paths, home folder, limits, sync check, skills publishing.
   { method: "PUT", path: /^\/settings$/ },
-  { method: "*", path: /^\/settings\/(sync-check|runtime-defaults|runtime-check|skills)(\/|$)/ },
+  { method: "*", path: /^\/settings\/(sync-check|runtime-defaults|runtime-check|skills|retention-preview)(\/|$)/ },
   { method: "*", path: /^\/terminal-policy$/ },
   // The file sync engine's status and switch (GET /file-sync/status, PUT /file-sync/config) and its projects (GET /file-sync/projects);
   // peers use /cluster/v2/files.

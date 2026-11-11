@@ -35,6 +35,10 @@ export interface HarnessAdapter<TId extends HarnessId = HarnessId> {
     localize?: (sessionPath: string, homePath: string) => string;
     transcriptFile?: (sessionPath: string) => string;
     canonicalTranscript?: (filePath: string) => string;
+    /** The session a folder beside the transcripts belongs to, for a harness that keeps a session's
+        other files (sub-agent transcripts, tool results) in a folder of its own. Deleting the
+        conversation removes that folder. */
+    sessionFolder?: (directoryPath: string) => string | undefined;
   };
   sync: {
     transcriptRoot: () => string;

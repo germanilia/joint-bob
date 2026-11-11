@@ -127,7 +127,11 @@ test("a conversation deleted on one twin loses its transcript on both and never 
     await eventually(async () => assert.equal(await exists(path.join(piRoot(b), `${control}.jsonl`)), true, "transcript sharing ran"));
     assert.equal(await exists(path.join(piRoot(b), `${lateDeleted}.jsonl`)), false, "a deleted conversation's transcript is not copied in");
 
-    // Leftovers from before this fix are removed when the node starts, for every harness.
+    // A file of a conversation that was deleted earlier, found on disk later, is a left-behind file: the node removes
+    // it when it starts, for every harness, once its admin has ticked that box. (Without the box a start only finishes
+    // deletes that did not finish; test/conversation-delete-complete.test.ts covers that.)
+    const ticked = await api(right, sb, "PUT", "/settings", { conversationRetentionScope: { leftovers: true } });
+    assert.equal(ticked.status, 200, JSON.stringify(ticked.body));
     const remote = await api<{ projects: Array<{ id: string; path: string }> }>(right, sb, "GET", "/projects");
     const remotePath = remote.body.projects.find((project) => project.id === projectId)!.path;
     const claudeDeleted = randomUUID();

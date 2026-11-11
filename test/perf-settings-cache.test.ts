@@ -51,6 +51,15 @@ test("a setting changes right after it is written, by this connection or by anot
   assert.ok(getSettings().conversationLabels.includes("From elsewhere"));
   other.prepare("DELETE FROM node_settings WHERE key = 'conversationHistoryDays'").run();
   assert.equal(getSettings().conversationHistoryDays, 30, "a removed row gives the default again");
+  // What the retention sweep may delete: six boxes in one row, all off until ticked.
+  const untouched = { full: false, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: false, backgroundRuns: false };
+  assert.deepEqual(getSettings().conversationRetentionScope, untouched);
+  updateSettings({ conversationRetentionScope: { leftovers: true } });
+  assert.deepEqual(getSettings().conversationRetentionScope, { ...untouched, leftovers: true });
+  store(other, "conversationRetentionScope", JSON.stringify({ full: true, includeTickets: true }));
+  assert.deepEqual(getSettings().conversationRetentionScope, { ...untouched, full: true, includeTickets: true }, "written by another connection; a box that is not saved is off");
+  other.prepare("DELETE FROM node_settings WHERE key = 'conversationRetentionScope'").run();
+  assert.deepEqual(getSettings().conversationRetentionScope, untouched, "a removed row turns every box off again");
   // A write to any other table ends the kept answer too. It is simply read again.
   other.exec("CREATE TABLE IF NOT EXISTS perf_unrelated(id TEXT)");
   other.prepare("INSERT INTO perf_unrelated VALUES ('x')").run();
@@ -104,7 +113,7 @@ test("every caller owns what it gets, and the fields come in the order they alwa
   for (const id of Object.keys(again.runtimes)) assert.equal((again as unknown as Record<string, unknown>)[id], again.runtimes[id]);
   assert.deepEqual(Object.keys(again), [
     "conversationDefaults", ...Object.keys(again.runtimes), "runtimes", "runtimeOverrides", "kiroEnabled", "projects", "resources", "conversationLabels",
-    "conversationLabelIcons", "conversationHistoryDays", "conversationRetentionDays", "autoCompactThreshold", "shellCommandTimeoutSeconds",
+    "conversationLabelIcons", "conversationHistoryDays", "conversationRetentionDays", "conversationRetentionScope", "autoCompactThreshold", "shellCommandTimeoutSeconds",
     "subprocessMaxLifetimeMinutes", "conversationCpuLimitCores", "conversationMemoryLimitGb", "digestAttachments", "showProjectsOnOtherNodes",
     "newConversationWorktree", "strictResourceIsolation", "autoActivateSharedSkills", "gitPullFileLimit", "gitPullTimeoutSeconds", "syncCheck",
     "dashboards", "backgroundAgent", "remoteTerminal", "runnerAccess", "conversationCommands", "restartRequired",

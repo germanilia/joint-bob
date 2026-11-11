@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { appendAuditEvent } from "./audit.js";
 import { resolveDataDirectory } from "./data-directory.js";
+import { CONVERSATION_RETENTION_SCOPE_KEYS, defaultConversationRetentionScope, type ConversationRetentionScope } from "./conversation-retention.js";
 import { conversationLabelIconsSchema, conversationLabelsSchema, DEFAULT_CONVERSATION_LABEL_ICONS, DEFAULT_CONVERSATION_LABELS, iconsForLabels, storedConversationLabelIconsSchema } from "./conversation-labels.js";
 import { conversationDefaultsSchema, type ConversationDefault } from "./harnesses/defaults.js";
 import { listDiscoveredHarnesses } from "./harnesses/registry.js";
@@ -268,6 +269,8 @@ export interface SettingsInput {
   conversationLabelIcons?: Record<string, string>;
   conversationHistoryDays?: number;
   conversationRetentionDays?: number;
+  /** Absent keeps what is saved; a box that is absent keeps its saved value. */
+  conversationRetentionScope?: Partial<ConversationRetentionScope>;
   autoCompactThreshold?: number | null;
   /** Seconds a harness shell command may run before this node stops it; null means no limit. */
   shellCommandTimeoutSeconds?: number | null;
@@ -311,6 +314,7 @@ export interface SettingsResponse {
   conversationLabelIcons: Record<string, string>;
   conversationHistoryDays: number;
   conversationRetentionDays: number;
+  conversationRetentionScope: ConversationRetentionScope;
   autoCompactThreshold: number | null;
   shellCommandTimeoutSeconds: number | null;
   subprocessMaxLifetimeMinutes: number;
@@ -608,6 +612,7 @@ interface StoredSettings {
   conversationLabelIcons: Record<string, string>;
   conversationHistoryDays: number;
   conversationRetentionDays: number;
+  conversationRetentionScope: ConversationRetentionScope;
   autoCompactThreshold: number | null;
   shellCommandTimeoutSeconds: number | null;
   subprocessMaxLifetimeMinutes: number;
@@ -627,6 +632,16 @@ interface StoredSettings {
   remoteTerminal: RemoteTerminalSettings;
   runnerAccess: RunnerAccessSettings;
   conversationCommands: ConversationCommandsSettings;
+}
+
+/** What the owner lets the retention sweep delete. Nothing saved, or a box an older release did not know, reads as off. */
+function storedRetentionScope(): ConversationRetentionScope {
+  const scope = defaultConversationRetentionScope();
+  let saved: unknown;
+  try { saved = JSON.parse(value("conversationRetentionScope", "{}")); } catch { return scope; }
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return scope;
+  for (const key of CONVERSATION_RETENTION_SCOPE_KEYS) scope[key] = (saved as Record<string, unknown>)[key] === true;
+  return scope;
 }
 
 /** A stored setting as `value` gives it, or undefined when there is none. */
@@ -650,6 +665,7 @@ function readStoredSettings(): { settings: StoredSettings; unsaved: boolean } {
     conversationLabelIcons: labelIcons(),
     conversationHistoryDays: Number(value("conversationHistoryDays", "30")),
     conversationRetentionDays: Number(value("conversationRetentionDays", "40")),
+    conversationRetentionScope: storedRetentionScope(),
     autoCompactThreshold: value("autoCompactThreshold", "70") === "disabled" ? null : Number(value("autoCompactThreshold", "70")),
     shellCommandTimeoutSeconds: value("shellCommandTimeoutSeconds", "unlimited") === "unlimited" ? null : Number(value("shellCommandTimeoutSeconds", "unlimited")),
     subprocessMaxLifetimeMinutes: Number(value("subprocessMaxLifetimeMinutes", String(DEFAULT_SUBPROCESS_MAX_LIFETIME_MINUTES))),
@@ -736,6 +752,7 @@ export function nodeSettings(): SettingsResponse {
     conversationLabelIcons: stored.conversationLabelIcons,
     conversationHistoryDays: stored.conversationHistoryDays,
     conversationRetentionDays: stored.conversationRetentionDays,
+    conversationRetentionScope: stored.conversationRetentionScope,
     autoCompactThreshold: stored.autoCompactThreshold,
     shellCommandTimeoutSeconds: stored.shellCommandTimeoutSeconds,
     subprocessMaxLifetimeMinutes: stored.subprocessMaxLifetimeMinutes,
@@ -852,6 +869,11 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
   const conversationHistoryDays = input.conversationHistoryDays ?? previous.conversationHistoryDays;
   const conversationRetentionDays = input.conversationRetentionDays ?? previous.conversationRetentionDays;
   if (!Number.isInteger(conversationRetentionDays) || conversationRetentionDays < 1 || conversationRetentionDays > 3650) throw new Error("Conversation retention must be between 1 and 3650 days");
+  const conversationRetentionScope = { ...previous.conversationRetentionScope };
+  for (const [key, ticked] of Object.entries(input.conversationRetentionScope ?? {})) {
+    if (!(CONVERSATION_RETENTION_SCOPE_KEYS as readonly string[]).includes(key) || typeof ticked !== "boolean") throw new Error("Conversation retention scope has an unknown or invalid box");
+    conversationRetentionScope[key as keyof ConversationRetentionScope] = ticked;
+  }
   const autoCompactThreshold = input.autoCompactThreshold === undefined ? previous.autoCompactThreshold : input.autoCompactThreshold;
   const shellCommandTimeoutSeconds = input.shellCommandTimeoutSeconds === undefined ? previous.shellCommandTimeoutSeconds : input.shellCommandTimeoutSeconds;
   const subprocessMaxLifetimeMinutes = input.subprocessMaxLifetimeMinutes === undefined ? previous.subprocessMaxLifetimeMinutes : input.subprocessMaxLifetimeMinutes;
@@ -890,6 +912,7 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
     save(db, "conversationLabelIcons", JSON.stringify({ ...clearedIcons, ...conversationLabelIcons }));
     save(db, "conversationHistoryDays", String(conversationHistoryDays));
     save(db, "conversationRetentionDays", String(conversationRetentionDays));
+    save(db, "conversationRetentionScope", JSON.stringify(conversationRetentionScope));
     save(db, "autoCompactThreshold", autoCompactThreshold === null ? "disabled" : String(autoCompactThreshold));
     save(db, "shellCommandTimeoutSeconds", shellCommandTimeoutSeconds === null ? "unlimited" : String(shellCommandTimeoutSeconds));
     save(db, "subprocessMaxLifetimeMinutes", String(subprocessMaxLifetimeMinutes));
@@ -928,6 +951,7 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
         conversationLabelsChanged: JSON.stringify(previous.conversationLabels) !== JSON.stringify(settings.conversationLabels),
         conversationHistoryDaysChanged: previous.conversationHistoryDays !== settings.conversationHistoryDays,
         conversationRetentionDaysChanged: previous.conversationRetentionDays !== settings.conversationRetentionDays,
+        conversationRetentionScopeChanged: JSON.stringify(previous.conversationRetentionScope) !== JSON.stringify(settings.conversationRetentionScope),
         autoCompactThresholdChanged: previous.autoCompactThreshold !== settings.autoCompactThreshold,
         shellCommandTimeoutChanged: previous.shellCommandTimeoutSeconds !== settings.shellCommandTimeoutSeconds,
         subprocessMaxLifetimeChanged: previous.subprocessMaxLifetimeMinutes !== settings.subprocessMaxLifetimeMinutes,
