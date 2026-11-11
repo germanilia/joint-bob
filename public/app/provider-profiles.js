@@ -9,9 +9,10 @@ const PROVIDERS = [
   { id: "openai-codex", name: "ChatGPT", via: "ChatGPT subscription via Pi", brand: "openai", note: "ChatGPT subscriptions, used through Pi." },
   { id: "pi", name: "Pi", via: "Multiple providers · API keys and OAuth", brand: "pi", note: "API keys and OAuth sign-ins for any provider Pi supports. Connect them under Manage providers." },
   { id: "kiro", name: "Kiro", via: "AWS IAM Identity Center", brand: "kiro", note: "AWS IAM Identity Center accounts for Kiro. Their sign-ins stay on this node, and they cannot join pools or be shared." },
+  { id: "antigravity", name: "Google Antigravity", via: "Google Antigravity CLI", brand: "antigravity", note: "Google accounts with a separate native CLI sign-in for each profile on this node. Profiles stay private and cannot join pools." },
 ];
-/** Pools and the failover dry run cover subscription providers; Kiro profiles stand alone. */
-const POOL_PROVIDERS = PROVIDERS.filter((provider) => provider.id !== "kiro");
+/** Pools and the failover dry run cover subscription providers; Kiro and Antigravity profiles stand alone. */
+const POOL_PROVIDERS = PROVIDERS.filter((provider) => !["kiro", "antigravity"].includes(provider.id));
 const POOL_HARNESSES = [{ id: "claude", name: "Claude" }, { id: "pi", name: "Pi" }];
 const SCOPES = [
   { id: "workspace", label: "Workspace", icon: "folder" },
@@ -173,7 +174,7 @@ function render() {
   title.append(heading, el("p", { text: "Sign in to your accounts under Profiles, group them for failover under Pools, and choose which one each conversation uses under Assignments." }));
   const synced = el("span", { className: "profile-badge synced", text: "Synced with your twins" }); synced.prepend(menuIcon("transfer"));
   header.append(icon, title, synced);
-  const about = el("p", { className: "settings-hint", text: "A sign-in stays on the machine where you signed in and never goes through the relay; a twin without its own sign-in borrows short-lived tokens from that machine, so it stops while that machine is offline. Sign in on each machine that runs turns. A profile shared for automation serves automations only, never human turns." });
+  const about = el("p", { className: "settings-hint", text: "A sign-in stays on the machine where you signed in and never goes through the relay. Subscription profiles on a twin can borrow short-lived tokens from that machine; Kiro and Antigravity credentials never relay or borrow. Sign in locally on each machine that runs turns. A profile shared for automation serves automations only, never human turns." });
   for (const name of Object.keys(builders)) sections[name] = builders[name]();
   sections.header = header; sections.about = about;
   showView();
@@ -246,7 +247,7 @@ function poolMemberRow(index) {
   const row = el("div", { className: "pool-member-editor", testid: "subscription-pool-member-row" });
   const value = poolEditor.profileIds[index] ?? "";
   const usedElsewhere = new Set(poolEditor.profileIds.filter((id, position) => position !== index && id));
-  const options = profiles.filter((profile) => !profile.shared && profile.provider !== "kiro" && (!usedElsewhere.has(profile.id) || profile.id === value)).map((profile) => ({
+  const options = profiles.filter((profile) => !profile.shared && !["kiro", "antigravity"].includes(profile.provider) && (!usedElsewhere.has(profile.id) || profile.id === value)).map((profile) => ({
     value: profile.id, label: profile.label, detail: `${providerOf(profile.provider).name} · ${profileStatusLabel(profile.id)}`,
   }));
   if (value && !options.some((option) => option.value === value)) options.unshift({ value, label: profileNamed(value)?.label ?? "Unavailable profile", detail: "Choose another profile" });
@@ -438,9 +439,10 @@ function statusOf(body) {
   if (body.login?.state === "waiting") return { kind: "pending", label: "Sign-in in progress", detail: body.login.message };
   // A Pi profile has no Sign in button; its providers are connected under Manage providers.
   if (body.provider === "pi") return { kind: body.signedIn ? "ok" : "warn", label: body.signedIn ? "Providers configured" : "No providers configured", detail: body.signedIn ? body.message : "Connect one under Manage providers." };
-  if (body.signedIn) return { kind: "ok", label: "Signed in on this node", detail: "Tokens refresh automatically here." };
+  if (body.signedIn) return { kind: "ok", label: "Signed in on this node", detail: body.provider === "antigravity" ? "This profile's Google sign-in is stored on this node." : "Tokens refresh automatically here." };
   // Twins never borrow a Kiro sign-in, so only this node can sign it in.
   if (body.provider === "kiro" && body.message.startsWith("Sign in on this node")) return { kind: "warn", label: "Not signed in", detail: "Kiro sign-ins stay on this node." };
+  if (body.provider === "antigravity" && body.message.startsWith("Sign in on this node")) return { kind: "warn", label: "Not signed in", detail: "Each Google sign-in stays in this profile on this node." };
   if (body.twin) return { kind: "twin", label: `Using the sign-in on ${body.twin}`, detail: `Turns here stop while ${body.twin} is offline. Sign in here too so this machine works on its own.` };
   if (body.message.startsWith("Sign in on this node")) return { kind: "warn", label: "Not signed in", detail: `Sign in on this node or on a twin.${body.message.slice("Sign in on this node".length)}` };
   return { kind: "error", label: "Sign-in unavailable", detail: body.message };
@@ -453,6 +455,7 @@ function profileCard(profile) {
   const card = el("article", { testid: "provider-profile-row", className: `profile-card ${profile.provider}` }); card.dataset.profileId = profile.id;
   const tile = el("span", { className: `profile-tile ${profile.provider}` }); tile.append(providerMark(profile.provider));
   const kiro = profile.provider === "kiro";
+  const standalone = kiro || profile.provider === "antigravity";
   const via = kiro ? `${profile.kiro.startUrl} · ${profile.kiro.region}` : providerOf(profile.provider).via;
   const meta = el("div", { className: "profile-card-meta" }); meta.append(el("strong", { text: profile.label }), el("span", { text: via }));
   const sharing = el("span", { className: `profile-badge ${profile.shared ? "shared" : "private"}`, text: profile.shared ? "Shared for automation" : "Private" });
@@ -467,14 +470,15 @@ function profileCard(profile) {
     signIn.hidden = body.signedIn; signOut.hidden = !body.signedIn;
     if (body.login?.state === "waiting") showLogin(profile, login, body.login, signedIn);
   }
-  // Kiro's harness is ready only once one of its profiles is signed in.
-  const signedIn = async () => { await checkStatus(); if (kiro) await refreshHarnessAvailability(); };
+  // Standalone native-login harnesses are ready once one of their profiles is signed in.
+  const signedIn = async () => { await checkStatus(); if (standalone) await refreshHarnessAvailability(); };
   const signIn = actionButton("Sign in", "provider-profile-signin", async () => {
     const { login: state } = await api(`/api/provider-profiles/${profile.id}/login`, { method: "POST" });
     showLogin(profile, login, state, signedIn);
   }, { icon: "key" });
   const signOutMessage = kiro ? "Signs out only this Kiro profile on this node. Other Kiro accounts and conversations stay intact."
-    : "Signs out on this node only. Conversations here that select this profile pause until you sign in again, unless a twin still holds a sign-in for it.";
+    : profile.provider === "antigravity" ? "Signs out only this Antigravity profile on this node. Other profiles and conversations stay intact."
+      : "Signs out on this node only. Conversations here that select this profile pause until you sign in again, unless a twin still holds a sign-in for it.";
   const signOut = actionButton("Sign out", "provider-profile-signout", async () => {
     if (!await confirmAction({ title: `Sign out of ${profile.label}?`, message: signOutMessage })) return;
     await api(`/api/provider-profiles/${profile.id}/logout`, { method: "POST" }); await signedIn();
@@ -486,14 +490,16 @@ function profileCard(profile) {
     await loadProviderProfiles();
   }, { icon: profile.shared ? "lock" : "share" });
   const remove = actionButton("Delete", "provider-profile-delete", async () => {
-    const deleting = kiro ? "Its native Kiro sign-in is removed; saved conversation transcripts remain." : "Deleting removes the profile and its sign-in from this node and from your twins.";
+    const deleting = kiro ? "Its native Kiro sign-in is removed; saved conversation transcripts remain."
+      : profile.provider === "antigravity" ? "Its native Google sign-in is removed; saved conversation transcripts remain."
+        : "Deleting removes the profile and its sign-in from this node and from your twins.";
     if (!await confirmAction({ title: `Delete ${profile.label}?`, message: `Remove its assignments and automation choices first. ${deleting}`, destructive: true, confirmLabel: "Delete" })) return;
     await api(`/api/provider-profiles/${profile.id}`, { method: "DELETE" }); await loadProviderProfiles();
     if (kiro) await refreshHarnessAvailability();
   }, { icon: "trash", className: "ghost danger profile-action" });
   const actions = el("div", { className: "profile-actions" });
-  // Kiro profiles are private and standalone: the server refuses to share them.
-  actions.append(actionButton("Check status", "provider-profile-check", checkStatus, { icon: "refresh" }), ...(profile.provider === "pi" ? [] : [signIn, signOut]), ...(kiro ? [] : [share]), remove);
+  // Kiro and Antigravity profiles are private and standalone: the server refuses to share them.
+  actions.append(actionButton("Check status", "provider-profile-check", checkStatus, { icon: "refresh" }), ...(profile.provider === "pi" ? [] : [signIn, signOut]), ...(standalone ? [] : [share]), remove);
   card.append(head, status);
   // A Pi provider's key is asked for below the provider it is for, where the user just clicked Connect.
   if (profile.provider === "pi") card.append(createPiProfileProviderEditor(profile, login, (state, settled) => showLogin(profile, login, state, settled), checkStatus).root);
@@ -562,7 +568,7 @@ function assignmentsSection() {
 }
 /** A relay rule wins in its group's projects over every choice here; set on the relay, never on this page. */
 function relayRuleNote(provider) {
-  if (provider === "kiro" || !relayRules.length) return [];
+  if (["kiro", "antigravity"].includes(provider) || !relayRules.length) return [];
   const uses = relayRules.map((rule) => `${rule.groupName} uses ${rule.poolName}`);
   return [el("p", { testid: "provider-assignment-cluster-note", className: "assignment-cluster-note",
     text: `Set by relay: in projects shared through a relay group, its relay's pool is used whatever you choose here: ${uses.join("; ")}. Your choices apply everywhere else.` })];
@@ -576,9 +582,9 @@ function automaticDefault(provider) {
 }
 function choiceOptions(provider) {
   return [
-    ...(provider === "claude" || provider === "openai-codex" ? [{ value: "machine", label: "This machine's own sign-in", detail: "No profile: the sign-in on this machine" }] : []),
+    ...(provider === "claude" || provider === "openai-codex" || provider === "antigravity" ? [{ value: "machine", label: "This machine's own sign-in", detail: "No profile: the sign-in on this machine" }] : []),
     ...privateProfiles(provider).map((profile) => ({ value: `profile:${profile.id}`, label: profile.label, detail: `${providerOf(provider).name} profile · ${profileStatusLabel(profile.id)}` })),
-    ...(provider === "kiro" ? [] : poolOptions().map((option) => ({ ...option, value: `pool:${option.value}` }))),
+    ...(["kiro", "antigravity"].includes(provider) ? [] : poolOptions().map((option) => ({ ...option, value: `pool:${option.value}` }))),
   ];
 }
 function choiceLabel(value) {

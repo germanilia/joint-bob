@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { chmod, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { test } from "node:test";
 import type { Locator, Page } from "playwright-core";
 import { nativeUiFixture } from "./native-ui-fixture.js";
@@ -9,14 +11,37 @@ async function choose(page: Page | Locator, testid: string, search: string, labe
   await page.getByTestId(`${testid}-option`).filter({ hasText: label }).first().click();
 }
 
+async function waitForConnectionsReload(page: Page): Promise<void> {
+  const endpoints = ["/api/provider-profiles", "/api/provider-profiles/pools", "/api/projects", "/api/workspaces", "/api/provider-profiles/relay-rules", "/api/provider-profiles/clusters", "/api/settings"];
+  await Promise.all(endpoints.map((endpoint) => page.waitForResponse((response) => response.request().method() === "GET" && new URL(response.url()).pathname === endpoint)));
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
 test("connections have their own Settings tab, list profiles per provider, and choose a default with exceptions", { timeout: 120_000 }, async (t) => {
-  const { page, environment, node } = await nativeUiFixture(t);
+  const { page, environment, node } = await nativeUiFixture(t, (root) => ({ AGY_FIXTURE_HOME_RECORD: path.join(root, "agy-profile-home") }));
   await page.goto(node.url);
   await page.getByTestId("login-username-input").fill(environment.username);
   await page.getByTestId("login-password-input").fill(environment.password);
   await page.getByTestId("login-submit-button").click();
   await page.locator("#loginDialog[open]").waitFor({ state: "hidden" });
   await page.locator(".project-card").first().waitFor();
+  const antigravityCli = path.join(environment.home, "agy-fixture");
+  await writeFile(antigravityCli, `#!${process.execPath}
+const fs=require('node:fs'),path=require('node:path'),readline=require('node:readline'),args=process.argv.slice(2);
+if(args[0]==='--version'||args[0]==='acp'&&args[1]==='--help')process.exit(0);
+if(args[0]==='acp'&&args[1]==='--login'){
+ process.stdout.write('Open this link: https://accounts.google.com/o/oauth2/auth?client_id=fixture&state=fixture\\nThen paste the authorization code, or the full URL of the page you land on, and press Enter:\\n');
+ readline.createInterface({input:process.stdin}).on('line',code=>{if(code!=='fixture-code')process.exit(1);fs.mkdirSync(process.env.HOME,{recursive:true});fs.writeFileSync(path.join(process.env.HOME,'signed-in'),'fixture');if(process.env.AGY_FIXTURE_HOME_RECORD)fs.writeFileSync(process.env.AGY_FIXTURE_HOME_RECORD,process.env.HOME);process.exit(0);});
+}else{
+ const rl=readline.createInterface({input:process.stdin}),send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+ rl.on('line',line=>{const request=JSON.parse(line);if(request.method==='initialize')return send({jsonrpc:'2.0',id:request.id,result:{protocolVersion:1}});if(request.method==='session/new'){if(!fs.existsSync(path.join(process.env.HOME,'signed-in')))return send({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:'Authentication required'}});return send({jsonrpc:'2.0',id:request.id,result:{sessionId:'profile-session',configOptions:[{id:'model',name:'Model',type:'select',currentValue:'model-a',options:[{value:'model-a',name:'Model A'}]}]}})}throw Error('Unexpected ACP request '+request.method)});
+}`);
+  await chmod(antigravityCli, 0o700);
+  await page.evaluate(async (executable) => {
+    const { api } = await import("/app/api.js");
+    const settings = await api("/api/settings");
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({ runtimes: { ...settings.runtimes, antigravity: { ...settings.runtimes.antigravity, executable } } }) });
+  }, antigravityCli);
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-connections").click();
   await page.getByTestId("provider-profile-add").waitFor();
@@ -25,13 +50,60 @@ test("connections have their own Settings tab, list profiles per provider, and c
   await page.getByTestId("settings-tab-engines").click();
   await page.getByTestId("harness-config-card").waitFor();
   assert.equal(await page.locator("#settingsPanel-engines [data-testid='provider-profiles'], #settingsPanel-engines [data-testid='kiro-profiles']").count(), 0, "Harnesses holds no profile management");
+  const connectionsReload = waitForConnectionsReload(page);
   await page.getByTestId("settings-tab-connections").click();
+  await connectionsReload;
 
   // Every provider, Kiro included, is the same kind of tab with its own icon.
-  for (const provider of ["claude", "openai-codex", "pi", "kiro"]) {
+  for (const provider of ["claude", "openai-codex", "pi", "kiro", "antigravity"]) {
     assert.equal(await page.getByTestId(`provider-profile-provider-${provider}`).locator("svg").count(), 1, `${provider} tab has its icon`);
   }
 
+  await page.getByTestId("provider-profile-provider-antigravity").click();
+  assert.equal(await page.getByTestId("provider-profile-provider-antigravity").getAttribute("aria-selected"), "true");
+  await page.getByTestId("provider-profile-label").fill("Google work");
+  const antigravityCreated = page.waitForResponse((response) => response.url().endsWith("/api/provider-profiles") && response.request().method() === "POST");
+  await page.getByTestId("provider-profile-add").click();
+  assert.equal((await antigravityCreated).status(), 201);
+  const antigravityCard = page.getByTestId("provider-profile-row").filter({ hasText: "Google work" });
+  await antigravityCard.waitFor();
+  const createdProfiles = await (await page.request.get(`${node.url}/api/provider-profiles`)).json();
+  const antigravityProfileId = createdProfiles.profiles.find((profile: { id: string; label: string }) => profile.label === "Google work").id;
+  assert.equal(await antigravityCard.getByTestId("provider-profile-signin").count(), 1);
+  assert.equal(await antigravityCard.getByTestId("provider-profile-sharing").count(), 0, "Antigravity profiles stay private");
+  await antigravityCard.locator(".profile-pill").filter({ hasText: "Not signed in" }).waitFor();
+  await antigravityCard.getByTestId("provider-profile-signin").click();
+  await page.getByTestId("provider-profile-login-answer").waitFor();
+  await page.getByTestId("provider-profile-login-answer").fill("fixture-code");
+  await page.getByTestId("provider-profile-login-continue").click();
+  await antigravityCard.locator(".profile-pill").filter({ hasText: "Signed in on this node" }).waitFor();
+  assert.equal(await readFile(path.join(environment.root, "agy-profile-home"), "utf8"), path.join(node.dataDir, "provider-profile-auth", antigravityProfileId, "antigravity-home"));
+  await antigravityCard.getByTestId("provider-profile-signout").click();
+  await page.locator("#confirmDialog[open]").waitFor();
+  assert.match(await page.locator("#confirmDialog").innerText(), /Signs out only this Antigravity profile/);
+  await page.getByTestId("confirm-accept-button").click();
+  await antigravityCard.locator(".profile-pill").filter({ hasText: "Not signed in" }).waitFor();
+
+  await page.getByTestId("provider-profiles-tab-pools").click();
+  await page.getByTestId("subscription-pool-new").click();
+  await page.getByTestId("subscription-pool-member-0").click();
+  await page.getByTestId("subscription-pool-member-0-search").fill("Google work");
+  assert.equal(await page.getByTestId("subscription-pool-member-0-option").count(), 0, "Antigravity profiles cannot join pools");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("subscription-pool-cancel").click();
+
+  await page.getByTestId("provider-profiles-tab-assignments").click();
+  await page.getByTestId("provider-assignment-provider-antigravity").click();
+  const antigravitySaved = page.waitForResponse((response) => response.url().endsWith("/api/provider-profiles/selection") && response.request().method() === "PUT");
+  await page.getByTestId("provider-assignment-default-select").click();
+  await page.getByTestId("provider-assignment-default-select-search").fill("Google work");
+  await page.getByTestId("provider-assignment-default-select-option").filter({ hasText: "Google Antigravity profile" }).click();
+  await page.getByTestId("confirm-accept-button").click();
+  assert.equal((await antigravitySaved).status(), 200);
+  const antigravityListing = await (await page.request.get(`${node.url}/api/provider-profiles`)).json();
+  assert.ok(antigravityListing.selections.some((item: { provider: string; profileId: string }) => item.provider === "antigravity" && item.profileId === antigravityListing.profiles.find((profile: { label: string }) => profile.label === "Google work").id));
+
+  await page.getByTestId("provider-profiles-tab-profiles").click();
   let posted = 0;
   page.on("request", (request) => { if (request.url().endsWith("/api/provider-profiles") && request.method() === "POST") posted += 1; });
   await page.getByTestId("provider-profile-label").fill("   ");

@@ -88,7 +88,7 @@ export async function piTurnsOnPool(projectId: string, conversationId: string | 
   });
 }
 
-export async function projectProviderProfile(projectId: string, conversationId: string | undefined, provider: string, engine: "claude" | "pi" | "kiro" = "claude"): Promise<ProviderProfile | undefined> {
+export async function projectProviderProfile(projectId: string, conversationId: string | undefined, provider: string, engine: "claude" | "pi" | "kiro" | "antigravity" = "claude"): Promise<ProviderProfile | undefined> {
   const targetProvider = provider === "anthropic" ? "claude" : provider;
   const poolProfile = poolProfileContext();
   if (poolProfile) {
@@ -117,7 +117,7 @@ export async function projectProviderProfile(projectId: string, conversationId: 
     const selected = resolveProviderProfile(accountId, "pi", scope, automation ? "automation" : "interactive");
     if (selected) return selected.profile;
   }
-  const subscription = targetProvider === "claude" || targetProvider === "openai-codex" || (engine === "kiro" && targetProvider === "kiro");
+  const subscription = targetProvider === "claude" || targetProvider === "openai-codex" || (engine === "kiro" && targetProvider === "kiro") || (engine === "antigravity" && targetProvider === "antigravity");
   // This machine's own sign-in chosen for the provider means no profile at all, Pi profiles included.
   const machine = subscription && machineSignInChosen(accountId, targetProvider as ProfileProvider, scope);
   const profile = machine ? undefined : (subscription ? resolveProviderProfile(accountId, targetProvider, scope, automation ? "automation" : "interactive")?.profile : undefined)
@@ -186,7 +186,7 @@ export async function claudeProfileAccess(profile: ProviderProfile): Promise<{ a
  * Twins borrow from this.
  */
 export async function localProfileCredential(profile: ProviderProfile): Promise<ProfileOAuthCredential | undefined> {
-  if (profile.provider === "kiro") throw new Error("Kiro profiles are standalone; their credentials never leave this node");
+  if (profile.provider === "kiro" || profile.provider === "antigravity") throw new Error(`${profile.provider === "kiro" ? "Kiro" : "Antigravity"} profiles are standalone; their credentials never leave this node`);
   if (profile.provider === "pi") throw new Error("Pi profile credentials stay on this node; OAuth token borrowing is unavailable");
   const message = `Sign in to ${profile.label} again on this node. No other account was used.`;
   const providerId = profile.provider === "claude" ? "anthropic" : "openai-codex";
@@ -210,6 +210,7 @@ type ProfileOAuthCredential = Extract<ProfileCredential, { type: "oauth" }>;
 export async function startProfileLogin(owner: string, id: string) {
   const profile = providerProfile(owner, id);
   if (profile.provider === "kiro") return (await import("../kiro-profiles/native.js")).startKiroProfileLogin(profile);
+  if (profile.provider === "antigravity") return (await import("../harnesses/antigravity/login.js")).antigravityLogins.start(owner, profile);
   if (profile.provider === "pi") throw new Error("Choose a provider and login method for this Pi profile");
   if (profile.provider === "claude") {
     const current = await profileLoginState(profile);
@@ -257,7 +258,7 @@ export async function refreshedProfileCredential(profile: ProviderProfile): Prom
 /** Where a turn on this node would get the profile's token: here, from a twin, or nowhere. */
 export async function profileAvailability(profile: ProviderProfile): Promise<{ signedIn: boolean; twin: string | null; message: string }> {
   const local = await profileLoginState(profile);
-  if (profile.provider === "pi" || profile.provider === "kiro") return { ...local, twin: null };
+  if (profile.provider === "pi" || profile.provider === "kiro" || profile.provider === "antigravity") return { ...local, twin: null };
   if (local.signedIn || local.message !== "Sign in on this node") return { ...local, twin: null };
   const { holder, unchecked } = await twinLoginHolder(profile);
   if (holder) return { signedIn: false, twin: holder, message: `Uses the sign-in on ${holder}. Turns here stop while it is offline; sign in here too so this machine works on its own.` };
@@ -267,6 +268,7 @@ export async function profileAvailability(profile: ProviderProfile): Promise<{ s
 
 export async function profileLoginState(profile: ProviderProfile): Promise<{ signedIn: boolean; message: string }> {
   if (profile.provider === "kiro") return (await import("../kiro-profiles/native.js")).kiroProfileLoginState(profile);
+  if (profile.provider === "antigravity") return (await import("../antigravity-profiles/native.js")).antigravityProfileLoginState(profile);
   if (profile.provider === "pi") {
     const runtime = await profileModelRuntime(profile);
     const entries = await runtime.listCredentials();
@@ -287,6 +289,7 @@ export async function profileLoginState(profile: ProviderProfile): Promise<{ sig
 
 export async function logoutProfile(profile: ProviderProfile): Promise<void> {
   if (profile.provider === "kiro") return (await import("../kiro-profiles/native.js")).logoutKiroProfile(profile);
+  if (profile.provider === "antigravity") return (await import("../antigravity-profiles/native.js")).logoutAntigravityProfile(profile);
   if (profile.provider === "claude") {
     await withProfileAuthority(openAIAuthPath(profile), async () => {
       await (await profileModelRuntime(profile)).logout("anthropic");

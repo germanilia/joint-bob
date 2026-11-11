@@ -1,13 +1,19 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 import { currentRuntime } from "../../account-runtime.js";
 import { stopProcessGroup } from "../process-lifecycle.js";
 import type { ProfileLoginStatus } from "../../provider-profiles/login.js";
+import type { ProviderProfile } from "../../provider-profiles/store.js";
+import { prepareAntigravityProfile } from "../../antigravity-profiles/native.js";
 import { invalidateAntigravityModels, probeAntigravity } from "./models.js";
 import { antigravitySettings, spawnAntigravity } from "./process.js";
 
-type Login = { owner: string; status: ProfileLoginStatus; child: ChildProcessWithoutNullStreams; submitted?: boolean };
+type Login = { owner: string; home: string; status: ProfileLoginStatus; child: ChildProcessWithoutNullStreams; submitted?: boolean };
 
-function loginKey(): string { return `${currentRuntime().key}\n${antigravitySettings().configPath}`; }
+function loginKey(profile?: ProviderProfile): string {
+  return profile ? `profile:${profile.id}` : `machine:${currentRuntime().key}\n${antigravitySettings().configPath}`;
+}
 
 /** Only the vendor's Google authorization URL is exposed, never arbitrary process output. */
 function googleUrl(output: string): string | undefined {
@@ -22,13 +28,16 @@ function googleUrl(output: string): string | undefined {
 export class AntigravityLogins {
   private readonly logins = new Map<string, Login>();
 
-  start(owner: string): ProfileLoginStatus {
-    const key = loginKey();
+  async start(owner: string, profile?: ProviderProfile): Promise<ProfileLoginStatus> {
+    if (profile && (profile.provider !== "antigravity" || profile.owner !== owner)) throw new Error("Expected this owner's Google Antigravity profile");
+    const key = loginKey(profile);
     if (this.logins.get(key)?.status.state === "waiting") throw new Error("Antigravity sign-in is already in progress on this node");
+    const settings = antigravitySettings();
+    const home = profile ? await prepareAntigravityProfile(profile) : settings.configPath ? path.dirname(settings.configPath) : currentRuntime().home;
     // The native terminal flow prints a URL and accepts a code over stdin. Never open
     // a browser on the server or inherit API-key/ADC authentication for this process.
-    const child = spawnAntigravity(currentRuntime().home, ["acp", "--login"], { ...process.env, BROWSER: "true", SSH_CONNECTION: "127.0.0.1 1 127.0.0.1 2" });
-    const login: Login = { owner, child, status: { state: "waiting", message: "Starting Google sign-in on this execution node" } };
+    const child = spawnAntigravity(currentRuntime().home, ["acp", "--login"], { ...process.env, BROWSER: "true", SSH_CONNECTION: "127.0.0.1 1 127.0.0.1 2" }, home);
+    const login: Login = { owner, home, child, status: { state: "waiting", message: "Starting Google sign-in on this execution node" } };
     this.logins.set(key, login);
     this.watch(login);
     return structuredClone(login.status);
@@ -67,7 +76,7 @@ export class AntigravityLogins {
 
   private async verify(login: Login): Promise<void> {
     try {
-      await probeAntigravity();
+      await probeAntigravity(os.tmpdir(), process.env, login.home);
       if (login.status.state === "waiting") {
         invalidateAntigravityModels();
         login.status = { state: "complete", message: "Google Antigravity is signed in on this execution node" };
@@ -77,13 +86,13 @@ export class AntigravityLogins {
     }
   }
 
-  status(owner: string): ProfileLoginStatus | undefined {
-    const login = this.logins.get(loginKey());
+  status(owner: string, profile?: ProviderProfile): ProfileLoginStatus | undefined {
+    const login = this.logins.get(loginKey(profile));
     return login?.owner === owner ? structuredClone(login.status) : undefined;
   }
 
-  answer(owner: string, answer: string): void {
-    const login = this.logins.get(loginKey());
+  answer(owner: string, answer: string, profile?: ProviderProfile): void {
+    const login = this.logins.get(loginKey(profile));
     if (!login || login.owner !== owner || login.status.state !== "waiting" || !login.status.prompt) throw new Error("No pending Antigravity sign-in prompt");
     if (!answer.trim() || answer.length > 8192 || /[\r\n\0]/.test(answer)) throw new Error("Authorization response must be a nonempty single line of at most 8192 characters");
     login.submitted = true;
@@ -93,14 +102,14 @@ export class AntigravityLogins {
     login.child.stdin.end(`${answer.trim()}\n`);
   }
 
-  async cancel(owner: string): Promise<void> {
-    const login = this.logins.get(loginKey());
+  async cancel(owner: string, profile?: ProviderProfile): Promise<void> {
+    const login = this.logins.get(loginKey(profile));
     if (!login || login.owner !== owner || login.status.state !== "waiting") throw new Error("No Antigravity sign-in is in progress");
     login.status = { state: "cancelled", message: "Google sign-in cancelled" };
     if (login.child.exitCode === null && login.child.signalCode === null) await stopProcessGroup(login.child, "Antigravity sign-in");
   }
 
-  busy(): boolean { return this.logins.get(loginKey())?.status.state === "waiting"; }
+  busy(profile?: ProviderProfile): boolean { return this.logins.get(loginKey(profile))?.status.state === "waiting"; }
 }
 
 export const antigravityLogins = new AntigravityLogins();

@@ -87,8 +87,8 @@ export async function applyAntigravitySettings(connection: Rpc, sessionId: strin
   return options;
 }
 
-async function openCatalogSession(cwd: string) {
-  const child = spawnAntigravity(cwd, ["acp"], process.env);
+async function openCatalogSession(cwd: string, environment: NodeJS.ProcessEnv, home?: string) {
+  const child = spawnAntigravity(cwd, ["acp"], environment, home);
   const connection = createAntigravityConnection(child, () => {}, async (method) => { throw new Error(`Unexpected Antigravity ACP request during model discovery: ${method}`); });
   const deadline = setTimeout(() => child.kill(), 30_000);
   deadline.unref();
@@ -108,7 +108,7 @@ async function openCatalogSession(cwd: string) {
   }
 }
 
-export async function probeAntigravity(cwd = runtimeHome()): Promise<unknown> { return openCatalogSession(cwd); }
+export async function probeAntigravity(cwd = runtimeHome(), environment: NodeJS.ProcessEnv = process.env, home?: string): Promise<unknown> { return openCatalogSession(cwd, environment, home); }
 
 const MODEL_CACHE_MS = 10 * 60_000;
 const modelCache = new Map<string, { at: number; models: Promise<HarnessModel[]> }>();
@@ -131,9 +131,9 @@ export async function antigravityModels(): Promise<HarnessModel[]> {
   return models;
 }
 
-export async function checkAntigravityExecutable(cwd: string, environment: NodeJS.ProcessEnv = process.env): Promise<void> {
-  const launch = antigravityRuntimeCommand(["--version"], environment);
+export async function checkAntigravityExecutable(cwd: string, environment: NodeJS.ProcessEnv = process.env, home?: string): Promise<void> {
+  const launch = antigravityRuntimeCommand(["--version"], environment, home);
   await execute(launch.command, launch.args, { cwd, env: launch.env, timeout: 5_000 });
-  const acp = antigravityRuntimeCommand(["acp", "--help"], environment);
+  const acp = antigravityRuntimeCommand(["acp", "--help"], environment, home);
   await execute(acp.command, acp.args, { cwd, env: acp.env, timeout: 5_000 });
 }

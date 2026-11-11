@@ -19,6 +19,7 @@ import { borrowTwinCredential, TWIN_PROFILE_TOKEN_PATH } from "../../provider-pr
 import { forwardToProvider, isModelRoute, isProxiedProvider, RELAY_PROXY_PATH, RelayRouteRefused, relayProxyRequestSchema, streamAnswer } from "../../provider-profiles/relay-proxy.js";
 import { profileLogins } from "../../provider-profiles/login.js";
 import { kiroProfileLoginStatus, cancelKiroProfileLogin } from "../../kiro-profiles/native.js";
+import { antigravityLogins } from "../../harnesses/antigravity/login.js";
 import { piProfileProviders, startPiProfileLogin, removePiProfileProvider } from "../../provider-profiles/pi-credentials.js";
 import { profileBusy } from "../../provider-profiles/execution.js";
 import { sendError } from "../http-auth.js";
@@ -39,7 +40,7 @@ function route(work: (request: Request, response: Response) => unknown) {
     catch (error) {
       if (error instanceof z.ZodError) { sendError(response, 400, "Invalid provider profile request"); return; }
       if (error instanceof Error && /login method unavailable|Expected Pi profile|Choose a provider/.test(error.message)) { sendError(response, 400, error.message); return; }
-      if (error instanceof Error && /Kiro profiles.*standalone/.test(error.message)) { sendError(response, 400, error.message); return; }
+      if (error instanceof Error && /(?:Kiro|Antigravity) profiles.*standalone/.test(error.message)) { sendError(response, 400, error.message); return; }
       if (error instanceof ClusterV2HttpError) { sendError(response, error.statusCode, error.message); return; }
       if (error instanceof Error && /not found/i.test(error.message)) { sendError(response, 404, error.message); return; }
       if (error instanceof Error && /selection|assignment|assigned|in progress|busy|pending sign-in|already signed in|finishing|automation only/i.test(error.message)) { sendError(response, 409, error.message); return; }
@@ -48,7 +49,9 @@ function route(work: (request: Request, response: Response) => unknown) {
   };
 }
 function loginStatus(selected: ReturnType<typeof providerProfile>) {
-  return selected.provider === "kiro" ? kiroProfileLoginStatus(selected) : profileLogins.status(selected.owner, selected.id);
+  if (selected.provider === "kiro") return kiroProfileLoginStatus(selected);
+  if (selected.provider === "antigravity") return antigravityLogins.status(selected.owner, selected);
+  return profileLogins.status(selected.owner, selected.id);
 }
 function editable(id: string): void {
   if (profileBusy(id)) throw new Error("This profile is busy. Wait for its current turn to finish.");
@@ -163,12 +166,14 @@ app.post("/api/provider-profiles/:id/login", route(async (request, response) => 
 app.put("/api/provider-profiles/:id/login", route((request, response) => {
   const selected = profile(request, response);
   const body = z.object({ answer: z.string().trim().min(1).max(8192) }).strict().parse(request.body);
-  profileLogins.answer(owner(response), selected.id, body.answer);
+  if (selected.provider === "antigravity") antigravityLogins.answer(owner(response), body.answer, selected);
+  else profileLogins.answer(owner(response), selected.id, body.answer);
   response.json({ ok: true });
 }));
 app.delete("/api/provider-profiles/:id/login", route(async (request, response) => {
   const selected = profile(request, response);
   if (selected.provider === "kiro") await cancelKiroProfileLogin(selected);
+  else if (selected.provider === "antigravity") await antigravityLogins.cancel(owner(response), selected);
   else profileLogins.cancel(owner(response), selected.id);
   response.json({ ok: true });
 }));
@@ -296,7 +301,7 @@ app.post(TWIN_PROFILE_TOKEN_PATH, route(async (request, response) => {
   const body = z.object({ profileId: idSchema, check: z.literal(true).optional() }).strict().parse(request.body);
   const selected = twinProviderProfile(body.profileId);
   if (!selected) { sendError(response, 404, "Provider profile not found on this node"); return; }
-  if (selected.provider === "kiro") { sendError(response, 409, "Kiro profiles are standalone; their credentials stay on this node"); return; }
+  if (selected.provider === "kiro" || selected.provider === "antigravity") { sendError(response, 409, `${selected.provider === "kiro" ? "Kiro" : "Antigravity"} profiles are standalone; their credentials stay on this node`); return; }
   if (body.check) { response.json({ signedIn: (await profileLoginState(selected)).signedIn }); return; }
   try {
     const credential = await localProfileCredential(selected);

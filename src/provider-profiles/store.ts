@@ -8,17 +8,18 @@ import { adminAccountId } from "../ownership.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from "../replication.js";
 import { settingsDatabase } from "../settings-store.js";
 
-export const profileProviderSchema = z.enum(["claude", "openai-codex", "pi", "kiro"]);
+export const profileProviderSchema = z.enum(["claude", "openai-codex", "pi", "kiro", "antigravity"]);
 export const kiroProfileConfigSchema = z.object({
   startUrl: z.string().url().max(2048).refine((value) => { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password; }, "Use an HTTPS IAM Identity Center start URL"),
   region: z.string().max(64).regex(/^[a-z]{2}(?:-[a-z]+)+-\d+$/),
 }).strict();
-function kiroConfigRequired(value: { provider: string; kiro?: unknown; shared?: boolean }, ctx: z.RefinementCtx): void {
+function profileConfigRequired(value: { provider: string; kiro?: unknown; shared?: boolean }, ctx: z.RefinementCtx): void {
   if ((value.provider === "kiro") !== Boolean(value.kiro)) ctx.addIssue({ code: "custom", message: "Only Kiro profiles require IAM Identity Center settings" });
   if (value.provider === "kiro" && value.shared) ctx.addIssue({ code: "custom", message: "Kiro profiles are private and standalone" });
+  if (value.provider === "antigravity" && value.shared) ctx.addIssue({ code: "custom", message: "Antigravity profiles are private and standalone" });
 }
 export type ProfileProvider = z.infer<typeof profileProviderSchema>;
-export const profileInputSchema = z.object({ label: z.string().trim().min(1).max(80), provider: profileProviderSchema, kiro: kiroProfileConfigSchema.optional() }).strict().superRefine(kiroConfigRequired);
+export const profileInputSchema = z.object({ label: z.string().trim().min(1).max(80), provider: profileProviderSchema, kiro: kiroProfileConfigSchema.optional() }).strict().superRefine(profileConfigRequired);
 /** "cluster": projects shared through one cluster. A personal choice, so it follows its owner and their twins only. */
 const scopeSchema = z.enum(["default", "workspace", "cluster", "project", "conversation"]);
 /** `machine`: no profile at all; this machine's own sign-in serves the choice, and no single-profile default applies. */
@@ -26,8 +27,9 @@ export const profileSelectionSchema = z.object({ provider: profileProviderSchema
   if ((value.scope === "default") !== (value.scopeId === "")) ctx.addIssue({ code: "custom", message: "Only the default scope has an empty scopeId" });
   if (value.profileId && value.poolId) ctx.addIssue({ code: "custom", message: "Choose either a profile or a pool" });
   if (value.machine && (value.profileId || value.poolId)) ctx.addIssue({ code: "custom", message: "This machine's own sign-in is chosen alone, not with a profile or pool" });
-  if (value.machine && !["claude", "openai-codex"].includes(value.provider)) ctx.addIssue({ code: "custom", message: "Only Claude and ChatGPT can use this machine's own sign-in" });
+  if (value.machine && !["claude", "openai-codex", "antigravity"].includes(value.provider)) ctx.addIssue({ code: "custom", message: "Only Claude, ChatGPT, and Google Antigravity can use this machine's own sign-in" });
   if (value.provider === "kiro" && value.poolId) ctx.addIssue({ code: "custom", message: "Kiro profiles are standalone and cannot use subscription pools" });
+  if (value.provider === "antigravity" && value.poolId) ctx.addIssue({ code: "custom", message: "Antigravity profiles are standalone and cannot use subscription pools" });
 });
 /** A pool choice names a scope and a pool, with no provider: the pool's own profiles decide which providers it covers. */
 export const poolChoiceSchema = z.object({ scope: scopeSchema, scopeId: z.string().max(700), poolId: z.string().uuid().nullable() }).strict().superRefine((value, ctx) => {
@@ -158,6 +160,7 @@ export function createProviderProfile(owner: string, input: unknown): ProviderPr
 export function setProviderProfileShared(owner: string, id: string, shared: boolean): ProviderProfile {
   const profile = providerProfile(owner, id), db = database();
   if (profile.provider === "kiro" && shared) throw new Error("Kiro profiles are private and standalone");
+  if (profile.provider === "antigravity" && shared) throw new Error("Antigravity profiles are private and standalone");
   const poolTablesExist = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='subscription_pool_members'").get();
   if (shared && poolTablesExist && db.prepare("SELECT 1 FROM subscription_pool_members m JOIN subscription_pools p ON p.id=m.pool_id WHERE m.profile_id=? AND p.deleted=0 LIMIT 1").get(id)) {
     throw new Error("Remove this profile from its pools before sharing it for automation");
@@ -200,6 +203,7 @@ export function deleteProviderProfile(owner: string, id: string): void {
   if (poolTablesExist && db.prepare("SELECT 1 FROM subscription_pool_members m JOIN subscription_pools p ON p.id=m.pool_id WHERE m.profile_id=? AND p.deleted=0 LIMIT 1").get(id)) throw new Error("Remove this profile from its pools before deleting it");
   transaction(db, () => writeProfile(db, { ...profile, deleted: true }, stamp(db, origin(db))));
   if (profile.provider === "kiro") rmSync(path.join(resolveDataDirectory(), "kiro-profile-auth", profile.id), { recursive: true, force: true });
+  if (profile.provider === "antigravity") rmSync(path.join(resolveDataDirectory(), "provider-profile-auth", profile.id), { recursive: true, force: true });
 }
 export function listProviderProfileSelections(owner: string): ProfileSelection[] {
   return database().prepare("SELECT provider,scope,scope_id AS scopeId,profile_id AS profileId FROM provider_profile_selections WHERE owner=? AND profile_id<>''").all(owner) as unknown as ProfileSelection[];
@@ -286,7 +290,7 @@ export function onlyPrivateProfile(owner: string, provider: ProfileProvider): Pr
 }
 
 const stampSchema = { username: z.string().regex(/^[0-9a-f]{32}$/), updatedAt: z.string().datetime(), originNodeId: z.string().min(1).max(100) };
-const profileEventSchema = z.object({ ...stampSchema, id: z.string().uuid(), label: z.string().trim().min(1).max(80), provider: profileProviderSchema, createdAt: z.string().datetime(), shared: z.boolean(), deleted: z.boolean(), kiro: kiroProfileConfigSchema.optional() }).strict().superRefine(kiroConfigRequired);
+const profileEventSchema = z.object({ ...stampSchema, id: z.string().uuid(), label: z.string().trim().min(1).max(80), provider: profileProviderSchema, createdAt: z.string().datetime(), shared: z.boolean(), deleted: z.boolean(), kiro: kiroProfileConfigSchema.optional() }).strict().superRefine(profileConfigRequired);
 const selectionEventSchema = z.object({ ...stampSchema, provider: profileProviderSchema, scope: scopeSchema, scopeId: z.string().max(700), profileId: z.string().uuid().nullable(), machine: z.literal(true).optional() }).strict();
 const poolSelectionEventSchema = z.object({ ...stampSchema, provider: profileProviderSchema, scope: scopeSchema, scopeId: z.string().max(700), poolId: z.string().uuid().nullable() }).strict();
 

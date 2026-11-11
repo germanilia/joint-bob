@@ -287,10 +287,10 @@ const antigravityLoginPath = "/api/harnesses/antigravity/login";
 app.get(antigravityLoginPath, requireAdmin, (_request, response) => {
   response.json({ login: antigravityLogins.status((response.locals.authSession as AuthSession).accountId) ?? null });
 });
-app.post(antigravityLoginPath, requireAdmin, (request, response) => {
+app.post(antigravityLoginPath, requireAdmin, async (request, response) => {
   try {
     z.object({}).strict().parse(request.body);
-    response.json({ login: antigravityLogins.start((response.locals.authSession as AuthSession).accountId) });
+    response.json({ login: await antigravityLogins.start((response.locals.authSession as AuthSession).accountId) });
   } catch { sendError(response, 400, "Could not start Antigravity sign-in. Check installation or finish the current sign-in first."); }
 });
 app.put(antigravityLoginPath, requireAdmin, (request, response) => {

@@ -261,6 +261,7 @@ function selectedHarness(settings: QueuedSettings): HarnessId { return settings.
 export interface TurnSubscriptionPool { id: string; name: string; harnessId: HarnessId; fallbackModels: Partial<Record<string, string>>; candidates: PoolProfileContext[]; sameProviderOnly: boolean }
 function profileProviderForRuntime(provider: string): ProfileProvider | undefined {
   if (provider === "anthropic" || provider === "claude") return "claude";
+  if (provider === "antigravity") return "antigravity";
   return provider === "openai-codex" ? provider : "pi";
 }
 interface SubscriptionPoolRequest {
@@ -273,7 +274,7 @@ interface SubscriptionPoolRequest {
 }
 export async function resolveSubscriptionPool(request: SubscriptionPoolRequest): Promise<TurnSubscriptionPool | undefined> {
   const { engine, accountId, usage } = request;
-  if (engine === "kiro") return undefined;
+  if (engine === "kiro" || engine === "antigravity") return undefined;
   const preferred = profileProviderForRuntime(request.provider);
   const local = await getClusterNode(), db = await clusterV2Database();
   const assignments = resolveClusterSubscriptionPools(db, local.id, request.projectId);
@@ -397,7 +398,7 @@ export function announceSharedConnection(shared: SharedHarnessSession, view: Tur
  */
 async function profileConnectionView(projectId: string, conversationId: string, engine: HarnessId, provider: string): Promise<TurnConnectionView | undefined> {
   // Only these harnesses run on Joint Bob profiles; any other keeps its own sign-in, unlabelled.
-  if (engine !== "claude" && engine !== "pi" && engine !== "kiro") return undefined;
+  if (engine !== "claude" && engine !== "pi" && engine !== "kiro" && engine !== "antigravity") return undefined;
   const profile = await projectProviderProfile(projectId, conversationId, provider, engine);
   return { profile: { label: profile?.label ?? "this machine's sign-in" } };
 }
