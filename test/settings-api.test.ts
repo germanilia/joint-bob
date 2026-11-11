@@ -69,6 +69,10 @@ test("settings API persists runtime choices without returning secrets", async ()
     });
     assert.equal(checked.status, 200);
     assert.equal((await checked.json()).pi.configPath.ok, false, "missing config folder is reported");
+    const backupOff = {
+      destination: "off", keepDays: 30, folder: "", hasSecretAccessKey: false, defaultFolder: path.join(root, "conversation-backups"),
+      s3: { bucket: "", region: "", prefix: "", endpoint: "", credentials: "keys", accessKeyId: "", profile: "" },
+    };
     const conversationDefaults = {
       pi: { provider: "anthropic", modelId: "claude-sonnet-4-5", thinkingLevel: "low" },
       claude: { provider: "claude", modelId: "sonnet", thinkingLevel: "high" },
@@ -116,6 +120,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       conversationHistoryDays: 45,
       conversationRetentionDays: 60,
       conversationRetentionScope: { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: true, backgroundRuns: false },
+      conversationBackup: backupOff,
       autoCompactThreshold: 70,
       digestAttachments: false,
       showProjectsOnOtherNodes: true,
@@ -164,6 +169,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       conversationHistoryDays: 45,
       conversationRetentionDays: 60,
       conversationRetentionScope: { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: true, backgroundRuns: false },
+      conversationBackup: backupOff,
       autoCompactThreshold: 70,
       digestAttachments: false,
       showProjectsOnOtherNodes: true,
@@ -247,6 +253,65 @@ test("settings API persists runtime choices without returning secrets", async ()
       });
       assert.equal(invalidLimit.status, 400);
     }
+    // Backups before the sweep deletes. Off at first; what is typed can be checked before it is saved; a save that is
+    // incomplete or has a field the setting does not have is refused with the reason and changes nothing.
+    const backupOf = async (): Promise<Record<string, any>> => (await (await fetch(`${node.baseUrl}/api/settings`, { headers })).json()).conversationBackup;
+    const putBackup = (conversationBackup: unknown): Promise<Response> => fetch(`${node.baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ conversationBackup }) });
+    const checkBackup = async (body: unknown): Promise<Record<string, unknown>> => {
+      const checked = await fetch(`${node.baseUrl}/api/settings/conversation-backups/check`, { method: "POST", headers, body: JSON.stringify(body) });
+      assert.equal(checked.status, 200);
+      return await checked.json() as Record<string, unknown>;
+    };
+    assert.deepEqual(await backupOf(), backupOff);
+    for (const refused of [{ destination: "tape" }, { keepDays: 1.5 }, { keepDays: 4000 }, { everything: true }, { s3: { secret: "x" } }, "folder"]) {
+      assert.equal((await putBackup(refused)).status, 400, JSON.stringify(refused));
+    }
+    // A page that saves the settings it read sends back the two fields a GET adds. They are taken and ignored.
+    assert.equal((await putBackup({ ...backupOff, hasSecretAccessKey: true, defaultFolder: "/elsewhere" })).status, 200);
+    const wholeSettings = await (await fetch(`${node.baseUrl}/api/settings`, { headers })).json();
+    assert.equal((await fetch(`${node.baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify(wholeSettings) })).status, 200, "what a GET returns can be saved as it is");
+    for (const [incomplete, reason] of [[{ destination: "s3" }, /need a bucket/], [{ destination: "folder", folder: "relative" }, /absolute path/], [{ destination: "s3", s3: { bucket: "a-bucket", region: "eu-west-1" } }, /access key ID and its secret key, or a profile/]] as const) {
+      const answer = await putBackup(incomplete);
+      assert.equal(answer.status, 400);
+      const refusal = await answer.json() as { error: string; details?: { setting?: string } };
+      assert.match(refusal.error, reason);
+      assert.deepEqual(refusal.details, { setting: "conversationBackup" }, "the refusal says which setting it is about");
+    }
+    // A folder that something else reads or moves is refused when it is saved, not found out by the next hourly check.
+    for (const [unsafe, reason] of [[path.join(piRuntime.sessionPath, "backups"), /transcript folder/], [path.dirname(piRuntime.sessionPath), /transcript folder/]] as const) {
+      const answer = await putBackup({ destination: "folder", folder: unsafe });
+      assert.equal(answer.status, 400, unsafe);
+      const refusal = await answer.json() as { error: string; details?: { setting?: string } };
+      assert.match(refusal.error, reason);
+      assert.deepEqual(refusal.details, { setting: "conversationBackup" });
+    }
+    assert.deepEqual(await backupOf(), backupOff, "refused saves changed nothing");
+    const backupFolder = path.join(root, "api backups");
+    assert.deepEqual(await checkBackup({}), { ok: false, message: "Choose a folder or S3 first" });
+    assert.deepEqual(await checkBackup({ destination: "folder", folder: "relative" }), { ok: false, message: "The backup folder must be an absolute path" });
+    assert.deepEqual(await checkBackup({ destination: "folder", folder: backupFolder }), { ok: true, where: backupFolder });
+    assert.deepEqual(await backupOf(), backupOff, "a check saves nothing");
+    assert.equal((await fetch(`${node.baseUrl}/api/settings/conversation-backups/check`, { method: "POST", headers, body: JSON.stringify({ everything: true }) })).status, 400);
+    const backupSaved = await putBackup({ destination: "folder", folder: backupFolder, keepDays: 14, s3: { accessKeyId: "AKIAAPITESTKEY", secretAccessKey: "a secret the API never returns" } });
+    assert.equal(backupSaved.status, 200);
+    const backupSavedText = await backupSaved.text();
+    assert.equal(backupSavedText.includes("a secret the API never returns"), false);
+    const folderBackup = { ...backupOff, destination: "folder", folder: backupFolder, keepDays: 14, hasSecretAccessKey: true, s3: { ...backupOff.s3, accessKeyId: "AKIAAPITESTKEY" } };
+    assert.deepEqual(JSON.parse(backupSavedText).conversationBackup, folderBackup);
+    assert.equal((await (await fetch(`${node.baseUrl}/api/settings`, { headers })).text()).includes("a secret the API never returns"), false);
+    const backupStatus = { destination: "folder", where: backupFolder, keepDays: 14, kept: { backups: 0, bytes: 0 }, nextRemovalAt: null, problem: null };
+    assert.deepEqual(await (await fetch(`${node.baseUrl}/api/settings/conversation-backups`, { headers })).json(), backupStatus);
+    assert.deepEqual((await (await fetch(`${node.baseUrl}/api/settings/retention-preview`, { headers })).json() as { backup: unknown }).backup, backupStatus, "the dry run says where backups go");
+    // A save that leaves the setting out keeps it; turning it off keeps what was typed for the next time.
+    assert.equal((await fetch(`${node.baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ gitPullFileLimit: 750 }) })).status, 200);
+    assert.deepEqual(await backupOf(), folderBackup);
+    assert.equal((await putBackup({ destination: "off", keepDays: 30, folder: "", s3: { accessKeyId: "" } })).status, 200);
+    assert.deepEqual(await backupOf(), { ...backupOff, hasSecretAccessKey: true });
+    // Only the node's admin sees these routes: without a session they answer like any other route does.
+    for (const [method, route] of [["GET", "/api/settings/conversation-backups"], ["POST", "/api/settings/conversation-backups/check"]] as const) {
+      assert.equal((await fetch(`${node.baseUrl}${route}`, { method, headers: { "Content-Type": "application/json" }, ...(method === "POST" ? { body: "{}" } : {}) })).status, 401);
+    }
+
     // The retention boxes: one the setting does not have, or a value that is no yes or no, is refused and changes nothing.
     for (const scope of [{ everything: true }, { full: "yes" }, true]) {
       const refusedScope = await fetch(`${node.baseUrl}/api/settings`, {

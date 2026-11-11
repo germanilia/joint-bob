@@ -2426,6 +2426,20 @@ body.terminal-open[data-terminal-orientation="horizontal"] .shell { height: calc
 .retention-preview th:not(:first-child), .retention-preview td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .retention-preview caption { text-align: left; padding: 4px 0; color: var(--muted); font-size: 12px; }
 .retention-preview [role="alert"] { margin: 0; color: var(--danger, #b3261e); }
+/* Settings → backup before deleting: where the copy goes, a check button, and what is kept now.
+   The fields stack; a folder path or a bucket address wraps instead of widening the panel. */
+.retention-backup { display: grid; gap: 8px; min-width: 0; margin: 14px 0 0; padding: 4px 0 0; border: 0; border-top: 1px solid var(--line); }
+.retention-backup > legend { padding-left: 0; }
+.retention-backup-fields, .retention-backup-notes { display: grid; gap: 8px; min-width: 0; }
+.retention-backup-notes:empty { display: none; }
+.retention-backup button { justify-self: start; }
+.retention-backup .settings-hint { overflow-wrap: anywhere; }
+.retention-backup-more > summary { width: fit-content; color: var(--muted); font-size: 12px; cursor: pointer; }
+.retention-backup-more[open] > summary { margin-bottom: 8px; }
+.retention-backup-note { display: flex; align-items: flex-start; gap: 7px; margin: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.retention-backup-note .row-menu-icon { width: 14px; height: 14px; margin-top: 2px; opacity: 1; }
+.retention-backup-note.ok .row-menu-icon { color: var(--live); }
+.retention-backup-note.failed { color: var(--danger); }
 #ntfyServiceList { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 #ntfyServiceList li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ntfy-service-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }

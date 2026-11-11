@@ -3,6 +3,7 @@ import { projectAdditionalPaths } from "../session-scope.js";
 import { assertProjectFolderAllowed, ProjectFolderError, projectHomeFor } from "../../project-runtime.js";
 import { actingAccount } from "../../account-context.js";
 import { isNodeAdmin } from "../admin.js";
+import { ConversationBackupSettingError } from "../../conversation-retention.js";
 import { personalSettings, terminalAccessSettings, updatePersonalSettings, updateTerminalAccessSettings } from "../../settings.js";
 import path from "node:path";
 import { runSyncCheck, syncCheckStatus } from "../sync-check.js";
@@ -292,6 +293,7 @@ app.put("/api/settings", async (request, response, next) => {
     if (!homePath.trim() || !path.isAbsolute(homePath)) throw new Error("Joint Bob home folder must be absolute");
     await assertManagedHomeChangeAllowed(homePath);
     await ensureManagedHome(homePath, (await listWorkspaces()).map((workspace) => workspace.id));
+    if (payload.conversationBackup) await (await import("../conversation-backup.js")).assertBackupPlaceAllowed(payload.conversationBackup);
     const settings = updateSettings(payload, session.userId);
     const { publishSystemAiSettings } = await import("../../system-ai-replication.js");
     await publishSystemAiSettings(["backgroundAgent", "syncCheck", "dashboards"].filter(key => key in payload));
@@ -305,6 +307,8 @@ app.put("/api/settings", async (request, response, next) => {
       sendError(response, 400, error.errors.map((issue) => issue.message).join(", "));
       return;
     }
+    // Tagged, so the page can show the reason next to the backup fields as well as where every failed save shows.
+    if (error instanceof ConversationBackupSettingError) { response.status(400).json({ error: error.message, details: { setting: "conversationBackup" } }); return; }
     if (error instanceof Error && (
       error.message === "Joint Bob home folder must be absolute" ||
       /^(Pi|Claude) (config path|session path) must be blank or absolute$/.test(error.message) ||

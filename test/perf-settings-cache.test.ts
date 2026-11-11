@@ -102,6 +102,8 @@ test("every caller owns what it gets, and the fields come in the order they alwa
   first.backgroundAgent.harnessId = "changed";
   first.projects.homePath = "/changed";
   first.strictResourceIsolation = !first.strictResourceIsolation;
+  first.conversationBackup.s3.bucket = "changed-by-a-caller";
+  first.conversationBackup.destination = "s3";
   delete (first as Partial<typeof first>).dashboards;
   assert.deepEqual(getSettings(), snapshot);
   assert.deepEqual(nodeSettings(), snapshot);
@@ -113,7 +115,7 @@ test("every caller owns what it gets, and the fields come in the order they alwa
   for (const id of Object.keys(again.runtimes)) assert.equal((again as unknown as Record<string, unknown>)[id], again.runtimes[id]);
   assert.deepEqual(Object.keys(again), [
     "conversationDefaults", ...Object.keys(again.runtimes), "runtimes", "runtimeOverrides", "kiroEnabled", "projects", "resources", "conversationLabels",
-    "conversationLabelIcons", "conversationHistoryDays", "conversationRetentionDays", "conversationRetentionScope", "autoCompactThreshold", "shellCommandTimeoutSeconds",
+    "conversationLabelIcons", "conversationHistoryDays", "conversationRetentionDays", "conversationRetentionScope", "conversationBackup", "autoCompactThreshold", "shellCommandTimeoutSeconds",
     "subprocessMaxLifetimeMinutes", "conversationCpuLimitCores", "conversationMemoryLimitGb", "digestAttachments", "showProjectsOnOtherNodes",
     "newConversationWorktree", "strictResourceIsolation", "autoActivateSharedSkills", "gitPullFileLimit", "gitPullTimeoutSeconds", "syncCheck",
     "dashboards", "backgroundAgent", "remoteTerminal", "runnerAccess", "conversationCommands", "restartRequired",

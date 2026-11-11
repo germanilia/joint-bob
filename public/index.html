@@ -956,6 +956,77 @@
               <p class="settings-hint">Nothing is deleted until you save, and then only at the next hourly check.</p>
               <div id="settingsRetentionPreview" class="retention-preview" data-testid="settings-retention-preview" aria-live="polite" hidden></div>
             </div>
+            <fieldset class="retention-backup" id="settingsBackup" data-testid="settings-backup">
+              <legend>Backup before deleting</legend>
+              <p class="settings-hint">With a place chosen, the hourly check deletes a conversation only after its backup is stored there. If a backup cannot be written, old conversations are kept and the problem is shown here.</p>
+              <p class="settings-hint">Not backed up: a conversation that someone deletes by hand, a conversation that never got a message, and Joint Bob's own background runs. Pinned conversations are never deleted.</p>
+              <label>Back up to
+                <select id="settingsBackupDestination" data-testid="settings-backup-destination">
+                  <option value="off">Do not back up</option>
+                  <option value="folder">A folder on this machine</option>
+                  <option value="s3">An Amazon S3 bucket</option>
+                </select>
+              </label>
+              <div class="retention-backup-notes" id="settingsBackupSaveError" data-testid="settings-backup-save-error"></div>
+              <div class="retention-backup-fields" data-backup-kind="folder" hidden>
+                <label>Folder
+                  <input id="settingsBackupFolder" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1024" data-testid="settings-backup-folder" />
+                </label>
+                <p class="settings-hint" id="settingsBackupFolderHint" data-testid="settings-backup-folder-hint">Leave this empty to use the folder shown in the field. Use a folder outside your projects.</p>
+              </div>
+              <div class="retention-backup-fields" data-backup-kind="s3" hidden>
+                <label>Bucket
+                  <input id="settingsBackupS3Bucket" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" data-testid="settings-backup-s3-bucket" />
+                </label>
+                <label>Region
+                  <input id="settingsBackupS3Region" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32" placeholder="eu-west-1" data-testid="settings-backup-s3-region" />
+                </label>
+                <label>Folder in the bucket (optional)
+                  <input id="settingsBackupS3Prefix" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" data-testid="settings-backup-s3-prefix" />
+                </label>
+                <p class="settings-hint">Backups are stored under this machine's name, so several machines can share one bucket.</p>
+                <label>Sign in with
+                  <select id="settingsBackupS3Credentials" data-testid="settings-backup-s3-credentials">
+                    <option value="keys">An access key</option>
+                    <option value="profile">An AWS profile on this machine</option>
+                  </select>
+                </label>
+                <div class="retention-backup-fields" data-backup-credentials="keys">
+                  <label>Access key ID
+                    <input id="settingsBackupS3AccessKeyId" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="128" data-testid="settings-backup-s3-access-key-id" />
+                  </label>
+                  <label>Secret access key
+                    <input id="settingsBackupS3SecretAccessKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="256" data-testid="settings-backup-s3-secret-access-key" />
+                  </label>
+                  <p class="settings-hint" data-testid="settings-backup-s3-secret-hint"><span id="settingsBackupS3SecretSaved" hidden>A key is saved. Leave this empty to keep it. </span>The secret key is stored encrypted on this machine and is never shown again.</p>
+                </div>
+                <div class="retention-backup-fields" data-backup-credentials="profile" hidden>
+                  <label>Profile name
+                    <input id="settingsBackupS3Profile" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="default profile" data-testid="settings-backup-s3-profile" />
+                  </label>
+                  <p class="settings-hint">This needs the AWS command line tool on this machine. Leave the name empty to use the default profile.</p>
+                </div>
+                <details class="retention-backup-more" id="settingsBackupS3More" data-testid="settings-backup-s3-more">
+                  <summary>Other S3-compatible service</summary>
+                  <div class="retention-backup-fields">
+                    <label>Address of the service
+                      <input id="settingsBackupS3Endpoint" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="https://" data-testid="settings-backup-s3-endpoint" />
+                    </label>
+                    <p class="settings-hint">Leave this empty for Amazon S3.</p>
+                  </div>
+                </details>
+              </div>
+              <div class="retention-backup-fields" id="settingsBackupOn" hidden>
+                <label>Delete each backup after
+                  <input id="settingsBackupKeepDays" type="number" min="0" max="3650" step="1" required disabled data-testid="settings-backup-keep-days" />
+                  days
+                </label>
+                <p class="settings-hint">0 keeps backups for good. The number also applies to backups already made.</p>
+                <button class="ghost" id="settingsBackupCheckButton" type="button" data-testid="settings-backup-check-button">Check that backups can be written</button>
+                <div class="retention-backup-notes" id="settingsBackupCheckResult" data-testid="settings-backup-check-result" aria-live="polite"></div>
+              </div>
+              <div class="retention-backup-notes" id="settingsBackupStatus" data-testid="settings-backup-status"></div>
+            </fieldset>
             </div>
           </fieldset>
           <fieldset class="phase-settings">

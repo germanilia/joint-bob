@@ -378,6 +378,23 @@ export const resourcePathsSchema = z.object({ skills: z.array(absolutePathSchema
 const conversationCommandSchema = z.object({ enabled: z.boolean(), prompt: z.string().trim().min(1).max(10_000) }).strict();
 const conversationCommandsSchema = z.object({ start: conversationCommandSchema, end: conversationCommandSchema, presets: z.array(z.object({ id: z.string().uuid().optional(), name: z.string().trim().min(1).max(80), prompt: z.string().trim().min(1).max(10_000) }).strict()).max(50).refine((items) => new Set(items.flatMap((p) => p.id ? [p.id] : [])).size === items.filter((p) => p.id).length, "Duplicate command IDs").optional() }).strict();
 
+/**
+ * Where the retention sweep backs a conversation up before deleting it. A part that is left out
+ * keeps its saved value; the secret key is write-only. `hasSecretAccessKey` and `defaultFolder` are
+ * what a GET adds: a page that saves the settings it read sends them back, and they are ignored.
+ */
+export const conversationBackupSchema = z.object({
+  destination: z.enum(["off", "folder", "s3"]).optional(),
+  keepDays: z.number().int().min(0).max(3650).optional(),
+  folder: z.string().max(1024).optional(),
+  hasSecretAccessKey: z.boolean().optional(),
+  defaultFolder: z.string().max(4096).optional(),
+  s3: z.object({
+    bucket: z.string().max(63).optional(), region: z.string().max(32).optional(), prefix: z.string().max(200).optional(), endpoint: z.string().max(300).optional(),
+    credentials: z.enum(["keys", "profile"]).optional(), accessKeyId: z.string().max(128).optional(), profile: z.string().max(64).optional(), secretAccessKey: z.string().max(256).optional(),
+  }).strict().optional(),
+}).strict();
+
 export const settingsSchema = z.object({
   kiroEnabled: z.boolean().optional(),
   conversationDefaults: conversationDefaultsSchema.optional(),
@@ -400,6 +417,7 @@ export const settingsSchema = z.object({
     full: z.boolean().optional(), includeUnrecorded: z.boolean().optional(), includeScheduled: z.boolean().optional(),
     includeTickets: z.boolean().optional(), leftovers: z.boolean().optional(), backgroundRuns: z.boolean().optional(),
   }).strict().optional(),
+  conversationBackup: conversationBackupSchema.optional(),
   autoCompactThreshold: z.number().int().min(1).max(100).nullable().optional(),
   shellCommandTimeoutSeconds: z.number().int().min(1).max(86_400).nullable().optional(),
   subprocessMaxLifetimeMinutes: z.number().int().min(1).max(10_080).optional(),

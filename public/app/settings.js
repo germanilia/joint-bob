@@ -532,6 +532,9 @@ async function loadSettings() {
   elements.settingsProjectHome.value = settings.projects.homePath;
   document.querySelector("#settingsConversationRetentionDays").value = settings.conversationRetentionDays;
   fillRetentionScope(settings.conversationRetentionScope);
+  fillBackup(settings.conversationBackup);
+  // Not part of the settings, and not a reason to keep them from opening.
+  void loadBackupStatus();
   elements.settingsShellTimeoutEnabled.checked = settings.shellCommandTimeoutSeconds !== null;
   elements.settingsShellTimeoutSeconds.value = settings.shellCommandTimeoutSeconds ?? 600;
   elements.settingsSubprocessMaxLifetimeMinutes.value = settings.subprocessMaxLifetimeMinutes ?? 360;
@@ -673,6 +676,7 @@ async function saveSettings(event) {
       conversationHistoryDays: Number(document.querySelector("#settingsConversationHistoryDays").value),
       conversationRetentionDays: Number(document.querySelector("#settingsConversationRetentionDays").value),
       conversationRetentionScope: retentionScopeValue(),
+      ...(backupKnown ? { conversationBackup: conversationBackupValue() } : {}),
       autoCompactThreshold: elements.settingsAutoCompactEnabled.checked ? Number(elements.settingsAutoCompactThreshold.value) : null,
       shellCommandTimeoutSeconds: elements.settingsShellTimeoutEnabled.checked ? Number(elements.settingsShellTimeoutSeconds.value) : null,
       subprocessMaxLifetimeMinutes: Number(elements.settingsSubprocessMaxLifetimeMinutes.value),
@@ -688,6 +692,9 @@ async function saveSettings(event) {
       conversationCommands: personalSettingsValue().conversationCommands,
     }),
   });
+  // The form takes what the node saved: the secret key leaves its field, and the status follows the new setting.
+  fillBackup(saved.conversationBackup);
+  void loadBackupStatus();
   await saveChangedTerminalPolicy();
   state.conversationLabels = saved.conversationLabels;
   state.conversationLabelIcons = saved.conversationLabelIcons;
@@ -774,10 +781,26 @@ function retentionTable(testId, caption, headings, rows) {
   return table;
 }
 
+/** The line over the dry run's tables: what is kept of a conversation before it goes. `saved` is the node's saved backup setting. */
+function retentionBackupLine(saved) {
+  const line = document.createElement("p");
+  line.className = "settings-hint";
+  line.dataset.testid = "settings-retention-preview-backup";
+  const days = saved.keepDays;
+  const kept = days > 0 ? `Each backup is deleted after ${days.toLocaleString()} ${days === 1 ? "day" : "days"}.` : "The backups are kept for good.";
+  line.textContent = saved.destination === "off"
+    ? "No backup is made: what is deleted is gone."
+    : `Expired conversations and left-behind files are backed up to ${saved.where} first. ${kept} Empty conversations and background runs are not backed up.`;
+  // The boxes are read from the page, the backup setting from the node: say so when the two differ.
+  if (backupChanged()) line.textContent += " This is the saved backup setting. Your changes below are not saved yet.";
+  return line;
+}
+
 function retentionPreviewTables(preview) {
   const count = (total) => [total.conversations.toLocaleString(), total.files.toLocaleString(), retentionSize(total.bytes)];
   const { totals } = preview;
-  const tables = [retentionTable("settings-retention-preview-totals", "With the boxes ticked above, on this machine", ["", "Conversations", "Files", "Size"], [
+  // A node that predates backups says nothing about them.
+  const tables = [...(preview.backup ? [retentionBackupLine(preview.backup)] : []), retentionTable("settings-retention-preview-totals", "With the boxes ticked above, on this machine", ["", "Conversations", "Files", "Size"], [
     { kind: "expired", cells: [`Expired: no activity for ${preview.retentionDays} days`, ...count(totals.expired)] },
     { kind: "empty", cells: ["Empty: never got a message", ...count(totals.empty)] },
     { kind: "background", cells: ["Background runs", ...count(totals.background)] },
@@ -826,6 +849,187 @@ async function showRetentionPreview() {
   }
 }
 
+/* Backup before deleting: where the hourly check writes a conversation before it deletes it, and
+   for how many days the backup is kept. Saved with the other settings. The check button tries the
+   place that is typed, saved or not, and the status says what this machine keeps now. */
+const backupForm = {
+  group: document.getElementById("settingsBackup"),
+  destination: document.getElementById("settingsBackupDestination"),
+  on: document.getElementById("settingsBackupOn"),
+  keepDays: document.getElementById("settingsBackupKeepDays"),
+  folder: document.getElementById("settingsBackupFolder"),
+  folderHint: document.getElementById("settingsBackupFolderHint"),
+  credentials: document.getElementById("settingsBackupS3Credentials"),
+  secret: document.getElementById("settingsBackupS3SecretAccessKey"),
+  secretSaved: document.getElementById("settingsBackupS3SecretSaved"),
+  more: document.getElementById("settingsBackupS3More"),
+  checkButton: document.getElementById("settingsBackupCheckButton"),
+  checkResult: document.getElementById("settingsBackupCheckResult"),
+  saveError: document.getElementById("settingsBackupSaveError"),
+  status: document.getElementById("settingsBackupStatus"),
+  // A bucket's text fields, each under the name it has in the setting.
+  s3: {
+    bucket: document.getElementById("settingsBackupS3Bucket"),
+    region: document.getElementById("settingsBackupS3Region"),
+    prefix: document.getElementById("settingsBackupS3Prefix"),
+    endpoint: document.getElementById("settingsBackupS3Endpoint"),
+    accessKeyId: document.getElementById("settingsBackupS3AccessKeyId"),
+    profile: document.getElementById("settingsBackupS3Profile"),
+  },
+};
+/** False on a node that predates backups: the group stays hidden and a save leaves the setting out. */
+let backupKnown = false;
+/** What the form held when it was last filled from the node, to tell a choice that is not saved yet. */
+let backupSnapshot = "";
+let backupCheckRun = 0;
+let backupStatusRun = 0;
+
+/** A line with a tick, or a cross and the page's error colour. Its text is the node's, so it is set as text. */
+function backupNote(kind, text, testId) {
+  const note = document.createElement("p");
+  note.className = `retention-backup-note ${kind}`;
+  if (kind === "failed") note.setAttribute("role", "alert");
+  if (testId) note.dataset.testid = testId;
+  const words = document.createElement("span");
+  words.textContent = text;
+  note.append(menuIcon(kind === "failed" ? "close" : "check"), words);
+  return note;
+}
+
+/** Shows the fields of the chosen place and of the chosen way to sign in, and no others. */
+function syncBackupFields() {
+  const destination = backupForm.destination.value;
+  for (const block of backupForm.group.querySelectorAll("[data-backup-kind]")) block.hidden = block.dataset.backupKind !== destination;
+  for (const block of backupForm.group.querySelectorAll("[data-backup-credentials]")) block.hidden = block.dataset.backupCredentials !== backupForm.credentials.value;
+  backupForm.on.hidden = destination === "off";
+  // A number field that is not on screen must not hold up a save: the browser cannot point at it.
+  backupForm.keepDays.disabled = destination === "off";
+}
+
+/** `saved` is the node's `conversationBackup`. The secret key never comes back, so its field starts empty. */
+function fillBackup(saved) {
+  backupKnown = Boolean(saved);
+  backupForm.group.hidden = !backupKnown;
+  // A group that is not shown must not hold up a save with a number nobody can see.
+  if (!backupKnown) { backupForm.keepDays.disabled = true; return; }
+  backupForm.destination.value = saved.destination;
+  backupForm.keepDays.value = saved.keepDays;
+  backupForm.folder.value = saved.folder;
+  backupForm.folder.placeholder = saved.defaultFolder;
+  const defaultFolder = document.createElement("code");
+  defaultFolder.textContent = saved.defaultFolder;
+  backupForm.folderHint.replaceChildren("Leave this empty to use ", defaultFolder, ". Use a folder outside your projects.");
+  for (const [name, input] of Object.entries(backupForm.s3)) input.value = saved.s3[name];
+  backupForm.credentials.value = saved.s3.credentials;
+  backupForm.secret.value = "";
+  backupForm.secret.placeholder = saved.hasSecretAccessKey ? "A key is saved. Type a new one to replace it." : "";
+  // A narrow field cuts its placeholder short, so the line under the field says it too.
+  backupForm.secretSaved.hidden = !saved.hasSecretAccessKey;
+  // An address that is saved must not hide behind a closed line.
+  backupForm.more.open = Boolean(saved.s3.endpoint);
+  syncBackupFields();
+  backupCheckRun += 1;
+  backupForm.checkResult.replaceChildren();
+  backupForm.saveError.replaceChildren();
+  backupSnapshot = JSON.stringify(conversationBackupValue());
+}
+
+/** The setting as the form has it, in the shape a save takes: the fields of the chosen place and no others. */
+function conversationBackupValue() {
+  const destination = backupForm.destination.value;
+  // With backups off the days are not on screen, so the saved number stays.
+  if (destination === "off") return { destination };
+  const value = { destination, keepDays: Number(backupForm.keepDays.value) };
+  if (destination === "folder") return { ...value, folder: backupForm.folder.value.trim() };
+  const typed = (name) => backupForm.s3[name].value.trim();
+  const credentials = backupForm.credentials.value;
+  const secretAccessKey = backupForm.secret.value.trim();
+  return {
+    ...value,
+    s3: {
+      bucket: typed("bucket"), region: typed("region"), prefix: typed("prefix"), endpoint: typed("endpoint"), credentials,
+      // The secret key goes only when one was typed: leaving it out keeps the saved one.
+      ...(credentials === "keys" ? { accessKeyId: typed("accessKeyId"), ...(secretAccessKey ? { secretAccessKey } : {}) } : { profile: typed("profile") }),
+    },
+  };
+}
+
+/** Whether the form holds a backup choice that the node has not saved. */
+function backupChanged() {
+  return backupKnown && JSON.stringify(conversationBackupValue()) !== backupSnapshot;
+}
+
+function backupKeptText({ kept, nextRemovalAt }) {
+  if (!kept.backups) return "No backups yet.";
+  const one = kept.backups === 1;
+  const count = `${kept.backups.toLocaleString()} ${one ? "backup" : "backups"}`;
+  // One conversation's backup is often far below a megabyte.
+  const size = kept.bytes > 0 && kept.bytes < 1e6 ? `${Math.max(1, Math.round(kept.bytes / 1e3))} KB` : retentionSize(kept.bytes);
+  if (!nextRemovalAt) return `${count} kept for good (${size}).`;
+  const due = new Date(nextRemovalAt);
+  const when = due.getTime() <= Date.now() ? "at the next hourly check" : `on ${due.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}`;
+  return `${count} kept (${size}). ${one ? "It" : "The oldest"} is removed ${when}.`;
+}
+
+function backupStatusNotes(status) {
+  const kept = document.createElement("p");
+  kept.className = "settings-hint";
+  kept.dataset.testid = "settings-backup-kept";
+  kept.textContent = backupKeptText(status);
+  if (!status.problem) return [kept];
+  const at = new Date(status.problem.at);
+  const when = Number.isFinite(at.getTime()) ? ` on ${at.toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" })}` : "";
+  return [kept, backupNote("failed", `Problem${when}: ${status.problem.message}`, "settings-backup-problem")];
+}
+
+/** What this machine keeps now and the last problem. Asked when settings open and after a save. */
+async function loadBackupStatus() {
+  if (!backupKnown) return;
+  const run = ++backupStatusRun;
+  let notes;
+  try { notes = backupStatusNotes(await api("/api/settings/conversation-backups")); }
+  catch (error) { notes = [backupNote("failed", error.message, "settings-backup-status-error")]; }
+  // An answer that a later request overtook is out of date.
+  if (run === backupStatusRun) backupForm.status.replaceChildren(...notes);
+}
+
+async function checkBackupDestination() {
+  // The days go with the request, so let the browser point at a number the node would refuse.
+  if (!backupForm.keepDays.reportValidity()) return;
+  const run = ++backupCheckRun;
+  const label = backupForm.checkButton.textContent;
+  backupForm.checkButton.disabled = true;
+  backupForm.checkButton.textContent = "Checking…";
+  backupForm.checkResult.replaceChildren();
+  let note;
+  try {
+    // What is typed, saved or not: the point is to try a place before saving it.
+    const answer = await api("/api/settings/conversation-backups/check", { method: "POST", body: JSON.stringify(conversationBackupValue()) });
+    note = answer.ok ? backupNote("ok", `Joint Bob can write backups to ${answer.where}.`) : backupNote("failed", answer.message);
+  } catch (error) {
+    note = backupNote("failed", error.message);
+  } finally {
+    backupForm.checkButton.disabled = false;
+    backupForm.checkButton.textContent = label;
+  }
+  // An answer about values that changed while it was on its way would mislead.
+  if (run === backupCheckRun) backupForm.checkResult.replaceChildren(note);
+}
+
+/** A save the node refused because of the backup setting: its reason goes over the fields, in the node's words. */
+function showBackupSaveError(error) {
+  // The node names the setting it refused, so a refusal about another one stays out of this group.
+  const refused = error?.details?.setting === "conversationBackup";
+  backupForm.saveError.replaceChildren(...(refused ? [backupNote("failed", error.cause?.message || error.message)] : []));
+  // Save sits under the panel, and the group may be far above it: bring the reason and the fields under it on screen.
+  if (refused) backupForm.saveError.scrollIntoView({ block: "center" });
+}
+
+backupForm.destination.addEventListener("change", syncBackupFields);
+backupForm.credentials.addEventListener("change", syncBackupFields);
+backupForm.checkButton.addEventListener("click", () => { void checkBackupDestination(); });
+// What a check or a refused save said was about the values as they were.
+backupForm.group.addEventListener("input", () => { backupCheckRun += 1; backupForm.checkResult.replaceChildren(); backupForm.saveError.replaceChildren(); });
 document.querySelector("#settingsRetentionFull").addEventListener("change", syncRetentionScope);
 document.querySelector("#settingsRetentionPreviewButton").addEventListener("click", () => { void showRetentionPreview(); });
 elements.settingsSyncSkillsButton.addEventListener("click", () => runSkillOperation(syncLocalSkills));
@@ -874,6 +1078,9 @@ const settingsSearch = createSettingsSearch({
     selectSettingsTab(tab.dataset.settingsTab);
     const target = entry.accountId ? revealSecretAccount(entry.accountId) : element;
     if (!target || target === tab) return;
+    // A setting behind a closed disclosure has no place on the page to scroll to until it opens.
+    const closed = target.closest("details:not([open])");
+    if (closed) closed.open = true;
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.remove("settings-hit");
     void target.offsetWidth;
@@ -950,10 +1157,12 @@ elements.settingsForm.addEventListener("submit", async (event) => {
   elements.settingsRestartMessage.hidden = false;
   elements.settingsRestartMessage.classList.add("is-loading");
   elements.settingsRestartMessage.textContent = "Saving settings…";
+  showBackupSaveError(null);
   try {
     await saveSettings(event);
   } catch (error) {
     elements.settingsRestartMessage.textContent = `Could not save settings: ${error.message}`;
+    showBackupSaveError(error);
     toast.error(error.message);
   } finally {
     settingsSaving = false;

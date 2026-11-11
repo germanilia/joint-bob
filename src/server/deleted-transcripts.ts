@@ -12,7 +12,8 @@
 // conversation that is on record (conversation-delete.ts checks the tombstone before each one).
 //
 // What deletes made before the complete delete existed left behind is not in the queue. It stays
-// until the owner turns on the `leftovers` box of the retention setting, which queues it.
+// until the owner turns on the `leftovers` box of the retention setting, which queues it: here at
+// start-up when backups are off, and in the hourly check, after a backup, when they are on.
 import type { ConversationEngine } from "../conversation-ownership.js";
 import { conversationRecordsReady } from "../conversation-records.js";
 import type { ReplicationEvent } from "../replication.js";
@@ -44,7 +45,10 @@ export async function removeAllDeletedTranscripts(): Promise<void> {
   // Opens the record store first: its start-up repairs run before anything reads its tables.
   await conversationRecordsReady();
   const finished = await finishAllPendingDeletes();
-  if (getSettings().conversationRetentionScope.leftovers) {
+  const settings = getSettings();
+  // With backups on, what earlier deletes left is backed up before it goes. The hourly check does both
+  // (conversation-retention.ts); here nothing of it is taken, so nothing goes without its backup.
+  if (settings.conversationRetentionScope.leftovers && settings.conversationBackup.destination === "off") {
     const taken = await queueLeftovers();
     const more = await finishAllPendingDeletes();
     finished.finished += more.finished; finished.files += more.files; finished.tasks += more.tasks; finished.waiting = more.waiting;

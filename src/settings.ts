@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { appendAuditEvent } from "./audit.js";
 import { resolveDataDirectory } from "./data-directory.js";
-import { CONVERSATION_RETENTION_SCOPE_KEYS, defaultConversationRetentionScope, type ConversationRetentionScope } from "./conversation-retention.js";
+import { CONVERSATION_RETENTION_SCOPE_KEYS, defaultConversationRetentionScope, mergedConversationBackup, storedConversationBackup, type ConversationBackupInput, type ConversationBackupSettings, type ConversationRetentionScope } from "./conversation-retention.js";
 import { conversationLabelIconsSchema, conversationLabelsSchema, DEFAULT_CONVERSATION_LABEL_ICONS, DEFAULT_CONVERSATION_LABELS, iconsForLabels, storedConversationLabelIconsSchema } from "./conversation-labels.js";
 import { conversationDefaultsSchema, type ConversationDefault } from "./harnesses/defaults.js";
 import { listDiscoveredHarnesses } from "./harnesses/registry.js";
@@ -271,6 +271,8 @@ export interface SettingsInput {
   conversationRetentionDays?: number;
   /** Absent keeps what is saved; a box that is absent keeps its saved value. */
   conversationRetentionScope?: Partial<ConversationRetentionScope>;
+  /** Absent keeps what is saved; a part that is absent keeps its saved value. The secret key is saved when given and never returned. */
+  conversationBackup?: ConversationBackupInput;
   autoCompactThreshold?: number | null;
   /** Seconds a harness shell command may run before this node stops it; null means no limit. */
   shellCommandTimeoutSeconds?: number | null;
@@ -315,6 +317,7 @@ export interface SettingsResponse {
   conversationHistoryDays: number;
   conversationRetentionDays: number;
   conversationRetentionScope: ConversationRetentionScope;
+  conversationBackup: ConversationBackupView;
   autoCompactThreshold: number | null;
   shellCommandTimeoutSeconds: number | null;
   subprocessMaxLifetimeMinutes: number;
@@ -613,6 +616,7 @@ interface StoredSettings {
   conversationHistoryDays: number;
   conversationRetentionDays: number;
   conversationRetentionScope: ConversationRetentionScope;
+  conversationBackup: ConversationBackupView;
   autoCompactThreshold: number | null;
   shellCommandTimeoutSeconds: number | null;
   subprocessMaxLifetimeMinutes: number;
@@ -632,6 +636,24 @@ interface StoredSettings {
   remoteTerminal: RemoteTerminalSettings;
   runnerAccess: RunnerAccessSettings;
   conversationCommands: ConversationCommandsSettings;
+}
+
+/** The backup setting as a settings page gets it: whether a secret key is saved (never the key), and the folder used when none is named. */
+export type ConversationBackupView = ConversationBackupSettings & { hasSecretAccessKey: boolean; defaultFolder: string };
+
+const BACKUP_SECRET_KEY = "conversationBackup.s3SecretAccessKey";
+
+function storedBackup(): ConversationBackupView {
+  let saved: unknown;
+  try { saved = JSON.parse(value("conversationBackup", "{}")); } catch { saved = undefined; }
+  return { ...storedConversationBackup(saved), hasSecretAccessKey: setting(BACKUP_SECRET_KEY) !== undefined, defaultFolder: path.join(resolveDataDirectory(), "conversation-backups") };
+}
+
+/** The secret key saved for backups to S3, for the code that uploads them. Undefined when none is saved or it cannot be read. */
+export function conversationBackupSecretAccessKey(): string | undefined {
+  const found = setting(BACKUP_SECRET_KEY);
+  if (!found) return undefined;
+  try { return found.isSecret ? decrypt(found.value) : found.value; } catch { return undefined; }
 }
 
 /** What the owner lets the retention sweep delete. Nothing saved, or a box an older release did not know, reads as off. */
@@ -666,6 +688,7 @@ function readStoredSettings(): { settings: StoredSettings; unsaved: boolean } {
     conversationHistoryDays: Number(value("conversationHistoryDays", "30")),
     conversationRetentionDays: Number(value("conversationRetentionDays", "40")),
     conversationRetentionScope: storedRetentionScope(),
+    conversationBackup: storedBackup(),
     autoCompactThreshold: value("autoCompactThreshold", "70") === "disabled" ? null : Number(value("autoCompactThreshold", "70")),
     shellCommandTimeoutSeconds: value("shellCommandTimeoutSeconds", "unlimited") === "unlimited" ? null : Number(value("shellCommandTimeoutSeconds", "unlimited")),
     subprocessMaxLifetimeMinutes: Number(value("subprocessMaxLifetimeMinutes", String(DEFAULT_SUBPROCESS_MAX_LIFETIME_MINUTES))),
@@ -753,6 +776,7 @@ export function nodeSettings(): SettingsResponse {
     conversationHistoryDays: stored.conversationHistoryDays,
     conversationRetentionDays: stored.conversationRetentionDays,
     conversationRetentionScope: stored.conversationRetentionScope,
+    conversationBackup: stored.conversationBackup,
     autoCompactThreshold: stored.autoCompactThreshold,
     shellCommandTimeoutSeconds: stored.shellCommandTimeoutSeconds,
     subprocessMaxLifetimeMinutes: stored.subprocessMaxLifetimeMinutes,
@@ -874,6 +898,9 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
     if (!(CONVERSATION_RETENTION_SCOPE_KEYS as readonly string[]).includes(key) || typeof ticked !== "boolean") throw new Error("Conversation retention scope has an unknown or invalid box");
     conversationRetentionScope[key as keyof ConversationRetentionScope] = ticked;
   }
+  const backupSecret = input.conversationBackup?.s3?.secretAccessKey || undefined;
+  const { hasSecretAccessKey: hadBackupSecret, defaultFolder: _defaultFolder, ...previousBackup } = previous.conversationBackup;
+  const conversationBackup = mergedConversationBackup(previousBackup, input.conversationBackup ?? {}, hadBackupSecret || backupSecret !== undefined, path.isAbsolute);
   const autoCompactThreshold = input.autoCompactThreshold === undefined ? previous.autoCompactThreshold : input.autoCompactThreshold;
   const shellCommandTimeoutSeconds = input.shellCommandTimeoutSeconds === undefined ? previous.shellCommandTimeoutSeconds : input.shellCommandTimeoutSeconds;
   const subprocessMaxLifetimeMinutes = input.subprocessMaxLifetimeMinutes === undefined ? previous.subprocessMaxLifetimeMinutes : input.subprocessMaxLifetimeMinutes;
@@ -913,6 +940,8 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
     save(db, "conversationHistoryDays", String(conversationHistoryDays));
     save(db, "conversationRetentionDays", String(conversationRetentionDays));
     save(db, "conversationRetentionScope", JSON.stringify(conversationRetentionScope));
+    save(db, "conversationBackup", JSON.stringify(conversationBackup));
+    if (backupSecret !== undefined) save(db, BACKUP_SECRET_KEY, backupSecret, true);
     save(db, "autoCompactThreshold", autoCompactThreshold === null ? "disabled" : String(autoCompactThreshold));
     save(db, "shellCommandTimeoutSeconds", shellCommandTimeoutSeconds === null ? "unlimited" : String(shellCommandTimeoutSeconds));
     save(db, "subprocessMaxLifetimeMinutes", String(subprocessMaxLifetimeMinutes));
@@ -952,6 +981,7 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
         conversationHistoryDaysChanged: previous.conversationHistoryDays !== settings.conversationHistoryDays,
         conversationRetentionDaysChanged: previous.conversationRetentionDays !== settings.conversationRetentionDays,
         conversationRetentionScopeChanged: JSON.stringify(previous.conversationRetentionScope) !== JSON.stringify(settings.conversationRetentionScope),
+        conversationBackupChanged: JSON.stringify(previous.conversationBackup) !== JSON.stringify(settings.conversationBackup) || backupSecret !== undefined,
         autoCompactThresholdChanged: previous.autoCompactThreshold !== settings.autoCompactThreshold,
         shellCommandTimeoutChanged: previous.shellCommandTimeoutSeconds !== settings.shellCommandTimeoutSeconds,
         subprocessMaxLifetimeChanged: previous.subprocessMaxLifetimeMinutes !== settings.subprocessMaxLifetimeMinutes,
