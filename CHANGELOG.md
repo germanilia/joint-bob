@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.267.3 — 2026-11-11
+
+- Fixed a node that keeps its database in PostgreSQL failing every database call with "PostgreSQL worker answered out of turn" until it restarted. A late wake-up from the database worker was taken as the answer to the next query, and from then on each query read the answer meant for the one before it.
+
 ## 2.267.2 — 2026-11-11
 
 - Fixed Bob continuations using the person’s subscription profiles and allowing them to manage the queued prompt.

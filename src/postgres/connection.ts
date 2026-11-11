@@ -54,13 +54,29 @@ function call(request: Request): Response {
   const id = bridge.nextId++;
   Atomics.store(bridge.signal, 0, 0);
   bridge.port.postMessage({ ...request, id });
-  if (Atomics.wait(bridge.signal, 0, 0, ANSWER_TIMEOUT_MS) === "timed-out") {
+  if (!waitForAnswer(bridge.signal, ANSWER_TIMEOUT_MS)) {
     bridge = undefined;
     throw new Error(`PostgreSQL did not answer within ${ANSWER_TIMEOUT_MS / 1000} s`);
   }
   const message = receiveMessageOnPort(bridge.port)?.message as Response | undefined;
   if (!message || message.id !== id) throw new Error("PostgreSQL worker answered out of turn");
   return message;
+}
+
+/**
+ * Sleeps until the worker raises `signal`, or `timeoutMs` passes (false). A wake-up while the
+ * signal is still down is ignored: the worker raises the signal before it notifies, so the
+ * caller can read an answer and post the next request before the notify for that answer
+ * lands. Taken as an answer, that late notify left the real answer unread and every later
+ * call read the one before its own ("answered out of turn").
+ */
+export function waitForAnswer(signal: Int32Array, timeoutMs: number): boolean {
+  const deadline = Date.now() + timeoutMs;
+  while (Atomics.load(signal, 0) === 0) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0 || Atomics.wait(signal, 0, 0, remaining) === "timed-out") return Atomics.load(signal, 0) !== 0;
+  }
+  return true;
 }
 
 /** The SQLite error message the stores already recognise, with PostgreSQL's own after it. */
