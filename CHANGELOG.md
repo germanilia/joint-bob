@@ -3,6 +3,11 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.267.1 — 2026-11-11
+
+- After "Check that backups can be written" succeeds, a backup problem shown under the backup settings goes away at once, not when Settings is opened the next time.
+- A command-line deploy that is interrupted now removes its work folder, and every deploy first removes work folders that are a day old. Deploys that were killed had left them in the home folder, about 1 GB each.
+
 ## 2.267.0 — 2026-11-11
 
 - The hourly clean-up can back a conversation up before it deletes it. In Settings > Account > Conversation history > "Backup before deleting", choose a folder on the machine or an S3 bucket, and for how many days a backup is kept (30 unless changed; 0 keeps backups for good). A conversation then stays in the app for the retention days, stays as a backup for the backup days, and is gone after that. Backups are off until a place is chosen, so nothing changes on a machine until its admin turns them on.
