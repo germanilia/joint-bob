@@ -3,6 +3,16 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.267.0 — 2026-11-11
+
+- The hourly clean-up can back a conversation up before it deletes it. In Settings > Account > Conversation history > "Backup before deleting", choose a folder on the machine or an S3 bucket, and for how many days a backup is kept (30 unless changed; 0 keeps backups for good). A conversation then stays in the app for the retention days, stays as a backup for the backup days, and is gone after that. Backups are off until a place is chosen, so nothing changes on a machine until its admin turns them on.
+- A backup is one `.tar.gz` per conversation with its transcripts, sub-agent transcripts and tool results at the paths they had, and a `conversation.json` with the project, title and dates. Any archive tool opens it. The app does not list backups or restore them.
+- If a backup cannot be written, the conversation is not deleted and the reason shows under the backup settings. "Check that backups can be written" tries the folder or the bucket before you save. A folder inside a project or inside an agent's transcript folder is refused when it is saved.
+- Not backed up: a conversation you delete by hand, an empty conversation, and Joint Bob's own background runs. Pinned conversations are still never deleted.
+- S3 sign-in is an access key (the secret is stored encrypted and never shown again) or an AWS profile on the machine, which needs the AWS command line tool. An S3-compatible service can be used by giving its address.
+- Fixed a machine stalling for seconds at a time when it holds a very long conversation. The quality analysis read the whole conversation again after every reply it checked, and reading a long transcript held up everything else. It now reads the conversation once, and long transcripts are read in small steps (seen on a machine with a 170 MB scheduled conversation).
+- Fixed a harness version check that did not answer staying behind as a process.
+
 ## 2.266.1 — 2026-11-11
 
 - Made the model used after switching subscription profiles optional, with one choice per harness and a compatible default when the chosen model cannot run.
