@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.268.0 — 2026-11-11
+
+- Added Google Antigravity profiles to Connections, with scoped assignments and separate native sign-ins on each execution node.
+
 ## 2.267.4 — 2026-11-11
 
 - Fixed built-in file sync on Linux missing changes inside folders it had created itself while downloading. Those folders were never watched, so a file someone added there later, such as a worktree's conversation marker, was not sent to the other machines until a full rescan.
