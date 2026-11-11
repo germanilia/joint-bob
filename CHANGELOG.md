@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.269.0 — 2026-11-11
+
+- System control: put any conversation in Bob's hands with your instructions. Write your standing instructions in Bob's settings, and turn on **System control** in a conversation's Auto respond dialog, with anything you add for that conversation. Bob drives it firmly: he decides for you, answers the agent, approves its plans and keeps it going, with no limit on answers, until the work is ready for review, needs a password or sign-in only you have, or reaches an irreversible step.
+- It runs on the conversation's own model and subscription pool, so when an account reaches its limit both the agent and Bob move to the next one. It keeps going after restarts and updates.
+- **New conversations start under system control** in Bob's settings puts every new conversation under it; it is off by default.
+
 ## 2.268.0 — 2026-11-11
 
 - Added Google Antigravity profiles to Connections, with scoped assignments and separate native sign-ins on each execution node.
