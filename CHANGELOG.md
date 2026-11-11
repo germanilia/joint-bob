@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.270.0 — 2026-11-11
+
+- Bob now gets stuck conversations going again. A shell command that prints nothing for 30 minutes is stopped as hung, so the agent carries on instead of waiting hours for it. A turn with no input or output for 30 minutes is stopped as before, and now Bob tells the conversation to check what it left hanging and continue, on the same account and subscription pool, and says so in his chat. After 3 restarts in 6 hours he leaves it to you.
+
 ## 2.269.0 — 2026-11-11
 
 - System control: put any conversation in Bob's hands with your instructions. Write your standing instructions in Bob's settings, and turn on **System control** in a conversation's Auto respond dialog, with anything you add for that conversation. Bob drives it firmly: he decides for you, answers the agent, approves its plans and keeps it going, with no limit on answers, until the work is ready for review, needs a password or sign-in only you have, or reaches an irreversible step.
