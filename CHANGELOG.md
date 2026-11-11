@@ -3,6 +3,10 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.265.1 — 2026-11-11
+
+- This version carries everything listed under 2.265.0, which was never published: one of its release checks did not finish on Linux. Nothing in the app itself differs from what 2.265.0 describes.
+
 ## 2.265.0 — 2026-11-11
 
 - Deleting a conversation now removes everything that belongs to it: every copy of its transcript wherever it lies, its sub-agent transcripts and tool results, unfinished transfers, its title, labels, queue, review state and the logs of its background tasks. A machine that holds a copy does the same when it hears of the delete. Before, only the transcript and the record went. Cost history is kept.
