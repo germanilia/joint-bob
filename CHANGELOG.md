@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.270.3 — 2026-11-11
+
+- Fixed "Only the prompt's author may change it" when you tried to start now, edit or delete a message Bob or one of your automations queued in your conversation. You can manage those now, and one you edit becomes your own message.
+- Stepping in makes Bob stand back: when you press Stop, or change or delete a message Bob queued, he stops pushing that conversation on and removes his queued pushes. He starts again when you press **Push it on**, tell him to take the conversation over, or turn on System control for it.
+
 ## 2.270.2 — 2026-11-11
 
 - A node that keeps its database in PostgreSQL now keeps settings, sharing rules and names between writes, as a node on SQLite already did, instead of reading them from the database on every request. Any write committed by any process on the node clears them at once.
