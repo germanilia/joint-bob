@@ -194,6 +194,20 @@ test("a configured time limit stops an overlong command and says so", { timeout:
   }
 });
 
+test("a command that prints nothing for too long is stopped as hung, and one that keeps printing is not", { timeout: 30_000 }, async () => {
+  const f = await fixture();
+  try {
+    const hung = await wrapper(f, "printf started; exec sleep 60", { JOINT_BOB_SHELL_SILENCE_MS: "3000" });
+    assert.equal(hung.code, 124);
+    assert.match(hung.stdout, /^started\nJoint Bob stopped this command: it printed nothing for 3 seconds and looked hung\./);
+    const talking = await wrapper(f, "for i in 1 2 3 4 5 6; do printf .; sleep 1; done; printf done", { JOINT_BOB_SHELL_SILENCE_MS: "3000" });
+    assert.equal(talking.code, 0);
+    assert.equal(talking.stdout, "......done");
+  } finally {
+    await f.runtime.close(); await rm(f.root, { recursive: true, force: true });
+  }
+});
+
 test("an invalid time limit is ignored rather than cutting commands short", { timeout: 30_000 }, async () => {
   const f = await fixture();
   try {

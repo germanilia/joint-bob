@@ -194,7 +194,11 @@ export async function compactHarnessSession(shared: SharedHarnessSession, compac
   finally { shared.compaction = undefined; }
 }
 
-export async function reapInactiveHarnessSessions(now = Date.now(), liveShellCallers: ReadonlySet<string> = new Set()): Promise<void> {
+/** A turn the watchdog stopped, with the account it ran as, so it can go on on that account's subscription. */
+export interface StoppedTurn { shared: SharedHarnessSession; accountId: string | null }
+
+export async function reapInactiveHarnessSessions(now = Date.now(), liveShellCallers: ReadonlySet<string> = new Set()): Promise<StoppedTurn[]> {
+  const stopped: StoppedTurn[] = [];
   await Promise.all([...harnessSessions.values()].map(async (shared) => {
     if (liveShellCallers.has(JSON.stringify([shared.projectId, shared.conversationId]))) return;
     const timeout = shared.compaction ? COMPACTION_INACTIVITY_TIMEOUT_MS
@@ -202,10 +206,12 @@ export async function reapInactiveHarnessSessions(now = Date.now(), liveShellCal
       : TURN_INACTIVITY_TIMEOUT_MS;
     if (shared.watchdogStopping || !harnessTurnBusy(shared) || !conversationInactive(shared.lastActivityAt, now, timeout)) return;
     shared.watchdogStopping = true;
+    const accountId = shared.turnAccountId ?? null;
     try {
       shared.compaction?.abandon(new Error(`Compaction stopped after ${Math.round(timeout / 60_000)} minutes without finishing`));
       await shared.session.cancel(`Joint Bob stopped the turn after ${Math.round(timeout / 60_000)} minutes with no input or output`);
       shared.watchdogStoppedAt = now;
+      stopped.push({ shared, accountId });
       console.warn(`Stopped inactive ${shared.engine} conversation ${shared.session.id}: no input or output since ${new Date(shared.lastActivityAt).toISOString()}`);
     } catch (error) {
       shared.watchdogStopping = false;
@@ -214,6 +220,7 @@ export async function reapInactiveHarnessSessions(now = Date.now(), liveShellCal
       sendHarnessStatus(shared);
     }
   }));
+  return stopped;
 }
 
 /** A cancelled turn that still reports busy this long after the watchdog stopped it is not coming back. */

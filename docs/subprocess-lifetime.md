@@ -16,6 +16,11 @@ raising the setting does not undo it. Existing shorter command timeouts still wi
 Only the separate shell-command timeout promises exit code 124; lifetime expiration
 produces the process's signal/exit result and supervised tasks become stopped.
 
+A shell command that prints nothing for 30 minutes is stopped as hung, with exit code
+124 and a line saying so, so the agent's turn goes on instead of waiting out the
+lifetime. `JOINT_BOB_SHELL_SILENCE_MS` changes the silence limit. A long quiet job
+belongs in the background with the task CLI.
+
 ## Launch inventory
 
 - `src/subprocess.ts` registers native spawn/execFile results. Used by Claude CLI,

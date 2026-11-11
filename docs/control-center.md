@@ -167,6 +167,14 @@ System control puts a conversation in Bob's hands with your instructions, and he
 - **In a conversation.** The conversation's **Auto respond** dialog has **System control**, with **My instructions for this conversation** added to your standing ones. Turn it on in any conversation, or off in one your default put under it. While it is on, the toolbar pill reads *System*.
 - **How hard it drives.** Bob's responder runs on the conversation's own agent and model, and so on the same subscription pool as the agent: when one account reaches its limit or loses its sign-in, both move to the next account in the pool. It has no limit on answers in a row, decides for you (it answers the agent's questions, picks between options and approves plans from your instructions and the request), brings the agent back when it drifts, and after a failed or interrupted turn (a restart, an update, a subscription limit) tells it to check the current state and carry on without repeating side effects. When it cannot run (every account at its limit), it tries again with growing waits of up to a minute, and after a restart or an update it picks up where it was on the machine that runs the conversation. It stops only when the work is ready for review (Bob's chat says so, with what he checked and the agent's report; your reply is your review and it drives on), for something only you can supply (a password, a token, a code, a sign-in), or for an irreversible or production step. Guardian still asks you for production and destructive steps.
 
+## Stuck conversations
+
+Bob checks every minute for conversations that are stuck, and gets them going again.
+
+- **A hung command.** A shell command that prints nothing for 30 minutes is stopped as hung. The agent sees why and carries on with the rest of its turn.
+- **A stuck turn.** A turn with no input or output for 30 minutes is stopped. Once it lets go (a turn that never does is released 10 minutes later), Bob tells the conversation to check what it left hanging and carry on without repeating what it already did. It goes on as the account the turn ran as, so on the same subscription pool. Bob's chat says which conversation he restarted.
+- **When he leaves it.** A conversation someone wrote to after the stop is left alone, and one under auto respond or system control is pushed on by its responder instead. One that hangs again after 3 restarts in 6 hours is left to you, and Bob's chat says so.
+
 ## Delegating work to Bob
 
 You can hand work over to Bob after your first instructions, and see it again only when it is ready for review. Say so in Bob's chat, for new work ("build the dessert menu in DAK and delegate it to Bob, bring it back for review") or for a conversation you name ("delegate the internal assistant conversation to Bob", "take full control of it and see it through"). Typos are fine ("delegeate"). Bob asks first, as for any change, with **Start and delegate** or **Delegate it**.
