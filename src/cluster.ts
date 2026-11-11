@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { resolveDataDirectory } from "./data-directory.js";
 
 /** This node's identity. Cluster membership, twins, and peer endpoints live in the
@@ -61,7 +62,7 @@ function newNode(): ClusterNode {
 async function clusterDatabase(): Promise<DatabaseSync> {
   databasePromise ??= (async () => {
     await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(databasePath);
+    const db = openNodeDatabase(databasePath);
     db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
     db.exec(`CREATE TABLE IF NOT EXISTS cluster_node (
       singleton INTEGER PRIMARY KEY CHECK (singleton = 1),

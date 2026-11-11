@@ -5,7 +5,8 @@ import { hostname } from "node:os";
 import { mkdirSync } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { nanoid } from "nanoid";
 import { appendAuditEvent, ensureAuditSchema } from "./audit.js";
 import { decryptSecretValue, encryptSecretValue } from "./secrets.js";
@@ -98,7 +99,7 @@ let database: DatabaseSync | undefined;
 function authDatabase(): DatabaseSync {
   if (database) return database;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(databasePath);
+  database = openNodeDatabase(databasePath);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   database.exec(`
     CREATE TABLE IF NOT EXISTS users (

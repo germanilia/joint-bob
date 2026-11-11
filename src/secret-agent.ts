@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { fileURLToPath } from "node:url";
 import { resolveDataDirectory } from "./data-directory.js";
 import { isHarnessId, type HarnessId } from "./types.js";
@@ -14,7 +15,7 @@ function db(): DatabaseSync {
   if (!database) {
     const directory = resolveDataDirectory();
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    database = new DatabaseSync(path.join(directory, "node.db"));
+    database = openNodeDatabase(path.join(directory, "node.db"));
     database.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS secret_agent_tokens (
         token_hash TEXT PRIMARY KEY, project_id TEXT NOT NULL,

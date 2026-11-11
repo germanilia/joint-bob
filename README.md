@@ -548,6 +548,8 @@ launchctl kickstart -k gui/$(id -u)/com.joint-bob.node
 
 Node-specific ports, model aliases, credentials, proxy URLs, and executable overrides belong in `~/.joint-bob/env`. Restart the service after changing that file.
 
+A node keeps its database in SQLite (`~/.joint-bob/node.db`) unless `JOINT_BOB_DATABASE_URL` in `~/.joint-bob/env` names a PostgreSQL 16+ database of its own. That database is read at start and begins empty. See [docs/postgres-node-database.md](docs/postgres-node-database.md).
+
 Every shell command an agent runs is supervised so the Tasks panel can list it, stream its output, and stop it. Supervision is a view only: commands wait inside the agent's tool call, subject to this node's subprocess maximum lifetime, and a finished task never wakes the conversation. **Settings > Shell commands** can cap how long a command may run on this node; a command that exceeds the cap is stopped and returns exit code 124. Commands finishing within a few seconds stay out of the Tasks panel.
 
 **Settings > Shell commands > Subprocess maximum lifetime** defaults to 360 minutes. It accepts whole minutes from 1 to 10080 and measures elapsed wall-clock time from launch, not idle time. Changes apply to running owned processes on their next check, normally within two seconds. Expiration sends TERM, then KILL after five seconds. This also covers explicit background tasks, agent CLI processes, terminals and command helpers. The server, supervisor, update installer and persistent browser service are excluded. See [subprocess lifetime scope and safety limits](docs/subprocess-lifetime.md).

@@ -9,6 +9,7 @@ import { listTasks, updateTask } from "./tasks.js";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { resolveDataDirectory } from "./data-directory.js";
+import { describeNodeDatabase } from "./node-database.js";
 import { fileURLToPath } from "node:url";
 import { flushHubDeliveries, pullFromHubs } from "./server/cluster-hubs.js";
 import { inBackground, outsideBackground } from "./peer-presence.js";
@@ -130,6 +131,8 @@ export { app, createApp, server } from "./server/state.js";
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   installBackendErrorCapture();
+  // JOINT_BOB_DATABASE_URL is read here, at start; an unreachable PostgreSQL stops the node before it serves anything.
+  console.log(`Node database: ${describeNodeDatabase(resolveDataDirectory())}`);
   // Playwright installs signal handlers of its own. Explicitly finish node shutdown
   // after closing Chrome rather than leaving the HTTP server alive after SIGTERM.
   let stopping = false;

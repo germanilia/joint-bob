@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 
 /**
  * Durable apply journal for ticket merges (TICKET-MERGE-PLAN.md §8). Lives in the
@@ -50,7 +51,7 @@ async function journalDatabase(): Promise<DatabaseSync> {
   if (!journalPromise) {
     journalPromise = (async () => {
       await fs.mkdir(dataDir, { recursive: true });
-      const db = new DatabaseSync(path.join(dataDir, "node.db"));
+      const db = openNodeDatabase(path.join(dataDir, "node.db"));
       db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;");
       db.exec(`CREATE TABLE IF NOT EXISTS merge_transactions (
         txid TEXT PRIMARY KEY, task_id TEXT NOT NULL, project_id TEXT NOT NULL,

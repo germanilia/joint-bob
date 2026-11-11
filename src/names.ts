@@ -3,6 +3,7 @@ import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync, StatementSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { getClusterNode } from "./cluster.js";
 import { enqueueReplicationEvent, ensureReplicationSchema } from "./replication.js";
 import { untilNextWrite } from "./sqlite-generation.js";
@@ -72,7 +73,7 @@ function migrateStableProjectIds(db: DatabaseSync): void {
 async function namesDatabase(): Promise<DatabaseSync> {
   if (!databasePromise) databasePromise = (async () => {
     await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(databasePath);
+    const db = openNodeDatabase(databasePath);
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     db.exec(`
       CREATE TABLE IF NOT EXISTS name_overrides (

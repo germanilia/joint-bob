@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { SHORTCUT_CHORD_MODIFIERS, normalizeShortcutChordTokens, type ShortcutChordModifier } from "./shortcut-keys.js";
 import { isHarnessId, type HarnessId } from "./types.js";
 
@@ -211,7 +212,7 @@ let database: DatabaseSync | undefined;
 function preferencesDatabase(): DatabaseSync {
   if (database) return database;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(databasePath);
+  database = openNodeDatabase(databasePath);
   database.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   database.exec(`
     CREATE TABLE IF NOT EXISTS user_preferences (

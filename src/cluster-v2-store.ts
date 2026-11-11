@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { ensureClusterIdentitySchema } from "./cluster-identity.js";
 import { ensureClusterProtocolSchema } from "./cluster-protocol.js";
 import { ensureClusterSharingPolicySchema } from "./cluster-sharing-policy.js";
@@ -13,7 +14,7 @@ export async function clusterV2Database(): Promise<DatabaseSync> {
   databasePromise ??= (async () => {
     const directory = resolveDataDirectory();
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const database = new DatabaseSync(path.join(directory, "node.db"));
+    const database = openNodeDatabase(path.join(directory, "node.db"));
     database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON");
     ensureClusterIdentitySchema(database);
     ensureClusterProtocolSchema(database);

@@ -23,8 +23,22 @@ before(async () => {
   fixture = await configure(baseUrl, root, "");
   watch = openChat(baseUrl, fixture.cookie, fixture.projectId, "watch");
   sockets.push(watch.socket);
-  await waitFor(watch.messages, () => watch.messages.some(({ type }) => type === "sessionsChanged"));
+  await waitFor(watch.messages, () => watch.messages.some(({ type }) => type === "watchReady"));
+  // Creating the project scheduled a debounced catalog refresh. When setup outlasts the debounce
+  // (a slow disk), its sessionsChanged goes out before this socket subscribes, so waiting for that
+  // message can hang. Let the watcher go quiet instead: tests start after that refresh either way.
+  await watcherQuiet(watch.messages);
 });
+
+/** Waits until two debounce windows pass with no new sessionsChanged. */
+async function watcherQuiet(messages: Array<Record<string, unknown>>): Promise<void> {
+  const notices = () => messages.filter(({ type }) => type === "sessionsChanged").length;
+  let seen = -1;
+  while (seen !== notices()) {
+    seen = notices();
+    await new Promise(resolve => setTimeout(resolve, 1600));
+  }
+}
 
 after(async () => {
   const { sessionWatcher } = await import("../src/server/chat.js");

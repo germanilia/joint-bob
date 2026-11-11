@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { nanoid } from "nanoid";
 import { getClusterNode } from "./cluster.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, ensureTaskSchema } from "./replication.js";
@@ -93,7 +94,7 @@ export async function taskDatabase(): Promise<DatabaseSync> {
   if (databasePromise) return databasePromise;
   databasePromise = (async () => {
     await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(databasePath);
+    const db = openNodeDatabase(databasePath);
     db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
     ensureReplicationSchema(db);
     ensureTaskSchema(db);

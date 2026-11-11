@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.mjs";
 import { fetchReleaseResource } from "./release-auth.mjs";
 
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
@@ -90,7 +90,7 @@ function requiredEnv(name) {
 
 /** Turns an earlier update interrupted that are still being finished; the service refuses to update until they end. */
 function interruptedTurns(databasePath) {
-  const db = new DatabaseSync(databasePath, { readOnly: true });
+  const db = openNodeDatabase(databasePath, { readOnly: true });
   try {
     db.exec("PRAGMA busy_timeout = 5000");
     const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'update_recoveries'").get();
@@ -101,7 +101,7 @@ function interruptedTurns(databasePath) {
 }
 
 function markJob(databasePath, jobId, state, error = null) {
-  const db = new DatabaseSync(databasePath);
+  const db = openNodeDatabase(databasePath);
   try {
     db.exec("PRAGMA busy_timeout = 5000");
     db.prepare("UPDATE update_jobs SET state = ?, error = ?, updated_at = ? WHERE id = ?").run(state, error, new Date().toISOString(), jobId);

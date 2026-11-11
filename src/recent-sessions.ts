@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, resolveProjectAlias, type ReplicationEvent } from "./replication.js";
 import type { RecentSession } from "./preferences.js";
 import { portableSessionPath } from "./session-paths.js";
@@ -45,7 +46,7 @@ export function ensureUserRecentSessionSchema(db: DatabaseSync): void {
 function recentDatabase(): DatabaseSync {
   if (database) return database;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(path.join(dataDir, "node.db"));
+  database = openNodeDatabase(path.join(dataDir, "node.db"));
   database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   ensureUserRecentSessionSchema(database);
   ensureReplicationSchema(database);

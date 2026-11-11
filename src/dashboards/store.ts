@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "../node-database.js";
 import { resolveDataDirectory } from "../data-directory.js";
 import type { DashboardEntity } from "./contract.js";
 
@@ -44,7 +45,7 @@ function db(): DatabaseSync {
   if (database) return database;
   const directory = resolveDataDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(path.join(directory, "node.db"));
+  database = openNodeDatabase(path.join(directory, "node.db"));
   database.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS dashboards (
       id TEXT PRIMARY KEY,

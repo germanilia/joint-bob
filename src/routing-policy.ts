@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { z } from "zod";
 import { getDifficultyClassifier, listDifficultyClassifiers } from "./classifiers/registry.js";
 import { DIFFICULTY_RUBRIC } from "./classifiers/typesafe.js";
@@ -77,7 +78,7 @@ export function routingPolicyDatabase(): DatabaseSync {
   if (database) return database;
   const directory = resolveDataDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   ensureRoutingPolicySchema(db);
   database = db;

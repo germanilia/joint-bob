@@ -11,6 +11,7 @@ import { promises as fs } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { nanoid } from "nanoid";
 import { ensureDedicatedSecretTypesMigration, ensureWorkspaceSecretsMigration, rekeySecretAssignments } from "./secrets-migration.js";
 import { getClusterNode } from "./cluster.js";
@@ -444,7 +445,7 @@ async function projectDatabase(): Promise<DatabaseSync> {
 
 async function initializeProjectDatabase(): Promise<DatabaseSync> {
   await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(databasePath);
+  const db = openNodeDatabase(databasePath);
   try {
     db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
     // The rename runs before the CREATE TABLE block: otherwise an empty `workspaces`

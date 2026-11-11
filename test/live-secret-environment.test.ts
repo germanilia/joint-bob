@@ -48,7 +48,7 @@ test("running harness shells pick up scope attachment, rotation, collisions and 
   const duplicate = await account("Ambiguous fixture", "duplicate");
   const website = await saveSecretAccount({ label: "Website fixture", provider: "website", websiteOrigin: "https://live.fixture.test", variables: [{ name: "LOGIN_PASSWORD", kind: "value", value: "website-fixture" }] });
 
-  const baseEnv = { PATH: process.env.PATH, HOME: os.homedir(), PI_WEB_DATA_DIR: resolveDataDirectory(), UNRELATED_FIXTURE: "keep", NODE_NO_WARNINGS: "1" };
+  const baseEnv = { PATH: process.env.PATH, HOME: os.homedir(), PI_WEB_DATA_DIR: resolveDataDirectory(), JOINT_BOB_DATABASE_URL: process.env.JOINT_BOB_DATABASE_URL, NODE_TEST_CONTEXT: process.env.NODE_TEST_CONTEXT, UNRELATED_FIXTURE: "keep", NODE_NO_WARNINGS: "1" };
   for (const engine of ["pi", "claude", "kiro"] as const) {
     const identity = { engine, sessionId: `live-${engine}` };
     const scopeId = `${engine}:${identity.sessionId}`;

@@ -150,8 +150,8 @@ export function runtimeExec(command: string, args: string[], environment: NodeJS
   return { command: wrapped.command, args: wrapped.args, env: runtimeEnvironment(runtime, environment) };
 }
 
-/** What the service keeps for itself: its data directory, agent sockets and session bus. */
-const SERVICE_ONLY_ENVIRONMENT = ["JOINT_BOB_DATA_DIR", "PI_WEB_DATA_DIR", "JOINT_BOB_TASK_DATA_DIR", "JOINT_BOB_TASK_SOCKET", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "JOINT_BOB_BROWSER_TOKEN_FILE"];
+/** What the service keeps for itself: its data directory and database, agent sockets and session bus. */
+const SERVICE_ONLY_ENVIRONMENT = ["JOINT_BOB_DATA_DIR", "PI_WEB_DATA_DIR", "JOINT_BOB_DATABASE_URL", "JOINT_BOB_TASK_DATA_DIR", "JOINT_BOB_TASK_SOCKET", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "JOINT_BOB_BROWSER_TOKEN_FILE"];
 
 /** What an account may inherit from the service's own environment: how to find and run
     programs, and Joint Bob's and the harnesses' plain configuration. */

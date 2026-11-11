@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import type { ConversationEngine } from "./conversation-ownership.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, resolveProjectAlias, type ReplicationEvent } from "./replication.js";
 import { isHarnessId } from "./types.js";
@@ -64,7 +65,7 @@ let database: DatabaseSync | undefined;
 function reviewDatabase(): DatabaseSync {
   if (database) return database;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(databasePath);
+  database = openNodeDatabase(databasePath);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   database.exec(`
     CREATE TABLE IF NOT EXISTS conversation_review_tracking (

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.mjs";
 
 export const DEFAULT_SUBPROCESS_MAX_LIFETIME_MINUTES = 360;
 export const MAX_SUBPROCESS_MAX_LIFETIME_MINUTES = 10_080;
@@ -13,7 +13,7 @@ export function validSubprocessLifetime(value) {
 export function subprocessLifetimeMs(dataDirectory) {
   let db;
   try {
-    db = new DatabaseSync(path.join(dataDirectory, "node.db"), { readOnly: true });
+    db = openNodeDatabase(path.join(dataDirectory, "node.db"), { readOnly: true });
     const minutes = Number(db.prepare("SELECT value FROM node_settings WHERE key='subprocessMaxLifetimeMinutes'").get()?.value);
     return (validSubprocessLifetime(minutes) ? minutes : DEFAULT_SUBPROCESS_MAX_LIFETIME_MINUTES) * 60_000;
   } catch {

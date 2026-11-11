@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { resolveDataDirectory } from "./data-directory.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, resolveProjectAlias, type ReplicationEvent } from "./replication.js";
 import type { SessionSummary } from "./types.js";
@@ -29,7 +30,7 @@ export function ensureConversationNotificationSchema(db: DatabaseSync): void {
 function notificationDatabase(): DatabaseSync {
   if (database) return database;
   mkdirSync(path.dirname(databasePath), { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(databasePath);
+  database = openNodeDatabase(databasePath);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   ensureConversationNotificationSchema(database);
   return database;

@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { CONVERSATION_INACTIVITY_TIMEOUT_MS } from "./conversation-watchdog.js";
+import { nodeDatabaseIsPostgres, openNodeDatabase } from "./node-database.js";
 
 export interface BackgroundTask {
   id: string;
@@ -70,6 +71,23 @@ function open(dataDirectory: string): DatabaseSync | null {
   }
 }
 
+/* The shell policy table lives in the node database. SQLite attaches node.db to the supervisor's
+   database; a PostgreSQL node database cannot be attached, so the task ids it excludes are read
+   from it and passed to the supervisor's query as a JSON array. */
+const policyDatabases = new Map<string, DatabaseSync>();
+function postgresShellPolicy(dataDirectory: string): DatabaseSync | undefined {
+  const file = path.join(realpathSync(dataDirectory), "node.db");
+  let db = policyDatabases.get(file);
+  if (!db) policyDatabases.set(file, db = openNodeDatabase(file));
+  return db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='supervised_shell_calls'").get() ? db : undefined;
+}
+function postgresPolicyFilter(dataDirectory: string): { policy: string; values: SQLInputValue[] } {
+  const db = postgresShellPolicy(dataDirectory);
+  if (!db) return { policy: "", values: [] };
+  const excluded = db.prepare("SELECT task_id FROM supervised_shell_calls WHERE state='returned' OR (state='foreground' AND foreground_until > ?)").all(Date.now()) as Array<{ task_id: string }>;
+  return { policy: " AND id NOT IN (SELECT value FROM json_each(?))", values: [JSON.stringify(excluded.map((row) => row.task_id))] };
+}
+
 function task(row: Row): BackgroundTask {
   return {
     id: row.id,
@@ -98,19 +116,20 @@ export function readBackgroundTasks(
       return { tasks: [], nextCursor: null, available: false };
     }
     if (!identities.length) return { tasks: [], nextCursor: null, available: true };
-    let policy = "";
+    let { policy, values: policyValues } = nodeDatabaseIsPostgres() ? postgresPolicyFilter(dataDirectory) : { policy: "", values: [] as SQLInputValue[] };
     const policyFile = path.join(realpathSync(dataDirectory), "node.db");
-    if (existsSync(policyFile)) {
+    if (!nodeDatabaseIsPostgres() && existsSync(policyFile)) {
       db.prepare("ATTACH DATABASE ? AS shell_policy").run(`${pathToFileURL(policyFile).href}?mode=ro`);
       if (db.prepare("SELECT 1 FROM shell_policy.sqlite_master WHERE type='table' AND name='supervised_shell_calls'").get()) {
         policy = " AND NOT EXISTS (SELECT 1 FROM shell_policy.supervised_shell_calls p WHERE p.task_id=supervisor_tasks.id AND (p.state='returned' OR (p.state='foreground' AND p.foreground_until > ?)))";
+        policyValues = [Date.now()];
       }
     }
     const placeholders = identities.map(() => "?").join(",");
     const cursor = before ? " AND (started_at < ? OR (started_at = ? AND id < ?))" : "";
     const values: SQLInputValue[] = [
       ...identities,
-      ...(policy ? [Date.now()] : []),
+      ...policyValues,
       ...(before ? [before.startedAt, before.startedAt, before.id] : []),
       limit + 1,
     ];
@@ -165,6 +184,33 @@ export interface ImplicitShellTask {
   lastOutputAt?: string;
 }
 
+function attachedImplicitShellRows(db: DatabaseSync, dataDirectory: string): ImplicitShellRow[] {
+  const policyFile = path.join(realpathSync(dataDirectory), "node.db");
+  if (!existsSync(policyFile)) return [];
+  db.prepare("ATTACH DATABASE ? AS shell_calls").run(`${pathToFileURL(policyFile).href}?mode=ro`);
+  if (!db.prepare("SELECT 1 FROM shell_calls.sqlite_master WHERE type='table' AND name='supervised_shell_calls'").get()) return [];
+  return db.prepare(
+    `SELECT id,identity,started_at,p.foreground_until FROM supervisor_tasks
+     JOIN shell_calls.supervised_shell_calls p ON p.task_id=supervisor_tasks.id
+     WHERE status IN ('starting','running','stopping')
+     ORDER BY started_at`,
+  ).all() as unknown as ImplicitShellRow[];
+}
+
+/* The same rows when the policy is in a PostgreSQL node database: the supervisor's running tasks,
+   joined here with their policy rows. */
+function postgresImplicitShellRows(db: DatabaseSync, dataDirectory: string): ImplicitShellRow[] {
+  const policy = postgresShellPolicy(dataDirectory);
+  if (!policy) return [];
+  const running = db.prepare("SELECT id,identity,started_at FROM supervisor_tasks WHERE status IN ('starting','running','stopping') ORDER BY started_at").all() as Array<{ id: string; identity: string; started_at: string }>;
+  if (!running.length) return [];
+  const leases = new Map((policy.prepare("SELECT task_id,foreground_until FROM supervised_shell_calls WHERE task_id IN (SELECT value FROM json_each(?))").all(JSON.stringify(running.map((row) => row.id))) as Array<{ task_id: string; foreground_until: number }>)
+    .map((row) => [row.task_id, row.foreground_until]));
+  return running.filter((row) => leases.has(row.id)).map((row) => ({ ...row, foreground_until: leases.get(row.id)! }));
+}
+
+interface ImplicitShellRow { id: string; identity: string; started_at: string; foreground_until: number }
+
 /* A `supervised_shell_calls` row marks a task the harness started inside a tool
    call. Those shells are meant to end with the work of a turn, while a job started
    with `joint-bob-task start` is meant to outlive it, so only the former is ever
@@ -175,16 +221,7 @@ export function readImplicitShellTasks(dataDirectory: string): ImplicitShellTask
   if (!db) return [];
   try {
     if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='supervisor_tasks'").get()) return [];
-    const policyFile = path.join(realpathSync(dataDirectory), "node.db");
-    if (!existsSync(policyFile)) return [];
-    db.prepare("ATTACH DATABASE ? AS shell_calls").run(`${pathToFileURL(policyFile).href}?mode=ro`);
-    if (!db.prepare("SELECT 1 FROM shell_calls.sqlite_master WHERE type='table' AND name='supervised_shell_calls'").get()) return [];
-    const rows = db.prepare(
-      `SELECT id,identity,started_at,p.foreground_until FROM supervisor_tasks
-       JOIN shell_calls.supervised_shell_calls p ON p.task_id=supervisor_tasks.id
-       WHERE status IN ('starting','running','stopping')
-       ORDER BY started_at`,
-    ).all() as Array<{ id: string; identity: string; started_at: string; foreground_until: number }>;
+    const rows = nodeDatabaseIsPostgres() ? postgresImplicitShellRows(db, dataDirectory) : attachedImplicitShellRows(db, dataDirectory);
     const outputDirectory = path.join(realpathSync(dataDirectory), "background-tasks");
     return rows.map((row) => {
       const output = path.resolve(outputDirectory, `${row.id}.log`);
@@ -239,7 +276,7 @@ function identityReader(dataDirectory: string): DatabaseSync | null {
     reader = { dev: entry.dev, ino: entry.ino, db, attached: false };
     identityReaders.set(dataDirectory, reader);
   }
-  if (!reader.attached) {
+  if (!reader.attached && !nodeDatabaseIsPostgres()) {
     const policyFile = path.join(realpathSync(dataDirectory), "node.db");
     if (existsSync(policyFile)) {
       reader.db.prepare("ATTACH DATABASE ? AS active_policy").run(`${pathToFileURL(policyFile).href}?mode=ro`);
@@ -254,10 +291,10 @@ export function readActiveBackgroundTaskIdentities(dataDirectory: string): Set<s
   if (!db) return new Set();
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='supervisor_tasks'").get()) return new Set();
   const attached = identityReaders.get(dataDirectory)?.attached;
-  const policy = attached && db.prepare("SELECT 1 FROM active_policy.sqlite_master WHERE type='table' AND name='supervised_shell_calls'").get()
-    ? " AND NOT EXISTS (SELECT 1 FROM active_policy.supervised_shell_calls p WHERE p.task_id=supervisor_tasks.id AND (p.state='returned' OR (p.state='foreground' AND p.foreground_until > ?)))"
-    : "";
-  const values: SQLInputValue[] = [...(policy ? [Date.now()] : [])];
+  const { policy, values } = nodeDatabaseIsPostgres() ? postgresPolicyFilter(dataDirectory)
+    : attached && db.prepare("SELECT 1 FROM active_policy.sqlite_master WHERE type='table' AND name='supervised_shell_calls'").get()
+      ? { policy: " AND NOT EXISTS (SELECT 1 FROM active_policy.supervised_shell_calls p WHERE p.task_id=supervisor_tasks.id AND (p.state='returned' OR (p.state='foreground' AND p.foreground_until > ?)))", values: [Date.now()] as SQLInputValue[] }
+      : { policy: "", values: [] as SQLInputValue[] };
   const rows = db.prepare(`SELECT DISTINCT identity FROM supervisor_tasks WHERE status IN ('starting','running','stopping')${policy}`).all(...values) as Array<{ identity: string }>;
   return new Set(rows.map((row) => row.identity));
 }

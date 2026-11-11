@@ -28,20 +28,44 @@ git -C "${ROOT}" cat-file -e "${COMMIT}^{commit}"
 BUSY=75
 NOTHING_TO_DO=10
 
-# Prints how many interrupted turns a machine is still finishing. Reads its database without
-# touching it: `node - <database>` with this script on standard input.
+# Prints how many interrupted turns a machine is still finishing, or "unknown" when its database
+# cannot be read. Reads without touching: `node - <node.db> <app dirs>...` with this script on standard input.
+# A node whose database is in PostgreSQL (docs/postgres-node-database.md) has the marker file beside
+# node.db and JOINT_BOB_DATABASE_URL in its environment; its node.db, if any, is stale, so the
+# count comes from PostgreSQL, through the `pg` package of an installed release or of this checkout.
 PENDING_RECOVERIES='
 const fs = require("node:fs");
-const file = process.argv[2];
-let pending = 0;
-if (fs.existsSync(file)) {
+const path = require("node:path");
+const [file, ...appDirectories] = process.argv.slice(2);
+async function pendingInPostgres() {
+  const url = process.env.JOINT_BOB_DATABASE_URL;
+  if (!url) throw new Error("JOINT_BOB_DATABASE_URL is not set");
+  const { Client } = require(require.resolve("pg", { paths: appDirectories }));
+  const client = new Client({ connectionString: url });
+  await client.connect();
+  try {
+    const table = await client.query("SELECT to_regclass($1) AS found", ["update_recoveries"]);
+    if (!table.rows[0].found) return 0;
+    return Number((await client.query("SELECT count(*) AS pending FROM update_recoveries WHERE status = $1", ["pending"])).rows[0].pending);
+  } finally { await client.end(); }
+}
+function pendingInSqlite() {
+  if (!fs.existsSync(file)) return 0;
   const { DatabaseSync } = require("node:sqlite");
   const db = new DatabaseSync(file, { readOnly: true });
-  try { pending = db.prepare("SELECT count(*) AS pending FROM update_recoveries WHERE status = ?").get("pending").pending; } catch { /* no update has run yet */ }
-  db.close();
+  try { return db.prepare("SELECT count(*) AS pending FROM update_recoveries WHERE status = ?").get("pending").pending; }
+  catch { return 0; /* no update has run yet */ }
+  finally { db.close(); }
 }
-console.log(pending);
+(async () => {
+  const postgres = fs.existsSync(path.join(path.dirname(file), "node-database-is-postgres"));
+  try { console.log(postgres ? await pendingInPostgres() : pendingInSqlite()); }
+  catch (error) { console.error(error.message); console.log("unknown"); }
+})();
 '
+
+# Where installed releases keep their packages, newest first, then this checkout.
+APP_DIRECTORIES_SH='for d in $(ls -1dt "${JOINT_BOB_INSTALL_DIR:-$HOME/.local/share/joint-bob/app}"/releases/*/ 2>/dev/null); do printf "%s " "${d%/}"; done'
 
 release_in() { sed -n 's/.*"release":"\([0-9a-f]\{40\}\)".*/\1/p' | head -n 1; }
 
@@ -60,6 +84,10 @@ plan() {
     echo "${label} runs ${running}, which already contains ${COMMIT}; it is left as it is."
     return "${NOTHING_TO_DO}"
   fi
+  if [ "${pending}" = "unknown" ]; then
+    echo "${label}'s database could not be read to see whether interrupted turns are still running, so it is not updated yet."
+    return "${BUSY}"
+  fi
   if [[ "${pending}" =~ ^[1-9][0-9]*$ ]]; then
     echo "${label} is still finishing ${pending} conversation turn(s) that an earlier update interrupted. It is updated once they end."
     return "${BUSY}"
@@ -72,13 +100,15 @@ local_plan="${NOTHING_TO_DO}"
 if [ "${DESTINATION}" != "local" ]; then
   DEPLOY_TARGET="${JOINT_BOB_DEPLOY_SSH_TARGET:?Set JOINT_BOB_DEPLOY_SSH_TARGET in ~/.joint-bob/env}"
   running="$(ssh "${DEPLOY_TARGET}" 'curl -fsS -m 10 http://127.0.0.1:8787/api/health' 2>/dev/null | release_in || true)"
-  pending="$(ssh "${DEPLOY_TARGET}" 'node --no-warnings - "$HOME/.joint-bob/node.db"' <<<"${PENDING_RECOVERIES}" 2>/dev/null || true)"
+  # The remote shell reads the node's own environment, which holds JOINT_BOB_DATABASE_URL.
+  pending="$(ssh "${DEPLOY_TARGET}" 'set -a; [ -f "$HOME/.joint-bob/env" ] && . "$HOME/.joint-bob/env"; set +a; node --no-warnings - "$HOME/.joint-bob/node.db" $('"${APP_DIRECTORIES_SH}"')' <<<"${PENDING_RECOVERIES}" 2>/dev/null || true)"
   homeserver_plan=0
   plan "The homeserver" "${running}" "${pending}" || homeserver_plan=$?
 fi
 if [ "${DESTINATION}" != "homeserver" ]; then
   running="$(curl -fsS -m 10 http://127.0.0.1:8790/api/health 2>/dev/null | release_in || true)"
-  pending="$(node --no-warnings - "${HOME}/.joint-bob/node.db" <<<"${PENDING_RECOVERIES}" 2>/dev/null || true)"
+  # shellcheck disable=SC2046
+  pending="$(node --no-warnings - "${HOME}/.joint-bob/node.db" "${ROOT}" $(eval "${APP_DIRECTORIES_SH}") <<<"${PENDING_RECOVERIES}" 2>/dev/null || true)"
   local_plan=0
   plan "This machine" "${running}" "${pending}" || local_plan=$?
 fi
@@ -103,6 +133,10 @@ fi
 backup_local_state() {
   local state_dir="${HOME}/.joint-bob" backup_dir="${HOME}/.joint-bob/backups"
   [ -f "${state_dir}/node.db" ] || return
+  if [ -f "${state_dir}/node-database-is-postgres" ]; then
+    echo "This machine keeps its database in PostgreSQL; its leftover node.db is not backed up. Back the database up with pg_dump." >&2
+    return
+  fi
   mkdir -p "${backup_dir}"
   chmod 700 "${backup_dir}"
   # Older backups go first, so a deploy never needs room for more than BACKUP_KEEP copies of node.db.
@@ -130,7 +164,9 @@ install_homeserver() {
   ssh "${DEPLOY_TARGET}" "COMMIT='${COMMIT}' PACKAGE='${remote_package}' BACKUP_KEEP='${BACKUP_KEEP}' bash -s" <<'REMOTE'
 set -euo pipefail
 node_bin="$(command -v node)"
-if [ -f "$HOME/.joint-bob/node.db" ]; then
+if [ -f "$HOME/.joint-bob/node-database-is-postgres" ]; then
+  echo "The homeserver keeps its database in PostgreSQL; its leftover node.db is not backed up. Back the database up with pg_dump." >&2
+elif [ -f "$HOME/.joint-bob/node.db" ]; then
   { ls -1t "$HOME"/.joint-bob/backups/pre-deploy-*.db 2>/dev/null || true; } | tail -n "+${BACKUP_KEEP}" | while read -r old; do rm -f -- "$old" "$old-journal"; done
   backup_db="$HOME/.joint-bob/backups/pre-deploy-${COMMIT}-$(date -u +%Y%m%dT%H%M%SZ).db"
   if ! BACKUP_DB="$backup_db" JOINT_BOB_DATA_DIR="$HOME/.joint-bob" "$node_bin" - <<'NODE'

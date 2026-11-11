@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "../node-database.js";
 import { fileURLToPath } from "node:url";
 import { actingAccount, type ActingAccount } from "../account-context.js";
 import { JOINT_BOB_TOOL_SERVER, reservedMcpServerName } from "../assistant-collaboration/bridge-tools.js";
@@ -14,7 +15,7 @@ let database: DatabaseSync | undefined;
 function db() {
   if (!database) {
     const root = resolveDataDirectory(); mkdirSync(root, { recursive: true, mode: 0o700 });
-    database = new DatabaseSync(path.join(root, "node.db"));
+    database = openNodeDatabase(path.join(root, "node.db"));
     database.exec("PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS mcp_agent_tokens (hash TEXT PRIMARY KEY, identity TEXT NOT NULL, expires INTEGER NOT NULL)");
   }
   return database;

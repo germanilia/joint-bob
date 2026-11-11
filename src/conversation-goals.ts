@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { resolveDataDirectory } from "./data-directory.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, resolveProjectAlias, type ReplicationEvent } from "./replication.js";
 
@@ -82,7 +83,7 @@ function fromRow(row: GoalRow): ConversationGoal {
 async function database(): Promise<DatabaseSync> {
   databasePromise ??= (async () => {
     await mkdir(dataDir, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     ensureConversationGoalSchema(db);
     ensureReplicationSchema(db);

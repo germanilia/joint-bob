@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { resolveDataDirectory } from "./data-directory.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, resolveProjectAlias, type ReplicationEvent } from "./replication.js";
 import { usageDifficultySchema, usageEventSchema, type UsageDifficulty, type UsageDimension, type UsageEvent, type UsageFilters, type UsageTotals } from "./usage-types.js";
@@ -63,7 +64,7 @@ export function clearUsageTotalsCache(): void { totalsCache.clear(); revision++;
 export function usageDatabase(): DatabaseSync {
   if (database) return database;
   const directory = resolveDataDirectory(); mkdirSync(directory, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(path.join(directory, "node.db")); database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"); ensureReplicationSchema(database); ensureUsageSchema(database); return database;
+  database = openNodeDatabase(path.join(directory, "node.db")); database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"); ensureReplicationSchema(database); ensureUsageSchema(database); return database;
 }
 function compareQuality(next: UsageEvent, current: UsageEvent): number {
   const quality = (event: UsageEvent) => {

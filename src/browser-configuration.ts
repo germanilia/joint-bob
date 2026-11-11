@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { z } from "zod";
 import { resolveDataDirectory } from "./data-directory.js";
 import { browserIdentitySchema, type BrowserConfiguration } from "./browser-types.js";
@@ -17,7 +18,7 @@ let database: DatabaseSync | undefined;
 function db(): DatabaseSync {
   if (database) return database;
   const dir = resolveDataDirectory(); mkdirSync(dir, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(path.join(dir, "node.db"));
+  database = openNodeDatabase(path.join(dir, "node.db"));
   database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS browser_cluster_configuration (singleton INTEGER PRIMARY KEY CHECK(singleton=1), executor_node_id TEXT, updated_at TEXT NOT NULL, origin_node_id TEXT NOT NULL)");
   database.exec(`CREATE TABLE IF NOT EXISTS browser_conversation_preferences (
     project_id TEXT NOT NULL, engine TEXT NOT NULL, conversation_id TEXT NOT NULL,

@@ -127,7 +127,7 @@ export class QualityStore {
       SELECT r.*,SUM(c.at<>'' AND substr(c.at,1,10)<r.adoptedAt) beforeReplies,SUM(c.at<>'' AND substr(c.at,1,10)>=r.adoptedAt) afterReplies,
       SUM(c.at<>'' AND substr(c.at,1,10)<r.adoptedAt AND EXISTS(SELECT 1 FROM json_each(c.issues) j WHERE json_extract(j.value,'$.type')=r.type)) beforeIssues,
       SUM(c.at<>'' AND substr(c.at,1,10)>=r.adoptedAt AND EXISTS(SELECT 1 FROM json_each(c.issues) j WHERE json_extract(j.value,'$.type')=r.type)) afterIssues
-      FROM rules r JOIN cohort c ON c.project_id=r.projectId WHERE (?='' OR r.type=?) GROUP BY r.projectId,r.type,r.ruleId ORDER BY r.adoptedAt DESC LIMIT 100`).all(...cohortArgs, filter.issue ?? '', filter.issue ?? '');
+      FROM rules r JOIN cohort c ON c.project_id=r.projectId WHERE (?='' OR r.type=?) GROUP BY r.projectId,r.type,r.ruleId,r.adoptedAt ORDER BY r.adoptedAt DESC LIMIT 100`).all(...cohortArgs, filter.issue ?? '', filter.issue ?? '');
     const coverage = this.db.prepare(`SELECT COALESCE(SUM(reply_count),0) eligibleReplies FROM quality_coverage WHERE project_id IN (${marks})`).get(...allowed);
     const versions = this.db.prepare(`SELECT DISTINCT json_extract(result,'$.version') version,json_extract(result,'$.claudeModel') claudeModel,json_extract(result,'$.jevModel') jevModel FROM quality_observations WHERE project_id IN (${marks})`).all(...allowed);
     return { collectionError: String(this.db.prepare('SELECT error FROM quality_health WHERE singleton=1').get()?.error ?? ''), totals, coverage, trends, issues, lessons, rows, total: totals.replies, jobs, failures, failureGroups, sources, lastEvaluatedAt, feedback, versions, page: filter.page, pageSize: filter.pageSize };

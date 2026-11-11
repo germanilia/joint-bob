@@ -2,7 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { nodeDatabaseIsPostgres, openNodeDatabase } from "./node-database.js";
 import { resolveDataDirectory } from "./data-directory.js";
 import { webhookMemoryEnabled, type WebhookResourceOptions } from "./webhook-resources.js";
 import { ensureWebhookSchema } from "./webhooks.js";
@@ -64,8 +65,8 @@ export function webhookMemoryAgentEnvironment(db: DatabaseSync, projectId: strin
 
 export function webhookMemoryAgentEnvironmentForConversation(projectId: string, conversationId: string): NodeJS.ProcessEnv {
   const databaseFile = path.join(resolveDataDirectory(), "node.db");
-  if (!existsSync(databaseFile)) return {};
-  const db = new DatabaseSync(databaseFile);
+  if (!nodeDatabaseIsPostgres() && !existsSync(databaseFile)) return {};
+  const db = openNodeDatabase(databaseFile);
   try {
     db.exec("PRAGMA busy_timeout = 5000");
     const tables = db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('cluster_node','webhook_conversation_bindings')").get() as { count: number };

@@ -83,6 +83,8 @@ function taskEnvironment(identity: AgentCapabilityIdentity): NodeJS.ProcessEnv {
     BASH_MAX_TIMEOUT_MS: claudeBashTimeoutMs,
     JOINT_BOB_TASK_CLI: fileURLToPath(new URL("../bin/joint-bob-task.mjs", import.meta.url)),
     JOINT_BOB_TASK_DATA_DIR: dataDirectory,
+    // The supervised shell records its calls in the node database; an account's agents never keep this (account-runtime.ts).
+    JOINT_BOB_DATABASE_URL: process.env.JOINT_BOB_DATABASE_URL,
     JOINT_BOB_TASK_SHELL: shell,
     CLAUDE_CODE_SHELL: shell,
     KIRO_CHAT_SHELL: shell,

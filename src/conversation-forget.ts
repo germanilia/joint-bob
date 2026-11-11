@@ -182,7 +182,7 @@ export function ensureDeleteQueue(db: DatabaseSync): boolean {
     if (own) db.exec("BEGIN IMMEDIATE");
     try {
       if (!marked()) {
-        if (hasTombstones(db)) db.prepare("INSERT OR IGNORE INTO conversation_deletes_earlier (engine, session_id, made_here) SELECT engine, session_id, origin_node_id = ? FROM conversation_record_tombstones").run(local.id);
+        if (hasTombstones(db)) db.prepare("INSERT OR IGNORE INTO conversation_deletes_earlier (engine, session_id, made_here) SELECT engine, session_id, CASE WHEN origin_node_id = ? THEN 1 ELSE 0 END FROM conversation_record_tombstones").run(local.id);
         db.prepare("INSERT OR IGNORE INTO conversation_retention_marks (key, value) VALUES ('completeDeleteSince', ?)").run(new Date().toISOString());
       }
       if (own) db.exec("COMMIT");

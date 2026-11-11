@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { autoRespondConfigSchema } from "./conversation-auto-respond.js";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { z } from "zod";
 import { resolveDataDirectory } from "./data-directory.js";
 import { listDiscoveredHarnesses } from "./harnesses/registry.js";
@@ -276,7 +277,7 @@ export function cronStore(): CronStore {
   if (!store) {
     const directory = resolveDataDirectory();
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(path.join(directory, "node.db"));
+    const db = openNodeDatabase(path.join(directory, "node.db"));
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     store = new CronStore(db);
   }

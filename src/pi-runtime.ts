@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { resolveDataDirectory } from "./data-directory.js";
 
 export interface PiRuntimeSession {
@@ -12,7 +13,7 @@ export interface PiRuntimeSession {
 export function openPiRuntimeDatabase(dataDirectory: string): DatabaseSync {
   const directory = resolveDataDirectory(dataDirectory);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   db.exec(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;
     CREATE TABLE IF NOT EXISTS pi_runtime_sessions (
       session_id TEXT NOT NULL, run_id TEXT NOT NULL, transcript_path TEXT NOT NULL,

@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 
 export interface ClaudeHookInput {
   session_id: string;
@@ -22,7 +23,7 @@ let database: DatabaseSync | undefined;
 function runtimeDatabase(): DatabaseSync {
   if (database) return database;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(databasePath);
+  database = openNodeDatabase(databasePath);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   database.exec(`
     CREATE TABLE IF NOT EXISTS claude_runtime_sessions (

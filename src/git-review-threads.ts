@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { nanoid } from "nanoid";
 import { resolveDataDirectory } from "./data-directory.js";
 import type { HarnessId } from "./types.js";
@@ -95,7 +96,7 @@ export function ensureGitReviewThreadSchema(db: DatabaseSync): void {
 function reviewDatabase(): DatabaseSync {
   if (database) return database;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(databasePath);
+  database = openNodeDatabase(databasePath);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   ensureGitReviewThreadSchema(database);
   return database;

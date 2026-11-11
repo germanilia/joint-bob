@@ -8,7 +8,8 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } f
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { isHarnessId, type HarnessId } from "./types.js";
 import { isTrustedTwin, mayReceiveResource } from "./cluster-sharing-policy.js";
 import { ClusterV2HttpError } from "./cluster-v2-errors.js";
@@ -60,7 +61,7 @@ export function ensureSecretSchema(handle: DatabaseSync): void {
 function db(): DatabaseSync {
   if (database) return database;
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(databasePath);
+  database = openNodeDatabase(databasePath);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   ensureSecretSchema(database);
   return database;

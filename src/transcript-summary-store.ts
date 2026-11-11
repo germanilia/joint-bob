@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { resolveDataDirectory } from "./data-directory.js";
 
 /**
@@ -18,7 +19,7 @@ function summaryDatabase(): DatabaseSync {
   if (database && directory === current) return database;
   database?.close();
   mkdirSync(current, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(path.join(current, "node.db"));
+  database = openNodeDatabase(path.join(current, "node.db"));
   database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS transcript_summaries(kind TEXT NOT NULL, file TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind, file))");
   directory = current;
   return database;

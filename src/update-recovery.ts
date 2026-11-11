@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { z } from "zod";
 import type { HarnessModelSettings } from "./harnesses/runtime.js";
 import type { HarnessId, TaskPhase } from "./types.js";
@@ -35,7 +36,7 @@ async function recoveryDatabase(): Promise<DatabaseSync> {
   if (databasePromise) return databasePromise;
   databasePromise = (async () => {
     await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(databasePath);
+    const db = openNodeDatabase(databasePath);
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     db.exec(`CREATE TABLE IF NOT EXISTS update_recoveries (
       id TEXT PRIMARY KEY, kind TEXT NOT NULL, engine TEXT NOT NULL, project_id TEXT NOT NULL,

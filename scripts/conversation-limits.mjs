@@ -1,6 +1,6 @@
 import { availableParallelism } from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.mjs";
 import { processTable } from "./subprocess-lifetime.mjs";
 
 export const MIN_CONVERSATION_CPU_CORES = 0.1;
@@ -19,7 +19,7 @@ export function validConversationMemoryLimit(value) {
 export function conversationLimits(dataDirectory) {
   let db;
   try {
-    db = new DatabaseSync(path.join(dataDirectory, "node.db"), { readOnly: true });
+    db = openNodeDatabase(path.join(dataDirectory, "node.db"), { readOnly: true });
     const read = db.prepare("SELECT value FROM node_settings WHERE key=?");
     const limit = (key, valid) => {
       const stored = read.get(key)?.value;

@@ -5,6 +5,7 @@ import { promises as fs } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { applyConversationOwnershipEvent, ensureConversationOwnershipSchema } from "./conversation-ownership.js";
 import { applyGlobalInstructionsEvent, ensureGlobalInstructionsSchema } from "./global-instructions.js";
 import { applyConversationReviewEvent, ensureConversationReviewReplicaSchema } from "./conversation-reviews.js";
@@ -90,7 +91,7 @@ function ensureProjectLockSchema(db: DatabaseSync): void {
 
 async function replicationDatabase(): Promise<DatabaseSync> {
   if (databasePromise) return databasePromise;
-  databasePromise = (async () => { await fs.mkdir(dataDir, { recursive: true, mode: 0o700 }); const db = new DatabaseSync(databasePath); db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;"); ensureReplicationSchema(db); ensureNameSchema(db); ensureTaskSchema(db); ensureProjectLockSchema(db); ensureConversationOwnershipSchema(db); ensureConversationRecordSchema(db); ensureConversationReviewReplicaSchema(db); ensureConversationNotificationSchema(db); ensureConversationGoalSchema(db); db.exec("DROP TABLE IF EXISTS canvas_shortcuts; DROP TABLE IF EXISTS canvas_shortcut_binding_marks; DROP TABLE IF EXISTS canvas_shortcut_conversation_marks; DROP TABLE IF EXISTS canvas_shortcut_clock;"); ensureGlobalInstructionsSchema(db); ensureUserPinSchema(db); ensureUserRecentSessionSchema(db); ensureRoutingPolicySchema(db); ensureUsageSchema(db); return db; })();
+  databasePromise = (async () => { await fs.mkdir(dataDir, { recursive: true, mode: 0o700 }); const db = openNodeDatabase(databasePath); db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;"); ensureReplicationSchema(db); ensureNameSchema(db); ensureTaskSchema(db); ensureProjectLockSchema(db); ensureConversationOwnershipSchema(db); ensureConversationRecordSchema(db); ensureConversationReviewReplicaSchema(db); ensureConversationNotificationSchema(db); ensureConversationGoalSchema(db); db.exec("DROP TABLE IF EXISTS canvas_shortcuts; DROP TABLE IF EXISTS canvas_shortcut_binding_marks; DROP TABLE IF EXISTS canvas_shortcut_conversation_marks; DROP TABLE IF EXISTS canvas_shortcut_clock;"); ensureGlobalInstructionsSchema(db); ensureUserPinSchema(db); ensureUserRecentSessionSchema(db); ensureRoutingPolicySchema(db); ensureUsageSchema(db); return db; })();
   return databasePromise;
 }
 

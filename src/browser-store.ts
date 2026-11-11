@@ -3,6 +3,7 @@ import { z } from "zod";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { resolveDataDirectory } from "./data-directory.js";
 import { encryptSecretValue, decryptSecretValue } from "./secrets.js";
 import { ensureOwnershipSchema } from "./ownership.js";
@@ -70,7 +71,7 @@ export class BrowserStore {
   constructor() {
     const root = resolveDataDirectory();
     mkdirSync(root, { recursive: true, mode: 0o700 });
-    this.db = new DatabaseSync(path.join(root, "node.db"));
+    this.db = openNodeDatabase(path.join(root, "node.db"));
     this.db.exec(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS browser_sessions (
         id TEXT PRIMARY KEY, projectId TEXT NOT NULL, engine TEXT NOT NULL, conversationId TEXT NOT NULL,

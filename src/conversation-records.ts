@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import type { ConversationEngine } from "./conversation-ownership.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from "./replication.js";
 import { dropConversationGrantsInDatabase } from "./browser-store.js";
@@ -131,7 +132,7 @@ function removeSubagentRecords(db: DatabaseSync): void {
 async function database(): Promise<DatabaseSync> {
   if (!databasePromise) databasePromise = (async () => {
     await mkdir(dataDir, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     ensureConversationRecordSchema(db);
     ensureReplicationSchema(db);

@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { openNodeDatabase } from "./node-database.mjs";
 import { requestSupervisor, requestTaskControl } from "./supervisor-client.mjs";
 
 // Every harness shell command runs through the supervisor so the Tasks view can
@@ -29,7 +29,7 @@ function stateDirectory(value) {
   return realpathSync(value);
 }
 function registry(dataDirectory) {
-  const db = new DatabaseSync(path.join(dataDirectory, "node.db"));
+  const db = openNodeDatabase(path.join(dataDirectory, "node.db"));
   try {
     db.exec(`PRAGMA busy_timeout=5000; ${TABLE}`);
     return db;

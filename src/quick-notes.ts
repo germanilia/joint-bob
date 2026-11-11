@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { adminAccountId, newResourceOwner, personalAccount } from "./ownership.js";
 import { mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { nanoid } from "nanoid";
 import { resolveDataDirectory } from "./data-directory.js";
 
@@ -111,7 +112,7 @@ function db(): DatabaseSync {
   if (database) return database;
   const directory = resolveDataDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  database = new DatabaseSync(path.join(directory, "node.db"));
+  database = openNodeDatabase(path.join(directory, "node.db"));
   database.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS quick_notes (
       id TEXT PRIMARY KEY,
@@ -264,7 +265,7 @@ export function moveQuickNote(id: string, targetId: string): void {
     if (!note || !target || note.dispatched_at || target.dispatched_at || ![note.status, target.status].every(status => ["pending", "failed"].includes(status))) {
       throw new Error("Only backlog notes on the same home node can be reordered");
     }
-    database.prepare("UPDATE quick_notes SET position = CASE id WHEN ? THEN ? ELSE ? END WHERE id IN (?, ?)")
+    database.prepare("UPDATE quick_notes SET position = CASE id WHEN ? THEN CAST(? AS INTEGER) ELSE CAST(? AS INTEGER) END WHERE id IN (?, ?)")
       .run(id, target.position, note.position, id, targetId);
     database.exec("COMMIT");
   } catch (error) {

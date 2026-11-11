@@ -3,6 +3,14 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
+## 2.266.0 — 2026-11-11
+
+- A node can keep its database in PostgreSQL instead of SQLite. Set `JOINT_BOB_DATABASE_URL` in `~/.joint-bob/env` to a PostgreSQL 16+ database of the node's own and restart; the node starts with that database empty. Without the variable nothing changes. The start-up log names the database without its password. See docs/postgres-node-database.md.
+- The update check counts a PostgreSQL node's interrupted turns from PostgreSQL. When it cannot read them it waits instead of updating the machine, and it does not back up a PostgreSQL database as if it were `node.db`.
+- Fixed deleting a conversation failing with an error on a PostgreSQL node, and on that node deletes now remove the transcript and queue the rest of the delete.
+- Fixed quick-note reordering and webhook memory agents losing their environment on a PostgreSQL node.
+- Fixed quality analytics failing on a PostgreSQL node.
+
 ## 2.265.1 — 2026-11-11
 
 - This version carries everything listed under 2.265.0, which was never published: one of its release checks did not finish on Linux. Nothing in the app itself differs from what 2.265.0 describes.

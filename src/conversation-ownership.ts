@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "./node-database.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from "./replication.js";
 import { isHarnessId, type HarnessId } from "./types.js";
 
@@ -67,7 +68,7 @@ export function ensureConversationOwnershipSchema(db: DatabaseSync): void {
 async function ownershipDatabase(): Promise<DatabaseSync> {
   databasePromise ??= (async () => {
     await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync(databasePath);
+    const db = openNodeDatabase(databasePath);
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     ensureConversationOwnershipSchema(db);
     ensureReplicationSchema(db);

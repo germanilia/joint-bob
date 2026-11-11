@@ -22,6 +22,7 @@
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "../node-database.js";
 import { revokeAgentCapabilities } from "../agent-capabilities.js";
 import { supervisorDatabaseFile } from "../background-tasks.js";
 import { getClusterNode } from "../cluster.js";
@@ -41,7 +42,7 @@ let database: DatabaseSync | undefined;
 /** This module's own connection to node.db, for the checks and clean-up that run outside another module's transaction. */
 export function retentionDatabase(): DatabaseSync {
   if (!database) {
-    database = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+    database = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
     database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   }
   // The first time on a machine this writes down the deletes it already knew (conversation-forget.ts).
