@@ -115,8 +115,15 @@ fi
 
 work=""
 package=""
+# The work folder holds a full install, about a gigabyte. It goes when the deploy ends, also when the
+# deploy is interrupted or told to end. A deploy that is killed outright cannot remove it, so each deploy
+# first removes work folders that are a day old: 53 of them (39 GB) had gathered on one machine.
 trap '[ -z "${work}" ] || rm -rf "${work}"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 if [ "${homeserver_plan}" = 0 ] || [ "${local_plan}" = 0 ]; then
+  find "${HOME}" -maxdepth 1 -type d -name '.joint-bob-deploy.??????' -mmin +1440 -exec rm -rf {} + 2>/dev/null || true
   work="$(mktemp -d "${HOME}/.joint-bob-deploy.XXXXXX")"
   mkdir "${work}/source" "${work}/package"
   git -C "${ROOT}" archive "${COMMIT}" | tar -xf - -C "${work}/source"
