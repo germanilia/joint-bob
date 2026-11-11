@@ -40,6 +40,8 @@ export type Plan =
   | { kind: "updateOrIgnore"; select: Query; update: Query; tables: string[] }
   | { kind: "transaction"; op: TransactionOp; name?: string }
   | { kind: "rows"; rows: Record<string, unknown>[] }
+  /** SELECT total_changes(): the rows this handle changed, which only the handle knows. */
+  | { kind: "totalChanges"; column: string }
   | { kind: "pragmaWrite"; name: string; value: number };
 
 const TWO_CHAR = new Set(["||", "<=", ">=", "<>", "!=", "==", "<<", ">>", "->"]);
@@ -337,6 +339,8 @@ export function planStatement(tokens: Token[], schema: SchemaLookup): Plan {
   const words = significant(tokens);
   const first = upper(words[0]);
   if (first === "PRAGMA") return planPragma(words);
+  const totalChanges = planTotalChanges(words);
+  if (totalChanges) return totalChanges;
   const transaction = planTransaction(words);
   if (transaction) return transaction;
   if (first === "CREATE") return planCreate(tokens, words);
@@ -438,6 +442,14 @@ function planTransaction(words: Token[]): Plan | undefined {
   return undefined;
 }
 
+/** `SELECT total_changes()`, optionally named with AS. */
+function planTotalChanges(words: Token[]): Plan | undefined {
+  if (upper(words[0]) !== "SELECT" || upper(words[1]) !== "TOTAL_CHANGES" || words[2]?.text !== "(" || words[3]?.text !== ")") return undefined;
+  if (words.length === 4) return { kind: "totalChanges", column: "total_changes()" };
+  if (words.length === 6 && isWord(words[4], "AS")) return { kind: "totalChanges", column: identifier(words[5]) };
+  return undefined;
+}
+
 /* The pragmas the stores run. Connection tuning means nothing to PostgreSQL; `table_info` and
    `user_version` read what SQLite would. */
 function planPragma(words: Token[]): Plan {
@@ -451,6 +463,8 @@ function planPragma(words: Token[]): Plan {
     if (assigned) return { kind: "pragmaWrite", name: "user_version", value: Number(assigned.text) };
     return { kind: "query", query: { text: "SELECT COALESCE((SELECT value FROM sqlite_pragma WHERE name = 'user_version'), 0) AS user_version", args: [] }, write: false, keepsRowid: false, tables: [] };
   }
+  // SQLite moves data_version when another connection commits; here every committed write moves it, this handle's too.
+  if (name === "DATA_VERSION") return { kind: "query", query: { text: "SELECT value AS data_version FROM sqlite_pragma WHERE name = 'data_version'", args: [] }, write: false, keepsRowid: false, tables: [] };
   if (name === "SCHEMA_VERSION") return { kind: "query", query: { text: "SELECT schema_version FROM pragma_schema_version", args: [] }, write: false, keepsRowid: false, tables: [] };
   if (assigned) return { kind: "rows", rows: [] };
   const answers: Record<string, Record<string, unknown>> = {

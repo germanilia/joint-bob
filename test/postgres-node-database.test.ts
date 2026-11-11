@@ -173,3 +173,29 @@ test("json_group_array and json_object give text that json_each and json_extract
   assert.deepEqual(kinds, [{ kind: "a" }, { kind: "b" }]);
   db.close();
 });
+
+test("answers are kept between writes, and a committed write from any handle ends them", live, async () => {
+  const schema = `jb_adapter_${randomUUID().replaceAll("-", "")}`;
+  const reader = new PostgresDatabase(url!, schema);
+  const writer = new PostgresDatabase(url!, schema);
+  reader.exec("CREATE TABLE t (id TEXT PRIMARY KEY)");
+  const { untilNextWrite } = await import("../src/sqlite-generation.js");
+  let computed = 0;
+  const count = () => untilNextWrite(reader as never, "count", () => { computed++; return reader.prepare("SELECT count(*) AS n FROM t").get()!.n; });
+  assert.equal(count(), 0);
+  assert.equal(count(), 0);
+  assert.equal(computed, 1, "kept until a write");
+  writer.prepare("INSERT INTO t VALUES (?)").run("x");
+  assert.equal(count(), 1, "another handle's write ends it");
+  reader.prepare("INSERT INTO t VALUES (?)").run("y");
+  assert.equal(count(), 2, "the handle's own write ends it");
+  assert.equal(computed, 3);
+  writer.exec("BEGIN");
+  writer.prepare("INSERT INTO t VALUES (?)").run("z");
+  assert.equal(count(), 2, "a write not yet committed is not seen");
+  writer.exec("ROLLBACK");
+  assert.equal(count(), 2);
+  assert.equal(computed, 3, "a rolled-back write changes nothing");
+  reader.close();
+  writer.close();
+});

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.270.2 — 2026-11-11
+
+- A node that keeps its database in PostgreSQL now keeps settings, sharing rules and names between writes, as a node on SQLite already did, instead of reading them from the database on every request. Any write committed by any process on the node clears them at once.
+
 ## 2.270.1 — 2026-11-11
 
 - Fixed the phone's Back button closing the installed app. Chrome skips a history step the page added without a tap, so opening the app on a saved screen, or pressing Back once, left nothing to catch the next Back. Back now goes up one level and stays in the app.

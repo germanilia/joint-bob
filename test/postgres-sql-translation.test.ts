@@ -133,3 +133,9 @@ test("columns grouped by position are not read through min()", () => {
 test("json_group_array is cast to text so json_each can read it back", () => {
   assert.equal(text("SELECT json_group_array(json_object('a', x)) FROM t"), "SELECT (json_agg(json_build_object('a', x)))::TEXT FROM t");
 });
+
+test("the numbers the answer cache reads between writes are planned", () => {
+  assert.deepEqual(plan("SELECT total_changes() AS c"), { kind: "totalChanges", column: "c" });
+  assert.deepEqual(plan("SELECT total_changes()"), { kind: "totalChanges", column: "total_changes()" });
+  assert.equal(text("PRAGMA data_version"), "SELECT value AS data_version FROM sqlite_pragma WHERE name = 'data_version'");
+});

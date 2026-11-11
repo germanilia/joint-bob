@@ -26,8 +26,13 @@ type Args = unknown[];
 interface Outcome { rows: Row[]; changes: number }
 
 const ANSWER_TIMEOUT_MS = 120_000;
-// Two-key advisory lock: the first key is Joint Bob's, the second the schema's.
-const WRITE_LOCK: Step = { text: "SELECT pg_advisory_xact_lock(1246901, hashtext(current_schema()))" };
+// Two-key advisory lock: the first key is Joint Bob's, the second the schema's. Taking it also moves
+// PRAGMA data_version, in the same transaction: every committed write moves it, from any process, and a
+// rollback moves it back, which is what lets answers be kept between writes (sqlite-generation.ts).
+const WRITE_LOCK: Step[] = [
+  { text: "SELECT pg_advisory_xact_lock(1246901, hashtext(current_schema()))" },
+  { text: "UPDATE sqlite_pragma SET value = value + 1 WHERE name = 'data_version'" },
+];
 const STATEMENT_SAVEPOINT = "jb_statement";
 
 let bridge: { port: MessagePort; signal: Int32Array; nextId: number } | undefined;
@@ -148,6 +153,8 @@ export class PostgresDatabase implements SchemaLookup {
   private transactionConnection: number | undefined;
   private status = "I";
   private holdsWriteLock = false;
+  /** Rows this handle changed, as SQLite's total_changes() counts them. */
+  private totalChanges = 0;
   private savepoints: string[] = [];
   /** The savepoint that opened the transaction, as SQLite lets one do. */
   private opener: string | undefined;
@@ -206,7 +213,15 @@ export class PostgresDatabase implements SchemaLookup {
   }
 
   private execute(plan: Plan, args: Args): Outcome {
+    const outcome = this.executeOnce(plan, args);
+    // As SQLite counts: rows that INSERT, UPDATE and DELETE changed. PostgreSQL also gives a SELECT's row count there.
+    if ((plan.kind === "query" && plan.write && !plan.change) || plan.kind === "updateOrIgnore") this.totalChanges += outcome.changes;
+    return outcome;
+  }
+
+  private executeOnce(plan: Plan, args: Args): Outcome {
     if (plan.kind === "rows") return { rows: plan.rows, changes: 0 };
+    if (plan.kind === "totalChanges") return { rows: [{ [plan.column]: this.totalChanges }], changes: 0 };
     if (plan.kind === "transaction") { this.transaction(plan.op, plan.name); return { rows: [], changes: 0 }; }
     if (plan.kind === "pragmaWrite") {
       return this.batch([{ text: "INSERT INTO sqlite_pragma VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value", values: [plan.name, plan.value] }], true);
@@ -248,9 +263,9 @@ export class PostgresDatabase implements SchemaLookup {
   private batch(steps: Step[], write: boolean): Outcome {
     let request: Step[], recovery: Step[], first: number;
     if (!this.isTransaction) {
-      [request, recovery, first] = write ? [[{ text: "BEGIN" }, WRITE_LOCK, ...steps, { text: "COMMIT" }], [{ text: "ROLLBACK" }], 2] : [steps, [], 0];
+      [request, recovery, first] = write ? [[{ text: "BEGIN" }, ...WRITE_LOCK, ...steps, { text: "COMMIT" }], [{ text: "ROLLBACK" }], 1 + WRITE_LOCK.length] : [steps, [], 0];
     } else {
-      const lock = write && !this.holdsWriteLock ? [WRITE_LOCK] : [];
+      const lock = write && !this.holdsWriteLock ? WRITE_LOCK : [];
       request = [{ text: `SAVEPOINT ${STATEMENT_SAVEPOINT}` }, ...lock, ...steps, { text: `RELEASE SAVEPOINT ${STATEMENT_SAVEPOINT}` }];
       recovery = [{ text: `ROLLBACK TO SAVEPOINT ${STATEMENT_SAVEPOINT}` }, { text: `RELEASE SAVEPOINT ${STATEMENT_SAVEPOINT}` }];
       first = 1 + lock.length;
@@ -284,7 +299,7 @@ export class PostgresDatabase implements SchemaLookup {
     const savepoint = name && `SAVEPOINT ${quote(name)}`;
     if (op === "begin" || op === "beginImmediate") {
       if (this.isTransaction) throw new Error("cannot start a transaction within a transaction");
-      this.send(op === "begin" ? [{ text: "BEGIN" }] : [{ text: "BEGIN" }, WRITE_LOCK], [{ text: "ROLLBACK" }], true);
+      this.send(op === "begin" ? [{ text: "BEGIN" }] : [{ text: "BEGIN" }, ...WRITE_LOCK], [{ text: "ROLLBACK" }], true);
       this.holdsWriteLock = op === "beginImmediate";
     } else if (op === "commit" || op === "rollback") {
       if (!this.isTransaction) throw new Error(`cannot ${op} - no transaction is active`);

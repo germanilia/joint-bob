@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS sqlite_master (
 );
 CREATE TABLE IF NOT EXISTS sqlite_pragma (name TEXT COLLATE "C" PRIMARY KEY, value BIGINT NOT NULL);
 INSERT INTO sqlite_pragma VALUES ('schema_version', 0) ON CONFLICT DO NOTHING;
+-- PRAGMA data_version: every write transaction adds one, under the write lock (see connection.ts).
+INSERT INTO sqlite_pragma VALUES ('data_version', 0) ON CONFLICT DO NOTHING;
 CREATE OR REPLACE VIEW pragma_schema_version AS SELECT value AS schema_version FROM sqlite_pragma WHERE name = 'schema_version';
 
 DO $$ BEGIN
