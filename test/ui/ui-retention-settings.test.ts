@@ -71,10 +71,13 @@ let saveAnswer: { status: number; body: unknown } | undefined;
 let releaseCheck: (() => void) | undefined;
 /** The body of every check the page asked for. */
 const checked: unknown[] = [];
+/** How often the page asked for the status. */
+let statusAsked = 0;
 
 const json = (status: number, body: unknown) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
 
 async function backupStatus(route: Route): Promise<void> {
+  statusAsked += 1;
   if (statusAnswer) await route.fulfill(json(statusAnswer.status, statusAnswer.body));
   else await route.fallback();
 }
@@ -651,6 +654,23 @@ test("the status shows what is kept, when the oldest goes, and the last problem"
   assert.equal(await onScreen('[data-testid="settings-backup-problem"]'), true);
   const colours = await alert.evaluate((element) => [getComputedStyle(element).color, getComputedStyle(document.querySelector('[data-testid="settings-backup-kept"]')!).color]);
   assert.notEqual(colours[0], colours[1], "the problem stands out from the line over it");
+
+  // On the node, a check that goes well ends a problem about making backups. So the page reads
+  // the status again after one, and not after a check the place refused.
+  const asked = statusAsked;
+  await field("destination").selectOption("folder");
+  checkAnswer = { body: { ok: false, message: "The backup folder cannot be the whole disk" } };
+  await field("check-button").click();
+  await page.getByTestId("settings-backup-check-result").locator('[role="alert"]').waitFor();
+  assert.equal(await alert.count(), 1, "a refused check leaves the problem where it is");
+  statusAnswer = { status: 200, body: { destination: "folder", where: "/srv/backups", keepDays: 30, kept: { backups: 3, bytes: 5_400_000 }, nextRemovalAt: soon, problem: null } satisfies BackupStatus };
+  checkAnswer = { body: { ok: true, where: "/srv/backups" } };
+  await field("check-button").click();
+  await alert.waitFor({ state: "detached" });
+  await keptLine(`3 backups kept (5.4 MB). The oldest is removed on ${day}.`);
+  assert.equal(await page.getByTestId("settings-backup-check-result").innerText(), "Joint Bob can write backups to /srv/backups.");
+  assert.equal(statusAsked, asked + 1, "read once more: after the check that went well, not after the refused one");
+  checkAnswer = undefined;
 
   // One small backup that is kept for good, and no problem.
   statusAnswer = { status: 200, body: { ...noBackups, keepDays: 0, kept: { backups: 1, bytes: 340_000 } } satisfies BackupStatus };

@@ -982,7 +982,7 @@ function backupStatusNotes(status) {
   return [kept, backupNote("failed", `Problem${when}: ${status.problem.message}`, "settings-backup-problem")];
 }
 
-/** What this machine keeps now and the last problem. Asked when settings open and after a save. */
+/** What this machine keeps now and the last problem. Asked when settings open, after a save, and after a check that went well. */
 async function loadBackupStatus() {
   if (!backupKnown) return;
   const run = ++backupStatusRun;
@@ -1006,6 +1006,8 @@ async function checkBackupDestination() {
     // What is typed, saved or not: the point is to try a place before saving it.
     const answer = await api("/api/settings/conversation-backups/check", { method: "POST", body: JSON.stringify(conversationBackupValue()) });
     note = answer.ok ? backupNote("ok", `Joint Bob can write backups to ${answer.where}.`) : backupNote("failed", answer.message);
+    // On the node a check of the saved place that goes well ends a problem about making backups, so the status is read again.
+    if (answer.ok) void loadBackupStatus();
   } catch (error) {
     note = backupNote("failed", error.message);
   } finally {
