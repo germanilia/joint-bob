@@ -3,7 +3,7 @@
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 
-## Unreleased
+## 2.266.1 — 2026-11-11
 
 - Made the model used after switching subscription profiles optional, with one choice per harness and a compatible default when the chosen model cannot run.
 
