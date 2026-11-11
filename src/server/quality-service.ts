@@ -13,7 +13,7 @@ import { QualityStore } from '../quality-analytics.js';
 import { settingsDatabase } from '../settings-store.js';
 import { onSessionListingChange } from '../session-listing-revisions.js';
 import { getProject, listProjects } from '../store.js';
-import { loadConversationMessages } from './conversation-turns.js';
+import { loadConversationMessages, transcriptsUnchanged } from './conversation-turns.js';
 import { harnessSessions, harnessSessionBusy } from './harness-sessions.js';
 import { QualityCollector, QualityCollectionError, QualityEvidenceUnavailable } from './quality-collector.js';
 import { analyzeQualityReply } from './quality-models.js';
@@ -53,15 +53,22 @@ export function qualityWorker(): QualityCollector {
       return asNode(() => withProjectRuntime(projectId, async () => {
         const project = await getProject(projectId);
         if (!project) throw new QualityCollectionError('Project is no longer accessible locally.');
-        let transcript;
+        let transcript: Awaited<ReturnType<typeof loadConversationMessages>>;
         try { transcript = await loadConversationMessages(project, conversationId); }
         catch (error) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error instanceof Error && error.message === 'Conversation not found in this project')) throw new QualityEvidenceUnavailable('No local transcript evidence is available. No remote data was requested.');
           throw error;
         }
-        const busy = [...harnessSessions.values()].some(shared => shared.projectId === projectId && shared.conversationId === conversationId && harnessSessionBusy(shared));
+        const busy = (): boolean => [...harnessSessions.values()].some(shared => shared.projectId === projectId && shared.conversationId === conversationId && harnessSessionBusy(shared));
+        const evaluation = (): string => fingerprint({ rules: readSubjects(project.path), model: qualityModelId(), version: QUALITY_VERSION });
         const last = transcript.messages.at(-1);
-        return { ...transcript, evaluationRevision: fingerprint({ rules: readSubjects(project.path), model: qualityModelId(), version: QUALITY_VERSION }), complete: !busy && last?.role !== 'toolResult' && last?.role !== 'tool' };
+        const settled = last?.role !== 'toolResult' && last?.role !== 'tool';
+        const { files, ...loaded } = transcript;
+        return {
+          ...loaded, evaluationRevision: evaluation(), complete: !busy() && settled,
+          // Whether a turn runs and what the rules are is asked again each time; the messages only when a file changed.
+          current: () => asNode(() => withProjectRuntime(projectId, async () => ({ unchanged: Boolean(files) && await transcriptsUnchanged(files!), complete: !busy() && settled, evaluationRevision: evaluation() }))),
+        };
       }));
     },
     async feedback(projectId, conversationId) {

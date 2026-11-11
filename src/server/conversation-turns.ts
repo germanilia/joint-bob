@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { getHarness, listHarnessSessions } from "../harnesses.js";
 import { listConversationSegments } from "../conversation-records.js";
 import type { ChatMessage, ProjectRecord } from "../types.js";
@@ -68,8 +69,24 @@ export function buildTurns(messages: ChatMessage[]): ConversationTurn[] {
   return turns;
 }
 
-/** Every recorded message of a conversation, across harness switches, oldest first. */
-export async function loadConversationMessages(project: ProjectRecord, conversationId: string, options?: { contextOnly?: boolean }): Promise<{ messages: ChatMessage[]; lastHarness: string }> {
+/** A transcript file as it was right before it was read: enough to tell later, without reading it, that it has not changed. */
+export interface TranscriptRead { file: string; bytes: number; modifiedAt: number }
+
+/** Whether every file is still as it was read. False when one changed, is gone, or cannot be looked at. */
+export async function transcriptsUnchanged(files: TranscriptRead[]): Promise<boolean> {
+  for (const read of files) {
+    const info = await stat(read.file).catch(() => undefined);
+    if (!info || info.size !== read.bytes || info.mtimeMs !== read.modifiedAt) return false;
+  }
+  return true;
+}
+
+/**
+ * Every recorded message of a conversation, across harness switches, oldest first. `files` are the
+ * transcripts they were read from, each as it was right before its read; undefined when one could
+ * not be looked at, so a caller that wants to skip a second read cannot rely on it.
+ */
+export async function loadConversationMessages(project: ProjectRecord, conversationId: string, options?: { contextOnly?: boolean }): Promise<{ messages: ChatMessage[]; lastHarness: string; files: TranscriptRead[] | undefined }> {
   const transcriptProject = { ...project, additionalPaths: await projectAdditionalPaths(project.id) };
   const records = await listConversationSegments(project.id, conversationId);
   // Done conversations sink below the list cap; a direct lookup must keep its segments pinned.
@@ -81,13 +98,19 @@ export async function loadConversationMessages(project: ProjectRecord, conversat
     : [{ engine: session.harnessId, path: session.path }];
   const messages: ChatMessage[] = [];
   let lastHarness: string = session.harnessId;
+  let files: TranscriptRead[] | undefined = [];
   for (const entry of entries) {
     // A recorded segment without a local transcript is a draft placeholder, not a file.
     if (!entry.path || entry.path.startsWith("draft:")) continue;
-    for (const message of await getHarness(entry.engine).sessions.loadMessages(transcriptProject, entry.path, options)) {
+    const adapter = getHarness(entry.engine);
+    // Looked at before the read: a write that lands during the read then shows as a change, never as "unchanged".
+    const file = adapter.paths.transcriptFile?.(entry.path);
+    const info = file ? await stat(file).catch(() => undefined) : undefined;
+    if (file && info && files) files.push({ file, bytes: info.size, modifiedAt: info.mtimeMs }); else files = undefined;
+    for (const message of await adapter.sessions.loadMessages(transcriptProject, entry.path, options)) {
       messages.push(message);
       if (message.role === "assistant") lastHarness = message.attribution?.harnessId ?? entry.engine;
     }
   }
-  return { messages, lastHarness };
+  return { messages, lastHarness, files };
 }

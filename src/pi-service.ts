@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { isInternalSession } from "./internal-sessions.js";
 import { withResourcePass } from "./resource-pass.js";
 import { mapWithConcurrency } from "./concurrency.js";
-import { parseJsonlSkippingDamage } from "./jsonl.js";
-import { mkdtemp, open, readFile, readdir, rm, stat, symlink } from "node:fs/promises";
+import { jsonlLineSlices, parseJsonlSkippingDamage } from "./jsonl.js";
+import { mkdtemp, open, readdir, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { basename } from "node:path";
 import type { AgentSession, Skill, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -444,7 +444,9 @@ export function simplifyTranscriptEntries(entries: unknown[]): ChatMessage[] {
 
 /** Reads a Pi transcript file into chat messages without opening a live session. */
 export async function loadPiMessages(sessionPath: string): Promise<ChatMessage[]> {
-  const entries = (await readFile(sessionPath, "utf8")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as unknown);
+  const entries: unknown[] = [];
+  // In slices: a large transcript is parsed with other work in between, not in one go.
+  for await (const lines of jsonlLineSlices(sessionPath)) for (const line of lines) entries.push(JSON.parse(line) as unknown);
   return simplifyTranscriptEntries(entries);
 }
 

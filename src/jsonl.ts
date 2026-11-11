@@ -1,3 +1,34 @@
+import { readFile } from "node:fs/promises";
+
+/** How much of a transcript is parsed before other work gets a turn. Parsing this much takes a few tens of milliseconds. */
+const SLICE_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The lines of a JSONL file, a slice at a time, empty lines left out. Between slices other work
+ * gets a turn, so a caller that parses a transcript of a hundred megabytes does not hold the
+ * process for seconds: reading one as a single string, splitting it and parsing every line in one
+ * go did (a scheduled conversation of 170 MB on a node, 2026-11-11). The file is read as bytes
+ * and cut at newlines; a newline is never part of a longer UTF-8 character, so each line decodes
+ * to what it was. A last line without its newline is given too.
+ */
+export async function* jsonlLineSlices(file: string, sliceBytes = SLICE_BYTES): AsyncGenerator<string[]> {
+  const bytes = await readFile(file);
+  let from = 0;
+  while (from < bytes.length) {
+    const lines: string[] = [];
+    // A line that starts inside the slice is finished even when it runs past it.
+    const until = Math.min(bytes.length, from + sliceBytes);
+    while (from < until) {
+      let end = bytes.indexOf(10, from);
+      if (end < 0) end = bytes.length;
+      if (end > from) lines.push(bytes.toString("utf8", from, end));
+      from = end + 1;
+    }
+    yield lines;
+    if (from < bytes.length) await new Promise<void>((resolve) => { setImmediate(resolve); });
+  }
+}
+
 /** Append-only transcripts can end mid-record while an agent writes. Completed
  * lines must parse; a valid last record is also accepted without a newline. */
 export function parseCompletedJsonl(contents: string): unknown[] {
