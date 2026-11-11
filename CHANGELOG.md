@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Clarified the browser sign-in confirmation after the website removes its login form.
+
 ## 2.271.1 — 2026-11-11
 
 - Deleting a dashboard in the control center's Dashboard view asks in the app's own confirmation dialog. This release also carries the Dashboard view itself, since 2.271.0 was not published.

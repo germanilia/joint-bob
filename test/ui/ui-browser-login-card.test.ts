@@ -65,6 +65,9 @@ for (const width of [412, 1440]) {
     await form.getByLabel("Password", { exact: true }).fill("SYNTHETIC-CARD-PASSWORD");
     await panel.getByTestId("browser-login-submit").click();
     await panel.getByTestId("browser-login-done").waitFor({ state: "visible" });
+    const status = await panel.getByTestId("browser-login-status").innerText();
+    assert.doesNotMatch(status, /no supported|unsupported/i, "a disappearing form after sign-in must not be reported as unsupported");
+    assert.match(status, /I'm signed in/, "the card must explain how to confirm completion");
     assert.ok(session.loginRequest, "card must await human confirmation");
     await panel.getByTestId("browser-login-done").click();
     await panel.getByTestId("browser-login-status").filter({ hasText: /signed in/i }).waitFor();

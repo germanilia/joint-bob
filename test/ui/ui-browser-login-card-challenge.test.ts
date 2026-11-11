@@ -95,6 +95,7 @@ for (const width of [412, 1280]) {
 
       await panel.getByTestId("browser-login-back-to-card").click();
       await panel.getByTestId("browser-login-done").waitFor({ state: "visible" });
+      assert.doesNotMatch(await panel.getByTestId("browser-login-status").innerText(), /no supported|unsupported/i, "signed-in page must not be presented as an unsupported login");
       await panel.getByTestId("browser-login-done").click();
       await panel.getByTestId("browser-login-status").filter({ hasText: /^Signed in\./ }).waitFor();
       const finished = await session();
