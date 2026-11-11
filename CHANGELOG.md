@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.267.2 — 2026-11-11
+
+- Fixed Bob continuations using the person’s subscription profiles and allowing them to manage the queued prompt.
+
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
 

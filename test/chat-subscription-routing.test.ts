@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { EventEmitter } from "node:events";
+import { decodeAuthor, encodeAuthor } from "../src/message-authors.js";
+import { assertQueuedPromptEditor } from "../src/prompt-queue.js";
 import vm from "node:vm";
 import test from "node:test";
 import ts from "typescript";
@@ -15,11 +18,33 @@ function load(file: string, dependencies: Record<string, any>, extra = ""): any 
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const exports: any = {};
   vm.runInThisContext(`(function(require, exports) { ${compiled}\n${extra}\n})`)(
-    (name: string) => name.startsWith("node:") || name === "ws" ? require(name) : dependencies, exports);
+    (name: string) => name.startsWith("node:") || name === "ws" || name === "zod" ? require(name) : dependencies, exports);
   return exports;
 }
 const actor = (accountId: string) => ({ accountId, username: accountId, role: "member" as const, isRemoteLogin: false, homeNodeId: null });
 const author = (accountId: string, homeNodeId: string | null = null) => ({ accountId, username: accountId, email: null, homeNodeId });
+
+/** Cross the real signed-socket identity boundary without opening a listener or an agent. */
+async function bobPromptAuthor(accountId: string) {
+  let url: URL | undefined;
+  const dependencies: Record<string, any> = {
+    actingAccount, runAsAccount, encodeAuthor,
+    server: { address: () => ({ port: 1234 }) }, getClusterNode: async () => ({ id: "node" }),
+    runtimeSocketHeaders: async () => ({}), personalContinuationAllowed: async () => true, registerBobAction: () => {},
+    authSessionEvents: new EventEmitter(), webSocketServer: new EventEmitter(), onPhonePolicyChanged: () => {},
+    clusterV2Database: async () => ({}), isTrustedTwin: () => false,
+  };
+  const socket = load("server/conversation-prompt.ts", dependencies, "exports.localChatSocket = localChatSocket;");
+  dependencies.queueConversationPrompt = async (options: any) => { url = (await socket.localChatSocket(options)).url; };
+  const review = load("server/control-center-review-check.ts", dependencies, "exports.push = push;");
+  await review.push(actor(accountId), { projectId: "project", conversationId: "conversation", sessionId: "conversation", engine: "claude" }, "Work remains");
+  assert.ok(url);
+  assert.equal(url.searchParams.has("automationProfile"), false, "Bob's push stays editable, not an automation-owned prompt");
+  const receiver = load("server/chat-socket.ts", dependencies, "exports.peerAuthor = peerAuthor;");
+  const decoded = decodeAuthor(url.searchParams.get("author"));
+  assert.ok(decoded, "the signed socket carries a valid author");
+  return receiver.peerAuthor("node", decoded);
+}
 
 type Selection = "profile" | "pool" | "relay-pool";
 function fixture(selection: Selection, failure?: string) {
@@ -104,14 +129,22 @@ function fixture(selection: Selection, failure?: string) {
 }
 
 for (const selection of ["profile", "pool", "relay-pool"] as const) {
-  for (const origin of ["human", "remote-human", "automation-inherited", "automation-explicit", "internal-completion"] as const) {
+  for (const origin of ["human", "bob-continuation", "remote-human", "automation-inherited", "automation-explicit", "internal-completion"] as const) {
     test(`${origin} queued turn uses its configured ${selection}, not the draining viewer's account`, async () => {
       const f = fixture(selection);
+      const writer = origin === "bob-continuation" ? "a".repeat(32) : "writer";
+      if (origin === "bob-continuation") {
+        f.queued.author = await bobPromptAuthor(writer);
+        f.connection.author = f.queued.author;
+        assert.deepEqual(f.queued.author, author(writer), "Bob retains the local member's identity, not the project's owner");
+        assert.doesNotThrow(() => assertQueuedPromptEditor(f.queued, writer));
+        assert.throws(() => assertQueuedPromptEditor(f.queued, "unrelated-viewer"), /Only the prompt's author/);
+      }
       if (origin === "remote-human") f.queued.author = author("remote-writer", "remote-node");
       if (origin.startsWith("automation")) f.queued.automationProfile = { accountId: "creator", profileId: origin === "automation-explicit" ? "pinned-profile" : null, nodeId: "node" };
       if (origin === "internal-completion") f.queued.systemEventId = "completion";
       await runAsAccount(actor("unrelated-viewer"), () => withAutomationProfile({ accountId: "unrelated-job", profileId: "wrong-profile" }, () => f.exports.dispatch(f.connection, f.queued)));
-      const account = origin.startsWith("automation") ? "creator" : origin === "remote-human" ? "project-owner" : "writer";
+      const account = origin.startsWith("automation") ? "creator" : origin === "remote-human" ? "project-owner" : writer;
       const pooled = selection === "relay-pool" || (selection === "pool" && origin !== "automation-explicit");
       assert.deepEqual(f.calls.map(call => call.account), pooled ? [account, account] : [account]);
       assert.deepEqual(f.calls.map(call => call.profile), pooled ? ["first", "second"] : [origin === "automation-explicit" ? "pinned-profile" : `${account}-profile`]);
@@ -133,6 +166,35 @@ for (const selection of ["profile", "pool", "relay-pool"] as const) {
     assert.equal(f.shared.turnInFlight, 0);
   });
 }
+
+test("local signed sockets preserve explicit authors and automation assignments without inventing a user", async () => {
+  const dependency = { actingAccount, encodeAuthor, server: { address: () => ({ port: 1234 }) },
+    getClusterNode: async () => ({ id: "node" }), runtimeSocketHeaders: async () => ({}) };
+  const socket = load("server/conversation-prompt.ts", dependency, "exports.localChatSocket = localChatSocket;");
+  const options = { projectId: "project", sessionId: "conversation", engine: "claude", label: "test" };
+  const explicit = author("b".repeat(32));
+  const explicitSocket = await runAsAccount(actor("a".repeat(32)), () => socket.localChatSocket({ ...options, author: explicit }));
+  assert.deepEqual(decodeAuthor(explicitSocket.url.searchParams.get("author")), explicit);
+  const automationProfile = { accountId: "b".repeat(32), profileId: "pinned" };
+  const automated = await runAsAccount(actor("a".repeat(32)), () => socket.localChatSocket({ ...options, automationProfile }));
+  assert.equal(automated.url.searchParams.has("author"), false);
+  assert.deepEqual(JSON.parse(automated.url.searchParams.get("automationProfile")), automationProfile);
+  const system = await asNode(() => socket.localChatSocket(options));
+  assert.equal(system.url.searchParams.has("author"), false);
+});
+
+test("signed authors remain local only for this node and trusted twins", async () => {
+  const dependency = { authSessionEvents: new EventEmitter(), webSocketServer: new EventEmitter(), onPhonePolicyChanged: () => {},
+    clusterV2Database: async () => ({}), getClusterNode: async () => ({ id: "node" }),
+    isTrustedTwin: (_db: unknown, _local: string, peer: string) => peer === "twin" };
+  const receiver = load("server/chat-socket.ts", dependency, "exports.peerAuthor = peerAuthor;");
+  const person = author("a".repeat(32));
+  assert.deepEqual(await receiver.peerAuthor("node", person), person);
+  assert.deepEqual(await receiver.peerAuthor("twin", person), person);
+  assert.deepEqual(await receiver.peerAuthor("teammate", person), { ...person, homeNodeId: "teammate" });
+  const visitor = { ...person, homeNodeId: "visitor-home" };
+  assert.deepEqual(await receiver.peerAuthor("node", visitor), visitor);
+});
 
 test("a pool turn restores saved settings on its first member and uses the default after switching", async () => {
   const f = fixture("pool");
