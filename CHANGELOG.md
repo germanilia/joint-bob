@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.271.1 — 2026-11-11
+
+- Deleting a dashboard in the control center's Dashboard view asks in the app's own confirmation dialog. This release also carries the Dashboard view itself, since 2.271.0 was not published.
+
 ## 2.271.0 — 2026-11-11
 
 - The control center has a **Dashboard** view next to **Live agents**: one click swaps the conversations for a dashboard of your own, and one click swaps back. These dashboards cover every project and workspace you can see, not one of them.
