@@ -65,7 +65,7 @@
 .browser-screen[aria-disabled="false"] { cursor: crosshair; }
 .browser-screen:focus { outline: 3px solid var(--accent); outline-offset: -3px; }
 /* Focus target for typing. Kept out of sight but focusable, and 16px so iOS does not zoom. */
-.browser-typing { flex: 0 0 auto; width: 1px; height: 1px; min-height: 0; padding: 0; margin: 0; border: 0; background: transparent; color: transparent; font-size: 16px; opacity: 0; }
+.browser-viewer .browser-typing { flex: 0 0 auto; width: 1px; height: 1px; min-height: 0; padding: 0; margin: 0; border: 0; background: transparent; color: transparent; font-size: 16px; opacity: 0; }
 .browser-empty { max-width: 48ch; padding: 24px; margin: 0; color: var(--muted); text-align: center; line-height: 1.6; }
 [data-testid="browser-reopen"] { margin-bottom: 24px; }
 .browser-viewer[data-control="human"] .browser-stage { border-color: var(--accent); }
@@ -154,7 +154,7 @@
 /* Full screen strips the app chrome so a phone keyboard leaves room to see and type
    into the page. interactive-widget=resizes-content shrinks inset:0 above the keyboard. */
 .browser-login-inline.browser-login-fullscreen { position: fixed; inset: 0; z-index: 60; margin: 0; border: 0; border-radius: 0; }
-.browser-login-inline.browser-login-fullscreen .browser-stage { max-height: none; flex: 1 1 auto; }
+.browser-login-inline.browser-login-fullscreen .browser-stage { max-height: none; flex: 1 1 0; }
 /* A phone has no room for the inline halfway state: squeezed into the chat
    column, the page overlaps the transcript and its actions scroll away behind
    the composer. The sign-in is only ever the popup there, and its actions stay

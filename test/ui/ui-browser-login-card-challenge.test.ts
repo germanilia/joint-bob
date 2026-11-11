@@ -8,7 +8,7 @@ import { chromeExecutable } from "./launch-chrome.js";
 import { api, signIn } from "../dev-nodes.js";
 import { waitForAssertion } from "../async-assertion.js";
 
-for (const width of [412, 1280]) {
+for (const width of [412, 1280, 3437]) {
   test(`real login card hands a challenge to the human viewer and back at ${width}px`, { timeout: 120_000 }, async t => {
     const website = http.createServer((req, res) => {
       res.setHeader("content-type", "text/html");
@@ -79,6 +79,29 @@ for (const width of [412, 1280]) {
       await screen.waitFor({ state: "visible" });
       await panel.locator('[data-testid="browser-login-done"]:enabled').waitFor();
       if (width < 700) await page.waitForFunction(() => document.querySelector<HTMLImageElement>('[data-testid="browser-screen"]')?.naturalWidth === innerWidth);
+      if (width >= 700) {
+        const assertFillsStage = async () => {
+          const geometry = await screen.evaluate(image => {
+            const stage = image.parentElement!, rect = image.getBoundingClientRect();
+            return { width: rect.width, height: rect.height, nativeWidth: (image as HTMLImageElement).naturalWidth, nativeHeight: (image as HTMLImageElement).naturalHeight, availableWidth: stage.clientWidth, availableHeight: stage.clientHeight };
+          });
+          assert.ok(Math.abs(geometry.nativeWidth - geometry.availableWidth) <= 1, `remote viewport must match the available width, not upscale old pixels: ${JSON.stringify(geometry)}`);
+          assert.ok(Math.abs(geometry.width - geometry.availableWidth) <= 1 && Math.abs(geometry.height - geometry.availableHeight) <= 2, `live page must fill the stage: ${JSON.stringify(geometry)}`);
+          assert.ok(Math.abs(geometry.height - geometry.nativeHeight) <= 1, "remote page must render at its native resolution");
+        };
+        await waitForAssertion(assertFillsStage, 10_000);
+        await page.setViewportSize({ width: 1900, height: 1000 });
+        await waitForAssertion(assertFillsStage, 10_000);
+        for (let cycle = 0; cycle < 2; cycle++) {
+          await page.setViewportSize({ width: 412, height: 900 });
+          await page.waitForFunction(() => document.querySelector<HTMLImageElement>('[data-testid="browser-screen"]')?.naturalWidth === 412);
+          await page.setViewportSize({ width: 1900, height: 1000 });
+          await waitForAssertion(assertFillsStage, 10_000);
+        }
+        await panel.getByTestId("browser-login-expand").click();
+        await panel.getByTestId("browser-login-expand").click();
+        await waitForAssertion(assertFillsStage, 10_000);
+      }
       // Native viewer pointer events, not API clicks, act as the synthetic human.
       const point = await screen.evaluate(image => {
         const scale = image.getBoundingClientRect().width / (image as HTMLImageElement).naturalWidth;

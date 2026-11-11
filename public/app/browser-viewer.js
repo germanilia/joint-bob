@@ -3,7 +3,7 @@
 export function createBrowserViewer(root, { api: request, identity, sessionId, nodeId, confirm: confirmAction, onClose, loginMode = false, onSession, isCurrent = () => true }) {
   let session = null, socket = null, disposed = false, retry = 0, retryTimer, connectionTimer;
   const attemptedLoginControl = new Set();
-  const requestedPhoneViewport = new Map();
+  const requestedLoginViewport = new Map();
   let framePending = null, drawing = false, frameVersion = 0, frameSize = null;
   let sessionVersion = 0;
   let busy = false, connected = false, loaded = false, profiles = [], sessions = [];
@@ -157,6 +157,7 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
   const get = (name) => root.querySelector(`[data-testid="browser-${name}"]`);
   const part = (name) => root.querySelector(`[data-part="${name}"]`);
   const screen = get("screen");
+  const stage = screen.parentElement;
   const typing = get("typing");
   const error = (message = "") => { get("error").textContent = message; get("error").hidden = !message; };
   const running = () => session?.state === "running";
@@ -336,40 +337,46 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
     // a narrow screen — freshly taken or held before this page loaded — shrink
     // the remote page to phone dimensions so the site serves its mobile layout;
     // the runtime restores the desktop size when the handoff ends.
-    // The reverse case: a page left phone-sized by an earlier sign-in would otherwise sit in a
-    // wide window as a narrow strip. Restore a desktop-sized page once per handoff.
-    if (request && canInput() && !disposed && isCurrent() && window.innerWidth >= 700 && frameSize && frameSize.width < 700) {
-      const target = { nodeId: session.nodeId, sessionId: session.id, requestId: request.id };
-      const key = `desktop:${target.nodeId}:${target.sessionId}:${target.requestId}`;
-      const entry = requestedPhoneViewport.get(key) || { sent: null, pending: false };
-      requestedPhoneViewport.set(key, entry);
-      const width = Math.min(1600, Math.max(700, Math.round(window.innerWidth)));
-      const height = Math.min(2000, Math.max(480, Math.round(window.innerHeight)));
-      if (!entry.sent && !entry.pending) {
+    // Fullscreen needs new remote pixels, not a stretched desktop screenshot.
+    // Measure the stage after the toolbar takes its space; follow container
+    // changes too, including fullscreen toggles that do not resize the window.
+    const fullscreen = loginMode && root.classList.contains("browser-login-fullscreen");
+    if (request && canInput() && !disposed && isCurrent() && window.innerWidth >= 700 && (fullscreen || frameSize && frameSize.width < 700)) {
+      const target = { nodeId: session.nodeId, sessionId: session.id, requestId: request.id, pageId: session.activePageId };
+      const key = `${target.nodeId}:${target.sessionId}:${target.requestId}:${target.pageId}`;
+      const entry = requestedLoginViewport.get(key) || { sent: null, pending: false };
+      requestedLoginViewport.set(key, entry);
+      const width = fullscreen ? Math.max(320, Math.min(3840, stage.clientWidth)) : Math.min(1600, Math.max(700, Math.round(window.innerWidth)));
+      const height = fullscreen ? Math.max(320, Math.min(2160, stage.clientHeight - typing.offsetHeight)) : Math.min(2000, Math.max(480, Math.round(window.innerHeight)));
+      const desired = `${width}x${height}`;
+      if (entry.sent !== desired && !entry.pending) {
         entry.pending = true;
         void operation(async () => {
-          if (disposed || !isCurrent() || session?.id !== target.sessionId || session?.loginRequest?.id !== target.requestId || session?.owner !== "human" || !running() || !connected) return;
+          if (disposed || !isCurrent() || session?.nodeId !== target.nodeId || session?.id !== target.sessionId || session?.loginRequest?.id !== target.requestId || session?.activePageId !== target.pageId || session?.owner !== "human" || session.canControl === false || !running() || !connected) return;
           await command({ action: "setViewport", width, height });
-          entry.sent = `${width}x${height}`;
-        }).finally(() => { entry.pending = false; });
+          entry.sent = desired;
+        }, { preserveError: true }).finally(() => {
+          entry.pending = false;
+          if (!disposed && entry.sent === desired) render();
+        });
       }
     }
     if (request && canInput() && !disposed && isCurrent() && window.innerWidth < 700) {
-      const target = { nodeId: session.nodeId, sessionId: session.id, requestId: request.id };
-      const key = `${target.nodeId}:${target.sessionId}:${target.requestId}`;
+      const target = { nodeId: session.nodeId, sessionId: session.id, requestId: request.id, pageId: session.activePageId };
+      const key = `${target.nodeId}:${target.sessionId}:${target.requestId}:${target.pageId}`;
       // The size follows the window: the on-screen keyboard shrinks it, and the
       // remote page must shrink with it so the focused field stays visible.
       const width = Math.max(320, Math.min(500, Math.round(window.innerWidth)));
       const height = Math.max(320, Math.min(1000, Math.round(window.innerHeight)));
       const desired = `${width}x${height}`;
-      const entry = requestedPhoneViewport.get(key) || { sent: null, tried: null, attempts: 0, pending: false };
-      requestedPhoneViewport.set(key, entry);
+      const entry = requestedLoginViewport.get(key) || { sent: null, tried: null, attempts: 0, pending: false };
+      requestedLoginViewport.set(key, entry);
       if (entry.sent !== desired && !entry.pending && (entry.tried !== desired || entry.attempts < 5)) {
         queueMicrotask(() => {
           if (busy || disposed || entry.pending) return;
           entry.pending = true;
           void operation(async () => {
-            if (disposed || !isCurrent() || session?.nodeId !== target.nodeId || session?.id !== target.sessionId || session?.loginRequest?.id !== target.requestId || session?.owner !== "human" || !running() || !connected || window.innerWidth >= 700) return;
+            if (disposed || !isCurrent() || session?.nodeId !== target.nodeId || session?.id !== target.sessionId || session?.loginRequest?.id !== target.requestId || session?.activePageId !== target.pageId || session?.owner !== "human" || !running() || !connected || window.innerWidth >= 700) return;
             try {
               await command({ action: "setViewport", width, height });
               entry.sent = desired;
@@ -469,9 +476,11 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
       await api(browserUrl(`/api/browser/profiles/${encodeURIComponent(profile.id)}?${new URLSearchParams({ projectId })}`, ownerId), { method: "DELETE" }); await loadProfiles();
     });
   }
-  async function operation(work) {
+  async function operation(work, { preserveError = false } = {}) {
     if (busy || disposed) return;
-    busy = true; error(); controls();
+    busy = true;
+    if (!preserveError) error();
+    controls();
     try { await work(); } catch (failure) { if (!disposed) error(failure.message); }
     finally { busy = false; if (!disposed) render(); }
   }
@@ -858,8 +867,11 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
   let resizeTimer = null;
   const onWindowResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (!disposed) render(); }, 250); };
   window.addEventListener("resize", onWindowResize);
+  const stageResize = new ResizeObserver(onWindowResize);
+  stageResize.observe(stage);
   function dispose() {
     disposed = true; frameVersion++; framePending = null; stopSocket();
+    stageResize.disconnect();
     window.removeEventListener("resize", onWindowResize); clearTimeout(resizeTimer);
     document.removeEventListener?.("browserSessionsChanged", refreshSessionList);
   }

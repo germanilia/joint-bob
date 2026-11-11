@@ -130,10 +130,10 @@ test("browser navigation accepts only HTTP(S), never executor files or privilege
 
 test("setViewport accepts phone and desktop sizes and rejects absurd dimensions", () => {
   // 320-tall pages cover a phone window shrunk by the on-screen keyboard.
-  for (const [width, height] of [[320, 480], [412, 730], [412, 320], [1512, 945]]) {
+  for (const [width, height] of [[320, 480], [412, 730], [412, 320], [1512, 945], [3437, 1345], [3840, 2160]]) {
     assert.equal(browserCommandSchema.safeParse({ action: "setViewport", width, height }).success, true, `${width}x${height}`);
   }
-  for (const [width, height] of [[100, 730], [412, 100], [5000, 730], [412, 5000], [412.5, 730]]) {
+  for (const [width, height] of [[100, 730], [412, 100], [3841, 730], [412, 2161], [5000, 730], [412, 5000], [412.5, 730]]) {
     assert.equal(browserCommandSchema.safeParse({ action: "setViewport", width, height }).success, false, `${width}x${height}`);
   }
 });

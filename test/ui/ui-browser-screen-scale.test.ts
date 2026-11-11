@@ -63,6 +63,7 @@ test("browser screen never renders wider than the remote frame", { timeout: 120_
 
   const dialog = page.getByTestId("browser-login-panel");
   await dialog.waitFor();
+  await dialog.getByTestId("browser-login-takeover").click();
   const screen = dialog.getByTestId("browser-screen");
   await screen.waitFor({ state: "visible" });
 

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Clarified the browser sign-in confirmation after the website removes its login form.
+- Made fullscreen browser sign-in fill the available space on wide screens and follow desktop-to-phone resizing without stretching the page.
 
 ## 2.271.1 — 2026-11-11
 
