@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.270.1 — 2026-11-11
+
+- Fixed the phone's Back button closing the installed app. Chrome skips a history step the page added without a tap, so opening the app on a saved screen, or pressing Back once, left nothing to catch the next Back. Back now goes up one level and stays in the app.
+
 ## 2.270.0 — 2026-11-11
 
 - Bob now gets stuck conversations going again. A shell command that prints nothing for 30 minutes is stopped as hung, so the agent carries on instead of waiting hours for it. A turn with no input or output for 30 minutes is stopped as before, and now Bob tells the conversation to check what it left hanging and continue, on the same account and subscription pool, and says so in his chat. After 3 restarts in 6 hours he leaves it to you.
