@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.271.2 — 2026-11-11
 
 - Clarified the browser sign-in confirmation after the website removes its login form.
 - Made fullscreen browser sign-in fill the available space on wide screens and follow desktop-to-phone resizing without stretching the page.
