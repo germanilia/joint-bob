@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.283.0 — 2026-11-12
+
+- A conversation whose agent ends with `BOB_GOAL_BLOCKED` now goes under Needs you right away, without asking a model.
+- Under the answer Bob judged, the conversation shows his check: the verdict, the reason, and how it was decided (the decision model with its confidence and threshold, or Bob's agent and its model when the decision model was unsure). When Bob passes over a turn without judging it, the conversation says why.
+
 ## 2.282.0 — 2026-11-12
 
 - Bob can create an assistant for a cluster. Ask for one "for" a cluster you joined; it is hosted on the machine you ask on, in a project of its own shared with that cluster, so its turns run on the cluster's subscription pool when the cluster has one.
