@@ -114,6 +114,30 @@ test("a worktree cannot be deleted while a conversation started in it is still r
   assert.deepEqual((await post(creator.token, { operation: "delete", worktreeId: worktree.id })).body, { deleted: worktree.id });
 });
 
+test("merge commits a verified task through the CLI, scopes status and retries after deletion", async () => {
+  const projectPath = path.join(root, "merge-project");
+  await mkdir(projectPath);
+  const git = (...args: string[]) => run("git", ["-C", projectPath, ...args]);
+  await git("init", "-b", "main"); await git("config", "user.name", "Fixture"); await git("config", "user.email", "fixture@example.test");
+  await writeFile(path.join(projectPath, "app.txt"), "base\n"); await git("add", "."); await git("commit", "-qm", "base");
+  const { addProject } = await import("../src/store.js");
+  const project = await addProject("Merge fixture", projectPath, { writeInstructions: false });
+  const creator = await capability(randomUUID(), project.id);
+  const other = await capability(randomUUID(), project.id);
+  const { worktree } = await cliRun(creator.environment, "create", "--name", "Verified task");
+  await writeFile(path.join(worktree.path, "app.txt"), "task\n");
+  const operationId = randomUUID();
+  const request = { operation: "merge", worktreeId: worktree.id, operationId, title: "feat: task", check: "node -e 'process.exit(0)'" };
+  assert.equal((await post(other.token, request)).status, 403);
+  const args = ["merge", "--worktree", worktree.id, "--operation", operationId, "--title", request.title, "--check", request.check];
+  const result = await cliRun(creator.environment, ...args);
+  assert.equal(result.status, "committed"); assert.equal(result.worktreeDeleted, true);
+  assert.equal((await git("show", "HEAD:app.txt")).stdout, "task\n");
+  assert.deepEqual(await cliRun(creator.environment, ...args), result);
+  assert.equal((await post(other.token, { operation: "status", operationId })).status, 404);
+  assert.equal((await cliRun(creator.environment, "status", "--operation", operationId)).result.commit, result.commit);
+});
+
 test("a token for a project this node does not have is refused", async () => {
   const { token } = await capability(randomUUID(), "missing_project");
   assert.equal((await post(token, { operation: "list" })).status, 404);

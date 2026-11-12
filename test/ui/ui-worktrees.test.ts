@@ -455,20 +455,30 @@ test("with the setting on, each new conversation starts in a worktree of its own
   assert.equal(await readFile(path.join(worktree, "src", "inbox.ts"), "utf8"), "export const inbox = 'real';\n", "the worktree copies the project as it is now");
 });
 
-test("marking the last conversation done removes its worktree header and folder", async () => {
+test("marking the last conversation done preserves its unverified worktree", async () => {
   const worktree = await onlyWorktreePath();
-  const row = page.locator("#sessionList .list-row.active");
+  const toggle = page.getByTestId("worktree-section-toggle");
+  if (await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
+  const row = page.locator("#sessionList .list-row", { has: page.getByTestId("session-worktree-badge") }).first();
+  await row.hover();
   await row.getByTestId("session-menu-button").click();
   const marked = page.waitForResponse((response) => response.url().endsWith("/sessions/done") && response.request().method() === "PUT");
   await page.getByTestId("session-done-button").click();
   await page.getByTestId("conversation-feedback-submit").click();
   const result = await (await marked).json();
-  assert.deepEqual(result.deletedWorktreeIds, [path.basename(worktree)], JSON.stringify(result));
-  await page.getByTestId("worktree-section").waitFor({ state: "detached", timeout: 20_000 });
-  assert.equal(await exists(worktree), false, "the folder is deleted, not merely hidden");
+  assert.deepEqual(result.deletedWorktreeIds, [], JSON.stringify(result));
+  assert.equal(await exists(worktree), true, "Done is not evidence of a verified commit");
   await page.reload({ waitUntil: "domcontentloaded" });
   await openProject();
-  assert.equal(await page.getByTestId("worktree-section").count(), 0, "no zero-count header returns after reload");
+  await page.getByTestId("other-worktrees-toggle").click();
+  await page.getByTestId("worktree-section").waitFor();
+  assert.equal(await exists(worktree), true, "unverified work survives reload and cleanup");
+  // Explicit deletion is a separate human action; clean up this test-owned fixture before the next case.
+  await page.getByTestId("worktree-menu-button").click();
+  await page.getByTestId("worktree-menu-delete").click();
+  await page.locator("#confirmDialog[open]").waitFor();
+  await page.locator("#confirmAcceptButton").click();
+  await page.getByTestId("worktree-section").waitFor({ state: "detached" });
 });
 
 // A worktree made on another machine: its conversation's record arrives in seconds, its

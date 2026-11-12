@@ -12,17 +12,23 @@ import { createProjectWorktree, markWorktreeConversation, recordWorktreePullRequ
 import { cleanupDoneWorktrees, sweepWorktrees } from "../src/server/worktree-cleanup.js";
 import { addProject } from "../src/store.js";
 
-async function fixture(context: test.TestContext) {
+async function fixture(context: test.TestContext, verified = true) {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-cleanup-"));
   process.env.JOINT_BOB_WORKTREE_ROOT = path.join(root, "worktrees");
   context.after(async () => { delete process.env.JOINT_BOB_WORKTREE_ROOT; await rm(root, { recursive: true, force: true }); });
   const source = path.join(root, "project");
   await mkdir(source);
   await writeFile(path.join(source, "index.ts"), "export const value = 1;\n");
+  const git = (...args: string[]) => execFileSync("git", ["-C", source, ...args]);
+  git("init", "-b", "main"); git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.test"); git("add", "."); git("commit", "-qm", "base");
   const project = await addProject("Cleanup fixture", source, { writeInstructions: false });
   const worktree = await createProjectWorktree(project, { name: "finished" });
   const sessionId = randomUUID();
   await markWorktreeConversation(project.id, worktree.id, "pi", sessionId);
+  if (verified) {
+    const { integrateProjectWorktree } = await import("../src/worktree-integration.js");
+    await integrateProjectWorktree(project, worktree.id, { operationId: randomUUID(), title: "chore: verified task", check: "node -e 'process.exit(0)'", deferCleanup: true });
+  }
   return { project, worktree, sessionId };
 }
 
@@ -33,6 +39,8 @@ test("cleanup handles old done marks, keeps new empty worktrees, and is idempote
   const results = await Promise.all([cleanupDoneWorktrees(project), cleanupDoneWorktrees(project)]);
   for (const result of results) assert.deepEqual(result.deletedWorktreeIds, [worktree.id]);
   await assert.rejects(access(worktree.path), { code: "ENOENT" });
+  const { worktreeSessionPaths } = await import("../src/project-worktrees.js");
+  assert.ok((await worktreeSessionPaths(project.id)).includes(worktree.path), "retired cwd remains discoverable for transcript history");
   await access(empty.path);
   assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
 });
@@ -73,25 +81,25 @@ test("reopened conversations and missing done marks keep the folder", async (con
   await access(worktree.path);
 });
 
-test("cleanup removes a finished worktree without checking its pull request or local changes", async (context) => {
-  const { project, worktree, sessionId } = await fixture(context);
+test("Done cannot delete unmerged changes or an explicit pull request", async (context) => {
+  const { project, worktree, sessionId } = await fixture(context, false);
   context.mock.method(globalThis, "fetch", async () => { throw new Error("cleanup must not contact GitHub"); });
   await recordWorktreePullRequest(project.id, worktree.id, { number: 12, url: "https://github.com/o/r/pull/12", branch: "joint-bob/finished", base: "main", baseCommit: "a".repeat(40) });
   await writeFile(path.join(worktree.path, "index.ts"), "export const value = 2;\n");
   await setSessionDone(sessionId, true);
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
-  await assert.rejects(access(worktree.path), { code: "ENOENT" });
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+  await access(worktree.path);
 });
 
-test("a damaged baseline does not block removing a finished worktree", async (context) => {
+test("a damaged baseline blocks removing a finished worktree", async (context) => {
   const { project, worktree, sessionId } = await fixture(context);
   await setSessionDone(sessionId, true);
   await rm(path.join(worktree.path, ".joint-bob-baseline"), { recursive: true, force: true });
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
-  await assert.rejects(access(worktree.path), { code: "ENOENT" });
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+  await access(worktree.path);
 });
 
-test("a worktree with no conversations is removed after thirty minutes, with or without edits", async (context) => {
+test("unverified worktrees without conversations survive the grace period", async (context) => {
   const { project } = await fixture(context);
   const clean = await createProjectWorktree(project, { name: "abandoned" });
   const edited = await createProjectWorktree(project, { name: "abandoned with edits" });
@@ -100,12 +108,12 @@ test("a worktree with no conversations is removed after thirty minutes, with or 
   const now = Date.now();
   context.mock.method(Date, "now", () => now + 31 * 60_000);
   const result = await cleanupDoneWorktrees(project);
-  assert.deepEqual(new Set(result.deletedWorktreeIds), new Set([clean.id, edited.id]));
-  await assert.rejects(access(clean.path), { code: "ENOENT" });
-  await assert.rejects(access(edited.path), { code: "ENOENT" });
+  assert.deepEqual(result.deletedWorktreeIds, []);
+  await access(clean.path);
+  await access(edited.path);
 });
 
-test("an empty worktree changed within the last thirty minutes is kept until it has been quiet", async (context) => {
+test("quiet time does not authorize deleting an unverified worktree", async (context) => {
   const { project } = await fixture(context);
   const worktree = await createProjectWorktree(project, { name: "active without conversation" });
   const created = Date.now();
@@ -119,17 +127,17 @@ test("an empty worktree changed within the last thirty minutes is kept until it 
   assert.equal(kept.retainedWorktrees[worktree.id], "Worktree kept: recent activity");
   await access(worktree.path);
   clock = created + 31 * 60_000 + 40 * 60_000;
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
-  await assert.rejects(access(worktree.path), { code: "ENOENT" });
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+  await access(worktree.path);
 });
 
-test("the periodic sweep removes finished worktrees even with unmerged edits or a pull request", async (context) => {
-  const { project, worktree, sessionId } = await fixture(context);
+test("the periodic sweep retains unmerged edits and pull requests", async (context) => {
+  const { project, worktree, sessionId } = await fixture(context, false);
   await writeFile(path.join(worktree.path, "index.ts"), "export const value = 2;\n");
   await recordWorktreePullRequest(project.id, worktree.id, { number: 7, url: "https://github.com/o/r/pull/7", branch: "joint-bob/open", base: "main", baseCommit: "a".repeat(40) });
   await setSessionDone(sessionId, true);
-  assert.ok((await sweepWorktrees()).includes(worktree.id));
-  await assert.rejects(access(worktree.path), { code: "ENOENT" });
+  assert.ok(!(await sweepWorktrees()).includes(worktree.id));
+  await access(worktree.path);
 });
 
 test("the periodic sweep keeps a worktree with an undone or running conversation", async (context) => {

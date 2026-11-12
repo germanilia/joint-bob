@@ -48,6 +48,16 @@ async function push(clone: string, file: string, content: string, message: strin
   return git(clone, "rev-parse", "HEAD");
 }
 
+test("local-finish worktrees include unpublished main commits but exclude dirty project files", async (t) => {
+  const { project, worktrees } = await repositories(t);
+  await writeFile(path.join(project.path, "local.txt"), "unpublished\n");
+  git(project.path, "add", "local.txt"); git(project.path, "commit", "-qm", "local commit");
+  await writeFile(path.join(project.path, "local.txt"), "dirty\n");
+  const worktree = await createProjectWorktree(project, { name: "Local finish", localMain: true }, worktrees);
+  assert.equal(await readFile(path.join(worktree.path, "local.txt"), "utf8"), "unpublished\n");
+  assert.equal((await worktreeChanges(project.id, worktree.id, worktrees)).gitBase, git(project.path, "rev-parse", "HEAD"));
+});
+
 test("a worktree starts from the remote branch, not the folder's HEAD or its uncommitted work", async (t) => {
   const { other, project, worktrees } = await repositories(t);
   const head = git(project.path, "rev-parse", "HEAD");

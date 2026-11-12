@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { randomUUID } from "node:crypto";
 
 const token = process.env.JOINT_BOB_WORKTREE_TOKEN;
 const endpoint = process.env.JOINT_BOB_WORKTREE_URL;
@@ -7,7 +8,9 @@ const endpoint = process.env.JOINT_BOB_WORKTREE_URL;
 const timeoutSeconds = Number(process.env.JOINT_BOB_WORKTREE_TIMEOUT_SECONDS) || 360;
 const usage = `Usage:
   list
-  create --name NAME [--color COLOR]
+  status --operation ID
+  merge [--worktree ID] --title TITLE --check COMMAND [--operation ID]
+  create --name NAME [--color COLOR] [--finish local|pr]
   start --worktree ID (--prompt TEXT | --prompt-stdin) [--title TITLE]
   pr [--worktree ID] --title TITLE [--body TEXT | --body-stdin] [--base BRANCH]
   delete --worktree ID`;
@@ -15,7 +18,9 @@ const text = { type: "string" };
 const flag = { type: "boolean" };
 const commands = {
   list: { options: {} },
-  create: { options: { name: text, color: text }, required: ["name"] },
+  status: { options: { operation: text }, required: ["operation"] },
+  merge: { options: { worktree: text, title: text, check: text, operation: text, "resolve-main": text }, required: ["title", "check"] },
+  create: { options: { name: text, color: text, finish: text }, required: ["name"] },
   start: { options: { worktree: text, prompt: text, "prompt-stdin": flag, title: text }, required: ["worktree"], stdin: "prompt" },
   pr: { options: { worktree: text, title: text, body: text, "body-stdin": flag, base: text }, required: ["title"], stdin: "body" },
   delete: { options: { worktree: text }, required: ["worktree"] },
@@ -37,7 +42,9 @@ async function requestBody(operation, values) {
   }
   switch (operation) {
     case "list": return { operation };
-    case "create": return { operation, name: values.name, ...optional("color", values.color) };
+    case "status": return { operation, operationId: values.operation };
+    case "merge": return { operation, operationId: values.operation ?? randomUUID(), title: values.title, check: values.check, ...optional("resolutionTarget", values["resolve-main"]), ...optional("worktreeId", values.worktree) };
+    case "create": return { operation, name: values.name, ...optional("color", values.color), ...optional("finish", values.finish) };
     case "start":
       if (!values.prompt) throw new Error("start needs --prompt TEXT or --prompt-stdin");
       return { operation, worktreeId: values.worktree, prompt: values.prompt, ...optional("title", values.title) };
@@ -52,7 +59,7 @@ async function request(body) {
   try {
     response = await fetch(endpoint, { method: "POST", redirect: "error", signal: AbortSignal.timeout(timeoutSeconds * 1000), headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
   } catch {
-    throw new Error(body.operation === "list" ? "Worktree bridge unreachable or timed out" : "Worktree request failed or timed out; its outcome is unknown. Run list before retrying.");
+    throw new Error(body.operation === "merge" ? `Integration ${body.operationId} has an unknown outcome. Run status --operation ${body.operationId}; retry only with the same --operation ID and arguments.` : body.operation === "list" || body.operation === "status" ? "Worktree bridge unreachable or timed out" : "Worktree request failed or timed out; its outcome is unknown. Run list before retrying.");
   }
   let value;
   try { value = await response.json(); } catch { throw new Error(`Invalid response from the worktree bridge (HTTP ${response.status})`); }

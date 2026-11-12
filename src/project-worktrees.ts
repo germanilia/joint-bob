@@ -16,6 +16,7 @@ import { exportWorktreeBase, ignoredPaths, type WorktreeChanges, type WorktreeFi
 import { WORKTREE_META_DIR, worktreeBinaryExtensions, worktreeHeavyDirectories, worktreeHeavyFiles, worktreeLinkedDirectories } from "./worktree-filters.js";
 
 export { projectWorktreeSyncFolderId, WORKTREE_META_DIR } from "./worktree-filters.js";
+export { integrateProjectWorktree } from "./worktree-integration.js";
 const binaryExtensions = new Set(worktreeBinaryExtensions.map((extension) => `.${extension}`));
 const heavyDirectories = new Set<string>([...worktreeHeavyDirectories, WORKTREE_META_DIR, TICKET_MERGE_DIR]);
 const heavyFiles = new Set<string>(worktreeHeavyFiles);
@@ -285,11 +286,12 @@ export async function ensureWorktreeLocalFiles(projectPath: string, worktree: st
 
 /** Starts the worktree as the remote default branch is now, plus the folder's git-ignored local files.
     Returns null, having written nothing, when the project has no such branch. */
-async function copyRemoteBase(source: string, staging: string, gitEnvironment: NodeJS.ProcessEnv): Promise<{ gitBase: string; gitBaseRef: string } | null> {
+async function copyRemoteBase(source: string, staging: string, gitEnvironment: NodeJS.ProcessEnv, localMain = false): Promise<{ gitBase: string; gitBaseRef: string } | null> {
   let base;
   try {
-    base = await exportWorktreeBase(source, gitEnvironment, staging, (relative, size) => size <= MAX_FILE_BYTES && worktreePathAllowed(staging, path.join(staging, ...relative.split("/"))));
+    base = await exportWorktreeBase(source, gitEnvironment, staging, (relative, size) => size <= MAX_FILE_BYTES && worktreePathAllowed(staging, path.join(staging, ...relative.split("/"))), localMain);
   } catch (error) {
+    if (localMain) throw error;
     console.warn("Worktree could not start from the remote branch; copying the project folder", error instanceof Error ? error.message.slice(0, 200) : error);
     await fs.rm(staging, { recursive: true, force: true });
     return null;
@@ -305,7 +307,7 @@ async function copyRemoteBase(source: string, staging: string, gitEnvironment: N
   return { gitBase: base.commit, gitBaseRef: base.ref };
 }
 
-export async function createProjectWorktree(project: ProjectRecord, input: { name: unknown; color?: unknown; createdBy?: WorktreeCreator; gitEnvironment?: NodeJS.ProcessEnv }, root = worktreeRoot()): Promise<ProjectWorktree> {
+export async function createProjectWorktree(project: ProjectRecord, input: { name: unknown; color?: unknown; createdBy?: WorktreeCreator; gitEnvironment?: NodeJS.ProcessEnv; localMain?: boolean }, root = worktreeRoot()): Promise<ProjectWorktree> {
   const name = normalizeName(input.name);
   const existing = await listProjectWorktrees(project.id, root);
   if (existing.some((worktree) => worktree.name.toLowerCase() === name.toLowerCase())) throw new ProjectWorktreeError(409, "A worktree with this name already exists");
@@ -320,7 +322,7 @@ export async function createProjectWorktree(project: ProjectRecord, input: { nam
   // Copied privately, then renamed in: the synced folder never sees a half-made worktree.
   const staging = path.join(path.dirname(worktree), `.creating-${id}`);
   try {
-    const remote = await copyRemoteBase(source, staging, input.gitEnvironment ?? {});
+    const remote = await copyRemoteBase(source, staging, input.gitEnvironment ?? {}, input.localMain);
     let gitBase = remote?.gitBase ?? null;
     let uncommittedDiff: string | null = null;
     if (!remote) {
@@ -373,6 +375,10 @@ async function carryToConversationRecords(projectId: string, worktreeId: string,
 export async function deleteProjectWorktree(projectId: string, worktreeId: string, root = worktreeRoot()): Promise<void> {
   const worktree = expectedWorktreePath(projectId, worktreeId, root);
   if (!await readMetadata(worktree)) throw new ProjectWorktreeError(404, "Worktree not found");
+  const retired = path.join(projectWorktreeRoot(projectId, root), ".retired", `${worktreeId}.json`);
+  const paths = (await worktreeSessionPaths(projectId, root)).filter(directory => path.basename(directory) === worktreeId);
+  await writeAtomic(retired, `${JSON.stringify(paths)}\n`);
+  worktreeFilesChanged(projectId, retired);
   await fs.rm(metadataFile(worktree), { force: true });
   await fs.rm(worktree, { recursive: true, force: true });
   worktreeFilesChanged(projectId, worktree);
@@ -417,6 +423,16 @@ export async function worktreeConversations(projectId: string, root = worktreeRo
 /** Every path any node keeps a worktree of this project at: conversations are matched by working directory. */
 export async function worktreeSessionPaths(projectId: string, root = worktreeRoot()): Promise<string[]> {
   const paths = new Set<string>();
+  const retired = path.join(projectWorktreeRoot(projectId, root), ".retired");
+  let archives: string[];
+  try { archives = await fs.readdir(retired); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; archives = []; }
+  for (const file of archives) {
+    if (!file.endsWith(".json") || !WORKTREE_ID.test(file.slice(0, -5))) continue;
+    const saved: unknown = JSON.parse(await fs.readFile(path.join(retired, file), "utf8"));
+    if (!Array.isArray(saved) || saved.some(directory => typeof directory !== "string" || !path.isAbsolute(directory) || path.basename(directory) !== file.slice(0, -5))) throw new ProjectWorktreeError(409, `Invalid retired worktree paths: ${file}`);
+    for (const directory of saved) paths.add(directory);
+  }
   for (const worktree of await listProjectWorktrees(projectId, root)) {
     paths.add(worktree.path);
     let files: string[];

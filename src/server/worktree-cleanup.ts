@@ -6,7 +6,8 @@ import { conversationWorkActive } from "../conversation-work.js";
 import { resolveDataDirectory } from "../data-directory.js";
 import { conversationLeaseRunning } from "../conversation-runtime.js";
 import { sessionDoneOverrides } from "../names.js";
-import { deleteProjectWorktree, listProjectWorktrees, projectWorktreeRoot, WORKTREE_ID, worktreeConversationIndex } from "../project-worktrees.js";
+import { hasVerifiedIntegration, retireVerifiedWorktree } from "../worktree-integration.js";
+import { listProjectWorktrees, projectWorktreeRoot, WORKTREE_ID, worktreeConversationIndex } from "../project-worktrees.js";
 import { worktreeFilesChanged, worktreeMetadataGone, worktreeSweepRefusal } from "../file-sync/facade.js";
 import { listProjects } from "../store.js";
 import { isHarnessId, type ProjectRecord } from "../types.js";
@@ -34,7 +35,7 @@ export async function cleanupDoneWorktrees(project: ProjectRecord): Promise<Clea
   finally { pending.delete(project.id); }
 }
 
-/** Periodic node housekeeping: every worktree without an undone conversation goes, pull requests and unmerged edits included. */
+/** Automatic deletion requires a verified local commit; Done and age are not proof. */
 export async function sweepWorktrees(): Promise<string[]> {
   const deleted: string[] = [];
   for (const project of await listProjects()) {
@@ -90,7 +91,11 @@ async function cleanup(project: ProjectRecord): Promise<CleanupResult> {
         result.retainedWorktrees[worktree.id] = refusal;
         continue;
       }
-      await deleteProjectWorktree(project.id, worktree.id);
+      if (!hasVerifiedIntegration(project.id, worktree.id) || worktree.pullRequest) {
+        result.retainedWorktrees[worktree.id] = "Worktree kept: no verified local integration or explicit PR finish path";
+        continue;
+      }
+      await retireVerifiedWorktree(project, worktree.id);
       result.deletedWorktreeIds.push(worktree.id);
     } catch (error) {
       // Housekeeping must not turn a successfully saved done mark into an HTTP error.
@@ -109,7 +114,7 @@ async function cleanup(project: ProjectRecord): Promise<CleanupResult> {
   return result;
 }
 
-/** Any worktree with no conversation is removed after the grace period, whether or not it has a pull request or unmerged changes, unless it is in use. */
+/** Unstarted worktrees also require verified integration; age alone never authorizes deletion. */
 async function cleanupEmptyWorktrees(project: ProjectRecord, result: CleanupResult): Promise<void> {
   const hasConversations = async (worktreeId: string) => [...(await worktreeConversationIndex(project.id)).values()].some(({ id }) => id === worktreeId);
   for (const worktree of await listProjectWorktrees(project.id)) {
@@ -127,7 +132,11 @@ async function cleanupEmptyWorktrees(project: ProjectRecord, result: CleanupResu
         result.retainedWorktrees[worktree.id] = refusal;
         continue;
       }
-      await deleteProjectWorktree(project.id, worktree.id);
+      if (!hasVerifiedIntegration(project.id, worktree.id) || worktree.pullRequest) {
+        result.retainedWorktrees[worktree.id] = "Worktree kept: no verified local integration or explicit PR finish path";
+        continue;
+      }
+      await retireVerifiedWorktree(project, worktree.id);
       result.deletedWorktreeIds.push(worktree.id);
     } catch (error) {
       result.retainedWorktrees[worktree.id] = error instanceof ProjectLockedError

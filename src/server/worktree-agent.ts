@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { withProjectRuntime } from "../project-runtime.js";
 import { z } from "zod";
 import { getClusterNode } from "../cluster.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { recordConversationStart } from "../conversation-starts.js";
 import { ensureConversationRecord } from "../conversation-records.js";
 import { githubAccountFor } from "../github-credentials.js";
-import { ensureSessionTitle } from "../names.js";
+import { ensureSessionTitle, setSessionDone } from "../names.js";
+import { integrateProjectWorktree, integrationStatus, hasVerifiedIntegration } from "../worktree-integration.js";
 import {
   createProjectWorktree, deleteProjectWorktree, getProjectWorktree, listProjectWorktrees, ProjectWorktreeError,
   recordWorktreePullRequest, withoutGitIgnored, worktreeChanges, worktreeConversationIndex, type ProjectWorktree,
@@ -21,11 +23,14 @@ import { openWorktreePullRequest } from "./github-pull-request.js";
 import { findHarnessSession, harnessSessionBusy } from "./harness-sessions.js";
 import { assertProjectEditable } from "./projects.js";
 import { broadcastToProject } from "./realtime.js";
+import { scheduleWorktreeRetirement } from "./worktree-retirement.js";
 
 const worktreeId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 export const worktreeAgentRequestSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("list") }).strict(),
-  z.object({ operation: z.literal("create"), name: z.string().max(200), color: z.enum(PROJECT_COLORS).optional() }).strict(),
+  z.object({ operation: z.literal("status"), operationId: worktreeId }).strict(),
+  z.object({ operation: z.literal("merge"), worktreeId: worktreeId.optional(), operationId: worktreeId, title: z.string().trim().min(1).max(256), check: z.string().trim().min(1).max(10_000), resolutionTarget: z.string().regex(/^[a-f0-9]{40}$/).optional() }).strict(),
+  z.object({ operation: z.literal("create"), name: z.string().max(200), color: z.enum(PROJECT_COLORS).optional(), finish: z.enum(["local", "pr"]).optional() }).strict(),
   z.object({ operation: z.literal("start"), worktreeId, prompt: z.string().trim().min(1).max(100_000), title: z.string().trim().min(1).max(120).optional() }).strict(),
   z.object({ operation: z.literal("pr"), worktreeId: worktreeId.optional(), title: z.string().trim().min(1).max(256), body: z.string().max(60_000).default(""), base: z.string().trim().min(1).max(200).optional() }).strict(),
   z.object({ operation: z.literal("delete"), worktreeId }).strict(),
@@ -123,7 +128,7 @@ export async function worktreeAgentRequest(identity: WorktreeAgentIdentity, requ
     case "create": {
       await assertProjectEditable(project);
       const worktree = await createProjectWorktree(project, {
-        name: request.name, color: request.color, createdBy: { engine: identity.engine, conversationId: identity.conversationId },
+        name: request.name, color: request.color, localMain: request.finish !== "pr", createdBy: { engine: identity.engine, conversationId: identity.conversationId },
         gitEnvironment: genericSecretEnvironment(project.id, { engine: identity.engine, sessionId: identity.sessionId }),
       });
       broadcastToProject(project.id, { type: "worktreesChanged" });
@@ -133,7 +138,36 @@ export async function worktreeAgentRequest(identity: WorktreeAgentIdentity, requ
       await assertProjectEditable(project);
       return startConversation(identity, project, await localWorktree(project.id, request.worktreeId), request.prompt, request.title);
     }
+    case "status": {
+      const status = integrationStatus(project.id, request.operationId, identity.conversationId);
+      if (!status) throw new ProjectWorktreeError(404, "Integration operation not found for this conversation");
+      return status;
+    }
+    case "merge": {
+      await assertProjectEditable(project);
+      const previous = integrationStatus(project.id, request.operationId, identity.conversationId);
+      const id = request.worktreeId ?? current?.id ?? previous?.worktreeId;
+      if (!id) throw new ProjectWorktreeError(400, "This conversation does not run in a worktree; pass --worktree ID");
+      if (!previous) {
+        const worktree = await localWorktree(project.id, id);
+        if (worktree.id !== current?.id && !createdByCaller(worktree, identity)) throw new ProjectWorktreeError(403, "Only this worktree's conversation or creator may integrate it");
+        if (worktree.pullRequest) throw new ProjectWorktreeError(409, "This worktree uses the explicit PR finish path; it cannot also be merged locally");
+        const running = (await runningConversations(project.id, worktree)).filter(sessionId => ![identity.sessionId, identity.conversationId].includes(sessionId));
+        if (running.length) throw new ProjectWorktreeError(409, `Worktree has other running conversations: ${running.join(", ")}`);
+      }
+      const result = await withProjectRuntime(project.id, () => integrateProjectWorktree(project, id, { ...request, ownerId: identity.conversationId, deferCleanup: id === current?.id }, undefined,
+        genericSecretEnvironment(project.id, { engine: identity.engine, sessionId: identity.sessionId })));
+      if (result.status === "committed" && id === current?.id) {
+        await setSessionDone(identity.conversationId, true);
+        scheduleWorktreeRetirement(project);
+      }
+      broadcastToProject(project.id, { type: "worktreesChanged" });
+      broadcastToProject(project.id, { type: "sessionsChanged" });
+      return result;
+    }
     case "pr": {
+      const id = request.worktreeId ?? current?.id;
+      if (id && hasVerifiedIntegration(project.id, id)) throw new ProjectWorktreeError(409, "This worktree was already integrated locally; no PR will be published");
       if (!request.worktreeId && !current) throw new ProjectWorktreeError(400, "This conversation does not run in a worktree; pass --worktree ID");
       return openPullRequest(identity, project, request.worktreeId ? await localWorktree(project.id, request.worktreeId) : current!, request);
     }
