@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New conversation opens on the message box ready to type when the project is known, shows Bob auto as the default model and thinking when routing is on, and no longer leaves the Runs on list open over the Secrets step.
 - The Snooze menu on a board card opens under its button in Safari instead of the window's top-left corner.
 
 ## 2.290.0 — 2026-11-12

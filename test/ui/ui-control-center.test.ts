@@ -463,12 +463,11 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await page.getByTestId("quick-note-save-button").textContent(), "Start conversation");
   assert.equal(await page.getByTestId("quick-note-schedule-input").isVisible(), false, "nothing to schedule");
   // A wizard: project, title and content, agent, where it runs, secrets; Enter walks the fields and then the steps.
-  await page.getByTestId("quick-note-project-select").waitFor({ state: "visible" });
-  assert.equal(await page.getByTestId("quick-note-content-input").isVisible(), false, "one step at a time");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "quick-note-project-select");
-  await page.keyboard.press("Enter");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "quick-note-title-input");
-  await page.keyboard.press("Enter");
+  // The project is already known, so it opens on the message, ready to type.
+  await page.getByTestId("quick-note-content-input").waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("quick-note-step-2").getAttribute("aria-current"), "step");
+  assert.equal(await page.getByTestId("quick-note-project-select").isVisible(), false, "one step at a time");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "quick-note-content-input");
   await page.keyboard.press("Enter");
   await page.locator(".quick-note-error", { hasText: "Write what the agent should do." }).waitFor();
   await page.keyboard.type("check the login page copy");
@@ -482,6 +481,8 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.keyboard.press("Enter");
   await page.getByTestId("quick-note-save-button").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("quick-note-step-5").getAttribute("aria-current"), "step");
+  // Enter on Runs on leaves no list open over the next step.
+  await page.getByTestId("select-search-options").waitFor({ state: "hidden" });
   await page.keyboard.press("Control+Enter");
   await form.waitFor({ state: "hidden" });
   await page.locator(".toast", { hasText: /^Started “check the login page copy” in / }).waitFor();
@@ -500,7 +501,8 @@ test("the control center shows the live board, filters by project, colors cards 
   // Its shortcut opens the same wizard from anywhere.
   await page.keyboard.press("Control+Alt+Shift+KeyN");
   await form.waitFor({ state: "visible" });
-  assert.equal(await page.getByTestId("quick-note-step-1").getAttribute("aria-current"), "step");
+  assert.equal(await page.getByTestId("quick-note-step-2").getAttribute("aria-current"), "step");
+  assert.match(await page.getByTestId("quick-note-step-1").textContent() ?? "", /^1 · (?!Project$)\S/, "the step it skipped names the project");
   await page.keyboard.press("Escape");
   await form.waitFor({ state: "hidden" });
 

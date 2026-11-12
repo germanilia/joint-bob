@@ -333,18 +333,22 @@ function modelsForHarness() {
   return (availableModels || []).filter((model) => model.harnessId === harnessSelect.value);
 }
 
+/** Set when this node routes prompts: an unpinned model or thinking level then means Bob auto picks them per prompt. */
+let routingActive = false;
+const defaultChoiceLabel = () => (routingActive ? "Bob auto" : "Harness default");
+
 function renderThinking(selected = "") {
   const [provider, modelId] = modelSelect.value.split("\u0000");
   const model = modelsForHarness().find((candidate) => candidate.provider === provider && candidate.id === modelId);
   const harness = state.harnesses.find((candidate) => candidate.id === harnessSelect.value);
   const levels = model?.thinkingLevels || harness?.configuration?.thinkingLevels || [];
-  thinkingSelect.replaceChildren(new Option("Harness default", ""), ...levels.map((level) => new Option(level, level)));
+  thinkingSelect.replaceChildren(new Option(defaultChoiceLabel(), ""), ...levels.map((level) => new Option(level, level)));
   if (selected && !levels.includes(selected)) thinkingSelect.add(new Option(`${selected} (saved)`, selected));
   thinkingSelect.value = selected;
 }
 
 function renderModels(selectedProvider = "", selectedModelId = "", selectedThinking = "") {
-  const options = [new Option("Harness default", "")];
+  const options = [new Option(defaultChoiceLabel(), "")];
   for (const model of modelsForHarness()) options.push(new Option(model.label, `${model.provider}\u0000${model.id}`));
   const selected = selectedModelId ? `${selectedProvider}\u0000${selectedModelId}` : "";
   if (selected && !options.some((option) => option.value === selected)) options.push(new Option(`${selectedModelId} (saved)`, selected));
@@ -356,6 +360,7 @@ function renderModels(selectedProvider = "", selectedModelId = "", selectedThink
 async function loadOptions() {
   if (!state.harnesses.length) await loadHarnesses();
   if (!availableModels) availableModels = (await api("/api/models")).models;
+  routingActive = Boolean((await api("/api/routing-configs")).selectedId);
 }
 
 // datetime-local values are local wall-clock with no zone; Date both ways keeps the instant.
@@ -527,11 +532,16 @@ const backButton = navButton("Back", "quick-note-back-button");
 const nextButton = navButton("Next", "quick-note-next-button");
 backButton.addEventListener("click", () => goToStep(wizardStep - 1));
 nextButton.addEventListener("click", () => goToStep(wizardStep + 1));
+/** Step 1 shows the chosen project, since the wizard can open past it. */
+function nameProjectStep() {
+  const project = state.projects.find((candidate) => candidate.id === selectedProjectId());
+  stepButtons[0].textContent = `1 · ${project?.name || WIZARD_STEPS[0].label}`;
+}
 /** The step the wizard shows, or -1 when the form is the plain quick note form. */
 let wizardStep = -1;
 
-function setWizard(on) {
-  wizardStep = on ? 0 : -1;
+function setWizard(on, firstStep = 0) {
+  wizardStep = on ? firstStep : -1;
   form.noValidate = on;
   stepList.hidden = !on;
   wizardHint.hidden = !on;
@@ -539,7 +549,7 @@ function setWizard(on) {
   nextButton.hidden = !on;
   saveButton.hidden = false;
   for (const step of WIZARD_STEPS) for (const group of step.groups) group.hidden = false;
-  if (on) showStep(0, false);
+  if (on) showStep(firstStep, false);
 }
 
 function stepFields(index) {
@@ -548,7 +558,8 @@ function stepFields(index) {
 }
 
 function focusStep() {
-  const target = stepFields(wizardStep)[0] ?? (wizardStep === LAST_STEP ? saveButton : nextButton);
+  // The message is what the agent gets (the title can come from it), so typing starts there.
+  const target = wizardStep === 1 ? contentInput : stepFields(wizardStep)[0] ?? (wizardStep === LAST_STEP ? saveButton : nextButton);
   target.focus();
 }
 
@@ -630,16 +641,19 @@ export async function openQuickNote(note = null, { chooseProject = false, startN
   titleInput.required = !startingNow;
   contentInput.required = startingNow;
   scheduleInput.closest("label").hidden = startingNow;
-  setWizard(startingNow);
   const selectedProjectId = note?.projectId || defaultProjectId;
+  // With a project chosen already, it opens on the message so the person can type at once; step 1 names the project.
+  setWizard(startingNow, selectedProjectId ? 1 : 0);
   projectPicker.setOptions(state.projects.map((project) => ({ value: project.id, label: project.name })));
   projectPicker.setValue(selectedProjectId || "");
+  nameProjectStep();
   titleInput.value = note?.title || "";
   contentInput.value = note?.content || content;
   scheduleInput.value = note?.scheduledAt ? toDatetimeLocal(note.scheduledAt) : "";
   dialogImages = note?.images ? note.images.map((image) => ({ ...image })) : [];
   renderDialogImages();
   dialog.showModal();
+  if (wizardStep >= 0) focusStep();
   void loadDialogProjectOptions(note);
   try {
     await loadOptions();
@@ -762,6 +776,7 @@ async function startSavedNote(note) {
 harnessSelect.addEventListener("change", () => renderModels());
 modelSelect.addEventListener("change", () => renderThinking());
 projectPicker.onChange(() => {
+  nameProjectStep();
   void loadDialogProjectOptions({ nodeId: nodeSelect.value, secretAccountIds: checkedSecretIds() });
 });
 nodeSelect.addEventListener("change", () => renderDialogSecrets(checkedSecretIds()));

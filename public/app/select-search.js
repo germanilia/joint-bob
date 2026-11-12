@@ -99,6 +99,10 @@ export function installSelectSearch(root = document) {
     event.preventDefault();
     open(target, typing ? event.key : "");
   }, true);
+  // Focus moving on (Enter walking a form's fields, a step changing) closes the list, so it never stays open over other fields.
+  root.addEventListener("focusin", (event) => {
+    if (choices.isOpen && event.target !== select && !choices.popover.contains(event.target)) choices.close();
+  }, true);
   root.addEventListener("pointerdown", (event) => {
     if (!choices.isOpen || choices.popover.contains(event.target) || event.target === choices.scrim || event.target === select) return;
     choices.close();
