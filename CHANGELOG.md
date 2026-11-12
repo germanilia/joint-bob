@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.287.1 — 2026-11-12
+
+- The evidence-based allocation preview in Settings is built without injecting markup again, as the 2.284.1 fix had it; 2.287.0 had brought the old panel back and failed its release check.
+
 ## 2.287.0 — 2026-11-12
 
 - Opening a conversation from the control center now puts you in control of it at once, Esc closes it even from the message box, and a new **Keep Bob out** switch keeps Bob and auto respond out after you close it, across restarts, until you turn it off or give it back to Bob. The phone sheet's **Watch** is now **Open**.
