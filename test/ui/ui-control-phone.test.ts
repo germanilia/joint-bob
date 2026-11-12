@@ -174,7 +174,7 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
   assert.equal(await page.locator('[data-group="you"]').getByTestId("control-phone-answer").count(), 1);
   assert.match(await page.locator('[data-group="you"]').innerText(), /A plan waits for approval/);
   assert.equal(await page.locator('[data-group="review"]').getByTestId("control-phone-review").count(), 1);
-  assert.equal(await page.locator(`[data-key="${real.projectId}:${real.conversationId}"]`).getByTestId("control-phone-watch").count(), 1);
+  assert.equal(await page.locator(`[data-key="${real.projectId}:${real.conversationId}"]`).getByTestId("control-phone-open").count(), 1);
   assert.equal(await page.locator(`[data-key="${real.projectId}:${real.conversationId}"]`).getByTestId("control-phone-take-control").count(), 1);
   const list = page.getByTestId("control-phone-list");
   assert.equal(await list.evaluate((element) => element.scrollHeight <= element.clientHeight), true, "the sheet pages instead of scrolling");
@@ -212,13 +212,14 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
   const mine = page.locator(`[data-key="${real.projectId}:${real.conversationId}"]`);
   await mine.getByTestId("control-phone-take-control").waitFor();
 
-  // Watch opens the conversation without taking control, and without a message box.
-  await mine.getByTestId("control-phone-watch").click();
+  // Open shows the conversation with the person in control, and closing gives it back.
+  await mine.getByTestId("control-phone-open").click();
   await page.getByTestId("control-popup-bar").waitFor({ state: "visible" });
-  assert.equal(await page.locator("#composer").isVisible(), false);
-  assert.deepEqual(await page.evaluate("window.__lease"), ["take", "release"]);
+  await page.locator("#composer").waitFor({ state: "visible" });
   await page.getByTestId("control-popup-close").click();
   await page.getByTestId("control-popup-bar").waitFor({ state: "hidden" });
+  await page.waitForFunction(() => (window as unknown as { __lease: string[] }).__lease.length === 4);
+  assert.deepEqual(await page.evaluate("window.__lease"), ["take", "release", "take", "release"]);
   assert.equal(await page.locator("body.view-control").count(), 1);
 
   // Many agents: the sheet pages to the height it has instead of scrolling, and a page that starts mid-group repeats its heading.

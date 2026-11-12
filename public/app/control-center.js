@@ -382,7 +382,7 @@ export function refreshControlCenter() {
 
 /**
  * Opens a conversation by its project and conversation id (or its path), the way a card does. From the control center it
- * opens over the board, to read; replying needs Take control. Closing it goes back to the board.
+ * opens over the board, with the person in control (control-lease.js). Closing it goes back to the board.
  */
 export async function openConversation(card) {
   const overBoard = isControlCenterOpen();
@@ -552,10 +552,12 @@ setInterval(() => {
 window.addEventListener("control-center-changed", onChanged);
 // Leaving the control center closes the conversation over it.
 window.addEventListener("app-view-changed", () => { if (!isControlCenterOpen()) closeConversationPopup(); });
-// Esc closes the conversation over the board before it can leave the control center.
+// Esc closes the conversation over the board before it can leave the control center, from its message box too (the draft
+// stays); an open command list closes first.
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented || !document.body.classList.contains("control-popup")) return;
-  if (document.querySelector("dialog[open]") || event.target.closest?.("input, textarea, select")) return;
+  if (document.querySelector("dialog[open]")) return;
+  if (event.target === elements.messageInput ? !elements.commandAutocomplete.hidden : event.target.closest?.("input, textarea, select")) return;
   event.preventDefault();
   closeConversationPopup();
 }, true);

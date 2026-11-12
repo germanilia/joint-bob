@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 
-test("a card opens its conversation over the board to watch; taking control lets the person reply, and closing gives it back", async (t) => {
+test("opening a conversation over the board takes control, Esc or Close gives it back, and Keep Bob out keeps it after closing", async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
@@ -37,8 +37,10 @@ test("a card opens its conversation over the board to watch; taking control lets
       if (path === '/api/control-center/lease') {
         const body = JSON.parse(args[1].body);
         window.__lease.push(body.action);
-        window.__held = body.action === 'take' ? 'you' : null;
-        return reply({ leased: body.action === 'take' });
+        if (body.action === 'keep-out' || body.action === 'let-in') window.__keptOut = body.action === 'keep-out';
+        if (body.action === 'release') window.__keptOut = false;
+        window.__held = body.action === 'release' ? null : 'you';
+        return reply({ leased: body.action !== 'release', keptOut: Boolean(window.__keptOut) });
       }
       return originalFetch(...args);
     };
@@ -53,41 +55,60 @@ test("a card opens its conversation over the board to watch; taking control lets
   const composer = page.locator("#composer");
   const mode = page.getByTestId("control-popup-mode");
 
-  // Opening a card shows the conversation over the board, to watch: Bob keeps driving and there is no message box.
+  const lease = () => page.evaluate("window.__lease") as Promise<string[]>;
+  const keepOut = page.getByTestId("control-popup-keep-out-toggle");
+
+  // Opening a card puts the person in control at once: the message box and the banner, without pressing Take control.
   await card.locator(".control-title").click();
   await page.getByTestId("control-popup-bar").waitFor({ state: "visible" });
   assert.equal(await page.locator("body.view-control.control-popup").count(), 1, "the board stays under the conversation");
-  assert.match(await mode.innerText(), /Watching · Bob keeps driving/);
-  assert.equal(await composer.isVisible(), false, "watching has no message box");
-  assert.deepEqual(await page.evaluate("window.__lease"), []);
-
-  // Take control in the open view brings the message box and the banner; giving it back goes back to watching.
-  await page.getByTestId("control-popup-take").click();
   await page.getByTestId("control-lease-banner").waitFor({ state: "visible" });
   await composer.waitFor({ state: "visible" });
   assert.match(await mode.innerText(), /You're in it/);
   assert.equal(await page.getByTestId("control-popup-take").isVisible(), false);
+  assert.equal(await keepOut.isChecked(), false);
+  assert.deepEqual(await lease(), ["take"]);
   // The whole message box fits in the window: the popup is never taller than the space under its top edge.
   const fit = await page.evaluate(() => ({ composer: document.querySelector("#composer")!.getBoundingClientRect().bottom, panel: document.querySelector("#chatPanel")!.getBoundingClientRect().bottom, window: innerHeight }));
   assert.ok(fit.composer <= fit.panel && fit.panel <= fit.window, `composer ${fit.composer}, panel ${fit.panel}, window ${fit.window}`);
+
+  // Giving it back in the open view goes back to watching; Take control there takes it again.
   await page.getByTestId("control-lease-give-back").click();
   await page.getByTestId("control-lease-banner").waitFor({ state: "hidden" });
   await composer.waitFor({ state: "hidden" });
-  assert.deepEqual(await page.evaluate("window.__lease"), ["take", "release"]);
+  assert.match(await mode.innerText(), /Watching · Bob keeps driving/);
+  await page.getByTestId("control-popup-take").click();
+  await composer.waitFor({ state: "visible" });
+  assert.deepEqual(await lease(), ["take", "release", "take"]);
 
-  // Esc closes the conversation, not the control center.
+  // Esc in the message box closes the conversation, not the control center, and hands it back to Bob.
+  await page.locator("#messageInput").focus();
   await page.keyboard.press("Escape");
   await page.getByTestId("control-popup-bar").waitFor({ state: "hidden" });
   assert.equal(await page.locator("body.view-control").count(), 1);
+  await page.waitForFunction(() => (window as unknown as { __lease: string[] }).__lease.length === 4);
+  assert.deepEqual(await lease(), ["take", "release", "take", "release"]);
 
-  // Take control on the card opens it already held; closing hands it back to Bob.
-  await page.getByTestId("control-center-card").getByTestId("control-card-action-take-control").click();
-  await page.getByTestId("control-lease-banner").waitFor({ state: "visible" });
-  assert.equal(await page.locator("body.view-control.control-popup.control-held").count(), 1);
+  // Keep Bob out: closing no longer gives it back, and reopening shows it still kept out.
+  await page.getByTestId("control-center-card").locator(".control-title").click();
+  await composer.waitFor({ state: "visible" });
+  await keepOut.check();
+  await page.waitForFunction(() => /even after you close/.test(document.querySelector("#controlPopupMode")!.textContent!));
   await page.getByTestId("control-popup-close").click();
   await page.getByTestId("control-popup-bar").waitFor({ state: "hidden" });
-  await page.waitForFunction(() => (window as unknown as { __lease: string[] }).__lease.length === 4);
-  assert.deepEqual(await page.evaluate("window.__lease"), ["take", "release", "take", "release"]);
+  await page.waitForTimeout(300);
+  assert.deepEqual(await lease(), ["take", "release", "take", "release", "take", "keep-out"]);
+  await page.evaluate("window.dispatchEvent(new CustomEvent('control-center-changed'))");
+  await page.getByTestId("control-center-card").getByTestId("control-card-action-give-back").waitFor();
+  await page.getByTestId("control-center-card").locator(".control-title").click();
+  await composer.waitFor({ state: "visible" });
+  await page.waitForFunction(() => (document.querySelector('[data-testid="control-popup-keep-out-toggle"]') as HTMLInputElement).checked);
+  // Turning it off lets Bob back in once the conversation closes.
+  await keepOut.uncheck();
+  await page.waitForFunction(() => (window as unknown as { __lease: string[] }).__lease.at(-1) === "let-in");
+  await page.getByTestId("control-popup-close").click();
+  await page.waitForFunction(() => (window as unknown as { __lease: string[] }).__lease.at(-1) === "release");
+  assert.deepEqual(await lease(), ["take", "release", "take", "release", "take", "keep-out", "take", "let-in", "release"]);
 
   // A conversation held elsewhere says so on its card, which offers the way back.
   await page.evaluate("window.__held = 'you'; window.dispatchEvent(new CustomEvent('control-center-changed'))");
@@ -96,7 +117,7 @@ test("a card opens its conversation over the board to watch; taking control lets
   assert.match(await held.innerText(), /You're in it/);
   await held.getByTestId("control-card-action-give-back").click();
   await page.getByTestId("control-card-action-take-control").waitFor();
-  assert.deepEqual(await page.evaluate("window.__lease"), ["take", "release", "take", "release", "release"]);
+  assert.deepEqual((await lease()).slice(-1), ["release"]);
 
   // A card that waits for the person opens with them in control, ready to answer, without pressing Take control.
   await page.evaluate("window.__column = 'needs-you'; window.dispatchEvent(new CustomEvent('control-center-changed'))");
@@ -105,5 +126,5 @@ test("a card opens its conversation over the board to watch; taking control lets
   await page.getByTestId("control-lease-banner").waitFor({ state: "visible" });
   await composer.waitFor({ state: "visible" });
   assert.match(await mode.innerText(), /You're in it/);
-  assert.deepEqual(await page.evaluate("window.__lease"), ["take", "release", "take", "release", "release", "take"]);
+  assert.deepEqual((await lease()).slice(-1), ["take"]);
 });

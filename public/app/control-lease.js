@@ -7,8 +7,9 @@ import { state } from "./state.js";
 
 /**
  * "Take control": the person works in a conversation themselves, and Bob and auto respond leave it alone until they give
- * it back. The server keeps the lease for a minute at a time, so this renews it while they stay in the conversation and
- * lets it lapse when they leave or close the page.
+ * it back. Opening a conversation over the board takes control and closing it gives it back. The server keeps the lease for
+ * a minute at a time, so this renews it while they stay in the conversation and lets it lapse when they leave or close the
+ * page. "Keep Bob out" keeps the lease for good, so closing leaves Bob out until the person lets him back in.
  */
 const RENEW_MS = 20_000;
 const banner = document.querySelector("#controlLeaseBanner");
@@ -17,8 +18,12 @@ const popupProject = document.querySelector("#controlPopupProject");
 const popupMode = document.querySelector("#controlPopupMode");
 const popupTake = document.querySelector("#controlPopupTake");
 const popupClose = document.querySelector("#controlPopupClose");
+const popupKeepOut = document.querySelector("#controlPopupKeepOut");
+const popupKeepOutBox = popupKeepOut.querySelector("input");
 
 let held = null;
+/** Bob is kept out of the held conversation for good, not only while it is open here. */
+let keptOut = false;
 let timer = null;
 /** The card whose conversation is open over the board. */
 let popupCard = null;
@@ -49,8 +54,11 @@ function renderPopup() {
   const mine = sameConversation(held, popupCard);
   document.body.classList.toggle("control-held", Boolean(held));
   popupProject.textContent = popupCard?.projectName ?? "";
-  popupMode.textContent = mine ? "You're in it · Bob stays out until you give it back or close this" : "Watching · Bob keeps driving this agent";
+  popupMode.textContent = !mine ? "Watching · Bob keeps driving this agent"
+    : keptOut ? "You're in it · Bob stays out, even after you close this" : "You're in it · Bob stays out until you give it back or close this";
   popupTake.hidden = mine || popupCard?.controlledBy === "someone-else";
+  popupKeepOut.hidden = !mine;
+  popupKeepOutBox.checked = mine && keptOut;
 }
 
 function activeConversation() {
@@ -60,30 +68,35 @@ function activeConversation() {
 
 const send = (action, target) => api("/api/control-center/lease", { method: "POST", body: JSON.stringify({ ...target, action }) });
 
-async function release() {
+/** Stops holding here. A conversation Bob is kept out of stays held on the server; only giving it back lets him in. */
+async function release({ keepOut = false } = {}) {
   const target = held;
+  const stays = keepOut && keptOut;
   held = null;
+  keptOut = false;
   clearInterval(timer);
   banner.hidden = true;
   renderPopup();
-  if (target) await send("release", target);
+  if (target && !stays) await send("release", target);
 }
 
 async function renew() {
   const current = activeConversation();
   if (!held) return;
-  if (!current || current.projectId !== held.projectId || current.conversationId !== held.conversationId) { await release(); return; }
+  if (!current || current.projectId !== held.projectId || current.conversationId !== held.conversationId) { await release({ keepOut: true }); return; }
   await send("take", held);
 }
 
 /** Takes control of a conversation and opens it over the board with its message box. */
 export async function takeControl(card) {
-  if (held) await release();
   const target = { projectId: card.projectId, conversationId: card.conversationId };
-  await send("take", target);
-  held = target;
-  clearInterval(timer);
-  timer = setInterval(() => renew().catch((error) => toast.error(error.message)), RENEW_MS);
+  if (!sameConversation(held, target)) {
+    if (held) await release({ keepOut: true });
+    keptOut = (await send("take", target)).keptOut;
+    held = target;
+    clearInterval(timer);
+    timer = setInterval(() => renew().catch((error) => toast.error(error.message)), RENEW_MS);
+  }
   if (!sameConversation(popupCard, target) || !document.body.classList.contains("control-popup")) await openConversation(card);
   banner.hidden = false;
   renderPopup();
@@ -100,12 +113,25 @@ async function giveBack(card) {
 giveBackButton.addEventListener("click", () => giveBack(null).catch((error) => toast.error(error.message)));
 popupTake.addEventListener("click", () => takeControl(popupCard).catch((error) => toast.error(error.message)));
 popupClose.addEventListener("click", closeConversationPopup);
-window.addEventListener("control-popup-opened", (event) => { popupCard = event.detail; renderPopup(); });
-// Closing the conversation hands it back to Bob.
+popupKeepOutBox.addEventListener("change", () => {
+  const on = popupKeepOutBox.checked;
+  send(on ? "keep-out" : "let-in", held).then(() => { keptOut = on; renderPopup(); void refreshControlCenter().catch(() => undefined); })
+    .catch((error) => { renderPopup(); toast.error(error.message); });
+});
+// Opening a conversation over the board puts the person in control of it, unless someone else is, or they are handing it to Bob.
+window.addEventListener("control-popup-opened", (event) => {
+  popupCard = event.detail;
+  renderPopup();
+  if (popupCard.controlledBy === "someone-else" || sameConversation(systemControlTarget, popupCard)) return;
+  void takeControl(popupCard).catch((error) => toast.error(error.message));
+});
+// Closing the conversation hands it back to Bob, unless the person keeps him out of it.
 window.addEventListener("control-popup-closed", () => {
   popupCard = null;
   systemControlTarget = null;
-  if (held) void giveBack(null).catch((error) => toast.error(error.message));
+  if (!held) return;
+  if (keptOut) { void release({ keepOut: true }).then(() => refreshControlCenter()).catch((error) => toast.error(error.message)); return; }
+  void giveBack(null).catch((error) => toast.error(error.message));
 });
 
 registerCardAction({

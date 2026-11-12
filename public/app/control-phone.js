@@ -185,7 +185,7 @@ function buildRow(entry) {
     const block = button("Block", "phone-action", "control-phone-block", () => decide(entry, "block", [allow, block]));
     actions.append(allow, block);
   } else {
-    const label = { you: "Answer", running: "Watch", review: "Review" }[group];
+    const label = { you: "Answer", running: "Open", review: "Review" }[group];
     actions.append(button(label, "phone-action", `control-phone-${label.toLowerCase()}`, () => open(card)));
   }
   if (group === "running") {

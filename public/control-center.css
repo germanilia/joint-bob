@@ -178,6 +178,8 @@ body.view-control.control-popup .control-popup-bar { display: flex; align-items:
 .control-popup-project { font-weight: 650; }
 .control-popup-mode { flex: 1; min-width: 0; color: var(--muted); }
 .control-popup-bar button[hidden] { display: none; }
+.control-popup-keep-out { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.control-popup-keep-out[hidden] { display: none; }
 body.control-popup:not(.control-held) #composer { display: none; }
 @media (max-width: 1023px) {
   body.view-control.control-popup .shell > #chatPanel { inset: 0; border-radius: 0; }
