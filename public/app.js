@@ -40,6 +40,7 @@ import "./app/control-assistant-setup.js";
 import "./app/control-memory.js";
 import "./app/control-triggers.js";
 import "./app/control-assistants.js";
+import "./app/control-cluster-assistants.js";
 import "./app/control-moves.js";
 import "./app/control-phone.js";
 import "./app/control-clusters.js";

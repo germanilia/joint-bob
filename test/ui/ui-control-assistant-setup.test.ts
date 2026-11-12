@@ -3,6 +3,14 @@ import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 import { waitInPage } from "./wait-in-page.js";
 
+/** Waits until the page has sent this many of the requests the test catches. */
+async function sent(page: { evaluate: (expression: string) => Promise<unknown> }, count: number): Promise<void> {
+  for (const deadline = Date.now() + 30_000; ; await new Promise((resolve) => setTimeout(resolve, 100))) {
+    if (await page.evaluate("window.__sent.length") === count) return;
+    if (Date.now() > deadline) throw new Error(`The page never sent request ${count}`);
+  }
+}
+
 async function signedIn(t: test.TestContext) {
   const fixture = await nativeUiFixture(t);
   const { page, environment, node } = fixture;
@@ -55,8 +63,8 @@ test("a secret an assistant's setup asks for is entered in its own box and sent 
   await inputs.nth(1).fill("42");
   if (process.env.JOINT_BOB_UI_SHOT) await page.screenshot({ path: process.env.JOINT_BOB_UI_SHOT });
   await page.getByTestId("control-secret-save").click();
-  await page.waitForFunction("window.__sent.length === 1");
+  await sent(page, 1);
   assert.deepEqual(await page.evaluate("window.__sent"), [{ url: "/api/control-center/assistant-setup/secrets/11111111-1111-4111-8111-111111111111", body: { messageId: "m1", values: { POSTER_TOKEN: "s3cret", POSTER_ID: "42" } } }]);
-  assert.equal(await dialog.evaluate((node) => (node as HTMLDialogElement).open), false);
+  await page.locator('[data-testid="control-secret-dialog"]:not([open])').waitFor({ state: "attached" });
   assert.equal(await page.getByTestId("control-secret-input").count(), 0, "the values do not stay in the page");
 });

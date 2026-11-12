@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AskRefusal, startAskOn, waitForAsk } from "../assistant-collaboration/ask.js";
 import { ownerAssistants, type HelperView } from "../assistant-collaboration/directory.js";
 import { askAllowedBySwitch, BOB_ASKER_NAME, BOB_ASK_TURN_PREFIX, bobAsks, setAskSwitch, type AskRecord } from "../assistant-collaboration/store.js";
+import { clusterAssistant } from "../cluster-assistants.js";
 import { getClusterNode } from "../cluster.js";
 import { listPersonalAssistantTopics, runningPersonalAssistantTurn } from "../personal-assistants.js";
 import { socialProfile } from "../social/directory.js";
@@ -30,7 +31,8 @@ export async function bobAskerId(accountId: string): Promise<string> {
 /** Every assistant of the person on any of their machines, with whether Bob may ask it now and why not. Bob's chat is the person's alone, so only the helper's side can be shared. */
 export async function bobHelperViews(accountId: string): Promise<HelperView[]> {
   const asker = await bobAskerId(accountId);
-  return Promise.all((await ownerAssistants(accountId)).map(async (helper) => {
+  // A cluster's assistant is not the person's own: it is listed and asked with the cluster's (server/cluster-assistants.ts).
+  return Promise.all((await ownerAssistants(accountId)).filter((helper) => !clusterAssistant(helper.id)).map(async (helper) => {
     const enabled = await askAllowedBySwitch(asker, helper.id);
     const reason = !enabled ? "Bob may not ask it: the switch is off."
       : !helper.private ? `${helper.name} is in a shared project, so Bob can't ask it: its answers could reach the people it is shared with.`

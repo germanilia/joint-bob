@@ -74,6 +74,18 @@ export function recordAuditEvent(input: AuditEventInput): AuditEventRecord {
   return appendAuditEvent(auditDatabase(), input);
 }
 
+/** What happened to one thing, newest first: who did what to it, and when. The caller decides who may read it. */
+export function listEntityAuditEvents(entityType: string, entityId: string, limit: number): AuditEventRecord[] {
+  const rows = auditDatabase().prepare(`SELECT id, event_type, actor_type, actor_id, entity_type, entity_id, details, created_at FROM audit_events
+    WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`).all(entityType, entityId, Math.max(1, Math.min(500, limit))) as unknown as Array<{
+    id: string; event_type: string; actor_type: AuditEventInput["actorType"]; actor_id: string | null; entity_type: string; entity_id: string | null; details: string; created_at: string;
+  }>;
+  return rows.map((row) => ({
+    id: row.id, eventType: row.event_type, actorType: row.actor_type, actorId: row.actor_id, entityType: row.entity_type, entityId: row.entity_id,
+    details: JSON.parse(row.details) as AuditEventRecord["details"], createdAt: row.created_at,
+  }));
+}
+
 /** `viewerUserId` limits the log to what that person may see: node events and their own,
     never another user's sign-ins or activity. */
 export async function listAuditEvents(limit: number, viewerUserId?: string): Promise<AuditEventRecord[]> {

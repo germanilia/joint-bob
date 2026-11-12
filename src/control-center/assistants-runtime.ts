@@ -1,6 +1,7 @@
 import { waitForAsk } from "../assistant-collaboration/ask.js";
 import { getAsk } from "../assistant-collaboration/store.js";
 import { askAsBob, bobHelperViews, toBobHelper } from "./assistants-asks.js";
+import { askClusterAssistant, clusterAssistantsFor } from "../server/cluster-assistants.js";
 import { useAssistants, viaFor, type AskOutcome, type AssistantPorts, type PickDeps } from "./assistants.js";
 import { askSystemOneChoices } from "../classifiers/typesafe.js";
 import { bobDecisionModel } from "../server/bob.js";
@@ -64,9 +65,19 @@ function followLateAnswer(accountId: string, late: AskOutcome): void {
 export function assistantPorts(turn: BobTurn, waitMs = ASK_WAIT_MS, override: Partial<AssistantPorts> = {}): AssistantPorts {
   const accountId = turn.session.accountId;
   return {
-    helpers: async () => (await bobHelperViews(accountId)).filter((view) => view.available).map(toBobHelper),
+    // The person's own assistants, and the assistants of the clusters they joined, on whichever machine hosts them.
+    helpers: async () => [
+      ...(await bobHelperViews(accountId)).filter((view) => view.available).map(toBobHelper),
+      ...(await clusterAssistantsFor(accountId)).map((view) => ({ id: view.id, name: view.name, about: `${view.about} (assistant of the cluster "${view.clusterName}", on ${view.machineName})`.trim(), has: view.has })),
+    ],
     pickDeps: () => pickDeps(turn),
     async askHelper(helper, message, purpose) {
+      const shared = (await clusterAssistantsFor(accountId)).find((view) => view.id === helper.id);
+      if (shared) {
+        const began = Date.now();
+        const answered = await askClusterAssistant(shared, { accountId, name: turn.session.username }, message, purpose, waitMs);
+        return { helper, purpose, askId: null, ...answered, seconds: Math.max(1, Math.round((Date.now() - began) / 1000)) };
+      }
       const outcome = await askAsBob(accountId, helper, message, purpose, { waitMs, onStarted: () => changed(accountId) });
       changed(accountId);
       if (outcome.status === "running") followLateAnswer(accountId, outcome);

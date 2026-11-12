@@ -140,6 +140,18 @@ app.put("/api/clusters/:clusterId/sharing", route(async (request, response) => {
   void announceWorkspaceChanges().catch((error) => console.warn("Shared workspace notice failed", error));
 }));
 
+/** Adds one of the acting person's projects to what they share with a cluster, as choosing it in the cluster's sharing does. */
+export async function shareProjectWithCluster(clusterId: string, projectId: string): Promise<void> {
+  const db = await clusterV2Database(), local = (await getClusterNode()).id, scope = personScope();
+  const current = clusterSharingView(db, local, clusterId, scope);
+  if (current.projectIds.includes(projectId)) return;
+  const projectIds = [...current.projectIds, projectId];
+  updateClusterSelection(db, local, clusterId, projectIds, current.workspaceIds, scope);
+  await disconnectRevokedRuntimeSockets();
+  await forwardTwinSelection(db, local, clusterId, projectIds, current.workspaceIds, scope);
+  void announceWorkspaceChanges().catch((error) => console.warn("Shared workspace notice failed", error));
+}
+
 app.post("/api/cluster/v2/twins/selection", route(async (request, response) => {
   if (response.locals.machineProtocol !== 2 || typeof response.locals.machineNodeId !== "string") throw new ClusterV2HttpError(401, "Unauthorized");
   const sender = response.locals.machineNodeId, db = await clusterV2Database(), local = (await getClusterNode()).id;

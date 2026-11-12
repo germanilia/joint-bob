@@ -267,6 +267,17 @@ Tell Bob what you want an assistant for ("create an assistant that can post on m
 - **Nothing public during setup.** The agent proves the route works up to the last step and does not post, send, publish, buy or delete anything.
 - **When it is ready.** Bob says so in the chat, with what he checked and the agent's report (the route, what you gave it, what the skill holds, what was and was not tested). From then on the assistant's agent can no longer change its own skill or instructions; you change them in its Resources. A setup left open for a day ends by itself.
 
+### An assistant for a cluster
+
+Ask Bob for an assistant "for" one of the clusters you joined on this machine ("create an assistant for the Team cluster that drafts posts for the team account"). He says what that means and waits for **Create for the cluster**.
+
+- **Host.** The machine you ask on hosts it. Its sign-ins, keys, skill and files stay there.
+- **Its own project.** It lives in a project named after the cluster (*Assistants · Team*), shared with that cluster and holding nothing else of yours. Your private **Assistants** project is not shared. Members of the cluster can read the conversations in the cluster's project.
+- **Subscriptions.** Because the project is shared with the cluster, its turns run on the pool assigned to the cluster, when a relay assigned one. Without one they run on its creator's subscriptions.
+- **Who can ask.** Everyone in the cluster, on any member machine, through their own Bob: the Assistants tab lists it under **Cluster assistants**, and Bob asks it when their message needs what it has. The ask travels over the signed machine channel and runs on the host with the assistant's own sign-ins and keys, so a member can do with it whatever it can do.
+- **Who can change it.** Its creator, and any admin of the host machine who is in the cluster: **Edit** (name and standing instructions) and **Delete**, on the host. Clusters have a manager machine but no admin role for people, so "admin" here is an admin of the machine that hosts it. Its skills and sign-ins are changed on the host, in the assistant's own Resources, by its creator.
+- **Audit log.** The host records under each cluster assistant who created it, every ask (who, from which machine, and for what, never the words of the ask or the answer), and every change and deletion. **Audit log** on its row shows it to those who may change it.
+
 ## Clusters
 
 The **Clusters** tab shows what other people in your clusters are running, grouped by machine, and only through what they share with you: a project shared with a cluster, and its conversations. Your own machines are not listed (they are on the board). Click a card to read that conversation; nothing on this tab can act on another person's agent. Bob can answer questions about them ("what is the team doing?"): when a message is about other people's work, Bob is given a short summary of the shared agents that are running, and the line under the reply says so.

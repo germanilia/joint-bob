@@ -86,3 +86,16 @@
 .control-asst-form[hidden] { display: none; }
 .control-asst-note { margin: 0; }
 @media (max-width: 900px) { .control-asst-body { grid-template-columns: minmax(0, 1fr); } .control-asst-side { display: none; } }
+
+/* Cluster assistants in the Assistants tab. */
+.control-cluster-asst { display: grid; gap: 6px; padding: 4px 0 8px; }
+.control-cluster-asst[hidden] { display: none; }
+.control-cluster-asst h3 { margin: 0; font-size: 14px; }
+.control-cluster-asst-list { display: grid; gap: 8px; }
+.control-cluster-asst-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 11px; }
+.control-cluster-asst-text { display: grid; gap: 2px; flex: 1 1 260px; min-width: 0; font-size: 13px; }
+.control-cluster-asst-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.control-cluster-asst-card { width: min(620px, calc(100vw - 24px)); }
+.control-cluster-asst-card textarea { width: 100%; resize: vertical; }
+.control-cluster-asst-log { display: grid; gap: 6px; max-height: min(420px, 60dvh); overflow: auto; }
+.control-cluster-asst-event { display: grid; gap: 1px; font-size: 13px; }
