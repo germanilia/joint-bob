@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.273.3 — 2026-11-12
+
+- Restored the model-routing dispatch tests that a test-database change had put back to their old project-key version, so the release suite checks routing with the System AI decision credential again.
+
 ## 2.273.2 — 2026-11-12
 
 - No change to the app's behaviour. The tests that read or write a node's database directly now go through the same database module the app uses, so they run against PostgreSQL as well as SQLite (`JOINT_BOB_DATABASE_URL`). The SQLite runs are unchanged.
