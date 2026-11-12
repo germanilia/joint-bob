@@ -49,8 +49,8 @@ export function snoozedWords(snoozed) {
 registerCardAction({
   id: "snooze", label: "Snooze", order: 60, title: "Put it aside for now: it leaves Needs you until the time you choose or something new happens",
   visible: (card) => card.column === "needs-you",
-  // The button pressed keeps focus while its click runs, so the menu opens under it.
-  run: (card) => chooseSnooze(card, document.activeElement),
+  // Under the button pressed. Not document.activeElement: Safari does not focus a clicked button, so the menu landed top-left.
+  run: (card, button) => chooseSnooze(card, button),
 });
 
 registerCardAction({

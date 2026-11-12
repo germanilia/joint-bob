@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The Snooze menu on a board card opens under its button in Safari instead of the window's top-left corner.
+
 ## 2.290.0 — 2026-11-12
 
 - Phone: the filters on Bob's page wrap onto lines, with the project picker first, instead of scrolling sideways with the last chip cut off.

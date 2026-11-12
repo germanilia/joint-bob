@@ -46,6 +46,10 @@ test("a Needs you card can be snoozed from the board, moves to Snoozed with its 
   assert.match(await page.getByTestId("control-center-count").textContent() ?? "", /1 need you/);
 
   await card.getByTestId("control-card-action-snooze").click();
+  // Under the button pressed, not the page corner (Safari leaves a clicked button unfocused).
+  const pressed = await card.getByTestId("control-card-action-snooze").boundingBox();
+  const choice = await page.getByTestId("snooze-hour").boundingBox();
+  assert.ok(pressed && choice && Math.abs(choice.y - pressed.y) < 200 && Math.abs(choice.x - pressed.x) < 300, `menu at ${JSON.stringify(choice)}, button at ${JSON.stringify(pressed)}`);
   await page.getByTestId("snooze-hour").click();
   await page.waitForFunction(() => document.querySelector('[data-key="p1:c1"]')?.getAttribute("data-column") === "snoozed");
   const [sent] = await page.evaluate(() => (window as unknown as { __snoozes: Array<{ action: string; until: string | null; conversationId: string }> }).__snoozes);

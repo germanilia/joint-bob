@@ -179,7 +179,7 @@ function renderCard(card) {
       button.dataset.testid = `control-card-action-${action.id}`;
       button.addEventListener("click", (event) => {
         event.stopPropagation();
-        Promise.resolve(action.run(card)).catch((error) => toast.error(error.message));
+        Promise.resolve(action.run(card, button)).catch((error) => toast.error(error.message));
       });
       row.append(button);
     }
