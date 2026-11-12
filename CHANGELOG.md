@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.272.1 — 2026-11-12
+
+- Allowed Google Antigravity profiles to be selected and saved in connection pools alongside other providers.
+
 ## 2.272.0 — 2026-11-12
 
 - **A new look for the whole app, on desktop and phone.** Cream cards on a sand background, serif headings, one forest-green accent, in all six themes (System, Light, Sepia, Dark, Midnight, Graphite). Nothing was removed; some actions moved.

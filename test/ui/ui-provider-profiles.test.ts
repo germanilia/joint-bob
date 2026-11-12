@@ -45,8 +45,7 @@ if(args[0]==='acp'&&args[1]==='--login'){
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-connections").click();
   await page.getByTestId("provider-profile-add").waitFor();
-  assert.match(await page.getByTestId("provider-profiles").locator("h3").innerText(), /Connections/);
-  assert.match(await page.getByTestId("provider-profiles").innerText(), /never goes through the relay/);
+  assert.equal(await page.getByTestId("provider-profiles-tab-profiles").getAttribute("aria-selected"), "true");
   await page.getByTestId("settings-tab-engines").click();
   await page.getByTestId("harness-config-card").waitFor();
   assert.equal(await page.locator("#settingsPanel-engines [data-testid='provider-profiles'], #settingsPanel-engines [data-testid='kiro-profiles']").count(), 0, "Harnesses holds no profile management");
@@ -84,24 +83,25 @@ if(args[0]==='acp'&&args[1]==='--login'){
   await page.getByTestId("confirm-accept-button").click();
   await antigravityCard.locator(".profile-pill").filter({ hasText: "Not signed in" }).waitFor();
 
-  await page.getByTestId("provider-profiles-tab-pools").click();
-  await page.getByTestId("subscription-pool-new").click();
-  await page.getByTestId("subscription-pool-member-0").click();
-  await page.getByTestId("subscription-pool-member-0-search").fill("Google work");
-  assert.equal(await page.getByTestId("subscription-pool-member-0-option").count(), 0, "Antigravity profiles cannot join pools");
-  await page.keyboard.press("Escape");
-  await page.getByTestId("subscription-pool-cancel").click();
-
   await page.getByTestId("provider-profiles-tab-assignments").click();
   await page.getByTestId("provider-assignment-provider-antigravity").click();
   const antigravitySaved = page.waitForResponse((response) => response.url().endsWith("/api/provider-profiles/selection") && response.request().method() === "PUT");
-  await page.getByTestId("provider-assignment-default-select").click();
-  await page.getByTestId("provider-assignment-default-select-search").fill("Google work");
-  await page.getByTestId("provider-assignment-default-select-option").filter({ hasText: "Google Antigravity profile" }).click();
+  await choose(page, "provider-assignment-default-select", "Google work", "Google Antigravity profile");
   await page.getByTestId("confirm-accept-button").click();
   assert.equal((await antigravitySaved).status(), 200);
   const antigravityListing = await (await page.request.get(`${node.url}/api/provider-profiles`)).json();
   assert.ok(antigravityListing.selections.some((item: { provider: string; profileId: string }) => item.provider === "antigravity" && item.profileId === antigravityListing.profiles.find((profile: { label: string }) => profile.label === "Google work").id));
+
+  await page.getByTestId("provider-profiles-tab-pools").click();
+  await page.getByTestId("subscription-pool-new").click();
+  await page.getByTestId("subscription-pool-name").fill("Google pool");
+  await choose(page, "subscription-pool-member-0", "Google work", "Google work");
+  const poolSaved = page.waitForResponse((response) => response.url().endsWith("/api/provider-profiles/pools") && response.request().method() === "POST");
+  await page.getByTestId("subscription-pool-save").click();
+  assert.equal((await poolSaved).status(), 201);
+  await page.getByTestId("subscription-pool-card").filter({ hasText: "Google pool" }).waitFor();
+  const savedPools = await (await page.request.get(`${node.url}/api/provider-profiles/pools`)).json();
+  assert.ok(savedPools.pools.some((pool: { name: string; members: { profileId: string }[] }) => pool.name === "Google pool" && pool.members.some(({ profileId }) => profileId === antigravityProfileId)));
 
   await page.getByTestId("provider-profiles-tab-profiles").click();
   let posted = 0;

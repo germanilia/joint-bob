@@ -29,7 +29,6 @@ export const profileSelectionSchema = z.object({ provider: profileProviderSchema
   if (value.machine && (value.profileId || value.poolId)) ctx.addIssue({ code: "custom", message: "This machine's own sign-in is chosen alone, not with a profile or pool" });
   if (value.machine && !["claude", "openai-codex", "antigravity"].includes(value.provider)) ctx.addIssue({ code: "custom", message: "Only Claude, ChatGPT, and Google Antigravity can use this machine's own sign-in" });
   if (value.provider === "kiro" && value.poolId) ctx.addIssue({ code: "custom", message: "Kiro profiles are standalone and cannot use subscription pools" });
-  if (value.provider === "antigravity" && value.poolId) ctx.addIssue({ code: "custom", message: "Antigravity profiles are standalone and cannot use subscription pools" });
 });
 /** A pool choice names a scope and a pool, with no provider: the pool's own profiles decide which providers it covers. */
 export const poolChoiceSchema = z.object({ scope: scopeSchema, scopeId: z.string().max(700), poolId: z.string().uuid().nullable() }).strict().superRefine((value, ctx) => {

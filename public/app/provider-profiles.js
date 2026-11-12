@@ -9,10 +9,10 @@ const PROVIDERS = [
   { id: "openai-codex", name: "ChatGPT", via: "ChatGPT subscription via Pi", brand: "openai", note: "ChatGPT subscriptions, used through Pi." },
   { id: "pi", name: "Pi", via: "Multiple providers · API keys and OAuth", brand: "pi", note: "API keys and OAuth sign-ins for any provider Pi supports. Connect them under Manage providers." },
   { id: "kiro", name: "Kiro", via: "AWS IAM Identity Center", brand: "kiro", note: "AWS IAM Identity Center accounts for Kiro. Their sign-ins stay on this node, and they cannot join pools or be shared." },
-  { id: "antigravity", name: "Google Antigravity", via: "Google Antigravity CLI", brand: "antigravity", note: "Google accounts with a separate native CLI sign-in for each profile on this node. Profiles stay private and cannot join pools." },
+  { id: "antigravity", name: "Google Antigravity", via: "Google Antigravity CLI", brand: "antigravity", note: "Google accounts with a separate native CLI sign-in for each profile on this node. Profiles stay private and can join connection pools." },
 ];
-/** Pools and the failover dry run cover subscription providers; Kiro and Antigravity profiles stand alone. */
-const POOL_PROVIDERS = PROVIDERS.filter((provider) => !["kiro", "antigravity"].includes(provider.id));
+/** Kiro profiles stand alone; other private profiles can join pools. */
+const POOL_PROVIDERS = PROVIDERS.filter((provider) => provider.id !== "kiro");
 const POOL_HARNESSES = [{ id: "claude", name: "Claude" }, { id: "pi", name: "Pi" }];
 const SCOPES = [
   { id: "workspace", label: "Workspace", icon: "folder" },
@@ -247,7 +247,7 @@ function poolMemberRow(index) {
   const row = el("div", { className: "pool-member-editor", testid: "subscription-pool-member-row" });
   const value = poolEditor.profileIds[index] ?? "";
   const usedElsewhere = new Set(poolEditor.profileIds.filter((id, position) => position !== index && id));
-  const options = profiles.filter((profile) => !profile.shared && !["kiro", "antigravity"].includes(profile.provider) && (!usedElsewhere.has(profile.id) || profile.id === value)).map((profile) => ({
+  const options = profiles.filter((profile) => !profile.shared && profile.provider !== "kiro" && (!usedElsewhere.has(profile.id) || profile.id === value)).map((profile) => ({
     value: profile.id, label: profile.label, detail: `${providerOf(profile.provider).name} · ${profileStatusLabel(profile.id)}`,
   }));
   if (value && !options.some((option) => option.value === value)) options.unshift({ value, label: profileNamed(value)?.label ?? "Unavailable profile", detail: "Choose another profile" });
@@ -584,7 +584,7 @@ function choiceOptions(provider) {
   return [
     ...(provider === "claude" || provider === "openai-codex" || provider === "antigravity" ? [{ value: "machine", label: "This machine's own sign-in", detail: "No profile: the sign-in on this machine" }] : []),
     ...privateProfiles(provider).map((profile) => ({ value: `profile:${profile.id}`, label: profile.label, detail: `${providerOf(provider).name} profile · ${profileStatusLabel(profile.id)}` })),
-    ...(["kiro", "antigravity"].includes(provider) ? [] : poolOptions().map((option) => ({ ...option, value: `pool:${option.value}` }))),
+    ...(provider === "kiro" ? [] : poolOptions().map((option) => ({ ...option, value: `pool:${option.value}` }))),
   ];
 }
 function choiceLabel(value) {
