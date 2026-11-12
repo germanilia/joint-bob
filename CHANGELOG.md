@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed forcing a queued message that had already changed: the queue now refreshes on its own and says the message's status was updated, instead of asking you to refresh the page.
+
 ## 2.276.1 — 2026-11-12
 
 - Google Antigravity now keeps its OAuth credentials in each profile's isolated home directory instead of prompting for the macOS Keychain after sign-in.

@@ -1313,11 +1313,15 @@ async function applyQueueCommand(connection: HarnessChatConnection, message: Ret
     if (!message.queueId || !message.queueRevision) throw new Error("Queued prompt force start is incomplete");
     const key = queueKey(connection);
     const starting = startingIds.has(message.queueId) ? listQueuedPrompts(key).find(({ id }) => id === message.queueId) : undefined;
-    if (starting) {
-      // beginQueuedPrompt increments the revision before onStarted claims it.
-      // Accept either the attached page's pending revision or a reconnect's starting revision.
-      if (message.queueRevision !== starting.revision && message.queueRevision !== starting.revision - 1) throw new Error("Queued prompt changed; refresh and try again");
-    } else if (!prioritizeQueuedPrompt(key, message.queueId, message.queueRevision)) throw new Error("Queued prompt changed; refresh and try again");
+    // beginQueuedPrompt increments the revision before onStarted claims it.
+    // Accept either the attached page's pending revision or a reconnect's starting revision.
+    const current = starting
+      ? message.queueRevision === starting.revision || message.queueRevision === starting.revision - 1
+      : prioritizeQueuedPrompt(key, message.queueId, message.queueRevision);
+    if (!current) {
+      refreshHarnessPromptQueue(connection);
+      throw new Error("Queued message changed. Its status has been updated; try again if it is still queued.");
+    }
     await resumePromptQueue(connection);
     const draining = drains.get(key);
     pausedDrains.add(key);

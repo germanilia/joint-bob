@@ -140,6 +140,14 @@ test("websocket chat routes Kiro prompts through the generic harness runtime", a
     first.socket.send(JSON.stringify({ type: "editQueuedPrompt", queueId: editable.id, queueRevision: editable.revision, message: "stale" }));
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "error" && /changed/i.test(String(message.error))));
     assert.equal(first.messages.filter((message) => message.type === "queuedPromptEdited").length, editedAcknowledgements);
+    const beforeStaleForce = first.messages.length;
+    first.socket.send(JSON.stringify({ type: "forceStartQueuedPrompt", queueId: editable.id, queueRevision: editable.revision }));
+    await waitFor(first.messages, () => first.messages.slice(beforeStaleForce).some((message) => message.type === "error"));
+    const refreshedQueue = first.messages.slice(beforeStaleForce).find((message) => message.type === "queuedPrompts");
+    assert.ok(refreshedQueue, "a stale force-start must push the current queue without a page refresh");
+    const refreshedPrompt = (refreshedQueue.prompts as Array<{ id: string; revision: number }>).find((prompt) => prompt.id === editable.id);
+    assert.equal(refreshedPrompt?.revision, editable.revision + 1);
+    assert.ok(!first.messages.slice(beforeStaleForce).some((message) => message.type === "error" && /refresh and try again/.test(String(message.error))));
     first.socket.send(JSON.stringify({ type: "cancelQueuedPrompt", queueId: cancelled.id, queueRevision: cancelled.revision }));
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "queuedPromptCancelled" && message.queueId === cancelled.id));
     first.socket.send(JSON.stringify({ type: "forceStartQueuedPrompt", queueId: editable.id, queueRevision: editable.revision + 1 }));
