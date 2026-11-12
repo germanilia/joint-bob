@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.287.0 — 2026-11-12
+
+- Opening a conversation from the control center now puts you in control of it at once, Esc closes it even from the message box, and a new **Keep Bob out** switch keeps Bob and auto respond out after you close it, across restarts, until you turn it off or give it back to Bob. The phone sheet's **Watch** is now **Open**.
+- Search (Ctrl+Option+P) now finds a conversation by its project's name followed by its title, so "marketing kangaroo" finds the kangaroo conversation in Marketing site, not only by its title.
+- Bob's page is now the whole screen: the app's left column goes, the head toggles the middle between **Live conversations** and the **Dashboard**, Bob's chat sits beside it, and **What Bob looks after** stays on the right with its rows opening each view. The view you opened last opens again on every browser. Bob's chat and the right column fold into round buttons, and each lane of the board folds into its scoreboard tile.
+- The live board is more fun to watch: every agent is a character that bobs while it works and waves when it needs you, running cards charge an energy bar and count their steps, a scoreboard sits on top, and a conversation that finishes cheers on its way to review. Nothing on a card is cut any more.
+- Removed the **Clusters** and **Project overview** tabs from the control center.
+- Worktrees keep the history that came from other machines, and work marked done that was not verified yet is kept instead of dropped.
+- Model routing allocates from evidence scoped to the conversation, and a failed run recovers on the same agent a bounded number of times.
+
 ## 2.286.1 — 2026-11-12
 
 - On a phone, a conversation's chips now include its effort level beside the model, so you can change it without opening the ⋯ sheet. It shows only for models that have effort levels and stays locked while Bob auto picks the level.
