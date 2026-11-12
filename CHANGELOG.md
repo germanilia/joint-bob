@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.292.0 — 2026-11-12
 
 - Bob's page is simpler: his chat beside one stage whose tabs are Live agents, Dashboard, Automations, Bob's memory, Dashboards and Assistants; the head holds the team context, what Bob watches, a "Bob is on" switch and Bob's settings; background updates fold at the top of the chat, text is larger, and the folded chat is a clear "Ask Bob" button with the number that need you.
 
