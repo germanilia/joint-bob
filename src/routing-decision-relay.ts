@@ -13,10 +13,11 @@ import { systemDecisionKey } from "./system-ai.js";
 /** A member without its own decision credential asks the relay it uses; the relay classifies
     with its own key and returns only the classification. The key never leaves the relay. */
 export const DECISION_RELAY_PATH = "/api/cluster/v2/decision-model/classify";
+const MAX_DECISION_TEXT = 120_000;
 
 export const decisionRelayRequestSchema = z.object({
   classifierId: z.enum(["typesafe", "laya"]),
-  text: z.string().min(1).max(120_000),
+  text: z.string().min(1).max(MAX_DECISION_TEXT),
   options: z.array(z.object({ level: z.number().int().min(1).max(10), description: z.string().min(1).max(1000) }).strict()).max(10),
 }).strict();
 export type DecisionRelayRequest = z.infer<typeof decisionRelayRequestSchema>;
@@ -78,13 +79,18 @@ async function sendToRelay(target: RelayTarget, body: DecisionRelayRequest): Pro
 }
 
 export const classifyThroughRelay = async (classifierId: "typesafe" | "laya", text: string, options: DecisionRelayRequest["options"], dependencies: RelayAskDependencies = {}): ReturnType<RelayClassify> => {
-  const body = { classifierId, text, options };
+  // The newest part of a long conversation is what the classifier judges; the relay accepts at most this much.
+  const body = { classifierId, text: text.slice(-MAX_DECISION_TEXT), options };
   for (const target of await (dependencies.targets ?? relayTargets)()) {
     if ((refusedUntil.get(target.relayNodeId) ?? 0) > Date.now()) continue;
     const source = `relay:${target.relayNodeId}` as const;
     try {
       const answer = await (dependencies.send ?? sendToRelay)(target, body);
-      if (!answer.ok) { refusedUntil.set(target.relayNodeId, Date.now() + REFUSAL_MEMORY_MS); continue; }
+      if (!answer.ok) {
+        // A rejected request (400) says nothing about the relay; refusals and outages are remembered.
+        if (answer.status !== 400) refusedUntil.set(target.relayNodeId, Date.now() + REFUSAL_MEMORY_MS);
+        continue;
+      }
       const classification = classificationSchema.nullable().parse(await answer.json());
       return classification ? { classification, source } : { classification: null, source, reason: "classifier failed" };
     } catch {

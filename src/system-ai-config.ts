@@ -24,3 +24,10 @@ export function systemAiSettings(): SystemAiSettings {
   const stored = value('systemAI');
   return stored ? systemAiSchema.parse(JSON.parse(stored)) : systemAiDefaults();
 }
+
+/** An older twin or a page still on old assets saves System AI without routing; keep what is stored
+    instead of letting the schema default switch routing back on and relay sharing off. */
+export function withStoredRouting(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || 'routing' in raw) return raw;
+  return { ...raw, routing: systemAiSettings().routing };
+}

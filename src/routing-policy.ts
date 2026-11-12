@@ -20,6 +20,12 @@ export function automaticRoutingModelAllowed(provider: string | undefined, model
   return provider !== "openai-codex" || codexRoutingModels.has(modelId);
 }
 
+/** True when the harness lists this model here. "default" is the harness's own choice and always
+    runs (a signed-in Kiro lists only real model IDs); without a catalogue, validateSettings decides. */
+export function routingCandidateListed(listed: Set<string> | null, provider: string, modelId: string): boolean {
+  return !listed || modelId === "default" || listed.has(`${provider}\0${modelId}`);
+}
+
 const levelKeys = Array.from({ length: ROUTING_LEVELS }, (_, index) => String(index + 1));
 
 export const routingCandidateSchema = z.object({

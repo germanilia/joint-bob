@@ -65,3 +65,18 @@ test("relay unreachable → reason decision model unavailable", async () => {
   assert.equal(refusing.reason, "decision model unavailable");
   assert.equal(calls, 1);
 });
+
+test("a long conversation is trimmed to the newest text, and a rejected request does not shut the relay out", async () => {
+  const relayNodeId = randomUUID();
+  const sent: Array<{ text: string }> = [];
+  let status = 400;
+  const send = async (_target: unknown, body: { text: string }) => { sent.push(body); return new Response(JSON.stringify({ level: 2, score: 2, confidence: 0.8 }), { status }); };
+  const targets = async () => [{ relayNodeId, clusterId: randomUUID() }];
+  const long = `${"old ".repeat(40_000)}NEWEST`;
+  const rejected = await classifyThroughRelay("typesafe", long, options, { targets, send });
+  assert.equal(rejected.reason, "decision model unavailable");
+  assert.ok(sent[0].text.length <= 120_000 && sent[0].text.endsWith("NEWEST"), "only the newest 120,000 characters travel");
+  status = 200;
+  const next = await classifyThroughRelay("typesafe", "git status", options, { targets, send });
+  assert.equal(next.source, `relay:${relayNodeId}`, "a 400 is not remembered as a refusal");
+});

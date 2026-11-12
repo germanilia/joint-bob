@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { isDeepStrictEqual } from 'node:util';
 import { getClusterNode } from '../../cluster.js';
-import { systemAiSchema, systemAiSettings } from '../../system-ai-config.js';
+import { systemAiSchema, systemAiSettings, withStoredRouting } from '../../system-ai-config.js';
 import { systemDecisionKey } from '../../system-ai.js';
 import { saveSystemAiSetting } from '../../system-ai-replication.js';
 import { settingsDatabase } from '../../settings-store.js';
@@ -52,7 +52,8 @@ app.get('/api/system-ai', requireAdmin, async (_request, response, next) => {
 });
 app.put('/api/system-ai', requireAdmin, async (request, response, next) => {
   try {
-    const input = inputSchema.parse(request.body), previous = systemAiSettings(), settings = nodeSettings();
+    const body = request.body && typeof request.body === 'object' ? { ...request.body, system: withStoredRouting(request.body.system) } : request.body;
+    const input = inputSchema.parse(body), previous = systemAiSettings(), settings = nodeSettings();
     // Unchanged replicated choices may be unavailable here; changed local choices must run here.
     for (const operation of ['feedback', 'knowledge'] as const) {
       const choice = input.system.operations[operation];

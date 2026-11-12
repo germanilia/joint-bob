@@ -48,3 +48,12 @@ test("a saved policy without fallbacks still parses", () => {
   });
   assert.equal(policy.harnesses.claude.levels["6"]?.fallbacks, undefined);
 });
+
+test("a harness's own default model counts as listed even when the catalogue omits it", async () => {
+  const { routingCandidateListed } = await import("../src/routing-policy.js");
+  const listed = new Set(["kiro\0claude-sonnet-5.5"]);
+  assert.equal(routingCandidateListed(listed, "kiro", "default"), true, "a signed-in Kiro lists real model IDs, not default");
+  assert.equal(routingCandidateListed(listed, "kiro", "claude-sonnet-5.5"), true);
+  assert.equal(routingCandidateListed(listed, "kiro", "missing"), false);
+  assert.equal(routingCandidateListed(null, "kiro", "missing"), true, "no catalogue: validateSettings decides");
+});

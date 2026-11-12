@@ -249,7 +249,7 @@ test("a routed model runs on the first pool member and the default runs after sw
     readRoutingState: () => ({ mode: "auto", lastEvalOrdinal: null, configId: "config", configRevision: 1 }),
     classifyForRouting: async () => ({ classification: { level: 7, score: 7, confidence: 0.9 }, source: "local" }),
     systemAiSettings: () => ({ decision: { model: "typesafe" }, routing: { enabled: true, shareWithRelay: false } }), DEFAULT_ROUTING_CONFIG_ID: "default-config",
-    automaticRoutingModelAllowed: () => true, getHarness: () => ({ configuration: {} }),
+    automaticRoutingModelAllowed: () => true, routingCandidateListed: () => true, getHarness: () => ({ configuration: {} }),
     readQueueSettings: () => saved, recordQueueSettings: (_key: string, value: unknown) => { saved = value; },
     getHarnessRuntime: async () => ({ validateSettings: async (value: any) => { routed.push(value.modelId); } }),
   });

@@ -68,3 +68,14 @@ test("older saved System AI without routing parses with defaults", () => {
   assert.deepEqual(systemAiSettings().routing, { enabled: true, shareWithRelay: false });
   assert.throws(() => systemAiSchema.parse({ ...older, routing: { enabled: true } }));
 });
+
+test("saving System AI without routing keeps the stored routing (older twin or old page)", async () => {
+  const { withStoredRouting } = await import("../src/system-ai-config.js");
+  const stored = systemAiDefaults(); stored.routing = { enabled: false, shareWithRelay: true };
+  save(settingsDatabase(), "systemAI", JSON.stringify(stored));
+  const { routing: _dropped, ...older } = systemAiDefaults();
+  assert.deepEqual((withStoredRouting(older) as { routing: unknown }).routing, { enabled: false, shareWithRelay: true });
+  const explicit = { ...systemAiDefaults(), routing: { enabled: true, shareWithRelay: false } };
+  assert.deepEqual((withStoredRouting(explicit) as { routing: unknown }).routing, { enabled: true, shareWithRelay: false }, "an explicit value wins");
+  persist(systemAiDefaults());
+});

@@ -26,7 +26,7 @@ import type { UsageDifficulty } from "../usage-types.js";
 import { inheritedDifficulty, latestDifficultyForConversation, saveDifficulty } from "../usage-ledger.js";
 import { classifyForRouting } from "../routing-decision.js";
 import { systemAiSettings } from "../system-ai-config.js";
-import { automaticRoutingModelAllowed, routingEvalDue, type RoutingCandidate } from "../routing-policy.js";
+import { automaticRoutingModelAllowed, routingCandidateListed, routingEvalDue, type RoutingCandidate } from "../routing-policy.js";
 import { activeRoutingConfig, DEFAULT_ROUTING_CONFIG_ID, routingConfigDatabase, routingConfigWarning, type StoredRoutingConfig } from "../routing-configs.js";
 import { applySystemControlDefault, enableSystemControl, type ConversationModel } from "./system-control.js";
 import { blockConversationGoal, cancelConversationGoal, getConversationGoal, goalPrompt, goalStatusMessage, parseBobGoalCommand, recordConversationGoalResponse, startConversationGoal, type ConversationGoal } from "../conversation-goals.js";
@@ -648,7 +648,7 @@ async function applyFirstAvailableCandidate(connection: HarnessChatConnection, c
       reasoning: candidate.thinkingLevel,
     };
     if (!automaticRoutingModelAllowed(settings.provider, settings.modelId)) continue;
-    if (listed && !listed.has(`${settings.provider}\0${settings.modelId}`)) continue;
+    if (!routingCandidateListed(listed, settings.provider, settings.modelId)) continue;
     try {
       await applyRoutedSettings(connection, settings, poolActive);
       return { settings, index };
