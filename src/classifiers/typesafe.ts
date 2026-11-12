@@ -189,6 +189,8 @@ export async function classifyWithTypesafe(text: string, apiKey: string, context
 /** The same classification against any System One server; an empty key sends no Authorization header. */
 export async function classifyWithSystemOne(target: SystemOneTarget, text: string, apiKey: string, context: string | DifficultyClassifierContext = "", fetchImpl: typeof fetch = fetch): Promise<DifficultyClassification | null> {
   if (!text.trim()) return null;
+  // Routing records only "classifier failed"; the log keeps the cause.
+  const fail = (cause: string): null => { console.warn(`Difficulty classification failed (${target.endpoint}): ${cause}`); return null; };
   let response: Response | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
@@ -197,23 +199,27 @@ export async function classifyWithSystemOne(target: SystemOneTarget, text: strin
         response = candidate;
         break;
       }
-    } catch {
-      if (attempt === MAX_ATTEMPTS) return null;
+      console.warn(`Difficulty classification attempt ${attempt} got HTTP ${candidate.status}; retrying`);
+    } catch (error) {
+      const cause = error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 200) : "unknown error";
+      if (attempt === MAX_ATTEMPTS) return fail(`request error after ${attempt} attempts: ${cause}`);
+      console.warn(`Difficulty classification attempt ${attempt} failed (${cause}); retrying`);
     }
   }
-  if (!response || !response.ok) return null;
+  if (!response) return fail("no response");
+  if (!response.ok) return fail(`HTTP ${response.status} ${(await response.text().catch(() => "")).slice(0, 200)}`);
   let body: unknown;
   try { body = await response.json(); }
-  catch { return null; }
+  catch { return fail("response is not JSON"); }
   const answers = (body as { answers?: unknown } | null)?.answers;
-  if (!answers || typeof answers !== "object" || Array.isArray(answers)) return null;
+  if (!answers || typeof answers !== "object" || Array.isArray(answers)) return fail("response has no answers");
   const answer = (answers as Record<string, unknown>).complexity;
-  if (!answer || typeof answer !== "object" || Array.isArray(answer)) return null;
+  if (!answer || typeof answer !== "object" || Array.isArray(answer)) return fail("response has no complexity answer");
   try {
     return (answer as { type?: unknown }).type === "choice"
       ? choiceFromAnswer(answer as ChoiceAnswer)
       : levelFromAnswer(answer as ScoreAnswer);
-  } catch { return null; }
+  } catch (error) { return fail(`malformed answer: ${error instanceof Error ? error.message.slice(0, 200) : "unknown error"}`); }
 }
 
 export const typesafeClassifier: DifficultyClassifier = {

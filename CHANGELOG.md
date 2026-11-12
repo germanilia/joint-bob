@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- When difficulty classification failed, the log now says why, including each retry, instead of failing silently.
+
 ## 2.279.0 — 2026-11-12
 
 - Bob can create an assistant for a job. Tell him what you want it for ("create an assistant that can post on my LinkedIn"); after you press **Create and set up**, the assistant is made on this machine, for you alone, in the **Assistants** project, and sets itself up: it finds out how the job is done, chooses the route, writes its own skill and instructions, and tests them without posting or sending anything. Bob drives the setup and tells you when the assistant is ready.
