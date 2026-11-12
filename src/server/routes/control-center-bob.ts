@@ -10,6 +10,9 @@ import { fileAttachmentSchema, imageAttachmentSchema } from "../schemas.js";
 import { appearanceContextSchema } from "../control-center-display.js";
 import { replyToItem, settleItem } from "../control-center-items.js";
 import { app } from "../state.js";
+import { readReviewCheck } from "../../control-center/review-check.js";
+import { lastReviewSkip } from "../control-center-review-check.js";
+import { projectVisible } from "../../store.js";
 // A press of a message another of the person's machines wrote is run there.
 import "../control-center-bob-remote.js";
 
@@ -63,6 +66,25 @@ app.put("/api/control-center/bob/settings", async (request, response, next) => {
     response.json(writeBobSettings(db, session.accountId, change));
   } catch (error) {
     if (error instanceof z.ZodError) { sendError(response, 400, "Invalid settings for Bob"); return; }
+    next(error);
+  }
+});
+
+/**
+ * Bob's last check of one conversation, for the conversation itself: the verdict, why, and which model decided (`by`), or why he
+ * passed over its last turn without judging it. A project the caller cannot see is not found.
+ */
+app.get("/api/control-center/bob/review-check", async (request, response, next) => {
+  try {
+    const { projectId, conversationId } = z.object({ projectId: z.string().min(1).max(200), conversationId: z.string().min(1).max(300) }).strict().parse(request.query);
+    if (!await projectVisible(projectId)) { sendError(response, 404, "Project not found"); return; }
+    const check = readReviewCheck(await bobDatabase(), projectId, conversationId);
+    response.json({
+      check: check ? { verdict: check.verdict, reason: check.reason, by: check.by, pushes: check.pushes, needsYou: check.needsYou, checkedAt: check.checkedAt } : null,
+      skipped: lastReviewSkip(projectId, conversationId),
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid request"); return; }
     next(error);
   }
 });

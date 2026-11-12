@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import {
-  latestRequest, MAX_PUSHES, nextStep, parseAgentVerdict, PUSH_PREFIX, pushesSoFar, readReviewCheck, reasonFromAnswer, REVIEW_QUESTION, reviewState, verdictOf, writeReviewCheck, type ReviewCheck,
+  GOAL_BLOCKED_BY, goalBlockedVerdict, latestRequest, MAX_PUSHES, nextStep, parseAgentVerdict, PUSH_PREFIX, pushesSoFar, readReviewCheck, reasonFromAnswer, REVIEW_QUESTION, reviewState, verdictOf, writeReviewCheck, type ReviewCheck,
 } from "../src/control-center/review-check.js";
 
 const check = (overrides: Partial<ReviewCheck> = {}): ReviewCheck => ({
@@ -65,4 +65,11 @@ test("the answer is judged against what the person asked last, not the conversat
   assert.equal(latestRequest(messages.slice(0, 2)), "Make sure the code is from main and pull it");
   assert.equal(latestRequest([{ role: "user", text: `${PUSH_PREFIX}.` }]), `${PUSH_PREFIX}.`, "only Bob's push: it is what there is");
   assert.equal(latestRequest([]), "");
+});
+
+test("an answer that ends with BOB_GOAL_BLOCKED waits for the person without asking a model, and says so", () => {
+  assert.deepEqual(goalBlockedVerdict("Two questions for you.\n\nBOB_GOAL_BLOCKED: Need answers to Q1 and Q2"), { verdict: "needs-user", reason: "Need answers to Q1 and Q2", by: GOAL_BLOCKED_BY });
+  // Only the last line counts: a quoted protocol line earlier, or a finished goal, is for the models to judge.
+  assert.equal(goalBlockedVerdict("BOB_GOAL_BLOCKED: old\nThen I carried on and finished."), null);
+  assert.equal(goalBlockedVerdict("Done.\nBOB_GOAL_COMPLETE"), null);
 });

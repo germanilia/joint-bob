@@ -11,7 +11,7 @@ import { isLeased } from "../control-center/leases.js";
 import { createMoveEnvironment } from "../control-center/moves-runtime.js";
 import { bobStarter } from "../control-center/started.js";
 import {
-  answerHash, latestRequest, MAX_PUSHES, nextStep, PUSH_PREFIX, parseAgentVerdict, pushesSoFar, readReviewCheck, reasonFromAnswer, REVIEW_INSTRUCTIONS, REVIEW_QUESTION, reviewState,
+  answerHash, goalBlockedVerdict, latestRequest, MAX_PUSHES, nextStep, PUSH_PREFIX, parseAgentVerdict, pushesSoFar, readReviewCheck, reasonFromAnswer, REVIEW_INSTRUCTIONS, REVIEW_QUESTION, reviewState,
   verdictOf, writeReviewCheck, type ReviewCheck, type ReviewVerdict,
 } from "../control-center/review-check.js";
 import { getAutoRespond } from "../conversation-auto-respond.js";
@@ -28,7 +28,7 @@ import { runGitReview } from "./git-review-run.js";
 import { harnessSessionBusy, onConversationMessage, type SharedHarnessSession } from "./harness-sessions.js";
 import { agentFor } from "../background-agent.js";
 import { projectsWithSharedNames } from "./projects.js";
-import { broadcastToAllClients } from "./realtime.js";
+import { announceToAllClients, broadcastToAllClients } from "./realtime.js";
 import { markConversationDoneAsActor } from "./routes/projects.js";
 
 /**
@@ -56,16 +56,30 @@ const personPushText = (reason: string, instructions: string): string => instruc
 
 export interface Conversation { projectId: string; projectName: string; conversationId: string; engine: string; sessionId: string; title: string }
 
+/**
+ * The verdict, and in `by` how it was reached, so the person can follow it: the agent's own BOB_GOAL_BLOCKED line decides
+ * without a model; otherwise the decision model, with its answer, confidence and the threshold; below the threshold (or with
+ * no model, or no answer) Bob's agent decides, and `by` names its model and what the decision model said first.
+ */
 async function decide(actor: ActingAccount, settings: BobSettings, conversation: Conversation, cwd: string, input: { request: string; summary: string | null; answer: string }): Promise<{ verdict: ReviewVerdict; reason: string; by: string } | null> {
+  const blocked = goalBlockedVerdict(input.answer);
+  if (blocked) return blocked;
   return runAsAccount(actor, async () => {
     const model = await bobDecisionModel(await projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }), settings);
+    const name = settings.classifier === "typesafe" ? "TypeSafe" : "Laya";
+    const threshold = Math.round(settings.threshold * 100);
+    let first = "No decision model is set up";
     if (model) {
       const state = reviewState(input, model.target.stateCharacters);
       const answer = state ? await askSystemOneChoices(model.target, state, { verdict: REVIEW_QUESTION }, model.apiKey) : null;
       const verdict = answer?.verdict ? verdictOf(answer.verdict.choice) : null;
-      if (answer?.verdict && verdict && answer.verdict.confidence >= settings.threshold) {
-        return { verdict, reason: reasonFromAnswer(input.answer), by: `Decision model ${Math.round(answer.verdict.confidence * 100)}%` };
-      }
+      if (answer?.verdict && verdict) {
+        const confidence = Math.round(answer.verdict.confidence * 100);
+        if (answer.verdict.confidence >= settings.threshold) {
+          return { verdict, reason: reasonFromAnswer(input.answer), by: `Decision model ${confidence}% (${name} said ${verdict}; threshold ${threshold}%)` };
+        }
+        first = `Decision model (${name}) said ${verdict} at ${confidence}%, under the ${threshold}% threshold`;
+      } else first = state ? `Decision model (${name}) gave no answer` : `The conversation was too long for the decision model (${name})`;
     }
     // The model is missing, could not answer, or was not sure enough: Bob's own agent reads the same and decides.
     const result = await runGitReview({
@@ -74,7 +88,9 @@ async function decide(actor: ActingAccount, settings: BobSettings, conversation:
       diff: JSON.stringify({ user_request: input.request, conversation_summary: input.summary, agent_last_message: input.answer.slice(-8000) }), instructions: REVIEW_INSTRUCTIONS,
     });
     const parsed = parseAgentVerdict(result.answer);
-    return parsed ? { ...parsed, reason: parsed.reason || reasonFromAnswer(input.answer), by: model ? "Under the threshold, so Bob's agent decided" : "Bob's agent" } : null;
+    const agent = [result.provider, result.modelId].filter(Boolean).join("/") || "its default model";
+    if (!parsed) console.warn(`Bob's agent (${agent}) gave no verdict for "${conversation.title}" after: ${first}`);
+    return parsed ? { ...parsed, reason: parsed.reason || reasonFromAnswer(input.answer), by: `${first}, so Bob's agent (${agent}) decided` } : null;
   });
 }
 
@@ -104,39 +120,55 @@ const pushAction = (conversation: Conversation): BobAction => ({ id: "review.pus
 const doneAction = (conversation: Conversation): BobAction => ({ id: "conversation.done", label: "Done", data: { ...conversation } });
 const abandonAction = (conversation: Conversation): BobAction => ({ id: "conversation.abandon", label: "Abandon", style: "warn", data: { ...conversation } });
 
+/** Why Bob last passed over a turn without judging it, per conversation, so the conversation can say so. Kept on this machine only. */
+const skips = new Map<string, { reason: string; at: string }>();
+
+function skip(shared: Pick<SharedHarnessSession, "projectId" | "conversationId">, reason: string): void {
+  skips.set(`${shared.projectId}:${shared.conversationId}`, { reason, at: new Date().toISOString() });
+  console.info(`Bob's review check passed over ${shared.projectId}:${shared.conversationId}: ${reason}`);
+  // The open conversation reads it again, as it does after a check.
+  announceToAllClients({ type: "controlCenterChanged" });
+}
+
+/** Why Bob last passed over this conversation's turn on this machine, if he did. */
+export function lastReviewSkip(projectId: string, conversationId: string): { reason: string; at: string } | null {
+  return skips.get(`${projectId}:${conversationId}`) ?? null;
+}
+
 /** Checks one conversation whose turn ended, as the person whose conversation it is, and acts on what is found. "busy" means the turn is still settling. */
 async function check(shared: SharedHarnessSession, actor: ActingAccount, turnEndedAt: number): Promise<"busy" | void> {
-  if (!await personalContinuationAllowed(shared.projectId, shared.conversationId)) return;
+  if (!await personalContinuationAllowed(shared.projectId, shared.conversationId)) return skip(shared, "it belongs to an assistant team, which continues only on an explicit assignment");
   const db = await bobDatabase();
   const settings = readBobSettings(db, actor.accountId);
-  if (!settings.monitoring || settings.reviewCheck === "off") return;
+  if (!settings.monitoring || settings.reviewCheck === "off") return skip(shared, "monitoring or the review check is off in Bob's settings");
   if (shared.turnInFlight > 0 || harnessSessionBusy(shared)) return "busy";
   // Closed while its last turn ended (Done on its card stops it first): nothing to judge, and it must not be pushed on.
   const done = await sessionDoneOverrides();
-  if (done[shared.conversationId] || done[shared.session.id]) return;
+  if (done[shared.conversationId] || done[shared.session.id]) return skip(shared, "it was marked done");
   // Something else is moving it, or the person is in it: nothing to judge.
-  if (listQueuedPrompts(`${shared.projectId}:${shared.conversationId}`).length) return;
-  if (isLeased(shared.projectId, shared.conversationId)) return;
+  if (listQueuedPrompts(`${shared.projectId}:${shared.conversationId}`).length) return skip(shared, "a queued message was about to run");
+  if (isLeased(shared.projectId, shared.conversationId)) return skip(shared, "someone had taken control of it");
   // Auto respond answers for the agent; when it stopped on this turn, it already brought the conversation to the person.
   const responder = await getAutoRespond(shared.projectId, shared.conversationId);
-  if (responder?.status === "active" || (responder?.status === "stopped" && Date.parse(responder.updatedAt) >= turnEndedAt - AUTO_RESPOND_SLACK_MS)) return;
+  if (responder?.status === "active") return skip(shared, "auto respond answers it");
+  if (responder?.status === "stopped" && Date.parse(responder.updatedAt) >= turnEndedAt - AUTO_RESPOND_SLACK_MS) return skip(shared, "auto respond stopped on this turn and brought it to you");
   const messages = shared.session.messages;
   const answer = [...messages].reverse().find((message) => message.role === "assistant")?.text?.trim();
-  if (!answer) return;
+  if (!answer) return skip(shared, "the turn ended without an answer");
   const previous = readReviewCheck(db, shared.projectId, shared.conversationId);
-  if (previous?.by === TAKEN_OVER_BY) return;
+  if (previous?.by === TAKEN_OVER_BY) return skip(shared, "you stepped in, so Bob leaves it to you until you hand it back");
   // The same words can end two turns ("Done."); the count of messages tells the turns apart.
   const hash = answerHash(`${messages.length}:${answer}`);
   if (previous?.answerHash === hash) return;
   const project = await getProject(shared.projectId);
-  if (!project || !await runAsAccount(actor, () => projectVisible(project.id))) return;
+  if (!project || !await runAsAccount(actor, () => projectVisible(project.id))) return skip(shared, "its project is not visible to the account Bob checks for");
   const request = latestRequest(messages);
   const conversation: Conversation = {
     projectId: project.id, projectName: project.name, conversationId: shared.conversationId, engine: shared.engine, sessionId: shared.session.id,
     title: (await sessionTitleOverrides())[shared.session.id] ?? titleOf(request || answer),
   };
   const decided = await decide(actor, settings, conversation, project.path, { request, summary: storedDigest(project.id, shared.conversationId)?.summary ?? null, answer });
-  if (!decided) { console.warn(`Bob could not tell whether "${conversation.title}" is done`); return; }
+  if (!decided) return skip(shared, "neither the decision model nor Bob's agent gave a verdict");
   const pushes = pushesSoFar(previous);
   const step = nextStep(decided.verdict, settings.reviewCheck, pushes);
   const record: ReviewCheck = {
@@ -208,10 +240,16 @@ function schedule(shared: SharedHarnessSession, turnAccountId: string | null, tu
   pending.set(key, setTimeout(() => {
     pending.delete(key);
     void (async () => {
-      if (!await personalContinuationAllowed(shared.projectId, shared.conversationId)) return;
+      if (!await personalContinuationAllowed(shared.projectId, shared.conversationId)) return skip(shared, "it belongs to an assistant team, which continues only on an explicit assignment");
       const owner = await ownerOf(shared, turnAccountId);
-      if (owner && await check(shared, owner, turnEndedAt) === "busy" && attempt < BUSY_RETRIES) schedule(shared, turnAccountId, turnEndedAt, attempt + 1);
-    })().catch((error) => console.warn("Bob's review check failed", error instanceof Error ? error.message : error));
+      if (!owner) return skip(shared, "Bob has no account for the person this turn ran for");
+      if (await check(shared, owner, turnEndedAt) !== "busy") return;
+      if (attempt < BUSY_RETRIES) schedule(shared, turnAccountId, turnEndedAt, attempt + 1);
+      else skip(shared, `it was still busy (a turn or background work running) after ${BUSY_RETRIES + 1} looks`);
+    })().catch((error) => {
+      skip(shared, `the check failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn("Bob's review check failed", error instanceof Error ? error.message : error);
+    });
   }, attempt === 0 ? firstCheckMs : busyRetryMs).unref());
 }
 
@@ -222,7 +260,8 @@ export function startReviewChecks(): void {
   if (started) return;
   started = true;
   onConversationMessage((shared) => {
-    if (shared.scheduledTurn || shared.internalTurn) return;
+    if (shared.internalTurn) return;
+    if (shared.scheduledTurn) return skip(shared, "scheduled runs are not checked");
     // Read now: the turn's person is forgotten once it ends.
     const turnAccountId = shared.turnAccountId ?? null;
     schedule(shared, turnAccountId, Date.now(), 0);

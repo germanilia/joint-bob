@@ -98,9 +98,14 @@ test("a conversation that stops before its task is done is told to go on, one th
     await new Promise((resolve) => setTimeout(resolve, 1500));
     assert.equal((await prompts()).filter((prompt) => prompt.startsWith("Continue with the task")).length, 1);
     assert.deepEqual(classifier.verdicts, ["continue", "done"]);
-    const card = await eventually(async () => (await api<{ cards: Array<{ column: string; reviewCheck: { verdict: string } | null }> }>(node, auth, "GET", "/control-center/board")).body.cards.find((entry) => entry.reviewCheck), "the board shows the check");
+    const card = await eventually(async () => (await api<{ cards: Array<{ column: string; projectId: string; conversationId: string; reviewCheck: { verdict: string } | null }> }>(node, auth, "GET", "/control-center/board")).body.cards.find((entry) => entry.reviewCheck), "the board shows the check");
     assert.equal(card.reviewCheck?.verdict, "done");
     assert.notEqual(card.column, "needs-you");
+    // The conversation reads the same check, with which model decided and how sure it was.
+    const shown = await api<{ check: { verdict: string; by: string } | null; skipped: unknown }>(node, auth, "GET", `/control-center/bob/review-check?projectId=${encodeURIComponent(card.projectId)}&conversationId=${encodeURIComponent(card.conversationId)}`);
+    assert.equal(shown.status, 200, JSON.stringify(shown.body));
+    assert.equal(shown.body.check?.verdict, "done");
+    assert.match(shown.body.check?.by ?? "", /^Decision model 97% \(TypeSafe said done; threshold \d+%\)$/);
     // Bob's note was about the turn he pushed: it leaves the chat as soon as the conversation runs again (the board shows it),
     // or, when that turn already ended, once he checked it; at once either way, not at the next sweep.
     const noted = await eventually(async () => (await timeline()).find((message) => message.id === said.id && message.resolvedAt), "Bob's note left the chat");

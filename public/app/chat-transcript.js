@@ -10,6 +10,7 @@ import { brandIcon, menuIcon } from "./icons.js";
 import { openFileAction, projectFileUrl } from "./project-files.js";
 import { toast } from "./shell.js";
 import { state } from "./state.js";
+import "./review-check-note.js";
 
 export function clearThinkingBubble() {
   if (state.thinkingBubble) {
@@ -500,6 +501,7 @@ export function rerenderChatTranscript(messages, segments, conversationStartedAt
   clearChat();
   appendTranscript(messages, segments, conversationStartedAt);
   requestAnimationFrame(() => { rerenderingChat = false; });
+  document.dispatchEvent(new CustomEvent("chat-transcript-rendered"));
   return resumeFromTop;
 }
 
