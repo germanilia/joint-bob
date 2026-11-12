@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.279.0 — 2026-11-12
+
+- Bob can create an assistant for a job. Tell him what you want it for ("create an assistant that can post on my LinkedIn"); after you press **Create and set up**, the assistant is made on this machine, for you alone, in the **Assistants** project, and sets itself up: it finds out how the job is done, chooses the route, writes its own skill and instructions, and tests them without posting or sending anything. Bob drives the setup and tells you when the assistant is ready.
+- When the setup needs a key or token, Bob's chat shows **Enter it**: a box takes the value straight to Secrets, attached to the assistant, and the agent never sees it. A website sign-in appears as the usual sign-in card.
+- Once an assistant is ready, its agent can no longer change its own skill or instructions.
+
 ## 2.278.0 — 2026-11-12
 
 - Added a Transfer administration action to cluster members, so the current manager can hand over a cluster without the new manager confirming, and the new manager can delete it.
