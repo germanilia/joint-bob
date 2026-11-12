@@ -19,6 +19,7 @@ import { startNewHarnessConversation, startGlobalConversation } from "./app/new-
 import { initializeFocusUi } from "./app/focus-ui.js";
 import { installSelectSearch } from "./app/select-search.js";
 import { openQuickNote, toggleQuickNotes } from "./app/quick-notes.js";
+import { newConversation } from "./app/control-center.js";
 import { confirmAction, SERVICE_WORKER_UPDATE_MS, setTheme, syncNotifyButton, toast, updateInstallButton, updateServiceWorker } from "./app/shell.js";
 import { state } from "./app/state.js";
 import { openUsageDashboard } from "./app/usage-dashboard.js";
@@ -152,6 +153,7 @@ installShortcuts({
   toggleProjects: () => togglePanel("projects"),
   toggleChats: () => togglePanel("chats"),
   newProject: () => elements.newProjectButton.click(),
+  newConversation: () => { void newConversation().catch((error) => toast(error.message)); },
   newPiChat: () => { void startNewHarnessConversation("pi").catch((error) => toast(error.message)); },
   newClaudeChat: () => { void startNewHarnessConversation("claude").catch((error) => toast(error.message)); },
   newKiroChat: () => { void startNewHarnessConversation("kiro").catch((error) => toast(error.message)); },

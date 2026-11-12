@@ -462,8 +462,27 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await page.locator("#quickNoteDialogTitle").textContent(), "New conversation");
   assert.equal(await page.getByTestId("quick-note-save-button").textContent(), "Start conversation");
   assert.equal(await page.getByTestId("quick-note-schedule-input").isVisible(), false, "nothing to schedule");
-  await page.getByTestId("quick-note-content-input").fill("check the login page copy");
-  await page.getByTestId("quick-note-save-button").click();
+  // A wizard: project, title and content, agent, where it runs, secrets; Enter walks the fields and then the steps.
+  await page.getByTestId("quick-note-project-select").waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("quick-note-content-input").isVisible(), false, "one step at a time");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "quick-note-project-select");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "quick-note-title-input");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.locator(".quick-note-error", { hasText: "Write what the agent should do." }).waitFor();
+  await page.keyboard.type("check the login page copy");
+  await page.keyboard.press("Enter");
+  await page.getByTestId("quick-note-harness-select").waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("quick-note-step-3").getAttribute("aria-current"), "step");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.getByTestId("quick-note-node-select").waitFor({ state: "visible" });
+  await page.keyboard.press("Enter");
+  await page.getByTestId("quick-note-save-button").waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("quick-note-step-5").getAttribute("aria-current"), "step");
+  await page.keyboard.press("Control+Enter");
   await form.waitFor({ state: "hidden" });
   await page.locator(".toast", { hasText: /^Started “check the login page copy” in / }).waitFor();
   assert.equal(await page.locator("body.view-control").count(), 1, "the board stays");
@@ -476,6 +495,12 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.getByTestId("control-chat-entry").filter({ hasText: "Which project should I start this in?" }).getByRole("button", { name: "Another project…" }).click();
   await form.waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("quick-note-content-input").inputValue(), "fix the sidebar spacing");
+  await page.keyboard.press("Escape");
+  await form.waitFor({ state: "hidden" });
+  // Its shortcut opens the same wizard from anywhere.
+  await page.keyboard.press("Control+Alt+Shift+KeyN");
+  await form.waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("quick-note-step-1").getAttribute("aria-current"), "step");
   await page.keyboard.press("Escape");
   await form.waitFor({ state: "hidden" });
 

@@ -482,6 +482,128 @@ dialog.addEventListener("paste", (event) => {
 
 dialog.addEventListener("close", () => { ++dialogGeneration; ++optionsRequestId; });
 
+/* ---------- New conversation as a wizard: project, title and content, agent, where it runs, secrets ---------- */
+
+const WIZARD_STEPS = [
+  { label: "Project", groups: [projectPicker.root.closest(".project-combobox-field")] },
+  { label: "Title & content", groups: [titleInput.closest("label"), contentInput.closest("label"), imageButton.closest(".field-group")] },
+  { label: "Agent", groups: [harnessSelect.closest(".quick-note-settings")] },
+  { label: "Runs on", groups: [nodeSelect.closest(".quick-note-settings")] },
+  { label: "Secrets", groups: [secretList.closest(".field-group")] },
+];
+const LAST_STEP = WIZARD_STEPS.length - 1;
+const stepList = document.createElement("ol");
+stepList.className = "wizard-steps";
+stepList.style.gridTemplateColumns = `repeat(${WIZARD_STEPS.length}, minmax(0, 1fr))`;
+stepList.dataset.testid = "quick-note-steps";
+const stepButtons = WIZARD_STEPS.map((step, index) => {
+  const item = document.createElement("li");
+  const stepButton = document.createElement("button");
+  stepButton.type = "button";
+  stepButton.className = "wizard-step";
+  stepButton.textContent = `${index + 1} · ${step.label}`;
+  stepButton.dataset.testid = `quick-note-step-${index + 1}`;
+  stepButton.addEventListener("click", () => goToStep(index));
+  item.append(stepButton);
+  stepList.append(item);
+  return stepButton;
+});
+form.firstElementChild.after(stepList);
+const wizardHint = document.createElement("p");
+wizardHint.className = "muted compact-copy";
+wizardHint.dataset.testid = "quick-note-keyboard-hint";
+wizardHint.textContent = "Enter moves to the next field, then the next step · Shift + Enter adds a line · ⌘/Ctrl + Enter starts now · Esc cancels";
+errorText.before(wizardHint);
+function navButton(text, testid) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = "ghost";
+  node.textContent = text;
+  node.dataset.testid = testid;
+  saveButton.before(node);
+  return node;
+}
+const backButton = navButton("Back", "quick-note-back-button");
+const nextButton = navButton("Next", "quick-note-next-button");
+backButton.addEventListener("click", () => goToStep(wizardStep - 1));
+nextButton.addEventListener("click", () => goToStep(wizardStep + 1));
+/** The step the wizard shows, or -1 when the form is the plain quick note form. */
+let wizardStep = -1;
+
+function setWizard(on) {
+  wizardStep = on ? 0 : -1;
+  form.noValidate = on;
+  stepList.hidden = !on;
+  wizardHint.hidden = !on;
+  backButton.hidden = !on;
+  nextButton.hidden = !on;
+  saveButton.hidden = false;
+  for (const step of WIZARD_STEPS) for (const group of step.groups) group.hidden = false;
+  if (on) showStep(0, false);
+}
+
+function stepFields(index) {
+  const controls = WIZARD_STEPS[index].groups.flatMap((group) => [...group.querySelectorAll("input:not([type='file']), select, textarea, .searchable-select-trigger")]);
+  return controls.filter((control) => !control.disabled && !control.closest("[hidden]"));
+}
+
+function focusStep() {
+  const target = stepFields(wizardStep)[0] ?? (wizardStep === LAST_STEP ? saveButton : nextButton);
+  target.focus();
+}
+
+function showStep(index, focus = true) {
+  wizardStep = index;
+  WIZARD_STEPS.forEach((step, stepIndex) => { for (const group of step.groups) group.hidden = stepIndex !== index; });
+  stepButtons.forEach((stepButton, stepIndex) => {
+    stepButton.classList.toggle("active", stepIndex === index);
+    stepButton.classList.toggle("done", stepIndex < index);
+    stepButton.setAttribute("aria-current", stepIndex === index ? "step" : "false");
+  });
+  backButton.disabled = index === 0;
+  nextButton.hidden = index === LAST_STEP;
+  saveButton.hidden = index !== LAST_STEP;
+  if (focus) focusStep();
+}
+
+/** What a step is missing, with the field to fix it in, or null. */
+function stepError(index) {
+  if (index === 0 && !selectedProjectId()) return { message: "Choose a project for the conversation.", field: projectPicker.trigger };
+  if (index === 1 && !contentInput.value.trim()) return { message: "Write what the agent should do.", field: contentInput };
+  return null;
+}
+
+function showStepError(index) {
+  const { message, field } = stepError(index);
+  showStep(index, false);
+  showError(message);
+  field.focus();
+}
+
+/** Moving forward checks every step on the way; the first one missing something opens instead. */
+function goToStep(index) {
+  for (let step = Math.max(wizardStep, 0); step < index; step += 1) {
+    if (stepError(step)) { showStepError(step); return; }
+  }
+  showError();
+  showStep(index);
+}
+
+// Enter walks the fields of a step, then on to the next step; on the last one it starts the conversation.
+form.addEventListener("keydown", (event) => {
+  if (wizardStep < 0 || event.key !== "Enter" || event.isComposing) return;
+  if (event.metaKey || event.ctrlKey) { event.preventDefault(); form.requestSubmit(); return; }
+  const fields = stepFields(wizardStep);
+  const position = fields.indexOf(event.target);
+  if (position < 0) return;
+  if (event.target.tagName === "TEXTAREA" && event.shiftKey) return;
+  if (event.target === projectPicker.trigger && projectPicker.trigger.getAttribute("aria-expanded") === "true") return;
+  event.preventDefault();
+  if (position < fields.length - 1) fields[position + 1].focus();
+  else if (wizardStep < LAST_STEP) goToStep(wizardStep + 1);
+  else form.requestSubmit();
+}, true);
+
 export async function openQuickNote(note = null, { chooseProject = false, startNow = false, projectId = null, content = "" } = {}) {
   if (note?.dispatchedAt) {
     await openNoteConversation(note).catch((error) => toast.error(error.message));
@@ -508,6 +630,7 @@ export async function openQuickNote(note = null, { chooseProject = false, startN
   titleInput.required = !startingNow;
   contentInput.required = startingNow;
   scheduleInput.closest("label").hidden = startingNow;
+  setWizard(startingNow);
   const selectedProjectId = note?.projectId || defaultProjectId;
   projectPicker.setOptions(state.projects.map((project) => ({ value: project.id, label: project.name })));
   projectPicker.setValue(selectedProjectId || "");
@@ -529,7 +652,8 @@ export async function openQuickNote(note = null, { chooseProject = false, startN
     renderModels(note?.provider || "", note?.modelId || "", note?.thinkingLevel || "");
     modelsReady = true;
     updateFormControls();
-    titleInput.focus();
+    if (wizardStep >= 0) focusStep();
+    else titleInput.focus();
   } catch (error) {
     showError(error.message);
   }
@@ -565,6 +689,10 @@ async function saveNote(event) {
   showError();
   if (saveButton.disabled) return;
   if (!selectedProjectId()) { showError(startingNow ? "Choose a project for the conversation." : "Choose a project for this note."); return; }
+  if (wizardStep >= 0) {
+    const missing = WIZARD_STEPS.findIndex((step, index) => stepError(index));
+    if (missing >= 0) { showStepError(missing); return; }
+  }
   formSaving = true;
   updateFormControls();
   try {

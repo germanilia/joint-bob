@@ -38,6 +38,7 @@ const KEYMAP_COMMANDS = [
   "toggleProjects", "toggleChats", "board", "newProject", "newPiChat", "newClaudeChat", "newKiroChat", "quickNote", "toggleNotes",
   "runsOn", "selectAgent", "selectModel", "selectThinking", "terminal", "notify", "rename", "browser", "scheduledTasks",
   "backgroundTasks", "chatFiles", "sessionActions", "markDone", "autoRespond", "git", "explainConversation", "costs", "activity",
+  "newConversation",
 ] as const;
 
 /** Mirrors `DEFAULT_KEYMAP` in `public/keymap.js`; every command rides
@@ -85,6 +86,7 @@ export const defaultKeymap = (): KeymapPreference => ({
     git: ["ctrl", "alt", "shift", "G"],
     explainConversation: ["ctrl", "alt", "shift", "E"],
     costs: ["ctrl", "alt", "shift", "C"],
+    newConversation: ["ctrl", "alt", "shift", "N"],
     activity: ["ctrl", "alt", "shift", "S"],
   },
 });

@@ -119,6 +119,7 @@ export const KEYMAP_COMMANDS = [
   "toggleProjects", "toggleChats", "board", "newProject", "newPiChat", "newClaudeChat", "newKiroChat", "quickNote", "toggleNotes",
   "runsOn", "selectAgent", "selectModel", "selectThinking", "terminal", "notify", "rename", "browser", "scheduledTasks",
   "backgroundTasks", "chatFiles", "sessionActions", "markDone", "autoRespond", "git", "explainConversation", "costs", "activity",
+  "newConversation",
 ];
 /** Every command rides one modifier pair - Control+Option on a Mac, Control+Alt
  *  elsewhere, the same two physical keys - so a button badge can name the key alone.
@@ -165,6 +166,7 @@ export const DEFAULT_KEYMAP = {
     git: ["ctrl", "alt", "shift", "G"],
     explainConversation: ["ctrl", "alt", "shift", "E"],
     costs: ["ctrl", "alt", "shift", "C"],
+    newConversation: ["ctrl", "alt", "shift", "N"],
     activity: ["ctrl", "alt", "shift", "S"],
   },
 };

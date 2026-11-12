@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **New conversation** in the control center is now a wizard: project, then title and content, agent, where it runs, and secret accounts. Enter moves to the next field and then the next step, Shift+Enter adds a line, and ⌘/Ctrl+Enter starts the conversation at once. **Control+Option+Shift+N** opens it from anywhere (change it in Settings → Shortcuts).
+
 ## 2.279.1 — 2026-11-12
 
 - When difficulty classification failed, the node log now says why, with the HTTP status, the request error or the malformed answer, and logs each retry.
