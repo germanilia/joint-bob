@@ -14,6 +14,7 @@ import {
   profileProviderSchema,
   providerProfile,
   setPoolChoice,
+  subscriptionOwner,
   syncPoolChoices,
   type ProfileProvider,
   type ProfileScope,
@@ -193,6 +194,7 @@ function poolProviders(owner: string, pool: SubscriptionPool): ProfileProvider[]
   return [...new Set(poolProfiles(owner, pool.members.map(({ profileId }) => profileId)).map(({ provider }) => provider))];
 }
 export function resolveSubscriptionChoice(owner: string, provider: ProfileProvider, scope: ProfileScope, usage: ProfileUsage = "interactive"): SubscriptionChoice | undefined {
+  owner = subscriptionOwner(owner, scope.projectId);
   const match = matchingSelection(listSubscriptionSelections(owner).filter((entry) => entry.provider === profileProviderSchema.parse(provider)), scope);
   if (match?.entry.poolId) return { kind: "pool", pool: getSubscriptionPool(owner, match.entry.poolId), source: match.source };
   if (match?.entry.profileId) return { kind: "profile", profile: accessibleProviderProfile(owner, match.entry.profileId, usage), source: match.source };

@@ -72,17 +72,24 @@ export function personalAccount(account: ActingAccount | undefined = actingAccou
   return account?.accountId;
 }
 
+/** Whether an account belongs to a member of this node (`home_node_id IS NULL AND role = 'member'`). */
+export function localMemberAccount(accountId: string, db: DatabaseSync = ownershipDatabase()): boolean {
+  let members: Array<{ username: string; account_id: string | null }>;
+  try {
+    members = db.prepare("SELECT username, account_id FROM users WHERE home_node_id IS NULL AND role = 'member'").all() as unknown as Array<{ username: string; account_id: string | null }>;
+  } catch { return false; }
+  const home = canonicalLocalHome(db);
+  return members.some((member) => member.account_id === accountId || (home !== "" && accountIdFor(home, member.username) === accountId));
+}
+
 /** Whether an account is known here as someone other than the admin: a member of this node,
     or a visitor from another. The admin can be on record under an older id (before a twin
     was paired), so an id nobody here answers to counts as the admin's. */
 export function accountOfSomeoneElse(accountId: string, db: DatabaseSync = ownershipDatabase()): boolean {
-  let members: Array<{ username: string; account_id: string | null }>;
   try {
     if (db.prepare("SELECT 1 FROM users WHERE account_id = ? AND home_node_id IS NOT NULL").get(accountId)) return true;
-    members = db.prepare("SELECT username, account_id FROM users WHERE home_node_id IS NULL AND role = 'member'").all() as unknown as Array<{ username: string; account_id: string | null }>;
   } catch { return false; } // No accounts table yet, or one from before roles: nobody but the admin.
-  const home = canonicalLocalHome(db);
-  return members.some((member) => member.account_id === accountId || (home !== "" && accountIdFor(home, member.username) === accountId));
+  return localMemberAccount(accountId, db);
 }
 
 /** Whether the acting person owns the resource. The node itself (no acting account) sees

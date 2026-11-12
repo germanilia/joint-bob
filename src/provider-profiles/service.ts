@@ -12,7 +12,7 @@ import { prepareClaudeProfile, readLegacyClaudeCredential, removeLegacyClaudeCre
 import { withProfileAuthority } from "./broker.js";
 import { borrowTwinCredential, MIN_TOKEN_VALIDITY_MS, turnTokenValidityMs, twinLoginHolder, type BorrowedCredential } from "./twin-login.js";
 import { relayProxyCredential } from "./relay-proxy.js";
-import { accessibleProviderProfile, listProviderProfiles, machineSignInChosen, providerProfile, resolveProviderProfile, localProviderProfile, type ProfileProvider, type ProfileScope, type ProviderProfile } from "./store.js";
+import { accessibleProviderProfile, listProviderProfiles, machineSignInChosen, providerProfile, resolveProviderProfile, localProviderProfile, subscriptionOwner, type ProfileProvider, type ProfileScope, type ProviderProfile } from "./store.js";
 
 export { createSubscriptionPool, deleteSubscriptionPool, getSubscriptionPool, listSubscriptionPools, poolCandidates, resolveSubscriptionChoice, setSubscriptionPoolChoice, updateSubscriptionPool } from "./pools.js";
 
@@ -112,18 +112,19 @@ export async function projectProviderProfile(projectId: string, conversationId: 
   if (!accountId) return undefined;
   const project = await asNode(() => getProject(projectId));
   if (!project) throw new Error("Project not found");
+  const owner = subscriptionOwner(accountId, project.id);
   const scope = await projectScope(project.id, project.type!, conversationId);
   if (engine === "pi") {
-    const selected = resolveProviderProfile(accountId, "pi", scope, automation ? "automation" : "interactive");
+    const selected = resolveProviderProfile(owner, "pi", scope, automation ? "automation" : "interactive");
     if (selected) return selected.profile;
   }
   const subscription = targetProvider === "claude" || targetProvider === "openai-codex" || (engine === "kiro" && targetProvider === "kiro") || (engine === "antigravity" && targetProvider === "antigravity");
   // This machine's own sign-in chosen for the provider means no profile at all, Pi profiles included.
-  const machine = subscription && machineSignInChosen(accountId, targetProvider as ProfileProvider, scope);
-  const profile = machine ? undefined : (subscription ? resolveProviderProfile(accountId, targetProvider, scope, automation ? "automation" : "interactive")?.profile : undefined)
-    ?? (engine === "pi" ? onlyPiProfileHolding(accountId, provider) : undefined);
+  const machine = subscription && machineSignInChosen(owner, targetProvider as ProfileProvider, scope);
+  const profile = machine ? undefined : (subscription ? resolveProviderProfile(owner, targetProvider, scope, automation ? "automation" : "interactive")?.profile : undefined)
+    ?? (engine === "pi" ? onlyPiProfileHolding(owner, provider) : undefined);
   if (!subscription) return profile;
-  if (!profile && accountId !== adminAccountId()) throw new Error("Select your own subscription profile on this node. No other user's account was used.");
+  if (!profile && owner !== adminAccountId()) throw new Error("Select your own subscription profile on this node. No other user's account was used.");
   return profile;
 }
 /** Where a turn runs, including the clusters its project is shared through for cluster choices. */

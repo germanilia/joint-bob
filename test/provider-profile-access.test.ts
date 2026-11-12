@@ -4,10 +4,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runAsAccount } from "../src/account-context.js";
+import { accountIdFor } from "../src/accounts.js";
+import { getClusterNode } from "../src/cluster.js";
 import { addProject } from "../src/store.js";
-import { setResourceOwner } from "../src/ownership.js";
+import { adminAccountId, setResourceOwner } from "../src/ownership.js";
+import { settingsDatabase } from "../src/settings-store.js";
 import { createProviderProfile, profileInputSchema, profileSelectionSchema, setProviderProfileSelection, setProviderProfileShared } from "../src/provider-profiles/store.js";
-import { projectProviderProfile } from "../src/provider-profiles/service.js";
+import { bootstrapPiProfile, piTurnsOnPool, projectProviderProfile } from "../src/provider-profiles/service.js";
 import { createSubscriptionPool, updateSubscriptionPool, setSubscriptionPoolChoice, resolveSubscriptionChoice, poolCandidates } from "../src/provider-profiles/pools.js";
 import { withAutomationProfile } from "../src/provider-profiles/context.js";
 
@@ -68,4 +71,47 @@ test("same project resolves the acting user's selection, never its owner's profi
     setProviderProfileShared(shared.owner, shared.id, false);
     await assert.rejects(withAutomationProfile({ accountId: "visitor", profileId: shared.id }, () => projectProviderProfile(project.id, "c", "claude")), /access revoked/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("unpinned automations from another node use the project owner's subscriptions while local members still need their own", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "peer-automation-profile-access-"));
+  const db = settingsDatabase();
+  db.exec("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL, home_node_id TEXT, role TEXT, account_id TEXT)");
+  try {
+    const localNode = (await getClusterNode()).id;
+    const admin = accountIdFor(localNode, "relay-admin");
+    const localMember = accountIdFor(localNode, "relay-member");
+    const peerCreator = accountIdFor("22222222-2222-4222-8222-222222222222", "peer-creator");
+    const remoteVisitor = accountIdFor("33333333-3333-4333-8333-333333333333", "remote-visitor");
+    db.prepare("DELETE FROM users").run();
+    db.prepare("INSERT INTO users (id, username, home_node_id, role, account_id) VALUES ('u-admin', 'relay-admin', NULL, 'admin', ?), ('u-member', 'relay-member', NULL, 'member', ?), ('u-visitor', 'remote-visitor', '33333333-3333-4333-8333-333333333333', 'member', ?)")
+      .run(admin, localMember, remoteVisitor);
+    assert.equal(adminAccountId(db), admin);
+
+    const project = await addProject("Relay shared project", root, { writeInstructions: false });
+    const piProfile = createProviderProfile(admin, { label: "Relay Pi", provider: "pi" });
+    const codexProfile = createProviderProfile(admin, { label: "Relay Codex", provider: "openai-codex" });
+    const pool = createSubscriptionPool(admin, { name: "Relay pool", profileIds: [piProfile.id, codexProfile.id], fallbackModels: {} });
+    setSubscriptionPoolChoice(admin, { scope: "default", scopeId: "", poolId: pool.id });
+
+    for (const remoteAccount of [peerCreator, remoteVisitor]) {
+      const choice = resolveSubscriptionChoice(remoteAccount, "pi", { projectId: project.id, workspaceId: project.type! }, "automation");
+      assert.equal(choice?.kind === "pool" && choice.pool.id, pool.id);
+      assert.equal(await withAutomationProfile({ accountId: remoteAccount, profileId: null }, () => piTurnsOnPool(project.id, "conv-1")), true);
+    }
+    assert.equal(resolveSubscriptionChoice(localMember, "pi", { projectId: project.id, workspaceId: project.type! }, "automation"), undefined);
+    assert.equal(await withAutomationProfile({ accountId: localMember, profileId: null }, () => piTurnsOnPool(project.id, "conv-1")), false);
+
+    setSubscriptionPoolChoice(admin, { scope: "default", scopeId: "", poolId: null });
+    setProviderProfileSelection(admin, { provider: "pi", scope: "default", scopeId: "", profileId: piProfile.id });
+    setProviderProfileSelection(admin, { provider: "openai-codex", scope: "default", scopeId: "", profileId: codexProfile.id });
+    for (const remoteAccount of [peerCreator, remoteVisitor]) {
+      assert.equal((await withAutomationProfile({ accountId: remoteAccount, profileId: null }, () => bootstrapPiProfile(project.id, "conv-1")))?.id, piProfile.id);
+      assert.equal((await withAutomationProfile({ accountId: remoteAccount, profileId: null }, () => projectProviderProfile(project.id, "conv-1", "openai-codex", "pi")))?.id, piProfile.id);
+    }
+    await assert.rejects(withAutomationProfile({ accountId: localMember, profileId: null }, () => projectProviderProfile(project.id, "conv-1", "openai-codex", "pi")), /Select your own subscription profile/);
+  } finally {
+    db.prepare("DELETE FROM users").run();
+    await rm(root, { recursive: true, force: true });
+  }
 });

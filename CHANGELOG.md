@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.276.4 — 2026-11-12
+
+- Webhooks and scheduled tasks created from another node now use the target project owner's subscription pool or profile on the relay or execution node when no shared profile is pinned.
+
 ## 2.276.3 — 2026-11-12
 
 - Fixed forcing a queued message that had already changed: the queue now refreshes on its own and says the message's status was updated, instead of asking you to refresh the page.

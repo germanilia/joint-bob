@@ -4,7 +4,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { resolveDataDirectory } from "../data-directory.js";
-import { adminAccountId } from "../ownership.js";
+import { adminAccountId, localMemberAccount, resourceOwner } from "../ownership.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from "../replication.js";
 import { settingsDatabase } from "../settings-store.js";
 
@@ -265,7 +265,26 @@ export function matchingSelection(selections: readonly SavedSelection[], scope: 
   const general = at("workspace", scope.workspaceId) ?? at("default", "");
   return general ? { entry: general, source: general.scope } : undefined;
 }
+function hasOwnSubscriptions(db: DatabaseSync, owner: string): boolean {
+  return Boolean(
+    db.prepare("SELECT 1 FROM provider_profiles WHERE owner=? AND deleted=0 LIMIT 1").get(owner)
+    || db.prepare("SELECT 1 FROM provider_profile_selections WHERE owner=? AND (profile_id<>'' OR pool_id<>'' OR machine=1) LIMIT 1").get(owner),
+  );
+}
+/**
+ * Whose subscription choices apply in `projectId` on this node. A person of this node (its admin
+ * or a local member) uses their own choices. A person of another node has no subscription choice
+ * here and cannot make one, so in a shared project their unpinned run uses the project owner's.
+ */
+export function subscriptionOwner(owner: string, projectId: string): string {
+  if (!owner || !projectId) return owner;
+  const db = database();
+  const admin = adminAccountId(db);
+  if (!admin || owner === admin || hasOwnSubscriptions(db, owner) || localMemberAccount(owner, db)) return owner;
+  return resourceOwner("project", projectId, db) ?? owner;
+}
 export function resolveProviderProfile(owner: string, provider: ProfileProvider, scope: ProfileScope, usage: ProfileUsage = "interactive"): { profile: ProviderProfile; source: ProfileSelection["scope"] } | undefined {
+  owner = subscriptionOwner(owner, scope.projectId);
   const match = matchingSelection(listSubscriptionSelections(owner).filter((entry) => entry.provider === provider), scope);
   if (match?.entry.poolId) throw new Error("Selected subscription pool requires pool-aware execution");
   if (match?.entry.profileId) return { profile: accessibleProviderProfile(owner, match.entry.profileId, usage), source: match.source };
@@ -275,6 +294,7 @@ export function resolveProviderProfile(owner: string, provider: ProfileProvider,
 }
 /** True when the choice that applies to this scope is this machine's own sign-in, which uses no profile. */
 export function machineSignInChosen(owner: string, provider: ProfileProvider, scope: ProfileScope): boolean {
+  owner = subscriptionOwner(owner, scope.projectId);
   return matchingSelection(listSubscriptionSelections(owner).filter((entry) => entry.provider === provider), scope)?.entry.machine === true;
 }
 /**
