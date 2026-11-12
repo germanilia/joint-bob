@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.282.0 — 2026-11-12
+
+- Bob can create an assistant for a cluster. Ask for one "for" a cluster you joined; it is hosted on the machine you ask on, in a project of its own shared with that cluster, so its turns run on the cluster's subscription pool when the cluster has one.
+- Everyone in the cluster can ask it through their own Bob, from any member machine: the Assistants tab lists it under **Cluster assistants**. It answers with its own sign-ins and keys, which stay on the host.
+- Its creator and the admins of the host machine who are in the cluster can edit its name and instructions and delete it.
+- Every cluster assistant has an audit log on its host: who created it, who asked it and for what, and who changed or deleted it. The words of an ask and its answer are not written there.
+
 ## 2.281.0 — 2026-11-12
 
 - Bob's automatic model choice now picks a model good enough for each prompt, trying models included in a subscription before API-billed ones and then the cheapest. Scores come from public evals.
