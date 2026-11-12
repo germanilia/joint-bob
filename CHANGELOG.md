@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.293.0 — 2026-11-12
 
 - Removed the project Kanban board: its Board buttons, task dialog, ticket conversations, ticket merges and moving tickets between machines. Conversations, worktrees, background tasks and the control center board are unchanged.
 
