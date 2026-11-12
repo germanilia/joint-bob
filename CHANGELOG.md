@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.273.4 — 2026-11-12
+
+- Made the Google Antigravity icon readable in light and dark themes so its enabled button no longer looks disabled.
+
 ## 2.273.3 — 2026-11-12
 
 - Restored the model-routing dispatch tests that a test-database change had put back to their old project-key version, so the release suite checks routing with the System AI decision credential again.
