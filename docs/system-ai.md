@@ -20,7 +20,7 @@ Bob auto picks a model for each prompt: the cheapest one that does the job, on t
 - **Let machines on this relay use this decision model** appears only on a machine that serves a relay. A machine using the relay that has no decision credential of its own then sends the prompt text and the routing choices to the relay, which classifies them with its own key and returns only the answer. The key never leaves the relay. A relay that is off, refuses or cannot be reached is not asked again for ten minutes; the prompt then runs on its current model.
 - The section shows where decisions come from on this machine, and the default models for each kind of task, cheapest first. When the first model cannot run here (not installed, not signed in, rejected), the next one is tried. If none can, the model is left as it is and the reason is recorded.
 
-The defaults live in `src/routing-defaults.json` and ship with each release. Two scheduled tasks in the Joint Bob project on the Homeserver review them daily; their instructions (`scripts/routing-review/`) are shown read-only in this section.
+The defaults live in `src/routing-defaults.json` and ship with each release.
 
 ## Saving and collection
 

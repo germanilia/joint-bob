@@ -31,17 +31,11 @@ function checkbox(box, text, testid, checked) {
 function paragraph(box, text, testid) {
   const node = document.createElement('p'); node.className = 'settings-hint'; node.textContent = text; node.dataset.testid = testid; box.append(node); return node;
 }
-function instructions(box, title, text, testid) {
-  const details = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = title;
-  const body = document.createElement('pre'); body.className = 'system-ai-routing-instructions'; body.dataset.testid = testid; body.textContent = text;
-  details.append(summary, body); box.append(details);
-}
-
-/** Model routing: the machine-wide switch, where decisions come from, the shipped defaults (read-only)
-    and the instructions the daily Homeserver review follows. Returns the value to save. */
+/** Model routing: the machine-wide switch, where decisions come from and the shipped defaults (read-only).
+    Returns the value to save. */
 function renderRouting(routing) {
   const box = fieldset('Model routing');
-  paragraph(box, 'Bob auto picks the cheapest model that does the job, on the conversation\'s own agent. The defaults ship with each release and are reviewed daily on the Homeserver.', 'system-ai-routing-hint');
+  paragraph(box, 'Bob auto picks the cheapest model that does the job, on the conversation\'s own agent. The defaults ship with each release.', 'system-ai-routing-hint');
   const enabled = checkbox(box, 'Route prompts with the Joint Bob default on this machine', 'system-ai-routing-enabled', routing.enabled);
   const share = routing.servesRelay ? checkbox(box, 'Let machines on this relay use this decision model', 'system-ai-routing-share', routing.shareWithRelay) : null;
   paragraph(box, routing.source, 'system-ai-routing-source');
@@ -57,8 +51,6 @@ function renderRouting(routing) {
   }
   const models = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Default models, cheapest first';
   models.append(summary, list); box.append(models);
-  instructions(box, 'Daily quality review instructions', routing.instructions.qualityReview, 'system-ai-routing-quality-instructions');
-  instructions(box, 'Daily defaults update instructions', routing.instructions.routingUpdate, 'system-ai-routing-update-instructions');
   return () => ({ enabled: enabled.checked, shareWithRelay: share ? share.checked : routing.shareWithRelay });
 }
 

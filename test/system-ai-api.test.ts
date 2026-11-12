@@ -25,12 +25,11 @@ test('System AI selects unattached credentials, replicates between twins, and le
     system.decision.typesafeAccountId = created.body.account.id;
     system.quality.modelId = 'quality-fixture';
     system.routing = { enabled: false, shareWithRelay: true };
-    const routingView = (initial.body as unknown as { routing: { enabled: boolean; servesRelay: boolean; source: string; defaults: { reviewedAt: string; categories: unknown[] }; instructions: { qualityReview: string; routingUpdate: string } } }).routing;
+    const routingView = (initial.body as unknown as { routing: { enabled: boolean; servesRelay: boolean; source: string; defaults: { reviewedAt: string; categories: unknown[] }; instructions?: unknown } }).routing;
     assert.equal(routingView.servesRelay, false);
     assert.match(routingView.defaults.reviewedAt, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(routingView.defaults.categories.length >= 1);
-    assert.match(routingView.instructions.qualityReview, /routing-review/);
-    assert.match(routingView.instructions.routingUpdate, /routing-defaults\.json/);
+    assert.equal(routingView.instructions, undefined, 'reviewing the defaults is a scheduled task people set up themselves, not an app feature');
     const agent = { harnessId: 'claude', provider: 'claude', modelId: 'system-fixture', thinkingLevel: 'low' };
     const saved = await api(a, authA, 'PUT', '/system-ai', { system, backgroundAgent: agent });
     assert.equal(saved.status, 200, JSON.stringify(saved.body));

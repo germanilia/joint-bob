@@ -13,16 +13,10 @@ import { forgetHarnessReadiness } from '../../background-agent.js';
 import { requireAdmin } from '../admin.js';
 import { sendError } from '../http-auth.js';
 import { app } from '../state.js';
-import { readFileSync } from 'node:fs';
 import { clusterV2Database } from '../../cluster-v2-store.js';
 import { listMemberships, servingSettings } from '../../relay/store.js';
 import { relayPolicyLabel } from '../../relay/resource-policy.js';
 import { readRoutingDefaults } from '../../routing-policy.js';
-
-/** The daily routing review's instructions ship with the app (scripts/ is in the package). */
-function reviewInstructions(file: string): string {
-  return readFileSync(new URL(`../../../scripts/routing-review/${file}`, import.meta.url), 'utf8');
-}
 
 async function routingView(system: ReturnType<typeof systemAiSettings>, localKey: boolean) {
   const db = await clusterV2Database();
@@ -30,8 +24,7 @@ async function routingView(system: ReturnType<typeof systemAiSettings>, localKey
   const source = localKey ? 'This machine classifies with its own decision credential.'
     : relays.length ? `No decision credential here: routing asks ${relays.join(', ')} when it shares its decision model.`
       : 'No decision credential here and no relay to ask: prompts are not routed.';
-  return { ...system.routing, servesRelay: servingSettings(db).enabled, source, defaults: readRoutingDefaults(),
-    instructions: { qualityReview: reviewInstructions('quality-review.md'), routingUpdate: reviewInstructions('routing-update.md') } };
+  return { ...system.routing, servesRelay: servingSettings(db).enabled, source, defaults: readRoutingDefaults() };
 }
 
 const inputSchema = z.object({ system: systemAiSchema, backgroundAgent: backgroundAgentSchema.optional(), syncCheck: syncCheckSchema.optional(), dashboards: dashboardAgentSchema.optional() }).strict();

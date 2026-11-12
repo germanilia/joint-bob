@@ -244,7 +244,7 @@ export const routingDefaultsSchema = z.object({
 }).strict();
 export type RoutingDefaults = z.infer<typeof routingDefaultsSchema>;
 
-/** The shipped defaults, reviewed daily on the Homeserver (scripts/routing-review). The path
+/** The shipped defaults (src/routing-defaults.json), updated through releases. The path
     resolves to the package's src/ from both src/ and the compiled dist/. */
 export function readRoutingDefaults(): RoutingDefaults {
   return routingDefaultsSchema.parse(JSON.parse(readFileSync(new URL("../src/routing-defaults.json", import.meta.url), "utf8")));

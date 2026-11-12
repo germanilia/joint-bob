@@ -1,6 +1,6 @@
 {
   "reviewedAt": "2026-11-11",
-  "notes": "Cheapest adequate first, by API price. Sonnet 5.5 leads complex coding (SWE-Bench Pro 81.3%, half Opus 5.5's price); Fable 5.2 at high effort matches Opus 5.5 at max for about half the cost per task, so it leads planning; GPT-6.1 Sol replaces Astra ($10/$50) as Pi's first pick for hard work. Kiro routes thinking level on its default model; Antigravity is left blank until its model IDs are seen on the Homeserver.",
+  "notes": "Cheapest adequate first, by API price. Sonnet 5.5 leads complex coding (SWE-Bench Pro 81.3%, half Opus 5.5's price); Fable 5.2 at high effort matches Opus 5.5 at max for about half the cost per task, so it leads planning; GPT-6.1 Sol replaces Astra ($10/$50) as Pi's first pick for hard work. Kiro routes thinking level on its default model; Antigravity is left blank until its model IDs are confirmed.",
   "categories": [
     {
       "level": "1",

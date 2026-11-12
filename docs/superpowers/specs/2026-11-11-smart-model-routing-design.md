@@ -160,3 +160,7 @@ Both are scheduled tasks in the Joint Bob project, running on the Homeserver, cr
 - Concrete signals and thresholds for the sample, within the bounds above.
 - The read-only list layout in System AI (follow the Paper style and existing Settings patterns).
 - Schedule times.
+
+## Update 2026-11-12: the review is not an app feature
+
+At the user's request the daily review was taken out of the app (2.273.5). No instruction files, data script or Settings panel ship with Joint Bob. The two reviews are ordinary scheduled tasks on the user's own Homeserver, with all their instructions inside the task prompts. Anyone can set up the same thing with their own scheduled tasks. The selector (System AI key, fallback lists, relay sharing, `src/routing-defaults.json`) stays in the app.

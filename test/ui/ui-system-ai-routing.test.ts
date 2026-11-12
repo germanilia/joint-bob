@@ -11,10 +11,10 @@ function view(servesRelay: boolean) {
     backgroundAgent: { harnessId: '', provider: '', modelId: '', thinkingLevel: '' }, syncCheck: { harnessId: '', provider: '', modelId: '', thinkingLevel: '', enabled: false }, dashboards: { harnessId: '', provider: '', modelId: '', thinkingLevel: '' },
     node: { id: 'synthetic', name: 'Synthetic machine' }, secrets: [], profiles: [], readiness: { decision: 'No system TypeSafe key is available.' },
     routing: { enabled: true, shareWithRelay: false, servesRelay, source: 'No decision credential here: routing asks relay.example when it shares its decision model.', defaults,
-      instructions: { qualityReview: '# Routing quality review\nSynthetic quality steps', routingUpdate: '# Routing defaults update\nSynthetic update steps' } } };
+ } };
 }
 
-test('System AI shows model routing, its defaults and the daily review instructions', { timeout: 120000 }, async t => {
+test('System AI shows model routing and its defaults, without daily review instructions', { timeout: 120000 }, async t => {
   const { page, node, environment } = await nativeUiFixture(t);
   let servesRelay = true;
   const writes: any[] = [];
@@ -36,8 +36,8 @@ test('System AI shows model routing, its defaults and the daily review instructi
   const candidates = await page.getByTestId('system-ai-routing-defaults').innerText();
   assert.match(candidates, /Terminal and git work/);
   assert.match(candidates, /zai · glm-fixture · medium[\s\S]*openai-codex · gpt-6-luna · medium/, 'candidates are listed cheapest first');
-  assert.match(await page.getByTestId('system-ai-routing-quality-instructions').textContent() ?? '', /Synthetic quality steps/);
-  assert.match(await page.getByTestId('system-ai-routing-update-instructions').textContent() ?? '', /Synthetic update steps/);
+  assert.equal(await panel.getByText(/review instructions/i).count(), 0, 'no daily review instructions in the app');
+  assert.doesNotMatch(await page.getByTestId('system-ai-routing-hint').innerText(), /Homeserver|reviewed daily/);
   // Each change saves on its own through System AI's endpoint.
   await page.getByTestId('system-ai-routing-enabled').uncheck();
   await page.getByTestId('system-ai-routing-share').check();
