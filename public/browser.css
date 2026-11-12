@@ -1,4 +1,6 @@
 /* Native controls and the same paper/ink surfaces as the conversation shell. */
+.toast .browser-login-open { display: block; margin-top: 8px; padding: 6px 10px; min-height: 36px; color: inherit; background: transparent; border: 1px solid currentColor; }
+.toast .browser-login-open:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .browser-viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); container-type: inline-size; }
 .browser-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--header); }
 .browser-heading > div:first-child { flex: 1 1 100px; min-width: 100px; display: flex; flex-direction: column; }

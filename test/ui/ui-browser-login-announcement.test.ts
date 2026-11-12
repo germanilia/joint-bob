@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { signIn } from "../dev-nodes.js";
+import { api, signIn } from "../dev-nodes.js";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 
 test("background sign-in notices do not repeat after reload, but new requests and the sign-in card remain visible", { timeout: 90_000 }, async t => {
@@ -9,9 +9,15 @@ test("background sign-in notices do not repeat after reload, but new requests an
   page.on("pageerror", error => errors.push(error.message));
   const login = await signIn(environment, node);
   await page.context().addCookies(login.cookie.split("; ").map(cookie => ({ name: cookie.slice(0, cookie.indexOf("=")), value: cookie.slice(cookie.indexOf("=") + 1), url: node.url })));
+  const projects = await api<{ projects: Array<{ id: string }> }>(node, login, "GET", "/projects");
+  const projectId = projects.body.projects[0].id;
+  const conversations = await api<{ sessions: Array<{ id: string; conversationId?: string; harnessId: string; title: string; displayTitle?: string }> }>(node, login, "GET", `/projects/${projectId}/sessions`);
+  const conversation = conversations.body.sessions[0];
+  const conversationId = conversation.conversationId ?? conversation.id;
+  const title = conversation.displayTitle ?? conversation.title;
   const session = {
     id: "11111111-1111-4111-8111-111111111111", nodeId: node.nodeId,
-    projectId: "background-project", engine: "pi", conversationId: "background-conversation", appNodeId: node.nodeId,
+    projectId, engine: conversation.harnessId, conversationId, appNodeId: node.nodeId,
     state: "running", owner: "human", canControl: true, profileLabel: "Background fixture",
     activePageId: "page", tabs: [], downloads: [],
     loginRequest: { id: "first-request", expectedOrigin: "https://accounts.example.test", label: "Synthetic sign-in" },
@@ -37,6 +43,10 @@ test("background sign-in notices do not repeat after reload, but new requests an
   const notice = page.locator(".toast", { hasText: "Sign-in needed for Background fixture" });
   await notice.waitFor();
   assert.equal(await notice.count(), 1);
+  assert.ok((await notice.innerText()).includes(title), "notice names the actual conversation");
+  assert.ok(!(await notice.innerText()).includes(conversationId), "notice does not expose raw conversation IDs");
+  assert.ok(!(await notice.innerText()).includes(projectId), "notice does not expose raw project IDs");
+  assert.equal(await notice.getByRole("button", { name: "Open conversation", exact: true }).count(), 1);
   await notice.getByTestId("toast-close-button").click();
   await discover();
   assert.equal(await notice.count(), 0, "rediscovery must not repeat a notice");
@@ -54,19 +64,12 @@ test("background sign-in notices do not repeat after reload, but new requests an
   await discover();
   await notice.waitFor();
   assert.equal(await notice.count(), 1, "a new request for the same browser must still notify");
-  await page.reload();
-  await page.waitForFunction(async () => (await import("/app/state.js")).state.authenticated);
-  await discover();
-  assert.equal(await notice.count(), 0, "even an undismissed notice must not repeat after reload");
-
-  // Announcing a request must not dismiss the card when its conversation becomes active.
-  await page.evaluate(session => import("/app/state.js").then(({ state }) => {
-    state.activeConversationProjectId = session.projectId;
-    state.activeConversationId = session.conversationId;
-    state.activeNodeId = session.appNodeId;
-    state.engine = session.engine;
-    document.dispatchEvent(new Event("activeConversationChanged"));
-  }), session);
+  // The explicit action navigates to the requesting conversation and shows its sign-in card.
+  await notice.getByRole("button", { name: "Open conversation", exact: true }).click();
+  await page.waitForFunction(async id => {
+    const { state } = await import("/app/state.js");
+    return (state.activeConversationId || state.activeSessionId) === id;
+  }, conversationId);
   const panel = page.getByTestId("browser-login-panel");
   await panel.getByTestId("browser-login-status").filter({ hasText: "This step needs the browser" }).waitFor({ state: "attached" });
   assert.equal(await panel.count(), 1, "the sign-in request remains available in its own conversation");

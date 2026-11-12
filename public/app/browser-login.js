@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import { createBrowserViewer } from "./browser-viewer.js";
 import { createBrowserLoginCard } from "./browser-login-card.js";
 import { elements } from "./elements.js";
+import { sessionDisplayTitle } from "./layout.js";
 import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
 
@@ -152,11 +153,33 @@ async function discover() {
     const mine = currentIdentityKey && pending.find(row => identityKey(sessionIdentity(row)) === currentIdentityKey);
     if (mine) { mount(mine); return; }
     // Another conversation's sign-in stays there; announce it once instead of taking over this screen.
+    const projectSessions = new Map();
     for (const row of pending) {
       const key = requestKey(row);
       if (isAnnounced(key)) continue;
+      if (!projectSessions.has(row.projectId)) {
+        const { sessions } = await api(`/api/projects/${encodeURIComponent(row.projectId)}/sessions`);
+        projectSessions.set(row.projectId, sessions);
+      }
+      if (!state.authenticated || identityKey(identity()) !== currentIdentityKey || document.hidden) return;
+      const conversation = projectSessions.get(row.projectId).find(session => (session.conversationId ?? session.id) === row.conversationId);
+      if (!conversation) throw new Error("The conversation requesting browser sign-in is no longer listed.");
+      const title = sessionDisplayTitle(conversation);
+      const notice = toast(`Sign-in needed for ${row.profileLabel || "the browser"} in “${title}”.`, 8000);
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "browser-login-open";
+      open.dataset.testid = "browser-login-open-conversation";
+      open.textContent = "Open conversation";
+      open.addEventListener("click", async () => {
+        try {
+          const { openConversation } = await import("./control-center.js");
+          await openConversation({ ...sessionIdentity(row), path: conversation.path, title });
+          notice.remove();
+        } catch (error) { toast.error(error.message); }
+      });
+      notice.querySelector(".toast-message").append(open);
       markAnnounced(key);
-      toast(`Sign-in needed for ${row.profileLabel || "the browser"} in project ${row.projectId}, conversation ${row.conversationId}. Open that conversation’s Browser panel to continue.`, 8000);
     }
   } catch {
     if (!discoveryOutage) toast.error("Could not check for browser sign-in requests. Check your connection.");
