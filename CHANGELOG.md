@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.273.0 — 2026-11-12
+
+- **Model routing:** Bob auto now uses the decision credential from **Settings → System AI** instead of each project's attached secrets, so projects without a TypeSafe key (about 40% of prompts before) are routed again. Twins share the key; a machine that serves a relay can lend its decision model to the relay's machines without the key leaving it.
+- **Model routing:** each kind of task has an ordered list of models per agent, cheapest suitable first by API price. When a model cannot run on a machine the next one is tried, and every prompt that is not routed records why. Routing never moves a conversation to another agent. New defaults add Sonnet 5.5 for complex coding, Fable 5.2 for planning, Pi's Z.ai and Anthropic models, and Kiro.
+- **System AI** has a Model routing section: an on/off switch for this machine, the relay sharing switch, where decisions come from, the default models and the instructions of the two daily review tasks that run on the Homeserver.
+
 ## 2.272.1 — 2026-11-12
 
 - Allowed Google Antigravity profiles to be selected and saved in connection pools alongside other providers.
