@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.286.0 — 2026-11-12
+
+- A cluster assistant now runs only on its cluster's subscriptions: the pool a relay assigned to the group, or the profile or pool its owner chose for that cluster in Settings › Connections. It no longer falls back to the owner's other subscriptions. Bob refuses to create one while the cluster has none for its agent, and says how to add one.
+- The admins of a cluster's manager machine can now change and delete a cluster assistant and read its audit log from that machine, wherever it is hosted. A change made from there names that machine in the log.
+- Those who manage a cluster assistant can remove skills from it in its Edit box.
+
 ## 2.285.0 — 2026-11-12
 
 - Moved background updates beside Bob’s chat, with a collapsible section on mobile, so unrelated cards no longer interrupt replies.
