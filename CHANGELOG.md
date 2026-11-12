@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.284.1 — 2026-11-12
+
+- The evidence-based allocation preview in Settings builds its panel without injecting markup, as the rest of the app does. Nothing about how it looks or works changes.
+
 ## 2.284.0 — 2026-11-12
 
 - Added “Let Bob control” to conversation cards, with instructions and optional iteration and time limits, both unlimited by default. Bob checks the goal is achieved, including test coverage and requested deployment, before finishing.
