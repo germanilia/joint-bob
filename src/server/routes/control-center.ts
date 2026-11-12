@@ -10,7 +10,8 @@ import { requireAdmin } from "../admin.js";
 import { broadcastToAllClients } from "../realtime.js";
 import { sendError } from "../http-auth.js";
 import { actingAccountFromSession } from "../../account-context.js";
-import { bobDatabase, countBobMessages, rememberBobAccount } from "../../control-center/bob-store.js";
+import { bobDatabase, countBobMessages, rememberBobAccount, type BobMessage } from "../../control-center/bob-store.js";
+import { asideNow, conversationsOfMessage, listSnoozes, writeSnooze } from "../../control-center/snoozes.js";
 import { overviewConversations } from "../../control-center/overview.js";
 import { bobStartedKeys } from "../../control-center/started.js";
 import { storedDigest } from "../../conversation-digest.js";
@@ -40,9 +41,16 @@ startMemorySync();
 app.get("/api/control-center/summary", async (_request, response, next) => {
   try {
     const session = response.locals.authSession as AuthSession;
-    const reviews = allPendingGuardianReviews();
+    const db = await bobDatabase();
+    // What the person put aside does not count: a review it already saw, and Bob's earlier items about it alone.
+    const aside = asideNow(listSnoozes(db, session.accountId));
+    const reviews = allPendingGuardianReviews().filter((review) => !aside.get(`${review.projectId}:${review.conversationId}`)?.reviewIds.includes(review.id));
     const visible = (await Promise.all(reviews.map((review) => projectVisible(review.projectId)))).filter(Boolean).length;
-    response.json({ waiting: visible + countBobMessages(await bobDatabase(), session.accountId, "important") });
+    const aboutAside = (message: Pick<BobMessage, "actions" | "createdAt">) => {
+      const keys = conversationsOfMessage(message);
+      return keys.length > 0 && keys.every((key) => { const snooze = aside.get(key); return snooze !== undefined && message.createdAt <= snooze.snoozedAt; });
+    };
+    response.json({ waiting: visible + countBobMessages(db, session.accountId, "important", aboutAside) });
   } catch (error) { next(error); }
 });
 
@@ -56,6 +64,43 @@ app.get("/api/control-center/board", async (request, response, next) => {
     // The project's own color goes along: the board and Bob's chat draw each project in it.
     response.json({ cards, projects: projects.map((project) => ({ id: project.id, name: project.name, color: project.color ?? null })) });
   } catch (error) {
+    next(error);
+  }
+});
+
+const snoozeSchema = z.object({
+  projectId: z.string().min(1).max(200),
+  conversationId: z.string().min(1).max(200),
+  action: z.enum(["snooze", "wake"]),
+  /** When it comes back on its own; null keeps it aside until something new happens. Ignored when waking. */
+  until: z.string().datetime({ offset: true }).nullable().default(null),
+}).strict();
+
+const MAX_SNOOZE_MS = 30 * 24 * 60 * 60 * 1_000;
+
+/** Puts a Needs you card aside for now, or brings it back. Snoozes are the person's and follow them to their other machines. */
+app.post("/api/control-center/snooze", async (request, response, next) => {
+  try {
+    const session = response.locals.authSession as AuthSession;
+    const input = snoozeSchema.parse(request.body);
+    if (!await projectVisible(input.projectId)) { sendError(response, 404, "Project not found"); return; }
+    const now = new Date();
+    if (input.action === "snooze" && input.until !== null) {
+      const until = Date.parse(input.until);
+      if (until <= now.getTime() || until - now.getTime() > MAX_SNOOZE_MS) { sendError(response, 400, "Choose a time within the next 30 days"); return; }
+    }
+    const reviewIds = allPendingGuardianReviews().filter((review) => review.projectId === input.projectId && review.conversationId === input.conversationId).map((review) => review.id);
+    const at = now.toISOString();
+    writeSnooze(await bobDatabase(), {
+      accountId: session.accountId, projectId: input.projectId, conversationId: input.conversationId,
+      // Waking ends it now; the moment kept as its end keeps a late copy from another machine from putting it aside again.
+      until: input.action === "wake" ? at : input.until === null ? null : new Date(input.until).toISOString(),
+      snoozedAt: at, reviewIds, updatedAt: at,
+    });
+    broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
+    response.json({ ok: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid snooze"); return; }
     next(error);
   }
 });

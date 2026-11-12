@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { DatabaseSync } from "node:sqlite";
 import type { AuthSession } from "../auth.js";
 import { getBobMessage, onBobMessage, readBobSettings, type BobMessage } from "./bob-store.js";
+import { aboutSnoozedOnly } from "./snoozes.js";
 import type { TelegramApi } from "./telegram-api.js";
 import { keyboardFor, parseCallbackData, pushedText, SETTLED_BUTTON, wantsTelegramPush } from "./telegram-format.js";
 import { consumeTelegramPairing, telegramConnectionFor, telegramPairingPending, telegramUpdateIsNew, type TelegramConnection } from "./telegram-store.js";
@@ -149,9 +150,9 @@ export async function handleTelegramUpdate(deps: BotDeps, known: TelegramConnect
 
 // ── What Bob says on its own ───────────────────────────────────────────────────────────────────────────────
 
-/** Sends a message of the person's timeline to their Telegram when it matters, unless they paused Bob. */
+/** Sends a message of the person's timeline to their Telegram when it matters, unless they paused Bob or put its conversation aside. */
 export async function pushToTelegram(deps: BotDeps, accountId: string, message: BobMessage): Promise<void> {
-  if (!wantsTelegramPush(message) || !readBobSettings(deps.db, accountId).monitoring) return;
+  if (!wantsTelegramPush(message) || !readBobSettings(deps.db, accountId).monitoring || aboutSnoozedOnly(deps.db, accountId, message)) return;
   await inOrder(`push:${accountId}`, async () => {
     const known = telegramConnectionFor(deps.db, accountId);
     if (!known?.telegramUserId) return;

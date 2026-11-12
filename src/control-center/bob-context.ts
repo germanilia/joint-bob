@@ -18,7 +18,7 @@ export interface BobContextFacts {
  */
 export function bobContext(cards: BoardCard[], projects: BobProjectOption[], facts: BobContextFacts): string {
   const live = cards.map((card) => {
-    const state = card.column === "running" ? "running" : card.column === "needs-you" ? "waiting for the user" : "finished, waiting for review";
+    const state = card.column === "running" ? "running" : card.column === "needs-you" ? "waiting for the user" : card.column === "snoozed" ? "waiting for the user, who put it aside for now" : "finished, waiting for review";
     const here = !card.executionNodeId || card.executionNodeId === facts.localNodeId;
     const where = here ? "runs on this machine" : `runs on ${facts.machineName(card.executionNodeId!)}`;
     const summary = card.summary ? ` — summary: ${card.summary.replace(/\s+/g, " ").slice(0, 240)}` : " — no summary on the board";

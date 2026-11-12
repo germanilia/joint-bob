@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Snooze a conversation under **Needs you** when you do not want to deal with it now: for an hour, until tomorrow morning, or until something changes. It moves to a **Snoozed** lane and stops counting as waiting for you, and comes back when its time comes, when the agent writes again, or when a new Guardian approval arrives. **Wake** brings it back early. While a timed snooze lasts, Bob does not send Telegram messages about it. Snoozes follow you to your other machines.
+
 ## 2.283.0 — 2026-11-12
 
 - A conversation whose agent ends with `BOB_GOAL_BLOCKED` now goes under Needs you right away, without asking a model.

@@ -221,6 +221,10 @@ body.control-popup:not(.control-held) #composer { display: none; }
 .control-check { font-size: 11.5px; color: var(--muted); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .control-check.done { color: #4fd1b5; }
 .control-check.needs { color: #f2b44b; }
+/* Put aside for now: quiet, and it says until when. */
+.control-card[data-column="snoozed"] { opacity: .72; border-style: dashed; }
+.control-card-snoozed { margin: 4px 0 0; font-size: 11.5px; color: var(--muted); }
+.control-lane[data-column="snoozed"] .control-lane-count { background: var(--line); color: var(--text); }
 
 /* A message about one conversation is a card in its project's own color: the project and the conversation's name on top. */
 .control-entry.about { --project-color: var(--project-hue); align-self: stretch; gap: 5px; padding: 8px 11px 9px; border: 1px solid var(--line); border-left: 4px solid var(--project-color); border-radius: 10px; background: color-mix(in srgb, var(--project-color) 7%, var(--panel)); }

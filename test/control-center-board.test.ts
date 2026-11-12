@@ -16,6 +16,7 @@ const sources = {
   controlledBy: (_projectId: string, conversationId: string) => conversationId === "c-run" ? "you" as const : null,
   reviewCheck: () => null,
   activityOf: (_projectId: string, conversationId: string) => conversationId === "c-run" ? "Bash · npm test" : "not running, never asked",
+  snoozeOf: () => null,
 };
 
 test("the board lists running conversations and ones waiting for review, newest first", () => {

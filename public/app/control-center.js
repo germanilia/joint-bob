@@ -16,6 +16,7 @@ const COLUMNS = [
   { id: "needs-you", title: "Needs you", hint: "A step waiting for your OK, or an agent that stopped for you" },
   { id: "running", title: "Running", hint: "Where each one stands; hover a card for its summary" },
   { id: "review", title: "Done · ready for review", hint: "" },
+  { id: "snoozed", title: "Snoozed", hint: "Put aside for now; each comes back when its time comes or something new happens" },
 ];
 
 let board = { cards: [], projects: [] };
@@ -339,7 +340,7 @@ function render() {
     `${cards.filter((card) => card.column === "running").length} running`, waiting ? `${waiting} need you` : "",
     driven ? `${driven} driven by the system` : "", watched ? `${watched} watched by Bob` : "",
   ].filter(Boolean).join(" · ");
-  liveView.setBadge(cards.filter((card) => card.column !== "review").length);
+  liveView.setBadge(cards.filter((card) => card.column === "needs-you" || card.column === "running").length);
   if (!cards.length) {
     container.append(element("p", "control-empty", board.cards.length ? "Nothing matches the project filter." : "No conversations are running and nothing is waiting for review."));
     return;

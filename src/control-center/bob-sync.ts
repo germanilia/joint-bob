@@ -8,17 +8,19 @@ import {
   storeReplicatedBobMessage, type BobMessage, type BobSettings,
 } from "./bob-store.js";
 import { onReviewCheckWritten, readReviewCheck, storeReviewCheck, type ReviewCheck } from "./review-check.js";
+import { onSnoozeWritten, readSnooze, storeSnooze, type Snooze } from "./snoozes.js";
 
 /**
  * What follows the person to each of their machines: that they use Bob, with the settings they chose (pausing Bob on one machine
  * pauses him on all), what his review checks found, so every machine's board shows it, and Bob's chat, so the person can go on
- * talking to Bob from any of them. The newest write wins; an event that arrives here is kept and not sent on again. Every event
- * names the account it belongs to (`username` carries the account id, as replication routes by it), so it reaches only that
+ * talking to Bob from any of them, and the conversations the person put aside, so they stay aside on every board. The newest
+ * write wins; an event that arrives here is kept and not sent on again. Every event names the account it belongs to (`username` carries the account id, as replication routes by it), so it reaches only that
  * person's machines and the machines they are signed in on.
  */
 export const BOB_EVENT = "control.bob";
 export const REVIEW_CHECK_EVENT = "control.reviewCheck";
 export const BOB_MESSAGE_EVENT = "control.bobMessage";
+export const SNOOZE_EVENT = "control.snooze";
 const MAX_TEXT = 60_000;
 
 const MAX_ID = 240;
@@ -63,6 +65,27 @@ export function applyReviewCheckEvent(db: DatabaseSync, event: ReplicationEvent)
   const check = { ...fields, projectId: resolveProjectAlias(db, value.projectId) } as ReviewCheck;
   const held = readReviewCheck(db, check.projectId, check.conversationId);
   if (!held || check.checkedAt > held.checkedAt) storeReviewCheck(db, check);
+}
+
+export function publishSnooze(db: DatabaseSync, originNodeId: string, snooze: Snooze): void {
+  ensureReplicationSchema(db);
+  enqueueReplicationEvent(db, { originNodeId, entityType: SNOOZE_EVENT, entityKey: `${snooze.accountId}:${snooze.projectId}:${snooze.conversationId}`, operation: "upsert", payload: { username: snooze.accountId, ...snooze } });
+}
+
+export function applySnoozeEvent(db: DatabaseSync, event: ReplicationEvent): void {
+  const value = event.payload as Partial<Snooze> | null;
+  if (!value || !text(value.accountId, MAX_ID) || !text(value.projectId, MAX_ID) || !text(value.conversationId, MAX_ID)
+    || !(value.until === null || time(value.until)) || !time(value.snoozedAt) || !time(value.updatedAt)
+    || !Array.isArray(value.reviewIds) || value.reviewIds.length > 100 || !value.reviewIds.every((id) => text(id, 100))
+    || event.entityKey !== `${value.accountId}:${value.projectId}:${value.conversationId}`) {
+    throw new Error("Malformed snooze replication payload");
+  }
+  const snooze: Snooze = {
+    accountId: value.accountId, projectId: resolveProjectAlias(db, value.projectId), conversationId: value.conversationId,
+    until: value.until, snoozedAt: value.snoozedAt, reviewIds: value.reviewIds, updatedAt: value.updatedAt,
+  };
+  const held = readSnooze(db, snooze.accountId, snooze.projectId, snooze.conversationId);
+  if (!held || snooze.updatedAt > held.updatedAt) storeSnooze(db, snooze);
 }
 
 export function publishBobMessage(db: DatabaseSync, originNodeId: string, accountId: string, message: BobMessage, updatedAt: string): void {
@@ -111,6 +134,7 @@ export function startBobSync(): void {
   onBobAccountChanged((accountId) => send((db, nodeId) => publishBobAccount(db, nodeId, accountId)));
   onReviewCheckWritten((check) => send((db, nodeId) => publishReviewCheck(db, nodeId, check)));
   onBobMessageWritten((accountId, message, updatedAt) => send((db, nodeId) => publishBobMessage(db, nodeId, accountId, message, updatedAt)));
+  onSnoozeWritten((snooze) => send((db, nodeId) => publishSnooze(db, nodeId, snooze)));
   // Settings, and the chat written before this machine could send it, reach the other machines.
   void bobDatabase().then((db) => send((sendDb, nodeId) => {
     for (const row of db.prepare("SELECT account_id FROM control_center_bob_accounts").all() as Array<{ account_id: string }>) {

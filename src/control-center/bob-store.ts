@@ -348,7 +348,11 @@ export function hideBobActions(db: DatabaseSync, accountId: string, id: string):
 }
 
 /** How many messages of this kind still wait for the person to press a button, for the badge. */
-export function countBobMessages(db: DatabaseSync, accountId: string, importance: BobImportanceFilter): number {
+/** Messages still waiting on the person (they have buttons), leaving out those `skip` names. */
+export function countBobMessages(db: DatabaseSync, accountId: string, importance: BobImportanceFilter, skip?: (message: Pick<BobMessage, "actions" | "createdAt">) => boolean): number {
   const levels = FILTERS[importance];
-  return (db.prepare(`SELECT COUNT(*) AS count FROM control_center_bob_messages WHERE account_id = ? AND actions <> '[]' AND importance IN (${levels.map(() => "?").join(", ")})`).get(accountId, ...levels) as { count: number }).count;
+  const where = `account_id = ? AND actions <> '[]' AND importance IN (${levels.map(() => "?").join(", ")})`;
+  if (!skip) return (db.prepare(`SELECT COUNT(*) AS count FROM control_center_bob_messages WHERE ${where}`).get(accountId, ...levels) as { count: number }).count;
+  const rows = db.prepare(`SELECT actions, created_at FROM control_center_bob_messages WHERE ${where}`).all(accountId, ...levels) as Array<{ actions: string; created_at: string }>;
+  return rows.filter((row) => !skip({ actions: JSON.parse(row.actions) as BobAction[], createdAt: row.created_at })).length;
 }

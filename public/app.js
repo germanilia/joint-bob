@@ -31,6 +31,7 @@ import "./app/project-files.js";
 import "./app/dashboards.js";
 import "./app/control-chat.js";
 import "./app/control-lease.js";
+import "./app/control-snooze.js";
 import "./app/control-brief.js";
 import "./app/control-overview.js";
 import "./app/control-automations.js";

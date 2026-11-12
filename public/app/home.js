@@ -11,6 +11,7 @@ import { api } from "./api.js";
 import { briefStatus, cardActionList } from "./control-cards.js";
 import { decideReview, markDone, openConversation, pushOn } from "./control-center.js";
 import { takeControl } from "./control-lease.js";
+import { chooseSnooze } from "./control-snooze.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { toast } from "./shell.js";
@@ -125,6 +126,9 @@ export function waitingCard(card, { compact = false } = {}) {
     push.title = "Tell it to go on, with a word of instructions if you like";
     actions.append(answerButton, push);
   }
+  const snooze = button("Snooze", "compact ghost", "home-card-snooze", () => chooseSnooze(card, snooze));
+  snooze.title = "Put it aside for now: it leaves Needs you until the time you choose or something new happens";
+  actions.append(snooze);
   const done = button("Done", "compact ghost", "home-card-done", () => markDone(card));
   done.title = card.turnRunning ? "Stop it and close it: it leaves Home, and you can open it again from its project" : "Close it: it leaves Home, and you can open it again from its project";
   actions.append(done, element("span", "ws-home-spacer"));

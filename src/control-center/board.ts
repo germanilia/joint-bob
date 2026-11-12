@@ -1,6 +1,8 @@
 import type { SessionSummary } from "../types.js";
+import { snoozeHolds, type Snooze } from "./snoozes.js";
 
-export type BoardColumn = "needs-you" | "running" | "review";
+/** "snoozed": it would be under Needs you, but the person put it aside for now (snoozes.ts). */
+export type BoardColumn = "needs-you" | "snoozed" | "running" | "review";
 
 /** A Guardian review waiting on the person: what the agent wants to do. */
 export interface BoardReview { id: string; title: string; subject: string; detail: string; expiresAt: string }
@@ -39,6 +41,8 @@ export interface BoardCard {
   /** Someone has taken control: Bob and auto respond leave the conversation alone. */
   controlledBy: "you" | "someone-else" | null;
   reviewCheck: BoardReviewCheck | null;
+  /** Set while it is put aside: when it comes back on its own (null: once something new happens) and since when. */
+  snooze: { until: string | null; snoozedAt: string } | null;
 }
 
 export interface BoardProject {
@@ -56,13 +60,14 @@ export interface BoardSources {
   controlledBy(projectId: string, conversationId: string): "you" | "someone-else" | null;
   reviewCheck(projectId: string, conversationId: string): BoardReviewCheck | null;
   activityOf(projectId: string, conversationId: string): string | null;
+  snoozeOf(projectId: string, conversationId: string): Snooze | null;
 }
 
 /** The conversation has activity after the moment given: someone wrote to it, or it ran. */
 const movedOnSince = (updatedAt: string | undefined, since: string): boolean => Boolean(updatedAt) && Date.parse(updatedAt!) > Date.parse(since);
 
 /** Running conversations and finished ones waiting for review, newest activity first. */
-export function buildBoard(projects: BoardProject[], sources: BoardSources): BoardCard[] {
+export function buildBoard(projects: BoardProject[], sources: BoardSources, now = Date.now()): BoardCard[] {
   const cards: BoardCard[] = [];
   for (const project of projects) {
     for (const session of project.sessions) {
@@ -78,6 +83,9 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources): Boa
       if (!running && !needsReview && !pendingReviews.length && !checkedForYou) continue;
       // Marked done, from its project or from the board: it has left the board, until it runs again.
       if (session.doneAt && !running) continue;
+      const needsYou = Boolean(pendingReviews.length || autoRespondStop || checkedForYou);
+      const snooze = needsYou ? sources.snoozeOf(project.projectId, conversationId) : null;
+      const snoozed = snooze !== null && snoozeHolds(snooze, { running, updatedAt: session.updatedAt, reviewIds: pendingReviews.map((review) => review.id) }, now);
       cards.push({
         projectId: project.projectId,
         projectName: project.projectName,
@@ -85,7 +93,7 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources): Boa
         sessionId: session.id,
         path: session.path,
         title: session.title,
-        column: pendingReviews.length || autoRespondStop || checkedForYou ? "needs-you" : running ? "running" : "review",
+        column: needsYou ? (snoozed ? "snoozed" : "needs-you") : running ? "running" : "review",
         harnessId: session.harnessId,
         agentId: session.agentId,
         agentLabel: session.agentLabel,
@@ -102,6 +110,7 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources): Boa
         autoRespondStop,
         controlledBy: sources.controlledBy(project.projectId, conversationId),
         reviewCheck,
+        snooze: snoozed && snooze ? { until: snooze.until, snoozedAt: snooze.snoozedAt } : null,
       });
     }
   }

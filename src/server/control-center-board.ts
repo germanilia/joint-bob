@@ -8,6 +8,7 @@ import { allPendingGuardianReviews } from "../guardian/reviews.js";
 import { storedDigest } from "../conversation-digest.js";
 import { bobDatabase } from "../control-center/bob-store.js";
 import { listReviewChecks } from "../control-center/review-check.js";
+import { listSnoozes } from "../control-center/snoozes.js";
 import { getClusterNode } from "../cluster.js";
 import { liveActivity } from "./control-center-live.js";
 import { askRemoteLive } from "./control-center-live-remote.js";
@@ -52,7 +53,9 @@ export async function loadBoard(session: AuthSession): Promise<LoadedBoard> {
   // Auto respond that stopped on something only the person can settle; stopping it themselves, or a failed turn nobody can fix by answering, is not one.
   const autoStopped = new Map(autoResponders.filter((state) => state.status === "stopped" && state.stopKind && !["user-stopped"].includes(state.stopKind)).map((state) => [`${state.projectId}:${state.conversationId}`, { kind: state.stopKind!, reason: state.stopReason ?? "" }]));
   const reviews = allPendingGuardianReviews();
-  const checks = new Map(listReviewChecks(await bobDatabase()).map(({ projectId, conversationId, verdict, reason, by, pushes, pushPending, needsYou, checkedAt }) => [`${projectId}:${conversationId}`, { verdict, reason, by, pushes, pushPending, needsYou, checkedAt }]));
+  const db = await bobDatabase();
+  const snoozes = new Map(listSnoozes(db, session.accountId).map((snooze) => [`${snooze.projectId}:${snooze.conversationId}`, snooze]));
+  const checks = new Map(listReviewChecks(db).map(({ projectId, conversationId, verdict, reason, by, pushes, pushPending, needsYou, checkedAt }) => [`${projectId}:${conversationId}`, { verdict, reason, by, pushes, pushPending, needsYou, checkedAt }]));
   // Other people's agents are read-only and have their own tab (Clusters); nothing on this board can act on them.
   const theirs = await otherPersonsMachine();
   const groups = await Promise.all(projects.map(async (project) => ({
@@ -69,6 +72,7 @@ export async function loadBoard(session: AuthSession): Promise<LoadedBoard> {
     controlledBy: (projectId, conversationId) => { const holder = leaseHolder(projectId, conversationId); return holder === null ? null : holder === session.accountId ? "you" : "someone-else"; },
     reviewCheck: (projectId, conversationId) => checks.get(`${projectId}:${conversationId}`) ?? null,
     activityOf: liveActivity,
+    snoozeOf: (projectId, conversationId) => snoozes.get(`${projectId}:${conversationId}`) ?? null,
   });
   await fillFromOtherMachines(cards);
   return { cards, projects };
