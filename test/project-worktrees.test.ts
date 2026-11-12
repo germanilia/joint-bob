@@ -21,6 +21,19 @@ import {
 } from "../src/project-worktrees.ts";
 import type { ProjectRecord } from "../src/types.ts";
 
+test("retired paths arriving from a peer retain this node's canonical history path", async context => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "jb-retired-peer-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const archived = path.join(root, "project", ".retired");
+  await mkdir(archived, { recursive: true });
+  const peerPath = `/peer/worktrees/project/${id}`;
+  await writeFile(path.join(archived, `${id}.json`), JSON.stringify([peerPath]));
+  const paths = await worktreeSessionPaths("project", root);
+  assert.ok(paths.includes(peerPath));
+  assert.ok(paths.includes(path.join(root, "project", id)), "peer deletion must not hide local native transcripts");
+});
+
 async function exists(file: string): Promise<boolean> {
   try { await access(file); return true; } catch { return false; }
 }

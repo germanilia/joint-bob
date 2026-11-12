@@ -432,6 +432,7 @@ export async function worktreeSessionPaths(projectId: string, root = worktreeRoo
     const saved: unknown = JSON.parse(await fs.readFile(path.join(retired, file), "utf8"));
     if (!Array.isArray(saved) || saved.some(directory => typeof directory !== "string" || !path.isAbsolute(directory) || path.basename(directory) !== file.slice(0, -5))) throw new ProjectWorktreeError(409, `Invalid retired worktree paths: ${file}`);
     for (const directory of saved) paths.add(directory);
+    paths.add(path.join(projectWorktreeRoot(projectId, root), file.slice(0, -5)));
   }
   for (const worktree of await listProjectWorktrees(projectId, root)) {
     paths.add(worktree.path);
