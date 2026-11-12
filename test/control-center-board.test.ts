@@ -52,6 +52,24 @@ test("the board lists running conversations and ones waiting for review, newest 
   assert.equal(review.projectName, "Joint Bob");
 });
 
+test("an unstarted queued prompt needs attention, not review, even after opening it", () => {
+  for (const reviewState of ["needs_review", "reviewed"] as const) {
+    const [card] = buildBoard([{ projectId: "p", projectName: "Project", sessions: [
+      session({ id: "blocked", running: false, reviewState, pendingPromptCount: 1, promptStartError: "Sign in again" }),
+    ] }], sources);
+    assert.equal(card.column, "needs-you");
+    assert.equal(card.summary, "Sign in again");
+  }
+});
+
+test("a queued prompt without an error is not presented as finished", () => {
+  const [card] = buildBoard([{ projectId: "p", projectName: "Project", sessions: [
+    session({ id: "queued", running: false, reviewState: "needs_review", pendingPromptCount: 1 }),
+  ] }], sources);
+  assert.equal(card.column, "needs-you");
+  assert.equal(card.summary, "Message queued; waiting to start.");
+});
+
 test("an empty board is an empty list", () => {
   assert.deepEqual(buildBoard([], sources), []);
 });

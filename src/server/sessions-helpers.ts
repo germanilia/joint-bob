@@ -1,3 +1,5 @@
+import { listQueuedPrompts } from "../prompt-queue.js";
+import { listTurnFailures } from "../turn-failures.js";
 import { worktreeConversations, type ProjectWorktree } from "../project-worktrees.js";
 import { recordedConversationWorktrees } from "../conversation-records.js";
 import { projectAdditionalPaths } from "./session-scope.js";
@@ -126,6 +128,9 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
       const task = (session.taskId ? tasksById.get(session.taskId) : undefined) ?? tasksBySessionPath.get(session.path);
       const shared = findHarnessSession(project.id, session.harnessId, session.id);
       const config = task?.executionState === "running" ? taskConfig(task, taskPhase(task)) : undefined;
+      const queued = listQueuedPrompts(`${project.id}:${session.conversationId ?? session.id}`).filter((prompt) => !prompt.systemEventId);
+      const failure = queued.length ? listTurnFailures(session.harnessId, session.id).at(-1) : undefined;
+      const promptStartError = failure && queued.some((prompt) => prompt.createdAt <= failure.failedAt) ? failure.error : undefined;
       const agentId = config?.engine ?? session.harnessId;
       const liveModel = shared?.session.status().model?.label;
       const agentModel = config?.modelId || liveModel;
@@ -136,6 +141,8 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
       return {
         ...session,
         agentId,
+        pendingPromptCount: queued.length,
+        promptStartError,
         agentLabel: getHarness(agentId).label,
         ...(agentModel ? { agentModel } : {}),
         taskStatus: task?.status,

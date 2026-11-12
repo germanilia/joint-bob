@@ -756,5 +756,13 @@ test("Pi receives native image bytes and a pre-start SDK rejection retains the q
     assert.equal(pending.length, 1);
     assert.equal(pending[0].images[0].mimeType, "image/png");
     assert.equal(opened.messages.some((frame) => frame.type === "promptStarted"), false);
+    const { listTurnFailures } = await import("../src/turn-failures.js");
+    assert.match(listTurnFailures("pi", sessionId).at(-1)!.error, /SDK rejected before agent_start/);
+    const response = await fetch(`${baseUrl}/api/projects/${fixture.projectId}/sessions`, { headers: { cookie: fixture.cookie } });
+    assert.equal(response.status, 200);
+    const { sessions } = await response.json() as { sessions: Array<{ id: string; pendingPromptCount: number; promptStartError: string }> };
+    const listed = sessions.find((session) => session.id === sessionId)!;
+    assert.equal(listed.pendingPromptCount, 1);
+    assert.match(listed.promptStartError, /SDK rejected before agent_start/);
   } finally { process.env.JOINT_BOB_TEST_ENGINE_LOG = log; }
 });

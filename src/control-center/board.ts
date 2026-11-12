@@ -75,15 +75,16 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
       const conversationId = session.conversationId ?? session.id;
       const pendingReviews = sources.pendingReviews(project.projectId, conversationId);
       const needsReview = session.reviewState === "needs_review";
+      const waitingToStart = !running && Boolean(session.pendingPromptCount);
       const autoRespondStop = needsReview && !running ? sources.autoRespondStop(project.projectId, conversationId) : null;
       const reviewCheck = sources.reviewCheck(project.projectId, conversationId);
       // Bob checked it and found it waits for the person: it stays under Needs you until they answer it (it moves on after the
       // check), close it, or tell Bob to leave it. Opening it to look is not answering it.
       const checkedForYou = !running && Boolean(reviewCheck?.needsYou) && !movedOnSince(session.updatedAt, reviewCheck!.checkedAt);
-      if (!running && !needsReview && !pendingReviews.length && !checkedForYou) continue;
+      if (!running && !needsReview && !pendingReviews.length && !checkedForYou && !waitingToStart) continue;
       // Marked done, from its project or from the board: it has left the board, until it runs again.
       if (session.doneAt && !running) continue;
-      const needsYou = Boolean(pendingReviews.length || autoRespondStop || checkedForYou);
+      const needsYou = Boolean(pendingReviews.length || autoRespondStop || checkedForYou || waitingToStart);
       const snooze = needsYou ? sources.snoozeOf(project.projectId, conversationId) : null;
       const snoozed = snooze !== null && snoozeHolds(snooze, { running, updatedAt: session.updatedAt, reviewIds: pendingReviews.map((review) => review.id) }, now);
       cards.push({
@@ -102,7 +103,7 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
         updatedAt: session.updatedAt ?? null,
         turnRunning: Boolean(session.turnRunning),
         backgroundRunning: Boolean(session.backgroundRunning),
-        summary: sources.summaryOf(project.projectId, conversationId),
+        summary: waitingToStart ? session.promptStartError ?? "Message queued; waiting to start." : sources.summaryOf(project.projectId, conversationId),
         activity: running ? sources.activityOf(project.projectId, conversationId) : null,
         autoRespondActive: sources.autoRespondActive(project.projectId, conversationId),
         startedBy: sources.startedByBob(project.projectId, session.id) || sources.startedByBob(project.projectId, conversationId) ? "bob" : "you",

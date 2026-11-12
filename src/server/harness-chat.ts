@@ -864,7 +864,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
       }
       if (!pausedDrains.has(queueKey(connection)) && !promptQueuePaused(queueKey(connection))) {
         // An acknowledged or uncertain automatic turn is inspected, never replayed.
-        if (claimed || recovering) recordTurnFailure(connection.engine, connection.shared.session.id, chatErrorMessage(error));
+        recordTurnFailure(connection.engine, connection.shared.session.id, chatErrorMessage(error));
         if (!queued.systemEventId) publish(connection, { type: "promptFailed", queueId: queued.id, error: chatErrorMessage(error) });
         throw error;
       }

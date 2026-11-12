@@ -21,8 +21,8 @@ test("scheduled turns collapse to their final report", () => {
     { id: "report-2", role: "assistant", text: "Second final report" },
   ];
 
-  assert.deepEqual(scheduledReportMessages(messages), [messages[4], messages[7]]);
-  assert.deepEqual(scheduledReportMessages(messages, false), [messages[4]], "an active turn must not expose its latest intermediate reply");
+  assert.deepEqual(scheduledReportMessages(messages), [messages[0], messages[4], messages[5], messages[7]]);
+  assert.deepEqual(scheduledReportMessages(messages, false), [messages[0], messages[4], messages[5]], "an active turn must not expose its latest intermediate reply");
 });
 
 test("a person's own turn stays fully visible inside a scheduled conversation", () => {
@@ -35,10 +35,10 @@ test("a person's own turn stays fully visible inside a scheduled conversation", 
     { id: "reply-2", role: "assistant", text: "Two invoices." },
   ];
 
-  assert.deepEqual(scheduledReportMessages(messages), [messages[2], messages[3], messages[4], messages[5]]);
+  assert.deepEqual(scheduledReportMessages(messages), [messages[0], messages[2], messages[3], messages[4], messages[5]]);
   assert.deepEqual(
     scheduledReportMessages(messages, false),
-    [messages[2], messages[3], messages[4], messages[5]],
+    [messages[0], messages[2], messages[3], messages[4], messages[5]],
     "a running human turn keeps its own message and streamed reply",
   );
 });

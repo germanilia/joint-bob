@@ -341,8 +341,7 @@ test("changing a conversation schedule harness detaches it into a new conversati
   await page.waitForFunction(() => document.querySelector("#cronList").textContent.includes("Pi scheduled conversation") && document.querySelector("#cronList").textContent.includes("New conversation") && document.querySelector("#cronList").textContent.includes("Pi"));
 });
 
-// A scheduled run's prompt is hidden, so its conversation has no message until the report
-// arrives. It showed "Ready for your first message" above the "Working…" row the whole time.
+// The automation's instruction must stay visible while its first report is pending.
 test("a running scheduled run shows its conversation working, not the first-message prompt", { timeout: 300_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   page.context().setDefaultTimeout(60_000);
@@ -409,7 +408,7 @@ console.log(JSON.stringify({ type: "result", is_error: false }));
     if (Date.now() > deadline) throw new Error(`scheduled run never started: ${JSON.stringify(run)}`);
     await new Promise(resolve => setTimeout(resolve, 250));
   }
-  // The bug needs the run listed as running, with its prompt hidden and no answer yet.
+  // Open the running conversation before it has an answer.
   for (const deadline = Date.now() + 60_000; ;) {
     const listed = (await api<{ sessions: Array<{ title: string; turnRunning?: boolean }> }>(node, admin, "GET", `/projects/${encodeURIComponent(project.id)}/sessions`)).body.sessions;
     if (listed.some((session) => session.title === "Nightly certificate report" && session.turnRunning)) break;
@@ -424,6 +423,7 @@ console.log(JSON.stringify({ type: "result", is_error: false }));
   await page.getByTestId("chats-filter-cron-button").click();
   await page.locator("#sessionList .list-row", { hasText: "Nightly certificate report" }).first().click();
   await page.locator("#sessionTitle").filter({ hasText: "Nightly certificate report" }).waitFor();
+  await page.locator("#messages .message.user", { hasText: "Check the certificates" }).waitFor();
   const working = page.locator("#messages .live-activity");
   await working.waitFor();
   assert.match(await working.innerText(), /Working/);

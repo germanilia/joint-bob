@@ -485,9 +485,6 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
   }
   if (payload.type === "userMessage") {
     finalizeAssistantBubble();
-    // A scheduled task's trigger prompt is the scheduler talking; a person's own
-    // message always shows, even in a conversation a schedule also drives.
-    if (payload.scheduled) return;
     state.spinOffSourceTaskId = null;
     const sentAt = payload.timestamp ? new Date(payload.timestamp) : true;
     const bubble = appendMessage("user", payload.text, sentAt, payload.attachments, false, undefined, payload.author);
@@ -499,7 +496,7 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
   // Prompts typed while the agent was busy live on the conversation, not on this
   // socket, so a reload or a reconnect gets them back instead of losing them.
   if (payload.type === "queuedPrompts") {
-    const prompts = payload.prompts.filter((prompt) => !prompt.scheduled);
+    const prompts = payload.prompts;
     const retained = new Set(prompts.map((prompt) => prompt.id));
     for (const bubble of elements.messages.querySelectorAll("[data-queue-id]")) {
       if (!retained.has(bubble.dataset.queueId)) removeQueuedMessage(bubble.dataset.queueId);

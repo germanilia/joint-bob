@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Removed the project Kanban board.
+- Scheduled conversations showed their instruction, and a queued message that never started stayed on the board as needing you, with the reason it failed to start.
+
 ## 2.291.0 — 2026-11-12
 
 - Conversations show **Worktree: name** beside their title on desktop and phone.
@@ -12,29 +17,6 @@
 - The unpinned Model and Thinking choices in a new conversation read "Bob auto" when this machine routes prompts.
 - Pressing Enter on Runs on no longer leaves its list open over the Secrets step.
 - The Snooze menu on a card opens under its button in Safari instead of in the window's corner.
-
-## 2.290.0 — 2026-11-12
-
-- Phone: the filters on Bob's page wrap onto lines, with the project picker first, instead of scrolling sideways with the last chip cut off.
-
-## 2.289.0 — 2026-11-12
-
-- **Workspaces are clear section headers in the left column**: a tinted bar with a colour dot, a bold name, a count and a larger arrow, with a divider between workspaces; the bar stays at the top while its projects scroll.
-- **A project or conversation with a colour tag has a soft tinted background** in that colour, not only a thin left edge; selected and hover have their own look.
-- The conversation filters under the search box wrap instead of running off the edge of the column when the counts are large.
-- Fixed the phone project list scrolling sideways.
-
-## 2.288.1 — 2026-11-12
-
-- Phone cards use accessible icon buttons so every action, including Open, stays inside the card.
-
-## 2.288.0 — 2026-11-12
-
-- **Needs you on the phone is a deck you can swipe.** Every card that needs you sits in one row; swipe to move on, and nothing is done to a card by looking at it or swiping past it. Tap a card to see exactly what it needs without opening the conversation: the question or request, why it was flagged, how long it has waited, your last message, the agent's last message and its last few steps. Answer, Push it on, Allow or Block, Done and Snooze are in the same place.
-- **Conversations, projects and workspaces are one long list that scrolls, not pages.** No more Previous and Next. A long list is drawn in chunks as you scroll and keeps its place when it refreshes.
-- **The left column is easier to read.** Workspace groups have a clear label with a line above, long team names are shortened, and a project row is one line with its path in the tooltip. The ⋯ button is always visible, in its own place beside the pin, and its menu no longer opens over the pin.
-- The running mark on a conversation is a solid green dot with a pulsing ring, so it stays visible on the open, highlighted conversation.
-- The narrow icon-only column has a search button.
 
 ## 2.287.1 — 2026-11-12
 

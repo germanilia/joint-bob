@@ -68,6 +68,7 @@ export function scheduledReportMessages<T extends ChatMessage>(messages: T[], in
     if (message.role !== "user") { turn.push(message); continue; }
     flush(true);
     scheduled = isScheduledPromptText(message.text);
+    if (scheduled) kept.push(message);
     turn = scheduled ? [] : [message];
   }
   flush(scheduled ? includeTrailingTurn : true);

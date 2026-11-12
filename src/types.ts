@@ -138,6 +138,8 @@ export interface SessionSummary {
   /** Compatibility aggregate: either a model turn or background work is active. */
   running?: boolean;
   reviewState?: "running" | "needs_review" | "reviewed";
+  pendingPromptCount?: number;
+  promptStartError?: string;
   /** Last activity watermark the current account reviewed. */
   reviewedAt?: string;
   reviewNotificationsEnabled?: boolean;
