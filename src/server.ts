@@ -71,9 +71,7 @@ import "./server/routes/model-allocation.js";
 import "./server/routes/cluster.js";
 import "./server/routes/cluster-tasks.js";
 import "./server/routes/platform.js";
-import "./server/routes/quality-analytics.js";
 import "./server/routes/system-ai.js";
-import { startQualityCollection } from "./server/quality-service.js";
 import "./server/routes/secrets.js";
 import "./server/routes/ec2-nodes.js";
 import "./server/routes/browser.js";
@@ -105,7 +103,6 @@ import { startCronScheduler } from "./server/cron.js";
 import { recoverAutoResponders } from "./server/auto-respond-recovery.js";
 import { startConversationDigests } from "./server/conversation-digest-runner.js";
 import { startKnowledgeCleanupScheduler } from "./server/knowledge-cleanup.js";
-import { startConversationCloseoutScheduler } from "./server/conversation-closeout.js";
 import { startQuickNoteScheduler } from "./server/quick-note-dispatch.js";
 import "./server/routes/cron.js";
 import "./server/routes/tasks.js";
@@ -193,7 +190,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     startUpdateScheduler();
     startHarnessUpdateScheduler();
     startKnowledgeCleanupScheduler();
-    startConversationCloseoutScheduler();
     void loadHarnessVersions().catch((error) => console.warn("Harness versions could not be read", error));
     // An installed node runs a newly installed Pi harness after restarting, once nothing is running.
     if (/^[0-9a-f]{40}$/i.test(process.env.JOINT_BOB_RELEASE ?? "")) configurePiSdkSwitch({
@@ -264,7 +260,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       .then(async () => { await recoverPendingUpdateRuns(); await reconcileTaskConversationRecords(); })
       // A returning node pulls the dashboards it missed while away; afterwards change notices keep it current.
       .then(() => inBackground(refreshSharedDashboards))
-      .then(() => startQualityCollection())
       .catch((error) => console.warn("Startup recovery failed", error));
     setInterval(() => { if (clusterWorkAllowed()) inBackground(() => pullFromHubs()).catch((error) => console.warn("Hub pull failed", error)); }, 60_000).unref();
     setInterval(() => reapInactiveConversations().catch((error) => console.warn("Inactive conversation reap failed", error)), 60_000).unref();

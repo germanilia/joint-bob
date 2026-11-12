@@ -10,7 +10,7 @@ export function chooseConversationFeedback(session) {
   title.textContent = session.title;
   const choices = document.createElement("fieldset");
   const legend = document.createElement("legend");
-  legend.textContent = "Anything worth learning?";
+  legend.textContent = "Conversation feedback";
   choices.append(legend);
   for (const [rating, text] of [["good", "👍 Good"], ["bad", "👎 Bad"], ["unimportant", "Nothing — not important"]]) {
     const label = document.createElement("label");
@@ -38,8 +38,8 @@ export function chooseConversationFeedback(session) {
     detail.hidden = rating() === "unimportant";
     prompt.textContent = rating() === "bad" ? "What went badly?" : "What went well?";
     hint.textContent = rating() === "unimportant"
-      ? "Mark done without learning anything from this conversation."
-      : "Leave blank and the agent will describe the outcome. The decision model reviews lessons to propose in Project knowledge.";
+      ? "Mark done without including this conversation in feedback-driven reviews."
+      : "Your rating and comments are saved as written for later review.";
   };
   choices.addEventListener("change", sync);
   const actions = document.createElement("div");

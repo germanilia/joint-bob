@@ -36,20 +36,15 @@ import { createSettingsSearch } from "./settings-search.js";
 // settings-page (P4): Settings → File sync.
 import { loadFileSyncSettings } from "./file-sync-settings.js";
 import { loadGuardianSettings } from "./guardian-settings.js";
-import { loadQualityAnalytics } from "./quality-analytics.js";
 import { loadSystemAiSettings, saveSystemAiSettings } from "./system-ai-settings.js";
 import { loadConversationChatSettings } from "./conversation-chat.js";
-import { buildSectionHeads, drawSectionIcons, installSettingsPage, openGroup, showSection } from "./settings-page.js";
+import { buildSectionHeads, drawSectionIcons, installSettingsPage, showSection } from "./settings-page.js";
 import { autosaveFields, deferSave, invalidSetting, settingsAutosave, stillTyping } from "./settings-autosave.js";
 
-const settingsGroups = [...document.querySelectorAll("#settingsForm .settings-group")];
 const settingsSaveState = document.querySelector("#settingsSaveState");
 buildSectionHeads(elements.settingsTabs);
 drawSectionIcons(elements.settingsTabs);
 installSettingsPage(elements.settingsForm);
-for (const group of settingsGroups) {
-  group.querySelector(".settings-group-label").addEventListener("click", () => openGroup(group, settingsGroups));
-}
 // Every change saves on its own; this line in the open section says how that went.
 const autosave = settingsAutosave();
 autosave.onError = (error) => toast.error(`Settings not saved: ${error.message}`);
@@ -121,7 +116,7 @@ function renderClientLogs() {
 }
 
 // These panels guard their own loading and do not depend on Save settings.
-const ownLoading = (panel) => ["settingsPanel-cluster", "settingsPanel-relay", "settingsPanel-webhooks", "settingsPanel-browser", "settingsPanel-node", "settingsPanel-users", "settingsPanel-file-sync", "settingsPanel-automation-tags", "settingsPanel-story", "settingsPanel-guardian", "settingsPanel-quality", "settingsPanel-system-ai"].includes(panel.id);
+const ownLoading = (panel) => ["settingsPanel-cluster", "settingsPanel-relay", "settingsPanel-webhooks", "settingsPanel-browser", "settingsPanel-node", "settingsPanel-users", "settingsPanel-file-sync", "settingsPanel-automation-tags", "settingsPanel-story", "settingsPanel-guardian", "settingsPanel-system-ai"].includes(panel.id);
 
 /** Shows one settings panel and hides the rest, keeping the tablist's roving tabindex correct. */
 function selectSettingsTab(requested) {
@@ -140,7 +135,7 @@ function selectSettingsTab(requested) {
   for (const panel of elements.settingsPanels) panel.hidden = panel.id !== `settingsPanel-${name}`;
   // Phones show either the section list or one section; desktop CSS ignores this.
   elements.settingsForm.dataset.mobileView = "panel";
-  showSection(elements.settingsTabs.find((tab) => tab.dataset.settingsTab === name), { groups: settingsGroups, title: elements.settingsCurrentTitle, crumb: document.querySelector("#settingsCurrentCrumb"), saveState: settingsSaveState, restartMessage: elements.settingsRestartMessage });
+  showSection(elements.settingsTabs.find((tab) => tab.dataset.settingsTab === name), { title: elements.settingsCurrentTitle, crumb: document.querySelector("#settingsCurrentCrumb"), saveState: settingsSaveState, restartMessage: elements.settingsRestartMessage });
   autosave.quiet();
   document.querySelector(`#settingsPanel-${name}`).scrollTop = 0;
   if (name === "cluster" || name === "browser") void loadBrowserStatus();
@@ -151,7 +146,6 @@ function selectSettingsTab(requested) {
   if (name === "notifications") { void loadNtfyServicesPanel(); void loadErrorReportingSettings(); }
   if (name === "classifiers") void loadRoutingConfigs().catch((error) => { elements.routingConfigStatus.textContent = error.message; });
   if (name === "guardian" || name === "classifiers") void loadGuardianSettings().catch((error) => toast.error(error.message));
-  if (name === "quality") void loadQualityAnalytics();
   if (name === "system-ai") {
     void loadSystemAiSettings({ controls: (descriptor, settings, prefix, options) => createConversationControls(descriptor, settings, prefix, { ...options, preserveUnavailableThinking: true }), render: (settings, descriptors) => {
       systemHarnessDescriptors = descriptors;
@@ -1147,14 +1141,15 @@ elements.settingsShellTimeoutEnabled.addEventListener("change", () => { elements
 elements.settingsConversationCpuLimitEnabled.addEventListener("change", () => { elements.settingsConversationCpuLimitCores.disabled = !elements.settingsConversationCpuLimitEnabled.checked; });
 elements.settingsConversationMemoryLimitEnabled.addEventListener("change", () => { elements.settingsConversationMemoryLimitGb.disabled = !elements.settingsConversationMemoryLimitEnabled.checked; });
 for (const tab of elements.settingsTabs) {
-  tab.addEventListener("click", () => selectSettingsTab(tab.dataset.settingsTab));
+  // Opening a section from a filtered list ends the search: the whole list is back when the person returns.
+  tab.addEventListener("click", () => { settingsSearch.clear(); selectSettingsTab(tab.dataset.settingsTab); });
   tab.addEventListener("keydown", (event) => {
     // The tablist is a vertical sidebar on wide screens and a horizontal strip on narrow
     // ones, so both axes walk it.
     const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
     if (!step) return;
     event.preventDefault();
-    const visible = elements.settingsTabs.filter((item) => !item.hidden && (isNodeAdmin() || !item.hasAttribute("data-admin-only")));
+    const visible = elements.settingsTabs.filter((item) => !item.hidden && !item.hasAttribute("data-search-miss") && (isNodeAdmin() || !item.hasAttribute("data-admin-only")));
     const index = visible.indexOf(tab);
     const next = visible[(index + step + visible.length) % visible.length];
     selectSettingsTab(next.dataset.settingsTab);
@@ -1162,6 +1157,12 @@ for (const tab of elements.settingsTabs) {
   });
 }
 elements.settingsBackButton.addEventListener("click", () => { elements.settingsForm.dataset.mobileView = "menu"; });
+// The phone list's Appearance row names the theme in use and opens the tiles, which lead Account.
+document.querySelector("#settingsAppearanceLink").addEventListener("click", () => {
+  settingsSearch.clear();
+  selectSettingsTab("account");
+  document.querySelector("#settingsThemeTiles [aria-checked='true']")?.focus({ preventScroll: true });
+});
 // Search sections and saved account metadata. Never index secret values.
 const settingsSearch = createSettingsSearch({
   input: elements.settingsSearchInput,

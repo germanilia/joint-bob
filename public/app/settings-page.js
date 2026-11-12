@@ -1,8 +1,8 @@
 /**
  * Settings is a page with one shape for every section: its group as a crumb, the title, one
- * sentence, where it applies, and the save line (settings-autosave.js). The list on the left keeps
- * the open section's group expanded; the other groups show their sections as one short line.
- * On a phone the list and a section take turns, with a back button.
+ * sentence, where it applies, and the save line (settings-autosave.js). The list on the left shows
+ * every section of every group as a row with its icon; the search box above filters it
+ * (settings-search.js). On a phone the list and a section take turns, with a back button.
  */
 
 /** Where a section applies, in the words its own text already uses. */
@@ -32,7 +32,6 @@ export const SECTION_INFO = {
   connections: { kind: "tabs", scope: "machines", text: "Sign in to your model accounts, group them so one takes over when another runs out, and choose which one each conversation uses." },
   classifiers: { kind: "form", scope: "machine", text: "Send each prompt to a model that suits how hard it is." },
   "system-ai": { kind: "form", scope: "machines", text: "The agents Joint Bob uses for its own work: Bob, summaries, the sync check and dashboards." },
-  quality: { kind: "form", scope: "machine", text: "How good the agents' replies are, judged from the conversations on this machine." },
   guardian: { kind: "form", scope: "machine", text: "Checks every tool call and everything sent to the AI, and keeps secrets out of both." },
   secrets: { kind: "list", scope: "machines", text: "Encrypted accounts agents use in a workspace, a project or a single conversation." },
   browser: { kind: "list", scope: "machines", text: "The browser profiles agents sign in with, and where new browsers open." },
@@ -64,7 +63,6 @@ const ICONS = {
   connections: "M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5",
   classifiers: "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6",
   "system-ai": "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z",
-  quality: "M3 12h4l3 8 4-16 3 8h4",
   guardian: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z",
   secrets: "M15 7a4 4 0 1 0-3.9 4.9L4 19v2h3v-2h2v-2h2l1.9-1.9A4 4 0 0 0 15 7zM16 7h.01",
   browser: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18",
@@ -125,18 +123,12 @@ export function buildSectionHeads(tabs) {
   }
 }
 
-/** Expands one group in the list; the others show their sections as a short line. */
-export function openGroup(group, groups) {
-  for (const item of groups) {
-    const open = item === group;
-    item.dataset.open = String(open);
-    item.querySelector(".settings-group-label")?.setAttribute("aria-expanded", String(open));
-  }
-}
-
-/** The open section: its group expands, the phone's bar names it, and the save line moves into its head. */
-export function showSection(tab, { groups, title, crumb, saveState, restartMessage }) {
-  openGroup(groupOf(tab), groups);
+/** The open section: its row shows in the list, the phone's bar names it, and the save line moves into its head. */
+export function showSection(tab, { title, crumb, saveState, restartMessage }) {
+  // The list scrolls on a short window: the open section's row stays in sight, and the first one brings the list's top with it.
+  const list = tab.closest(".settings-nav-scroll");
+  if (list && tab === list.querySelector(".settings-tab:not([hidden])")) list.scrollTop = 0;
+  else tab.scrollIntoView?.({ block: "nearest" });
   title.textContent = tabName(tab);
   crumb.textContent = `Settings · ${groupName(tab)}`;
   const panel = document.getElementById(`settingsPanel-${tab.dataset.settingsTab}`);
