@@ -12,6 +12,7 @@ import { sendError } from "../http-auth.js";
 import { flushRoutingConfigDeliveries } from "../maintenance.js";
 import { broadcastRoutingMode } from "../harness-chat.js";
 import { app } from "../state.js";
+import { answerRelayDecision, DECISION_RELAY_PATH, decisionRelayRequestSchema, RelayDecisionRefused } from "../../routing-decision-relay.js";
 
 const uuid = z.string().uuid();
 const configBodySchema = z.object({ name: z.string().trim().min(1).max(80), policy: z.object({}).passthrough() }).strict();
@@ -214,6 +215,19 @@ app.post("/api/cluster/v2/routing-configs", async (request, response, next) => {
   } catch (error) {
     if (error instanceof RoutingConfigError) { sendError(response, error.statusCode, error.message); return; }
     if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
+    next(error);
+  }
+});
+
+/** A machine of the relay this node serves asks for a routing decision; the key stays here. */
+app.post(DECISION_RELAY_PATH, async (request, response, next) => {
+  try {
+    if (response.locals.machineProtocol !== 2 || typeof response.locals.machineNodeId !== "string") { sendError(response, 401, "Unauthorized"); return; }
+    const input = decisionRelayRequestSchema.parse(request.body);
+    response.json(await answerRelayDecision(await clusterV2Database(), response.locals.machineNodeId, input));
+  } catch (error) {
+    if (error instanceof RelayDecisionRefused) { sendError(response, error.statusCode, error.message); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid decision request"); return; }
     next(error);
   }
 });

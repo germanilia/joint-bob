@@ -41,6 +41,7 @@ test("relay workspace group admits only approved machines and removes revoked ma
     assert.equal(relaySharingGroupActive(client, clusterId), false, "disconnect invalidates relay grants immediately");
     assert.equal(relayPeerRequestAllowed(server, relay, node, "/api/cluster/v2/runtime/projects/presence"), false, "relay membership alone must not authorize runtime access");
     assert.equal(relayPeerRequestAllowed(server, relay, node, "/api/cluster/v2/resources/policy"), true, "an admitted member can receive an owner-signed grant");
+    assert.equal(relayPeerRequestAllowed(server, relay, node, "/api/cluster/v2/decision-model/classify"), true, "relay members reach the decision route, which checks admission and sharing itself");
     setMachineStatus(server, node, "revoked");
     reconcileRelaySharingGroup(server, relay, "Fixture relay");
     assert.deepEqual(listSharingClusterMembers(server, clusterId).map(member => member.nodeId), [relay]);
