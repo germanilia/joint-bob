@@ -206,6 +206,123 @@ test("the details column: Activity, Files, Git and Tasks, More, the two switches
   await page.locator("#activityPanel").waitFor();
 });
 
+test("the details column keeps its controls together at the top, More shows its three rows at any text size, and every theme draws them readably", async () => {
+  if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
+  await page.getByTestId("activity-activity-tab").click();
+  // The test runner wraps named functions in a helper the page does not have.
+  await page.evaluate("window.__name = (value) => value");
+  // Browser, Terminal, Share and Schedule sit directly under the segments, above the column's content, each with an icon.
+  const rows = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+    const links = [...document.querySelectorAll<HTMLElement>("#detailsLinks .ws-link")];
+    return {
+      segments: rect("#activityPanel .activity-tabs"), links: rect("#detailsLinks"), body: rect("#activityBody"), foot: rect("#detailsFoot"),
+      icons: links.every((link) => link.querySelector("svg") !== null && link.textContent!.trim().length > 0),
+      cut: links.filter((link) => link.scrollWidth > link.clientWidth + 1 || link.querySelector("span")!.scrollWidth > link.querySelector("span")!.clientWidth + 1).map((link) => link.dataset.testid),
+      inFoot: document.querySelectorAll("#detailsFoot button:not([role=switch])").length,
+    };
+  });
+  assert.ok(rows.links.top >= rows.segments.bottom && rows.links.top - rows.segments.bottom <= 16, `the actions are right under the segments (${rows.segments.bottom} → ${rows.links.top})`);
+  assert.ok(rows.links.bottom <= rows.body.top, "and above the column's content");
+  assert.ok(rows.foot.top >= rows.body.bottom - 1, "the switches stay at the foot");
+  assert.equal(rows.inFoot, 0, "nothing but the two switches is at the foot");
+  assert.equal(rows.icons, true, "each action has an icon and a label");
+  assert.deepEqual(rows.cut, [], "no label is cut");
+  assert.equal(await page.locator("#detailsFoot [role=switch]").count(), 2);
+
+  // More is a segment with a pane of its own: a click shows the side chat, Story and the Activity overview, each with
+  // a line about it and its button. With larger Details text too: the old popover menu opened outside the window.
+  for (const zoom of ["1", "1.3"]) {
+    await page.evaluate((value) => document.documentElement.style.setProperty("--ui-zoom-activity", value), zoom);
+    await page.getByTestId("activity-activity-tab").click();
+    await page.getByTestId("details-more-button").click();
+    assert.equal(await page.getByTestId("details-more-button").getAttribute("aria-selected"), "true");
+    assert.equal(await visible("activity-body"), false);
+    for (const [row, button] of [["details-more-chat", "activity-chat-tab"], ["details-more-story", "activity-story-button"], ["details-more-overview", "activity-overview-button"]]) {
+      const seen = await page.getByTestId(row).evaluate((element, id) => {
+        const inside = (rect: DOMRect) => rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
+        element.scrollIntoView({ block: "nearest" });
+        return { words: element.querySelector("p")!.textContent!.trim().length > 20 && inside(element.querySelector("b")!.getBoundingClientRect()), button: inside(element.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect()) };
+      }, button);
+      assert.deepEqual(seen, { words: true, button: true }, `${row} shows inside the window at text size ${zoom}`);
+    }
+  }
+  await page.evaluate(() => document.documentElement.style.removeProperty("--ui-zoom-activity"));
+  // The side chat opens from its row; More stays the way back to the three rows.
+  await page.getByTestId("activity-chat-tab").click();
+  assert.equal(await visible("conversation-chat"), true);
+  await page.getByTestId("details-more-button").click();
+  assert.equal(await visible("details-more"), true);
+  assert.equal(await visible("conversation-chat"), false);
+  await page.getByTestId("details-more-button").press("ArrowLeft");
+  assert.equal(await visible("details-tasks"), true, "Left and Right walk the segments");
+  await page.getByTestId("details-more-button").click();
+
+  // Contrast, measured: every label at least 4.5:1 on its own fill, and the outline of the segments' track, of the lit
+  // segment and of each action button at least 3:1 against the column, in every theme.
+  const themes: Array<[string, string]> = [["light", ""], ["light", "sepia"], ["dark", ""], ["dark", "midnight"], ["dark", "graphite"]];
+  const before = await page.evaluate(() => [document.documentElement.dataset.theme ?? "", document.documentElement.dataset.palette ?? ""]);
+  for (const [theme, palette] of themes) {
+    await page.evaluate(([name, tone]) => {
+      document.documentElement.dataset.theme = name;
+      if (tone) document.documentElement.dataset.palette = tone; else delete document.documentElement.dataset.palette;
+    }, [theme, palette]);
+    // Colours ease from one theme to the next; measure them once they have arrived.
+    await page.waitForTimeout(400);
+    const weak = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d", { willReadFrequently: true })!;
+      const rgba = (colour: string) => { context.clearRect(0, 0, 1, 1); context.fillStyle = colour; context.fillRect(0, 0, 1, 1); const data = context.getImageData(0, 0, 1, 1).data; return [data[0], data[1], data[2], data[3] / 255]; };
+      const over = (top: number[], under: number[]) => [0, 1, 2].map((index) => top[index] * top[3] + under[index] * (1 - top[3])).concat(1);
+      const fillOf = (element: Element | null) => {
+        const chain: Element[] = [];
+        for (let node = element; node; node = node.parentElement) chain.unshift(node);
+        return chain.reduce((colour, node) => over(rgba(getComputedStyle(node).backgroundColor), colour), [255, 255, 255, 1]);
+      };
+      const light = (colour: number[]) => { const part = (value: number) => { const unit = value / 255; return unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4; }; return 0.2126 * part(colour[0]) + 0.7152 * part(colour[1]) + 0.0722 * part(colour[2]); };
+      const ratio = (one: number[], other: number[]) => { const [high, low] = [light(one), light(other)].sort((a, b) => b - a); return (high + 0.05) / (low + 0.05); };
+      const found: string[] = [];
+      const text = (selector: string) => {
+        for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+          if (!element.getClientRects().length || element.matches(":disabled")) continue;
+          const fill = fillOf(element);
+          const value = ratio(over(rgba(getComputedStyle(element).color), fill), fill);
+          if (value < 4.5) found.push(`${selector} text ${value.toFixed(2)}`);
+        }
+      };
+      const edge = (selector: string) => {
+        for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+          if (!element.getClientRects().length || element.matches(":disabled")) continue;
+          const around = fillOf(element.parentElement);
+          const shadow = getComputedStyle(element).boxShadow;
+          const colour = shadow.includes("inset") ? shadow.match(/(rgba?\([^)]*\)|color\([^)]*\))/)?.[1] : undefined;
+          const value = colour ? ratio(over(rgba(colour), around), around) : 1;
+          if (value < 3) found.push(`${selector} outline ${value.toFixed(2)}`);
+        }
+      };
+      text("#activityPanel .activity-tabs > button");
+      text("#detailsLinks .ws-link");
+      text("#activityPanelCloseButton");
+      text("#activityPanel .ws-pane-actions > button");
+      text("#detailsFoot .ws-switch-row");
+      edge("#activityPanel .activity-tabs");
+      edge("#activityPanel .activity-tabs > button[aria-selected=true]");
+      edge("#detailsLinks .ws-link");
+      edge("#activityPanelCloseButton");
+      edge("#activityPanel .ws-pane-actions > button");
+      edge("#detailsFoot .ws-switch-row[aria-checked=false] .ws-switch");
+      return found;
+    });
+    assert.deepEqual(weak, [], `${palette || theme}: the column's controls are readable`);
+  }
+  await page.evaluate(([name, tone]) => {
+    if (name) document.documentElement.dataset.theme = name; else delete document.documentElement.dataset.theme;
+    if (tone) document.documentElement.dataset.palette = tone; else delete document.documentElement.dataset.palette;
+  }, before);
+  await page.getByTestId("activity-activity-tab").click();
+});
+
 const box = (selector: string) => page.locator(selector).evaluate((element) => {
   const rect = element.getBoundingClientRect();
   return { left: Math.round(rect.left), right: Math.round(rect.right), top: Math.round(rect.top), bottom: Math.round(rect.bottom), width: Math.round(rect.width) };

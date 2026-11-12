@@ -229,10 +229,11 @@
   body.focus-ui .chat-title-meta > .chat-project-name { display: block; grid-column: 1; max-width: none; overflow: hidden; color: var(--muted); font: 500 13px/1.3 var(--sans); letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
   body.focus-ui .chat-title-meta > .turn-timer { grid-column: 1; font-size: 13px; }
   body.focus-ui .chat-title-meta > .chat-actions { grid-column: 2; grid-row: 1 / span 3; }
-  body.focus-ui.view-chat .ph-chips { display: flex; flex: none; gap: 8px; min-width: 0; padding: 0 14px 10px; overflow: hidden; }
+  body.focus-ui.view-chat .ph-chips { display: flex; flex: none; gap: 8px; min-width: 0; padding: 10px 14px; overflow: hidden; }
   /* Each chip keeps its own words while they fit, and none takes more than its share. */
-  .ph-chips .searchable-select { flex: 0 1 auto; min-width: 56px; max-width: 42%; }
-  .ph-chips .searchable-select:first-child { max-width: 30%; }
+  /* The agent's name is short and always shown whole; the model and the machine share what is left. */
+  .ph-chips .searchable-select { flex: 0 1 auto; min-width: 56px; }
+  .ph-chips .searchable-select:first-child { flex: none; }
   .ph-chips .searchable-select-trigger {
     min-height: 44px; height: 44px; padding: 0 28px 0 14px; border: 0; border-radius: 22px; background-color: transparent; background-position: right 11px center;
     box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); font: 600 14px/44px var(--sans);

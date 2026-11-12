@@ -61,10 +61,10 @@ const PLACEMENTS = [
   ["chatFilesButton", "detailsFilesActions"],
   ["chatGitButton", "detailsGitActions"],
   ["backgroundTasksButton", "detailsTasksActions"],
-  // The panel's side chat, Story and Activity overview fold into the details column's More.
-  ["activityChatTab", "detailsMoreMenu"],
-  ["activityStoryButton", "detailsMoreMenu"],
-  ["activityOverviewButton", "detailsMoreMenu"],
+  // The panel's side chat, Story and Activity overview are the three rows of the details column's More segment.
+  ["activityChatTab", "detailsMoreChat"],
+  ["activityStoryButton", "detailsMoreStory"],
+  ["activityOverviewButton", "detailsMoreOverview"],
 ];
 
 function applyPlacements() {
@@ -268,11 +268,14 @@ function anchorMenu(menu, button) {
     button.setAttribute("aria-expanded", String(event.newState === "open"));
     if (event.newState !== "open") return;
     const anchor = button.getBoundingClientRect();
-    const width = menu.offsetWidth;
-    const left = Math.max(8, Math.min(anchor.left, innerWidth - width - 8));
+    // The menu lives in a column that the text size zooms: its own lengths are multiplied by that zoom, the window's
+    // coordinates are not. Unscaled, a menu far from the corner opened beside its button or outside the window.
+    const zoom = menu.currentCSSZoom || 1;
+    const box = menu.getBoundingClientRect();
+    const left = Math.max(8, Math.min(anchor.left, innerWidth - box.width - 8));
     const below = anchor.bottom + 6;
-    const top = below + menu.offsetHeight > innerHeight - 8 ? Math.max(8, anchor.top - menu.offsetHeight - 6) : below;
-    Object.assign(menu.style, { left: `${left}px`, top: `${top}px` });
+    const top = below + box.height > innerHeight - 8 ? Math.max(8, anchor.top - box.height - 6) : below;
+    Object.assign(menu.style, { left: `${left / zoom}px`, top: `${top / zoom}px` });
     menu.querySelector("button:not(:disabled), a")?.focus({ preventScroll: true });
   });
   // A chosen item closes the menu; what it opens takes over. Focus moves to the menu's button first, so a dialog the
@@ -292,7 +295,6 @@ function anchorMenu(menu, button) {
 }
 anchorMenu(byId("workspaceNewMenu"), byId("workspaceNewButton"));
 anchorMenu(byId("workspaceMoreMenu"), byId("workspaceMoreButton"));
-anchorMenu(byId("detailsMoreMenu"), byId("detailsMoreButton"));
 
 const run = (action) => () => Promise.resolve().then(action).catch((error) => toast.error(error.message));
 byId("workspaceNewConversation").addEventListener("click", run(startGlobalConversation));
