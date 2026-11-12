@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.293.3 — 2026-11-13
 
 - Client logs now record every view change, whether a tap or key press caused it, and the code that made it, so an automatic exit from the control center can be traced.
 
