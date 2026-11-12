@@ -478,7 +478,9 @@ test("the sweep and done-cleanup keep a built-in project's worktree while its fi
   assert.equal(metadata.createdByNodeId, (await getClusterNode()).id);
   await writeFile(metadataPath, JSON.stringify({ ...metadata, createdByNodeId: OTHER, createdAt: new Date(Date.now() - 3_600_000).toISOString() }));
   assert.match(await worktreeSweepRefusal(project.id, { id: foreign.id, createdByNodeId: OTHER }) ?? "", /another machine created it and this node has not caught up with homeserver since it started/);
+  assert.match(await worktreeSweepRefusal(project.id, own, { requirePeerCheck: true }) ?? "", /has not caught up/, "expiration checks peers even for a locally created worktree");
   stand.pulled.add(`worktrees:${project.id}\n${PEER}`);
+  assert.equal(await worktreeSweepRefusal(project.id, own, { requirePeerCheck: true }), undefined);
   assert.equal(await worktreeSweepRefusal(project.id, { id: foreign.id, createdByNodeId: OTHER }), undefined);
   assert.equal(await worktreeSweepRefusal(project.id, { id: own.id, createdByNodeId: (await getClusterNode()).id }), undefined, "its own worktree needs no pull");
 

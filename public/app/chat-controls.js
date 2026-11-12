@@ -6,6 +6,7 @@ import { syncBrowserButton } from "./browser.js";
 import { clearThinkingBubble, syncLiveActivity } from "./chat-transcript.js";
 import { changeReasoningLevel, hideCommandAutocomplete, renderReasoningOptions, renderToolsDialog, syncModelButton } from "./composer-dialogs.js";
 import { elements } from "./elements.js";
+import { renderWorktreeIndicator } from "./worktree-indicator.js";
 import { syncQuickActionLabels } from "./focus-ui.js";
 import { shortSessionTitle, syncChatTitleFromSessions } from "./layout.js";
 import { renderSessions } from "./session-list.js";
@@ -136,6 +137,7 @@ function syncSelectOptions(select, options) {
 }
 
 export function renderChatSessionControls() {
+  renderWorktreeIndicator();
   syncBrowserButton();
   document.dispatchEvent(new CustomEvent("activeConversationChanged"));
   syncBackgroundTasks();

@@ -20,11 +20,19 @@ A conflict returns the inspected `targetCommit`. Combine both sides in the workt
 
 ## Retirement
 
-A verified durable local commit is required for automatic retirement. Done marks and age alone never prove integration. PR-path worktrees remain intact until explicit handling; opening a PR is not a merge.
+Verified integration can retire a worktree immediately when its writers stop. The housekeeping retention policy also removes merged worktrees after five days without activity, and any worktree after ten inactive days, **including unmerged changes and open PR worktrees**. Opening a PR is not a merge. Conversation timestamps and file/directory changes count as activity; Done alone does not authorize deleting unmerged work.
+
+Expiration protects running conversations, background tasks, open harness working directories and unresolved integrations. It waits for file sync and checks eligible peers even when this machine created the worktree. Unknown activity or an unavailable peer retains the worktree rather than guessing.
 
 The active agent's cwd is not deleted during its merge tool call. Completion schedules a turn-aware grace period; cleanup rechecks writers, pending sync and the task digest. Later edits invalidate retirement eligibility. Existing housekeeping provides restart recovery. Archived cwd metadata keeps local native transcript discovery available after deletion.
 
-The legacy UI **Merge to project** action remains a file-only merge and does **not** create verified retirement evidence. Explicit user deletion remains separate from automatic cleanup.
+The legacy UI **Merge to project** action remains a file-only merge, not a verified commit. An unchanged file-only merge qualifies for five-day inactivity cleanup. Later edits require a new merge or the ten-day expiry. Explicit user deletion remains separate from automatic cleanup.
+
+## Conversation indicator, secrets and sync
+
+The open conversation shows **Worktree: name** beside its title on desktop and phone. Ordinary project-folder conversations do not show this indicator. The conversation list keeps its colored worktree badges.
+
+Worktree conversations use normal conversation secret scopes. Agent-started child conversations inherit their caller's attached secret accounts; the new-conversation dialog uses its selected accounts. Local environment files and dependency links use the existing worktree setup. Secrets are not added to the synced source tree: each machine resolves its authorized local secret accounts and local files. Worktree code, metadata and deletion continue through the project's file-sync engine; archived cwd metadata preserves conversation history.
 
 ## Verification boundaries
 

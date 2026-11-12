@@ -503,18 +503,19 @@ export async function worktreeMetadataGone(projectId: string, worktreeId: string
  * node last started or woke, with none of them ahead: until then its conversation markers may simply
  * not have arrived. A project shared with nobody has nothing to wait for.
  */
-export async function worktreeSweepRefusal(projectId: string, worktree: { id: string; createdByNodeId: string }): Promise<string | undefined> {
+export async function worktreeSweepRefusal(projectId: string, worktree: { id: string; createdByNodeId: string }, options: { requirePeerCheck?: boolean } = {}): Promise<string | undefined> {
   const engine = await projectFilesEngine(projectId);
   if (engine === "none") return undefined;
   if (engine === "moving") return "Worktree kept: file sync is still checking this project's files";
   if (await worktreeHasPendingFiles(projectId, worktree.id, { use: false })) return "Worktree kept: its files are still arriving from another machine";
   const api = await engineApi();
   const { getClusterNode } = await import("../cluster.js");
-  if (worktree.createdByNodeId === (await getClusterNode()).id) return undefined;
+  if (!options.requirePeerCheck && worktree.createdByNodeId === (await getClusterNode()).id) return undefined;
   const view = (await api.fileSyncProjectViews([projectId])).get(projectId)!;
   const share = view.shares.find((candidate) => candidate.kind === "worktrees");
   const eligible = view.peers.worktrees ?? [];
-  if (!share || view.worker !== "running" || !eligible.length) return "Worktree kept: another machine created it and this node cannot check that machine's copy now";
+  if (options.requirePeerCheck && !eligible.length && worktree.createdByNodeId === (await getClusterNode()).id) return undefined;
+  if (!share || view.worker !== "running" || !eligible.length) return "Worktree kept: this node cannot check the other machines' copies now";
   const peerFacts = await api.fileSyncPeerFacts(eligible);
   for (const peer of eligible) {
     const known = peerFacts.peers.get(peer);

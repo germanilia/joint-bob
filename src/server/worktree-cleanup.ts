@@ -2,12 +2,13 @@ import { lstat, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { backgroundTaskConversationId, readActiveBackgroundTaskIdentities } from "../background-tasks.js";
 import { listConversationRecords } from "../conversation-records.js";
+import { listHarnessSessions } from "../harnesses.js";
 import { conversationWorkActive } from "../conversation-work.js";
 import { resolveDataDirectory } from "../data-directory.js";
 import { conversationLeaseRunning } from "../conversation-runtime.js";
 import { sessionDoneOverrides } from "../names.js";
-import { hasVerifiedIntegration, retireVerifiedWorktree } from "../worktree-integration.js";
-import { listProjectWorktrees, projectWorktreeRoot, WORKTREE_ID, worktreeConversationIndex } from "../project-worktrees.js";
+import { hasVerifiedIntegration, retireVerifiedWorktree, worktreeIntegrationPending } from "../worktree-integration.js";
+import { deleteProjectWorktree, listProjectWorktrees, projectWorktreeRoot, WORKTREE_ID, worktreeChanges, worktreeConversationIndex } from "../project-worktrees.js";
 import { worktreeFilesChanged, worktreeMetadataGone, worktreeSweepRefusal } from "../file-sync/facade.js";
 import { listProjects } from "../store.js";
 import { isHarnessId, type ProjectRecord } from "../types.js";
@@ -35,7 +36,7 @@ export async function cleanupDoneWorktrees(project: ProjectRecord): Promise<Clea
   finally { pending.delete(project.id); }
 }
 
-/** Automatic deletion requires a verified local commit; Done and age are not proof. */
+/** Verified Done work retires immediately; inactive work follows the five/ten-day retention policy. */
 export async function sweepWorktrees(): Promise<string[]> {
   const deleted: string[] = [];
   for (const project of await listProjects()) {
@@ -64,7 +65,7 @@ async function cleanup(project: ProjectRecord): Promise<CleanupResult> {
       // A harness switch can leave only the original segment's worktree marker.
       const conversations = new Set(group.map((member) => member.conversationId));
       const segments = [...group, ...records.filter((record) => conversations.has(record.conversationId ?? record.sessionId))];
-      const running = () => [...readActiveBackgroundTaskIdentities(resolveDataDirectory())].map(backgroundTaskConversationId).some((id) => conversations.has(id)) || segments.some(({ engine, sessionId }) => {
+      const running = () => worktreeIntegrationPending(project.id, worktree.id) || [...harnessSessions.values()].some(({ cwd }) => cwd === worktree.path || cwd.startsWith(`${worktree.path}${path.sep}`)) || [...readActiveBackgroundTaskIdentities(resolveDataDirectory())].map(backgroundTaskConversationId).some((id) => conversations.has(id)) || segments.some(({ engine, sessionId }) => {
         if (!isHarnessId(engine)) return true;
         const session = findHarnessSession(project.id, engine, sessionId);
         return Boolean(session && harnessSessionBusy(session)) || conversationWorkActive(engine, sessionId) || conversationLeaseRunning(engine, sessionId);
@@ -105,6 +106,7 @@ async function cleanup(project: ProjectRecord): Promise<CleanupResult> {
       if (!(error instanceof ProjectLockedError)) console.warn(`Worktree cleanup failed for ${worktree.id}`, error);
     }
   }
+  await cleanupIdleWorktrees(project, result);
   await cleanupEmptyWorktrees(project, result);
   await removeDeadWorktreeFolders(project).catch((error) => console.warn(`Removing leftover worktree folders of ${project.id} failed`, error));
   if (result.deletedWorktreeIds.length) {
@@ -114,7 +116,61 @@ async function cleanup(project: ProjectRecord): Promise<CleanupResult> {
   return result;
 }
 
-/** Unstarted worktrees also require verified integration; age alone never authorizes deletion. */
+/** Explicit retention: merged after five inactive days; any worktree after ten. */
+async function cleanupIdleWorktrees(project: ProjectRecord, result: CleanupResult): Promise<void> {
+  const day = 86_400_000;
+  const now = Date.now();
+  const candidates = (await listProjectWorktrees(project.id)).filter(tree => now - Date.parse(tree.createdAt) > 5 * day);
+  if (!candidates.length) return;
+  const records = await listConversationRecords(project.id);
+  const index = await worktreeConversationIndex(project.id);
+  const sessions = await listHarnessSessions({ ...project, additionalPaths: candidates.map(tree => tree.path), historyDays: 0, includeUnstarted: true }, [], [...index.keys()]);
+  for (const tree of candidates) {
+    try {
+      await assertProjectEditable(project);
+      const keys = new Set([...index].filter(([, value]) => value.id === tree.id).map(([key]) => key));
+      const ids = new Set(records.filter(record => keys.has(`${record.engine}:${record.sessionId}`)).map(record => record.conversationId ?? record.sessionId));
+      const segments = records.filter(record => ids.has(record.conversationId ?? record.sessionId)).map(({ engine, sessionId }) => ({ engine, sessionId }));
+      for (const key of keys) {
+        const [engine, sessionId] = key.split(":");
+        ids.add(sessionId);
+        if (!segments.some(record => record.engine === engine && record.sessionId === sessionId)) segments.push({ engine, sessionId });
+      }
+      const active = () => worktreeIntegrationPending(project.id, tree.id) || [...readActiveBackgroundTaskIdentities(resolveDataDirectory())].map(backgroundTaskConversationId).some(id => ids.has(id))
+        || segments.some(({ engine, sessionId }) => !isHarnessId(engine) || conversationWorkActive(engine, sessionId) || conversationLeaseRunning(engine, sessionId) || Boolean(findHarnessSession(project.id, engine, sessionId) && harnessSessionBusy(findHarnessSession(project.id, engine, sessionId)!)))
+        || [...harnessSessions.values()].some(({ cwd }) => cwd === tree.path || cwd.startsWith(`${tree.path}${path.sep}`));
+      if (active()) continue;
+      const activity = [tree.createdAt, ...records.filter(record => ids.has(record.conversationId ?? record.sessionId)).map(record => record.updatedAt), ...sessions.filter(session => ids.has(session.id) || keys.has(`${session.harnessId}:${session.id}`)).map(session => session.updatedAt)];
+      const timestamps = activity.map(at => {
+        if (typeof at !== "string" || !Number.isFinite(Date.parse(at))) throw new Error("Worktree activity timestamp is invalid");
+        return Date.parse(at);
+      });
+      const idle = now - Math.max(...timestamps);
+      if (idle <= 5 * day) continue;
+      const expires = idle > 10 * day && !await changedSince(tree.path, now - 10 * day, true);
+      if (!expires && !hasVerifiedIntegration(project.id, tree.id) && !tree.lastMergedAt) continue;
+      const cutoff = now - (expires ? 10 : 5) * day;
+      if (await changedSince(tree.path, cutoff, true)) continue;
+      const refusal = await worktreeSweepRefusal(project.id, tree, { requirePeerCheck: true });
+      if (refusal) { result.retainedWorktrees[tree.id] = refusal; continue; }
+      if (active() || await changedSince(tree.path, cutoff, true)) continue;
+      if (expires) await deleteProjectWorktree(project.id, tree.id);
+      else if (hasVerifiedIntegration(project.id, tree.id)) await retireVerifiedWorktree(project, tree.id);
+      else {
+        const changes = await worktreeChanges(project.id, tree.id);
+        if (changes.writes.length || changes.deletes.length) continue;
+        await deleteProjectWorktree(project.id, tree.id);
+      }
+      delete result.retainedWorktrees[tree.id];
+      result.deletedWorktreeIds.push(tree.id);
+    } catch (error) {
+      result.retainedWorktrees[tree.id] = "Worktree kept: inactivity cleanup could not be completed";
+      console.warn(`Idle worktree cleanup failed for ${tree.id}`, error);
+    }
+  }
+}
+
+/** Unstarted worktrees younger than the retention deadline still require verified integration. */
 async function cleanupEmptyWorktrees(project: ProjectRecord, result: CleanupResult): Promise<void> {
   const hasConversations = async (worktreeId: string) => [...(await worktreeConversationIndex(project.id)).values()].some(({ id }) => id === worktreeId);
   for (const worktree of await listProjectWorktrees(project.id)) {
@@ -195,17 +251,18 @@ async function worktreeInUse(worktreePath: string): Promise<boolean> {
   return changedSince(worktreePath, Date.now() - EMPTY_WORKTREE_GRACE_MS);
 }
 
-async function changedSince(dir: string, since: number): Promise<boolean> {
+async function changedSince(dir: string, since: number, strict = false): Promise<boolean> {
+  if (strict && (await lstat(dir)).mtimeMs >= since) return true;
   let entries;
   try { entries = await readdir(dir, { withFileTypes: true }); }
-  catch { return false; }
+  catch (error) { if (strict) throw error; return false; }
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     let info;
     try { info = await lstat(full); }
-    catch { continue; }
+    catch (error) { if (strict) throw error; continue; }
     if (info.mtimeMs >= since) return true;
-    if (entry.isDirectory() && await changedSince(full, since)) return true;
+    if (entry.isDirectory() && await changedSince(full, since, strict)) return true;
   }
   return false;
 }

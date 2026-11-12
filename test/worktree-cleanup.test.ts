@@ -140,6 +140,95 @@ test("the periodic sweep retains unmerged edits and pull requests", async (conte
   await access(worktree.path);
 });
 
+test("five inactive days retire a verified worktree without a Done mark", async (context) => {
+  const { project, worktree } = await fixture(context);
+  const now = Date.now();
+  context.mock.method(Date, "now", () => now + 6 * 86_400_000);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
+});
+
+test("merged retention counts file activity as well as conversation age", async (context) => {
+  const { project, worktree } = await fixture(context);
+  const now = Date.now();
+  const touched = new Date(now + 4 * 86_400_000);
+  await utimes(path.join(worktree.path, "index.ts"), touched, touched);
+  context.mock.method(Date, "now", () => now + 11 * 86_400_000);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id], "seven quiet days qualify for merged cleanup, even though the conversation is eleven days old");
+});
+
+test("unmerged work survives five days but expires after ten, preserving history", async (context) => {
+  const { project, worktree } = await fixture(context, false);
+  await writeFile(path.join(worktree.path, "index.ts"), "unmerged work\n");
+  const now = Date.now();
+  let days = 6;
+  context.mock.method(Date, "now", () => now + days * 86_400_000);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+  days = 11;
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
+  const { worktreeSessionPaths } = await import("../src/project-worktrees.js");
+  assert.ok((await worktreeSessionPaths(project.id)).includes(worktree.path));
+});
+
+test("unstarted worktrees and open PRs expire only after ten inactive days", async (context) => {
+  const { project, worktree } = await fixture(context, false);
+  const empty = await createProjectWorktree(project, { name: "never started" });
+  await recordWorktreePullRequest(project.id, worktree.id, { number: 8, url: "https://github.com/o/r/pull/8", branch: "task", base: "main", baseCommit: "a".repeat(40) });
+  const now = Date.now();
+  context.mock.method(Date, "now", () => now + 11 * 86_400_000);
+  assert.deepEqual(new Set((await cleanupDoneWorktrees(project)).deletedWorktreeIds), new Set([empty.id, worktree.id]));
+});
+
+test("a file-only merge expires after five inactive days", async (context) => {
+  const { project, worktree } = await fixture(context, false);
+  const { mergeProjectWorktree } = await import("../src/project-worktrees.js");
+  await writeFile(path.join(worktree.path, "index.ts"), "merged\n");
+  assert.ok((await mergeProjectWorktree(project, worktree.id)).merged);
+  const now = Date.now();
+  context.mock.method(Date, "now", () => now + 6 * 86_400_000);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
+});
+
+test("unresolved integration blocks ten-day expiration", async (context) => {
+  const { project, worktree } = await fixture(context);
+  const { openNodeDatabase } = await import("../src/node-database.js");
+  const { resolveDataDirectory } = await import("../src/data-directory.js");
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
+  db.prepare("INSERT INTO worktree_integrations(operation_id,project_id,worktree_id,receipt) VALUES (?,?,?,?)")
+    .run(randomUUID(), project.id, worktree.id, JSON.stringify({ phase: "verifying" }));
+  db.close();
+  const now = Date.now();
+  context.mock.method(Date, "now", () => now + 11 * 86_400_000);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+});
+
+test("recent transcript activity keeps an old worktree even with no file edits", async (context) => {
+  const { project, worktree, sessionId } = await fixture(context, false);
+  const now = Date.now();
+  const recent = new Date(now + 10 * 86_400_000).toISOString();
+  const folder = path.join(os.homedir(), ".pi", "agent", "sessions");
+  await mkdir(folder, { recursive: true });
+  const transcript = path.join(folder, `${sessionId}.jsonl`);
+  await writeFile(transcript, [
+    { type: "session", version: 3, id: sessionId, timestamp: recent, cwd: worktree.path },
+    { type: "message", id: "recent", parentId: null, timestamp: recent, message: { role: "user", content: [{ type: "text", text: "Still working" }], timestamp: Date.parse(recent) } },
+  ].map(record => JSON.stringify(record)).join("\n") + "\n");
+  context.after(() => rm(transcript, { force: true }));
+  context.mock.method(Date, "now", () => now + 11 * 86_400_000);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+});
+
+test("ten-day expiration protects running work and recent file activity", async (context) => {
+  const { project, worktree, sessionId } = await fixture(context, false);
+  const now = Date.now();
+  context.mock.method(Date, "now", () => now + 11 * 86_400_000);
+  holdEndedRun("pi", sessionId, false);
+  try { assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []); }
+  finally { releaseEndedRun("pi", sessionId); }
+  const recent = new Date(now + 10 * 86_400_000);
+  await utimes(path.join(worktree.path, "index.ts"), recent, recent);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+});
+
 test("the periodic sweep keeps a worktree with an undone or running conversation", async (context) => {
   const { project, worktree, sessionId } = await fixture(context);
   assert.deepEqual(await sweepWorktrees(), [], "an undone conversation keeps it");

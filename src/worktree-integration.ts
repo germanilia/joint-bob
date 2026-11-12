@@ -65,6 +65,11 @@ export function hasVerifiedIntegration(projectId: string, worktreeId: string): b
   return Boolean(verifiedReceipt(projectId, worktreeId));
 }
 
+/** An interrupted verification/install must be resolved before automatic expiry. */
+export function worktreeIntegrationPending(projectId: string, worktreeId: string): boolean {
+  return pending.has(projectId) || Boolean(db().prepare("SELECT 1 FROM worktree_integrations WHERE project_id=? AND worktree_id=? AND json_extract(receipt,'$.phase') != 'finished' LIMIT 1").get(projectId, worktreeId));
+}
+
 function verifiedReceipt(projectId: string, worktreeId: string): { operationId: string; receipt: Receipt } | null {
   const row = db().prepare("SELECT operation_id, receipt FROM worktree_integrations WHERE project_id=? AND worktree_id=? AND json_extract(receipt,'$.result.status')='committed' ORDER BY rowid DESC LIMIT 1").get(projectId, worktreeId) as { operation_id: string; receipt: string } | undefined;
   return row ? { operationId: row.operation_id, receipt: JSON.parse(row.receipt) } : null;
