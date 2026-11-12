@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.277.0 — 2026-11-12
+
+- **The details column's controls are visible and in one place.** The Activity / Files / Git / Tasks / More tabs and the Browser, Terminal, Share and Schedule buttons now have a clear outline and stronger text in every theme, and the four buttons sit directly under the tabs with icons instead of at the bottom of the column. The two "when it stops" switches stay at the bottom.
+- Fixed **More** doing nothing in the details column: with a larger Details text size its menu opened off-screen. More is now a tab of its own with Side chat, Story and Activity overview. The same fault in the left column's New and ⋯ menus is fixed.
+- The routing preview's module is part of the offline app again, so an installed app no longer misses it.
+- Phone: the agent, model and machine chips under a conversation's header have space above them, and the agent's name is no longer cut short.
+
 ## 2.276.4 — 2026-11-12
 
 - Webhooks and scheduled tasks created from another node now use the target project owner's subscription pool or profile on the relay or execution node when no shared profile is pinned.

@@ -18,7 +18,7 @@
 
 /* Only the desktop shows these; the phone keeps today's panels and its own menu. */
 .ws-side, .ws-groups, .ws-foot, .ws-group-page, .ws-head-actions, .ws-chat-meta, .ws-seg-tab, .ws-pane,
-.ws-details-foot, .ws-picker-title, .ws-label, .ws-item-label, .conversation-filters-toggle { display: none; }
+.ws-details-foot, .ws-links, .ws-picker-title, .ws-label, .ws-item-label, .conversation-filters-toggle { display: none; }
 .ws-menu:not(:popover-open) { display: none; }
 #activityPanel .ws-seg-tab { display: none; }
 
@@ -629,31 +629,88 @@
   body:not(.focus-ui) #chatPanel:has(> .messages-wrap.activity-floating) > .messages-wrap > #activityPanel {
     grid-area: msgs; position: absolute; z-index: 6; inset: 0 0 0 auto; width: min(92%, var(--activity-preferred-width, 360px)); max-width: none; box-shadow: var(--shadow);
   }
-  body:not(.focus-ui) #activityPanel > .activity-panel-header { flex-wrap: wrap; gap: 6px; padding: 16px 14px 8px 16px; }
-  body:not(.focus-ui) #activityPanel .activity-tabs { flex: 1; display: flex; gap: 2px; min-width: 0; padding: 3px; border-radius: 12px; background: var(--paper-raised); }
+  /* The column's controls are drawn from the theme's ink over its panel, so every theme gives them the same contrast
+     (measured, test/ui/ui-workspace-layout.test.ts): labels at least 7:1 on their fill, the outlines of the segments'
+     track, the lit segment and the buttons at least 3:1 against what is around them. */
+  body:not(.focus-ui) #activityPanel {
+    --ctl-fill: color-mix(in srgb, var(--text) 8%, var(--panel));
+    --ctl-fill-hover: color-mix(in srgb, var(--text) 15%, var(--panel));
+    --ctl-edge: color-mix(in srgb, var(--text) 56%, var(--panel));
+    --ctl-ink: color-mix(in srgb, var(--text) 88%, var(--panel));
+    --ctl-on: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  }
+  /* Light ink on a dark panel reaches the same contrast with less of it. */
+  :root[data-theme="dark"] body:not(.focus-ui) #activityPanel { --ctl-edge: color-mix(in srgb, var(--text) 42%, var(--panel)); }
+  /* First line: the segments and the collapse button. Second line: Browser, Terminal, Share, Schedule. */
+  body:not(.focus-ui) #activityPanel > .activity-panel-header { flex-wrap: wrap; gap: 8px 6px; padding: 16px 14px 10px 16px; border-bottom: 1px solid var(--line); }
+  body:not(.focus-ui) #activityPanel .activity-tabs { flex: 1; display: flex; gap: 2px; min-width: 0; padding: 3px; border-radius: 12px; background: var(--ctl-fill); box-shadow: inset 0 0 0 1px var(--ctl-edge); }
   body:not(.focus-ui) #activityPanel .activity-tabs > button {
-    display: flex; flex: 1; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 30px; height: 30px; padding: 0 6px;
-    border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    display: flex; flex: 1 1 auto; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 30px; height: 30px; padding: 0 4px;
+    border: 0; border-radius: 9px; background: transparent; color: var(--ctl-ink); font-size: 12.5px; font-weight: 600; white-space: nowrap;
   }
   body:not(.focus-ui) #activityPanel .activity-tabs > button > svg { display: none; }
   body:not(.focus-ui) #activityPanel .activity-tabs > button > span { display: inline; }
-  body:not(.focus-ui) #activityPanel .activity-tabs > button[aria-selected="true"] { border: 0; background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); color: var(--text); }
-  body:not(.focus-ui) #activityPanel .activity-tabs > .ws-seg-more:is(:hover, [aria-expanded="true"]) { color: var(--text); }
-  /* The side chat is one of More's rows: while it shows, More is the lit segment. */
-  body:not(.focus-ui) #activityPanel:has(#activityChatTab[aria-selected="true"]) .activity-tabs > .ws-seg-more { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); color: var(--text); }
-  body:not(.focus-ui) #activityPanel .ws-seg-count { color: var(--muted); font-size: 11px; font-weight: 600; }
+  body:not(.focus-ui) #activityPanel .activity-tabs > button:hover:not([aria-selected="true"]) { background: var(--ctl-fill-hover); color: var(--text); }
+  /* The lit segment: the accent's tint and outline, and heavier words. The side chat is one of More's rows: while it
+     shows, More is the lit segment. */
+  body:not(.focus-ui) #activityPanel .activity-tabs > button[aria-selected="true"],
+  body:not(.focus-ui) #activityPanel:has(#activityChatTab[aria-selected="true"]) .activity-tabs > .ws-seg-more {
+    border: 0; background: var(--ctl-on); box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--text); font-weight: 700;
+  }
+  body:not(.focus-ui) #activityPanel .ws-seg-count { color: inherit; font-size: 11px; font-weight: 700; }
   body:not(.focus-ui) #activityPanel .ws-seg-count[hidden] { display: none; }
   body:not(.focus-ui) #activityPanel .activity-modes { display: none; }
-  body:not(.focus-ui) #activityPanel .activity-panel-close { width: 30px; min-width: 30px; min-height: 30px; color: var(--muted); }
-  /* Side chat, Story and the Activity overview, under More. */
-  #detailsMoreMenu > button > span { display: inline !important; }
-  #detailsMoreMenu > button[role="tab"][aria-selected="true"] { background: var(--field); }
-  #detailsMoreMenu .shortcut-hint { display: none !important; }
+  body:not(.focus-ui) #activityPanel .activity-panel-close {
+    width: 32px; min-width: 32px; min-height: 32px; border-radius: 10px; background: var(--ctl-fill); box-shadow: inset 0 0 0 1px var(--ctl-edge); color: var(--text);
+  }
+  body:not(.focus-ui) #activityPanel .activity-panel-close:hover { background: var(--ctl-fill-hover); }
+  /* One row of four where the words fit (from about 1400 px of window, or a widened column); two by two in a narrower column. */
+  body:not(.focus-ui) #activityPanel > .activity-panel-header { container: details-head / inline-size; }
+  body:not(.focus-ui) #activityPanel .ws-links { display: grid; flex: 1 0 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+  @container details-head (min-width: 314px) {
+    body:not(.focus-ui) #activityPanel .ws-links { display: flex; gap: 4px; }
+    body:not(.focus-ui) #activityPanel .ws-link { flex: 1 1 auto; gap: 4px; padding: 0 5px; font-size: 12px; }
+    body:not(.focus-ui) #activityPanel .ws-link > svg { width: 14px; height: 14px; }
+  }
+  .ws-link {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 32px; height: 32px; padding: 0 8px;
+    border: 0; border-radius: 10px; background: var(--ctl-fill); box-shadow: inset 0 0 0 1px var(--ctl-edge); color: var(--text); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  }
+  .ws-link > svg { width: 15px; height: 15px; flex: none; }
+  .ws-link > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ws-link:hover:not(:disabled) { background: var(--ctl-fill-hover); }
+  /* Not available now (no project, a shared read-only conversation): still readable, plainly not a button. */
+  .ws-link:disabled { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--muted); cursor: not-allowed; }
+  .ws-link[hidden] { display: none; }
+  /* The quiet buttons inside the cards (View, Edit, Update summary, the summary's model, Add to knowledge, Dismiss). */
+  body:not(.focus-ui) #activityPanel :is(.activity-summary-actions, .activity-instructions-actions, .activity-rule-actions) > button {
+    min-height: 28px; padding: 2px 10px; border: 0; border-radius: 8px; background: var(--ctl-fill); box-shadow: inset 0 0 0 1px var(--ctl-edge); color: var(--text);
+  }
+  body:not(.focus-ui) #activityPanel :is(.activity-summary-actions, .activity-instructions-actions, .activity-rule-actions) > button:hover:not(:disabled) { background: var(--ctl-fill-hover); }
+  body:not(.focus-ui) #activityPanel .activity-rule-actions > button:not(.ghost) { background: var(--btn-bg); box-shadow: none; color: var(--btn-fg); }
+  body:not(.focus-ui) #activityPanel :is(.activity-summary-actions, .activity-instructions-actions) { gap: 6px; margin-left: 0; }
+  /* More: the side chat, Story and the Activity overview, each with a line about it and its button. */
+  .ws-more-list { display: grid; overflow: hidden; border-radius: 12px; background: var(--field); }
+  .ws-more-item { display: grid; gap: 8px; padding: 12px; }
+  .ws-more-item + .ws-more-item { box-shadow: inset 0 1px 0 var(--line-strong); }
+  .ws-more-text b { display: block; font-size: 13.5px; font-weight: 600; }
+  .ws-more-text p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  #detailsMoreMenu .ws-pane-actions > button > span { display: inline !important; }
+  #detailsMoreMenu .ws-pane-actions > button { border-bottom: 0 !important; }
+  /* The buttons keep their short names for the phone's panel; here each says what it does. */
+  #detailsMoreMenu .ws-pane-actions > button > span { font-size: 0; }
+  #detailsMoreMenu .ws-pane-actions > button > span::after { font-size: 13px; }
+  #detailsMoreChat > button > span::after { content: "Open the side chat"; }
+  #detailsMoreStory > button > span::after { content: "Open the story"; }
+  #detailsMoreOverview > button > span::after { content: "Play the overview"; }
   body:not(.focus-ui) #activityPanel > :is(.activity-body, .conversation-chat, .ws-pane) { flex: 1 1 0; min-height: 0; }
   body:not(.focus-ui) #activityPanel .ws-pane:not([hidden]) { display: flex; flex-direction: column; gap: 10px; overflow: hidden; padding: 6px 16px 10px; }
   .ws-pane-head { display: flex; align-items: baseline; gap: 8px; }
-  .ws-pane-head h3 { margin: 0; font: 400 16px/1.2 var(--serif); color: var(--heading); }
-  .ws-pane-head small { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .ws-pane-head h3 { flex: none; margin: 0; font: 400 16px/1.2 var(--serif); color: var(--heading); white-space: nowrap; }
+  .ws-pane-head small { min-width: 0; margin-left: auto; color: var(--muted); font-size: 12px; text-align: right; }
+  /* More's three rows scroll when the column is short (a floating column, large text); the summaries never do. */
+  body:not(.focus-ui) #activityPanel #detailsMore:not([hidden]) { overflow: hidden auto; }
+  #detailsMore > * { flex: none; }
   .ws-pane-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
   .ws-git-branch { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--field); font-size: 13px; }
   .ws-git-branch:empty { display: none; }
@@ -670,7 +727,7 @@
   .ws-pane-actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .ws-pane-actions > button {
     display: inline-flex !important; align-items: center; gap: 6px; width: auto !important; min-width: 0 !important; min-height: 34px !important; padding: 0 12px !important;
-    border: 0; border-radius: 10px; background: var(--paper-raised) !important; box-shadow: none !important; color: var(--text); font-size: 13px; font-weight: 600; line-height: normal !important;
+    border: 0; border-radius: 10px; background: var(--ctl-fill) !important; box-shadow: inset 0 0 0 1px var(--ctl-edge) !important; color: var(--text); font-size: 13px; font-weight: 600; line-height: normal !important;
   }
   .ws-pane-actions > button svg { width: 16px; height: 16px; }
   .ws-pane-actions :is(.chat-action-label, .background-tasks-label) { display: inline !important; }
@@ -680,22 +737,18 @@
   #detailsGitActions .chat-action-label::after { content: " review"; }
   #detailsTasksActions .background-tasks-label::before { content: "Open "; }
 
-  /* The two "when it stops" switches and the links, at the foot of the column. */
-  body:not(.focus-ui) #activityPanel .ws-details-foot { display: grid; flex: none; gap: 10px; padding: 10px 16px 16px; border-top: 1px solid var(--line); }
+  /* The two "when it stops" switches, alone at the foot of the column: in reach from every segment. */
+  body:not(.focus-ui) #activityPanel .ws-details-foot { display: grid; flex: none; padding: 10px 16px 16px; border-top: 1px solid var(--line); }
   .ws-switches { overflow: hidden; border-radius: 14px; background: var(--field); }
   .ws-switch-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 14px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 13.5px; font-weight: 500; text-align: left; }
   .ws-switch-row + .ws-switch-row { box-shadow: inset 0 1px 0 var(--line); }
   .ws-switch-row > span { min-width: 0; flex: 1; }
   .ws-switch-row:disabled { opacity: 0.5; }
-  .ws-switch { position: relative; flex: none; width: 40px; height: 24px; border-radius: 12px; background: var(--paper-raised); box-shadow: inset 0 0 0 1px var(--line); transition: background 0.2s; }
-  .ws-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); transition: left 0.2s; }
+  /* Off: an outlined track with an ink knob; on: the accent with the panel's colour for the knob. Both read in every theme. */
+  .ws-switch { position: relative; flex: none; width: 40px; height: 24px; border-radius: 12px; background: var(--ctl-fill, var(--paper-raised)); box-shadow: inset 0 0 0 1.5px var(--ctl-edge, var(--line-strong)); transition: background 0.2s; }
+  .ws-switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 16px; height: 16px; border-radius: 50%; background: var(--ctl-edge, var(--muted)); transition: left 0.2s, background 0.2s; }
   .ws-switch-row[aria-checked="true"] .ws-switch { background: var(--accent); box-shadow: none; }
-  .ws-switch-row[aria-checked="true"] .ws-switch::after { left: 19px; }
-  .ws-links { display: flex; flex-wrap: wrap; gap: 6px; }
-  .ws-link { min-height: 30px; height: 30px; padding: 0 12px; border: 0; border-radius: 15px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-size: 12.5px; font-weight: 600; }
-  .ws-link:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
-  .ws-link:disabled { opacity: 0.45; cursor: not-allowed; }
-  .ws-link[hidden] { display: none; }
+  .ws-switch-row[aria-checked="true"] .ws-switch::after { left: 20px; background: var(--panel); }
 
   /* Large text on a window that is not wide enough for both: the details float over the thread, as below 1024 px, so
      the conversation keeps a readable width (app/workspace.js sets the class). */

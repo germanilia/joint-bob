@@ -1,12 +1,15 @@
-// The conversation's details column on the desktop workspace: Activity / Files / Git / Tasks as one
-// segmented control (the side chat, Story and the Activity overview under More), the two "when it
-// stops" switches and links to Browser, Terminal, Share and Schedule. Files, Git and Tasks are
-// summaries; their buttons open today's full screens. The column is the activity panel: it opens,
+// The conversation's details column on the desktop workspace: Activity / Files / Git / Tasks / More as
+// one segmented control, directly under it the buttons for Browser, Terminal, Share and Schedule, and
+// at the foot the two "when it stops" switches. Files, Git and Tasks are summaries; their buttons open
+// today's full screens. More is a pane too (the side chat, Story and the Activity overview, each with
+// a line saying what it is): it was a popover menu once, placed with window coordinates inside a
+// column that is zoomed by the text size, so with larger text it opened outside the window. The column is the activity panel: it opens,
 // closes and resizes as that panel always did (activity-panel.js). The phone keeps the panel as it was.
 
 import { api } from "./api.js";
 import { elements } from "./elements.js";
 import { openGitReview } from "./git-review.js";
+import { menuIcon } from "./icons.js";
 import { projectGitUrl } from "./project-git-url.js";
 import { openFileAction } from "./project-files.js";
 import { toast } from "./shell.js";
@@ -15,8 +18,8 @@ import { activeChatSession } from "./terminal.js";
 import { formatUsageCost } from "./usage-format.js";
 
 const byId = (id) => document.getElementById(id);
-const PANES = { files: byId("detailsFiles"), git: byId("detailsGit"), tasks: byId("detailsTasks") };
-const TABS = { files: byId("detailsFilesTab"), git: byId("detailsGitTab"), tasks: byId("detailsTasksTab") };
+const PANES = { files: byId("detailsFiles"), git: byId("detailsGit"), tasks: byId("detailsTasks"), more: byId("detailsMore") };
+const TABS = { files: byId("detailsFilesTab"), git: byId("detailsGitTab"), tasks: byId("detailsTasksTab"), more: byId("detailsMoreButton") };
 const activityTab = byId("activityActivityTab");
 const chatTab = byId("activityChatTab");
 let shown = null;
@@ -40,6 +43,20 @@ function showPane(name) {
 for (const [name, tab] of Object.entries(TABS)) tab.addEventListener("click", () => showPane(name));
 // The panel's own tabs take the column back; their handlers show their pane.
 for (const tab of [activityTab, chatTab]) tab.addEventListener("click", () => showPane(null), true);
+// The phone has no summaries (its sheet holds these actions): a window that narrows into it shows the activity again.
+const desktop = matchMedia("(min-width: 701px)");
+desktop.addEventListener("change", () => { if (!desktop.matches && shown) activityTab.click(); });
+// Left and Right walk the segments, as they do between the panel's own two tabs.
+const segments = [activityTab, TABS.files, TABS.git, TABS.tasks, TABS.more];
+for (const tab of segments) tab.addEventListener("keydown", (event) => {
+  if ((event.key !== "ArrowLeft" && event.key !== "ArrowRight") || !desktop.matches) return;
+  event.preventDefault();
+  // Activity's own handler (conversation-chat.js) would open the side chat, its neighbour on the phone.
+  event.stopImmediatePropagation();
+  const next = segments[(segments.indexOf(tab) + (event.key === "ArrowRight" ? 1 : segments.length - 1)) % segments.length];
+  next.click();
+  next.focus();
+}, true);
 
 /* ---------- Files and Git: one status read serves both ---------- */
 
@@ -152,11 +169,14 @@ if (tasksBadge) new MutationObserver(syncTasks).observe(tasksBadge, { attributes
 
 const autoSwitch = byId("detailsAutoRespondSwitch");
 const notifySwitch = byId("detailsNotifySwitch");
+// Browser, Terminal, Share and Schedule, under the segments: each wears its icon and presses the conversation's own button.
+const links = [...document.querySelectorAll("#detailsLinks [data-proxy]")];
+for (const link of links) link.prepend(menuIcon(link.dataset.icon));
 function syncSwitches() {
   autoSwitch.setAttribute("aria-checked", String(elements.autoRespondButton.classList.contains("active")));
   autoSwitch.disabled = elements.autoRespondButton.disabled;
   notifySwitch.setAttribute("aria-checked", String(elements.notifyButton.getAttribute("aria-pressed") === "true"));
-  for (const link of document.querySelectorAll("#detailsFoot [data-proxy]")) {
+  for (const link of links) {
     const source = byId(link.dataset.proxy);
     link.disabled = !source || source.disabled;
     link.hidden = !source || source.hidden;
@@ -165,9 +185,7 @@ function syncSwitches() {
 // Auto respond needs instructions, so its switch opens the same dialog its menu item does.
 autoSwitch.addEventListener("click", () => elements.autoRespondButton.click());
 notifySwitch.addEventListener("click", () => elements.notifyButton.click());
-for (const link of document.querySelectorAll("#detailsFoot [data-proxy]")) {
-  link.addEventListener("click", () => byId(link.dataset.proxy)?.click());
-}
+for (const link of links) link.addEventListener("click", () => byId(link.dataset.proxy)?.click());
 const watch = new MutationObserver(syncSwitches);
 for (const id of ["autoRespondButton", "notifyButton", "openBrowserButton", "openTerminalButton", "shareConversationButton", "chatCronButton"]) {
   const source = byId(id);

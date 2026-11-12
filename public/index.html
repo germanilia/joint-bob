@@ -502,14 +502,21 @@
                 <button type="button" role="tab" class="ws-seg-tab" id="detailsFilesTab" aria-selected="false" aria-controls="detailsFiles" data-details-pane="files" data-testid="details-files-tab"><span>Files</span></button>
                 <button type="button" role="tab" class="ws-seg-tab" id="detailsGitTab" aria-selected="false" aria-controls="detailsGit" data-details-pane="git" data-testid="details-git-tab"><span>Git</span><b class="ws-seg-count" id="detailsGitCount" data-testid="details-git-count" hidden></b></button>
                 <button type="button" role="tab" class="ws-seg-tab" id="detailsTasksTab" aria-selected="false" aria-controls="detailsTasks" data-details-pane="tasks" data-testid="details-tasks-tab"><span>Tasks</span><b class="ws-seg-count" id="detailsTasksCount" data-testid="details-tasks-count" hidden></b></button>
-                <button type="button" class="ws-seg-tab ws-seg-more" id="detailsMoreButton" popovertarget="detailsMoreMenu" aria-haspopup="menu" title="Side chat, Story and the Activity overview" data-testid="details-more-button"><span>More</span></button>
+                <button type="button" class="ws-seg-tab ws-seg-more" id="detailsMoreButton" role="tab" aria-selected="false" aria-controls="detailsMore" data-details-pane="more" title="Side chat, Story and the Activity overview" data-testid="details-more-button"><span>More</span></button>
               </div>
-              <div class="ws-menu" id="detailsMoreMenu" popover role="menu" aria-label="More about this conversation" data-testid="details-more-menu"></div>
               <div class="activity-modes" data-testid="activity-modes">
                 <button class="ghost compact activity-mode" id="activityStoryButton" data-shortcut-hint="explainConversation" type="button" data-testid="activity-story-button" title="Open this conversation's story: what changed, how it works and why" aria-label="Story"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg><span>Story</span></button>
                 <button class="ghost compact activity-mode" id="activityOverviewButton" type="button" data-testid="activity-overview-button" title="Watch two hosts explain what this conversation did, in a movie drawn on paper" aria-label="Activity overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9.5 4.5 2.5-4.5 2.5z"/></svg><span>Overview</span></button>
               </div>
               <button class="ghost icon-button activity-panel-close" id="activityPanelCloseButton" type="button" aria-label="Collapse activity" title="Collapse activity" data-testid="activity-panel-close"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg></button>
+              <!-- Desktop details column: what opens beside the conversation, directly under the segments
+                   (app/conversation-details.js adds the icons and passes each press to the conversation's own button). -->
+              <nav class="ws-links" id="detailsLinks" aria-label="Open" data-testid="details-links">
+                <button type="button" class="ws-link" data-proxy="openBrowserButton" data-icon="globe" data-testid="details-link-browser"><span>Browser</span></button>
+                <button type="button" class="ws-link" data-proxy="openTerminalButton" data-icon="terminal" data-testid="details-link-terminal"><span>Terminal</span></button>
+                <button type="button" class="ws-link" data-proxy="shareConversationButton" data-icon="share" data-testid="details-link-share"><span>Share</span></button>
+                <button type="button" class="ws-link" data-proxy="chatCronButton" data-icon="clock" data-testid="details-link-schedule"><span>Schedule</span></button>
+              </nav>
             </header>
             <!-- One scrolling column: the overview (summary, statistics, rule suggestions), then the
                  steps, which open on demand and scroll inside their own list. -->
@@ -583,17 +590,30 @@
               <p class="ws-pane-note" id="detailsTasksNote">Commands the agent left running: servers, watchers, long builds.</p>
               <div class="ws-pane-actions" id="detailsTasksActions"></div>
             </section>
+            <!-- More: what did not fit the four segments. Always three rows; app/workspace.js places the panel's own
+                 Chat, Story and Overview buttons into them on the desktop. -->
+            <section class="ws-pane" id="detailsMore" role="tabpanel" aria-labelledby="detailsMoreButton" data-testid="details-more" hidden>
+              <div class="ws-pane-head"><h3>More</h3><small>About this conversation</small></div>
+              <div class="ws-more-list" id="detailsMoreMenu" data-testid="details-more-menu">
+                <div class="ws-more-item" data-testid="details-more-chat">
+                  <div class="ws-more-text"><b>Side chat</b><p>Ask about this conversation without adding to it. Questions and answers stay here.</p></div>
+                  <div class="ws-pane-actions" id="detailsMoreChat"></div>
+                </div>
+                <div class="ws-more-item" data-testid="details-more-story">
+                  <div class="ws-more-text"><b>Story</b><p>What changed, how it works and why, written and read aloud. It is written the first time you open it.</p></div>
+                  <div class="ws-pane-actions" id="detailsMoreStory"></div>
+                </div>
+                <div class="ws-more-item" data-testid="details-more-overview">
+                  <div class="ws-more-text"><b>Activity overview</b><p>Two hosts explain what this conversation did, as a short movie drawn on paper.</p></div>
+                  <div class="ws-pane-actions" id="detailsMoreOverview"></div>
+                </div>
+              </div>
+            </section>
             <footer class="ws-details-foot" id="detailsFoot" data-testid="details-foot">
               <div class="ws-switches">
                 <button type="button" class="ws-switch-row" id="detailsAutoRespondSwitch" role="switch" aria-checked="false" title="Auto respond: the responder answers the agent when it stops" data-testid="details-auto-respond-switch"><span>Answer for me when it stops</span><i class="ws-switch" aria-hidden="true"></i></button>
                 <button type="button" class="ws-switch-row" id="detailsNotifySwitch" role="switch" aria-checked="false" title="A notification on this device when a conversation needs review" data-testid="details-notify-switch"><span>Notify me when it stops</span><i class="ws-switch" aria-hidden="true"></i></button>
               </div>
-              <nav class="ws-links" aria-label="Open" data-testid="details-links">
-                <button type="button" class="ws-link" data-proxy="openBrowserButton" data-testid="details-link-browser">Browser</button>
-                <button type="button" class="ws-link" data-proxy="openTerminalButton" data-testid="details-link-terminal">Terminal</button>
-                <button type="button" class="ws-link" data-proxy="shareConversationButton" data-testid="details-link-share">Share</button>
-                <button type="button" class="ws-link" data-proxy="chatCronButton" data-testid="details-link-schedule">Schedule</button>
-              </nav>
             </footer>
           </aside>
         </div>
