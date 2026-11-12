@@ -3,13 +3,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test, { after, before } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { JOINT_BOB_TOOL_SERVER } from "../src/assistant-collaboration/bridge-tools.js";
 import { addSharingMember, createSharingCluster, getSharingCluster, setResourceShares } from "../src/cluster-sharing-policy.js";
 import { api, pairTwinNodes, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // A ("Default") runs on node one and asks B ("Work"), which runs on node two, its twin.
 // test/stub-ask-bootstrap.ts stands in for the asking turn's prompt on node one and B's agent on node two.
@@ -21,7 +22,7 @@ const children: ChildProcess[] = [];
 let helperEnv: Record<string, string>, helperLog: string, helperId: string, helperProjectId: string, token: string;
 
 function database(node: SeededNode): DatabaseSync {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   db.exec("PRAGMA busy_timeout=5000");
   return db;
 }

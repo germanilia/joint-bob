@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function until(check: () => Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 20_000;
@@ -30,12 +30,12 @@ test("owner DELETE reaches twin, offline twin catches up, and old metadata canno
     const recipient = await signIn(environment, twin);
     const projects = [owner.projects[0], owner.projects[1]];
     const deleted = (id: string) => {
-      const db = new DatabaseSync(path.join(twin.dataDir, "node.db"));
+      const db = openNodeDatabase(path.join(twin.dataDir, "node.db"));
       try { return (db.prepare("SELECT deleted FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?").get(id) as {deleted:number}|undefined)?.deleted === 1; }
       finally { db.close(); }
     };
     const gone = async (id: string) => deleted(id) && (await api(twin, recipient, "GET", `/projects/${id}`)).status === 404;
-    const ownerDb = new DatabaseSync(path.join(owner.dataDir, "node.db"));
+    const ownerDb = openNodeDatabase(path.join(owner.dataDir, "node.db"));
     const previous = ownerDb.prepare("SELECT statement FROM cluster_v2_resource_contexts WHERE kind='project' AND resource_id=? AND generation=1 LIMIT 1")
       .get(projects[1].id) as { statement: string } | undefined;
     ownerDb.close();
@@ -51,7 +51,7 @@ test("owner DELETE reaches twin, offline twin catches up, and old metadata canno
     const replay = await signedNodeRequest(environment, owner, twin, "POST", "/api/cluster/v2/resources/policy", { statement: JSON.parse(previous.statement) });
     assert.equal(replay.status, 409, "stale signed upsert cannot restore a terminal deletion");
     assert.equal(await gone(projects[1].id), true);
-    const db = new DatabaseSync(path.join(twin.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(twin.dataDir, "node.db"));
     try {
       assert.ok(db.prepare("SELECT 1 FROM cluster_v2_resource_deletions WHERE kind='project' AND resource_id=?").get(projects[1].id));
       assert.equal((await api(twin, recipient, "GET", `/projects/${projects[1].id}`)).status, 404);

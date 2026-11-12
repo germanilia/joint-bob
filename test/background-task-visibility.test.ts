@@ -6,6 +6,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { readActiveBackgroundTaskIdentities, readActiveConversationTaskIds, readBackgroundTasks, type TaskCursor } from "../src/background-tasks.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const identity = "visible-session";
 
@@ -24,7 +25,7 @@ function insertLiveTask(db: DatabaseSync, id: string, status: string, taskIdenti
 }
 
 function createPolicyDatabase(directory: string): DatabaseSync {
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   db.exec("CREATE TABLE supervised_shell_calls(task_id TEXT PRIMARY KEY,state TEXT NOT NULL,foreground_until INTEGER NOT NULL)");
   return db;
 }
@@ -89,10 +90,10 @@ test("foreground tasks become visible only when promoted", async () => {
     } finally { supervisor.close(); policy.close(); }
 
     assert.deepEqual(readBackgroundTasks(directory, [identity], 10).tasks, []);
-    const updates = new DatabaseSync(path.join(directory, "node.db"));
+    const updates = openNodeDatabase(path.join(directory, "node.db"));
     try { updates.prepare("UPDATE supervised_shell_calls SET state=?,foreground_until=0 WHERE task_id=?").run("background", "shell-task"); } finally { updates.close(); }
     assert.deepEqual(readBackgroundTasks(directory, [identity], 10).tasks.map((task) => task.id), ["shell-task"]);
-    const returned = new DatabaseSync(path.join(directory, "node.db"));
+    const returned = openNodeDatabase(path.join(directory, "node.db"));
     try { returned.prepare("UPDATE supervised_shell_calls SET state=? WHERE task_id=?").run("returned", "shell-task"); } finally { returned.close(); }
     assert.deepEqual(readBackgroundTasks(directory, [identity], 10).tasks, []);
   } finally {
@@ -115,7 +116,7 @@ test("a conversation's live background commands are reported, foreground ones ar
 
     assert.deepEqual([...readActiveBackgroundTaskIdentities(directory)].sort(), [identity, "other-session"].sort());
 
-    const promoted = new DatabaseSync(path.join(directory, "node.db"));
+    const promoted = openNodeDatabase(path.join(directory, "node.db"));
     try { promoted.prepare("UPDATE supervised_shell_calls SET state=?,foreground_until=0 WHERE task_id=?").run("background", "foreground-task"); } finally { promoted.close(); }
     assert.equal(readActiveBackgroundTaskIdentities(directory).has("foreground-session"), true);
   } finally {

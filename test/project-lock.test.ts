@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("a project lock records the local node, replicates, and can be cleared by anyone", async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "joint-bob-project-lock-"));
@@ -30,7 +30,7 @@ test("a project lock records the local node, replicates, and can be cleared by a
     assert.equal((await locks.projectLocks())[project.id].nodeId, node.id);
 
     // Locking enqueues a replication event so peers learn about it.
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     try {
       const outbox = db.prepare("SELECT entity_type, entity_key, operation FROM replication_outbox").all() as Array<{ entity_type: string; entity_key: string; operation: string }>;
       assert.equal(outbox.length, 1);

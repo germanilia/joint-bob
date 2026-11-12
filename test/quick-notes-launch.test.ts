@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { type ChildProcess } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface QuickNote {
   id: string;
@@ -305,7 +305,7 @@ test("restart recovery fails uncertain launches and disables the queue without r
 
     // Simulate a crash between claim and dispatch: the note is left 'starting'.
     await stopDevNode(children.pop()!);
-    const database = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try {
       database.exec("PRAGMA busy_timeout = 5000");
       database.prepare("UPDATE quick_notes SET status = 'starting', session_id = ?, launch_request_id = ? WHERE id = ?")

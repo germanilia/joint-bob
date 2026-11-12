@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import { type DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,6 +15,7 @@ import { addClusterLocalMember } from '../src/cluster-accounts.js';
 import { telegramDatabase, saveTeamTelegramConnection } from '../src/assistant-teams/telegram-store.js';
 import { ingestTeamTelegramUpdate } from '../src/assistant-teams/telegram.js';
 import { directTeamTargets, listPendingTeamEvents, teamMessageHistory, listTeamHistory, recordTeamOutput, saveTeamSubject, teamSubjectCandidates, onTeamInbox, bindTeamMessageSubject, bindTeamConversation } from '../src/assistant-teams/conversations.js';
+import { openNodeDatabase } from "../src/node-database.js";
 
 test('durable full history, edit versions, pending dedup, scoped reply routing and entity-safe aliases',async()=>{
  const db=await teamDatabase(),host=await getClusterNode();createAdministrator('context','Synthetic-password-123!',false);
@@ -74,9 +75,9 @@ test('real HTTP enrollment and webhook persist before acknowledgment; startup co
  try{
  const env=await seedDevEnvironment(root,1),node=env.nodes[0];server=await startDevNode(env,node);const login=await signIn(env,node);
  const cluster=await api<any>(node,login,'POST','/clusters',{name:'Telegram fixture'});assert.equal(cluster.status,201);
- const created=await api<any>(node,login,'POST','/assistant-teams',{clusterId:cluster.body.snapshot.body.clusterId});assert.equal(created.status,201);const teamId=created.body.team.id,base=`/assistant-teams/${teamId}/telegram`;{const seed=new DatabaseSync(path.join(node.dataDir,'node.db'));try{(await import('./team-members-fixture.js')).seedNodeMemberRows(seed,teamId);}finally{seed.close();}}
+ const created=await api<any>(node,login,'POST','/assistant-teams',{clusterId:cluster.body.snapshot.body.clusterId});assert.equal(created.status,201);const teamId=created.body.team.id,base=`/assistant-teams/${teamId}/telegram`;{const seed=openNodeDatabase(path.join(node.dataDir,'node.db'));try{(await import('./team-members-fixture.js')).seedNodeMemberRows(seed,teamId);}finally{seed.close();}}
  assert.equal((await api(node,login,'GET',base)).status,200);
- db=new DatabaseSync(path.join(node.dataDir,'node.db'));saveTeamTelegramConnection(db,{teamId,botId:'http-fixture',botUsername:'http_fixture_bot',tokenAccountId:'synthetic',headerSecret:'http-secret',readsAllGroupMessages:true});
+ db=openNodeDatabase(path.join(node.dataDir,'node.db'));saveTeamTelegramConnection(db,{teamId,botId:'http-fixture',botUsername:'http_fixture_bot',tokenAccountId:'synthetic',headerSecret:'http-secret',readsAllGroupMessages:true});
  const hook=async(update:unknown,secret='http-secret')=>fetch(`${node.url}/hooks/teamtelegram-${teamId}`,{method:'POST',headers:{'Content-Type':'application/json','x-telegram-bot-api-secret-token':secret},body:JSON.stringify(update)});
  assert.equal((await hook({},'forged')).status,401);
  assert.equal((await fetch(`${node.url}/api${base}/enrollment`,{method:'POST',headers:{Cookie:login.cookie,'Content-Type':'application/json'},body:'{}'})).status,403);

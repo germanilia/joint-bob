@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type WebSocket from "ws";
 import type { CronTask } from "../src/cron.js";
@@ -13,6 +12,7 @@ import { ensureUsageSchema } from "../src/usage-ledger.js";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { openChat, waitFor } from "./queued-prompt-harness.js";
 import { kiroV3SessionFixture } from "./kiro-v3-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const fixtureSource = `#!/usr/bin/env node
 ${kiroV3SessionFixture}
@@ -59,7 +59,7 @@ rl.on("close", () => process.exit(0));
 `;
 
 function configureKiro(dataDir: string, executable: string, configPath: string, sessionPath: string): void {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   const save = db.prepare("INSERT INTO node_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at");
   const now = new Date().toISOString();
   save.run("kiro.executable", executable, now);
@@ -80,7 +80,7 @@ async function kiroNode(root: string, spentUsd: number) {
   await chmod(executable, 0o700);
   configureKiro(node.dataDir, executable, configPath, sessionPath);
   const project = projectNamed(node, "Joint Bob");
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db")); ensureUsageSchema(db);
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db")); ensureUsageSchema(db);
   const occurredAt = new Date().toISOString();
   const payload = { id: "earlier", projectId: project.id, conversationId: "earlier-chat", sessionId: "earlier", engine: "pi", provider: "test", modelId: "fixture", occurredAt, requestId: null, input: 1, output: 1, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheWriteUnknown: 0, reasoning: 0, apiCostUsd: spentUsd, pricing: null, usageStatus: "reported", difficultyLevel: null, difficultyConfidence: null, difficultyStatus: "unknown", turnId: null, toolCalls: 0, toolErrors: 0 };
   db.prepare("INSERT INTO model_usage_events(id,project_id,conversation_id,session_id,engine,occurred_at,payload,origin_node_id) VALUES(?,?,?,?,?,?,?,?)").run("earlier", project.id, "earlier-chat", "earlier", "pi", occurredAt, JSON.stringify(payload), node.nodeId);
@@ -179,7 +179,7 @@ test("a scheduled run that is refused for budget is recorded, and its task stays
     const input = { projectId: project.id, name: "Nightly", prompt: "report", engine: "kiro", sessionId: null, ownerNodeId: node.nodeId, enabled: true, pauseOnFailure: true, schedule: { frequency: "hourly", hour: 9, minute: (new Date().getUTCMinutes() + 30) % 60, weekday: 1, timezone: "UTC" } };
     const created = await api<{ task: CronTask }>(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "create", input } });
     assert.equal(created.status, 200, JSON.stringify(created.body));
-    const db = new DatabaseSync(path.join(node.dataDir, "node.db")); db.exec("PRAGMA busy_timeout = 5000");
+    const db = openNodeDatabase(path.join(node.dataDir, "node.db")); db.exec("PRAGMA busy_timeout = 5000");
     db.prepare("UPDATE cron_tasks SET next_run = ? WHERE id = ?").run(Date.now(), created.body.task.id); db.close();
     const read = async () => (await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`)).body.tasks.find((task) => task.id === created.body.task.id)!;
     const deadline = Date.now() + 60_000;

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -21,6 +20,7 @@ import {
 } from "../src/quick-notes.js";
 import { launchQuickNote, planQuickNoteLaunches, prepareQuickNoteConversation, runningConversationCounts, QuickNoteLaunchError } from "../src/server/quick-note-dispatch.js";
 import { server } from "../src/server/state.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("queue planning honors saved order before creation time", () => {
   const first = { ...planNote("older", "2026-01-01T08:00:00.000Z"), position: 2 };
@@ -443,7 +443,7 @@ test("peer launches need replicating accounts and respect project locks", async 
     assert.equal(getQuickNoteQueue().enabled, false);
 
     // A project locked by another node never launches, locally or remotely.
-    const locks = new DatabaseSync(path.join(process.env.PI_WEB_DATA_DIR!, "node.db"));
+    const locks = openNodeDatabase(path.join(process.env.PI_WEB_DATA_DIR!, "node.db"));
     try {
       locks.exec("PRAGMA busy_timeout = 5000");
       locks.prepare("INSERT OR REPLACE INTO project_locks (project_id, node_id, node_name, locked_at, updated_at, origin_node_id) VALUES (?, ?, ?, ?, ?, ?)")

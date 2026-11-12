@@ -8,12 +8,12 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function projectWorkspace(dataDir: string, projectId: string): string {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
   try {
     return (db.prepare("SELECT workspace_id FROM projects WHERE id=?").get(projectId) as { workspace_id: string }).workspace_id;
   } finally {
@@ -22,7 +22,7 @@ function projectWorkspace(dataDir: string, projectId: string): string {
 }
 
 function projectName(dataDir: string, projectId: string): string | undefined {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
   try {
     return (db.prepare("SELECT name FROM projects WHERE id=?").get(projectId) as { name: string } | undefined)?.name;
   } finally {
@@ -39,7 +39,7 @@ async function waitFor(condition: () => boolean, message: string): Promise<void>
 }
 
 function receipt(dataDir: string, projectId: string, contextKind: "cluster" | "twin"): boolean {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
   try {
     return Boolean(db.prepare("SELECT 1 FROM cluster_v2_project_metadata_receipts WHERE project_id=? AND context_kind=?").get(projectId, contextKind));
   } finally {

@@ -7,12 +7,13 @@ import { BrowserStore } from "../src/browser-store.js";
 import { BrowserRuntime } from "../src/browser-runtime.js";
 import { getClusterNode } from "../src/cluster.js";
 import { resolveDataDirectory } from "../src/data-directory.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // No browser launch: seed closed history and exercise the real listing and grant SQL.
 test("browser grant checks reuse schema SQL but never cache permission decisions", async t => {
   const local = (await getClusterNode()).id;
   const store = new BrowserStore();
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   t.after(() => { db.close(); store.close(); });
   const home = randomUUID(), projectId = randomUUID();
   const profile = store.createProfile(home, "Fixture");
@@ -68,7 +69,7 @@ test("browser history listing does not reread session records and download reads
   assert.equal(get.mock.callCount(), 0, "records already returned by list must not be fetched again for each view/login request");
   get.mock.restore();
   assert.throws(() => store.loginRequest("missing-session"), /Browser session not found/);
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   try {
     const plan = db.prepare("EXPLAIN QUERY PLAN SELECT id,name,ready,error FROM browser_downloads WHERE sessionId=? ORDER BY rowid").all(expected[0]) as Array<{ detail: string }>;
     assert.ok(plan.some(row => /SEARCH browser_downloads USING INDEX/.test(row.detail)), JSON.stringify(plan));

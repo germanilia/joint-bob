@@ -3,11 +3,11 @@ import { execFile, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import { pendingReviewDiff } from "../src/server/git-review-guide.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("saved reviews and guides cannot cross repository selections, including legacy root records", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "git-review-scope-"));
@@ -28,7 +28,7 @@ test("saved reviews and guides cannot cross repository selections, including leg
     assert.equal((await api(node, session, "GET", `${base}/reviews`)).status, 200);
     const pending = await pendingReviewDiff(path.join(project.path, "a"), ["same.txt"]);
     const saved = { guide: { comments: [] }, paths: ["same.txt"], patches: pending.patches, fingerprint: pending.fingerprint, scope: "all" };
-    const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try {
       const now = new Date().toISOString();
       for (const [id, repository, question] of [["guide-a", "a", "Generated review comments"], ["story-a", "a", "Generated change story"], ["legacy", undefined, "Legacy review"]] as const) {

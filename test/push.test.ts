@@ -3,9 +3,9 @@ import { createDecipheriv } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import webpush from "web-push";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function withPushStore(run: (dataDir: string) => Promise<void>): Promise<void> {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-web-push-"));
@@ -55,7 +55,7 @@ test("push SQLite state persists generated VAPID keys and encrypts credentials",
     await push.savePushSubscription(subscription, "user-a", "project", "second-session", "Claude");
 
     assert.equal(first, second);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     const subscriptionCount = db.prepare("SELECT COUNT(*) AS count FROM push_session_subscriptions").get() as { count: number };
     assert.equal(subscriptionCount.count, 2);
     await push.savePushSubscription(subscription, "user-a", "project", "*", "Joint Bob");

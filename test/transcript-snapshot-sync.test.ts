@@ -21,6 +21,7 @@ import { getHarness } from "../src/harnesses.js";
 import { markPeerReachable, resetPeerAvailability } from "../src/server/peer-availability.js";
 import { acceptOwnerTranscript, assertSharedTranscriptReady, catchUpSharedTranscript, flushSharedTranscripts, resetSharedTranscriptPulls, setTranscriptStallTimeout, sharedTranscriptInventory, sharedTranscriptStatus } from "../src/server/shared-transcripts.js";
 import { addProject, removeProject } from "../src/store.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const hash = (bytes: string): string => createHash("sha256").update(bytes).digest("hex");
 
@@ -73,7 +74,7 @@ test("one conversation and its file are found in the kept project list until the
   await mkdir(path.dirname(f.destination), { recursive: true });
   await writeFile(f.destination, f.content);
   await sharedTranscriptInventory(f.peer, f.project.id);
-  const nodeDb = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const nodeDb = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   t.after(() => nodeDb.close());
   nodeDb.prepare("INSERT INTO conversation_record_tombstones (project_id, engine, session_id, updated_at, origin_node_id) VALUES (?, 'pi', ?, ?, ?)").run(f.project.id, f.sessionId, new Date().toISOString(), f.local.id);
 

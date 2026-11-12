@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type DatabaseSyncOptions } from "node:sqlite";
 import { PostgresDatabase } from "./postgres/connection.js";
 
 /**
@@ -24,8 +24,11 @@ export function nodeDatabaseIsPostgres(): boolean { return postgresUrl() !== und
 
 function testContext(): boolean { return Boolean(process.env.NODE_TEST_CONTEXT) || process.env.NODE_ENV === "test"; }
 
-/** Opens the node database whose SQLite file would be `file` (always `<data directory>/node.db`). */
-export function openNodeDatabase(file: string): DatabaseSync {
+/**
+ * Opens the node database whose SQLite file would be `file` (always `<data directory>/node.db`).
+ * `options` are SQLite's (read-only, busy timeout); PostgreSQL has nothing they would change.
+ */
+export function openNodeDatabase(file: string, options?: DatabaseSyncOptions): DatabaseSync {
   if (path.basename(file) !== "node.db") throw new Error(`openNodeDatabase opens node.db, not ${file}`);
   const directory = path.dirname(file);
   const marker = path.join(directory, POSTGRES_MARKER);
@@ -34,7 +37,7 @@ export function openNodeDatabase(file: string): DatabaseSync {
     if (existsSync(marker)) {
       throw new Error(`This node keeps its database in PostgreSQL (${marker}). Set ${DATABASE_URL_VARIABLE} in ~/.joint-bob/env and restart, or delete that file to start again with an empty SQLite database.`);
     }
-    return new DatabaseSync(file);
+    return options ? new DatabaseSync(file, options) : new DatabaseSync(file);
   }
   if (!existsSync(marker)) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /** People are keyed by account id; legacy usernames are translated on receipt. */
 const ILIA = "0123456789abcdef0123456789abcdef";
@@ -18,7 +18,7 @@ async function freshPins(dataDir: string) {
 }
 
 function createNode(dataDir: string): void {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   db.exec(`
     CREATE TABLE cluster_node (id TEXT NOT NULL, name TEXT NOT NULL, singleton INTEGER NOT NULL, url TEXT NOT NULL, paired_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     INSERT INTO cluster_node VALUES ('node-a', 'A', 1, 'http://127.0.0.1:1', NULL, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
@@ -40,7 +40,7 @@ test("project and conversation pin changes enqueue separate stable replication e
       conversations: [],
     });
 
-    const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+    const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
     const events = db.prepare("SELECT entity_type, operation, payload FROM replication_outbox ORDER BY created_at, rowid").all() as Array<{ entity_type: string; operation: string; payload: string }>;
     assert.equal(events.length, 3);
     assert.ok(events.every((event) => event.entity_type === "user.pin"));
@@ -60,7 +60,7 @@ test("pin replication is last-write-wins per item and resolves project aliases",
   process.env.PI_WEB_DATA_DIR = dataDir;
   try {
     createNode(dataDir);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     db.exec("CREATE TABLE project_aliases (alias_id TEXT PRIMARY KEY, project_id TEXT NOT NULL); INSERT INTO project_aliases VALUES ('remote-project', 'local-project')");
     db.close();
     const { receiveReplicationBatch } = await import(`../src/replication.ts?pins-merge=${Date.now()}`);
@@ -93,7 +93,7 @@ test("a canvas shortcut event from an older machine is accepted and dropped, and
   process.env.PI_WEB_DATA_DIR = dataDir;
   try {
     createNode(dataDir);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     db.exec("CREATE TABLE canvas_shortcuts (username TEXT NOT NULL, binding TEXT NOT NULL); INSERT INTO canvas_shortcuts VALUES ('old', 'K')");
     db.close();
     const { receiveReplicationBatch } = await import(`../src/replication.ts?canvas-compat=${Date.now()}`);
@@ -103,7 +103,7 @@ test("a canvas shortcut event from an older machine is accepted and dropped, and
       createdAt: "2026-09-02T11:00:00.000Z",
     }] });
     assert.deepEqual(received, ["00000000-0000-4000-8000-0000000000aa"]);
-    const check = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+    const check = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
     const tables = (check.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'canvas_shortcut%'").all() as Array<{ name: string }>).map((row) => row.name);
     check.close();
     assert.deepEqual(tables, [], "the old canvas shortcut tables are dropped");

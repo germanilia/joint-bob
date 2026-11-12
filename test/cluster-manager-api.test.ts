@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface Transfer { offer: { body: { transferId: string } }; acceptance: unknown | null; certificate: unknown | null }
 interface Status { clusters: Array<{ id: string; managerNodeId: string; managerEpoch: number; members: Array<{ nodeId: string; joinSequence: number }> }> }
@@ -64,17 +65,17 @@ async function join(manager: SeededNode, managerSession: SignedIn, member: Seede
     assert.equal((await api(b, sb, "POST", `/clusters/${clusterId}/invitations`, { expectedEpoch: 2 })).status, 201);
     assert.equal((await api(b, sb, "DELETE", `/clusters/${clusterId}/members/${a.nodeId}`, { expectedEpoch: 2 })).status, 403);
     await poll("delivery acknowledgement", async () => {
-      const db = new DatabaseSync(path.join(a.dataDir, "node.db"), { readOnly: true });
+      const db = openNodeDatabase(path.join(a.dataDir, "node.db"), { readOnly: true });
       try { return (db.prepare("SELECT count(*) count FROM cluster_v2_manager_deliveries").get() as { count: number }).count; } finally { db.close(); }
     }, (count) => count === 0);
     const retriedPrepare = await api<{ transfer: Transfer }>(a, sa, "POST", `/clusters/${clusterId}/manager-transfer`, { successorNodeId: b.nodeId, expectedEpoch: 1, transferId });
     assert.ok(retriedPrepare.body.transfer.certificate);
-    const dbA = new DatabaseSync(path.join(a.dataDir, "node.db"), { readOnly: true });
+    const dbA = openNodeDatabase(path.join(a.dataDir, "node.db"), { readOnly: true });
     try { assert.equal((dbA.prepare("SELECT count(*) count FROM cluster_v2_manager_steps").get() as { count: number }).count, 0); } finally { dbA.close(); }
     const retriedAccept = await api<{ transfer: Transfer }>(b, sb, "POST", `/clusters/${clusterId}/manager-transfer/${transferId}/accept`, {});
     assert.ok([200, 202].includes(retriedAccept.status));
     assert.ok(retriedAccept.body.transfer.certificate);
-    const dbB = new DatabaseSync(path.join(b.dataDir, "node.db"), { readOnly: true });
+    const dbB = openNodeDatabase(path.join(b.dataDir, "node.db"), { readOnly: true });
     try { assert.equal((dbB.prepare("SELECT count(*) count FROM cluster_v2_manager_steps WHERE step='acceptance'").get() as { count: number }).count, 0); } finally { dbB.close(); }
     await stopDevNode(children.pop()!);
     children.push(await startDevNode(envB, b));

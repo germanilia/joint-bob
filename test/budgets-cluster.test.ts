@@ -5,10 +5,10 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ensureUsageSchema } from "../src/usage-ledger.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check: () => Promise<void>, timeoutMs = 45_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -24,7 +24,7 @@ test("the manager's cluster budget limits its projects, reaches members, and onl
   const environment = await seedDevEnvironment(root, 2);
   const [manager, member] = environment.nodes;
   const project = manager.projects[0];
-  const db = new DatabaseSync(path.join(manager.dataDir, "node.db")); ensureUsageSchema(db);
+  const db = openNodeDatabase(path.join(manager.dataDir, "node.db")); ensureUsageSchema(db);
   const occurredAt = new Date().toISOString();
   const event = (id: string, conversationId: string, cost: number) => ({ id, projectId: project.id, conversationId, sessionId: id, engine: "pi", provider: "test", modelId: "fixture", occurredAt, requestId: null, input: 1, output: 1, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheWriteUnknown: 0, reasoning: 0, apiCostUsd: cost, pricing: null, usageStatus: "reported", difficultyLevel: null, difficultyConfidence: null, difficultyStatus: "unknown", turnId: null, toolCalls: 0, toolErrors: 0 });
   for (const row of [event("a", "chat-a", 3), event("b", "chat-b", 1)]) {

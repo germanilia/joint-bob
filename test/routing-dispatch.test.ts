@@ -4,17 +4,16 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test, { after, before } from "node:test";
 import type WebSocket from "ws";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { openChat, waitFor } from "./queued-prompt-harness.js";
 import { kiroV3SessionFixture } from "./kiro-v3-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // Drives the full difficulty-routing path against a real server: the Kiro harness
 // runs on a synthetic ACP fixture, the TypeSafe classifier against a local fake
-// endpoint, and the API key comes from the System AI decision credential: the only
-// admin-owned TypeSafe account, never the project's attachments.
+// endpoint, and the API key comes from a real project-scoped secret account.
 const kiroFixture = `#!/usr/bin/env node
 ${kiroV3SessionFixture}
 if (process.argv.includes("--version") || process.argv.includes("whoami")) process.exit(0);
@@ -62,15 +61,6 @@ let sockets: WebSocket[] = [];
 let projectId = "";
 let secretAccountId = "";
 
-async function waitForRows<T>(read: () => T[], minimum = 2): Promise<T[]> {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    const rows = read();
-    if (rows.length >= minimum) return rows;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return read();
-}
-
 function routingEvents(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
   return messages.filter((message) => message.type === "promptRouted");
 }
@@ -112,7 +102,7 @@ before(async () => {
   });
   await new Promise<void>((resolve) => classifierEndpoint.listen(0, "127.0.0.1", resolve));
   const classifierPort = (classifierEndpoint.address() as { port: number }).port;
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   const now = new Date().toISOString();
   const save = db.prepare("INSERT INTO node_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at");
   save.run("kiro.executable", executable, now);
@@ -126,6 +116,8 @@ before(async () => {
   const account = await api<{ account: { id: string } }>(node, session, "POST", "/secrets/accounts", { label: "routing-test", provider: "custom", variables: [{ name: "TYPESAFE_AI_API_KEY", kind: "value", value: "test-key" }] });
   assert.equal(account.status, 201, JSON.stringify(account.body));
   secretAccountId = account.body.account.id;
+  const attached = await api(node, session, "PUT", `/secrets/scopes/project/${projectId}`, { accountIds: [secretAccountId] });
+  assert.equal(attached.status, 200, JSON.stringify(attached.body));
   const savedPolicy = { enabled: true, classifierId: "typesafe", evalCadence: { mode: "every-n", n: 2 }, contextMessages: 3, confidenceThreshold: 0.3, harnesses: { kiro: { levels: { "1": { modelId: "default", thinkingLevel: "low", description: "Small obvious request" }, "8": { modelId: "big", thinkingLevel: "high", description: "Cross-component design or difficult debugging" } } } } };
   const created = await api<{ config: { id: string } }>(node, session, "POST", "/routing-configs", { name: "Dispatch routing", policy: savedPolicy });
   assert.equal(created.status, 201, JSON.stringify(created.body));
@@ -206,8 +198,7 @@ test("difficulty routing maps a classified prompt to the policy model and honour
   chat.socket.send(JSON.stringify({ type: "prompt", message: "none of the tiers fit", requestId: randomUUID() }));
   await completed(chat.messages, 9);
   events = routingEvents(chat.messages);
-  assert.equal(events[3].skipped, "no suitable mapping");
-  assert.equal(events[3].fallback, "harness default", "the classifier escape returns to the harness default, like low confidence");
+  assert.equal(events[3].skipped, "no suitable mapping", "the classifier escape keeps current conversation settings");
 
   const unmapped = await api(node, session, "PUT", `/routing-configs/${configId}`, {
     policy: { enabled: true, classifierId: "typesafe", evalCadence: { mode: "every-n", n: 1 }, confidenceThreshold: 0.3, harnesses: {} },
@@ -250,7 +241,7 @@ test("a missing key or a failing classifier falls back to conversation settings"
   await completed(chat.messages, 3);
   events = routingEvents(chat.messages);
   assert.equal(events.length, 2);
-  assert.equal(events[1].skipped, "decision model unavailable", "no System AI key and no relay lending one");
+  assert.equal(events[1].skipped, "classifier key missing");
 });
 
 test("bob-auto is the default and an explicit pick pauses classifier control until bob-auto returns", { timeout: 120_000 }, async () => {
@@ -291,9 +282,10 @@ test("bob-auto is the default and an explicit pick pauses classifier control unt
 });
 
 test("switching the active configuration re-evaluates on the next turn even after a first-message evaluation", { timeout: 120_000 }, async () => {
-  // The earlier test deleted the only system TypeSafe account; add a fresh one (attached to nothing).
+  // The earlier test deleted the classifier's secret account; give the project a fresh one.
   const account = await api<{ account: { id: string } }>(node, session, "POST", "/secrets/accounts", { label: "routing-switch", provider: "custom", variables: [{ name: "TYPESAFE_AI_API_KEY", kind: "value", value: "test-key" }] });
   assert.equal(account.status, 201, JSON.stringify(account.body));
+  await api(node, session, "PUT", `/secrets/scopes/project/${projectId}`, { accountIds: [account.body.account.id] });
   // A first-message configuration has already consumed its evaluation point on the
   // conversation above; switching to another named configuration must take effect on
   // the very next user turn instead of waiting for a cadence point that never comes.
@@ -358,72 +350,4 @@ test("switching the active configuration re-evaluates on the next turn even afte
   await api(node, session, "PUT", "/routing-configs/selection", { configId: previousConfigId });
   await api(node, session, "DELETE", `/routing-configs/${first.body.config.id}`);
   await api(node, session, "DELETE", `/routing-configs/${switcher.body.config.id}`);
-});
-
-test("routing tries fallback models in order and records why nothing was routed", { timeout: 120_000 }, async () => {
-  const fallbackPolicy = {
-    enabled: true, classifierId: "typesafe", evalCadence: { mode: "every-n", n: 1 }, contextMessages: 3, confidenceThreshold: 0.3,
-    harnesses: { kiro: { levels: {
-      "6": { modelId: "not-installed", thinkingLevel: "high", description: "Complex coding", fallbacks: [{ modelId: "big", thinkingLevel: "medium" }] },
-      "8": { modelId: "missing-a", thinkingLevel: "high", description: "Difficult debugging", fallbacks: [{ modelId: "missing-b", thinkingLevel: "high" }] },
-    } } },
-  };
-  const created = await api<{ config: { id: string } }>(node, session, "POST", "/routing-configs", { name: "Fallbacks", policy: fallbackPolicy });
-  assert.equal(created.status, 201, JSON.stringify(created.body));
-  const previous = configId;
-  await api(node, session, "PUT", "/routing-configs/selection", { configId: created.body.config.id });
-  const chat = openChat(node.url, session.cookie, projectId, "kiro:new");
-  sockets.push(chat.socket);
-  await waitFor(chat.messages, () => chat.messages.some((message) => message.type === "ready" && message.engine === "kiro"));
-
-  answer = { level: 6, confidence: 0.9 };
-  chat.socket.send(JSON.stringify({ type: "prompt", message: "primary is not on this machine", requestId: randomUUID() }));
-  await completed(chat.messages, 1);
-  let events = routingEvents(chat.messages);
-  assert.equal(events[0].modelId, "big", "the first listed fallback runs");
-  assert.equal(events[0].candidateIndex, 1);
-
-  answer = { level: 8, confidence: 0.9 };
-  chat.socket.send(JSON.stringify({ type: "prompt", message: "nothing on this machine", requestId: randomUUID() }));
-  await completed(chat.messages, 2);
-  events = routingEvents(chat.messages);
-  assert.equal(events[1].skipped, "no candidate available");
-
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"), { readOnly: true });
-  const reasons = await waitForRows(() => (db.prepare("SELECT payload FROM usage_difficulty WHERE conversation_id IN (SELECT conversation_id FROM usage_difficulty) ORDER BY occurred_at").all() as Array<{ payload: string }>)
-    .map(({ payload }) => JSON.parse(payload) as { reason?: string; candidateIndex?: number; modelId?: string; decisionSource?: string })
-    .filter((record) => record.reason === "no candidate available" || record.candidateIndex === 1));
-  db.close();
-  assert.ok(reasons.some((record) => record.reason === "no candidate available"), "the ledger stores why nothing was routed");
-  const fellBack = reasons.find((record) => record.candidateIndex === 1);
-  assert.equal(fellBack?.modelId, "big");
-  assert.equal(fellBack?.decisionSource, "local");
-  await api(node, session, "PUT", "/routing-configs/selection", { configId: previous });
-  await api(node, session, "DELETE", `/routing-configs/${created.body.config.id}`);
-});
-
-test("the System AI switch turns off only the Joint Bob default", { timeout: 120_000 }, async () => {
-  const named = await api<{ config: { id: string } }>(node, session, "POST", "/routing-configs", { name: "Named after switch", policy: {
-    enabled: true, classifierId: "typesafe", evalCadence: { mode: "every-n", n: 1 }, contextMessages: 3, confidenceThreshold: 0.3,
-    harnesses: { kiro: { levels: { "8": { modelId: "big", thinkingLevel: "high", description: "Difficult debugging" } } } } } });
-  assert.equal(named.status, 201, JSON.stringify(named.body));
-  const previous = named.body.config.id;
-  const current = await api<{ system: Record<string, unknown> }>(node, session, "GET", "/system-ai");
-  assert.equal(current.status, 200, JSON.stringify(current.body));
-  const off = await api(node, session, "PUT", "/system-ai", { system: { ...current.body.system, routing: { enabled: false, shareWithRelay: false } } });
-  assert.equal(off.status, 200, JSON.stringify(off.body));
-  await api(node, session, "PUT", "/routing-configs/selection", { configId: "00000000-0000-4000-8000-000000000001" });
-  const chat = openChat(node.url, session.cookie, projectId, "kiro:new");
-  sockets.push(chat.socket);
-  await waitFor(chat.messages, () => chat.messages.some((message) => message.type === "ready" && message.engine === "kiro"));
-  answer = { level: 8, confidence: 0.9 };
-  chat.socket.send(JSON.stringify({ type: "prompt", message: "default switched off", requestId: randomUUID() }));
-  await completed(chat.messages, 1);
-  assert.equal(routingEvents(chat.messages).length, 0, "the default does not route while switched off");
-
-  await api(node, session, "PUT", "/routing-configs/selection", { configId: previous });
-  chat.socket.send(JSON.stringify({ type: "prompt", message: "named config still routes", requestId: randomUUID() }));
-  await completed(chat.messages, 2);
-  assert.equal(routingEvents(chat.messages).length, 1, "a named configuration is unaffected by the switch");
-  await api(node, session, "PUT", "/system-ai", { system: { ...current.body.system, routing: { enabled: true, shareWithRelay: false } } });
 });

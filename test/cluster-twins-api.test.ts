@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { SignedResourcePolicy } from "../src/cluster-sharing.js";
 import { isTrustedTwin } from "../src/cluster-sharing-policy.js";
@@ -12,6 +12,7 @@ import {
   api, freePort, seedDevEnvironment, signIn, startDevNode, stopDevNode,
   type SeededNode, type SignedIn,
 } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface ClusterStatus {
   clusters: Array<{ id: string; members: Array<{ nodeId: string }> }>;
@@ -32,7 +33,7 @@ interface ProjectResponse { project: { id: string; name: string; path: string; t
 type Child = Awaited<ReturnType<typeof startDevNode>>;
 
 function dbFor(node: SeededNode): DatabaseSync {
-  return new DatabaseSync(path.join(node.dataDir, "node.db"));
+  return openNodeDatabase(path.join(node.dataDir, "node.db"));
 }
 
 function decodeTwinLink(link: string): TwinInvitationLink {

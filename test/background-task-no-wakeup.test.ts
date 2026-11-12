@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { supervisorRequest } from "../scripts/supervisor-client.mjs";
 import { api, projectNamed, signIn } from "./dev-nodes.js";
 import { backgroundFixture, closeBackgroundFixture, startSyntheticTask } from "./background-tasks-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function waitFor<T>(read: () => T | Promise<T>, ready: (value: T) => boolean, label: string, attempts = 200): Promise<T> {
   let value!: T;
@@ -19,7 +19,7 @@ async function waitFor<T>(read: () => T | Promise<T>, ready: (value: T) => boole
 }
 
 function queuedPromptCount(dataDir: string): number {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
   try {
     if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name='queued_prompts'").get()) return 0;
     return Number((db.prepare("SELECT COUNT(*) AS n FROM queued_prompts").get() as { n: number }).n);
@@ -34,7 +34,7 @@ test("a finished background task is visible in Tasks but never wakes its convers
     // A real seeded conversation, so an accidental wake-up would have somewhere to land.
     const listed = await api<{ sessions: Array<{ id: string; harnessId: string }> }>(f.node, session, "GET", `/projects/${project.id}/sessions`);
     const target = listed.body.sessions.find((value) => value.harnessId === "pi")!;
-    const records = new DatabaseSync(path.join(f.node.dataDir, "node.db"), { readOnly: true });
+    const records = openNodeDatabase(path.join(f.node.dataDir, "node.db"), { readOnly: true });
     let conversationId = target.id;
     try {
       const record = records.prepare("SELECT conversation_id FROM conversation_records WHERE project_id=? AND session_id=?").get(project.id, target.id) as { conversation_id: string | null } | undefined;

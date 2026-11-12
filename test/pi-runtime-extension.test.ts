@@ -3,11 +3,12 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createPiRuntimeExtension } from "../src/pi-runtime-extension.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function terminal(dataDirectory: string, sessionId = "terminal") {
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => void>();
@@ -31,7 +32,7 @@ test("terminal lifecycle keeps long tools and automatic continuations running un
     pi.emit("session_start");
     pi.setIdle(false);
     pi.emit("agent_start");
-    db = new DatabaseSync(path.join(root, "node.db"));
+    db = openNodeDatabase(path.join(root, "node.db"));
     const running = () => Number(db!.prepare("SELECT COUNT(*) AS count FROM pi_runtime_sessions WHERE expires_at > ?").get(new Date().toISOString())!.count);
     assert.equal(running(), 1);
     t.mock.timers.tick(120_000);
@@ -67,7 +68,7 @@ test("reloading a busy session reports activity and one terminal cannot stop ano
     first.emit("session_start");
     second.setIdle(false);
     second.emit("agent_start");
-    db = new DatabaseSync(path.join(root, "node.db"));
+    db = openNodeDatabase(path.join(root, "node.db"));
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM pi_runtime_sessions").get()!.count, 2);
     first.emit("session_shutdown");
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM pi_runtime_sessions").get()!.count, 1);

@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createWebhook, webhookInputSchema } from "../src/webhooks.js";
 import { listWebhookResources, removeWebhookResource, resolveWebhookResources, revertWebhookResource, saveWebhookResource, snapshotWebhookResources, webhookResourceInstructions } from "../src/webhook-resources.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const input = webhookInputSchema.parse({ name: "Issues", target: { kind: "project", projectId: "p1" } });
 
 test("webhook files have descriptions and immutable versions retained by accepted snapshots", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-resources-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const first = await saveWebhookResource(db, webhook.id, { kind: "file", name: "deals.csv", description: "Current deal export", bytes: Buffer.from("id,value\n1,2") }, { root });
@@ -32,7 +32,7 @@ test("webhook files have descriptions and immutable versions retained by accepte
 
 test("webhook resources can revert to the previous immutable version", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-resource-revert-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const original = await saveWebhookResource(db, webhook.id, { kind: "file", name: "note.txt", description: "Original", bytes: Buffer.from("one") }, { root });
@@ -50,7 +50,7 @@ test("webhook resources can revert to the previous immutable version", async () 
 
 test("webhook resources reject empty descriptions, oversized files and unsafe names", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-resources-limits-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     await assert.rejects(saveWebhookResource(db, webhook.id, { kind: "file", name: "x.csv", description: "  ", bytes: Buffer.from("x") }, { root }), /description/i);
@@ -76,7 +76,7 @@ test("webhook resource instructions give paths and descriptions without includin
 
 test("a saved resource version cannot be redirected through a file symlink", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-resource-file-link-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const saved = await saveWebhookResource(db, webhook.id, { kind: "file", name: "safe.txt", description: "Safe", bytes: Buffer.from("inside") }, { root });
@@ -91,7 +91,7 @@ test("a saved resource version cannot be redirected through a file symlink", asy
 test("webhook resource directories cannot be redirected through symlinks", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-resources-link-"));
   const outside = await mkdtemp(path.join(os.tmpdir(), "webhook-resources-outside-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const resourceRoot = path.join(root, "webhook-resources", webhook.id);

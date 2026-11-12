@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { type DatabaseSync } from "node:sqlite";
 import { signedNodeRequest } from './signed-node-request.js';
 import { accountIdFor } from '../src/accounts.js';
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from './dev-nodes.js';
@@ -21,6 +21,7 @@ import { handleTeamTelegramWebhook } from '../src/server/routes/assistant-team-t
 import { saveSecretAccount } from '../src/secrets.js';
 import { systemAiDefaults } from '../src/system-ai-config.js';
 import { save, settingsDatabase } from '../src/settings-store.js';
+import { openNodeDatabase } from "../src/node-database.js";
 
 test('long delivery preserves the final character and every actual chat/thread receipt without resend',async()=>{
  const f=await fixture(),original=globalThis.fetch,sends:any[]=[];
@@ -186,7 +187,7 @@ test('loopback Telegram HTTP → durable queue → Pi tools: four private specia
   assert.equal((await api(node,auth,'PUT','/guardian',{settings:{...DEFAULT_GUARDIAN_SETTINGS,enabled:true,rules:[PRODUCTION_RULE]}})).status,200);
   // The members are ordinary assistants of the host's owner, picked in with free role names.
   await (await import('./team-members-fixture.js')).addNodeMembers((method,route,body)=>api<any>(node,auth,method as any,route,body),node.projects.map((p:any)=>p.id),team.id,['bob',...roles].map(role=>({role,instructions:`ROLE_${role}`})),'bob',{harnessId:'pi',provider:'dev-environment',modelId:'dev-model',reasoning:'off'});
-  await api(node,auth,'GET',`${base}/telegram`);db=new DatabaseSync(path.join(node.dataDir,'node.db'));
+  await api(node,auth,'GET',`${base}/telegram`);db=openNodeDatabase(path.join(node.dataDir,'node.db'));
   saveTeamTelegramConnection(db,{teamId:team.id,botId:'integration',botUsername:'integration_bot',tokenAccountId:seeded.stdout.trim().split('\n').at(-1)!,headerSecret:'integration-secret',readsAllGroupMessages:true});
   const hook=(value:unknown)=>fetch(`${node.url}/hooks/teamtelegram-${team.id}`,{method:'POST',headers:{'Content-Type':'application/json','x-telegram-bot-api-secret-token':'integration-secret'},body:JSON.stringify(value)});
   const message=(id:number,text:string,extra:object={})=>({update_id:id,message:{message_id:id,date:1,from:{id:7},chat:{id:-1,type:'supergroup'},message_thread_id:42,text,...extra}});

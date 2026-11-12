@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("automation saves reject unavailable profiles, ignore forged creators, and preserve assignments", { timeout: 60_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "automation-profile-api-"));
@@ -38,7 +38,7 @@ test("automation saves reject unavailable profiles, ignore forged creators, and 
     assert.equal(cleared.body.webhook.creatorAccountId, profile.body.profile.owner);
     assert.equal(cleared.body.webhook.providerProfileId, null);
     // The same project remains visible, but its automations belong to a different user.
-    const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try {
       db.prepare("UPDATE webhooks SET creator_account_id=? WHERE id=?").run("different-creator", hook.body.webhook.id);
       db.prepare("UPDATE cron_tasks SET input=json_set(input, '$.creatorAccountId', ?) WHERE id=?").run("different-creator", task.body.task.id);

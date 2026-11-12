@@ -8,6 +8,7 @@ import test from "node:test";
 import { setPhase } from "../src/file-sync/control.js";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /* What two machines that share projects tell each other besides the files: where each project lies on
    the other machine (POST /api/cluster/v2/files/enroll). A machine on an older release also sends the
@@ -16,7 +17,7 @@ import { signedNodeRequest } from "./signed-node-request.js";
 const ENROLL = "/api/cluster/v2/files/enroll";
 
 function peerLocation(node: SeededNode, projectId: string, peerId: string): string | undefined {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout = 5000");
     return (db.prepare("SELECT path FROM project_locations WHERE project_id = ? AND node_id = ?").get(projectId, peerId) as { path: string } | undefined)?.path;
@@ -62,7 +63,7 @@ test("twins exchange project locations, with or without an old machine's device 
     // One on an older release still does: the body is accepted and the device ID is not stored anywhere.
     const device = Array(8).fill("OLDPEER").join("-");
     await sendUntilStored({ deviceId: device, projects: [project.id], locations: [{ projectId: project.id, path: "/on-b/older-release" }] }, "/on-b/older-release");
-    const db = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try {
       assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'cluster_v2_file_enrollments'").get(), undefined, "no enrollment table is made");
     } finally { db.close(); }
@@ -80,7 +81,7 @@ test("twins exchange project locations, with or without an old machine's device 
     // An exchange that failed is shown on the sharing panel until the peer answers again.
     const sharing = `/twins/${relationshipId}/sharing`;
     await until("sharing to settle", async () => (await api<{ state: string }>(a, session, "GET", sharing)).body.state === "ready");
-    const errors = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const errors = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try {
       errors.exec("PRAGMA busy_timeout = 5000");
       errors.prepare("INSERT OR REPLACE INTO cluster_v2_file_errors VALUES(?,?)").run(b.nodeId, "Project locations were not accepted (503)");
@@ -97,7 +98,7 @@ test("twins exchange project locations, with or without an old machine's device 
     await rm(fresh.path, { recursive: true, force: true });
     assert.equal((await signedNodeRequest(environment, b, a, "POST", ENROLL, { projects: [fresh.id], locations: [] })).status, 200);
     assert.equal((await stat(fresh.path)).isDirectory(), true, "the folder of a newly shared project is made");
-    const phases = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const phases = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try {
       phases.exec("PRAGMA busy_timeout = 5000");
       setPhase(phases, fresh.id, "builtin");

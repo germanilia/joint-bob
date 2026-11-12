@@ -5,12 +5,12 @@ import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from "
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import type { FileSyncProject } from "../src/file-sync/adoption.js";
 import type { FileSyncStatusAnswer } from "../src/file-sync/index.js";
 import type { PeerShareStatus, ShareStatus } from "../src/file-sync/protocol.js";
 import { api, freePort, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /* Taking a shared project over, end to end on real nodes: two separately seeded one-node environments
    share a project whose folder already holds files on both sides, as a project that another sync tool
@@ -184,7 +184,7 @@ function inOrder(phases: readonly string[]): boolean {
 
 /** The owner's word for machines on older releases, as each node's node.db holds it. */
 function engineRecords(node: SeededNode, projectId: string): Array<{ mode: string; generation: number; origin: string }> {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"), { readOnly: true });
   try { return (db.prepare("SELECT mode, generation, origin FROM file_sync_engines WHERE project_id = ?").all(projectId) as Array<{ mode: string; generation: number; origin: string }>).map((row) => ({ ...row })); }
   finally { db.close(); }
 }

@@ -6,11 +6,11 @@ import path from "node:path";
 import { execFile, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import test, { before, after } from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { signedNodeRequest } from "./signed-node-request.js";
 import { api, seedDevEnvironment, startDevNode, stopDevNode, signIn, type DevEnvironment, type SignedIn, pairTwinNodes } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 let root: string, env: DevEnvironment, logins: SignedIn[];
 const servers: ChildProcess[] = [];
@@ -106,7 +106,7 @@ test("legacy exact session-ID lookup resolves its owner without selecting anothe
   assert.equal(found.body.session.id,remote.id);
   assert.equal(found.body.session.nodeId,b.nodeId);
   assert.equal((await request(0,"GET",`/browser/sessions/${randomUUID()}`)).status,404);
-  const db=new DatabaseSync(path.join(b.dataDir,"node.db"));
+  const db=openNodeDatabase(path.join(b.dataDir,"node.db"));
   db.exec("PRAGMA busy_timeout=5000");
   db.prepare("UPDATE browser_sessions SET state='interrupted',restoreOnRestart=1 WHERE id=?").run(remote.id);
   try {
@@ -127,7 +127,7 @@ test("agent discovery follows conversation across nodes and relay keeps paused r
   const profiles=await agent(0,{operation:"profiles"});
   assert.deepEqual([...new Set(profiles.body.profiles.map((p:any)=>p.nodeId))].sort(),[a.nodeId,b.nodeId].sort());
   const remote=discovery.body.sessions.find((s:any)=>s.nodeId===b.nodeId);
-  const db=new DatabaseSync(path.join(b.dataDir,"node.db"));
+  const db=openNodeDatabase(path.join(b.dataDir,"node.db"));
   db.exec("PRAGMA busy_timeout=5000");
   db.prepare("UPDATE browser_sessions SET state='interrupted',restoreOnRestart=1,recovery=? WHERE id=?").run(JSON.stringify({origins:["http://127.0.0.1:1234"],activeIndex:0,human:"synthetic-human"}),remote.id);
   try {
@@ -155,7 +155,7 @@ test("agent downloads use the selected remote account after the default changes"
   const remote=discovery.body.sessions.find((s:any)=>s.nodeId===b.nodeId);
   const downloadId=randomUUID();
   await childCode(1,`import { BrowserStore } from './src/browser-store.ts';import { mkdirSync,writeFileSync } from 'node:fs';import path from 'node:path';const s=new BrowserStore();s.saveDownload(${JSON.stringify(remote.id)},{id:${JSON.stringify(downloadId)},name:'fixture.txt',ready:true});const folder=path.join(process.env.JOINT_BOB_DATA_DIR,'browser',${JSON.stringify(remote.id)},'downloads');mkdirSync(folder,{recursive:true});writeFileSync(path.join(folder,${JSON.stringify(downloadId)}),'remote fixture bytes');s.close();console.log('null');`);
-  const db=new DatabaseSync(path.join(b.dataDir,"node.db"));
+  const db=openNodeDatabase(path.join(b.dataDir,"node.db"));
   db.exec("PRAGMA busy_timeout=5000");
   db.prepare("UPDATE browser_sessions SET state='running',restoreOnRestart=0 WHERE id=?").run(remote.id);
   try {
@@ -180,7 +180,7 @@ test("logical conversation preference and remote recovery commands survive engin
   assert.deepEqual(conversationChoice((await request(0,"GET",`/browser/preferences?${query()}`)).body),{nodeId:a.nodeId,effectiveNodeId:a.nodeId});
   const listed=await agent(0,{operation:"status"},"claude");
   const remote=listed.body.sessions.find((s:any)=>s.nodeId===b.nodeId);
-  const db=new DatabaseSync(path.join(b.dataDir,"node.db"));
+  const db=openNodeDatabase(path.join(b.dataDir,"node.db"));
   db.exec("PRAGMA busy_timeout=5000");
   db.prepare("UPDATE browser_sessions SET state='interrupted',restoreOnRestart=1,recovery=? WHERE id=?").run(JSON.stringify({origins:[],activeIndex:0,human:null}),remote.id);
   try {assert.equal((await agent(0,{operation:"command",profileId:remote.profileId,command:{action:"close"}},"claude")).status,200);}
@@ -227,7 +227,7 @@ test("a peer missing the browser endpoint is unavailable, not an empty account i
   const fixture=createServer((_request,response)=>{response.writeHead(404,{"Content-Type":"application/json"});response.end(JSON.stringify({error:"Endpoint not found"}));});
   fixture.listen(0,"127.0.0.1");await once(fixture,"listening");
   const address=fixture.address();assert.ok(address && typeof address!=="string");
-  const db=new DatabaseSync(path.join(a.dataDir,"node.db"));
+  const db=openNodeDatabase(path.join(a.dataDir,"node.db"));
   db.exec("PRAGMA busy_timeout=5000");
   try {
     db.prepare("UPDATE cluster_v2_peer_endpoints SET url=? WHERE node_id=?").run(`http://127.0.0.1:${address.port}`,b.nodeId);
@@ -251,7 +251,7 @@ test("cold profile discovery reports unavailable inventory instead of claiming t
   });
   fixture.listen(0, "127.0.0.1"); await once(fixture, "listening");
   const address = fixture.address(); assert.ok(address && typeof address !== "string");
-  const db = new DatabaseSync(path.join(a.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(a.dataDir, "node.db"));
   db.exec("PRAGMA busy_timeout=5000");
   try {
     db.prepare("UPDATE cluster_v2_peer_endpoints SET url=? WHERE node_id=?").run(`http://127.0.0.1:${address.port}`, b.nodeId);
@@ -281,7 +281,7 @@ test("offline discovery is explicit, rejects guesses, and preferences converge a
   const [a,b]=env.nodes;
   const before=await agent(0,{operation:"status"});
   const local=before.body.sessions.find((s:any)=>s.nodeId===a.nodeId);
-  const db=new DatabaseSync(path.join(a.dataDir,"node.db"));
+  const db=openNodeDatabase(path.join(a.dataDir,"node.db"));
   db.exec("PRAGMA busy_timeout=5000");
   db.prepare("UPDATE browser_sessions SET state='interrupted',restoreOnRestart=1 WHERE id=?").run(local.id);
   await stopDevNode(servers[1]);

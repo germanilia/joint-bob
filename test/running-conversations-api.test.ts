@@ -3,8 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("the running conversations endpoint groups only live conversations across projects", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-running-"));
@@ -25,7 +26,7 @@ test("the running conversations endpoint groups only live conversations across p
 
     try {
       const now = new Date();
-      database = new DatabaseSync(path.join(node.dataDir, "node.db"));
+      database = openNodeDatabase(path.join(node.dataDir, "node.db"));
       database.prepare(`INSERT INTO conversation_runtime_leases
         (engine, session_id, owner_node_id, ownership_epoch, run_id, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
         .run(target.harnessId, target.id, node.nodeId, 1, "running-test", now.toISOString(), new Date(now.getTime() + 60_000).toISOString());

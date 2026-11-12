@@ -6,10 +6,10 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check: () => Promise<void>, timeout = 30_000): Promise<void> {
   const deadline = Date.now() + timeout;
@@ -20,7 +20,7 @@ async function eventually(check: () => Promise<void>, timeout = 30_000): Promise
 }
 
 function query<T>(node: SeededNode, sql: string, ...values: string[]): T[] {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try { return db.prepare(sql).all(...values) as unknown as T[]; } finally { db.close(); }
 }
 

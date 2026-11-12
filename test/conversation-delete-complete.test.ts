@@ -9,6 +9,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { after } from "node:test";
 import { createSourceTables } from "./source-schema.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // This file loads the server's own delete route, and with it the watcher that follows each project's
 // transcript folders. On Linux a recursive watcher keeps the process alive after the last test (unref
@@ -55,7 +56,7 @@ async function build() {
   const directory = claudeProjectDir(projectPath, sessionRoot), elsewhere = claudeProjectDir(path.join(root, "where-the-project-was"), sessionRoot);
   await mkdir(directory, { recursive: true });
   await mkdir(elsewhere, { recursive: true });
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   db.exec("PRAGMA busy_timeout = 5000");
   await createSourceTables(db, ["supervised_shell_calls"]);
   const line = (id: string, text: string): string => JSON.stringify({ type: "user", uuid: randomUUID(), sessionId: id, cwd: projectPath, timestamp: new Date().toISOString(), message: { role: "user", content: text } }) + "\n";

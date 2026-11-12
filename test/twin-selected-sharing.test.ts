@@ -4,9 +4,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type Selection = { projects: Array<{ id: string; workspaceId: string }>; projectIds: string[]; workspaceIds: string[] };
 
@@ -72,7 +72,7 @@ test("workspace selection on a twin shares the owner's projects, including futur
     const forbidden = await signedNodeRequest(remote, recipient, owner, "POST", "/api/cluster/v2/twins/selection", { clusterId, projectIds: [], workspaceIds: [], projectScopeIds: [project.id], workspaceScopeIds: [listed.workspaceId] });
     assert.equal(forbidden.status, 403, "a cluster peer cannot ask the owner to change sharing");
 
-    const ownerDb = new DatabaseSync(path.join(owner.dataDir, "node.db"));
+    const ownerDb = openNodeDatabase(path.join(owner.dataDir, "node.db"));
     const endpoints = ownerDb.prepare("SELECT context_kind,context_id,url FROM cluster_v2_peer_endpoints WHERE node_id=?").all(twin.nodeId) as Array<{ context_kind: string; context_id: string; url: string }>;
     try {
       ownerDb.prepare("UPDATE cluster_v2_peer_endpoints SET url='http://127.0.0.1:1' WHERE node_id=?").run(twin.nodeId);

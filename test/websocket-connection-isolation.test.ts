@@ -5,10 +5,10 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket from "ws";
 import { seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("a task with an unowned session path closes its socket without crashing the node", { timeout: 60_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "socket-isolation-"));
@@ -19,7 +19,7 @@ test("a task with an unowned session path closes its socket without crashing the
     const script = `import { createTask } from "./src/tasks.ts"; process.stdout.write(JSON.stringify(await createTask(${JSON.stringify(project.id)}, ${JSON.stringify(project.path)}, "Malformed", "", "backlog", "pi", false, false, {}))); process.exit(0);`;
     const task = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { env: { ...process.env, HOME: environment.home, JOINT_BOB_DATA_DIR: node.dataDir }, encoding: "utf8" })) as { id: string };
     const unowned = "pi:/nowhere/unowned-session.jsonl";
-    const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try { assert.equal(db.prepare("UPDATE tasks SET session_path=? WHERE id=?").run(unowned, task.id).changes, 1); } finally { db.close(); }
 
     const session = await signIn(environment, node);

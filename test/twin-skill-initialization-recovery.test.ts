@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
 import { mkdtemp,mkdir,writeFile,readFile,rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { beginTwinSkillInitialization,nextSkillVersion,type TwinSkillSession } from "../src/twin-skill-sync.js";
 import { api,pairTwinNodes,seedDevEnvironment,signIn,startDevNode,stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("changed pending initialization can be cancelled and previewed again without losing files",{timeout:120_000},async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),"twin-init-recovery-")),servers:Awaited<ReturnType<typeof startDevNode>>[]=[];
@@ -19,7 +19,7 @@ test("changed pending initialization can be cancelled and previewed again withou
   // Simulate a process interruption after both durable session writes, before the first application.
   // The interruption: both nodes are down while their databases are written.
   for(const s of servers)await stopDevNode(s);
-  const ad=new DatabaseSync(path.join(a.dataDir,"node.db"),{timeout:10_000}),bd=new DatabaseSync(path.join(b.dataDir,"node.db"),{timeout:10_000});
+  const ad=openNodeDatabase(path.join(a.dataDir,"node.db"),{timeout:10_000}),bd=openNodeDatabase(path.join(b.dataDir,"node.db"),{timeout:10_000});
   let payload:unknown;
   try{
    const row=ad.prepare("SELECT plan FROM twin_skill_previews WHERE token=?").get(preview.body.token) as {plan:string},stored=JSON.parse(row.plan);

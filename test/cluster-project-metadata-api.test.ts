@@ -3,12 +3,13 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import {
   seedDevEnvironment, signIn, startDevNode, stopDevNode,
   type DevEnvironment, type SeededNode, type SignedIn,
 } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type Child = Awaited<ReturnType<typeof startDevNode>>;
 interface Project {
@@ -100,7 +101,7 @@ async function pairTwins(nodeB: SeededNode, sessionB: SignedIn, nodeD: SeededNod
 }
 
 function openDb(node: SeededNode): DatabaseSync {
-  return new DatabaseSync(path.join(node.dataDir, "node.db"));
+  return openNodeDatabase(path.join(node.dataDir, "node.db"));
 }
 
 async function startEnvironment(environment: DevEnvironment, children: Set<Child>): Promise<{ node: SeededNode; session: SignedIn }> {

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { mkdirSync, rmSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -12,6 +11,7 @@ import { prepareProfile } from "../src/browser-profile-files.js";
 import { getClusterNode } from "../src/cluster.js";
 import { addSharingMember, createSharingCluster, getSharingCluster } from "../src/cluster-sharing-policy.js";
 import { clusterV2Database } from "../src/cluster-v2-store.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // Shares decide which conversations, on which machines, may use a persistent browser
 // profile. The profile entity itself stays on its machine with its native login directory.
@@ -119,7 +119,7 @@ test("grant migration keeps every existing profile's reach and never widens it",
   process.env.PI_WEB_DATA_DIR = root;
   mkdirSync(root, { recursive: true });
   t.after(() => { process.env.PI_WEB_DATA_DIR = previous; rmSync(root, { recursive: true, force: true }); });
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   db.exec(`CREATE TABLE browser_sessions (
     id TEXT PRIMARY KEY, projectId TEXT NOT NULL, engine TEXT NOT NULL, conversationId TEXT NOT NULL,
     appNodeId TEXT NOT NULL, url TEXT, profileId TEXT, state TEXT NOT NULL,
@@ -156,7 +156,7 @@ test("grant migration keeps every existing profile's reach and never widens it",
 
   // The sharing migration: "global" becomes this machine, and grants the old relay
   // toggle kept on this machine are pinned to it.
-  const upgraded = new DatabaseSync(path.join(root, "node.db"));
+  const upgraded = openNodeDatabase(path.join(root, "node.db"));
   upgraded.exec(`DELETE FROM browser_migrations WHERE id = 'profile-grants-sharing-scopes';
     INSERT INTO browser_profiles (id, projectId, label, createdAt, updatedAt, stateEncrypted, persistent, crossNodeAccess) VALUES ('island','gamma','Island login','then','then','',1,0);
     INSERT INTO browser_profile_grants (profileId, scope, projectId, conversationId, createdAt) VALUES ('island','global',NULL,NULL,'then'), ('island','project','gamma',NULL,'then'), ('legacy-b','global',NULL,NULL,'then');`);

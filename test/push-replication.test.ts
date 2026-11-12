@@ -4,11 +4,11 @@ import { type ChildProcess } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import webpush from "web-push";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type PushModule = typeof import("../src/push.js");
 
@@ -121,7 +121,7 @@ test("a peer applies replicated subscriptions and keeps the origin node's VAPID 
     await origin.savePushSubscription(subscription, "user-a", "*", "*", "Joint Bob");
     const originPublicKey = await origin.getVapidPublicKey();
     const events = await origin.pushSubscriptionEventsForPeer("peer-b");
-    const originDb = new DatabaseSync(path.join(originDir, "node.db"));
+    const originDb = openNodeDatabase(path.join(originDir, "node.db"));
     const originKeyRow = originDb.prepare("SELECT private_key FROM push_vapid_keys WHERE singleton = 1").get() as { private_key: string };
     const originPrivateKey = decrypt(originKeyRow.private_key, await secretKey(originDir));
     originDb.close();
@@ -134,7 +134,7 @@ test("a peer applies replicated subscriptions and keeps the origin node's VAPID 
       // The replica generates its own VAPID identity, but the replicated row keeps the origin's.
       const replicaPublicKey = await replica.getVapidPublicKey();
       assert.notEqual(replicaPublicKey, originPublicKey);
-      const db = new DatabaseSync(path.join(replicaDir, "node.db"));
+      const db = openNodeDatabase(path.join(replicaDir, "node.db"));
       const row = db.prepare("SELECT user_id, project_id, session_path, subscription, vapid_public_key, vapid_private_key FROM push_session_subscriptions").get() as { user_id: string; project_id: string; session_path: string; subscription: string; vapid_public_key: string; vapid_private_key: string };
       assert.equal(row.user_id, "user-a");
       assert.equal(row.project_id, "*");
@@ -154,7 +154,7 @@ test("a peer applies replicated subscriptions and keeps the origin node's VAPID 
 
       // Replays are acknowledged without duplicating rows.
       assert.deepEqual(await replica.receivePushSubscriptionEvents(events), events.map((event) => event.id));
-      const countDb = new DatabaseSync(path.join(replicaDir, "node.db"));
+      const countDb = openNodeDatabase(path.join(replicaDir, "node.db"));
       const count = countDb.prepare("SELECT COUNT(*) AS count FROM push_session_subscriptions").get() as { count: number };
       countDb.close();
       assert.equal(count.count, 1);
@@ -162,7 +162,7 @@ test("a peer applies replicated subscriptions and keeps the origin node's VAPID 
       // A stale upsert loses to the applied version.
       const staleUpsert = { ...events[0], id: randomUUID(), updatedAt: "2000-01-01T00:00:00.000Z", value: { ...(events[0].value as object), title: "Stale" } };
       await replica.receivePushSubscriptionEvents([staleUpsert as typeof events[0]]);
-      const titleDb = new DatabaseSync(path.join(replicaDir, "node.db"));
+      const titleDb = openNodeDatabase(path.join(replicaDir, "node.db"));
       const title = titleDb.prepare("SELECT title FROM push_session_subscriptions").get() as { title: string };
       titleDb.close();
       assert.equal(title.title, "Joint Bob");

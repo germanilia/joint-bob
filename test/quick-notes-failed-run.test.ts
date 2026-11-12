@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
-import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("a dispatched note stays consumed after failure, edit, retry, and restart", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-note-consumed-"));
@@ -64,7 +64,7 @@ test("upgrading old failed notes preserves their original conversation without r
     const sessionId = randomUUID();
     notes.claimQuickNoteForLaunch(failed.id, sessionId, randomUUID());
     notes.finishQuickNote(failed.id, "failed", "Claude prompt failed after output");
-    const database = new DatabaseSync(path.join(root, "data", "node.db"));
+    const database = openNodeDatabase(path.join(root, "data", "node.db"));
     try { database.exec("ALTER TABLE quick_notes DROP COLUMN dispatched_at"); }
     finally { database.close(); }
     const upgraded = await import(`../src/quick-notes.js?upgraded=${token}`);

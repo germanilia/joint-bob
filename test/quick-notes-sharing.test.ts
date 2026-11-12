@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import { signedNodeRequest } from "./signed-node-request.js";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, pairTwinNodes } from "./dev-nodes.js";
 import type { QuickNote } from "../src/quick-notes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check: () => Promise<void>): Promise<void> {
   const deadline = Date.now() + 30_000;
@@ -117,7 +117,7 @@ test("shared project notes can be read, edited, started and deleted from either 
       const settled = await api<{ note: QuickNote }>(a, sa, "GET", `/quick-notes/${launchable.body.note.id}`);
       assert.equal(settled.body.note.status, "completed");
     });
-    const database = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try {
       database.prepare("UPDATE quick_notes SET status = 'failed', error = ? WHERE id = ?")
         .run("Failed after output", launchable.body.note.id);

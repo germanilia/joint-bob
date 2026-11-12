@@ -8,9 +8,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface Fixture { root: string; environment: DevEnvironment; a: SeededNode; b: SeededNode; projectId: string; children: Map<SeededNode, ChildProcess> }
 
@@ -83,7 +83,7 @@ function baseTask(id: string, title: string, createdAt: string): Record<string, 
 }
 
 function insertPendingOutgoingHandoff(dataDir: string, projectId: string, task: Record<string, unknown>, source: string, destination: string, handoffId: string): void {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   const now = new Date().toISOString();
   db.prepare("UPDATE tasks SET current_node_id = ?, lease_owner_node_id = NULL, lease_expires_at = NULL, execution_state = 'handoff_pending', active_handoff_id = ?, updated_at = ?, origin_node_id = ? WHERE project_id = ? AND id = ?").run(source, handoffId, now, source, projectId, String(task.id));
   db.prepare("INSERT INTO task_handoffs (handoff_id, project_id, protocol_project_id, task_id, source_node_id, destination_node_id, direction, status, task_json, handoff_context, worktree_path, worktree_branch, worktree_created, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'outgoing', 'pending', ?, NULL, NULL, NULL, 0, ?, ?)").run(handoffId, projectId, projectId, String(task.id), source, destination, JSON.stringify(task), now, now);
@@ -173,10 +173,10 @@ test("pending outgoing handoff commits its prepared snapshot after source restar
     ]);
     assert.equal(destinationTask.title, "Prepared snapshot");
     assert.equal(sourceTask.title, "Prepared snapshot");
-    const sourceDb = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const sourceDb = openNodeDatabase(path.join(a.dataDir, "node.db"));
     assert.equal((sourceDb.prepare("SELECT COUNT(*) AS count FROM task_handoffs WHERE handoff_id = ?").get(handoffId) as { count: number }).count, 1);
     sourceDb.close();
-    const destinationDb = new DatabaseSync(path.join(b.dataDir, "node.db"));
+    const destinationDb = openNodeDatabase(path.join(b.dataDir, "node.db"));
     assert.equal((destinationDb.prepare("SELECT COUNT(*) AS count FROM task_handoffs WHERE handoff_id = ?").get(handoffId) as { count: number }).count, 1);
     destinationDb.close();
 
@@ -223,7 +223,7 @@ test("a pending outgoing handoff the destination never prepared is aborted after
     const aAuth = await signIn(environment, a);
     await waitForTask(a, aAuth, projectId, String(task.id), (item) => item.currentNodeId === a.nodeId && item.executionState === "idle");
     await new Promise((resolve) => setTimeout(resolve, 250));
-    const abortedDb = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const abortedDb = openNodeDatabase(path.join(a.dataDir, "node.db"));
     assert.equal((abortedDb.prepare("SELECT status FROM task_handoffs WHERE handoff_id = ?").get(missingHandoffId) as { status: string }).status, "aborted");
     abortedDb.close();
   } finally { await closeFixture(fixture); }
@@ -252,7 +252,7 @@ test("machine settlement preserves committed deleted handoff evidence until ackn
     const settled = await runtime(fixture, a, b, "tasks/settle", { handoffId });
     assert.equal(settled.status, 200, await settled.clone().text());
     assert.equal((await browser(b, bAuth, "DELETE", `/projects/${projectId}`)).status, 204);
-    const deletedProjectDb = new DatabaseSync(path.join(b.dataDir, "node.db"));
+    const deletedProjectDb = openNodeDatabase(path.join(b.dataDir, "node.db"));
     assert.equal(deletedProjectDb.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId), undefined);
     assert.equal(deletedProjectDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(projectId, task.id), undefined);
     assert.equal(deletedProjectDb.prepare("SELECT 1 FROM task_tombstones WHERE project_id = ? AND task_id = ?").get(projectId, task.id), undefined);

@@ -5,10 +5,10 @@ import { connect, type Socket } from "node:net";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function sessionCookie(response: Response): string {
   const value = response.headers.get("set-cookie");
@@ -89,7 +89,7 @@ async function peerProxy(upstream: SeededNode): Promise<PeerProxy> {
 
 /** Points node A at the proxy for its twin B, the address A learned when they paired. */
 function routePeerThrough(node: SeededNode, peer: SeededNode, url: string): void {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout=5000");
     assert.equal(db.prepare("UPDATE cluster_v2_peer_endpoints SET url = ? WHERE node_id = ?").run(url, peer.nodeId).changes > 0, true);

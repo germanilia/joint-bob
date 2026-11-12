@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface LocalProject {
   id: string;
@@ -55,7 +55,7 @@ test("project name overrides use stable project IDs and migrate unambiguous base
     await names.setSessionTitle("keep-session-id", "Session title");
     assert.equal((await names.sessionTitleOverrides())["keep-session-id"], "Session title");
 
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     const legacyRows = db.prepare("SELECT key FROM name_overrides WHERE scope = 'projects' AND key IN ('legacy-single', 'shared') ORDER BY key").all() as Array<{ key: string }>;
     assert.deepEqual(legacyRows.map((row) => row.key), ["legacy-single", "shared"]);
   } finally {

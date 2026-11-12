@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, eventsForPeer, recordPeerReceipt } from "../src/replication.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("selective outbox allocates only eligible deliveries and revisits future grants", async () => {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "bounded-peer";
   const ids: string[] = [];
@@ -29,7 +29,7 @@ test("selective outbox allocates only eligible deliveries and revisits future gr
 });
 
 test("revoked queued events cannot starve later eligible retries", async t => {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "revoked-backlog", ids: string[] = [];
   const at = new Date("2026-06-01T00:00:00.000Z");
@@ -62,7 +62,7 @@ test("revoked queued events cannot starve later eligible retries", async t => {
 });
 
 test("the search of older events advances a little on each pass and never holds up new ones", async () => {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "paced-peer", ids: string[] = [];
   const add = (key: string): string => enqueueReplicationEvent(db, { originNodeId: "local", entityType: "project.lock", entityKey: key, operation: "upsert", payload: { projectId: key } }).id;
@@ -100,7 +100,7 @@ test("the search of older events advances a little on each pass and never holds 
 });
 
 test("a peer that already has every event costs one bounded look per pass, and a full batch is never exceeded", async () => {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "caught-up-peer", ids: string[] = [];
   db.exec("BEGIN");

@@ -4,8 +4,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function sessionCookie(response: Response): string {
   const value = response.headers.get("set-cookie");
@@ -89,7 +89,7 @@ test("runtime audit events are redacted, local, and session-admin readable", asy
     const eventTypes = new Set(events.map((event) => event.eventType));
     for (const eventType of ["auth.login.failed", "auth.login.rate_limited", "auth.login.succeeded", "auth.password.changed", "settings.updated", "secrets.credentials.sync", "task.lease.claimed", "task.lease.released", "task.handoff.prepared", "task.handoff.committed"]) assert.ok(eventTypes.has(eventType), eventType);
     // A signed machine request is valid only on /api/cluster/v2 routes; it never reads the audit log.
-    const signingDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const signingDb = openNodeDatabase(path.join(dataDir, "node.db"));
     getOrCreateClusterIdentity(signingDb, local.id);
     const machineAuthorization = signClusterRequest(signingDb, local.id, local.id, "GET", "/api/audit", Buffer.alloc(0));
     signingDb.close();
@@ -97,7 +97,7 @@ test("runtime audit events are redacted, local, and session-admin readable", asy
     assert.equal((await fetch(`${baseUrl}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie, "X-CSRF-Token": loginBody.csrfToken } })).status, 204);
 
     const rawAudit = JSON.stringify(await listAuditEvents(200));
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     ensureAuditSchema(db);
     assert.throws(() => appendAuditEvent(db, { eventType: "bad", actorType: "system", entityType: "test", details: { password: "forbidden" } }), /forbidden key/);
     const rawRows = JSON.stringify(db.prepare("SELECT * FROM audit_events").all());

@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import {randomUUID} from "node:crypto";
 import test from "node:test";
-import {DatabaseSync} from "node:sqlite";
 import type {FileSyncStatusAnswer} from "../src/file-sync/index.js";
 import {api,freePort,seedDevEnvironment,signIn,startDevNode,stopDevNode,type SeededNode,type SignedIn} from "./dev-nodes.js";
 import {signedNodeRequest} from './signed-node-request.js';
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check:()=>Promise<void>):Promise<void>{
  const deadline=Date.now()+90000;
@@ -56,7 +56,7 @@ test("selected projects transfer only their files, transcripts and attached elig
   const source=await api<{sessions:Array<{id:string;harnessId:string}>}>(left,sa,"GET",`/projects/${shared.id}/sessions`);assert.ok(source.body.sessions.length>0);
   await eventually(async()=>{
    const sessions=await api<{sessions:Array<{id:string;draft?:boolean}>}>(right,sb,"GET",`/projects/${shared.id}/sessions`);
-   const db=new DatabaseSync(path.join(right.dataDir,'node.db'));
+   const db=openNodeDatabase(path.join(right.dataDir,'node.db'));
    let errors:unknown;try{errors=db.prepare('SELECT error FROM cluster_v2_transcript_errors').all();}finally{db.close();}
    assert.ok(source.body.sessions.every(session=>sessions.body.sessions.some(remote=>remote.id===session.id&&!remote.draft)),`selected conversations must arrive without global transcript enrollment: ${JSON.stringify(errors)}`);
   });

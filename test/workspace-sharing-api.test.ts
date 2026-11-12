@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import { addSharingMember } from "../src/cluster-sharing-policy.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("workspace creation shares existing and future projects without changing other workspace selections", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-sharing-"));
@@ -30,7 +30,7 @@ test("workspace creation shares existing and future projects without changing ot
     const policy = await api<{ shares: Array<{ clusterId: string }> }>(node, session, "GET", `/sharing/project/${project.body.project.id}`);
     assert.deepEqual(policy.body.shares.map((share) => share.clusterId), [clusterId]);
     const peerId = randomUUID();
-    const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try { addSharingMember(db, clusterId, node.nodeId, peerId, 1); } finally { db.close(); }
     assert.equal((await api(node, session, "PUT", `/workspaces/${id}/sharing`, { clusterIds: [], nodeIds: [peerId], relayIds: [] })).status, 200);
     const legacy = await api(node, session, "PUT", `/clusters/${clusterId}/sharing`, { projectIds: [], workspaceIds: [id], confirmOwnedData: true });

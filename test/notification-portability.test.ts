@@ -3,11 +3,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import webpush from "web-push";
 import type { ReplicationEvent } from "../src/replication.js";
 import type { SessionSummary } from "../src/types.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function isolated(run: (dataDir: string, tag: string) => Promise<void>): Promise<void> {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "notification-portability-"));
@@ -31,7 +31,7 @@ function event(entityType: string, payload: Record<string, unknown>, originNodeI
 
 test("legacy push rows migrate to stable IDs without replacing credentials or unresolved rows", async (context) => {
   await isolated(async (dataDir, tag) => {
-    const node = new DatabaseSync(path.join(dataDir, "node.db"));
+    const node = openNodeDatabase(path.join(dataDir, "node.db"));
     node.exec("CREATE TABLE cluster_node (singleton INTEGER PRIMARY KEY, id TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); INSERT INTO cluster_node VALUES (1, 'node-portable', 'P', '', '', '')");
     node.close();
     const auth = await import(`../src/auth.ts?portable-auth-${tag}`);
@@ -62,7 +62,7 @@ test("legacy push rows migrate to stable IDs without replacing credentials or un
     const count = migrated.length;
     await push.migratePushConversationSubscriptions(user.userId, account, "project", [session]);
     assert.equal((await push.pushSubscriptionEventsForPeer("another-peer")).filter((candidate) => candidate.operation === "upsert").length, count);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal((db.prepare("SELECT username FROM push_session_subscriptions WHERE title='All'").get() as { username: string }).username, account);
     db.close();
     await push.deleteNtfySubscriptions(user.userId, "project", "logical-id");
@@ -76,13 +76,13 @@ test("legacy push rows migrate to stable IDs without replacing credentials or un
 test("delivery consolidation preserves the same conversation in unrelated projects", async () => {
   await isolated(async (dataDir, tag) => {
     const notifications = await import(`../src/conversation-notifications.ts?project-scope-${tag}`);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     notifications.ensureConversationNotificationSchema(db);
     db.prepare("INSERT INTO conversation_notification_deliveries VALUES(?,?,?,?,?,?)").run("admin", "project-one", "conversation", "2025-01-01T00:00:00.000Z", null, null);
     db.prepare("INSERT INTO conversation_notification_deliveries VALUES(?,?,?,?,?,?)").run("admin", "project-two", "conversation", "2025-01-02T00:00:00.000Z", null, null);
     db.close();
     notifications.claimConversationNotification("admin", "project-one", "conversation", "2025-01-03T00:00:00.000Z");
-    const verify = new DatabaseSync(path.join(dataDir, "node.db"));
+    const verify = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.deepEqual(verify.prepare("SELECT project_id,delivered_at FROM conversation_notification_deliveries ORDER BY project_id").all().map((row) => ({ ...row })), [
       { project_id: "project-one", delivered_at: "2025-01-01T00:00:00.000Z" },
       { project_id: "project-two", delivered_at: "2025-01-02T00:00:00.000Z" },
@@ -112,7 +112,7 @@ test("newer stable ntfy replication rejects a stale legacy path without collapsi
     const base = stableEvent.value as import("../src/push.js").PushSubscriptionUpsertValue;
     const browserEvents = ["first", "second"].map((sessionPath, index) => ({ ...stableEvent, id: randomUUID(), entityKey: createSubscriptionKey(browser.endpoint, "project", sessionPath), updatedAt: new Date(Date.parse(stableEvent.updatedAt) + index + 1).toISOString(), value: { ...base, subscription: browser, sessionPath } }));
     await replica.receivePushSubscriptionEvents(browserEvents);
-    const db = new DatabaseSync(path.join(replicaDir, "node.db"));
+    const db = openNodeDatabase(path.join(replicaDir, "node.db"));
     const rows = db.prepare("SELECT session_path FROM push_session_subscriptions ORDER BY session_path").all() as Array<{ session_path: string }>;
     assert.deepEqual(rows.map((row) => row.session_path), ["first", "logical-id", "second"]);
     db.close();
@@ -131,7 +131,7 @@ function createSubscriptionKey(endpoint: string, projectId: string, sessionPath:
 test("delivery aliases merge watermark and live claim independently", async () => {
   await isolated(async (dataDir, tag) => {
     const notifications = await import(`../src/conversation-notifications.ts?alias-${tag}`);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     notifications.ensureConversationNotificationSchema(db);
     db.exec("CREATE TABLE project_aliases(alias_id TEXT PRIMARY KEY,project_id TEXT NOT NULL,created_at TEXT NOT NULL)");
     db.prepare("INSERT INTO project_aliases VALUES(?,?,?)").run("old-project", "project", new Date().toISOString());
@@ -184,7 +184,7 @@ test("ntfy delete and re-enable is monotonic within one wallclock tick", async (
 test("aliased preference and delivery events use canonical ISO ordering", async () => {
   await isolated(async (dataDir, tag) => {
     const notifications = await import(`../src/conversation-notifications.ts?events-${tag}`);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     notifications.ensureConversationNotificationSchema(db);
     db.exec("CREATE TABLE project_aliases(alias_id TEXT PRIMARY KEY,project_id TEXT NOT NULL,created_at TEXT NOT NULL)");
     db.prepare("INSERT INTO project_aliases VALUES(?,?,?)").run("alias", "project", new Date().toISOString());

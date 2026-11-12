@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createWebhook, webhookInputSchema } from "../src/webhooks.js";
 import { readWebhookMemory, setWebhookMemoryEnabled, writeWebhookMemory } from "../src/webhook-memory.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const input = webhookInputSchema.parse({ name: "Issues", target: { kind: "project", projectId: "p1" } });
 
 test("webhook memory persists, hashes actual bytes and survives disable and re-enable", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-memory-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const empty = await readWebhookMemory(webhook.id, { root });
@@ -30,7 +30,7 @@ test("webhook memory persists, hashes actual bytes and survives disable and re-e
 
 test("saving webhook memory holds no database transaction across its file work", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-memory-transaction-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const empty = await readWebhookMemory(webhook.id, { root });
@@ -49,7 +49,7 @@ test("saving webhook memory holds no database transaction across its file work",
 
 test("concurrent webhook memory writes reject the stale revision without losing the winning edit", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-memory-conflict-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const initial = await readWebhookMemory(webhook.id, { root });
@@ -70,7 +70,7 @@ test("concurrent webhook memory writes reject the stale revision without losing 
 
 test("webhook memory refuses a symlinked Markdown file", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-memory-link-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const initial = await readWebhookMemory(webhook.id, { root });
@@ -83,7 +83,7 @@ test("webhook memory refuses a symlinked Markdown file", async () => {
 
 test("webhook memory enforces UTF-8 byte limit", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-memory-limit-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const initial = await readWebhookMemory(webhook.id, { root });

@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import { access, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { TaskRecord } from "../src/types.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("SQLite name replication is atomic, idempotent, ordered, and retryable", async (t) => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-web-replication-"));
@@ -29,7 +29,7 @@ test("SQLite name replication is atomic, idempotent, ordered, and retryable", as
     await store.registerProjectAliases(canonicalProjectId, [aliasProjectId]);
 
     await names.setProjectName("project-atomic", "Atomic name");
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     const outbox = db.prepare("SELECT event_id, origin_node_id, payload FROM replication_outbox").all() as Array<{ event_id: string; origin_node_id: string; payload: string }>;
     assert.equal(outbox.length, 1);
     assert.equal(outbox[0].origin_node_id, node.id);

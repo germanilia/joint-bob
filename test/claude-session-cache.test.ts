@@ -6,6 +6,7 @@ import test, { type TestContext } from "node:test";
 import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { setImmediate as nextTurn } from "node:timers/promises";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // Listing re-reads a transcript only when its size or mtime changes, so the
 // session watcher's per-write re-list stops re-parsing every transcript.
@@ -276,7 +277,7 @@ test("a restart resumes Claude session facts from node.db instead of re-reading 
 
     // Mark the stored facts: a process that re-parsed the unchanged transcript would never see it.
     const { DatabaseSync } = await import("node:sqlite");
-    const db = new DatabaseSync(path.join(root, "node.db"));
+    const db = openNodeDatabase(path.join(root, "node.db"));
     const row = db.prepare("SELECT payload FROM transcript_summaries WHERE kind='claude-facts-v1' AND file=?").get(transcriptPath) as { payload: string } | undefined;
     assert.ok(row, "listing stores the facts");
     db.prepare("UPDATE transcript_summaries SET payload=? WHERE kind='claude-facts-v1' AND file=?").run(JSON.stringify({ ...JSON.parse(row.payload), title: "Stored" }), transcriptPath);

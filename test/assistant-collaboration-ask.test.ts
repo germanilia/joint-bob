@@ -3,7 +3,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { runAsAccount, type ActingAccount } from "../src/account-context.js";
@@ -20,6 +19,7 @@ import { addPersonalAssistantTopic, beginPersonalAssistantTurn, filterPersonalAs
 import { getSettings } from "../src/settings.js";
 import { addProject } from "../src/store.js";
 import { seedDevEnvironment, signIn, api, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const OWNER_ONLY = "Only your own chat and scheduled tasks can ask your other assistants.";
 const ONE_HOP = "An assistant answering another assistant can't ask a third one.";
@@ -253,7 +253,7 @@ test("the agent bridge offers Joint Bob's tools only in assistant topics", { tim
   const root = await mkdtemp(path.join(os.tmpdir(), "assistant-ask-bridge-"));
   const environment = await seedDevEnvironment(root, 1), node = environment.nodes[0];
   const child = await startDevNode(environment, node);
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout=5000");
     const session = await signIn(environment, node), projectId = node.projects[0].id;

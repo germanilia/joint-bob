@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function withDataDir(run: (dataDir: string) => Promise<void>): Promise<void> {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "joint-bob-review-notifications-"));
@@ -93,7 +93,7 @@ test("a device subscribed to every project is a subscriber of each one", async (
     assert.deepEqual(await push.listPushSubscriberUserIds("project-one"), ["user-a"]);
     assert.deepEqual(await push.listPushSubscriberUserIds("never-opened-project"), ["user-a"]);
 
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     const rows = db.prepare("SELECT project_id, user_id FROM push_session_subscriptions").all() as Array<{ project_id: string; user_id: string }>;
     assert.deepEqual(rows.map((row) => `${row.project_id}/${row.user_id}`), ["*/user-a"]);
     db.close();

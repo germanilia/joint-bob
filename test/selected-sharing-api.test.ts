@@ -3,10 +3,10 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { addSharingMember, setTrustedTwin } from "../src/cluster-sharing-policy.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("cluster selection adopts local projects, persists workspace inheritance and revokes", {timeout:120_000}, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "selected-sharing-"));
@@ -25,7 +25,7 @@ test("cluster selection adopts local projects, persists workspace inheritance an
     const project = initial.body.projects[0];
     assert.ok(project);
     assert.equal((await api(node,session,"PUT",endpoint,{projectIds:[project.id],workspaceIds:[]})).status,400);
-    const db=new DatabaseSync(path.join(node.dataDir,'node.db'));
+    const db=openNodeDatabase(path.join(node.dataDir,'node.db'));
     try{db.prepare('UPDATE sharing_memberships SET auto_share_projects=1 WHERE cluster_id=? AND node_id=?').run(clusterId,node.nodeId);}finally{db.close();}
     const existingDirectory=path.join(root,'existing-grant');await mkdir(existingDirectory);
     const alreadyShared=await api<{project:{id:string}}>(node,session,'POST','/projects',{name:'Existing grant',type:project.workspaceId,path:existingDirectory,synced:false});
@@ -59,7 +59,7 @@ test("cluster selection adopts local projects, persists workspace inheritance an
     assert.deepEqual(revoked.body.shares,[]);
     assert.equal((await api(node,session,"GET",`/projects/${future.body.project.id}`)).status,200,"revocation preserves local project");
     const peer = randomUUID(), originalOwner = randomUUID();
-    const policyDb = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const policyDb = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try {
       addSharingMember(policyDb, clusterId, node.nodeId, peer, 1);
       setTrustedTwin(policyDb, node.nodeId, peer, true);

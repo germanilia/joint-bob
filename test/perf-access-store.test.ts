@@ -20,6 +20,7 @@ import { resolveDataDirectory } from "../src/data-directory.js";
 import { ensureOwnershipSchema } from "../src/ownership.js";
 import { addProject, getProject, listProjects, projectVisible } from "../src/store.js";
 import type { ProjectRecord } from "../src/types.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /* A project is looked up, and its visibility to the acting person checked, on nearly every
    request. What those lookups read besides the project's own row is kept until the next write.
@@ -34,7 +35,7 @@ after(() => { second?.close(); rmSync(root, { recursive: true, force: true }); }
 /** A second connection to the node's database, as another module or process would hold. */
 async function other(): Promise<DatabaseSync> {
   await getClusterNode();
-  second ??= new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  second ??= openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   return second;
 }
 async function project(name: string): Promise<ProjectRecord> {

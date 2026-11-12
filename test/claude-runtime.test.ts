@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("Claude hook lifecycle tracks running transcripts", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-claude-runtime-"));
@@ -28,7 +28,7 @@ test("Claude hook lifecycle tracks running transcripts", async () => {
     runtime.stopClaudeSession("session", transcript);
     assert.equal(runtime.isClaudeSessionRunning(`claude:${transcript}`), false, "child exit clears a missed Stop hook");
     runtime.recordClaudeHookEvent(input("UserPromptSubmit"));
-    const db = new DatabaseSync(path.join(root, "node.db"));
+    const db = openNodeDatabase(path.join(root, "node.db"));
     db.prepare("UPDATE claude_runtime_sessions SET updated_at = ? WHERE transcript_path = ?").run(new Date(Date.now() - 11 * 60 * 1000).toISOString(), transcript);
     assert.equal(runtime.isClaudeSessionRunning(`claude:${transcript}`), false);
     assert.equal(runtime.listRunningClaudeSessions().length, 0, "missing Stop expires from running list");

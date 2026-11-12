@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import {
@@ -11,6 +10,7 @@ import {
   GIT_REVIEW_THREAD_TTL_MS,
   listGitReviewThreads,
 } from "../src/git-review-threads.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function baseInput(overrides: Partial<Parameters<typeof createGitReviewThread>[0]> = {}) {
   return {
@@ -66,7 +66,7 @@ test("an expired thread is pruned on the next read", () => {
   const thread = createGitReviewThread(baseInput({ projectId: `project-expiry-${Date.now()}` }));
   // Reach into the shared node.db to backdate this thread past its TTL, then confirm
   // the next read prunes it. This is the behaviour the whole "expiring" decision rests on.
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   const expired = new Date(Date.now() - GIT_REVIEW_THREAD_TTL_MS - 1000).toISOString();
   db.prepare("UPDATE git_review_threads SET expires_at = ? WHERE id = ?").run(expired, thread.id);
   db.close();

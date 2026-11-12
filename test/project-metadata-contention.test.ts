@@ -8,6 +8,7 @@ import { addSharingMember, createSharingCluster } from "../src/cluster-sharing-p
 import { ensureResourceSharingSchema, listResourcePolicyDeliveries, registerLocalSharingResource, updateResourceSharing } from "../src/cluster-sharing.js";
 import { settingsDatabase } from "../src/settings-store.js";
 import { applyProjectMetadata, getProject, listProjects } from "../src/store.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const ownerId = "00000000-0000-4000-8000-000000000001";
 const clusterId = "10000000-0000-4000-8000-000000000001";
@@ -17,7 +18,7 @@ test("metadata receipt prevents a writer from invalidating its read snapshot and
   const localId = (await getClusterNode()).id;
   const receiver = settingsDatabase();
   const owner = new DatabaseSync(":memory:");
-  const competing = new DatabaseSync(path.join(process.env.PI_WEB_DATA_DIR!, "node.db"));
+  const competing = openNodeDatabase(path.join(process.env.PI_WEB_DATA_DIR!, "node.db"));
   competing.exec("PRAGMA busy_timeout=0; CREATE TABLE contention_probe(value INTEGER); INSERT INTO contention_probe VALUES(0)");
   try {
     for (const db of [owner, receiver]) {

@@ -8,9 +8,9 @@ import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { signedNodeRequest } from "./signed-node-request.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // Twin sync on a loaded CI runner can take longer than 30 seconds to converge.
 async function eventually(check: () => Promise<void>): Promise<void> {
@@ -26,7 +26,7 @@ const claudeLine = (sessionId: string, cwd: string): string =>
   `${JSON.stringify({ type: "user", uuid: randomUUID(), sessionId, cwd, timestamp: new Date().toISOString(), message: { role: "user", content: "Synthetic turn" } })}\n`;
 
 function conversationEvent(dataDir: string, sessionId: string, operation: "upsert" | "delete") {
-  const database = new DatabaseSync(path.join(dataDir, "node.db"));
+  const database = openNodeDatabase(path.join(dataDir, "node.db"));
   try {
     const row = database.prepare(`SELECT event_id, origin_node_id, entity_type, entity_key, operation, payload, created_at
       FROM replication_outbox WHERE entity_type = 'conversation.record' AND operation = ? AND entity_key LIKE ? ORDER BY rowid DESC LIMIT 1`)
@@ -88,14 +88,14 @@ test("a tombstone from the owner removes the other machine's copy wherever it li
 
     // Rows the other machine holds about both conversations.
     const rows = (id: string): number => {
-      const database = new DatabaseSync(path.join(right.dataDir, "node.db"));
+      const database = openNodeDatabase(path.join(right.dataDir, "node.db"));
       try {
         database.exec("PRAGMA busy_timeout = 5000");
         return Number((database.prepare("SELECT count(*) AS n FROM name_overrides WHERE scope IN ('sessions', 'session_colors') AND key = ?").get(id) as { n: number }).n)
           + Number((database.prepare("SELECT count(*) AS n FROM transcript_summaries WHERE file LIKE ?").get(`%${id}%`) as { n: number }).n);
       } finally { database.close(); }
     };
-    const seeded = new DatabaseSync(path.join(right.dataDir, "node.db"));
+    const seeded = openNodeDatabase(path.join(right.dataDir, "node.db"));
     try {
       seeded.exec("PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS transcript_summaries (kind TEXT NOT NULL, file TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (kind, file))");
       const at = new Date().toISOString();
@@ -127,7 +127,7 @@ test("a tombstone from the owner removes the other machine's copy wherever it li
 
     // A delete the owner made long ago that reaches this machine only now. Its date is before this machine ever ran the
     // complete delete, and it is carried out all the same: the date says when the owner deleted, not when this machine heard.
-    const longAgo = new DatabaseSync(path.join(right.dataDir, "node.db"));
+    const longAgo = openNodeDatabase(path.join(right.dataDir, "node.db"));
     try {
       longAgo.exec("PRAGMA busy_timeout = 5000");
       longAgo.prepare("UPDATE conversation_records SET updated_at = '2025-12-01T00:00:00.000Z' WHERE session_id = ?").run(early);
@@ -143,7 +143,7 @@ test("a tombstone from the owner removes the other machine's copy wherever it li
       for (const file of [...files(copyDir, early), path.join(copyDir, early)]) assert.equal(await exists(file), false, `the other machine still has ${file} of a delete that arrived late`);
       assert.equal(rows(early), 0, "its rows went with it");
     });
-    const queue = new DatabaseSync(path.join(right.dataDir, "node.db"), { readOnly: true });
+    const queue = openNodeDatabase(path.join(right.dataDir, "node.db"), { readOnly: true });
     try { assert.deepEqual(queue.prepare("SELECT session_id FROM conversation_deletes_pending").all(), [], "nothing is left in the queue of unfinished deletes"); }
     finally { queue.close(); }
 
@@ -154,7 +154,7 @@ test("a tombstone from the owner removes the other machine's copy wherever it li
       payload: { projectId, engine: "claude", sessionId: kept, record: null, updatedAt: stale, originNodeId: left.nodeId }, createdAt: stale,
     }] });
     assert.equal(late.status, 200, await late.text());
-    const recorded = new DatabaseSync(path.join(right.dataDir, "node.db"), { readOnly: true });
+    const recorded = openNodeDatabase(path.join(right.dataDir, "node.db"), { readOnly: true });
     try { assert.ok(recorded.prepare("SELECT 1 FROM conversation_records WHERE session_id = ?").get(kept), "the record outlives the older delete"); }
     finally { recorded.close(); }
     await new Promise((resolve) => setTimeout(resolve, 1_000));

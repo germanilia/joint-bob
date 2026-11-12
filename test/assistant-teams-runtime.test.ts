@@ -8,7 +8,6 @@ import { promisify } from 'node:util';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from './dev-nodes.js';
 import { getClusterNode } from '../src/cluster.js';
 import { createAdministrator, createLocalUser, localAccountIdForUsername, type AuthSession } from '../src/auth.js';
@@ -20,6 +19,7 @@ import { runTeamTurn, teamConversation, teamAssignmentDestination, teamQueuedTur
 import { getPersonalAssistant, getPersonalAssistantSourceHistory, savePersonalAssistant, beginPersonalAssistantTurn } from '../src/personal-assistants.js';
 import { DEFAULT_GUARDIAN_SETTINGS } from '../src/guardian/rules.js';
 import { PRODUCTION_RULE } from '../src/guardian/production-rule.js';
+import { openNodeDatabase } from "../src/node-database.js";
 
 test('picked members with free roles keep their own settings; assignment and machine checks precede execution', async () => {
   const db = await teamDatabase(); const host = await getClusterNode();
@@ -124,7 +124,7 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
     assert.equal(cluster.status, 201);
     const created = await api<any>(node, auth, 'POST', '/assistant-teams', { clusterId: cluster.body.snapshot.body.clusterId });
     assert.equal(created.status, 201, JSON.stringify(created.body)); const team = created.body.team;
-    const membershipDb = new DatabaseSync(path.join(node.dataDir, 'node.db'));
+    const membershipDb = openNodeDatabase(path.join(node.dataDir, 'node.db'));
     try { addClusterLocalMember(membershipDb, team.clusterId, human.accountId); } finally { membershipDb.close(); }
     const humanAuth = await signIn({ ...env, username: 'teamhuman', password: 'Synthetic-member-password-123!' }, node);
     // Members are the owner's ordinary assistants, picked in with free role names.
@@ -165,7 +165,7 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
     const delegated = await api<any>(node, auth, 'POST', `/assistant-teams/${team.id}/agents/bob/turn`, { subjectId: 'delegated', requestId: bobRequest, message: 'LIVE_BOB_DELEGATION' });
     assert.equal(delegated.status, 409, `premature root answer is withheld: ${JSON.stringify(delegated.body)}`);
     assert.doesNotMatch(JSON.stringify(delegated.body), /PREMATURE_ROOT/);
-    const db = new DatabaseSync(path.join(node.dataDir, 'node.db'));
+    const db = openNodeDatabase(path.join(node.dataDir, 'node.db'));
     try {
       const deadline = Date.now() + 20000;
       let rootWork: any;

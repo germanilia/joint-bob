@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import type { Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function cookieFrom(response: Response): string {
   const cookie = response.headers.get("set-cookie");
@@ -229,7 +229,7 @@ test("a harness switch keeps one conversation with embedded, ordered segments", 
 
     // A Done ticket owning the ORIGINAL segment locks the whole conversation,
     // even when the client addresses it by another segment's identity.
-    const database = new DatabaseSync(path.join(root, "data", "node.db"));
+    const database = openNodeDatabase(path.join(root, "data", "node.db"));
     const nodeId = (database.prepare("SELECT id FROM cluster_node WHERE singleton = 1").get() as { id: string }).id;
     const now = new Date().toISOString();
     database.prepare(`INSERT INTO tasks (id, project_id, title, description, status, engine, plan_mode, review_mode, phase_config, session_path, worktree_path, worktree_branch, merged_at, created_at, updated_at, current_node_id, origin_node_id, execution_state, merge_state, conflict_count) VALUES ('done-ticket', ?, 'Done ticket', '', 'done', 'pi', 0, 0, '{}', ?, NULL, NULL, NULL, ?, ?, ?, ?, 'idle', 'none', 0)`)
@@ -256,7 +256,7 @@ test("a harness switch keeps one conversation with embedded, ordered segments", 
     assert.equal(ticketReady.sessionId, thirdSegmentFile.replace(/\.jsonl$/, "").split("_").at(-1));
     ticketSocket.socket.close();
 
-    const unlock = new DatabaseSync(path.join(root, "data", "node.db"));
+    const unlock = openNodeDatabase(path.join(root, "data", "node.db"));
     unlock.prepare("DELETE FROM tasks WHERE id = 'done-ticket'").run();
     unlock.close();
 

@@ -3,9 +3,9 @@
 import { chmod, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_GUARDIAN_SETTINGS, type GuardianSettings } from "../src/guardian/rules.js";
 import type { SeededNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /** A decision model that says yes to deletes and to AWS keys, and no to everything else. */
 export function guardianDecisionModel(): Promise<Server> {
@@ -67,7 +67,7 @@ console.log(JSON.stringify({ type: 'assistant', message }));
 console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: sessionId }));
 `);
   await chmod(executable, 0o755);
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try { db.prepare("UPDATE node_settings SET value = ? WHERE key = 'claude.executable'").run(executable); }
   finally { db.close(); }
 }

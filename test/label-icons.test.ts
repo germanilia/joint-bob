@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { iconsForLabels, labelIconPrompt, parseGeneratedIcon } from "../src/conversation-labels.js";
 import type { SettingsResponse } from "../src/settings.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("generated icon replies reduce to the first emoji", () => {
   assert.equal(parseGeneratedIcon("🐞"), "🐞");
@@ -24,7 +24,7 @@ test("saved icon maps gain new built-in icons without replacing custom icons", a
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-legacy-label-icons-"));
   const environment = await seedDevEnvironment(root, 1);
   const node = environment.nodes[0];
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     // A saved map from before Deploy to prod and Hotfix were introduced.
     db.prepare("INSERT OR REPLACE INTO node_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?)")

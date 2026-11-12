@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function withStore(run: (root: string, store: typeof import("../src/store.js")) => Promise<void>): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "master-bob-node-sync-"));
@@ -105,7 +106,7 @@ test("legacy owner orphan retires once on startup; missing remote metadata stays
   await withStore(async (root, store) => {
     const owner = await store.addProject("legacy owner", path.join(root, "owner"));
     const remote = await store.addProject("awaiting metadata", path.join(root, "remote"));
-    const db = new DatabaseSync(path.join(root, "data", "node.db"));
+    const db = openNodeDatabase(path.join(root, "data", "node.db"));
     const remoteId = randomUUID();
     db.prepare("UPDATE sharing_resource_owners SET owner_node_id=? WHERE kind='project' AND resource_id=?").run(remoteId, remote.id);
     db.prepare("UPDATE cluster_v2_resource_policy SET owner_node_id=? WHERE kind='project' AND resource_id=?").run(remoteId, remote.id);
@@ -113,7 +114,7 @@ test("legacy owner orphan retires once on startup; missing remote metadata stays
     db.close();
     const reload = () => import(new URL(`../src/store.ts?orphan=${Math.random()}`, import.meta.url).href);
     await (await reload()).listProjects();
-    const inspect = new DatabaseSync(path.join(root, "data", "node.db"));
+    const inspect = openNodeDatabase(path.join(root, "data", "node.db"));
     const state = (id: string) => inspect.prepare("SELECT generation,deleted FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?").get(id) as {generation:number;deleted:number};
     assert.deepEqual({ ...state(owner.id) }, { generation: 2, deleted: 1 });
     assert.deepEqual({ ...state(remote.id) }, { generation: 1, deleted: 0 });
@@ -129,7 +130,7 @@ test("delivery failure rolls back owner deletion; replica removal cannot sign ow
     const { applyTwinCertificate, confirmTwinAcceptance, createTwinInvitation, prepareTwinAcceptance } = await import("../src/cluster-twins.js");
     const local = await getClusterNode();
     await store.listProjects();
-    const db = new DatabaseSync(path.join(root, "data", "node.db"));
+    const db = openNodeDatabase(path.join(root, "data", "node.db"));
     const peer = randomUUID(), peerDb = new DatabaseSync(":memory:");
     const invite = createTwinInvitation(db, local.id);
     const acceptance = prepareTwinAcceptance(peerDb, peer, invite, invite.body.inviter.fingerprint);
@@ -205,11 +206,11 @@ test("project removal atomically settles project task state and reservations", a
     await inject(settled.id, settledTask);
     const settledHandoff = await tasks.beginOutgoingTaskHandoff(settled.id, settledTask, local.id, randomUUID());
     await tasks.abortOutgoingTaskHandoff(settledHandoff.handoffId);
-    const settledDb = new DatabaseSync(path.join(root, "data", "node.db"));
+    const settledDb = openNodeDatabase(path.join(root, "data", "node.db"));
     settledDb.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?)").run(settled.id, "settled-deleted", "2026-06-01T00:00:01.000Z", local.id);
     settledDb.close();
     await store.removeProject(settled.id);
-    const removedDb = new DatabaseSync(path.join(root, "data", "node.db"));
+    const removedDb = openNodeDatabase(path.join(root, "data", "node.db"));
     assert.equal((removedDb.prepare("SELECT COUNT(*) AS count FROM projects WHERE id = ?").get(settled.id) as { count: number }).count, 0);
     for (const table of ["tasks", "task_tombstones", "task_migrations", "task_handoffs"]) assert.equal((removedDb.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE project_id = ?`).get(settled.id) as { count: number }).count, 0);
     removedDb.close();
@@ -219,7 +220,7 @@ test("project removal atomically settles project task state and reservations", a
     const unfinishedHandoffId = randomUUID();
     await tasks.reserveTaskHandoff(unfinishedHandoffId, unfinished.id, unfinished.id, unfinishedTask, local.id, "", "2026-06-01T00:00:02.000Z");
     await assert.rejects(store.removeProject(unfinished.id), (error: Error) => error.message === "Settle task handoffs before deleting project");
-    const unfinishedDb = new DatabaseSync(path.join(root, "data", "node.db"));
+    const unfinishedDb = openNodeDatabase(path.join(root, "data", "node.db"));
     assert.ok(unfinishedDb.prepare("SELECT 1 FROM projects WHERE id = ?").get(unfinished.id));
     assert.ok(unfinishedDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(unfinished.id, unfinishedTask.id));
     assert.ok(unfinishedDb.prepare("SELECT 1 FROM task_handoffs WHERE handoff_id = ?").get(unfinishedHandoffId));
@@ -232,7 +233,7 @@ test("project removal atomically settles project task state and reservations", a
     await tasks.commitPreparedTaskHandoff(unacknowledgedHandoffId, local.id);
     await tasks.deleteTask(unacknowledged.id, unacknowledgedTask.id);
     await assert.rejects(store.removeProject(unacknowledged.id), (error: Error) => error.message === "Wait for task handoff settlement before deleting project");
-    const unacknowledgedDb = new DatabaseSync(path.join(root, "data", "node.db"));
+    const unacknowledgedDb = openNodeDatabase(path.join(root, "data", "node.db"));
     assert.ok(unacknowledgedDb.prepare("SELECT 1 FROM projects WHERE id = ?").get(unacknowledged.id));
     assert.ok(unacknowledgedDb.prepare("SELECT 1 FROM task_tombstones WHERE project_id = ? AND task_id = ?").get(unacknowledged.id, unacknowledgedTask.id));
     assert.ok(unacknowledgedDb.prepare("SELECT 1 FROM task_handoffs WHERE handoff_id = ?").get(unacknowledgedHandoffId));
@@ -247,7 +248,7 @@ test("project removal atomically settles project task state and reservations", a
     await tasks.markOutgoingTaskHandoff(unacknowledgedOutgoingHandoff.handoffId, "prepared");
     await tasks.completeTaskHandoff(unacknowledgedOutgoingHandoff.handoffId, unacknowledgedOutgoing.id, unacknowledgedOutgoingTask.id, local.id, unacknowledgedOutgoingHandoff.destinationNodeId);
     await assert.rejects(store.removeProject(unacknowledgedOutgoing.id), (error: Error) => error.message === "Wait for task handoff settlement before deleting project");
-    const unacknowledgedOutgoingDb = new DatabaseSync(path.join(root, "data", "node.db"));
+    const unacknowledgedOutgoingDb = openNodeDatabase(path.join(root, "data", "node.db"));
     assert.ok(unacknowledgedOutgoingDb.prepare("SELECT 1 FROM projects WHERE id = ?").get(unacknowledgedOutgoing.id));
     assert.ok(unacknowledgedOutgoingDb.prepare("SELECT 1 FROM task_handoffs WHERE handoff_id = ?").get(unacknowledgedOutgoingHandoff.handoffId));
     unacknowledgedOutgoingDb.close();
@@ -259,7 +260,7 @@ test("project removal atomically settles project task state and reservations", a
     const runningTask = { ...taskFor("running-task"), executionState: "running" as const };
     await inject(running.id, runningTask);
     await assert.rejects(store.removeProject(running.id), (error: Error) => error.message === "Wait for task agents to finish before deleting project");
-    let activeDb = new DatabaseSync(path.join(root, "data", "node.db"));
+    let activeDb = openNodeDatabase(path.join(root, "data", "node.db"));
     assert.ok(activeDb.prepare("SELECT 1 FROM projects WHERE id = ?").get(running.id));
     assert.ok(activeDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(running.id, runningTask.id));
     activeDb.prepare("UPDATE tasks SET execution_state = 'idle' WHERE project_id = ? AND id = ?").run(running.id, runningTask.id);
@@ -270,7 +271,7 @@ test("project removal atomically settles project task state and reservations", a
     const liveLeasedTask = { ...taskFor("live-leased-task"), leaseOwnerNodeId: local.id, leaseExpiresAt: new Date(Date.now() + 60_000).toISOString() };
     await inject(liveLeased.id, liveLeasedTask);
     await assert.rejects(store.removeProject(liveLeased.id), (error: Error) => error.message === "Wait for task agents to finish before deleting project");
-    activeDb = new DatabaseSync(path.join(root, "data", "node.db"));
+    activeDb = openNodeDatabase(path.join(root, "data", "node.db"));
     assert.ok(activeDb.prepare("SELECT 1 FROM projects WHERE id = ?").get(liveLeased.id));
     assert.ok(activeDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(liveLeased.id, liveLeasedTask.id));
     activeDb.prepare("UPDATE tasks SET lease_owner_node_id = NULL, lease_expires_at = NULL WHERE project_id = ? AND id = ?").run(liveLeased.id, liveLeasedTask.id);
@@ -284,7 +285,7 @@ test("project removal atomically settles project task state and reservations", a
       store.removeProject(raced.id),
       tasks.reserveTaskHandoff(raceHandoffId, raced.id, raced.id, racedTask, local.id, "", "2026-06-01T00:00:03.000Z"),
     ]);
-    const raceDb = new DatabaseSync(path.join(root, "data", "node.db"));
+    const raceDb = openNodeDatabase(path.join(root, "data", "node.db"));
     if (reservation.status === "fulfilled") {
       assert.equal(removal.status, "rejected");
       assert.equal((removal as PromiseRejectedResult).reason.message, "Settle task handoffs before deleting project");

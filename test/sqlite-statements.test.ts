@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ensureScriptCounts, withoutDiskFlush } from "../src/sqlite-statements.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
@@ -66,7 +67,7 @@ test("closing a connection drops its statements, and the least recently used are
 test("a script that only makes sure tables exist runs once, and again whenever the schema has changed", (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "jb-ensure-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const db = new DatabaseSync(path.join(root, "node.db")), other = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db")), other = openNodeDatabase(path.join(root, "node.db"));
   t.after(() => { db.close(); other.close(); });
   const ensure = "CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, body TEXT);\n CREATE INDEX IF NOT EXISTS notes_body ON notes(body);";
   const counted = (run: () => void): { ran: number; skipped: number } => {
@@ -114,7 +115,7 @@ test("a script that does anything else runs every time", () => {
 test("a write without disk flush commits under NORMAL and leaves the connection's own level", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "jb-flush-"));
   try {
-    const db = new DatabaseSync(path.join(directory, "node.db"));
+    const db = openNodeDatabase(path.join(directory, "node.db"));
     db.exec("PRAGMA journal_mode=WAL; CREATE TABLE seen(id TEXT PRIMARY KEY)");
     const level = (): number => (db.prepare("PRAGMA synchronous").get() as { synchronous: number }).synchronous;
     assert.equal(level(), 2, "connections start at FULL");

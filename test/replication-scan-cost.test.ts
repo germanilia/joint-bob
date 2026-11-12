@@ -3,13 +3,13 @@
 // most of its CPU re-reading events it had delivered long ago, and every page waited.
 import assert from "node:assert/strict";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, eventsForPeer, pendingEventsForPeer } from "../src/replication.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("polling a twin reads only new and due events, not the delivered history", async () => {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "scan-cost-peer", ids: string[] = [];
   const start = new Date("2026-05-01T00:00:00.000Z");
@@ -44,7 +44,7 @@ test("polling a twin reads only new and due events, not the delivered history", 
 // A visitor's home node takes only that visitor's own events. Judged one by one, every other
 // event of the outbox came back a hundred at a time and was refused, on every flush.
 test("a peer limited to some accounts is searched only for their events", async () => {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "scan-accounts-peer", visitor = "0123456789abcdef0123456789abcdef";
   const at = new Date("2026-05-01T00:00:00.000Z");
@@ -70,7 +70,7 @@ test("a peer limited to some accounts is searched only for their events", async 
 // the payload of every event parsed to find their account (2026-11-01, about a second each on
 // the Mac with 334k events). The account index makes that pass cost only the visitor's events.
 test("a visitor's search reads the account index, whatever the outbox holds", async () => {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "scan-index-peer", visitor = "abcdefabcdefabcdefabcdefabcdefab";
   const at = new Date("2026-05-01T00:00:00.000Z");
@@ -101,7 +101,7 @@ test("a visitor's search reads the account index, whatever the outbox holds", as
 
 // Every two seconds, for every peer, a pass took the write lock only to find nothing new.
 test("a pass with nothing new or due for the peer leaves the write lock alone", async () => {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "scan-idle-peer";
   const at = (seconds: number) => new Date(Date.parse("2026-05-01T00:00:00.000Z") + seconds * 1000);
@@ -110,7 +110,7 @@ test("a pass with nothing new or due for the peer leaves the write lock alone", 
     // The first pass also searches the existing history; let it finish.
     for (let second = 1; second < 60; second++) await eventsForPeer(peer, at(second), () => true);
     db.prepare("UPDATE replication_deliveries SET delivered_at=? WHERE peer_id=?").run(at(60).toISOString(), peer);
-    const writer = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+    const writer = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
     writer.exec("PRAGMA busy_timeout = 0; BEGIN IMMEDIATE");
     try {
       const started = performance.now();

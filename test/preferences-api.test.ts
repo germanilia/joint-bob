@@ -4,8 +4,8 @@ import { createServer } from "node:http";
 import type { Express } from "express";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function listen(app: Express) {
   const server = createServer(app);
@@ -100,7 +100,7 @@ test("preferences store the keymap, ignore the removed canvas layout and map a s
     const rejectedView = await fetch(`${node.baseUrl}/api/preferences`, { method: "PUT", headers, body: JSON.stringify({ mobileView: "canvas" }) });
     assert.equal(rejectedView.status, 400);
     await node.close();
-    const store = new DatabaseSync(path.join(root, "node.db"));
+    const store = openNodeDatabase(path.join(root, "node.db"));
     store.prepare("UPDATE user_preferences SET mobile_view = 'canvas'").run();
     store.close();
     node = await listen(app.createApp());

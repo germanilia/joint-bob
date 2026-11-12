@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket from "ws";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("Pi terminal turns stay out of pending reviews until settled or their heartbeat expires", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-pi-terminal-"));
@@ -21,7 +22,7 @@ test("Pi terminal turns stay out of pending reviews until settled or their heart
     type Row = { id: string; path: string; harnessId: string; running: boolean; reviewState: string };
     const sessions = () => api<{ sessions: Row[] }>(node, login, "GET", `/projects/${project.id}/sessions`);
     const target = (await sessions()).body.sessions.find((row) => row.harnessId === "pi")!;
-    db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     db.exec(`CREATE TABLE IF NOT EXISTS pi_runtime_sessions (
       session_id TEXT NOT NULL, run_id TEXT NOT NULL, transcript_path TEXT NOT NULL,
       expires_at TEXT NOT NULL, PRIMARY KEY (session_id, run_id)

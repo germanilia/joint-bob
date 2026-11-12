@@ -17,6 +17,7 @@ import { setNodeBlock } from "../src/node-blocks.js";
 import type { ReplicationEvent } from "../src/replication.js";
 import { mayReplicateEvent, replicationPeers } from "../src/server/replication-v2.js";
 import { mayShareProject, sharedProjectIds } from "../src/server/sharing-files.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /* What one node may share with another is asked for every peer, project and event. The answers
    are kept until the next write. These tests hold them to that: an answer follows every change at
@@ -281,7 +282,7 @@ test("mayReplicateEvent finds the tables that later features bring, and never se
 
 test("the sharing schema is made sure of once per connection, and again after a rollback took it away", (t) => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "jb-perf-access-schema-"));
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
   const has = (table: string): boolean => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
   db.exec("BEGIN");

@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { ensureConversationRecord } from "../src/conversation-records.js";
 import { addPersonalAssistantTopic, beginPersonalAssistantTurn, deleteItem, deletePersonalAssistant, filterPersonalAssistantTools, finishPersonalAssistantTurn, getPersonalAssistant, getPersonalAssistantSourceHistory, listPersonalAssistantTopics, listPersonalAssistantTurnSourceIds, listPersonalAssistantTurns, listPersonalAssistants, listSavedItems, personalAssistantContext, personalAssistantSettings, personalAssistantToolBaseline, saveItem, savedImage, savePersonalAssistant, savePersonalAssistantSourceHistory } from "../src/personal-assistants.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("personal assistant stores instructions and paired source images, scoped to its owner", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "personal-assistant-"));
   const previous = process.env.JOINT_BOB_DATA_DIR;
   process.env.JOINT_BOB_DATA_DIR = root;
   try {
-    const legacy = new DatabaseSync(path.join(root, "node.db"));
+    const legacy = openNodeDatabase(path.join(root, "node.db"));
     legacy.exec(`CREATE TABLE personal_assistants (
       id TEXT PRIMARY KEY, account_id TEXT NOT NULL, project_id TEXT NOT NULL, engine TEXT NOT NULL, session_id TEXT NOT NULL,
       node_id TEXT NOT NULL DEFAULT '', name TEXT NOT NULL, instructions TEXT NOT NULL DEFAULT '', classifier_id TEXT NOT NULL DEFAULT 'typesafe',

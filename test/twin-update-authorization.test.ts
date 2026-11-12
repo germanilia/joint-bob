@@ -4,12 +4,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { signClusterRequest } from "../src/cluster-protocol.js";
 import {
   api, seedDevEnvironment, signIn, startDevNode, stopDevNode,
   type DevEnvironment, type SeededNode, type SignedIn,
 } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const isolatedServerEnv = {
   AWS_ACCESS_KEY_ID: "", AWS_SECRET_ACCESS_KEY: "", AWS_SESSION_TOKEN: "", AWS_PROFILE: "",
@@ -18,7 +18,7 @@ const isolatedServerEnv = {
 type Child = Awaited<ReturnType<typeof startDevNode>>;
 
 function updateJobCount(node: SeededNode): number {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"), { readOnly: true });
   try {
     return (db.prepare("SELECT count(*) AS count FROM update_jobs").get() as { count: number }).count;
   } finally { db.close(); }
@@ -46,7 +46,7 @@ async function createTwin(inviter: SeededNode, inviterSession: SignedIn, accepto
 
 async function signedRequest(sender: SeededNode, recipient: SeededNode, target: string, payload: unknown): Promise<Response> {
   const body = Buffer.from(JSON.stringify(payload));
-  const db = new DatabaseSync(path.join(sender.dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(sender.dataDir, "node.db"), { readOnly: true });
   const previous = process.env.JOINT_BOB_SECRET_KEY;
   try {
     process.env.JOINT_BOB_SECRET_KEY = (await readFile(path.join(sender.dataDir, "secret.key"), "utf8")).trim();

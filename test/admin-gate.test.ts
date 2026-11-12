@@ -108,8 +108,8 @@ test("the terminal follows the admin's policy, per person, with a limit", { time
   const node = environment.nodes[0];
   // An upgraded node: it has an admin but no terminal setting yet.
   await runOnNode(environment, node, `
-    const { DatabaseSync } = await import("node:sqlite");
-    const db = new DatabaseSync(process.env.JOINT_BOB_DATA_DIR + "/node.db");
+    const { openNodeDatabase } = await import("./src/node-database.ts");
+    const db = openNodeDatabase(process.env.JOINT_BOB_DATA_DIR + "/node.db");
     db.exec("DELETE FROM node_settings WHERE key LIKE 'terminalAccess.%'");
   `);
   const child = await startDevNode(environment, node, { JOINT_BOB_TEST_MULTI_USER_READY: "1" });

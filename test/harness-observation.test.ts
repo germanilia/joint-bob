@@ -3,12 +3,12 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type WebSocket from "ws";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { openChat, waitFor } from "./queued-prompt-harness.js";
 import { kiroV3SessionFixture } from "./kiro-v3-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const fixtureSource = `#!/usr/bin/env node
 ${kiroV3SessionFixture}
@@ -46,7 +46,7 @@ rl.on("line", line => {
 `;
 
 function configure(dataDir: string, executable: string, configPath: string, sessionPath: string, release: string): void {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   const save = db.prepare("INSERT INTO node_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at");
   const now = new Date().toISOString();
   save.run("kiro.executable", executable, now); save.run("kiro.configPath", configPath, now); save.run("kiro.sessionPath", sessionPath, now);

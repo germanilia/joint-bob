@@ -3,10 +3,10 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { execFileSync } from "node:child_process";
 import { signedNodeRequest } from "./signed-node-request.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check: () => Promise<void>): Promise<void> {
   const deadline = Date.now() + 50_000;
@@ -43,7 +43,7 @@ test("twins replicate project events over signed transport without bearer peers"
       const peer=inventory.body.remote.find(peer=>peer.peerId===right.nodeId);
       assert.ok(peer,'signed twin must appear in the node inventory');
       assert.equal(peer.reachable,true,'the twin answers signed inventory requests without a bearer token');
-      const db=new DatabaseSync(path.join(left.dataDir,'node.db'));
+      const db=openNodeDatabase(path.join(left.dataDir,'node.db'));
       try{
         const activity=db.prepare('SELECT last_seen_at FROM cluster_v2_peer_activity WHERE node_id=?').get(right.nodeId) as {last_seen_at:string|null}|undefined;
         assert.ok(activity?.last_seen_at&&Date.parse(activity.last_seen_at)>Date.now()-90000,'successful signed traffic records the twin as recently seen');
@@ -84,7 +84,7 @@ test("twins replicate project events over signed transport without bearer peers"
     assert.equal(unknown.status, 403, "a task ID with no stored project cannot authorize itself");
     const renamed = await api(left, sa, "PATCH", `/projects/${id}`, { name: "Signed project" });
     assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
-    const db = new DatabaseSync(path.join(right.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(right.dataDir, "node.db"));
     try {
       await eventually(async () => {
         const row = db.prepare("SELECT name FROM name_overrides WHERE scope='projects' AND key=?").get(id) as { name: string } | undefined;

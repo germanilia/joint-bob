@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.273.2 — 2026-11-12
+
+- No change to the app's behaviour. The tests that read or write a node's database directly now go through the same database module the app uses, so they run against PostgreSQL as well as SQLite (`JOINT_BOB_DATABASE_URL`). The SQLite runs are unchanged.
+
 ## 2.273.1 — 2026-11-12
 
 - Fixed saving edits to connection pools containing Google Antigravity profiles.

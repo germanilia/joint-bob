@@ -5,7 +5,7 @@ import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type ClusterModule = typeof import("../src/cluster.js");
 
@@ -28,7 +28,7 @@ async function freshCluster(tag: string): Promise<ClusterModule> {
 }
 
 function tableNames(dataDir: string): string[] {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   try {
     return (db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'trigger') ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name);
   } finally {
@@ -86,7 +86,7 @@ test("starting drops the retired bearer-token cluster tables and keeps the node 
       "cluster_membership_state", "cluster_peers", "cluster_project_grants", "cluster_secret_migrations", "cluster_v2_mode",
     ];
     await mkdir(dataDir, { recursive: true });
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     db.exec("CREATE TABLE cluster_node (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), id TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
     db.prepare("INSERT INTO cluster_node VALUES (1, ?, ?, ?, ?, ?)").run("9d7c2c8e-5d2e-4f55-9f55-7f1c8f1e2a11", "Kept", "https://kept.tailnet.ts.net", "2025-01-01T00:00:00.000Z", "2025-01-01T00:00:00.000Z");
     for (const table of retired) db.exec(`CREATE TABLE ${table} (id TEXT)`);

@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // The click-through link comes from the cluster node URL, which is seeded from this
 // variable on first boot; it must be set before the push module (and cluster) load.
@@ -93,7 +93,7 @@ test("a rejected ntfy publish reports failure and keeps the subscription for ret
       await push.savePushSubscription(subscription, "user-a", "project-c", "watch", "My chat");
       const delivered = await push.notifyConversationReview("user-a", "project-c", "watch", "My chat", "Body.");
       assert.equal(delivered, false);
-      const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+      const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
       const row = db.prepare("SELECT COUNT(*) AS count FROM push_session_subscriptions WHERE project_id = 'project-c'").get() as { count: number };
       db.close();
       assert.equal(row.count, 1, "a server error must not delete the target like a dead web-push endpoint");

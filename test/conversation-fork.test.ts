@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test, { after, before } from "node:test";
 import WebSocket from "ws";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -13,6 +12,7 @@ import { openPiRuntimeDatabase, publishPiRuntime } from "../src/pi-runtime.js";
 import { queuedSettingsSchema } from "../src/prompt-queue.js";
 import type { SessionSummary } from "../src/types.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 let root: string, environment: DevEnvironment, node: SeededNode, server: ChildProcess, auth: SignedIn;
 const sockets: WebSocket[] = [];
@@ -41,7 +41,7 @@ if (prompt.includes('hold original')) {
 console.log(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'fixture reply' }] } }));
 console.log(JSON.stringify({ type: 'result', is_error: false, session_id: id }));
 `, { mode: 0o755 });
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   db.prepare("UPDATE node_settings SET value = ? WHERE key = 'claude.executable'").run(executable);
   db.close();
   server = await startDevNode(environment, node);
@@ -349,7 +349,7 @@ test("cold Pi v1 fork migrates only its snapshot and retains history and setting
 test("fork copies every switched segment and preserves an empty active draft", async () => {
   const source = (await list()).find((session) => session.harnessId === "pi" && !session.title.startsWith("[F]"))!;
   const draftId = randomUUID();
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     const now = new Date().toISOString();
     const save = db.prepare("INSERT OR REPLACE INTO conversation_records (project_id, engine, session_id, created_at, updated_at, origin_node_id, task_id, conversation_id, segment_index) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)");

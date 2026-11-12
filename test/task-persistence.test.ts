@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("legacy task migration publishes each inserted task once", async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-web-legacy-task-"));
@@ -18,7 +18,7 @@ test("legacy task migration publishes each inserted task once", async () => {
     await writeFile(path.join(dataDir, "tasks", `${projectId}.json`), JSON.stringify({ tasks: [task] }));
     const tasks = await import(new URL(`../src/tasks.ts?legacy=${Date.now()}`, import.meta.url).href);
     const migrated = await tasks.listTasks(projectId);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     const node = db.prepare("SELECT id FROM cluster_node WHERE singleton = 1").get() as { id: string };
     const events = db.prepare("SELECT origin_node_id, entity_type, entity_key, operation, payload FROM replication_outbox").all() as Array<{ origin_node_id: string; entity_type: string; entity_key: string; operation: string; payload: string }>;
     assert.equal(migrated.length, 1);

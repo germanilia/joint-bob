@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,6 +8,7 @@ import type { AutomationRow } from "../src/control-center/automations.js";
 import type { BobMessage } from "../src/control-center/bob-store.js";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, stopDevNode, waitForDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { serverArgs } from "./server-entry.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /** A node with Bob's agent stood in: what it "answers" for an automation request is the intent.json in its own directory. */
 async function startNode(environment: DevEnvironment, node: SeededNode, directory: string): Promise<ChildProcess> {
@@ -39,7 +39,7 @@ async function accountIdOn(environment: DevEnvironment, node: SeededNode): Promi
 
 /** Whether `from` has delivered its accounts to `to`, after which the person's newer events are sent to it. */
 function accountsDelivered(from: SeededNode, to: SeededNode): boolean {
-  const db = new DatabaseSync(path.join(from.dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(from.dataDir, "node.db"), { readOnly: true });
   try {
     return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'account_replication_deliveries'").get())
       && Boolean(db.prepare("SELECT 1 FROM account_replication_deliveries WHERE peer_id = ?").get(to.nodeId));

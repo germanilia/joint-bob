@@ -5,12 +5,12 @@ import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runSupervisedShell } from "../scripts/supervised-shell.mjs";
 import { startSupervisor } from "../scripts/joint-bob-supervisor.mjs";
 import { mintTaskToken, readSupervisorControl, requestSupervisor } from "../scripts/supervisor-client.mjs";
 import { readBackgroundTasks } from "../src/background-tasks.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const identity = JSON.stringify(["p", "c"]);
 
@@ -76,7 +76,7 @@ test("short supervised commands complete and stay out of the Tasks view", { time
     const task = await requestSupervisor(f.control.socketPath, f.token, { action: "task", id: result.taskId }) as Record<string, unknown>;
     assert.equal(task.status, "completed");
     assert.deepEqual(readBackgroundTasks(f.state, [identity], 10).tasks, []);
-    const db = new DatabaseSync(path.join(f.state, "node.db"), { readOnly: true });
+    const db = openNodeDatabase(path.join(f.state, "node.db"), { readOnly: true });
     try { assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name='background_completion_outbox'").get(), undefined, "finished commands must not be queued for delivery"); }
     finally { db.close(); }
   } finally { await f.runtime.close(); await rm(f.root, { recursive: true, force: true }); }

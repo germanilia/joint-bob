@@ -32,9 +32,9 @@ async function signIntoProfile(node: SeededNode, profileId: string, access: stri
 /** A request signed with `sender`'s own node key, as a twin's borrowing request is. */
 function signed(environment: DevEnvironment, sender: SeededNode, recipient: SeededNode, body: string): string {
   return execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-    import { DatabaseSync } from "node:sqlite";
+    import { openNodeDatabase } from "./src/node-database.ts";
     import { signClusterRequest } from "./src/cluster-protocol.ts";
-    const db = new DatabaseSync(process.env.JOINT_BOB_DATA_DIR + "/node.db");
+    const db = openNodeDatabase(process.env.JOINT_BOB_DATA_DIR + "/node.db");
     process.stdout.write(signClusterRequest(db, ${JSON.stringify(sender.nodeId)}, ${JSON.stringify(recipient.nodeId)}, "POST", ${JSON.stringify(TOKEN_PATH)}, Buffer.from(${JSON.stringify(body)})));
     db.close();
   `], { env: { ...process.env, HOME: environment.home, JOINT_BOB_DATA_DIR: sender.dataDir }, encoding: "utf8" });

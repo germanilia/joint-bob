@@ -9,6 +9,7 @@ import test from "node:test";
 import { api, projectNamed, signIn } from "./dev-nodes.js";
 import { backgroundClusterFixture, backgroundFixture, closeBackgroundClusterFixture, closeBackgroundFixture, startSyntheticTask } from "./background-tasks-fixture.js";
 import { mintTaskToken, readSupervisorControl } from "../scripts/supervisor-client.mjs";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("background task API exposes scoped metadata and output without a web start action", async () => {
   const f = await backgroundFixture();
@@ -147,7 +148,7 @@ test("background task discovery tolerates a rolling-upgrade peer without weakeni
     await once(legacy, "listening");
     const address = legacy.address();
     assert(address && typeof address === "object");
-    const db = new DatabaseSync(path.join(f.nodeA.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(f.nodeA.dataDir, "node.db"));
     try {
       db.exec("PRAGMA busy_timeout=5000");
       // Node A now reaches its twin B at an address answering like a node that predates the route.

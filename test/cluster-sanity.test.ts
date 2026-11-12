@@ -10,7 +10,6 @@ import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } fr
 import os from "node:os";
 import { createServer } from "node:http";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test, { after, before } from "node:test";
 import { promisify } from "node:util";
 import WebSocket from "ws";
@@ -23,6 +22,7 @@ import { startSyntheticTask } from "./background-tasks-fixture.js";
 import { browserCapability } from "../src/browser-runtime.js";
 import { authRequest, fixtureTotp } from "./mfa-fixture.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface SessionView { id: string; path: string; title: string; harnessId: string; executionNodeId?: string; cronTaskId?: string }
 interface PinsView { projectIds: string[]; conversations: Array<{ projectId: string; engine: string; sessionId: string }> }
@@ -148,7 +148,7 @@ test("scheduled conversation keeps its active run isolated while edits apply to 
   const source = listed.body.sessions.find(session => session.harnessId === "pi")!;
   assert.equal((await api(nodeA, sessionA, "POST", `/projects/${project.id}/sessions/take-ownership`, { sessionPath: source.path, sessionId: source.id, peerId: nodeA.nodeId })).status, 200);
   const runtimeDb = openPiRuntimeDatabase(nodeA.dataDir);
-  const db = new DatabaseSync(path.join(nodeB.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(nodeB.dataDir, "node.db"));
   const runtime = { sessionId: source.id, transcriptPath: source.path, runId: randomUUID() };
   const input = { projectId: project.id, name: "Wait for active run", prompt: "Continue", ownerNodeId: nodeB.nodeId, engine: "pi", sessionId: source.id, enabled: true, schedule: { frequency: "hourly", minute: 0, hour: 9, weekday: 1, timezone: "UTC" } };
   try {
@@ -245,7 +245,7 @@ test("active bob-goal state replicates to the peer", async () => {
   const conversationId = randomUUID();
   const now = new Date().toISOString();
   const goal = { projectId: projectA.id, conversationId, objective: "verify cross-node goals", status: "active", turns: 3, blocker: null, createdAt: now, updatedAt: now, originNodeId: nodeA.nodeId };
-  const db = new DatabaseSync(path.join(nodeA.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(nodeA.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout=5000");
     db.prepare("INSERT INTO replication_outbox (event_id, origin_node_id, entity_type, entity_key, operation, payload, created_at) VALUES (?, ?, ?, ?, 'upsert', ?, ?)")
@@ -253,7 +253,7 @@ test("active bob-goal state replicates to the peer", async () => {
   } finally { db.close(); }
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    const peer = new DatabaseSync(path.join(nodeB.dataDir, "node.db"));
+    const peer = openNodeDatabase(path.join(nodeB.dataDir, "node.db"));
     try {
       const replicated = peer.prepare("SELECT objective, status, turns FROM conversation_goals WHERE project_id = ? AND conversation_id = ?").get(projectB.id, conversationId) as { objective: string; status: string; turns: number } | undefined;
       if (replicated) {
@@ -359,7 +359,7 @@ test("background tasks route list, output, stop, and offline across two nodes", 
 
 test("background children keep both nodes running after parent completion for every built-in harness", { timeout: 60_000 }, async () => {
   const project = nodeA.projects[0];
-  const db = new DatabaseSync(path.join(nodeA.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(nodeA.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout=5000");
     for (const engine of ["pi", "claude"]) {
@@ -418,7 +418,7 @@ test("conversation browser discovery aggregates history with each physical owner
     const status = await api<{ node: { id: string } }>(node, [sessionA, sessionB][index], "GET", "/browser/status");
     assert.equal(status.status, 200);
     assert.equal(status.body.node.id, node.nodeId);
-    const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try {
       db.exec("PRAGMA busy_timeout=5000");
       db.prepare("INSERT INTO browser_sessions(id,projectId,engine,conversationId,appNodeId,state,createdAt,updatedAt) VALUES (?,?,?,?,?,'closed',?,?)")
@@ -972,7 +972,7 @@ test("taking over an empty conversation succeeds when its owner also has no tran
     api(nodeB, sessionB, "GET", `/projects/${twin.id}/sessions`),
   ]);
   for (const [node, projectId] of [[nodeA, project.id], [nodeB, twin.id]] as const) {
-    const seed = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const seed = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try {
       seed.exec("PRAGMA busy_timeout = 5000;");
       seed.prepare("INSERT INTO conversation_records (project_id, engine, session_id, created_at, updated_at, origin_node_id) VALUES (?, 'pi', ?, ?, ?, ?)")
@@ -999,7 +999,7 @@ test("taking over a conversation whose transcript never synchronized fails inste
   // conversation this node cannot actually open.
   const sessionId = randomUUID();
   const now = new Date().toISOString();
-  const seed = new DatabaseSync(path.join(nodeB.dataDir, "node.db"));
+  const seed = openNodeDatabase(path.join(nodeB.dataDir, "node.db"));
   try {
     seed.exec("PRAGMA busy_timeout = 5000;");
     seed.prepare("INSERT INTO conversation_records (project_id, engine, session_id, created_at, updated_at, origin_node_id) VALUES (?, 'pi', ?, ?, ?, ?)")
@@ -1020,7 +1020,7 @@ test("taking over a conversation whose transcript never synchronized fails inste
   assert.equal(takeover.status, 409, `takeover of a transcript-less draft must fail, got ${JSON.stringify(takeover.body)}`);
   assert.match(takeover.body.error ?? "", /synchroniz/i);
 
-  const verify = new DatabaseSync(path.join(nodeB.dataDir, "node.db"));
+  const verify = openNodeDatabase(path.join(nodeB.dataDir, "node.db"));
   try {
     const owner = verify.prepare("SELECT owner_node_id FROM conversation_ownership WHERE engine = 'pi' AND session_id = ?").get(sessionId) as { owner_node_id: string } | undefined;
     assert.equal(owner?.owner_node_id, nodeA.nodeId, "ownership must not move without the transcript");
@@ -1066,7 +1066,7 @@ test("a node opens new conversations while its peer is down, and the claim repli
     });
     assert.ok(sessionId && sessionId !== "claude:new", `ready reported a concrete session id, got ${sessionId}`);
 
-    const local = new DatabaseSync(path.join(nodeA.dataDir, "node.db"));
+    const local = openNodeDatabase(path.join(nodeA.dataDir, "node.db"));
     try {
       local.exec("PRAGMA busy_timeout = 5000;");
       const owner = local.prepare("SELECT owner_node_id, status FROM conversation_ownership WHERE engine = 'claude' AND session_id = ?").get(sessionId) as { owner_node_id: string; status: string } | undefined;
@@ -1079,7 +1079,7 @@ test("a node opens new conversations while its peer is down, and the claim repli
 
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
-    const replicated = new DatabaseSync(path.join(nodeB.dataDir, "node.db"));
+    const replicated = openNodeDatabase(path.join(nodeB.dataDir, "node.db"));
     try {
       replicated.exec("PRAGMA busy_timeout = 5000;");
       const owner = replicated.prepare("SELECT owner_node_id FROM conversation_ownership WHERE engine = 'claude' AND session_id = ?").get(sessionId) as { owner_node_id: string } | undefined;
@@ -1135,7 +1135,7 @@ test("queue takeover retries a lost fenced response, copies pending settings and
     // Discard the response, as if the network failed after the source fenced.
     const takeover = await api(nodeB, sessionB, "POST", `/projects/${projectB.id}/sessions/take-ownership`, { peerId: nodeB.nodeId, sessionId: conversation.id, sessionPath: conversation.path });
     assert.equal(takeover.status, 200, JSON.stringify(takeover.body));
-    const db = new DatabaseSync(path.join(nodeB.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(nodeB.dataDir, "node.db"));
     try {
       assert.ok(db.prepare("SELECT 1 FROM queued_prompt_tombstones WHERE id = ?").get(String(cancelledId)));
       const pending = db.prepare("SELECT prompt FROM queued_prompts WHERE queue_key = ?").all(`${projectB.id}:${conversation.id}`) as { prompt: string }[];
@@ -1178,7 +1178,7 @@ function openConversationSocket(node: SeededNode, session: SignedIn, projectId: 
 }
 
 function seedOwnershipRow(node: SeededNode, engine: string, sessionId: string, ownerNodeId: string, status: string, transferToNodeId: string | null): void {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout = 5000;");
     db.prepare("INSERT OR REPLACE INTO conversation_ownership (engine, session_id, owner_node_id, epoch, status, transfer_to_node_id) VALUES (?, ?, ?, 1, ?, ?)")
@@ -1187,7 +1187,7 @@ function seedOwnershipRow(node: SeededNode, engine: string, sessionId: string, o
 }
 
 function readOwnershipRow(node: SeededNode, engine: string, sessionId: string): { owner_node_id: string; epoch: number; status: string } | undefined {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout = 5000;");
     return db.prepare("SELECT owner_node_id, epoch, status FROM conversation_ownership WHERE engine = ? AND session_id = ?").get(engine, sessionId) as { owner_node_id: string; epoch: number; status: string } | undefined;
@@ -1410,7 +1410,7 @@ test("chat ntfy sends use the replicated conversation destination on another nod
     assert.equal(baselineA.id, baselineB.id);
     assert.notEqual(baselineA.path, baselineB.path);
     const userIds = [nodeA, nodeB].map((node) => {
-      const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+      const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
       try { return (db.prepare("SELECT id FROM users WHERE username = ?").get(environment.username) as { id: string }).id; }
       finally { db.close(); }
     });
@@ -1448,7 +1448,7 @@ test("chat ntfy sends use the replicated conversation destination on another nod
     const account = (await api<{ accountId: string }>(nodeA, sessionA, "GET", "/auth/status")).body.accountId;
     let delivered = false;
     while (!delivered && Date.now() < deliveryDeadline) {
-      const db = new DatabaseSync(path.join(nodeA.dataDir, "node.db"));
+      const db = openNodeDatabase(path.join(nodeA.dataDir, "node.db"));
       try {
         const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'conversation_notification_deliveries'").get();
         assert.ok(exists, "conversation_notification_deliveries table is missing");
@@ -1475,7 +1475,7 @@ test("chat ntfy sends use the replicated conversation destination on another nod
 async function signedSelfPrepare(node: SeededNode): Promise<Response> {
   const target = "/api/cluster/v2/update/prepare";
   const body = Buffer.from("{}");
-  const database = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const database = openNodeDatabase(path.join(node.dataDir, "node.db"));
   const previousSecretKey = process.env.JOINT_BOB_SECRET_KEY;
   let authorization: string;
   try {

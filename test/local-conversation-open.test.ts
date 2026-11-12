@@ -4,12 +4,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket from "ws";
 import { ensureConversationRecordSchema } from "../src/conversation-records.js";
 import { claudeProjectDir } from "../src/session-paths.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("recorded local single-segment open reaches ready without reading unrelated transcripts", { timeout: 90_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-local-open-"));
@@ -30,7 +31,7 @@ test("recorded local single-segment open reaches ready without reading unrelated
     server = await startDevNode(environment, node);
     const credentials = await signIn(environment, node);
 
-    db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     db.exec("PRAGMA busy_timeout = 5000");
     ensureConversationRecordSchema(db);
     const now = new Date().toISOString();

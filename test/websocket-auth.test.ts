@@ -22,10 +22,10 @@ function closeCode(socket: WebSocket): Promise<number> {
 
 function signedSocketAuthorization(environment: DevEnvironment, sender: SeededNode, recipient: SeededNode, target: string): string {
   return execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-    import { DatabaseSync } from "node:sqlite";
+    import { openNodeDatabase } from "./src/node-database.ts";
     import { signClusterRequest } from "./src/cluster-protocol.ts";
     import { getOrCreateClusterIdentity } from "./src/cluster-identity.ts";
-    const db = new DatabaseSync(process.env.JOINT_BOB_DATA_DIR + "/node.db");
+    const db = openNodeDatabase(process.env.JOINT_BOB_DATA_DIR + "/node.db");
     db.exec("PRAGMA busy_timeout=5000");
     // The same lazy creation the server performs, so a never-paired node can sign too.
     getOrCreateClusterIdentity(db, ${JSON.stringify(sender.nodeId)});

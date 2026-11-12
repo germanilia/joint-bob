@@ -6,10 +6,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket from "ws";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check: () => Promise<void>, timeoutMs = 60_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -107,7 +107,7 @@ test("your unshared projects travel live to a node you signed in to, and nothing
     watch.close();
 
     // B keeps nothing of it: no project row, and the file's contents are nowhere in its data.
-    const dbB = new DatabaseSync(path.join(b.dataDir, "node.db"), { readOnly: true });
+    const dbB = openNodeDatabase(path.join(b.dataDir, "node.db"), { readOnly: true });
     try { assert.equal((dbB.prepare("SELECT count(*) count FROM projects WHERE id = ?").get(project.id) as { count: number }).count, 0); } finally { dbB.close(); }
     assert.deepEqual(await filesContaining(b.dataDir, secret), [], "nothing of the project is written on B");
 

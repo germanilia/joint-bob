@@ -3,10 +3,11 @@ import { test } from "node:test";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import type { ChildProcess } from "node:child_process";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, pairTwinNodes } from "./dev-nodes.js";
 import type { CronTask } from "../src/cron.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function until(check: () => Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 30000;
@@ -14,7 +15,7 @@ async function until(check: () => Promise<boolean>): Promise<void> {
 }
 /** The nodes under test write node.db while the test reads and writes it too. */
 function openNodeDb(directory: string): DatabaseSync {
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   db.exec("PRAGMA busy_timeout = 5000");
   return db;
 }

@@ -3,12 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function fixture(tag: string) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), `joint-bob-website-${tag}-`));
   process.env.PI_WEB_DATA_DIR = dataDir;
-  const database = new DatabaseSync(path.join(dataDir, "node.db"));
+  const database = openNodeDatabase(path.join(dataDir, "node.db"));
   database.exec("CREATE TABLE workspaces (id TEXT PRIMARY KEY); CREATE TABLE projects (id TEXT PRIMARY KEY, workspace_id TEXT); CREATE TABLE project_aliases (alias_id TEXT PRIMARY KEY, project_id TEXT); INSERT INTO workspaces VALUES ('work'); INSERT INTO projects VALUES ('project-a', 'work'), ('project-b', 'work'); INSERT INTO project_aliases VALUES ('alias-a', 'project-a');");
   database.close();
   const nonce = `${tag}-${Date.now()}-${Math.random()}`;
@@ -133,7 +133,7 @@ test("browser tokens hold immutable encrypted scope snapshots", async () => {
     const removed = browser.browserAgentEnvironment("project-a", "pi", "logical", secrets.websiteCredentialSnapshot("project-a", { engine: "pi", sessionId: "one" }));
     assert.throws(() => browser.browserAgentCredential(removed.JOINT_BOB_BROWSER_TOKEN!, account.id, "LOGIN_PASSWORD"), /credential/i);
     assert.deepEqual(secrets.websiteCredentialSnapshot("project-b", { engine: "pi", sessionId: "two" }), []);
-    const database = new DatabaseSync(path.join(dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(dataDir, "node.db"));
     const rows = database.prepare("SELECT credentials_encrypted FROM browser_agent_tokens").all();
     database.close();
     assert.ok(rows.some((row) => (row as { credentials_encrypted: string | null }).credentials_encrypted));

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { BobMessage } from "../src/control-center/bob-store.js";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function until<T>(what: string, read: () => Promise<T | undefined | false>, timeoutMs = 90_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -26,7 +26,7 @@ async function accountIdOn(environment: DevEnvironment, node: SeededNode): Promi
 
 /** Whether `from` has delivered its accounts to `to`, after which the person's newer events (Bob's chat) are sent to it. */
 function accountsDelivered(from: SeededNode, to: SeededNode): boolean {
-  const db = new DatabaseSync(path.join(from.dataDir, "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(from.dataDir, "node.db"), { readOnly: true });
   try {
     return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'account_replication_deliveries'").get())
       && Boolean(db.prepare("SELECT 1 FROM account_replication_deliveries WHERE peer_id = ?").get(to.nodeId));

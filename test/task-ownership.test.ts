@@ -4,8 +4,8 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import type { TaskRecord } from "../src/types.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("task handoff start atomically blocks mutations and source completion stays local", async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-web-task-ownership-"));
@@ -128,19 +128,19 @@ test("task handoff start atomically blocks mutations and source completion stays
     assert.equal(committedFenced.worktreePath, "/destination/worktree");
     assert.equal(committedFenced.worktreeBranch, "pi-ticket/task-ownership-fenced-destination");
     assert.equal(committedFenced.handoffContext, "destination context");
-    const ownershipDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const ownershipDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal((ownershipDb.prepare("SELECT active_handoff_id FROM tasks WHERE project_id = ? AND id = ?").get(projectId, fencedIncoming.id) as { active_handoff_id: string | null }).active_handoff_id, null);
     ownershipDb.close();
 
     const missingIncoming = { ...task, id: "task-ownership-missing", title: "Missing before reserve", currentNodeId: peer, originNodeId: peer, createdAt: "2026-01-03T00:00:05.000Z", updatedAt: "2026-01-03T00:00:05.000Z" };
     const missingHandoffId = randomUUID();
     await tasks.reserveTaskHandoff(missingHandoffId, projectId, projectId, missingIncoming, local.id, "missing destination context", "2026-01-03T00:00:06.000Z");
-    const missingDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const missingDb = openNodeDatabase(path.join(dataDir, "node.db"));
     missingDb.prepare("UPDATE tasks SET active_handoff_id = NULL WHERE project_id = ? AND id = ?").run(projectId, missingIncoming.id);
     missingDb.close();
     await tasks.reserveTaskHandoff(missingHandoffId, projectId, projectId, missingIncoming, local.id, "missing destination context", "2026-01-03T00:00:06.000Z");
     await inject(missingIncoming);
-    const fencedDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const fencedDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal((fencedDb.prepare("SELECT active_handoff_id FROM tasks WHERE project_id = ? AND id = ?").get(projectId, missingIncoming.id) as { active_handoff_id: string | null }).active_handoff_id, missingHandoffId);
     fencedDb.close();
     const fencedPlaceholder = (await tasks.listTasks(projectId)).find((candidate) => candidate.id === missingIncoming.id);
@@ -175,7 +175,7 @@ test("task handoff start atomically blocks mutations and source completion stays
     assert.equal(unchangedDestination?.title, destinationTask.title);
     assert.equal(unchangedDestination?.sessionPath, destinationTask.sessionPath);
     assert.equal(unchangedDestination?.worktreePath, destinationTask.worktreePath);
-    const ownerDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const ownerDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal((ownerDb.prepare("SELECT active_handoff_id FROM tasks WHERE project_id = ? AND id = ?").get(projectId, destinationTask.id) as { active_handoff_id: string | null }).active_handoff_id, null);
     ownerDb.close();
 
@@ -212,7 +212,7 @@ test("task handoff start atomically blocks mutations and source completion stays
     await inject(prepareIncoming);
     const prepareHandoffId = randomUUID();
     await tasks.reserveTaskHandoff(prepareHandoffId, projectId, projectId, prepareIncoming, local.id, "", "2026-01-03T00:00:21.000Z");
-    const prepareDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const prepareDb = openNodeDatabase(path.join(dataDir, "node.db"));
     prepareDb.prepare("UPDATE tasks SET title = ?, session_path = ?, worktree_path = ?, worktree_branch = ?, updated_at = ? WHERE project_id = ? AND id = ?").run("Advanced source task", "/advanced/session.jsonl", "/advanced/worktree", "pi-ticket/task-ownership-advanced", "2026-01-03T00:00:22.000Z", projectId, prepareIncoming.id);
     prepareDb.close();
     await assert.rejects(tasks.prepareTaskHandoff(prepareHandoffId, projectId, projectId, prepareIncoming, local.id, null, "", "2026-01-03T00:00:21.000Z"), /Task ownership or version is newer on this node/);
@@ -221,7 +221,7 @@ test("task handoff start atomically blocks mutations and source completion stays
     assert.equal(advancedPrepared?.sessionPath, "/advanced/session.jsonl");
     assert.equal(advancedPrepared?.worktreePath, "/advanced/worktree");
     assert.equal(advancedPrepared?.updatedAt, "2026-01-03T00:00:22.000Z");
-    const revalidationDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const revalidationDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal((revalidationDb.prepare("SELECT active_handoff_id FROM tasks WHERE project_id = ? AND id = ?").get(projectId, prepareIncoming.id) as { active_handoff_id: string | null }).active_handoff_id, prepareHandoffId);
     revalidationDb.close();
 
@@ -247,27 +247,27 @@ test("task handoff start atomically blocks mutations and source completion stays
     const tombstoneIncoming = { ...task, id: "task-ownership-tombstone-newer", currentNodeId: peer, originNodeId: peer, createdAt: "2026-01-04T00:00:00.000Z", updatedAt: "2026-01-04T00:00:00.000Z" };
     const tombstoneHandoffId = randomUUID();
     const tombstoneVersion = "2026-01-04T00:00:01.000Z";
-    const tombstoneDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const tombstoneDb = openNodeDatabase(path.join(dataDir, "node.db"));
     tombstoneDb.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?)").run(projectId, tombstoneIncoming.id, "2026-01-04T00:00:02.000Z", peer);
     tombstoneDb.close();
     await assert.rejects(tasks.reserveTaskHandoff(tombstoneHandoffId, projectId, projectId, tombstoneIncoming, local.id, "", tombstoneVersion), /Task was deleted after handoff started/);
-    let verifiedTombstoneDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    let verifiedTombstoneDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.ok(verifiedTombstoneDb.prepare("SELECT 1 FROM task_tombstones WHERE project_id = ? AND task_id = ?").get(projectId, tombstoneIncoming.id));
     assert.equal(verifiedTombstoneDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(projectId, tombstoneIncoming.id), undefined);
     verifiedTombstoneDb.close();
     await assert.rejects(tasks.reserveTaskHandoff(tombstoneHandoffId, projectId, projectId, tombstoneIncoming, local.id, "", tombstoneVersion), /Task was deleted after handoff started/);
-    verifiedTombstoneDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    verifiedTombstoneDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.ok(verifiedTombstoneDb.prepare("SELECT 1 FROM task_tombstones WHERE project_id = ? AND task_id = ?").get(projectId, tombstoneIncoming.id));
     assert.equal(verifiedTombstoneDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(projectId, tombstoneIncoming.id), undefined);
     verifiedTombstoneDb.close();
 
     const olderTombstoneIncoming = { ...tombstoneIncoming, id: "task-ownership-tombstone-older" };
     const olderTombstoneHandoffId = randomUUID();
-    const olderTombstoneDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const olderTombstoneDb = openNodeDatabase(path.join(dataDir, "node.db"));
     olderTombstoneDb.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?)").run(projectId, olderTombstoneIncoming.id, "2026-01-03T23:59:59.000Z", peer);
     olderTombstoneDb.close();
     await tasks.reserveTaskHandoff(olderTombstoneHandoffId, projectId, projectId, olderTombstoneIncoming, local.id, "", tombstoneVersion);
-    verifiedTombstoneDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    verifiedTombstoneDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal(verifiedTombstoneDb.prepare("SELECT 1 FROM task_tombstones WHERE project_id = ? AND task_id = ?").get(projectId, olderTombstoneIncoming.id), undefined);
     assert.equal((verifiedTombstoneDb.prepare("SELECT execution_state, active_handoff_id FROM tasks WHERE project_id = ? AND id = ?").get(projectId, olderTombstoneIncoming.id) as { execution_state: string; active_handoff_id: string }).execution_state, "handoff_pending");
     assert.equal((verifiedTombstoneDb.prepare("SELECT execution_state, active_handoff_id FROM tasks WHERE project_id = ? AND id = ?").get(projectId, olderTombstoneIncoming.id) as { execution_state: string; active_handoff_id: string }).active_handoff_id, olderTombstoneHandoffId);
@@ -276,12 +276,12 @@ test("task handoff start atomically blocks mutations and source completion stays
     const retryTombstoneIncoming = { ...tombstoneIncoming, id: "task-ownership-tombstone-retry" };
     const retryTombstoneHandoffId = randomUUID();
     await tasks.reserveTaskHandoff(retryTombstoneHandoffId, projectId, projectId, retryTombstoneIncoming, local.id, "", tombstoneVersion);
-    const retryTombstoneDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const retryTombstoneDb = openNodeDatabase(path.join(dataDir, "node.db"));
     const placeholderBeforeRetry = retryTombstoneDb.prepare("SELECT * FROM tasks WHERE project_id = ? AND id = ?").get(projectId, retryTombstoneIncoming.id);
     retryTombstoneDb.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?)").run(projectId, retryTombstoneIncoming.id, "2026-01-04T00:00:02.000Z", peer);
     retryTombstoneDb.close();
     await assert.rejects(tasks.reserveTaskHandoff(retryTombstoneHandoffId, projectId, projectId, retryTombstoneIncoming, local.id, "", tombstoneVersion), /Task was deleted after handoff started/);
-    verifiedTombstoneDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    verifiedTombstoneDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.deepEqual(verifiedTombstoneDb.prepare("SELECT * FROM tasks WHERE project_id = ? AND id = ?").get(projectId, retryTombstoneIncoming.id), placeholderBeforeRetry);
     verifiedTombstoneDb.close();
 
@@ -290,13 +290,13 @@ test("task handoff start atomically blocks mutations and source completion stays
     await inject({ ...outgoingProjectTask, currentNodeId: local.id, originNodeId: local.id }, outgoingProjectId);
     const outgoingProjectHandoff = await tasks.beginOutgoingTaskHandoff(outgoingProjectId, outgoingProjectTask, local.id, peer);
     await assert.rejects(tasks.deleteProjectTasks(outgoingProjectId), (error: Error) => error.message === "Settle task handoffs before deleting project");
-    let projectDeleteDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    let projectDeleteDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.ok(projectDeleteDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(outgoingProjectId, outgoingProjectTask.id));
     assert.equal((await tasks.getTaskHandoff(outgoingProjectHandoff.handoffId))?.status, "pending");
     projectDeleteDb.close();
     await tasks.abortOutgoingTaskHandoff(outgoingProjectHandoff.handoffId);
     await tasks.deleteProjectTasks(outgoingProjectId);
-    projectDeleteDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    projectDeleteDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal(projectDeleteDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(outgoingProjectId, outgoingProjectTask.id), undefined);
     projectDeleteDb.close();
     assert.equal(await tasks.getTaskHandoff(outgoingProjectHandoff.handoffId), undefined);
@@ -306,7 +306,7 @@ test("task handoff start atomically blocks mutations and source completion stays
     const incomingProjectHandoffId = randomUUID();
     await tasks.reserveTaskHandoff(incomingProjectHandoffId, incomingProjectId, incomingProjectId, incomingProjectTask, local.id, "", "2026-01-04T00:00:05.000Z");
     await assert.rejects(tasks.deleteProjectTasks(incomingProjectId), (error: Error) => error.message === "Settle task handoffs before deleting project");
-    projectDeleteDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    projectDeleteDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.ok(projectDeleteDb.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get(incomingProjectId, incomingProjectTask.id));
     assert.equal((await tasks.getTaskHandoff(incomingProjectHandoffId))?.status, "pending");
     projectDeleteDb.close();
@@ -319,7 +319,7 @@ test("task handoff start atomically blocks mutations and source completion stays
     const deletedOutgoing = await tasks.beginOutgoingTaskHandoff(projectId, deletedOutgoingTask, local.id, peer);
     await tasks.markOutgoingTaskHandoff(deletedOutgoing.handoffId, "prepared");
     const deletion = { updatedAt: "2099-01-05T00:00:02.000Z", originNodeId: peer };
-    const deletionDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const deletionDb = openNodeDatabase(path.join(dataDir, "node.db"));
     deletionDb.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?)").run(projectId, deletedOutgoingTask.id, deletion.updatedAt, deletion.originNodeId);
     deletionDb.close();
     assert.equal(await tasks.completeTaskHandoff(deletedOutgoing.handoffId, projectId, deletedOutgoingTask.id, local.id, peer, deletion), null);
@@ -333,7 +333,7 @@ test("task handoff start atomically blocks mutations and source completion stays
     await tasks.prepareTaskHandoff(deletedIncomingHandoffId, projectId, projectId, deletedIncomingTask, local.id, null, "", "2026-01-05T00:00:04.000Z");
     assert.ok(await tasks.commitPreparedTaskHandoff(deletedIncomingHandoffId, local.id));
     const deletedIncomingVersion = { updatedAt: "2026-01-05T00:00:05.000Z", originNodeId: peer };
-    const idempotentDeletionDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const idempotentDeletionDb = openNodeDatabase(path.join(dataDir, "node.db"));
     idempotentDeletionDb.prepare("DELETE FROM tasks WHERE project_id = ? AND id = ?").run(projectId, deletedIncomingTask.id);
     idempotentDeletionDb.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?)").run(projectId, deletedIncomingTask.id, deletedIncomingVersion.updatedAt, deletedIncomingVersion.originNodeId);
     idempotentDeletionDb.close();
@@ -413,7 +413,7 @@ test("task lease claims are exclusive for the same node and permit expired lease
     const fenced = taskFor("fenced-lease", null, null);
     await inject(fenced);
     const first = await tasks.claimTaskLease(projectId, fenced.id, local.id, 1);
-    const leaseDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const leaseDb = openNodeDatabase(path.join(dataDir, "node.db"));
     leaseDb.prepare("UPDATE tasks SET lease_expires_at = ? WHERE project_id = ? AND id = ?").run(new Date(Date.now() - 1_000).toISOString(), projectId, fenced.id);
     leaseDb.close();
     const second = await tasks.claimTaskLease(projectId, fenced.id, local.id);
@@ -424,7 +424,7 @@ test("task lease claims are exclusive for the same node and permit expired lease
     assert.equal(stale?.title, fenced.title);
     assert.equal(stale?.status, fenced.status);
     assert.equal(stale?.executionState, "running");
-    const fencedDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const fencedDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal((fencedDb.prepare("SELECT lease_token FROM tasks WHERE project_id = ? AND id = ?").get(projectId, fenced.id) as { lease_token: string }).lease_token, second.leaseToken);
     fencedDb.close();
     const completed = await tasks.completeTaskLease(projectId, fenced.id, local.id, second.leaseToken, { title: "Current title", status: "done" });
@@ -432,7 +432,7 @@ test("task lease claims are exclusive for the same node and permit expired lease
     assert.equal(completed.status, "done");
     assert.equal(completed.executionState, "idle");
     assert(Date.parse(completed.updatedAt) > Date.parse(second.task.updatedAt));
-    const completedDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const completedDb = openNodeDatabase(path.join(dataDir, "node.db"));
     const clearedLease = completedDb.prepare("SELECT lease_owner_node_id, lease_expires_at, lease_token FROM tasks WHERE project_id = ? AND id = ?").get(projectId, fenced.id) as { lease_owner_node_id: string | null; lease_expires_at: string | null; lease_token: string | null };
     assert.equal(clearedLease.lease_owner_node_id, null);
     assert.equal(clearedLease.lease_expires_at, null);
@@ -469,7 +469,7 @@ test("task startup recovers locally owned running tasks once", async () => {
       await replication.receiveReplicationBatch({ events: [{ id: randomUUID(), originNodeId: task.originNodeId, entityType: "task", entityKey: `${projectId}:${task.id}`, operation: "upsert", payload: { projectId, task, originNodeId: task.originNodeId }, createdAt: task.updatedAt }] });
     }
 
-    const recoveryDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const recoveryDb = openNodeDatabase(path.join(dataDir, "node.db"));
     recoveryDb.prepare("UPDATE tasks SET lease_token = ? WHERE project_id = ? AND id = ?").run("recovery-token", projectId, localRunning.id);
     recoveryDb.close();
 
@@ -486,7 +486,7 @@ test("task startup recovers locally owned running tasks once", async () => {
     assert.equal(remoteTask.leaseOwnerNodeId, remote);
     assert.equal(remoteTask.leaseExpiresAt, remoteRunning.leaseExpiresAt);
 
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     const recoveredOutbox = db.prepare("SELECT payload FROM replication_outbox WHERE entity_type = 'task'").all() as Array<{ payload: string }>;
     assert.equal(recoveredOutbox.filter(({ payload }) => {
       const event = JSON.parse(payload) as { task: TaskRecord };
@@ -498,7 +498,7 @@ test("task startup recovers locally owned running tasks once", async () => {
 
     const reloadedTasks = await import(new URL(`../src/tasks.ts?recovery-reload=${suffix}`, import.meta.url).href);
     await reloadedTasks.listTasks(projectId);
-    const reloadedDb = new DatabaseSync(path.join(dataDir, "node.db"));
+    const reloadedDb = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal((reloadedDb.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE event_type = 'task.run.recovered' AND entity_id = ?").get(localRunning.id) as { count: number }).count, 1);
     reloadedDb.close();
   } finally {
@@ -552,7 +552,7 @@ test("exact outgoing handoff IDs fence retained round-cycle receipts", async () 
     assert.equal(finalTask?.executionState, "idle");
     assert.deepEqual(await tasks.getTaskHandoff(first.handoffId), firstReceipt);
     assert.equal((await tasks.getTaskHandoff(second.handoffId))?.status, "committed");
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     assert.equal((db.prepare("SELECT active_handoff_id FROM tasks WHERE project_id = ? AND id = ?").get(projectId, task.id) as { active_handoff_id: string | null }).active_handoff_id, null);
     db.close();
   } finally {

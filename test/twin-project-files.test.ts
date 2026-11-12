@@ -3,10 +3,10 @@ import { mkdtemp,mkdir,readFile,writeFile,rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import {DatabaseSync} from 'node:sqlite';
 import {enqueueReplicationEvent} from '../src/replication.js';
 import type {FileSyncStatusAnswer} from "../src/file-sync/index.js";
 import { api,freePort,seedDevEnvironment,signIn,startDevNode,stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // Both nodes run built-in file sync and take a newly shared project over by themselves.
 test("twins move a new project's files with built-in file sync and stop when they are unpaired",{timeout:240000},async()=>{
@@ -101,7 +101,7 @@ test("twins move a new project's files with built-in file sync and stop when the
   }
   assert.equal(ready,true,"ready requires acknowledged sharing and both nodes holding each other's files");
   for(const [sender,recipient]of[[left,right],[right,left]]){
-   const db=new DatabaseSync(path.join(sender.dataDir,'node.db'));
+   const db=openNodeDatabase(path.join(sender.dataDir,'node.db'));
    db.exec('PRAGMA busy_timeout=5000');
    const now=new Date().toISOString();
    const event=enqueueReplicationEvent(db,{originNodeId:sender.nodeId,entityType:'name.override',entityKey:`projects:${created.body.project.id}`,operation:'upsert',payload:{scope:'projects',key:created.body.project.id,name:'Pending rename',updatedAt:now,originNodeId:sender.nodeId}});

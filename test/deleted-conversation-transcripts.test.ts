@@ -4,9 +4,9 @@ import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { signedNodeRequest } from "./signed-node-request.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // Twin sync on a loaded CI runner can take longer than 30 seconds to converge.
 async function eventually(check: () => Promise<void>): Promise<void> {
@@ -28,7 +28,7 @@ function piTranscript(sessionId: string, cwd: string): string {
 }
 
 function conversationEvent(dataDir: string, sessionId: string, operation: "upsert" | "delete") {
-  const database = new DatabaseSync(path.join(dataDir, "node.db"));
+  const database = openNodeDatabase(path.join(dataDir, "node.db"));
   try {
     const row = database.prepare(`SELECT event_id, origin_node_id, entity_type, entity_key, operation, payload, created_at
       FROM replication_outbox WHERE entity_type = 'conversation.record' AND operation = ? AND entity_key LIKE ? ORDER BY rowid DESC LIMIT 1`)
@@ -116,7 +116,7 @@ test("a conversation deleted on one twin loses its transcript on both and never 
     // A node never writes a transcript for a conversation it knows was deleted, even
     // when a twin that has not heard of the deletion yet still offers it.
     const lateDeleted = randomUUID(), control = randomUUID();
-    const database = new DatabaseSync(path.join(right.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(right.dataDir, "node.db"));
     try {
       database.prepare("INSERT INTO conversation_record_tombstones (project_id, engine, session_id, updated_at, origin_node_id) VALUES (?, 'pi', ?, ?, ?)")
         // Dated ahead so the owner's own record for it, created when it offers the
@@ -137,7 +137,7 @@ test("a conversation deleted on one twin loses its transcript on both and never 
     const claudeDeleted = randomUUID();
     const claudeFile = path.join(b.home, ".claude", "projects", remotePath.replace(/^\//, "-").replace(/[\s_.\/]+/g, "-"), `${claudeDeleted}.jsonl`);
     await stopDevNode(children.pop()!);
-    const stopped = new DatabaseSync(path.join(right.dataDir, "node.db"));
+    const stopped = openNodeDatabase(path.join(right.dataDir, "node.db"));
     try {
       stopped.prepare("INSERT INTO conversation_record_tombstones (project_id, engine, session_id, updated_at, origin_node_id) VALUES (?, 'claude', ?, ?, ?)")
         .run(projectId, claudeDeleted, new Date().toISOString(), right.nodeId);

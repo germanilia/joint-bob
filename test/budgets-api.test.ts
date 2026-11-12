@@ -4,14 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import test, { after, before } from "node:test";
 import type { ChildProcess } from "node:child_process";
-import { DatabaseSync } from "node:sqlite";
 import { ensureUsageSchema } from "../src/usage-ledger.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 let root: string; let environment: DevEnvironment; let node: SeededNode; let session: SignedIn; let child: ChildProcess;
 before(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-budgets-")); environment = await seedDevEnvironment(root, 1); node = environment.nodes[0];
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db")); ensureUsageSchema(db);
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db")); ensureUsageSchema(db);
   const occurredAt = new Date().toISOString();
   const payload = { id: "spent", projectId: node.projects[0].id, conversationId: "conversation-a", sessionId: "s", engine: "pi", provider: "test", modelId: "fixture", occurredAt, requestId: null, input: 1, output: 1, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheWriteUnknown: 0, reasoning: 0, apiCostUsd: 6, pricing: null, usageStatus: "reported", difficultyLevel: null, difficultyConfidence: null, difficultyStatus: "unknown", turnId: null, toolCalls: 0, toolErrors: 0 };
   db.prepare("INSERT INTO model_usage_events(id,project_id,conversation_id,session_id,engine,occurred_at,payload,origin_node_id) VALUES(?,?,?,?,?,?,?,?)")
