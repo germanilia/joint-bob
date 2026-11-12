@@ -125,7 +125,7 @@ test("a shell whose conversation is gone is reaped once its record had time to l
   assert.equal(abandonedShellReason(started, undefined, false, now + MISSING_CONVERSATION_GRACE_MS + 1), "its conversation is gone");
 });
 
-test("the maintenance watcher stops an abandoned shell process group", { timeout: 20_000 }, async () => {
+test("the maintenance watcher stops an abandoned shell process group", { timeout: 20_000 }, async (context) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "abandoned-shell-runtime-"));
   const runtime = await startSupervisor({
     dataDirectory: directory,
@@ -161,15 +161,27 @@ test("the maintenance watcher stops an abandoned shell process group", { timeout
       status = (await supervisorRequest(directory, { action: "task", id }) as { status: string }).status;
     }
     assert.equal(status, "stopped");
+    const kill = process.kill.bind(process);
+    let groupProbes = 0;
+    context.mock.method(process, "kill", (pid: number, signal?: NodeJS.Signals | number) => {
+      if (pid === -started.pid && signal === 0 && ++groupProbes === 1) {
+        throw Object.assign(new Error("Zombie group has not been reaped"), { code: "EPERM" });
+      }
+      return kill(pid, signal);
+    });
     let groupExists = true;
     for (let attempt = 0; attempt < 100 && groupExists; attempt += 1) {
       try { process.kill(-started.pid, 0); }
       catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-        groupExists = false;
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ESRCH") groupExists = false;
+        // Darwin returns EPERM while a stopped group's last member is a zombie awaiting reaping.
+        // Keep waiting; only ESRCH proves the group is gone, and the bounded assertion still applies.
+        else if (code !== "EPERM") throw error;
       }
       if (groupExists) await new Promise((resolve) => setTimeout(resolve, 25));
     }
+    assert.ok(groupProbes >= 2, "EPERM must not be mistaken for an absent process group");
     assert.equal(groupExists, false, "the stopped task process group must be gone");
   } finally {
     await runtime.close();
