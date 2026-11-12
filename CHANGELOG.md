@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.275.0 — 2026-11-12
+
+- **Settings is centred.** The section list and the content sit together in the middle of a wide window instead of at its left edge. Sections with tables, maps or long lists get a wider column.
+- **The Settings section list is one searchable list.** Every section is a row with its own icon under its group, instead of a line of names under each closed group. Typing in the search box filters the rows in place and lists matching settings under them; the arrow keys and Enter walk the results, and Escape clears the search.
+- **Themes are easy to find on the phone.** Appearance is now the first thing in Account, and the phone's Settings list has an Appearance row that shows the theme in use and opens the six theme tiles.
+- On the desktop, Settings is a gear button next to the theme button on your name row; the separate Settings row is gone, which leaves more room for the lists.
+
 ## 2.274.1 — 2026-11-12
 
 - Removed built-in Quality collection, its dashboard and evaluator controls. Conversation ratings and comments are still saved when marking Done, without starting an automatic learning agent. Review and system improvements can be handled by separately configured scheduled tasks.

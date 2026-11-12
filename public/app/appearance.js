@@ -230,6 +230,9 @@ function accountSlider(section) {
 function renderAccountAppearance() {
   if (!accountTiles) return;
   accountTiles.replaceChildren(...THEME_TILES.map(themeTile));
+  // The phone's Settings list names the theme in use on its Appearance row.
+  const listValue = document.querySelector("#settingsAppearanceValue");
+  if (listValue) listValue.textContent = themeLabel();
   const sectionsDefault = SECTIONS.every((section) => settings.sections[section.id] === 1);
   accountPresets.replaceChildren(...PRESETS.map((preset) => {
     const button = choiceButton(preset.label, `settings-text-size-preset-${preset.id}`, sectionsDefault && preset.global === settings.global, () => {

@@ -1,8 +1,8 @@
 /**
  * Settings is a page with one shape for every section: its group as a crumb, the title, one
- * sentence, where it applies, and the save line (settings-autosave.js). The list on the left keeps
- * the open section's group expanded; the other groups show their sections as one short line.
- * On a phone the list and a section take turns, with a back button.
+ * sentence, where it applies, and the save line (settings-autosave.js). The list on the left shows
+ * every section of every group as a row with its icon; the search box above filters it
+ * (settings-search.js). On a phone the list and a section take turns, with a back button.
  */
 
 /** Where a section applies, in the words its own text already uses. */
@@ -123,18 +123,12 @@ export function buildSectionHeads(tabs) {
   }
 }
 
-/** Expands one group in the list; the others show their sections as a short line. */
-export function openGroup(group, groups) {
-  for (const item of groups) {
-    const open = item === group;
-    item.dataset.open = String(open);
-    item.querySelector(".settings-group-label")?.setAttribute("aria-expanded", String(open));
-  }
-}
-
-/** The open section: its group expands, the phone's bar names it, and the save line moves into its head. */
-export function showSection(tab, { groups, title, crumb, saveState, restartMessage }) {
-  openGroup(groupOf(tab), groups);
+/** The open section: its row shows in the list, the phone's bar names it, and the save line moves into its head. */
+export function showSection(tab, { title, crumb, saveState, restartMessage }) {
+  // The list scrolls on a short window: the open section's row stays in sight, and the first one brings the list's top with it.
+  const list = tab.closest(".settings-nav-scroll");
+  if (list && tab === list.querySelector(".settings-tab:not([hidden])")) list.scrollTop = 0;
+  else tab.scrollIntoView?.({ block: "nearest" });
   title.textContent = tabName(tab);
   crumb.textContent = `Settings · ${groupName(tab)}`;
   const panel = document.getElementById(`settingsPanel-${tab.dataset.settingsTab}`);

@@ -58,7 +58,7 @@
   body:not(.focus-ui) .ws-menu #projectNotesButton { display: flex; }
   body:not(.focus-ui) .ws-side { grid-area: side-top; display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 4px 0 6px var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
   body:not(.focus-ui) .ws-groups { grid-area: side-body; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; padding: 0 0 0 var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
-  body:not(.focus-ui) .ws-foot { grid-area: side-foot; display: grid; gap: 2px; min-width: 0; padding: 8px 0 0 var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
+  body:not(.focus-ui) .ws-foot { grid-area: side-foot; display: flex; align-items: center; gap: 2px; min-width: 0; padding: 8px 0 0 var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
 
   body:not(.focus-ui) :is(#chatPanel, #boardPanel, #controlCenterPanel, #workspaceGroupPage) { grid-area: main; min-width: 0; min-height: 0; height: auto; }
 
@@ -209,14 +209,23 @@
   .ws-row-top time { flex: none; color: var(--muted); font-size: 11.5px; }
   .ws-row-line { overflow: hidden; color: var(--muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* ---------- left column foot: Settings and the person ---------- */
-  .ws-me { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 10px; border: 0; border-radius: 12px; background: transparent; color: var(--text); text-align: left; font-weight: 400; }
+  /* ---------- left column foot: one row — the person (opens themes, the palette), then the Settings gear ---------- */
+  .ws-me { display: flex; flex: 1 1 auto; align-items: center; gap: 10px; width: auto; min-width: 0; min-height: 48px; padding: 6px 2px 6px 10px; border: 0; border-radius: 12px; background: transparent; color: var(--text); text-align: left; font-weight: 400; }
   .ws-me:hover { background: color-mix(in srgb, var(--paper-raised) 60%, transparent); }
   .ws-avatar { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-size: 12px; font-weight: 700; }
   .ws-me-copy { display: grid; min-width: 0; flex: 1; }
   .ws-me-copy b { overflow: hidden; font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
   .ws-me-copy small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-  .ws-me > svg { width: 17px; height: 17px; flex: none; color: var(--muted); }
+  /* The palette and the gear are the same icon cell: 32 px, a 17 px drawing. */
+  .ws-me > svg { box-sizing: border-box; width: 32px; height: 32px; padding: 7.5px; flex: none; color: var(--muted); }
+  .ws-me:hover > svg { color: var(--text); }
+  .ws-foot .ws-foot-icon {
+    position: relative; display: flex; flex: none; align-items: center; justify-content: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0;
+    border: 0; border-radius: 10px; background: transparent; box-shadow: none; color: var(--muted);
+  }
+  .ws-foot .ws-foot-icon:hover:not(:disabled) { background: color-mix(in srgb, var(--paper-raised) 60%, transparent); color: var(--text); }
+  .ws-foot .ws-foot-icon > svg { width: 17px; height: 17px; flex: none; }
+  .ws-foot-icon .shortcut-hint { left: 50%; }
 
   /* ---------- Projects: two columns, the projects and the chosen project's conversations ---------- */
   /* Both lists sit on the page as the Inbox groups do: no card, quiet rows, one highlight. */
@@ -426,6 +435,9 @@
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-brand { flex-direction: column; justify-content: center; padding-inline: 0; }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-new-button { width: 32px; padding: 0; justify-content: center; font-size: 0; }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) :is(.ws-place, .ws-me) { justify-content: center; padding: 0; }
+  /* Folded, the foot stacks: the person (themes) over the Settings gear, both still one click away. */
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-foot { flex-direction: column; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-me { flex: none; width: 100%; min-height: 40px; }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) :is(.ws-side, .ws-foot) { padding-left: 10px; }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-places { display: grid; }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-places .control-icon-badge { position: absolute; top: 1px; right: 2px; min-width: 16px; height: 15px; margin: 0; padding: 0 4px; font-size: 10px; }

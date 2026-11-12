@@ -375,6 +375,20 @@ test("New, ⋯ and the places reach every action the old panels had", async () =
   await page.getByTestId("usage-open").click();
   await page.locator("#usageDialog[open]").waitFor();
   await page.getByTestId("usage-close").click();
+  // Settings is the gear at the end of the person's row, beside the palette: an icon with a name for readers, no row of its own.
+  const foot = await page.evaluate(() => {
+    // No named helper in here: the test loader wraps one in a call the page does not have.
+    const [footBox, palette, gearBox] = ["#workspaceFoot", "#workspacePersonButton > svg", "#settingsButton"].map((selector) => document.querySelector(selector)!.getBoundingClientRect().toJSON() as DOMRect);
+    const gear = document.querySelector<HTMLElement>("#settingsButton")!;
+    const label = [...gear.childNodes].filter((node) => !(node as HTMLElement).classList?.contains("shortcut-hint")).map((node) => node.textContent ?? "").join("").trim();
+    return { foot: footBox, palette, gear: gearBox, text: label, label: gear.getAttribute("aria-label"), title: gear.title, hint: gear.dataset.shortcutHint };
+  });
+  assert.equal(foot.text, "", "the gear carries no visible label");
+  assert.deepEqual([foot.label, foot.title, foot.hint], ["Settings", "Settings", "settings"]);
+  assert.deepEqual([foot.gear.width, foot.gear.height], [foot.palette.width, foot.palette.height], "the gear is the palette's size");
+  assert.ok(foot.gear.left >= foot.palette.right && foot.gear.left - foot.palette.right <= 8, "the gear sits right after the palette");
+  assert.ok(Math.abs((foot.gear.top + foot.gear.bottom) / 2 - (foot.palette.top + foot.palette.bottom) / 2) <= 1, "on the same line");
+  assert.ok(foot.foot.height <= 60, `the foot is one row, got ${foot.foot.height}px`);
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-dialog").waitFor();
   await page.getByTestId("settings-cancel-button").click();
