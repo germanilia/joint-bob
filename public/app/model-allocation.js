@@ -1,5 +1,52 @@
 import { api } from "./api.js";
 
+function el(tag, { text, testid, role, ...properties } = {}) {
+  const node = Object.assign(document.createElement(tag), properties);
+  if (text !== undefined) node.textContent = text;
+  if (testid) node.dataset.testid = testid;
+  if (role) node.setAttribute("role", role);
+  return node;
+}
+
+function labelled(text, control) {
+  const label = el("label", { text });
+  label.append(control);
+  return label;
+}
+
+function allocationFields() {
+  const mode = el("select", { testid: "allocation-mode", disabled: true });
+  for (const [value, text] of [["off", "Off"], ["recommendation", "Record recommendations"], ["automatic", "Automatic after validation"]]) mode.append(el("option", { value, text }));
+  const details = el("details");
+  details.append(
+    el("summary", { text: "Candidate estimates and benchmark snapshots" }),
+    el("p", { text: "Advanced preview: enter a JSON array of candidates with exact identity, capabilities and cost estimates. The first candidate is the baseline. Unknown costs must be null, not zero. Include no credentials. History is loaded only from your accessible projects on this machine." }),
+    labelled("Candidate estimates", el("textarea", { testid: "allocation-candidates", rows: 6, maxLength: 100000, spellcheck: false, value: "[]" })),
+    labelled("Verified benchmark snapshots (optional)", el("textarea", { testid: "allocation-evidence", rows: 3, maxLength: 200000, spellcheck: false, value: "[]" })),
+  );
+  const result = el("p", { testid: "allocation-result", role: "status" });
+  result.style.whiteSpace = "pre-wrap";
+  result.style.overflowWrap = "anywhere";
+  const pager = el("div");
+  pager.append(el("button", { type: "button", testid: "allocation-previous", hidden: true, text: "Previous" }), " ", el("button", { type: "button", testid: "allocation-next", hidden: true, text: "Next" }));
+  return [
+    el("h3", { text: "Evidence-based allocation preview" }),
+    el("p", { testid: "allocation-status", role: "status", text: "Loading evidence availability…" }),
+    el("p", { text: "Preview never changes a model. Saved policy stays within the current harness and preserves manual choices. Recording invokes the configured decision model and stores derived task evidence, not transcripts." }),
+    labelled("Evidence allocation mode", mode),
+    labelled("Recovery allowance, USD", el("input", { testid: "allocation-allowance", type: "number", min: "0", step: "0.01", value: "0" })),
+    el("p", { text: "Zero disables paid recovery. Reservations use cost estimates; actual provider charges can exceed an estimate. Unknown costs block further recovery. At most two stronger attempts." }),
+    labelled("I accept the held-out evidence limitations and authorize the selected policy and allowance.", el("input", { type: "checkbox", testid: "allocation-accepted" })),
+    el("button", { type: "button", testid: "allocation-save", disabled: true, text: "Save allocation policy" }),
+    el("p", { testid: "allocation-policy-status", role: "status" }),
+    labelled("Task description", el("textarea", { testid: "allocation-task", rows: 3, maxLength: 12000 })),
+    el("button", { type: "button", testid: "allocation-assess", text: "Assess with configured decision model" }),
+    el("p", { testid: "allocation-assessment", role: "status" }), details,
+    labelled("Keep manual baseline selection", el("input", { type: "checkbox", testid: "allocation-pinned", checked: true })),
+    el("button", { type: "button", testid: "allocation-compare", text: "Preview recommendation" }), result, pager,
+  ];
+}
+
 async function allocationPolicyControls(field) {
   const display = result => {
     field("mode").value = result.policy.mode;
@@ -30,27 +77,7 @@ export async function renderAllocationPreview() {
   const section = document.createElement("section");
   section.dataset.testid = "allocation-preview";
   section.className = "routing-config-editor";
-  section.innerHTML = `<h3>Evidence-based allocation preview</h3>
-    <p data-testid="allocation-status" role="status">Loading evidence availability…</p>
-    <p>Preview never changes a model. Saved policy stays within the current harness and preserves manual choices. Recording invokes the configured decision model and stores derived task evidence, not transcripts.</p>
-    <label>Evidence allocation mode<select data-testid="allocation-mode" disabled><option value="off">Off</option><option value="recommendation">Record recommendations</option><option value="automatic">Automatic after validation</option></select></label>
-    <label>Recovery allowance, USD<input data-testid="allocation-allowance" type="number" min="0" step="0.01" value="0" /></label>
-    <p>Zero disables paid recovery. Reservations use cost estimates; actual provider charges can exceed an estimate. Unknown costs block further recovery. At most two stronger attempts.</p>
-    <label><input type="checkbox" data-testid="allocation-accepted" /> I accept the held-out evidence limitations and authorize the selected policy and allowance.</label>
-    <button type="button" data-testid="allocation-save" disabled>Save allocation policy</button>
-    <p data-testid="allocation-policy-status" role="status"></p>
-    <label>Task description<textarea data-testid="allocation-task" rows="3" maxlength="12000"></textarea></label>
-    <button type="button" data-testid="allocation-assess">Assess with configured decision model</button>
-    <p data-testid="allocation-assessment" role="status"></p>
-    <details><summary>Candidate estimates and benchmark snapshots</summary>
-      <p>Advanced preview: enter a JSON array of candidates with exact identity, capabilities and cost estimates. The first candidate is the baseline. Unknown costs must be null, not zero. Include no credentials. History is loaded only from your accessible projects on this machine.</p>
-      <label>Candidate estimates<textarea data-testid="allocation-candidates" rows="6" maxlength="100000" spellcheck="false">[]</textarea></label>
-      <label>Verified benchmark snapshots (optional)<textarea data-testid="allocation-evidence" rows="3" maxlength="200000" spellcheck="false">[]</textarea></label>
-    </details>
-    <label><input type="checkbox" data-testid="allocation-pinned" checked /> Keep manual baseline selection</label>
-    <button type="button" data-testid="allocation-compare">Preview recommendation</button>
-    <p data-testid="allocation-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
-    <div><button type="button" data-testid="allocation-previous" hidden>Previous</button> <button type="button" data-testid="allocation-next" hidden>Next</button></div>`;
+  section.append(...allocationFields());
   document.querySelector("#settingsPanel-classifiers").append(section);
   const field = name => section.querySelector(`[data-testid="allocation-${name}"]`);
   await allocationPolicyControls(field);
