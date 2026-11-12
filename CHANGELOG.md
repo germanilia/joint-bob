@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.284.2 — 2026-11-12
+
+- Snoozing a conversation under **Needs you** now carries over to your other machines; before, the snooze was dropped during sync and never reached them.
+
 ## 2.284.1 — 2026-11-12
 
 - The evidence-based allocation preview in Settings builds its panel without injecting markup, as the rest of the app does. Nothing about how it looks or works changes.
