@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.295.0 — 2026-11-13
 
 - The workspace reads more easily on a computer: larger text in the project and conversation lists, the conversation and its details; the slash command chips give way to typing / in the message box, and rule suggestions read as text until you edit them. A conversation opened from Bob's page now opens beside his chat with one control line that holds Give back to Bob.
 
