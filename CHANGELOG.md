@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.291.0 — 2026-11-12
+
+- Conversations show **Worktree: name** beside their title on desktop and phone.
+- Merged worktrees expire after five days without activity; any worktree expires after ten inactive days, including unmerged changes and open pull requests.
+- Expiration protects running work, open agent folders and unresolved integrations, waits for peer synchronization, and preserves conversation history.
+
 ## 2.290.1 — 2026-11-12
 
 - A new conversation opens on the message box, focused, when its project is already chosen, and its first step names that project.
