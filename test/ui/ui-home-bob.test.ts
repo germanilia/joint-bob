@@ -182,3 +182,61 @@ test("the phone's Home shows what needs you as the same cards", async () => {
   }
   await page.setViewportSize({ width: 1440, height: 900 });
 });
+
+test("the phone's Needs you deck: every card is one swipe away, swiping does nothing to a card, a tap shows what exactly it needs", async () => {
+  const waiting = Array.from({ length: 5 }, (_, index) => card(`d${index + 1}`, "needs-you", { title: `Deck card ${index + 1}`, reviewCheck: { needsYou: true, reason: `Question ${index + 1}: which plan?`, by: "Decision model 96%" } }));
+  const calls: string[] = [];
+  const answers: unknown[] = [];
+  await page.route("**/api/control-center/board*", (route) => route.fulfill({ json: { cards: waiting, projects: [{ id: "p1", name: "Joint Bob", color: null }] } }));
+  for (const action of ["push", "done", "reply"]) await page.route(`**/api/control-center/cards/${action}`, async (route) => { calls.push(action); if (action === "reply") answers.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true } }); });
+  await page.route("**/api/control-center/cards/detail*", async (route) => {
+    const conversationId = new URL(route.request().url()).searchParams.get("conversationId");
+    await route.fulfill({ json: { request: "Please pick a plan", answer: `**Two plans** for ${conversationId}:\n\n- Plan A keeps the flag\n- Plan B removes it`, answerAt: null, answerCut: false, steps: [{ name: "Bash", target: "npm test", failed: false }] } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("control-center-changed")));
+  await page.getByTestId("phone-tab-inbox").click();
+  const deck = page.getByTestId("needs-deck");
+  await deck.waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="needs-deck"] [data-testid="home-card"]').length === 5);
+  assert.equal(await deck.getByTestId("home-card").count(), 5, "every needs-you item is in the deck");
+  const position = page.getByTestId("needs-deck-position");
+  assert.equal(await position.innerText(), "1 of 5");
+  // The next card peeks in beside the first; nothing but the deck scrolls sideways.
+  const geometry = await page.getByTestId("needs-deck-track").evaluate((track) => {
+    const [first, second] = [...track.children].map((child) => child.getBoundingClientRect());
+    return { firstWidth: first.width, secondLeft: second.left, view: innerWidth, page: document.documentElement.scrollWidth, scrollable: track.scrollWidth > track.clientWidth };
+  });
+  assert.ok(geometry.scrollable && geometry.secondLeft < geometry.view && geometry.firstWidth > geometry.view * 0.8, `the next card peeks in (${JSON.stringify(geometry)})`);
+  assert.ok(geometry.page <= geometry.view, "the page does not scroll sideways");
+  // Swiping (the arrow buttons, the keys) moves on without calling any card action.
+  await page.getByTestId("needs-deck-next").click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="needs-deck-position"]')?.textContent === "2 of 5");
+  await page.getByTestId("needs-deck-track").focus();
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector('[data-testid="needs-deck-position"]')?.textContent === "3 of 5");
+  await page.getByTestId("needs-deck-previous").click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="needs-deck-position"]')?.textContent === "2 of 5");
+  assert.deepEqual(calls, [], "looking at cards changes nothing");
+  // A background refresh keeps the card the reader is on.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("control-center-changed")));
+  await page.waitForTimeout(1_200);
+  assert.equal(await position.innerText(), "2 of 5");
+  // A tap on the card shows exactly what it needs, without opening the conversation.
+  await deck.getByTestId("home-card").nth(1).locator(".ws-wait-title").click();
+  const sheet = page.getByTestId("need-sheet");
+  await sheet.waitFor();
+  assert.match(await sheet.getByTestId("need-sheet-ask").innerText(), /Question 2: which plan\?/);
+  assert.match(await sheet.getByTestId("need-sheet-request").innerText(), /Please pick a plan/);
+  assert.match(await sheet.getByTestId("need-sheet-last").innerText(), /Two plans for d2/);
+  assert.equal(await sheet.getByTestId("need-sheet-last").locator("li").count(), 2, "the message is rendered as markdown");
+  assert.match(await sheet.getByTestId("need-sheet-steps").innerText(), /npm test/);
+  assert.equal(await page.locator("body.view-chat").count(), 0, "the conversation did not open");
+  // Answer works right there.
+  await sheet.getByTestId("need-sheet-answer").click();
+  await sheet.getByTestId("need-sheet-box").locator("textarea").fill("Go with plan B");
+  await sheet.getByTestId("need-sheet-send").click();
+  await sheet.waitFor({ state: "detached" });
+  assert.deepEqual(answers, [{ projectId: "p1", conversationId: "d2", message: "Go with plan B" }]);
+  await page.setViewportSize({ width: 1440, height: 900 });
+});

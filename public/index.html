@@ -165,6 +165,7 @@
           <input id="workspaceSearchInput" type="search" autocomplete="off" placeholder="Search or ask Bob…" data-testid="workspace-search-input" />
           <kbd class="ws-search-key" id="workspaceSearchKey" aria-hidden="true"></kbd>
         </label>
+        <button class="ghost icon-button ws-search-rail" id="workspaceSearchRailButton" type="button" aria-label="Search or ask Bob" title="Search or ask Bob" data-testid="workspace-search-rail-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg></button>
         <nav class="ws-places" aria-label="Places" data-testid="workspace-places">
           <button class="ghost icon-button ws-place ws-place-bob" id="openControlCenterButton" type="button" aria-label="Open the control center" title="Bob: the control center (Bob's chat and every agent that runs)" data-shortcut-hint="toggleView" data-place="bob" data-testid="projects-open-control-center-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.6M12 17.9v2.6M3.5 12h2.6M17.9 12h2.6"/></svg><span class="ws-place-label">Bob</span></button>
           <button class="ghost ws-place" id="workspaceInboxButton" type="button" data-place="inbox" aria-pressed="false" title="What needs you, what runs and what waits for review, in every project" data-testid="workspace-inbox-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg><span class="ws-place-label">Inbox</span><i class="ws-place-note" id="workspaceInboxNote" data-testid="workspace-inbox-note"></i></button>
@@ -680,15 +681,10 @@
           <button class="ghost icon-button" id="workspaceGroupClose" type="button" aria-label="Close" title="Close (Esc)" data-testid="workspace-group-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
         </header>
         <div class="ws-page-list" id="workspaceGroupList" role="list" data-testid="workspace-group-list"></div>
-        <nav class="ws-page-pager" id="workspaceGroupPager" aria-label="Pages" data-testid="workspace-group-pager" hidden>
-          <button class="ghost compact" id="workspaceGroupPrevious" type="button" data-testid="workspace-group-previous">Previous</button>
-          <span id="workspaceGroupPosition" aria-live="polite" data-testid="workspace-group-position"></span>
-          <button class="ghost compact" id="workspaceGroupNext" type="button" data-testid="workspace-group-next">Next</button>
-        </nav>
       </section>
       <!-- Desktop Home (the Inbox place with no conversation open, or Inbox pressed): the greeting with what waits and
            today's spend, Needs you as cards with Answer / Push it on / Done / Open, then Running and Ready to review side
-           by side. Fits the window and pages. public/home.css, app/home.js. -->
+           by side. Needs you scrolls when it is long. public/home.css, app/home.js. -->
       <section class="panel ws-home" id="homePage" aria-labelledby="homeGreeting" data-testid="home-page" hidden>
         <div class="ws-home-in">
           <header class="ws-home-head">
@@ -699,11 +695,6 @@
             <div class="ws-home-sechead">
               <h2 id="homeNeedTitle">Needs you</h2><span class="ws-home-count" id="homeNeedCount" data-testid="home-count-needs-you"></span>
               <span class="ws-home-spacer"></span>
-              <nav class="ws-home-pager" id="homeNeedPager" aria-label="Pages of what needs you" data-testid="home-need-pager" hidden>
-                <button class="ghost icon-button" id="homeNeedPrevious" type="button" aria-label="Previous page" title="Previous page" data-testid="home-need-previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
-                <span id="homeNeedPosition" aria-live="polite" data-testid="home-need-position"></span>
-                <button class="ghost icon-button" id="homeNeedNext" type="button" aria-label="Next page" title="Next page" data-testid="home-need-next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
-              </nav>
               <button class="ghost ws-home-all" type="button" data-group="needs-you" data-testid="home-show-all-needs-you">Show all<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
             </div>
             <div class="ws-home-cards" id="homeNeedCards" data-testid="home-need-cards"></div>

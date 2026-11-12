@@ -77,7 +77,7 @@
   body.focus-ui .phone-sheet { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
   .phone-grab { align-self: center; width: 40px; height: 4px; margin-bottom: 4px; border-radius: 2px; background: var(--line-strong); }
   .phone-sheet-head { display: flex; align-items: center; justify-content: space-between; }
-  .phone-sheet-list { min-width: 0; overflow: hidden; }
+  .phone-sheet-list { min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
   .phone-heading { padding: 8px 2px 4px; color: var(--muted); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
   .phone-heading b { color: var(--text); }
   .phone-heading.ok b { color: #ff9d9d; }
@@ -96,8 +96,6 @@
   .phone-action { min-height: 34px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--field); color: var(--text); font: inherit; font-size: 12.5px; white-space: nowrap; }
   .phone-action.warn { border-color: transparent; background: #f2b44b; color: #1a1205; font-weight: 600; }
   .phone-action:disabled { opacity: 0.5; }
-  .phone-pager { display: flex; align-items: center; justify-content: center; gap: 8px; padding-top: 6px; color: var(--muted); font-size: 11px; }
-  .phone-pager[hidden] { display: none; }
   .phone-empty { margin: 8px 2px; color: var(--muted); }
 
   /* The Focus menu's round handle sits above the composer, not on the send button. */

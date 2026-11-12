@@ -13,6 +13,7 @@ import { openBudgetDialog, projectBudgetTarget } from "./budget-dialog.js";
 import { openDashboardMode } from "./dashboards.js";
 import { menuIcon } from "./icons.js";
 import { keepListScroll } from "./list-scroll.js";
+import { drawChunked } from "./long-scroll.js";
 import { openRowMenu, pinButton, refreshRowMenuAnchor } from "./row-menu.js";
 import { mobileProjectFilterActions } from "./focus-project-controls.js";
 import { openSecretScope } from "./secrets.js";
@@ -58,9 +59,18 @@ export function renderProjects() {
     return;
   }
 
+  // One continuous list that scrolls (long-scroll.js): each group is there, its rows are drawn as the person scrolls to them.
+  const entries = [];
+  let activeAt = -1;
   for (const group of groupedProjects(projects)) {
-    elements.projectList.append(projectGroupElement(group));
+    const details = projectGroupElement(group);
+    elements.projectList.append(details);
+    for (const project of group.projects) {
+      if (project.id === state.activeProjectId && activeAt < 0) activeAt = entries.length;
+      entries.push({ make: () => projectRow(project), into: details });
+    }
   }
+  drawChunked(elements.projectList, entries, { key: JSON.stringify([elements.projectSearchInput.value || "", [...state.projectClusterFilters]]), ensure: activeAt });
 }
 
 /** Remembered for this page view only — preferences live on the server and Web Storage is banned here. */
@@ -70,6 +80,11 @@ const collapsedProjectGroups = new Set();
 function groupLabel(workspace, typeId) {
   if (!workspace) return typeId;
   return workspace.source ? `${workspace.label} · ${workspace.source.name}` : workspace.label;
+}
+
+/** "Team 12d29f48-668c-4a1b-9f3e-… · Contigos EC2": the id is cut in the middle, the node's name stays. */
+export function friendlyGroupLabel(label) {
+  return label.replace(/\b([0-9a-f]{8})-[0-9a-f-]{8,}?([0-9a-f]{4})\b/gi, "$1…$2");
 }
 
 /** Groups follow the order types are configured in Settings; anything unknown sorts last. */
@@ -122,7 +137,9 @@ function projectGroupElement(group) {
   summary.className = "project-group-summary";
   summary.dataset.testid = "project-group-toggle";
   const label = document.createElement("span");
-  label.textContent = group.label;
+  label.textContent = friendlyGroupLabel(group.label);
+  // One line with an ellipsis: the full name is the tooltip.
+  summary.title = group.label;
   const count = document.createElement("span");
   count.className = "project-group-count";
   count.textContent = String(group.projects.length);
@@ -148,7 +165,6 @@ function projectGroupElement(group) {
   if (group.projects.length) summary.append(workspaceDashboardButton(group));
   details.append(summary);
 
-  for (const project of group.projects) details.append(projectRow(project));
   return details;
 }
 
@@ -213,6 +229,7 @@ function projectRow(project) {
     const syncLabels = { synced: "Synced", syncing: "Syncing", paused: "Paused", error: "Error", unavailable: "Unavailable" };
     syncStatus.className = `project-sync-status project-sync-status-${status.state}`;
     syncStatus.dataset.testid = "project-sync-status";
+    syncStatus.classList.toggle("project-sync-none", status.engine === "none");
     // A project shared with no other machine has nothing to sync: that is not a fault.
     syncStatus.textContent = status.engine === "none" ? "Not shared" : status.state === "error" && status.message ? `Error: ${status.message}` : syncLabels[status.state] || syncLabels.unavailable;
     syncStatus.title = status.message || "";
@@ -234,6 +251,8 @@ function projectRow(project) {
       lockBadge.textContent = project.lockedElsewhere ? `\u{1F512} Locked by ${project.lock.nodeName}` : "\u{1F512} Locked to this node";
       button.append(lockBadge);
     }
+    // The folder is the row's tooltip, not a line of it.
+    button.title = project.path;
     button.addEventListener("click", () => selectProject(project.id));
 
     const menuButton = document.createElement("button");

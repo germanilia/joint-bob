@@ -25,7 +25,6 @@ const LEASE_LABELS = { "take-control": "Take control", "give-back": "Give back" 
 let cards = [];
 let openGroup = null;
 let jumpTo = null;
-let page = 0;
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -120,9 +119,7 @@ const sheetHead = element("div", "phone-sheet-head");
 sheetHead.append(sheetTitle, sheetClose);
 const list = element("div", "phone-sheet-list");
 list.dataset.testid = "control-phone-list";
-const pager = element("div", "phone-pager");
-pager.dataset.testid = "control-phone-pager";
-sheet.append(element("span", "phone-grab"), sheetHead, list, pager);
+sheet.append(element("span", "phone-grab"), sheetHead, list);
 elements.controlChat.append(sheet);
 
 // The Focus menu's round handle would sit on the rows' buttons, so it steps aside while the sheet is open.
@@ -213,34 +210,13 @@ function buildHeading(group, count) {
   return heading;
 }
 
-/**
- * Splits the groups into pages that fit `capacity`: lists page rather than scroll. Rows are drawn once to learn their height
- * (text wraps, so heights differ); a page that starts in the middle of a group repeats the group's heading.
- */
-function paginate(sections, capacity, headingHeight) {
-  const pages = [];
-  let current = null;
-  let used = 0;
-  for (const section of sections) {
-    let part = null;
-    for (const row of section.rows) {
-      if (current && used + row.height + (part ? 0 : headingHeight) > capacity) { current = null; part = null; }
-      if (!current) { current = []; pages.push(current); used = 0; }
-      if (!part) { part = { section, rows: [] }; current.push(part); used += headingHeight; }
-      part.rows.push(row);
-      used += row.height;
-    }
-  }
-  return pages;
-}
-
 /** What a sheet row shows and can do, to tell whether the sheet must be drawn again. */
 const rowDrawing = (entry) => [entry.group, entry.card.projectId, entry.card.conversationId, entry.card.title, detail(entry), entry.review?.id ?? null, cardActionList(entry.card).map((action) => action.id)];
 
 function renderSheet() {
   if (sheet.hidden) return;
   const all = entries();
-  const drawing = JSON.stringify([all.map(rowDrawing), page, jumpTo, innerHeight]);
+  const drawing = JSON.stringify([all.map(rowDrawing), jumpTo, innerHeight]);
   if (drawing === drawnSheet) return;
   drawnSheet = drawing;
   sheetTitle.textContent = `Agents · ${all.length}`;
@@ -250,32 +226,15 @@ function renderSheet() {
     const empty = element("p", "phone-empty", "Nothing is running and nothing waits for you.");
     empty.dataset.testid = "control-phone-empty";
     list.replaceChildren(empty);
-    pager.hidden = true;
     return;
   }
-  const sections = GROUPS.map((group) => ({ group, rows: all.filter((entry) => entry.group === group.id).map((entry) => ({ node: buildRow(entry) })) })).filter((section) => section.rows.length);
-  // Heights are only known once the rows are in the page.
-  const sample = buildHeading(sections[0].group, 0);
-  list.replaceChildren(sample, ...sections.flatMap((section) => section.rows.map((row) => row.node)));
-  const headingHeight = sample.offsetHeight;
-  for (const section of sections) for (const row of section.rows) row.height = row.node.offsetHeight;
-  const pages = paginate(sections, capacity, headingHeight);
-  if (jumpTo) page = Math.max(0, pages.findIndex((parts) => parts.some((part) => part.section.group.id === jumpTo)));
+  // One long list that scrolls: each group's heading, then all its rows. The place stays across a redraw.
+  const scroll = list.scrollTop;
+  const sections = GROUPS.map((group) => ({ group, rows: all.filter((entry) => entry.group === group.id).map((entry) => buildRow(entry)) })).filter((section) => section.rows.length);
+  list.replaceChildren(...sections.flatMap((section) => [buildHeading(section.group, section.rows.length), ...section.rows]));
+  list.scrollTop = scroll;
+  if (jumpTo) list.querySelector(`[data-testid="control-phone-group-${jumpTo}"]`)?.scrollIntoView({ block: "start" });
   jumpTo = null;
-  page = Math.min(page, pages.length - 1);
-  list.replaceChildren(...pages[page].flatMap((part) => [buildHeading(part.section.group, part.section.rows.length), ...part.rows.map((row) => row.node)]));
-  renderPager(pages.length);
-}
-
-function renderPager(pages) {
-  pager.hidden = pages <= 1;
-  const previous = button("Prev", "ghost compact", "control-phone-prev", () => { page -= 1; renderSheet(); });
-  const next = button("Next", "ghost compact", "control-phone-next", () => { page += 1; renderSheet(); });
-  previous.disabled = page === 0;
-  next.disabled = page >= pages - 1;
-  const label = element("span", "", `Page ${page + 1} of ${pages}`);
-  label.dataset.testid = "control-phone-page-label";
-  pager.replaceChildren(previous, label, next);
 }
 
 renderStrip();

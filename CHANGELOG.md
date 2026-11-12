@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.288.0 — 2026-11-12
+
+- **Needs you on the phone is a deck you can swipe.** Every card that needs you sits in one row; swipe to move on, and nothing is done to a card by looking at it or swiping past it. Tap a card to see exactly what it needs without opening the conversation: the question or request, why it was flagged, how long it has waited, your last message, the agent's last message and its last few steps. Answer, Push it on, Allow or Block, Done and Snooze are in the same place.
+- **Conversations, projects and workspaces are one long list that scrolls, not pages.** No more Previous and Next. A long list is drawn in chunks as you scroll and keeps its place when it refreshes.
+- **The left column is easier to read.** Workspace groups have a clear label with a line above, long team names are shortened, and a project row is one line with its path in the tooltip. The ⋯ button is always visible, in its own place beside the pin, and its menu no longer opens over the pin.
+- The running mark on a conversation is a solid green dot with a pulsing ring, so it stays visible on the open, highlighted conversation.
+- The narrow icon-only column has a search button.
+
 ## 2.287.1 — 2026-11-12
 
 - The evidence-based allocation preview in Settings is built without injecting markup again, as the 2.284.1 fix had it; 2.287.0 had brought the old panel back and failed its release check.

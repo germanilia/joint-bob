@@ -177,7 +177,7 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
   assert.equal(await page.locator(`[data-key="${real.projectId}:${real.conversationId}"]`).getByTestId("control-phone-open").count(), 1);
   assert.equal(await page.locator(`[data-key="${real.projectId}:${real.conversationId}"]`).getByTestId("control-phone-take-control").count(), 1);
   const list = page.getByTestId("control-phone-list");
-  assert.equal(await list.evaluate((element) => element.scrollHeight <= element.clientHeight), true, "the sheet pages instead of scrolling");
+  assert.equal(await list.evaluate((element) => getComputedStyle(element).overflowY), "auto", "the sheet is one list that scrolls");
   const none = await sideways(page);
   assert.deepEqual(none, { page: 0, chat: 0, outside: [] }, "nothing sticks out sideways with the sheet open");
 
@@ -222,24 +222,24 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
   assert.deepEqual(await page.evaluate("window.__lease"), ["take", "release", "take", "release"]);
   assert.equal(await page.locator("body.view-control").count(), 1);
 
-  // Many agents: the sheet pages to the height it has instead of scrolling, and a page that starts mid-group repeats its heading.
+  // Many agents: the sheet is one long list that scrolls (no pages); every agent is reachable by scrolling it.
   await page.evaluate(`(() => {
     window.__extra = Array.from({ length: 14 }, (_, index) => window.__card({ conversationId: 'x' + index, sessionId: 'x' + index, title: 'Agent number ' + index, summary: 'Working on step ' + index }));
     window.dispatchEvent(new CustomEvent('control-center-changed'));
   })()`);
   await page.waitForFunction(() => document.querySelector('[data-testid="control-phone-chip-running"]')?.getAttribute("data-count") === "16");
   await page.getByTestId("control-phone-chip-running").click();
-  await page.getByTestId("control-phone-pager").waitFor({ state: "visible" });
-  const label = await page.getByTestId("control-phone-page-label").textContent();
-  const pages = Number(/of (\d+)/.exec(label ?? "")![1]);
-  assert.ok(pages >= 2, `sixteen running agents need more than one page: ${label}`);
-  assert.equal(await list.evaluate((element) => element.scrollHeight <= element.clientHeight), true);
+  await page.getByTestId("control-phone-list").waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("control-phone-pager").count(), 0, "no pager");
+  assert.ok(await page.getByTestId("control-phone-row").count() >= 16, "every running agent has its row");
+  assert.equal(await list.evaluate((element) => element.scrollHeight > element.clientHeight), true, "sixteen agents scroll");
   assert.deepEqual(await sideways(page), { page: 0, chat: 0, outside: [] });
-  await page.getByTestId("control-phone-next").click();
-  assert.match((await page.getByTestId("control-phone-page-label").textContent()) ?? "", /Page 2 of/);
-  assert.match(await page.getByTestId("control-phone-group-running").innerText(), /running/i, "the next page names its group again");
-  assert.ok(await page.getByTestId("control-phone-row").count() > 0, "the next page has rows");
-  assert.equal(await list.evaluate((element) => element.scrollHeight <= element.clientHeight), true);
+  await list.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  assert.equal(await page.getByTestId("control-phone-row").last().isVisible(), true, "the last agent comes into view");
+  const place = await list.evaluate((element) => element.scrollTop);
+  await page.evaluate("window.dispatchEvent(new CustomEvent('control-center-changed'))");
+  await page.waitForTimeout(400);
+  assert.ok(Math.abs((await list.evaluate((element) => element.scrollTop)) - place) < 4, "a refresh keeps the place in the list");
   await page.getByTestId("control-phone-sheet-close").click();
   await page.getByTestId("control-phone-sheet").waitFor({ state: "hidden" });
 

@@ -60,9 +60,16 @@ function placeRowMenu(anchor) {
   const menu = elements.rowMenu;
   const button = anchor.getBoundingClientRect();
   const { width, height } = menu.getBoundingClientRect();
-  const left = Math.min(Math.max(8, button.right - width), innerWidth - width - 8);
+  let left = Math.min(Math.max(8, button.right - width), innerWidth - width - 8);
   const below = button.bottom + 6;
-  const top = below + height > innerHeight - 8 ? Math.max(8, button.top - height - 6) : below;
+  const above = button.top - height - 6;
+  let top = below + height > innerHeight - 8 ? above : below;
+  // Too tall for both sides of the button (a long menu in a short window): it goes beside the button's column, so it
+  // never lies over the row's own pin or its neighbours' controls.
+  if (top < 8) {
+    left = button.right + 8 + width <= innerWidth - 8 ? button.right + 8 : Math.max(8, button.left - width - 8);
+    top = Math.min(Math.max(8, button.top), Math.max(8, innerHeight - height - 8));
+  }
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
 }

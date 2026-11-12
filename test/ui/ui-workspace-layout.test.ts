@@ -94,7 +94,7 @@ test("the left column starts in Inbox: places, then Needs you, Running and To re
   assert.ok(scroll.groups[0] <= scroll.groups[1] + 1, "the groups fit their part of the column");
 });
 
-test("a group shows the rows that fit and Show all lists it, paged, in the middle", async () => {
+test("a group shows the rows that fit and Show all lists every row, one long scroll, in the middle", async () => {
   await page.setViewportSize({ width: 1440, height: 560 });
   await frames();
   const shown = await page.locator('[data-testid="workspace-group-review"] [data-testid="workspace-group-row"]').count();
@@ -103,11 +103,15 @@ test("a group shows the rows that fit and Show all lists it, paged, in the middl
   await page.getByTestId("workspace-group-page").waitFor();
   assert.equal(await page.getByTestId("workspace-group-title").innerText(), "To review");
   assert.equal(await page.locator("#chatPanel").isVisible(), false, "the list takes the middle");
+  // Every row of the group is there to scroll to (no pager); the list scrolls inside the page when it is longer than it.
+  assert.equal(await page.getByTestId("workspace-group-pager").count(), 0, "no pager");
   const rows = await page.getByTestId("workspace-group-page-row").count();
-  assert.ok(rows >= 1 && rows <= reviewCount);
-  if (rows < reviewCount) {
-    assert.equal(await visible("workspace-group-pager"), true, "more rows than fit page instead of scrolling");
-    await page.getByTestId("workspace-group-next").click();
+  assert.equal(rows, reviewCount, "every row of the group is drawn (a short list is one chunk)");
+  const scrolls = await page.getByTestId("workspace-group-list").evaluate((element) => ({ overflow: getComputedStyle(element).overflowY, over: element.scrollHeight - element.clientHeight }));
+  assert.equal(scrolls.overflow, "auto");
+  if (scrolls.over > 0) {
+    await page.getByTestId("workspace-group-list").evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    assert.equal(await page.getByTestId("workspace-group-page-row").last().isVisible(), true, "the last row can be scrolled into view");
   }
   await page.getByTestId("workspace-group-tab-running").click();
   assert.equal(await page.getByTestId("workspace-group-title").innerText(), "Running");
@@ -357,7 +361,7 @@ test("Projects shows two columns: the projects under the places, and the chosen 
   assert.ok(places.every((place) => place.shown && !place.cut), "every place shows its whole name");
   assert.equal(new Set(places.map((place) => place.left)).size, 1, "the places are one column");
   assert.equal(new Set(places.map((place) => place.top)).size, places.length, "one place per row");
-  // Nothing in either column scrolls or is cut: every row in sight is whole, and the rows of a list share one height.
+  // Both lists are one long scroll inside their column (no pages); the rows of a list share one height.
   for (const list of ["#sessionList", "#projectList"]) {
     const rows = await page.locator(`${list} .list-row`).evaluateAll((items, selector) => {
       const host = document.querySelector<HTMLElement>(selector);
@@ -367,16 +371,16 @@ test("Projects shows two columns: the projects under the places, and the chosen 
         .map((rect) => ({ whole: rect.top >= frame.top - 1 && rect.bottom <= frame.bottom - clip + 1, height: Math.round(rect.height), top: Math.round(rect.top - frame.top), room: Math.round(frame.height - clip) }));
     }, list);
     assert.ok(rows.length >= 2, `${list}: several rows fit (${rows.length})`);
-    assert.ok(rows.every((row) => row.whole), `${list}: no row is cut at the top or the bottom: ${JSON.stringify(rows)}`);
     assert.equal(new Set(rows.map((row) => row.height)).size, 1, `${list}: rows share one height: ${rows.map((row) => row.height)}`);
-    assert.equal(await page.locator(list).evaluate((host) => getComputedStyle(host).overflowY), "hidden", `${list} has no scroll bar`);
+    assert.equal(await page.locator(list).evaluate((host) => getComputedStyle(host).overflowY), "auto", `${list} scrolls`);
+    assert.equal(await page.getByTestId(`${list === "#sessionList" ? "session" : "project"}-list-pager`).count(), 0, `${list} has no pager`);
   }
-  // A row's pin and ⋮ come with the pointer or the keyboard; a resting row shows neither, and keeps its height.
+  // ⋮ is always in view; the pin comes with the pointer or the keyboard (a pinned row keeps it); a resting row keeps its height.
   const row = page.locator("#sessionList > .list-row").first();
   await page.mouse.move(900, 500);
   await page.getByTestId("chat-message-input").focus();
   const shown = (selector: string) => row.locator(selector).evaluate((button) => getComputedStyle(button).opacity === "1");
-  assert.equal(await shown("[data-testid='session-menu-button']"), false, "a resting row shows no ⋮");
+  assert.equal(await shown("[data-testid='session-menu-button']"), true, "a resting row shows its ⋮");
   assert.equal(await shown(".pin-button"), false, "a resting row shows no pin");
   const resting = await row.evaluate((item) => item.getBoundingClientRect().height);
   await row.locator(".session-card").hover();
@@ -461,6 +465,36 @@ test("Projects shows two columns: the projects under the places, and the chosen 
   assert.equal(await page.locator("#chatsPanel").isVisible(), false, "Inbox has no second column");
 });
 
+test("every project and conversation row has its ⋯ in view without hover, apart from the pin, and the open menu keeps off the pin", async () => {
+  await page.getByTestId("workspace-projects-button").click();
+  await page.locator("#sessionList .session-card").first().waitFor();
+  for (const [list, row] of [["#projectList", ".list-row"], ["#sessionList", ".list-row-main"]] as const) {
+    const geometry = await page.locator(`${list} ${row}`).first().evaluate((element) => {
+      const more = element.querySelector<HTMLElement>(".row-menu-button")!, pin = element.querySelector<HTMLElement>(".pin-button")!;
+      const rowBox = element.getBoundingClientRect(), moreBox = more.getBoundingClientRect(), pinBox = pin.getBoundingClientRect();
+      return { opacity: Number(getComputedStyle(more).opacity), more: moreBox.toJSON(), pin: pinBox.toJSON(), rowRight: rowBox.right, height: rowBox.height };
+    });
+    assert.equal(geometry.opacity, 1, `${list}: ⋯ shows without hover`);
+    assert.ok(geometry.more.right <= geometry.rowRight + 1, `${list}: ⋯ is inside the row`);
+    assert.ok(geometry.pin.right <= geometry.more.left + 1 || geometry.pin.left >= geometry.more.right - 1, `${list}: the pin has its own slot beside ⋯ (${JSON.stringify([geometry.pin, geometry.more])})`);
+    // Pointing at the row changes neither its height nor where ⋯ is.
+    await page.locator(`${list} ${row}`).first().hover();
+    const hovered = await page.locator(`${list} ${row}`).first().evaluate((element) => ({ height: element.getBoundingClientRect().height, more: element.querySelector(".row-menu-button")!.getBoundingClientRect().left }));
+    assert.equal(hovered.height, geometry.height, `${list}: the row keeps its height on hover`);
+    assert.equal(hovered.more, geometry.more.left, `${list}: ⋯ does not move on hover`);
+    // The open menu is under, over or beside ⋯, never over the pin.
+    await page.locator(`${list} ${row}`).first().locator(".row-menu-button").click();
+    const menu = await page.locator("#rowMenu").boundingBox();
+    const pin = await page.locator(`${list} ${row}`).first().locator(".pin-button").boundingBox();
+    assert.ok(menu && pin, "the menu and the pin are there");
+    const meets = menu.x < pin.x + pin.width && menu.x + menu.width > pin.x && menu.y < pin.y + pin.height && menu.y + menu.height > pin.y;
+    assert.equal(meets, false, `${list}: the open menu does not cover the pin`);
+    assert.ok(menu.x >= 0 && menu.y >= 0 && menu.x + menu.width <= 1440 && menu.y + menu.height <= 900, `${list}: the menu stays in the window`);
+    await page.keyboard.press("Escape");
+    await page.locator("#rowMenu").waitFor({ state: "hidden" });
+  }
+});
+
 test("New, ⋯ and the places reach every action the old panels had", async () => {
   await page.getByTestId("workspace-new-button").click();
   for (const id of ["workspace-new-conversation", "workspace-new-note", "workspace-new-project", "workspace-new-pi", "workspace-new-claude"]) assert.equal(await visible(id), true, `${id} is in New`);
@@ -532,6 +566,9 @@ test("the workspace search opens with what was typed, and can hand it to Bob", a
 });
 
 test("[ folds the column to a rail of icons and back", async () => {
+  // The groups are Inbox's: the places before this test may have left Projects open.
+  await page.getByTestId("workspace-inbox-button").click();
+  await page.getByTestId("workspace-groups").waitFor();
   await page.keyboard.press("Control+Alt+BracketLeft");
   await page.getByTestId("projects-panel-expand-button").waitFor();
   const width = await page.getByTestId("workspace-side").evaluate((side) => side.getBoundingClientRect().width);
@@ -569,6 +606,53 @@ test("between 701 and 1023 px the column stays and the details float; the phone 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForFunction(() => !document.body.classList.contains("focus-ui"));
   assert.equal(await page.getByTestId("chat-head-actions").locator("#chatDoneButton").count(), 1, "and move back on the desktop");
+});
+
+test("the left column never clips: full above 1385 px, a real icon rail below, every place reachable, the conversation keeps its room", async () => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frames();
+  await page.getByTestId("workspace-projects-button").click();
+  await page.locator("#sessionList .list-row").first().waitFor();
+  for (const width of [1440, 1380, 1200, 1100, 1054, 1000, 900, 800, 701]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.waitForTimeout(250);
+    await frames();
+    const state = await page.evaluate(() => {
+      const side = document.querySelector<HTMLElement>('[data-testid="workspace-side"]')!;
+      const box = side.getBoundingClientRect();
+      const roots = [side, document.querySelector<HTMLElement>('[data-testid="workspace-foot"]')!];
+      const crossing: string[] = [];
+      for (const root of roots) {
+        for (const element of root.querySelectorAll<HTMLElement>("*")) {
+          const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
+          if (!rect.width || !rect.height || style.display === "none" || style.visibility === "hidden") continue;
+          if (rect.right > box.right + 1 || rect.left < -1) crossing.push(`${element.tagName}.${String(element.className).slice(0, 24)} ${Math.round(rect.left)}–${Math.round(rect.right)}`);
+        }
+      }
+      const places = [...document.querySelectorAll<HTMLElement>('[data-testid="workspace-places"] .ws-place')].map((place) => {
+        const rect = place.getBoundingClientRect();
+        return { name: place.getAttribute("aria-label") || place.getAttribute("title") || place.textContent?.trim(), whole: rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.right <= box.right + 1 };
+      });
+      const rail = document.body.classList.contains("ws-auto-rail") || document.body.classList.contains("projects-collapsed");
+      return { right: Math.round(box.right), rail, crossing, places, chat: Math.round(document.querySelector("#chatPanel")!.getBoundingClientRect().width), searchIcon: getComputedStyle(document.querySelector("#workspaceSearchRailButton")!).display !== "none" };
+    });
+    assert.deepEqual(state.crossing, [], `${width}px: nothing crosses the column's right edge`);
+    assert.ok(state.places.length >= 5 && state.places.every((place) => place.whole), `${width}px: every place is whole and in view: ${JSON.stringify(state.places)}`);
+    if (width >= 1385) assert.equal(state.rail, false, `${width}px: the full column is back`);
+    if (width <= 1000) {
+      assert.equal(state.rail, true, `${width}px: the column is a rail`);
+      assert.ok(state.right <= 64, `${width}px: the rail is narrow (${state.right})`);
+      assert.equal(state.searchIcon, true, `${width}px: the rail has a search icon`);
+    }
+    // Below about 875 px two columns and a 480 px conversation do not fit together; the lists keep their width there.
+    if (width >= 900) assert.ok(state.chat >= 480, `${width}px: the conversation keeps its room (${state.chat})`);
+  }
+  // The rail's search opens the workspace search.
+  await page.getByTestId("workspace-search-rail-button").click();
+  await page.getByTestId("spotlight-dialog").waitFor();
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frames();
 });
 
 test("the workspace raised no page errors", () => {

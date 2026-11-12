@@ -6,9 +6,9 @@ import test from "node:test";
 import { launchChrome } from "./launch-chrome.js";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 
-// The desktop workspace pages a project's list inside its column (public/app/session-pager.js: no scroll bar, a pager
-// under the rows); the phone keeps a scrolling list. Either way every conversation is reachable and the page stays fixed.
-test("conversations stay inside the column — paged on the desktop, scrolling on the phone — while the page stays fixed", async () => {
+// A project's conversations are one long list that scrolls inside its column, on the desktop and on the phone
+// (public/app/long-scroll.js, .agents/knowledge/list-scrolling.md): no pager. Every conversation is reachable and the page stays fixed.
+test("conversations are one long scroll inside the column, on the desktop and the phone, while the page stays fixed", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-conversation-scroll-"));
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
   let browser: Awaited<ReturnType<typeof launchChrome>> | undefined;
@@ -46,12 +46,8 @@ test("conversations stay inside the column — paged on the desktop, scrolling o
           viewportHeight: innerHeight,
         };
       });
-      if (width > 700) {
-        assert.equal(geometry.overflow, "hidden", `at ${width}px, the list pages instead of scrolling`);
-        assert.equal(await page.getByTestId("session-list-pager").isVisible(), true, `at ${width}px, the pager reaches the other pages`);
-      } else {
-        assert.equal(geometry.overflow, "auto", `at ${width}px, retain vertical list scrolling`);
-      }
+      assert.equal(geometry.overflow, "auto", `at ${width}px, the list scrolls`);
+      assert.equal(await page.getByTestId("session-list-pager").count(), 0, `at ${width}px, there is no pager`);
       assert.ok(geometry.scrollHeight > geometry.height && geometry.scrollTop > 0, `at ${width}px, fixture must scroll inside the list`);
       assert.equal(geometry.scrollWidth, geometry.width, `at ${width}px, list must not scroll horizontally`);
       assert.ok(geometry.lastRow <= geometry.listBottom, `at ${width}px, last conversation stays reachable`);

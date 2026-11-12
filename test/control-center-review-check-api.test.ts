@@ -117,6 +117,17 @@ test("a conversation that stops before its task is done is told to go on, one th
     const login = await api<{ action: string }>(node, auth, "POST", "/control-center/bob/message", { message: "fix the login page in Joint Bob" });
     assert.equal(login.body.action, "started", JSON.stringify(login.body));
     const waits = await eventually(async () => (await timeline()).find((message) => message.text.startsWith('"fix the login page in Joint Bob" waits for you') && message.actions.length), "Bob brought it to the person");
+    // The card says what exactly it waits for without opening the conversation: Bob's reason on the board, the agent's last words from the detail.
+    const loginCard = (await api<{ cards: Array<{ title: string; column: string; projectId: string; conversationId: string }> }>(node, auth, "GET", "/control-center/board")).body.cards.find((entry) => entry.title === "fix the login page in Joint Bob");
+    assert.equal(loginCard?.column, "needs-you");
+    const detail = await api<{ request: string; answer: string; steps: unknown[]; unavailable?: boolean }>(node, auth, "GET", `/control-center/cards/detail?projectId=${encodeURIComponent(loginCard!.projectId)}&conversationId=${encodeURIComponent(loginCard!.conversationId)}`);
+    assert.equal(detail.status, 200, JSON.stringify(detail.body));
+    assert.match(detail.body.request, /fix the login page in Joint Bob/);
+    assert.ok(detail.body.answer.length > 0, "the agent's last message is there");
+    assert.ok(Array.isArray(detail.body.steps));
+    assert.equal((await api(node, auth, "GET", `/control-center/cards/detail?projectId=${encodeURIComponent(loginCard!.projectId)}&conversationId=no-such-conversation`)).status, 404);
+    assert.equal((await api(node, auth, "GET", "/control-center/cards/detail?projectId=no-such-project&conversationId=x")).status, 404);
+    assert.equal((await api(node, auth, "GET", "/control-center/cards/detail?projectId=x")).status, 400);
     const abandoned = await api<{ messages: BobMessage[]; pressed: BobMessage }>(node, auth, "POST", "/control-center/bob/action", { messageId: waits.id, actionId: "conversation.abandon" });
     assert.equal(abandoned.status, 200, JSON.stringify(abandoned.body));
     assert.deepEqual(abandoned.body.messages, []);
@@ -131,6 +142,13 @@ test("a conversation that stops before its task is done is told to go on, one th
     const settings = await api<{ action: string }>(node, auth, "POST", "/control-center/bob/message", { message: "fix the settings page in Joint Bob" });
     assert.equal(settings.body.action, "started", JSON.stringify(settings.body));
     const settingsCard = await eventually(async () => (await api<{ cards: Array<{ title: string; projectId: string; conversationId: string }> }>(node, auth, "GET", "/control-center/board")).body.cards.find((entry) => entry.title === "fix the settings page in Joint Bob"), "the card is on the board");
+    // Answering on the card sends the person's words as they are: no push wording, and an empty or unknown reply is refused.
+    assert.equal((await api(node, auth, "POST", "/control-center/cards/reply", { projectId: settingsCard.projectId, conversationId: settingsCard.conversationId, message: "  " })).status, 400);
+    assert.equal((await api(node, auth, "POST", "/control-center/cards/reply", { projectId: settingsCard.projectId, conversationId: "no-such-conversation", message: "Go on" })).status, 404);
+    const replied = await api(node, auth, "POST", "/control-center/cards/reply", { projectId: settingsCard.projectId, conversationId: settingsCard.conversationId, message: "Use option B for the settings page" });
+    assert.equal(replied.status, 200, JSON.stringify(replied.body));
+    const sent = await eventually(async () => (await prompts()).find((prompt) => prompt.includes("Use option B for the settings page")), "the reply reached the conversation");
+    assert.equal(sent.includes("Continue with the task"), false, "a reply is not a push");
     const closed = await api(node, auth, "POST", "/control-center/cards/done", { projectId: settingsCard.projectId, conversationId: settingsCard.conversationId, feedback: { rating: "unimportant", description: "" } });
     assert.equal(closed.status, 200, JSON.stringify(closed.body));
     const afterDone = (await api<{ sessions: Array<{ title: string; doneAt?: string }> }>(node, auth, "GET", `/projects/${project.id}/sessions`)).body.sessions;

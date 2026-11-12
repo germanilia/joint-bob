@@ -101,7 +101,11 @@ body.booting :is(#focusControlsButton, #focusControls) { visibility: hidden; }
   body.focus-ui .list-filter-row { font-size: 14px; }
   body.focus-ui .list-filter-row .searchable-select-trigger { min-height: 44px; font-size: 15px; }
   body.focus-ui .done-filter { font-size: 14px; }
-  body.focus-ui .project-group-summary { font-size: 15px; }
+  /* A group: a semi-bold sans label with its count, space above and a hairline (not above the first); one line. */
+  body.focus-ui .project-group-summary { min-height: 44px; margin-top: 0; font: 600 14px/1.2 var(--sans); color: var(--text); text-transform: none; letter-spacing: 0.01em; }
+  body.focus-ui .project-group-summary > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.focus-ui .project-group + .project-group { margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--line-strong); }
+  body.focus-ui .project-card > .project-path, body.focus-ui .project-card :is(.project-sync-status-synced, .project-sync-none) { display: none; }
   body.focus-ui .project-card strong, body.focus-ui .session-card strong { font-size: 17px; }
   body.focus-ui .project-card span:not(strong span), body.focus-ui .session-card span:not(strong span) { font-size: 13.5px; }
   body.focus-ui .project-card .project-sync-status, body.focus-ui .project-card .project-lock-badge, body.focus-ui .project-card .project-cluster-badge { font-size: 12px; }

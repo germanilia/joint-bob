@@ -74,7 +74,7 @@
   body.focus-ui .ws-row:active, body.focus-ui .ws-row.sel { background: var(--panel); box-shadow: var(--shadow-soft); }
   body.focus-ui .ws-dot { flex: none; width: 9px; height: 9px; margin-top: 9px; border-radius: 50%; background: var(--muted); }
   body.focus-ui .ws-dot.need { background: var(--ws-need-fill); }
-  body.focus-ui .ws-dot.run { background: var(--ws-run); animation: ph-pulse 1.8s ease-in-out infinite; }
+  body.focus-ui .ws-dot.run { background: var(--live, var(--ws-run)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live, var(--ws-run)) 28%, transparent); animation: ph-ring 1.8s ease-in-out infinite; }
   body.focus-ui .ws-dot.rev { background: var(--ws-rev); }
   body.focus-ui .ws-row-copy { display: grid; flex: 1; gap: 3px; min-width: 0; }
   body.focus-ui .ws-row-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
@@ -82,7 +82,7 @@
   body.focus-ui .ws-row-top time { flex: none; color: var(--muted); font-size: 13px; }
   body.focus-ui .ws-row-line { overflow: hidden; color: var(--muted); font-size: 14.5px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* Show all: one group as a paged screen of its own. */
+  /* Show all: one group as a screen of its own, one long scroll. */
   body.focus-ui #workspaceGroupPage:not([hidden]) {
     position: fixed; inset: 0; z-index: 52; display: flex; flex-direction: column; gap: 8px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px));
     border: 0; border-radius: 0; background: var(--bg);
@@ -93,12 +93,10 @@
   body.focus-ui #workspaceGroupPage h1 { margin: 0; color: var(--heading); font: 400 28px/1.2 var(--serif); }
   body.focus-ui #workspaceGroupPage #workspaceGroupClose { grid-column: 2; grid-row: 1; width: 44px; height: 44px; border: 0; background: var(--field); border-radius: 50%; }
   body.focus-ui #workspaceGroupPage .ws-page-tabs { grid-column: 1 / -1; display: flex; gap: 8px; }
-  body.focus-ui #workspaceGroupPage .ws-page-pager:not([hidden]) { display: flex; align-items: center; gap: 8px; }
-  body.focus-ui #workspaceGroupList { flex: 1; min-height: 0; margin: 0; padding: 0; overflow: hidden; display: grid; align-content: start; gap: 6px; }
+  body.focus-ui #workspaceGroupList { flex: 1; min-height: 0; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 6px; }
   body.focus-ui #workspaceGroupPage .ws-page-tabs button { flex: 0 1 auto; padding: 0 12px; border: 0; border-radius: 22px; background: var(--field); box-shadow: none; color: var(--text); font: 600 14px var(--sans); white-space: nowrap; }
   body.focus-ui #workspaceGroupPage .ws-page-tabs button[aria-selected="true"] { background: var(--ink); color: var(--on-ink); }
   body.focus-ui #workspaceGroupPage .ws-page-tabs b { margin-left: 6px; opacity: 0.7; }
-  body.focus-ui #workspaceGroupPage .ws-page-pager { justify-content: center; font-size: 14px; }
 
   /* ---------- Projects: the list, then a project's conversations ---------- */
   body.focus-ui #projectsPanel .ws-picker-title { display: block; flex: 1; min-width: 0; }
@@ -375,6 +373,7 @@
 }
 
 @keyframes ph-pulse { 50% { opacity: 0.45; } }
+@keyframes ph-ring { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--live, var(--ws-run)) 10%, transparent); } }
 @media (prefers-reduced-motion: reduce) {
   body.focus-ui .ws-dot.run { animation: none; }
 }

@@ -85,7 +85,7 @@ body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
   .ws-home-pager { display: inline-flex; align-items: center; gap: 2px; align-self: center; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
   .ws-home-pager button { width: 28px; justify-content: center; padding: 0; }
 
-  .ws-home-cards { display: grid; grid-template-columns: repeat(var(--home-columns, 2), minmax(0, 1fr)); align-content: start; gap: 12px; min-height: 0; overflow: hidden; }
+  .ws-home-cards { display: grid; grid-template-columns: repeat(var(--home-columns, 2), minmax(0, 1fr)); align-content: start; gap: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
   .ws-home-cards > .ws-empty, .ws-home-table > .ws-empty { height: auto; padding: 4px 0; }
 
   .ws-home-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; min-height: 0; }
@@ -114,3 +114,59 @@ body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
     .ws-home-two .ws-home-sechead { margin-top: 12px; }
   }
 }
+
+/* ---------- the phone's Needs you deck: every card in one swipeable row ---------- */
+.ws-deck { display: grid; gap: 0; min-width: 0; margin: 0 -8px 4px; }
+.ws-deck-track {
+  display: flex; gap: 10px; min-width: 0; padding: 0 28px 2px 8px; overflow-x: auto; overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory; scroll-padding-inline: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.ws-deck-track::-webkit-scrollbar { display: none; }
+.ws-deck-track:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 16px; }
+.ws-deck-track.dragging { scroll-snap-type: none; cursor: grabbing; user-select: none; }
+.ws-deck-slide { display: flex; flex: 0 0 calc(100% - 36px); min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; }
+.ws-deck-slide > .ws-wait { flex: 1; min-width: 0; margin: 0 !important; cursor: pointer; }
+.ws-deck-bar { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.ws-deck-step { width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; box-shadow: none; color: var(--text); font-size: 22px; line-height: 1; }
+.ws-deck-step:disabled { opacity: 0.3; }
+.ws-wait:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- what a card needs, in a sheet over Home (bottom sheet on the phone) ---------- */
+.need-sheet {
+  box-sizing: border-box; width: min(640px, calc(100vw - 32px)); max-width: none; max-height: min(88dvh, 780px); margin: auto; padding: 0;
+  border: 0; border-radius: 20px; background: var(--panel); color: var(--text); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35); overflow: hidden;
+}
+.need-sheet[open] { display: flex; flex-direction: column; }
+.need-sheet::backdrop { background: rgba(10, 8, 6, 0.5); }
+.need-sheet-grab { display: none; width: 40px; height: 4px; margin: 8px auto 0; border-radius: 2px; background: var(--line-strong); }
+.need-sheet-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 18px 8px; }
+.need-sheet-heading { min-width: 0; flex: 1; }
+.need-sheet-meta { margin: 0 0 4px; color: var(--muted); font-size: 14px; font-weight: 600; }
+.need-sheet-head h2 { margin: 0; color: var(--heading); font: 400 22px/1.25 var(--serif); overflow-wrap: anywhere; }
+.need-sheet-close { flex: none; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--field); box-shadow: none; color: var(--text); }
+.need-sheet-close svg { width: 18px; height: 18px; }
+.need-sheet-body { flex: 1; min-height: 0; padding: 4px 18px 12px; overflow-y: auto; overscroll-behavior: contain; }
+.need-sheet-section { display: grid; gap: 6px; margin: 12px 0 0; }
+.need-sheet-section[hidden] { display: none; }
+.need-sheet-section h3 { margin: 0; color: var(--muted); font: 600 13px/1.2 var(--sans); letter-spacing: 0.02em; }
+.need-sheet-ask-text { margin: 0; font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; }
+.need-sheet-note, .need-sheet-request-text { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+.need-sheet-request-text { color: var(--text); max-height: 7.5em; overflow-y: auto; }
+.need-sheet-code { margin: 0; padding: 10px 12px; overflow-x: auto; border-radius: 10px; background: var(--field); font: 13.5px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.need-sheet-markdown { max-height: 42dvh; padding: 12px 14px; overflow-y: auto; overscroll-behavior: contain; border-radius: 12px; background: var(--field); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.need-sheet-markdown:focus-visible { outline: 2px solid var(--accent); }
+.need-sheet-steplist { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.need-sheet-steplist li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.need-sheet-steplist li.failed { color: var(--danger, #c0392b); }
+.need-sheet-steplist code { font: 400 13px var(--mono); color: var(--muted); }
+.need-sheet-foot { display: grid; gap: 8px; padding: 10px 18px calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--panel); }
+.need-sheet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.need-sheet-actions[hidden], .need-sheet-box[hidden] { display: none; }
+.need-sheet-actions > button { min-height: 44px; padding: 0 12px; border-radius: 12px; font-size: 15px; font-weight: 600; white-space: nowrap; }
+.need-sheet-actions > .soft { border: 0; background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); box-shadow: none; }
+.need-sheet-actions > .ghost { border: 0; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
+.need-sheet-box { display: grid; gap: 8px; }
+.need-sheet-box textarea { min-height: 84px; resize: none; border-radius: 12px; font-size: 16px; }
+body.focus-ui .need-sheet { width: 100%; max-height: 90dvh; margin: auto 0 0; border-radius: 20px 20px 0 0; }
+body.focus-ui .need-sheet-grab { display: block; }
+body.focus-ui .need-sheet-head { padding-top: 10px; }

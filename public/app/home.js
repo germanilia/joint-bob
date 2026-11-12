@@ -1,8 +1,8 @@
 // Desktop Home: the middle of the Inbox place when no conversation is open, or when the brand (Home) is pressed.
 // A serif greeting by time of day with "N need you · N running · N to review · $X spent today"; Needs you as cards
 // (project, time, agent, title, the question) with Answer, Push it on, Done and Open; Running (live line, time) and
-// Ready to review (Review) side by side. It fits the window: the cards and rows that fit, a pager for Needs you and
-// "Show all" opening the group's paged list (workspace.js). The cards' actions are the control center's own: taking
+// Ready to review (Review) side by side. Needs you scrolls when there are many; Running and Ready to review show the rows
+// that fit and "Show all" opens the group as one long list (workspace.js). The cards' actions are the control center's own: taking
 // control to answer (control-lease.js), Push it on (`POST /api/control-center/cards/push`), Done with the closing
 // question (control-center.js `markDone`) and opening the conversation. The phone's Home uses `waitingCard` too.
 // Spec: docs/superpowers/specs/2026-11-10-ui-redo-paper-design.md; mock: mocks/ui-redo "Desktop · Home". Styles: home.css.
@@ -12,6 +12,8 @@ import { briefStatus, cardActionList } from "./control-cards.js";
 import { decideReview, markDone, openConversation, pushOn } from "./control-center.js";
 import { takeControl } from "./control-lease.js";
 import { chooseSnooze } from "./control-snooze.js";
+import { drawChunked } from "./long-scroll.js";
+import { openNeedDetail } from "./needs-detail.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { toast } from "./shell.js";
@@ -25,9 +27,6 @@ const home = byId("homePage");
 
 let cards = [];
 let loaded = false;
-let needPage = 0;
-/** The cards' room when they were last fitted. */
-let needRoom = 0;
 /** Inbox pressed while a conversation is open: Home shows over it until a conversation is opened. */
 let requested = false;
 let shownFor = "";
@@ -136,7 +135,119 @@ export function waitingCard(card, { compact = false } = {}) {
   open.append(chevron());
   actions.append(open);
   root.append(top, title, question, actions);
+  // Looking at a card changes nothing; tapping it (not its buttons) shows what exactly it needs, over Home.
+  root.tabIndex = 0;
+  root.title = "Tap to see what it needs";
+  const showDetail = () => openNeedDetail(card, {
+    ask: questionOf(card),
+    open: () => { requested = false; return openConversation(card); },
+    onChange: () => { shownFor = ""; window.dispatchEvent(new CustomEvent("control-center-changed")); },
+  });
+  root.addEventListener("click", (event) => { if (!event.target.closest("button, a, textarea, form")) showDetail(); });
+  root.addEventListener("keydown", (event) => { if (event.target === root && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); showDetail(); } });
   return root;
+}
+
+/* ---------- the phone's Needs you deck ---------- */
+
+/** The card the deck shows (kept across redraws, so a refresh does not take the reader back to the first). */
+let deckKey = "";
+
+/**
+ * Every needs-you card as one swipeable row: scroll-snap, one card nearly the width with the next peeking, "2 of 4", arrow
+ * buttons and arrow keys, and a mouse can drag it. Moving through it does nothing to a card (nothing is marked seen).
+ */
+export function needDeck(items) {
+  const deck = element("div", "ws-deck");
+  deck.dataset.testid = "needs-deck";
+  deck.setAttribute("role", "group");
+  deck.setAttribute("aria-roledescription", "carousel");
+  deck.setAttribute("aria-label", "What needs you");
+  const track = element("div", "ws-deck-track");
+  track.dataset.testid = "needs-deck-track";
+  track.tabIndex = 0;
+  track.setAttribute("aria-label", "Cards that need you; use the arrow keys to move between them");
+  for (const [index, card] of items.entries()) {
+    const slide = element("div", "ws-deck-slide");
+    slide.dataset.index = String(index);
+    slide.dataset.key = `${card.projectId}:${card.conversationId}`;
+    slide.setAttribute("role", "group");
+    slide.setAttribute("aria-label", `${index + 1} of ${items.length}`);
+    slide.append(waitingCard(card, { compact: true }));
+    track.append(slide);
+  }
+  const bar = element("div", "ws-deck-bar");
+  const previous = element("button", "ghost ws-deck-step", "‹");
+  const next = element("button", "ghost ws-deck-step", "›");
+  for (const [node, label, testid] of [[previous, "Previous card", "needs-deck-previous"], [next, "Next card", "needs-deck-next"]]) { node.type = "button"; node.setAttribute("aria-label", label); node.title = label; node.dataset.testid = testid; }
+  const position = element("span", "ws-deck-position");
+  position.dataset.testid = "needs-deck-position";
+  position.setAttribute("aria-live", "polite");
+  bar.append(previous, position, next);
+  deck.append(track, bar);
+
+  const slides = () => [...track.children];
+  const indexNow = () => {
+    const all = slides();
+    if (!all.length) return 0;
+    const step = all.length > 1 ? all[1].offsetLeft - all[0].offsetLeft : track.clientWidth;
+    return Math.max(0, Math.min(all.length - 1, Math.round(track.scrollLeft / (step || 1))));
+  };
+  const show = () => {
+    const at = indexNow();
+    position.textContent = `${at + 1} of ${items.length}`;
+    previous.disabled = at === 0;
+    next.disabled = at >= items.length - 1;
+    const key = slides()[at]?.dataset.key;
+    if (key) deckKey = key;
+  };
+  const go = (to, behavior = "smooth") => {
+    const target = slides()[Math.max(0, Math.min(items.length - 1, to))];
+    if (target) track.scrollTo({ left: target.offsetLeft - slides()[0].offsetLeft, behavior });
+  };
+  let frame = 0;
+  track.addEventListener("scroll", () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(show); }, { passive: true });
+  previous.addEventListener("click", () => go(indexNow() - 1));
+  next.addEventListener("click", () => go(indexNow() + 1));
+  track.addEventListener("keydown", (event) => {
+    if (event.target !== track) return;
+    if (event.key === "ArrowRight") { event.preventDefault(); go(indexNow() + 1); }
+    else if (event.key === "ArrowLeft") { event.preventDefault(); go(indexNow() - 1); }
+    else if (event.key === "Home") { event.preventDefault(); go(0); }
+    else if (event.key === "End") { event.preventDefault(); go(items.length - 1); }
+  });
+  // A mouse drags the row like a finger does (touch scrolls it natively). A drag is not a tap: the click after it is dropped.
+  let drag = null;
+  track.addEventListener("pointerdown", (event) => {
+    if (event.pointerType !== "mouse" || event.button !== 0 || event.target.closest("button, textarea, a")) return;
+    drag = { x: event.clientX, left: track.scrollLeft, moved: false };
+  });
+  track.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    const delta = event.clientX - drag.x;
+    if (!drag.moved && Math.abs(delta) < 6) return;
+    if (!drag.moved) { drag.moved = true; track.classList.add("dragging"); track.setPointerCapture(event.pointerId); }
+    track.scrollLeft = drag.left - delta;
+  });
+  const release = () => {
+    if (!drag) return;
+    const moved = drag.moved;
+    drag = null;
+    track.classList.remove("dragging");
+    if (moved) {
+      go(indexNow());
+      track.addEventListener("click", (event) => event.stopPropagation(), { capture: true, once: true });
+    }
+  };
+  track.addEventListener("pointerup", release);
+  track.addEventListener("pointercancel", release);
+  // Redrawn while the reader is on the third card: it stays on that card.
+  requestAnimationFrame(() => {
+    const at = Math.max(0, items.findIndex((card) => `${card.projectId}:${card.conversationId}` === deckKey));
+    if (at > 0) go(at, "instant");
+    show();
+  });
+  return deck;
 }
 
 function chevron() {
@@ -267,23 +378,14 @@ function renderNeed() {
   home.classList.toggle("need-empty", loaded && !need.length);
   if (!need.length) {
     host.replaceChildren(element("p", "ws-empty", loaded ? "Nothing waits for you." : "Loading…"));
-    byId("homeNeedPager").hidden = true;
     return;
   }
-  const columns = host.clientWidth >= 620 ? 2 : 1;
-  host.style.setProperty("--home-columns", String(columns));
-  // The tallest kind of card sets the fit: one with a question long enough for two lines.
-  const sampleCard = need.reduce((longest, card) => (questionOf(card).length > questionOf(longest).length ? card : longest), need[0]);
-  const size = fitCount(host, waitingCard(sampleCard), 12, columns);
-  needRoom = host.clientHeight;
-  const pages = Math.max(1, Math.ceil(need.length / size));
-  needPage = Math.min(needPage, pages - 1);
-  const slice = need.slice(needPage * size, (needPage + 1) * size);
-  host.replaceChildren(...slice.map((card) => waitingCard(card)));
-  byId("homeNeedPager").hidden = pages <= 1;
-  byId("homeNeedPosition").textContent = `${needPage * size + 1}–${needPage * size + slice.length} of ${need.length}`;
-  byId("homeNeedPrevious").disabled = needPage === 0;
-  byId("homeNeedNext").disabled = needPage >= pages - 1;
+  host.style.setProperty("--home-columns", String(host.clientWidth >= 620 ? 2 : 1));
+  // Every card is there: the area scrolls, drawn in chunks (long-scroll.js); a refresh keeps the place.
+  const scroll = host.scrollTop;
+  host.replaceChildren();
+  drawChunked(host, need.map((card) => () => waitingCard(card)), { key: "home-needs" });
+  host.scrollTop = scroll;
 }
 
 function renderList(column, hostId, countId, empty) {
@@ -332,14 +434,10 @@ function sync() {
   if (body.classList.contains("ws-home") !== show) body.classList.toggle("ws-home", show);
   if (home.hidden === show) home.hidden = !show;
   if (show) {
-    const drawing = JSON.stringify([cards.map((card) => [card.projectId, card.conversationId, card.column, card.title, card.updatedAt, card.activity, card.controlledBy, questionOf(card)]), loaded, spentToday, home.clientWidth, home.clientHeight, needPage, state.username]);
+    const drawing = JSON.stringify([cards.map((card) => [card.projectId, card.conversationId, card.column, card.title, card.updatedAt, card.activity, card.controlledBy, questionOf(card)]), loaded, spentToday, home.clientWidth, home.clientHeight, state.username]);
     if (drawing !== shownFor) {
       shownFor = drawing;
       render();
-      // The grid settles its rows after the first drawing (the empty state had other ones): fit once more if it moved.
-      requestAnimationFrame(() => {
-        if (!home.hidden && Math.abs(byId("homeNeedCards").clientHeight - needRoom) > 1 && inColumn("needs-you").length) { shownFor = ""; schedule(); }
-      });
     }
     // Read when signed in, then every few minutes (a day without prices stays without the spend, not read again at once).
     if (state.authenticated && (!spentReadAt || Date.now() - spentReadAt > SPENT_REFRESH_MS)) void readSpent();
@@ -391,7 +489,6 @@ new ResizeObserver(schedule).observe(home);
 // conversation back, as it always has (workspace.js).
 byId("workspaceHomeButton").addEventListener("click", () => {
   requested = true;
-  needPage = 0;
   if (["board", "control"].includes(currentMobileView())) setMobileView(state.activeSessionId || state.activeSessionPath ? "chat" : "sessions");
   if (!body.classList.contains("ws-column-inbox")) byId("workspaceInboxButton").click();
   schedule();
@@ -399,7 +496,6 @@ byId("workspaceHomeButton").addEventListener("click", () => {
 byId("workspaceInboxButton").addEventListener("click", (event) => {
   // Pressed by the person (not by Home itself): Inbox is the open conversation again.
   if (event.isTrusted) requested = false;
-  needPage = 0;
   schedule();
 });
 // A row of the left column (or the group page) opens its conversation, even the one Home was shown over.
@@ -407,11 +503,9 @@ document.addEventListener("click", (event) => {
   if (event.target.closest?.(".ws-row") && requested) { requested = false; schedule(); }
 }, true);
 
-byId("homeNeedPrevious").addEventListener("click", () => { needPage = Math.max(0, needPage - 1); schedule(); });
-byId("homeNeedNext").addEventListener("click", () => { needPage += 1; schedule(); });
 for (const all of home.querySelectorAll(".ws-home-all")) all.addEventListener("click", () => openGroupPage(all.dataset.group));
 // The greeting follows the time of day, the Running times the clock.
 setInterval(() => { shownFor = ""; schedule(); }, 60_000);
 schedule();
 // The phone's Home shows the same cards under its greeting.
-useNeedCards((card) => waitingCard(card, { compact: true }));
+useNeedCards((items) => needDeck(items));

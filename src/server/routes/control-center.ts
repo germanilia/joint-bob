@@ -4,7 +4,7 @@ import type { AuthSession } from "../../auth.js";
 import { getGuardianSettings, updateGuardianSettings } from "../../guardian/settings.js";
 import { productionGuardStatus, withProductionGuard } from "../../guardian/production-rule.js";
 import { allPendingGuardianReviews, decideGuardianReview } from "../../guardian/reviews.js";
-import { projectVisible } from "../../store.js";
+import { getProject, projectVisible } from "../../store.js";
 import { isKeptOut, keepBobOut, loadKeptOut, releaseLease, takeLease } from "../../control-center/leases.js";
 import { requireAdmin } from "../admin.js";
 import { broadcastToAllClients } from "../realtime.js";
@@ -14,6 +14,9 @@ import { bobDatabase, countBobMessages, rememberBobAccount, type BobMessage } fr
 import { asideNow, conversationsOfMessage, listSnoozes, writeSnooze } from "../../control-center/snoozes.js";
 import { overviewConversations } from "../../control-center/overview.js";
 import { bobStartedKeys } from "../../control-center/started.js";
+import { cardDetail } from "../../control-center/card-detail.js";
+import { createMoveEnvironment } from "../../control-center/moves-runtime.js";
+import { loadConversationMessages } from "../conversation-turns.js";
 import { storedDigest } from "../../conversation-digest.js";
 import { gitCommitHistory, gitStatus } from "../../git-review.js";
 import { knowledgeDirectory, readSubjects } from "../../project-knowledge.js";
@@ -22,7 +25,7 @@ import { sharedProjectSessions } from "../sessions-helpers.js";
 import { startMemorySync } from "../../control-center/memory-sync.js";
 import { loadBoard } from "../control-center-board.js";
 import { startControlCenterWatch } from "../control-center-watch.js";
-import { closeFromBoard, pushFromBoard, startReviewChecks } from "../control-center-review-check.js";
+import { closeFromBoard, pushFromBoard, replyFromBoard, startReviewChecks } from "../control-center-review-check.js";
 import { BobActionError } from "../../control-center/bob-actions.js";
 import { NotFoundError } from "../../not-found.js";
 import { closeoutFeedbackSchema } from "../../conversation-closeout.js";
@@ -205,6 +208,45 @@ app.post("/api/control-center/cards/push", async (request, response, next) => {
     if (error instanceof BobActionError) { sendError(response, error.status, error.message); return; }
     if (error instanceof NotFoundError) { sendError(response, 404, error.message); return; }
     if (error instanceof Error && /not writable on this node|Team continuation/.test(error.message)) { sendError(response, 409, error.message); return; }
+    next(error);
+  }
+});
+
+const cardReplySchema = z.object({ projectId: z.string().min(1).max(200), conversationId: z.string().min(1).max(300), message: z.string().trim().min(1).max(8_000) }).strict();
+
+/** Answer on a card: the person's words go to the conversation as written, without opening it. */
+app.post("/api/control-center/cards/reply", async (request, response, next) => {
+  try {
+    const input = cardReplySchema.parse(request.body);
+    if (!await projectVisible(input.projectId)) { sendError(response, 404, "Project not found"); return; }
+    await replyFromBoard(response.locals.authSession as AuthSession, input, input.message);
+    response.json({ ok: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid request"); return; }
+    if (error instanceof BobActionError) { sendError(response, error.status, error.message); return; }
+    if (error instanceof NotFoundError) { sendError(response, 404, error.message); return; }
+    if (error instanceof Error && /not writable on this node|Team continuation/.test(error.message)) { sendError(response, 409, error.message); return; }
+    next(error);
+  }
+});
+
+const cardDetailSchema = z.object({ projectId: z.string().min(1).max(200), conversationId: z.string().min(1).max(300) }).strict();
+
+/**
+ * What a card on Home waits for, read without opening the conversation: what was asked, the agent's last message and its last
+ * steps. Read-only; a project or conversation the caller cannot see is not found, exactly as for the card's other actions.
+ */
+app.get("/api/control-center/cards/detail", async (request, response, next) => {
+  try {
+    const input = cardDetailSchema.parse(request.query);
+    if (!await projectVisible(input.projectId)) { sendError(response, 404, "Project not found"); return; }
+    const project = await getProject(input.projectId);
+    if (!project || !await createMoveEnvironment(response.locals.authSession as AuthSession).resolve(input)) { sendError(response, 404, "Conversation not found"); return; }
+    // A transcript still on another machine cannot be read here: the card says so and keeps its other reasons.
+    const loaded = await loadConversationMessages(project, input.conversationId).catch(() => null);
+    response.json(loaded ? cardDetail(loaded.messages) : { ...cardDetail([]), unavailable: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid request"); return; }
     next(error);
   }
 });

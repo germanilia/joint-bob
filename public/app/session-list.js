@@ -11,6 +11,7 @@ import { filteredSessions, normalizedQuery, selectedProject, sessionDisplayState
 import { toggleSessionNtfy } from "./ntfy.js";
 import { changeSessionOptimistically } from "./optimistic-sessions.js";
 import { keepListScroll } from "./list-scroll.js";
+import { drawChunked } from "./long-scroll.js";
 import { renderProjects } from "./project-list.js";
 import { syncRecentSessionActivity } from "./recents.js";
 import { openListedSession, reviewableSessions } from "./reviews.js";
@@ -127,7 +128,14 @@ export function renderSessions() {
   }
 
   const list = elements.sessionList;
-  list.append(worktreesHeading());
+  // The rows are made as the person scrolls to them (long-scroll.js): what is listed here are the entries, in order.
+  const entries = [worktreesHeading()];
+  let activeAt = -1;
+  const addRow = (row) => {
+    const active = sessionIsActive(row.session);
+    if (active && activeAt < 0) activeAt = entries.length;
+    entries.push(() => sessionRow(row, active));
+  };
   const emptyWorktrees = [];
   for (const worktree of worktrees.values()) {
     const group = worktreeRows.get(worktree.id) || [];
@@ -136,11 +144,13 @@ export function renderSessions() {
       if (!narrowed && !state.chatFilters.size && !worktree.syncing) emptyWorktrees.push(worktree);
       continue;
     }
-    list.append(worktreeSectionHeader(worktree, group.filter((row) => row.depth === 0).length));
+    entries.push(worktreeSectionHeader(worktree, group.filter((row) => row.depth === 0).length));
     if (state.collapsedWorktreeIds.has(worktree.id)) continue;
-    for (const row of group) list.append(sessionRow(row, sessionIsActive(row.session)));
+    for (const row of group) addRow(row);
   }
-  if (emptyWorktrees.length) list.append(otherWorktreesSection(emptyWorktrees, otherWorktreesOpen));
+  if (emptyWorktrees.length) entries.push(otherWorktreesSection(emptyWorktrees, otherWorktreesOpen));
+  // One continuous list that scrolls; another project, search or filter is another list and starts at the top.
+  const draw = () => drawChunked(list, entries, { key: listKey(project, narrowed), ensure: activeAt });
   if (state.sessions.length === 0 || sessions.length === 0) {
     const empty = document.createElement("p");
     empty.className = "muted";
@@ -149,7 +159,8 @@ export function renderSessions() {
       : narrowed
         ? "No matching conversations."
         : `No ${[...state.chatFilters].map((filter) => chatFilterNames[filter]).join(" or ")} conversations.`;
-    list.append(empty);
+    entries.push(empty);
+    draw();
     return;
   }
   if (worktrees.size && projectRows.length) {
@@ -157,9 +168,26 @@ export function renderSessions() {
     heading.className = "worktree-subsection-title";
     heading.dataset.testid = "project-folder-subsection";
     heading.textContent = "Project folder";
-    list.append(heading);
+    entries.push(heading);
   }
-  for (const row of projectRows) list.append(sessionRow(row, sessionIsActive(row.session)));
+  for (const row of projectRows) addRow(row);
+  draw();
+  showOpenConversation(list);
+}
+
+/** What makes the list another list: the project, the search and the filters. A refresh keeps all of them. */
+function listKey(project, narrowed) {
+  return JSON.stringify([project?.id, normalizedQuery(elements.sessionSearchInput.value || ""), narrowed, [...state.chatFilters], [...state.classificationFilters], [...state.sessionClusterFilters], state.showDoneConversations, state.showScheduledConversations]);
+}
+
+/** Another conversation opened (from Home, a shortcut): its row is brought into view once, not on every refresh. */
+let shownConversation = "";
+function showOpenConversation(list) {
+  const key = `${state.activeProjectId || ""}|${state.activeSessionId || ""}|${state.activeSessionPath || ""}`;
+  if (key === shownConversation) return;
+  shownConversation = key;
+  const row = list.querySelector(".list-row.active, .session-card.active");
+  if (row && list.getClientRects().length) queueMicrotask(() => row.scrollIntoView({ block: "nearest" }));
 }
 
 function sessionCard(session, sessionActive, sessionPinned, ticketTask) {

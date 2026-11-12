@@ -2,7 +2,8 @@ import { api } from "./api.js";
 import { openBudgetDialog, workspaceBudgetTarget } from "./budget-dialog.js";
 import { isNodeAdmin } from "./node-admin.js";
 import { elements } from "./elements.js";
-import { createListPager, rowActions } from "./list-pager.js";
+import { rowActions } from "./list-pager.js";
+import { createChunkedList } from "./long-scroll.js";
 import { fillProjectBases } from "./project-forms.js";
 import { openSecretScope } from "./secrets.js";
 import { confirmAction, toast } from "./shell.js";
@@ -40,8 +41,8 @@ function fillWorkspaceSelect() {
   elements.projectWorkspaceInput.value = shared.workspaces.some((workspace) => workspace.id === previous) ? previous : shared.workspaces[0]?.id ?? "";
 }
 
-// The list fits the section and pages (list-pager.js); `revealWorkspaceId` turns to a new workspace's page once.
-const workspacePager = createListPager({ list: elements.workspaceList, prefix: "workspace", label: "Workspace pages", render: renderWorkspaces });
+// One long list that the section scrolls, drawn in chunks (long-scroll.js); `revealWorkspaceId` draws a new workspace's row once.
+const workspacePager = createChunkedList({ list: elements.workspaceList, render: renderWorkspaces });
 let revealWorkspaceId = null;
 
 function renderWorkspaces() {

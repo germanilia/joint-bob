@@ -3,14 +3,15 @@ import test from "node:test";
 import type { Page } from "playwright-core";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 
-// Settings › Browser, Secrets and Workspaces are long lists: rows of one height that fit the
-// window and page with Previous / "1–8 of 31" / Next, never growing the section.
+// Settings › Browser and Secrets are long lists: rows of one height that fit the window and page with Previous /
+// "1–8 of 31" / Next, never growing the section. Workspaces are one long scroll, drawn in chunks (app/long-scroll.js;
+// .agents/knowledge/list-scrolling.md): every workspace is reachable by scrolling the section, with no pager.
 // Synthetic metadata only: no profile, secret value or workspace folder is created.
 const LISTS = [
   { section: "browser", prefix: "browser-profile", list: "browser-profile-directory", total: 31 },
   { section: "secrets", prefix: "secret-account", list: "secret-account-list", total: 23 },
-  { section: "workspaces", prefix: "workspace", list: "workspace-list", total: 17 },
 ] as const;
+const WORKSPACES = 95;
 
 const frames = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
@@ -34,7 +35,7 @@ test("long Settings lists fit the window, page, and keep every row action", { ti
     id: `account-${index}`, label: index === 22 ? "Fixture" : `Fixture account ${index + 1}`, provider: index % 2 ? "custom" : "openai", websiteOrigin: null,
     variables: [{ name: index === 22 ? "FIXTURE_LAST_KEY" : `FIXTURE_KEY_${index + 1}`, kind: "value", configured: true }], shared: index === 1, readOnly: false, projectId: null,
   }));
-  const workspaces = Array.from({ length: 17 }, (_, index) => ({ id: `fixture-${index + 1}`, label: `Fixture workspace ${index + 1}` }));
+  const workspaces = Array.from({ length: WORKSPACES }, (_, index) => ({ id: `fixture-${index + 1}`, label: `Fixture workspace ${index + 1}` }));
   await page.route("**/api/browser/directory", (route) => route.fulfill({ json: { profiles, unavailableNodes: [] } }));
   await page.route("**/api/browser/share-targets", (route) => route.fulfill({ json: { localNodeId: node.nodeId, nodes: machines, clusters: [], workspaces: [] } }));
   await page.route("**/api/secrets", (route) => route.request().method() === "GET" ? route.fulfill({ json: { accounts } }) : route.continue());
@@ -74,6 +75,30 @@ test("long Settings lists fit the window, page, and keep every row action", { ti
       await page.getByTestId(`${prefix}-page-previous`).click();
       assert.equal(await label.innerText(), `1–${shown} of ${total}`);
     }
+  }
+
+  // Workspaces: one continuous list. The first chunk is forty rows; scrolling the section draws the rest, and a refresh keeps the place.
+  for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+    await page.setViewportSize({ width, height });
+    await openSection(page, "workspaces");
+    const workspaceList = page.getByTestId("workspace-list");
+    await workspaceList.locator(":scope > .long-list-row").first().waitFor();
+    assert.equal(await page.getByTestId("workspace-pager").count(), 0, "no pager");
+    assert.equal(await workspaceList.getAttribute("data-total"), String(WORKSPACES));
+    // The drawn count outlives a resize (the same list), so only the first pass starts at the first chunk.
+    if (width === 1440) assert.equal(await workspaceList.getAttribute("data-rendered"), "40", "the first chunk is forty rows");
+    for (let step = 0; step < 4 && Number(await workspaceList.getAttribute("data-rendered")) < WORKSPACES; step++) {
+      const before = Number(await workspaceList.getAttribute("data-rendered"));
+      if (before >= WORKSPACES) break;
+      await workspaceList.evaluate((element) => { const panel = element.closest(".settings-panel")!; panel.scrollTop = panel.scrollHeight; });
+      await page.waitForFunction((count) => Number(document.querySelector('[data-testid="workspace-list"]')?.getAttribute("data-rendered")) > count, before);
+    }
+    assert.equal(await workspaceList.locator(":scope > .long-list-row").count(), WORKSPACES, `every workspace is reachable at ${width}px`);
+    const place = await workspaceList.evaluate((element) => element.closest(".settings-panel")!.scrollTop);
+    await page.evaluate(async () => { await (await import("/app/workspaces.js")).loadWorkspaces(); });
+    await frames(page);
+    assert.equal(await workspaceList.locator(":scope > .long-list-row").count(), WORKSPACES, "a refresh keeps every drawn row");
+    assert.ok(Math.abs((await workspaceList.evaluate((element) => element.closest(".settings-panel")!.scrollTop)) - place) < 4, "a refresh keeps the place");
   }
 
   // On a phone a row's actions fold behind ⋯; none is dropped, and each is a full-size target.

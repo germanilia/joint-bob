@@ -94,10 +94,10 @@ async function decide(actor: ActingAccount, settings: BobSettings, conversation:
   });
 }
 
-async function push(actor: ActingAccount, conversation: Conversation, reason: string, instructions = "", onQueued?: () => void): Promise<void> {
+async function push(actor: ActingAccount, conversation: Conversation, reason: string, instructions = "", onQueued?: () => void, verbatim?: string): Promise<void> {
   if (!await personalContinuationAllowed(conversation.projectId, conversation.conversationId)) throw new Error('Team continuation requires an explicit assignment');
   await runAsAccount(actor, () => queueConversationPrompt({
-    projectId: conversation.projectId, engine: conversation.engine, sessionId: conversation.sessionId, message: personPushText(reason, instructions),
+    projectId: conversation.projectId, engine: conversation.engine, sessionId: conversation.sessionId, message: verbatim ?? personPushText(reason, instructions),
     requestId: randomUUID(), label: "Bob", until: "started", onQueued,
   }));
 }
@@ -106,10 +106,10 @@ async function push(actor: ActingAccount, conversation: Conversation, reason: st
  * The person's push answers the press as soon as the conversation has it in its queue, as a quick reply does, so the chat
  * says so at once; the turn starts right after (or after the one running). A turn that then fails to start shows there.
  */
-async function pushForPerson(actor: ActingAccount, conversation: Conversation, reason: string, instructions: string): Promise<void> {
+async function pushForPerson(actor: ActingAccount, conversation: Conversation, reason: string, instructions: string, verbatim?: string): Promise<void> {
   let accepted!: () => void;
   const queued = new Promise<void>((resolve) => { accepted = resolve; });
-  const started = push(actor, conversation, reason, instructions, accepted);
+  const started = push(actor, conversation, reason, instructions, accepted, verbatim);
   started.catch((error) => console.warn(`Bob's push to "${conversation.title}" did not start`, error instanceof Error ? error.message : error));
   await Promise.race([queued, started]);
 }
@@ -329,6 +329,23 @@ export async function pushFromBoard(session: AuthSession, ref: { projectId: stri
   const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
   await pushForPerson(actingAccountFromSession(session), conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
   if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
+  broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
+  askBobRecheck(session.accountId);
+}
+
+/**
+ * The person's own answer to a card, written on the card: sent to the conversation as it is (no push wording added), as when they
+ * type it in the conversation. Bob's check of what it was waiting on ends, and he judges the turn that follows afresh.
+ */
+export async function replyFromBoard(session: AuthSession, ref: { projectId: string; conversationId: string }, message: string): Promise<void> {
+  if (isLeased(ref.projectId, ref.conversationId)) throw new BobActionError(409, "You are in this conversation now, so it is left to you");
+  const found = await createMoveEnvironment(session).resolve(ref);
+  if (!found) throw new NotFoundError("Conversation not found");
+  const conversation: Conversation = { projectId: ref.projectId, projectName: found.projectName, conversationId: ref.conversationId, engine: found.harnessId, sessionId: found.sessionId, title: found.title };
+  const db = await bobDatabase();
+  const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
+  await pushForPerson(actingAccountFromSession(session), conversation, "", "", message);
+  if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), verdict: "done", reason: "You answered it.", pushes: 0, pushPending: false, needsYou: false });
   broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
   askBobRecheck(session.accountId);
 }

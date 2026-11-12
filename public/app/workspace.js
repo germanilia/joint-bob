@@ -5,7 +5,7 @@
 // Projects, Board, Automations, Costs), then either the conversations that need you, run or wait for
 // review in every project (Inbox), or the projects with the chosen project's conversations in a column beside them (Projects);
 // Settings and the person at the bottom. Each group shows the rows that fit and "Show all" opens the
-// group as a paged list in the middle. The column never scrolls.
+// group as one long list in the middle that scrolls (long-scroll.js). The column itself never scrolls.
 //
 // The conversation header keeps today's controls and ids; on the desktop a few of them move into
 // the header's action slot and chip row (and back when the phone layout takes over), so every
@@ -19,6 +19,7 @@ import { isControlCenterOpen, openConversation } from "./control-center.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { startGlobalConversation } from "./new-session.js";
+import { drawChunked } from "./long-scroll.js";
 import { openQuickNote } from "./quick-notes.js";
 import { openSpotlight } from "./spotlight.js";
 import { toast } from "./shell.js";
@@ -354,6 +355,8 @@ search.addEventListener("keydown", (event) => {
   openSpotlight(search.value);
 });
 window.addEventListener("shortcut-targets-changed", syncSearchKey);
+// The folded rail has no box to type in: its search icon opens the same search.
+byId("workspaceSearchRailButton").addEventListener("click", () => openSpotlight(""));
 
 /* ---------- the groups: Needs you, Running, To review ---------- */
 
@@ -427,13 +430,16 @@ function cardRow(card, group, testid) {
 
 const groupsHost = byId("workspaceGroups");
 // A group's label and its "nothing here" line; the phone sets taller ones (phone.css: --ws-lab-height, --ws-empty-height).
-const LABEL_HEIGHT = 34;
+const LABEL_HEIGHT = 43;
 const EMPTY_HEIGHT = 26;
+/** The phone's Home shows this many rows of Running and To review before Show all; the deck's bar is this tall. */
+const PHONE_ROWS = 5;
+const DECK_BAR = 48;
 function cssHeight(name, fallback) {
   return parseFloat(getComputedStyle(groupsHost).getPropertyValue(name)) || fallback;
 }
 
-/** The phone's Home draws what needs you as cards; home.js gives the card (`waitingCard`). */
+/** The phone's Home draws what needs you as a swipeable deck of cards; home.js gives it (`needDeck`, from all the cards). */
 let needCard = null;
 export function useNeedCards(render) {
   needCard = render;
@@ -456,6 +462,16 @@ function renderGroups(refit = true) {
   const room = groupsHost.clientHeight;
   let budget = room - GROUPS.length * cssHeight("--ws-lab-height", LABEL_HEIGHT) - counts.filter((count) => !count).length * cssHeight("--ws-empty-height", EMPTY_HEIGHT);
   const shown = GROUPS.map(() => 0);
+  if (phoneHomeShown()) {
+    // The phone's Home scrolls with the page: Needs you is one deck of every card, the other groups show their first few
+    // rows and Show all opens the whole list.
+    GROUPS.forEach((group, index) => { shown[index] = group.id === "needs-you" && cardsHere ? counts[index] : Math.min(counts[index], PHONE_ROWS); });
+    budget = 0;
+  } else if (cardsHere && counts[GROUPS.findIndex((group) => group.id === "needs-you")]) {
+    const index = GROUPS.findIndex((group) => group.id === "needs-you");
+    shown[index] = counts[index];
+    budget -= cardHeight + DECK_BAR;
+  }
   let dealt = true;
   while (dealt) {
     dealt = false;
@@ -466,6 +482,10 @@ function renderGroups(refit = true) {
       dealt = true;
     }
   }
+  // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
+  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, GROUPS.map((group, index) => cardsIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)]))]);
+  if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
+  groupsHost.dataset.signature = signature;
   groupsHost.replaceChildren(...GROUPS.map((group, index) => {
     const section = document.createElement("section");
     section.className = "ws-group";
@@ -496,9 +516,9 @@ function renderGroups(refit = true) {
       empty.textContent = group.empty;
       section.append(empty);
     }
-    for (const card of cardsIn(group.id).slice(0, shown[index])) {
-      section.append(cardsHere && group.id === "needs-you" ? needCard(card) : cardRow(card, group, "workspace-group-row"));
-    }
+    if (cardsHere && group.id === "needs-you") {
+      if (counts[index]) section.append(needCard(cardsIn(group.id)));
+    } else for (const card of cardsIn(group.id).slice(0, shown[index])) section.append(cardRow(card, group, "workspace-group-row"));
     return section;
   }));
   // The first render measures a row; a different height deals again once.
@@ -517,10 +537,7 @@ function syncInboxNote() {
   note.classList.toggle("needs", needs > 0);
 }
 
-new ResizeObserver(() => requestAnimationFrame(() => {
-  renderGroups();
-  if (!page.hidden) renderGroupPage();
-})).observe(groupsHost);
+new ResizeObserver(() => requestAnimationFrame(() => renderGroups())).observe(groupsHost);
 
 /* ---------- reading the board ---------- */
 
@@ -583,17 +600,14 @@ setInterval(() => {
   void readBoard();
 }, 20_000);
 
-/* ---------- Show all: one group as a paged list in the middle ---------- */
+/* ---------- Show all: one group as a long list in the middle ---------- */
 
 const page = byId("workspaceGroupPage");
 const pageList = byId("workspaceGroupList");
 let pageGroup = "needs-you";
-let pageIndex = 0;
-let pageSize = 8;
 
 export function openGroupPage(groupId) {
   pageGroup = groupId;
-  pageIndex = 0;
   page.hidden = false;
   body.classList.add("ws-page-open");
   renderGroupPage();
@@ -606,7 +620,8 @@ export function closeGroupPage() {
   body.classList.remove("ws-page-open");
 }
 
-function renderGroupPage(refit = true) {
+/** Every card of the group is one continuous list that scrolls (long-scroll.js); a refresh draws it again where it was, another group starts at the top. */
+function renderGroupPage() {
   const group = GROUPS.find((item) => item.id === pageGroup) ?? GROUPS[0];
   byId("workspaceGroupTitle").textContent = group.title;
   byId("workspaceGroupTabs").replaceChildren(...GROUPS.map((item) => {
@@ -616,45 +631,32 @@ function renderGroupPage(refit = true) {
     tab.setAttribute("aria-selected", String(item.id === group.id));
     tab.dataset.testid = `workspace-group-tab-${item.id}`;
     tab.append(item.title, Object.assign(document.createElement("b"), { textContent: String(cardsIn(item.id).length) }));
-    tab.addEventListener("click", () => { pageGroup = item.id; pageIndex = 0; renderGroupPage(); });
+    tab.addEventListener("click", () => { pageGroup = item.id; renderGroupPage(); });
     return tab;
   }));
   const items = cardsIn(group.id);
-  // Rows share one height, so the page holds the whole rows that fit above the pager.
-  const sample = pageList.querySelector(".ws-row");
-  const rowHeight = sample ? sample.getBoundingClientRect().height + 6 : 70;
-  const room = pageList.clientHeight || (page.clientHeight - 160);
-  pageSize = Math.max(1, Math.floor((room + 6) / rowHeight));
-  const pages = Math.max(1, Math.ceil(items.length / pageSize));
-  pageIndex = Math.min(pageIndex, pages - 1);
-  const slice = items.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-  pageList.replaceChildren(...slice.map((card) => {
+  const scroll = pageList.scrollTop;
+  pageList.replaceChildren();
+  const entries = items.map((card) => () => {
     const row = cardRow(card, group, "workspace-group-page-row");
     row.classList.add("wide");
     return row;
-  }));
+  });
   if (!items.length) {
     const empty = document.createElement("p");
     empty.className = "ws-empty";
     empty.textContent = loaded ? group.empty : "Loading…";
-    pageList.append(empty);
+    entries.push(empty);
   }
-  byId("workspaceGroupPager").hidden = items.length <= pageSize;
-  byId("workspaceGroupPosition").textContent = items.length ? `${pageIndex * pageSize + 1}–${Math.min(items.length, (pageIndex + 1) * pageSize)} of ${items.length}` : "";
-  byId("workspaceGroupPrevious").disabled = pageIndex === 0;
-  byId("workspaceGroupNext").disabled = pageIndex >= pages - 1;
-  // A first page drawn before a row could be measured is fitted again once.
-  const measured = pageList.querySelector(".ws-row");
-  if (refit && measured && Math.abs(measured.getBoundingClientRect().height + 6 - rowHeight) > 1) renderGroupPage(false);
+  drawChunked(pageList, entries, { key: group.id });
+  // Emptying a scroll box sends it to its top; a refresh of the same group puts it back (a new group's key resets it after this).
+  pageList.scrollTop = scroll;
 }
 
 byId("workspaceGroupClose").addEventListener("click", closeGroupPage);
-byId("workspaceGroupPrevious").addEventListener("click", () => { pageIndex -= 1; renderGroupPage(); });
-byId("workspaceGroupNext").addEventListener("click", () => { pageIndex += 1; renderGroupPage(); });
 page.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); closeGroupPage(); }
 });
-new ResizeObserver(() => { if (!page.hidden) requestAnimationFrame(renderGroupPage); }).observe(page);
 
 /* ---------- the person ---------- */
 

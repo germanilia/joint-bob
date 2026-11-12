@@ -90,7 +90,6 @@ import "./app/appearance.js";
 import "./app/conversation-sharing.js";
 import "./app/conversation-details.js";
 import "./app/workspace.js";
-import "./app/session-pager.js";
 import "./app/home.js";
 import "./app/bob-page.js";
 
