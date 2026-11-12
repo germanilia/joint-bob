@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.276.0 — 2026-11-12
+
+- Browser sign-in notices now show the conversation title and an Open conversation button instead of raw IDs.
+- Added an evidence-based model allocation preview with scoped evidence and recovery checks.
+- Added verification of task-only local commits before retiring a worktree.
+
 ## 2.275.0 — 2026-11-12
 
 - **Settings is centred.** The section list and the content sit together in the middle of a wide window instead of at its left edge. Sections with tables, maps or long lists get a wider column.
