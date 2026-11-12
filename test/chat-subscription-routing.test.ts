@@ -242,12 +242,13 @@ test("a routed model runs on the first pool member and the default runs after sw
   const f = fixture("pool");
   let saved: any = null;
   const routed: any[] = [];
-  const policy = { id: "config", revision: 1, policy: { classifierId: "fixture", confidenceThreshold: 0.5, contextMessages: 10,
+  const policy = { id: "config", revision: 1, policy: { classifierId: "typesafe", confidenceThreshold: 0.5, contextMessages: 10,
     harnesses: { claude: { levels: { "7": { provider: "claude", modelId: "routed-model", thinkingLevel: "high", description: "Hard work" } } } } } };
   Object.assign(f.dependencies, {
     activeRoutingConfig: () => policy, bumpRoutingPromptCount: () => 1, routingEvalDue: () => true, recordRoutingEval: () => {},
     readRoutingState: () => ({ mode: "auto", lastEvalOrdinal: null, configId: "config", configRevision: 1 }),
-    getDifficultyClassifier: () => ({ id: "fixture", variableName: "FIXTURE_KEY", keyOptional: true, classify: async () => ({ level: 7, confidence: 0.9, abstained: false }) }),
+    classifyForRouting: async () => ({ classification: { level: 7, score: 7, confidence: 0.9 }, source: "local" }),
+    systemAiSettings: () => ({ decision: { model: "typesafe" }, routing: { enabled: true, shareWithRelay: false } }), DEFAULT_ROUTING_CONFIG_ID: "default-config",
     automaticRoutingModelAllowed: () => true, getHarness: () => ({ configuration: {} }),
     readQueueSettings: () => saved, recordQueueSettings: (_key: string, value: unknown) => { saved = value; },
     getHarnessRuntime: async () => ({ validateSettings: async (value: any) => { routed.push(value.modelId); } }),

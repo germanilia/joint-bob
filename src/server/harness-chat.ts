@@ -22,12 +22,12 @@ import { withPoolProfile, type PoolProfileContext } from "../provider-profiles/c
 import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../provider-profiles/pool-execution.js";
 import type { ProfileProvider } from "../provider-profiles/store.js";
 import { getConversationRecord, ensureConversationRecord, listConversationSegments } from "../conversation-records.js";
-import type { DifficultyClassification } from "../classifiers/contract.js";
 import type { UsageDifficulty } from "../usage-types.js";
 import { inheritedDifficulty, latestDifficultyForConversation, saveDifficulty } from "../usage-ledger.js";
-import { getDifficultyClassifier } from "../classifiers/registry.js";
-import { automaticRoutingModelAllowed, routingEvalDue } from "../routing-policy.js";
-import { activeRoutingConfig, routingConfigDatabase, routingConfigWarning, type StoredRoutingConfig } from "../routing-configs.js";
+import { classifyForRouting } from "../routing-decision.js";
+import { systemAiSettings } from "../system-ai-config.js";
+import { automaticRoutingModelAllowed, routingEvalDue, type RoutingCandidate } from "../routing-policy.js";
+import { activeRoutingConfig, DEFAULT_ROUTING_CONFIG_ID, routingConfigDatabase, routingConfigWarning, type StoredRoutingConfig } from "../routing-configs.js";
 import { applySystemControlDefault, enableSystemControl, type ConversationModel } from "./system-control.js";
 import { blockConversationGoal, cancelConversationGoal, getConversationGoal, goalPrompt, goalStatusMessage, parseBobGoalCommand, recordConversationGoalResponse, startConversationGoal, type ConversationGoal } from "../conversation-goals.js";
 import { attachAutoReplies, recordAutoReply, DEFAULT_AUTO_RESPOND_INSTRUCTIONS, DEFAULT_AUTO_RESPOND_STOP_INSTRUCTIONS, autoRespondInput, autoRespondConfigSchema, autoRespondMessage, disableAutoRespond, enableAutoRespond, getAutoRespond, parseAutoRespondDecision, recordAutoResponse, resetAutoRespondCount, responderPrompt, retryAutoRespond, stopAutoRespond, type AutoRespondConfig, type AutoRespondState, type AutoRespondStopKind } from "../conversation-auto-respond.js";
@@ -557,7 +557,7 @@ async function routePromptByDifficulty(connection: HarnessChatConnection, queued
   let policy: StoredRoutingConfig | null = null;
   try { policy = activeRoutingConfig(routingConfigDatabase(), conversationOwner(connection)); }
   catch (error) { console.warn("Routing configuration resolution failed", error instanceof Error ? error.message.slice(0, 200) : "unknown error"); }
-  if (!policy) return result("disabled");
+  if (!policy || policy.id === DEFAULT_ROUTING_CONFIG_ID && !systemAiSettings().routing.enabled) return result("disabled");
   const key = queueKey(connection);
   const ordinal = bumpRoutingPromptCount(key);
   const state = readRoutingState(key);
@@ -574,9 +574,9 @@ async function routePromptByDifficulty(connection: HarnessChatConnection, queued
   }
   if (!due) return inheritedDifficulty(result("not-classified", configured), latestDifficultyForConversation(connection.project.id, connection.conversationId, policy.id, policy.revision));
   recordRoutingEval(key, ordinal, policy);
-  const skip = (reason: string, status: string, level?: number, confidence?: number): UsageDifficulty => {
+  const skip = (reason: string, status: string, level?: number, confidence?: number, extra: Partial<UsageDifficulty> = {}): UsageDifficulty => {
     publish(connection, { type: "promptRouted", queueId: queued.id, skipped: reason, ...(level !== undefined ? { level } : {}), ...(confidence !== undefined ? { confidence } : {}) });
-    return result(status, { ...configured, level: status === "classified" ? level ?? null : null, confidence: confidence ?? null });
+    return result(status, { ...configured, reason, ...extra, level: status === "classified" ? level ?? null : null, confidence: confidence ?? null });
   };
   const harnessPolicy = policy.policy.harnesses[connection.engine];
   const configuredOptions = Object.entries(harnessPolicy?.levels ?? {})
@@ -585,58 +585,85 @@ async function routePromptByDifficulty(connection: HarnessChatConnection, queued
     .sort((left, right) => left.level - right.level);
   if (!configuredOptions.length) {
     publish(connection, { type: "promptRouted", queueId: queued.id, skipped: "no configured mapping", mapped: false });
-    return result("unavailable", configured);
+    return result("unavailable", { ...configured, reason: "no configured mapping" });
   }
-  const classifier = getDifficultyClassifier(policy.policy.classifierId);
-  if (!classifier) return skip("unknown classifier", "unavailable");
-  const apiKey = genericSecretEnvironment(connection.project.id)[classifier.variableName];
-  if (!apiKey && !classifier.keyOptional) return skip("classifier key missing", "unavailable");
-  let classification: DifficultyClassification | null = null;
-  try {
-    const input = routingClassifierInput(connection, queued, policy.policy.contextMessages ?? 10);
-    classification = await classifier.classify(input, apiKey ?? "", { options: configuredOptions });
-  } catch { classification = null; }
-  if (!classification) return skip("classifier failed", "unavailable");
-  if (classification.confidence < policy.policy.confidenceThreshold) {
-    // An unsure classifier must not leave a previously routed tier (often a cheap one) in place.
+  const classifierId = policy.id === DEFAULT_ROUTING_CONFIG_ID ? systemAiSettings().decision.model : policy.policy.classifierId;
+  if (classifierId !== "typesafe" && classifierId !== "laya") return skip("unknown classifier", "unavailable");
+  const decision = await classifyForRouting(classifierId, routingClassifierInput(connection, queued, policy.policy.contextMessages ?? 10), configuredOptions);
+  const decided = { ...configured, classifierId, decisionSource: decision.source };
+  if (!decision.classification) return skip(decision.reason, "unavailable", undefined, undefined, { ...decided, reason: decision.reason });
+  const classification = decision.classification;
+  const unsure = classification.confidence < policy.policy.confidenceThreshold;
+  if (unsure || classification.abstained) {
+    // An unsure or abstaining classifier must not leave a previously routed tier (often a cheap one) in place.
+    const reason = unsure ? "low confidence" : "no suitable mapping";
+    const status = unsure ? "low-confidence" : "abstained";
     const fallback = getSettings().conversationDefaults[connection.engine];
     const settings = fallback ? { provider: fallback.provider, modelId: fallback.modelId, reasoning: fallback.thinkingLevel } : null;
     if (settings) {
       try {
         await applyRoutedSettings(connection, settings, poolActive);
-        publish(connection, { type: "promptRouted", queueId: queued.id, skipped: "low confidence", fallback: "harness default", level: classification.level, confidence: classification.confidence, provider: settings.provider, modelId: settings.modelId, thinkingLevel: settings.reasoning });
-        return result("low-confidence", { ...configured, confidence: classification.confidence });
+        publish(connection, { type: "promptRouted", queueId: queued.id, skipped: reason, fallback: "harness default", level: classification.level, confidence: classification.confidence, provider: settings.provider, modelId: settings.modelId, thinkingLevel: settings.reasoning });
+        return result(status, { ...decided, confidence: classification.confidence, reason });
       } catch (error) {
         console.warn("Harness default model unavailable", error instanceof Error ? error.message.slice(0, 200) : "unknown error");
       }
     }
-    return skip("low confidence", "low-confidence", classification.level, classification.confidence);
+    return skip(reason, status, unsure ? classification.level : undefined, classification.confidence, { ...decided, reason });
   }
-  if (classification.abstained) return skip("no suitable mapping", "abstained", undefined, classification.confidence);
   const mapping = harnessPolicy?.levels[String(classification.level)] ?? null;
   if (!mapping) {
     publish(connection, { type: "promptRouted", queueId: queued.id, level: classification.level, confidence: classification.confidence, mapped: false });
-    return result("classified", { ...configured, level: classification.level, confidence: classification.confidence, mapped: false });
+    return result("classified", { ...decided, level: classification.level, confidence: classification.confidence, mapped: false, reason: "level not mapped" });
   }
-  const settings = {
-    provider: mapping.provider ?? getHarness(connection.engine).configuration?.fixedProvider ?? connection.shared.session.settings().provider,
-    modelId: mapping.modelId,
-    reasoning: mapping.thinkingLevel,
-  };
-  if (!automaticRoutingModelAllowed(settings.provider, settings.modelId)) return skip("model not allowed", "classified", classification.level, classification.confidence);
-  try {
-    await applyRoutedSettings(connection, settings, poolActive);
-  } catch (error) {
-    console.warn("Routed model unavailable", error instanceof Error ? error.message.slice(0, 200) : "unknown error");
-    return skip("model unavailable", "classified", classification.level, classification.confidence);
+  const routed = await applyFirstAvailableCandidate(connection, poolActive ? [mapping] : [mapping, ...(mapping.fallbacks ?? [])], poolActive);
+  if (!routed) return skip("no candidate available", "unavailable", undefined, classification.confidence, { ...decided, level: classification.level, reason: "no candidate available" });
+  const { settings, index } = routed;
+  publish(connection, { type: "promptRouted", queueId: queued.id, level: classification.level, confidence: classification.confidence, mapped: true, provider: settings.provider, modelId: settings.modelId, thinkingLevel: settings.reasoning, classifierId, candidateIndex: index });
+  return result("classified", { ...decided, level: classification.level, confidence: classification.confidence, mapped: true, reason: "routed", candidateIndex: index, provider: settings.provider, modelId: settings.modelId, thinkingLevel: settings.reasoning });
+}
+
+const ROUTING_MODEL_CACHE_MS = 10 * 60_000;
+const routingModelCache = new Map<string, { at: number; models: Promise<Set<string> | null> }>();
+
+/** "provider\0model" pairs the harness lists here, cached because Kiro spawns its CLI to list.
+    null when the harness cannot list: routing then relies on validateSettings alone. */
+function routingModelsHere(engine: string): Promise<Set<string> | null> {
+  const cached = routingModelCache.get(engine);
+  if (cached && Date.now() - cached.at < ROUTING_MODEL_CACHE_MS) return cached.models;
+  const models = listHarnessModels(engine as HarnessId)
+    .then((list) => new Set(list.map((model) => `${model.provider}\0${model.id}`)))
+    .catch(() => null);
+  routingModelCache.set(engine, { at: Date.now(), models });
+  return models;
+}
+
+/** Applies the first candidate this machine can run, in the configured (cheapest first) order. */
+async function applyFirstAvailableCandidate(connection: HarnessChatConnection, candidates: RoutingCandidate[], poolActive: boolean): Promise<{ settings: HarnessModelSettings; index: number } | null> {
+  const listed = poolActive ? null : await routingModelsHere(connection.engine);
+  for (const [index, candidate] of candidates.entries()) {
+    const settings = {
+      provider: candidate.provider ?? getHarness(connection.engine).configuration?.fixedProvider ?? connection.shared.session.settings().provider,
+      modelId: candidate.modelId,
+      reasoning: candidate.thinkingLevel,
+    };
+    if (!automaticRoutingModelAllowed(settings.provider, settings.modelId)) continue;
+    if (listed && !listed.has(`${settings.provider}\0${settings.modelId}`)) continue;
+    try {
+      await applyRoutedSettings(connection, settings, poolActive);
+      return { settings, index };
+    } catch (error) {
+      console.warn("Routed model unavailable", error instanceof Error ? error.message.slice(0, 200) : "unknown error");
+    }
   }
-  publish(connection, { type: "promptRouted", queueId: queued.id, level: classification.level, confidence: classification.confidence, mapped: true, provider: settings.provider, modelId: settings.modelId, thinkingLevel: settings.reasoning, classifierId: classifier.id });
-  return result("classified", { ...configured, classifierId: classifier.id, level: classification.level, confidence: classification.confidence, mapped: true });
+  return null;
 }
 
 function poolCandidateSettings(connection: HarnessChatConnection, pool: TurnSubscriptionPool, candidate: PoolProfileContext, initial: HarnessModelSettings, difficulty: UsageDifficulty): HarnessModelSettings {
   const policy = difficulty.level === null ? null : activeRoutingConfig(routingConfigDatabase(), conversationOwner(connection));
-  const configured = policy?.policy.harnesses.pi?.levels[String(difficulty.level)] ?? null;
+  const level = policy?.policy.harnesses.pi?.levels[String(difficulty.level)] ?? null;
+  // A pool never leaves its members' providers: take the cheapest configured candidate on this member's provider.
+  const configured = level ? [level, ...(level.fallbacks ?? [])].find((item) => item.provider === candidate.provider) ?? level : null;
   const mapping = configured ? { provider: configured.provider ?? getHarness(connection.engine).configuration?.fixedProvider ?? initial.provider,
     modelId: configured.modelId, reasoning: configured.thinkingLevel } : undefined;
   return resolvePoolModelSettings(connection.engine, candidate.provider, initial, mapping, pool.fallbackModels[candidate.provider]);
