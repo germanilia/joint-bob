@@ -145,6 +145,8 @@ export function waitingCard(card, { compact = false } = {}) {
   // Looking at a card changes nothing; tapping it (not its buttons) shows what exactly it needs, over Home.
   root.tabIndex = 0;
   root.title = "Tap to see what it needs";
+  // Touch taps reach only controls (focus-ui.js); the card is one, so a tap on its words opens the sheet.
+  root.dataset.tap = "";
   const showDetail = () => openNeedDetail(card, {
     ask: questionOf(card),
     open: () => { requested = false; return openConversation(card); },

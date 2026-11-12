@@ -7,7 +7,7 @@
    chat header slots and the details panes); behaviour: app/workspace.js, app/conversation-details.js. */
 
 :root {
-  --ws-need: #b86e00; --ws-need-fill: #e8a13a; --ws-run: var(--accent); --ws-rev: #5b5bd6;
+  --ws-need: #8a4f00; --ws-need-fill: #e8a13a; --ws-run: var(--accent); --ws-rev: #5b5bd6;
   --ws-side-width: clamp(244px, 19vw, 288px);
   /* The conversations column of the Projects place (app/workspace.js syncRail mirrors both widths). */
   --ws-list-width: clamp(288px, 20vw, 336px);

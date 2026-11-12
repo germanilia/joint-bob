@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.294.0 — 2026-11-12
+
+- **Phone polish across every screen.** On Home, the Running and To review groups under the Needs you deck are reachable again (the list scrolls), tapping the words of a needs-you card opens its sheet, and the tab badge, the counts and the avatar letter have readable contrast. On Bob's page the filter chips fit without a lone chip on a third line. In a conversation the effort chip shows its name and the `/` and `@` suggestions are easier to read.
+- The worktree indicator's script is part of the offline app again, so an installed app no longer misses it.
+- Dialogs and panels on the phone (Terminal, Browser, Rename, Schedule, Files, Git review, Activity, Costs, Notes, Search) and the Settings sections use text of at least 13 px and controls at least 44 px tall.
+
 ## 2.293.4 — 2026-11-13
 
 - A conversation whose agent has answered now waits under Review even while its background tasks keep running, and its status reads "Waiting for you · background tasks running" instead of "working"; the background tasks keep running and are not stopped.
