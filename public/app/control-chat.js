@@ -355,7 +355,7 @@ function renderPending({ text, startedAt }) {
 }
 
 function tickPending() {
-  for (const time of elements.controlChatMessages.querySelectorAll(".control-pending-time")) time.textContent = elapsed(Number(time.dataset.since));
+  for (const time of elements.controlChat.querySelectorAll(".control-pending-time")) time.textContent = elapsed(Number(time.dataset.since));
 }
 
 // The chat is drawn again only when what it shows changed: it is read again whenever anything changes, and drawing it anew
@@ -379,11 +379,17 @@ function renderMessages() {
   drawnPending = pending.size;
   const writing = Boolean(document.activeElement?.closest?.(".control-reply"));
   const extra = [...[...pending.values()].map(renderPending), ...(sendError ? [element("div", "control-msg error", sendError)] : [])];
-  const shown = visible.map(renderMessage);
-  const empty = !shown.length && filter.importance === "cleared" ? [element("p", "control-empty", "Nothing was cleared yet.")] : [];
+  const updates = document.getElementById("controlChatUpdates");
+  const updateTop = updates.scrollTop;
+  const background = visible.filter((message) => sourceOf(message).label !== "Bob" && message.role !== "user");
+  updates.replaceChildren(...background.map(renderMessage));
+  updates.scrollTop = updateTop;
+  document.getElementById("controlChatUpdateCount").textContent = `(${background.length})`;
+  const shown = visible.filter((message) => message.role === "user" || sourceOf(message).label === "Bob").map(renderMessage);
+  const empty = !visible.length && filter.importance === "cleared" ? [element("p", "control-empty", "Nothing was cleared yet.")] : [];
   list.replaceChildren(...shown, ...empty, ...extra);
   list.scrollTop = follow ? list.scrollHeight : top;
-  const box = list.querySelector(".control-reply textarea");
+  const box = elements.controlChat.querySelector(".control-reply textarea");
   if (box) {
     if (writing || replying.focus) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); replying.focus = false; }
     box.closest(".control-entry").scrollIntoView({ block: "nearest" });
@@ -402,7 +408,7 @@ function matchesFilter(message) {
   return !levels || levels.includes(message.importance);
 }
 
-const entryOf = (id) => elements.controlChatMessages.querySelector(`.control-entry[data-id="${CSS.escape(id)}"]`);
+const entryOf = (id) => elements.controlChat.querySelector(`.control-entry[data-id="${CSS.escape(id)}"]`);
 
 /**
  * Puts where each message's conversation stands now in step with the board, in place: the chat is not drawn again for it, so

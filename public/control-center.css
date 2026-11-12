@@ -51,6 +51,15 @@
 .control-chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .control-chat-head > div { flex: 1; min-width: 0; }
 .control-chat-head small { display: block; color: var(--muted); font-size: 11px; }
+.control-chat-streams { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.control-chat-streams > .control-chat-messages { min-width: 0; }
+.control-chat-updates { flex: 0 0 34%; min-width: 180px; border-left: 1px solid var(--line); overflow: auto; }
+.control-chat-updates > summary { padding: 12px; cursor: pointer; font-weight: 600; }
+.control-chat-updates:not([open]) { flex-basis: auto; min-width: 0; }
+@media (max-width: 900px) {
+  .control-chat-streams { flex-direction: column; }
+  .control-chat-updates { flex: 0 0 auto; min-width: 0; max-height: 35%; border-left: 0; border-top: 1px solid var(--line); }
+}
 .control-chat-messages { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
 .control-msg { max-width: 92%; padding: 7px 11px; border-radius: 12px; background: var(--field); border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
 .control-msg.user { align-self: flex-end; background: color-mix(in srgb, var(--accent) 14%, var(--field)); }

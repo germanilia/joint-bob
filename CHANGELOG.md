@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.285.0 — 2026-11-12
+
+- Moved background updates beside Bob’s chat, with a collapsible section on mobile, so unrelated cards no longer interrupt replies.
+- Added clickable conversation cards when Bob finds conversations to open.
+
 ## 2.284.3 — 2026-11-12
 
 - The Needs you snooze menu now loads when the app is offline.
