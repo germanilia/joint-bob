@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.278.0 — 2026-11-12
 
 - Added a Transfer administration action to cluster members, so the current manager can hand over a cluster without the new manager confirming, and the new manager can delete it.
 - Sharing a profile for automation now keeps it usable in your own conversations and pools, and automations without a profile of their own fall back to a node administrator's pool.
