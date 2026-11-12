@@ -39,7 +39,12 @@ test("the chat More menu closes a conversation out without a nested menu", { tim
     // (and its name for assistive technology), so the label is read from the button's text, not what is painted.
     const doneButton = page.getByTestId("chat-done-button");
     assert.equal(await page.getByTestId("chat-head-actions").getByTestId("chat-done-button").count(), 1, "Mark done is in the header, not in a menu");
-    assert.equal(await doneButton.innerText(), "Mark done");
+    // Beside the two columns of Projects and the details the header is narrow at 1440 px too: the icon alone shows.
+    assert.equal(await doneButton.locator(".chat-action-label").textContent(), "Mark done");
+    await page.getByTestId("chat-activity-toggle").click();
+    await page.getByTestId("activity-panel").waitFor({ state: "hidden" });
+    assert.equal(await doneButton.innerText(), "Mark done", "with the details closed the button has room for its name");
+    await page.getByTestId("chat-activity-toggle").click();
     await page.setViewportSize({ width: 720, height: 844 });
     assert.equal(await doneButton.locator(".chat-action-label").textContent(), "Mark done");
     await doneButton.click();

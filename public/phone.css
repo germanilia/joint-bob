@@ -15,7 +15,7 @@
   #settingsDialog:has(#settingsForm[data-mobile-view="panel"]) > .ph-tabs { display: none; }
   .ph-tabs {
     position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); height: var(--ph-tabs-h);
-    padding: 4px max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px));
+    padding: 4px max(8px, env(safe-area-inset-right, 0px)) max(4px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
     background: var(--panel); box-shadow: 0 -1px 0 var(--line);
   }
   .ph-tabs button {
@@ -24,7 +24,8 @@
   }
   .ph-tabs button svg { width: 24px; height: 24px; flex: none; }
   .ph-tabs button.on { color: var(--accent); }
-  .ph-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* The chosen tab is the green one. A ring around it after a tap read as a second selection and was cut by the screen edge. */
+  .ph-tabs button:focus-visible { outline: none; background: var(--field); }
   .ph-tab-badge { position: absolute; top: 3px; left: calc(50% + 6px); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--ws-need-fill); color: #fff; font: 700 13px/20px var(--sans); text-align: center; }
   .ph-tab-badge[hidden] { display: none; }
   /* Room for the tabs under the screens that show them. */
@@ -375,4 +376,60 @@
 @keyframes ph-pulse { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) {
   body.focus-ui .ws-dot.run { animation: none; }
+}
+
+/* ---------- New conversation on the phone ---------- */
+/* A sheet: the title, the three steps as one segmented line, the step's fields (they scroll; app/dialog-layout.js
+   keeps the focused one above the keyboard) and a foot that stays put: Cancel, then Back and Next where there is a
+   step to go to, and Start as the one wide button under them. The keyboard-shortcut line is for desks. */
+@media (max-width: 700px) {
+  /* Any sheet: a field brought into view keeps its focus ring and its label's foot clear of the edge. */
+  dialog .dialog-body :is(input, textarea, select, .searchable-select-trigger) { scroll-margin-block: 28px 10px; }
+  .wizard-card { min-height: 0; }
+  .wizard-card [data-testid="new-session-keyboard-hint"] { display: none; }
+  .wizard-card > :first-child h2 { font-size: 22px; line-height: 1.2; }
+  .wizard-card .wizard-steps { gap: 2px; padding: 3px; border-radius: 14px; background: var(--field); }
+  .wizard-card .wizard-step {
+    min-height: 44px; padding: 0 6px; border: 0; border-radius: 11px; background: transparent; color: var(--muted);
+    font: 600 13px/1.2 var(--sans); white-space: nowrap;
+  }
+  .wizard-card .wizard-step.done { color: var(--text); }
+  .wizard-card .wizard-step.active { background: var(--panel); color: var(--accent); box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 14%, transparent); }
+  .wizard-card .wizard-panel { gap: 14px; }
+  .wizard-card .wizard-panel :is(input:not([type="checkbox"], [type="radio"]), select) { font-size: 16px; }
+  #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding-top: 6px; }
+  #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > button { flex: 1 1 0; min-width: 0; min-height: 46px; }
+  /* No step that way: the button leaves the row (step 1 has no Back, the last step no Next). */
+  #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > button:disabled { display: none; }
+  .wizard-card > .dialog-actions > .ghost { background: var(--field); }
+  .wizard-card > .dialog-actions > #newSessionNextButton { background: color-mix(in srgb, var(--accent) 14%, var(--field)); color: var(--accent); }
+  #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > .primary { flex: 1 0 100%; min-height: 50px; font-size: 16.5px; }
+}
+/* The keyboard is up (the page is as tall as what it leaves): the explanation goes and the sheet tightens, so the
+   field being typed in and Start are both on screen. */
+@media (max-width: 700px) and (max-height: 560px) {
+  #newSessionNameDialog > .dialog-card.wizard-card { gap: 10px; padding: 14px 16px 12px; }
+  .wizard-card > :first-child p { display: none; }
+  .wizard-card > :first-child h2 { font-size: 19px; }
+  #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > button { min-height: 44px; }
+  #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > .primary { min-height: 46px; }
+}
+
+/* ---------- Costs on the phone: the filters open in the page ---------- */
+/* The filter list hung from its button and ran off the right edge (and under the keyboard). On the phone it opens
+   as a full-width block under the bar, so the page scrolls it and every field is reachable. */
+@media (max-width: 700px) {
+  #usageDialog .usage-filter-menu[open] { flex: 1 0 100%; }
+  #usageDialog .usage-filter-menu > summary { width: max-content; }
+  #usageDialog .usage-filter-popover { position: static; width: 100%; margin-top: 8px; box-shadow: none; }
+}
+
+/* ---------- Choosing one of a few (an agent, a branch) on the phone ---------- */
+/* The row is the target (44 px) and shows the choice; its radio keeps a round shape, and the keyboard's focus is
+   drawn on the row, not as a box around the dot. */
+@media (max-width: 700px) {
+  .choice-option { min-height: 48px; align-items: center; }
+  .choice-option input[type="radio"] { width: 18px; height: 18px; min-height: 0; margin: 0; }
+  dialog .choice-option input[type="radio"]:focus-visible { outline: none; }
+  .choice-option:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--accent); }
 }

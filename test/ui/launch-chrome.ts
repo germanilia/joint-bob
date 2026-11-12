@@ -34,6 +34,9 @@ export const WORKSPACE_COLUMN_KEY = "joint-bob-workspace-column";
  */
 export const CONVERSATION_FILTERS_KEY = "joint-bob-conversation-filters-open";
 
+/** The list of projects folds its own filter (clusters) the same way, behind the button beside its search box. */
+export const PROJECT_FILTERS_KEY = "joint-bob-project-filters-open";
+
 /**
  * The suite was written against the project and conversation lists, which the desktop workspace shows when its left
  * column is in Projects; a person who never chose starts in Inbox. Every context this browser opens starts in Projects
@@ -44,12 +47,13 @@ function startInProjectsColumn(browser: Browser): Browser {
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (...args: Parameters<Browser["newContext"]>) => {
     const context = await newContext(...args);
-    await context.addInitScript(([key, filtersKey]) => {
+    await context.addInitScript(([key, filtersKey, projectFiltersKey]) => {
       try {
         if (localStorage.getItem(key) === null) localStorage.setItem(key, "projects");
         if (localStorage.getItem(filtersKey) === null) localStorage.setItem(filtersKey, "1");
+        if (localStorage.getItem(projectFiltersKey) === null) localStorage.setItem(projectFiltersKey, "1");
       } catch { /* opaque origins have no storage */ }
-    }, [WORKSPACE_COLUMN_KEY, CONVERSATION_FILTERS_KEY]);
+    }, [WORKSPACE_COLUMN_KEY, CONVERSATION_FILTERS_KEY, PROJECT_FILTERS_KEY]);
     return context;
   };
   return browser;

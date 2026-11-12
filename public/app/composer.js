@@ -86,6 +86,12 @@ function hasModifier(event) {
 
 function autoGrowInput() {
   const input = elements.messageInput;
+  // Measuring folds the box to one line for a moment. The transcript above takes that room, and a transcript at its
+  // bottom is moved by the browser to fill it: with a draft of three lines or more every key moved the conversation
+  // and took it off the bottom. Its place is put back once the box has its height (chat-transcript.js keeps a
+  // following reader at the bottom when the height really changes).
+  const pane = elements.messages;
+  const paneTop = pane.scrollTop;
   input.style.overflowY = "hidden";
   input.style.height = "auto";
   const style = getComputedStyle(input);
@@ -93,6 +99,7 @@ function autoGrowInput() {
   const maxHeight = matchMedia("(min-width: 1024px)").matches ? Math.min(innerHeight * 0.4, 360) : 160;
   input.style.height = `${Math.min(height, maxHeight)}px`;
   input.style.overflowY = height > maxHeight ? "auto" : "hidden";
+  if (pane.scrollTop !== paneTop) pane.scrollTop = paneTop;
 }
 
 let inputWidth = 0;

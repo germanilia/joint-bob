@@ -14,6 +14,10 @@ test("the composer fits empty and wrapped text when appearance size changes", { 
   await page.locator(".session-card", { hasText: "Thread-Based Agent Builder" }).first().click();
   const input = page.getByTestId("chat-message-input");
   await page.waitForFunction(() => !document.querySelector<HTMLTextAreaElement>("#messageInput")!.disabled);
+  // In Inbox the conversation has one column beside it at every text size. (Beside the two columns of Projects larger
+  // text puts the details away, which widens the message box and unwraps the draft this test wraps.)
+  await page.getByTestId("workspace-inbox-button").click();
+  await page.locator("body.ws-column-inbox.view-chat").waitFor();
 
   const overflows: string[] = [];
   async function checkFits(label: string) {

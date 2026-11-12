@@ -19,7 +19,7 @@ import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "../dev-nodes.js";
 import { waitInPage } from "./wait-in-page.js";
-import { reach } from "./workspace-menus.js";
+import { reach, showProjects } from "./workspace-menus.js";
 
 let root: string;
 let environment: DevEnvironment;
@@ -419,13 +419,20 @@ test("the selected project and conversation stay highlighted in their sidebars",
   assert.equal(await project.getAttribute("aria-current"), "true", "selected project is announced as current");
   assert.equal(await conversation.getAttribute("aria-current"), "true", "selected conversation is announced as current");
 
+  // The selected row is a raised card on the column: its own fill and a shadow (a hairline in the dark themes), which
+  // no other row has.
   for (const [label, row] of [["project", project], ["conversation", conversation]] as const) {
-    const border = await row.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return { color: style.borderTopColor, width: style.borderTopWidth };
+    // (No helper function inside the page's function: the test loader's wrapper for named functions is not in the page.)
+    const fill = await row.evaluate((element) => {
+      const holder = element.closest(".list-row-main") ?? element.closest(".list-row");
+      const other = [...document.querySelectorAll(element.closest("#projectList") ? "#projectList .list-row" : "#sessionList .list-row-main")].find((item) => item !== holder && !item.matches(":hover"));
+      const mine = getComputedStyle(holder);
+      const theirs = other ? getComputedStyle(other) : null;
+      return { selected: { fill: mine.backgroundColor, shadow: mine.boxShadow }, other: theirs ? { fill: theirs.backgroundColor, shadow: theirs.boxShadow } : null };
     });
-    assert.notEqual(border.width, "0px", `selected ${label} has a border`);
-    assert.notEqual(border.color, "rgba(0, 0, 0, 0)", `selected ${label} border is visible`);
+    assert.notEqual(fill.selected.fill, "rgba(0, 0, 0, 0)", `selected ${label} has a fill`);
+    assert.notEqual(fill.selected.shadow, "none", `selected ${label} is raised`);
+    if (fill.other) assert.notDeepEqual(fill.selected, fill.other, `selected ${label} looks unlike the other rows`);
   }
 });
 
@@ -476,6 +483,7 @@ test("a phone reloads conversations missed while its watch socket was disconnect
     await mobilePage.getByTestId("session-list-loading-bar").waitFor({ state: "hidden" });
     // 720px is the desktop workspace now: the project list is in its left column, without the old bottom bar.
     if (await mobilePage.getByTestId("nav-projects-button").isVisible()) await mobilePage.getByTestId("nav-projects-button").click();
+    await showProjects(mobilePage);
     await mobilePage.locator("#projectsPanel").waitFor();
     await mobilePage.locator(".project-card", { hasText: project.name }).first().click();
     await mobilePage.locator("#chatsLiveDot").waitFor({ state: "visible" });
@@ -756,6 +764,7 @@ test("a top toast stays above the mobile composer", async () => {
     await waitInPage(mobilePage, async () => (await import('/app/state.js')).state.preferencesLoaded);
     // 720px is the desktop workspace now: the project list is in its left column, without the old bottom bar.
     if (await mobilePage.getByTestId("nav-projects-button").isVisible()) await mobilePage.getByTestId("nav-projects-button").click();
+    await showProjects(mobilePage);
     await project.waitFor({ timeout: 20_000 });
     await project.click();
     await mobilePage.locator(".session-card", { hasText: "Thread-Based Agent Builder" }).first().click();

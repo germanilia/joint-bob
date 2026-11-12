@@ -206,17 +206,75 @@ test("the details column: Activity, Files, Git and Tasks, More, the two switches
   await page.locator("#activityPanel").waitFor();
 });
 
-test("Projects turns the column into the picker over that project's conversations, with its filters and notes", async () => {
+const box = (selector: string) => page.locator(selector).evaluate((element) => {
+  const rect = element.getBoundingClientRect();
+  return { left: Math.round(rect.left), right: Math.round(rect.right), top: Math.round(rect.top), bottom: Math.round(rect.bottom), width: Math.round(rect.width) };
+});
+
+test("Projects shows two columns: the projects under the places, and the chosen project's conversations beside them", async () => {
   await page.getByTestId("workspace-projects-button").click();
-  // A conversation is open: the projects stay on top, one line each, and its project's list fills the rest.
+  // A conversation is open: its project's conversations have their own column between the projects and the conversation.
   await page.locator("#projectsPanel").waitFor();
   await page.locator("#chatsPanel").waitFor();
   assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("ws-picker")), false);
-  for (const id of ["project-list-search-input", "all-project-issues-button", "project-create-button", "projects-panel-collapse-button", "chats-panel-collapse-button"]) assert.equal(await visible(id), true, `${id} is in the column`);
-  for (const id of ["conversation-list-search-input", "chats-filter-all-button", "show-done-conversations-toggle", "show-scheduled-conversations-toggle", "conversations-tab", "notes-tab", "chats-mark-all-reviewed-button", "session-create-button", "session-create-claude-button"]) {
+  const side = await box("#workspaceSide");
+  const projects = await box("#projectsPanel");
+  const conversations = await box("#chatsPanel");
+  const chat = await box("#chatPanel");
+  assert.ok(projects.width >= 220 && projects.width <= 290, `the projects column is ${projects.width}px wide`);
+  assert.ok(conversations.width >= 288 && conversations.width <= 340, `the conversations column is ${conversations.width}px wide`);
+  assert.ok(projects.right <= conversations.left && conversations.right <= chat.left, "projects, conversations, conversation: side by side, none over another");
+  assert.ok(projects.top >= side.bottom - 1, "the projects are under the places");
+  assert.ok(conversations.top <= side.top + 8, "the conversations column starts at the top of the window");
+  assert.equal(await page.locator("#chatsPanel #projectName").innerText(), "Internal Assistant", "the conversations column is headed by its project");
+  for (const id of ["project-list-search-input", "all-project-issues-button", "project-create-button", "projects-panel-collapse-button", "chats-panel-collapse-button"]) assert.equal(await visible(id), true, `${id} is in the columns`);
+  for (const id of ["conversation-list-search-input", "conversation-filters-toggle", "chats-filter-all-button", "show-done-conversations-toggle", "show-scheduled-conversations-toggle", "conversations-tab", "notes-tab", "chats-mark-all-reviewed-button", "session-create-button", "session-create-claude-button"]) {
     assert.equal(await visible(id), true, `${id} is in the project's list`);
   }
-  assert.ok(await page.locator("#sessionList .session-card").first().isVisible(), "at least one conversation row fits under the controls");
+  // The places are one column of rows with their whole names.
+  const places = await page.getByTestId("workspace-places").locator(".ws-place").evaluateAll((items) => items.map((item) => {
+    const label = item.querySelector(".ws-place-label");
+    const rect = item.getBoundingClientRect();
+    return { left: Math.round(rect.left), top: Math.round(rect.top), cut: label.scrollWidth > label.clientWidth, shown: label.getClientRects().length > 0 };
+  }));
+  assert.ok(places.every((place) => place.shown && !place.cut), "every place shows its whole name");
+  assert.equal(new Set(places.map((place) => place.left)).size, 1, "the places are one column");
+  assert.equal(new Set(places.map((place) => place.top)).size, places.length, "one place per row");
+  // Nothing in either column scrolls or is cut: every row in sight is whole, and the rows of a list share one height.
+  for (const list of ["#sessionList", "#projectList"]) {
+    const rows = await page.locator(`${list} .list-row`).evaluateAll((items, selector) => {
+      const host = document.querySelector<HTMLElement>(selector);
+      const frame = host.getBoundingClientRect();
+      const clip = parseFloat((host.style.clipPath.match(/inset\(0(?:px)? 0(?:px)? ([\d.]+)px/) ?? [])[1] ?? "0");
+      return items.map((item) => item.getBoundingClientRect()).filter((rect) => rect.height > 0 && rect.bottom > frame.top + 1 && rect.top < frame.bottom - clip - 1)
+        .map((rect) => ({ whole: rect.top >= frame.top - 1 && rect.bottom <= frame.bottom - clip + 1, height: Math.round(rect.height), top: Math.round(rect.top - frame.top), room: Math.round(frame.height - clip) }));
+    }, list);
+    assert.ok(rows.length >= 2, `${list}: several rows fit (${rows.length})`);
+    assert.ok(rows.every((row) => row.whole), `${list}: no row is cut at the top or the bottom: ${JSON.stringify(rows)}`);
+    assert.equal(new Set(rows.map((row) => row.height)).size, 1, `${list}: rows share one height: ${rows.map((row) => row.height)}`);
+    assert.equal(await page.locator(list).evaluate((host) => getComputedStyle(host).overflowY), "hidden", `${list} has no scroll bar`);
+  }
+  // A row's pin and ⋮ come with the pointer or the keyboard; a resting row shows neither, and keeps its height.
+  const row = page.locator("#sessionList > .list-row").first();
+  await page.mouse.move(900, 500);
+  await page.getByTestId("chat-message-input").focus();
+  const shown = (selector: string) => row.locator(selector).evaluate((button) => getComputedStyle(button).opacity === "1");
+  assert.equal(await shown("[data-testid='session-menu-button']"), false, "a resting row shows no ⋮");
+  assert.equal(await shown(".pin-button"), false, "a resting row shows no pin");
+  const resting = await row.evaluate((item) => item.getBoundingClientRect().height);
+  await row.locator(".session-card").hover();
+  await page.waitForTimeout(250);
+  assert.equal(await shown("[data-testid='session-menu-button']"), true, "⋮ shows under the pointer");
+  assert.equal(await shown(".pin-button"), true, "the pin shows under the pointer");
+  assert.equal(await row.evaluate((item) => item.getBoundingClientRect().height), resting, "the row keeps its height");
+  assert.equal(await row.evaluate((item) => item.querySelector(".session-card > strong").getBoundingClientRect().right <= item.querySelector(".pin-button").getBoundingClientRect().left), true, "the title ends before the pin and ⋮");
+  await page.mouse.move(900, 500);
+  await row.locator(".session-card").focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement.classList.contains("pin-button")), true, "Tab reaches the pin from the row");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.testid), "session-menu-button", "and then ⋮");
+  await page.getByTestId("chat-message-input").focus();
   // The filters fold behind one button beside the search box, so the list keeps the column; the button counts the
   // filters that are on. The suite starts with them open (launch-chrome.ts); a person starts with them folded.
   const filters = page.getByTestId("conversation-filters-toggle");
@@ -239,15 +297,51 @@ test("Projects turns the column into the picker over that project's conversation
   await page.getByTestId("notes-tab").click();
   await page.getByTestId("quick-notes-section").waitFor();
   await page.getByTestId("conversations-tab").click();
-  // Another project is one click away, as in the old projects panel.
+  // Another project is one click away: its conversations take the second column.
+  await page.locator(".project-card", { hasText: "Joint Bob" }).click();
+  await page.locator("#projectName", { hasText: "Joint Bob" }).waitFor();
   await page.locator(".project-card", { hasText: "Internal Assistant" }).click();
-  await page.locator("#projectName", { hasText: "Internal Assistant" }).waitFor({ state: "attached" });
+  await page.locator("#projectName", { hasText: "Internal Assistant" }).waitFor();
   await page.locator("#sessionList .session-card", { hasText: "Thread-Based Agent Builder" }).waitFor();
   assert.equal(await page.evaluate((key) => localStorage.getItem(key), WORKSPACE_COLUMN_KEY), "projects", "the column remembers the choice");
-  // The places keep their labels there (two short columns), and Inbox brings the groups back.
-  assert.equal(await page.getByTestId("workspace-places").locator(".ws-place-label").first().isVisible(), true, "labelled places in Projects");
+
+  // Each column folds on its own chevron: ] the conversations to a strip, [ the left column to the rail.
+  await page.getByTestId("chats-panel-collapse-button").click();
+  await page.getByTestId("chats-panel-expand-button").waitFor();
+  assert.ok((await box("#chatsPanel")).width <= 48, "the conversations fold to a strip");
+  assert.equal(await visible("project-list-search-input"), true, "the projects stay");
+  await page.getByTestId("chats-panel-expand-button").click();
+  await page.getByTestId("conversation-list-search-input").waitFor();
+  await page.getByTestId("projects-panel-collapse-button").click();
+  await page.getByTestId("projects-panel-expand-button").waitFor();
+  assert.ok((await box("#workspaceSide")).width < 80, "the left column folds to the rail");
+  assert.equal(await visible("conversation-list-search-input"), true, "the conversations stay");
+  await page.getByTestId("projects-panel-expand-button").click();
+  await page.getByTestId("project-list-search-input").waitFor();
+
+  // A narrower window keeps the conversation usable: the details give way first, then the left column folds itself.
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await page.locator("body.ws-details-tucked").waitFor();
+  assert.equal(await page.locator("#activityPanel").isVisible(), false, "at 1100 px the details are put away");
+  assert.equal(await visible("project-list-search-input"), true, "and both columns stay");
+  assert.ok((await box("#chatPanel")).width >= 480, "the conversation keeps a readable width");
+  await page.getByTestId("chat-activity-toggle").click();
+  await page.locator("#activityPanel").waitFor();
+  await page.setViewportSize({ width: 1030, height: 900 });
+  await page.locator("body.ws-auto-rail").waitFor();
+  assert.ok((await box("#workspaceSide")).width < 80, "at 1030 px the left column is the rail");
+  assert.equal(await visible("conversation-list-search-input"), true, "the conversations stay beside it");
+  assert.ok((await box("#chatPanel")).width >= 480, "and the conversation keeps a readable width");
+  await page.getByTestId("projects-panel-expand-button").click();
+  await page.getByTestId("project-list-search-input").waitFor();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator("body:not(.ws-auto-rail):not(.ws-details-float)").waitFor();
+  assert.equal(await visible("project-list-search-input"), true);
+
+  // Inbox brings the groups back, in one column.
   await page.getByTestId("workspace-inbox-button").click();
   await page.getByTestId("workspace-groups").waitFor();
+  assert.equal(await page.locator("#chatsPanel").isVisible(), false, "Inbox has no second column");
 });
 
 test("New, ⋯ and the places reach every action the old panels had", async () => {

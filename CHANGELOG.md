@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.274.0 — 2026-11-12
+
+- **Projects and conversations sit in two columns on the desktop.** The project list is under the places, and the chosen project's conversations have their own column beside it. Both lists page with whole rows and no inner scrollbar; pin and ⋯ show when you point at a row or focus it. `[` and `]` fold each column. A narrow window puts the details column away first, then folds the left column.
+- Fixed the conversation list jumping back to its first page a second after you moved to another page. A list keeps its page until the project, search or filters change.
+- Fixed the conversation jumping while you type or while the agent works: the message box no longer collapses to one line on every key, and the view stays at the bottom when the pane changes size.
+- Fixed padding in the left column: an icon and its label sat above the middle of the selected row's fill, and the AUTO badge on the model chip had an oversized ring.
+- The left column no longer rebuilds its groups and re-reads Git status on every redraw of the open conversation.
+- Phone: the new-conversation sheet keeps its fields and its Start button above the keyboard, with Back and Next laid out per step; the tapped tab no longer shows a ring cut off by the screen edge; dialogs with fields stay usable with the keyboard up.
+
 ## 2.273.5 — 2026-11-12
 
 - **Model routing:** the daily review of the default models is no longer part of the app. The instruction files, the data script and the review instructions in **Settings → System AI** are gone; a review like this is a scheduled task you set up yourself, with its instructions in the task. Model routing itself is unchanged.

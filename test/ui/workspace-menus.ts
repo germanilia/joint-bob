@@ -15,6 +15,17 @@ const HOLDERS: Array<[selector: string, opener: string]> = [
   ["#detailsTasks", "details-tasks-tab"],
 ];
 
+/**
+ * The list of projects, in sight. Beside an open project's conversations, a window too narrow for both columns and a
+ * readable conversation shows the left column as its rail of icons (workspace.js syncRail); its button unfolds it.
+ */
+export async function showProjects(page: Page): Promise<void> {
+  await page.locator(".project-card").first().waitFor({ state: "attached" });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const unfold = page.getByTestId("projects-panel-expand-button");
+  if (await unfold.isVisible()) await unfold.click();
+}
+
 /** The button with this test id, made visible: its menu opened, or its details pane shown (opening the column first). */
 export async function reach(page: Page, testid: string): Promise<Locator> {
   const target = page.getByTestId(testid).first();

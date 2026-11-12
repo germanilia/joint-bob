@@ -3,7 +3,7 @@
 //
 // The left column is the navigation: brand and New, the workspace search, the places (Bob, Inbox,
 // Projects, Board, Automations, Costs), then either the conversations that need you, run or wait for
-// review in every project (Inbox), or the project picker and one project's conversations (Projects);
+// review in every project (Inbox), or the projects with the chosen project's conversations in a column beside them (Projects);
 // Settings and the person at the bottom. Each group shows the rows that fit and "Show all" opens the
 // group as a paged list in the middle. The column never scrolls.
 //
@@ -80,23 +80,37 @@ function applyPlacements() {
 /** Below this many of the conversation's own (zoomed) pixels beside the details, the details float over the thread. */
 const READABLE_MIDDLE = 420;
 const chatPanel = byId("chatPanel");
-function syncDetailsFloat() {
+function syncDetailsFloat(resized = false) {
   const zoom = parseFloat(getComputedStyle(chatPanel).zoom) || 1;
   const activityZoom = parseFloat(getComputedStyle(elements.activityPanel).zoom) || 1;
   const preferred = parseFloat(getComputedStyle(elements.activityPanel).getPropertyValue("--activity-preferred-width")) || 360;
   // The docked column's width on screen (styles cap it at 36% of the window).
   const details = Math.min(innerWidth * 0.36, preferred * zoom * activityZoom);
   const middle = (chatPanel.getBoundingClientRect().width - details) / zoom;
-  body.classList.toggle("ws-details-float", desktop.matches && innerWidth > 1023 && chatPanel.getBoundingClientRect().width > 0 && middle < READABLE_MIDDLE);
+  const two = body.classList.contains("ws-column-projects") && !body.classList.contains("ws-picker");
+  const float = desktop.matches && innerWidth > 1023 && chatPanel.getBoundingClientRect().width > 0 && middle < READABLE_MIDDLE;
+  const floated = body.classList.contains("ws-details-float");
+  body.classList.toggle("ws-details-float", float);
+  // Beside the two columns of Projects the details give way first: when they stop fitting they are put away, not laid
+  // over the conversation. Their button in the header brings them back, floating, until they fit again.
+  if (!float) body.classList.remove("ws-details-tucked");
+  // (A person dragging the details wider, or choosing larger text, keeps them in sight: they float, as before.)
+  else if (!floated && two && resized !== true) body.classList.add("ws-details-tucked");
 }
+elements.activityToggleButton.addEventListener("click", (event) => {
+  if (!body.classList.contains("ws-details-tucked")) return;
+  body.classList.remove("ws-details-tucked");
+  // The panel is open already (only put away): the press shows it and must not close it.
+  if (!elements.activityPanel.hidden) { event.stopImmediatePropagation(); event.preventDefault(); }
+}, true);
 new ResizeObserver(() => syncDetailsFloat()).observe(chatPanel);
-new MutationObserver(syncDetailsFloat).observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+new MutationObserver(() => syncDetailsFloat(true)).observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
 
 /* ---------- the column's mode: Inbox or Projects ---------- */
 
 /**
- * Projects shows the picker over the chosen project's conversations: the picker fills the column until a project is
- * chosen, then keeps a short list of the projects on top (one click switches, as the old projects panel did).
+ * Projects shows two columns: the projects under the places, and beside them the chosen project's conversations
+ * (styles: "Projects: two columns"). Until a project is chosen there is only the first.
  */
 let column = readColumn();
 
@@ -123,6 +137,8 @@ function syncColumn() {
   body.classList.toggle("ws-column-inbox", column === "inbox");
   body.classList.toggle("ws-column-projects", column === "projects");
   body.classList.toggle("ws-picker", column === "projects" && !state.activeProjectId);
+  syncRail();
+  requestAnimationFrame(() => syncDetailsFloat());
   syncPlaces();
   if (column === "inbox") renderGroups();
 }
@@ -155,7 +171,66 @@ byId("workspaceProjectsButton").addEventListener("click", () => {
   setColumn("projects");
   if (body.classList.contains("ws-picker")) elements.projectSearchInput.focus({ preventScroll: true });
 });
+
+/* ---------- the Projects place: a column of projects, a column of the chosen project's conversations ---------- */
+
+// Each column folds on its own chevron ([ and ]): the first to the rail of icons, the conversations to a strip. A
+// window too narrow for both columns and a readable conversation folds the first column by itself (the details
+// column gives way before that: see syncDetailsFloat); its expand button opens it over that for as long as the
+// window stays narrow.
+/** The conversation's own width, without the details, under which the first column folds. */
+const READABLE_WITH_LISTS = 480;
+let railOpened = false;
+function syncRail() {
+  const two = desktop.matches && column === "projects" && Boolean(state.activeProjectId);
+  // The two columns' widths, as the styles set them (--ws-side-width, --ws-list-width).
+  const side = innerWidth < 1024 ? 232 : Math.min(288, Math.max(244, innerWidth * 0.19));
+  const list = body.classList.contains("chats-collapsed") ? 44 : Math.min(336, Math.max(288, innerWidth * 0.2));
+  const narrow = two && innerWidth - side - list - 3 * 14 < READABLE_WITH_LISTS;
+  if (!narrow) railOpened = false;
+  const auto = narrow && !railOpened && !body.classList.contains("projects-collapsed");
+  body.classList.toggle("ws-auto-rail", auto);
+  elements.projectsPanel.classList.toggle("collapsed", auto || body.classList.contains("projects-collapsed"));
+}
+addEventListener("resize", () => requestAnimationFrame(syncRail));
+byId("expandProjectsButton").addEventListener("click", () => {
+  if (body.classList.contains("ws-auto-rail")) railOpened = true;
+  queueMicrotask(syncRail);
+});
+byId("collapseProjectsButton").addEventListener("click", () => { railOpened = false; queueMicrotask(syncRail); });
 window.addEventListener("project-selected", syncColumn);
+
+// The projects' own filter (clusters) folds behind a button beside the search box, as a project's filters do; the
+// button shows only when there is something to filter by, and counts what is chosen.
+const PROJECT_FILTERS_OPEN_KEY = "joint-bob-project-filters-open";
+const projectFiltersToggle = byId("projectFiltersToggle");
+const projectFilterRow = byId("projectFilterRow");
+function syncProjectFilters() {
+  projectFiltersToggle.hidden = projectFilterRow.hidden || !projectFilterRow.childElementCount;
+  const on = projectFilterRow.querySelectorAll(".multi-select:not([hidden]) > .multi-select-trigger:not(.empty)").length;
+  const count = byId("projectFiltersCount");
+  count.hidden = on === 0;
+  count.textContent = on ? String(on) : "";
+  projectFiltersToggle.classList.toggle("on", on > 0);
+  const label = on ? `Filter projects (${on} on)` : "Filter projects";
+  if (projectFiltersToggle.title !== label) {
+    projectFiltersToggle.title = label;
+    projectFiltersToggle.setAttribute("aria-label", label);
+  }
+}
+function setProjectFiltersOpen(open) {
+  elements.projectsPanel.classList.toggle("filters-open", open);
+  projectFiltersToggle.setAttribute("aria-expanded", String(open));
+}
+projectFiltersToggle.addEventListener("click", () => {
+  const open = !elements.projectsPanel.classList.contains("filters-open");
+  setProjectFiltersOpen(open);
+  try { localStorage.setItem(PROJECT_FILTERS_OPEN_KEY, open ? "1" : "0"); } catch { /* private mode: the choice lasts the page */ }
+});
+try { setProjectFiltersOpen(localStorage.getItem(PROJECT_FILTERS_OPEN_KEY) === "1"); } catch { setProjectFiltersOpen(false); }
+new MutationObserver(syncProjectFilters).observe(projectFilterRow, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
+syncProjectFilters();
+
 byId("workspaceBoardButton").addEventListener("click", () => {
   if (!state.activeProjectId) {
     setColumn("projects");
@@ -488,7 +563,17 @@ for (const name of ["running-refreshed", "control-center-changed", "conversation
 }
 // The control center reads the same board; its answer is used as it arrives.
 window.addEventListener("control-center-rendered", (event) => { if (event.detail?.cards) acceptCards(event.detail.cards); });
-document.addEventListener("activeConversationChanged", () => { renderGroups(); if (!page.hidden) renderGroupPage(); });
+// "activeConversationChanged" is announced on every redraw of the chat controls (about once a second while an agent
+// works). The groups mark the open conversation, so they are drawn again only when another conversation is open;
+// drawing them on every announcement rebuilt every row of the column each second.
+let markedConversation = "";
+document.addEventListener("activeConversationChanged", () => {
+  const key = `${state.activeConversationProjectId || state.activeProjectId || ""}|${state.activeSessionId || ""}|${state.activeSessionPath || ""}`;
+  if (key === markedConversation) return;
+  markedConversation = key;
+  renderGroups();
+  if (!page.hidden) renderGroupPage();
+});
 document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleGroupsRefresh(200); });
 // What a running turn is doing changes all the time; while something runs and the page is seen, its line is read again.
 setInterval(() => {

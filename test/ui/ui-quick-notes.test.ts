@@ -117,6 +117,9 @@ test("a narrow window keeps creation in New and switches conversations and notes
   await page.setViewportSize({ width: 720, height: 844 });
   const projectId = node.projects.find((project) => project.name === "Internal Assistant")!.id;
   await page.getByTestId("workspace-projects-button").click();
+  // This narrow, the left column is its rail beside an open project's conversations; its button unfolds it.
+  const unfold = page.getByTestId("projects-panel-expand-button");
+  if (await unfold.isVisible()) await unfold.click();
   await page.locator(`[data-project-id="${projectId}"] .project-card`).click();
   await page.getByTestId("session-list-loading-bar").waitFor({ state: "hidden" });
 

@@ -26,7 +26,9 @@ test("conversations stay inside the column — paged on the desktop, scrolling o
     await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
     await page.locator("#sessionList .session-card").first().waitFor();
     for (const width of [1440, 1024, 390]) {
-      await page.setViewportSize({ width, height: 800 });
+      // Short enough that the project's few conversations do not all fit: on the desktop they have a column of the
+      // window's whole height.
+      await page.setViewportSize({ width, height: 520 });
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       const geometry = await page.evaluate(() => {
         const list = document.querySelector<HTMLElement>("#sessionList")!;

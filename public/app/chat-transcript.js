@@ -448,6 +448,21 @@ export function requestPinChat() {
   });
 }
 
+// The pane's own height changes too: the message box grows with a draft of several lines and shrinks when it is sent,
+// banners and the command strip come and go, the phone's keyboard opens. Nothing scrolls then, so a reader at the bottom
+// was left with the newest lines (and the working badge) under the message box until the next live update pinned the
+// pane and the whole conversation jumped. The pin happens here instead, in the frame the height changes, so the bottom
+// stays where it is; a reader who scrolled away is left alone.
+let paneHeight = elements.messages.clientHeight;
+new ResizeObserver(() => {
+  const height = elements.messages.clientHeight;
+  if (height === paneHeight) return;
+  paneHeight = height;
+  if (!height) return;
+  if (state.followChat) pinChatToBottom();
+  syncJumpButton();
+}).observe(elements.messages);
+
 // The jump button is the escape hatch from a long scroll back: it shows exactly
 // when the reader is away from the bottom, and hides the moment they are on it.
 function syncJumpButton() {
@@ -1218,6 +1233,9 @@ elements.messages.addEventListener("scroll", () => {
   syncJumpButton();
   scheduleMarkViewed();
   if (rerenderingChat) return;
+  // The pane is changing height (the message box grew or shrank): the browser moved the transcript, not the reader.
+  // The observer above runs later in this frame and keeps a following reader at the bottom.
+  if (elements.messages.clientHeight !== paneHeight) return;
   if (Math.abs(elements.messages.scrollTop - lastPinScrollTop) < 1) return;
   state.followChat = chatAtBottom();
 }, { passive: true });

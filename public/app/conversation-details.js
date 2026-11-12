@@ -187,13 +187,21 @@ function syncCost() {
 
 /* ---------- a new conversation starts on the activity ---------- */
 
+// "activeConversationChanged" is announced on every redraw of the chat controls (about once a second while an agent
+// works), not only when another conversation opens. Only another conversation empties the Files and Git summaries and
+// reads them again: doing it on every announcement emptied the pane and asked the server for the working tree each
+// second for as long as the agent worked.
+let detailsOf = "";
 document.addEventListener("activeConversationChanged", () => {
+  syncSwitches();
+  syncCost();
+  const key = `${state.activeConversationProjectId || state.activeProjectId || ""}|${state.activeSessionId || ""}|${state.activeSessionPath || ""}`;
+  if (key === detailsOf) return;
+  detailsOf = key;
   status = null;
   statusKey = "";
   renderStatus();
   if (shown === "files" || shown === "git") void loadStatus();
-  syncSwitches();
-  syncCost();
 });
 // A turn that ends may have changed files: an open Files or Git summary reads them again.
 window.addEventListener("running-refreshed", () => {

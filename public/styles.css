@@ -1539,7 +1539,8 @@ select.chat-toolbar-control {
 /* The model button opens a picker, so it carries the same chevron as the selects beside it. */
 .model-button.chat-toolbar-control { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.5 1.75 6 6.25l4.5-4.5' fill='none' stroke='%238b9198' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 11px; }
 #modelButtonName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-auto-label { flex: none; padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--live) 55%, transparent); border-radius: 999px; color: var(--live); font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+/* Its own line height: a chip's (30 px on the desktop header) made the pill a 34 px ring around 12 px of text. */
+.model-auto-label { flex: none; line-height: 1.3; padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--live) 55%, transparent); border-radius: 999px; color: var(--live); font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .model-button.auto { border-color: color-mix(in srgb, var(--live) 45%, var(--line)); background-color: color-mix(in srgb, var(--live) 8%, var(--field)); }
 .model-button.claude { color: var(--claude); border-color: color-mix(in srgb, var(--claude) 30%, transparent); background-color: transparent; }
 .chat-more, .chat-more-actions { display: contents; }
