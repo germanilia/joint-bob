@@ -18,7 +18,6 @@ import { getUserPreferences, normalizeKeymapPreference, readLegacyRecentSessions
 import { listUserRecentSessions, migrateLegacyRecentSessions, removeUserRecentSession, setUserRecentSession, type SyncedRecentSession } from "../../recent-sessions.js";
 import { checkRuntimeSettings, getProjectResourcePaths, getRuntimeDefaults, getSettings, updateProjectResourcePaths, updateSettings } from "../../settings.js";
 import { getProject, listWorkspaces } from "../../store.js";
-import { listTasks } from "../../tasks.js";
 import { isHarnessId } from "../../types.js";
 import { listUserPins, setUserPin } from "../../user-pins.js";
 import { assertManagedHomeChangeAllowed } from "../cluster-helpers.js";
@@ -102,8 +101,7 @@ app.put("/api/pins", async (request, response, next) => {
     if (payload.pinned && !project) { sendError(response, 404, "Project not found"); return; }
     // Removing an account pin must work even when its transcript or project is gone.
     if (payload.pinned && project && payload.kind === "conversation") {
-      const tasks = await listTasks(project.id);
-      const sessions = await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id, tasks) });
+      const sessions = await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id) });
       if (!sessions.some((candidate) => candidate.id === payload.sessionId && candidate.harnessId === payload.engine)) {
         sendError(response, 404, "Conversation not found");
         return;

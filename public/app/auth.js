@@ -18,7 +18,6 @@ import { syncNotifyButton, updateInstallButton } from "./shell.js";
 import { syncShortcutHints } from "./shortcut-hints.js";
 import { closeSocket, closeWatchSocket } from "./socket.js";
 import { BOOT_MINIMUM_MS, BOOT_REQUEST_TIMEOUT_MS, bootStartedAt, LEGACY_PREFERENCE_KEYS, shared, state } from "./state.js";
-import { renderBoardView } from "./tasks.js";
 import { loadWorkspaces } from "./workspaces.js";
 import { watchVisitorProfile } from "./roaming.js";
 
@@ -40,7 +39,7 @@ async function migrateLegacyPreferences(preferences) {
   if (["light", "dark"].includes(legacy.piWebTheme)) partial.theme = legacy.piWebTheme;
   if (["1", "true", "0", "false"].includes(legacy.piWebNotifications)) partial.notificationsEnabled = ["1", "true"].includes(legacy.piWebNotifications);
   if (["1", "true", "0", "false"].includes(legacy.piWebInstallDismissed)) partial.installDismissed = ["1", "true"].includes(legacy.piWebInstallDismissed);
-  if (["projects", "sessions", "board", "chat"].includes(legacy.piWebActiveView)) partial.mobileView = legacy.piWebActiveView;
+  if (["projects", "sessions", "chat"].includes(legacy.piWebActiveView)) partial.mobileView = legacy.piWebActiveView;
   if (legacy.piWebActiveProjectId?.trim() && legacy.piWebActiveProjectId.length <= 120) partial.activeProjectId = legacy.piWebActiveProjectId;
   if (legacy.piWebActiveSessionPath?.trim() && legacy.piWebActiveSessionPath.length <= 2000) partial.activeSessionPath = legacy.piWebActiveSessionPath;
 
@@ -79,14 +78,12 @@ export function showSignedOut() {
   state.activeProjectId = null;
   state.activeSessionPath = null;
   state.activeSessionId = null;
-  state.activeTaskId = null;
   state.projects = [];
   state.sessions = [];
   state.sessionsProjectId = null;
   state.keptSessionLists.clear();
   state.quickNotes = [];
   state.pendingQuickNoteConversion = null;
-  state.tasks = [];
   closeSocket();
   closeWatchSocket();
   clearChat();
@@ -97,7 +94,6 @@ export function showSignedOut() {
   renderProjects();
   renderSessions();
   renderQuickNotes();
-  renderBoardView();
   setMobileView("projects");
   showLogin();
 }

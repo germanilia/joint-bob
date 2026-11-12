@@ -29,8 +29,7 @@ export async function cronConversationReady(projectId: string, sessionId: string
   const session = (await listProjectSessionsWithReviewState(project, "", "")).find(candidate => candidate.id === sessionId);
   if (!session) throw new Error("Scheduled conversation not found");
   if (session.harnessId !== engine) throw new Error("Conversation agent changed; update the scheduled task");
-  if (session.readOnly || session.taskStatus === "done") throw new Error("Scheduled conversation is read-only");
-  if (session.taskId) throw new Error("Ticket conversations must run through their ticket owner, not a scheduled task");
+  if (session.readOnly) throw new Error("Scheduled conversation is read-only");
   return !session.running;
 }
 

@@ -116,7 +116,7 @@ export const isSwitcherNavigationCode = (code) => /^Digit[0-9]$/.test(code)
  *  answer from anywhere in the app. */
 export const KEYMAP_COMMANDS = [
   "toggleView", "spotlight", "pendingReviews", "recents", "runningConversations", "settings", "focusInput", "savedCommands",
-  "toggleProjects", "toggleChats", "board", "newProject", "newPiChat", "newClaudeChat", "newKiroChat", "quickNote", "toggleNotes",
+  "toggleProjects", "toggleChats", "newProject", "newPiChat", "newClaudeChat", "newKiroChat", "quickNote", "toggleNotes",
   "runsOn", "selectAgent", "selectModel", "selectThinking", "terminal", "notify", "rename", "browser", "scheduledTasks",
   "backgroundTasks", "chatFiles", "sessionActions", "markDone", "autoRespond", "git", "explainConversation", "costs", "activity",
   "newConversation",
@@ -141,7 +141,6 @@ export const DEFAULT_KEYMAP = {
     savedCommands: ["ctrl", "alt", "shift", "L"],
     toggleProjects: commandChord("["),
     toggleChats: commandChord("]"),
-    board: commandChord("D"),
     newProject: commandChord("="),
     newPiChat: commandChord("N"),
     newClaudeChat: commandChord("C"),

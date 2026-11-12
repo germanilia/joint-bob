@@ -3,7 +3,7 @@ import type { Stats } from "node:fs";
 export type { Stats };
 
 /**
- * Pure three-way merge decisions for a ticket workspace, per plan §5 of
+ * Pure three-way merge decisions for a worktree, per plan §5 of
  * TICKET-MERGE-PLAN.md. No I/O: the caller scans and hashes the three trees
  * (baseline, workspace, project) and passes the states in. byte-for-byte
  * equality is a hash equality here because the caller hashed the bytes.
@@ -30,7 +30,7 @@ export type Decision =
 export interface DecideOptions {
   /** Paths that are safe to line-merge: decodable UTF-8 and within the size limit, on all three sides. */
   textMergeable: Set<string>;
-  /** Legacy tickets captured no baseline: every divergent file becomes an explicit
+  /** No trusted baseline: every divergent file becomes an explicit
    * choice instead of an automatic apply, because there is no trusted common
    * ancestor to three-way against. */
   legacy?: boolean;
@@ -55,7 +55,7 @@ export function decide(
     }
 
     if (!base) {
-      // Created after the baseline was captured (or a legacy ticket with no baseline at all).
+      // Created after the baseline was captured (or there is no trusted baseline at all).
       if (work && proj) {
         if (work.sha256 === proj.sha256 && work.mode === proj.mode) decisions.push({ kind: "skip", path });
         else if (work.sha256 === proj.sha256) decisions.push({ kind: "choice", path, reason: "mode-conflict" });

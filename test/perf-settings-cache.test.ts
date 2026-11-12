@@ -52,12 +52,12 @@ test("a setting changes right after it is written, by this connection or by anot
   other.prepare("DELETE FROM node_settings WHERE key = 'conversationHistoryDays'").run();
   assert.equal(getSettings().conversationHistoryDays, 30, "a removed row gives the default again");
   // What the retention sweep may delete: six boxes in one row, all off until ticked.
-  const untouched = { full: false, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: false, backgroundRuns: false };
+  const untouched = { full: false, includeUnrecorded: false, includeScheduled: false, leftovers: false, backgroundRuns: false };
   assert.deepEqual(getSettings().conversationRetentionScope, untouched);
   updateSettings({ conversationRetentionScope: { leftovers: true } });
   assert.deepEqual(getSettings().conversationRetentionScope, { ...untouched, leftovers: true });
-  store(other, "conversationRetentionScope", JSON.stringify({ full: true, includeTickets: true }));
-  assert.deepEqual(getSettings().conversationRetentionScope, { ...untouched, full: true, includeTickets: true }, "written by another connection; a box that is not saved is off");
+  store(other, "conversationRetentionScope", JSON.stringify({ full: true, includeScheduled: true }));
+  assert.deepEqual(getSettings().conversationRetentionScope, { ...untouched, full: true, includeScheduled: true }, "written by another connection; a box that is not saved is off");
   other.prepare("DELETE FROM node_settings WHERE key = 'conversationRetentionScope'").run();
   assert.deepEqual(getSettings().conversationRetentionScope, untouched, "a removed row turns every box off again");
   // A write to any other table ends the kept answer too. It is simply read again.

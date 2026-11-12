@@ -35,7 +35,7 @@ const SHORTCUT_MODIFIERS: ShortcutModifier[] = [...SHORTCUT_CHORD_MODIFIERS];
 // command already holds it, so an existing account never loses a binding it configured.
 const KEYMAP_COMMANDS = [
   "toggleView", "spotlight", "pendingReviews", "recents", "runningConversations", "settings", "focusInput", "savedCommands",
-  "toggleProjects", "toggleChats", "board", "newProject", "newPiChat", "newClaudeChat", "newKiroChat", "quickNote", "toggleNotes",
+  "toggleProjects", "toggleChats", "newProject", "newPiChat", "newClaudeChat", "newKiroChat", "quickNote", "toggleNotes",
   "runsOn", "selectAgent", "selectModel", "selectThinking", "terminal", "notify", "rename", "browser", "scheduledTasks",
   "backgroundTasks", "chatFiles", "sessionActions", "markDone", "autoRespond", "git", "explainConversation", "costs", "activity",
   "newConversation",
@@ -61,7 +61,6 @@ export const defaultKeymap = (): KeymapPreference => ({
     savedCommands: ["ctrl", "alt", "shift", "L"],
     toggleProjects: commandChord("["),
     toggleChats: commandChord("]"),
-    board: commandChord("D"),
     newProject: commandChord("="),
     newPiChat: commandChord("N"),
     newClaudeChat: commandChord("C"),
@@ -151,7 +150,7 @@ export interface UserPreferences {
   completionSound: "off" | "chime" | "bell";
   terminalDock: TerminalDockPreference;
   installDismissed: boolean;
-  mobileView: "projects" | "sessions" | "board" | "chat" | "control";
+  mobileView: "projects" | "sessions" | "chat" | "control";
   activeProjectId: string | null;
   activeSessionPath: string | null;
   activeSessionId: string | null;
@@ -406,7 +405,8 @@ function preferencesFromRow(row: PreferenceRow): UserPreferences {
     terminalDock: parseTerminalDockPreference(row.terminal_dock),
     installDismissed: row.install_dismissed === 1,
     // The canvas view no longer exists; a saved canvas view opens the control center that replaced it.
-    mobileView: (row.mobile_view as string) === "canvas" ? "control" : row.mobile_view,
+    // The project board is gone too; a saved board view opens the project's conversations.
+    mobileView: (row.mobile_view as string) === "canvas" ? "control" : (row.mobile_view as string) === "board" ? "sessions" : row.mobile_view,
     activeProjectId: row.active_project_id,
     activeSessionPath: row.active_session_path,
     activeSessionId: row.active_session_id,

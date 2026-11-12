@@ -38,28 +38,20 @@ import type { HarnessId } from "../../types.js";
 import { genericSecretEnvironment, githubAccountChoicesForProject, githubAccountsForProject } from "../../secrets.js";
 import { githubAccountFor } from "../../github-credentials.js";
 import { createGitHubReview } from "../github-review.js";
-import { listTasks } from "../../tasks.js";
 import { sendError } from "../http-auth.js";
 import { GitReviewRunError, runGitReview } from "../git-review-run.js";
 import { checkedConversationFiles, conversationReviewContext, discoverConversationFiles, generateReviewGuide, pendingReviewDiff } from "../git-review-guide.js";
 import { gitReviewAskSchema, gitReviewFollowUpSchema } from "../schemas.js";
 import { app } from "../state.js";
 
-// The review cwd is the ticket worktree when a task is in scope, else the project root.
-// A ticket-scoped request routes to the task owner, exactly like project-files, because a
-// replica holds no worktree.
-async function reviewRoot(projectId: string, taskId?: string): Promise<string> {
+async function reviewRoot(projectId: string): Promise<string> {
   const project = await getProject(projectId);
   if (!project) throw new GitReviewError(404, "Project not found");
-  if (!taskId) return await realpath(project.path);
-  const task = (await listTasks(projectId)).find((candidate) => candidate.id === taskId);
-  if (!task) throw new GitReviewError(404, "Ticket was not found");
-  if (!task.worktreePath) throw new GitReviewError(404, "Ticket workspace is not available");
-  return await realpath(task.worktreePath);
+  return await realpath(project.path);
 }
 
-async function reviewCwd(projectId: string, taskId?: string, repository?: string): Promise<string> {
-  return resolveGitRepository(await reviewRoot(projectId, taskId), repository);
+async function reviewCwd(projectId: string, repository?: string): Promise<string> {
+  return resolveGitRepository(await reviewRoot(projectId), repository);
 }
 
 function repositoryKey(repository?: string): string {
@@ -68,11 +60,6 @@ function repositoryKey(repository?: string): string {
 
 function sameRepository(selection: GitReviewSelection, repository?: string): boolean {
   return repositoryKey(selection.repository) === repositoryKey(repository);
-}
-
-async function taskOwnerNodeId(projectId: string, taskId: string, fallback: string): Promise<string> {
-  const task = (await listTasks(projectId)).find((candidate) => candidate.id === taskId);
-  return task?.currentNodeId ?? fallback;
 }
 
 function queryString(request: Request, name: string): string {
@@ -130,18 +117,16 @@ async function withOwningNode(
   forwardRequest?: Request,
 ): Promise<void> {
   const projectId = request.params.projectId;
-  const taskId = queryOptional(request, "taskId");
-  let nodeId = queryString(request, "nodeId");
+  const nodeId = queryString(request, "nodeId");
   const localNode = await getClusterNode();
-  if (taskId) nodeId = await taskOwnerNodeId(projectId, taskId, nodeId);
   if (nodeId && nodeId !== localNode.id) {
     const peer = await getRuntimePeer(nodeId);
     if (!peer) { sendError(response, 404, "Git node not found"); return; }
-    await proxyGitJson(response, peer, clusterRoute, { ...query, projectId, taskId, repository: queryOptional(request, "repository") }, forwardRequest);
+    await proxyGitJson(response, peer, clusterRoute, { ...query, projectId, repository: queryOptional(request, "repository") }, forwardRequest);
     return;
   }
   const repository = queryOptional(request, "repository");
-  if (repository !== undefined) await reviewCwd(projectId, taskId, repository);
+  if (repository !== undefined) await reviewCwd(projectId, repository);
   const result = await local();
   if (result !== SENT) response.json(result);
 }
@@ -219,7 +204,7 @@ async function githubWrite(projectId: string, cwd: string, body: unknown, query:
 app.get("/api/cluster/git/github", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    response.json(await githubRead(queryString(request, "projectId"), await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository")), request.query));
+    response.json(await githubRead(queryString(request, "projectId"), await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository")), request.query));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -227,21 +212,21 @@ app.get("/api/projects/:projectId/git/github", async (request, response, next) =
   try {
     const query = { op: queryOptional(request, "op"), id: queryOptional(request, "id"), state: queryOptional(request, "state"), page: queryOptional(request, "page"), accountId: queryOptional(request, "accountId") };
     await withOwningNode(request, response, "/api/cluster/git/github", query, async () =>
-      githubRead(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), query));
+      githubRead(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "repository")), query));
   } catch (error) { handleGitError(response, error, next); }
 });
 
 app.post("/api/cluster/git/github", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    response.json(await githubWrite(queryString(request, "projectId"), await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository")), request.body, request.query));
+    response.json(await githubWrite(queryString(request, "projectId"), await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository")), request.body, request.query));
   } catch (error) { handleGitError(response, error, next); }
 });
 
 app.post("/api/projects/:projectId/git/github", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/github", { accountId: queryOptional(request, "accountId") }, async () =>
-      githubWrite(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), request.body, request.query), request);
+      githubWrite(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "repository")), request.body, request.query), request);
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -250,14 +235,14 @@ app.post("/api/projects/:projectId/git/github", async (request, response, next) 
 app.get("/api/cluster/git/repositories", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    response.json(await discoverGitRepositories(await reviewRoot(queryString(request, "projectId"), queryOptional(request, "taskId"))));
+    response.json(await discoverGitRepositories(await reviewRoot(queryString(request, "projectId"))));
   } catch (error) { handleGitError(response, error, next); }
 });
 
 app.get("/api/projects/:projectId/git/repositories", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/repositories", {}, async () =>
-      discoverGitRepositories(await reviewRoot(request.params.projectId, queryOptional(request, "taskId"))));
+      discoverGitRepositories(await reviewRoot(request.params.projectId)));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -266,7 +251,7 @@ app.get("/api/projects/:projectId/git/repositories", async (request, response, n
 app.get("/api/cluster/git/status", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository"));
     response.json(await gitStatus(cwd));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -274,7 +259,7 @@ app.get("/api/cluster/git/status", async (request, response, next) => {
 app.get("/api/projects/:projectId/git/status", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/status", {}, async () =>
-      gitStatus(await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"))));
+      gitStatus(await reviewCwd(request.params.projectId, queryOptional(request, "repository"))));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -283,7 +268,7 @@ app.get("/api/projects/:projectId/git/status", async (request, response, next) =
 app.get("/api/cluster/git/diff", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository"));
     response.json(await gitFileDiff(cwd, queryString(request, "path"), { staged: request.query.staged === "1", untracked: request.query.untracked === "1" }));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -291,7 +276,7 @@ app.get("/api/cluster/git/diff", async (request, response, next) => {
 app.get("/api/projects/:projectId/git/diff", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/diff", { path: queryString(request, "path"), staged: request.query.staged === "1" ? "1" : undefined, untracked: request.query.untracked === "1" ? "1" : undefined }, async () =>
-      gitFileDiff(await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), queryString(request, "path"), { staged: request.query.staged === "1", untracked: request.query.untracked === "1" }));
+      gitFileDiff(await reviewCwd(request.params.projectId, queryOptional(request, "repository")), queryString(request, "path"), { staged: request.query.staged === "1", untracked: request.query.untracked === "1" }));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -300,7 +285,7 @@ app.get("/api/projects/:projectId/git/diff", async (request, response, next) => 
 app.get("/api/cluster/git/history", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository"));
     response.json({ commits: await gitCommitHistory(cwd, Number(queryString(request, "limit")) || 50, Number(queryString(request, "skip")) || 0) });
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -308,7 +293,7 @@ app.get("/api/cluster/git/history", async (request, response, next) => {
 app.get("/api/projects/:projectId/git/history", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/history", { limit: queryOptional(request, "limit"), skip: queryOptional(request, "skip") }, async () =>
-      ({ commits: await gitCommitHistory(await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), Number(queryString(request, "limit")) || 50, Number(queryString(request, "skip")) || 0) }));
+      ({ commits: await gitCommitHistory(await reviewCwd(request.params.projectId, queryOptional(request, "repository")), Number(queryString(request, "limit")) || 50, Number(queryString(request, "skip")) || 0) }));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -317,7 +302,7 @@ app.get("/api/projects/:projectId/git/history", async (request, response, next) 
 app.get("/api/cluster/git/commit", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository"));
     response.json(await gitCommitDetail(cwd, queryString(request, "revision")));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -325,7 +310,7 @@ app.get("/api/cluster/git/commit", async (request, response, next) => {
 app.get("/api/projects/:projectId/git/commit", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/commit", { revision: queryString(request, "revision") }, async () =>
-      gitCommitDetail(await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), queryString(request, "revision")));
+      gitCommitDetail(await reviewCwd(request.params.projectId, queryOptional(request, "repository")), queryString(request, "revision")));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -334,7 +319,7 @@ app.get("/api/projects/:projectId/git/commit", async (request, response, next) =
 app.get("/api/cluster/git/commit-diff", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository"));
     response.json(await gitCommitFileDiff(cwd, queryString(request, "revision"), queryString(request, "path")));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -342,7 +327,7 @@ app.get("/api/cluster/git/commit-diff", async (request, response, next) => {
 app.get("/api/projects/:projectId/git/commit-diff", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/commit-diff", { revision: queryString(request, "revision"), path: queryString(request, "path") }, async () =>
-      gitCommitFileDiff(await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), queryString(request, "revision"), queryString(request, "path")));
+      gitCommitFileDiff(await reviewCwd(request.params.projectId, queryOptional(request, "repository")), queryString(request, "revision"), queryString(request, "path")));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -361,7 +346,7 @@ function reviewDetail(projectId: string, threadId: string, repository?: string):
 app.get("/api/cluster/git/reviews", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    if (queryOptional(request, "repository") !== undefined) await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    if (queryOptional(request, "repository") !== undefined) await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository"));
     response.json(reviewList(queryString(request, "projectId"), queryOptional(request, "conversationId"), queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -378,7 +363,7 @@ app.get("/api/projects/:projectId/git/reviews", async (request, response, next) 
 app.get("/api/cluster/git/review", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    if (queryOptional(request, "repository") !== undefined) await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    if (queryOptional(request, "repository") !== undefined) await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository"));
     response.json(reviewDetail(queryString(request, "projectId"), queryString(request, "threadId"), queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -396,7 +381,7 @@ app.delete("/api/cluster/git/review", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = queryString(request, "projectId");
-    await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    await reviewCwd(projectId, queryOptional(request, "repository"));
     reviewDetail(projectId, queryString(request, "threadId"), queryOptional(request, "repository"));
     deleteGitReviewThread(queryString(request, "threadId"));
     response.status(204).send();
@@ -406,7 +391,7 @@ app.delete("/api/cluster/git/review", async (request, response, next) => {
 app.delete("/api/projects/:projectId/git/reviews/:threadId", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/review", { threadId: request.params.threadId }, async () => {
-      await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+      await reviewCwd(request.params.projectId, queryOptional(request, "repository"));
       reviewDetail(request.params.projectId, request.params.threadId, queryOptional(request, "repository"));
       deleteGitReviewThread(request.params.threadId);
       response.status(204).send();
@@ -436,7 +421,7 @@ async function discoverScope(projectId: string, cwd: string, conversationId: str
 app.get("/api/cluster/git/scope", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    response.json(await discoverScope(queryString(request, "projectId"), await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository")), queryString(request, "conversationId"), queryOptional(request, "refresh") === "1"));
+    response.json(await discoverScope(queryString(request, "projectId"), await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository")), queryString(request, "conversationId"), queryOptional(request, "refresh") === "1"));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -446,7 +431,7 @@ app.get("/api/projects/:projectId/git/scope", async (request, response, next) =>
     if (!conversationId) throw new GitReviewError(400, "Conversation required");
     const refresh = queryOptional(request, "refresh") === "1";
     await withOwningNode(request, response, "/api/cluster/git/scope", { conversationId, ...(refresh ? { refresh: "1" } : {}) }, async () =>
-      discoverScope(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), conversationId, refresh));
+      discoverScope(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "repository")), conversationId, refresh));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -469,14 +454,14 @@ app.post("/api/cluster/git/guide", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = queryString(request, "projectId");
-    response.json(await performGuide(projectId, await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), guideRequest.parse(request.body), queryOptional(request, "repository")));
+    response.json(await performGuide(projectId, await reviewCwd(projectId, queryOptional(request, "repository")), guideRequest.parse(request.body), queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
 
 app.post("/api/projects/:projectId/git/guide", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/guide", {}, async () =>
-      performGuide(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), guideRequest.parse(request.body), queryOptional(request, "repository")), request);
+      performGuide(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "repository")), guideRequest.parse(request.body), queryOptional(request, "repository")), request);
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -486,7 +471,7 @@ app.get("/api/cluster/git/guide-fresh", async (request, response, next) => {
     const thread = getGitReviewThread(queryString(request, "threadId"));
     if (!thread || thread.projectId !== queryString(request, "projectId") || !sameRepository(thread.selection, queryOptional(request, "repository"))) throw new GitReviewError(404, "Review not found");
     const saved = JSON.parse(thread.messages[1].text) as { paths: string[]; fingerprint: string };
-    const current = await pendingReviewDiff(await reviewCwd(thread.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), saved.paths);
+    const current = await pendingReviewDiff(await reviewCwd(thread.projectId, queryOptional(request, "repository")), saved.paths);
     response.json({ fresh: current.fingerprint === saved.fingerprint });
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -497,7 +482,7 @@ app.get("/api/projects/:projectId/git/guide-fresh", async (request, response, ne
       const thread = getGitReviewThread(queryString(request, "threadId"));
       if (!thread || thread.projectId !== request.params.projectId || !sameRepository(thread.selection, queryOptional(request, "repository"))) throw new GitReviewError(404, "Review not found");
       const saved = JSON.parse(thread.messages[1].text) as { paths: string[]; fingerprint: string };
-      const current = await pendingReviewDiff(await reviewCwd(thread.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), saved.paths);
+      const current = await pendingReviewDiff(await reviewCwd(thread.projectId, queryOptional(request, "repository")), saved.paths);
       return { fresh: current.fingerprint === saved.fingerprint };
     });
   } catch (error) { handleGitError(response, error, next); }
@@ -517,7 +502,7 @@ app.get("/api/cluster/git/guide-latest", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = queryString(request, "projectId");
-    response.json(await latestFreshGuide(projectId, await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), queryOptional(request, "conversationId") ?? null, queryOptional(request, "repository")));
+    response.json(await latestFreshGuide(projectId, await reviewCwd(projectId, queryOptional(request, "repository")), queryOptional(request, "conversationId") ?? null, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -526,7 +511,7 @@ app.get("/api/projects/:projectId/git/guide-latest", async (request, response, n
     const conversationId = queryOptional(request, "conversationId");
     await withOwningNode(request, response, "/api/cluster/git/guide-latest", conversationId ? { conversationId } : {}, async () => {
       if (!await getProject(request.params.projectId)) throw new GitReviewError(404, "Project not found");
-      return latestFreshGuide(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), conversationId ?? null, queryOptional(request, "repository"));
+      return latestFreshGuide(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "repository")), conversationId ?? null, queryOptional(request, "repository"));
     });
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -653,7 +638,7 @@ app.post("/api/cluster/git/story", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = queryString(request, "projectId");
-    const cwd = await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
     const input = storyRequest.parse(request.body);
     await sendStory(request, response, (onProgress) => performStory(projectId, cwd, input, onProgress, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
@@ -664,7 +649,7 @@ app.post("/api/projects/:projectId/git/story", async (request, response, next) =
     const { projectId } = request.params;
     const input = storyRequest.parse(request.body);
     await withOwningNode(request, response, "/api/cluster/git/story", {}, async () => {
-      const cwd = await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+      const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
       await sendStory(request, response, (onProgress) => performStory(projectId, cwd, input, onProgress, queryOptional(request, "repository")));
       return SENT;
     }, request);
@@ -674,14 +659,14 @@ app.post("/api/projects/:projectId/git/story", async (request, response, next) =
 app.get("/api/cluster/git/pushes", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    response.json({ pushes: await gitPushHistory(await reviewCwd(queryString(request, "projectId"), queryOptional(request, "taskId"), queryOptional(request, "repository"))) });
+    response.json({ pushes: await gitPushHistory(await reviewCwd(queryString(request, "projectId"), queryOptional(request, "repository"))) });
   } catch (error) { handleGitError(response, error, next); }
 });
 
 app.get("/api/projects/:projectId/git/pushes", async (request, response, next) => {
   try {
     await withOwningNode(request, response, "/api/cluster/git/pushes", {}, async () =>
-      ({ pushes: await gitPushHistory(await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"))) }));
+      ({ pushes: await gitPushHistory(await reviewCwd(request.params.projectId, queryOptional(request, "repository"))) }));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -689,7 +674,7 @@ app.get("/api/cluster/git/story-latest", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = queryString(request, "projectId");
-    response.json(await latestStory(projectId, await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), queryOptional(request, "conversationId") ?? null, queryOptional(request, "threadId"), queryOptional(request, "repository")));
+    response.json(await latestStory(projectId, await reviewCwd(projectId, queryOptional(request, "repository")), queryOptional(request, "conversationId") ?? null, queryOptional(request, "threadId"), queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -698,7 +683,7 @@ app.get("/api/projects/:projectId/git/story-latest", async (request, response, n
     const conversationId = queryOptional(request, "conversationId");
     const threadId = queryOptional(request, "threadId");
     await withOwningNode(request, response, "/api/cluster/git/story-latest", { conversationId, threadId }, async () =>
-      latestStory(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "taskId"), queryOptional(request, "repository")), conversationId ?? null, threadId, queryOptional(request, "repository")));
+      latestStory(request.params.projectId, await reviewCwd(request.params.projectId, queryOptional(request, "repository")), conversationId ?? null, threadId, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
 
@@ -796,7 +781,7 @@ app.post("/api/cluster/git/overview", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = queryString(request, "projectId");
-    const cwd = await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
     const input = overviewRequest.parse(request.body);
     await sendStory(request, response, (onProgress) => performOverview(projectId, cwd, input, onProgress, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
@@ -807,7 +792,7 @@ app.post("/api/projects/:projectId/git/overview", async (request, response, next
     const { projectId } = request.params;
     const input = overviewRequest.parse(request.body);
     await withOwningNode(request, response, "/api/cluster/git/overview", {}, async () => {
-      const cwd = await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+      const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
       await sendStory(request, response, (onProgress) => performOverview(projectId, cwd, input, onProgress, queryOptional(request, "repository")));
       return SENT;
     }, request);
@@ -837,7 +822,7 @@ app.post("/api/cluster/git/story-podcast", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = queryString(request, "projectId");
-    const cwd = await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
     const input = podcastRequest.parse(request.body);
     await sendStory(request, response, (onProgress) => performPodcast(projectId, cwd, input, onProgress, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
@@ -848,7 +833,7 @@ app.post("/api/projects/:projectId/git/story-podcast", async (request, response,
     const { projectId } = request.params;
     const input = podcastRequest.parse(request.body);
     await withOwningNode(request, response, "/api/cluster/git/story-podcast", {}, async () => {
-      const cwd = await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+      const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
       await sendStory(request, response, (onProgress) => performPodcast(projectId, cwd, input, onProgress, queryOptional(request, "repository")));
       return SENT;
     }, request);
@@ -924,7 +909,7 @@ app.post("/api/cluster/git/ask", async (request, response, next) => {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = queryString(request, "projectId");
     const payload = gitReviewAskSchema.parse(request.body);
-    const cwd = await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
     response.json(await performAsk(projectId, cwd, payload, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -963,18 +948,16 @@ async function performAsk(projectId: string, cwd: string, payload: ReturnType<ty
 app.post("/api/projects/:projectId/git/ask", async (request, response, next) => {
   try {
     const projectId = request.params.projectId;
-    const taskId = queryOptional(request, "taskId");
-    let nodeId = queryString(request, "nodeId");
+    const nodeId = queryString(request, "nodeId");
     const localNode = await getClusterNode();
-    if (taskId) nodeId = await taskOwnerNodeId(projectId, taskId, nodeId);
     if (nodeId && nodeId !== localNode.id) {
       const peer = await getRuntimePeer(nodeId);
       if (!peer) { sendError(response, 404, "Git node not found"); return; }
-      await proxyGitJson(response, peer, "/api/cluster/git/ask", { projectId, taskId, repository: queryOptional(request, "repository") }, request);
+      await proxyGitJson(response, peer, "/api/cluster/git/ask", { projectId, repository: queryOptional(request, "repository") }, request);
       return;
     }
     const payload = gitReviewAskSchema.parse(request.body);
-    const cwd = await reviewCwd(projectId, taskId, queryOptional(request, "repository"));
+    const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
     response.json(await performAsk(projectId, cwd, payload, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -1011,7 +994,7 @@ app.post("/api/cluster/git/reviews/ask", async (request, response, next) => {
     const projectId = queryString(request, "projectId");
     const threadId = queryString(request, "threadId");
     const payload = gitReviewFollowUpSchema.parse(request.body);
-    const cwd = await reviewCwd(projectId, queryOptional(request, "taskId"), queryOptional(request, "repository"));
+    const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
     response.json(await performFollowUp(projectId, cwd, threadId, payload.question, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });
@@ -1019,18 +1002,16 @@ app.post("/api/cluster/git/reviews/ask", async (request, response, next) => {
 app.post("/api/projects/:projectId/git/reviews/:threadId/ask", async (request, response, next) => {
   try {
     const projectId = request.params.projectId;
-    const taskId = queryOptional(request, "taskId");
-    let nodeId = queryString(request, "nodeId");
+    const nodeId = queryString(request, "nodeId");
     const localNode = await getClusterNode();
-    if (taskId) nodeId = await taskOwnerNodeId(projectId, taskId, nodeId);
     if (nodeId && nodeId !== localNode.id) {
       const peer = await getRuntimePeer(nodeId);
       if (!peer) { sendError(response, 404, "Git node not found"); return; }
-      await proxyGitJson(response, peer, "/api/cluster/git/reviews/ask", { projectId, taskId, repository: queryOptional(request, "repository"), threadId: request.params.threadId }, request);
+      await proxyGitJson(response, peer, "/api/cluster/git/reviews/ask", { projectId, repository: queryOptional(request, "repository"), threadId: request.params.threadId }, request);
       return;
     }
     const payload = gitReviewFollowUpSchema.parse(request.body);
-    const cwd = await reviewCwd(projectId, taskId, queryOptional(request, "repository"));
+    const cwd = await reviewCwd(projectId, queryOptional(request, "repository"));
     response.json(await performFollowUp(projectId, cwd, request.params.threadId, payload.question, queryOptional(request, "repository")));
   } catch (error) { handleGitError(response, error, next); }
 });

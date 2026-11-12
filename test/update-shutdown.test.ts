@@ -137,7 +137,7 @@ test("Claude stop refuses if the process group cannot be confirmed gone", async 
 });
 
 test("pending recovery refuses preparation without discarding records", async () => {
-  const record = { id: "pending-shutdown", kind: "chat" as const, engine: "pi" as const, projectId: "shutdown-test", cwd: "/tmp", sessionId: "s", sessionPath: "/tmp/s.jsonl", taskId: null, phase: null, queuedPrompts: ["keep"], model: null, effort: null, createdAt: new Date().toISOString() };
+  const record = { id: "pending-shutdown", kind: "chat" as const, engine: "pi" as const, projectId: "shutdown-test", cwd: "/tmp", sessionId: "s", sessionPath: "/tmp/s.jsonl", queuedPrompts: ["keep"], model: null, effort: null, createdAt: new Date().toISOString() };
   await saveUpdateRecoveries([record]);
   try {
     await assert.rejects(prepareForUpdate(), /still recovering/);

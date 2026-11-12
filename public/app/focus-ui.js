@@ -89,11 +89,11 @@ chips.effort.onChange(value => chooseSelectValue(elements.reasoningLevelSelect, 
 chips.node.onChange(value => chooseSelectValue(elements.chatNodeSelect, value));
 
 function currentView() {
-  return ["projects", "sessions", "chat", "board", "control"].find(view => document.body.classList.contains(`view-${view}`)) || "projects";
+  return ["projects", "sessions", "chat", "control"].find(view => document.body.classList.contains(`view-${view}`)) || "projects";
 }
 /** The sheet rises from the bottom (phone.css); nothing is positioned by hand. */
 function placeMenu() {}
-const viewPanel = { projects: "#projectsPanel", sessions: "#chatsPanel", chat: "#chatPanel", board: "#boardPanel", control: "#controlCenterPanel" };
+const viewPanel = { projects: "#projectsPanel", sessions: "#chatsPanel", chat: "#chatPanel", control: "#controlCenterPanel" };
 /** Home (the projects view with the Inbox column) has its own top line; every other view has a top bar. */
 const phoneHomeTop = document.querySelector("#phoneHomeTop");
 function onHome() {
@@ -137,7 +137,7 @@ function syncMenuLayout() {
     meta.textContent = [byId("chatProjectName")?.textContent?.trim(), context?.textContent?.trim() && `${context.textContent.trim()} context`, cost && !cost.hidden && cost.textContent.trim()]
       .filter(Boolean).join(" · ");
   } else {
-    title.textContent = { projects: onHome() ? "Inbox" : "Projects", sessions: "This project", chat: "This conversation", board: "Project board", control: "Bob" }[currentView()];
+    title.textContent = { projects: onHome() ? "Inbox" : "Projects", sessions: "This project", chat: "This conversation", control: "Bob" }[currentView()];
     meta.textContent = "";
   }
   meta.hidden = !meta.textContent;
@@ -230,10 +230,8 @@ function syncView() {
     const rowMenu = document.querySelector(`[data-project-id="${CSS.escape(state.activeProjectId || "")}"] [data-testid="project-menu-button"]`);
     if (rowMenu) proxyAction("Project actions", rowMenu, "sliders");
     if (state.activeProjectId) dashboardAction(() => ({ kind: "project", id: state.activeProjectId, projectId: state.activeProjectId }));
-    proxyAction("Project board", elements.openBoardButton, "canvas");
   }
   if (state.activeProjectId && view === "projects") proxyAction("Project notes", document.querySelector("#projectNotesButton"), "file");
-  if (view === "board") proxyAction("New task", elements.newTaskButton, "pencil");
   if (view === "control") {
     // Bob's head keeps only his name and state on a phone; what it held is here, one row each.
     proxyAction(elements.controlChatMonitor.textContent === "Paused" ? "Restore Bob (paused)" : "Pause Bob (monitoring)", elements.controlChatMonitor, "sliders");

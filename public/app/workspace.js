@@ -148,7 +148,7 @@ function syncPlaces() {
   const view = currentMobileView();
   const control = view === "control";
   const active = control ? (currentControlView() === "automations" ? "automations" : "bob")
-    : view === "board" ? "board" : column;
+    : column;
   for (const placeButton of document.querySelectorAll(".ws-places [data-place]")) {
     const on = placeButton.dataset.place === active;
     placeButton.classList.toggle("on", on);
@@ -158,17 +158,12 @@ function syncPlaces() {
   byId("workspaceProjectNote").textContent = column === "projects" ? "" : project?.name ?? "";
 }
 
-/** Inbox and Projects are about the conversations: from the board they bring the conversation back to the middle. */
-function leaveBoard() {
-  closeGroupPage();
-  if (currentMobileView() === "board") setMobileView(state.activeSessionId || state.activeSessionPath ? "chat" : "sessions");
-}
 byId("workspaceInboxButton").addEventListener("click", () => {
-  leaveBoard();
+  closeGroupPage();
   setColumn("inbox");
 });
 byId("workspaceProjectsButton").addEventListener("click", () => {
-  leaveBoard();
+  closeGroupPage();
   setColumn("projects");
   if (body.classList.contains("ws-picker")) elements.projectSearchInput.focus({ preventScroll: true });
 });
@@ -232,14 +227,6 @@ try { setProjectFiltersOpen(localStorage.getItem(PROJECT_FILTERS_OPEN_KEY) === "
 new MutationObserver(syncProjectFilters).observe(projectFilterRow, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
 syncProjectFilters();
 
-byId("workspaceBoardButton").addEventListener("click", () => {
-  if (!state.activeProjectId) {
-    setColumn("projects");
-    toast("Choose a project to see its board");
-    return;
-  }
-  elements.openBoardButton.click();
-});
 byId("workspaceAutomationsButton").addEventListener("click", () => {
   setMobileView("control");
   showControlView("automations");

@@ -20,9 +20,6 @@ test("every destructive action asks through confirmAction before it calls the ap
   for (const owner of [
     "async function removeProject(project)",
     "async function removeSessionFromRow(session, sessionActive)",
-    "async function archiveTask(task)",
-    "async function mergeTask(task)",
-    "async function deleteTaskFromCard(task)",
     "async function deleteSecretAccount(account)",
     "async function attemptCloseFileEditor()",
     "async function removeDashboard()",

@@ -67,7 +67,7 @@ h1, h2, .app-boot-wordmark, .brand-copy strong, .message-content.md :is(h1, h2, 
 .focus-controls > header strong, body.focus-ui .queued-editor-top strong { font-weight: 400; letter-spacing: 0; }
 
 /* Labels drop the monospaced capitals. Group and section labels take the serif; pills and badges stay sans. */
-:is(.eyebrow, .status-pill, .chat-badge, .task-engine, .board-count, .model-dialog-group, .credential-state,
+:is(.eyebrow, .status-pill, .chat-badge, .model-dialog-group, .credential-state,
   .brand-copy span, .chat-project-name, .chat-control > span, .queued-badge, .activity-rule-kind,
   .harness-switch-notice, .cron-task-kind, .cron-task-details dt, .github-group-default, .skill-option-scope,
   .git-review-kind, .resources-badge, .budget-head, .focus-setting-label, .activity-usage h3) {

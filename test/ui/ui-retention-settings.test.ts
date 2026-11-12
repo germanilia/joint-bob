@@ -1,7 +1,7 @@
 // Browser suite for the retention boxes in Settings: the three boxes that widen the first follow
 // it, a box or a number of days that deletes more asks first (Cancel leaves the setting as saved,
 // Delete them saves it), "Show what would be deleted" asks for the ticked boxes and shows the
-// answer or the error without saving, and every save sends the six boxes as one setting. The
+// answer or the error without saving, and every save sends the five boxes as one setting. The
 // dry-run answer comes from a fixture, so nothing is counted or deleted on the node.
 //
 // And for "Backup before deleting" under them: the fields of the chosen place show and no others,
@@ -22,14 +22,14 @@ import { type Browser, type Page, type Route } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "../dev-nodes.js";
 
-const BOXES = ["full", "includeUnrecorded", "includeScheduled", "includeTickets", "leftovers", "backgroundRuns"] as const;
+const BOXES = ["full", "includeUnrecorded", "includeScheduled", "leftovers", "backgroundRuns"] as const;
 const count = (conversations: number, files: number, bytes: number) => ({ conversations, files, bytes });
 /** What the node says about backups: where they go, what is kept, the last problem. */
 interface BackupStatus { destination: string; where: string; keepDays: number; kept: { backups: number; bytes: number }; nextRemovalAt: string | null; problem: { at: string; message: string } | null }
 const noBackups: BackupStatus = { destination: "off", where: "", keepDays: 30, kept: { backups: 0, bytes: 0 }, nextRemovalAt: null, problem: null };
 const answer = {
   generatedAt: "2026-11-11T00:00:00.000Z", retentionDays: 40, passLimit: 500,
-  switches: { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: true, leftovers: false, backgroundRuns: true },
+  switches: { full: true, includeUnrecorded: false, includeScheduled: true, leftovers: false, backgroundRuns: true },
   totals: { expired: count(975, 1076, 1_194_000_000), empty: count(6, 0, 0), background: count(2577, 2600, 577_000_000), leftover: count(449, 612, 601_000_000), held: count(32, 241, 119_000_000) },
   projects: [
     { projectId: "p1", name: "Contigos <b>", expired: count(500, 520, 479_000_000), empty: count(1, 0, 0) },
@@ -248,7 +248,7 @@ test("every box starts unticked, and the three that widen the first follow it", 
   initialDays = (await storedSettings()).conversationRetentionDays;
   assert.ok(initialDays > 30, `the fixture keeps conversations longer than the days this suite lowers it to (${initialDays})`);
   for (const name of BOXES) assert.equal(await box(name).isChecked(), false, `${name} is off on a node that never saved the setting`);
-  const dependents = ["includeUnrecorded", "includeScheduled", "includeTickets"];
+  const dependents = ["includeUnrecorded", "includeScheduled"];
   for (const name of dependents) assert.equal(await box(name).isDisabled(), true, `${name} waits for the first box`);
   for (const name of ["full", "leftovers", "backgroundRuns"]) assert.equal(await box(name).isEnabled(), true);
   // Ticking a box deletes more, so it asks first. While it asks, the boxes under the first follow it.
@@ -273,7 +273,7 @@ test("every box starts unticked, and the three that widen the first follow it", 
 
 test("the dry run asks for the ticked boxes and shows what they would delete", async () => {
   // Each box that deletes more asks; Delete them saves it.
-  for (const name of ["full", "includeTickets", "backgroundRuns"]) {
+  for (const name of ["full", "includeScheduled", "backgroundRuns"]) {
     await box(name).check();
     await confirmOpen();
     await page.getByTestId("confirm-accept-button").click();
@@ -297,7 +297,7 @@ test("the dry run asks for the ticked boxes and shows what they would delete", a
 
   // The boxes on the page were sent, and looking saves nothing.
   const query = new URLSearchParams(asked.at(-1));
-  assert.deepEqual(Object.fromEntries(BOXES.map((name) => [name, query.get(name)])), { full: "1", includeUnrecorded: "0", includeScheduled: "0", includeTickets: "1", leftovers: "0", backgroundRuns: "1" });
+  assert.deepEqual(Object.fromEntries(BOXES.map((name) => [name, query.get(name)])), { full: "1", includeUnrecorded: "0", includeScheduled: "1", leftovers: "0", backgroundRuns: "1" });
   assert.equal(saved.length, savesBefore, "looking saves nothing");
 
   const expired = await rowOf("expired");
@@ -334,9 +334,9 @@ test("an error takes the table's place", async () => {
   next = { status: 200, body: answer };
 });
 
-test("saving sends the six boxes as one setting, and they come back ticked", async () => {
-  // The boxes saved as they were allowed; the last request carried all six as one setting.
-  const expected = { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: true, leftovers: false, backgroundRuns: true };
+test("saving sends the five boxes as one setting, and they come back ticked", async () => {
+  // The boxes saved as they were allowed; the last request carried all five as one setting.
+  const expected = { full: true, includeUnrecorded: false, includeScheduled: true, leftovers: false, backgroundRuns: true };
   assert.deepEqual(saved.at(-1)?.conversationRetentionScope, expected);
   const stored = await storedSettings();
   assert.deepEqual(stored.conversationRetentionScope, expected);
@@ -351,7 +351,7 @@ test("saving sends the six boxes as one setting, and they come back ticked", asy
   assert.equal(await box("includeUnrecorded").isEnabled(), true, "the first box is ticked, so the ones under it can be");
   assert.equal(await page.getByTestId("settings-retention-preview").isVisible(), false, "an earlier answer is not shown again as if it were current");
 
-  // Unticking deletes less, so it saves without asking; the page always sends all six.
+  // Unticking deletes less, so it saves without asking; the page always sends all five.
   // The first box last: unticking it locks the three under it as they are.
   for (const name of [...BOXES].reverse()) {
     if (!await box(name).isChecked()) continue;

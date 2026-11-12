@@ -11,13 +11,13 @@ import { settingsDatabase } from "../src/settings-store.js";
 const off = defaultConversationRetentionScope();
 
 test("every box is off on a machine that never saved the setting", () => {
-  assert.deepEqual(off, { full: false, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: false, backgroundRuns: false });
+  assert.deepEqual(off, { full: false, includeUnrecorded: false, includeScheduled: false, leftovers: false, backgroundRuns: false });
   assert.deepEqual(getSettings().conversationRetentionScope, off);
 });
 
 test("a save changes the boxes it names and keeps the others, and leaving the setting out keeps them all", async () => {
-  assert.deepEqual(updateSettings({ conversationRetentionScope: { full: true, includeTickets: true } }).conversationRetentionScope, { ...off, full: true, includeTickets: true });
-  assert.deepEqual(updateSettings({ conversationRetentionScope: { backgroundRuns: true, includeTickets: false } }).conversationRetentionScope, { ...off, full: true, backgroundRuns: true });
+  assert.deepEqual(updateSettings({ conversationRetentionScope: { full: true, includeScheduled: true } }).conversationRetentionScope, { ...off, full: true, includeScheduled: true });
+  assert.deepEqual(updateSettings({ conversationRetentionScope: { backgroundRuns: true, includeScheduled: false } }).conversationRetentionScope, { ...off, full: true, backgroundRuns: true });
   // A save of something else, as the page sends when another field changed, keeps what is saved.
   assert.deepEqual(updateSettings({ conversationRetentionDays: 41 }).conversationRetentionScope, { ...off, full: true, backgroundRuns: true });
   assert.deepEqual(getSettings().conversationRetentionScope, { ...off, full: true, backgroundRuns: true });
@@ -54,10 +54,10 @@ test("it is the machine's setting: no person's own settings carry it", () => {
 test("the sweep reads the saved boxes, and a box that depends on the first counts only with it", async () => {
   const { retentionSwitches } = await import("../src/server/conversation-retention.js");
   assert.deepEqual(retentionSwitches(), off);
-  updateSettings({ conversationRetentionScope: { includeUnrecorded: true, includeScheduled: true, includeTickets: true, leftovers: true } });
-  assert.deepEqual(retentionSwitches(), { ...off, leftovers: true }, "without the first box the three that widen it are off");
+  updateSettings({ conversationRetentionScope: { includeUnrecorded: true, includeScheduled: true, leftovers: true } });
+  assert.deepEqual(retentionSwitches(), { ...off, leftovers: true }, "without the first box the two that widen it are off");
   updateSettings({ conversationRetentionScope: { full: true } });
-  assert.deepEqual(retentionSwitches(), { full: true, includeUnrecorded: true, includeScheduled: true, includeTickets: true, leftovers: true, backgroundRuns: false }, "seen at the next read");
+  assert.deepEqual(retentionSwitches(), { full: true, includeUnrecorded: true, includeScheduled: true, leftovers: true, backgroundRuns: false }, "seen at the next read");
   updateSettings({ conversationRetentionScope: off });
   assert.deepEqual(retentionSwitches(), off);
 });

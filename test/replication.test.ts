@@ -4,7 +4,6 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { TaskRecord } from "../src/types.js";
 import { openNodeDatabase } from "../src/node-database.js";
 
 test("SQLite name replication is atomic, idempotent, ordered, and retryable", async (t) => {
@@ -17,7 +16,6 @@ test("SQLite name replication is atomic, idempotent, ordered, and retryable", as
     const store = await import(new URL(`../src/store.ts?replication=${suffix}`, import.meta.url).href);
     const names = await import(new URL(`../src/names.ts?replication=${suffix}`, import.meta.url).href);
     const replication = await import("../src/replication.ts");
-    const tasks = await import(new URL(`../src/tasks.ts?replication=${suffix}`, import.meta.url).href);
     const node = await cluster.getClusterNode();
     const projectIds = ["project-atomic", "project-duplicate", "project-conflict"];
     for (const id of projectIds) {
@@ -101,115 +99,10 @@ test("SQLite name replication is atomic, idempotent, ordered, and retryable", as
     assert(delivered.delivered_at);
     assert.equal(delivered.last_error, null);
 
+    // The project board is gone: a task event from a machine on an older version is taken and dropped.
     const taskOrigin = randomUUID();
-    const handoffTask = { id: "handoff-fence", title: "Source", description: "Task", status: "backlog", engine: "pi", planMode: false, reviewMode: false, phaseConfig: {}, sessionPath: null, worktreePath: null, worktreeBranch: null, mergedAt: null, currentNodeId: taskOrigin, leaseOwnerNodeId: null, leaseExpiresAt: null, executionState: "idle", handoffContext: null, originNodeId: taskOrigin, createdAt: "2026-04-01T00:00:00.000Z", updatedAt: "2026-04-01T00:00:00.000Z" };
-    const taskEvent = (operation: "upsert" | "delete", task: typeof handoffTask) => ({ id: randomUUID(), originNodeId: taskOrigin, entityType: "task", entityKey: `project-atomic:${task.id}`, operation, payload: { projectId: "project-atomic", task, originNodeId: taskOrigin }, createdAt: task.updatedAt });
-    await replication.receiveReplicationBatch({ events: [taskEvent("upsert", handoffTask)] });
-    db.prepare("UPDATE tasks SET active_handoff_id = ? WHERE project_id = ? AND id = ?").run(randomUUID(), "project-atomic", handoffTask.id);
-    const newerTask = { ...handoffTask, title: "Newer source", updatedAt: "2026-04-02T00:00:00.000Z" };
-    const activeUpsert = taskEvent("upsert", newerTask);
-    assert.deepEqual(await replication.receiveReplicationBatch({ events: [activeUpsert] }), []);
-    assert.equal(db.prepare("SELECT 1 FROM replication_inbox WHERE event_id = ?").get(activeUpsert.id), undefined);
-    assert.equal((db.prepare("SELECT title FROM tasks WHERE project_id = ? AND id = ?").get("project-atomic", handoffTask.id) as { title: string }).title, "Source");
-    db.prepare("UPDATE tasks SET active_handoff_id = NULL WHERE project_id = ? AND id = ?").run("project-atomic", handoffTask.id);
-    assert.deepEqual(await replication.receiveReplicationBatch({ events: [activeUpsert] }), [activeUpsert.id]);
-    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM replication_inbox WHERE event_id = ?").get(activeUpsert.id) as { count: number }).count, 1);
-    assert.equal((db.prepare("SELECT title FROM tasks WHERE project_id = ? AND id = ?").get("project-atomic", handoffTask.id) as { title: string }).title, "Newer source");
-    db.prepare("UPDATE tasks SET active_handoff_id = ? WHERE project_id = ? AND id = ?").run(randomUUID(), "project-atomic", handoffTask.id);
-    const activeDelete = taskEvent("delete", { ...newerTask, updatedAt: "2026-04-03T00:00:00.000Z" });
-    assert.deepEqual(await replication.receiveReplicationBatch({ events: [activeDelete] }), [activeDelete.id]);
-    assert.equal((db.prepare("SELECT title FROM tasks WHERE project_id = ? AND id = ?").get("project-atomic", handoffTask.id) as { title: string }).title, "Newer source");
-    const activeTombstone = db.prepare("SELECT updated_at, origin_node_id FROM task_tombstones WHERE project_id = ? AND task_id = ?").get("project-atomic", handoffTask.id) as { updated_at: string; origin_node_id: string };
-    assert.equal(activeTombstone.updated_at, "2026-04-03T00:00:00.000Z");
-    assert.equal(activeTombstone.origin_node_id, taskOrigin);
-    await replication.receiveReplicationBatch({ events: [activeDelete] });
-    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM replication_inbox WHERE event_id = ?").get(activeDelete.id) as { count: number }).count, 1);
-    db.prepare("UPDATE tasks SET active_handoff_id = NULL WHERE project_id = ? AND id = ?").run("project-atomic", handoffTask.id);
-    assert.ok(db.prepare("SELECT 1 FROM task_tombstones WHERE project_id = ? AND task_id = ?").get("project-atomic", handoffTask.id));
-    await replication.receiveReplicationBatch({ events: [taskEvent("delete", { ...newerTask, updatedAt: "2026-04-04T00:00:00.000Z" })] });
-    assert.equal(db.prepare("SELECT 1 FROM tasks WHERE project_id = ? AND id = ?").get("project-atomic", handoffTask.id), undefined);
-
-    const leaseTask = (id: string) => ({ ...handoffTask, id, currentNodeId: node.id, originNodeId: node.id });
-    const claimThenRelease = leaseTask("claim-then-release");
-    const releaseThenClaim = leaseTask("release-then-claim");
-    for (const task of [claimThenRelease, releaseThenClaim]) {
-      await replication.receiveReplicationBatch({ events: [{ id: randomUUID(), originNodeId: task.originNodeId, entityType: "task", entityKey: `project-atomic:${task.id}`, operation: "upsert", payload: { projectId: "project-atomic", task, originNodeId: task.originNodeId }, createdAt: task.updatedAt }] });
-    }
-    const firstClaim = await tasks.claimTaskLease("project-atomic", claimThenRelease.id, node.id);
-    const firstRelease = await tasks.releaseTaskLease("project-atomic", claimThenRelease.id, node.id, firstClaim.leaseToken);
-    const secondClaim = await tasks.claimTaskLease("project-atomic", releaseThenClaim.id, node.id);
-    const secondRelease = await tasks.releaseTaskLease("project-atomic", releaseThenClaim.id, node.id, secondClaim.leaseToken);
-    assert.notEqual(firstClaim.task.updatedAt, firstRelease.updatedAt);
-    assert.notEqual(secondClaim.task.updatedAt, secondRelease.updatedAt);
-    assert.equal(firstClaim.task.originNodeId, firstRelease.originNodeId);
-    assert.equal(secondClaim.task.originNodeId, secondRelease.originNodeId);
-
-    db.prepare("DELETE FROM tasks WHERE project_id = ? AND id IN (?, ?)").run("project-atomic", claimThenRelease.id, releaseThenClaim.id);
-    const leaseEvent = (task: typeof firstRelease) => ({ id: randomUUID(), originNodeId: task.originNodeId, entityType: "task", entityKey: `project-atomic:${task.id}`, operation: "upsert" as const, payload: { projectId: "project-atomic", task, originNodeId: task.originNodeId }, createdAt: task.updatedAt });
-    await replication.receiveReplicationBatch({ events: [leaseEvent(firstClaim.task)] });
-    await replication.receiveReplicationBatch({ events: [leaseEvent(firstRelease)] });
-    await replication.receiveReplicationBatch({ events: [leaseEvent(secondRelease)] });
-    await replication.receiveReplicationBatch({ events: [leaseEvent(secondClaim.task)] });
-    for (const id of [claimThenRelease.id, releaseThenClaim.id]) {
-      const replicated = db.prepare("SELECT execution_state, lease_owner_node_id FROM tasks WHERE project_id = ? AND id = ?").get("project-atomic", id) as { execution_state: string; lease_owner_node_id: string | null };
-      assert.equal(replicated.execution_state, "idle");
-      assert.equal(replicated.lease_owner_node_id, null);
-    }
-
-    await t.test("task replication retains a configured local transcript pointer only for the same harness session", async () => {
-      const settings = await import(new URL(`../src/settings.ts?replication=${suffix}`, import.meta.url).href);
-      const previousSettings = settings.getSettings();
-      const transcriptRoot = path.join(dataDir, "configured-claude-sessions");
-      settings.updateSettings({ ...previousSettings, claude: { ...previousSettings.claude, sessionPath: transcriptRoot } });
-      try {
-        const taskId = "local-transcript-pointer";
-        const sessionId = randomUUID();
-        const localPointer = `claude:${path.join(transcriptRoot, "legacy", `${sessionId}.jsonl`)}`;
-        let sequence = 0;
-        const publish = async (changes: Partial<TaskRecord>) => {
-          sequence += 1;
-          const task = {
-            ...handoffTask,
-            id: taskId,
-            engine: "claude",
-            sessionPath: localPointer,
-            currentNodeId: taskOrigin,
-            title: `replicated-${sequence}`,
-            updatedAt: new Date(Date.parse("2026-04-10T00:00:00.000Z") + sequence).toISOString(),
-            ...changes,
-          };
-          await replication.receiveReplicationBatch({ events: [{
-            id: randomUUID(), originNodeId: taskOrigin, entityType: "task", entityKey: `project-atomic:${taskId}`, operation: "upsert",
-            payload: { projectId: "project-atomic", task, originNodeId: taskOrigin }, createdAt: task.updatedAt,
-          }] });
-          return db.prepare("SELECT title, current_node_id, session_path FROM tasks WHERE project_id = ? AND id = ?").get("project-atomic", taskId) as { title: string; current_node_id: string; session_path: string | null };
-        };
-
-        await publish({ currentNodeId: node.id });
-        const remoteNode = randomUUID();
-        const remotePointer = `claude:/remote/.claude/projects/ticket/${sessionId}.jsonl`;
-        let replicated = await publish({ title: "remote owner", currentNodeId: remoteNode, sessionPath: remotePointer });
-        assert.equal(replicated.title, "remote owner");
-        assert.equal(replicated.current_node_id, remoteNode);
-        assert.equal(replicated.session_path, localPointer);
-        replicated = await publish({ title: "newer remote owner", currentNodeId: remoteNode, sessionPath: remotePointer });
-        assert.equal(replicated.session_path, localPointer);
-
-        const differentPointer = `claude:/remote/.claude/projects/ticket/${randomUUID()}.jsonl`;
-        replicated = await publish({ sessionPath: differentPointer });
-        assert.equal(replicated.session_path, differentPointer);
-
-        db.prepare("UPDATE tasks SET session_path = ? WHERE project_id = ? AND id = ?").run(remotePointer, "project-atomic", taskId);
-        replicated = await publish({ sessionPath: localPointer });
-        assert.equal(replicated.session_path, localPointer);
-
-        const piPointer = `pi:${path.join(transcriptRoot, "legacy", `${sessionId}.jsonl`)}`;
-        replicated = await publish({ engine: "pi", sessionPath: piPointer });
-        assert.equal(replicated.session_path, piPointer);
-      } finally {
-        settings.updateSettings({ ...settings.getSettings(), claude: previousSettings.claude });
-      }
-    });
+    const oldTaskEvent = { id: randomUUID(), originNodeId: taskOrigin, entityType: "task", entityKey: "project-atomic:old-ticket", operation: "upsert" as const, payload: { projectId: "project-atomic", task: { id: "old-ticket" }, originNodeId: taskOrigin }, createdAt: "2026-04-01T00:00:00.000Z" };
+    assert.deepEqual(await replication.receiveReplicationBatch({ events: [oldTaskEvent] }), [oldTaskEvent.id]);
   } finally {
     if (previous === undefined) delete process.env.PI_WEB_DATA_DIR;
     else process.env.PI_WEB_DATA_DIR = previous;

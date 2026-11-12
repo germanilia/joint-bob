@@ -65,7 +65,7 @@ let statusKey = "";
 let reading = 0;
 
 function target() {
-  return { projectId: state.activeConversationProjectId || state.activeProjectId, nodeId: state.activeNodeId, taskId: state.activeTaskId };
+  return { projectId: state.activeConversationProjectId || state.activeProjectId, nodeId: state.activeNodeId };
 }
 
 function changesOf(current) {
@@ -146,7 +146,7 @@ function renderStatus(message = "") {
   const tracking = [status.upstream && `→ ${status.upstream}`, status.ahead && `↑${status.ahead}`, status.behind && `↓${status.behind}`].filter(Boolean).join(" ");
   if (tracking) branch.append(Object.assign(document.createElement("small"), { textContent: tracking }));
   const shownChanges = changes.slice(0, ROWS);
-  filesList.replaceChildren(...shownChanges.map((change) => fileRow(change, () => void openFileAction(change.path, state.activeTaskId))));
+  filesList.replaceChildren(...shownChanges.map((change) => fileRow(change, () => void openFileAction(change.path))));
   gitList.replaceChildren(...shownChanges.map((change) => fileRow(change, () => {
     const session = activeChatSession();
     void openGitReview(session?.conversationId ?? session?.id ?? null);

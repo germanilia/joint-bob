@@ -9,11 +9,9 @@ import { getProjectLock, projectLocks } from "../project-locks.js";
 import { getSettings } from "../settings.js";
 import { listProjects, updateProjectWorkspaceAndPath } from "../store.js";
 import { projectSyncStatuses, unavailableProjectStatus } from "../file-sync/facade.js";
-import { listTasks } from "../tasks.js";
 import type { ProjectRecord, ProjectView } from "../types.js";
 import { sessionWatcher } from "./chat.js";
 import { harnessSessionBusy, harnessSessions } from "./harness-sessions.js";
-import { harnessTaskRuns, projectHasMergeReservation } from "./task-runs.js";
 import { projectUsage } from "../usage-ledger.js";
 import { workspaceSharingSchema } from "../workspace-sharing.js";
 
@@ -98,25 +96,10 @@ export async function projectView(project: ProjectRecord): Promise<ProjectView> 
 }
 
 async function assertProjectRelocationIdle(project: ProjectRecord): Promise<void> {
-  if ((await listTasks(project.id)).some((task) => task.executionState === "running")) {
-    throw new ProjectDirectoryImportError("Wait for this project's task to finish before changing its type");
-  }
   for (const session of harnessSessions.values()) {
     if (session.projectId === project.id && (session.clients.size || harnessSessionBusy(session))) {
       throw new ProjectDirectoryImportError("Close or finish this project's conversations before changing its type");
     }
-  }
-  if ([...harnessTaskRuns.values()].some((run) => run.projectId === project.id)) {
-    throw new ProjectDirectoryImportError("Wait for this project's task run to finish before changing its workspace");
-  }
-  if ((await listTasks(project.id)).some((task) => task.mergeTx === "open")) {
-    throw new ProjectDirectoryImportError("Wait for this project's ticket merge transaction to finish before changing its workspace");
-  }
-  if (projectHasMergeReservation(project.id)) {
-    throw new ProjectDirectoryImportError("A ticket merge reservation is active for this project");
-  }
-  if ((await listTasks(project.id)).some((task) => (task.mergeState === "conflicts" || task.mergeState === "resolved") && task.worktreePath)) {
-    throw new ProjectDirectoryImportError("Resolve this project's ticket merges before changing its workspace");
   }
 }
 

@@ -36,7 +36,7 @@ export function openRowMenu(anchor, items, anchorSelector = null) {
 
 /**
  * Background refreshes replace whole rows while a menu is open. Closing the menu
- * on every refresh made it unusable on a running ticket, whose transcript writes
+ * on every refresh made it unusable on a running conversation, whose transcript writes
  * trigger a sessions refresh about once a second. The menu is re-pointed at the
  * fresh row instead, and only closes when that row is really gone.
  */

@@ -11,20 +11,16 @@ import type { HarnessModel } from "../harnesses/runtime.js";
 import { createQuickNote } from "../quick-notes.js";
 import { getScopeSecretAccounts } from "../secrets.js";
 import { getProject } from "../store.js";
-import { createTask } from "../tasks.js";
 import { isHarnessId } from "../types.js";
 import { observeAutoResponder } from "./auto-respond-recovery.js";
 import { configureConversation } from "./conversation-prompt.js";
 import { iconHarnessId } from "./label-icon.js";
-import { assertProjectEditable } from "./projects.js";
-import { broadcastToProject } from "./realtime.js";
 import { projectGitOverview, projectGithubAction, projectPull, type ProjectPull } from "./routes/git-review.js";
 import { attachConversationSecretAsActor } from "./routes/secrets.js";
-import { startTaskRun } from "./task-runs.js";
 
 // Bob operates more of the app for the person, beside arranging their work (control-center-organize.ts): he stops a
 // conversation, turns its auto respond on or off, changes its agent, model or effort, attaches a secret account to it, shows a
-// project's git and acts on its pull requests, and adds a task or a quick note. Each change waits for the person's button and
+// project's git and acts on its pull requests, and adds a quick note. Each change waits for the person's button and
 // runs as them, through the same functions the app's own screens use; looking at git changes nothing, so Bob answers it at once.
 
 const id = z.string().min(1).max(240);
@@ -37,7 +33,6 @@ export const operateIntentShapes = [
   z.object({ intent: z.literal("attach-secret"), conversation: id, accountId: id }),
   z.object({ intent: z.literal("git-status"), projectId: id }),
   z.object({ intent: z.literal("pull-request"), projectId: id, number: z.number().int().positive(), action: z.enum(["merge", "close", "reopen", "comment", "approve"]), body: z.string().max(20_000) }),
-  z.object({ intent: z.literal("add-task"), projectId: id, title: z.string().trim().min(1).max(200), description: z.string().max(20_000), start: z.boolean() }),
   z.object({ intent: z.literal("add-note"), projectId: id, title: z.string().trim().min(1).max(120), content: z.string().max(100_000) }),
 ] as const;
 export type OperateIntent = z.infer<(typeof operateIntentShapes)[number]>;
@@ -50,7 +45,6 @@ export const OPERATE_INSTRUCTIONS = [
   '{"intent":"attach-secret","conversation":"<key>","accountId":"<secret account id>"} to attach one of the secret accounts listed to a listed conversation.',
   '{"intent":"git-status","projectId":"<id>"} when the user asks where a project\'s git stands: its branch, its changes, its open pull requests.',
   '{"intent":"pull-request","projectId":"<id>","number":123,"action":"merge|close|reopen|comment|approve","body":"<the comment, or empty>"} to act on one of a project\'s GitHub pull requests, by its number.',
-  '{"intent":"add-task","projectId":"<id>","title":"...","description":"what the task should do, in the user\'s words","start":false} to add a task to a project\'s Tasks list; "start":true only when the user asks to start it now.',
   '{"intent":"add-note","projectId":"<id>","title":"...","content":"..."} to save a quick note in a project, to start later.',
 ];
 
@@ -69,7 +63,6 @@ export const operationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("change-model"), ...conversationRef, agent: z.string().nullable(), provider: z.string().nullable(), modelId: z.string().nullable(), effort: z.enum(EFFORTS).nullable() }),
   z.object({ op: z.literal("attach-secret"), ...conversationRef, accountId: id, accountLabel: z.string() }),
   z.object({ op: z.literal("pull-request"), projectId: id, number: z.number().int().positive(), title: z.string(), action: z.enum(["merge", "close", "reopen", "comment", "approve"]), body: z.string(), sha: z.string() }),
-  z.object({ op: z.literal("add-task"), projectId: id, title: z.string().min(1).max(200), description: z.string().max(20_000), start: z.boolean() }),
   z.object({ op: z.literal("add-note"), projectId: id, title: z.string().min(1).max(120), content: z.string().max(100_000) }),
 ]);
 export type Operation = z.infer<typeof operationSchema>;
@@ -191,7 +184,6 @@ export async function offerOperation(session: AuthSession, intent: OperateIntent
       }
     }
     case "pull-request": return offerForPull(intent, place);
-    case "add-task": return ask(`${intent.start ? "Add and start" : "Add"} the task "${intent.title}" in ${found.name}'s Tasks list?${intent.description ? `\n${intent.description.slice(0, 600)}` : ""}`, intent.start ? "Add and start" : "Add it", { op: "add-task", projectId: found.id, title: intent.title, description: intent.description, start: intent.start }, place);
     case "add-note": return ask(`Save the quick note "${intent.title}" in ${found.name}, to start later?${intent.content ? `\n${intent.content.slice(0, 600)}` : ""}`, "Save it", { op: "add-note", projectId: found.id, title: intent.title, content: intent.content }, place);
   }
 }
@@ -239,14 +231,6 @@ async function runInProject(settings: BobSettings, operation: Exclude<Operation,
             : { action: operation.action, number: operation.number };
       await projectGithubAction(project.id, action);
       return `${{ merge: "Merged", close: "Closed", reopen: "Reopened", approve: "Approved", comment: "Commented on" }[operation.action]} #${operation.number} "${operation.title}".`;
-    }
-    case "add-task": {
-      await assertProjectEditable(project);
-      const engine = isHarnessId(settings.harnessId) ? settings.harnessId : "pi";
-      const task = await createTask(project.id, project.path, operation.title, operation.description, operation.start ? "in_progress" : "backlog", engine, false, false, {});
-      if (operation.start) startTaskRun(project, task).catch((error) => console.warn("Task start failed", error));
-      broadcastToProject(project.id, { type: "tasksChanged" });
-      return operation.start ? `Added "${task.title}" to the Tasks list of ${project.name} and started it.` : `Added "${task.title}" to the Tasks list of ${project.name}.`;
     }
     case "add-note": {
       createQuickNote({ projectId: project.id, title: operation.title, content: operation.content, harnessId: settings.harnessId || iconHarnessId() });

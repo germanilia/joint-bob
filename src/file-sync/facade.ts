@@ -1,13 +1,11 @@
-import { z } from "zod";
 import { peerAway } from "../peer-presence.js";
 import { getProject } from "../store.js";
 import type { ProjectRecord, ProjectSyncStatus } from "../types.js";
 import { controlDatabase, listPhases, type PhaseRecord } from "./control.js";
 import type { FileSyncPeerFacts, FileSyncProjectView } from "./index.js";
-import { FILE_SYNC_SWITCH_PROTOCOL, type ShareStatus } from "./protocol.js";
+import { FILE_SYNC_SWITCH_PROTOCOL } from "./protocol.js";
 import { projectSyncStatus } from "./status.js";
 import type { Phase, ShareKind } from "./types.js";
-import type { StatusAnswer } from "./wire.js";
 
 /* The one place callers ask about a project's files on other machines. A project shared with another
    machine is moved by the built-in engine: once this node has taken it over (phase "builtin") the
@@ -15,7 +13,6 @@ import type { StatusAnswer } from "./wire.js";
    should start work on it. A project with no phase here is shared with nobody ("none"): there is
    nothing to wait for. */
 
-export type ProjectShareKind = "project" | "tickets";
 /** How a project's files reach other machines from this node: "builtin" synced, "moving" being taken over, "none" shared with nobody. */
 export type ProjectFilesEngine = "builtin" | "moving" | "none";
 /** What the UI is told besides the status: whether the project is synced or still being taken over. */
@@ -28,12 +25,6 @@ export class ProjectNotSynchronizedError extends Error {
 /** The built-in engine cannot act for the project on this node right now (off, restarting); `message` says why in plain words. */
 export class ProjectFilesUnavailableError extends Error {}
 
-/** A built-in project's files are not ready here; a "syncing" status is worth waiting for, anything else needs a person. */
-export class ProjectFilesNotReadyError extends Error {
-  constructor(readonly status: ProjectSyncStatus) { super(`Files are not synchronized on this node: ${status.message ?? status.state}`); }
-  get retryable(): boolean { return this.status.state === "syncing"; }
-}
-
 export function unavailableProjectStatus(message = "This project is not shared with another machine"): ProjectSyncStatus {
   return { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message };
 }
@@ -42,8 +33,8 @@ export function unavailableProjectStatus(message = "This project is not shared w
 
 /** The engine's main-thread answers the facade uses (index.ts); tests stand one in with useFacadeEngineForTests. */
 export type EngineApi = Pick<typeof import("./index.js"),
-  "fileSyncProjectViews" | "fileSyncPeerFacts" | "fileSyncFlushProject" | "fileSyncRescanProject" | "fileSyncScanPaths"
-  | "fileSyncPrioritize" | "fileSyncHandoffStatus" | "fileSyncPulledSinceStart" | "fileSyncPendingFiles">;
+  "fileSyncProjectViews" | "fileSyncPeerFacts" | "fileSyncRescanProject" | "fileSyncScanPaths"
+  | "fileSyncPrioritize" | "fileSyncPulledSinceStart" | "fileSyncPendingFiles">;
 
 let engineModule: Promise<EngineApi> | undefined;
 let engineOverride: EngineApi | undefined;
@@ -55,8 +46,6 @@ function engineApi(): Promise<EngineApi> {
 /** Tests: the engine's main-thread answers from a stand-in; undefined restores the real one. */
 export function useFacadeEngineForTests(engine: EngineApi | undefined): void {
   engineOverride = engine;
-  partCache.clear();
-  expectations.clear();
 }
 
 export function filesEngineOf(phase: Phase | undefined): ProjectFilesEngine {
@@ -127,7 +116,7 @@ function peerProblem(view: FileSyncProjectView, facts: PeerFacts): string | unde
   return undefined;
 }
 
-/** A built-in project's status from its shares (design §6.5); `kinds` narrows it to some of them (a ticket's folder). */
+/** A built-in project's status from its shares (design §6.5); `kinds` narrows it to some of them. */
 export function builtinProjectStatus(view: FileSyncProjectView, facts: PeerFacts, kinds?: readonly ShareKind[]): FacadeSyncStatus {
   const shares = kinds ? view.shares.filter((share) => kinds.includes(share.kind)) : view.shares;
   const done = (status: ProjectSyncStatus): FacadeSyncStatus => ({ ...status, engine: "builtin" });
@@ -153,133 +142,10 @@ export function builtinProjectStatus(view: FileSyncProjectView, facts: PeerFacts
   return done(status);
 }
 
-/** Where a peer reads it as the plain status (handoff eligibility answers). */
+/** Where a peer reads it as the plain status. */
 function withoutEngine(status: FacadeSyncStatus): ProjectSyncStatus {
   const { engine: _engine, ...plain } = status;
   return plain;
-}
-
-const STATE_RANK: Record<ProjectSyncStatus["state"], number> = { error: 4, unavailable: 3, paused: 2, syncing: 1, synced: 0 };
-
-function worst<T extends ProjectSyncStatus>(statuses: readonly T[]): T | undefined {
-  return statuses.reduce<T | undefined>((held, status) => !held || STATE_RANK[status.state] > STATE_RANK[held.state] ? status : held, undefined);
-}
-
-/* ---- handoff (design §6.5): the source says how far its index reached, the destination waits until it holds that ---- */
-
-const handoffShareSchema = z.object({ kind: z.enum(["project", "tickets", "worktrees"]), indexId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), maxSeq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) });
-/** Non-strict like every handoff body: a newer source may add fields, an older destination drops the whole part. */
-const handoffFilesSchema = z.object({ projectId: z.string().min(1).max(240), shares: z.array(handoffShareSchema).min(1).max(3) });
-export type HandoffFiles = z.infer<typeof handoffFilesSchema>;
-type HandoffShare = HandoffFiles["shares"][number];
-type AnswerShare = StatusAnswer["shares"][number];
-
-/** A handoff stops counting this long after the source last said it (the dialog repeats it every second; commit follows prepare within seconds). */
-const EXPECTATION_TTL_MS = 2 * 60_000;
-/** Polls from several dialogs share one worker answer this fresh. */
-const ANSWER_REUSE_MS = 500;
-/** How long a readiness check waits for the worker's answer before it reports "Checking files". */
-const ANSWER_WAIT_MS = 2_000;
-/** The source's own flush while a dialog polls (the peer's eligibility request times out after 3 s). */
-export const HANDOFF_POLL_FLUSH_MS = 1_500;
-/** A handoff check waits this long for this node's own changes to be picked up (design §6.5). */
-export const READY_FLUSH_MS = 10_000;
-const PART_REUSE_MS = 1_000;
-
-interface Expectation { peer: string; part: HandoffFiles; at: number; asked?: { at: number; answer: Promise<StatusAnswer | undefined> } }
-/** projectId → source peer → what it handed over last. In memory: a restart drops it, and the source says it again with its next request. */
-const expectations = new Map<string, Map<string, Expectation>>();
-const partCache = new Map<string, { at: number; part: Promise<HandoffFiles | undefined> }>();
-
-/** One share of a destination's answer as a status; `names.source` is the machine handing over. */
-export function handoffShareStatus(expected: HandoffShare, answer: AnswerShare | undefined, names: { local: string; source: string }): ProjectSyncStatus {
-  const status = (state: ProjectSyncStatus["state"], message: string, files = 0, bytes = 0): ProjectSyncStatus => ({ state, remainingFiles: files, remainingBytes: bytes, message });
-  if (!answer) return status("syncing", "Starting file sync");
-  if (answer.state === "error" || answer.blocked > 0 || answer.errors > 0) {
-    return status("error", answer.blocked ? `${plural(answer.blocked, "file")} could not be synchronized` : answer.errors ? `${plural(answer.errors, "file")} could not be read or written` : "File sync stopped on an error", answer.need.files, answer.need.bytes);
-  }
-  if (answer.state === "unavailable") return status("unavailable", "The folder is missing on this node");
-  // Another generation of the source's index, or not as far as it said: its newest files are not even listed here yet.
-  if (answer.callerIndexId !== expected.indexId || answer.cursor < expected.maxSeq) return status("syncing", `Checking what changed on ${names.source}`, answer.need.files, answer.need.bytes);
-  if (answer.need.files > 0) return status("syncing", `Copying files to ${names.local}`, answer.need.files, answer.need.bytes);
-  if (answer.state === "starting") return status("syncing", "Starting file sync");
-  if (answer.state === "scanning") return status("syncing", "Checking files");
-  return status("synced", "Files are up to date");
-}
-
-/**
- * A handoff or takeover source sent `fileSync` in its eligibility or prepare body. Kept for a while
- * and, for a project on built-in sync here, handed to the worker at once: it pulls what the source
- * has and this node lacks and puts those folders first. Never throws: an unreadable part is dropped,
- * as an older node drops it.
- */
-export function noteHandoffFiles(peer: string, projectId: unknown, part: unknown): void {
-  const parsed = handoffFilesSchema.safeParse(part);
-  if (!parsed.success || parsed.data.projectId !== projectId) return;
-  const byPeer = expectations.get(parsed.data.projectId) ?? new Map<string, Expectation>();
-  const expectation: Expectation = { peer, part: parsed.data, at: Date.now() };
-  byPeer.set(peer, expectation);
-  expectations.set(parsed.data.projectId, byPeer);
-  void phaseOfProject(parsed.data.projectId).then((phase) => { if (filesEngineOf(phase) === "builtin") void ask(expectation); }).catch(() => undefined);
-}
-
-/** Fresh handoffs into this project; a source that is away cannot send anything more, so it is not waited for. */
-function currentExpectations(projectId: string, kind?: ShareKind): Expectation[] {
-  const byPeer = expectations.get(projectId);
-  if (!byPeer) return [];
-  const now = Date.now();
-  for (const [peer, expectation] of byPeer) if (now - expectation.at > EXPECTATION_TTL_MS) byPeer.delete(peer);
-  if (!byPeer.size) expectations.delete(projectId);
-  return [...byPeer.values()].filter((expectation) => !peerAway(expectation.peer) && (!kind || expectation.part.shares.some((share) => share.kind === kind)));
-}
-
-function ask(expectation: Expectation): Promise<StatusAnswer | undefined> {
-  if (expectation.asked && Date.now() - expectation.asked.at < ANSWER_REUSE_MS) return expectation.asked.answer;
-  const answer = engineApi().then((engine) => engine.fileSyncHandoffStatus(expectation.peer, expectation.part)).catch(() => undefined);
-  expectation.asked = { at: Date.now(), answer };
-  return answer;
-}
-
-async function answerWithin(expectation: Expectation, ms: number): Promise<StatusAnswer | undefined> {
-  let timer: NodeJS.Timeout | undefined;
-  const waited = new Promise<undefined>((resolve) => { const wait = setTimeout(() => resolve(undefined), ms); wait.unref(); timer = wait; });
-  try { return await Promise.race([ask(expectation), waited]); } finally { clearTimeout(timer); }
-}
-
-/** What the handoffs into the project say about one folder kind here; undefined when none is pending for it. */
-async function handoffStatusFor(projectId: string, kind: ShareKind, facts: PeerFacts): Promise<ProjectSyncStatus | undefined> {
-  const pending = currentExpectations(projectId, kind);
-  if (!pending.length) return undefined;
-  const statuses = await Promise.all(pending.map(async (expectation) => {
-    const answer = await answerWithin(expectation, ANSWER_WAIT_MS);
-    const expected = expectation.part.shares.find((share) => share.kind === kind)!;
-    if (!answer) return { state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking files" } satisfies ProjectSyncStatus;
-    return handoffShareStatus(expected, answer.shares.find((share) => share.kind === kind), { local: facts.local, source: nameOf(facts, expectation.peer) });
-  }));
-  return worst(statuses);
-}
-
-/**
- * The source's part of an eligibility or prepare body: how far its own index of each folder kind
- * reached, after picking up its latest changes (bounded by `flushTimeoutMs`). Undefined for a project
- * this node has not taken over, or shares with nobody.
- */
-export async function projectFilesHandoffPart(project: ProjectRecord, kinds: readonly ShareKind[], flushTimeoutMs: number): Promise<HandoffFiles | undefined> {
-  const key = `${project.id}\n${[...kinds].sort().join(",")}\n${flushTimeoutMs}`;
-  const cached = partCache.get(key);
-  if (cached && Date.now() - cached.at < PART_REUSE_MS) return cached.part;
-  const part = (async (): Promise<HandoffFiles | undefined> => {
-    if (filesEngineOf(await phaseOfProject(project.id)) !== "builtin") return undefined;
-    const engine = await engineApi();
-    // Whatever was picked up in time counts; the destination's later checks see the rest.
-    await engine.fileSyncFlushProject(project.id, kinds, flushTimeoutMs).catch(() => undefined);
-    const view = (await engine.fileSyncProjectViews([project.id])).get(project.id);
-    const shares = (view?.shares ?? []).filter((share) => kinds.includes(share.kind) && share.indexId).map((share) => ({ kind: share.kind, indexId: share.indexId, maxSeq: share.maxSeq }));
-    return shares.length ? { projectId: project.id, shares } : undefined;
-  })().catch(() => undefined);
-  partCache.set(key, { at: Date.now(), part });
-  for (const [held, entry] of partCache) if (Date.now() - entry.at > PART_REUSE_MS) partCache.delete(held);
-  return part;
 }
 
 /* ---- the facade ---- */
@@ -330,7 +196,7 @@ export async function conversationFilesStatus(project: ProjectRecord, worktreeId
   return builtinProjectStatus(scoped, facts);
 }
 
-/** Asks for an immediate scan of the project and of its ticket and worktree folders. */
+/** Asks for an immediate scan of the project and of its other folders. */
 export async function rescanProjectFiles(projectId: string): Promise<void> {
   const project = await getProject(projectId);
   if (!project) throw new Error("Project not found");
@@ -339,67 +205,9 @@ export async function rescanProjectFiles(projectId: string): Promise<void> {
   let finished: Array<{ kind: ShareKind; error?: string }>;
   try { finished = await api.fileSyncRescanProject(project.id); }
   catch (error) { throw new ProjectFilesUnavailableError(error instanceof Error ? error.message : "File sync is not running on this node"); }
-  // A ticket or worktree folder this node never had is not the project's problem; the project folder's is.
+  // A worktree (or old ticket) folder this node never had is not the project's problem; the project folder's is.
   const failed = finished.find((scan) => scan.kind === "project" && scan.error);
   if (failed) throw new ProjectFilesUnavailableError(failed.error!);
-}
-
-/**
- * This node's changes are picked up (10 s at most), then no need, blocked item or error may remain,
- * and a handoff into the project must have arrived; anything still under way is a retryable "syncing".
- * A project shared with nobody has nothing to wait for.
- */
-export async function assertProjectFilesReady(project: ProjectRecord, kind: ProjectShareKind): Promise<void> {
-  const phase = await phaseOfProject(project.id);
-  const engine = filesEngineOf(phase);
-  if (engine === "moving") throw new ProjectFilesNotReadyError(movingStatus());
-  if (engine === "none") return;
-  const api = await engineApi();
-  let view = (await api.fileSyncProjectViews([project.id])).get(project.id)!;
-  const facts = await api.fileSyncPeerFacts(Object.values(view.peers).flat());
-  if (view.worker !== "running") throw new ProjectFilesNotReadyError(builtinProjectStatus(view, facts, [kind]));
-  // No peer shares the project now: like a project without a folder, there is nothing to wait for.
-  if (!view.shares.length) return;
-  try { await api.fileSyncFlushProject(project.id, [kind], READY_FLUSH_MS); }
-  catch { throw new ProjectFilesNotReadyError({ state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking files" }); }
-  view = (await api.fileSyncProjectViews([project.id])).get(project.id)!;
-  const share = view.shares.find((candidate) => candidate.kind === kind);
-  if (share) {
-    const local = localShareProblem(share);
-    if (local) throw new ProjectFilesNotReadyError(local);
-  }
-  const handoff = await handoffStatusFor(project.id, kind, facts);
-  if (handoff && handoff.state !== "synced") throw new ProjectFilesNotReadyError(handoff);
-}
-
-/** Need, blocked items, errors or an unfinished scan in this node's copy of one share. */
-function localShareProblem(share: ShareStatus): ProjectSyncStatus | undefined {
-  const status = (state: ProjectSyncStatus["state"], message: string): ProjectSyncStatus => ({ state, remainingFiles: share.need.files, remainingBytes: share.need.bytes, message });
-  if (share.state === "error" || share.blocked > 0 || share.errors > 0) {
-    return status("error", share.blocked ? `${plural(share.blocked, "file")} could not be synchronized` : share.errors ? `${plural(share.errors, "file")} could not be read or written` : share.message ?? "File sync stopped on an error");
-  }
-  if (share.state === "unavailable") return status("unavailable", share.message ?? "The folder is missing on this node");
-  if (share.state === "starting") return status("syncing", "Starting file sync");
-  if (share.scanning || share.state === "scanning") return status("syncing", "Checking files");
-  if (share.need.files > 0) return status("syncing", `${plural(share.need.files, "file")} still arriving`);
-  return undefined;
-}
-
-/** This node's view of each share a ticket needs; a project without a folder has nothing to wait for. */
-export async function taskShareStatuses(project: ProjectRecord, targets: Array<{ kind: ProjectShareKind; label: string }>): Promise<Array<ProjectSyncStatus & { label: string }>> {
-  const phase = await phaseOfProject(project.id);
-  const engine = filesEngineOf(phase);
-  if (engine === "none") return [];
-  const unique = targets.filter((target, index) => targets.findIndex(({ kind }) => kind === target.kind) === index);
-  if (engine === "moving") return unique.map((target) => ({ label: target.label, ...withoutEngine(movingStatus()) }));
-  const api = await engineApi();
-  const view = (await api.fileSyncProjectViews([project.id])).get(project.id)!;
-  const facts = await api.fileSyncPeerFacts([...Object.values(view.peers).flat(), ...currentExpectations(project.id).map((expectation) => expectation.peer)]);
-  return Promise.all(unique.map(async (target) => {
-    const own = builtinProjectStatus(view, facts, [target.kind]);
-    const handoff = view.worker === "running" ? await handoffStatusFor(project.id, target.kind, facts) : undefined;
-    return { label: target.label, ...withoutEngine(handoff ? worst<FacadeSyncStatus>([own, handoff])! : own) };
-  }));
 }
 
 /**

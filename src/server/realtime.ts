@@ -16,7 +16,6 @@ import { listProjectSessionsWithReviewState } from "./sessions-helpers.js";
 import { conversationProjects, conversationsChanged, sessionListingChanged } from "../session-listing-revisions.js";
 import { flushReplicationOutbox } from "./maintenance.js";
 import { flags, server, socketAccounts, watchClients, webSocketServer } from "./state.js";
-import { harnessTaskRuns } from "./task-runs.js";
 
 let updateRestartTimer: NodeJS.Timeout | undefined;
 server.on("close", () => {
@@ -133,7 +132,7 @@ export function wakeQueuedConversations(): void {
    event that change a conversation list (or which conversations a person's list includes)
    mark the lists kept in session-listing-revisions.ts, and most of them name their project;
    one that names none marks them all. Pages are told as before. */
-const LISTING_EVENTS = new Set(["name.override", "task", "conversation.ownership", "conversation.record", "conversation.queue", "conversation.goal", "conversation.review", "conversation.notification", "user.pin", "user.recent"]);
+const LISTING_EVENTS = new Set(["name.override", "conversation.ownership", "conversation.record", "conversation.queue", "conversation.goal", "conversation.review", "conversation.notification", "user.pin", "user.recent"]);
 export function broadcastReplicationInvalidations(events: ReplicationBatch["events"]): void {
   for (const event of events) {
     if (!LISTING_EVENTS.has(event.entityType)) continue;
@@ -203,16 +202,12 @@ function updateRecoveryRecord(values: Omit<UpdateRecoveryRecord, "id" | "created
 
 function activeUpdateRecoveries(): Array<{ record: UpdateRecoveryRecord; shared: SharedHarnessSession }> {
   const active: Array<{ record: UpdateRecoveryRecord; shared: SharedHarnessSession }> = [];
-  const taskByShared = new Map([...harnessTaskRuns.values()].map((run) => [run.shared, run]));
   for (const shared of harnessSessions.values()) {
     if (!harnessSessionBusy(shared)) continue;
-    const task = taskByShared.get(shared);
-    if (task?.kind === "merge") continue;
     const settings = shared.session.settings();
     active.push({ shared, record: updateRecoveryRecord({
-      kind: task ? "task" : "chat", engine: shared.engine, projectId: shared.projectId, cwd: shared.cwd,
-      sessionId: shared.session.id, sessionPath: shared.session.file ?? "", taskId: task?.taskId ?? null,
-      phase: task?.phase ?? null, queuedPrompts: shared.session.queuedPrompts(), settings, model: settings.modelId || null, effort: settings.reasoning || null,
+      kind: "chat", engine: shared.engine, projectId: shared.projectId, cwd: shared.cwd,
+      sessionId: shared.session.id, sessionPath: shared.session.file ?? "", queuedPrompts: shared.session.queuedPrompts(), settings, model: settings.modelId || null, effort: settings.reasoning || null,
       accountId: shared.turnAccountId ?? null,
     }) });
   }

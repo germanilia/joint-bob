@@ -76,7 +76,6 @@ import "./app/resources.js";
 import "./app/chat-controls.js";
 import "./app/project-selection.js";
 import "./app/socket.js";
-import "./app/tasks.js";
 import "./app/worktrees.js";
 import "./app/terminal.js";
 import "./app/ownership.js";

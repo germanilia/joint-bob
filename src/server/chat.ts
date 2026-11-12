@@ -1,17 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, realpath, unlink, writeFile } from "node:fs/promises";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import WebSocket from "ws";
-import { z } from "zod";
 import { listProjects } from "../store.js";
-import { TaskWorkspaceError } from "../task-workspaces.js";
-import { updateTask } from "../tasks.js";
-import type { TaskAttachment, TaskRecord } from "../types.js";
+import type { TaskAttachment } from "../types.js";
 import { SessionWatcher } from "../watcher.js";
 import { webSocketCloseReason } from "../websocket.js";
 import { harnessPromptQueueIsDraining } from "./harness-chat.js";
 import { handleSessionChange } from "./realtime.js";
-import { taskUpdateSchema } from "./schemas.js";
 
 export const sessionWatcher = new SessionWatcher(handleSessionChange);
 listProjects().then((projects) => {
@@ -54,37 +50,8 @@ export async function persistTaskAttachments(cwd: string, images: Array<{ name: 
 export function taskAttachmentFile(cwd: string, attachment: TaskAttachment): string {
   const attachmentRoot = path.resolve(cwd, ".joint-bob-attachments");
   const filePath = path.resolve(cwd, attachment.path);
-  if (!filePath.startsWith(`${attachmentRoot}${path.sep}`)) throw new Error("Ticket attachment path is invalid");
+  if (!filePath.startsWith(`${attachmentRoot}${path.sep}`)) throw new Error("Attachment path is invalid");
   return filePath;
-}
-async function removeTaskAttachments(cwd: string, attachments: TaskAttachment[]): Promise<void> {
-  for (const attachment of attachments) {
-    try { await unlink(taskAttachmentFile(cwd, attachment)); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  }
-}
-async function prepareTaskAttachmentUpdate(existing: TaskRecord, payload: z.infer<typeof taskUpdateSchema>) {
-  const { attachmentIds, images, files, ...fields } = payload;
-  const changesAttachments = attachmentIds !== undefined || images !== undefined || files !== undefined;
-  if (!changesAttachments) return { update: fields, added: [] as TaskAttachment[], removed: [] as TaskAttachment[] };
-  if (!existing.worktreePath) throw new TaskWorkspaceError("Ticket workspace is unavailable");
-  const current = existing.attachments ?? [];
-  const ids = attachmentIds ?? current.map((attachment) => attachment.id);
-  z.array(z.string().uuid().refine((id) => current.some((attachment) => attachment.id === id), "Ticket attachment was not found"))
-    .max(10).refine((values) => new Set(values).size === values.length, "Ticket attachments cannot repeat").parse(ids);
-  const retained = ids.map((id) => current.find((attachment) => attachment.id === id)!);
-  z.array(z.unknown()).max(4).parse([...retained.filter((attachment) => attachment.kind === "image"), ...(images ?? [])]);
-  z.array(z.unknown()).max(6).parse([...retained.filter((attachment) => attachment.kind === "file"), ...(files ?? [])]);
-  const added = await persistTaskAttachments(existing.worktreePath, images ?? [], files ?? []);
-  return { update: { ...fields, attachments: [...retained, ...added] }, added, removed: current.filter((attachment) => !ids.includes(attachment.id)) };
-}
-export async function updateTaskWithAttachments(projectId: string, existing: TaskRecord, payload: z.infer<typeof taskUpdateSchema>): Promise<TaskRecord> {
-  const prepared = await prepareTaskAttachmentUpdate(existing, payload);
-  let updated: TaskRecord;
-  try { updated = await updateTask(projectId, existing.id, prepared.update); }
-  catch (error) { if (existing.worktreePath) await removeTaskAttachments(existing.worktreePath, prepared.added); throw error; }
-  if (existing.worktreePath) await removeTaskAttachments(existing.worktreePath, prepared.removed);
-  return updated;
 }
 
 export function claudeRunKey(projectId: string, sessionPath: string): string { return `${projectId}\n${sessionPath}`; }

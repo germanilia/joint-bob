@@ -14,7 +14,7 @@ test("update recovery records persist queues and stop failed records retrying", 
   try {
     const recovery = await import(`../src/update-recovery.ts?test=${Date.now()}-${Math.random()}`);
     const createdAt = new Date().toISOString();
-    const chatRecord = { id: "chat", kind: "chat" as const, engine: "pi" as const, projectId: "project", cwd: "/tmp/project", sessionId: "session", sessionPath: "/tmp/session.jsonl", taskId: null, phase: null, queuedPrompts: ["first", "second"], model: null, effort: null, createdAt };
+    const chatRecord = { id: "chat", kind: "chat" as const, engine: "pi" as const, projectId: "project", cwd: "/tmp/project", sessionId: "session", sessionPath: "/tmp/session.jsonl", queuedPrompts: ["first", "second"], model: null, effort: null, createdAt };
     const taskRecord = { ...chatRecord, id: "task", kind: "task" as const, engine: "claude" as const, taskId: "task-id", phase: "in_progress" as const, queuedPrompts: [] };
     await recovery.saveUpdateRecoveries([chatRecord, taskRecord]);
     const pending = await recovery.listPendingUpdateRecoveries();

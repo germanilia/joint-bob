@@ -107,7 +107,7 @@ let takeoverController = null;
 // write lock moves.
 async function takeLockedConversationOwnership(force = false) {
   const session = activeChatSession();
-  if (shared.ownershipWait || shared.ownershipTaking || state.activeTaskId || !state.activeProjectId || !session) return;
+  if (shared.ownershipWait || shared.ownershipTaking || !state.activeProjectId || !session) return;
   const projectId = state.activeProjectId;
   const owner = state.conversationLock;
   const destination = state.sessionNodes.find((node) => node.id === state.activeNodeId);
@@ -134,7 +134,7 @@ async function takeLockedConversationOwnership(force = false) {
     if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: destination.id, activeSessionId: null });
     resetOwnershipWait();
     // Taking it over from a conversation opened over the control center board keeps the board there.
-    openSession(result.sessionPath, shortSessionTitle(session), false, false, null, currentMobileView() === "control");
+    openSession(result.sessionPath, shortSessionTitle(session), false, null, currentMobileView() === "control");
     toast(force ? `Ownership forced using ${destination.name}'s history. Backup: ${result.saved}.${result.pendingPeerIds.length ? " Some machines could not confirm stopping; they will receive ownership when they reconnect." : " Reachable runs stopped."}` : result.saved ? `Ownership taken using ${owner.nodeName}'s history. Backup: ${result.saved}` : result.pendingPeerIds?.length ? "Ownership taken; offline nodes will update when they return" : "Ownership taken", result.saved ? 12000 : 8000);
   };
   try { await transfer(); }

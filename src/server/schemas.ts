@@ -147,19 +147,6 @@ const websiteOriginSchema = z.string().max(2048).refine((value) => { try { norma
 export const secretAccountSchema = z.object({ label: z.string().trim().min(1).max(64).refine((value) => !/[\x00-\x1f\x7f]/.test(value), "Secret account label cannot contain control characters"), provider: z.enum(["aws", "azure", "google", "github", "stripe", "cloudflare", "openai", "typesafe", "tavily", "elevenlabs", "zai", "grafana", "datadog", "jira", "gitlab", "postgres", "mssql", "mongodb", "custom", "website", "ssh", "certificate"]), replicate: z.boolean().optional(), websiteOrigin: websiteOriginSchema.nullable().optional(), projectId: z.string().trim().min(1).max(300).optional(), variables: z.array(secretVariableSchema).min(1).max(20) }).strict().refine((value) => !(value.projectId && value.replicate), "Project-scoped secret accounts cannot replicate");
 export const secretScopeParamsSchema = z.object({ scopeType: z.enum(["workspace", "project", "conversation"]), scopeId: z.string().trim().min(1).max(300) });
 export const secretScopeSchema = z.object({ accountIds: z.array(z.string().uuid()).max(100) }).strict();
-const taskStatusSchema = z.enum(["backlog", "planning", "in_progress", "review", "done"]);
-const taskEngineSchema = registeredHarnessIdSchema;
-const taskPhaseConfigSchema = z.object({
-  engine: taskEngineSchema,
-  provider: z.string().max(80).optional().default(""),
-  modelId: z.string().max(200).optional().default(""),
-  effort: z.enum(["default", "low", "medium", "high", "xhigh", "max"]).optional().default("default"),
-});
-const taskPhaseConfigMapSchema = z.object({
-  planning: taskPhaseConfigSchema.optional(),
-  in_progress: taskPhaseConfigSchema.optional(),
-  review: taskPhaseConfigSchema.optional(),
-}).optional();
 export const projectUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   type: z.string().trim().min(1).max(40).optional(),
@@ -201,8 +188,7 @@ export const recentSessionSchema = z.object({
   sessionPath: z.string().trim().min(1).max(2000), title: z.string().max(300), openedAt: z.string().datetime(), updatedAt: z.string().datetime().nullable(),
 }).strict();
 export const recentSessionIdentitySchema = recentSessionSchema.pick({ projectId: true, engine: true, sessionId: true });
-export const socketTaskIdSchema = z.string().trim().min(1).max(120);
-export const sessionDeleteSchema = z.object({ projectId: z.string().min(1), engine: registeredHarnessIdSchema, sessionId: z.string().uuid(), taskId: socketTaskIdSchema.optional() });
+export const sessionDeleteSchema = z.object({ projectId: z.string().min(1), engine: registeredHarnessIdSchema, sessionId: z.string().uuid() });
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 const attachmentDataSchema = z.string()
   .min(1)
@@ -255,39 +241,6 @@ export const fileAttachmentSchema = z.object({
   name: z.string().trim().min(1).max(240),
   mimeType: z.string().trim().min(1).max(120),
   data: attachmentDataSchema,
-});
-export const taskCreateSchema = z.object({
-  title: z.string().trim().min(1).max(200),
-  description: z.string().trim().max(20_000),
-  status: taskStatusSchema.optional(),
-  engine: taskEngineSchema.optional(),
-  planMode: z.boolean().optional(),
-  reviewMode: z.boolean().optional(),
-  phaseConfig: taskPhaseConfigMapSchema,
-  images: z.array(imageAttachmentSchema).max(4).optional(),
-  files: z.array(fileAttachmentSchema).max(6).optional(),
-});
-export const taskHandoffSchema = z.object({ peerId: z.string().uuid() });
-const taskBranchBundleSchema = z.object({ data: z.string().min(1).max(12_000_000), sha256: z.string().regex(/^[a-f0-9]{64}$/) });
-export const preparedTaskSchema = z.object({ projectId: z.string().min(1), task: z.unknown(), handoffId: z.string().uuid(), handoffContext: z.string().max(500_000), handoffVersion: z.string().datetime(), bundle: taskBranchBundleSchema.nullable() });
-export const taskEligibilitySchema = z.object({ projectId: z.string().min(1), task: z.unknown(), source: z.boolean().optional().default(false) });
-export const taskHandoffActionSchema = z.object({ handoffId: z.string().uuid() });
-export const taskHandoffDeletionSchema = z.object({ updatedAt: z.string().datetime(), originNodeId: z.string().uuid() });
-export const taskHandoffStatusSchema = taskHandoffActionSchema;
-export const routedTaskUpdateSchema = z.object({ projectId: z.string().min(1), taskId: z.string().min(1), update: z.unknown() });
-export const routedTaskSchema = z.object({ projectId: z.string().min(1), taskId: z.string().min(1) });
-export const routedTaskHandoffSchema = routedTaskSchema.extend({ peerId: z.string().uuid() });
-export const taskUpdateSchema = z.object({
-  title: z.string().trim().min(1).max(200).optional(),
-  description: z.string().trim().max(20_000).optional(),
-  status: taskStatusSchema.optional(),
-  engine: taskEngineSchema.optional(),
-  planMode: z.boolean().optional(),
-  reviewMode: z.boolean().optional(),
-  phaseConfig: taskPhaseConfigMapSchema,
-  attachmentIds: z.array(z.string().uuid()).max(10).optional(),
-  images: z.array(imageAttachmentSchema).max(4).optional(),
-  files: z.array(fileAttachmentSchema).max(6).optional(),
 });
 const pushSubscriptionSchema = z.object({
   endpoint: z.string().url(),
@@ -415,7 +368,7 @@ export const settingsSchema = z.object({
   // What the retention sweep may delete beyond the list. A box that is left out keeps its saved value; an unknown box is refused.
   conversationRetentionScope: z.object({
     full: z.boolean().optional(), includeUnrecorded: z.boolean().optional(), includeScheduled: z.boolean().optional(),
-    includeTickets: z.boolean().optional(), leftovers: z.boolean().optional(), backgroundRuns: z.boolean().optional(),
+    leftovers: z.boolean().optional(), backgroundRuns: z.boolean().optional(),
   }).strict().optional(),
   conversationBackup: conversationBackupSchema.optional(),
   autoCompactThreshold: z.number().int().min(1).max(100).nullable().optional(),
@@ -468,7 +421,7 @@ export const userPreferencesSchema = z.object({
     verticalSize: z.number().int().min(180).max(2500),
   }).strict().optional(),
   installDismissed: z.boolean().optional(),
-  mobileView: z.enum(["projects", "sessions", "board", "chat", "control"]).optional(),
+  mobileView: z.enum(["projects", "sessions", "chat", "control"]).optional(),
   activeProjectId: z.string().trim().min(1).max(120).nullable().optional(),
   activeSessionPath: z.string().trim().min(1).max(2000).nullable().optional(),
   activeSessionId: z.string().trim().min(1).max(200).nullable().optional(),

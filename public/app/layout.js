@@ -1,11 +1,9 @@
 import { savePreferencesInBackground } from "./api.js";
-import { conversationTask } from "./chat-controls.js";
 import { elements } from "./elements.js";
 import { projectMatchesClusters, sessionMatchesClusters } from "./cluster-filters.js";
 import { activateControlCenter } from "./control-center.js";
 import { formatDate, toast } from "./shell.js";
 import { state } from "./state.js";
-import { focusTaskCard, renderBoardView } from "./tasks.js";
 
 export function shortSessionTitle(session) {
   // Pi names a session it could not title "Untitled Pi session"; any harness's untitled session reads the same.
@@ -50,7 +48,7 @@ export function togglePanel(panel) {
   setPanelCollapsed(panel, !document.body.classList.contains(`${panel}-collapsed`));
 }
 
-const MOBILE_VIEWS = ["projects", "sessions", "board", "chat", "control"];
+const MOBILE_VIEWS = ["projects", "sessions", "chat", "control"];
 
 export function currentMobileView() {
   return MOBILE_VIEWS.find((name) => document.body.classList.contains(`view-${name}`)) ?? "projects";
@@ -68,11 +66,11 @@ export function toggleControlView() {
   setMobileView("control");
 }
 
-/** The view one level up: a conversation or the board returns to its project's list, and the list and the control center to the projects. */
+/** The view one level up: a conversation returns to its project's list, and the list and the control center to the projects. */
 export function parentView(view) {
   // A conversation opened from the phone's Home goes back there (phone-ui.js sets the mark).
   if (view === "chat" && state.chatFromHome) return "projects";
-  if (view === "chat" || view === "board") return state.activeProjectId ? "sessions" : "projects";
+  if (view === "chat") return state.activeProjectId ? "sessions" : "projects";
   if (view === "sessions" || view === "control") return "projects";
   return null;
 }
@@ -137,12 +135,11 @@ export function setMobileView(view) {
   if (view === "control" && currentMobileView() !== "control") state.viewBeforeControl = currentMobileView();
   if (state.preferencesLoaded) savePreferencesInBackground({ mobileView: view });
 
-  document.body.classList.remove("view-projects", "view-sessions", "view-board", "view-chat", "view-control");
+  document.body.classList.remove("view-projects", "view-sessions", "view-chat", "view-control");
   document.body.classList.add(`view-${view}`);
   for (const [name, navButton] of [
     ["projects", elements.navProjectsButton],
     ["sessions", elements.navSessionsButton],
-    ["board", elements.navBoardButton],
     ["chat", elements.navChatButton],
   ]) {
     navButton.classList.toggle("active", name === view);
@@ -236,25 +233,9 @@ export function filteredProjects() {
 
 elements.navProjectsButton.addEventListener("click", () => setMobileView("projects"));
 elements.navSessionsButton.addEventListener("click", () => setMobileView("sessions"));
-elements.navBoardButton.addEventListener("click", () => {
-  renderBoardView();
-  setMobileView("board");
-});
 elements.navChatButton.addEventListener("click", () => setMobileView("chat"));
 elements.backToProjectsButton.addEventListener("click", () => setMobileView("projects"));
-elements.backToChatsButton.addEventListener("click", () => setMobileView("sessions"));
 elements.backToSessionsButton.addEventListener("click", () => setMobileView(parentView("chat")));
-elements.taskBacklinkButton.addEventListener("click", () => {
-  const task = conversationTask();
-  if (!task) return;
-  renderBoardView();
-  setMobileView("board");
-  focusTaskCard(task.id);
-});
-elements.openBoardButton.addEventListener("click", () => {
-  renderBoardView();
-  setMobileView("board");
-});
 elements.openControlCenterButton.addEventListener("click", () => setMobileView("control"));
 const EXIT_PROMPT_MS = 3000;
 let exitPromptTimer = null;

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { diff3Merge } from "node-diff3";
@@ -27,17 +27,6 @@ function entryIdFor(filePath: string): string {
 /** Lines in `text` that look like generic conflict-marker syntax, duplicates included. */
 export function markerSyntaxLines(text: string): string[] {
   return text.split("\n").filter((line) => MARKER_SYNTAX.test(line));
-}
-
-function multisetContained(newLines: string[], allowed: string[]): boolean {
-  const counts = new Map<string, number>();
-  for (const line of allowed) counts.set(line, (counts.get(line) ?? 0) + 1);
-  for (const line of newLines) {
-    const left = counts.get(line) ?? 0;
-    if (left === 0) return false;
-    counts.set(line, left - 1);
-  }
-  return true;
 }
 
 /** C6 containment for untrusted relative paths (manifest keys, conflict entries):
@@ -190,7 +179,7 @@ function mergeText(entryId: string, workspaceText: string, baselineText: string,
 
 /** Computes the merge staging area: decisions staged, conflicts recorded, digests
  * produced. Pure filesystem writes inside the workspace only; the project is only
- * read. Callers record the digests on the replicated task record (the trust anchor). */
+ * read. Callers keep the digests as the trust anchor. */
 export async function prepareTicketMerge(projectRoot: string, workspace: string, trustedBaselineDigest?: string, options: { workspaceOnlyDirs?: string[]; allowed?: (root: string, file: string) => boolean } = {}): Promise<PreparedMerge> {
   const baseline = await readBaseline(workspace);
   // A1: a baseline whose manifest no longer matches the digest recorded at
@@ -336,104 +325,10 @@ function markerSyntaxLinesOf(decision: { path: string }, entryId: string): strin
   return [`<<<<<<< ${tag} `, `||||||| ${tag} `, `======= ${tag} `, `>>>>>>> ${tag} `];
 }
 
-export interface ResolutionOutcome {
-  resolved: MergeConflictEntry[];
-  remaining: MergeConflictEntry[];
-  /** Validated staged state per resolved path: the bytes and mode the validator
-   * actually saw, so later steps never reread and re-trust the filesystem. */
-  validated: Map<string, { sha256: string; mode: number }>;
-}
-
-/** Validates staged content against every conflict entry (TICKET-MERGE-PLAN.md §7).
- * Runs only in trusted server code; the agent never writes this verdict. */
-export async function validateStagedConflicts(workspace: string, conflicts: MergeConflictEntry[]): Promise<ResolutionOutcome> {
-  const stagedRoot = path.join(workspace, TICKET_MERGE_DIR, "staged");
-  const resolved: MergeConflictEntry[] = [];
-  const remaining: MergeConflictEntry[] = [];
-  const validated = new Map<string, { sha256: string; mode: number }>();
-  for (const entry of conflicts) {
-    const stagedPath = path.join(stagedRoot, entry.path);
-    let bytes: Buffer | null = null;
-    try { bytes = await fs.readFile(stagedPath); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-    if (entry.kind === "choice") {
-      if (!bytes) { remaining.push(entry); continue; }
-      const hash = sha256(bytes);
-      const stagedMode = (await fs.stat(stagedPath)).mode & 0o7777;
-      const workspaceChoice = entry.choices?.workspace ?? "";
-      const projectChoice = entry.choices?.project ?? null;
-      const matchesWorkspace = hash === workspaceChoice && workspaceChoice !== "" && stagedMode === (entry.choices?.workspaceMode ?? stagedMode);
-      const matchesProject = projectChoice !== null && projectChoice !== "" && hash === projectChoice && stagedMode === (entry.choices?.projectMode ?? stagedMode);
-      if (matchesWorkspace || matchesProject) {
-        resolved.push(entry);
-        validated.set(entry.path, { sha256: hash, mode: stagedMode });
-      }
-      else remaining.push(entry);
-      continue;
-    }
-    if (!bytes || !entry.unresolvedSha256 || sha256(bytes) === entry.unresolvedSha256) { remaining.push(entry); continue; }
-    const text = bytes.toString("utf8");
-    const markersGone = (entry.markerLines ?? []).every((line) => !text.split("\n").includes(line));
-    const noNewSyntax = multisetContained(markerSyntaxLines(text), entry.preExistingMarkerLines ?? []);
-    const entryTag = (entry.markerLines?.[0] ?? "").trim().replace(/^<{7,} /, "");
-    const noTag = !entryTag || !text.includes(entryTag);
-    if (markersGone && noNewSyntax && noTag) {
-      resolved.push(entry);
-      validated.set(entry.path, { sha256: sha256(bytes), mode: (await fs.stat(stagedPath)).mode & 0o7777 });
-    }
-    else remaining.push(entry);
-  }
-  return { resolved, remaining, validated };
-}
-
-/** Trusted resolution of a choice conflict: copies the chosen side's bytes into the
- * staging area and marks the entry resolved in conflicts.json. */
-export async function resolveChoiceConflict(workspace: string, conflicts: MergeConflictEntry[], projectRoot: string, conflictPath: string, side: "workspace" | "project"): Promise<{ conflicts: MergeConflictEntry[]; digest: string }> {
-  const entry = conflicts.find((candidate) => candidate.path === conflictPath);
-  if (!entry || entry.kind !== "choice") throw new Error("Conflict entry is not a choice");
-  if (side === "project" && !entry.choices?.project) throw new Error("Project side deleted the file; only the workspace side exists");
-  const source = side === "workspace" ? path.join(workspace, entry.path) : path.join(projectRoot, entry.path);
-  const bytes = await fs.readFile(source);
-  const target = path.join(workspace, TICKET_MERGE_DIR, "staged", entry.path);
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, bytes);
-  const next = conflicts.filter((candidate) => candidate.path !== conflictPath);
-  const conflictsJson = `${JSON.stringify({ version: 1 as const, conflicts: next }, null, 2)}\n`;
-  await fs.writeFile(path.join(workspace, TICKET_MERGE_DIR, "conflicts.json"), conflictsJson);
-  return { conflicts: next, digest: sha256(Buffer.from(conflictsJson, "utf8")) };
-}
-
-/** Rehashes the baseline content tree against its manifest (A1 post-run check). */
-export async function baselineTreeProblems(workspace: string): Promise<string[]> {
-  const baseline = await readBaseline(workspace);
-  if (!baseline) return ["baseline manifest disappeared"];
-  const problems: string[] = [];
-  const baselineRoot = path.join(workspace, TICKET_BASELINE_DIR);
-  const listed = new Set(["manifest.json", ...Object.keys(baseline.manifest.files)]);
-  const entries = await fs.readdir(baselineRoot, { recursive: true, withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    const relative = path.relative(baselineRoot, path.join(entry.parentPath, entry.name)).split(path.sep).join("/");
-    if (!listed.has(relative)) problems.push(`baseline gained an unlisted file: ${relative}`);
-  }
-  for (const [filePath, entry] of Object.entries(baseline.manifest.files)) {
-    if ("symlink" in entry) continue;
-    const current = await sha256File(path.join(baselineRoot, filePath));
-    if (current !== entry.sha256) problems.push(`baseline content changed: ${filePath}`);
-  }
-  return problems;
-}
-
 async function sha256File(filePath: string): Promise<string | null> {
   try { return sha256(await fs.readFile(filePath)); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
-}
-
-export function newMergeTransactionId(): string {
-  return randomUUID();
 }

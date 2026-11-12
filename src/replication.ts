@@ -17,9 +17,7 @@ import { applyBobEvent, applyBobMessageEvent, applyReviewCheckEvent, applySnooze
 import { applyConversationGoalEvent, ensureConversationGoalSchema } from "./conversation-goals.js";
 import { applyUserPinEvent, ensureUserPinSchema } from "./user-pins.js";
 import { applyUserRecentSessionEvent, ensureUserRecentSessionSchema } from "./recent-sessions.js";
-import { isHarnessId, PROJECT_COLORS, type TaskRecord } from "./types.js";
-import { listDiscoveredHarnesses } from "./harnesses/registry.js";
-import { multiUserEnabled, runInRuntime, serviceRuntime, type RuntimeAccount } from "./account-runtime.js";
+import { PROJECT_COLORS } from "./types.js";
 import { applyClusterRoutingEvent, ensureRoutingPolicySchema } from "./routing-policy.js";
 import { applyUsageDifficultyEvent, applyUsageEvent, ensureUsageSchema } from "./usage-ledger.js";
 import { isTwinOrigin, translateLegacyAccountEvent } from "./account-keys.js";
@@ -40,12 +38,10 @@ export interface ReplicationEvent {
   createdAt: string;
 }
 export interface ReplicationBatch { events: ReplicationEvent[]; }
-export type ReplicationInvalidation = "projectsChanged" | "sessionsChanged" | "tasksChanged" | "pinsChanged" | "recentsChanged" | "instructionsChanged";
+export type ReplicationInvalidation = "projectsChanged" | "sessionsChanged" | "pinsChanged" | "recentsChanged" | "instructionsChanged";
 interface OutboxRow { event_id: string; origin_node_id: string; entity_type: string; entity_key: string; operation: string; payload: string; created_at: string; }
 interface NamePayload { scope: "projects" | "sessions" | "session_colors" | "session_classifications" | "session_done" | "session_feedback"; key: string; name: string | null; updatedAt: string; originNodeId: string; }
 interface ProjectLockPayload { projectId: string; lock: { nodeId: string; nodeName: string; lockedAt: string } | null; updatedAt: string; originNodeId: string; }
-interface TaskPayload { projectId: string; task: TaskRecord | null; originNodeId: string; updatedAt?: string; }
-type LocalTranscript = { root: string; sessionId: (pointer: string) => string | undefined };
 
 const projectColors = new Set<string>(PROJECT_COLORS);
 const dataDir = resolveDataDirectory();
@@ -58,24 +54,6 @@ export function ensureReplicationSchema(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS replication_deliveries (event_id TEXT NOT NULL, peer_id TEXT NOT NULL, attempts INTEGER NOT NULL, next_attempt_at TEXT NOT NULL, delivered_at TEXT, last_error TEXT, PRIMARY KEY (event_id, peer_id));
     CREATE INDEX IF NOT EXISTS replication_deliveries_pending ON replication_deliveries(peer_id, next_attempt_at) WHERE delivered_at IS NULL;
     CREATE INDEX IF NOT EXISTS replication_deliveries_due ON replication_deliveries(peer_id, next_attempt_at, event_id) WHERE delivered_at IS NULL;`);
-}
-
-export function ensureTaskSchema(db: DatabaseSync): void {
-  db.exec(`CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL,
-    engine TEXT NOT NULL, plan_mode INTEGER NOT NULL, review_mode INTEGER NOT NULL, phase_config TEXT NOT NULL,
-    session_path TEXT, worktree_path TEXT, worktree_branch TEXT, merged_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-    current_node_id TEXT NOT NULL DEFAULT '', lease_owner_node_id TEXT, lease_expires_at TEXT, lease_token TEXT,
-    execution_state TEXT NOT NULL DEFAULT 'idle', handoff_context TEXT, origin_node_id TEXT NOT NULL DEFAULT '', active_handoff_id TEXT
-  ); CREATE INDEX IF NOT EXISTS tasks_project_id_updated_at ON tasks(project_id, updated_at DESC);
-  CREATE TABLE IF NOT EXISTS task_tombstones (project_id TEXT NOT NULL, task_id TEXT NOT NULL, updated_at TEXT NOT NULL, origin_node_id TEXT NOT NULL, PRIMARY KEY(project_id, task_id));`);
-  const columns = db.prepare("PRAGMA table_info(tasks)").all() as unknown as Array<{ name: string }>;
-  const additions = [
-    ["current_node_id", "TEXT NOT NULL DEFAULT ''"], ["lease_owner_node_id", "TEXT"], ["lease_expires_at", "TEXT"], ["lease_token", "TEXT"],
-    ["execution_state", "TEXT NOT NULL DEFAULT 'idle'"], ["handoff_context", "TEXT"], ["origin_node_id", "TEXT NOT NULL DEFAULT ''"], ["active_handoff_id", "TEXT"],
-    ["attachments", "TEXT NOT NULL DEFAULT '[]'"], ["merge_state", "TEXT NOT NULL DEFAULT 'none'"], ["conflict_count", "INTEGER NOT NULL DEFAULT 0"], ["merge_warning", "TEXT"], ["merge_tx", "TEXT"], ["merge_digests", "TEXT"], ["run_kind", "TEXT"],
-  ];
-  for (const [name, definition] of additions) if (!columns.some((column) => column.name === name)) db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${definition}`);
 }
 
 function ensureNameSchema(db: DatabaseSync): void {
@@ -91,7 +69,7 @@ function ensureProjectLockSchema(db: DatabaseSync): void {
 
 async function replicationDatabase(): Promise<DatabaseSync> {
   if (databasePromise) return databasePromise;
-  databasePromise = (async () => { await fs.mkdir(dataDir, { recursive: true, mode: 0o700 }); const db = openNodeDatabase(databasePath); db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;"); ensureReplicationSchema(db); ensureNameSchema(db); ensureTaskSchema(db); ensureProjectLockSchema(db); ensureConversationOwnershipSchema(db); ensureConversationRecordSchema(db); ensureConversationReviewReplicaSchema(db); ensureConversationNotificationSchema(db); ensureConversationGoalSchema(db); db.exec("DROP TABLE IF EXISTS canvas_shortcuts; DROP TABLE IF EXISTS canvas_shortcut_binding_marks; DROP TABLE IF EXISTS canvas_shortcut_conversation_marks; DROP TABLE IF EXISTS canvas_shortcut_clock;"); ensureGlobalInstructionsSchema(db); ensureUserPinSchema(db); ensureUserRecentSessionSchema(db); ensureRoutingPolicySchema(db); ensureUsageSchema(db); return db; })();
+  databasePromise = (async () => { await fs.mkdir(dataDir, { recursive: true, mode: 0o700 }); const db = openNodeDatabase(databasePath); db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;"); ensureReplicationSchema(db); ensureNameSchema(db); ensureProjectLockSchema(db); ensureConversationOwnershipSchema(db); ensureConversationRecordSchema(db); ensureConversationReviewReplicaSchema(db); ensureConversationNotificationSchema(db); ensureConversationGoalSchema(db); db.exec("DROP TABLE IF EXISTS canvas_shortcuts; DROP TABLE IF EXISTS canvas_shortcut_binding_marks; DROP TABLE IF EXISTS canvas_shortcut_conversation_marks; DROP TABLE IF EXISTS canvas_shortcut_clock;"); ensureGlobalInstructionsSchema(db); ensureUserPinSchema(db); ensureUserRecentSessionSchema(db); ensureRoutingPolicySchema(db); ensureUsageSchema(db); return db; })();
   return databasePromise;
 }
 
@@ -109,7 +87,7 @@ export function replicationEventProjectId(event: ReplicationEvent): string | und
   const payload = event.payload as Record<string, unknown> | null | undefined;
   if (!payload || typeof payload !== "object") return undefined;
   if (event.entityType === "name.override") return payload.scope === "projects" && typeof payload.key === "string" ? payload.key : undefined;
-  if (!["task", "story", "project.lock", "conversation.record", "conversation.author", "conversation.queue", "conversation.goal", "conversation.routing", "canvas.shortcut", "control.memory", "user.pin", "user.recent", "conversation.review", "conversation.notification", "conversation.notification.delivered", "model.usage", "usage.difficulty"].includes(event.entityType)) return undefined;
+  if (!["story", "project.lock", "conversation.record", "conversation.author", "conversation.queue", "conversation.goal", "conversation.routing", "canvas.shortcut", "control.memory", "user.pin", "user.recent", "conversation.review", "conversation.notification", "conversation.notification.delivered", "model.usage", "usage.difficulty"].includes(event.entityType)) return undefined;
   return typeof payload.projectId === "string" && payload.projectId ? payload.projectId : undefined;
 }
 
@@ -344,8 +322,7 @@ export function replicationInvalidations(events: ReplicationEvent[]): Replicatio
   const entityTypes = new Set(events.map((event) => event.entityType));
   const invalidations = new Set<ReplicationInvalidation>();
   if (entityTypes.has("name.override") || entityTypes.has("project.lock") || entityTypes.has("model.usage") || entityTypes.has("usage.difficulty")) invalidations.add("projectsChanged");
-  if (["name.override", "task", "conversation.ownership", "conversation.record", "conversation.queue", "conversation.goal", "conversation.review", "conversation.notification", "model.usage", "usage.difficulty", "control.reviewCheck"].some((type) => entityTypes.has(type))) invalidations.add("sessionsChanged");
-  if (entityTypes.has("task")) invalidations.add("tasksChanged");
+  if (["name.override", "conversation.ownership", "conversation.record", "conversation.queue", "conversation.goal", "conversation.review", "conversation.notification", "model.usage", "usage.difficulty", "control.reviewCheck"].some((type) => entityTypes.has(type))) invalidations.add("sessionsChanged");
   if (entityTypes.has("user.pin")) invalidations.add("pinsChanged");
   if (entityTypes.has("user.recent")) invalidations.add("recentsChanged");
   if (entityTypes.has("instructions.global")) invalidations.add("instructionsChanged");
@@ -396,79 +373,13 @@ function applyProjectLockEvent(db: DatabaseSync, event: ReplicationEvent): void 
     .run(payload.projectId, payload.lock?.nodeId ?? null, payload.lock?.nodeName ?? null, payload.lock?.lockedAt ?? null, payload.updatedAt, payload.originNodeId);
 }
 
-function taskAttachmentsAreValid(task: TaskRecord): boolean {
-  if (task.attachments === undefined) return true;
-  if (!Array.isArray(task.attachments) || task.attachments.length > 10) return false;
-  const valid = task.attachments.every((attachment) =>
-    attachment !== null && typeof attachment === "object"
-    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attachment.id)
-    && ["image", "file"].includes(attachment.kind)
-    && typeof attachment.name === "string" && attachment.name.length > 0 && attachment.name.length <= 240
-    && typeof attachment.mimeType === "string" && attachment.mimeType.length > 0 && attachment.mimeType.length <= 120
-    && typeof attachment.path === "string" && /^\.joint-bob-attachments\/[a-zA-Z0-9._-]+$/.test(attachment.path));
-  if (!valid) return false;
-  return new Set(task.attachments.map((attachment) => attachment.id)).size === task.attachments.length
-    && task.attachments.filter((attachment) => attachment.kind === "image").length <= 4
-    && task.attachments.filter((attachment) => attachment.kind === "file").length <= 6;
-}
-
-function taskPayload(event: ReplicationEvent): TaskPayload {
-  if (event.entityType !== "task" || !["upsert", "delete"].includes(event.operation)) throw new Error("Unsupported replication event");
-  const payload = event.payload as Partial<TaskPayload>; const task = payload?.task;
-  if (!payload || typeof payload !== "object" || typeof payload.projectId !== "string" || typeof payload.originNodeId !== "string" || payload.originNodeId !== event.originNodeId || event.entityKey !== `${payload.projectId}:${event.operation === "upsert" ? task?.id : event.entityKey.split(":").slice(1).join(":")}`) throw new Error("Malformed task replication payload");
-  if (!task || typeof task !== "object" || typeof task.id !== "string" || typeof task.updatedAt !== "string" || typeof task.originNodeId !== "string" || task.originNodeId !== event.originNodeId) throw new Error("Malformed task replication payload");
-  if (event.operation === "delete") return payload as TaskPayload;
-  if (typeof task.title !== "string" || typeof task.description !== "string" || !taskAttachmentsAreValid(task) || !["backlog", "planning", "in_progress", "review", "done"].includes(task.status) || !isHarnessId(task.engine) || typeof task.planMode !== "boolean" || typeof task.reviewMode !== "boolean" || !["idle", "running", "handoff_pending", "failed"].includes(task.executionState) || typeof task.currentNodeId !== "string" || typeof task.createdAt !== "string") throw new Error("Malformed task replication payload");
-  return payload as TaskPayload;
-}
-function applyTaskEvent(db: DatabaseSync, event: ReplicationEvent, localTranscripts: ReadonlyMap<string, LocalTranscript> = new Map()): boolean {
-  const payload = taskPayload(event); const projectId = resolveProjectAlias(db, payload.projectId); const task = payload.task; const id = task?.id ?? event.entityKey.slice(payload.projectId.length + 1); const updatedAt = task?.updatedAt ?? payload.updatedAt!;
-  const identity = db.prepare("SELECT project_id FROM tasks WHERE id=? UNION SELECT project_id FROM task_tombstones WHERE task_id=?").all(id,id) as unknown as Array<{project_id:string}>;
-  if (identity.some(row => row.project_id !== projectId)) throw new Error("Task identity belongs to a different project");
-  const active = db.prepare("SELECT active_handoff_id FROM tasks WHERE project_id = ? AND id = ?").get(projectId, id) as { active_handoff_id: string | null } | undefined;
-  const current = db.prepare("SELECT updated_at, origin_node_id FROM tasks WHERE project_id = ? AND id = ? UNION ALL SELECT updated_at, origin_node_id FROM task_tombstones WHERE project_id = ? AND task_id = ? ORDER BY updated_at DESC, origin_node_id DESC LIMIT 1").get(projectId, id, projectId, id) as { updated_at: string; origin_node_id: string } | undefined;
-  if (active?.active_handoff_id) {
-    if (event.operation === "upsert") return false;
-    if (current && `${updatedAt}\n${event.originNodeId}` <= `${current.updated_at}\n${current.origin_node_id}`) return true;
-    db.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?) ON CONFLICT(project_id, task_id) DO UPDATE SET updated_at=excluded.updated_at, origin_node_id=excluded.origin_node_id").run(projectId, id, updatedAt, event.originNodeId);
-    return true;
-  }
-  if (current && `${updatedAt}\n${event.originNodeId}` <= `${current.updated_at}\n${current.origin_node_id}`) return true;
-  if (event.operation === "delete") { db.prepare("DELETE FROM tasks WHERE project_id = ? AND id = ?").run(projectId, id); db.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?) ON CONFLICT(project_id, task_id) DO UPDATE SET updated_at=excluded.updated_at, origin_node_id=excluded.origin_node_id").run(projectId, id, updatedAt, event.originNodeId); return true; }
-  if (!task) throw new Error("Malformed task replication payload");
-  const localNode = (db.prepare("SELECT id FROM cluster_node WHERE singleton = 1").get() as { id: string } | undefined)?.id;
-  const previous = db.prepare("SELECT attachments, engine, worktree_path, worktree_branch, session_path, handoff_context FROM tasks WHERE project_id = ? AND id = ?").get(projectId, task.id) as { attachments: string | null; engine: string; worktree_path: string | null; worktree_branch: string | null; session_path: string | null; handoff_context: string | null } | undefined;
-  const attachments = task.attachments ?? (previous?.attachments ? JSON.parse(previous.attachments) as TaskRecord["attachments"] : []);
-  const local = task.currentNodeId === localNode;
-  const worktreePath = local && task.worktreePath === null ? previous?.worktree_path ?? null : task.worktreePath;
-  const worktreeBranch = local && task.worktreeBranch === null ? previous?.worktree_branch ?? null : task.worktreeBranch;
-  const transcript = localTranscripts.get(task.engine);
-  const previousPointer = previous?.session_path;
-  const incomingPointer = task.sessionPath;
-  const rawPrevious = typeof previousPointer === "string" && previousPointer.startsWith(`${task.engine}:`) ? previousPointer.slice(task.engine.length + 1) : previousPointer;
-  const relativePrevious = transcript && typeof rawPrevious === "string" && path.isAbsolute(rawPrevious) ? path.relative(transcript.root, rawPrevious) : undefined;
-  const previousSessionId = transcript && typeof previousPointer === "string" ? transcript.sessionId(previousPointer) : undefined;
-  const incomingSessionId = transcript && typeof incomingPointer === "string" ? transcript.sessionId(incomingPointer) : undefined;
-  const preserveLocalSession = previous?.engine === task.engine
-    && typeof relativePrevious === "string"
-    && relativePrevious !== ".."
-    && !relativePrevious.startsWith(`..${path.sep}`)
-    && !path.isAbsolute(relativePrevious)
-    && Boolean(previousSessionId)
-    && previousSessionId === incomingSessionId;
-  const sessionPath = preserveLocalSession ? previousPointer ?? null : local && incomingPointer === null ? previousPointer ?? null : incomingPointer;
-  const handoffContext = local && task.handoffContext === null ? previous?.handoff_context ?? null : task.handoffContext;
-  db.prepare(`INSERT INTO tasks (id, project_id, title, description, attachments, status, engine, plan_mode, review_mode, phase_config, session_path, worktree_path, worktree_branch, merged_at, created_at, updated_at, current_node_id, lease_owner_node_id, lease_expires_at, execution_state, handoff_context, origin_node_id, merge_state, conflict_count, merge_warning, merge_tx, merge_digests, run_kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, attachments=excluded.attachments, status=excluded.status, engine=excluded.engine, plan_mode=excluded.plan_mode, review_mode=excluded.review_mode, phase_config=excluded.phase_config, session_path=excluded.session_path, worktree_path=excluded.worktree_path, worktree_branch=excluded.worktree_branch, merged_at=excluded.merged_at, updated_at=excluded.updated_at, current_node_id=excluded.current_node_id, lease_owner_node_id=excluded.lease_owner_node_id, lease_expires_at=excluded.lease_expires_at, execution_state=excluded.execution_state, handoff_context=excluded.handoff_context, origin_node_id=excluded.origin_node_id, merge_state=excluded.merge_state, conflict_count=excluded.conflict_count, merge_warning=excluded.merge_warning, merge_tx=excluded.merge_tx, merge_digests=excluded.merge_digests, run_kind=excluded.run_kind`).run(task.id, projectId, task.title, task.description, JSON.stringify(attachments), task.status, task.engine, task.planMode ? 1 : 0, task.reviewMode ? 1 : 0, JSON.stringify(task.phaseConfig), sessionPath, local ? worktreePath : null, local ? worktreeBranch : null, task.mergedAt, task.createdAt, task.updatedAt, task.currentNodeId, task.leaseOwnerNodeId, task.leaseExpiresAt, task.executionState, local ? handoffContext : null, task.originNodeId, task.mergeState ?? "none", task.conflictCount ?? 0, task.mergeWarning ?? null, task.mergeTx ?? null, task.mergeDigests ? JSON.stringify(task.mergeDigests) : null, task.runKind ?? null);
-  db.prepare("DELETE FROM task_tombstones WHERE project_id = ? AND task_id = ?").run(projectId, task.id);
-  return true;
-}
-
 type ReplicationApplier = (db: DatabaseSync, event: ReplicationEvent) => unknown;
 /** Entity type -> applier. Returning false means the event was rejected and must not be re-queued. */
 const REPLICATION_APPLIERS: Record<string, ReplicationApplier> = {
   "name.override": applyNameEvent,
   "project.lock": applyProjectLockEvent,
-  task: applyTaskEvent,
+  // The project board is gone; machines that still run an older version keep sending these.
+  task: () => undefined,
   "conversation.ownership": applyConversationOwnershipEvent,
   "conversation.record": applyConversationRecordEvent,
   "conversation.queue": applyQueuedPromptEvent,
@@ -503,29 +414,9 @@ const REPLICATION_APPLIERS: Record<string, ReplicationApplier> = {
 /** Every event type this node can apply. Each one needs a scope in replication-v2.ts. */
 export function replicatedEntityTypes(): string[] { return Object.keys(REPLICATION_APPLIERS); }
 
-async function replicationRuntime(projectId: string): Promise<RuntimeAccount> {
-  if (!multiUserEnabled()) return serviceRuntime();
-  const { runtimeForProject } = await import("./project-runtime.js");
-  return runtimeForProject(projectId).catch(() => serviceRuntime());
-}
-
 export async function receiveReplicationBatch(batch: ReplicationBatch): Promise<string[]> {
   const db = await replicationDatabase();
   const localNode = (db.prepare("SELECT id FROM cluster_node WHERE singleton = 1").get() as { id: string }).id;
-  // A task's transcripts are where its project's agents write them: the project's runtime
-  // account's home in multi-user mode, else the service's.
-  const projectTranscripts = new Map<string, Map<string, LocalTranscript>>();
-  const taskProject = (event: ReplicationEvent): string | undefined => { try { return resolveProjectAlias(db, taskPayload(event).projectId); } catch { return undefined; } };
-  for (const event of batch.events) {
-    if (event.entityType !== "task" || event.operation !== "upsert") continue;
-    const projectId = taskProject(event);
-    if (!projectId || projectTranscripts.has(projectId)) continue;
-    const runtime = await replicationRuntime(projectId);
-    projectTranscripts.set(projectId, runInRuntime(runtime, () => new Map(listDiscoveredHarnesses().map((adapter) => [adapter.id, {
-      root: path.resolve(adapter.sync.transcriptRoot()),
-      sessionId: (pointer: string) => adapter.paths.ownsSession(pointer) ? adapter.paths.sessionId(pointer) : undefined,
-    }]))));
-  }
   db.exec("BEGIN IMMEDIATE");
   try {
     const insert = db.prepare("INSERT OR IGNORE INTO replication_inbox (event_id, origin_node_id, received_at) VALUES (?, ?, ?)");
@@ -546,7 +437,7 @@ export async function receiveReplicationBatch(batch: ReplicationBatch): Promise<
         received.push(event.id);
         continue;
       }
-      const applied = (event.entityType === "task" ? applyTaskEvent(db, event, projectTranscripts.get(taskProject(event) ?? "")) : applier(db, event)) !== false;
+      const applied = applier(db, event) !== false;
       if (!applied) {
         remove.run(event.id);
         continue;

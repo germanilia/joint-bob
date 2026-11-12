@@ -141,10 +141,6 @@ test("a git status reads as the branch, how it stands, its changes and its open 
 });
 
 test("each operation says what it does and waits for the button; what cannot be done from here is said so", async () => {
-  const task = await offerOperation(session, { intent: "add-task", projectId: "jb", title: "Speed up the board", description: "It takes 3 s to draw", start: false }, world);
-  assert.deepEqual([task.text, task.ask && task.button, task.ask && task.operation], ["Add the task \"Speed up the board\" in Joint Bob's Tasks list?\nIt takes 3 s to draw", "Add it", { op: "add-task", projectId: "jb", title: "Speed up the board", description: "It takes 3 s to draw", start: false }]);
-  const started = await offerOperation(session, { intent: "add-task", projectId: "jb", title: "Speed up the board", description: "", start: true }, world);
-  assert.equal(started.ask && started.button, "Add and start");
   const note = await offerOperation(session, { intent: "add-note", projectId: "dak", title: "Invoices", content: "check them" }, world);
   assert.deepEqual([note.text, note.ask && note.button], ["Save the quick note \"Invoices\" in DAK Live, to start later?\ncheck them", "Save it"]);
   assert.match((await offerOperation(session, { intent: "auto-respond", conversation: "conversation_2", on: true }, world)).text, /"Mac build" runs on another machine/);

@@ -64,7 +64,7 @@ export async function assertWithinBudget(projectId: string, conversationId: stri
 
 /**
  * Puts the check in front of every model run a session starts: a chat turn, a goal turn,
- * compaction, a ticket run or an internal review all reach the harness through these two calls.
+ * compaction or an internal review all reach the harness through these two calls.
  */
 export function guardSession(session: HarnessSession, options: Pick<HarnessOpenOptions, "projectId" | "conversationId" | "sessionId">, assertBudget = assertWithinBudget): HarnessSession {
   const conversationId = options.conversationId ?? options.sessionId;

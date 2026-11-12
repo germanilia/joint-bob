@@ -13,8 +13,7 @@ import { getRuntimePeer, runtimeFetch } from "../runtime-peers.js";
 import { ConversationOwnershipError } from "../../conversation-ownership.js";
 import { listHarnessSessions } from "../../harnesses.js";
 import { getProject } from "../../store.js";
-import { TICKET_BASELINE_DIR, TICKET_MERGE_DIR, ticketWorkspaceRoot } from "../../task-workspaces.js";
-import { listTasks } from "../../tasks.js";
+import { TICKET_BASELINE_DIR, TICKET_MERGE_DIR } from "../../task-workspaces.js";
 import type { ProjectRecord } from "../../types.js";
 import { sendError } from "../http-auth.js";
 import { assertProjectEditable } from "../projects.js";
@@ -93,14 +92,14 @@ async function searchProjectFile(projectRoot: string, requestedPath: string): Pr
   return best[0];
 }
 
-async function resolveProjectFile(projectId: string, requestedPath: string, taskId?: string): Promise<{ project: ProjectRecord; resolved: string; relativePath: string; info: Awaited<ReturnType<typeof stat>> }> {
+async function resolveProjectFile(projectId: string, requestedPath: string): Promise<{ project: ProjectRecord; resolved: string; relativePath: string; info: Awaited<ReturnType<typeof stat>> }> {
   const project = await getProject(projectId);
   if (!project) throw new ProjectFileError(404, "Project not found");
   const pathValue = requestedPath.trim();
   if (!pathValue) throw new ProjectFileError(400, "File path is required");
   if (pathValue.length > 2000) throw new ProjectFileError(400, "File path is too long");
   if (portablePathParts(pathValue).includes("..")) throw new ProjectFileError(403, "File is outside the project directory");
-  const projectRoot = await resolutionRoot(projectId, project.path, taskId);
+  const projectRoot = await resolutionRoot(projectId, project.path);
   const directPath = pathValue.replace(/\\/g, path.sep);
   // An absolute path only resolves directly when its REALPATH is inside the
   // root: comparing the literal string lets a symlinked prefix (/var vs
@@ -128,36 +127,21 @@ async function resolveProjectFile(projectId: string, requestedPath: string, task
   return { project, resolved: match.resolved, relativePath: match.relativePath, info: match.info };
 }
 
-// A ticket-scoped resolution roots at the ticket workspace so agent paths resolve to
-// the copy the agent actually edited, never to a same-named project file.
-export async function resolutionRoot(projectId: string, projectPath: string, taskId?: string): Promise<string> {
+export async function resolutionRoot(projectId: string, projectPath: string): Promise<string> {
   // In multi-user mode the service serves a folder only while it stays in its owner's home.
   if (multiUserEnabled() && !await projectFolderConfined(await runtimeForProject(projectId), projectPath, projectId)) throw new ProjectFileError(409, "This project's folder is outside its owner's home");
-  if (!taskId) return await realpath(projectPath);
-  const task = (await listTasks(projectId)).find((candidate) => candidate.id === taskId);
-  if (!task) throw new ProjectFileError(404, "Ticket was not found");
-  if (!task.worktreePath) throw new ProjectFileError(404, "Ticket workspace is not available");
-  const workspace = await realpath(task.worktreePath);
-  // A ticket's workspace is where the node made it, whatever a peer's copy of the ticket says:
-  // under the node's ticket folder or beside the project, and named for the ticket.
-  if (multiUserEnabled()) {
-    const roots = await Promise.all([ticketWorkspaceRoot(), path.join(path.dirname(projectPath), ".joint-bob-worktrees")].map((root) => realpath(root).catch(() => undefined)));
-    const within = roots.some((root) => root && workspace.startsWith(root + path.sep));
-    if (!within || path.basename(workspace) !== taskId) throw new ProjectFileError(404, "Ticket workspace is not available");
-  }
-  return workspace;
+  return await realpath(projectPath);
 }
 
-async function projectFileResolution(projectId: string, requestedPath: string, taskId?: string): Promise<{ path: string }> {
-  return { path: (await resolveProjectFile(projectId, requestedPath, taskId)).relativePath };
+async function projectFileResolution(projectId: string, requestedPath: string): Promise<{ path: string }> {
+  return { path: (await resolveProjectFile(projectId, requestedPath)).relativePath };
 }
 
-function projectFileLinks(projectId: string, relativePath: string, nodeId?: string, taskId?: string): ProjectFileResolution {
+function projectFileLinks(projectId: string, relativePath: string, nodeId?: string): ProjectFileResolution {
   const makeUrl = (route: string, mode: ProjectFileMode = "view"): string => {
     const url = new URL(`/api/projects/${encodeURIComponent(projectId)}/${route}`, "http://joint-bob.local");
     url.searchParams.set("path", relativePath);
     if (nodeId) url.searchParams.set("nodeId", nodeId);
-    if (taskId) url.searchParams.set("taskId", taskId);
     if (mode !== "view") url.searchParams.set(mode, "1");
     return `${url.pathname}${url.search}`;
   };
@@ -268,10 +252,10 @@ function fileViewPage(fileName: string, language: string, source: string): strin
 const BROWSER_FILE_EXTENSIONS = new Set([".html", ".htm"]);
 const BROWSER_FILE_CSP = "sandbox allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads";
 
-async function sendProjectFile(response: Response, projectId: string, requestedPath: string, mode: ProjectFileMode, taskId?: string): Promise<void> {
+async function sendProjectFile(response: Response, projectId: string, requestedPath: string, mode: ProjectFileMode): Promise<void> {
   const download = mode === "download";
   try {
-    const { resolved, info } = await resolveProjectFile(projectId, requestedPath, taskId);
+    const { resolved, info } = await resolveProjectFile(projectId, requestedPath);
     const fileName = path.basename(resolved).replace(/["\r\n]/g, "");
     if (mode === "browser" && BROWSER_FILE_EXTENSIONS.has(path.extname(resolved).toLowerCase())) {
       response.setHeader("Content-Security-Policy", BROWSER_FILE_CSP);
@@ -320,8 +304,8 @@ async function sendProjectFile(response: Response, projectId: string, requestedP
   }
 }
 
-async function projectFileContent(projectId: string, requestedPath: string, taskId?: string): Promise<{ path: string; content: string; version: string }> {
-  const { resolved, relativePath, info } = await resolveProjectFile(projectId, requestedPath, taskId);
+async function projectFileContent(projectId: string, requestedPath: string): Promise<{ path: string; content: string; version: string }> {
+  const { resolved, relativePath, info } = await resolveProjectFile(projectId, requestedPath);
   if (info.size > TEXT_FILE_LIMIT) throw new ProjectFileError(413, "File is too large to edit");
   const bytes = await readFile(resolved);
   return { path: relativePath, content: textFile(bytes), version: fileVersion(bytes) };
@@ -338,8 +322,8 @@ async function assertProjectFileConversationOwner(project: ProjectRecord, sessio
   }
 }
 
-async function updateProjectFileContent(projectId: string, requestedPath: string, payload: z.infer<typeof projectFileUpdateSchema>, taskId?: string): Promise<{ path: string; version: string }> {
-  const { project, resolved, relativePath, info } = await resolveProjectFile(projectId, requestedPath, taskId);
+async function updateProjectFileContent(projectId: string, requestedPath: string, payload: z.infer<typeof projectFileUpdateSchema>): Promise<{ path: string; version: string }> {
+  const { project, resolved, relativePath, info } = await resolveProjectFile(projectId, requestedPath);
   await assertProjectEditable(project);
   await assertProjectFileConversationOwner(project, payload.sessionId);
   const nextBytes = Buffer.from(payload.content, "utf8");
@@ -359,11 +343,10 @@ async function updateProjectFileContent(projectId: string, requestedPath: string
   return { path: relativePath, version: fileVersion(nextBytes) };
 }
 
-async function proxyProjectFileResolution(peer: ClusterPeer, projectId: string, requestedPath: string, taskId?: string): Promise<{ path: string }> {
+async function proxyProjectFileResolution(peer: ClusterPeer, projectId: string, requestedPath: string): Promise<{ path: string }> {
   const url = new URL("/api/cluster/project-file-resolution", peer.url);
   url.searchParams.set("projectId", projectId);
   url.searchParams.set("path", requestedPath);
-  if (taskId) url.searchParams.set("taskId", taskId);
   const routed = await runtimeFetch(url, { signal: AbortSignal.timeout(30_000) });
   const body = await routed.json().catch(() => null) as { path?: unknown; error?: unknown } | null;
   if (!routed.ok) {
@@ -374,11 +357,10 @@ async function proxyProjectFileResolution(peer: ClusterPeer, projectId: string, 
   return { path: body.path };
 }
 
-async function proxyProjectFile(response: Response, peer: ClusterPeer, projectId: string, requestedPath: string, mode: ProjectFileMode, taskId?: string, range?: string): Promise<void> {
+async function proxyProjectFile(response: Response, peer: ClusterPeer, projectId: string, requestedPath: string, mode: ProjectFileMode, range?: string): Promise<void> {
   const url = new URL("/api/cluster/project-file", peer.url);
   url.searchParams.set("projectId", projectId);
   url.searchParams.set("path", requestedPath);
-  if (taskId) url.searchParams.set("taskId", taskId);
   if (mode !== "view") url.searchParams.set(mode, "1");
   const routed = await runtimeFetch(url, { headers: range ? { Range: range } : {}, signal: AbortSignal.timeout(30_000) });
   // The peer's sandbox policy must replace this node's own CSP, or the page is held
@@ -398,8 +380,7 @@ app.get("/api/cluster/project-file-resolution", async (request, response, next) 
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = typeof request.query.projectId === "string" ? request.query.projectId : "";
     const requestedPath = typeof request.query.path === "string" ? request.query.path : "";
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
-    response.json(await projectFileResolution(projectId, requestedPath, taskId));
+    response.json(await projectFileResolution(projectId, requestedPath));
   } catch (error) {
     if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
     next(error);
@@ -411,34 +392,24 @@ app.get("/api/cluster/project-file", async (request, response, next) => {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = typeof request.query.projectId === "string" ? request.query.projectId : "";
     const requestedPath = typeof request.query.path === "string" ? request.query.path : "";
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
-    await sendProjectFile(response, projectId, requestedPath, projectFileMode(request.query), taskId);
+    await sendProjectFile(response, projectId, requestedPath, projectFileMode(request.query));
   } catch (error) { next(error); }
 });
-
-// A ticket-scoped file request routes to the task OWNER, not the ambient node:
-// replicas hold no workspace, so the browser's activeNodeId would 404.
-async function taskOwnerNodeId(projectId: string, taskId: string, fallback: string): Promise<string> {
-  const task = (await listTasks(projectId)).find((candidate) => candidate.id === taskId);
-  return task?.currentNodeId ?? fallback;
-}
 
 app.get("/api/projects/:projectId/file-resolution", async (request, response, next) => {
   try {
     const requestedPath = typeof request.query.path === "string" ? request.query.path : "";
     const requestedNodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
     const local = await getClusterNode();
-    const effectiveNodeId = taskId ? await taskOwnerNodeId(request.params.projectId, taskId, requestedNodeId) : requestedNodeId;
-    if (effectiveNodeId && effectiveNodeId !== local.id) {
-      const peer = await getRuntimePeer(effectiveNodeId);
+    if (requestedNodeId && requestedNodeId !== local.id) {
+      const peer = await getRuntimePeer(requestedNodeId);
       if (!peer) { sendError(response, 404, "File node not found"); return; }
-      const resolution = await proxyProjectFileResolution(peer, request.params.projectId, requestedPath, taskId);
-      response.json(projectFileLinks(request.params.projectId, resolution.path, effectiveNodeId, taskId));
+      const resolution = await proxyProjectFileResolution(peer, request.params.projectId, requestedPath);
+      response.json(projectFileLinks(request.params.projectId, resolution.path, requestedNodeId));
       return;
     }
-    const resolution = await projectFileResolution(request.params.projectId, requestedPath, taskId);
-    response.json(projectFileLinks(request.params.projectId, resolution.path, undefined, taskId));
+    const resolution = await projectFileResolution(request.params.projectId, requestedPath);
+    response.json(projectFileLinks(request.params.projectId, resolution.path, undefined));
   } catch (error) {
     if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
     next(error);
@@ -448,25 +419,22 @@ app.get("/api/projects/:projectId/file-resolution", async (request, response, ne
 app.get("/api/projects/:projectId/file", async (request, response, next) => {
   try {
     const requestedPath = typeof request.query.path === "string" ? request.query.path : "";
-    let requestedNodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
+    const requestedNodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
     const local = await getClusterNode();
-    if (taskId) requestedNodeId = await taskOwnerNodeId(request.params.projectId, taskId, requestedNodeId);
     if (requestedNodeId && requestedNodeId !== local.id) {
       const peer = await getRuntimePeer(requestedNodeId);
       if (!peer) { sendError(response, 404, "File node not found"); return; }
-      await proxyProjectFile(response, peer, request.params.projectId, requestedPath, projectFileMode(request.query), taskId, request.headers.range);
+      await proxyProjectFile(response, peer, request.params.projectId, requestedPath, projectFileMode(request.query), request.headers.range);
       return;
     }
-    await sendProjectFile(response, request.params.projectId, requestedPath, projectFileMode(request.query), taskId);
+    await sendProjectFile(response, request.params.projectId, requestedPath, projectFileMode(request.query));
   } catch (error) { next(error); }
 });
 
-async function proxyProjectFileContent(response: Response, peer: ClusterPeer, projectId: string, requestedPath: string, request?: Request, taskId?: string): Promise<void> {
+async function proxyProjectFileContent(response: Response, peer: ClusterPeer, projectId: string, requestedPath: string, request?: Request): Promise<void> {
   const url = new URL("/api/cluster/project-file-content", peer.url);
   url.searchParams.set("projectId", projectId);
   url.searchParams.set("path", requestedPath);
-  if (taskId) url.searchParams.set("taskId", taskId);
   const routed = await runtimeFetch(url, {
     method: request?.method ?? "GET",
     headers: { ...(request ? { "Content-Type": "application/json" } : {}) },
@@ -478,8 +446,8 @@ async function proxyProjectFileContent(response: Response, peer: ClusterPeer, pr
   response.status(routed.status).send(await routed.text());
 }
 
-async function sendProjectFileContent(response: Response, projectId: string, requestedPath: string, payload?: z.infer<typeof projectFileUpdateSchema>, taskId?: string): Promise<void> {
-  try { response.json(payload ? await updateProjectFileContent(projectId, requestedPath, payload, taskId) : await projectFileContent(projectId, requestedPath, taskId)); }
+async function sendProjectFileContent(response: Response, projectId: string, requestedPath: string, payload?: z.infer<typeof projectFileUpdateSchema>): Promise<void> {
+  try { response.json(payload ? await updateProjectFileContent(projectId, requestedPath, payload) : await projectFileContent(projectId, requestedPath)); }
   catch (error) {
     if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
     throw error;
@@ -489,16 +457,14 @@ async function sendProjectFileContent(response: Response, projectId: string, req
 app.get("/api/cluster/project-file-content", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
-    await sendProjectFileContent(response, String(request.query.projectId ?? ""), String(request.query.path ?? ""), undefined, taskId);
+    await sendProjectFileContent(response, String(request.query.projectId ?? ""), String(request.query.path ?? ""), undefined);
   } catch (error) { next(error); }
 });
 
 app.put("/api/cluster/project-file-content", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
-    await sendProjectFileContent(response, String(request.query.projectId ?? ""), String(request.query.path ?? ""), projectFileUpdateSchema.parse(request.body), taskId);
+    await sendProjectFileContent(response, String(request.query.projectId ?? ""), String(request.query.path ?? ""), projectFileUpdateSchema.parse(request.body));
   } catch (error) { next(error); }
 });
 
@@ -506,30 +472,28 @@ for (const method of ["get", "put"] as const) {
   app[method]("/api/projects/:projectId/file-content", async (request, response, next) => {
     try {
       const requestedPath = typeof request.query.path === "string" ? request.query.path : "";
-      let nodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
-      const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
+      const nodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
       const local = await getClusterNode();
-      if (taskId) nodeId = await taskOwnerNodeId(request.params.projectId, taskId, nodeId);
       if (nodeId && nodeId !== local.id) {
         const peer = await getRuntimePeer(nodeId);
         if (!peer) { sendError(response, 404, "File node not found"); return; }
-        await proxyProjectFileContent(response, peer, request.params.projectId, requestedPath, method === "put" ? request : undefined, taskId);
+        await proxyProjectFileContent(response, peer, request.params.projectId, requestedPath, method === "put" ? request : undefined);
         return;
       }
-      await sendProjectFileContent(response, request.params.projectId, requestedPath, method === "put" ? projectFileUpdateSchema.parse(request.body) : undefined, taskId);
+      await sendProjectFileContent(response, request.params.projectId, requestedPath, method === "put" ? projectFileUpdateSchema.parse(request.body) : undefined);
     } catch (error) { next(error); }
   });
 }
 
 interface ProjectFileEntry { name: string; path: string; type: "directory" | "file"; size: number | null }
 
-async function resolveProjectDirectory(projectId: string, requestedDir: string, taskId?: string): Promise<{ project: ProjectRecord; projectRoot: string; resolved: string; relativePath: string }> {
+async function resolveProjectDirectory(projectId: string, requestedDir: string): Promise<{ project: ProjectRecord; projectRoot: string; resolved: string; relativePath: string }> {
   const project = await getProject(projectId);
   if (!project) throw new ProjectFileError(404, "Project not found");
   const dirValue = requestedDir.trim();
   if (dirValue.length > 2000) throw new ProjectFileError(400, "Directory path is too long");
   if (portablePathParts(dirValue).includes("..")) throw new ProjectFileError(403, "Directory is outside the project directory");
-  const projectRoot = await resolutionRoot(projectId, project.path, taskId);
+  const projectRoot = await resolutionRoot(projectId, project.path);
   let resolved: string;
   try { resolved = await realpath(path.resolve(projectRoot, dirValue.replace(/\\/g, path.sep) || ".")); }
   catch (error) {
@@ -543,8 +507,8 @@ async function resolveProjectDirectory(projectId: string, requestedDir: string, 
   return { project, projectRoot, resolved, relativePath };
 }
 
-async function listProjectFiles(projectId: string, requestedDir: string, taskId?: string): Promise<{ path: string; entries: ProjectFileEntry[] }> {
-  const { resolved, relativePath } = await resolveProjectDirectory(projectId, requestedDir, taskId);
+async function listProjectFiles(projectId: string, requestedDir: string): Promise<{ path: string; entries: ProjectFileEntry[] }> {
+  const { resolved, relativePath } = await resolveProjectDirectory(projectId, requestedDir);
   const dirents = await readdir(resolved, { withFileTypes: true });
   const entries: ProjectFileEntry[] = [];
   for (const entry of dirents) {
@@ -562,7 +526,7 @@ async function listProjectFiles(projectId: string, requestedDir: string, taskId?
 // Delete and copy act on the exact path the explorer shows. The fuzzy suffix search used
 // for chat references could pick a same-named file somewhere else, which must never
 // happen for a destructive operation.
-async function resolveExactProjectFile(projectId: string, requestedPath: string, taskId?: string): Promise<{ project: ProjectRecord; resolved: string; relativePath: string }> {
+async function resolveExactProjectFile(projectId: string, requestedPath: string): Promise<{ project: ProjectRecord; resolved: string; relativePath: string }> {
   const project = await getProject(projectId);
   if (!project) throw new ProjectFileError(404, "Project not found");
   const pathValue = requestedPath.trim();
@@ -570,26 +534,26 @@ async function resolveExactProjectFile(projectId: string, requestedPath: string,
   if (pathValue.length > 2000) throw new ProjectFileError(400, "File path is too long");
   if (path.isAbsolute(pathValue)) throw new ProjectFileError(400, "File path must be relative");
   if (portablePathParts(pathValue).includes("..")) throw new ProjectFileError(403, "File is outside the project directory");
-  const projectRoot = await resolutionRoot(projectId, project.path, taskId);
+  const projectRoot = await resolutionRoot(projectId, project.path);
   const direct = await verifiedProjectFile(projectRoot, path.resolve(projectRoot, pathValue.replace(/\\/g, path.sep)));
   if (!direct) throw new ProjectFileError(404, "File not found");
   const relativePath = path.relative(projectRoot, direct.resolved).split(path.sep).join("/");
   return { project, resolved: direct.resolved, relativePath };
 }
 
-async function deleteProjectFile(projectId: string, requestedPath: string, payload: z.infer<typeof projectFileDeleteSchema>, taskId?: string): Promise<{ path: string }> {
-  const { project, resolved, relativePath } = await resolveExactProjectFile(projectId, requestedPath, taskId);
+async function deleteProjectFile(projectId: string, requestedPath: string, payload: z.infer<typeof projectFileDeleteSchema>): Promise<{ path: string }> {
+  const { project, resolved, relativePath } = await resolveExactProjectFile(projectId, requestedPath);
   await assertProjectEditable(project);
   await assertProjectFileConversationOwner(project, payload.sessionId);
   await unlink(resolved);
   return { path: relativePath };
 }
 
-async function copyProjectFile(projectId: string, requestedPath: string, payload: z.infer<typeof projectFileCopySchema>, taskId?: string): Promise<{ path: string }> {
-  const source = await resolveExactProjectFile(projectId, requestedPath, taskId);
+async function copyProjectFile(projectId: string, requestedPath: string, payload: z.infer<typeof projectFileCopySchema>): Promise<{ path: string }> {
+  const source = await resolveExactProjectFile(projectId, requestedPath);
   await assertProjectEditable(source.project);
   await assertProjectFileConversationOwner(source.project, payload.sessionId);
-  const destination = await resolveProjectDirectory(projectId, payload.destinationDir, taskId);
+  const destination = await resolveProjectDirectory(projectId, payload.destinationDir);
   const fileName = path.basename(source.resolved);
   try { await copyFile(source.resolved, path.join(destination.resolved, fileName), constants.COPYFILE_EXCL); }
   catch (error) {
@@ -616,8 +580,7 @@ async function proxyProjectFileJson(response: Response, peer: ClusterPeer, clust
 app.get("/api/cluster/project-files", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
-    response.json(await listProjectFiles(String(request.query.projectId ?? ""), String(request.query.dir ?? ""), taskId));
+    response.json(await listProjectFiles(String(request.query.projectId ?? ""), String(request.query.dir ?? "")));
   } catch (error) {
     if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
     next(error);
@@ -627,8 +590,7 @@ app.get("/api/cluster/project-files", async (request, response, next) => {
 app.post("/api/cluster/project-file-delete", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
-    response.json(await deleteProjectFile(String(request.query.projectId ?? ""), String(request.query.path ?? ""), projectFileDeleteSchema.parse(request.body), taskId));
+    response.json(await deleteProjectFile(String(request.query.projectId ?? ""), String(request.query.path ?? ""), projectFileDeleteSchema.parse(request.body)));
   } catch (error) {
     if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
     next(error);
@@ -638,8 +600,7 @@ app.post("/api/cluster/project-file-delete", async (request, response, next) => 
 app.post("/api/cluster/project-file-copy", async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
-    response.json(await copyProjectFile(String(request.query.projectId ?? ""), String(request.query.path ?? ""), projectFileCopySchema.parse(request.body), taskId));
+    response.json(await copyProjectFile(String(request.query.projectId ?? ""), String(request.query.path ?? ""), projectFileCopySchema.parse(request.body)));
   } catch (error) {
     if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
     next(error);
@@ -649,17 +610,15 @@ app.post("/api/cluster/project-file-copy", async (request, response, next) => {
 app.get("/api/projects/:projectId/files", async (request, response, next) => {
   try {
     const dir = typeof request.query.dir === "string" ? request.query.dir : "";
-    let nodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
-    const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
+    const nodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
     const local = await getClusterNode();
-    if (taskId) nodeId = await taskOwnerNodeId(request.params.projectId, taskId, nodeId);
     if (nodeId && nodeId !== local.id) {
       const peer = await getRuntimePeer(nodeId);
       if (!peer) { sendError(response, 404, "File node not found"); return; }
-      await proxyProjectFileJson(response, peer, "/api/cluster/project-files", { projectId: request.params.projectId, dir, taskId: taskId ?? "" });
+      await proxyProjectFileJson(response, peer, "/api/cluster/project-files", { projectId: request.params.projectId, dir });
       return;
     }
-    response.json(await listProjectFiles(request.params.projectId, dir, taskId));
+    response.json(await listProjectFiles(request.params.projectId, dir));
   } catch (error) {
     if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
     next(error);
@@ -667,23 +626,21 @@ app.get("/api/projects/:projectId/files", async (request, response, next) => {
 });
 
 for (const [route, clusterRoute, handler] of [
-  ["/api/projects/:projectId/file-delete", "/api/cluster/project-file-delete", (projectId: string, requestedPath: string, body: unknown, taskId?: string) => deleteProjectFile(projectId, requestedPath, projectFileDeleteSchema.parse(body), taskId)],
-  ["/api/projects/:projectId/file-copy", "/api/cluster/project-file-copy", (projectId: string, requestedPath: string, body: unknown, taskId?: string) => copyProjectFile(projectId, requestedPath, projectFileCopySchema.parse(body), taskId)],
+  ["/api/projects/:projectId/file-delete", "/api/cluster/project-file-delete", (projectId: string, requestedPath: string, body: unknown) => deleteProjectFile(projectId, requestedPath, projectFileDeleteSchema.parse(body))],
+  ["/api/projects/:projectId/file-copy", "/api/cluster/project-file-copy", (projectId: string, requestedPath: string, body: unknown) => copyProjectFile(projectId, requestedPath, projectFileCopySchema.parse(body))],
 ] as const) {
   app.post(route, async (request, response, next) => {
     try {
       const requestedPath = typeof request.query.path === "string" ? request.query.path : "";
-      let nodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
-      const taskId = typeof request.query.taskId === "string" ? request.query.taskId : undefined;
+      const nodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
       const local = await getClusterNode();
-      if (taskId) nodeId = await taskOwnerNodeId(request.params.projectId, taskId, nodeId);
       if (nodeId && nodeId !== local.id) {
         const peer = await getRuntimePeer(nodeId);
         if (!peer) { sendError(response, 404, "File node not found"); return; }
-        await proxyProjectFileJson(response, peer, clusterRoute, { projectId: request.params.projectId, path: requestedPath, taskId: taskId ?? "" }, request);
+        await proxyProjectFileJson(response, peer, clusterRoute, { projectId: request.params.projectId, path: requestedPath }, request);
         return;
       }
-      response.json(await handler(request.params.projectId, requestedPath, request.body, taskId));
+      response.json(await handler(request.params.projectId, requestedPath, request.body));
     } catch (error) {
       if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
       next(error);

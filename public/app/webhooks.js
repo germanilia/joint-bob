@@ -365,7 +365,7 @@ function fillProjects(selected) {
   if (selected && projectNames.has(selected)) field.project.value = selected;
 }
 
-/** Conversations the webhook can write to: live ones, not tickets or read-only copies. */
+/** Conversations the webhook can write to: live ones, not read-only copies. */
 async function fillConversations(selected) {
   field.conversation.replaceChildren(new Option("Loading…", ""));
   const revision = ownerRevision;
@@ -373,7 +373,7 @@ async function fillConversations(selected) {
   if (!projectId) { field.conversation.replaceChildren(new Option("Choose a project first", "")); return; }
   const { sessions } = await api(endpoint(`/projects/${encodeURIComponent(projectId)}/sessions`));
   if (revision !== ownerRevision || projectId !== field.project.value || field.kind.value !== "conversation") return;
-  const usable = sessions.filter((session) => !session.readOnly && !session.taskId && !session.doneAt);
+  const usable = sessions.filter((session) => !session.readOnly && !session.doneAt);
   const options = usable.map((session) => {
     const option = new Option(session.title || session.firstMessage || session.id, session.id);
     option.dataset.engine = session.harnessId;

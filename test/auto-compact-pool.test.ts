@@ -52,7 +52,7 @@ function fixture(selection: "cluster" | "conversation" | "none", failure?: Error
     sendHarnessStatus: () => { statuses.push(shared.turnInFlight > 0); }, broadcastToProject: () => {},
     promptQueuePaused: () => false,
     listQueuedPrompts: () => { queueReads++; return queue; }, claimQueuedPrompt: () => queue.shift(),
-    getProjectLock: async () => undefined, conversationBelongsToDoneTask: async () => false,
+    getProjectLock: async () => undefined,
     requireLocalConversationOwner: async () => {}, listConversationSegments: async () => [],
     send: (_socket: unknown, event: unknown) => { events.push(event); }, chatErrorMessage: (error: Error) => error.message,
   };

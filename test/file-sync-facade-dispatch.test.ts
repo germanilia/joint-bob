@@ -7,14 +7,13 @@ import test from "node:test";
 import { conflictCopyName } from "../src/file-sync/conflicts.js";
 import { controlDatabase, setPhase } from "../src/file-sync/control.js";
 import {
-  assertProjectFilesReady, builtinProjectStatus, type EngineApi, noteHandoffFiles, peerFilesReady, ProjectFilesNotReadyError, projectFilesHandoffPart,
-  conversationFilesStatus, ProjectNotSynchronizedError, projectFilesEngines, projectSyncStatuses, rescanProjectFiles, taskShareStatuses, useFacadeEngineForTests, worktreeFilesChanged, worktreeHasPendingFiles, worktreeSweepRefusal,
+  builtinProjectStatus, type EngineApi, peerFilesReady,
+  conversationFilesStatus, ProjectNotSynchronizedError, projectFilesEngines, projectSyncStatuses, rescanProjectFiles, useFacadeEngineForTests, worktreeFilesChanged, worktreeHasPendingFiles, worktreeSweepRefusal,
 } from "../src/file-sync/facade.js";
 import type { FileSyncPeerFacts, FileSyncProjectView } from "../src/file-sync/index.js";
 import { FILE_SYNC_PROTOCOL, type PeerShareStatus, type PendingFiles, type ShareStatus } from "../src/file-sync/protocol.js";
 import type { ShareKind } from "../src/file-sync/types.js";
-import type { StatusAnswer, StatusBody } from "../src/file-sync/wire.js";
-import type { ProjectRecord, TaskRecord } from "../src/types.js";
+import type { ProjectRecord } from "../src/types.js";
 
 /* app-integration (P4): the facade answers per project from its phase on this node. A project with no
    phase is shared with nobody, one being taken over is "moving", and a built-in one is answered from
@@ -46,26 +45,22 @@ function view(projectId: string, overrides: Partial<FileSyncProjectView> = {}, s
 interface Stand {
   views: Map<string, FileSyncProjectView>;
   facts: Record<string, FileSyncPeerFacts>;
-  flush?: (projectId: string, kinds: readonly ShareKind[], timeoutMs: number) => Promise<void>;
-  handoff?: (peer: string, body: StatusBody) => StatusAnswer | undefined;
   rescan?: Array<{ kind: ShareKind; error?: string }>;
   /** The worker's count of a share's need under a prefix; by default the share's whole need, all of it from present peers. */
   pending?: (projectId: string, kind: ShareKind, prefix: string, availablePeers: readonly string[]) => PendingFiles | undefined;
   pulled: Set<string>;
   engine: EngineApi;
-  calls: { flush: unknown[]; rescan: string[]; scan: unknown[]; prioritize: unknown[]; handoff: Array<{ peer: string; body: StatusBody }>; pending: unknown[] };
+  calls: { rescan: string[]; scan: unknown[]; prioritize: unknown[]; pending: unknown[] };
 }
 
 function standIn(): Stand {
-  const stand = { views: new Map(), facts: {}, pulled: new Set(), calls: { flush: [], rescan: [], scan: [], prioritize: [], handoff: [], pending: [] } } as unknown as Stand;
+  const stand = { views: new Map(), facts: {}, pulled: new Set(), calls: { rescan: [], scan: [], prioritize: [], pending: [] } } as unknown as Stand;
   const engine: EngineApi = stand.engine = {
     fileSyncProjectViews: async (ids) => new Map(ids.map((id) => [id, stand.views.get(id) ?? view(id, { worker: "off", enabled: false }, [])])),
     fileSyncPeerFacts: async (peers) => ({ local: "laptop", peers: new Map([...peers].map((peer) => [peer, stand.facts[peer] ?? { name: peer === PEER ? "homeserver" : peer, present: true, protocol: FILE_SYNC_PROTOCOL, enabled: true }])) }),
-    fileSyncFlushProject: async (projectId, kinds, timeoutMs) => { stand.calls.flush.push({ projectId, kinds: [...kinds], timeoutMs }); await stand.flush?.(projectId, kinds, timeoutMs); },
     fileSyncRescanProject: async (projectId) => { stand.calls.rescan.push(projectId); return stand.rescan ?? []; },
     fileSyncScanPaths: (projectId, kind, paths) => { stand.calls.scan.push({ projectId, kind, paths: [...paths] }); },
     fileSyncPrioritize: (projectId, kind, prefix) => { stand.calls.prioritize.push({ projectId, kind, prefix }); },
-    fileSyncHandoffStatus: async (peer, body) => { stand.calls.handoff.push({ peer, body }); return stand.handoff?.(peer, body); },
     fileSyncPulledSinceStart: (key, peer) => stand.pulled.has(`${key}\n${peer}`),
     fileSyncPendingFiles: async (projectId, kind, prefix, availablePeers) => {
       stand.calls.pending.push({ projectId, kind, prefix, availablePeers: [...availablePeers] });
@@ -231,21 +226,6 @@ test("each project is answered from its phase here: shared with nobody, being ta
   assert.deepEqual(await projectSyncStatuses([]), {});
 });
 
-test("a ticket's folders: nothing to wait for when the project is shared with nobody, the take-over while it runs", async () => {
-  const stand = standIn();
-  const db = await controlDatabase();
-  const targets = [{ kind: "project" as const, label: "Project files" }, { kind: "tickets" as const, label: "Ticket workspace" }, { kind: "tickets" as const, label: "Again" }];
-  const unshared = record("tickets-unshared"), moving = record("tickets-moving");
-  assert.deepEqual(await taskShareStatuses(unshared, targets), []);
-  setPhase(db, moving.id, "bootstrapping");
-  assert.deepEqual(await taskShareStatuses(moving, targets), [
-    { label: "Project files", state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking both machines' files" },
-    { label: "Ticket workspace", state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking both machines' files" },
-  ]);
-  assert.deepEqual(await conversationFilesStatus(unshared), { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "This project is not shared with another machine", engine: "none" });
-  assert.deepEqual(stand.calls, { flush: [], rescan: [], scan: [], prioritize: [], handoff: [], pending: [] }, "the engine was never asked");
-});
-
 test("Rescan files walks the engine's folders for a shared project and refuses one shared with nobody", async () => {
   const stand = standIn();
   const { addProject } = await import("../src/store.js");
@@ -265,101 +245,6 @@ test("Rescan files walks the engine's folders for a shared project and refuses o
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
-
-test("a handoff check on a built-in project flushes for 10 s at most, then wants no need, block or error", async () => {
-  const stand = standIn();
-  const project = record("ready-project");
-  setPhase(await controlDatabase(), project.id, "builtin");
-  stand.views.set(project.id, view(project.id));
-  await assertProjectFilesReady(project, "project");
-  assert.deepEqual(stand.calls.flush, [{ projectId: project.id, kinds: ["project"], timeoutMs: 10_000 }]);
-
-  // The bridge gives up on a flush that outlasts its time limit: still checking, worth waiting for.
-  stand.flush = async () => { throw new Error("File sync worker did not answer flush within 10 s"); };
-  const timedOut = await assertProjectFilesReady(project, "project").then(() => undefined, (error: unknown) => error);
-  assert.ok(timedOut instanceof ProjectFilesNotReadyError);
-  assert.deepEqual([timedOut.retryable, timedOut.status.state, timedOut.status.message], [true, "syncing", "Checking files"]);
-  stand.flush = undefined;
-
-  stand.views.set(project.id, view(project.id, {}, [share(project.id, "project", { need: { files: 3, bytes: 300 } })]));
-  await assert.rejects(assertProjectFilesReady(project, "project"), (error: ProjectFilesNotReadyError) => error.retryable && error.status.remainingFiles === 3 && /3 files still arriving/.test(error.message));
-  stand.views.set(project.id, view(project.id, {}, [share(project.id, "project", { blocked: 1 })]));
-  await assert.rejects(assertProjectFilesReady(project, "project"), (error: ProjectFilesNotReadyError) => !error.retryable && error.status.state === "error");
-  stand.views.set(project.id, view(project.id, { worker: "restarting" }));
-  await assert.rejects(assertProjectFilesReady(project, "project"), (error: ProjectFilesNotReadyError) => error.retryable && error.status.message === "Starting file sync");
-  // Only the asked folder counts: a ticket folder still copying does not hold the project's.
-  stand.views.set(project.id, view(project.id, {}, [share(project.id, "project"), share(project.id, "tickets", { need: { files: 9, bytes: 9 } })]));
-  await assertProjectFilesReady(project, "project");
-  setPhase(await controlDatabase(), project.id, "bootstrapping");
-  await assert.rejects(assertProjectFilesReady(project, "project"), (error: ProjectFilesNotReadyError) => error.retryable && error.status.message === "Checking both machines' files");
-  // A project shared with nobody has nothing to wait for, and the engine is not asked.
-  const asked = stand.calls.flush.length;
-  await assertProjectFilesReady(record("ready-unshared"), "project");
-  await assertProjectFilesReady(record("ready-unshared"), "tickets");
-  assert.equal(stand.calls.flush.length, asked);
-});
-
-test("the source's part travels in eligibility and prepare bodies; an old destination drops it and a new one waits for it", async () => {
-  const stand = standIn();
-  const db = await controlDatabase();
-  const project = record("handoff-project");
-  setPhase(db, project.id, "builtin");
-  stand.views.set(project.id, view(project.id));
-  const task = { id: "t1", projectId: project.id, title: "Ticket", currentNodeId: OTHER, worktreePath: "/tmp/ws/t1", worktreeBranch: null } as unknown as TaskRecord;
-
-  const { taskHandoffFiles } = await import("../src/server/cluster-helpers.js");
-  const files = await taskHandoffFiles(project, task, 1_500);
-  assert.deepEqual(files, { fileSync: { projectId: project.id, shares: [{ kind: "tickets", indexId: "ours-tickets", maxSeq: 7 }] } }, "a synchronized ticket workspace hands over its ticket folder");
-  assert.deepEqual(stand.calls.flush.at(-1), { projectId: project.id, kinds: ["tickets"], timeoutMs: 1_500 });
-  assert.deepEqual(await taskHandoffFiles(record("handoff-unshared"), task, 1_500), {}, "a project shared with nobody sends no file sync part");
-
-  // An older destination parses with today's schemas: the part goes, nothing else changes.
-  const { preparedTaskSchema, taskEligibilitySchema } = await import("../src/server/schemas.js");
-  const eligibilityBody = { projectId: project.id, task, source: false, ...files };
-  assert.deepEqual(taskEligibilitySchema.parse(JSON.parse(JSON.stringify(eligibilityBody))), { projectId: project.id, task: JSON.parse(JSON.stringify(task)), source: false });
-  const prepareBody = { projectId: project.id, task, handoffId: randomUUID(), handoffContext: "", handoffVersion: new Date().toISOString(), bundle: null, ...files };
-  assert.equal("fileSync" in preparedTaskSchema.parse(JSON.parse(JSON.stringify(prepareBody))), false);
-
-  // A new destination takes it from the signed runtime request, before the handler's schema drops it.
-  const { dispatchSignedRuntime } = await import("../src/server/runtime-peers.js");
-  const request = { path: "/api/cluster/v2/runtime/tasks/eligibility", method: "POST", url: "/api/cluster/v2/runtime/tasks/eligibility", body: { projectId: project.id, task, fileSync: files.fileSync } };
-  let forwarded = false;
-  dispatchSignedRuntime(request as never, { locals: { machineNodeId: PEER } } as never, () => { forwarded = true; });
-  assert.deepEqual([forwarded, request.url], [true, "/api/cluster/tasks/eligibility"]);
-
-  // Behind the source: the worker was asked at once (pull, priority) and the destination says so.
-  let answer: StatusAnswer = { shares: [{ kind: "tickets", state: "idle", cursor: 4, callerIndexId: "ours-tickets", need: { files: 0, bytes: 0 }, blocked: 0, errors: 0, digest: "a".repeat(64), maxSeq: 2 }] };
-  stand.handoff = () => answer;
-  const target = [{ kind: "tickets" as const, label: "Ticket workspace" }];
-  const behind = await taskShareStatuses(project, target);
-  assert.deepEqual(behind, [{ label: "Ticket workspace", state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking what changed on homeserver" }]);
-  assert.deepEqual(stand.calls.handoff[0], { peer: PEER, body: files.fileSync });
-  answer = { shares: [{ ...answer.shares[0], cursor: 7, need: { files: 312, bytes: 4_299_162 } }] };
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  assert.deepEqual(await taskShareStatuses(project, target), [{ label: "Ticket workspace", state: "syncing", remainingFiles: 312, remainingBytes: 4_299_162, message: "Copying files to laptop" }]);
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  await assert.rejects(assertProjectFilesReady(project, "tickets"), (error: ProjectFilesNotReadyError) => error.retryable && error.status.message === "Copying files to laptop");
-  answer = { shares: [{ ...answer.shares[0], need: { files: 0, bytes: 0 } }] };
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  assert.deepEqual(await taskShareStatuses(project, target), [{ label: "Ticket workspace", state: "synced", remainingFiles: 0, remainingBytes: 0, message: "Files are up to date" }]);
-  await assertProjectFilesReady(project, "tickets");
-  // Another generation of the source's index is not "caught up", whatever the number says.
-  answer = { shares: [{ ...answer.shares[0], callerIndexId: "older", cursor: 99 }] };
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  assert.equal((await taskShareStatuses(project, target))[0].state, "syncing");
-  // A worker that cannot answer reads as still checking, never as ready.
-  stand.handoff = () => undefined;
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  assert.deepEqual((await taskShareStatuses(project, target)).map((status) => [status.state, status.message]), [["syncing", "Checking files"]]);
-
-  // A part for another project, or an unreadable one, is dropped like an old node drops it.
-  const before = stand.calls.handoff.length;
-  noteHandoffFiles(OTHER, "someone-else", files.fileSync);
-  noteHandoffFiles(OTHER, project.id, { projectId: project.id, shares: [{ kind: "tickets", indexId: "bad id!", maxSeq: 1 }] });
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.equal(stand.calls.handoff.length, before);
-  assert.deepEqual(await projectFilesHandoffPart(record("handoff-off"), ["project"], 1_500), undefined);
 });
 
 test("worktree files still arriving hold merges and are moved up the queue", async () => {
@@ -595,23 +480,18 @@ test("the engine's calls for the facade reach the worker, bounded, and pulls cou
   const peerFacts = await index.fileSyncPeerFacts([PEER]);
   assert.deepEqual(peerFacts.peers.get(PEER)?.name, "homeserver");
 
-  await index.fileSyncFlushProject("engine-alpha", ["project"], 10_000);
   const rescans = await index.fileSyncRescanProject("engine-alpha");
   assert.deepEqual(rescans.map((scan) => scan.kind), ["project", "tickets", "worktrees"]);
   index.fileSyncScanPaths("engine-alpha", "project", [path.join(projectRoot, "src", "a.ts"), path.join(work, "outside.txt")]);
   index.fileSyncPrioritize("engine-alpha", "worktrees", "w1", Date.now() + 1_000);
-  const answer = await index.fileSyncHandoffStatus(PEER, { projectId: "engine-alpha", shares: [{ kind: "project", indexId: "theirs", maxSeq: 9 }] });
-  assert.deepEqual(answer, statusAnswer);
   await until(async () => (await ops()).some((entry) => entry.op === "prioritize"), "the prioritize op");
-  const asked = (await ops()).filter((entry) => ["flush", "scan", "prioritize", "serve"].includes(entry.op));
+  const asked = (await ops()).filter((entry) => ["scan", "prioritize"].includes(entry.op));
   assert.deepEqual(asked.map((entry) => entry.op === "prioritize" ? { op: entry.op, args: { ...entry.args, untilMs: typeof entry.args.untilMs } } : entry), [
-    { op: "flush", args: { share: "project:engine-alpha" } },
     { op: "scan", args: { share: "project:engine-alpha", scope: "full", reason: "manual" } },
     { op: "scan", args: { share: "tickets:engine-alpha", scope: "full", reason: "manual" } },
     { op: "scan", args: { share: "worktrees:engine-alpha", scope: "full", reason: "manual" } },
     { op: "scan", args: { share: "project:engine-alpha", scope: { paths: ["src/a.ts"] }, reason: "app" } },
     { op: "prioritize", args: { share: "worktrees:engine-alpha", prefix: "w1", untilMs: "number" } },
-    { op: "serve", args: { peer: PEER, endpoint: "status", query: {}, body: { projectId: "engine-alpha", shares: [{ kind: "project", indexId: "theirs", maxSeq: 9 }] } } },
   ]);
 
   // A wake forgets every pull: what peers did while this node slept is unknown until it pulls again.

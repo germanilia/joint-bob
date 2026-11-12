@@ -119,7 +119,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       conversationDefaults,
       conversationHistoryDays: 45,
       conversationRetentionDays: 60,
-      conversationRetentionScope: { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: true, backgroundRuns: false },
+      conversationRetentionScope: { full: true, includeUnrecorded: false, includeScheduled: false, leftovers: true, backgroundRuns: false },
       conversationBackup: backupOff,
       autoCompactThreshold: 70,
       digestAttachments: false,
@@ -168,7 +168,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       conversationDefaults,
       conversationHistoryDays: 45,
       conversationRetentionDays: 60,
-      conversationRetentionScope: { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: true, backgroundRuns: false },
+      conversationRetentionScope: { full: true, includeUnrecorded: false, includeScheduled: false, leftovers: true, backgroundRuns: false },
       conversationBackup: backupOff,
       autoCompactThreshold: 70,
       digestAttachments: false,
@@ -321,7 +321,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       assert.equal(refusedScope.status, 400);
     }
     const scopeKept = await (await fetch(`${node.baseUrl}/api/settings`, { headers })).json() as { conversationRetentionScope: Record<string, boolean> };
-    assert.deepEqual(scopeKept.conversationRetentionScope, { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: true, backgroundRuns: false }, "saves that left the boxes out kept them");
+    assert.deepEqual(scopeKept.conversationRetentionScope, { full: true, includeUnrecorded: false, includeScheduled: false, leftovers: true, backgroundRuns: false }, "saves that left the boxes out kept them");
     for (const timeout of [59, 3601, 90.5]) {
       const invalidTimeout = await fetch(`${node.baseUrl}/api/settings`, {
         method: "PUT", headers,

@@ -232,7 +232,7 @@ async function checkTarget(input: WebhookInput): Promise<void> {
   if (input.target.kind !== "conversation") return;
   const { sessionId, engine } = input.target;
   const found = (await listProjectSessionsWithReviewState(project, "", "")).find((session) => session.id === sessionId && session.harnessId === engine);
-  if (!found || found.readOnly || found.taskId || found.doneAt) throw new WebhookError(404, "Conversation not found on this machine");
+  if (!found || found.readOnly || found.doneAt) throw new WebhookError(404, "Conversation not found on this machine");
   const ownership = await getConversationOwnership(engine, sessionId);
   if (ownership && ownership.ownerNodeId !== (await getClusterNode()).id) throw new WebhookError(409, "Choose the machine that owns this conversation");
 }
@@ -346,7 +346,7 @@ async function manage(command: Command, scope?: WebhookPeerScope): Promise<unkno
     if (!project) throw new WebhookError(404, "Project not found on this machine");
     const local = await getClusterNode();
     const sessions = await listProjectSessionsWithReviewState(project, "", "");
-    return { sessions: sessions.filter(session => !session.readOnly && !session.taskId && !session.doneAt && (!session.executionNodeId || session.executionNodeId === local.id))
+    return { sessions: sessions.filter(session => !session.readOnly && !session.doneAt && (!session.executionNodeId || session.executionNodeId === local.id))
       .map(({ id, title, firstMessage, harnessId }) => ({ id, title, firstMessage, harnessId })) };
   }
   if (isWebhookResourceCommand(command)) {

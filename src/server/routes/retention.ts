@@ -8,7 +8,7 @@ import { app } from "../state.js";
 
 // What the retention sweep would delete on this machine now, without deleting anything: counts and
 // bytes per kind and per project. Each box is taken from the query (`full=1`, `includeUnrecorded=1`,
-// `includeScheduled=1`, `includeTickets=1`, `leftovers=1`, `backgroundRuns=1`; `0` for unticked), or
+// `includeScheduled=1`, `leftovers=1`, `backgroundRuns=1`; `0` for unticked), or
 // from the saved setting when it is not given, so the settings page can show what its ticked boxes
 // would do before they are saved. `detail=1` adds the conversations themselves. Admin only
 // (src/server/admin.ts): it names every project's conversations.

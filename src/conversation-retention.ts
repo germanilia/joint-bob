@@ -19,18 +19,16 @@ export interface ConversationRetentionScope {
   includeUnrecorded: boolean;
   /** With `full`: the conversations that scheduled tasks and webhooks made, one per run. */
   includeScheduled: boolean;
-  /** With `full`: the conversations of finished tickets. An unfinished ticket keeps its conversation. */
-  includeTickets: boolean;
   /** Files and rows that deletes made before the complete delete existed left on this machine. */
   leftovers: boolean;
   /** Joint Bob's own background runs, seven days after their last activity. */
   backgroundRuns: boolean;
 }
 
-export const CONVERSATION_RETENTION_SCOPE_KEYS = ["full", "includeUnrecorded", "includeScheduled", "includeTickets", "leftovers", "backgroundRuns"] as const satisfies ReadonlyArray<keyof ConversationRetentionScope>;
+export const CONVERSATION_RETENTION_SCOPE_KEYS = ["full", "includeUnrecorded", "includeScheduled", "leftovers", "backgroundRuns"] as const satisfies ReadonlyArray<keyof ConversationRetentionScope>;
 
 export function defaultConversationRetentionScope(): ConversationRetentionScope {
-  return { full: false, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: false, backgroundRuns: false };
+  return { full: false, includeUnrecorded: false, includeScheduled: false, leftovers: false, backgroundRuns: false };
 }
 
 export interface RetentionContext {
@@ -53,8 +51,8 @@ function segmentKeys(session: SessionSummary): string[] {
 
 /** Why a listed conversation should be deleted now, or `undefined` to keep it. */
 export function retentionReason(session: SessionSummary, context: RetentionContext): RetentionReason | undefined {
-  // Sub-agent transcripts and done tickets are read-only; tickets and schedules own their conversations.
-  if (session.readOnly || session.taskId || session.cronTaskId) return undefined;
+  // Sub-agent transcripts are read-only; schedules own their conversations.
+  if (session.readOnly || session.cronTaskId) return undefined;
   if (segmentKeys(session).some((key) => context.pinned.has(key))) return undefined;
   const owned = context.ownedLocally(session);
   if (owned === false) return undefined;

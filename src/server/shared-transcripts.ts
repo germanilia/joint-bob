@@ -21,7 +21,6 @@ import { resolveDataDirectory } from "../data-directory.js";
 import { clearHarnessSessionCache, getHarness, harnessForSessionPath, listHarnessSessions } from "../harnesses.js";
 import { getProject } from "../store.js";
 import type { ProjectRecord } from "../types.js";
-import { listTasks } from '../tasks.js';
 import { getConversationOwnership, type ConversationOwnership } from "../conversation-ownership.js";
 import { deletedConversationKeys, ensureConversationRecord, ensureConversationRecordSchema } from "../conversation-records.js";
 import { presentReplicationPeers, replicationPeers, signedPeerPost } from "./replication-v2.js";
@@ -91,13 +90,6 @@ async function listSourceTranscripts(project:ProjectRecord):Promise<SourceTransc
  const projectId=project.id,sessions=await listHarnessSessions({...project,additionalPaths:await projectAdditionalPaths(projectId)});
  const local=await getClusterNode();
  const entries:SourceTranscript[]=sessions.flatMap(session=>session.segments?.length?session.segments.map(segment=>({engine:segment.engine,id:segment.sessionId,path:segment.path})): [{engine:session.harnessId,id:session.id,path:session.path,subagent:Boolean(session.parentSessionPath)}]);
- // Ticket conversations live under ticket working directories, not the project's cwd.
- for(const task of await listTasks(projectId)){
-  if(!task.sessionPath||task.sessionPath==='watch'||task.currentNodeId!==local.id)continue;
-  const adapter=harnessForSessionPath(task.sessionPath),id=adapter.paths.sessionId(task.sessionPath);
-  if(!id)throw new Error('Task conversation has no transcript identity');
-  entries.push({engine:adapter.id,id,path:task.sessionPath});
- }
  // A leftover copy of a conversation deleted on any node is never offered.
  const deleted=await deletedConversationKeys(projectId);
  const unique=[...new Map(entries.filter(entry=>!entry.path.startsWith('draft:')&&!deleted.has(`${entry.engine}:${entry.id}`)).map(entry=>[`${entry.engine}:${entry.id}`,entry])).values()];

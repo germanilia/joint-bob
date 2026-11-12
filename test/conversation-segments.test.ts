@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
-import { openNodeDatabase } from "../src/node-database.js";
 
 function cookieFrom(response: Response): string {
   const cookie = response.headers.get("set-cookie");
@@ -113,16 +112,6 @@ test("a harness switch keeps one conversation with embedded, ordered segments", 
     assert.equal(projectResponse.status, 201);
     const { project } = await projectResponse.json() as { project: { id: string } };
 
-    const openTaskSocket = async (baseUrl: string, projectId: string, cookie: string, sessionPath: string): Promise<{ socket: WebSocket; messages: Array<Record<string, unknown>> }> => {
-      const wsUrl = new URL(`/ws?projectId=${projectId}&taskId=done-ticket&sessionPath=${encodeURIComponent(sessionPath)}`, baseUrl);
-      wsUrl.protocol = "ws:";
-      const socket = new WebSocket(wsUrl, { origin: baseUrl, headers: { Cookie: cookie } });
-      sockets.push(socket);
-      const messages: Array<Record<string, unknown>> = [];
-      socket.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
-      await waitFor(messages, () => messages.some((message) => message.type === "ready"));
-      return { socket, messages };
-    };
     const openSocket = async (sessionPath: string): Promise<{ socket: WebSocket; messages: Array<Record<string, unknown>> }> => {
       const wsUrl = new URL(`/ws?projectId=${project.id}&sessionPath=${encodeURIComponent(sessionPath)}`, baseUrl);
       wsUrl.protocol = "ws:";
@@ -226,39 +215,6 @@ test("a harness switch keeps one conversation with embedded, ordered segments", 
       method: "PUT", headers, body: JSON.stringify({ sessionId: piSessionId, engine: "claude", title: "Unified chain" }) });
     assert.equal(renamed.status, 200);
     assert.equal((await sessions())[0].title, "Unified chain");
-
-    // A Done ticket owning the ORIGINAL segment locks the whole conversation,
-    // even when the client addresses it by another segment's identity.
-    const database = openNodeDatabase(path.join(root, "data", "node.db"));
-    const nodeId = (database.prepare("SELECT id FROM cluster_node WHERE singleton = 1").get() as { id: string }).id;
-    const now = new Date().toISOString();
-    database.prepare(`INSERT INTO tasks (id, project_id, title, description, status, engine, plan_mode, review_mode, phase_config, session_path, worktree_path, worktree_branch, merged_at, created_at, updated_at, current_node_id, origin_node_id, execution_state, merge_state, conflict_count) VALUES ('done-ticket', ?, 'Done ticket', '', 'done', 'pi', 0, 0, '{}', ?, NULL, NULL, NULL, ?, ?, ?, ?, 'idle', 'none', 0)`)
-      .run(project.id, piTranscriptPath, now, now, nodeId, nodeId);
-    database.close();
-    const lockedRename = await fetch(`${baseUrl}/api/projects/${project.id}/sessions/title`, {
-      method: "PUT", headers, body: JSON.stringify({ sessionId: piSessionId, engine: "claude", title: "should not stick" }) });
-    assert.equal(lockedRename.status, 409, "renaming by conversation id hits the Done lock");
-    const lockedDelete = await fetch(`${baseUrl}/api/projects/${project.id}/sessions?engine=claude&sessionId=${claudeSessionId}`, { method: "DELETE", headers: { Cookie: cookie, "X-CSRF-Token": csrfToken } });
-    assert.equal(lockedDelete.status, 409, "deleting by the newest segment hits the Done lock");
-    // Opening the same conversation WITHOUT its ticket still respects the Done lock.
-    const guarded = await openSocket(piTranscriptPath);
-    const guardedReady = guarded.messages.find((message) => message.type === "ready") as { readOnly?: boolean };
-    assert.equal(guardedReady.readOnly, true, "a Done ticket conversation opens read-only without its ticket id");
-    guarded.socket.send(JSON.stringify({ type: "prompt", message: "should be rejected" }));
-    await waitFor(guarded.messages, () => guarded.messages.some((message) => message.type === "error" && String(message.error).includes("Done ticket conversations are read-only")));
-    guarded.socket.close();
-
-    // A ticket whose path names the ORIGINAL segment still opens the whole
-    // conversation on its newest segment.
-    const ticketSocket = await openTaskSocket(baseUrl, project.id, cookie, piTranscriptPath);
-    const ticketReady = ticketSocket.messages.find((message) => message.type === "ready") as { engine: string; sessionId: string };
-    assert.equal(ticketReady.engine, "pi", "a ticket path opens the newest segment");
-    assert.equal(ticketReady.sessionId, thirdSegmentFile.replace(/\.jsonl$/, "").split("_").at(-1));
-    ticketSocket.socket.close();
-
-    const unlock = openNodeDatabase(path.join(root, "data", "node.db"));
-    unlock.prepare("DELETE FROM tasks WHERE id = 'done-ticket'").run();
-    unlock.close();
 
     // Live Pi handles re-create their file on dispose, so close the sockets first.
     reopened.socket.close();

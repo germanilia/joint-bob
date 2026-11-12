@@ -619,8 +619,8 @@ h2 { font-size: 17px; line-height: 1.25; }
 :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* Mono micro-label — the console signature */
-.eyebrow, .section-title, .status-pill, .chat-badge, .task-engine,
-.board-count, .model-dialog-group, .credential-state {
+.eyebrow, .section-title, .status-pill, .chat-badge,
+.model-dialog-group, .credential-state {
   font-family: var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -707,7 +707,6 @@ html.assistant-automation #settingsDialog .settings-body { grid-template-columns
 }
 body.view-projects #projectsPanel,
 body.view-sessions #chatsPanel,
-body.view-board #boardPanel,
 body.view-chat #chatPanel {
   display: flex;
   animation: screen-in 340ms cubic-bezier(0.22, 0.9, 0.28, 1) both;
@@ -715,14 +714,12 @@ body.view-chat #chatPanel {
 /* Header settles first, then the list body lifts in behind it. */
 body.view-projects #projectsPanel :is(.panel-bar, .chat-topbar),
 body.view-sessions #chatsPanel :is(.panel-bar, .chat-topbar),
-body.view-board #boardPanel :is(.panel-bar, .chat-topbar),
 body.view-chat #chatPanel :is(.panel-bar, .chat-topbar) {
   animation: header-in 300ms cubic-bezier(0.22, 0.9, 0.28, 1) 40ms both;
 }
-body.view-projects #projectsPanel :is(.panel-scroll, .board-columns, .messages),
-body.view-sessions #chatsPanel :is(.panel-scroll, .board-columns, .messages),
-body.view-board #boardPanel :is(.panel-scroll, .board-columns, .messages),
-body.view-chat #chatPanel :is(.panel-scroll, .board-columns, .messages) {
+body.view-projects #projectsPanel :is(.panel-scroll, .messages),
+body.view-sessions #chatsPanel :is(.panel-scroll, .messages),
+body.view-chat #chatPanel :is(.panel-scroll, .messages) {
   animation: body-in 380ms cubic-bezier(0.22, 0.9, 0.28, 1) 90ms both;
 }
 @keyframes screen-in {
@@ -1102,16 +1099,6 @@ textarea:focus, input:focus, select:focus { border-color: var(--line-strong); bo
 .list-row.done .session-card strong { text-decoration: line-through; text-decoration-color: var(--muted); }
 .list-row.done .session-card { opacity: 0.68; }
 .list-row.done .session-card:hover, .list-row.done .session-card.active { opacity: 1; }
-/* The ticket mark shares the badge anatomy but carries the accent, like the board cards' engine chips. */
-.session-ticket-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-style: normal;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-.session-ticket-badge svg { width: 10px; height: 10px; }
 .project-card .project-sync-status {
   display: flex;
   align-items: center;
@@ -1312,122 +1299,8 @@ textarea:focus, input:focus, select:focus { border-color: var(--line-strong); bo
   text-align: center;
 }
 
-/* ---- Kanban board ---- */
-.board-columns {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding: 12px;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: thin;
-}
-.board-column {
-  flex: 0 0 min(82vw, 320px);
-  scroll-snap-align: start;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--bg);
-}
-.board-column-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-.board-column-header strong { flex: 1; font-size: 13px; }
-.board-count { min-width: 22px; text-align: center; border-radius: 6px; padding: 1px 6px; font-size: 10.5px; background: var(--field); color: var(--muted); }
-.board-add { min-width: 30px; width: 30px; min-height: 30px; font-size: 15px; }
-.status-in_progress .board-count { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
-.status-planning .board-count { background: color-mix(in srgb, var(--claude) 12%, transparent); color: var(--claude); }
-.status-review .board-count { background: color-mix(in srgb, var(--amber) 13%, transparent); color: var(--amber); }
-.status-done .board-count { background: color-mix(in srgb, var(--live) 12%, transparent); color: var(--live); }
-.board-column-list { flex: 1; min-height: 0; overflow-y: auto; display: grid; gap: 8px; align-content: start; padding: 10px; }
-.board-empty { font-size: 12px; text-align: center; padding: 12px 0; }
-
-.task-card {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-ctl);
-  background: var(--surface);
-  box-shadow: var(--raise);
-  overflow: hidden;
-  transition: border-color 150ms ease;
-}
-.task-card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
-.task-card-body {
-  display: grid;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  padding: 11px 12px 10px;
-}
-.task-card-title { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
-.task-card-title strong { flex: 1; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
-.task-engine { flex: 0 0 auto; margin-top: 1px; font-size: 9px; border-radius: 4px; padding: 2px 6px; }
-.task-engine.engine-pi { color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); }
-.task-engine.engine-claude { color: var(--claude); background: color-mix(in srgb, var(--claude) 11%, transparent); }
-.task-engine.task-plan { color: var(--claude); background: color-mix(in srgb, var(--claude) 11%, transparent); }
-.task-card-description {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-.task-card-meta { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 10.5px; }
-.task-node {
-  flex: 0 0 auto;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-  background: var(--field);
-  border-radius: 5px;
-  padding: 2px 6px;
-}
-.task-state { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; text-transform: capitalize; color: var(--muted); }
-.task-state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
-.task-state-running { color: var(--live); }
-.task-state-running i { animation: task-state-pulse 1.4s ease-in-out infinite; }
-.task-state-handoff_pending { color: var(--amber); }
+/* Pulsing status dots elsewhere share this beat. */
 @keyframes task-state-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-
-.task-card-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 2px;
-  padding: 5px 6px;
-  border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--field) 45%, transparent);
-}
-.task-card-actions-main { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 2px; }
-.task-action { min-width: 30px; width: 30px; min-height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-.task-action:disabled { opacity: 0.32; }
-.task-card-icon { width: 17px; height: 17px; flex: none; }
-/* The arrows only move a ticket, so they stay quiet next to the two controls
-   that open something. */
-.task-move { color: var(--muted); }
-.task-open-chat { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.task-open-chat:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
-.task-start { color: var(--live); }
-
-.task-card.dragging { opacity: 0.5; }
-@keyframes task-card-focus { 0%, 100% { box-shadow: var(--raise); } 50% { box-shadow: 0 0 0 2px var(--accent); } }
-.task-card-focus { border-color: var(--accent); animation: task-card-focus 800ms ease-in-out 2; }
-.board-column.drop-target { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
-
-@media (prefers-reduced-motion: reduce) {
-  .task-state-running i { animation: none; }
-  .task-card-focus { animation: none; }
-}
 
 /* ---- Chat ---- */
 .chat { background: var(--panel); }
@@ -1456,24 +1329,8 @@ textarea:focus, input:focus, select:focus { border-color: var(--line-strong); bo
   white-space: nowrap;
 }
 .turn-timer { flex: 0 0 auto; color: var(--muted); font-family: var(--mono); font-size: 10.5px; white-space: nowrap; }
-.task-backlink {
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  color: var(--accent);
-  font-size: 10px;
-  padding: 3px 7px;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 130ms ease, border-color 130ms ease;
-}
-.task-backlink:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
-/* The traffic light and Stop ride the meta row, so they line up with the ticket
-   chip instead of floating between the title and the meta line. */
+/* The traffic light and Stop ride the meta row, so they line up with the project
+   name instead of floating between the title and the meta line. */
 .chat-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; margin-left: auto; padding-left: 8px; }
 .chat-actions .icon-button { min-width: 24px; width: 24px; min-height: 24px; }
 .chat-actions .icon-button svg { width: 15px; height: 15px; }
@@ -2304,32 +2161,6 @@ dialog::backdrop { background: rgba(10, 11, 13, 0.5); backdrop-filter: blur(6px)
   #cronFooter > button:not(#cronNew) { flex: 1 1 0; }
 }
 
-/* Wide enough to read a transcript in; the chat host owns its own scroll so the
-   card itself never grows past the viewport. */
-.task-dialog-card { width: min(760px, calc(100vw - 24px)); display: flex; flex-direction: column; overflow: hidden; }
-.task-dialog-card > :not(#taskForm):not(.task-chat-host) { flex: 0 0 auto; }
-.task-form-body { display: grid; gap: 14px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: -4px; padding: 4px; }
-/* #taskForm is a tab panel inside the card now, so it owns the field layout the
-   card used to provide. */
-#taskForm { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 14px; min-width: 0; min-height: 0; }
-#taskForm[hidden] { display: none; }
-.task-description-field { display: grid; gap: 8px; padding: 2px; border-radius: var(--radius-ctl); }
-.task-description-field.dragging { outline: 2px dashed var(--accent); outline-offset: 2px; }
-.task-description-field textarea { width: 100%; }
-.task-attach-button { justify-self: start; }
-.task-chat-host {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  height: min(520px, 60dvh);
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-ctl);
-  background: var(--panel);
-}
-.task-chat-host .messages { padding: 14px; }
-.task-chat-host .composer { padding: 8px 10px 10px; }
-
 /* The settings dialog parks its opening focus here, so it must not look like a pressed control. */
 .dialog-heading:focus { outline: none; }
 .dialog-card label { color: var(--text); font-size: 12px; font-weight: 550; }
@@ -3088,9 +2919,6 @@ body > .searchable-select-popover { z-index: 1200; }
 .multi-select-clear:hover { color: var(--text); }
 .multi-select-clear[hidden] { display: none; }
 
-.handoff-progress-card progress { width: 100%; accent-color: var(--accent); }
-#handoffProgressStatus { min-height: 2.8em; white-space: pre-line; }
-
 .toast-stack {
   position: fixed;
   right: calc(16px + env(safe-area-inset-right, 0px));
@@ -3256,12 +3084,8 @@ body > .searchable-select-popover { z-index: 1200; }
   .view-panel.collapsed .panel-rail { display: flex; }
   #projectsPanel, #chatsPanel { display: flex; }
   #chatPanel { display: flex; }
-  #boardPanel { display: none; }
-  body.view-board #boardPanel { display: flex; }
-  body.view-board #chatPanel { display: none; }
   body.view-control #controlCenterPanel { display: flex; }
-  body.view-control #chatPanel, body.view-control #boardPanel { display: none; }
-  .board-column { flex: 1 1 0; min-width: 220px; }
+  body.view-control #chatPanel { display: none; }
   .message.assistant, .message.thinking, .message.tool-output { width: 100%; max-width: 100%; }
   .message.user { max-width: min(720px, 78%); }
   .messages { padding-inline: clamp(16px, 4vw, 56px); }
@@ -3346,7 +3170,7 @@ body > .searchable-select-popover { z-index: 1200; }
   .panel-bar, .chat-topbar { height: auto; min-height: 58px; padding: 10px 52px 10px 12px; padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
   .app-menu { display: block; position: fixed; top: calc(18px + env(safe-area-inset-top, 0px)); right: 16px; z-index: 50; }
   /* The bottom bar already reaches Notes, so the duplicate desktop action stays hidden. */
-  #settingsButton, #projectNotesButton, #projectBoardButton, #openControlCenterButton { display: none; }
+  #settingsButton, #projectNotesButton, #openControlCenterButton { display: none; }
   /* A phone has no modifier keys to hold, so the badges never reveal there. */
   body.shortcuts-revealed .shortcut-hint { display: none; }
   .messages { padding: 12px; }
@@ -3363,10 +3187,6 @@ body > .searchable-select-popover { z-index: 1200; }
   .session-list .pin-button, .project-list .pin-button { min-height: 34px; min-width: 34px; width: 34px; right: 52px; }
   .session-list .session-children-toggle { min-height: 34px; right: 94px; }
   .session-list .session-card, .project-list .project-card { padding-right: 94px; }
-  /* The ticket jump button gets the same touch target and the same 8px of air,
-     one lane further out than the pin so the row reads ticket, pin, menu. */
-  .session-list .ticket-link-button { min-height: 34px; min-width: 34px; width: 34px; right: 94px; }
-  .session-list .list-row.has-ticket .session-card { padding-right: 136px; }
   .session-list .list-row.has-children .session-card { padding-right: 136px; }
   /* Stop stays a real touch target on phones without leaving the meta row. */
   .chat-actions .icon-button { min-width: 32px; width: 32px; min-height: 32px; }
@@ -3434,14 +3254,6 @@ body > .searchable-select-popover { z-index: 1200; }
 /* Parents with sub-agent children carry a third lane for the expand toggle. */
 .session-children-toggle { right: 78px; width: auto; min-width: 28px; padding: 0 7px; font-family: var(--mono); font-size: 10.5px; }
 .session-list .list-row.has-children .session-card { padding-right: 122px; }
-
-/* ---- Ticket conversations in the list ---- */
-/* The jump button owns the outermost lane, and the row pays for the
-   lane with padding so the title never runs under it. */
-.session-list .ticket-link-button { right: 78px; color: var(--accent); }
-.session-list .ticket-link-button svg { width: 15px; height: 15px; }
-/* A ticket conversation needs three lanes: ticket, pin, menu. */
-.session-list .list-row.has-ticket .session-card { padding-right: 110px; }
 
 /* ---- Skills browser ---- */
 .skills-dialog-list { display: grid; gap: 4px; min-width: 0; max-height: 52dvh; overflow-y: auto; }
@@ -4045,21 +3857,6 @@ body.file-view { overflow: auto; }
 .cluster-sync-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .cluster-twin-link { margin-top: 8px; }
 .cluster-twin-link p { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
-
-/* Ticket merge conflict picker: one row per conflict, actions on the right. */
-.merge-conflict-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.merge-conflict-row button {
-  flex: none;
-}
-.merge-warning {
-  color: var(--danger, #b3261e);
-  margin: 0;
-}
 
 .engine-defaults, .engine-readiness { display: block; color: var(--muted); font-family: var(--mono); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 /* Three long absolute paths in one run: a bordered block keeps them off the prose above. */

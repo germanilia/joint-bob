@@ -10,7 +10,6 @@ function explorerApiUrl(route, params = {}) {
   const url = new URL(`/api/projects/${encodeURIComponent(state.activeProjectId)}/${route}`, location.origin);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   if (state.activeNodeId) url.searchParams.set("nodeId", state.activeNodeId);
-  if (state.activeTaskId) url.searchParams.set("taskId", state.activeTaskId);
   return `${url.pathname}${url.search}`;
 }
 

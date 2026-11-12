@@ -2,7 +2,6 @@ import { chatModelSchema, chatState, saveChatState, type ChatQuestion, type Chat
 import { getHarness } from "../harnesses.js";
 import { readQueueSettings } from "../prompt-queue.js";
 import { getProjectWorktree } from "../project-worktrees.js";
-import { listTasks } from "../tasks.js";
 import type { ProjectRecord, SessionSummary } from "../types.js";
 import { runChatAgent } from "./conversation-chat-agent.js";
 import { validateProjectSecretAccounts } from "../secrets.js";
@@ -27,8 +26,7 @@ async function chatCwd(project: ProjectRecord, source: SessionSummary): Promise<
     if (!worktree) throw new Error("Conversation worktree is unavailable on this machine");
     return worktree.path;
   }
-  const task = (await listTasks(project.id)).find(item => item.sessionPath === source.path);
-  return task?.worktreePath ?? project.path;
+  return project.path;
 }
 
 async function answerQuestion(project: ProjectRecord, scope: ChatScope, payload: ChatQuestion, accountId: string, onText: (text: string, compacted: boolean) => void) {

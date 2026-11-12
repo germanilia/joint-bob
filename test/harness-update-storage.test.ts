@@ -5,7 +5,7 @@ import { listPendingUpdateRecoveries, saveUpdateRecoveries, type UpdateRecoveryR
 function record(id: string, settings?: UpdateRecoveryRecord["settings"]): UpdateRecoveryRecord {
   return {
     id, kind: "chat", engine: "kiro", projectId: "project", cwd: "/tmp/project",
-    sessionId: `session-${id}`, sessionPath: `kiro:/tmp/${id}.jsonl`, taskId: null, phase: null,
+    sessionId: `session-${id}`, sessionPath: `kiro:/tmp/${id}.jsonl`,
     queuedPrompts: [], model: "kiro-model", effort: "high", ...(settings ? { settings } : {}),
     createdAt: `2026-01-01T00:00:0${id}.000Z`,
   };

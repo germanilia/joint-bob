@@ -54,7 +54,7 @@ const KIND_LABEL = {
 };
 
 export async function openGitReview(conversationId = null, { tab = "changes", ownScope = false, context, prepare } = {}) {
-  const target = context ?? { projectId: state.activeProjectId, nodeId: state.activeNodeId, taskId: state.activeTaskId };
+  const target = context ?? { projectId: state.activeProjectId, nodeId: state.activeNodeId };
   if (!target.projectId) { toast("Select a project first"); return; }
   const version = ++git.viewRequest;
   git.target = target;

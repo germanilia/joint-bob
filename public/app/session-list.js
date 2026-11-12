@@ -20,7 +20,7 @@ import { openRowMenu, pinButton, refreshRowMenuAnchor } from "./row-menu.js";
 import { openSecretScope } from "./secrets.js";
 import { labelIcon, labelOptionText } from "./classification.js";
 import { openConversationClassificationDialog, openConversationColorDialog, openRenameDialog, sessionEngine } from "./session-identity.js";
-import { autoRespondBadge, isSessionPinned, nestedSessionRows, sessionTicketTask, ticketBadge, ticketRowButton, togglePinnedSession } from "./session-rows.js";
+import { autoRespondBadge, isSessionPinned, nestedSessionRows, togglePinnedSession } from "./session-rows.js";
 import { loadWorktrees, otherWorktreesSection, worktreeBadge, worktreeDeleting, worktreeSectionHeader, worktreesHeading } from "./worktrees.js";
 import { confirmAction, enableNotifications, formatDate, toast } from "./shell.js";
 import { closeSocket, refreshSessionsQuietly } from "./socket.js";
@@ -190,7 +190,7 @@ function showOpenConversation(list) {
   if (row && list.getClientRects().length) queueMicrotask(() => row.scrollIntoView({ block: "nearest" }));
 }
 
-function sessionCard(session, sessionActive, sessionPinned, ticketTask) {
+function sessionCard(session, sessionActive, sessionPinned) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `session-card${sessionActive ? " active" : ""}${sessionPinned ? " pinned" : ""}`;
@@ -256,7 +256,6 @@ function sessionCard(session, sessionActive, sessionPinned, ticketTask) {
     && (session.conversationId || session.id) === state.activeConversationId
     ? state.autoRespond : session.autoRespond;
   if (autoRespond) meta.append(" ", autoRespondBadge(autoRespond));
-  if (ticketTask) meta.append(" ", ticketBadge(ticketTask));
   if (session.worktree) meta.append(" ", worktreeBadge(session.worktree));
   button.addEventListener("click", () => openListedSession(session));
   return button;
@@ -264,14 +263,13 @@ function sessionCard(session, sessionActive, sessionPinned, ticketTask) {
 
 function sessionRow({ session, depth, childCount }, sessionActive) {
   const sessionPinned = isSessionPinned(session);
-  const ticketTask = sessionTicketTask(session);
   const row = document.createElement("div");
-  row.className = `list-row${sessionActive ? " active" : ""}${sessionPinned ? " pinned" : ""}${session.doneAt ? " done" : ""}${ticketTask ? " has-ticket" : ""}${session.worktree ? " has-worktree" : ""}${childCount ? " has-children" : ""}`;
+  row.className = `list-row${sessionActive ? " active" : ""}${sessionPinned ? " pinned" : ""}${session.doneAt ? " done" : ""}${session.worktree ? " has-worktree" : ""}${childCount ? " has-children" : ""}`;
   row.dataset.sessionDepth = String(depth);
   // The row menu is re-pointed at this row after a refresh replaces it.
   row.dataset.sessionPath = session.path;
 
-  const button = sessionCard(session, sessionActive, sessionPinned, ticketTask);
+  const button = sessionCard(session, sessionActive, sessionPinned);
 
   const menuButton = document.createElement("button");
   menuButton.type = "button";
@@ -312,8 +310,7 @@ function sessionRow({ session, depth, childCount }, sessionActive) {
   const rowMain = document.createElement("div");
   rowMain.className = "list-row-main";
   if (session.color) rowMain.dataset.color = session.color;
-  if (ticketTask) rowMain.append(button, ticketRowButton(ticketTask), pinToggle, menuButton);
-  else rowMain.append(button, pinToggle, menuButton);
+  rowMain.append(button, pinToggle, menuButton);
   if (childToggle) rowMain.append(childToggle);
   row.append(rowMain);
   if (session.agentRuns?.length) {
@@ -417,7 +414,7 @@ function runnerRefusesThisMachine(session, sessionActive) {
 function sessionMenuItems(session, sessionActive) {
   const name = shortSessionTitle(session);
   const runnerRefused = runnerRefusesThisMachine(session, sessionActive);
-  const readOnly = runnerRefused || session.readOnly === true || sessionTicketTask(session)?.status === "done";
+  const readOnly = runnerRefused || session.readOnly === true;
   return [
     {
       label: "Budget…",
@@ -621,7 +618,6 @@ async function toggleSessionReviewNotifications(session) {
 }
 
 function clearActiveSession() {
-  state.activeTaskId = null;
   closeSocket();
   clearChat();
   clearAttachments();
@@ -642,9 +638,8 @@ async function removeSessionFromRow(session, sessionActive) {
     destructive: true,
   });
   if (!confirmed) return;
-  const taskQuery = session.taskId ? `&taskId=${encodeURIComponent(session.taskId)}` : "";
   const projectId = state.activeProjectId;
-  const url = `/api/projects/${encodeURIComponent(projectId)}/sessions?sessionId=${encodeURIComponent(session.id)}&engine=${sessionEngine(session)}${taskQuery}`;
+  const url = `/api/projects/${encodeURIComponent(projectId)}/sessions?sessionId=${encodeURIComponent(session.id)}&engine=${sessionEngine(session)}`;
   // The row and the open chat go at once; a refusal brings both back.
   if (sessionActive) clearActiveSession();
   try {

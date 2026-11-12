@@ -1,7 +1,7 @@
 import { harnessIdFromPath, harnessOption } from "../harness-metadata.js";
 import { api, savePreferencesInBackground } from "./api.js";
 import { classificationPicker } from "./classification.js";
-import { conversationTask, loadHarnesses } from "./chat-controls.js";
+import { loadHarnesses } from "./chat-controls.js";
 import { elements } from "./elements.js";
 import { rememberDraft, restoreDraft } from "./composer.js";
 import { selectProject } from "./project-selection.js";
@@ -13,7 +13,6 @@ import { renderSessionColorSwatches, selectedSessionColor } from "./session-iden
 import { chooseOption, toast } from "./shell.js";
 import { openSession } from "./socket.js";
 import { state } from "./state.js";
-import { cancelHandoffWait } from "./tasks.js";
 import { createConversationWorktree } from "./worktrees.js";
 
 const classification = classificationPicker(document.querySelector("#newSessionClassification"), "new-session");
@@ -36,7 +35,7 @@ function runsOnThisNode() {
 /** Worktrees are known for the open project only; another project's conversation runs in its folder. */
 function renderNewSessionWorktrees(selected = null) {
   const draft = state.newSessionDraft;
-  const offered = Boolean(draft) && !draft.sourceTaskId;
+  const offered = Boolean(draft);
   const worktrees = offered && draft.projectId === state.activeProjectId ? state.worktrees : [];
   const select = elements.newSessionWorktreeSelect;
   elements.newSessionWorktreeLabel.hidden = !offered;
@@ -170,7 +169,7 @@ export function addOptimisticSession(sessionId, sessionPath, title, color, class
 }
 
 /** A conversation is named up front so the list shows the user's own label from the first turn. */
-async function openNewSessionNameDialog(sessionPath, defaultTitle, sourceTaskId = null, global = false, referenceDraft = null) {
+async function openNewSessionNameDialog(sessionPath, defaultTitle, global = false, referenceDraft = null) {
   const projectId = state.activeProjectId;
   const [settings] = await Promise.all([
     api("/api/settings"),
@@ -180,15 +179,15 @@ async function openNewSessionNameDialog(sessionPath, defaultTitle, sourceTaskId 
   classification.reset(settings.conversationLabels, null, settings.conversationLabelIcons);
   newWorktreeByDefault = settings.newConversationWorktree === true;
   worktreeChosen = preselectedWorktreeId !== null;
-  state.newSessionDraft = { sessionPath, defaultTitle, sourceTaskId, projectId: projectId || state.projects[0]?.id, referenceDraft };
+  state.newSessionDraft = { sessionPath, defaultTitle, projectId: projectId || state.projects[0]?.id, referenceDraft };
   document.querySelector("#newSessionProjectLabel").hidden = !document.body.classList.contains("focus-ui");
   projectPicker.setOptions(state.projects.map((project) => ({ value: project.id, label: project.name })));
   projectPicker.setValue(state.newSessionDraft.projectId || "");
-  projectPicker.disabled = Boolean(sourceTaskId);
+  projectPicker.disabled = false;
   document.querySelector("#newSessionHarnessLabel").hidden = !global;
   harnessSelect.replaceChildren(...state.harnesses.filter(harness => harness.runtimeConfigured).map(harnessOption));
   harnessSelect.value = state.harnesses.find(harness => harness.newSessionPath === sessionPath)?.id || "";
-  elements.newSessionNameInput.value = sourceTaskId ? defaultTitle : "";
+  elements.newSessionNameInput.value = "";
   newSessionNodes = [];
   elements.newSessionNodeSelect.replaceChildren();
   renderSessionColorSwatches(null, elements.newSessionColorSwatches);
@@ -239,7 +238,7 @@ export async function startGlobalConversation() {
   const available = state.harnesses.filter(harness => harness.ready);
   const harness = available.find(harness => harness.id === state.engine) || available[0];
   if (!harness) throw new Error("No agent is installed and signed in on this node");
-  await openNewSessionNameDialog(harness.newSessionPath, `New ${harness.label} conversation`, null, true);
+  await openNewSessionNameDialog(harness.newSessionPath, `New ${harness.label} conversation`, true);
 }
 
 projectPicker.onChange((projectId) => {
@@ -262,7 +261,7 @@ export async function startNewHarnessConversation(harnessId, references = null) 
   if (!harness) throw new Error(`Harness ${harnessId} is unavailable`);
   if (!harness.ready) throw new Error(harness.unavailableReason);
   const title = references?.title ?? (references ? `Review ${references.count} reference${references.count === 1 ? "" : "s"}` : `New ${harness.label} conversation`);
-  return openNewSessionNameDialog(harness.newSessionPath, title, null, false, references?.draft);
+  return openNewSessionNameDialog(harness.newSessionPath, title, false, references?.draft);
 }
 
 export async function startConversationWithReferences(draft, count) {
@@ -318,19 +317,7 @@ async function chooseNewSessionHarness(references = null) {
 
 window.addEventListener("harnesses-changed", renderNewSessionHarnesses);
 renderNewSessionHarnesses();
-elements.handoffProgressCancelButton.addEventListener("click", cancelHandoffWait);
-elements.handoffProgressDialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  cancelHandoffWait();
-});
 elements.newSessionButton.addEventListener("click", () => chooseNewSessionHarness().catch((error) => toast.error(error.message)));
-elements.doneConversationContinueButton.addEventListener("click", () => {
-  const task = conversationTask();
-  if (!task || task.status !== "done") throw new Error("Done ticket was not found");
-  const harness = state.harnesses.find((candidate) => candidate.id === state.engine);
-  if (!harness) throw new Error(`Harness ${state.engine} was not found`);
-  openNewSessionNameDialog(harness.newSessionPath, `Follow-up: ${task.title}`, task.id).catch((error) => toast.error(error.message));
-});
 elements.cancelNewSessionNameButton.addEventListener("click", () => {
   state.newSessionDraft = null;
   elements.newSessionNameDialog.close();
@@ -391,7 +378,6 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
       if (!elements.newSessionNameDialog.open || state.newSessionDraft !== draft) return;
     }
     state.newSessionSecretAccountIds = secretIds;
-    state.spinOffSourceTaskId = draft.sourceTaskId;
     state.newSessionWorktreeId = worktreeId;
     state.activeNodeId = node.id;
     if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: node.id });
@@ -412,7 +398,7 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
   } finally {
     submit.disabled = false;
     submit.textContent = submitLabel;
-    projectPicker.disabled = Boolean(state.newSessionDraft?.sourceTaskId);
+    projectPicker.disabled = false;
     harnessSelect.disabled = false;
   }
 });

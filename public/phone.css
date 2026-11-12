@@ -364,7 +364,7 @@
   /* The install card sits above the tabs and the New button; a conversation (no tabs, the message box at the foot)
      does not show it. */
   body.focus-ui .install-banner { bottom: calc(var(--ph-tabs-h) + 84px); width: calc(100% - 24px); border: 0; border-radius: 18px; }
-  body.focus-ui.view-chat .install-banner, body.focus-ui.view-board .install-banner { display: none; }
+  body.focus-ui.view-chat .install-banner { display: none; }
   body.focus-ui .install-banner-actions button { min-height: 44px; }
   #usageDialog[open] { padding: 0; }
   #usageDialog > .usage-card, .background-tasks-dialog > .background-tasks-card { margin: 0; }

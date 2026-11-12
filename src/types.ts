@@ -113,7 +113,7 @@ export interface SessionSummary {
    */
   worktree?: { id: string; name: string; color: ProjectColor; syncing?: true };
   harnessId: HarnessId;
-  /** The agent that last drove the conversation: its own harness, or a task engine that overrode it. */
+  /** The agent that last drove the conversation. */
   agentId: HarnessId;
   agentLabel: string;
   agentModel?: string;
@@ -129,8 +129,6 @@ export interface SessionSummary {
   conversationId?: string;
   /** Every harness segment of a switched conversation, oldest first; absent for single sessions. */
   segments?: Array<{ engine: HarnessId; sessionId: string; path: string; draft?: boolean }>;
-  taskStatus?: TaskStatus;
-  taskId?: string;
   /** True while the model itself is processing a turn. */
   turnRunning?: boolean;
   /** True while child or external work continues independently of the model turn. */
@@ -151,67 +149,13 @@ export interface SessionSummary {
   agentRuns?: AgentRunSummary[];
 }
 
-export type TaskStatus = "backlog" | "planning" | "in_progress" | "review" | "done";
-
-export type TaskEngine = HarnessId;
-
-export type TaskExecutionState = "idle" | "running" | "handoff_pending" | "failed";
-
-export type TaskPhase = "planning" | "in_progress" | "review";
-
-export type TaskMergeState = "none" | "conflicts" | "resolved" | "merged";
-
-export type TaskMergeTx = "open" | "committed" | "rolled_back";
-
-export type TaskRunKind = "phase" | "merge";
-
-export interface TaskPhaseConfig {
-  engine: TaskEngine;
-  provider: string;
-  modelId: string;
-  effort: string;
-}
-
 export interface TaskAttachment {
   id: string;
   kind: "image" | "file";
   name: string;
   mimeType: string;
-  /** Path relative to the ticket workspace, so handoffs keep it valid. */
+  /** Path relative to the folder it was saved in. */
   path: string;
-}
-
-export interface TaskRecord {
-  id: string;
-  title: string;
-  description: string;
-  attachments?: TaskAttachment[];
-  status: TaskStatus;
-  engine: TaskEngine;
-  planMode: boolean;
-  reviewMode: boolean;
-  phaseConfig: Partial<Record<TaskPhase, TaskPhaseConfig>>;
-  // Conversation created when the task was started (pi session file path or claude:<path>).
-  sessionPath: string | null;
-  worktreePath: string | null;
-  worktreeBranch: string | null;
-  mergedAt: string | null;
-  // Ticket-workspace merge-back state (TICKET-MERGE-PLAN.md §10).
-  mergeState: TaskMergeState;
-  conflictCount: number;
-  mergeWarning: string | null;
-  mergeTx: TaskMergeTx | null;
-  // Trusted digests of the workspace merge artifacts, captured by server code at prepare.
-  mergeDigests: Record<string, string> | null;
-  runKind: TaskRunKind | null;
-  currentNodeId: string;
-  leaseOwnerNodeId: string | null;
-  leaseExpiresAt: string | null;
-  executionState: TaskExecutionState;
-  handoffContext: string | null;
-  originNodeId: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 /** A tool call's subject: a file, command or pattern, or the skill it loaded. */

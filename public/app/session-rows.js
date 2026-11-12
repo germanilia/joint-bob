@@ -1,11 +1,9 @@
-import { ticketGlyph } from "../board.js";
 import { harnessIdFromPath } from "../harness-metadata.js";
 import { savePin, savePreferencesInBackground } from "./api.js";
 import { renderProjects } from "./project-list.js";
 import { renderSessions } from "./session-list.js";
 import { toast } from "./shell.js";
 import { state } from "./state.js";
-import { openEditTaskDialog } from "./tasks.js";
 
 /** The fixed palette mirrors PROJECT_COLORS in src/types.ts. */
 export const PROJECT_COLORS = ["slate", "teal", "blue", "violet", "magenta", "amber", "green", "red", "orange", "yellow", "lime", "cyan", "indigo", "purple", "pink", "brown"];
@@ -52,21 +50,6 @@ export function sessionTranscriptName(sessionPath) {
   return sessionPath.replace(/\\/g, "/").split("/").at(-1);
 }
 
-/** A conversation listed with a taskId belongs to a board ticket; resolve it for the mark and the jump. */
-export function sessionTicketTask(session) {
-  return session.taskId ? state.tasks.find((task) => task.id === session.taskId) : undefined;
-}
-
-/** The mark itself: quiet, accent-coloured, and titled with the ticket it belongs to. */
-export function ticketBadge(task) {
-  const badge = document.createElement("em");
-  badge.className = "session-ticket-badge";
-  badge.setAttribute("data-testid", "session-ticket-badge");
-  badge.title = `Belongs to ticket: ${task.title}`;
-  badge.append(ticketGlyph("session-ticket-icon"), document.createTextNode("Ticket"));
-  return badge;
-}
-
 /** Shows that auto respond answers for this conversation, or stopped and why. */
 export function autoRespondBadge(autoRespond) {
   const badge = document.createElement("em");
@@ -76,22 +59,6 @@ export function autoRespondBadge(autoRespond) {
   badge.textContent = autoRespond.status === "stopped" ? "Auto stopped" : `Auto ${autoRespond.responses}${limit}`;
   badge.title = autoRespond.status === "stopped" ? `Auto respond stopped: ${autoRespond.stopReason || "stopped"}` : "Auto respond is answering for you in this conversation";
   return badge;
-}
-
-/** The quick jump: one tap from the conversations list into the ticket itself. */
-export function ticketRowButton(task) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "ghost icon-button row-action-button ticket-link-button";
-  button.setAttribute("data-testid", "session-ticket-button");
-  button.setAttribute("aria-label", `Open ticket ${task.title}`);
-  button.title = `Open ticket: ${task.title}`;
-  button.append(ticketGlyph("session-ticket-icon"));
-  button.addEventListener("click", (event) => {
-    event.stopPropagation();
-    openEditTaskDialog(task);
-  });
-  return button;
 }
 
 export function nestedSessionRows(sessions, shouldExpand = () => true) {

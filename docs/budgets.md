@@ -14,7 +14,7 @@ Spend is the ledger's API-equivalent price (see [usage-dashboard.md](usage-dashb
 
 ## What happens at the limit
 
-- A turn, goal turn, compaction, ticket run or internal review that would start is refused with the reason ("Budget reached: the daily limit of $20.00 for project X is used up…") and the time the period resets. Queued prompts stay queued.
+- A turn, goal turn, compaction or internal review that would start is refused with the reason ("Budget reached: the daily limit of $20.00 for project X is used up…") and the time the period resets. Queued prompts stay queued.
 - A turn already running is stopped within about a minute; the reason is recorded in the conversation.
 - A scheduled task whose run is refused is recorded as failed and stays enabled.
 - A warning shows at 80% (`GET /api/budgets/status`).

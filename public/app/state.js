@@ -4,8 +4,6 @@ import { DEFAULT_KEYMAP } from "../keymap.js";
 export const shared = {
   ownershipWait: null,
   ownershipTaking: false,
-  handoffWaitController: null,
-  handoffFinalizing: false,
   bootRevealTimer: null,
   workspaces: [],
 };
@@ -62,7 +60,6 @@ export const state = {
   renameSessionId: null,
   renameSessionEngine: "pi",
   newSessionDraft: null,
-  spinOffSourceTaskId: null,
   // The Joint Bob worktree a new conversation should run in; null runs it in the project folder.
   newSessionWorktreeId: null,
   worktrees: [],
@@ -86,8 +83,6 @@ export const state = {
   // Conversation paths whose sub-agent run lines are opened; folded away by default.
   expandedAgentRuns: new Set(),
   projectSyncTimer: null,
-  tasks: [],
-  editingTaskId: null,
   mappingProjectId: null,
   folderPickerPath: null,
   folderPickerParentPath: null,
@@ -141,10 +136,9 @@ export const state = {
   watchPingTimer: null,
   activeProjectId: null,
   activeSessionPath: null,
-  activeTaskId: null,
   conversationLock: null,
   conversationReadOnly: false,
-  // Why the open conversation is read-only ("doneTicket", "transcript", "runnerAccess"), and the machine it runs on.
+  // Why the open conversation is read-only ("transcript", "runnerAccess"), and the machine it runs on.
   conversationReadOnlyReason: null,
   conversationNodeName: null,
   scheduledTurn: false,
@@ -168,7 +162,6 @@ export const state = {
   availableThinkingLevels: [],
   claudeEffort: "default",
   attachments: [],
-  taskAttachments: [],
   drafts: new Map(),
   promptHistory: new Map(),
   historyIndex: -1,

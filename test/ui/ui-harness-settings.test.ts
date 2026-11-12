@@ -357,18 +357,6 @@ test("harness settings and model picker follow runtime metadata", { timeout: 120
   await page.locator("#modelDialog").evaluate((dialog: HTMLDialogElement) => dialog.close());
 
   await page.locator("#projectList .project-card").filter({ has: page.getByText("Internal Assistant", { exact: true }) }).click();
-  await page.getByTestId("projects-open-board-button").evaluate((button) => (button as HTMLButtonElement).click());
-  await page.getByTestId("task-create-button").click();
-  assert.deepEqual(await page.getByTestId("task-form-engine-select").locator("option").allTextContents(), ["Pi", "Claude", "Kiro"]);
-  await page.getByTestId("task-form-engine-select").selectOption("kiro");
-  const planningModelOptions = page.locator("#taskPlanningModelInput option");
-  assert.deepEqual(await planningModelOptions.allTextContents(), ["Use harness defaults", "Kiro default"]);
-  const inheritedModelValue = await planningModelOptions.first().getAttribute("value");
-  assert.match(inheritedModelValue!, /^kiro\|/);
-  const [engine, provider, modelId, effort] = inheritedModelValue!.split("|");
-  assert.deepEqual({ engine, provider, modelId, effort }, { engine: "kiro", provider: "", modelId: "", effort: "default" });
-  await page.locator("#taskDialog").evaluate((dialog: HTMLDialogElement) => dialog.close());
-
   await page.evaluate(async () => {
     const { state } = await import("/app/state.js");
     await (await import("/app/cron.js")).openScheduledTasks(state.activeProjectId);
@@ -486,11 +474,6 @@ test("listing-only harness metadata does not offer execution or break settings",
 
   await page.locator("#projectList .project-card").filter({ has: page.getByText("Internal Assistant", { exact: true }) }).click();
   assert.equal(await page.locator("#chatHarnessSelect option[value=archive]").count(), 0);
-
-  await page.getByTestId("projects-open-board-button").evaluate((button) => (button as HTMLButtonElement).click());
-  await page.getByTestId("task-create-button").click();
-  assert.equal(await page.getByTestId("task-form-engine-select").locator("option[value=archive]").count(), 0);
-  await page.locator("#taskDialog").evaluate((dialog: HTMLDialogElement) => dialog.close());
 
   await page.evaluate(async () => {
     const { state } = await import("/app/state.js");

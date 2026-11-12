@@ -1,6 +1,6 @@
 /* Paper · Editorial — the desktop workspace (wider than 700 px; the phone, body.focus-ui, keeps its layout).
    Left column (brand and New, search, places, then the three groups or, in Projects, one list at a time: the
-   projects, then one project's conversations; Settings and the person), the middle (the conversation, the board, the control center or
+   projects, then one project's conversations; Settings and the person), the middle (the conversation, the control center or
    a group's full list) and the conversation's details column. Spec: "Layout › Desktop workspace" in
    docs/superpowers/specs/2026-11-10-ui-redo-paper-design.md; mock: mocks/ui-redo, "Desktop · A conversation".
    Markup: public/index.html (#workspaceSide, #workspaceGroups, #workspaceFoot, #workspaceGroupPage, the
@@ -60,7 +60,7 @@
   body:not(.focus-ui) .ws-groups { grid-area: side-body; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; padding: 0 0 0 var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
   body:not(.focus-ui) .ws-foot { grid-area: side-foot; display: flex; align-items: center; gap: 2px; min-width: 0; padding: 8px 0 0 var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
 
-  body:not(.focus-ui) :is(#chatPanel, #boardPanel, #controlCenterPanel, #workspaceGroupPage) { grid-area: main; min-width: 0; min-height: 0; height: auto; }
+  body:not(.focus-ui) :is(#chatPanel, #controlCenterPanel, #workspaceGroupPage) { grid-area: main; min-width: 0; min-height: 0; height: auto; }
 
   /* What the left column's body holds: the groups (Inbox, the default) or the projects (Projects). In Projects the
      chosen project's conversations have a column of their own beside it, the height of the window. Nothing in either
@@ -74,18 +74,18 @@
   body:not(.focus-ui).ws-column-projects:is(:not(.ws-picker), .chats-collapsed) .shell > #chatsPanel { display: flex; }
   body:not(.focus-ui) :is(#sessionList, #projectList) .usage-cost { display: none; }
 
-  /* The middle holds one thing: the conversation, the board, the control center, or a group's full list. */
+  /* The middle holds one thing: the conversation, the control center, or a group's full list. */
   body:not(.focus-ui) #chatPanel { display: grid; }
-  body:not(.focus-ui) #boardPanel, body:not(.focus-ui) #controlCenterPanel { display: none; }
-  body:not(.focus-ui).view-board #boardPanel, body:not(.focus-ui).view-control #controlCenterPanel { display: flex; }
-  body:not(.focus-ui):is(.view-board, .view-control) #chatPanel { display: none; }
-  body:not(.focus-ui).ws-page-open :is(#chatPanel, #boardPanel, #controlCenterPanel) { display: none; }
+  body:not(.focus-ui) #controlCenterPanel { display: none; }
+  body:not(.focus-ui).view-control #controlCenterPanel { display: flex; }
+  body:not(.focus-ui).view-control #chatPanel { display: none; }
+  body:not(.focus-ui).ws-page-open :is(#chatPanel, #controlCenterPanel) { display: none; }
   body:not(.focus-ui).ws-page-open #workspaceGroupPage:not([hidden]) { display: flex; }
   /* A conversation opened from Bob's board floats over it, as it always has. */
   body:not(.focus-ui).view-control.control-popup .shell > #chatPanel { display: grid; position: fixed; inset: 48px max(16px, 5vw) 16px; height: auto; z-index: 40; }
 
   /* Cards on sand: the middle and the details are cream cards; the left column sits on the page. */
-  body:not(.focus-ui) :is(#boardPanel, #controlCenterPanel, #workspaceGroupPage) {
+  body:not(.focus-ui) :is(#controlCenterPanel, #workspaceGroupPage) {
     border: 0; border-radius: var(--ws-card-radius); background: var(--panel); box-shadow: var(--shadow-soft); overflow: hidden;
   }
   /* The install card sat over the message box. On the desktop it is a small card at the foot of the left column,
@@ -97,18 +97,14 @@
   body:not(.focus-ui) .install-banner-copy { flex: 1 1 0; }
   body:not(.focus-ui) .install-banner-actions { flex: 1 0 100%; justify-content: flex-end; margin-left: 0; }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .install-banner { width: 300px; }
-  /* The board's five columns share the card and keep its margin; a narrow window scrolls them without losing it. */
-  body:not(.focus-ui) #boardPanel .board-columns { gap: 12px; padding: 14px 18px 18px; scroll-padding-inline: 18px; }
-  body:not(.focus-ui) #boardPanel .board-column { min-width: 176px; border-color: transparent; background: var(--field); }
-  body:not(.focus-ui) #boardPanel > .panel-bar { padding-inline: 22px; border-bottom-color: transparent; }
   /* Dark themes draw a hairline instead of a shadow. */
-  :root[data-theme="dark"] body:not(.focus-ui) :is(#boardPanel, #controlCenterPanel, #workspaceGroupPage),
+  :root[data-theme="dark"] body:not(.focus-ui) :is(#controlCenterPanel, #workspaceGroupPage),
   :root[data-theme="dark"] body:not(.focus-ui) #chatPanel::before,
   :root[data-theme="dark"] body:not(.focus-ui) #chatPanel > .messages-wrap > #activityPanel { box-shadow: 0 0 0 1px var(--line); }
   /* The columns stay put, so the phone's slide-in for each screen is not used; its fill would also give every header
      a stacking context and put the ⋯ menu under the messages. */
-  body:not(.focus-ui) :is(#chatPanel, #projectsPanel, #chatsPanel, #boardPanel, #controlCenterPanel),
-  body:not(.focus-ui) :is(#chatPanel, #projectsPanel, #chatsPanel, #boardPanel) :is(.panel-bar, .chat-topbar, .panel-scroll, .board-columns, .messages) { animation: none; }
+  body:not(.focus-ui) :is(#chatPanel, #projectsPanel, #chatsPanel, #controlCenterPanel),
+  body:not(.focus-ui) :is(#chatPanel, #projectsPanel, #chatsPanel) :is(.panel-bar, .chat-topbar, .panel-scroll, .messages) { animation: none; }
 
   /* ---------- left column: brand, New, search, places ---------- */
   .ws-brand { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 2px 2px 4px; }
@@ -355,7 +351,7 @@
   /* A row is one line of title and one quiet line under it. The row holds the highlight. Its pin and ⋮ lie over its
      end and show when the pointer or the keyboard is on the row (the title then ends before them); a pinned row keeps
      its pin in sight, and a touch screen keeps ⋮, which also pins. --row-lead is the room a row's own mark takes
-     there: the count of its sub-agent conversations, its ticket. */
+     there: the count of its sub-agent conversations. */
   body:not(.focus-ui) #projectList .list-row,
   body:not(.focus-ui) #sessionList .list-row-main { --row-lead: 4px; --row-end: calc(var(--row-lead) + 2px); position: relative; display: flex; align-items: center; min-width: 0; border-radius: 12px; }
   body:not(.focus-ui) #sessionList .list-row:is(.has-children, .has-ticket) > .list-row-main { --row-lead: 36px; }
@@ -430,8 +426,6 @@
   }
   /* A conversation's sub-agent conversations open from the count at the end of its row; it never moves. */
   body:not(.focus-ui) #sessionList .session-children-toggle { right: 4px; width: 30px; min-width: 30px; padding: 0; opacity: 1; color: var(--muted); font: 600 10.5px/1 var(--mono); }
-  body:not(.focus-ui) #sessionList .ticket-link-button { right: 4px; opacity: 1; }
-  body:not(.focus-ui) #sessionList .list-row.has-children .ticket-link-button { right: 36px; }
   body:not(.focus-ui) #sessionList .list-row[data-session-depth="1"] .session-card { min-height: 0; }
   /* Its sub-agent steps are a quiet line at the end of the row's second line, so every folded row has the same
      height; opened, the steps list under the row. */
@@ -440,7 +434,7 @@
     position: absolute; right: 8px; bottom: 7px; z-index: 1; max-width: 54%; height: 18px; min-height: 0; margin: 0; padding: 0 2px; overflow: hidden; border: 0; background: transparent;
     font-size: 11px; line-height: 18px; text-align: right; text-overflow: ellipsis; white-space: nowrap;
   }
-  body:not(.focus-ui) #sessionList .list-row:is(.has-children, .has-ticket) > .agent-run-toggle[aria-expanded="false"] { right: 40px; }
+  body:not(.focus-ui) #sessionList .list-row.has-children > .agent-run-toggle[aria-expanded="false"] { right: 40px; }
   body:not(.focus-ui) #sessionList .agent-run-toggle[aria-expanded="true"] { margin-left: 10px; }
   body:not(.focus-ui) #sessionList .agent-run-list { margin-left: 10px; }
   /* Notes: the queue's explanation is one line until the pointer or the focus is on the queue, so the notes keep the column. */

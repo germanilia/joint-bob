@@ -7,7 +7,7 @@ only:
 
 - `conversationRetentionDays`, the number of days without activity after which a
   conversation is deleted. It defaults to 40.
-- `conversationRetentionScope`, six boxes that say how far the hourly check reaches.
+- `conversationRetentionScope`, five boxes that say how far the hourly check reaches.
   All six are off until the admin ticks them.
 - `conversationBackup`, where a conversation is backed up before the check deletes it,
   and for how many days the backup is kept. Off until the admin chooses a place. See
@@ -25,7 +25,7 @@ follows the same rule for its parts.
   more that schedules made. Anything older than that is never looked at.
 - A conversation that never got a message, one hour after it was opened.
 
-Kept in any case: pinned conversations, ticket conversations, conversations a schedule
+Kept in any case: pinned conversations, conversations a schedule
 made, conversations that another node owns, and anything that is open, running or has a
 prompt waiting.
 
@@ -36,7 +36,6 @@ prompt waiting.
 | Also delete older conversations that the list no longer shows | `full` | Every conversation on record in a project is checked, wherever its transcript lies. |
 | …and old transcripts that have no conversation record | `includeUnrecorded` | Transcripts in a current project's folders that no record points to. Needs the first box. |
 | …and conversations started by schedules and webhooks | `includeScheduled` | The conversations a scheduled task or a webhook made, one per run. Needs the first box. |
-| …and conversations of finished tickets | `includeTickets` | Conversations of tickets that are done or gone. Needs the first box. |
 | Remove files left behind by conversations that were already deleted | `leftovers` | See "Files left behind" below. |
 | Remove Joint Bob's own background-run transcripts after 7 days | `backgroundRuns` | Transcripts of Joint Bob's own work: summaries, titles, checks, reviews. They are never listed. |
 
@@ -52,7 +51,6 @@ was last written on this node.
 - A conversation another node owns. Only the owner deletes; see "Other nodes".
 - An assistant's conversation, its topics and its team conversations.
 - The conversation an existing scheduled task or webhook writes into every time.
-- The conversation of a ticket that is not finished.
 - A transcript outside every project's folders.
 - Kiro's own sessions. Joint Bob only ever touches its own folder under Kiro's.
 - A background run that a side chat still resumes.
@@ -163,7 +161,7 @@ removed is tried again within the hour. If a step fails, the delete itself still
 the conversation is gone from the list and the other nodes are told.
 
 Rows that are kept: the tombstone, the usage ledger, quality records, the audit log,
-pins, browser profiles, secrets that belong to a project or workspace, tickets,
+pins, browser profiles, secrets that belong to a project or workspace,
 schedules and their run history, and quick notes.
 
 ## Other nodes

@@ -43,7 +43,7 @@ async function session(node: StartedNode): Promise<Record<string, string>> {
   return headers;
 }
 
-test("a project and its tickets are created on a machine that shares with nobody", { timeout: 120_000 }, async () => {
+test("a project is created on a machine that shares with nobody", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-unshared-project-"));
   let node: StartedNode | undefined;
   try {
@@ -64,13 +64,6 @@ test("a project and its tickets are created on a machine that shares with nobody
     assert.ok(listedProject, "the new project is listed");
     assert.deepEqual(listedProject.syncStatus, { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "This project is not shared with another machine", engine: "none" });
 
-    const ticket = await fetch(`${node.baseUrl}/api/projects/${project.id}/tasks`, { method: "POST", headers, body: JSON.stringify({ title: "Works offline", description: "" }) });
-    assert.equal(ticket.status, 201, node.output());
-    const task = (await ticket.json() as { task: { id: string; worktreePath: string | null } }).task;
-    assert.equal(task.worktreePath, path.join(homePath, "tickets", project.id, task.id));
-    await access(task.worktreePath);
-    const tasks = await (await fetch(`${node.baseUrl}/api/projects/${project.id}/tasks`, { headers })).json() as { tasks: Array<{ id: string }> };
-    assert.ok(tasks.tasks.some((candidate) => candidate.id === task.id));
     // Nothing to send the files to: a rescan says so instead of failing.
     const rescan = await fetch(`${node.baseUrl}/api/projects/${project.id}/sync/rescan`, { method: "POST", headers, body: "{}" });
     assert.equal(rescan.status, 409, node.output());

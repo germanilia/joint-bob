@@ -8,7 +8,6 @@ import { ABSENT_VERSION, INSTRUCTIONS_LIMIT, InstructionsConflict, instructionsV
 import { projectInstructionFile, projectInstructionSources } from "../../project-folder-resources.js";
 import { getProjectWorktree } from "../../project-worktrees.js";
 import { getProject } from "../../store.js";
-import { listTasks } from "../../tasks.js";
 import { sendError } from "../http-auth.js";
 import { assertProjectEditable } from "../projects.js";
 import { instructionsChanged } from "../realtime.js";
@@ -19,7 +18,7 @@ import { ProjectFileError, resolutionRoot } from "./project-files.js";
 // The file editor sends the conversation it was opened from; instructions do not need one.
 const updateSchema = z.object({ content: z.string(), version: z.string().min(1).max(100), sessionId: z.string().max(300).optional() }).strict();
 type Update = z.infer<typeof updateSchema>;
-type Where = { taskId?: string; worktreeId?: string };
+type Where = { worktreeId?: string };
 
 function sendInstructionsError(response: Response, error: unknown): boolean {
   if (error instanceof InstructionsConflict) sendError(response, 409, error.message);
@@ -29,7 +28,7 @@ function sendInstructionsError(response: Response, error: unknown): boolean {
   return true;
 }
 
-/** The folder the conversation's agent runs in: a worktree, a ticket workspace or the project itself. */
+/** The folder the conversation's agent runs in: a worktree or the project itself. */
 async function instructionsRoot(projectId: string, where: Where) {
   const project = await getProject(projectId);
   if (!project) throw new ProjectFileError(404, "Project not found");
@@ -38,7 +37,7 @@ async function instructionsRoot(projectId: string, where: Where) {
     if (!worktree) throw new ProjectFileError(404, "Worktree is not available on this node");
     return { project, root: await realpath(worktree.path) };
   }
-  return { project, root: await resolutionRoot(project.id, project.path, where.taskId) };
+  return { project, root: await resolutionRoot(project.id, project.path) };
 }
 
 async function projectInstructions(projectId: string, where: Where) {
@@ -70,7 +69,6 @@ async function saveProjectInstructions(projectId: string, where: Where, update: 
 
 function where(request: Request): Where {
   return {
-    ...(typeof request.query.taskId === "string" && request.query.taskId ? { taskId: request.query.taskId } : {}),
     ...(typeof request.query.worktreeId === "string" && request.query.worktreeId ? { worktreeId: request.query.worktreeId } : {}),
   };
 }
@@ -94,7 +92,7 @@ async function sendProjectInstructions(response: Response, projectId: string, lo
 }
 
 for (const method of ["get", "put"] as const) {
-  // The node the conversation runs on holds its worktree or ticket workspace; its project folder syncs.
+  // The node the conversation runs on holds its worktree; its project folder syncs.
   app[method]("/api/cluster/project-instructions-content", async (request, response, next) => {
     try {
       if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
@@ -105,8 +103,7 @@ for (const method of ["get", "put"] as const) {
   app[method]("/api/projects/:projectId/instructions/content", async (request, response, next) => {
     try {
       const location = where(request);
-      let nodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
-      if (location.taskId) nodeId = (await listTasks(request.params.projectId)).find((task) => task.id === location.taskId)?.currentNodeId ?? nodeId;
+      const nodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
       const update = method === "put" ? updateSchema.parse(request.body) : undefined;
       if (nodeId && nodeId !== (await getClusterNode()).id) {
         const peer = await getRuntimePeer(nodeId);

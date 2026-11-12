@@ -27,16 +27,14 @@ import { conversationBelongsElsewhere, getConversationRecord } from "../../conve
 import { addProject, getProject, listProjects, listWorkspaces, removeProject, renameProject, updateProjectColor, updateProjectMacPath, WorkspaceError } from "../../store.js";
 import { conversationFilesStatus, ProjectFilesUnavailableError, ProjectNotSynchronizedError, rescanProjectFiles } from "../../file-sync/facade.js";
 import { warnOnChange } from "../quiet-log.js";
-import { listTasks, unmergedWorkspaceBlocksClose } from "../../tasks.js";
 import { sessionWatcher } from "../chat.js";
-import { clusterPeerMayAccessProject, conversationBelongsToDoneTask, mappedPathInsideHome, peerMayOpenTerminal, peerMayRunHere } from "../cluster-helpers.js";
+import { clusterPeerMayAccessProject, mappedPathInsideHome, peerMayOpenTerminal, peerMayRunHere } from "../cluster-helpers.js";
 import { sendError } from "../http-auth.js";
 import { assertProjectEditable, projectsWithSharedNames, projectView, relocateProjectWorkspace } from "../projects.js";
 import { broadcastToProject, projectAudience } from "../realtime.js";
 import { projectListQuerySchema, projectLockSchema, projectPathMappingSchema, projectSchema, projectUpdateSchema, registeredHarnessIdSchema, sessionClassificationSchema, sessionColorSchema, sessionDoneSchema, sessionTitleSchema } from "../schemas.js";
 import { app } from "../state.js";
 import { peerSnapshot } from "../peer-snapshots.js";
-import { projectHasMergeReservation } from "../task-runs.js";
 
 app.get("/api/projects", async (request, response, next) => {
   try {
@@ -100,12 +98,6 @@ app.post("/api/projects/:projectId/sync/rescan", async (request, response, next)
     next(error);
   }
 });
-
-/** A refusal shown to the person as it is: the final error handler sends its status and message. */
-class ProjectRequestError extends Error {
-  readonly expose = true;
-  constructor(readonly status: number, message: string) { super(message); }
-}
 
 /** Creates a project as the acting account. The Projects form and Bob's chat both come here. */
 export async function createProjectAsActor(raw: unknown) {
@@ -267,7 +259,6 @@ export async function renameConversationAsActor(projectId: string, raw: unknown)
   if (!project) throw new NotFoundError("Project not found");
   const payload = sessionTitleSchema.parse(raw);
   if (await conversationOfAnotherProject(project, payload.engine, payload.sessionId)) throw new NotFoundError("Conversation not found");
-  if (await conversationBelongsToDoneTask(project.id, payload.engine, payload.sessionId)) throw new ProjectRequestError(409, "Done ticket conversations are read-only");
   // No conversation-list lookup: a conversation named at creation has no
   // transcript on disk yet, and the list is where that name matters most.
   await setSessionTitle(payload.sessionId, payload.title);
@@ -292,10 +283,6 @@ app.put("/api/projects/:projectId/sessions/classification", async (request, resp
     }
     const payload = sessionClassificationSchema.parse(request.body);
     if (await conversationOfAnotherProject(project, payload.engine, payload.sessionId)) { sendError(response, 404, "Conversation not found"); return; }
-    if (await conversationBelongsToDoneTask(project.id, payload.engine, payload.sessionId)) {
-      sendError(response, 409, "Done ticket conversations are read-only");
-      return;
-    }
     // Like titles, classification can be saved before the first transcript exists.
     await setSessionClassification(payload.sessionId, payload.classification);
     broadcastToProject(project.id, { type: "sessionsChanged" });
@@ -352,10 +339,6 @@ app.put("/api/projects/:projectId/sessions/color", async (request, response, nex
     }
     const payload = sessionColorSchema.parse(request.body);
     if (await conversationOfAnotherProject(project, payload.engine, payload.sessionId)) { sendError(response, 404, "Conversation not found"); return; }
-    if (await conversationBelongsToDoneTask(project.id, payload.engine, payload.sessionId)) {
-      sendError(response, 409, "Done ticket conversations are read-only");
-      return;
-    }
     await setSessionColor(payload.sessionId, payload.color);
     broadcastToProject(project.id, { type: "sessionsChanged" });
     response.json({ ok: true });
@@ -364,26 +347,13 @@ app.put("/api/projects/:projectId/sessions/color", async (request, response, nex
   }
 });
 
-const DELETE_WAITS = ["Settle task handoffs before deleting project", "Wait for task handoff settlement before deleting project", "Wait for task agents to finish before deleting project"];
-
 /** Removes a project from Joint Bob, as the acting account. Its folder stays on disk. */
 export async function deleteProjectAsActor(projectId: string): Promise<void> {
   const project = await getProject(projectId);
   if (!project) throw new NotFoundError("Project not found");
   await assertProjectEditable(project);
-  const tasks = await listTasks(project.id);
-  if (tasks.some((task) => task.mergeTx === "open")) throw new ProjectRequestError(409, "Wait for this project's ticket merge transaction to finish before deleting the project");
-  if (projectHasMergeReservation(project.id)) throw new ProjectRequestError(409, "A ticket merge reservation is active for this project");
-  if (tasks.some((task) => task.worktreePath && !task.worktreeBranch && unmergedWorkspaceBlocksClose(task))) {
-    throw new ProjectRequestError(409, "Resolve this project's ticket merges (or discard them) before deleting the project");
-  }
   const tellAudience = await projectAudience(project.id);
-  try {
-    await removeProject(project.id);
-  } catch (error) {
-    if (error instanceof Error && DELETE_WAITS.includes(error.message)) throw new ProjectRequestError(409, error.message);
-    throw error;
-  }
+  await removeProject(project.id);
   revokeAgentCapabilities(project.id);
   sessionWatcher.removeProject(project.id);
   tellAudience({ type: "projectsChanged" });

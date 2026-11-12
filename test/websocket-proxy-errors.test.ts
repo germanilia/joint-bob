@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
 import { connect, type Socket } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -8,7 +8,7 @@ import path from "node:path";
 import test from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 import { signedNodeRequest } from "./signed-node-request.js";
-import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "./dev-nodes.js";
+import { pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode } from "./dev-nodes.js";
 import { openNodeDatabase } from "../src/node-database.js";
 
 type UpgradeMode = "reject" | "forward" | "stub";
@@ -81,12 +81,6 @@ function routePeerThrough(node: SeededNode, peer: SeededNode, url: string): void
   } finally { db.close(); }
 }
 
-/** Creates a ticket the way a node does, owned by that node. */
-function createTaskOn(environment: DevEnvironment, node: SeededNode, project: SeededNode["projects"][number], title: string): { id: string } {
-  const script = `import { createTask } from "./src/tasks.ts"; process.stdout.write(JSON.stringify(await createTask(${JSON.stringify(project.id)}, ${JSON.stringify(project.path)}, ${JSON.stringify(title)}, "", "backlog", "pi", false, false, {}))); process.exit(0);`;
-  return JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { env: { ...process.env, HOME: environment.home, JOINT_BOB_DATA_DIR: node.dataDir }, encoding: "utf8" })) as { id: string };
-}
-
 function signedEnvelope(authorization: string | undefined): { senderNodeId: string; recipientNodeId: string; target: string } {
   assert.match(authorization ?? "", /^JointBobV2 /, "peer sockets must carry a signed request, not a bearer token");
   return (JSON.parse(Buffer.from(authorization!.slice("JointBobV2 ".length), "base64url").toString("utf8")) as { envelope: { senderNodeId: string; recipientNodeId: string; target: string } }).envelope;
@@ -100,7 +94,7 @@ function firstMessage(socket: WebSocket, label: string): Promise<{ payload: unkn
   });
 }
 
-test("execution-node WebSockets close on rejection and route task sessions to their owner", { timeout: 150_000 }, async () => {
+test("execution-node WebSockets close on rejection and route sessions to their owner", { timeout: 150_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-proxy-error-"));
   const servers: ChildProcess[] = [];
   let proxy: PeerProxy | undefined;
@@ -149,30 +143,6 @@ test("execution-node WebSockets close on rejection and route task sessions to th
       if (Date.now() > deadline) throw new Error(`A never learned B owns ${ownedId}: ${response.status} ${JSON.stringify(ownership)}`);
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
-
-    // A ticket owned by B: a socket naming its conversation path goes to B, not A.
-    const created = { body: { task: createTaskOn(environment, b, project, "Owner task") } };
-    const taskSessionPath = `claude:${path.join(root, "owner-worktree", "session.jsonl")}`;
-    for (;;) {
-      const listed = await api<{ tasks: Array<{ id: string; currentNodeId: string }> }>(a, sessionA, "GET", `/projects/${project.id}/tasks`);
-      if (listed.body.tasks.some((task) => task.id === created.body.task.id && task.currentNodeId === b.nodeId)) break;
-      if (Date.now() > deadline + 30_000) throw new Error("A never received B's ticket");
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    const db = openNodeDatabase(path.join(a.dataDir, "node.db"));
-    try {
-      db.exec("PRAGMA busy_timeout=5000");
-      db.prepare("UPDATE tasks SET session_path = ? WHERE id = ?").run(taskSessionPath, created.body.task.id);
-    } finally { db.close(); }
-    proxy.mode = "stub";
-    const taskUrl = wsUrl(`projectId=${project.id}`);
-    taskUrl.searchParams.set("sessionPath", taskSessionPath);
-    socket = open(taskUrl);
-    assert.deepEqual(await firstMessage(socket, "ticket"), { payload: { type: "watchReady" }, isBinary: false });
-    const routedTaskUrl = new URL(proxy.upgrades.at(-1)!.url, "http://upstream.test");
-    assert.equal(routedTaskUrl.searchParams.get("taskId"), created.body.task.id);
-    assert.equal(routedTaskUrl.searchParams.get("sessionPath"), taskSessionPath);
-    socket.terminate();
 
     socket = open(wsUrl(`projectId=${project.id}&sessionPath=draft:pi:${ownedId}&sessionId=${ownedId}`));
     await firstMessage(socket, "owned draft");

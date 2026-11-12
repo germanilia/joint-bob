@@ -34,11 +34,11 @@ test("update recovery resumes as the turn's account, on that account's pool, nam
     session: { id: "session", settings: () => ({ provider: "claude", modelId: "sonnet", reasoning: "medium" }), configure: async () => {},
       preflight: async () => assert.fail("a pool attempt runs preflight as its member"), prompt: async () => assert.fail("a pool turn runs through the pool") } };
   const record = { id: "recovery", kind: "chat", engine: "claude", projectId: "project", cwd: "/synthetic", sessionId: "session", sessionPath: "claude:/synthetic/session.jsonl",
-    taskId: null, phase: null, queuedPrompts: ["queued while it ran"], model: "sonnet", effort: "medium", settings: { provider: "claude", modelId: "sonnet", reasoning: "medium" },
+    queuedPrompts: ["queued while it ran"], model: "sonnet", effort: "medium", settings: { provider: "claude", modelId: "sonnet", reasoning: "medium" },
     accountId: "member", createdAt: "2026-11-04T23:03:13.944Z" };
   let actor: any;
   const poolLookups: any[] = [], prompts: string[] = [], announced: any[] = [], completed: string[] = [];
-  const exports = load("server/task-runs.ts", {
+  const exports = load("server/update-recovery-runs.ts", {
     getClusterNode: async () => ({ id: "local" }), claimConversationLocally: async () => {},
     getConversationRecord: async () => ({ conversationId: "conversation" }), getProject: async () => ({ id: "project", type: "personal" }),
     openHarnessSession: async () => shared, broadcastToProject: () => {}, sendHarnessStatus: () => {},

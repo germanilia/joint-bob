@@ -39,7 +39,7 @@ test("a switched conversation with a started segment is not empty", () => {
   assert.equal(retentionReason(face, context()), undefined);
 });
 
-test("pinned, ticket, scheduled, read-only and peer-owned conversations are never deleted", () => {
+test("pinned, scheduled, read-only and peer-owned conversations are never deleted", () => {
   const old = { updatedAt: ago(100 * DAY) };
   const pinned = session(old);
   assert.equal(retentionReason(pinned, context({ pinned: new Set([`claude:${pinned.id}`]) })), undefined);
@@ -48,7 +48,6 @@ test("pinned, ticket, scheduled, read-only and peer-owned conversations are neve
   const segmentId = randomUUID();
   const switched = session({ ...old, segments: [{ engine: "pi", sessionId: segmentId, path: "pi:/tmp/s.jsonl" }] });
   assert.equal(retentionReason(switched, context({ pinned: new Set([`pi:${segmentId}`]) })), undefined);
-  assert.equal(retentionReason(session({ ...old, taskId: "t" }), context()), undefined);
   assert.equal(retentionReason(session({ ...old, cronTaskId: "c" }), context()), undefined);
   assert.equal(retentionReason(session({ ...old, readOnly: true }), context()), undefined);
   assert.equal(retentionReason(session(old), context({ ownedLocally: () => false })), undefined);

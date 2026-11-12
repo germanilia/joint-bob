@@ -1,7 +1,6 @@
 import { projectAdditionalPaths } from "./server/session-scope.js";
 import { listHarnessSessions } from "./harnesses.js";
 import { listProjects } from "./store.js";
-import { listTasks } from "./tasks.js";
 import type { HarnessId } from "./types.js";
 
 /**
@@ -50,10 +49,9 @@ export function fuzzySearchScore(text: string, query: string): number | null {
 const byNewest = (left: SearchResult, right: SearchResult) => (right.updatedAt || "").localeCompare(left.updatedAt || "");
 
 async function conversationsIn(project: { id: string; name: string; path: string }): Promise<SearchResult[]> {
-  const tasks = await listTasks(project.id);
   const sessions = await listHarnessSessions({
     ...project,
-    additionalPaths: await projectAdditionalPaths(project.id, tasks),
+    additionalPaths: await projectAdditionalPaths(project.id),
   } as Parameters<typeof listHarnessSessions>[0]);
   return sessions.map((session) => ({
     kind: "conversation" as const,

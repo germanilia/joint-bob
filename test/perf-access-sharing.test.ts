@@ -202,7 +202,7 @@ test("replicationPeers is answered once between writes, follows every change, an
 });
 
 function task(projectId: string, originNodeId = A): ReplicationEvent {
-  return { id: "e", originNodeId, entityType: "task", entityKey: "k", operation: "upsert", payload: { projectId }, createdAt: "2026-01-01T00:00:00.000Z" };
+  return { id: "e", originNodeId, entityType: "project.lock", entityKey: "k", operation: "upsert", payload: { projectId }, createdAt: "2026-01-01T00:00:00.000Z" };
 }
 
 test("mayReplicateEvent asks nothing for a second event of the same project and follows sharing and blocks", (t) => {

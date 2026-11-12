@@ -7,13 +7,11 @@ import { machineRoutes } from "./state.js";
 import { isTrustedTwin } from "../cluster-sharing-policy.js";
 import type { DatabaseSync } from "node:sqlite";
 import { ensureConversationRecordSchema } from "../conversation-records.js";
-import { getTaskHandoff } from "../tasks.js";
 import { cronStore } from "../cron.js";
 import { mayShareProject, sharedProjectIds } from "./sharing-files.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { replicationPeers } from "./replication-v2.js";
 import { fetchPeer } from "./peer-availability.js";
-import { noteHandoffFiles } from "../file-sync/facade.js";
 
 const runtimeSockets=new Map<WebSocket,{peer:string;projectId:string}>();
 export function trackRuntimeSocket(socket:WebSocket,peer:string,projectId:string):void{
@@ -70,7 +68,7 @@ function sessionShared(db:DatabaseSync,local:string,peer:string,engine:unknown,s
  return rows.length===1&&mayShareProject(db,local,peer,rows[0].project_id);
 }
 async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:string):Promise<boolean>{
- const body=request.body as {projectId?:unknown;handoffId?:unknown;id?:unknown;input?:{projectId?:unknown};record?:{engine?:unknown;sessionId?:unknown};leases?:Array<{engine:unknown;sessionId:unknown}>}|undefined;
+ const body=request.body as {projectId?:unknown;id?:unknown;input?:{projectId?:unknown};record?:{engine?:unknown;sessionId?:unknown};leases?:Array<{engine:unknown;sessionId:unknown}>}|undefined;
  if(request.path.startsWith('/browser/'))return request.path==='/browser/config'?isTrustedTwin(db,local,peer):true;
  if(request.path==='/background-tasks')return true;
  // A press of Bob's button comes only from the person's own machines; the route checks the person and the message.
@@ -81,12 +79,6 @@ async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:
  if(request.path==='/sessions/runtime-snapshot')return Array.isArray(body?.leases)&&body.leases.every((lease:{engine:unknown;sessionId:unknown})=>sessionShared(db,local,peer,lease.engine,lease.sessionId));
  if(request.path==='/sessions/ownership')return sessionShared(db,local,peer,request.query.engine,request.query.sessionId);
  if(request.path==='/sessions/ownership/apply')return sessionShared(db,local,peer,body?.record?.engine,body?.record?.sessionId);
- if(['/tasks/status','/tasks/commit','/tasks/settle','/tasks/abort'].includes(request.path)){
-  if(typeof body?.handoffId!=='string')return false;
-  // An unknown handoff exposes nothing: its handler answers 404 or records the refusal
-  // that fences a late prepare, so the source can settle it.
-  const handoff=await getTaskHandoff(body.handoffId);return !handoff||mayShareProject(db,local,peer,handoff.projectId);
- }
  if(request.path==='/cron'){
   // Task commands name the project in their input, or only by task ID. Both must be shared.
   const stored=typeof body?.id==='string'?cronStore().get(body.id):null;
@@ -100,13 +92,9 @@ export function dispatchSignedRuntime(request:Request,response:Response,next:Nex
  const prefix='/api/cluster/v2/runtime/';
  if(!request.path.startsWith(prefix)){next();return;}
  const suffix=request.path.slice(prefix.length),target='/cluster/'+suffix;
- if(!/^(tasks\/|sessions\/|browser\/|git\/|projects\/presence$|project-file|project-files$|cron$|quick-notes\/prepare$|background-tasks$|control-center\/(?:bob\/(?:action|reply|send)|live|summarize)$|resources\/(?:inventory|manage-inventory|activation(?:\/(?:item|bulk))?)$)/.test(suffix)||!machineRoutes.has(`${request.method} ${target}`)){
+ if(!/^(sessions\/|browser\/|git\/|projects\/presence$|project-file|project-files$|cron$|quick-notes\/prepare$|background-tasks$|control-center\/(?:bob\/(?:action|reply|send)|live|summarize)$|resources\/(?:inventory|manage-inventory|activation(?:\/(?:item|bulk))?)$)/.test(suffix)||!machineRoutes.has(`${request.method} ${target}`)){
   response.status(404).json({error:'Unsupported signed runtime route'});return;
  }
- // A handoff source says how far its files reached (design §6.5); the handlers' schemas drop the part, so it is taken here,
- // after twinRuntimeGuard checked the project is shared with the sender. Old sources send nothing and nothing changes.
- const body=request.body as {projectId?:unknown;fileSync?:unknown}|undefined;
- if((suffix==='tasks/eligibility'||suffix==='tasks/prepare')&&body?.fileSync!==undefined&&typeof response.locals.machineNodeId==='string')noteHandoffFiles(response.locals.machineNodeId,body.projectId,body.fileSync);
  request.url=request.url.replace(prefix,'/api/cluster/');next();
 }
 

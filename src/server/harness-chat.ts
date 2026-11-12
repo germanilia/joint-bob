@@ -50,9 +50,7 @@ import { queuedAttachments } from "../queued-attachments.js";
 import { describeImage } from "../attachment-digest.js";
 import { listTurnFailures, recordTurnFailure, withTurnFailures } from "../turn-failures.js";
 import type { HarnessId, ProjectRecord, SessionSummary } from "../types.js";
-import { listTasks, updateTask } from "../tasks.js";
 import { persistTaskAttachments, promptTextWithAttachments } from "./chat.js";
-import { conversationBelongsToDoneTask } from "./cluster-helpers.js";
 import { conversationTranscriptPayload, scheduledReportMessages } from "../conversation-segments.js";
 import { isScheduledPromptText } from "../scheduled-prompt.js";
 import { isSilentWebhookRequest, silentScheduledReview } from "./scheduled-review.js";
@@ -72,22 +70,22 @@ export interface HarnessChatConnection {
   automationProfile?: QueuedPrompt["automationProfile"];
   /** Run-denied peers may read stored summaries but cannot start a summary agent. */
   peerReadOnly?: boolean;
-  socket: WebSocket; project: ProjectRecord; taskId: string | null; cwd: string; engine: HarnessId;
+  socket: WebSocket; project: ProjectRecord; cwd: string; engine: HarnessId;
   shared: SharedHarnessSession; handoffContext: string | null; accountIds: string[]; readOnly: boolean; conversationId: string;
   /** Who writes on this socket; prompts queued here carry it. */
   author?: MessageAuthor;
 }
 
-/** Why a conversation opened read-only: a Done ticket's, a transcript that can never be continued
-    (a sub-agent's), or this node not letting the peer that relays the page run work here. */
-export type ReadOnlyReason = "doneTicket" | "transcript" | "runnerAccess";
+/** Why a conversation opened read-only: a transcript that can never be continued (a sub-agent's),
+    or this node not letting the peer that relays the page run work here. */
+export type ReadOnlyReason = "transcript" | "runnerAccess";
 
 export interface AttachOptions {
   automationProfile?: QueuedPrompt["automationProfile"];
   peerReadOnly?: boolean;
-  socket: WebSocket; project: ProjectRecord; taskId: string | null; cwd: string; engine: HarnessId; sessionId: string;
+  socket: WebSocket; project: ProjectRecord; cwd: string; engine: HarnessId; sessionId: string;
   sessionPath?: string; accountIds: string[]; readOnly: boolean; readOnlyReason?: ReadOnlyReason | null; ownership: ForeignConversationOwner | null;
-  listedSessions?: SessionSummary[]; handoffContext: string | null; autoStartPrompt: string | null;
+  listedSessions?: SessionSummary[]; autoStartPrompt: string | null;
   author?: MessageAuthor;
 }
 
@@ -463,7 +461,6 @@ async function writable(connection: HarnessChatConnection): Promise<void> {
   const local = await getClusterNode();
   const lock = await getProjectLock(connection.project.id);
   if (lock && lock.nodeId !== local.id) throw new Error(`Project is locked by ${lock.nodeName}`);
-  if (await conversationBelongsToDoneTask(connection.project.id, connection.engine, connection.shared.session.id)) throw new Error("Done ticket conversations are read-only");
   if (connection.readOnly) throw new Error("This conversation is read-only");
   await requireLocalConversationOwner(connection.engine, connection.shared.session.id);
   const segments = await listConversationSegments(connection.project.id, connection.conversationId);
@@ -507,17 +504,6 @@ async function removeAttachments(connection: HarnessChatConnection, queued: Queu
   }
 }
 
-async function resumeReviewedTask(connection: HarnessChatConnection): Promise<void> {
-  const local = await getClusterNode();
-  const tasks = await listTasks(connection.project.id);
-  const task = tasks.find((candidate) => connection.taskId
-    ? candidate.id === connection.taskId
-    : Boolean(candidate.sessionPath && candidate.sessionPath === connection.shared.session.file));
-  if (task?.status !== "review" || task.currentNodeId !== local.id) return;
-  await updateTask(connection.project.id, task.id, { status: "in_progress" });
-  broadcastToProject(connection.project.id, { type: "tasksChanged" });
-}
-
 async function enqueue(connection: HarnessChatConnection, message: string, images: Array<{ name: string; mimeType: string; data: string }>, files: Array<{ name: string; mimeType: string; data: string }>, requestId?: string, settings?: QueuedSettings | null, scheduledAutoRespond?: AutoRespondConfig): Promise<void> {
   if (!message.trim()) throw new Error("Prompt cannot be empty");
   await writable(connection);
@@ -528,7 +514,6 @@ async function enqueue(connection: HarnessChatConnection, message: string, image
     autoDecisions.get(queueKey(connection))?.controller.abort("person-typed");
     await resetAutoRespondCount(connection.project.id, connection.conversationId);
   }
-  await resumeReviewedTask(connection);
   if (settings) await (await getHarnessRuntime(selectedHarness(settings))).validateSettings(runtimeSettings(settings));
   const saved = await persistTaskAttachments(connection.cwd, images, files);
   const absolute = saved.map((attachment) => ({ ...attachment, path: path.resolve(connection.cwd, attachment.path) }));
@@ -1176,7 +1161,7 @@ async function switchHarness(connection: HarnessChatConnection, engine: HarnessI
   const old = connection.shared;
   const local = await getClusterNode();
   if (!await getConversationRecord(connection.project.id, connection.engine, old.session.id)) {
-    await ensureConversationRecord(connection.project.id, connection.engine, old.session.id, local.id, connection.taskId ?? undefined, { conversationId: connection.conversationId, segmentIndex: 0 });
+    await ensureConversationRecord(connection.project.id, connection.engine, old.session.id, local.id, undefined, { conversationId: connection.conversationId, segmentIndex: 0 });
   }
   const transcript = await conversationTranscriptPayload(connection.project.id, connection.engine, old.session.id, await listHarnessSessions(connection.project), old.session.messages);
   const id = randomUUID();
@@ -1190,7 +1175,7 @@ async function switchHarness(connection: HarnessChatConnection, engine: HarnessI
     await claimConversationLocally(engine, id, local.id);
     await writable(connection);
     const segments = await listConversationSegments(connection.project.id, connection.conversationId);
-    await ensureConversationRecord(connection.project.id, engine, id, local.id, connection.taskId ?? undefined, { conversationId: connection.conversationId, segmentIndex: (segments.at(-1)?.segmentIndex ?? 0) + 1 });
+    await ensureConversationRecord(connection.project.id, engine, id, local.id, undefined, { conversationId: connection.conversationId, segmentIndex: (segments.at(-1)?.segmentIndex ?? 0) + 1 });
   } catch (error) {
     if (internal) shared.turnInFlight -= 1;
     if (!shared.clients.size && !harnessSessionBusy(shared)) disposeHarnessSession(shared);
@@ -1559,9 +1544,9 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
   const conversationId = record?.conversationId ?? options.sessionId;
   const runtimeWasOpen = Boolean(options.sessionId && findHarnessSession(options.project.id, options.engine, options.sessionId));
   const shared = await measureOperation("chat.open.runtime", () => runWithAutomationProfile({ creatorAccountId: options.automationProfile?.accountId, providerProfileId: options.automationProfile?.profileId }, () => openHarnessSession(options.engine, { projectId: options.project.id, cwd: options.cwd, sessionId: options.sessionId, sessionPath: options.sessionPath, conversationId, accountIds: options.accountIds })));
-  const connection: HarnessChatConnection = { automationProfile: options.automationProfile, socket: options.socket, project: options.project, taskId: options.taskId, cwd: options.cwd, engine: options.engine, shared, handoffContext: options.handoffContext, accountIds: options.accountIds, readOnly: options.readOnly, peerReadOnly: options.peerReadOnly, conversationId, author: options.author };
+  const connection: HarnessChatConnection = { automationProfile: options.automationProfile, socket: options.socket, project: options.project, cwd: options.cwd, engine: options.engine, shared, handoffContext: null, accountIds: options.accountIds, readOnly: options.readOnly, peerReadOnly: options.peerReadOnly, conversationId, author: options.author };
   const local = await getClusterNode();
-  if (!record && !options.readOnly) record = await ensureConversationRecord(options.project.id, options.engine, options.sessionId, local.id, options.taskId ?? undefined, { conversationId, segmentIndex: 0 });
+  if (!record && !options.readOnly) record = await ensureConversationRecord(options.project.id, options.engine, options.sessionId, local.id, undefined, { conversationId, segmentIndex: 0 });
   const saved = readQueueSettings(queueKey(connection));
   if (saved && selectedHarness(saved) === options.engine && !harnessSessionBusy(shared)) {
     // Pool settings authenticate only inside a member attempt, never while opening history.

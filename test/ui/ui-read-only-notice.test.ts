@@ -1,8 +1,7 @@
-// A conversation can open read-only for more than one reason. The notice said "Done ticket" for
-// all of them, so a teammate whose machine was refused by the machine running the conversation,
-// or anyone reading a sub-agent's transcript, was told it was a finished ticket. The node now
-// sends the reason with `ready` (see test/cluster-teammate-runs.test.ts); this checks the page
-// says it in plain words and does not offer what the reader cannot do.
+// A conversation can open read-only for more than one reason: a teammate whose machine was
+// refused by the machine running the conversation, or anyone reading a sub-agent's transcript.
+// The node sends the reason with `ready` (see test/cluster-teammate-runs.test.ts); this checks
+// the page says it in plain words and does not offer what the reader cannot do.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -79,11 +78,9 @@ test("a conversation whose machine refuses this one says so, where to change it,
   const notice = page.getByTestId("done-conversation-notice");
   await notice.waitFor({ state: "visible" });
   const text = await notice.innerText();
-  assert.doesNotMatch(text, /Done ticket/, "a refused runner is not a Done ticket");
   assert.match(text, /Read-only here/);
   assert.match(text, /Home server does not let other machines run work on it/);
   assert.match(text, /Settings → Node on Home server/, "the notice says where the setting is");
-  assert.equal(await page.getByTestId("done-conversation-continue-button").isHidden(), true, "the Done ticket follow-up does not apply");
   assert.equal(await page.locator("#composer").isHidden(), true, "nothing can be sent from here");
   assert.deepEqual(await offeredWriteActions(page, REFUSED_TITLE), [], "the open conversation's menu offers nothing its machine would refuse");
 
@@ -99,7 +96,7 @@ test("a conversation whose machine refuses this one says so, where to change it,
   assert.equal(await notice.isHidden(), true);
 });
 
-test("a sub-agent conversation says it can't be continued, not that it is a Done ticket", { timeout: 180_000 }, async (t) => {
+test("a sub-agent conversation says it can't be continued", { timeout: 180_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   // A Claude conversation that started a sub-agent, as Claude Code lays them out on disk.
   const project = projectNamed(node, PROJECT_NAME);
@@ -110,7 +107,7 @@ test("a sub-agent conversation says it can't be continued, not that it is a Done
     await writeFile(file, JSON.stringify({ type: "user", uuid: randomUUID(), sessionId: parentId, cwd: project.path, timestamp: new Date().toISOString(), message: { role: "user", content: text } }) + "\n");
   }
   await signInAndOpenProject(page, node.url, environment.username, environment.password);
-  // The child is nested under its parent in the list; open it the way the board and the canvas do.
+  // The child is nested under its parent in the list; open it directly.
   await waitInPage(page, async () => (await import("/app/state.js")).state.sessions.some((session: { readOnly?: boolean }) => session.readOnly === true));
   await page.evaluate(async () => {
     const { state } = await import("/app/state.js");
@@ -122,10 +119,8 @@ test("a sub-agent conversation says it can't be continued, not that it is a Done
   const notice = page.getByTestId("done-conversation-notice");
   await notice.waitFor({ state: "visible" });
   const text = await notice.innerText();
-  assert.doesNotMatch(text, /Done ticket/, "a sub-agent's transcript is not a Done ticket");
   assert.match(text, /Sub-agent conversation/);
   assert.match(text, /can't be continued/);
   assert.match(text, /conversation that started it/, "the notice says where to write instead");
-  assert.equal(await page.getByTestId("done-conversation-continue-button").isHidden(), true, "the Done ticket follow-up does not apply");
   assert.equal(await page.locator("#composer").isHidden(), true);
 });

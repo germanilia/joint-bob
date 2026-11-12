@@ -1,6 +1,6 @@
 // The retention sweep: what this machine deletes on its own, by age.
 //
-// The owner chooses how far it reaches (the `conversationRetentionScope` setting, six boxes, all
+// The owner chooses how far it reaches (the `conversationRetentionScope` setting, five boxes, all
 // off until ticked). With every box off it deletes what it always did: conversations idle past the
 // retention setting, and empty ones, among those a project's list shows. The list shows 50
 // conversations per project, so anything outside that window is never reached.
@@ -11,7 +11,6 @@
 //                   another machine owns, anything outside every project, or Kiro's own files.
 //   includeUnrecorded   with full: transcripts that have no record, inside a current project's folders.
 //   includeScheduled    with full: conversations a scheduled task or webhook made, one per run.
-//   includeTickets      with full: conversations of finished tickets. An unfinished ticket keeps its own.
 //   leftovers       what deletes made before the complete delete existed left on this machine:
 //                   they are put in the queue of unfinished deletes. Without the box only that
 //                   queue is worked off: deletes made or received by this release that did not finish.
@@ -48,10 +47,8 @@ import { withProjectRuntime } from "../project-runtime.js";
 import { listQueuedPrompts } from "../prompt-queue.js";
 import { getSettings } from "../settings.js";
 import { listProjects } from "../store.js";
-import { listTasks } from "../tasks.js";
-import type { ProjectRecord, TaskRecord } from "../types.js";
+import type { ProjectRecord } from "../types.js";
 import { pinnedConversationKeys } from "../user-pins.js";
-import { conversationBelongsToDoneTask, taskConversationIdentity } from "./cluster-helpers.js";
 import { ConversationBackups, conversationBackupStatus, noteBackupProblem, removeExpiredBackups, type BackupStatus } from "./conversation-backup.js";
 import { finishAllPendingDeletes, heldBack, queueLeftovers, retentionDatabase, type ConversationSegment, type FilesByHarness } from "./conversation-delete.js";
 import { harnessFiles, measureSessionFiles, removeSessionFiles, type HarnessFiles, type SessionFiles } from "./conversation-files.js";
@@ -73,7 +70,7 @@ const BATCH_PAUSE_MS = 200;
 /** How old a reading of the harness folders may be when a delete relies on it. */
 const READING_MAX_AGE_MS = 10_000;
 
-/** The owner's six boxes (ConversationRetentionScope in ../conversation-retention.ts). */
+/** The owner's five boxes (ConversationRetentionScope in ../conversation-retention.ts). */
 export type RetentionSwitches = ConversationRetentionScope;
 
 /** The boxes the hourly sweep runs with: the machine's saved setting. A box that depends on `full` counts only with it. */
@@ -82,7 +79,7 @@ export function retentionSwitches(): RetentionSwitches {
 }
 
 function effective(scope: RetentionSwitches): RetentionSwitches {
-  return { ...scope, includeUnrecorded: scope.full && scope.includeUnrecorded, includeScheduled: scope.full && scope.includeScheduled, includeTickets: scope.full && scope.includeTickets };
+  return { ...scope, includeUnrecorded: scope.full && scope.includeUnrecorded, includeScheduled: scope.full && scope.includeScheduled };
 }
 
 /** `held`: deleted here before the complete delete existed, with a transcript still on this machine. Counted, never removed (heldBack in conversation-delete.ts). */
@@ -200,11 +197,6 @@ function conversationsWithActiveTasks(): Set<string> {
   catch (error) { console.warn("Background tasks could not be read for the retention sweep", error); return new Set(); }
 }
 
-function ticketConversation(task: TaskRecord): ConversationSegment | null {
-  if (!task.sessionPath || task.sessionPath === "watch") return null;
-  try { return taskConversationIdentity(task); } catch { return null; }
-}
-
 function pinKeysOf(engine: string, conversationId: string, segments: ConversationSegment[], files: FilesByHarness): string[] {
   return [
     `${engine}:${conversationId}`,
@@ -244,10 +236,9 @@ interface Plan {
 
 /** Today's reach: what the project's list shows, by the rule in conversation-retention.ts. */
 async function listedCandidates(project: ProjectRecord, plan: Plan, pinned: Set<string>): Promise<void> {
-  const tasks = await listTasks(project.id);
   const records = new Map((await listConversationRecords(project.id)).map((record) => [`${record.engine}:${record.sessionId}`, record]));
   const temporary = await listByTheWaySessionIds(project.id);
-  const sessions = await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id, tasks) });
+  const sessions = await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id) });
   const ownership = new Map(await Promise.all(sessions.map(async (session) => [session, await getConversationOwnership(session.harnessId, session.id)] as const)));
   const files = await plan.readings.forProject(project.id);
   for (const session of sessions) {
@@ -278,7 +269,6 @@ async function listedCandidates(project: ProjectRecord, plan: Plan, pinned: Set<
 
 /** The full reach: every conversation on record in the project, with the exemptions. */
 async function recordedCandidates(project: ProjectRecord, plan: Plan, pinned: Set<string>, assistants: Set<string>, targets: Set<string>): Promise<void> {
-  const tasks = await listTasks(project.id);
   const temporary = await listByTheWaySessionIds(project.id);
   const files = await plan.readings.forProject(project.id);
   const conversations = new Map<string, ConversationRecord[]>();
@@ -308,10 +298,6 @@ async function recordedCandidates(project: ProjectRecord, plan: Plan, pinned: Se
     if (!owned) { keep("owned by another machine"); continue; }
     if (names.some((name) => assistants.has(name))) { keep("an assistant's conversation"); continue; }
     if (names.some((name) => targets.has(name))) { keep("the target of a scheduled task or webhook"); continue; }
-    // A ticket that is not finished keeps its conversation whatever the boxes say. A finished one, or one whose ticket is gone, waits for the box.
-    const ticket = tasks.find((task) => records.some((record) => record.taskId === task.id) || segments.some((segment) => { const own = ticketConversation(task); return own?.engine === segment.engine && own.sessionId === segment.sessionId; }));
-    if (ticket && ticket.status !== "done") { keep("an unfinished ticket's conversation"); continue; }
-    if ((ticket || records.some((record) => record.taskId)) && !plan.switches.includeTickets) { keep("a finished ticket's conversation"); continue; }
     if (records.some((record) => record.cronTaskId || record.webhookHistory) && !plan.switches.includeScheduled) { keep("made by a scheduled task or webhook"); continue; }
     plan.candidates.push({ category: empty ? "empty" : "expired", project, engine: records[0].engine, sessionId: records[0].sessionId, conversationId, segments, pinKeys });
   }
@@ -440,7 +426,6 @@ async function mayDeleteNow(candidate: Candidate, plan: Plan, files: FilesByHarn
   const queued = listQueuedPrompts(`${project.id}:${candidate.conversationId}`);
   // An empty conversation with a prompt waiting is about to start. An old one keeps a prompt that was queued since the cutoff.
   if (candidate.category === "empty" ? queued.length > 0 : queued.some((prompt) => !(Date.parse(prompt.createdAt) <= plan.cutoff))) return false;
-  if (!(plan.switches.full && plan.switches.includeTickets) && await conversationBelongsToDoneTask(project.id, candidate.engine, candidate.sessionId)) return false;
   if (candidate.category === "empty") return !candidate.segments.some((segment) => hasTranscript(files, segment));
   // Chosen by its files: nothing of it, a sub-agent's transcript included, was written since the cutoff.
   return candidate.listed || await lastWritten(files, candidate.segments, true) <= plan.cutoff;

@@ -1,28 +1,16 @@
-import { withProjectRuntime } from "../project-runtime.js";
 import { listProjectWorktrees } from "../project-worktrees.js";
 import { asNode } from "../account-context.js";
-import { lstat, realpath, stat } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { z } from "zod";
 import { type ClusterPeer, getClusterNode } from "../cluster.js";
-import { listConversationRecords } from "../conversation-records.js";
-import type { ConversationEngine } from "../conversation-ownership.js";
-import { getHarness, getHarnessRuntime, harnessForSessionPath } from "../harnesses.js";
-import { resolveLocalSessionPath } from "../session-paths.js";
 import { getSettings, remoteTerminalAllowed, remoteTerminalSettings, runnerAccessSettings } from "../settings.js";
-import { canonicalProjectId, getProject, listProjects, listWorkspaces } from "../store.js";
-import { assertProjectFilesReady, HANDOFF_POLL_FLUSH_MS, projectFilesHandoffPart, type HandoffFiles, type ProjectShareKind, taskShareStatuses } from "../file-sync/facade.js";
-import { assertTaskWorkspaceReady, TaskWorkspaceError, taskWorkspaceKey, TICKET_WORKSPACE_FOLDER_LABEL } from "../task-workspaces.js";
-import { listTasks } from "../tasks.js";
-import type { ProjectRecord, ProjectSyncStatus, TaskRecord } from "../types.js";
-import { validateTaskRepository } from "../worktrees.js";
-import { runtimeFetch } from "./runtime-peers.js";
-import { recordSignedPeerSeen } from "../cluster-peer-endpoints.js";
+import { canonicalProjectId, listProjects, listWorkspaces } from "../store.js";
+import { TaskWorkspaceError } from "../task-workspaces.js";
+import type { ProjectRecord } from "../types.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { mayShareProject } from "./sharing-files.js";
 import { isTrustedTwin } from "../cluster-sharing-policy.js";
-import { assertSharedTranscriptReady } from './shared-transcripts.js';
 
 interface PeerInventory {
   node: Awaited<ReturnType<typeof getClusterNode>>;
@@ -56,165 +44,6 @@ export function publicClusterPeer(peer: ClusterPeer): ClusterPeer & { online: bo
   return { ...peer, online: Boolean(peer.lastSeenAt && Date.now() - Date.parse(peer.lastSeenAt) <= 90_000) };
 }
 
-async function runtimeAvailable(engine: TaskRecord["engine"]): Promise<string[]> {
-  return (await getHarnessRuntime(engine)).readiness(process.cwd());
-}
-
-export async function abortPeerTaskHandoff(peer: ClusterPeer, handoffId: string): Promise<boolean> {
-  try {
-    const response = await runtimeFetch(`${peer.url}/api/cluster/tasks/abort`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handoffId }), signal: AbortSignal.timeout(30_000) });
-    if (response.ok) return true;
-    console.warn(`Handoff abort failed: ${response.status}`);
-  } catch (error) {
-    console.warn("Handoff abort request failed", error);
-  }
-  return false;
-}
-
-function assertTaskSessionReady(projectId:string, task:TaskRecord, syncStatusChecked = false): Promise<void> {
-  return withProjectRuntime(projectId, () => assertTaskSessionReadyNow(projectId, task, syncStatusChecked));
-}
-
-async function assertTaskSessionReadyNow(projectId:string, task:TaskRecord, syncStatusChecked: boolean): Promise<void> {
-  const sessionPath=task.sessionPath!;
-  const session = resolveLocalSessionPath(sessionPath);
-  const adapter = getHarness(session.engine);
-  if (!adapter.paths.transcriptFile) throw new Error(`${adapter.label} conversation is not synchronized on this node`);
-  try {
-    if (!syncStatusChecked) {
-      await assertSharedTranscriptReady(projectId,sessionPath,task.currentNodeId);
-    }
-    const info = await lstat(adapter.paths.transcriptFile(session.path));
-    if (!info.isFile() || info.isSymbolicLink()) throw new Error("Conversation is not a regular file");
-  } catch {
-    throw new Error(`${adapter.label} conversation is not synchronized on this node`);
-  }
-}
-
-/** The folder a ticket's files live in: its synchronized workspace, else the project (a Git worktree travels as a bundle). */
-export function taskShareKind(task: TaskRecord): ProjectShareKind {
-  return task.worktreePath && !task.worktreeBranch ? "tickets" : "project";
-}
-
-/**
- * The source's `fileSync` part of an eligibility or prepare body (design §6.5): how far its index of
- * the ticket's folder reached, so a destination on built-in sync waits until it holds that. Absent for
- * projects shared with nobody; older destinations drop it with the rest of the unknown keys.
- */
-export async function taskHandoffFiles(project: ProjectRecord, task: TaskRecord, flushTimeoutMs: number): Promise<{ fileSync?: HandoffFiles }> {
-  const part = await projectFilesHandoffPart(project, [taskShareKind(task)], flushTimeoutMs);
-  return part ? { fileSync: part } : {};
-}
-
-export async function assertTaskFilesReady(project: ProjectRecord, task: TaskRecord, syncStatusChecked = false): Promise<void> {
-  if (task.worktreePath && !task.worktreeBranch) {
-    if (!syncStatusChecked) await assertProjectFilesReady(project, "tickets");
-    await assertTaskWorkspaceReady(taskWorkspaceKey(task.worktreePath, task.id), task.id);
-  } else if (!syncStatusChecked) await assertProjectFilesReady(project, "project");
-  if (task.worktreeBranch) await validateTaskRepository(project.path);
-  if (task.sessionPath) await assertTaskSessionReady(project.id,task, syncStatusChecked);
-}
-
-export function taskConversationIdentity(task: TaskRecord): { engine: ConversationEngine; sessionId: string } | null {
-  if (!task.sessionPath) return null;
-  const adapter = harnessForSessionPath(task.sessionPath);
-  const sessionId = adapter.paths.sessionId(task.sessionPath);
-  if (!sessionId) throw new Error("Task conversation path has no transcript identity");
-  return { engine: adapter.id, sessionId };
-}
-
-export function doneTaskOwnsConversation(task: TaskRecord, engine: string, sessionId: string): boolean {
-  if (task.status !== "done" || !task.sessionPath || task.sessionPath === "watch") return false;
-  const identity = taskConversationIdentity(task);
-  return identity?.engine === engine && identity.sessionId === sessionId;
-}
-
-export async function conversationBelongsToDoneTask(projectId: string, engine: string, sessionId: string): Promise<boolean> {
-  const tasks = await listTasks(projectId);
-  const owns = (target: { engine: string; sessionId: string }): boolean => tasks.some((task) => doneTaskOwnsConversation(task, target.engine, target.sessionId));
-  if (owns({ engine, sessionId })) return true;
-  // The id may be a logical conversation id or any segment of a switched chain;
-  // a Done ticket holding any segment locks the whole conversation.
-  const records = await listConversationRecords(projectId);
-  const record = records.find((candidate) => candidate.sessionId === sessionId || candidate.conversationId === sessionId);
-  if (!record) return false;
-  const conversationId = record.conversationId ?? record.sessionId;
-  return records.filter((candidate) => (candidate.conversationId ?? candidate.sessionId) === conversationId).some(owns);
-}
-
-interface TaskSyncStatus extends ProjectSyncStatus { label: string }
-
-export const peerTaskEligibilitySchema = z.object({
-  eligible: z.boolean(),
-  reasons: z.array(z.string()),
-  syncStatuses: z.array(z.object({ label: z.string(), state: z.enum(["synced", "syncing", "paused", "error", "unavailable"]), remainingFiles: z.number(), remainingBytes: z.number(), message: z.string().optional() })).optional().default([]),
-  waitingForSync: z.boolean().optional().default(false),
-});
-
-async function taskSyncStatuses(project: ProjectRecord, task: TaskRecord): Promise<TaskSyncStatus[]> {
-  const result: TaskSyncStatus[] = await taskShareStatuses(project, [task.worktreePath && !task.worktreeBranch
-    ? { kind: "tickets", label: TICKET_WORKSPACE_FOLDER_LABEL }
-    : { kind: "project", label: project.name }]);
-  if(task.sessionPath){
-    try{await assertSharedTranscriptReady(project.id,task.sessionPath,task.currentNodeId);result.push({label:'Conversation transcript',state:'synced',remainingFiles:0,remainingBytes:0});}
-    catch(error){result.push({label:'Conversation transcript',state:'error',remainingFiles:1,remainingBytes:0,message:error instanceof Error?error.message:'Transcript unavailable'});}
-  }
-  return result;
-}
-
-interface TaskEligibility {
-  reasons: string[];
-  syncStatuses: TaskSyncStatus[];
-  waitingForSync: boolean;
-}
-
-export interface TaskEligibilityEntry extends TaskEligibility {
-  node: { id: string; name: string; local?: boolean; online: boolean };
-  eligible: boolean;
-}
-
-export async function taskHandoffEligibility(projectId: string, task: TaskRecord, requiresRuntime = true): Promise<TaskEligibility> {
-  const project = await getProject(projectId);
-  if (!project) return { reasons: ["Project is not mapped on this node"], syncStatuses: [], waitingForSync: false };
-  try {
-    if (!(await stat(project.path)).isDirectory()) return { reasons: ["Mapped project path is not a directory"], syncStatuses: [], waitingForSync: false };
-  } catch {
-    return { reasons: ["Mapped project path is not available on this node"], syncStatuses: [], waitingForSync: false };
-  }
-  const reasons = requiresRuntime ? await runtimeAvailable(task.engine) : [];
-  const permanentReasonCount = reasons.length;
-  const syncStatuses = await taskSyncStatuses(project, task);
-  const syncPending = syncStatuses.some((status) => status.state !== "synced");
-  const retryableSync = syncPending
-    && syncStatuses.every((status) => ["synced", "syncing", "error"].includes(status.state));
-  if (syncPending) reasons.push("Ticket files are not synchronized on this node");
-  try { await assertTaskFilesReady(project, task, true); }
-  catch (error) { reasons.push(error instanceof Error ? error.message : "Ticket files are not ready on this node"); }
-  return { reasons, syncStatuses, waitingForSync: retryableSync && permanentReasonCount === 0 };
-}
-
-export async function peerTaskEligibilityEntry(peer: ClusterPeer, projectId: string, task: TaskRecord, source = false): Promise<TaskEligibilityEntry> {
-  const node = publicClusterPeer(peer);
-  try {
-    // Only the ticket's owner hands its files over; the dialog asks every second, so the flush is short.
-    const project = !source && task.currentNodeId === (await getClusterNode()).id ? await getProject(projectId) : undefined;
-    const files = project ? await taskHandoffFiles(project, task, HANDOFF_POLL_FLUSH_MS) : {};
-    const remote = await runtimeFetch(`${peer.url}/api/cluster/tasks/eligibility`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, task, source, ...files }),
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (!remote.ok) throw new Error(`Peer returned ${remote.status}`);
-    const result = peerTaskEligibilitySchema.parse(await remote.json());
-    recordSignedPeerSeen(await clusterV2Database(), peer.id);
-    return { node: { ...node, online: true }, ...result };
-  } catch (error) {
-    return { node: { ...node, online: false }, eligible: false, reasons: [error instanceof Error ? `Peer unreachable: ${error.message}` : "Peer unreachable"], syncStatuses: [], waitingForSync: false };
-  }
-}
-
-
 /** A peer can carry a workspace this node never defined; fall back to a local one rather than inventing a folder. */
 export function requirePathInsideHome(candidate: string, homeDirectory: string): void {
   const relative = path.relative(homeDirectory, candidate);
@@ -231,9 +60,6 @@ export async function assertManagedHomeChangeAllowed(nextHomePath: string): Prom
   const currentHomePath = getSettings().projects.homePath;
   if (path.resolve(currentHomePath) === path.resolve(nextHomePath)) return;
   for (const project of await asNode(() => listProjects())) {
-    if ((await listTasks(project.id)).some((task) => task.worktreePath && !task.worktreeBranch)) {
-      throw new TaskWorkspaceError("Archive or delete board cards before changing the Joint Bob home folder");
-    }
     if ((await listProjectWorktrees(project.id)).length) {
       throw new TaskWorkspaceError("Merge and delete worktrees before changing the Joint Bob home folder");
     }

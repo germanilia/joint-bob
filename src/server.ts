@@ -5,7 +5,6 @@
 import { failUnobservedConversationWorkAfterRestart, retireUnreachableConversationWorkAfterRestart } from "./conversation-work.js";
 import { openMergeTransactionCount, recoverMergeTransactions } from "./merge-journal.js";
 import { getProject } from "./store.js";
-import { listTasks, updateTask } from "./tasks.js";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { resolveDataDirectory } from "./data-directory.js";
@@ -23,7 +22,7 @@ import { runReplicationHousekeeping } from "./server/replication-housekeeping.js
 import { removeAllDeletedTranscripts } from "./server/deleted-transcripts.js";
 import { flushSuccessionNotices } from "./server/succession.js";
 import { measureOperation } from "./server/performance-diagnostics.js";
-import { flushReplicationOutbox, flushRoutingConfigDeliveries, initializeStartupReadiness, pushRuntimeLeaseSnapshots, reconcileManagedAgentResources, reapInactiveConversations, reconcileTaskConversationRecords, reconcileTaskHandoffs, sweepRuntimeLeases, sweepStaleConversations } from "./server/maintenance.js";
+import { flushReplicationOutbox, flushRoutingConfigDeliveries, initializeStartupReadiness, pushRuntimeLeaseSnapshots, reconcileManagedAgentResources, reapInactiveConversations, sweepRuntimeLeases, sweepStaleConversations } from "./server/maintenance.js";
 import { runSyncCheck } from "./server/sync-check.js";
 import { installBackendErrorCapture } from "./server/error-capture.js";
 import { flushPushSubscriptionOutbox } from "./server/push-flush.js";
@@ -41,14 +40,12 @@ import { prepareForUpdate } from "./server/realtime.js";
 import { harnessSessionBusy, harnessSessions } from "./server/harness-sessions.js";
 import { clusterWorkAllowed, flags, port, server } from "./server/state.js";
 import { browserRuntime, closeBrowserRuntime } from "./server/browser.js";
-import { recoverPendingUpdateRuns } from "./server/task-runs.js";
+import { recoverPendingUpdateRuns } from "./server/update-recovery-runs.js";
 import { startRelay, stopRelay } from "./relay/index.js";
 import "./server/schemas.js";
 import "./server/http-auth.js";
-import "./server/task-handoff.js";
 import "./server/projects.js";
 import "./server/realtime.js";
-import "./server/task-runs.js";
 import "./server/chat.js";
 import "./server/chat-socket.js";
 import "./server/maintenance.js";
@@ -69,7 +66,6 @@ import "./server/routes/automation-executions.js";
 import "./server/routes/routing.js";
 import "./server/routes/model-allocation.js";
 import "./server/routes/cluster.js";
-import "./server/routes/cluster-tasks.js";
 import "./server/routes/platform.js";
 import "./server/routes/system-ai.js";
 import "./server/routes/secrets.js";
@@ -108,7 +104,6 @@ import { startConversationDigests } from "./server/conversation-digest-runner.js
 import { startKnowledgeCleanupScheduler } from "./server/knowledge-cleanup.js";
 import { startQuickNoteScheduler } from "./server/quick-note-dispatch.js";
 import "./server/routes/cron.js";
-import "./server/routes/tasks.js";
 import "./server/routes/worktrees.js";
 import "./server/routes/project-files.js";
 import "./server/routes/git-review.js";
@@ -151,24 +146,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   flags.startupReady = false;
   flags.startupError = undefined;
   failUnobservedConversationWorkAfterRestart();
-  // Interrupted merge transactions roll back before the node accepts any traffic
-  // (TICKET-MERGE-PLAN.md §8); committed ones reconcile their task records.
+  // Interrupted worktree merge transactions roll back before the node accepts any traffic.
   const recoverMerges = async (): Promise<void> => {
-    const recovered = await recoverMergeTransactions(async (projectId) => {
+    await recoverMergeTransactions(async (projectId) => {
       const project = await getProject(projectId);
       return project ? await realpath(project.path) : null;
     });
-    for (const outcome of recovered) {
-      const task = (await listTasks(outcome.projectId)).find((candidate) => candidate.id === outcome.taskId);
-      if (!task) continue;
-      // Rolled-back rows keep returning until reconciled; skip settled tasks.
-      if (task.mergeTx !== "open") continue;
-      if (outcome.outcome === "rolled-back") {
-        await updateTask(outcome.projectId, task.id, { mergeState: "conflicts", mergeTx: null, mergeWarning: "Merge transaction was interrupted and rolled back" });
-      } else {
-        await updateTask(outcome.projectId, task.id, { mergedAt: task.mergedAt ?? new Date().toISOString(), mergeState: "merged", mergeTx: null, mergeDigests: null });
-      }
-    }
   };
   openMergeTransactionCount().then((count) => {
     if (count > 0) console.log(`Recovering ${count} interrupted merge transaction(s) before accepting traffic`);
@@ -232,7 +215,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       flush("accounts", flushAccountReplication, "Account delivery failed");
       flush("profiles", () => import("./server/roaming.js").then(({ flushProfiles, sendSignInNotices }) => Promise.all([flushProfiles(), sendSignInNotices()])), "Profile delivery failed");
       flush("push_subscriptions", flushPushSubscriptionOutbox, "Push subscription flush failed");
-      flush("task_handoffs", reconcileTaskHandoffs, "Task handoff reconciliation failed");
     };
     let clusterStarted = false;
     const runClusterWork = (): void => {
@@ -260,7 +242,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     // The periodic passes run as background sync: they send nothing to a peer that is away (peer-presence.ts).
     initializeStartupReadiness()
       .then(() => inBackground(runClusterWork))
-      .then(async () => { await recoverPendingUpdateRuns(); await reconcileTaskConversationRecords(); })
+      .then(() => recoverPendingUpdateRuns())
       // A returning node pulls the dashboards it missed while away; afterwards change notices keep it current.
       .then(() => inBackground(refreshSharedDashboards))
       .catch((error) => console.warn("Startup recovery failed", error));

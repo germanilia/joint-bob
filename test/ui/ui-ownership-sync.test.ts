@@ -55,7 +55,7 @@ test("takeover counts only its working folder, cancels cleanly, and surfaces sta
       const { state } = await import(statePath);
       const { renderConversationLock } = await import(controlsPath);
       Object.assign(state, {
-        activeProjectId: projectId, activeSessionId: "session", activeSessionPath: "pi:session", activeNodeId: "mac", activeTaskId: null,
+        activeProjectId: projectId, activeSessionId: "session", activeSessionPath: "pi:session", activeNodeId: "mac",
         projects: [{ id: projectId, syncStatus: { engine: "builtin" } }],
         sessions: [{ id: "session", path: "pi:session", harnessId: "pi", title: "Ela", ...(inWorktree ? { worktree: { id: worktreeId, name: "Legal", color: "blue" } } : {}) }],
         sessionNodes: [{ id: "mac", name: "Mac", local: true, mapped: true }],
@@ -78,14 +78,14 @@ test("takeover counts only its working folder, cancels cleanly, and surfaces sta
     remaining = 0;
     await show(false);
     await take.dispatchEvent("click");
-    await page.getByText("Fixture takeover reached", { exact: true }).waitFor();
+    await page.getByText(/: Fixture takeover reached$/).waitFor();
     assert.equal(scopedRequests.at(-1), "", "a normal conversation checks the main project only");
     assert.equal(transfers.length, 1, "unrelated worktrees do not hold a normal conversation");
 
     failStatus = true;
     await show(true);
     await take.dispatchEvent("click");
-    await page.getByText("File sync worker unavailable", { exact: true }).waitFor();
+    await page.getByText(/: File sync worker unavailable$/).waitFor();
     assert.equal(transfers.length, 1, "a failed readiness request does not silently transfer ownership");
 
     failStatus = false;

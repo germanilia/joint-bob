@@ -139,7 +139,7 @@ test("an abandoned prepared update restarts through the service manager with rec
 test("another update cannot replace work still waiting for recovery", async () => {
   await saveUpdateRecoveries([{
     id: "awaiting-recovery", kind: "chat", engine: "pi", projectId: "project", cwd: "/tmp/project",
-    sessionId: "session", sessionPath: "/tmp/session.jsonl", taskId: null, phase: null,
+    sessionId: "session", sessionPath: "/tmp/session.jsonl",
     queuedPrompts: ["unfinished work"], model: null, effort: null, createdAt: new Date().toISOString(),
   }]);
   const response = await signedSelfPrepare();

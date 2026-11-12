@@ -66,7 +66,7 @@ body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
   body:not(.focus-ui) .ws-home-button:hover:not(:disabled) { background: transparent; }
   body:not(.focus-ui) .ws-home-button:hover .ws-name { color: var(--accent); }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-home-button { flex: none; justify-content: center; }
-  body:not(.focus-ui).ws-home .shell > :is(#chatPanel, #boardPanel, #controlCenterPanel) { display: none; }
+  body:not(.focus-ui).ws-home .shell > :is(#chatPanel, #controlCenterPanel) { display: none; }
   body:not(.focus-ui).ws-home #homePage:not([hidden]) {
     display: flex; grid-area: main; min-width: 0; min-height: 0; overflow: hidden;
     border: 0; border-radius: var(--ws-card-radius, 24px); background: var(--panel); box-shadow: var(--shadow-soft);

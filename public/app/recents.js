@@ -122,7 +122,7 @@ function applyRecentSessionActivity(sessionsByProject) {
 }
 
 /**
- * Conversations keep moving while the recents dialog is closed — a ticket run, or
+ * Conversations keep moving while the recents dialog is closed — an agent run, or
  * another node writing through file sync — so every session-list render refreshes
  * the stored activity time for the project it just listed.
  */

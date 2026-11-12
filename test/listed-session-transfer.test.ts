@@ -28,7 +28,7 @@ function client() {
     document: { querySelectorAll: () => [] }, attachDigitShortcuts() {},
     loadSessionNodes: async () => {}, rememberRecentSession() {},
     sessionDisplayTitle: (item: typeof session) => item.title,
-    openSession: (sessionPath: string, ...rest: unknown[]) => { state.activeSessionPath = sessionPath; keptView.push(rest[4] === true); },
+    openSession: (sessionPath: string, ...rest: unknown[]) => { state.activeSessionPath = sessionPath; keptView.push(rest[3] === true); },
     reconcileTranscriptConflict: async () => false,
     toast: Object.assign((message: string) => messages.push(message), { error: (message: string) => errors.push(message) }),
     api: (endpoint: string, options: { body: string }) => {

@@ -62,12 +62,12 @@ test("resumed execution does not acquire new conversation defaults", async () =>
 
 test("update recovery preserves saved null effort despite Settings override", async () => {
   const { saveUpdateRecoveries, listPendingUpdateRecoveries } = await import("../src/update-recovery.js");
-  const { recoverPendingUpdateRuns } = await import("../src/server/task-runs.js");
+  const { recoverPendingUpdateRuns } = await import("../src/server/update-recovery-runs.js");
   const sessionId = randomUUID();
   const filePath = path.join(root, "sessions", "existing-project", `${sessionId}.jsonl`);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify({ type: "user", sessionId, message: { role: "user", content: "Recovery in progress" } }) + "\n");
-  await saveUpdateRecoveries([{ id: randomUUID(), kind: "chat", engine: "claude", projectId, cwd: root, sessionId, sessionPath: `claude:${filePath}`, taskId: null, phase: null, queuedPrompts: [], model: "opus", effort: null, createdAt: new Date().toISOString() }]);
+  await saveUpdateRecoveries([{ id: randomUUID(), kind: "chat", engine: "claude", projectId, cwd: root, sessionId, sessionPath: `claude:${filePath}`, queuedPrompts: [], model: "opus", effort: null, createdAt: new Date().toISOString() }]);
   await recoverPendingUpdateRuns();
   assert.deepEqual(await listPendingUpdateRecoveries(), []);
   const args = JSON.parse(await readFile(path.join(root, "args.json"), "utf8")) as string[];

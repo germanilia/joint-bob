@@ -12,7 +12,7 @@ export async function voiceForThisNode() {
   const { settings } = await api("/api/story-settings");
   if (settings.voiceChosen) return settings;
   // This computer narrates whatever the project's node wrote, so its own Kokoro and the project's ElevenLabs key are offered.
-  const target = { projectId: state.activeProjectId, nodeId: state.activeNodeId, taskId: state.activeTaskId };
+  const target = { projectId: state.activeProjectId, nodeId: state.activeNodeId };
   const url = (route, params) => projectGitUrl(target, route, params);
   const [local, eleven] = await Promise.all([api(url("story-voice", { voiceProvider: "kokoro" })), api(url("story-voice", { voiceProvider: "elevenlabs" }))]);
   const choice = await chooseOption({

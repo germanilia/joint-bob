@@ -47,7 +47,7 @@ function fixture(overrides: Record<string, any> = {}) {
   const frames: any[] = [];
   const listeners = new Map<string, () => void>();
   const socket = { on: (type: string, listener: () => void) => listeners.set(type, listener), readyState: 1, frames };
-  const options: any = { socket, project: { id: "project" }, engine: "pi", sessionId: "conversation", conversationId: "conversation", cwd: "/synthetic", taskId: null, accountIds: [], readOnly: false, ownership: {}, handoffContext: null, autoStartPrompt: null };
+  const options: any = { socket, project: { id: "project" }, engine: "pi", sessionId: "conversation", conversationId: "conversation", cwd: "/synthetic", accountIds: [], readOnly: false, ownership: {}, autoStartPrompt: null };
   const mocks: Record<string, any> = {
     resourceOwner: () => undefined, flags: {}, getProjectLock: async () => null,
     withoutAutomationProfile: (action: () => any) => action(),
@@ -89,7 +89,6 @@ function fixture(overrides: Record<string, any> = {}) {
     listQueuedPrompts: () => queue,
     assertQueuedPromptEditor: () => {}, takesOverQueuedPrompt: () => false,
     isScheduledPromptText: () => false,
-    conversationBelongsToDoneTask: async () => false,
     requireLocalConversationOwner: async () => {}, markHarnessInput: () => {},
     catchUpGitHead: async () => {}, genericSecretEnvironment: () => ({}),
     queuedAttachments: async () => ({ text: queued.promptText, images: [] }),

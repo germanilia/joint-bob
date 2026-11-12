@@ -70,7 +70,7 @@ function showProgress() {
 let live = null;
 
 async function openActivityOverview(conversationId, audio) {
-  const target = { projectId: state.activeProjectId, nodeId: state.activeNodeId, taskId: state.activeTaskId };
+  const target = { projectId: state.activeProjectId, nodeId: state.activeNodeId };
   if (!target.projectId) { toast("Select a project first"); return; }
   const url = (route, params) => projectGitUrl(target, route, params);
   if (live?.conversationId === conversationId) { live.movie.show(); return; }

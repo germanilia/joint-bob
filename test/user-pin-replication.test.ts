@@ -119,7 +119,8 @@ test("every durable entity maps to the browser data it invalidates", async () =>
   const event = (entityType: string) => ({ entityType } as never);
   assert.deepEqual(replicationInvalidations([event("name.override")]).sort(), ["projectsChanged", "sessionsChanged"]);
   assert.deepEqual(replicationInvalidations([event("project.lock")]), ["projectsChanged"]);
-  assert.deepEqual(replicationInvalidations([event("task")]).sort(), ["sessionsChanged", "tasksChanged"]);
+  // Older machines still send board tasks; they change nothing here.
+  assert.deepEqual(replicationInvalidations([event("task")]), []);
   for (const entityType of ["conversation.ownership", "conversation.record", "conversation.review"]) {
     assert.deepEqual(replicationInvalidations([event(entityType)]), ["sessionsChanged"], entityType);
   }

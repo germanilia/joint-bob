@@ -4,16 +4,9 @@ import path from "node:path";
 import { managedHomePaths } from "./managed-home.js";
 import { getSettings } from "./settings.js";
 
-export const TICKET_WORKSPACE_FOLDER_ID = "joint-bob-ticket-workspaces";
-export const TICKET_WORKSPACE_FOLDER_LABEL = "Joint Bob ticket workspaces";
-export const TICKET_FOLDER_PREFIX = "joint-bob-tickets-";
-export function projectTicketSyncFolderId(projectId: string): string {
-  return `${TICKET_FOLDER_PREFIX}${createHash('sha256').update(projectId).digest('hex')}`;
-}
-
-/** Sync-visible (file sync ignores exactly `.joint-bob/`) baseline snapshot inside a ticket workspace. */
+/** Sync-visible (file sync ignores exactly `.joint-bob/`) baseline snapshot inside a worktree. */
 export const TICKET_BASELINE_DIR = ".joint-bob-baseline";
-/** Staged merge tree and conflict state inside a ticket workspace (TICKET-MERGE-PLAN.md §3). */
+/** Staged merge tree and conflict state inside a worktree. */
 export const TICKET_MERGE_DIR = ".joint-bob-merge";
 
 const excludedDirectories = new Set([
@@ -28,28 +21,9 @@ const excludedPrefixes = ["id_rsa", "id_ed25519", "id_ecdsa"];
 
 export class TaskWorkspaceError extends Error {}
 
+/** The removed project board's ticket folders. File sync still keeps the share, so machines on an older version keep syncing it. */
 export function ticketWorkspaceRoot(): string {
   return path.resolve(process.env.JOINT_BOB_TICKET_ROOT ?? managedHomePaths(getSettings().projects.homePath).tickets);
-}
-
-function assertPathSegment(value: string, label: string): void {
-  if (!/^[A-Za-z0-9._-]+$/.test(value) || value === "." || value === "..") {
-    throw new TaskWorkspaceError(`${label} is invalid`);
-  }
-}
-
-export function expectedTaskWorkspacePath(projectId: string, taskId: string, root = ticketWorkspaceRoot()): string {
-  assertPathSegment(projectId, "Project ID");
-  assertPathSegment(taskId, "Task ID");
-  return path.join(path.resolve(root), projectId, taskId);
-}
-
-export function taskWorkspaceKey(workspacePath: string, taskId: string): string {
-  assertPathSegment(taskId, "Task ID");
-  if (path.basename(workspacePath) !== taskId) throw new TaskWorkspaceError("Ticket workspace metadata is invalid");
-  const key = path.basename(path.dirname(workspacePath));
-  assertPathSegment(key, "Ticket workspace project key");
-  return key;
 }
 
 export function copyAllowed(projectPath: string, sourcePath: string): boolean {
@@ -84,8 +58,7 @@ export async function listTreeEntries(root: string): Promise<Array<{ path: strin
   return found.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
 }
 
-// The baseline is the trust root for the later three-way merge back into the project
-// (TICKET-MERGE-PLAN.md §4): the full content of every copied file plus a hash
+// The baseline is the trust root for the later three-way merge back into the project: the full content of every copied file plus a hash
 // manifest, so any node can diff3 without a git history.
 export async function captureBaseline(workspace: string, allowed: (root: string, file: string) => boolean = copyAllowed, skipTopLevel: string[] = []): Promise<string> {
   const baseline = path.join(workspace, TICKET_BASELINE_DIR);
@@ -113,34 +86,4 @@ export async function captureBaseline(workspace: string, allowed: (root: string,
   const manifest = `${JSON.stringify({ version: 1, files }, null, 2)}\n`;
   await fs.writeFile(path.join(baseline, "manifest.json"), manifest);
   return createHash("sha256").update(manifest).digest("hex");
-}
-
-export async function createTaskWorkspace(projectPath: string, projectId: string, taskId: string, root = ticketWorkspaceRoot()): Promise<string> {
-  const source = path.resolve(projectPath);
-  const sourceInfo = await fs.stat(source);
-  if (!sourceInfo.isDirectory()) throw new TaskWorkspaceError("Project path must be a directory");
-  const workspace = expectedTaskWorkspacePath(projectId, taskId, root);
-  await fs.mkdir(path.dirname(workspace), { recursive: true });
-  try {
-    await fs.cp(source, workspace, { recursive: true, force: false, errorOnExist: true, filter: (entry) => copyAllowed(source, entry) });
-    await captureBaseline(workspace);
-    return workspace;
-  } catch (error) {
-    await fs.rm(workspace, { recursive: true, force: true });
-    throw error;
-  }
-}
-
-export async function assertTaskWorkspaceReady(projectId: string, taskId: string, root = ticketWorkspaceRoot()): Promise<string> {
-  const workspace = expectedTaskWorkspacePath(projectId, taskId, root);
-  try {
-    if ((await fs.stat(workspace)).isDirectory()) return workspace;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  throw new TaskWorkspaceError("Ticket workspace is not synchronized on this node");
-}
-
-export async function removeTaskWorkspace(projectId: string, taskId: string, root = ticketWorkspaceRoot()): Promise<void> {
-  await fs.rm(expectedTaskWorkspacePath(projectId, taskId, root), { recursive: true, force: true });
 }

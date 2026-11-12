@@ -96,7 +96,7 @@ async function assistantTopicCandidates(project: NonNullable<Awaited<ReturnType<
   }));
 }
 async function assistantHistoryCandidates(project: NonNullable<Awaited<ReturnType<typeof getProject>>>, listed: Awaited<ReturnType<typeof sharedProjectSessions>>) {
-  return Promise.all(listed.filter(conversation => isHarnessId(conversation.harnessId) && !conversation.readOnly && !conversation.taskId && !conversation.webhookHistory?.hidden).slice(0, 12).map(async conversation => {
+  return Promise.all(listed.filter(conversation => isHarnessId(conversation.harnessId) && !conversation.readOnly && !conversation.webhookHistory?.hidden).slice(0, 12).map(async conversation => {
     const messages = await getHarness(conversation.harnessId).sessions.loadMessages(project, conversation.path);
     return { id: `${conversation.harnessId}:${conversation.id}`, title: conversation.title, summary: `${conversation.firstMessage ?? ""} ${messages.filter(message => message.role === "user" || message.role === "assistant").slice(-3).map(message => message.text.slice(-500)).join(" ")}`.slice(-1500) };
   }));

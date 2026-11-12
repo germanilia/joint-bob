@@ -1,5 +1,5 @@
 import { getClusterNode, updateClusterNode } from "../../cluster.js";
-import { getConversationOwnership, takeConversationOwnership } from "../../conversation-ownership.js";
+import { getConversationOwnership } from "../../conversation-ownership.js";
 import { applyRuntimeLeaseSnapshot, conversationOfKey, conversationRuntimeDatabase, holdEndedRun, liveRuntimeLeases, releaseEndedRun, type RuntimeLeaseInput } from "../../conversation-runtime.js";
 import { receiveReplicationBatch, type ReplicationBatch } from "../../replication.js";
 import { removeTranscriptsDeletedBy } from "../deleted-transcripts.js";
@@ -7,15 +7,10 @@ import { catchUpSharedTranscript } from "../shared-transcripts.js";
 import { resumeDeliveriesTo } from "../peer-return.js";
 import { syncSharedQuickNotes } from "../shared-quick-notes.js";
 import { type PushSubscriptionEvent, receivePushSubscriptionEvents } from "../../push.js";
-import { getProject } from "../../store.js";
-import { abortPreparedTaskHandoff, acknowledgeIncomingTaskHandoff, commitPreparedTaskHandoff, getTaskHandoff, isTaskHandoffRejected, listTasks, prepareTaskHandoff, rejectTaskHandoff, reserveTaskHandoff, taskHandoffDeletion } from "../../tasks.js";
-import { getRuntimePeer } from '../runtime-peers.js';
-import type { HarnessId, TaskRecord } from "../../types.js";
-import { type PreparedTaskWorktree, prepareTaskWorktreeFromBundle, removePreparedTaskWorktree } from "../../worktrees.js";
-import { assertTaskFilesReady, peerMayRunHere, taskConversationIdentity, taskHandoffEligibility } from "../cluster-helpers.js";
+import type { HarnessId } from "../../types.js";
 import { sendError } from "../http-auth.js";
-import { announceConversationsChanged, broadcastReplicationInvalidations, broadcastSessionsChangedToAllProjects, broadcastToProject } from "../realtime.js";
-import { clusterNodeSchema, preparedTaskSchema, pushSubscriptionBatchSchema, replicationBatchSchema, runtimeSnapshotSchema, taskEligibilitySchema, taskHandoffActionSchema, taskHandoffStatusSchema } from "../schemas.js";
+import { announceConversationsChanged, broadcastReplicationInvalidations } from "../realtime.js";
+import { clusterNodeSchema, pushSubscriptionBatchSchema, replicationBatchSchema, runtimeSnapshotSchema } from "../schemas.js";
 import { app } from "../state.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
 import { mayReplicateEvent, replicationPeers, signedPeerPost } from "../replication-v2.js";
@@ -195,116 +190,5 @@ app.post("/api/cluster/v2/push/events", async (request, response, next) => {
     if (!isTrustedTwin(db, local.id, response.locals.machineNodeId as string)) { sendError(response, 403, "Push subscriptions replicate only between twins"); return; }
     const payload = pushSubscriptionBatchSchema.parse(request.body);
     response.json({ received: await receivePushSubscriptionEvents(payload.events as PushSubscriptionEvent[]) });
-  } catch (error) { next(error); }
-});
-
-app.post(["/api/cluster/tasks/eligibility", "/api/cluster/v2/runtime/tasks/eligibility"], async (request, response, next) => {
-  try {
-    if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const payload = taskEligibilitySchema.parse(request.body);
-    const eligibility = await taskHandoffEligibility(payload.projectId, payload.task as TaskRecord, !payload.source);
-    if (!payload.source && !await peerMayRunHere(response.locals.machineNodeId)) eligibility.reasons.push("This node does not accept runs from other nodes");
-    response.json({ eligible: eligibility.reasons.length === 0, ...eligibility });
-  } catch (error) { next(error); }
-});
-
-app.post(["/api/cluster/tasks/status", "/api/cluster/v2/runtime/tasks/status"], async (request, response, next) => {
-  try {
-    if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const payload = taskHandoffStatusSchema.parse(request.body);
-    const record = await getTaskHandoff(payload.handoffId);
-    if (!record) { sendError(response, 404, "Handoff not found"); return; }
-    response.json({ status: record.status, taskId: record.taskId, projectId: record.protocolProjectId, sourceNodeId: record.sourceNodeId, destinationNodeId: record.destinationNodeId });
-  } catch (error) { next(error); }
-});
-
-app.post(["/api/cluster/tasks/prepare", "/api/cluster/v2/runtime/tasks/prepare"], async (request, response, next) => {
-  try {
-    if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    if (!await peerMayRunHere(response.locals.machineNodeId)) { sendError(response, 403, "This node does not accept runs from other nodes"); return; }
-    const payload = preparedTaskSchema.parse(request.body);
-    if (await isTaskHandoffRejected(payload.handoffId)) { sendError(response, 409, `Handoff ${payload.handoffId} is rejected`); return; }
-    const task = payload.task as TaskRecord;
-    if(response.locals.machineProtocol===2&&task.currentNodeId!==response.locals.machineNodeId){sendError(response,403,'Task owner does not match authenticated peer');return;}
-    const source = await getRuntimePeer(task.currentNodeId);
-    if (!source) { sendError(response, 403, "Task owner is not a known peer"); return; }
-    const eligibility = await taskHandoffEligibility(payload.projectId, task);
-    if (eligibility.reasons.length) { sendError(response, 409, eligibility.reasons.join("; ")); return; }
-    if (task.worktreeBranch && !payload.bundle) { sendError(response, 400, "Task worktree handoff requires a branch bundle"); return; }
-    if (!task.worktreeBranch && payload.bundle) { sendError(response, 400, "Task has no worktree branch for this bundle"); return; }
-    const project = await getProject(payload.projectId);
-    if (!project) throw new Error("Eligible project disappeared");
-    const local = await getClusterNode();
-    await assertTaskFilesReady(project, task);
-    const reservation = await reserveTaskHandoff(payload.handoffId, project.id, payload.projectId, task, local.id, payload.handoffContext, payload.handoffVersion);
-    if (reservation.status === "prepared" || reservation.status === "committed") {
-      response.status(201).json({ task: (await listTasks(project.id)).find((candidate) => candidate.id === task.id) });
-      return;
-    }
-    let worktree: PreparedTaskWorktree | null = null;
-    try {
-      worktree = task.worktreeBranch && payload.bundle ? await prepareTaskWorktreeFromBundle(project.path, task.id, task.worktreeBranch, payload.bundle) : null;
-      const prepared = await prepareTaskHandoff(payload.handoffId, project.id, payload.projectId, task, local.id, worktree, payload.handoffContext, payload.handoffVersion);
-      broadcastToProject(project.id, { type: "tasksChanged" });
-      response.status(201).json({ task: prepared });
-    } catch (error) {
-      try { await abortPreparedTaskHandoff(payload.handoffId, local.id); }
-      catch (abortError) { console.warn(`Prepared handoff abort failed for ${payload.handoffId}`, abortError); }
-      if (worktree?.created) {
-        try { await removePreparedTaskWorktree(project.path, worktree.path, worktree.branch); }
-        catch (cleanupError) { console.warn(`Prepared worktree cleanup failed for ${payload.handoffId}`, cleanupError); }
-      }
-      throw error;
-    }
-  } catch (error) { next(error); }
-});
-
-app.post(["/api/cluster/tasks/commit", "/api/cluster/v2/runtime/tasks/commit"], async (request, response, next) => {
-  try {
-    if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const payload = taskHandoffActionSchema.parse(request.body);
-    const record = await getTaskHandoff(payload.handoffId);
-    if (!record) { sendError(response, 404, "Prepared handoff not found"); return; }
-    const project = await getProject(record.projectId);
-    if (!project) throw new Error("Prepared handoff project is not mapped on this node");
-    await assertTaskFilesReady(project, record.task);
-    const local = await getClusterNode();
-    const task = await commitPreparedTaskHandoff(payload.handoffId, local.id);
-    const identity = task ? taskConversationIdentity(task) : null;
-    if (identity) await takeConversationOwnership(identity.engine, identity.sessionId, local.id);
-    broadcastToProject(record.projectId, { type: "tasksChanged" });
-    response.json(task ? { task } : { task: null, deleted: await taskHandoffDeletion(payload.handoffId) });
-  } catch (error) { next(error); }
-});
-
-app.post(["/api/cluster/tasks/settle", "/api/cluster/v2/runtime/tasks/settle"], async (request, response, next) => {
-  try {
-    if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const payload = taskHandoffActionSchema.parse(request.body);
-    const local = await getClusterNode();
-    await acknowledgeIncomingTaskHandoff(payload.handoffId, local.id);
-    response.json({ ok: true });
-  } catch (error) { next(error); }
-});
-
-app.post(["/api/cluster/tasks/abort", "/api/cluster/v2/runtime/tasks/abort"], async (request, response, next) => {
-  try {
-    if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    const payload = taskHandoffActionSchema.parse(request.body);
-    const record = await getTaskHandoff(payload.handoffId);
-    if (!record) {
-      await rejectTaskHandoff(payload.handoffId);
-      response.json({ task: null });
-      return;
-    }
-    const local = await getClusterNode();
-    const restored = await abortPreparedTaskHandoff(payload.handoffId, local.id);
-    if (record.worktreeCreated && record.worktreePath && record.worktreeBranch) {
-      const project = await getProject(record.projectId);
-      if (!project) throw new Error("Prepared task project is not mapped on this node");
-      try { await removePreparedTaskWorktree(project.path, record.worktreePath, record.worktreeBranch); } catch (error) { console.warn(`Prepared worktree cleanup failed for ${payload.handoffId}`, error); }
-    }
-    if (record) broadcastToProject(record.projectId, { type: "tasksChanged" });
-    response.json({ task: restored ?? null });
   } catch (error) { next(error); }
 });

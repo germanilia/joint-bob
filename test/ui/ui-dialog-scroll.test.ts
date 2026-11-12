@@ -36,7 +36,7 @@ test("dialog headers and actions stay visible while only the body scrolls", { ti
       dialog.innerHTML = '<h3>Budget</h3><p>Budget settings</p><div class="budget-dialog-actions"><button>Save</button></div>';
       dialog.close();
     });
-    for (const id of ["autoRespondDialog", "projectDialog", "quickNoteDialog", "modelDialog", "newSessionNameDialog", "appearanceDialog", "secretScopeDialog", "taskDialog", "dynamicBudget"]) {
+    for (const id of ["autoRespondDialog", "projectDialog", "quickNoteDialog", "modelDialog", "newSessionNameDialog", "appearanceDialog", "secretScopeDialog", "dynamicBudget"]) {
       const result = await page.evaluate(async (id) => {
         const dialog = document.getElementById(id) as HTMLDialogElement;
         if (id === "dynamicBudget") {
@@ -51,12 +51,12 @@ test("dialog headers and actions stay visible while only the body scrolls", { ti
         const filler = document.createElement("div");
         filler.style.height = "1400px";
         filler.textContent = "Long dialog content";
-        const existingBody = card.querySelector(".dialog-body, .task-form-body");
+        const existingBody = card.querySelector(".dialog-body");
         if (existingBody) existingBody.append(filler);
         else footer.before(filler);
         dialog.showModal();
         await new Promise(requestAnimationFrame);
-        const body = card.querySelector<HTMLElement>(".dialog-body, .task-form-body");
+        const body = card.querySelector<HTMLElement>(".dialog-body");
         const before = { heading: heading.getBoundingClientRect().top, footer: footer.getBoundingClientRect().top };
         if (body) body.scrollTop = body.scrollHeight;
         else card.scrollTop = card.scrollHeight;

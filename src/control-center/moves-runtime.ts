@@ -156,7 +156,7 @@ export function createMoveEnvironment(session: AuthSession): MoveEnvironment {
         harnessId: found.harnessId, harnessLabel: getHarness(found.harnessId).label, model: found.agentModel ?? null,
         ownerNodeId: ownership?.ownerNodeId ?? found.executionNodeId ?? local.id,
         turnRunning: Boolean(found.turnRunning),
-        fixedReason: found.readOnly ? "Its transcript is read-only" : found.taskId ? "It belongs to a ticket: move the ticket instead" : null,
+        fixedReason: found.readOnly ? "Its transcript is read-only" : null,
       };
     },
 

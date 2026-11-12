@@ -15,7 +15,7 @@ import type { RetentionSwitches } from "../src/server/conversation-retention.js"
 const run = promisify(execFile);
 const DAY = 86_400_000, HOUR = 3_600_000;
 const exists = (file: string) => access(file).then(() => true, () => false);
-const off: RetentionSwitches = { full: false, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: false, backgroundRuns: false };
+const off: RetentionSwitches = { full: false, includeUnrecorded: false, includeScheduled: false, leftovers: false, backgroundRuns: false };
 const full: RetentionSwitches = { ...off, full: true };
 
 // The sweep loads the server's delete route, and with it the watcher of transcript folders: on Linux an open one keeps the process alive.

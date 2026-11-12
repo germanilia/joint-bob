@@ -25,15 +25,13 @@ test("every PWA icon has its declared dimensions", async () => {
 });
 
 test("runtime-facing text and new paths use Joint Bob", async () => {
-  const [server, store, worktrees, push] = await Promise.all([
+  const [server, store, push] = await Promise.all([
     serverSource(),
     readFile("src/store.ts", "utf8"),
-    readFile("src/worktrees.ts", "utf8"),
     readFile("src/push.ts", "utf8"),
   ]);
-  for (const contents of [server, store, worktrees, push]) assert.doesNotMatch(contents, oldBrand);
+  for (const contents of [server, store, push]) assert.doesNotMatch(contents, oldBrand);
   assert.match(server, /\.joint-bob-attachments/);
-  assert.match(worktrees, /\.joint-bob-worktrees/);
   assert.match(store, /joint-bob-\$\{slug/);
   // Apple's push service rejects VAPID JWTs whose contact is a fake domain
   // ("BadJwtToken"), so the subject must be a real, reachable URL.

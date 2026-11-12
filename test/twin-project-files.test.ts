@@ -52,17 +52,6 @@ test("twins move a new project's files with built-in file sync and stop when the
    while(!(shares.length&&shares.every(share=>share.phase==='builtin'))&&Date.now()<phaseDeadline){await new Promise(r=>setTimeout(r,250));shares=shareWith(await fileSync(node,session),peer);}
    assert.ok(shares.length&&shares.every(share=>share.phase==='builtin'&&share.engine==='builtin'),JSON.stringify(shares.map(share=>({kind:share.kind,phase:share.phase,engine:share.engine,state:share.state}))));
   }
-  const task=await api<{task:{id:string}}>(left,sa,"POST",`/projects/${created.body.project.id}/tasks`,{title:"Shared task",description:"",status:"backlog",engine:"pi",phaseConfig:{}});
-  assert.equal(task.status,201,JSON.stringify(task.body));
-  const taskDeadline=Date.now()+10000;
-  let taskArrived=false;
-  while(Date.now()<taskDeadline){
-   const tasks=await api<{tasks:Array<{id:string}>}>(right,sb,"GET",`/projects/${created.body.project.id}/tasks`);
-   taskArrived=tasks.body.tasks.some(row=>row.id===task.body.task.id);if(taskArrived)break;await new Promise(r=>setTimeout(r,150));
-  }
-  assert.equal(taskArrived,true,'task events must replicate to twin');
-  const renamedTask=await api(right,sb,"PATCH",`/projects/${created.body.project.id}/tasks/${task.body.task.id}`,{title:"Edited through twin"});
-  assert.equal(renamedTask.status,200,'twin must forward task edits to current owner with signed transport');
   const note=await api<{note:{id:string}}>(left,sa,'POST','/quick-notes',{projectId:created.body.project.id,title:'Execute on twin',content:'Synthetic twin prompt',harnessId:'pi',nodeId:right.nodeId,scheduledAt:'2099-01-01T00:00:00.000Z',images:[],secretAccountIds:[]});
   assert.equal(note.status,201,JSON.stringify(note.body));
   const launch=await api<{sessionId:string;nodeId:string}>(left,sa,'POST',`/quick-notes/${note.body.note.id}/start`,{});
@@ -70,27 +59,6 @@ test("twins move a new project's files with built-in file sync and stop when the
   let runs='';const executionDeadline=Date.now()+15000;
   while(Date.now()<executionDeadline){try{runs=await readFile(engineLog,'utf8');}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}if(runs)break;await new Promise(r=>setTimeout(r,100));}
   assert.deepEqual(runs.trim().split('\n'),[`pi:${right.nodeId}`],'conversation executes exactly once on signed target twin, never locally');
-  const startedTask=await api(left,sa,'PATCH',`/projects/${created.body.project.id}/tasks/${task.body.task.id}`,{status:'in_progress'});
-  assert.equal(startedTask.status,200,JSON.stringify(startedTask.body));
-  type ExecutedTask={id:string;sessionPath:string;worktreePath:string;currentNodeId:string;executionState:string;status:string};
-  let executed:ExecutedTask|undefined;const taskRunDeadline=Date.now()+15000;
-  while(Date.now()<taskRunDeadline){
-    executed=(await api<{tasks:ExecutedTask[]}>(left,sa,'GET',`/projects/${created.body.project.id}/tasks`)).body.tasks.find(row=>row.id===task.body.task.id);
-    if(executed?.sessionPath&&executed.worktreePath&&executed.status==='review'&&executed.executionState==='idle')break;
-    await new Promise(r=>setTimeout(r,100));
-  }
-  assert.ok(executed?.sessionPath&&executed.worktreePath,'task produces an actual ticket workspace and conversation');
-  let handedOff:Awaited<ReturnType<typeof api<{task:ExecutedTask}>>>|undefined;const handoffDeadline=Date.now()+60000;
-  while(Date.now()<handoffDeadline){
-    handedOff=await api<{task:ExecutedTask}>(left,sa,'POST',`/projects/${created.body.project.id}/tasks/${task.body.task.id}/handoff`,{peerId:right.nodeId});
-    if(handedOff.status===200)break;await new Promise(r=>setTimeout(r,250));
-  }
-  const eligibility=await api(left,sa,'GET',`/projects/${created.body.project.id}/tasks/${task.body.task.id}/eligibility`);
-  assert.equal(handedOff?.status,200,JSON.stringify({handoff:handedOff?.body,eligibility}));
-  assert.equal(handedOff.body.task.currentNodeId,right.nodeId);
-  const targetTask=(await api<{tasks:ExecutedTask[]}>(right,sb,'GET',`/projects/${created.body.project.id}/tasks`)).body.tasks.find(row=>row.id===task.body.task.id)!;
-  assert.equal(await readFile(path.join(targetTask.worktreePath,'shared.txt'),'utf8'),'actual file transfer','ticket workspace bytes survive takeover');
-  assert.match(await readFile(targetTask.sessionPath,'utf8'),/stubbed response/,'ticket conversation bytes survive takeover');
   const sharingEndpoint=`/twins/${invitation.body.relationshipId}/sharing`;
   assert.equal((await api(left,sa,"POST",sharingEndpoint,{ownerNodeId:left.nodeId,confirmOwnedData:true})).status,200);
   let ready=false;

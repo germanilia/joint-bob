@@ -1,7 +1,7 @@
 /* Focus owns its chrome only. Classic panels and controls retain their state. */
 body.focus-ui .shell { display: block; height: var(--focus-height, 100dvh); padding: 16px max(16px, calc((100vw - 1180px) / 2)); }
-body.focus-ui .shell > :is(#projectsPanel, #chatsPanel, #chatPanel, #boardPanel, #controlCenterPanel) { display: none; animation: none; }
-body.focus-ui.view-projects .shell > #projectsPanel, body.focus-ui.view-sessions .shell > #chatsPanel, body.focus-ui.view-chat .shell > #chatPanel, body.focus-ui.view-board .shell > #boardPanel { display: flex; }
+body.focus-ui .shell > :is(#projectsPanel, #chatsPanel, #chatPanel, #controlCenterPanel) { display: none; animation: none; }
+body.focus-ui.view-projects .shell > #projectsPanel, body.focus-ui.view-sessions .shell > #chatsPanel, body.focus-ui.view-chat .shell > #chatPanel { display: flex; }
 body.focus-ui.view-control .shell > #controlCenterPanel { display: flex; }
 body.focus-ui :is(.mobile-nav, .app-menu, .collapse-button, .panel-rail, .project-actions, .new-chat-row, .projects-quick-note-mobile) { display: none !important; }
 body.focus-ui .back-button { display: inline-grid; }

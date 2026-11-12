@@ -8,7 +8,7 @@ import { state } from "./state.js";
 import { activeChatSession } from "./terminal.js";
 
 // ── Story and Overview ─────────────────────────────────────────────────────────────────────────────────────
-// The story and the Activity overview read the conversation that is open (its project, its machine, its ticket), so a
+// The story and the Activity overview read the conversation that is open (its project and its machine), so a
 // card opens its conversation first, the way clicking the card does, and then presses the same button the toolbar has.
 
 const OPEN_WAIT_MS = 10_000;

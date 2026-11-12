@@ -15,7 +15,6 @@ import type { Adoption, AdoptionEngine, FileSyncProject } from "./adoption.js";
 // app-integration (P4)
 import path from "node:path";
 import type { ShareKind } from "./types.js";
-import { statusAnswerSchema, type StatusAnswer, type StatusBody } from "./wire.js";
 
 /* Starts and stops the file sync worker and keeps it configured with the shares derived from
    node.db. Callers (server.ts, turn ends, project opens, /hello, Settings) never get an exception
@@ -752,7 +751,6 @@ export async function fileSyncProjects(): Promise<{ projects: FileSyncProject[] 
    built-in sync. Status comes from main's in-memory reports; the calls that reach the worker are
    bounded, and none reaches the network. ---- */
 
-const HANDOFF_STATUS_TIMEOUT_MS = 5_000;
 /** A manual rescan of a large folder can take minutes: the request waits this long, the walk goes on. */
 const RESCAN_WAIT_MS = 60_000;
 const RESCAN_TIMEOUT_MS = 30 * 60_000;
@@ -836,12 +834,6 @@ function configuredEngine(): Engine {
   return current;
 }
 
-/** What changed in the project's shares of these kinds is scanned now. Rejects when the worker cannot, or does not finish within `timeoutMs`. */
-export async function fileSyncFlushProject(projectId: string, kinds: readonly ShareKind[], timeoutMs: number): Promise<void> {
-  const current = configuredEngine();
-  await Promise.all(reportedShares(current, projectId, kinds).map((spec) => neutral(() => current.bridge.call("flush", { share: spec.key }, { timeoutMs }))));
-}
-
 /**
  * "Rescan files": a full walk of each of the project's shares; the scan op's "manual" reason also
  * gives blocked items another try. Waits a minute at most; a longer walk goes on and the status says
@@ -901,26 +893,3 @@ export function fileSyncPrioritize(projectId: string, kind: ShareKind, prefix: s
     .then(() => settled("fileSync:prioritize"), quietly("fileSync:prioritize", "File sync could not move files up its queue"));
 }
 
-/**
- * A handoff source said how far its index of the project's shares reached (design §6.5). The worker
- * takes it exactly as a peer's /files/status: it pulls at once from a source ahead of this node's
- * cursor, moves those shares up its queue for a while, and answers where the cursor of the source's
- * index and the need stand. Undefined when the worker cannot answer (off, restarting, not shared).
- */
-export async function fileSyncHandoffStatus(peer: string, body: StatusBody): Promise<StatusAnswer | undefined> {
-  const current = engine;
-  if (!current || current.bridge.state !== "running" || current.sent === undefined) return undefined;
-  try {
-    const answer = await neutral(() => current.bridge.serve({ peer, endpoint: "status", query: {}, body }, { timeoutMs: HANDOFF_STATUS_TIMEOUT_MS }));
-    if (answer.status !== 200) return undefined;
-    const parsed = statusAnswerSchema.safeParse(answer.json);
-    settled("fileSync:handoff");
-    return parsed.success ? parsed.data : undefined;
-  } catch (error) {
-    warnOnChange("fileSync:handoff", `File sync could not check the files a handoff needs: ${messageOf(error)}`);
-    return undefined;
-  } finally {
-    // Not a request a peer sent through main's routes: Settings' count of those stays as it was.
-    current.bridge.served = Math.max(0, current.bridge.served - 1);
-  }
-}

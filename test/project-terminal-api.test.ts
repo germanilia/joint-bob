@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { type ChildProcess } from "node:child_process";
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
 import { connect, type Socket } from "node:net";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -134,7 +134,6 @@ test("embedded terminal runs in the project directory or the ticket workspace", 
     const moduleUrl = new URL(`../src/server.ts?terminal=${Date.now()}`, import.meta.url);
     ({ server: appServer } = await import(moduleUrl.href));
     const { getClusterNode } = await import("../src/cluster.js");
-    const { createTask } = await import("../src/tasks.js");
     await new Promise<void>((resolve) => appServer?.listen(0, "127.0.0.1", resolve));
     const address = appServer.address();
     if (!address || typeof address === "string") throw new Error("App server did not bind");
@@ -185,15 +184,6 @@ test("embedded terminal runs in the project directory or the ticket workspace", 
     assert.match(output, new RegExp(projectPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     socket.close();
 
-    // A board ticket owns its own copy of the project, so its terminal must land there.
-    await mkdir(projectPath, { recursive: true });
-    const ticket = await createTask(project.id, projectPath, "Terminal ticket", "", "backlog", "pi", false, false, {});
-    const ticketUrl = new URL(`/ws?mode=terminal&projectId=${project.id}&nodeId=${local.id}&taskId=${ticket.id}`, baseUrl);
-    ticketUrl.protocol = "ws:";
-    socket = new WebSocket(ticketUrl, { origin: baseUrl, headers: { Cookie: cookie } });
-    assert.deepEqual(await nextMessage(socket), { type: "terminalReady", cwd: ticket.worktreePath, nodeId: local.id });
-    socket.close();
-    await rm(path.dirname(ticket.worktreePath ?? ""), { recursive: true, force: true });
 
   } finally {
     socket?.terminate();

@@ -156,7 +156,6 @@
           <button class="ghost icon-button ws-menu-item" type="button" role="menuitem" data-running-conversations-open aria-label="Running conversations" title="Running conversations" data-shortcut-hint="runningConversations" data-testid="running-conversations-open-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 5.5 10 6.5L8 18.5z"/></svg><span class="ws-item-label">Running conversations</span><span class="reviews-badge running-badge" data-running-count data-testid="running-conversations-badge" hidden>0</span></button>
           <button class="ghost icon-button ws-menu-item" id="projectNotesButton" type="button" role="menuitem" data-notes-open aria-label="Project notes" title="Project notes" data-shortcut-hint="toggleNotes" data-testid="projects-open-notes-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h9l3 3V20.5H6z"/><path d="M15 3.5v3h3M9 11h6M9 15h6"/></svg><span class="ws-item-label">Project notes</span></button>
           <button class="ghost icon-button ws-menu-item" id="workspaceIssuesButton" type="button" role="menuitem" aria-label="Issues across projects" title="Issues across projects" data-testid="workspace-issues-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 3v1"/></svg><span class="ws-item-label">Issues across projects</span></button>
-          <button class="ghost icon-button ws-menu-item" id="projectBoardButton" type="button" role="menuitem" aria-label="Project board" title="Project board" data-testid="projects-open-board-button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 4v16M16 4v16"/></svg><span class="ws-item-label">Project board</span></button>
           <a class="ghost icon-button ws-menu-item" id="openAssistantsButton" href="/assistant.html" role="menuitem" aria-label="Switch to assistants" title="Assistants" data-testid="projects-open-assistants-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3"/><path d="M4.5 9a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3z"/><path d="M8.5 12h.01M15.5 12h.01M9 16h6"/></svg><span class="ws-item-label">Assistants app</span></a>
         </div>
         <label class="ws-search" for="workspaceSearchInput">
@@ -170,7 +169,6 @@
           <button class="ghost icon-button ws-place ws-place-bob" id="openControlCenterButton" type="button" aria-label="Open the control center" title="Bob: the control center (Bob's chat and every agent that runs)" data-shortcut-hint="toggleView" data-place="bob" data-testid="projects-open-control-center-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.6M12 17.9v2.6M3.5 12h2.6M17.9 12h2.6"/></svg><span class="ws-place-label">Bob</span></button>
           <button class="ghost ws-place" id="workspaceInboxButton" type="button" data-place="inbox" aria-pressed="false" title="What needs you, what runs and what waits for review, in every project" data-testid="workspace-inbox-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg><span class="ws-place-label">Inbox</span><i class="ws-place-note" id="workspaceInboxNote" data-testid="workspace-inbox-note"></i></button>
           <button class="ghost ws-place" id="workspaceProjectsButton" type="button" data-place="projects" aria-pressed="false" title="Choose a project, then its conversations and notes" data-testid="workspace-projects-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span class="ws-place-label">Projects</span><i class="ws-place-note" id="workspaceProjectNote"></i></button>
-          <button class="ghost ws-place" id="workspaceBoardButton" type="button" data-place="board" title="This project's task board" data-testid="workspace-board-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 4v16M16 4v16"/></svg><span class="ws-place-label">Board</span></button>
           <button class="ghost ws-place" id="workspaceAutomationsButton" type="button" data-place="automations" title="Scheduled runs, webhooks and triggers, in Bob's control center" data-testid="workspace-automations-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg><span class="ws-place-label">Automations</span></button>
           <button class="ghost icon-button ws-place usage-open" type="button" data-usage-open data-place="costs" data-shortcut-hint="costs" data-testid="usage-open" aria-label="Costs" title="Costs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5h-4.5a2 2 0 0 0 0 4h3a2 2 0 0 1 0 4H9M12 6.5v11"/></svg><span class="ws-place-label">Costs</span><kbd class="shortcut-hint" aria-hidden="true"></kbd></button>
         </nav>
@@ -320,18 +318,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
       </footer>
-      <section class="panel view-panel board" id="boardPanel" aria-label="Kanban board">
-        <header class="panel-bar">
-          <button class="ghost icon-button back-button" id="backToChatsButton" type="button" aria-label="Back to conversations" data-testid="board-back-button">‹</button>
-          <div class="panel-title">
-            <h1 id="boardProjectName">Board</h1>
-            <p>Tasks for this project</p>
-          </div>
-          <button class="primary compact" id="newTaskButton" type="button" disabled data-testid="task-create-button">+ Task</button>
-        </header>
-        <div class="board-columns" id="boardColumns"></div>
-      </section>
-
       <section class="panel view-panel control-center" id="controlCenterPanel" aria-label="Control center">
         <div class="control-exit-prompt" id="controlExitPrompt" role="status" hidden data-testid="control-exit-prompt"><span>Press <kbd>Esc</kbd> again to leave the control center</span><button class="primary compact" id="controlExitConfirm" type="button" data-testid="control-exit-confirm">Leave</button></div>
         <header class="panel-bar">
@@ -423,7 +409,6 @@
             <div class="chat-title-meta">
               <span class="chat-project-name" id="chatProjectName" data-testid="chat-project-name">No project selected</span>
               <span class="turn-timer" id="turnTimer" hidden data-testid="chat-turn-timer"></span>
-              <button class="task-backlink" id="taskBacklinkButton" type="button" hidden data-testid="chat-task-backlink-button">Ticket</button>
               <div class="chat-actions">
                 <div class="status-pill" id="connectionStatus" role="status" title="Idle">Idle</div>
                 <div class="context-usage" id="contextUsage" role="status" data-testid="chat-context-usage" hidden><span class="context-usage-bar" aria-hidden="true"><i id="contextUsageFill"></i></span><span class="context-usage-text" id="contextUsageText"></span></div>
@@ -652,10 +637,9 @@
         </div>
         <div class="conversation-lock done-conversation-notice" id="doneConversationNotice" role="status" data-testid="done-conversation-notice" hidden>
           <div class="conversation-lock-copy">
-            <strong id="doneConversationTitle">Done ticket</strong>
-            <span id="doneConversationDetail" data-testid="done-conversation-detail">This conversation is read-only. Continue in a new project chat to do more work.</span>
+            <strong id="doneConversationTitle">Read-only</strong>
+            <span id="doneConversationDetail" data-testid="done-conversation-detail">This conversation is read-only.</span>
           </div>
-          <button class="primary compact" id="doneConversationContinueButton" type="button" data-testid="done-conversation-continue-button">Continue in new chat</button>
         </div>
         <form class="composer" id="composer">
           <div class="attachment-list" id="attachmentList" aria-live="polite"></div>
@@ -731,7 +715,6 @@
       <button id="navNotesButton" type="button" data-notes-open data-testid="nav-notes-button"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h9l3 3V20.5H6z"/><path d="M15 3.5v3h3M9 11h6M9 15h6"/></svg></span>Notes</button>
       <button id="navStoryButton" type="button" data-testid="nav-story-button" aria-label="Story"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg></span>Story</button>
       <button id="navOverviewButton" type="button" data-testid="nav-overview-button" aria-label="Activity overview"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9.5 4.5 2.5-4.5 2.5z"/></svg></span>Overview</button>
-      <button id="navBoardButton" type="button" data-testid="nav-board-button" hidden><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 4v16M16 4v16"/></svg></span>Board</button>
     </nav>
 
     <div class="install-banner" id="installBanner" role="dialog" aria-label="Install Joint Bob" hidden>
@@ -1051,7 +1034,7 @@
               <input id="settingsRemoteTerminalOtherNodes" type="checkbox" data-testid="settings-remote-terminal-other-nodes" />
               Allow other nodes to open a terminal on this node
             </label>
-            <p class="settings-hint">These apply when you are signed in to another node and open a terminal for a conversation or ticket running here. Signing in to this node directly always gives you its terminal.</p>
+            <p class="settings-hint">These apply when you are signed in to another node and open a terminal for a conversation running here. Signing in to this node directly always gives you its terminal.</p>
           </fieldset>
           <fieldset class="phase-settings" data-admin-only>
             <legend>Runs on this node</legend>
@@ -1163,10 +1146,6 @@
               <label class="checkbox-row retention-scope-dependent">
                 <input id="settingsRetentionScheduled" type="checkbox" data-retention-scope="includeScheduled" data-retention-needs-full data-testid="settings-retention-scheduled" />
                 …and conversations started by schedules and webhooks
-              </label>
-              <label class="checkbox-row retention-scope-dependent">
-                <input id="settingsRetentionTickets" type="checkbox" data-retention-scope="includeTickets" data-retention-needs-full data-testid="settings-retention-tickets" />
-                …and conversations of finished tickets
               </label>
               <label class="checkbox-row">
                 <input id="settingsRetentionLeftovers" type="checkbox" data-retention-scope="leftovers" data-testid="settings-retention-leftovers" />
@@ -1951,7 +1930,7 @@
                 <button class="ghost" type="button" id="settingsProjectHomeBrowseButton" data-testid="settings-project-home-browse-button">Browse</button>
               </div>
             </label>
-            <p>New projects use &lt;home&gt;/&lt;workspace&gt;/...; board cards use &lt;home&gt;/tickets/... Existing projects are not moved.</p>
+            <p>New projects use &lt;home&gt;/&lt;workspace&gt;/... Existing projects are not moved.</p>
           </fieldset>
           <fieldset class="phase-settings">
             <legend>Workspaces</legend>
@@ -3170,85 +3149,6 @@
       </form>
     </dialog>
 
-    <dialog id="taskDialog">
-      <div class="dialog-card task-dialog-card">
-        <div>
-          <span class="eyebrow">Kanban</span>
-          <h2 id="taskDialogTitle">New task</h2>
-        </div>
-        <div class="settings-tabs" role="tablist" aria-label="Ticket sections" id="taskTabs">
-          <button class="settings-tab" type="button" data-task-tab="settings" role="tab" id="taskTab-settings" aria-controls="taskForm" aria-selected="true" data-testid="task-tab-settings">Settings</button>
-          <button class="settings-tab" type="button" data-task-tab="conversation" role="tab" id="taskTab-conversation" aria-controls="taskChatHost" aria-selected="false" tabindex="-1" data-testid="task-tab-conversation">Conversation</button>
-        </div>
-      <form method="dialog" id="taskForm" role="tabpanel" aria-labelledby="taskTab-settings">
-        <div class="task-form-body">
-        <label>
-          Title
-          <input id="taskTitleInput" name="title" autocomplete="off" placeholder="Fix login flow" required data-testid="task-form-title-input" />
-        </label>
-        <div class="task-description-field" id="taskDescriptionField">
-          <label for="taskDescriptionInput">Task description (optional)</label>
-          <textarea id="taskDescriptionInput" name="description" rows="3" placeholder="Details, links, acceptance criteria..." data-testid="task-form-description-input"></textarea>
-          <div class="attachment-list" id="taskAttachmentList" aria-live="polite"></div>
-          <input class="sr-only" id="taskAttachmentInput" type="file" multiple data-testid="task-form-attachment-input" />
-          <button class="ghost compact task-attach-button" id="taskAttachButton" type="button" data-testid="task-form-attach-button">+ Attach files</button>
-        </div>
-        <label>
-          Agent
-          <select id="taskEngineInput" name="engine" data-testid="task-form-engine-select"></select>
-        </label>
-        <label class="checkbox-row">
-          <input id="taskPlanModeInput" name="planMode" type="checkbox" data-testid="task-form-plan-mode-input" />
-          Plan mode
-        </label>
-        <label class="checkbox-row">
-          <input id="taskReviewModeInput" name="reviewMode" type="checkbox" data-testid="task-form-review-mode-input" />
-          Review mode
-        </label>
-        <fieldset class="phase-settings">
-          <legend>Phase agents</legend>
-          <label>Planning<select id="taskPlanningModelInput" data-phase="planning"></select></label>
-          <label>Implementation<select id="taskImplementationModelInput" data-phase="in_progress"></select></label>
-          <label>Review<select id="taskReviewModelInput" data-phase="review"></select></label>
-        </fieldset>
-        <label>
-          Status
-          <select id="taskStatusInput" name="status" data-testid="task-form-status-select">
-            <option value="backlog">Backlog</option>
-            <option value="planning">Planning</option>
-            <option value="in_progress">In progress</option>
-            <option value="review">Review</option>
-            <option value="done">Done</option>
-          </select>
-        </label>
-        <p class="muted compact-copy">Plan mode adds a Planning phase. Use ▶ to get a plan, iterate in chat, then move to In progress to implement. Completed implementation moves to Review.</p>
-        </div>
-        <div class="dialog-actions">
-          <button class="ghost danger" value="cancel" type="button" id="deleteTaskButton" hidden data-testid="task-form-delete-button">Delete</button>
-          <button class="ghost" value="cancel" type="button" id="cancelTaskButton">Cancel</button>
-          <button class="primary" value="default" type="submit" data-testid="task-form-save-button">Save task</button>
-        </div>
-      </form>
-      <!-- The live chat nodes are moved in here while the dialog is open, so the
-           transcript, streaming, tools and attachments are the real ones. -->
-      <section class="task-chat-host" id="taskChatHost" role="tabpanel" aria-labelledby="taskTab-conversation" hidden></section>
-      </div>
-    </dialog>
-
-    <dialog id="handoffProgressDialog" data-testid="handoff-progress-dialog">
-      <div class="dialog-card handoff-progress-card">
-        <div>
-          <span class="eyebrow">Ticket handoff</span>
-          <h2>Waiting for files to copy</h2>
-        </div>
-        <p id="handoffProgressStatus" role="status" aria-live="polite" data-testid="handoff-progress-status"></p>
-        <progress aria-label="Handoff progress"></progress>
-        <div class="dialog-actions">
-          <button class="ghost" id="handoffProgressCancelButton" type="button" data-testid="handoff-progress-cancel-button">Cancel</button>
-        </div>
-      </div>
-    </dialog>
-
     <!-- The app's own confirm box. Replaces window.confirm so every prompt is themed and testable. -->
     <dialog id="backgroundTasksDialog" class="background-tasks-dialog" data-testid="background-tasks-dialog" aria-labelledby="backgroundTasksTitle">
       <div class="dialog-card background-tasks-card">
@@ -3308,20 +3208,6 @@
         <div class="dialog-actions">
           <button class="ghost" type="button" id="choiceCancelButton" data-testid="choice-cancel-button">Cancel</button>
           <button class="primary" type="submit" value="confirm" id="choiceAcceptButton" data-testid="choice-accept-button">Continue</button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog id="mergeConflictDialog" data-testid="merge-conflict-dialog">
-      <form method="dialog" class="dialog-card">
-        <div class="dialog-heading" tabindex="-1">
-          <span class="eyebrow" id="mergeConflictEyebrow">Merge conflicts</span>
-          <h2 id="mergeConflictTitle">Resolve conflicts</h2>
-          <p id="mergeConflictMessage"></p>
-        </div>
-        <div class="choice-list" id="mergeConflictList" data-testid="merge-conflict-list"></div>
-        <div class="dialog-actions">
-          <button class="ghost" type="button" id="mergeConflictDoneButton" data-testid="merge-conflict-done-button">Done</button>
         </div>
       </form>
     </dialog>

@@ -13,14 +13,14 @@ import { renderSessions } from "./session-list.js";
 import { setStatus, toast } from "./shell.js";
 import { openSession } from "./socket.js";
 import { shared, state } from "./state.js";
-import { activeChatSession, continueTaskOnNode } from "./terminal.js";
+import { activeChatSession } from "./terminal.js";
 
 function conversationIsReadOnly() {
-  return state.conversationReadOnly || conversationTask()?.status === "done";
+  return state.conversationReadOnly;
 }
 
 export function setComposerEnabled(enabled) {
-  // Ownership and completed tickets both fence writes, regardless of socket health.
+  // Ownership and read-only conversations both fence writes, regardless of socket health.
   const allowed = enabled && !state.conversationLock && !conversationIsReadOnly();
   const auto = state.routing?.active && state.routing.mode === "auto";
   elements.messageInput.disabled = !allowed;
@@ -40,28 +40,20 @@ export function setComposerEnabled(enabled) {
   if (!allowed) hideCommandAutocomplete();
 }
 
-/** Why the open conversation is read-only, as its node said. A Done ticket this page knows of
-    wins; a node too old to say is read the way the page read it before: its row, else Done. */
-function readOnlyReason() {
-  if (conversationTask()?.status === "done") return "doneTicket";
-  return state.conversationReadOnlyReason || (activeChatSession()?.readOnly === true ? "transcript" : "doneTicket");
-}
-
-/** Says why the conversation is read-only. Only a Done ticket offers its follow-up chat; the
-    other reasons say what can be done instead, and a refused machine where that changes. */
+/** Says why the conversation is read-only, as its node said: what can be done instead, and a
+    refused machine where that changes. */
 function renderReadOnlyNotice(readOnly) {
-  const reason = readOnly ? readOnlyReason() : "doneTicket";
+  const reason = readOnly ? state.conversationReadOnlyReason : null;
   const machine = state.conversationNodeName;
   const notice = reason === "runnerAccess" ? {
     title: "Read-only here",
     detail: `${machine || "The machine this conversation runs on"} does not let other machines run work on it, so you can read this conversation here but not write in it. To allow it, turn on “Allow other nodes to pick this node in Runs on” in Settings → Node on ${machine || "that machine"}.`,
-  } : reason === "transcript" ? {
+  } : {
     title: "Sub-agent conversation",
     detail: "A sub-agent wrote this while working on another conversation. You can read it, but it can't be continued. To do more, write in the conversation that started it.",
-  } : { title: "Done ticket", detail: "This conversation is read-only. Continue in a new project chat to do more work." };
+  };
   elements.doneConversationTitle.textContent = notice.title;
   elements.doneConversationDetail.textContent = notice.detail;
-  elements.doneConversationContinueButton.hidden = reason !== "doneTicket";
 }
 
 export function renderConversationLock() {
@@ -76,45 +68,22 @@ export function renderConversationLock() {
     elements.conversationLockStatus.textContent = "";
     return;
   }
-  const takeable = !state.activeTaskId;
   elements.conversationLockDetail.textContent = lock.status === "conflict"
     ? `Ownership is conflicted between this node and ${lock.nodeName}. Writes stay fenced until one node takes ownership.`
-    : takeable
-      ? `This conversation is owned by ${lock.nodeName}. Anything you send from here is rejected until you take ownership.`
-      : `This conversation is owned by ${lock.nodeName}. Open it there to continue \u2014 a ticket conversation stays on its node.`;
-  elements.conversationLockTakeButton.hidden = !takeable;
+    : `This conversation is owned by ${lock.nodeName}. Anything you send from here is rejected until you take ownership.`;
+  elements.conversationLockTakeButton.hidden = false;
   const transferring = shared.ownershipTaking || Boolean(shared.ownershipWait);
-  elements.conversationLockForceButton.hidden = !takeable;
+  elements.conversationLockForceButton.hidden = false;
   elements.conversationLockForceButton.disabled = transferring;
-  elements.conversationLockTakeButton.disabled = !takeable;
+  elements.conversationLockTakeButton.disabled = false;
   elements.conversationLockTakeButton.textContent = transferring ? "Cancel transfer" : "Take ownership";
-  elements.conversationLockTakeButton.title = transferring ? "Cancel this ownership transfer" : takeable ? `Move ownership to this node from ${lock.nodeName}` : "";
+  elements.conversationLockTakeButton.title = transferring ? "Cancel this ownership transfer" : `Move ownership to this node from ${lock.nodeName}`;
 }
 
 export function sendSocket(payload) {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return false;
   state.socket.send(JSON.stringify(payload));
   return true;
-}
-
-/**
- * The ticket a conversation belongs to. A ticket owns its session file, so the
- * link holds however the conversation was reached - from the board card, or
- * straight from the Chats list, which never sets an active ticket.
- */
-export function conversationTask() {
-  const opened = state.tasks.find((candidate) => candidate.id === state.activeTaskId);
-  if (opened) return opened;
-  return state.tasks.find((candidate) => candidate.sessionPath && candidate.sessionPath === state.activeSessionPath);
-}
-
-function renderTaskBacklink() {
-  const task = conversationTask();
-  elements.taskBacklinkButton.hidden = !task;
-  if (!task) return;
-  elements.taskBacklinkButton.textContent = `◂ ${task.title}`;
-  elements.taskBacklinkButton.title = `Back to ticket: ${task.title}`;
-  elements.taskBacklinkButton.setAttribute("aria-label", `Back to ticket ${task.title}`);
 }
 
 /**
@@ -147,7 +116,6 @@ export function renderChatSessionControls() {
     disabled: !node.online || !node.mapped || !node.runner,
   })));
   elements.chatNodeSelect.value = state.activeNodeId || "";
-  const activeTicket = state.activeTaskId ? state.tasks.find((task) => task.id === state.activeTaskId) : null;
   elements.chatNodeSelect.disabled = !state.activeProjectId || !state.sessionNodes.length || conversationIsReadOnly();
 
   syncSelectOptions(elements.chatHarnessSelect, state.harnesses.filter(({ runtimeConfigured }) => runtimeConfigured).map((harness) => ({ value: harness.id, label: harness.label, disabled: !harness.ready })));
@@ -167,11 +135,8 @@ export function renderChatSessionControls() {
     : "Terminal — " + (terminalRefused
     ? `${terminalNode.name} does not allow terminal access from this node`
     : terminalNode
-    ? activeTicket
-      ? `Open this ticket's folder in Terminal on ${terminalNode.name}`
-      : `Open the project folder in Terminal on ${terminalNode.name}`
+    ? `Open the project folder in Terminal on ${terminalNode.name}`
     : "Select an execution node first");
-  renderTaskBacklink();
   syncQuickActionLabels();
 }
 
@@ -289,27 +254,6 @@ document.addEventListener("terminalPolicyChanged", () => {
 elements.chatNodeSelect.addEventListener("change", async () => {
   const destination = state.sessionNodes.find((node) => node.id === elements.chatNodeSelect.value);
   if (!destination) { toast.error("Destination node was not found"); return; }
-  const task = state.activeTaskId ? state.tasks.find((candidate) => candidate.id === state.activeTaskId) : null;
-  if (state.activeTaskId) {
-    if (!task) {
-      toast.error("Active ticket was not found");
-      return;
-    }
-    const ownerId = task.currentNodeId;
-    if (destination.id === ownerId) return;
-    try {
-      if (await continueTaskOnNode(task, destination)) return;
-      state.activeNodeId = ownerId;
-      elements.chatNodeSelect.value = ownerId;
-      if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: ownerId });
-    } catch (error) {
-      state.activeNodeId = ownerId;
-      elements.chatNodeSelect.value = ownerId;
-      if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: ownerId });
-      toast.error(error.message);
-    }
-    return;
-  }
   const session = activeChatSession();
   if (!session) {
     state.activeNodeId = elements.chatNodeSelect.value;

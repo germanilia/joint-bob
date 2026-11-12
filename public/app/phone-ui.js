@@ -131,7 +131,7 @@ byId("workspaceGroupPage").addEventListener("click", markFromHome, true);
 byId("sessionList").addEventListener("click", () => { state.chatFromHome = false; }, true);
 
 window.addEventListener("app-view-changed", () => {
-  if (["projects", "control", "board"].includes(currentMobileView())) state.chatFromHome = false;
+  if (["projects", "control"].includes(currentMobileView())) state.chatFromHome = false;
   syncTabs();
 });
 window.addEventListener("workspace-column-changed", syncTabs);

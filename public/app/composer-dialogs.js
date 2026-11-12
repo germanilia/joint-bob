@@ -456,7 +456,6 @@ function folderListingUrl(dir) {
   const url = new URL(`/api/projects/${encodeURIComponent(state.activeProjectId)}/files`, location.origin);
   url.searchParams.set("dir", dir);
   if (state.activeNodeId) url.searchParams.set("nodeId", state.activeNodeId);
-  if (state.activeTaskId) url.searchParams.set("taskId", state.activeTaskId);
   return `${url.pathname}${url.search}`;
 }
 

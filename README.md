@@ -326,21 +326,20 @@ Earlier releases used Syncthing for project files. Joint Bob no longer installs,
 
 What travels how:
 
-- Joint Bob's signed HTTPS API exchanges cluster membership, project policy and metadata, task state, conversation transcripts, and other application events.
-- Built-in file sync transfers each shared project's files, its worktrees, and its ticket workspaces.
+- Joint Bob's signed HTTPS API exchanges cluster membership, project policy and metadata, conversation transcripts, and other application events.
+- Built-in file sync transfers each shared project's files and its worktrees.
 - Each node keeps its own `~/.joint-bob/node.db`. Joint Bob never synchronizes the SQLite database as a file.
 - Pi, Claude, and Kiro configuration, authentication files, OAuth state, MCP authentication, and daemon control keys remain node-local.
 - Twins automatically receive all of the node administrator's owned secret accounts, including project-owned accounts, without a per-account opt-in. Accounts received from another node and other local users' accounts are not forwarded through twins. Project-owned accounts keep their project restriction. The per-account sharing checkbox controls export to cluster members for shared projects the account is attached to. In Settings > Secrets, each owned account can also be shared with selected clusters or individual nodes in them, without enabling attached-project cluster sharing. Sharing a workspace sends its assigned accounts to members along with the workspace's projects. Recipients see read-only copies; edits on the owner update them, and removing the last grant removes the copy when the recipient reconnects. Values already copied cannot be recalled. Credential transfer uses the signed Joint Bob cluster API, not file sync.
 
 Users still install Joint Bob on every node, create a local Joint Bob administrator on every node, configure mutually reachable private HTTPS origins, choose a Joint Bob home folder, and join clusters or pair twins with a one-time link. Pi, Claude, and Kiro authentication is separate and must be completed on every node that will run that engine. Tailscale authentication is required only when Tailscale provides the private network.
 
-## Projects and ticket workspaces
+## Projects
 
-The **Joint Bob home folder** controls where new projects and board-card workspaces are stored on each node:
+The **Joint Bob home folder** controls where new projects are stored on each node:
 
 ```text
 <home>/<workspace>/<project-name>
-<home>/tickets/<project-id>/<ticket-id>
 ```
 
 A workspace is a folder directly under the home folder. Joint Bob creates `personal` and `work` workspaces by default. Add more under **Settings > Projects > Workspaces**.
@@ -354,10 +353,6 @@ Projects created through the UI are synchronized with the machines they are shar
 Joint Bob copies or moves the complete local folder, including `.git`, `node_modules`, and hidden files. `.git`, `node_modules`, build output, environment files, credentials, and logs are never synchronized, at any depth. Python environments and installed packages (`.venv`, `venv`, `site-packages`, `dist-packages`, `__pypackages__`), npm/pnpm/Yarn caches, pip/uv caches, NuGet's `.nuget` cache and package archives, and Gradle/Maven caches also stay node-local. Source directories named `packages` or `bin`, package-manager configuration, and lockfiles still sync; each node installs its own dependencies.
 
 Because `.git` stays on each node, a commit pushed from one node would leave the other nodes' git HEAD behind the files they already received. Before every user message and goal turn, Joint Bob checks whether the project is a git repository. If it is, it runs `git fetch` and moves HEAD and the index, never the files, to the upstream commit. It does that only when the files on disk already match that commit, the node has no unpushed commits, and nothing is staged. Commit and push from the same node: an unpushed commit stays on the node that made it.
-
-Ticket agents work in the synchronized `<home>/tickets` folder. Handoff waits for the destination node to report that the workspace is synchronized. Archiving a ticket moves it to Done and removes its workspace. Deleting a ticket removes its workspace and task record.
-
-Existing Git-backed tickets keep their worktree and merge behavior. New tickets do not create a branch and do not show **Merge to main**.
 
 ### Project Git and issues
 

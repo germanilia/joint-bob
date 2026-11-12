@@ -22,7 +22,6 @@ import { isProjectPinned, sortPinnedFirst, togglePinnedProject } from "./session
 import { confirmAction, toast } from "./shell.js";
 import { closeWatchSocket } from "./socket.js";
 import { shared, state } from "./state.js";
-import { renderBoardView } from "./tasks.js";
 import { openProjectPathMapping } from "./workspaces.js";
 import { usageBadge } from "./usage-format.js";
 
@@ -403,13 +402,10 @@ async function removeProject(project) {
     state.activeProjectId = null;
     state.activeSessionPath = null;
     state.activeSessionId = null;
-    state.activeTaskId = null;
     if (state.preferencesLoaded) savePreferencesInBackground({ activeProjectId: null, activeSessionPath: null, activeSessionId: null });
     state.sessions = [];
     state.sessionsProjectId = null;
-    state.tasks = [];
     closeWatchSocket();
-    renderBoardView();
   }
   await loadProjects();
 }

@@ -63,8 +63,7 @@ test("conversation records provide drafts until a transcript replaces them", asy
     updateSettings({ ...getSettings(), pi: { executable: "", configPath: path.join(root, "pi"), sessionPath }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") }, projects: { homePath: path.join(root, "home") }, conversationCommands: { start: { enabled: true, prompt: startPrompt }, end: { enabled: false, prompt: "" } } });
     const { listHarnessSessions, refreshHarnessSessions } = await import("../src/harnesses.js");
     assert.equal((await listHarnessSessions(project)).filter((session) => session.id === id).length, 1);
-    const draft = (await listHarnessSessions(project)).find((session) => session.path === `draft:pi:${id}`);
-    assert.equal(draft?.taskId, "ticket-1");
+    assert.ok((await listHarnessSessions(project)).some((session) => session.path === `draft:pi:${id}`));
 
     await mkdir(sessionPath, { recursive: true });
     const transcriptPath = path.join(sessionPath, `${id}.jsonl`);
@@ -78,7 +77,6 @@ test("conversation records provide drafts until a transcript replaces them", asy
     const merged = (await listHarnessSessions(project)).filter((session) => session.id === id);
     assert.equal(merged.length, 1);
     assert.equal(merged[0].draft, undefined);
-    assert.equal(merged[0].taskId, "ticket-1");
     assert.equal(await records.deleteConversationRecord(project.id, "pi", id, originNodeId), true);
     assert.equal(await records.getConversationRecord(project.id, "pi", id), undefined);
     const db = openNodeDatabase(path.join(root, "data", "node.db"));

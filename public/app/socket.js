@@ -25,7 +25,6 @@ import { markAutoReply, setAutoRespond } from "./auto-respond.js";
 import { renderSessions } from "./session-list.js";
 import { maybeNotifyTurnComplete, playCompletionSound, setConnecting, setStatus, subscribeToPush, toast } from "./shell.js";
 import { state } from "./state.js";
-import { loadTasks } from "./tasks.js";
 import { logTranscriptChanges } from "./transcript-diagnostics.js";
 
 const GOAL_COMPLETE_MARKER = "BOB_GOAL_COMPLETE";
@@ -77,7 +76,7 @@ function scheduleReconnect(sessionPath, delay = RECONNECT_MS) {
   if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
   state.reconnectTimer = setTimeout(() => {
     state.reconnectTimer = null;
-    openSession(sessionPath, elements.sessionTitle.textContent || "Conversation", true, Boolean(state.activeTaskId));
+    openSession(sessionPath, elements.sessionTitle.textContent || "Conversation", true);
   }, delay);
 }
 
@@ -166,26 +165,23 @@ function websocketUrl(sessionPath) {
   url.searchParams.set("projectId", state.activeProjectId);
   url.searchParams.set("sessionPath", sessionPath || "new");
   if (state.activeSessionId) url.searchParams.set("sessionId", state.activeSessionId);
-  if (state.activeNodeId && !state.activeTaskId) url.searchParams.set("nodeId", state.activeNodeId);
-  if (state.activeTaskId) url.searchParams.set("taskId", state.activeTaskId);
-  if (state.spinOffSourceTaskId) url.searchParams.set("sourceTaskId", state.spinOffSourceTaskId);
-  if (state.newSessionWorktreeId && !state.activeTaskId) url.searchParams.set("worktreeId", state.newSessionWorktreeId);
+  if (state.activeNodeId) url.searchParams.set("nodeId", state.activeNodeId);
+  if (state.newSessionWorktreeId) url.searchParams.set("worktreeId", state.newSessionWorktreeId);
   if (state.newSessionSecretAccountIds.length) url.searchParams.set("secretAccountIds", state.newSessionSecretAccountIds.join(","));
   return url.toString();
 }
 
-export function openSession(sessionPath, title = "New conversation", preserveChat = false, preserveTask = false, reviewHighlightAfter = null, keepView = false) {
+export function openSession(sessionPath, title = "New conversation", preserveChat = false, reviewHighlightAfter = null, keepView = false) {
   // The list renders before harness metadata arrives, and the engine is resolved from it below.
   // Opening without it threw after "Connecting…" was already on screen, with nothing left to retry.
   if (!state.harnesses.length) {
-    loadHarnesses().then(() => openSession(sessionPath, title, preserveChat, preserveTask, reviewHighlightAfter, keepView)).catch((error) => toast.error(error.message));
+    loadHarnesses().then(() => openSession(sessionPath, title, preserveChat, reviewHighlightAfter, keepView)).catch((error) => toast.error(error.message));
     return;
   }
   rememberDraft();
   // Opening a conversation that already exists drops the picks made for a new one.
   if (sessionPath && !state.harnesses.some(({ newSessionPath }) => newSessionPath === sessionPath)) {
     state.newSessionSecretAccountIds = [];
-    state.spinOffSourceTaskId = null;
     state.newSessionWorktreeId = null;
   }
   // Timers belong to the conversation being left. The ready payload restores
@@ -193,14 +189,9 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
   state.lastTurnStartedAt = 0;
   state.conversationDurationMs = 0;
   state.conversationStartedAt = null;
-  if (!preserveTask) state.activeTaskId = null;
   if (!preserveChat) {
     state.conversationReadOnly = false;
     state.conversationReadOnlyReason = null;
-  }
-  if (state.activeTaskId) {
-    const task = state.tasks.find((candidate) => candidate.id === state.activeTaskId);
-    if (task) state.activeNodeId = task.currentNodeId;
   }
   closeSocket();
   if (!preserveChat) {
@@ -235,7 +226,7 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
   elements.sessionTitle.textContent = title;
   renderSessions();
   // A reconnect reuses this function. Switching panels there would yank the user
-  // off the board (or any other view) every time a socket blips.
+  // off the current view every time a socket blips.
   if (!preserveChat && !keepView) setMobileView("chat");
   setStatus("Connecting…", false, true);
   setComposerEnabled(false);
@@ -363,8 +354,8 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
         .then(() => refreshSessionsQuietly())
         .catch((error) => toast.error(error.message));
     }
-    // Match the conversations list by id first: a conversation reopened from the
-    // board or a task carries an id before its file path is known here, and
+    // Match the conversations list by id first: a conversation reopened by id
+    // carries it before its file path is known here, and
     // matching on the path alone fell back to a bare "<Harness> conversation".
     const matchingSession = state.sessions.find((session) => (state.activeSessionId && session.id === state.activeSessionId) || session.path === payload.sessionFile);
     elements.sessionTitle.textContent = pendingTitle
@@ -485,7 +476,9 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
   }
   if (payload.type === "userMessage") {
     finalizeAssistantBubble();
-    state.spinOffSourceTaskId = null;
+    // A scheduled task's trigger prompt is the scheduler talking; a person's own
+    // message always shows, even in a conversation a schedule also drives.
+    if (payload.scheduled) return;
     const sentAt = payload.timestamp ? new Date(payload.timestamp) : true;
     const bubble = appendMessage("user", payload.text, sentAt, payload.attachments, false, undefined, payload.author);
     if (payload.queued) markMessageQueued(bubble, payload.queueId, payload.editableText, payload.settings, payload.revision);
@@ -697,7 +690,7 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
     console.info("Conversation transcript changed on disk; reconnecting", { engine: state.engine });
     // The session file changed on disk after synchronization. Reconnect so the
     // server loads the updated conversation; "ready" re-renders the messages.
-    openSession(state.activeSessionPath, elements.sessionTitle.textContent || "Conversation", true, Boolean(state.activeTaskId));
+    openSession(state.activeSessionPath, elements.sessionTitle.textContent || "Conversation", true);
     return;
   }
   if (payload.type === "error") {
@@ -749,7 +742,6 @@ const INVALIDATION_HANDLERS = {
   pinsChanged: () => loadPins().catch((error) => console.warn(error)),
   controlCenterChanged: () => window.dispatchEvent(new CustomEvent("control-center-changed")),
   recentsChanged: () => loadRecentSessions().catch((error) => console.warn(error)),
-  tasksChanged: () => loadTasks().catch((error) => console.warn(error)),
   worktreesChanged: () => loadWorktrees().catch((error) => console.warn(error)),
   profileChanged: () => reloadTravellingPreferences().catch((error) => console.warn(error)),
 };
@@ -808,7 +800,6 @@ async function refreshSessionSnapshot(projectId) {
     // Missing from the list is not enough to leave a conversation: one that has only run the
     // automatic start command is hidden there, and a socket that merely dropped is reconnecting.
     if (activeNode?.local && state.activeSessionPath && !state.harnesses.some(({ newSessionPath }) => newSessionPath === state.activeSessionPath) && !socketOpen() && refusedCloses > 0 && !activeSessionExists) {
-      state.activeTaskId = null;
       closeSocket();
       clearChat();
       clearAttachments();
@@ -853,8 +844,7 @@ export function ensureWatchSocket() {
     return;
   }
   // The subscription is bound to one project at connect time. Keeping a socket
-  // that still watches the project we left costs the board every live update -
-  // a ticket that gains a conversation only grows its chat button on a reload.
+  // that still watches the project we left costs the conversation list every live update.
   const live = state.watchSocket && (state.watchSocket.readyState === WebSocket.OPEN || state.watchSocket.readyState === WebSocket.CONNECTING);
   if (live && state.watchProjectId === state.activeProjectId) return;
   closeWatchSocket();

@@ -1286,7 +1286,6 @@ const RETENTION_WORDS = {
   full: "older conversations that a project's list no longer shows",
   includeUnrecorded: "old transcripts that have no conversation record",
   includeScheduled: "old conversations started by schedules and webhooks",
-  includeTickets: "old conversations of finished tickets",
   leftovers: "files left behind by conversations that were already deleted",
   backgroundRuns: "Joint Bob's own background-run transcripts after 7 days",
 };

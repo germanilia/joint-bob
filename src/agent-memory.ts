@@ -14,7 +14,7 @@ const INDEX_LINES = 200;
 
 /**
  * One memory folder per project, owned by the app instead of a harness. Claude, Pi and Kiro all
- * read and write it, worktrees and tickets of the project share it, and it stays on this machine.
+ * read and write it, the project's worktrees share it, and it stays on this machine.
  */
 export function projectMemoryDirectory(projectId: string): string {
   const name = /^[A-Za-z0-9_-]{1,200}$/.test(projectId) ? projectId : Buffer.from(projectId).toString("base64url");

@@ -112,7 +112,7 @@ test("Pi app queue dispatches Claude and Pi overrides FIFO, then inherits active
 for (const failFirst of [false, true]) test(`update recovery starts every conversation independently and releases queues after ${failFirst ? "failure" : "success"}`, async (context) => {
   const { harnessSessions } = await import("../src/server/harness-sessions.js");
   const { saveUpdateRecoveries, listPendingUpdateRecoveries } = await import("../src/update-recovery.js");
-  const { recoverPendingUpdateRuns } = await import("../src/server/task-runs.js");
+  const { recoverPendingUpdateRuns } = await import("../src/server/update-recovery-runs.js");
   const release = Promise.withResolvers<void>();
   const opened: ReturnType<typeof openChat>[] = [];
   for (let index = 0; index < 2; index += 1) {
@@ -135,7 +135,7 @@ for (const failFirst of [false, true]) test(`update recovery starts every conver
   }));
   await saveUpdateRecoveries(shared.map((session) => ({
     id: randomUUID(), kind: "chat", engine: "pi", projectId: fixture.projectId, cwd: session.cwd,
-    sessionId: session.session.id, sessionPath: session.session.file!, taskId: null, phase: null,
+    sessionId: session.session.id, sessionPath: session.session.file!,
     queuedPrompts: ["saved follow-up"], model: null, effort: null, createdAt: new Date().toISOString(),
   })));
   const recovering = recoverPendingUpdateRuns();
@@ -434,10 +434,10 @@ test("Pi queue resumes after update recovery finishes", async (context) => {
     input.onStarted?.();
   });
   const { saveUpdateRecoveries } = await import("../src/update-recovery.js");
-  const { recoverPendingUpdateRuns } = await import("../src/server/task-runs.js");
+  const { recoverPendingUpdateRuns } = await import("../src/server/update-recovery-runs.js");
   await saveUpdateRecoveries([{
     id: randomUUID(), kind: "chat", engine: "pi", projectId: fixture.projectId,
-    cwd: path.join(root, "project"), sessionId, sessionPath, taskId: null, phase: null,
+    cwd: path.join(root, "project"), sessionId, sessionPath,
     queuedPrompts: [], model: null, effort: null, createdAt: new Date().toISOString(),
   }]);
   const priorInvalidations = opened.messages.filter((frame) => frame.type === "sessionsChanged").length;

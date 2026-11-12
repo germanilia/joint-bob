@@ -287,7 +287,6 @@ export async function openListedSession(session, { keepView = false } = {}) {
   rememberRecentSession(session);
   const projectId = state.activeProjectId;
   state.activeSessionId = session.id;
-  state.activeTaskId = session.taskId || null;
   const listedOwner = state.sessionNodes.find((node) => node.id === session.executionNodeId);
   if (session.executionNodeId && !listedOwner?.local) {
     try { await loadSessionNodes(projectId, session.executionNodeId); }
@@ -295,7 +294,7 @@ export async function openListedSession(session, { keepView = false } = {}) {
     if (state.activeProjectId !== projectId || state.activeSessionId !== session.id) return;
   }
   const owner = state.sessionNodes.find((node) => node.id === session.executionNodeId);
-  const local = !state.activeTaskId && owner && !owner.online
+  const local = owner && !owner.online
     ? state.sessionNodes.find((node) => node.local && node.online && node.mapped)
     : null;
   const destinationId = local?.id || session.executionNodeId;
@@ -304,7 +303,7 @@ export async function openListedSession(session, { keepView = false } = {}) {
     if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: destinationId });
   }
   const title = sessionDisplayTitle(session);
-  openSession(session.path, title, false, Boolean(state.activeTaskId), reviewHighlightAfter, keepView);
+  openSession(session.path, title, false, reviewHighlightAfter, keepView);
   if (!local) return;
   const transferKey = JSON.stringify([projectId, session.harnessId, session.id]);
   // Reopening still navigates here, but must not start a second ownership transfer.
@@ -316,7 +315,7 @@ export async function openListedSession(session, { keepView = false } = {}) {
     });
     if (state.activeProjectId !== projectId || state.activeSessionId !== session.id) return;
     state.activeSessionId = null;
-    openSession(result.sessionPath, title, false, false, reviewHighlightAfter, keepView);
+    openSession(result.sessionPath, title, false, reviewHighlightAfter, keepView);
     toast(result.pendingPeerIds?.length ? "Switched to this node; offline nodes will update when they return" : "Switched to this node");
   } catch (error) {
     if (state.activeProjectId === projectId && state.activeSessionId === session.id

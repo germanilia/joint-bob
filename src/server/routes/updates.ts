@@ -12,9 +12,9 @@ import { startHarnessUpdates } from "../../harness-updater.js";
 import { checkForLatestRelease, installLocalRelease, latestFleetRun, ReleaseFeedError, releaseForVersion, selfUpdateSupported, setAutoUpdate, startFleetUpdate, UpdateRefusalError, updateInventoryView, updateStatusView } from "../../updater.js";
 import { WorkspaceError } from "../../store.js";
 import { TaskWorkspaceError } from "../../task-workspaces.js";
-import { TaskWorktreeError } from "../../worktrees.js";
 import { sendError } from "../http-auth.js";
 import { ProjectLockedError } from "../projects.js";
+import { ConversationTransferError } from "../sessions-helpers.js";
 import { prepareForUpdate } from "../realtime.js";
 import { app } from "../state.js";
 
@@ -183,7 +183,7 @@ app.use((error: unknown, request: Request, response: Response, _next: NextFuncti
     sendError(response, 400, message);
     return;
   }
-  const conflict = error instanceof TaskWorktreeError || error instanceof TaskWorkspaceError || error instanceof ProjectDirectoryImportError || error instanceof ProjectLockedError;
+  const conflict = error instanceof ConversationTransferError || error instanceof TaskWorkspaceError || error instanceof ProjectDirectoryImportError || error instanceof ProjectLockedError;
   if (!conflict) console.error(`Unhandled ${request.method} ${request.path} error`, error);
   sendError(response, conflict ? 409 : 500, message);
 });

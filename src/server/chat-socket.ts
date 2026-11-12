@@ -22,25 +22,20 @@ import { ensureConversationRecord, getConversationRecord, listConversationSegmen
 import { findConversation, findHarnessSession, harnessForSessionPath, listHarnesses, listHarnessSessions } from "../harnesses.js";
 import { getProjectLock } from "../project-locks.js";
 import { ensureWorktreeLocalFiles, getProjectWorktree, markWorktreeConversation, useProjectWorktree, worktreeConversationIndex, type ProjectWorktree } from "../project-worktrees.js";
-import { resolveLocalSessionPath } from "../session-paths.js";
 import { getProject } from "../store.js";
 import { getSettings } from "../settings.js";
-import { listTasks } from "../tasks.js";
 import { attachTerminalSession } from "../terminal-session.js";
 import type { ProjectRecord, SessionSummary } from "../types.js";
 import { webSocketCloseReason } from "../websocket.js";
 import { proxySocket, sessionWatcher } from "./chat.js";
 import { attachHarnessChat, type ReadOnlyReason } from "./harness-chat.js";
-import { conversationBelongsToDoneTask, taskConversationIdentity } from "./cluster-helpers.js";
 import { attachBrowserViewer } from "./browser.js";
 import { broadcastToProject, send } from "./realtime.js";
-import { socketSecretAccountIdsSchema, socketTaskIdSchema } from "./schemas.js";
+import { socketSecretAccountIdsSchema } from "./schemas.js";
 import { type ForeignConversationOwner, openConversationOwnership } from "./sessions-helpers.js";
 import { socketAccounts, watchClients, webSocketServer } from "./state.js";
-import { ownerPeer } from "./task-handoff.js";
 import { measureOperation, traceOperation } from "./performance-diagnostics.js";
 import { projectAdditionalPaths } from "./session-scope.js";
-import { mergeReservations, taskCwd, taskHandoffContext, taskTerminalCounts } from "./task-runs.js";
 import { relayPeerOf, relayTransportOf } from "../relay/stream.js";
 import { peerWebSocket } from "../relay/transport.js";
 import { onPhonePolicyChanged, otherUsersMayUsePhone } from "../relay/phone-policy.js";
@@ -249,68 +244,15 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     if(signedPeer!==(await getClusterNode()).id&&!await clusterPeerMayAccessProject(signedPeer,project.id)){socket.close(1008,'Project is not shared with this node');return;}
     trackRuntimeSocket(socket,signedPeer,project.id);
   }
-  const taskIdResult = socketTaskIdSchema.safeParse(url.searchParams.get("taskId"));
-  if (url.searchParams.has("taskId") && !taskIdResult.success) {
-    socket.close(1008, "Invalid task ID");
-    return;
-  }
-  const taskId = taskIdResult.success ? taskIdResult.data : undefined;
   const rawSessionPathFromUrl = url.searchParams.get("sessionPath");
   const suppliedSessionId = url.searchParams.get("sessionId");
-  const sourceTaskIdResult = socketTaskIdSchema.safeParse(url.searchParams.get("sourceTaskId"));
-  if (url.searchParams.has("sourceTaskId") && !sourceTaskIdResult.success) {
-    socket.close(1008, "Invalid source task ID");
-    return;
-  }
-  const sourceTaskId = sourceTaskIdResult.success ? sourceTaskIdResult.data : undefined;
-  const canMatchTaskSession = rawSessionPathFromUrl && rawSessionPathFromUrl !== "watch" && !isNewSessionPath(rawSessionPathFromUrl);
-  const tasks = taskId || sourceTaskId || canMatchTaskSession ? await listTasks(project.id) : [];
-  const task = taskId
-    ? tasks.find((candidate) => candidate.id === taskId)
-    : tasks.find((candidate) => candidate.sessionPath === rawSessionPathFromUrl);
-  const taskIdentity = task && rawSessionPathFromUrl !== "watch" ? taskConversationIdentity(task) : null;
-  const requestedSessionId = suppliedSessionId ?? taskIdentity?.sessionId ?? null;
-  const sourceTask = sourceTaskId ? tasks.find((candidate) => candidate.id === sourceTaskId) : undefined;
+  const requestedSessionId = suppliedSessionId ?? null;
   const worktreeIdParam = url.searchParams.get("worktreeId");
-  if (worktreeIdParam !== null && (taskId || sourceTaskId || !/^[0-9a-f-]{36}$/i.test(worktreeIdParam))) {
+  if (worktreeIdParam !== null && !/^[0-9a-f-]{36}$/i.test(worktreeIdParam)) {
     socket.close(1008, "Invalid worktree ID");
     return;
   }
-  if (sourceTaskId && (!sourceTask || sourceTask.status !== "done")) {
-    socket.close(1008, "Source ticket is not Done");
-    return;
-  }
-  if (sourceTaskId && !isNewSessionPath(rawSessionPathFromUrl)) {
-    socket.close(1008, "A follow-up must start a new conversation");
-    return;
-  }
-  if (taskId && !task) {
-    socket.close(1008, "Task not found");
-    return;
-  }
   const local = await getClusterNode();
-  if (task?.executionState === "handoff_pending") {
-    socket.close(1008, "Task handoff is awaiting destination commit");
-    return;
-  }
-  if (task && task.currentNodeId !== local.id) {
-    const peer = await ownerPeer(task, local.id);
-    if (!peer) {
-      socket.close(1011, "Task owner is unavailable");
-      return;
-    }
-    const ownerUrl = new URL("/ws", peer.url);
-    ownerUrl.protocol = ownerUrl.protocol === "https:" ? "wss:" : "ws:";
-    ownerUrl.searchParams.set("projectId", project.id);
-    ownerUrl.searchParams.set("sessionPath", rawSessionPathFromUrl ?? "new");
-    ownerUrl.searchParams.set("taskId", task.id);
-    if (requestedSessionId) ownerUrl.searchParams.set("sessionId", requestedSessionId);
-    // A terminal socket must stay a terminal socket on the owner, not become a session.
-    if (url.searchParams.get("mode") === "terminal") ownerUrl.searchParams.set("mode", "terminal");
-    if (author) ownerUrl.searchParams.set("author", encodeAuthor(author));
-    proxySocket(socket, peerWebSocket(ownerUrl, { headers: await runtimeSocketHeaders(peer.id,ownerUrl) }, peer.id));
-    return;
-  }
   const requestedNodeId = url.searchParams.get("nodeId");
   let routingEngine: ConversationEngine;
   try {
@@ -319,7 +261,7 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     socket.close(1008, webSocketCloseReason(error instanceof Error ? error.message : "Invalid conversation path"));
     return;
   }
-  if (browserAuthenticated && !task) {
+  if (browserAuthenticated) {
     const ownership = requestedSessionId ? await getConversationOwnership(routingEngine, requestedSessionId) : undefined;
     const targetNodeId = requestedNodeId || ownership?.ownerNodeId;
     if (targetNodeId && targetNodeId !== local.id) {
@@ -342,8 +284,7 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     }
   }
   if (machineAuthenticated) {
-    const routedSession = url.searchParams.get("nodeSession") === "1";
-    if (!task && !routedSession) {
+    if (url.searchParams.get("nodeSession") !== "1") {
       socket.close(1008, "Unauthorized");
       return;
     }
@@ -372,22 +313,8 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
       socket.close(1008, `Project is locked by ${lockedByPeer.nodeName}`);
       return;
     }
-    if (task) {
-      const mergeBusy = task.mergeState === "conflicts" || task.mergeState === "resolved" || mergeReservations.has(task.id);
-      if (mergeBusy) {
-        socket.close(4030, "Ticket merge in progress");
-        return;
-      }
-      const count = (taskTerminalCounts.get(task.id) ?? 0) + 1;
-      taskTerminalCounts.set(task.id, count);
-      socket.once("close", () => {
-        const remaining = (taskTerminalCounts.get(task.id) ?? 1) - 1;
-        if (remaining <= 0) taskTerminalCounts.delete(task.id);
-        else taskTerminalCounts.set(task.id, remaining);
-      });
-    }
-    const terminalWorktree = !task && worktreeIdParam ? await getProjectWorktree(project.id, worktreeIdParam) : undefined;
-    if (worktreeIdParam && !task && !terminalWorktree) {
+    const terminalWorktree = worktreeIdParam ? await getProjectWorktree(project.id, worktreeIdParam) : undefined;
+    if (worktreeIdParam && !terminalWorktree) {
       socket.close(1008, "Worktree is not synchronized on this node");
       return;
     }
@@ -400,12 +327,12 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
       return;
     }
     if (terminalWorktree) await provisionWorktree(project.path, terminalWorktree.path);
-    attachTerminalSession(socket, task ? taskCwd(project, task) : terminalWorktree?.path ?? project.path, local.id, undefined, claim.idleMinutes, await runtimeForProject(project.id));
+    attachTerminalSession(socket, terminalWorktree?.path ?? project.path, local.id, undefined, claim.idleMinutes, await runtimeForProject(project.id));
     return;
   }
 
   let rawSessionPath = rawSessionPathFromUrl;
-  const sessionSearchProject = { ...project, additionalPaths: await projectAdditionalPaths(project.id, taskId || sourceTaskId || canMatchTaskSession ? tasks : undefined) };
+  const sessionSearchProject = { ...project, additionalPaths: await projectAdditionalPaths(project.id) };
   let listedSessions: SessionSummary[] | undefined;
   // Chosen in the new-conversation dialog; a conversation has no id yet at this point, so the
   // accounts travel with the connection until the engine reports one (FR9.4).
@@ -422,11 +349,8 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
       const recovered = await measureOperation("chat.open.recover", () => findHarnessSession(sessionSearchProject, routingEngine, rawSessionPath!, requestedSessionId));
       if (recovered) listedSessions = [recovered];
     }
-    if (task?.sessionPath && taskIdentity?.sessionId === requestedSessionId) rawSessionPath = resolveLocalSessionPath(task.sessionPath).path;
-    else {
-      const matching = listedSessions.find((candidate) => candidate.id === requestedSessionId);
-      if (matching) rawSessionPath = matching.path;
-    }
+    const matching = listedSessions.find((candidate) => candidate.id === requestedSessionId);
+    if (matching) rawSessionPath = matching.path;
   }
   if (rawSessionPath === "watch") {
     // Session dirs may have appeared since startup (first session, new sync).
@@ -452,20 +376,18 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
   let sessionRequest: ReturnType<typeof describeSessionRequest>;
   try { sessionRequest = describeSessionRequest(rawSessionPath); }
   catch (error) { socket.close(1008, webSocketCloseReason(error instanceof Error ? error.message : "Invalid conversation path")); return; }
-  let requestedTask = sessionRequest.sessionPath ? tasks.find((candidate) => candidate.sessionPath === sessionRequest.sessionPath) : undefined;
-  let cwd = requestedTask ? taskCwd(project, requestedTask) : project.path;
-  // Ticket conversations live in the ticket workspace, not the project directory,
-  // so this must search the same paths the conversation list searches.
+  let cwd = project.path;
+  // Worktree conversations live outside the project directory, so this must search
+  // the same paths the conversation list searches.
   if ((sessionRequest.sessionPath || sessionRequest.draft) && !listedSessions) listedSessions = await measureOperation("chat.open.catalog", () => listHarnessSessions(sessionSearchProject));
   let listedSession = listedSessions?.find((candidate) => candidate.path === (sessionRequest.draft ? rawSessionPath : sessionRequest.sessionPath)
-    || Boolean(!sessionRequest.draft && taskIdentity && requestedSessionId === taskIdentity.sessionId && candidate.harnessId === taskIdentity.engine && candidate.id === taskIdentity.sessionId)
     || Boolean(sessionRequest.sessionPath && candidate.segments?.some((segment) => segment.path === sessionRequest.sessionPath)));
   if ((sessionRequest.sessionPath || sessionRequest.draft) && !listedSession) {
     socket.close(1008, "Conversation not found");
     return;
   }
   // Run permission does not hide shared history. Existing conversations use the
-  // same server-side read-only fence as subagent transcripts and Done tickets.
+  // same server-side read-only fence as subagent transcripts.
   const peerReadOnly = Boolean(signedPeer && !await peerMayRunHere(signedPeer));
   if (peerReadOnly && !listedSession) {
     socket.close(1008, "This node does not accept runs from other nodes");
@@ -473,34 +395,15 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
   }
   // A conversation that switched harness lists only its newest segment; opening
   // any older segment's path opens the conversation itself. A path that is not
-  // part of a listed group (an undiscovered ticket transcript) stays authoritative.
+  // part of a listed group stays authoritative.
   const openedStaleSegment = Boolean(sessionRequest.sessionPath && listedSession?.segments?.some((segment) => segment.path === sessionRequest.sessionPath && segment.path !== listedSession.path));
   if (openedStaleSegment && listedSession) {
     rawSessionPath = listedSession.path;
     sessionRequest = describeSessionRequest(rawSessionPath);
-    const redirectedTask = sessionRequest.sessionPath ? tasks.find((candidate) => candidate.sessionPath === sessionRequest.sessionPath) : undefined;
-    if (redirectedTask) {
-      requestedTask = redirectedTask;
-      cwd = taskCwd(project, redirectedTask);
-    }
   }
   if (sessionRequest.draft && (!listedSession?.draft || listedSession.id !== sessionRequest.draft.sessionId || !await getConversationRecord(project.id, sessionRequest.draft.engine, sessionRequest.draft.sessionId))) {
     socket.close(1008, "Conversation not found");
     return;
-  }
-  let spinOffContext: string | null = null;
-  if (sourceTask) {
-    if (!sourceTask.sessionPath) {
-      socket.close(1008, "Source ticket has no conversation");
-      return;
-    }
-    try {
-      const localSessionPath = resolveLocalSessionPath(sourceTask.sessionPath).path;
-      spinOffContext = sourceTask.handoffContext ?? await taskHandoffContext(project, { ...sourceTask, sessionPath: localSessionPath });
-    } catch (error) {
-      socket.close(1008, webSocketCloseReason(error instanceof Error ? error.message : "Source conversation is unavailable"));
-      return;
-    }
   }
   const validRequestedSessionId = requestedSessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedSessionId) ? requestedSessionId : undefined;
   const ownershipSessionId = listedSession && !listedSession.draft ? listedSession.id : sessionRequest.draft?.sessionId ?? validRequestedSessionId ?? randomUUID();
@@ -522,31 +425,28 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
   }
   const refreshSessionsAfterReady = !listedSession || listedSession.draft;
   // A conversation started in a worktree runs there on every node; its marker travels with the worktree.
-  let worktree: ProjectWorktree | undefined;
-  if (!requestedTask && !task) {
-    const known = (await worktreeConversationIndex(project.id).catch((error) => {
-      console.warn("Worktree conversation index unavailable", error);
-      return new Map<string, ProjectWorktree>();
-    })).get(`${sessionRequest.engine}:${ownershipSessionId}`);
-    const requested = refreshSessionsAfterReady && worktreeIdParam ? await getProjectWorktree(project.id, worktreeIdParam) : undefined;
-    if (refreshSessionsAfterReady && worktreeIdParam && !requested && !known) {
-      socket.close(1008, "Worktree is not synchronized on this node");
-      return;
-    }
-    worktree = known ?? requested;
-    if (worktree) {
-      cwd = worktree.path;
-      if (!peerReadOnly) {
-        if (await worktreeFilesArriving(worktree)) {
-          socket.close(1013, "Files of this worktree are still arriving from another machine; open it again in a moment");
-          return;
-        }
-        await provisionWorktree(project.path, worktree.path);
-        if (!known) await markWorktreeConversation(project.id, worktree.id, sessionRequest.engine, ownershipSessionId);
+  const known = (await worktreeConversationIndex(project.id).catch((error) => {
+    console.warn("Worktree conversation index unavailable", error);
+    return new Map<string, ProjectWorktree>();
+  })).get(`${sessionRequest.engine}:${ownershipSessionId}`);
+  const requested = refreshSessionsAfterReady && worktreeIdParam ? await getProjectWorktree(project.id, worktreeIdParam) : undefined;
+  if (refreshSessionsAfterReady && worktreeIdParam && !requested && !known) {
+    socket.close(1008, "Worktree is not synchronized on this node");
+    return;
+  }
+  const worktree = known ?? requested;
+  if (worktree) {
+    cwd = worktree.path;
+    if (!peerReadOnly) {
+      if (await worktreeFilesArriving(worktree)) {
+        socket.close(1013, "Files of this worktree are still arriving from another machine; open it again in a moment");
+        return;
       }
+      await provisionWorktree(project.path, worktree.path);
+      if (!known) await markWorktreeConversation(project.id, worktree.id, sessionRequest.engine, ownershipSessionId);
     }
   }
-  if (!requestedTask && !task && !worktree && !peerReadOnly) {
+  if (!worktree && !peerReadOnly) {
     cwd = webhookConversationWorkspace(await clusterV2Database(), project.id, sessionRequest.engine, ownershipSessionId) ?? cwd;
   }
   if (refreshSessionsAfterReady && !peerReadOnly) {
@@ -567,10 +467,9 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     await setConversationWorktree(project.id, sessionRequest.engine, ownershipSessionId, { id: worktree.id, name: worktree.name, color: worktree.color }, local.id)
       .catch((error) => console.warn("Could not record the conversation's worktree", error));
   }
-  const doneTicket = task?.status === "done" || await conversationBelongsToDoneTask(project.id, sessionRequest.engine, ownershipSessionId);
-  const conversationReadOnly = peerReadOnly || sessionReadOnly || doneTicket;
-  // The page says why it can't write: a refused runner is this node's setting, not a finished ticket.
-  const readOnlyReason: ReadOnlyReason | null = doneTicket ? "doneTicket" : sessionReadOnly ? "transcript" : peerReadOnly ? "runnerAccess" : null;
+  const conversationReadOnly = peerReadOnly || sessionReadOnly;
+  // The page says why it can't write: a refused runner is this node's setting, not a read-only transcript.
+  const readOnlyReason: ReadOnlyReason | null = sessionReadOnly ? "transcript" : peerReadOnly ? "runnerAccess" : null;
   try {
     const startCommand = getSettings().conversationCommands.start;
     const rawAutomationProfile = url.searchParams.get("automationProfile");
@@ -578,10 +477,10 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     const automationProfile = rawAutomationProfile ? queuedAutomationProfileSchema.parse({ ...JSON.parse(rawAutomationProfile), nodeId: local.id }) : undefined;
     await attachHarnessChat({
       automationProfile,
-      socket, project, taskId: task?.id ?? null, cwd, engine: sessionRequest.engine,
+      socket, project, cwd, engine: sessionRequest.engine,
       sessionId: ownershipSessionId, sessionPath: sessionRequest.sessionPath,
       accountIds: secretAccountIds, readOnly: conversationReadOnly, readOnlyReason, peerReadOnly, ownership: foreignOwner,
-      listedSessions, handoffContext: spinOffContext, author,
+      listedSessions, author,
       autoStartPrompt: !conversationReadOnly && refreshSessionsAfterReady && !sessionRequest.draft && !worktree && startCommand.enabled ? startCommand.prompt : null,
     });
     if (refreshSessionsAfterReady) broadcastToProject(project.id, { type: "sessionsChanged" });

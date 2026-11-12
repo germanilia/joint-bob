@@ -1,9 +1,7 @@
 import { savePreferencesInBackground } from "./api.js";
 import { elements } from "./elements.js";
 import { toast } from "./shell.js";
-import { openSession } from "./socket.js";
 import { state } from "./state.js";
-import { handoffTaskToPeer } from "./tasks.js";
 
 export function activeChatSession() {
   return state.sessions.find((session) => state.activeSessionId ? session.id === state.activeSessionId : session.path === state.activeSessionPath);
@@ -150,8 +148,6 @@ function terminalWebsocketUrl() {
   url.searchParams.set("mode", "terminal");
   url.searchParams.set("projectId", state.activeProjectId);
   url.searchParams.set("nodeId", state.activeNodeId);
-  // A board ticket keeps its own copy of the project, so its terminal opens there.
-  if (state.activeTaskId) url.searchParams.set("taskId", state.activeTaskId);
   return url;
 }
 
@@ -232,21 +228,6 @@ function resizeTerminalByKeyboard(event) {
   event.preventDefault();
 }
 
-export async function continueTaskOnNode(task, destination) {
-  if (!task) throw new Error("Active ticket was not found");
-  if (!task.sessionPath) throw new Error("Send a message first, then continue this ticket on another node");
-  if (task.executionState !== "idle") throw new Error("Wait for the ticket agent to finish before continuing on another node");
-  if (!destination) throw new Error("Destination node was not found");
-  const body = await handoffTaskToPeer(task, destination);
-  if (!body) return false;
-  if (body.handoffPendingCommit) throw new Error(body.message);
-  if (!body.task?.sessionPath) throw new Error("Ticket conversation is not available on the destination node");
-  state.activeNodeId = destination.id;
-  state.activeSessionId = null;
-  if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: destination.id, activeSessionId: null });
-  openSession(body.task.sessionPath, task.title, false, true);
-  return true;
-}
 elements.openTerminalButton.addEventListener("click", async () => {
   try { await openProjectTerminal(); }
   catch (error) { toast.error(error.message); }

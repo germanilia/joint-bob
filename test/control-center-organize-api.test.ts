@@ -204,10 +204,7 @@ test("Bob starts a conversation, asks it something and brings back its answer, o
     assert.match(git.text, /is on the branch main, with no upstream branch\./);
     assert.match(git.text, /\nI could not read its pull requests: /);
     assert.deepEqual([git.actions, git.via], [[], "Organize · git"]);
-    // A task in the project's Tasks list, and a quick note to start later.
-    assert.match((await operate(await say(node, auth, directory, `add a task to ${project.name}'s tasks list to speed up the board`, { intent: "add-task", projectId: project.id, title: "Speed up the board", description: "It takes 3 s to draw", start: false }))).text, /^Added "Speed up the board" to the Tasks list of /);
-    const tasks = (await api<{ tasks: Array<{ title: string; description: string; status: string }> }>(node, auth, "GET", `/projects/${project.id}/tasks`)).body.tasks;
-    assert.deepEqual(tasks.filter((task) => task.title === "Speed up the board").map((task) => [task.description, task.status]), [["It takes 3 s to draw", "backlog"]]);
+    // A quick note to start later.
     assert.match((await operate(await say(node, auth, directory, `add a quick note in ${project.name} to check the invoices`, { intent: "add-note", projectId: project.id, title: "Check the invoices", content: "the November ones" }))).text, /^Saved the quick note "Check the invoices"/);
     const notes = (await api<{ notes: Array<{ title: string; content: string; status: string }> }>(node, auth, "GET", `/projects/${project.id}/quick-notes`)).body.notes;
     assert.deepEqual(notes.filter((entry) => entry.title === "Check the invoices").map((entry) => [entry.content, entry.status]), [["the November ones", "pending"]]);

@@ -157,22 +157,6 @@ test("a saved chord retitles the badges without a reload", async () => {
   assert.equal(await hint("recent-sessions-open-button").textContent(), "K");
 });
 
-test("the board stays hidden from navigation and keyboard shortcuts", async () => {
-  assert.equal(await page.getByTestId("projects-open-board-button").isVisible(), false, "desktop navigation hides the board");
-  await page.setViewportSize({ width: 390, height: 844 });
-  assert.equal(await page.getByTestId("nav-board-button").isVisible(), false, "mobile navigation hides the board");
-  await page.setViewportSize({ width: 1440, height: 900 });
-
-  await page.getByTestId("settings-open-button").click();
-  await page.getByTestId("settings-dialog").waitFor({ state: "visible" });
-  await page.getByTestId("settings-tab-shortcuts").click();
-  assert.equal(await page.getByTestId("keymap-board-input").count(), 0, "shortcut settings omit the board");
-  await page.getByTestId("settings-cancel-button").click();
-
-  await page.keyboard.press("Control+Alt+KeyD");
-  assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("view-board")), false, "the old board chord does nothing");
-});
-
 // Until a project is chosen the picker has the workspace's whole left column: its title row keeps collapse, search
 // sits under it, and the app's name is written once, at the top of the column, beside New.
 test("the project title keeps collapse while its action row sits above search", async () => {

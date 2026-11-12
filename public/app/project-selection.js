@@ -18,7 +18,6 @@ import { renderSessions } from "./session-list.js";
 import { setListLoading, subscribeToPush, toast } from "./shell.js";
 import { closeSocket, ensureWatchSocket, openSession } from "./socket.js";
 import { state } from "./state.js";
-import { loadTasks } from "./tasks.js";
 
 export async function refreshProjectsQuietly() {
   if (state.projectsRefreshing) return;
@@ -145,7 +144,6 @@ export async function selectProject(projectId, shouldRender = true, preserveSess
   if (!preserveSession) {
     state.activeSessionPath = null;
     state.activeSessionId = null;
-    state.activeTaskId = null;
   }
   if (state.preferencesLoaded) savePreferencesInBackground({ activeProjectId: projectId, activeSessionPath: state.activeSessionPath, activeSessionId: state.activeSessionId });
   closeSocket();
@@ -167,10 +165,8 @@ export async function selectProject(projectId, shouldRender = true, preserveSess
   // The desktop workspace's left column turns from the project picker to this project's conversations.
   window.dispatchEvent(new CustomEvent("project-selected", { detail: { projectId } }));
   void loadSessionNodes(projectId).catch((error) => toast.error(error.message));
-  // The board does not need the conversation list, so it loads beside it instead of after it.
   // Worktrees wait: their listing starts a scan of every project's finished worktrees, which
   // competes with the list on a busy machine, and the rows already carry their worktree badges.
-  loadTasks().catch((error) => console.warn(error));
   // Shared notes can wait on an offline peer. They must not block local conversations.
   void refreshQuickNotes(projectId).catch((error) => {
     if (state.activeProjectId === projectId) toast.error(error.message);

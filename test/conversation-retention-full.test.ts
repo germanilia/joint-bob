@@ -12,7 +12,7 @@ import { openNodeDatabase } from "../src/node-database.js";
 
 const DAY = 86_400_000, HOUR = 3_600_000;
 const exists = (file: string) => access(file).then(() => true, () => false);
-const off: RetentionSwitches = { full: false, includeUnrecorded: false, includeScheduled: false, includeTickets: false, leftovers: false, backgroundRuns: false };
+const off: RetentionSwitches = { full: false, includeUnrecorded: false, includeScheduled: false, leftovers: false, backgroundRuns: false };
 const full: RetentionSwitches = { ...off, full: true };
 
 async function build() {
@@ -46,11 +46,11 @@ async function build() {
     const directory = claudeProjectDir(projectPath, sessionRoot);
     await mkdir(directory, { recursive: true });
     /** A Claude transcript last written `age` ago, on record unless told otherwise. */
-    const transcript = async (age: number, options: { id?: string; record?: boolean; origin?: string; taskId?: string; directory?: string } = {}): Promise<{ id: string; file: string }> => {
+    const transcript = async (age: number, options: { id?: string; record?: boolean; origin?: string; directory?: string } = {}): Promise<{ id: string; file: string }> => {
       const id = options.id ?? randomUUID(), file = path.join(options.directory ?? directory, `${id}.jsonl`), at = new Date(Date.now() - age);
       await writeFile(file, JSON.stringify({ type: "user", uuid: randomUUID(), sessionId: id, cwd: projectPath, timestamp: at.toISOString(), message: { role: "user", content: `Written ${Math.round(age / DAY)} days ago` } }) + "\n");
       await utimes(file, at, at);
-      if (options.record !== false) await ensureConversationRecord(record.id, "claude", id, options.origin ?? local.id, options.taskId);
+      if (options.record !== false) await ensureConversationRecord(record.id, "claude", id, options.origin ?? local.id);
       return { id, file };
     };
     return { record, projectPath, directory, transcript };
@@ -82,7 +82,7 @@ test("with 55 recent conversations in the list, the 10 old ones are out of today
   assert.deepEqual(today, { deleted: 0, previewed: [] });
   for (const entry of [...recent, ...old]) assert.equal(await exists(entry.file), true);
   // The boxes that widen the full reach do nothing on their own.
-  assert.deepEqual(await f.sweep({ ...off, includeUnrecorded: true, includeScheduled: true, includeTickets: true }), { deleted: 0, previewed: [] });
+  assert.deepEqual(await f.sweep({ ...off, includeUnrecorded: true, includeScheduled: true }), { deleted: 0, previewed: [] });
   for (const entry of old) assert.equal(await exists(entry.file), true);
 
   // The full reach: the dry run names the 10, the sweep deletes them and nothing else.
@@ -124,17 +124,6 @@ test("the full sweep keeps every exempt conversation, and each switch releases o
   kept.recent = await exempt.transcript(5 * DAY);
   kept["another machine's"] = await exempt.transcript(OLD, { origin: other });
   kept["outside every project"] = await exempt.transcript(OLD, { record: false, directory: f.elsewhere });
-  // Three ticket conversations: one whose ticket is gone, one whose ticket is done, one whose ticket is still worked on.
-  const ticket = await exempt.transcript(OLD, { taskId: "ticket-1" });
-  const doneTicket = await exempt.transcript(OLD);
-  kept["unfinished ticket"] = await exempt.transcript(OLD);
-  const { receiveReplicationBatch } = await import("../src/replication.js");
-  const tickets = [["done-ticket", "done", doneTicket], ["open-ticket", "in_progress", kept["unfinished ticket"]]] as const;
-  await receiveReplicationBatch({ events: tickets.map(([id, status, conversation]) => {
-    const task = { id, title: "A ticket", description: "synthetic", status, engine: "claude" as const, planMode: false, reviewMode: false, phaseConfig: {}, sessionPath: `claude:${conversation.file}`, worktreePath: null, worktreeBranch: null, mergedAt: null,
-      currentNodeId: f.local.id, leaseOwnerNodeId: null, leaseExpiresAt: null, executionState: "idle" as const, handoffContext: null, originNodeId: f.local.id, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
-    return { id: randomUUID(), originNodeId: f.local.id, entityType: "task", entityKey: `${exempt.record.id}:${id}`, operation: "upsert", payload: { projectId: exempt.record.id, task, originNodeId: f.local.id }, createdAt: task.updatedAt };
-  }) });
   const scheduled = await exempt.transcript(OLD), webhookMade = await exempt.transcript(OLD);
   const unrecorded = await exempt.transcript(OLD, { record: false });
 
@@ -167,24 +156,18 @@ test("the full sweep keeps every exempt conversation, and each switch releases o
   f.clearHarnessSessionCache();
   const preview = await f.retention.previewConversationRetention(full);
   assert.deepEqual(preview.conversations.expired, [key(plain)]);
-  for (const reason of ["pinned", "owned by another machine", "an assistant's conversation", "the target of a scheduled task or webhook", "a finished ticket's conversation", "an unfinished ticket's conversation", "made by a scheduled task or webhook", "running, open or waiting"]) {
+  for (const reason of ["pinned", "owned by another machine", "an assistant's conversation", "the target of a scheduled task or webhook", "made by a scheduled task or webhook", "running, open or waiting"]) {
     assert.ok(preview.kept[reason], `the dry run says what it keeps for being ${reason}: ${JSON.stringify(preview.kept)}`);
   }
   assert.deepEqual(await f.sweep(full), { deleted: 1, previewed: [key(plain)] });
   assert.equal(await exists(plain.file), false);
   await everything();
-  for (const entry of [ticket, doneTicket, scheduled, webhookMade, unrecorded]) assert.equal(await exists(entry.file), true);
+  for (const entry of [scheduled, webhookMade, unrecorded]) assert.equal(await exists(entry.file), true);
 
   // Conversations a scheduled task or a webhook made, one per run.
   assert.deepEqual(await f.sweep({ ...full, includeScheduled: true }), { deleted: 2, previewed: [key(scheduled), key(webhookMade)].sort() });
   assert.equal(await exists(scheduled.file), false);
   assert.equal(await exists(webhookMade.file), false);
-  for (const entry of [ticket, doneTicket, unrecorded]) assert.equal(await exists(entry.file), true);
-
-  // Conversations of finished tickets: the done one and the one whose ticket is gone. The ticket still worked on keeps its own.
-  assert.deepEqual(await f.sweep({ ...full, includeTickets: true }), { deleted: 2, previewed: [key(ticket), key(doneTicket)].sort() });
-  assert.equal(await exists(ticket.file), false);
-  assert.equal(await exists(doneTicket.file), false);
   assert.equal(await exists(unrecorded.file), true);
 
   // Transcripts without a record: the one in the project's folder goes, the one outside every project never does.
@@ -192,7 +175,7 @@ test("the full sweep keeps every exempt conversation, and each switch releases o
   assert.equal(await exists(unrecorded.file), false);
 
   // With every switch on, what is exempt by rule is still there.
-  assert.deepEqual(await f.sweep({ ...full, includeUnrecorded: true, includeScheduled: true, includeTickets: true }), { deleted: 0, previewed: [] });
+  assert.deepEqual(await f.sweep({ ...full, includeUnrecorded: true, includeScheduled: true }), { deleted: 0, previewed: [] });
   await everything();
   const records = await f.recorded(exempt.record.id);
   for (const [name, entry] of Object.entries(kept)) if (name !== "outside every project") assert.ok(records.has(entry.id), `the ${name} conversation lost its record`);
@@ -227,7 +210,7 @@ test("background runs go seven days after their last activity, except a side cha
 
   // Until the owner ticks the box, no background run goes, however old.
   f.clearHarnessSessionCache();
-  for (const switches of [off, full, { ...full, includeUnrecorded: true, includeScheduled: true, includeTickets: true, leftovers: true }]) {
+  for (const switches of [off, full, { ...full, includeUnrecorded: true, includeScheduled: true, leftovers: true }]) {
     assert.deepEqual((await f.retention.previewConversationRetention(switches)).conversations.background, []);
     await f.retention.sweepConversationRetention(Date.now(), switches);
     for (const file of [gone.file, subagent, piFile]) assert.equal(await exists(file), true, `${file} went with the box unticked`);

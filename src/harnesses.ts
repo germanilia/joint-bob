@@ -291,7 +291,6 @@ async function transcriptFilesById(project: HarnessProject, engine: HarnessId): 
 
 /** Joint Bob's own fields for a transcript, kept on its conversation record. */
 function applyConversationRecord(session: SessionSummary, record: ConversationRecord | undefined): void {
-  if (record?.taskId && !session.taskId) session.taskId = record.taskId;
   if (record?.cronTaskId) session.cronTaskId = record.cronTaskId;
   if (record?.webhookHistory) session.webhookHistory = record.webhookHistory;
   if (record?.silentReviewFrom) session.silentReviewFrom = record.silentReviewFrom;

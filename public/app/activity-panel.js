@@ -548,7 +548,6 @@ function projectInstructionsUrl() {
   const session = state.sessions.find((candidate) => state.activeSessionId ? candidate.id === state.activeSessionId : candidate.path === state.activeSessionPath);
   const query = new URLSearchParams();
   if (state.activeNodeId) query.set("nodeId", state.activeNodeId);
-  if (state.activeTaskId) query.set("taskId", state.activeTaskId);
   if (session?.worktree?.id) query.set("worktreeId", session.worktree.id);
   return `/api/projects/${encodeURIComponent(projectId)}/instructions/content${query.size ? `?${query}` : ""}`;
 }

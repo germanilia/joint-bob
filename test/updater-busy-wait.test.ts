@@ -38,7 +38,7 @@ test("with a newer release and a turn still being finished, the scheduler starts
     }
   });
   setAutoUpdate(true);
-  const recovery = { id: "busy-wait-recovery", kind: "chat" as const, engine: "claude" as const, projectId: "project", cwd: "/tmp", sessionId: "session", sessionPath: "claude:/tmp/session.jsonl", taskId: null, phase: null, queuedPrompts: [], model: null, effort: null, createdAt: new Date().toISOString() };
+  const recovery = { id: "busy-wait-recovery", kind: "chat" as const, engine: "claude" as const, projectId: "project", cwd: "/tmp", sessionId: "session", sessionPath: "claude:/tmp/session.jsonl", queuedPrompts: [], model: null, effort: null, createdAt: new Date().toISOString() };
   await saveUpdateRecoveries([recovery]);
   t.after(() => completeUpdateRecovery(recovery.id));
   const release = { tag_name: "v999.0.0", name: "v999.0.0", body: "", published_at: new Date().toISOString(), assets: [

@@ -20,12 +20,10 @@ import { flushReplicationOutbox } from "./maintenance.js";
 import { flushPushSubscriptionOutbox } from "./push-flush.js";
 import { listUserRecentSessions } from "../recent-sessions.js";
 import { getSettings } from "../settings.js";
-import { listTasks } from "../tasks.js";
 import type { ProjectRecord, SessionSummary } from "../types.js";
 import { listUserPins } from "../user-pins.js";
 import { sessionWatcher } from "./chat.js";
 import { findHarnessSession, harnessTurnBusy } from "./harness-sessions.js";
-import { taskConfig, taskPhase } from "./task-runs.js";
 import { listProjectCronTasks } from "./cron-list.js";
 import { measureOperation } from "./performance-diagnostics.js";
 import { conversationsChanged, sessionListingChanged, sharedProjectListing, sharedProjectListingUse } from "../session-listing-revisions.js";
@@ -63,8 +61,7 @@ async function migratePortableNotifications(userId: string, username: string, pr
  * a plain listing drops those conversations and returns 404, so a pending review could
  * never be cleared.
  */
-async function reviewScope(project: ProjectRecord, userId: string, username: string, historyDays?: number): Promise<{ project: HarnessProject; tasks: Awaited<ReturnType<typeof listTasks>>; includedSessionPaths: string[]; includedSessionIds: string[] }> {
-  const tasks = await listTasks(project.id);
+async function reviewScope(project: ProjectRecord, userId: string, username: string, historyDays?: number): Promise<{ project: HarnessProject; includedSessionPaths: string[]; includedSessionIds: string[] }> {
   const pinnedSessionPaths = userId ? getUserPreferences(userId).pinnedSessionPaths : [];
   const pinnedSessionIds = (username ? listUserPins(username).conversations : [])
     .filter((pin) => pin.projectId === project.id)
@@ -75,12 +72,11 @@ async function reviewScope(project: ProjectRecord, userId: string, username: str
   return {
     project: {
       ...project,
-      additionalPaths: await projectAdditionalPaths(project.id, tasks),
+      additionalPaths: await projectAdditionalPaths(project.id),
       historyDays: historyDays ?? getSettings().conversationHistoryDays,
       includedSessionPaths,
       includedSessionIds,
     },
-    tasks,
     includedSessionPaths,
     includedSessionIds,
   };
@@ -93,7 +89,6 @@ export async function listReviewScopeSessions(project: ProjectRecord, userId: st
 
 export async function listProjectSessionsWithReviewState(project: ProjectRecord, userId: string, username: string, historyDays = getSettings().conversationHistoryDays, includeTemporarySessionId?: string): Promise<SessionSummary[]> {
   const scope = await measureOperation("sessions.review_scope", () => reviewScope(project, userId, username, historyDays));
-  const tasks = scope.tasks;
   const searchProject = scope.project;
   sessionWatcher.ensureProject(searchProject);
   const temporarySessionIds = await listByTheWaySessionIds(project.id);
@@ -106,8 +101,6 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
   const sessions = catalog.filter((session) => (!userId || !session.webhookHistory?.hidden)
     && (!session.cronTaskId || !hiddenCronTaskIds.has(session.cronTaskId))
     && (!temporarySessionIds.has(session.id) || session.id === includeTemporarySessionId));
-  const tasksBySessionPath = new Map(tasks.filter((task) => task.sessionPath).map((task) => [task.sessionPath, task]));
-  const tasksById = new Map(tasks.map((task) => [task.id, task]));
   await measureOperation("sessions.agent_dashboards", refreshConversationWork);
   const externalRunning = new Map<string, Set<string>>();
   // A supervised command the agent left running keeps its conversation in the background
@@ -125,19 +118,16 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
   })));
   const { listedSessions, reviewDetails } = await measureOperation("sessions.decoration_review", () => {
     const listedSessions = applyConversationWork(sessions.map((session) => {
-      const task = (session.taskId ? tasksById.get(session.taskId) : undefined) ?? tasksBySessionPath.get(session.path);
       const shared = findHarnessSession(project.id, session.harnessId, session.id);
-      const config = task?.executionState === "running" ? taskConfig(task, taskPhase(task)) : undefined;
       const queued = listQueuedPrompts(`${project.id}:${session.conversationId ?? session.id}`).filter((prompt) => !prompt.systemEventId);
       const failure = queued.length ? listTurnFailures(session.harnessId, session.id).at(-1) : undefined;
       const promptStartError = failure && queued.some((prompt) => prompt.createdAt <= failure.failedAt) ? failure.error : undefined;
-      const agentId = config?.engine ?? session.harnessId;
-      const liveModel = shared?.session.status().model?.label;
-      const agentModel = config?.modelId || liveModel;
+      const agentId = session.harnessId;
+      const agentModel = shared?.session.status().model?.label;
       const work = listConversationWork(session.harnessId, session.id);
       const lease = conversationLeaseState(session.harnessId, session.id);
       const backgroundRunning = work.some((entry) => agentWorkActive(entry.summary)) || lease.backgroundRunning || backgroundTaskConversations.has(session.conversationId ?? session.id);
-      const turnRunning = Boolean(shared && harnessTurnBusy(shared) || task?.executionState === "running" || externalRunning.get(session.harnessId)?.has(session.id) || lease.running && !lease.backgroundRunning);
+      const turnRunning = Boolean(shared && harnessTurnBusy(shared) || externalRunning.get(session.harnessId)?.has(session.id) || lease.running && !lease.backgroundRunning);
       return {
         ...session,
         agentId,
@@ -145,8 +135,6 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
         promptStartError,
         agentLabel: getHarness(agentId).label,
         ...(agentModel ? { agentModel } : {}),
-        taskStatus: task?.status,
-        taskId: task?.id,
         agentRuns: work.length ? work.map((entry) => entry.summary).sort((left, right) => left.runId.localeCompare(right.runId)) : undefined,
         turnRunning,
         backgroundRunning,
@@ -263,6 +251,9 @@ async function assertLocalConversationOwner(engine: ConversationEngine, sessionI
   if (!ownership) throw new Error("Conversation ownership is not established");
   if (ownership.ownerNodeId !== local.id || ownership.status !== "owned") throw new ConversationOwnershipError(ownership);
 }
+
+/** A conversation ownership transfer that cannot go ahead now; answered as 409. */
+export class ConversationTransferError extends Error {}
 
 export interface ForeignConversationOwner { nodeId: string; nodeName: string; status: ConversationOwnershipStatus }
 

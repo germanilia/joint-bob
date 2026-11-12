@@ -66,12 +66,6 @@ test("phone titles read in title case at one size, and Back climbs a level inste
   await page.locator("#sessionList .session-card").first().click();
   await page.locator("body.view-chat").waitFor();
   await back("sessions");
-
-  await page.locator("#sessionList .session-card").first().click();
-  await page.locator("body.view-chat").waitFor();
-  await page.evaluate(async () => (await import("/app/layout.js")).setMobileView("board"));
-  await page.locator("body.view-board").waitFor();
-  await back("sessions");
   await back("projects");
   await back("projects");
   await back("projects");

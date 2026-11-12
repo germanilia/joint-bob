@@ -72,12 +72,12 @@ test("the left column starts in Inbox: places, then Needs you, Running and To re
   await page.getByTestId("workspace-side").waitFor();
   assert.equal(await page.evaluate((key) => localStorage.getItem(key), WORKSPACE_COLUMN_KEY), "unset", "nothing was chosen yet");
   assert.equal(await page.getByTestId("workspace-inbox-button").getAttribute("aria-pressed"), "true");
-  for (const id of ["projects-open-control-center-button", "workspace-inbox-button", "workspace-projects-button", "workspace-board-button", "workspace-automations-button", "usage-open", "settings-open-button", "workspace-person-button", "workspace-new-button", "workspace-search-input"]) {
+  for (const id of ["projects-open-control-center-button", "workspace-inbox-button", "workspace-projects-button", "workspace-automations-button", "usage-open", "settings-open-button", "workspace-person-button", "workspace-new-button", "workspace-search-input"]) {
     assert.equal(await visible(id), true, `${id} is in the column`);
   }
   assert.deepEqual(
     await page.locator('[data-testid="workspace-places"] .ws-place-label').allInnerTexts(),
-    ["Bob", "Inbox", "Projects", "Board", "Automations", "Costs"],
+    ["Bob", "Inbox", "Projects", "Automations", "Costs"],
   );
   // The conversations answered again after their last review wait under To review.
   await page.getByTestId("workspace-group-count-review").filter({ hasText: /^[1-9]\d*$/ }).waitFor();
@@ -509,9 +509,6 @@ test("New, ⋯ and the places reach every action the old panels had", async () =
   await page.keyboard.press("Escape");
   await page.getByTestId("recent-sessions-dialog").waitFor({ state: "hidden" });
 
-  await page.getByTestId("workspace-board-button").click();
-  await page.locator("#boardPanel").waitFor();
-  assert.equal(await page.locator("#chatPanel").isVisible(), false, "the board takes the middle");
   await page.getByTestId("workspace-automations-button").click();
   await page.locator("#controlCenterPanel").waitFor();
   assert.equal(await page.locator('[data-testid="control-center-tabs"] [aria-selected="true"]').innerText(), "Automations");
@@ -588,7 +585,7 @@ test("[ folds the column to a rail of icons and back", async () => {
 });
 
 test("between 701 and 1023 px the column stays and the details float; the phone keeps its own layout", async () => {
-  // Leaving Bob went back to the board; Inbox brings the open conversation back to the middle.
+  // Inbox brings the open conversation back to the middle.
   await page.getByTestId("workspace-inbox-button").click();
   // Choosing another project closed the conversation, so the middle is Home: a row of the column opens one again.
   await page.waitForTimeout(200);

@@ -429,7 +429,7 @@ let lastActive = activeKey();
 function wanted() {
   if (!desktop.matches || body.classList.contains("focus-ui") || !body.classList.contains("ws-column-inbox")) return false;
   if (body.classList.contains("ws-page-open")) return false;
-  if (["board", "control"].includes(currentMobileView())) return false;
+  if (currentMobileView() === "control") return false;
   return requested || !(state.activeSessionId || state.activeSessionPath);
 }
 
@@ -491,12 +491,12 @@ desktop.addEventListener("change", schedule);
 new MutationObserver(schedule).observe(body, { attributes: true, attributeFilter: ["class"] });
 new ResizeObserver(schedule).observe(home);
 
-// The brand (the mark and "Joint Bob") is the way Home, also over an open conversation, from the board or from Bob's
+// The brand (the mark and "Joint Bob") is the way Home, also over an open conversation, or from Bob's
 // page (only the person leaves it, and pressing Home is the person leaving). Inbox keeps bringing the open
 // conversation back, as it always has (workspace.js).
 byId("workspaceHomeButton").addEventListener("click", () => {
   requested = true;
-  if (["board", "control"].includes(currentMobileView())) setMobileView(state.activeSessionId || state.activeSessionPath ? "chat" : "sessions");
+  if (currentMobileView() === "control") setMobileView(state.activeSessionId || state.activeSessionPath ? "chat" : "sessions");
   if (!body.classList.contains("ws-column-inbox")) byId("workspaceInboxButton").click();
   schedule();
 });

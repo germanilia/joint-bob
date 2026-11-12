@@ -11,7 +11,7 @@ const note = document.querySelector("#gitReviewRepositoryNote");
 
 export async function openProjectGit(project, { nodeId = "", repository, tab = "changes" } = {}) {
   const version = ++generation;
-  const context = { projectId: project.id, nodeId, repository, taskId: null };
+  const context = { projectId: project.id, nodeId, repository };
   await openGitReview(null, { tab, context, prepare: async () => {
     controls.hidden = false;
     picker.disabled = true;

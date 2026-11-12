@@ -20,11 +20,10 @@ export function projectFileUrl(filePath, download = false) {
   return `${url.pathname}${url.search}`;
 }
 
-function projectFileApiUrl(route, filePath, taskId = state.activeTaskId) {
+function projectFileApiUrl(route, filePath) {
   const url = new URL(`/api/projects/${encodeURIComponent(state.activeProjectId)}/${route}`, location.origin);
   url.searchParams.set("path", filePath);
   if (state.activeNodeId) url.searchParams.set("nodeId", state.activeNodeId);
-  if (taskId) url.searchParams.set("taskId", taskId);
   return url;
 }
 
@@ -60,7 +59,7 @@ function resetFileEditor() {
   elements.fileActionEditButton.disabled = true;
 }
 
-export async function openFileAction(path, taskId) {
+export async function openFileAction(path) {
   if (!state.activeProjectId || !path) return;
   resetFileEditor();
   state.fileEditor.requestedPath = path;
@@ -68,7 +67,7 @@ export async function openFileAction(path, taskId) {
   elements.fileActionDialog.showModal();
   elements.fileActionStatus.textContent = "Finding file...";
   try {
-    const body = await api(`${projectFileApiUrl("file-resolution", path, taskId).pathname}${projectFileApiUrl("file-resolution", path, taskId).search}`);
+    const body = await api(`${projectFileApiUrl("file-resolution", path).pathname}${projectFileApiUrl("file-resolution", path).search}`);
     if (!elements.fileActionDialog.open || state.fileEditor.requestedPath !== path) return;
     Object.assign(state.fileEditor, { path: body.path, viewUrl: body.viewUrl, downloadUrl: body.downloadUrl, contentUrl: body.contentUrl });
     elements.fileActionPath.textContent = body.path;

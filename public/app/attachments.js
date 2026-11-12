@@ -50,13 +50,6 @@ function renderAttachments() {
   });
 }
 
-export function renderTaskAttachments() {
-  renderAttachmentChips(elements.taskAttachmentList, state.taskAttachments, (id) => {
-    state.taskAttachments = state.taskAttachments.filter((item) => item.id !== id);
-    renderTaskAttachments();
-  });
-}
-
 /** Reads picked files as attachment records, enforcing the shared size and count limits. */
 export async function attachmentsFromFiles(fileList, current) {
   const files = [...fileList];
@@ -81,24 +74,12 @@ export async function addAttachments(fileList) {
   resetAttachmentInput();
 }
 
-export async function addTaskAttachments(fileList) {
-  if (!fileList.length) return;
-  state.taskAttachments = await attachmentsFromFiles(fileList, state.taskAttachments);
-  renderTaskAttachments();
-  elements.taskAttachmentInput.value = "";
-}
-
 export function clearAttachments() {
   state.attachments = [];
   renderAttachments();
   resetAttachmentInput();
 }
 
-export function clearTaskAttachments() {
-  state.taskAttachments = [];
-  renderTaskAttachments();
-  elements.taskAttachmentInput.value = "";
-}
 elements.attachButton.addEventListener("click", () => elements.attachmentInput.click());
 elements.attachmentInput.addEventListener("change", async (event) => {
   try {

@@ -213,71 +213,6 @@ function compareVersion(left: VersionRow, right: VersionRow): number {
     : left.updated_at.localeCompare(right.updated_at);
 }
 
-function rekeyTaskTombstones(db: DatabaseSync, aliasId: string, projectId: string, hasTasks: boolean, migratedTaskIds: string[]): void {
-  if (!tableExists(db, "task_tombstones")) return;
-  const aliases = db.prepare("SELECT task_id, updated_at, origin_node_id FROM task_tombstones WHERE project_id = ?").all(aliasId) as unknown as Array<VersionRow & { task_id: string }>;
-  const aliasByTaskId = new Map(aliases.map((alias) => [alias.task_id, alias]));
-  const taskIds = new Set([...migratedTaskIds, ...aliasByTaskId.keys()]);
-  const findTombstone = db.prepare("SELECT updated_at, origin_node_id FROM task_tombstones WHERE project_id = ? AND task_id = ?");
-  const findTask = hasTasks ? db.prepare("SELECT updated_at, origin_node_id FROM tasks WHERE project_id = ? AND id = ?") : undefined;
-  const deleteTombstone = db.prepare("DELETE FROM task_tombstones WHERE project_id = ? AND task_id = ?");
-  const saveTombstone = db.prepare("INSERT INTO task_tombstones (project_id, task_id, updated_at, origin_node_id) VALUES (?, ?, ?, ?) ON CONFLICT(project_id, task_id) DO UPDATE SET updated_at = excluded.updated_at, origin_node_id = excluded.origin_node_id");
-  const deleteTask = hasTasks ? db.prepare("DELETE FROM tasks WHERE project_id = ? AND id = ?") : undefined;
-  for (const taskId of taskIds) {
-    const alias = aliasByTaskId.get(taskId);
-    const task = findTask?.get(projectId, taskId) as VersionRow | undefined;
-    const canonical = findTombstone.get(projectId, taskId) as VersionRow | undefined;
-    const winner = [task, canonical, alias].filter((state): state is VersionRow => Boolean(state)).reduce((current, state) => compareVersion(state, current) > 0 ? state : current);
-    if (winner === task) {
-      deleteTombstone.run(projectId, taskId);
-      if (alias) deleteTombstone.run(aliasId, taskId);
-      continue;
-    }
-    deleteTask?.run(projectId, taskId);
-    saveTombstone.run(projectId, taskId, winner.updated_at, winner.origin_node_id);
-    if (alias) deleteTombstone.run(aliasId, taskId);
-  }
-}
-
-function rekeyTasks(db: DatabaseSync, aliasId: string, projectId: string): void {
-  const hasTasks = tableExists(db, "tasks");
-  const migratedTaskIds = hasTasks
-    ? (db.prepare("SELECT id FROM tasks WHERE project_id = ?").all(aliasId) as unknown as Array<{ id: string }>).map((task) => task.id)
-    : [];
-  if (hasTasks) db.prepare("UPDATE tasks SET project_id = ? WHERE project_id = ?").run(projectId, aliasId);
-  rekeyTaskTombstones(db, aliasId, projectId, hasTasks, migratedTaskIds);
-}
-
-function rekeyTaskHandoffs(db: DatabaseSync, aliasId: string, projectId: string): void {
-  if (!tableExists(db, "task_handoffs")) return;
-  const conflicts = db.prepare(`
-    SELECT alias.handoff_id AS alias_handoff_id, alias.task_id, alias.updated_at AS alias_updated_at,
-      canonical.handoff_id AS canonical_handoff_id, canonical.updated_at AS canonical_updated_at
-    FROM task_handoffs alias
-    JOIN task_handoffs canonical ON canonical.project_id = ?
-      AND canonical.task_id = alias.task_id
-      AND canonical.destination_node_id = alias.destination_node_id
-      AND canonical.direction = 'outgoing'
-      AND canonical.status IN ('pending', 'prepared')
-    WHERE alias.project_id = ?
-      AND alias.direction = 'outgoing'
-      AND alias.status IN ('pending', 'prepared')
-  `).all(projectId, aliasId) as unknown as Array<{ alias_handoff_id: string; task_id: string; alias_updated_at: string; canonical_handoff_id: string; canonical_updated_at: string }>;
-  const abort = db.prepare("UPDATE task_handoffs SET status = 'aborted' WHERE handoff_id = ?");
-  const moveActiveHandoff = tableExists(db, "tasks")
-    ? db.prepare("UPDATE tasks SET active_handoff_id = ? WHERE project_id = ? AND id = ? AND active_handoff_id = ?")
-    : undefined;
-  for (const conflict of conflicts) {
-    const alias = { updated_at: conflict.alias_updated_at, origin_node_id: conflict.alias_handoff_id };
-    const canonical = { updated_at: conflict.canonical_updated_at, origin_node_id: conflict.canonical_handoff_id };
-    const winner = compareVersion(alias, canonical) > 0 ? conflict.alias_handoff_id : conflict.canonical_handoff_id;
-    const loser = winner === conflict.alias_handoff_id ? conflict.canonical_handoff_id : conflict.alias_handoff_id;
-    abort.run(loser);
-    moveActiveHandoff?.run(winner, projectId, conflict.task_id, loser);
-  }
-  db.prepare("UPDATE task_handoffs SET project_id = ? WHERE project_id = ?").run(projectId, aliasId);
-}
-
 function rekeyProjectNames(db: DatabaseSync, aliasId: string, projectId: string): void {
   const hasOverrides = tableExists(db, "name_overrides");
   const hasTombstones = tableExists(db, "name_override_tombstones");
@@ -323,8 +258,6 @@ function rekeyProjectQueue(db: DatabaseSync, aliasId: string, projectId: string)
 }
 
 function rekeyProjectState(db: DatabaseSync, aliasId: string, projectId: string): void {
-  rekeyTasks(db, aliasId, projectId);
-  rekeyTaskHandoffs(db, aliasId, projectId);
   rekeyProjectNames(db, aliasId, projectId);
   rekeySecretAssignments(db, aliasId, projectId);
   rekeyProjectQueue(db, aliasId, projectId);
@@ -1001,18 +934,11 @@ export async function removeProject(projectId: string): Promise<void> {
     const aliasIds = (db.prepare("SELECT alias_id FROM project_aliases WHERE project_id = ?").all(canonicalId) as Array<{ alias_id: string }>).map((row) => row.alias_id);
     const projectIds = [canonicalId, ...aliasIds];
     const placeholders = projectIds.map(() => "?").join(", ");
-    if (tableExists(db, "tasks") && db.prepare(`SELECT 1 FROM tasks WHERE project_id IN (${placeholders}) AND (execution_state = 'running' OR (lease_owner_node_id IS NOT NULL AND lease_expires_at > ?))`).get(...projectIds, new Date().toISOString())) throw new Error("Wait for task agents to finish before deleting project");
-    if (tableExists(db, "task_handoffs")) {
-      if (db.prepare("SELECT 1 FROM task_handoffs WHERE project_id = ? AND status IN ('pending', 'prepared')").get(canonicalId)) throw new Error("Settle task handoffs before deleting project");
-      const unacknowledgedCommitted = tableHasColumn(db, "task_handoffs", "acknowledged_at")
-        ? db.prepare("SELECT 1 FROM task_handoffs WHERE project_id = ? AND status = 'committed' AND acknowledged_at IS NULL").get(canonicalId)
-        : db.prepare("SELECT 1 FROM task_handoffs WHERE project_id = ? AND status = 'committed'").get(canonicalId);
-      if (unacknowledgedCommitted) throw new Error("Wait for task handoff settlement before deleting project");
-    }
+    // Rows the removed project board left behind go with their project.
     if (tableExists(db, "tasks")) db.prepare(`DELETE FROM tasks WHERE project_id IN (${placeholders})`).run(...projectIds);
     if (tableExists(db, "task_tombstones")) db.prepare(`DELETE FROM task_tombstones WHERE project_id IN (${placeholders})`).run(...projectIds);
     if (tableExists(db, "task_migrations")) db.prepare(`DELETE FROM task_migrations WHERE project_id IN (${placeholders})`).run(...projectIds);
-    if (tableExists(db, "task_handoffs")) db.prepare(`DELETE FROM task_handoffs WHERE project_id IN (${placeholders}) AND (status = 'aborted' OR (direction = 'outgoing' AND status = 'committed'))`).run(...projectIds);
+    if (tableExists(db, "task_handoffs")) db.prepare(`DELETE FROM task_handoffs WHERE project_id IN (${placeholders})`).run(...projectIds);
     if (tableExists(db, "name_overrides")) db.prepare(`DELETE FROM name_overrides WHERE scope = 'projects' AND key IN (${placeholders})`).run(...projectIds);
     if (tableExists(db, "name_override_tombstones")) db.prepare(`DELETE FROM name_override_tombstones WHERE scope = 'projects' AND key IN (${placeholders})`).run(...projectIds);
     db.prepare(`DELETE FROM secret_assignments WHERE scope_type = 'project' AND scope_id IN (${placeholders})`).run(...projectIds);
