@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.276.3 — 2026-11-12
 
 - Fixed forcing a queued message that had already changed: the queue now refreshes on its own and says the message's status was updated, instead of asking you to refresh the page.
 
