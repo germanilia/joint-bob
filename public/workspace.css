@@ -126,7 +126,7 @@
   .ws-search input { min-width: 0; flex: 1; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; box-shadow: none; color: var(--text); font-size: 13.5px; }
   .ws-search input::placeholder { color: var(--muted); opacity: 0.85; }
   .ws-search input::-webkit-search-cancel-button { display: none; }
-  .ws-search-key { flex: none; color: var(--muted); font: 500 11px/1 var(--mono); opacity: 0.8; }
+  .ws-search-key { flex: none; color: var(--muted); font: 500 11px/1 var(--mono); }
 
   .ws-places { display: grid; gap: 1px; }
   .ws-place, .ws-foot .ws-place {
@@ -191,7 +191,7 @@
   .ws-group + .ws-group { margin-top: 4px; border-top: 1px solid var(--line-strong); }
   .ws-show-all { margin-left: auto; min-height: 0; padding: 0; border: 0; background: none; color: var(--accent); font: 600 12px/1 var(--sans); cursor: pointer; }
   .ws-show-all:hover { text-decoration: underline; }
-  .ws-empty { margin: 0; padding: 2px 10px 6px; height: 26px; color: var(--muted); font-size: 12.5px; opacity: 0.85; }
+  .ws-empty { margin: 0; padding: 2px 10px 6px; height: 26px; color: var(--muted); font-size: 12.5px; }
   .ws-row {
     display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 0; margin: 0 0 2px; padding: 8px 10px;
     border: 0; border-radius: 12px; background: transparent; color: var(--text); text-align: left; font-weight: 400;
@@ -282,7 +282,10 @@
   body:not(.focus-ui) #chatsPanel .conversation-tabs { flex: none; gap: 2px; margin: 6px 0 0; padding: 3px; border: 0; border-radius: 12px; background: var(--paper-raised); }
   body:not(.focus-ui) #chatsPanel .conversation-tabs button { min-height: 26px; height: 26px; border-radius: 9px; font-size: 12.5px; }
   body:not(.focus-ui) #chatsPanel .conversation-tabs button.active { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
-  body:not(.focus-ui) .chat-filters { margin: 0 0 6px; }
+  /* The state chips wrap onto a second line rather than run past the column's edge (a three-digit count is wider than a
+     fifth of it); each takes what a line leaves over. */
+  body:not(.focus-ui) .chat-filters { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+  body:not(.focus-ui) .chat-filters button { flex: 1 1 auto; min-width: 44px; padding: 0 4px; }
   body:not(.focus-ui) :is(.classification-filter, .list-filter-row) { margin-inline: 0; }
   body:not(.focus-ui) #quickNotesSection .section-title { margin-inline: 10px 0; }
   body:not(.focus-ui) #quickNotesSection .quick-note-search { margin-inline: 0; }
@@ -300,10 +303,12 @@
   body:not(.focus-ui) #conversationListPane #chatsLiveDot { grid-area: mark; justify-self: end; align-self: center; margin: 0 12px 6px 0; }
   body:not(.focus-ui) #conversationListPane .mark-all-reviewed-button { grid-area: mark; justify-self: start; align-self: center; margin: 0 0 6px 8px; }
   body:not(.focus-ui) #conversationListPane > .section-title .mark-all-reviewed-button { min-width: 0; min-height: 22px; overflow: hidden; padding: 0 8px; font: 600 11.5px/20px var(--sans); text-overflow: ellipsis; white-space: nowrap; }
-  body:not(.focus-ui) #conversationListPane > .conversation-search-row { grid-area: search; display: flex; align-items: center; gap: 4px; margin: 6px 0; }
+  /* The filters button's count badge overhangs its corner: the row's own padding keeps it inside the column. */
+  body:not(.focus-ui) #conversationListPane > .conversation-search-row { grid-area: search; display: flex; align-items: center; gap: 4px; margin: 6px 0; padding: 4px 4px 0 0; }
   body:not(.focus-ui) #conversationListPane .conversation-search { flex: 1; min-width: 0; margin: 0; }
   body:not(.focus-ui) #conversationListPane > .chat-filters { grid-area: chips; }
-  body:not(.focus-ui) #conversationListPane .chat-filters button { min-height: 28px; }
+  body:not(.focus-ui) #conversationListPane .chat-filters button { min-height: 28px; color: color-mix(in srgb, var(--text) 78%, transparent); }
+  body:not(.focus-ui) #conversationListPane .chat-filters button.active { color: var(--text); }
   body:not(.focus-ui) #conversationListPane > #conversationFilterRow { grid-area: labels; margin-right: 0; }
   body:not(.focus-ui) #conversationListPane > .done-filter[for="showDoneConversations"] { grid-area: done; }
   body:not(.focus-ui) #conversationListPane > .done-filter[for="showScheduledConversations"] { grid-area: sched; }
@@ -315,20 +320,37 @@
   /* Both lists are one long scroll inside their own column (app/long-scroll.js, .agents/knowledge/list-scrolling.md): no pages. */
   body:not(.focus-ui) :is(#projectList, #sessionList).panel-scroll { gap: 2px; padding: 0 0 2px; overflow-y: auto; overscroll-behavior: contain; }
 
-  /* The projects' groups (Personal, Work, a machine): a small semi-bold sans label with its count and a chevron, set off from
-     the rows under it by space above and a hairline (not above the first). One line; the full name is its tooltip. */
+  /* The projects' groups (Personal, Work, a machine) are sections, so each one is headed by a bar of its own: a tinted
+     full-width fill (a step off the column's colour, with a touch of the workspace's own accent colour, the dot), the
+     name in bold, its count in a pill and a chevron with a 20 px hit area. Space and a hairline set one workspace off
+     from the next. The bar stays at the top of the list while its projects scroll under it. One line; the full name
+     is the tooltip. */
   body:not(.focus-ui) #projectList .project-group { gap: 2px; min-width: 0; }
-  body:not(.focus-ui) #projectList .project-group-summary { min-width: 0; }
-  body:not(.focus-ui) #projectList .project-group + .project-group { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--line-strong); }
+  body:not(.focus-ui) #projectList .project-group + .project-group { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-strong); }
   body:not(.focus-ui) #projectList .project-group > .list-row + .list-row { border-top: 0; }
   body:not(.focus-ui) #projectList .project-group-summary {
-    gap: 6px; min-height: 30px; margin: 0; padding: 0 4px 0 8px; border-radius: 10px; color: var(--text);
-    font: 600 12.5px/1.2 var(--sans); letter-spacing: 0.02em; text-transform: none; opacity: 0.92;
+    position: sticky; top: 0; z-index: 3; box-sizing: border-box; gap: 8px; min-width: 0; min-height: 36px; margin: 0 0 4px; padding: 0 6px 0 4px; border-radius: 10px;
+    background: color-mix(in srgb, var(--project-hue, var(--accent)) 9%, var(--paper-raised)); color: var(--text);
+    font: 700 13.5px/1.2 var(--sans); letter-spacing: 0.01em; text-transform: none; opacity: 1;
   }
-  body:not(.focus-ui) #projectList .project-group-summary > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  body:not(.focus-ui) #projectList .project-group-summary:hover { background: color-mix(in srgb, var(--paper-raised) 55%, transparent); }
-  body:not(.focus-ui) #projectList .project-group-count { flex: none; margin-left: 0; min-width: 0; padding: 0; background: none; color: var(--muted); font: 600 12.5px/1 var(--sans); }
-  body:not(.focus-ui) #projectList .project-group-summary::before { flex: none; font-size: 10px; }
+  body:not(.focus-ui) #projectList .project-group-summary:hover { background: color-mix(in srgb, var(--project-hue, var(--accent)) 16%, var(--paper-raised)); color: var(--text); }
+  body:not(.focus-ui) #projectList .project-group-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* The chevron: a 20 px cell. */
+  body:not(.focus-ui) #projectList .project-group-summary::before {
+    content: "▸"; display: inline-grid; flex: none; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: var(--text); font-size: 12px; line-height: 1;
+  }
+  body:not(.focus-ui) #projectList .project-group-summary > span:first-of-type {
+    display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* The workspace's own colour. */
+  body:not(.focus-ui) #projectList .project-group-summary > span:first-of-type::before {
+    content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--project-hue, var(--accent)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--project-hue, var(--accent)) 28%, transparent);
+  }
+  body:not(.focus-ui) #projectList .project-group-count {
+    flex: none; margin-left: 0; min-width: 22px; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--text) 13%, transparent);
+    color: var(--text); font: 650 12px/20px var(--sans); text-align: center;
+  }
+  body:not(.focus-ui) #projectList :is(.project-group-running-badge, .project-group-review-badge) { margin-left: 0; font-size: 11px; }
 
   /* A row is one line of title and one quiet line under it. The row holds the highlight. Its pin and ⋮ lie over its
      end and show when the pointer or the keyboard is on the row (the title then ends before them); a pinned row keeps
@@ -343,17 +365,32 @@
   body:not(.focus-ui) #projectList .list-row.active,
   body:not(.focus-ui) #sessionList .list-row.active > .list-row-main { background: var(--panel); box-shadow: var(--shadow-soft); }
   :root[data-theme="dark"] body:not(.focus-ui) #projectList .list-row.active,
-  :root[data-theme="dark"] body:not(.focus-ui) #sessionList .list-row.active > .list-row-main { box-shadow: 0 0 0 1px var(--line); }
+  :root[data-theme="dark"] body:not(.focus-ui) #sessionList .list-row.active > .list-row-main { box-shadow: 0 0 0 1px var(--line-strong); }
   body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card),
   body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card):is(:hover, .active) {
     flex: 1 1 0; width: auto; min-width: 0; min-height: 0; padding: 8px var(--row-end) 8px 10px; border: 0; border-radius: 12px; background: transparent; box-shadow: none;
   }
   body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  /* A project's or a conversation's own colour is a line at the start of its row. */
+  /* A project's or a conversation's own colour tints its whole row (about 14 % of it over the column, so the text keeps its
+     contrast in every theme) and keeps a slim accent edge at the start. Under the pointer the tint deepens; the open
+     row is lifted onto the card colour with the hue as its outline, so neither state is the other's tint. Rows
+     with no colour stay plain. */
   body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card)[data-color],
-  body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card)[data-color]:is(:hover, .active) { box-shadow: inset 3px 0 0 var(--project-hue); }
+  body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card)[data-color]:is(:hover, .active) { box-shadow: none; }
+  body:not(.focus-ui) :is(#projectList .list-row[data-color], #sessionList .list-row-main[data-color]) { background: color-mix(in srgb, var(--project-hue) 14%, var(--bg)); }
+  body:not(.focus-ui) :is(#projectList .list-row[data-color], #sessionList .list-row-main[data-color])::before {
+    content: ""; position: absolute; left: 3px; top: 9px; bottom: 9px; width: 3px; border-radius: 2px; background: var(--project-hue); pointer-events: none;
+  }
+  body:not(.focus-ui) :is(#projectList .list-row[data-color]:hover, #sessionList .list-row-main[data-color]:hover) { background: color-mix(in srgb, var(--project-hue) 24%, var(--bg)); }
+  body:not(.focus-ui) :is(#projectList .list-row[data-color].active, #sessionList .list-row.active > .list-row-main[data-color]) {
+    background: color-mix(in srgb, var(--project-hue) 9%, var(--panel)); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--project-hue) 62%, transparent), var(--shadow-soft);
+  }
+  :root[data-theme="dark"] body:not(.focus-ui) :is(#projectList .list-row[data-color].active, #sessionList .list-row.active > .list-row-main[data-color]) { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--project-hue) 70%, transparent); }
   body:not(.focus-ui) #sessionList .session-card > strong,
   body:not(.focus-ui) #projectList .project-card strong { display: block; overflow: hidden; margin-bottom: 2px; font-size: 13.5px; font-weight: 600; line-height: 1.35; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; }
+  /* The counts on a project's row keep their hue but are darkened (lightened in the dark themes) to read on their tint. */
+  body:not(.focus-ui) #projectList .project-review-badge { color: color-mix(in srgb, var(--amber) 50%, var(--text)); }
+  body:not(.focus-ui) #projectList .project-running-badge { color: color-mix(in srgb, var(--live) 50%, var(--text)); }
   body:not(.focus-ui) #projectList .project-card-heading { flex-wrap: nowrap; align-items: center; margin-bottom: 2px; }
   body:not(.focus-ui) #projectList .project-card-heading strong { flex: 0 1 auto; margin: 0; }
   body:not(.focus-ui) #sessionList .session-card > span,
@@ -380,7 +417,8 @@
      focus (a touch screen has no hover: the menu also pins). The open menu is placed under or over ⋯, never over the pin. */
   body:not(.focus-ui) :is(#projectList .list-row, #sessionList .list-row-main) { --row-end: calc(var(--row-lead) + 62px); }
   body:not(.focus-ui) :is(#projectList, #sessionList) .pin-button { right: calc(var(--row-lead) + 30px); }
-  body:not(.focus-ui) :is(#projectList, #sessionList) .row-menu-button { right: var(--row-lead); opacity: 1; color: var(--muted); }
+  body:not(.focus-ui) :is(#projectList, #sessionList) .row-menu-button { right: var(--row-lead); opacity: 1; color: color-mix(in srgb, var(--text) 72%, transparent); }
+  body:not(.focus-ui) :is(#projectList, #sessionList) .pin-button { color: color-mix(in srgb, var(--text) 72%, transparent); }
   body:not(.focus-ui) :is(#projectList, #sessionList) .row-menu-button:hover { color: var(--text); }
   body:not(.focus-ui) :is(#projectList, #sessionList) .pin-button:not(.pinned) { opacity: 0; }
   @media (hover: hover) {

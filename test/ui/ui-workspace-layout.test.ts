@@ -4,13 +4,14 @@
 // docs/superpowers/specs/2026-11-10-ui-redo-paper-design.md.
 import assert from "node:assert/strict";
 import { type ChildProcess } from "node:child_process";
-import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test, { after, before } from "node:test";
 import { type Browser, type Page } from "playwright-core";
 import { launchChrome, WORKSPACE_COLUMN_KEY } from "./launch-chrome.js";
-import { seedDevEnvironment, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "../dev-nodes.js";
+import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "../dev-nodes.js";
+import { auditContrast, auditFit, pagerLeftovers, setTheme, THEMES } from "./left-column-audit.js";
 
 let root: string;
 let environment: DevEnvironment;
@@ -515,9 +516,17 @@ test("New, ⋯ and the places reach every action the old panels had", async () =
   await page.locator("#controlCenterPanel").waitFor();
   assert.equal(await page.locator('[data-testid="control-center-tabs"] [aria-selected="true"]').innerText(), "Automations");
   assert.equal(await page.getByTestId("workspace-automations-button").getAttribute("class").then((value) => value?.includes("on")), true);
-  // Bob opens the control center in the middle and keeps its exit rule: Esc twice leaves.
+  // Bob's page has the whole width (the left column goes while it is open, from 1024 px) and keeps its exit rule: Esc
+  // twice leaves, and the column is back with Bob one click away.
+  assert.equal(await visible("workspace-side"), false, "Bob's page takes the left column's place");
+  await page.locator("body").press("Escape");
+  await page.getByTestId("control-exit-prompt").waitFor();
+  await page.locator("body").press("Escape");
+  await page.waitForFunction(() => !document.body.classList.contains("view-control"));
+  assert.equal(await visible("workspace-side"), true, "leaving Bob's page brings the column back");
   await page.getByTestId("projects-open-control-center-button").click();
-  assert.equal(await visible("workspace-side"), true, "the column stays beside Bob");
+  await page.waitForFunction(() => document.body.classList.contains("view-control"));
+  assert.equal(await visible("workspace-side"), false, "Bob's button opens his page");
   await page.locator("body").press("Escape");
   await page.getByTestId("control-exit-prompt").waitFor();
   await page.locator("body").press("Escape");
@@ -653,6 +662,163 @@ test("the left column never clips: full above 1385 px, a real icon rail below, e
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1440, height: 900 });
   await frames();
+});
+
+test("the left columns hold their width at every window width and in every theme: no pager, chips that wrap, workspace bars, tinted project rows", async () => {
+  // Five workspaces with projects (some coloured, some pinned) and sixty-four conversations in the open project.
+  const session = await signIn(environment, node);
+  const colours = ["green", "blue", "violet", "magenta", "amber", "red", "teal", "orange"];
+  const made: string[] = [];
+  let next = 0;
+  for (const label of ["Work", "Side Projects", "Research Lab With A Long Workspace Name", "Archive"]) {
+    const saved = await api<{ workspace: { id: string } }>(node, session, "PUT", "/workspaces", { label });
+    assert.equal(saved.status, 200, `${label} is saved`);
+    for (let index = 0; index < 4; index++) {
+      const colour = index % 3 === 2 ? undefined : colours[next++ % colours.length];
+      const created = await api<{ project: { id: string } }>(node, session, "POST", "/projects", { name: `${label.split(" ")[0]} project ${index} with a rather long name`, type: saved.body.workspace.id, ...(colour ? { color: colour } : {}) });
+      assert.equal(created.status, 201, "the project is made");
+      made.push(created.body.project.id);
+    }
+  }
+  for (const id of made.filter((_, index) => index % 4 === 0)) await api(node, session, "PUT", "/pins", { kind: "project", projectId: id, pinned: true });
+  const open = projectNamed(node, "Internal Assistant");
+  for (let index = 0; index < 64; index++) {
+    const id = `layout-seed-${index}`, at = Date.parse("2026-10-01T09:00:00Z") + index * 3_600_000;
+    const rows = [
+      { type: "session", version: 3, id, timestamp: new Date(at).toISOString(), cwd: open.path },
+      { type: "session_info", name: `Seeded conversation ${index} about a fairly long subject line`, timestamp: new Date(at).toISOString() },
+      { type: "message", id: `${id}-0`, parentId: null, timestamp: new Date(at + 60_000).toISOString(), message: { role: "user", content: [{ type: "text", text: `Question ${index}` }], timestamp: at + 60_000 } },
+      { type: "message", id: `${id}-1`, parentId: `${id}-0`, timestamp: new Date(at + 120_000).toISOString(), message: { role: "assistant", content: [{ type: "text", text: `Answer ${index}.` }], timestamp: at + 120_000 } },
+    ];
+    await writeFile(path.join(environment.home, ".pi", "sessions", `${id}.jsonl`), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  }
+  await page.evaluate(() => { localStorage.setItem("joint-bob-workspace-column", "projects"); localStorage.setItem("joint-bob-conversation-filters-open", "1"); localStorage.setItem("joint-bob-project-filters-open", "1"); });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
+  await page.locator("#sessionList .list-row").nth(20).waitFor();
+  await page.evaluate("window.__name = (value) => value");
+  assert.ok(await page.locator("#projectList .project-group").count() >= 5, "several workspaces");
+  assert.ok(await page.locator("#projectList .list-row[data-color]").count() >= 8, "several coloured projects");
+
+  // Filters on, and a three-digit count in every chip: the chips wrap, nothing leaves its column or scrolls sideways.
+  await page.getByTestId("show-done-conversations-toggle").check();
+  await page.getByTestId("show-scheduled-conversations-toggle").check();
+  await page.locator("#chatFilters [data-filter-count]").evaluateAll((counts) => counts.forEach((count) => { count.textContent = "999"; }));
+  for (const width of [701, 800, 1000, 1100, 1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(300);
+    assert.deepEqual(await auditFit(page), [], `${width} px: every row, chip and bar stays inside its column`);
+    assert.deepEqual(await pagerLeftovers(page), [], `${width} px: no pager`);
+    const chips = await page.locator("#chatFilters button").evaluateAll((buttons) => buttons.map((button) => { const rect = button.getBoundingClientRect(); return { height: Math.round(rect.height), right: rect.right }; }));
+    assert.ok(chips.every((chip) => chip.height >= 28), `${width} px: the chips are at least 28 px high`);
+    const row = await page.locator("#conversationListPane > .conversation-search-row").evaluate((element) => {
+      const frame = document.querySelector("#chatsPanel")!.getBoundingClientRect(), toggle = element.querySelector("#conversationFiltersToggle, [data-testid=conversation-filters-toggle]")!.getBoundingClientRect(), badge = element.querySelector("[data-testid=conversation-filters-count]")!.getBoundingClientRect();
+      return { toggleRight: toggle.right <= frame.right, badgeRight: badge.width === 0 || badge.right <= frame.right };
+    });
+    assert.deepEqual(row, { toggleRight: true, badgeRight: true }, `${width} px: the filters button and its badge stay in the search row`);
+  }
+  // Folded, the button counts the filters that are on; its badge overhangs the button's corner and stays in the column.
+  await page.setViewportSize({ width: 701, height: 900 });
+  await page.getByTestId("conversation-filters-toggle").click();
+  await page.getByTestId("conversation-filters-count").waitFor();
+  assert.deepEqual(await auditFit(page), [], "701 px, filters folded: the badge stays in the column");
+  await page.getByTestId("conversation-filters-toggle").click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  // Each workspace is a section: a tinted bar of its own, a bold 13.5 px name, its colour dot, a count pill and a chevron
+  // with a hit area of 20 px, set off from the one above by space and a divider.
+  const bars = await page.locator("#projectList .project-group").evaluateAll((groups) => groups.map((group, index) => {
+    const bar = group.querySelector<HTMLElement>(":scope > summary")!, label = bar.querySelector<HTMLElement>("span")!, count = bar.querySelector<HTMLElement>(".project-group-count")!;
+    const style = getComputedStyle(bar), chevron = getComputedStyle(bar, "::before"), dot = getComputedStyle(label, "::before"), column = getComputedStyle(document.querySelector("#projectsPanel")!);
+    const previous = group.previousElementSibling ? getComputedStyle(group).borderTopWidth : "0px";
+    return {
+      fill: style.backgroundColor, page: getComputedStyle(document.body).backgroundColor, size: style.fontSize, weight: Number(getComputedStyle(label).fontWeight), width: bar.getBoundingClientRect().width, listWidth: group.getBoundingClientRect().width,
+      pill: count.getBoundingClientRect().height >= 18 && getComputedStyle(count).borderTopLeftRadius !== "0px", chevron: [parseFloat(chevron.width), parseFloat(chevron.height)], dot: dot.backgroundColor, hue: group.getAttribute("data-color"), previous, index, panel: column.backgroundColor,
+    };
+  }));
+  for (const bar of bars) {
+    assert.notEqual(bar.fill, "rgba(0, 0, 0, 0)", "the bar has a fill");
+    assert.notEqual(bar.fill, bar.page, "and it is not the page's colour");
+    assert.equal(bar.size, "13.5px");
+    assert.ok(bar.weight >= 700, `the name is bold (${bar.weight})`);
+    assert.ok(Math.abs(bar.width - bar.listWidth) <= 1, "the bar is as wide as the list");
+    assert.equal(bar.pill, true, "the count is a pill");
+    assert.ok(bar.chevron[0] >= 20 && bar.chevron[1] >= 20, `the chevron has a 20 px hit area (${bar.chevron})`);
+    assert.notEqual(bar.dot, "rgba(0, 0, 0, 0)", "the workspace's colour dot");
+    if (bar.index > 0) assert.equal(bar.previous, "1px", "a divider sets one workspace off from the one above");
+  }
+  assert.equal(new Set(bars.map((bar) => bar.hue)).size, bars.length, "each workspace has its own colour");
+  // A group folds on its bar; the bar is a button to the keyboard (a native summary).
+  const first = page.locator("#projectList .project-group").first();
+  await first.locator("> summary").click();
+  assert.equal(await first.evaluate((group) => (group as HTMLDetailsElement).open), false);
+  await first.locator("> summary").click();
+  assert.equal(await first.evaluate((group) => (group as HTMLDetailsElement).open), true);
+
+  // A project's colour tints its whole row (not only an edge); the open row and the pointer have states of their own.
+  const rows = await page.locator("#projectList .list-row").evaluateAll((items) => items.slice(0, 40).map((item) => {
+    const style = getComputedStyle(item), edge = getComputedStyle(item, "::before");
+    return { coloured: item.hasAttribute("data-color"), fill: style.backgroundColor, edge: edge.content !== "none" ? parseFloat(edge.width) : 0, active: item.classList.contains("active") };
+  }));
+  const plain = rows.filter((row) => !row.coloured && !row.active), tinted = rows.filter((row) => row.coloured && !row.active);
+  assert.ok(plain.length > 2 && tinted.length > 2);
+  assert.ok(plain.every((row) => row.fill === "rgba(0, 0, 0, 0)" && row.edge === 0), "uncoloured rows stay plain");
+  assert.ok(tinted.every((row) => row.fill !== "rgba(0, 0, 0, 0)" && row.edge >= 3), "coloured rows have a fill and a slim edge");
+  const coloured = page.locator("#projectList .list-row[data-color]:not(.active)").first();
+  const resting = await coloured.evaluate((item) => getComputedStyle(item).backgroundColor);
+  await coloured.hover();
+  const hovered = await coloured.evaluate((item) => getComputedStyle(item).backgroundColor);
+  assert.notEqual(hovered, resting, "the pointer deepens the tint");
+  await page.mouse.move(700, 450);
+  await coloured.locator(".project-card").click();
+  await page.locator("#projectList .list-row[data-color].active").waitFor();
+  await page.mouse.move(700, 450);
+  await page.waitForTimeout(250);
+  const selected = await page.locator("#projectList .list-row[data-color].active").evaluate((item) => ({ fill: getComputedStyle(item).backgroundColor, shadow: getComputedStyle(item).boxShadow }));
+  assert.notEqual(selected.fill, resting, "the open row is not the resting tint");
+  assert.notEqual(selected.fill, hovered, "nor the pointer's");
+  assert.notEqual(selected.shadow, "none", "it is outlined in its colour");
+
+  // Contrast, measured, in every theme: every piece of text in the three columns reads at least 4.5:1.
+  for (const place of ["projects", "inbox"]) {
+    if (place === "inbox") { await page.getByTestId("workspace-inbox-button").click(); await page.getByTestId("workspace-groups").waitFor(); }
+    for (const [name, theme, palette] of THEMES) {
+      await setTheme(page, theme, palette);
+      assert.deepEqual(await auditContrast(page), [], `${name} (${place}): the left columns' text is readable`);
+    }
+  }
+  await setTheme(page, "", "");
+  await page.getByTestId("workspace-projects-button").click();
+  await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
+  await page.locator("#sessionList .list-row").first().waitFor();
+
+  // The phone's conversation list: the chips and the search row stay on the screen.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.body.classList.contains("focus-ui"));
+  await page.waitForTimeout(300);
+  assert.deepEqual(await pagerLeftovers(page), [], "the phone has no pager either");
+  const phone = await page.evaluate(() => {
+    const out: string[] = [];
+    for (const element of document.querySelectorAll<HTMLElement>("#chatFilters, #chatFilters button, #conversationListPane .conversation-search-row, #conversationListPane .conversation-search-row > *")) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width && (rect.right > innerWidth + 0.5 || rect.left < -0.5)) out.push(`${element.id || element.className} ${Math.round(rect.left)}–${Math.round(rect.right)}`);
+    }
+    return { out, overflow: document.scrollingElement!.scrollWidth - innerWidth };
+  });
+  assert.deepEqual(phone.out, [], "the phone's chips and search row stay on the screen");
+  assert.ok(phone.overflow <= 0, "and the page does not scroll sideways");
+  // The phone's list of projects: its groups and rows are as wide as the screen, not wider.
+  await page.locator("button:visible", { hasText: /^Projects$/ }).first().click();
+  await page.locator("#projectList .project-group .list-row").first().waitFor({ state: "visible" });
+  const projects = await page.evaluate(() => {
+    const list = document.querySelector<HTMLElement>("#projectList")!;
+    return { sideways: list.scrollWidth - list.clientWidth, right: Math.max(...[...list.querySelectorAll<HTMLElement>(".project-group, .project-group-summary, .list-row, .row-menu-button")].map((element) => element.getBoundingClientRect().right)), width: innerWidth };
+  });
+  assert.ok(projects.sideways <= 0, `the phone's project list does not scroll sideways (${projects.sideways}px)`);
+  assert.ok(projects.right <= projects.width, `its rows end inside the screen (${projects.right} > ${projects.width})`);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForFunction(() => !document.body.classList.contains("focus-ui"));
 });
 
 test("the workspace raised no page errors", () => {

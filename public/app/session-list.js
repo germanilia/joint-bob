@@ -311,6 +311,7 @@ function sessionRow({ session, depth, childCount }, sessionActive) {
   // centre on the whole row and slide out past the card's border.
   const rowMain = document.createElement("div");
   rowMain.className = "list-row-main";
+  if (session.color) rowMain.dataset.color = session.color;
   if (ticketTask) rowMain.append(button, ticketRowButton(ticketTask), pinToggle, menuButton);
   else rowMain.append(button, pinToggle, menuButton);
   if (childToggle) rowMain.append(childToggle);

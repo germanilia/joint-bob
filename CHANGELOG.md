@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.289.0 — 2026-11-12
+
+- **Workspaces are clear section headers in the left column**: a tinted bar with a colour dot, a bold name, a count and a larger arrow, with a divider between workspaces; the bar stays at the top while its projects scroll.
+- **A project or conversation with a colour tag has a soft tinted background** in that colour, not only a thin left edge; selected and hover have their own look.
+- The conversation filters under the search box wrap instead of running off the edge of the column when the counts are large.
+- Fixed the phone project list scrolling sideways.
+
 ## 2.288.1 — 2026-11-12
 
 - Phone cards use accessible icon buttons so every action, including Open, stays inside the card.

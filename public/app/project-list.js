@@ -97,12 +97,16 @@ function groupedProjects(projects) {
   }
   const configured = shared.workspaces.map((workspace) => workspace.id).filter((typeId) => byType.has(typeId));
   const unknown = [...byType.keys()].filter((typeId) => !configured.includes(typeId)).sort();
-  return [...configured, ...unknown].map((typeId) => ({
+  return [...configured, ...unknown].map((typeId, index) => ({
     id: typeId,
+    index,
     label: groupLabel(shared.workspaces.find((workspace) => workspace.id === typeId), typeId),
     projects: sortPinnedFirst(byType.get(typeId), (project) => isProjectPinned(project.id)),
   }));
 }
+
+/** Each workspace has an accent colour of its own, among the project colours: its place in the list (Settings order), so neighbours differ. */
+const WORKSPACE_HUES = ["blue", "violet", "teal", "amber", "magenta", "green", "orange", "indigo", "cyan", "pink"];
 
 /** Dashboard mode for a workspace; it runs in one of the workspace's projects, chosen on creation. */
 function workspaceDashboardButton(group) {
@@ -127,6 +131,7 @@ function projectGroupElement(group) {
   details.className = "project-group";
   details.dataset.testid = "project-group";
   details.dataset.projectType = group.id;
+  details.dataset.color = WORKSPACE_HUES[group.index % WORKSPACE_HUES.length];
   details.open = !collapsedProjectGroups.has(group.id);
   details.addEventListener("toggle", () => {
     if (details.open) collapsedProjectGroups.delete(group.id);

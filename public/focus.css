@@ -19,8 +19,9 @@ body.focus-ui .conversation-tabs button.active { background: transparent; border
 body.focus-ui .conversation-search { margin: 10px 16px 4px; }
 .conversation-search-row { display: contents; }
 .focus-search-create { display: none; }
-body.focus-ui .chat-filters { display: flex; margin: 4px 16px; gap: 4px; }
-body.focus-ui .chat-filters button { flex: 1; min-width: 0; min-height: 40px; padding: 4px; }
+/* The state chips wrap onto a second line rather than leave the screen (a three-digit count is wider than a fifth of it). */
+body.focus-ui .chat-filters { display: flex; flex-wrap: wrap; margin: 4px 16px; gap: 4px; }
+body.focus-ui .chat-filters button { flex: 1 1 auto; min-width: 56px; min-height: 40px; padding: 4px 8px; }
 body.focus-ui .list-filter-row { margin: 4px 16px; }
 body.focus-ui .list-filter-row .searchable-select-trigger { min-height: 36px; font-size: 13px; }
 body.focus-ui .done-filter { margin: 4px 16px 8px; font-size: 12px; }
