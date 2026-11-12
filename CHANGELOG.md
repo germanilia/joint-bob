@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.284.3 — 2026-11-12
+
+- The Needs you snooze menu now loads when the app is offline.
+
 ## 2.284.2 — 2026-11-12
 
 - Snoozing a conversation under **Needs you** now carries over to your other machines; before, the snooze was dropped during sync and never reached them.
