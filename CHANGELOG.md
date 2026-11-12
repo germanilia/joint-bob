@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.293.2 — 2026-11-12
+
+- Closing a conversation now returns to the list immediately while worktree cleanup runs in the background.
+
 ## 2.293.1 — 2026-11-12
 
 - Fixed the browser viewer closing or appearing behind conversations opened from the control center.
