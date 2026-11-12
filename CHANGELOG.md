@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.281.0 — 2026-11-12
 
-- Bob's automatic model choice now picks one good enough for each prompt, preferring models included in a subscription over API billing, instead of simply the cheapest; Settings shows each model's billing and score.
+- Bob's automatic model choice now picks a model good enough for each prompt, trying models included in a subscription before API-billed ones and then the cheapest. Scores come from public evals.
+- Settings → System AI shows each default model's billing and score, listed in the order they are tried.
+- Automatic routing for Pi uses only its Codex and Z.ai subscriptions, and Google Antigravity prompts are now routed by thinking level on its default model.
+- Added gpt-6.1-terra to the allowed Codex models.
 
 ## 2.280.0 — 2026-11-12
 
