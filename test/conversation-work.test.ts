@@ -136,7 +136,7 @@ test("a restarted dashboard retires orphaned runs without losing observed task r
 });
 
 for (const engine of ["pi", "claude", "future-harness"]) {
-  test(`${engine}: parent completion cannot trigger review before all children finish`, t => {
+  test(`${engine}: children working after the parent answered do not hold it out of review`, t => {
     t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
     const sessionId = `work-${engine}`;
     const session = { path: sessionId, engine, sessionId, running: false };
@@ -149,15 +149,13 @@ for (const engine of ["pi", "claude", "future-harness"]) {
     };
     child("one", "running");
     child("two", "queued");
-    assert.equal(observe(), "running", "finished parent must remain running while its children work");
+    // Background work is shown as its own state; the finished turn still waits for the person.
+    assert.equal(observe(), "needs_review", "a finished parent waits for review while its children work");
     child("one", "succeeded");
-    assert.equal(observe(), "running", "queued children also block review");
     child("two", "failed");
     assert.equal(observe(), "needs_review");
-    child("three", "running");
-    assert.equal(observe(), "running");
-    child("three", "cancelled");
-    assert.equal(observe(), "needs_review");
+    session.running = true;
+    assert.equal(observe(), "running", "only the parent's own turn makes it running");
   });
 }
 

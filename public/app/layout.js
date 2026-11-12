@@ -181,8 +181,9 @@ export function normalizedQuery(value) {
 
 export function sessionDisplayState(session) {
   if (session.turnRunning || (!session.backgroundRunning && (session.running || session.reviewState === "running"))) return "active";
-  if (session.backgroundRunning) return "background";
+  // A finished turn waits for the person even while its background tasks run on.
   if (session.reviewState === "needs_review") return "review";
+  if (session.backgroundRunning) return "background";
   return "done";
 }
 

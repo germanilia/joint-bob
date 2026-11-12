@@ -19,6 +19,17 @@ const sources = {
   snoozeOf: () => null,
 };
 
+test("a finished turn with background tasks left waits for review, not under Running", () => {
+  const cards = buildBoard([{ projectId: "p1", projectName: "Joint Bob", sessions: [
+    session({ id: "answered", running: true, backgroundRunning: true, turnRunning: false, reviewState: "needs_review", updatedAt: "2026-11-05T10:00:00Z" }),
+    session({ id: "watched", running: true, backgroundRunning: true, turnRunning: false, reviewState: "reviewed", updatedAt: "2026-11-05T09:00:00Z" }),
+  ] }], sources);
+  const byId = Object.fromEntries(cards.map((card) => [card.sessionId, card]));
+  assert.equal(byId.answered.column, "review");
+  assert.equal(byId.answered.backgroundRunning, true, "its background tasks still show on the card");
+  assert.equal(byId.watched.column, "running", "once reviewed, its background tasks keep it in sight");
+});
+
 test("the board lists running conversations and ones waiting for review, newest first", () => {
   const projects: BoardProject[] = [
     { projectId: "p1", projectName: "Joint Bob", sessions: [

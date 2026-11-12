@@ -829,6 +829,8 @@ export function runClaudePrompt(options: ClaudeRunOptions): ClaudeRunHandle {
       return;
     }
     if (record.type === "result") {
+      // The answer is out. A process still alive after this only waits for its own background tasks.
+      options.onEvent({ type: "turnAnswered" });
       if (record.is_error) {
         const reported = state.apiError !== null;
         if (typeof record.api_error_status === "number") state.apiError = { status: record.api_error_status, code: state.apiError?.code ?? null };

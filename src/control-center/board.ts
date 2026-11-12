@@ -72,15 +72,17 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
   for (const project of projects) {
     for (const session of project.sessions) {
       const running = Boolean(session.running);
+      // Background tasks left after the answer keep it alive but not working: it waits for the person like any finished turn.
+      const working = Boolean(session.turnRunning);
       const conversationId = session.conversationId ?? session.id;
       const pendingReviews = sources.pendingReviews(project.projectId, conversationId);
       const needsReview = session.reviewState === "needs_review";
-      const waitingToStart = !running && Boolean(session.pendingPromptCount);
-      const autoRespondStop = needsReview && !running ? sources.autoRespondStop(project.projectId, conversationId) : null;
+      const waitingToStart = !working && Boolean(session.pendingPromptCount);
+      const autoRespondStop = needsReview && !working ? sources.autoRespondStop(project.projectId, conversationId) : null;
       const reviewCheck = sources.reviewCheck(project.projectId, conversationId);
       // Bob checked it and found it waits for the person: it stays under Needs you until they answer it (it moves on after the
       // check), close it, or tell Bob to leave it. Opening it to look is not answering it.
-      const checkedForYou = !running && Boolean(reviewCheck?.needsYou) && !movedOnSince(session.updatedAt, reviewCheck!.checkedAt);
+      const checkedForYou = !working && Boolean(reviewCheck?.needsYou) && !movedOnSince(session.updatedAt, reviewCheck!.checkedAt);
       if (!running && !needsReview && !pendingReviews.length && !checkedForYou && !waitingToStart) continue;
       // Marked done, from its project or from the board: it has left the board, until it runs again.
       if (session.doneAt && !running) continue;
@@ -94,7 +96,7 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
         sessionId: session.id,
         path: session.path,
         title: session.title,
-        column: needsYou ? (snoozed ? "snoozed" : "needs-you") : running ? "running" : "review",
+        column: needsYou ? (snoozed ? "snoozed" : "needs-you") : working || (running && !needsReview) ? "running" : "review",
         harnessId: session.harnessId,
         agentId: session.agentId,
         agentLabel: session.agentLabel,

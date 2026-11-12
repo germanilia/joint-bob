@@ -24,7 +24,7 @@ import { refreshSharedSkills } from "./skill-sharing.js";
 import type { HarnessId } from "../types.js";
 import { announceConversationsChanged, broadcastSessionsChangedToAllProjects, instructionsChanged, scheduleReviewNotifications, scheduleReviewNotificationsFor, wakeQueuedConversations } from "./realtime.js";
 import { replicationReceiptSchema } from "./schemas.js";
-import { dropZombieHarnessSessions, harnessSessions, harnessTurnBusy, reapInactiveHarnessSessions } from "./harness-sessions.js";
+import { dropZombieHarnessSessions, harnessSessions, harnessTurnBusy, harnessTurnWorking, reapInactiveHarnessSessions } from "./harness-sessions.js";
 import { flags } from "./state.js";
 import { measureOperation } from "./performance-diagnostics.js";
 
@@ -147,7 +147,7 @@ export async function buildRuntimeLeaseSnapshot(localNodeId: string): Promise<Ru
     const key = `${shared.engine}\n${sessionId}`;
     const ownershipEpoch = await epochFor(shared.engine, sessionId);
     if (ownershipEpoch === null) continue;
-    entries.set(key, { engine: shared.engine, sessionId, ownerNodeId: localNodeId, ownershipEpoch, runId: sessionId, updatedAt, expiresAt });
+    entries.set(key, { engine: shared.engine, sessionId, ownerNodeId: localNodeId, ownershipEpoch, runId: sessionId, backgroundRunning: !harnessTurnWorking(shared), updatedAt, expiresAt });
   }
   for (const work of listUnfinishedConversationWork()) {
     const key = `${work.engine}\n${work.sessionId}`;

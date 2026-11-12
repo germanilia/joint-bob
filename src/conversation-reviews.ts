@@ -1,4 +1,3 @@
-import { conversationWorkActive } from "./conversation-work.js";
 import { mkdirSync } from "node:fs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
@@ -19,6 +18,7 @@ interface ConversationStateInput {
   engine: ConversationEngine;
   sessionId: string;
   updatedAt?: string;
+  /** The agent's turn is working. Background tasks after its answer do not count: the person can review it. */
   running: boolean;
   silentReviewFrom?: string;
   silentReviewUntil?: string;
@@ -191,7 +191,6 @@ export function syncConversationReviewDetails(userId: string, username: string, 
   const statements = reviewStatements(db);
   const remote = remoteWatermarks(db, username, projectId);
   const now = new Date().toISOString();
-  sessions = sessions.map((session) => ({ ...session, running: session.running || conversationWorkActive(session.engine, session.sessionId) }));
   /** One pass over the sessions. Without `write` it changes nothing, and gives up at the first thing that would have to be written. */
   const reconcile = (write: boolean): Map<string, ConversationReviewDetails> | undefined => {
     const states = new Map<string, ConversationReviewDetails>();

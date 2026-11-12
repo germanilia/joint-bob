@@ -189,7 +189,7 @@ export function syncTurnBusy() {
   state.sessionBusy = turnBusy;
   syncLiveActivity();
   elements.abortButton.disabled = !turnBusy;
-  setStatus(state.harnessBusy ? `${harnessLabel(state.harnesses, state.engine)} is working` : deciding ? "Auto respond is deciding" : state.backgroundRunning ? "Background tasks running" : "Connected", true, false, turnBusy);
+  setStatus(state.harnessBusy ? `${harnessLabel(state.harnesses, state.engine)} is working` : deciding ? "Auto respond is deciding" : state.backgroundRunning ? "Waiting for you · background tasks running" : "Connected", true, false, turnBusy, !turnBusy && state.backgroundRunning);
 }
 
 export function updateStatus(status) {

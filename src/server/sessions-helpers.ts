@@ -23,7 +23,7 @@ import { getSettings } from "../settings.js";
 import type { ProjectRecord, SessionSummary } from "../types.js";
 import { listUserPins } from "../user-pins.js";
 import { sessionWatcher } from "./chat.js";
-import { findHarnessSession, harnessTurnBusy } from "./harness-sessions.js";
+import { findHarnessSession, harnessTurnBusy, harnessTurnWorking } from "./harness-sessions.js";
 import { listProjectCronTasks } from "./cron-list.js";
 import { measureOperation } from "./performance-diagnostics.js";
 import { conversationsChanged, sessionListingChanged, sharedProjectListing, sharedProjectListingUse } from "../session-listing-revisions.js";
@@ -126,8 +126,10 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
       const agentModel = shared?.session.status().model?.label;
       const work = listConversationWork(session.harnessId, session.id);
       const lease = conversationLeaseState(session.harnessId, session.id);
-      const backgroundRunning = work.some((entry) => agentWorkActive(entry.summary)) || lease.backgroundRunning || backgroundTaskConversations.has(session.conversationId ?? session.id);
-      const turnRunning = Boolean(shared && harnessTurnBusy(shared) || externalRunning.get(session.harnessId)?.has(session.id) || lease.running && !lease.backgroundRunning);
+      // A turn that has answered but whose process waits on its own background tasks is background, not working.
+      const answeredBusy = Boolean(shared && harnessTurnBusy(shared) && !harnessTurnWorking(shared));
+      const backgroundRunning = answeredBusy || work.some((entry) => agentWorkActive(entry.summary)) || lease.backgroundRunning || backgroundTaskConversations.has(session.conversationId ?? session.id);
+      const turnRunning = Boolean(shared && harnessTurnWorking(shared) || externalRunning.get(session.harnessId)?.has(session.id) || lease.running && !lease.backgroundRunning);
       return {
         ...session,
         agentId,
@@ -144,7 +146,8 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
       };
     }));
     // Internal snapshots do not belong to a viewer and must not create review records.
-    const reviewDetails = userId ? syncConversationReviewDetails(userId, username, project.id, listedSessions.filter((session) => !session.readOnly)) : new Map();
+    const reviewDetails = userId ? syncConversationReviewDetails(userId, username, project.id, listedSessions.filter((session) => !session.readOnly)
+      .map((session) => ({ ...session, running: Boolean(session.turnRunning) }))) : new Map();
     return { listedSessions, reviewDetails };
   });
   const ownership = await measureOperation("sessions.ownership", () => Promise.all(listedSessions.map((session) => getConversationOwnership(session.harnessId, session.id))));

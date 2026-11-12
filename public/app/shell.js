@@ -257,12 +257,13 @@ export function updateInstallButton() {
 
 // The pill renders as a 12px traffic light, so the state has to reach the user
 // through the tooltip and the accessible name rather than visible text.
-export function setStatus(text, live = false, connecting = false, working = false) {
+export function setStatus(text, live = false, connecting = false, working = false, background = false) {
   elements.connectionStatus.textContent = text;
   elements.connectionStatus.title = text;
   elements.connectionStatus.classList.toggle("live", live);
   elements.connectionStatus.classList.toggle("connecting", connecting);
   elements.connectionStatus.classList.toggle("working", working);
+  elements.connectionStatus.classList.toggle("background", background);
 }
 
 // The node name and release cannot change while this tab is open, so one lazy

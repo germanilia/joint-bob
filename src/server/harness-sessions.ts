@@ -7,7 +7,7 @@ import { BACKGROUND_WORK_INACTIVITY_TIMEOUT_MS, COMPACTION_INACTIVITY_TIMEOUT_MS
 import { conversationWorkActive } from "../conversation-work.js";
 import { getHarness, getHarnessRuntime, refreshHarnessSessions } from "../harnesses.js";
 import type { HarnessEvent, HarnessOpenOptions, HarnessSession } from "../harnesses/runtime.js";
-import type { ChatMessage, HarnessId } from "../types.js";
+import type { ChatMessage, HarnessId, SessionStatus } from "../types.js";
 import { broadcastToProject, scheduleReviewNotifications, send } from "./realtime.js";
 import { idleSessionTimeoutMs, localWriteGraceMs } from "./state.js";
 
@@ -64,6 +64,11 @@ export function findHarnessSession(projectId: string, engine: HarnessId, id: str
 
 export function harnessTurnBusy(shared: SharedHarnessSession): boolean {
   return shared.turnInFlight > 0 || shared.session.isBusy();
+}
+
+/** Busy and not merely waiting on background tasks after its answer: the person has nothing to answer yet. */
+export function harnessTurnWorking(shared: SharedHarnessSession): boolean {
+  return harnessTurnBusy(shared) && !shared.session.status().backgroundRunning;
 }
 
 export function harnessSessionBusy(shared: SharedHarnessSession): boolean {
@@ -251,9 +256,14 @@ export function attachHarnessClient(shared: SharedHarnessSession, socket: WebSoc
   clearIdle(shared); shared.clients.add(socket);
 }
 export function detachHarnessClient(shared: SharedHarnessSession, socket: WebSocket): void { shared.clients.delete(socket); scheduleIdle(shared); }
+function withBackgroundWork(shared: SharedHarnessSession): SessionStatus {
+  const status = shared.session.status();
+  return { ...status, backgroundRunning: Boolean(status.backgroundRunning || conversationWorkActive(shared.engine, shared.session.id)) };
+}
+
 export function sendHarnessStatus(shared: SharedHarnessSession, socket?: WebSocket): void {
   const clients = socket ? [socket] : shared.clients;
-  for (const client of clients) send(client, { type: "status", status: { ...shared.session.status(), backgroundRunning: conversationWorkActive(shared.engine, shared.session.id) } });
+  for (const client of clients) send(client, { type: "status", status: withBackgroundWork(shared) });
   if (!shared.clients.size) scheduleIdle(shared);
 }
 

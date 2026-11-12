@@ -75,13 +75,14 @@ test("a harness switch keeps the conversation's background task visible on its n
     const merged = await waitForBackground(f.node, session, project.id, second.id, "the switched conversation");
     assert.equal(merged.conversationId, first.id);
     assert.equal(merged.running, true);
-    assert.equal(merged.reviewState, "running");
+    // A background task is its own state: it does not make the finished turn look like it is working.
+    assert.notEqual(merged.reviewState, "running");
   } finally {
     await closeBackgroundFixture(f);
   }
 });
 
-test("a background task on one node keeps its conversation running on the paired node", { timeout: 90_000 }, async () => {
+test("a background task on one node shows on the paired node without holding the conversation out of review", { timeout: 90_000 }, async () => {
   const f = await backgroundClusterFixture();
   try {
     const [nodeA, nodeB] = f.nodes;
@@ -97,7 +98,7 @@ test("a background task on one node keeps its conversation running on the paired
     await waitForBackground(nodeA, sessionA, projectA.id, target.id, "the node running the task");
     const peer = await waitForBackground(nodeB, sessionB, projectB.id, target.id, "the paired node");
     assert.equal(peer.running, true);
-    assert.equal(peer.reviewState, "running");
+    assert.notEqual(peer.reviewState, "running");
   } finally {
     await closeBackgroundClusterFixture(f);
   }

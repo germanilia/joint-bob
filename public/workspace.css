@@ -561,7 +561,9 @@
   body:not(.focus-ui) #chatPanel #connectionStatus.connecting { background: color-mix(in srgb, var(--ws-need-fill) 18%, transparent); color: var(--ws-need); }
   body:not(.focus-ui) #chatPanel #connectionStatus:is(.working, .connecting)::before { animation: ws-pulse 1.4s ease-in-out infinite; }
   /* Connected and resting says itself with a green dot (its name stays the tooltip and the accessible name). */
-  body:not(.focus-ui) #chatPanel #connectionStatus.live:not(.working) { width: 24px; padding: 0; overflow: hidden; color: var(--accent); font-size: 0; }
+  body:not(.focus-ui) #chatPanel #connectionStatus.live:not(.working, .background) { width: 24px; padding: 0; overflow: hidden; color: var(--accent); font-size: 0; }
+  /* The answer is out but its background tasks run on: say so in words, it waits for the person. */
+  body:not(.focus-ui) #chatPanel #connectionStatus.live.background { flex: 0 1 auto; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: color-mix(in srgb, var(--ws-need-fill) 18%, transparent); color: var(--ws-need); }
   body:not(.focus-ui) #chatPanel #chatDashboardButton { display: none; }
   body:not(.focus-ui) .ws-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
   body:not(.focus-ui) .ws-head-actions > :is(button, details > summary) { min-height: 34px; height: 34px; }

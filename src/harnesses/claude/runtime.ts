@@ -61,6 +61,8 @@ class ClaudeSession implements HarnessSession {
   private config: HarnessModelSettings;
   private child: ChildProcessWithoutNullStreams | undefined;
   private running = false;
+  /** The turn's answer is out; the process only lives on for its own background tasks. */
+  private answered = false;
   /** Why Joint Bob stopped the running process, which is the turn's failure reason rather than how the process died. */
   private stopReason: string | undefined;
   private readonly listeners = new Set<Listener>();
@@ -103,7 +105,8 @@ class ClaudeSession implements HarnessSession {
       model: { provider: "claude", id: this.config.modelId, label: claudeModelLabel(this.config.modelId) },
       thinkingLevel: this.config.reasoning,
       availableThinkingLevels: effortIds,
-      isStreaming: this.running,
+      isStreaming: this.running && !this.answered,
+      backgroundRunning: this.running && this.answered,
       isCompacting: this.compacting,
       isRetrying: false,
       isBashRunning: false,
@@ -154,6 +157,11 @@ class ClaudeSession implements HarnessSession {
   async preflight(): Promise<void> {
     const { env } = await this.currentEnvironment();
     await withClaudeProfile(this.options.projectId, this.options.conversationId ?? this.id, () => preflightQueuedClaude(this.options.cwd, env));
+  }
+
+  private markAnswered(answered: boolean): void {
+    this.answered = answered;
+    this.emit({ type: "status", status: this.status() });
   }
 
   private recordTurnEvent(event: HarnessEvent, turn: TurnTranscript): void {
@@ -239,6 +247,7 @@ class ClaudeSession implements HarnessSession {
   private async promptWithProfile(input: HarnessPrompt): Promise<void> {
     if (this.running) throw new Error("Claude session is busy");
     this.running = true;
+    this.answered = false;
     this.stopReason = undefined;
     const state = { started: false };
     this.emit({ type: "agent_start" });
@@ -277,6 +286,9 @@ class ClaudeSession implements HarnessSession {
       systemInstructions: context,
       onSessionId: (sessionId) => this.captureSession(sessionId),
       onEvent: (event) => {
+        if (event.type === "turnAnswered") return this.markAnswered(true);
+        // A finished background task wakes the model, and the turn is working again.
+        if (this.answered && startsTurn(event)) this.markAnswered(false);
         this.markStarted(input, state, event);
         if (event.type === "contextUsage") this.contextUsage = event.usage as ContextUsage;
         this.recordTurnEvent(event, turn);
