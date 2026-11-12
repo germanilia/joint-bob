@@ -12,6 +12,7 @@ test("allocation preview stays in Settings and reports uncertainty without switc
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-classifiers").click();
   await page.getByTestId("allocation-preview").waitFor();
+  await page.getByTestId("allocation-status").filter({ hasText: /recommendation|Recommendation/ }).waitFor();
   assert.match(await page.getByTestId("allocation-status").innerText(), /recommendation|Recommendation/);
   await page.getByTestId("allocation-mode").selectOption("recommendation");
   await page.getByTestId("allocation-save").click();
