@@ -130,8 +130,21 @@ function climbOneLevel() {
   if (parent) setMobileView(parent);
 }
 
+/** The few frames above setMobileView, so a log line names the code that changed the view. */
+function viewChangeCaller() {
+  return new Error().stack.split("\n").slice(2, 7).map((line) => line.trim().replace(/https?:\/\/[^/]+/, "")).join(" < ");
+}
+
 export function setMobileView(view) {
-  if (state.keepControlView && view !== "control") return;
+  const from = currentMobileView();
+  // `person` is true within a few seconds of a tap or key press. Leaving the control center with it false was
+  // automatic code (see .agents/knowledge/control-center-ui.md), and the caller names which.
+  const change = { person: navigator.userActivation.isActive, keepControlView: state.keepControlView, caller: viewChangeCaller() };
+  if (state.keepControlView && view !== "control") {
+    console.info(`View ${from} → ${view} refused: a conversation is opening over the control center`, change);
+    return;
+  }
+  if (from !== view) console.info(`View ${from} → ${view}`, change);
   if (view === "control" && currentMobileView() !== "control") state.viewBeforeControl = currentMobileView();
   if (state.preferencesLoaded) savePreferencesInBackground({ mobileView: view });
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Client logs now record every view change, whether a tap or key press caused it, and the code that made it, so an automatic exit from the control center can be traced.
+
 ## 2.293.2 — 2026-11-12
 
 - Closing a conversation now returns to the list immediately while worktree cleanup runs in the background.
