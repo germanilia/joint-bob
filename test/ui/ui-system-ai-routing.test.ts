@@ -38,11 +38,13 @@ test('System AI shows model routing, its defaults and the daily review instructi
   assert.match(candidates, /zai · glm-fixture · medium[\s\S]*openai-codex · gpt-6-luna · medium/, 'candidates are listed cheapest first');
   assert.match(await page.getByTestId('system-ai-routing-quality-instructions').textContent() ?? '', /Synthetic quality steps/);
   assert.match(await page.getByTestId('system-ai-routing-update-instructions').textContent() ?? '', /Synthetic update steps/);
+  // Each change saves on its own through System AI's endpoint.
   await page.getByTestId('system-ai-routing-enabled').uncheck();
   await page.getByTestId('system-ai-routing-share').check();
-  await page.getByTestId('settings-save-button').click();
-  await page.getByTestId('system-ai-status').getByText('Saved', { exact: false }).waitFor();
+  const until = Date.now() + 20000;
+  while (JSON.stringify(writes.at(-1)?.system.routing) !== JSON.stringify({ enabled: false, shareWithRelay: true }) && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 100));
   assert.deepEqual(writes.at(-1).system.routing, { enabled: false, shareWithRelay: true });
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
