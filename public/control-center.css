@@ -309,3 +309,82 @@ button.control-entry-conversation::after { content: " ↗"; color: var(--muted);
 .control-secret-fields { display: grid; gap: 8px; }
 .control-secret-field { display: grid; gap: 4px; font-size: 12px; }
 .control-secret-field input { width: 100%; }
+
+/* ---------- the game on the board (control-center.js): characters, energy, the scoreboard, a cheer ---------- */
+.control-score { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.control-score-tile {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 0; height: auto; padding: 10px 14px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--field); box-shadow: none; color: var(--muted); font: 600 12px/1.2 var(--sans); text-align: left; cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+}
+.control-score-tile b { color: var(--heading, var(--text)); font: 400 26px/1.05 var(--serif, inherit); }
+.control-score-tile[data-column="needs-you"] { border-color: color-mix(in srgb, #f2b44b 55%, transparent); }
+.control-score-tile[data-column="needs-you"] b { color: #f2b44b; }
+.control-score-tile[data-column="running"] b { color: var(--accent); }
+.control-score-tile[data-column="review"] b { color: #7b8cff; }
+.control-score-tile.done { cursor: default; background: linear-gradient(135deg, color-mix(in srgb, #f2b44b 14%, var(--field)), var(--field)); }
+.control-score-tile.done b { color: #f2b44b; }
+button.control-score-tile:hover { transform: translateY(-1px); border-color: var(--line-strong); }
+.control-score-tile.folded { opacity: 0.55; border-style: dashed; }
+.control-score-tile.folded::after { content: "folded"; position: absolute; top: 9px; right: 12px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.control-lane-fold { min-height: 22px; height: 22px; min-width: 22px; padding: 0 4px; font-size: 12px; }
+.control-lane.folded { opacity: 0.7; }
+
+.control-card[data-color] { --hue: var(--project-hue, var(--accent)); position: relative; border-left: 3px solid var(--hue); }
+.control-card[data-column="running"] { box-shadow: 0 0 0 1px color-mix(in srgb, var(--hue) 30%, transparent), 0 6px 18px -10px var(--hue); }
+.control-card[data-column="needs-you"] { animation: control-call 2.4s ease-in-out infinite; }
+@keyframes control-call { 0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, #f2b44b 35%, transparent); } 50% { box-shadow: 0 0 0 3px color-mix(in srgb, #f2b44b 55%, transparent), 0 0 22px -6px #f2b44b; } }
+
+.control-avatar {
+  position: relative; display: grid; flex: none; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  background: color-mix(in srgb, var(--hue, var(--accent)) 26%, var(--panel)); box-shadow: inset 0 0 0 2px var(--hue, var(--accent));
+  color: var(--heading, var(--text)); font: 700 12px/1 var(--sans);
+}
+.control-avatar.running { animation: control-bob 1.6s ease-in-out infinite; }
+.control-avatar.running::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--hue, var(--accent)); animation: control-spin 1.2s linear infinite;
+}
+.control-avatar.needs-you { animation: control-wave 1.2s ease-in-out infinite; }
+.control-avatar.review::after { content: "✓"; position: absolute; right: -4px; bottom: -3px; display: grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; background: #7b8cff; color: #fff; font-size: 9px; }
+.control-avatar-call { position: absolute; top: -7px; right: -6px; display: grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: #f2b44b; color: #1b1b1b; font: 800 10px/1 var(--sans); font-style: normal; }
+@keyframes control-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes control-spin { to { transform: rotate(360deg); } }
+@keyframes control-wave { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg); } 75% { transform: rotate(12deg); } }
+
+.control-energy { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+.control-energy-track { position: relative; flex: 1; height: 6px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--hue, var(--accent)) 16%, var(--field)); }
+.control-energy-fill {
+  position: absolute; inset: 0; width: 45%; border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--hue, var(--accent)), transparent); animation: control-charge 2.4s ease-in-out infinite;
+}
+@keyframes control-charge { from { transform: translateX(-100%); } to { transform: translateX(230%); } }
+.control-energy-steps { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.control-card-cheer { animation: control-cheer 0.7s ease-out; }
+@keyframes control-cheer { 0% { transform: scale(1); } 35% { transform: scale(1.04); } 100% { transform: scale(1); } }
+.control-burst { position: absolute; left: 50%; top: 40%; z-index: 2; pointer-events: none; }
+.control-burst i {
+  position: absolute; width: 7px; height: 7px; border-radius: 2px; background: var(--hue, #f2b44b);
+  transform: rotate(var(--turn)) translateY(0); animation: control-fly 1.1s ease-out forwards;
+}
+.control-burst i:nth-child(3n) { background: #f2b44b; }
+.control-burst i:nth-child(3n + 1) { background: #7b8cff; }
+.control-burst b { position: absolute; left: -30px; top: -10px; width: 60px; color: #f2b44b; font-size: 13px; text-align: center; animation: control-rise 1.6s ease-out forwards; }
+@keyframes control-fly { to { transform: rotate(var(--turn)) translateY(-56px) scale(0.4); opacity: 0; } }
+@keyframes control-rise { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-46px); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .control-card[data-column="needs-you"], .control-avatar.running, .control-avatar.running::after, .control-avatar.needs-you,
+  .control-energy-fill, .control-card-cheer, .control-burst i, .control-burst b { animation: none; }
+}
+@media (max-width: 1023px) { .control-score { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Room for the character in the card's top row. */
+.control-project-cards .control-card-top { height: 34px; padding-left: 4px; }
+.control-project-cards .control-card { width: 252px; }
+/* Nothing on a card is cut: the top row shows the driver and Done as icons (their words are on hover), and the buttons wrap
+   onto a second line, the cards of a row growing together. */
+.control-project-cards .control-card-top .control-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.control-project-cards .control-card-top { overflow: visible; }
+.control-project-cards .control-card-top .control-driver { flex: none; }
+/* Two rows of buttons are kept on every card, so the cards stay one size. */
+.control-project-cards .control-card-actions { flex-wrap: wrap; align-content: flex-start; overflow: visible; min-height: 51px; box-sizing: border-box; }

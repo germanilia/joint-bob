@@ -86,23 +86,81 @@ test("Home greets, counts, and shows Needs you as cards with their actions, then
   assert.ok(overflow <= 1, `Home does not scroll (${overflow})`);
 });
 
-test("Bob's page: his chat in the middle, what he looks after on the right, each row opening its tab", async () => {
+/** Waits until the account's preferences hold this view (saving is debounced). */
+async function savedView(view: string) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (await page.evaluate(async () => (await (await fetch("/api/preferences")).json()).controlCenter.view) === view) return;
+    await page.waitForTimeout(100);
+  }
+  assert.fail(`the saved view never became ${view}`);
+}
+
+test("Bob's page: the stage toggles live conversations and the Dashboard, the right column stays, and the choice and folds are kept", async () => {
+  // Wait for the page to finish opening, or its restore of the saved view takes it away from Bob again.
+  await page.waitForFunction(() => /need you/.test(document.querySelector('[data-testid="home-counts"]')?.textContent ?? ""));
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.locator("body.view-control.bob-chat").waitFor();
+  await page.locator("body.view-control.bob-desk").waitFor();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   assert.equal(await page.getByTestId("control-chat-input").getAttribute("placeholder"), "Ask Bob, or give him a task…");
   const side = page.getByTestId("bob-side");
-  assert.equal(await side.isVisible(), true);
-  for (const testid of ["control-tab-live", "control-tab-automations", "control-tab-memory", "control-tab-dashboards", "bob-side-model", "bob-side-ask", "bob-side-pause"]) {
+  await side.waitFor({ state: "visible" });
+  for (const testid of ["control-tab-live", "control-tab-my-dashboard", "control-tab-automations", "control-tab-memory", "control-tab-dashboards", "bob-side-model", "bob-side-ask", "bob-side-pause"]) {
     assert.equal(await side.getByTestId(testid).isVisible(), true, testid);
   }
+  for (const gone of ["control-tab-clusters", "control-tab-overview"]) assert.equal(await page.getByTestId(gone).count(), 0, `${gone} is gone`);
   assert.equal(await page.getByTestId("control-chat-monitor").isVisible(), true, "Monitoring stays reachable");
-  await side.getByTestId("control-tab-live").click();
+
+  // The board, its characters and scoreboard; the stage toggle shows the Dashboard and the column stays.
+  await page.getByTestId("bob-stage-live").click();
   await page.getByTestId("control-center-card").first().waitFor();
-  assert.equal(await page.locator("body.bob-chat").count(), 0);
-  await page.getByTestId("bob-chat-back").click();
-  await page.locator("body.bob-chat").waitFor();
-  assert.equal(await page.getByTestId("control-center-board").isVisible(), false);
+  assert.equal(await page.getByTestId("control-score").isVisible(), true);
+  assert.ok(await page.getByTestId("control-card-avatar").count() > 0);
+  // The app's left column goes on Bob's page; it has the whole width.
+  assert.equal(await page.getByTestId("workspace-side").isVisible(), false, "no left column on Bob's page");
+  // Nothing on a card is cut: its top row and its buttons fit inside it.
+  const clipped = await page.getByTestId("control-center-card").evaluateAll((cards) => cards.flatMap((card) => {
+    const box = card.getBoundingClientRect();
+    return [...card.querySelectorAll(".control-card-top > *, .control-card-actions > *")]
+      .filter((part) => getComputedStyle(part).position !== "absolute")
+      .filter((part) => { const own = part.getBoundingClientRect(); return own.right > box.right + 0.5 || own.bottom > box.bottom + 0.5; })
+      .map((part) => `${card.getAttribute("data-key")}: ${part.textContent}`);
+  }));
+  assert.deepEqual(clipped, [], "every part of a card is inside it");
+  if (process.env.BOB_PAGE_SHOT) await page.screenshot({ path: process.env.BOB_PAGE_SHOT });
+  await page.getByTestId("bob-stage-my-dashboard").click();
+  await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("bob-stage-my-dashboard").getAttribute("aria-pressed"), "true");
+  assert.equal(await side.isVisible(), true, "the column stays with another view open");
+  await side.getByTestId("control-tab-automations").click();
+  assert.equal(await side.isVisible(), true);
+  await side.getByTestId("control-tab-live").click();
+  await page.getByTestId("control-center-board").waitFor({ state: "visible" });
+
+  // A lane folds into its scoreboard tile and opens from it again.
+  await page.getByTestId("control-lane-fold-running").click();
+  assert.equal(await page.getByTestId("control-score-running").getAttribute("aria-pressed"), "false");
+  await page.getByTestId("control-score-running").click();
+  assert.equal(await page.getByTestId("control-lane-fold-running").getAttribute("aria-expanded"), "true");
+
+  // The chat and the column fold into round buttons and come back from them.
+  await page.getByTestId("control-chat-fold").click();
+  assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
+  await page.getByTestId("bob-fab-chat").click();
+  assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
+  await page.getByTestId("bob-side-fold").click();
+  assert.equal(await side.isVisible(), false);
+  await page.getByTestId("bob-fab-side").click();
+  assert.equal(await side.isVisible(), true);
+
+  // The view opened last opens again after a reload.
+  await page.getByTestId("bob-stage-my-dashboard").click();
+  await savedView("my-dashboard");
+  await page.reload();
+  await page.locator("body.view-control.bob-desk").waitFor();
+  await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
+  await page.getByTestId("bob-stage-live").click();
+  await savedView("live");
+
   // Nothing here leaves Bob's page by itself; Esc twice does.
   await page.keyboard.press("Escape");
   await page.getByTestId("control-exit-prompt").waitFor({ state: "visible" });

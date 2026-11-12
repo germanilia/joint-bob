@@ -361,9 +361,13 @@ export interface ControlCenterPreference {
   /** Bob's chat sits on the left unless the person moved it to the right; how wide it is in pixels. */
   chatRight: boolean;
   chatWidth: number;
+  /** The view Bob's page opened last (Live conversations, Dashboard, Automations…); it opens there again. */
+  view: string;
+  /** Sections folded into a button: board lanes ("lane:running"), Bob's chat ("chat"), the right column ("side"). */
+  collapsed: string[];
 }
 
-const emptyControlCenter = (): ControlCenterPreference => ({ colors: {}, filter: [], chatRight: false, chatWidth: 400 });
+const emptyControlCenter = (): ControlCenterPreference => ({ colors: {}, filter: [], chatRight: false, chatWidth: 400, view: "live", collapsed: [] });
 
 function parseControlCenter(value: string): ControlCenterPreference {
   try {
@@ -374,6 +378,8 @@ function parseControlCenter(value: string): ControlCenterPreference {
       filter: Array.isArray(stored.filter) ? stored.filter.filter((id): id is string => typeof id === "string" && id.length <= 200) : [],
       chatRight: stored.chatRight === true,
       chatWidth: typeof stored.chatWidth === "number" && stored.chatWidth >= 300 && stored.chatWidth <= 820 ? stored.chatWidth : 400,
+      view: typeof stored.view === "string" && stored.view.length <= 40 ? stored.view : "live",
+      collapsed: Array.isArray(stored.collapsed) ? stored.collapsed.filter((id): id is string => typeof id === "string" && id.length <= 60).slice(0, 30) : [],
     };
   } catch { return emptyControlCenter(); }
 }

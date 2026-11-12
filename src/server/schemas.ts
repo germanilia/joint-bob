@@ -497,6 +497,8 @@ export const userPreferencesSchema = z.object({
     // Sent by pages before 2.235, which kept the chat on the right unless it was moved; accepted and not kept.
     chatSide: z.unknown().optional(),
     chatWidth: z.number().min(300).max(820),
+    view: z.string().min(1).max(40).default("live"),
+    collapsed: z.array(z.string().min(1).max(60)).max(30).default([]),
   }).strict().optional(),
   gitReviewer: z.object({
     harnessId: registeredHarnessIdSchema,

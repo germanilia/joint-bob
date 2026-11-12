@@ -1,16 +1,17 @@
 // Bob's page on the desktop (1024 px and wider; below that the control center is Bob's chat, control-phone.js).
-// The control center opens as Bob's chat in the middle and, on the right, "What Bob looks after": its tabs (Live agents,
-// Project overview, Automations, Memory, Clusters, Assistants, Dashboards, with their counts) as rows that open the tab,
-// then Bob himself: his model, "Ask before saving to memory" and "Pause everything Bob does on his own" (today's
-// Settings and Monitoring), the team context and all of his settings. A tab opens in the middle as it always has (the
-// board or the tab beside Bob's chat, the tab strip on top), with "‹ Bob's chat" to come back. Nothing here leaves the
-// control center: only the person does (Exit, Esc twice, the toggle shortcut). Every element keeps its id and test id;
-// the tab strip and the team context move into the right column and back, by markers. Styles: public/bob-page.css.
-// Mock: mocks/ui-redo "Desktop · Bob".
+// The page is the stage, Bob's chat beside it, and on the right, always there, "What Bob looks after": the control
+// center's views (Live agents, Dashboard, Automations, Memory, Dashboards, Assistants, with their counts) as rows that
+// open the view on the stage, then Bob himself: his model, "Ask before saving to memory", "Pause everything Bob does",
+// the team context and all of his settings. The head toggles the stage between Live conversations and the Dashboard.
+// The view opened last opens again, on every browser (state.controlCenter.view). Bob's chat and the right column each
+// fold into a round button and open from it again (state.controlCenter.collapsed). Nothing here leaves the control
+// center: only the person does (Exit, Esc twice, the toggle shortcut). The tab strip and the team context move into the
+// right column and back, by markers. Styles: public/bob-page.css.
 
-import { currentControlView } from "./control-views.js";
+import { saveControlCenter, toggleFolded } from "./control-center.js";
+import { currentControlView, showControlView } from "./control-views.js";
 import { elements } from "./elements.js";
-import { currentMobileView } from "./layout.js";
+import { state } from "./state.js";
 
 const wide = matchMedia("(min-width: 1024px)");
 const body = document.body;
@@ -25,45 +26,66 @@ function element(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+function button(className, testid, text) {
+  const node = element("button", className, text);
+  node.type = "button";
+  node.dataset.testid = testid;
+  return node;
+}
+function hatImage(size) {
+  const hat = document.createElement("img");
+  hat.src = "/icon-mark.svg";
+  hat.alt = "";
+  hat.width = size;
+  hat.height = size;
+  return hat;
+}
 
-/* ---------- the parts this page adds ---------- */
+/* ---------- the head: Bob's hat, his name, the stage toggle and what he watches ---------- */
 
-// The head: Bob's hat, his name, what he does and what he watches; in a tab, the way back to his chat.
 const avatar = element("span", "bob-head-avatar");
 avatar.setAttribute("aria-hidden", "true");
-const hat = document.createElement("img");
-hat.src = "/icon-mark.svg";
-hat.alt = "";
-hat.width = 22;
-hat.height = 22;
-avatar.append(hat);
+avatar.append(hatImage(22));
 const tag = element("span", "bob-head-tag", "Acts as you in every project");
 tag.dataset.testid = "bob-head-tag";
 const watching = element("span", "bob-head-state");
 watching.dataset.testid = "bob-head-state";
-const back = element("button", "ghost compact bob-chat-back", "‹ Bob's chat");
-back.type = "button";
-back.title = "Back to Bob's chat";
-back.dataset.testid = "bob-chat-back";
-header.prepend(back, avatar);
+header.prepend(avatar);
 heading.after(tag);
-tag.after(watching);
 
-// The right column.
+/** The stage shows the live conversations or the Dashboard; another view opened from the right column presses neither. */
+const STAGE_VIEWS = [["live", "Live conversations"], ["my-dashboard", "Dashboard"]];
+const toggle = element("div", "bob-stage-toggle");
+toggle.setAttribute("role", "group");
+toggle.setAttribute("aria-label", "What the stage shows");
+toggle.dataset.testid = "bob-stage-toggle";
+for (const [view, label] of STAGE_VIEWS) {
+  const choice = button("bob-stage-choice", `bob-stage-${view}`, label);
+  choice.dataset.view = view;
+  choice.addEventListener("click", () => showControlView(view));
+  toggle.append(choice);
+}
+tag.after(toggle, watching);
+function markToggle() {
+  for (const choice of toggle.children) choice.setAttribute("aria-pressed", String(choice.dataset.view === currentControlView()));
+}
+
+/* ---------- the right column ---------- */
+
 const side = element("aside", "bob-side");
 side.id = "bobSide";
 side.dataset.testid = "bob-side";
 side.setAttribute("aria-label", "What Bob looks after");
-const looksAfter = element("div", "bob-side-lab", "What Bob looks after");
+const sideFold = button("ghost compact bob-fold", "bob-side-fold", "»");
+sideFold.title = "Fold this column into a button";
+const looksAfter = element("div", "bob-side-lab bob-side-top");
+looksAfter.append(element("span", "", "What Bob looks after"), sideFold);
 const tabsHere = element("div", "bob-side-group bob-side-tabs");
 const bobLab = element("div", "bob-side-lab", "Bob");
 const bobGroup = element("div", "bob-side-group");
 
 function line(className, testid) {
-  const node = element("button", `bob-line ${className}`);
-  node.type = "button";
-  node.dataset.testid = testid;
-  return node;
+  return button(`bob-line ${className}`, testid);
 }
 function chevron() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -107,6 +129,31 @@ bobGroup.append(model, ask, pause, contextHere, allSettings);
 side.append(looksAfter, tabsHere, bobLab, bobGroup);
 panel.append(side);
 
+/* ---------- folding: Bob's chat and the right column fold into round buttons ---------- */
+
+const chatFold = button("ghost compact bob-fold", "control-chat-fold", "–");
+chatFold.title = "Fold Bob's chat into a button";
+elements.controlChatSide.after(chatFold);
+const chatFab = button("bob-fab bob-fab-chat", "bob-fab-chat");
+chatFab.title = "Open Bob's chat";
+chatFab.append(hatImage(24));
+const sideFab = button("bob-fab bob-fab-side", "bob-fab-side", "«");
+sideFab.title = "Open What Bob looks after";
+panel.append(chatFab, sideFab);
+
+function applyFolds() {
+  body.classList.toggle("bob-chat-folded", state.controlCenter.collapsed.includes("chat"));
+  body.classList.toggle("bob-side-folded", state.controlCenter.collapsed.includes("side"));
+}
+function fold(id) {
+  toggleFolded(id);
+  applyFolds();
+}
+chatFold.addEventListener("click", () => fold("chat"));
+chatFab.addEventListener("click", () => fold("chat"));
+sideFold.addEventListener("click", () => fold("side"));
+sideFab.addEventListener("click", () => fold("side"));
+
 // On a phone Bob's settings are a screen of their own (phone.css): its head says so and goes back to the chat.
 const settingsHead = element("div", "bob-settings-head");
 const settingsBack = element("button", "ghost compact", "‹");
@@ -117,9 +164,9 @@ settingsBack.addEventListener("click", () => { if (!elements.controlChatSettings
 settingsHead.append(settingsBack, element("b", "", "Bob's settings"));
 elements.controlChatSettings.prepend(settingsHead);
 
-/** Bob's settings open over his chat, where they always were. */
+/** Bob's settings open over his chat, where they always were; a folded chat opens first. */
 function openSettings() {
-  showChat();
+  if (state.controlCenter.collapsed.includes("chat")) fold("chat");
   if (elements.controlChatSettings.hidden) elements.controlChatSettingsButton.click();
   elements.controlChatSettings.scrollIntoView?.({ block: "nearest" });
 }
@@ -133,14 +180,13 @@ window.addEventListener("control-bob-settings", (event) => {
   tag.textContent = settings.monitoring === false ? "Paused · agents wait for you" : "Acts as you in every project";
 });
 
-/* ---------- the tabs as rows ---------- */
+/* ---------- the views as rows ---------- */
 
 const ICONS = {
   live: "M3 12h4l3-8 4 16 3-8h4",
-  overview: "M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z",
+  "my-dashboard": "M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 7h6V4h-6z",
   automations: "M13 3 5 14h6l-1 7 8-11h-6z",
   memory: "M5 4.5h10.5a3 3 0 0 1 3 3v12H8a3 3 0 0 1-3-3zM5 16.5a3 3 0 0 1 3-3h10.5",
-  clusters: "M4 5h16v5H4zM4 14h16v5H4zM8 7.5h.01M8 16.5h.01",
   assistants: "M12 3v3M4.5 9a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3zM9 12h.01M15 12h.01M9 16h6",
   dashboards: "M4 4h16v16H4zM10 4v16M16 4v16",
   team: "M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 19a5 5 0 0 1 10 0M11 19a5 5 0 0 1 10 0",
@@ -166,25 +212,23 @@ function decorateTabs() {
 new MutationObserver(decorateTabs).observe(tabs, { childList: true });
 decorateTabs();
 
-/* ---------- chat or a tab ---------- */
+/* ---------- the page around the control center ---------- */
 
 /** Where a moved element lives otherwise, so it goes back exactly there. */
 const homes = new Map();
-function moveInto(node, target, before = null) {
-  if (!node || (node.parentElement === target && (!before || node.nextSibling === before))) return;
+function moveInto(node, target) {
+  if (!node || node.parentElement === target) return;
   if (!homes.has(node)) {
     const marker = document.createComment(`${node.id || node.className} lives here outside Bob's page`);
     node.before(marker);
     homes.set(node, marker);
   }
-  target.insertBefore(node, before);
+  target.append(node);
 }
 function restore() {
   for (const [node, marker] of homes) if (marker.isConnected) marker.replaceWith(node);
   homes.clear();
 }
-
-let chatMode = true;
 
 function onPage() {
   return wide.matches && body.classList.contains("ws-desktop") && !body.classList.contains("focus-ui");
@@ -192,58 +236,29 @@ function onPage() {
 
 function apply() {
   const page = onPage();
-  const chat = page && chatMode;
   body.classList.toggle("bob-desk", page);
-  body.classList.toggle("bob-chat", chat);
-  if (chat) {
+  if (page) {
     moveInto(tabs, tabsHere);
     moveInto(document.querySelector(".team-context-label"), contextHere);
-    // The chat's own Monitoring and Settings join the page's head, so the chat starts with its filters.
-    // So does the webhook log's bell (control-triggers.js).
-    moveInto(document.querySelector('[data-testid="control-triggers-bell"]'), header, elements.controlCenterRefresh);
-    moveInto(elements.controlChatMonitor, header, elements.controlCenterRefresh);
-    moveInto(elements.controlChatSettingsButton, header, elements.controlCenterRefresh);
   } else restore();
-  // The strip marks the open tab; in the column nothing is open while the chat has the middle.
-  tabs.classList.toggle("bob-none-open", chat);
-  heading.textContent = chat ? "Bob" : "Control center";
+  heading.textContent = page ? "Bob" : "Control center";
 }
 
-function showChat() {
-  if (chatMode) return;
-  chatMode = true;
-  apply();
-}
-
-// Opening the control center is opening Bob's chat; a tab asked for at the same moment (Automations in the left column)
-// opens instead, since its own event follows.
-// A tab asked for right as the control center opens (Automations, "Back to Clusters") opens that tab, even the one open last.
-let justActivated = false;
+// The view opened last opens again; a view asked for right as the control center opens (Automations in the left column,
+// a dashboard Bob opens) follows this and wins. Any wide window keeps it (the page's own classes may come later); a
+// phone always starts at the chat (control-phone.js), so it neither restores nor saves the view.
 window.addEventListener("control-center-activated", () => {
-  chatMode = true;
   apply();
-  justActivated = true;
-  setTimeout(() => { justActivated = false; }, 0);
+  applyFolds();
+  if (wide.matches && state.controlCenter.view !== currentControlView()) showControlView(state.controlCenter.view);
 });
-// A tab opens in the middle when the person picks it, or when something asks for another tab (Automations in the left
-// column, "Back to Clusters", a dashboard Bob opens). The same tab drawn again (a team context chosen) leaves the chat be.
-let lastView = currentControlView();
-function openTab() {
-  if (currentMobileView() !== "control" || !chatMode) return;
-  chatMode = false;
-  apply();
-}
 window.addEventListener("control-view-changed", (event) => {
-  const id = event.detail?.id;
-  const changed = id !== lastView;
-  lastView = id;
-  if (changed || justActivated) openTab();
+  markToggle();
+  const id = event.detail.id;
+  if (!wide.matches || !body.classList.contains("view-control") || state.controlCenter.view === id) return;
+  state.controlCenter.view = id;
+  saveControlCenter();
 });
-tabs.addEventListener("click", (event) => { if (event.target.closest(".control-tab")) openTab(); });
-document.getElementById("workspaceAutomationsButton")?.addEventListener("click", () => queueMicrotask(openTab));
-back.addEventListener("click", showChat);
-// Bob in the left column, pressed on Bob's page, is his chat again.
-elements.openControlCenterButton.addEventListener("click", () => { if (currentMobileView() === "control") showChat(); });
 wide.addEventListener("change", apply);
 new MutationObserver(() => { if (body.classList.contains("bob-desk") !== onPage()) apply(); }).observe(body, { attributes: true, attributeFilter: ["class"] });
 
@@ -258,4 +273,5 @@ window.addEventListener("control-center-rendered", (event) => {
 });
 
 apply();
-export { showChat as showBobChat, currentControlView };
+applyFolds();
+markToggle();

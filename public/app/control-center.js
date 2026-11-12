@@ -133,11 +133,16 @@ function renderCard(card) {
     root.classList.add("colored");
     save();
   });
+  root.dataset.color = projectColor(card.projectId);
+  top.append(avatarOf(card));
   const driver = driverOf(card);
   root.dataset.driver = driver?.id ?? "you";
   if (driver) {
-    const ribbon = element("span", `control-driver ${driver.id}`, driver.label);
-    ribbon.title = driver.title;
+    // The card's top row has room for the icon only; the words stay for readers and on hover.
+    const [glyph, ...words] = driver.label.split(" ");
+    const ribbon = element("span", `control-driver ${driver.id}`, `${glyph} `);
+    ribbon.append(element("span", "control-word", words.join(" ")));
+    ribbon.title = `${words.join(" ")}: ${driver.title}`;
     ribbon.dataset.testid = "control-card-driver";
     top.append(ribbon);
   }
@@ -152,6 +157,7 @@ function renderCard(card) {
   if (card.pendingReviews?.length || card.autoRespondStop) body.append(renderNeed(card));
   else {
     body.append(renderLive(card));
+    if (card.column === "running") body.append(energyBar(card));
     const checked = checkLine(card);
     if (checked) body.append(checked);
   }
@@ -186,6 +192,106 @@ function renderCard(card) {
     Promise.resolve(take ? take.run(card) : openCard(card)).catch((error) => toast.error(error.message));
   });
   return root;
+}
+
+/* ---------- the game on the board: avatars, energy, steps, the scoreboard, a cheer when one finishes ---------- */
+
+/** Each card's agent as a character: its first letter in its project's color; it bobs while it works and waves when it waits. */
+function avatarOf(card) {
+  const avatar = element("span", `control-avatar ${card.column}`, (card.agentLabel || card.harnessId || "?").trim()[0].toUpperCase());
+  avatar.dataset.testid = "control-card-avatar";
+  avatar.title = [card.agentLabel, card.agentModel].filter(Boolean).join(" · ");
+  if (card.column === "needs-you") avatar.append(element("i", "control-avatar-call", "!"));
+  return avatar;
+}
+
+/** What each running card did since this page opened: a new activity line is one more step. */
+const progress = new Map();
+function countSteps(cards) {
+  for (const card of cards) {
+    const known = progress.get(cardKey(card));
+    if (!known) progress.set(cardKey(card), { activity: card.activity, steps: card.activity ? 1 : 0 });
+    else if (card.activity && card.activity !== known.activity) progress.set(cardKey(card), { activity: card.activity, steps: known.steps + 1 });
+  }
+}
+
+/** A charging bar while its agent works, with the steps it took while you watched. */
+function energyBar(card) {
+  const bar = element("div", "control-energy");
+  bar.dataset.testid = "control-card-energy";
+  const steps = progress.get(cardKey(card))?.steps ?? 0;
+  const fill = element("span", "control-energy-fill");
+  fill.style.animationDelay = `-${Date.now() % 2_400}ms`;
+  const track = element("span", "control-energy-track");
+  track.append(fill);
+  const count = element("span", "control-energy-steps", `${steps} step${steps === 1 ? "" : "s"}`);
+  count.title = "Steps its agent took while you watched this page";
+  bar.append(track, count);
+  return bar;
+}
+
+/** Conversations that finished while this page was open: they cheered on their way to review. */
+let finishedWhileWatching = 0;
+/** Keys of cards that just went from running to review, so their next drawing cheers. */
+const cheering = new Set();
+function noteFinished(previous, next) {
+  const before = new Map(previous.map((card) => [cardKey(card), card.column]));
+  for (const card of next) {
+    if (before.get(cardKey(card)) === "running" && card.column === "review") { cheering.add(cardKey(card)); finishedWhileWatching += 1; }
+  }
+}
+function cheer(container) {
+  for (const key of cheering) {
+    const card = container.querySelector(`.control-card[data-key="${CSS.escape(key)}"]`);
+    if (!card) continue;
+    card.classList.add("control-card-cheer");
+    const burst = element("span", "control-burst");
+    burst.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < 12; index += 1) {
+      const bit = element("i");
+      bit.style.setProperty("--turn", `${index * 30}deg`);
+      burst.append(bit);
+    }
+    burst.append(element("b", "", "+1 done"));
+    card.append(burst);
+    setTimeout(() => { burst.remove(); card.classList.remove("control-card-cheer"); }, 1_800);
+  }
+  cheering.clear();
+}
+
+const isFolded = (id) => state.controlCenter.collapsed.includes(id);
+/** Folds a section into its button, or opens it again; remembered with the account. Bob's page folds the chat and the column. */
+export function toggleFolded(id) {
+  state.controlCenter.collapsed = isFolded(id) ? state.controlCenter.collapsed.filter((other) => other !== id) : [...state.controlCenter.collapsed, id];
+  save();
+}
+
+/** The scoreboard over the board: one tile per lane with its count; a tile folds its lane away and opens it again. */
+function renderScoreboard(cards) {
+  const board = element("div", "control-score");
+  board.dataset.testid = "control-score";
+  for (const column of COLUMNS) {
+    const count = cards.filter((card) => card.column === column.id).length;
+    // Nothing put aside needs no tile.
+    if (column.id === "snoozed" && !count) continue;
+    const tile = element("button", "control-score-tile");
+    tile.type = "button";
+    tile.dataset.column = column.id;
+    tile.dataset.testid = `control-score-${column.id}`;
+    const folded = isFolded(`lane:${column.id}`);
+    tile.classList.toggle("folded", folded);
+    tile.setAttribute("aria-pressed", String(!folded));
+    tile.title = folded ? `Show ${column.title}` : `Fold ${column.title} into this tile`;
+    tile.append(element("b", "", String(count)), element("span", "", column.id === "review" ? "To review" : column.title));
+    tile.addEventListener("click", () => { toggleFolded(`lane:${column.id}`); render(); });
+    board.append(tile);
+  }
+  const done = element("div", "control-score-tile done");
+  done.dataset.testid = "control-score-finished";
+  done.title = "Conversations that finished while you watched";
+  done.append(element("b", "", `★ ${finishedWhileWatching}`), element("span", "", "Finished while watching"));
+  board.append(done);
+  return board;
 }
 
 const SPIN_MS = 1_000;
@@ -314,7 +420,16 @@ function renderLanes(container, cards) {
     if (!inColumn.length) continue;
     const heading = element("div", "control-lane");
     heading.dataset.column = column.id;
-    heading.append(element("b", "", column.title), element("span", "control-lane-count", String(inColumn.length)), element("span", "", column.hint));
+    const folded = isFolded(`lane:${column.id}`);
+    const fold = element("button", "ghost compact control-lane-fold", folded ? "▸" : "▾");
+    fold.type = "button";
+    fold.title = folded ? `Show ${column.title}` : `Fold ${column.title}`;
+    fold.setAttribute("aria-expanded", String(!folded));
+    fold.dataset.testid = `control-lane-fold-${column.id}`;
+    fold.addEventListener("click", () => { toggleFolded(`lane:${column.id}`); render(); });
+    heading.append(fold, element("b", "", column.title), element("span", "control-lane-count", String(inColumn.length)), element("span", "", folded ? "" : column.hint));
+    heading.classList.toggle("folded", folded);
+    if (folded) { container.append(heading); continue; }
     const groups = element("div", "control-lane-groups");
     for (let index = 0; index < inColumn.length;) {
       const end = inColumn.findIndex((card, at) => at > index && card.projectId !== inColumn[index].projectId);
@@ -341,11 +456,13 @@ function render() {
     driven ? `${driven} driven by the system` : "", watched ? `${watched} watched by Bob` : "",
   ].filter(Boolean).join(" · ");
   liveView.setBadge(cards.filter((card) => card.column === "needs-you" || card.column === "running").length);
+  container.append(renderScoreboard(cards));
   if (!cards.length) {
     container.append(element("p", "control-empty", board.cards.length ? "Nothing matches the project filter." : "No conversations are running and nothing is waiting for review."));
     return;
   }
   renderLanes(container, cards);
+  cheer(container);
 }
 
 /** Cards marked done here, with the word their way out shows. */
@@ -364,6 +481,8 @@ async function drawBoard(next) {
     for (const node of gone) settledHere.delete(node.dataset.key);
   }
   const before = positions(container, ".control-card");
+  noteFinished(board.cards, next.cards);
+  countSteps(next.cards);
   board = next;
   render();
   glide(container, ".control-card", before);
@@ -450,7 +569,8 @@ export async function decideReview(card, review, decision) {
 }
 
 function doneButton(card) {
-  const button = element("button", "control-card-action control-card-done", "✓ Done");
+  const button = element("button", "control-card-action control-card-done", "✓ ");
+  button.append(element("span", "control-word", "Done"));
   button.type = "button";
   button.title = card.turnRunning
     ? "Stop it and close it: it leaves the board, and you can open it again from its project"
@@ -488,8 +608,8 @@ registerBoardTool({ id: "new-conversation", label: "+ New conversation", title: 
 window.addEventListener("conversation-started", () => { if (document.body.classList.contains("view-control")) void refreshControlCenter().catch(() => undefined); });
 
 function resetBoard() {
-  const { chatRight, chatWidth } = state.controlCenter;
-  state.controlCenter = { colors: {}, filter: [], chatRight, chatWidth };
+  const { chatRight, chatWidth, view, collapsed } = state.controlCenter;
+  state.controlCenter = { colors: {}, filter: [], chatRight, chatWidth, view, collapsed };
   save();
   render();
 }
