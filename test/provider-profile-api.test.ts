@@ -12,6 +12,7 @@ test("node-local profile API validates scopes, protects secrets, and refuses sel
   const server = await startDevNode(environment, node, { JOINT_BOB_TEST_MULTI_USER_READY: "1" });
   try {
     const session = await signIn(environment, node);
+    const seeded = await api<{ profiles: Array<{ id: string }> }>(node, session, "GET", "/provider-profiles");
     const created = await api<{ profile: { id: string; label: string } }>(node, session, "POST", "/provider-profiles", { provider: "openai-codex", label: "Personal" });
     assert.equal(created.status, 201);
     const id = created.body.profile.id;
@@ -24,7 +25,7 @@ test("node-local profile API validates scopes, protects secrets, and refuses sel
     assert.equal((await api(node, session, "POST", `/provider-profiles/${piId}/providers/zai/login`, { methodId: "oauth" })).status, 400);
     assert.equal((await api(node, session, "DELETE", `/provider-profiles/${piId}`)).status, 200);
     const listed = await api<{ profiles: Array<{ id: string }> }>(node, session, "GET", "/provider-profiles");
-    assert.deepEqual(listed.body.profiles.map((item) => item.id), [id]);
+    assert.deepEqual(listed.body.profiles.map((item) => item.id), [...seeded.body.profiles.map(item => item.id), id]);
     assert.doesNotMatch(JSON.stringify(listed.body), /refreshToken|accessToken|auth\.json/);
     const kiro = await api<{ profile: { id: string; kiro: { startUrl: string; region: string } } }>(node, session, "POST", "/provider-profiles", {
       provider: "kiro", label: "Standalone Kiro", kiro: { startUrl: "https://fixture.awsapps.com/start", region: "us-east-1" },

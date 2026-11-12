@@ -152,10 +152,10 @@ test('loopback Telegram HTTP → durable queue → Pi tools: four private specia
   await writeFile(path.join(env.home,'.pi','models.json'),JSON.stringify({providers:{'dev-environment':{baseUrl:`${url}/v1`,api:'openai-completions',apiKey:'synthetic',models:[{id:'dev-model'}]}}}));
   const seeded=await promisify(execFile)(process.execPath,['--import','tsx','--input-type=module','--eval',`
    const {saveSecretAccount}=await import('./src/secrets.ts');
-   const {systemAiDefaults}=await import('./src/system-ai-config.ts');
+   const {systemAiSettings}=await import('./src/system-ai-config.ts');
    const {save,settingsDatabase}=await import('./src/settings-store.ts');
    const key=await saveSecretAccount({label:'fixture decision',provider:'typesafe',variables:[{name:'TYPESAFE_AI_API_KEY',kind:'value',value:'synthetic'}]});
-   const config=systemAiDefaults();config.decision.typesafeAccountId=key.id;config.operations.knowledge={harnessId:'pi',provider:'dev-environment',modelId:'dev-model',thinkingLevel:'off'};save(settingsDatabase(),'systemAI',JSON.stringify(config));
+   const config=systemAiSettings();config.decision.typesafeAccountId=key.id;config.operations.knowledge={harnessId:'pi',provider:'dev-environment',modelId:'dev-model',thinkingLevel:'off'};save(settingsDatabase(),'systemAI',JSON.stringify(config));
    const bot=await saveSecretAccount({label:'fixture bot',provider:'custom',variables:[{name:'TELEGRAM_BOT_TOKEN',kind:'value',value:'synthetic'}]});console.log(bot.id);
   `],{env:{...process.env,HOME:env.home,NODE_ENV:'test',JOINT_BOB_DATA_DIR:node.dataDir}});
   const extra={JOINT_BOB_TYPESAFE_ENDPOINT:`${url}/decision`,JOINT_BOB_TELEGRAM_API:url};

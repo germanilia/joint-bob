@@ -7,7 +7,7 @@ import { protectPiProfileRuntime } from "./pi-auth.js";
 export async function createSessionModelRuntime(
   read: (provider: string) => Promise<ProfileCredential | undefined>,
   list: () => Promise<Array<{ providerId: string; type: ProfileCredential["type"] }>>,
-  isolated: () => boolean | Promise<boolean> = () => false,
+  isolated: () => boolean | Promise<boolean> = () => true,
 ): Promise<ModelRuntime> {
   /** Placeholder token → the relay proxy that accepts it (relay-proxy.ts); the relay keeps the real sign-in. */
   const proxied = new Map<string, string>();
@@ -26,7 +26,7 @@ export async function createSessionModelRuntime(
       },
       delete: async () => { throw new Error("Manage subscription sign-ins in Settings > Connections"); },
   };
-  const runtime = await ModelRuntime.create({ credentials,
+  const runtime = await ModelRuntime.create({ credentials, refreshOnCreate: false,
     // Creation restores the node's cached model catalog (no network). Skipping it left only
     // built-in models, so a model Pi had since learned about was "not found" in Joint Bob.
   });

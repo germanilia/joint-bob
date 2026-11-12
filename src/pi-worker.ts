@@ -30,7 +30,7 @@ const nodeCredentials = {
 };
 let modelRuntimeReady: Promise<ModelRuntime> | undefined;
 let providerCatalogReady: Promise<PiProviderCatalog> | undefined;
-const runtime = () => (modelRuntimeReady ??= ModelRuntime.create({ credentials: nodeCredentials }));
+const runtime = () => (modelRuntimeReady ??= createSessionModelRuntime(nodeCredentials.read, nodeCredentials.list));
 
 async function ensureProviderCatalog(): Promise<void> {
   const agentDir = process.env.PI_CODING_AGENT_DIR;

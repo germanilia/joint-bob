@@ -38,6 +38,7 @@ import { listLocalUsers } from "./auth.js";
 import { mcpAgentEnvironment } from './mcp/agent.js';
 import type { ManagedMcpServer } from "./mcp/store.js";
 import { activeMcpServers, activationDecision } from "./resource-activation.js";
+import { createSessionModelRuntime } from "./provider-profiles/pi.js";
 
 export type { PiSessionHandle } from "./pi-session-core.js";
 
@@ -61,7 +62,8 @@ const PI_LIST_CONCURRENCY = 8;
 // the server's own Pi always starts from the service's settings.
 const initialPiSettings = runInRuntime(serviceRuntime(), () => getSettings().pi);
 if (initialPiSettings.configPath) process.env.PI_CODING_AGENT_DIR = initialPiSettings.configPath;
-const modelRuntime = await ModelRuntime.create();
+// This catalog has no account. Only an app profile pinned to a session may authenticate.
+const modelRuntime = await createSessionModelRuntime(async () => undefined, async () => []);
 let piProviderCatalog: Promise<PiProviderCatalog> | undefined;
 type AvailableModel = NonNullable<ReturnType<ModelRuntime["getModel"]>>;
 
@@ -677,18 +679,13 @@ export async function refreshPiSessions(project: SessionProjectPaths & { history
 
 export { isPermissionSafeguardExtension, sessionSafeguardsEnabled, sessionToolSelection } from "./pi-session-core.js";
 
-/** The server-side inputs a Pi session needs, read from this node's own state. */
-/** The node's Pi sign-ins, for a worker under a person's OS account: refreshed here first,
-    under the service's lock, so the worker never refreshes or replaces a login itself. */
-export async function nodePiCredential(providerId: string): Promise<ReturnType<typeof readStoredCredential>> {
-  await ensurePiProviderCatalog();
-  await modelRuntime.getAuth(providerId, { minOAuthValidityMs: 10 * 60_000 }).catch(() => undefined);
-  return readStoredCredential(providerId, path.join(getAgentDir(), "auth.json"));
+/** Unassigned worker catalogs have no sign-in. Native Pi auth is never app authority. */
+export async function nodePiCredential(_providerId: string): Promise<ReturnType<typeof readStoredCredential>> {
+  return undefined;
 }
 
 export async function nodePiCredentialList(): Promise<Array<{ providerId: string; type: string }>> {
-  await ensurePiProviderCatalog();
-  return (await modelRuntime.listCredentials()).map((entry) => ({ providerId: entry.providerId, type: entry.type }));
+  return [];
 }
 
 /**
@@ -772,7 +769,6 @@ export async function createPiSession(options: PiSessionOptions): Promise<PiSess
   await ensurePiProviderCatalog();
   const profiles = await import("./provider-profiles/service.js");
   const { useProviderProfile } = await import("./provider-profiles/execution.js");
-  const { createSessionModelRuntime } = await import("./provider-profiles/pi.js");
   const hooks = piSessionHooks(options);
   let conversationId = options.conversationId ?? options.sessionId;
   const logicalId = hooks.conversationId;
@@ -785,7 +781,7 @@ export async function createPiSession(options: PiSessionOptions): Promise<PiSess
     if (provider !== providerId) throw new Error("Selected pool profile does not match the Pi model provider");
     return profiles.profileAccessCredential(selected);
   };
-  hooks.modelProfileIsolated = async () => selected?.provider === "pi";
+  hooks.modelProfileIsolated = async () => true;
   hooks.modelFromPool = () => profiles.piTurnsOnPool(options.projectId, conversationId);
   hooks.modelCredentialList = async () => {
     if (selected?.provider === "pi") return (await (await profiles.profileModelRuntime(selected)).listCredentials()).map(({ providerId, type }) => ({ providerId, type }));

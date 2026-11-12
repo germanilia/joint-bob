@@ -27,6 +27,24 @@ test("selected Pi authentication ignores machine models.json keys and authentica
   } finally { await rm(file, { force: true }); }
 });
 
+test("a custom model definition keeps its protocol but authenticates only with the app credential", async () => {
+  const file = path.join(getAgentDir(), "models.json");
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify({ providers: { "custom-fixture": {
+    api: "openai-completions", baseUrl: "http://127.0.0.1:9/v1", apiKey: "native-account-must-not-run",
+    models: [{ id: "custom-model", headers: { Authorization: "Bearer native-account" } }],
+  } } }));
+  try {
+    const runtime = await createSessionModelRuntime(async provider => provider === "custom-fixture" ? { type: "api_key", key: "fixture-app-account" } : undefined,
+      async () => [{ providerId: "custom-fixture", type: "api_key" }]);
+    const model = runtime.getModel("custom-fixture", "custom-model")!;
+    const auth = await runtime.getAuth(model);
+    assert.equal(auth?.auth.apiKey, "fixture-app-account");
+    assert.equal(auth?.auth.headers?.Authorization, undefined);
+    assert.equal((await runtime.getAvailable()).some(model => model.provider === "custom-fixture"), true);
+  } finally { await rm(file, { force: true }); }
+});
+
 test("Pi configure authenticates model switching inside the selected profile", async () => {
   let pinned = false;
   const runtime = await createSessionModelRuntime(async (provider) => pinned ? credential(provider) : undefined, async () => pinned ? list() : [], () => pinned);

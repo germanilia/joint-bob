@@ -81,6 +81,8 @@ export interface HarnessChatConnection {
 export type ReadOnlyReason = "transcript" | "runnerAccess";
 
 export interface AttachOptions {
+  /** Signed local automation/controller socket: no browser history or display metadata. */
+  controlOnly?: boolean;
   automationProfile?: QueuedPrompt["automationProfile"];
   peerReadOnly?: boolean;
   socket: WebSocket; project: ProjectRecord; cwd: string; engine: HarnessId; sessionId: string;
@@ -1568,7 +1570,17 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
       harnessSessionBusy(shared),
     ]);
   };
-  for (;;) {
+  if (options.controlOnly) {
+    // A switched empty segment still needs its preceding context. Existing monitor sessions do not need a display transcript.
+    if (!shared.session.messages.length) {
+      const transcript = await conversationTranscriptPayload(options.project.id, options.engine, shared.session.id, options.listedSessions, shared.session.messages);
+      if (transcript.segments.length > 1) connection.handoffContext = buildHandoffContext(transcript.messages);
+    }
+    armSystemControlDeadline(connection, await getAutoRespond(options.project.id, conversationId));
+    if (options.socket.readyState !== WebSocket.OPEN) return;
+    send(options.socket, { type: "ready", engine: options.engine, sessionId: shared.session.id, conversationId, messages: [], status: shared.session.status(), ownership: options.ownership, readOnly: options.readOnly });
+    refreshHarnessPromptQueue(connection);
+  } else for (;;) {
     const inputs = inputState();
     // Sessions replace this array on turn start/end, but append or coalesce deltas in place.
     const liveTurn = shared.liveEvents;

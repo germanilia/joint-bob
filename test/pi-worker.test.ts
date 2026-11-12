@@ -6,7 +6,7 @@ import { createServer, type Server } from "node:http";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type WebSocket from "ws";
+import WebSocket from "ws";
 import { configure, environment, openChat, startServer, stopServer, temporaryRoot, waitFor } from "./queued-prompt-harness.js";
 
 function fakeModel(): Promise<{ server: Server; url: string; prompts: string[]; authorizations: string[] }> {
@@ -67,6 +67,8 @@ test("a Pi conversation runs in a worker under its project's account and writes 
     export default pi => {
       writeFileSync(${JSON.stringify(providerMarker)}, marker);
       pi.registerCommand("worker-provider", { description: marker, handler: async () => {} });
+      pi.registerProvider("fixture", { api: "openai-completions", baseUrl: ${JSON.stringify(model.url)},
+        models: [{ id: "fixture-model", name: "Fixture", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32000, maxTokens: 512 }] });
       pi.registerProvider("pool-only", { api: "openai-completions", baseUrl: ${JSON.stringify(model.url)},
         models: [{ id: "pool-model", name: "Pool model", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32000, maxTokens: 512 }] });
     };`);
@@ -78,7 +80,7 @@ test("a Pi conversation runs in a worker under its project's account and writes 
     baseUrl: model.url, api: "openai-completions",
     models: [{ id: "fixture-model", name: "Fixture", reasoning: false, input: ["text"], contextWindow: 32000, maxTokens: 512 }],
   } } }));
-  // The node's sign-in for the provider; the worker may use it but never gets the file.
+  // The native sign-in must never be used, even by the node administrator.
   await writeFile(path.join(serviceAgent, "auth.json"), JSON.stringify({ fixture: { type: "api_key", key: "node-signed-in-key" } }), { mode: 0o600 });
   let server: Server | undefined;
   const sockets: WebSocket[] = [];
@@ -94,6 +96,14 @@ test("a Pi conversation runs in a worker under its project's account and writes 
     // In multi-user mode a person's project folder is in their own home.
     const fixture = await configure(started.baseUrl, root, "", path.join(homes, "jb-admin", "JointBob", "project"));
 
+    const { createProviderProfile, setProviderProfileSelection } = await import("../src/provider-profiles/store.js");
+    const { adminAccountId } = await import("../src/ownership.js");
+    const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
+    const owner = adminAccountId();
+    const appProfile = createProviderProfile(owner, { provider: "pi", label: "App account" });
+    await mkdir(path.dirname(openAIAuthPath(appProfile)), { recursive: true });
+    await writeFile(openAIAuthPath(appProfile), JSON.stringify({ fixture: { type: "api_key", key: "app-signed-in-key" } }), { mode: 0o600 });
+    setProviderProfileSelection(owner, { provider: "pi", scope: "default", scopeId: "", profileId: appProfile.id });
     const opened = openChat(started.baseUrl, fixture.cookie, fixture.projectId, "new");
     sockets.push(opened.socket);
     await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "ready" || frame.type === "error"), 60_000);
@@ -102,6 +112,20 @@ test("a Pi conversation runs in a worker under its project's account and writes 
     await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "assistantFinal" || frame.type === "assistantError" || frame.type === "error"), 60_000);
     const final = opened.messages.find((frame) => frame.type === "assistantFinal") as { text?: string } | undefined;
     assert.equal(final?.text, "hi from the worker", JSON.stringify(opened.messages.filter((frame) => /error/i.test(String(frame.type)))));
+
+    const { runtimeSocketHeaders } = await import("../src/server/runtime-peers.js");
+    const { getClusterNode } = await import("../src/cluster.js");
+    const sessionId = String(opened.messages.find(frame => frame.type === "ready")!.sessionId);
+    const controlUrl = new URL("/ws", started.baseUrl.replace(/^http/, "ws"));
+    for (const [key, value] of Object.entries({ projectId: fixture.projectId, sessionId, sessionPath: `draft:pi:${sessionId}`, nodeSession: "1" })) controlUrl.searchParams.set(key, value);
+    const control = new WebSocket(controlUrl, { headers: await runtimeSocketHeaders((await getClusterNode()).id, controlUrl) });
+    sockets.push(control);
+    const controlMessages: Array<Record<string, unknown>> = [];
+    control.on("message", raw => controlMessages.push(JSON.parse(raw.toString())));
+    await waitFor(controlMessages, () => controlMessages.some(frame => frame.type === "ready" || frame.type === "error"), 60_000);
+    assert.deepEqual(controlMessages.filter(frame => frame.type === "error"), []);
+    assert.deepEqual(controlMessages.find(frame => frame.type === "ready")?.messages, [], "a signed local controller receives readiness without browser history");
+    control.close();
 
     const admin = path.join(homes, "jb-admin");
     const transcripts = (await files(path.join(admin, ".pi", "agent", "sessions"))).filter((name) => name.endsWith(".jsonl"));
@@ -117,15 +141,13 @@ test("a Pi conversation runs in a worker under its project's account and writes 
     assert.ok(model.prompts.some((prompt) => prompt.includes("hello worker")), "the prompt reached the model from the worker");
     assert.equal(model.prompts.some((prompt) => prompt.includes("NATIVE_WORKER_INSTRUCTIONS")), false);
     await assert.rejects(readFile(nativeMarker), { code: "ENOENT" }, "the worker never executes native extensions");
-    assert.ok(model.authorizations.includes("Bearer node-signed-in-key"), "with the node's sign-in, read through the server");
+    assert.ok(model.authorizations.includes("Bearer app-signed-in-key"), "with the app profile's sign-in, read through the server");
+    assert.equal(model.authorizations.includes("Bearer node-signed-in-key"), false, "native authentication is never used");
     await assert.rejects(readFile(path.join(admin, ".pi", "agent", "auth.json")), "the account never holds the node's sign-ins");
 
     // A conversation arriving from another node can name a provider absent here.
     // Opening must reach the destination's default pool before checking that sign-in.
-    const { createProviderProfile } = await import("../src/provider-profiles/store.js");
     const { createSubscriptionPool, setSubscriptionPoolChoice } = await import("../src/provider-profiles/pools.js");
-    const { adminAccountId } = await import("../src/ownership.js");
-    const owner = adminAccountId();
     const unavailable = createProviderProfile(owner, { provider: "pi", label: "Signed-out destination account" });
     const profile = createProviderProfile(owner, { provider: "pi", label: "Destination account" });
     const pool = createSubscriptionPool(owner, { name: "Destination default", profileIds: [unavailable.id, profile.id] });
@@ -137,7 +159,6 @@ test("a Pi conversation runs in a worker under its project's account and writes 
     await waitFor(pooled.messages, () => pooled.messages.some(frame => frame.type === "ready" || frame.type === "error"), 60_000);
     assert.deepEqual(pooled.messages.filter(frame => frame.type === "error"), [], "the execution node's default pool allows startup without a node-local key for the previous provider");
     assert.ok(pooled.messages.some(frame => frame.type === "ready"));
-    const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
     await mkdir(path.dirname(openAIAuthPath(profile)), { recursive: true });
     await writeFile(openAIAuthPath(profile), JSON.stringify({ "pool-only": { type: "api_key", key: "destination-profile-key" } }), { mode: 0o600 });
     pooled.socket.send(JSON.stringify({ type: "prompt", message: "use destination pool", queueSettings: { harnessId: "pi", provider: "pool-only", modelId: "pool-model", reasoning: "off" } }));

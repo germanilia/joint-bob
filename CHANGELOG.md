@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Automations:** Pi uses only app logins, never native credentials; scheduled execution skips browser history to avoid startup timeouts on long monitor conversations.
+
 ## 2.293.0 — 2026-11-12
 
 - Removed the project Kanban board: its Board buttons, task dialog, ticket conversations, ticket merges and moving tickets between machines. Conversations, worktrees, background tasks and the control center board are unchanged.

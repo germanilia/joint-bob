@@ -477,6 +477,7 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     const automationProfile = rawAutomationProfile ? queuedAutomationProfileSchema.parse({ ...JSON.parse(rawAutomationProfile), nodeId: local.id }) : undefined;
     await attachHarnessChat({
       automationProfile,
+      controlOnly: signedPeer === local.id && url.searchParams.get("nodeSession") === "1",
       socket, project, cwd, engine: sessionRequest.engine,
       sessionId: ownershipSessionId, sessionPath: sessionRequest.sessionPath,
       accountIds: secretAccountIds, readOnly: conversationReadOnly, readOnlyReason, peerReadOnly, ownership: foreignOwner,

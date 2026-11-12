@@ -70,6 +70,12 @@ Schedules, webhooks, and automatic replies have a **Run with profile** dropdown.
 
 The creator and assignment are stored server-side and carried through queued execution. Access, provider compatibility, and execution-node identity are checked again at run time. Deletion, revoked sharing, unavailable login, or a mismatched provider fails visibly rather than using another account. Incoming webhook payloads cannot replace the stored creator or assignment.
 
+## Pi authentication
+
+Pi uses only app-configured profiles and pools, including model listing, session startup and scheduled execution. It never reads or refreshes native Pi sign-ins or falls back to ambient provider keys or account overrides in `models.json`. Without an applicable app login, a turn fails instead of using a machine account. The legacy machine-sign-in choice does not authorize native credentials for Pi.
+
+Scheduled controller sockets open without preparing browser history. The agent keeps its conversation context; a long-running monitor does not need to send its old reports to its own scheduler before accepting the next prompt.
+
 ## Token refresh and removal
 
 Claude refresh authority is the installed Pi SDK's node-local private auth file (provider `anthropic`), not Claude CLI's native credential store. First access migrates legacy credentials through private owner-runtime IPC under a serialized migration gate, saves the canonical credential, then removes native refresh-token copies. An existing canonical store, including a signed-out store, is never reseeded from legacy credentials.

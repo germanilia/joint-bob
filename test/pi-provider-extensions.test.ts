@@ -42,9 +42,18 @@ test("Joint Bob model catalog loads a provider package installed in Pi", async (
     assert.equal((await listAvailableModels()).some((model) => model.provider === "fixture-provider"), false);
     assert.equal(await modelIsRunnable("fixture-provider", "fixture-model"), false);
     await writeFile(path.join(agentDir, "settings.json"), JSON.stringify({ packages: [packageDir] }));
-    const available = await listAvailableModels();
+    assert.equal((await listAvailableModels()).some((model) => model.provider === "fixture-provider"), false, "an installed protocol is not an app sign-in");
+    const { createProviderProfile } = await import("../src/provider-profiles/store.js");
+    const { runAsAccount } = await import("../src/account-context.js");
+    const actor = { accountId: "fixture-provider-owner", username: "fixture", role: "member" as const, isRemoteLogin: false, homeNodeId: null };
+    const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
+    await (await import("../src/cluster.js")).getClusterNode();
+    const profile = createProviderProfile(actor.accountId, { provider: "pi", label: "Fixture account" });
+    await mkdir(path.dirname(openAIAuthPath(profile)), { recursive: true });
+    await writeFile(openAIAuthPath(profile), JSON.stringify({ "fixture-provider": { type: "api_key", key: "fixture-app-key" } }));
+    const available = await runAsAccount(actor, listAvailableModels);
     assert.ok(available.some((model) => model.provider === "fixture-provider" && model.id === "fixture-model"));
-    assert.equal(await modelIsRunnable("fixture-provider", "fixture-model"), true);
+    assert.equal(await runAsAccount(actor, () => modelIsRunnable("fixture-provider", "fixture-model")), true);
     assert.deepEqual(await nodePiCredentialList(), []);
   } finally {
     settings.updateSettings({ pi: previous.pi });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, copyFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -104,6 +104,7 @@ test('quiet discussion uses the real isolated selected Pi writer, no specialist 
   await mkdir(path.join(env.home,'.pi','agent'),{recursive:true});
   await writeFile(path.join(env.home,'.pi','agent','models.json'),JSON.stringify({providers:{'dev-environment':{baseUrl:`http://127.0.0.1:${port}/v1`,api:'openai-completions',apiKey:'synthetic',models:[{id:'dev-model'}]}}}));
   await writeFile(path.join(env.home,'.pi','agent','AGENTS.md'),'PRIVATE_MEMORY_INSTRUCTIONS_SENTINEL');
+  await copyFile(path.join(env.home,'.pi','settings.json'),path.join(env.home,'.pi','agent','settings.json'));
   const result=await promisify(execFile)(process.execPath,['--import','tsx','--input-type=module','--eval',`
    import assert from 'node:assert/strict';
    const {fixture}=await import('./test/assistant-team-fixture.ts');
@@ -113,9 +114,16 @@ test('quiet discussion uses the real isolated selected Pi writer, no specialist 
    const {save,settingsDatabase}=await import('./src/settings-store.ts');
    const {saveSecretAccount}=await import('./src/secrets.ts');
    const f=await fixture();
+   const {createProviderProfile,setProviderProfileSelection}=await import('./src/provider-profiles/store.ts');
+   const {openAIAuthPath}=await import('./src/provider-profiles/service.ts');
+   const {mkdir,writeFile}=await import('node:fs/promises');
+   const profile=createProviderProfile(f.member.accountId,{provider:'pi',label:'Memory writer'});
+   await mkdir((await import('node:path')).dirname(openAIAuthPath(profile)),{recursive:true});
+   await writeFile(openAIAuthPath(profile),JSON.stringify({'dev-environment':{type:'api_key',key:'synthetic-memory-provider'}}));
+   setProviderProfileSelection(f.member.accountId,{provider:'pi',scope:'default',scopeId:'',profileId:profile.id});
    const privateMemory=await import('./src/control-center/memory-store.ts');privateMemory.applyTopicText(privateMemory.memoryRoot(f.member.accountId),'private',privateMemory.topicText(privateMemory.cleanTopic('private',{description:'Private',body:'PRIVATE_PERSONAL_MEMORY_SENTINEL'})));
    const secret=await saveSecretAccount({label:'memory classifier',provider:'custom',variables:[{name:'TYPESAFE_AI_API_KEY',kind:'value',value:'synthetic-memory-key-123456'}]});
-   const config=systemAiDefaults();config.decision.typesafeAccountId=secret.id;config.operations.knowledge={harnessId:'pi',provider:'dev-environment',modelId:'dev-model',thinkingLevel:'off'};save(settingsDatabase(),'systemAI',JSON.stringify(config));
+   const config=systemAiDefaults();config.profiles.pi=profile.id;config.decision.typesafeAccountId=secret.id;config.operations.knowledge={harnessId:'pi',provider:'dev-environment',modelId:'dev-model',thinkingLevel:'off'};save(settingsDatabase(),'systemAI',JSON.stringify(config));
    const original=fetch;let decisions=0;
    globalThis.fetch=async(url,init)=>{if(String(url).includes(':${port}/'))return original(url,init);decisions++;const body=JSON.parse(String(init.body));assert.ok(!JSON.stringify(body).includes('synthetic-memory-key-123456'));assert.ok(!JSON.stringify(body).includes('sk-provider-shaped-123456789'));return Response.json({answers:Object.fromEntries(Object.keys(body.questions).map(k=>[k,{type:'choice',choice:k==='memory'?(body.state.includes('casual hello')?'none':'learn'):k==='attention'?'none':'new',confidence:0.99}]))});};
    const m=await f.message('Proposal Friday; disagreement unresolved. synthetic-memory-key-123456 sk-provider-shaped-123456789 '+ 'full original '.repeat(12000));

@@ -6,7 +6,7 @@
 // node instead of looping in-process.
 //
 // Reads one JSON job on stdin and writes one JSON result on stdout.
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ProjectRecord } from "../src/types.js";
 
@@ -54,6 +54,20 @@ if (authenticationStatus().setupRequired) createAdministrator(job.admin.username
 updateTerminalAccessSettings({ mode: "admin" });
 
 const node = await updateClusterNode(job.node.name, job.node.url);
+// Synthetic provider credentials follow the same app-profile boundary as real conversations.
+const { localAccountIdForUsername } = await import("../src/auth.js");
+const { createProviderProfile, setProviderProfileSelection } = await import("../src/provider-profiles/store.js");
+const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
+const owner = localAccountIdForUsername(job.admin.username)!;
+const profile = createProviderProfile(owner, { provider: "pi", label: "Dev environment" });
+await mkdir(path.dirname(openAIAuthPath(profile)), { recursive: true });
+await writeFile(openAIAuthPath(profile), JSON.stringify({ "dev-environment": { type: "api_key", key: "dev-environment" } }), { mode: 0o600 });
+setProviderProfileSelection(owner, { provider: "pi", scope: "default", scopeId: "", profileId: profile.id });
+const { systemAiDefaults } = await import("../src/system-ai-config.js");
+const { save, settingsDatabase } = await import("../src/settings-store.js");
+const systemAi = systemAiDefaults();
+systemAi.profiles.pi = profile.id;
+save(settingsDatabase(), "systemAI", JSON.stringify(systemAi));
 // Nodes start without workspaces; the demo projects live in these two.
 await saveWorkspace({ id: "personal", label: "Personal" });
 await saveWorkspace({ id: "work", label: "Work" });

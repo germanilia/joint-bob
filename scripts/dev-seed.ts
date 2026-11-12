@@ -80,10 +80,21 @@ for (const node of nodeSpecs) {
   await mkdir(managedBin, { recursive: true });
   await writeFile(path.join(managedBin, "kiro-cli"), standInScript, { mode: 0o755 });
 }
-// Pi offers only models whose provider has a key; a dummy key on a loopback address is enough.
+// Protocol fixture only. Its credential is seeded as an app profile on each disposable node.
 await writeFile(path.join(home, ".pi", "models.json"), `${JSON.stringify({
   providers: { "dev-environment": { baseUrl: "http://127.0.0.1:9/v1", api: "openai-completions", apiKey: "dev-environment", models: [{ id: "dev-model" }] } },
 }, null, 2)}\n`);
+const providerPackage = path.join(home, ".pi", "dev-provider");
+await mkdir(providerPackage, { recursive: true });
+await writeFile(path.join(providerPackage, "package.json"), JSON.stringify({ name: "dev-provider", version: "1.0.0", pi: { extensions: ["provider.ts"] } }));
+await writeFile(path.join(providerPackage, "provider.ts"), `import { existsSync, readFileSync } from "node:fs";
+export default pi => {
+  const override = ${JSON.stringify(path.join(home, ".pi", "agent", "models.json"))};
+  const file = existsSync(override) ? override : ${JSON.stringify(path.join(home, ".pi", "models.json"))};
+  const { apiKey, ...definition } = JSON.parse(readFileSync(file, "utf8")).providers["dev-environment"];
+  pi.registerProvider("dev-environment", { ...definition, models: definition.models.map(model => ({ name: "Dev model", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32000, maxTokens: 4096, ...model })) });
+};`);
+await writeFile(path.join(home, ".pi", "settings.json"), JSON.stringify({ packages: [providerPackage] }));
 
 const { claudeProjectDir } = await import("../src/session-paths.js");
 

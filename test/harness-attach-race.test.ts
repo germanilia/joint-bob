@@ -117,6 +117,31 @@ function fixture(overrides: Record<string, any> = {}) {
     closeSocket: () => { socket.readyState = 3; listeners.get("close")?.(); },
   };
 }
+test("execution-only attach skips browser history before accepting a scheduled prompt", async () => {
+  const f = fixture({
+    conversationTranscriptPayload: async () => { throw new Error("A scheduled controller must not load browser history"); },
+  });
+  f.options.controlOnly = true;
+  f.shared.session.messages.push({ role: "assistant", text: "Prior monitor report" });
+  await f.exports.attachHarnessChat(f.options);
+  const ready = f.frames.find(frame => frame.type === "ready");
+  assert.ok(ready, "a reused monitor must become ready without preparing its historical reports");
+  assert.deepEqual(ready.messages, []);
+  assert.equal(f.shared.session.messages.length, 1, "execution context stays intact");
+  f.closeSocket();
+});
+
+test("execution-only attach still imports prior segments for an empty switched session", async () => {
+  const f = fixture();
+  f.options.controlOnly = true;
+  f.addPriorSegment();
+  await f.exports.attachHarnessChat(f.options);
+  const connection = [...f.exports.harnessChatConnections][0];
+  assert.equal(connection.handoffContext, "prior segment context");
+  assert.ok(f.frames.some(frame => frame.type === "ready"));
+  f.closeSocket();
+});
+
 for (const peerReadOnly of [true, false]) test(`read-only attach ${peerReadOnly ? "blocks" : "allows"} summary runs when peer run access is ${peerReadOnly ? "denied" : "allowed"}`, async () => {
   let summaryRequests = 0;
   const f = fixture({
