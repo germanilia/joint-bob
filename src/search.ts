@@ -68,6 +68,18 @@ async function conversationsIn(project: { id: string; name: string; path: string
   }));
 }
 
+/**
+ * A conversation is found by its title, or by its project's name and then its title, so "jb login" finds the login
+ * conversation in Joint Bob. Matching the title alone ranks a little higher.
+ */
+function resultScore(result: SearchResult, query: string): number | null {
+  const own = fuzzySearchScore(result.title, query);
+  if (result.kind !== "conversation") return own;
+  const withProject = fuzzySearchScore(`${result.projectName} ${result.title}`, query);
+  if (withProject === null) return own;
+  return own === null ? withProject - 1 : Math.max(own, withProject - 1);
+}
+
 export async function searchWorkspace(query: string): Promise<SearchResult[]> {
   const projects = await listProjects();
   const projectResults: SearchResult[] = projects.map((project) => ({
@@ -97,7 +109,7 @@ export async function searchWorkspace(query: string): Promise<SearchResult[]> {
     ];
   }
   return [...projectResults, ...conversationResults]
-    .map((result) => ({ result, score: fuzzySearchScore(result.title, trimmed) }))
+    .map((result) => ({ result, score: resultScore(result, trimmed) }))
     .filter((entry): entry is { result: SearchResult; score: number } => entry.score !== null)
     // A project outranks a conversation of the same strength: it is the smaller list,
     // and it is what "go to X" usually means.

@@ -118,6 +118,10 @@ test("one search reaches every project and every conversation in them", async ()
     assert.ok(conversation.sessionPath?.endsWith("brochure-session.jsonl"));
     assert.equal(conversation.harnessId, "claude");
 
+    // The project's name and then the title find a conversation the title alone does not.
+    const byProject = (await search("marketing kangaroo")).find((hit) => hit.kind === "conversation");
+    assert.equal(byProject?.sessionPath, conversation.sessionPath, "project then title finds the conversation");
+
     assert.deepEqual(await search("zzzznothing"), [], "an unmatched query returns nothing, not everything");
 
     // An empty query is the opening state of the bar, so it offers somewhere to go.
