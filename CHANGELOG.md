@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.290.0 — 2026-11-12
+
+- Phone: the filters on Bob's page wrap onto lines, with the project picker first, instead of scrolling sideways with the last chip cut off.
+
 ## 2.289.0 — 2026-11-12
 
 - **Workspaces are clear section headers in the left column**: a tinted bar with a colour dot, a bold name, a count and a larger arrow, with a divider between workspaces; the bar stays at the top while its projects scroll.

@@ -259,9 +259,11 @@
   body.focus-ui #controlCenterPanel .phone-strip > * { flex: none; }
   body.focus-ui #controlCenterPanel .phone-strip > [data-testid="control-phone-chip-dashboards"] { display: none; }
   body.focus-ui #controlCenterPanel .phone-strip:not(:has(> :not([data-testid="control-phone-chip-dashboards"]))) { display: none; }
-  body.focus-ui #controlChatFilters { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding: 4px 16px 10px; border: 0; scrollbar-width: none; scroll-padding-inline: 16px; }
+  /* The filters wrap: the project picker takes the first line, the chips follow, and nothing is cut at the edge. */
+  body.focus-ui #controlChatFilters { flex-wrap: wrap; gap: 8px; overflow: visible; padding: 4px 16px 10px; border: 0; }
   body.focus-ui #controlChatFilters > * { flex: none; }
-  body.focus-ui #controlChatFilters select, body.focus-ui #controlChatFilters .searchable-select-trigger { max-width: 150px; border-radius: 22px; }
+  body.focus-ui #controlChatFilters > :is(label, .searchable-select, select):first-child { flex: 1 1 100%; max-width: none; }
+  body.focus-ui #controlChatFilters select, body.focus-ui #controlChatFilters .searchable-select-trigger { width: 100%; max-width: none; border-radius: 22px; }
   body.focus-ui #controlChatFilters .control-chip-word { display: inline; }
   body.focus-ui .control-chat-messages { padding: 8px 16px 12px; }
   body.focus-ui #controlChat { min-height: 0; }
