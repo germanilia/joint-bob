@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.279.1 — 2026-11-12
 
-- When difficulty classification failed, the log now says why, including each retry, instead of failing silently.
+- When difficulty classification failed, the node log now says why, with the HTTP status, the request error or the malformed answer, and logs each retry.
 
 ## 2.279.0 — 2026-11-12
 
