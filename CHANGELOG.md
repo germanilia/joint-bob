@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.273.1 — 2026-11-12
+
+- Fixed saving edits to connection pools containing Google Antigravity profiles.
+
 ## 2.273.0 — 2026-11-12
 
 - **Model routing:** Bob auto now uses the decision credential from **Settings → System AI** instead of each project's attached secrets, so projects without a TypeSafe key (about 40% of prompts before) are routed again. Twins share the key; a machine that serves a relay can lend its decision model to the relay's machines without the key leaving it.
