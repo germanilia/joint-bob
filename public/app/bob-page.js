@@ -169,6 +169,9 @@ function apply() {
   if (page) {
     moveInto(tabs, stage, { first: true });
     moveInto(document.querySelector(".team-context-label"), contextHere);
+    if (giveBack.parentElement !== popupBar) moveInto(giveBack, popupBar);
+    popupBar.append(document.getElementById("controlPopupClose"));
+    placePopup();
     // Background updates start folded at the top of the chat, once; the person opens them from their count.
     if (!updatesFolded) {
       document.querySelector('[data-testid="control-chat-updates"]').open = false;
@@ -194,6 +197,21 @@ window.addEventListener("control-view-changed", (event) => {
 });
 wide.addEventListener("change", apply);
 new MutationObserver(() => { if (body.classList.contains("bob-desk") !== onPage()) apply(); }).observe(body, { attributes: true, attributeFilter: ["class"] });
+
+/* ---------- a conversation opened from the page ---------- */
+
+// It opens over the stage, beside Bob's chat, instead of over the whole page: its frame follows the stage's box. The
+// lease banner's "Give back to Bob" joins the popup bar, so the bar is the one line that says who is in control.
+const popupBar = document.getElementById("controlPopupBar");
+const giveBack = document.getElementById("controlLeaseGiveBack");
+function placePopup() {
+  if (!body.classList.contains("bob-desk")) return;
+  const box = stage.getBoundingClientRect();
+  for (const [name, value] of [["x", box.left], ["y", box.top], ["w", box.width], ["h", box.height]]) body.style.setProperty(`--bob-pop-${name}`, `${Math.round(value)}px`);
+}
+new ResizeObserver(placePopup).observe(stage);
+window.addEventListener("resize", placePopup);
+window.addEventListener("control-popup-opened", placePopup);
 
 /* ---------- what Bob watches ---------- */
 

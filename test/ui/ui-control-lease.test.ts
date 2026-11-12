@@ -58,11 +58,18 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   const lease = () => page.evaluate("window.__lease") as Promise<string[]>;
   const keepOut = page.getByTestId("control-popup-keep-out-toggle");
 
-  // Opening a card puts the person in control at once: the message box and the banner, without pressing Take control.
+  // Opening a card puts the person in control at once: the message box and "Give back to Bob", without pressing Take control.
+  // On Bob's page the popup bar is the one control line: it carries Give back, and the lease banner stays hidden.
+  const giveBack = page.getByTestId("control-popup-bar").getByTestId("control-lease-give-back");
   await card.locator(".control-title").click();
   await page.getByTestId("control-popup-bar").waitFor({ state: "visible" });
   assert.equal(await page.locator("body.view-control.control-popup").count(), 1, "the board stays under the conversation");
-  await page.getByTestId("control-lease-banner").waitFor({ state: "visible" });
+  await giveBack.waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("control-lease-banner").isVisible(), false);
+  // It opens over the stage, beside Bob's chat, which stays visible.
+  const sides = await page.evaluate(() => ({ chat: document.querySelector("#controlChat")!.getBoundingClientRect(), popup: document.querySelector("#chatPanel")!.getBoundingClientRect() }));
+  assert.ok(sides.popup.left >= sides.chat.right - 1 || sides.popup.right <= sides.chat.left + 1, `the conversation sits beside Bob's chat: ${JSON.stringify(sides)}`);
+  assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   await composer.waitFor({ state: "visible" });
   assert.match(await mode.innerText(), /You're in it/);
   assert.equal(await page.getByTestId("control-popup-take").isVisible(), false);
@@ -73,8 +80,8 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   assert.ok(fit.composer <= fit.panel && fit.panel <= fit.window, `composer ${fit.composer}, panel ${fit.panel}, window ${fit.window}`);
 
   // Giving it back in the open view goes back to watching; Take control there takes it again.
-  await page.getByTestId("control-lease-give-back").click();
-  await page.getByTestId("control-lease-banner").waitFor({ state: "hidden" });
+  await giveBack.click();
+  await giveBack.waitFor({ state: "hidden" });
   await composer.waitFor({ state: "hidden" });
   assert.match(await mode.innerText(), /Watching · Bob keeps driving/);
   await page.getByTestId("control-popup-take").click();
@@ -123,7 +130,7 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   await page.evaluate("window.__column = 'needs-you'; window.dispatchEvent(new CustomEvent('control-center-changed'))");
   await page.locator('[data-testid="control-center-card"][data-column="needs-you"]').waitFor();
   await page.getByTestId("control-center-card").locator(".control-title").click();
-  await page.getByTestId("control-lease-banner").waitFor({ state: "visible" });
+  await giveBack.waitFor({ state: "visible" });
   await composer.waitFor({ state: "visible" });
   assert.match(await mode.innerText(), /You're in it/);
   assert.deepEqual((await lease()).slice(-1), ["take"]);

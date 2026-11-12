@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The workspace reads more easily on a computer: larger text in the project and conversation lists, the conversation and its details; the slash command chips give way to typing / in the message box, and rule suggestions read as text until you edit them. A conversation opened from Bob's page now opens beside his chat with one control line that holds Give back to Bob.
+
 ## 2.294.0 — 2026-11-12
 
 - **Phone polish across every screen.** On Home, the Running and To review groups under the Needs you deck are reachable again (the list scrolls), tapping the words of a needs-you card opens its sheet, and the tab badge, the counts and the avatar letter have readable contrast. On Bob's page the filter chips fit without a lone chip on a third line. In a conversation the effort chip shows its name and the `/` and `@` suggestions are easier to read.

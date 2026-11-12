@@ -1,0 +1,60 @@
+/* The workspace on the desktop in the flavour of Bob's page (12 Nov): larger text in the lists, the conversation and
+   its details, fewer controls in view. The slash command chips give way to typing "/" in the message box (its command
+   list shows them all); Resources stays. Rule suggestions read as text until clicked. Loaded just before paper.css,
+   so every rule is scoped to the desktop workspace and is more specific than paper.css. */
+
+@media (min-width: 1024px) {
+  /* ---------- the left column ---------- */
+  body.ws-desktop:not(.focus-ui) .ws-place { font-size: 15px; min-height: 38px; }
+  body.ws-desktop:not(.focus-ui) .ws-place .ws-place-label { font-size: 15px; }
+  body.ws-desktop:not(.focus-ui) #projectList .project-card strong { font-size: 14.5px; }
+  body.ws-desktop:not(.focus-ui) #projectList .project-group-summary { font-size: 14.5px; }
+  body.ws-desktop:not(.focus-ui) .ws-foot .ws-me-copy b { font-size: 14.5px; }
+
+  /* ---------- the conversation list ---------- */
+  body.ws-desktop:not(.focus-ui) #chatsPanel #projectName { font-size: 23px; }
+  body.ws-desktop:not(.focus-ui) #chatsPanel .conversation-tabs button { font-size: 14px; }
+  body.ws-desktop:not(.focus-ui) #chatsPanel #sessionSearchInput { font-size: 14.5px; }
+  body.ws-desktop:not(.focus-ui) #chatFilters > button > span:not(.sr-only) { font-size: 12.5px; min-width: 20px; }
+  body.ws-desktop:not(.focus-ui) #sessionList .session-card { padding-block: 10px; }
+  body.ws-desktop:not(.focus-ui) #sessionList .session-card > strong { font-size: 15px; line-height: 1.35; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  body.ws-desktop:not(.focus-ui) #sessionList .session-card > span { font-size: 13px; }
+  body.ws-desktop:not(.focus-ui) #sessionList .worktree-subsection-title > span { font-size: 15px; }
+  body.ws-desktop:not(.focus-ui) #sessionList .worktree-subsection-title button { font-size: 13px; }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .done-filter { font-size: 13.5px; }
+
+  /* ---------- the conversation ---------- */
+  body.ws-desktop:not(.focus-ui) { --read: 16px; --read-leading: 1.65; }
+  body.ws-desktop:not(.focus-ui) #chatPanel .chat-project-name { font-size: 13.5px; }
+  body.ws-desktop:not(.focus-ui) #chatToolbar .chat-toolbar-control { font-size: 14px; min-height: 34px; }
+  body.ws-desktop:not(.focus-ui) #chatToolbar .ws-chat-meta, body.ws-desktop:not(.focus-ui) #chatToolbar .turn-timer { font-size: 13.5px; }
+  body.ws-desktop:not(.focus-ui) #chatPanel .message-author { font-size: 13px; }
+  /* The command chips: typing "/" lists every command, so only Resources stays, after a hint. */
+  body.ws-desktop:not(.focus-ui) #commandStrip > button:not(#chatResourcesButton) { display: none; }
+  body.ws-desktop:not(.focus-ui) #commandStrip { align-items: center; gap: 12px; }
+  body.ws-desktop:not(.focus-ui) #commandStrip::before { content: "Type / for commands · @ for files"; color: var(--muted); font-size: 13px; }
+  body.ws-desktop:not(.focus-ui) #commandStrip > #chatResourcesButton { margin-left: auto; font-size: 13px; }
+  body.ws-desktop:not(.focus-ui) #messageInput { font-size: 15.5px; }
+
+  /* ---------- the details ---------- */
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-tabs button { font-size: 14px; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-section > summary { padding: 11px 14px; font: 400 16px/1.2 var(--serif); color: var(--heading); }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-section-status { font-family: var(--sans); font-size: 12.5px; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-section-body { gap: 10px; padding: 0 14px 14px; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-summary-text { font-size: 14.5px; line-height: 1.6; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-summary-refresh,
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-summary-model { font-size: 13px; font-family: var(--sans); }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-stat { padding: 8px 10px; border-radius: 12px; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-stat-value { font: 400 17px/1.2 var(--serif); color: var(--heading); }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-stat-value.failed { color: var(--danger); }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-stat-label { font-size: 12.5px; }
+  /* Rule suggestions: a name, the rule as plain text, the evidence; the rule's box shows only while it is edited. */
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule { gap: 6px; padding: 12px 14px; border-radius: 14px; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule-subject { font-size: 13.5px; font-weight: 600; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule-text { font-size: 14px; line-height: 1.5; }
+  body.ws-desktop:not(.focus-ui) #activityPanel textarea.activity-rule-text:not(:focus) {
+    min-height: 0; padding: 0; border-color: transparent; background: transparent; box-shadow: none; resize: none; field-sizing: content; cursor: text;
+  }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule-evidence { font-size: 13px; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule-actions button { font-size: 13.5px; }
+}
