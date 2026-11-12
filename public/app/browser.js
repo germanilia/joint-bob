@@ -60,7 +60,7 @@ function hideForNavigation() {
   closeViewer();
 }
 new MutationObserver(() => {
-  if (viewer && document.body.classList.contains("view-control")) hideForNavigation();
+  if (viewer && document.body.classList.contains("view-control") && !document.body.classList.contains("control-popup")) hideForNavigation();
 }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
 window.addEventListener("pagehide", closeViewer);
 
