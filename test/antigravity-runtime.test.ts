@@ -15,6 +15,7 @@ const fixture = `#!/usr/bin/env node
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const args=process.argv.slice(2);
 for(const name of ['AGY_ADC_AUTH','GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_APPLICATION_CREDENTIALS','GOOGLE_CLOUD_PROJECT'])assert.equal(process.env[name],undefined,name+' must not be inherited');
+assert.ok(process.env.SSH_CONNECTION,'SSH_CONNECTION must be set to bypass OS keyring');
 if(args[0]==='--version'){process.stdout.write('agy 1.0.0\\n');process.exit(0);}
 if(args[0]==='acp'&&args[1]==='--help'){process.stdout.write('agy acp\\n');process.exit(0);}
 assert.deepEqual(args,['acp']);

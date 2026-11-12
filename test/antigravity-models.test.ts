@@ -43,7 +43,7 @@ test("Antigravity applies ACP model and reasoning options using native values", 
   assert.deepEqual(updated.map(({ currentValue }) => currentValue), ["gemini-3.1-pro-low", "extra"]);
 });
 
-test("Antigravity environment excludes API keys and ADC so it uses native CLI login", () => {
+test("Antigravity environment excludes API keys and ADC and bypasses the OS keyring so it uses per-home CLI login files", () => {
   const environment = antigravityEnvironment({
     HOME: "/tmp/test-home",
     AGY_ADC_AUTH: "true",
@@ -55,6 +55,8 @@ test("Antigravity environment excludes API keys and ADC so it uses native CLI lo
   });
 
   assert.equal(environment.HOME, path.dirname(getSettings().runtimes.antigravity.configPath));
+  assert.ok(environment.SSH_CONNECTION);
+  assert.notEqual(environment.SSH_CONNECTION, process.env.SSH_CONNECTION);
   for (const name of ["AGY_ADC_AUTH", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT"]) {
     assert.equal(environment[name], undefined);
   }

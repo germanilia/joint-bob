@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.276.1 — 2026-11-12
+
+- Google Antigravity now keeps its OAuth credentials in each profile's isolated home directory instead of prompting for the macOS Keychain after sign-in.
+
 ## 2.276.0 — 2026-11-12
 
 - Browser sign-in notices now show the conversation title and an Open conversation button instead of raw IDs.

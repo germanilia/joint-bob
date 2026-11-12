@@ -10,13 +10,25 @@ const GOOGLE_AUTH_ENV = [
   "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_GEMINI_BASE_URL",
 ];
 
+// Forces agy's CompositeTokenStorage to use the per-HOME token file instead of the OS keyring,
+// preventing macOS "Keychain Not Found" dialogs in isolated profile/account homes and keeping
+// credentials isolated per profile.
+const KEYRING_BYPASS_SSH_CONNECTION = "127.0.0.1 1 127.0.0.1 2";
+
 export function antigravitySettings() {
   return configuredRuntime("antigravity", getSettings().runtimes.antigravity);
 }
 
 export function antigravityEnvironment(environment: NodeJS.ProcessEnv, home?: string): NodeJS.ProcessEnv {
   const settings = antigravitySettings();
-  const result: NodeJS.ProcessEnv = { ...environment, HOME: home ?? (settings.configPath ? path.dirname(settings.configPath) : currentRuntime().home) };
+  const sshConnection = process.env.SSH_CONNECTION === KEYRING_BYPASS_SSH_CONNECTION
+    ? "127.0.0.1 1 127.0.0.1 3"
+    : KEYRING_BYPASS_SSH_CONNECTION;
+  const result: NodeJS.ProcessEnv = {
+    ...environment,
+    HOME: home ?? (settings.configPath ? path.dirname(settings.configPath) : currentRuntime().home),
+    SSH_CONNECTION: sshConnection,
+  };
   for (const name of GOOGLE_AUTH_ENV) delete result[name];
   return result;
 }
