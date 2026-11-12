@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 2.291.1 — 2026-11-12
 
-- Scheduled conversations show their instruction, and queued messages that fail to start appear under Needs you with the reason.
+- Scheduled conversations show the instruction that started each run, including queued prompts.
+- Messages that fail to start appear under Needs you with the reason.
 
 ## 2.291.0 — 2026-11-12
 
