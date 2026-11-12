@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function api<T = unknown>(node: SeededNode, session: SignedIn, method: string, endpoint: string, body?: unknown): Promise<{status: number;body: T}> {
   const response = await fetch(`${node.url}/api${endpoint}`, { method, headers: { Cookie: session.cookie, "X-CSRF-Token": session.csrfToken, "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -70,7 +70,7 @@ test("workspace node grants stay narrow, relay grants reach existing and later a
     await join(a, sa);
     await eventually(async () => assert.ok((await ids(c, sc)).includes(offlineProject.body.project.id), "reconnecting restores persisted sharing for offline-created projects"));
     for (const node of [r, a, b, c]) {
-      const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+      const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
       try { assert.equal((db.prepare("SELECT count(*) n FROM users WHERE home_node_id IS NOT NULL").get() as {n: number}).n, 0, "relay groups must never replicate login accounts"); }
       finally { db.close(); }
     }

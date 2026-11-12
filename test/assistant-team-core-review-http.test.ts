@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { DatabaseSync } from 'node:sqlite';
+import { type DatabaseSync } from "node:sqlite";
 import path from 'node:path';
 import os from 'node:os';
 import WebSocket from 'ws';
@@ -16,6 +16,7 @@ import { saveTeamTelegramConnection } from '../src/assistant-teams/telegram-stor
 import { listResourceShares } from '../src/cluster-sharing-policy.js';
 import { DEFAULT_GUARDIAN_SETTINGS } from '../src/guardian/rules.js';
 import { PRODUCTION_RULE } from '../src/guardian/production-rule.js';
+import { openNodeDatabase } from "../src/node-database.js";
 
  test('team transcript sockets close on cluster-only account revocation and local leave; authorized continuation stays live', {timeout:120000},async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'team-core-http-'));
@@ -55,7 +56,7 @@ import { PRODUCTION_RULE } from '../src/guardian/production-rule.js';
  const broad=await api<any>(node,auth,'POST','/clusters',{name:'unrelated broad workspace'});
  const shared=await api(node,auth,'PUT',`/clusters/${broad.body.snapshot.body.clusterId}/sharing`,{projectIds:[],workspaceIds:['personal'],confirmOwnedData:true});assert.equal(shared.status,200,JSON.stringify(shared.body));
  const madeTeam=await api<any>(node,auth,'POST','/assistant-teams',{clusterId});assert.equal(madeTeam.status,201,JSON.stringify(madeTeam.body));const team=madeTeam.body.team,base=`/assistant-teams/${team.id}`;
- db=new DatabaseSync(path.join(node.dataDir,'node.db'));
+ db=openNodeDatabase(path.join(node.dataDir,'node.db'));
  assert.deepEqual(listResourceShares(db,'project',team.projectId).map(s=>s.clusterId),[clusterId],'no unrelated personal-workspace inheritance');
  const claimOnly={clusterId,homeNodeId:home.nodeId,username:'claimonly',accountId:accountIdFor(home.nodeId,'claimonly')};
  const facade=(member:unknown)=>signedNodeRequest(homeEnv,home,node,'POST','/api/cluster/v2/assistant-teams/get',{member,teamId:team.id});

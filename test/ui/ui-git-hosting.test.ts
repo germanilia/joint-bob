@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 test("GitHub PR and pipeline tabs show list-first navigation and mobile workflow jobs", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t, () => ({ GH_TOKEN: "", GITHUB_TOKEN: "" }));
@@ -51,7 +52,7 @@ test("GitHub PR and pipeline tabs show list-first navigation and mobile workflow
   await page.getByTestId("login-submit-button").click();
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-tab-pulls").click();
   await page.getByTestId("git-hosting-pull-row").waitFor();
   assert.equal(await page.getByText("All pull requests").count(), 1);
@@ -68,7 +69,7 @@ test("GitHub PR and pipeline tabs show list-first navigation and mobile workflow
   assert.equal(await page.getByTestId("git-review-tab-changes").isVisible(), false, "the story has no Git tabs");
   assert.match(await page.locator("#gitReviewGenerate").innerText(), /PR #42/);
   await page.getByTestId("git-review-close-button").click();
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-tab-pulls").click();
   await page.getByTestId("git-hosting-pull-row").click();
   await page.getByTestId("git-hosting-close").click();

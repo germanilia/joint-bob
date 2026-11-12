@@ -306,7 +306,10 @@ export async function reapInactiveConversations(now = Date.now(), data = resolve
   try {
     const shells = readImplicitShellTasks(data);
     const liveCallers = new Set(shells.filter((shell) => shell.callerUntil > now).map((shell) => shell.identity));
-    await reapInactiveHarnessSessions(now, liveCallers);
+    const { continueStuckTurn } = await import("./stuck-conversations.js");
+    for (const stopped of await reapInactiveHarnessSessions(now, liveCallers)) {
+      void continueStuckTurn(stopped).catch((error) => console.warn(`Could not continue stuck ${stopped.shared.engine} conversation ${stopped.shared.session.id}`, error));
+    }
     await (await import("../budget-guard.js")).enforceRunningBudgets();
     for (const shell of shells) {
       if (shell.callerUntil > now) continue;

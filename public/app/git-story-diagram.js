@@ -140,18 +140,27 @@ export function diagramLegend(diagram) {
 }
 
 /**
- * Draws the diagram into `canvas` (inside `wrap`). Clicking a step opens a card with what it
- * does and its changed files; `fileLine(path)` renders each file row.
+ * The open step of each diagram. The Story view is drawn again whenever something it shows arrives (the narrator's
+ * answer, a saved note): the card a person had just opened used to vanish with the old drawing.
  */
-export function mountStoryDiagram(wrap, canvas, diagram, { trace = null, fileLine } = {}) {
-  let openId = null;
+const openSteps = new WeakMap();
+
+/**
+ * Draws the diagram into `canvas` (inside `wrap`). Clicking a step opens a card with what it
+ * does and its changed files; `fileLine(path)` renders each file row. `remember` keeps the open card
+ * across redraws (the Overview section; not the examples' traces or the video).
+ */
+export function mountStoryDiagram(wrap, canvas, diagram, { trace = null, fileLine, remember = false } = {}) {
+  let openId = (remember && openSteps.get(diagram)) || null;
+  const pick = (id) => { openId = id; if (remember) openSteps.set(diagram, id); };
   const draw = () => {
-    const placed = drawDiagram(canvas, diagram, { trace, openId, onPick: (id) => { openId = openId === id ? null : id; draw(); } });
+    const placed = drawDiagram(canvas, diagram, { trace, openId, onPick: (id) => { pick(openId === id ? null : id); draw(); } });
     wrap.querySelector(".gs-pop")?.remove();
     if (!openId || !placed) return;
     const node = diagram.nodes.find((item) => item.id === openId);
+    if (!node) { pick(null); return; }
     const lane = diagram.lanes.find((item) => item.id === node.lane);
-    const close = () => { openId = null; draw(); canvas.querySelector(`[data-node="${CSS.escape(node.id)}"]`)?.focus(); };
+    const close = () => { pick(null); draw(); canvas.querySelector(`[data-node="${CSS.escape(node.id)}"]`)?.focus(); };
     const pop = h("div", { class: "gs-pop", role: "dialog", "aria-label": node.label, "data-testid": "git-story-step-card" },
       h("header", {},
         h("div", {}, h("p", { class: "gs-label", style: `color:${KIND_COLOR[node.kind]}` }, `${lane.label} · ${KIND_LABEL[node.kind]}`), h("h5", {}, node.label)),
@@ -171,4 +180,6 @@ export function mountStoryDiagram(wrap, canvas, diagram, { trace = null, fileLin
     pop.querySelector(".gs-pop-close").focus();
   };
   draw();
+  // A card carried over a redraw is placed once the new diagram is on the page and has its size.
+  if (openId && !wrap.isConnected) requestAnimationFrame(() => { if (wrap.isConnected) draw(); });
 }

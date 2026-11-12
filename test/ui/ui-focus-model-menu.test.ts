@@ -15,6 +15,13 @@ test("mobile menu model and effort dropdowns are searchable and keep the control
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
   await page.waitForFunction(() => !document.querySelector<HTMLTextAreaElement>("#messageInput")!.disabled);
+  // The harness's real model list arrives on its own and replaces that harness's models; let it land before the test
+  // puts its own in, or it can replace them halfway through a choice.
+  await page.waitForFunction(async () => {
+    const { state } = await import(new URL("/app/state.js", location.href).href);
+    return state.models.some((model: { harnessId: string }) => model.harnessId === state.engine);
+  }, undefined, { timeout: 15_000 }).catch(() => undefined);
+  await page.waitForTimeout(500);
   await page.evaluate(async () => {
     const { state } = await import(new URL("/app/state.js", location.href).href);
     const recordedWindow = window as Window & { controlMessages: unknown[] };

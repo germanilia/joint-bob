@@ -3,6 +3,7 @@ import { appendFile, mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promi
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // Listing re-reads a Pi transcript only when it changes and skips files outside
 // the configured history window, while direct transcript loading remains available.
@@ -142,7 +143,7 @@ test("a restart resumes Pi summaries from node.db instead of re-reading every tr
 
     // Mark the stored summary: a process that re-parsed the unchanged transcript would never see it.
     const { DatabaseSync } = await import("node:sqlite");
-    const db = new DatabaseSync(path.join(root, "data", "node.db"));
+    const db = openNodeDatabase(path.join(root, "data", "node.db"));
     const row = db.prepare("SELECT payload FROM transcript_summaries WHERE kind='pi-summary-v1' AND file=?").get(path.resolve(sessionFile)) as { payload: string } | undefined;
     assert.ok(row, "listing stores the summary");
     db.prepare("UPDATE transcript_summaries SET payload=? WHERE kind='pi-summary-v1' AND file=?").run(JSON.stringify({ ...JSON.parse(row.payload), firstMessage: "From the stored summary" }), path.resolve(sessionFile));

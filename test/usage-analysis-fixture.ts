@@ -1,14 +1,14 @@
-import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { ensureUsageSchema } from "../src/usage-ledger.js";
 import { ensureClusterSharingPolicySchema } from "../src/cluster-sharing-policy.js";
 import type { SeededNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 export const reportClusterId = "6f1f6a8e-2b0e-4c55-9f53-0d1b6e2a7c11";
 
 /** More than the analysis cap, with recent and old costs on the same conversations. */
 export function seedUsageAnalysis(node: SeededNode): void {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     ensureUsageSchema(db);
     const inventory = db.prepare("INSERT INTO usage_inventory(project_id,conversation_id,session_id,engine,title,usage_status) VALUES(?,?,?,?,?,?)");

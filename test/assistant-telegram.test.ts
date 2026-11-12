@@ -3,12 +3,12 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "n
 import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { LOCAL_VOICE_LOADER, localVoiceAllowed } from "../src/server/story-voice.js";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { openChat, waitFor } from "./queued-prompt-harness.js";
 import { kiroV3SessionFixture } from "./kiro-v3-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // The whole path with a real server: a Telegram update is authorized by code, the decision model
 // judges it, an agent answers and the answer returns to the chat. Only the outside world is
@@ -174,7 +174,7 @@ test("a Telegram bot reaches its assistant only through code that approves each 
     await Promise.all([mkdir(path.dirname(executable), { recursive: true }), mkdir(path.join(configPath, "sessions"), { recursive: true })]);
     await writeFile(executable, kiroFixture(promptLog, path.join(root, "note.md")));
     await chmod(executable, 0o700);
-    const settings = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const settings = openNodeDatabase(path.join(node.dataDir, "node.db"));
     const save = settings.prepare("INSERT INTO node_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at");
     for (const [key, value] of [["kiro.executable", executable], ["kiro.configPath", configPath], ["kiro.sessionPath", path.join(configPath, "sessions")]]) save.run(key, value, new Date().toISOString());
     settings.close();
@@ -232,7 +232,7 @@ test("a Telegram bot reaches its assistant only through code that approves each 
     const promptCount = (await prompts()).length;
     const turns = async () => (await api<{ turns: Array<{ topicId: string; message: string; status: string }> }>(node, session, "GET", `/personal-assistants/${assistantId}/turns`)).body.turns;
     const lastTurnOrigin = () => {
-      const db = new DatabaseSync(path.join(node.dataDir, "node.db"), { readOnly: true });
+      const db = openNodeDatabase(path.join(node.dataDir, "node.db"), { readOnly: true });
       try { return (db.prepare("SELECT origin FROM personal_assistant_turns ORDER BY created_at DESC, rowid DESC LIMIT 1").get() as { origin: string }).origin; }
       finally { db.close(); }
     };

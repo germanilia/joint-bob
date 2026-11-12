@@ -178,6 +178,11 @@ test("activity panel width is draggable and survives browser reopen", async () =
     await fresh.goto(node.url, { waitUntil: "domcontentloaded" });
     await fresh.locator(".project-card", { hasText: PROJECT_NAME }).first().click();
     await fresh.locator(".session-card", { hasText: CONVERSATION_TITLE }).first().click();
+    // Beside the two columns of Projects the widened details may no longer fit; a page that opens that way has them
+    // put away, and their button in the header shows them (workspace.js syncDetailsFloat).
+    await fresh.locator("body.view-chat").waitFor();
+    await fresh.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    if (await fresh.locator("body.ws-details-tucked").count()) await fresh.getByTestId("chat-activity-toggle").click();
     await fresh.getByTestId("activity-panel").waitFor({ state: "visible" });
     assert.ok(Math.abs((await fresh.getByTestId("activity-panel").boundingBox())!.width - savedWidth) < 2);
     await fresh.setViewportSize({ width: 390, height: 844 });

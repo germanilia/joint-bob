@@ -39,9 +39,10 @@ async function signIn(): Promise<void> {
   await page.locator(".project-card").first().waitFor({ timeout: 20_000 });
 }
 
+// On the desktop workspace the person at the foot of the left column opens them (the phone keeps the logo).
 test("the logo opens quick appearance settings that change theme and font size and survive a reload", async () => {
   await signIn();
-  await page.getByTestId("appearance-open").click();
+  await page.getByTestId("workspace-person-button").click();
   await page.getByTestId("appearance-theme-midnight").click();
   assert.equal(await page.evaluate(() => document.documentElement.dataset.palette), "midnight");
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
@@ -58,7 +59,7 @@ test("the logo opens quick appearance settings that change theme and font size a
   assert.equal(await page.evaluate(() => document.documentElement.dataset.palette), "midnight");
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#projectsPanel")!).zoom), "1.5");
 
-  await page.getByTestId("appearance-open").click();
+  await page.getByTestId("workspace-person-button").click();
   await page.getByTestId("appearance-reset-button").click();
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#projectsPanel")!).zoom), "1");
   assert.equal(await page.evaluate(() => document.documentElement.dataset.palette ?? ""), "");

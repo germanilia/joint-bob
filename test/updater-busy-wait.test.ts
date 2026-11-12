@@ -3,11 +3,11 @@
 // hours: on 2026-11-10 a machine whose turn ended after forty minutes would have waited until morning.
 import assert from "node:assert/strict";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import { completeUpdateRecovery, saveUpdateRecoveries } from "../src/update-recovery.js";
 import { scheduledUpdateStep, setAutoUpdate, startUpdateScheduler } from "../src/updater.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const HOUR = 60 * 60_000;
 const busy = "This machine is still finishing 1 conversation turn that an earlier update interrupted. It can update once that turn ends; stop it to update now.";
@@ -55,7 +55,7 @@ test("with a newer release and a turn still being finished, the scheduler starts
   for (let turn = 0; turn < 50 && !delays.includes(3 * 60_000); turn++) await new Promise((resolve) => setImmediate(resolve));
   assert.ok(fetched.mock.callCount() >= 1, "the release feed was asked");
   assert.ok(delays.includes(3 * 60_000), `it looks again in three minutes (timers asked for: ${delays.join(", ")})`);
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"), { readOnly: true });
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"), { readOnly: true });
   try {
     assert.equal((db.prepare("SELECT count(*) n FROM update_jobs").get() as { n: number }).n, 0, "no update job is started, so nothing fails and nothing backs off");
   } finally { db.close(); }

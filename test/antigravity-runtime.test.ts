@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { getSettings, updateSettings } from "../src/settings.js";
 import { addProject } from "../src/store.js";
+import { runAsAccount } from "../src/account-context.js";
+import { createProviderProfile, setProviderProfileSelection } from "../src/provider-profiles/store.js";
+import { antigravityProfileHome } from "../src/antigravity-profiles/native.js";
 import runtime from "../src/harnesses/antigravity/runtime.js";
 import { readAntigravitySession } from "../src/harnesses/antigravity/storage.js";
 
 const fixture = `#!/usr/bin/env node
-const assert=require('node:assert/strict');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const args=process.argv.slice(2);
 for(const name of ['AGY_ADC_AUTH','GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_APPLICATION_CREDENTIALS','GOOGLE_CLOUD_PROJECT'])assert.equal(process.env[name],undefined,name+' must not be inherited');
 if(args[0]==='--version'){process.stdout.write('agy 1.0.0\\n');process.exit(0);}
@@ -20,7 +23,7 @@ const config=()=>[
 {id:'model',name:'Model',type:'select',currentValue:model,options:[{value:'model-a',name:'Model A'},{value:'model-b',name:'Model B'}]},
 {id:'effortLevel',name:'Thinking level',type:'select',currentValue:effort,options:[{value:'low',name:'Low'},{value:'medium',name:'Medium'},{value:'extra',name:'Extra'}]},
 ];
-let model='model-a',effort='medium',sessionId='native-antigravity-1',promptId;
+let model='model-a',effort='medium',sessionId=path.basename(process.env.HOME)==='antigravity-home'?'native-'+path.basename(path.dirname(process.env.HOME)):'native-antigravity-1',promptId;
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
 const request=JSON.parse(line),reply=result=>send({jsonrpc:'2.0',id:request.id,result});
 if(request.id==='permission'){
@@ -33,8 +36,11 @@ return send({jsonrpc:'2.0',id:promptId,result:{stopReason:'end_turn'}});
 }
 if(request.method==='initialize')return reply({protocolVersion:1,agentCapabilities:{loadSession:true}});
 if(request.method==='session/new'||request.method==='session/load'){
-if(process.env.AGY_FIXTURE_UNAUTHENTICATED==='1')return send({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:'Authentication required'}});
-if(request.method==='session/load')send({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'Replayed old reply'}}}});
+if(process.env.AGY_FIXTURE_UNAUTHENTICATED==='1'||process.env.AGY_FIXTURE_REQUIRE_LOGIN==='1'&&!fs.existsSync(path.join(process.env.HOME,'signed-in')))return send({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:'Authentication required'}});
+if(request.method==='session/load'){
+assert.equal(request.params.sessionId,sessionId);
+send({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'Replayed old reply'}}}});
+}
 return reply({...(request.method==='session/new'?{sessionId}:{}),configOptions:config()});
 }
 if(request.method==='session/set_config_option'){
@@ -94,6 +100,52 @@ test("Google Antigravity ACP readiness, model selection, native session and tran
   } finally {
     if (session?.isBusy()) await session.stopForUpdate();
     session?.dispose();
+    updateSettings({ runtimes: previous.runtimes });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Antigravity turns use the selected profile home and do not resume another profile's native session", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "antigravity-profile-runtime-")), previous = getSettings();
+  const previousRequireLogin = process.env.AGY_FIXTURE_REQUIRE_LOGIN;
+  let session: Awaited<ReturnType<typeof runtime.open>> | undefined;
+  try {
+    const executable = path.join(root, "agy");
+    await writeFile(executable, fixture); await chmod(executable, 0o700);
+    updateSettings({ runtimes: { ...previous.runtimes, antigravity: { executable, configPath: path.join(root, ".gemini"), sessionPath: path.join(root, "sessions") } } });
+    process.env.AGY_FIXTURE_REQUIRE_LOGIN = "1";
+    const project = await addProject("Antigravity profile fixture", root, { writeInstructions: false });
+    const owner = "antigravity-profile-owner";
+    const actor = { accountId: owner, username: owner, role: "member" as const, isRemoteLogin: false, homeNodeId: null };
+    const work = createProviderProfile(owner, { provider: "antigravity", label: "Google work" });
+    const personal = createProviderProfile(owner, { provider: "antigravity", label: "Google personal" });
+    setProviderProfileSelection(owner, { provider: "antigravity", scope: "default", scopeId: "", profileId: work.id });
+    const workHome = antigravityProfileHome(work);
+    await mkdir(workHome, { recursive: true, mode: 0o700 });
+    await writeFile(path.join(workHome, "signed-in"), "fixture");
+
+    session = await runtime.open({ projectId: project.id, cwd: root, sessionId: "antigravity-profile-session" });
+    await runAsAccount(actor, () => session!.preflight());
+    await runAsAccount(actor, () => session!.prompt({ text: "work turn" }));
+    const workSession = await readAntigravitySession(session.file!.replace(/^antigravity:/, ""));
+    assert.equal(workSession.nativeProfileId, work.id);
+    assert.equal(workSession.nativeSessionId, `native-${work.id}`);
+
+    setProviderProfileSelection(owner, { provider: "antigravity", scope: "default", scopeId: "", profileId: personal.id });
+    await assert.rejects(runAsAccount(actor, () => session!.prompt({ text: "personal turn before sign-in" })), /Sign in to Antigravity profile Google personal/);
+    const personalHome = antigravityProfileHome(personal);
+    await mkdir(personalHome, { recursive: true, mode: 0o700 });
+    await writeFile(path.join(personalHome, "signed-in"), "fixture");
+    await runAsAccount(actor, () => session!.prompt({ text: "personal turn" }));
+    const personalSession = await readAntigravitySession(session.file!.replace(/^antigravity:/, ""));
+    assert.equal(personalSession.nativeProfileId, personal.id);
+    assert.equal(personalSession.nativeSessionId, `native-${personal.id}`);
+    assert.notEqual(personalSession.nativeSessionId, workSession.nativeSessionId);
+  } finally {
+    if (session?.isBusy()) await session.stopForUpdate();
+    session?.dispose();
+    if (previousRequireLogin === undefined) delete process.env.AGY_FIXTURE_REQUIRE_LOGIN;
+    else process.env.AGY_FIXTURE_REQUIRE_LOGIN = previousRequireLogin;
     updateSettings({ runtimes: previous.runtimes });
     await rm(root, { recursive: true, force: true });
   }

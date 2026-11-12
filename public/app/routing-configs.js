@@ -260,6 +260,8 @@ async function saveConfig(notify = true) {
   const body = { name: elements.routingConfigEditorNameInput.value.trim(), policy: editorFormValue() };
   const result = await api(`/api/routing-configs/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
   editorDirty = false;
+  // Settings' save line stops waiting for this configuration (settings.js).
+  document.dispatchEvent(new CustomEvent("routing-config-saved"));
   const failed = (result.results ?? []).filter((entry) => !entry.delivered);
   await loadRoutingConfigs(result.config.id);
   if (notify) {

@@ -69,6 +69,8 @@ async function save(settings) {
     return true;
   } catch (error) {
     toast.error(`Could not save Guardian: ${error.message}`);
+    // The controls show the choice that was not saved: the models block is drawn again from what is stored.
+    modelsDrawn = "";
     return false;
   } finally {
     render();
@@ -261,9 +263,17 @@ async function installLaya() {
 /** The model as stored: Laya means the saved server when there is one, this machine otherwise. */
 const modelFor = (choice, layaUrl) => choice === "jev" ? "jev" : layaUrl ? "laya-remote" : "laya-local";
 
+/** What the models block last showed. */
+let modelsDrawn = "";
+
 function renderModels() {
   const host = document.getElementById("guardianModels");
   if (!host || !view) return;
+  // Opening Guardian or Classifiers reads the settings again. Drawing the same thing again replaced the block under
+  // the person: a list just opened closed, and an address being typed was lost. It is drawn when what it shows changed.
+  const showing = JSON.stringify([view.settings.model, view.settings.layaUrl, view.laya]);
+  if (showing === modelsDrawn && host.firstElementChild) return;
+  modelsDrawn = showing;
   const fieldset = el("fieldset", "phase-settings");
   fieldset.append(el("legend", "", "Decision models"));
   const choice = select("guardianModel", "Guardian uses", [

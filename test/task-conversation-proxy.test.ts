@@ -6,10 +6,10 @@ import { connect, type Socket } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type UpgradeMode = "reject" | "forward" | "stub";
 interface PeerProxy {
@@ -76,7 +76,7 @@ async function peerProxy(upstream: SeededNode): Promise<PeerProxy> {
 
 /** Points node A at the proxy for its twin B, the address A learned when they paired. */
 function routePeerThrough(node: SeededNode, peer: SeededNode, url: string): void {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout=5000");
     assert.equal(db.prepare("UPDATE cluster_v2_peer_endpoints SET url = ? WHERE node_id = ?").run(url, peer.nodeId).changes > 0, true);
@@ -125,7 +125,7 @@ test("task conversation proxy preserves the session ID across node-specific path
     const conversationId = randomUUID();
     // The owner recorded the conversation under its own home; this node knows it by another path.
     const remotePath = `claude:/home/remote/.claude/projects/task/${conversationId}.jsonl`;
-    const db = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try {
       db.exec("PRAGMA busy_timeout=5000");
       db.prepare("UPDATE tasks SET session_path = ? WHERE id = ?").run(remotePath, task.id);

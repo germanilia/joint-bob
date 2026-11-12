@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface Command { id: string; name: string; prompt: string; kind: string }
 interface Catalog { commands: Command[]; recentIds?: string[] }
@@ -85,7 +85,7 @@ test("twins automatically share existing and new commands without settings chang
       assert.equal((await api(a, sa, "PUT", "/settings/personal", { conversationCommands: settings })).status, 200);
       assert.equal((await api(a, sa, "POST", "/commands", { name: "Created while away", prompt: "Missed notification" })).status, 200);
       children[1] = await startDevNode(env, b, { JOINT_BOB_TEST_MULTI_USER_READY: "1" });
-      const db = new DatabaseSync(path.join(b.dataDir, "node.db"));
+      const db = openNodeDatabase(path.join(b.dataDir, "node.db"));
       try {
         const deadline = Date.now() + 40_000;
         for (;;) {

@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const execute = promisify(execFile);
 const publicApi = "https://api.github.com/repos/germanilia/joint-bob-releases";
@@ -42,7 +43,7 @@ test("the default feed checks and downloads anonymously, ignoring old tokens and
   assert.equal(first.error, null);
   assert.equal(first.release?.version, "99.0.0");
   const { DatabaseSync } = await import("node:sqlite");
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   t.after(() => db.close());
   for (const oldApi of ["https://api.github.com/repos/germanilia/joint-bob", "https://api.github.com/repos/iliagerman/joint-bob"]) {
     db.prepare("UPDATE update_preferences SET latest_json = ?").run(JSON.stringify({ ...first.release, archiveUrl: `${oldApi}/releases/assets/1`, checksumUrl: `${oldApi}/releases/assets/2` }));

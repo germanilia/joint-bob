@@ -164,6 +164,8 @@ export async function selectProject(projectId, shouldRender = true, preserveSess
   renderSessions();
   renderQuickNotes();
   setMobileView("sessions");
+  // The desktop workspace's left column turns from the project picker to this project's conversations.
+  window.dispatchEvent(new CustomEvent("project-selected", { detail: { projectId } }));
   void loadSessionNodes(projectId).catch((error) => toast.error(error.message));
   // The board does not need the conversation list, so it loads beside it instead of after it.
   // Worktrees wait: their listing starts a scan of every project's finished worktrees, which

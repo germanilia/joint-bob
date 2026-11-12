@@ -4,8 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("confirmed twins with mirrored IDs keep local paths and the owners established at project creation", {timeout:120_000}, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(),"twin-adoption-"));
@@ -14,7 +15,7 @@ test("confirmed twins with mirrored IDs keep local paths and the owners establis
   try {
     const a=await seedDevEnvironment(path.join(root,"a"),1),b=await seedDevEnvironment(path.join(root,"b"),1);
     const left=a.nodes[0],right=b.nodes[0];
-    const da=new DatabaseSync(path.join(left.dataDir,"node.db")),db=new DatabaseSync(path.join(right.dataDir,"node.db"));handles.push(da,db);
+    const da=openNodeDatabase(path.join(left.dataDir,"node.db")),db=openNodeDatabase(path.join(right.dataDir,"node.db"));handles.push(da,db);
     for (const project of da.prepare("SELECT id,name FROM projects").all() as unknown as Array<{id:string;name:string}>) {
       db.prepare("UPDATE projects SET id=? WHERE name=?").run(project.id,project.name);
     }

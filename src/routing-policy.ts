@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openNodeDatabase } from "./node-database.js";
@@ -20,13 +20,25 @@ export function automaticRoutingModelAllowed(provider: string | undefined, model
   return provider !== "openai-codex" || codexRoutingModels.has(modelId);
 }
 
+/** True when the harness lists this model here. "default" is the harness's own choice and always
+    runs (a signed-in Kiro lists only real model IDs); without a catalogue, validateSettings decides. */
+export function routingCandidateListed(listed: Set<string> | null, provider: string, modelId: string): boolean {
+  return !listed || modelId === "default" || listed.has(`${provider}\0${modelId}`);
+}
+
 const levelKeys = Array.from({ length: ROUTING_LEVELS }, (_, index) => String(index + 1));
 
-export const routingMappingSchema = z.object({
+export const routingCandidateSchema = z.object({
   provider: z.string().trim().min(1).max(200).optional(),
   modelId: z.string().trim().min(1).max(300),
   thinkingLevel: z.string().trim().min(1).max(16),
+}).strict();
+export type RoutingCandidate = z.infer<typeof routingCandidateSchema>;
+
+export const routingMappingSchema = routingCandidateSchema.extend({
   description: z.string().trim().min(1).max(1000),
+  /** Tried in order when the primary model cannot run on this machine. */
+  fallbacks: z.array(routingCandidateSchema).max(8).optional(),
 }).strict();
 export type RoutingMapping = z.infer<typeof routingMappingSchema>;
 
@@ -95,14 +107,16 @@ export function validateRoutingPolicy(policy: unknown): RoutingPolicy {
     for (const level of levelKeys) {
       const mapping = entry.levels[level];
       if (!mapping) continue;
-      if (adapter.configuration?.fixedProvider && mapping.provider !== undefined && mapping.provider !== adapter.configuration.fixedProvider) {
-        throw new RoutingPolicyError(400, `${adapter.label} models must use provider ${adapter.configuration.fixedProvider}`);
-      }
-      if (!adapter.configuration?.fixedProvider && !mapping.provider) throw new RoutingPolicyError(400, `${adapter.label} level ${level} mapping needs a provider`);
-      const provider = mapping.provider ?? adapter.configuration?.fixedProvider;
-      if (!automaticRoutingModelAllowed(provider, mapping.modelId)) throw new RoutingPolicyError(400, `${mapping.modelId} is not allowed for automatic routing`);
-      if (adapter.configuration && !adapter.configuration.thinkingLevels.includes(mapping.thinkingLevel as never)) {
-        throw new RoutingPolicyError(400, `${adapter.label} does not support thinking level ${mapping.thinkingLevel}`);
+      for (const candidate of [mapping, ...(mapping.fallbacks ?? [])]) {
+        if (adapter.configuration?.fixedProvider && candidate.provider !== undefined && candidate.provider !== adapter.configuration.fixedProvider) {
+          throw new RoutingPolicyError(400, `${adapter.label} models must use provider ${adapter.configuration.fixedProvider}`);
+        }
+        if (!adapter.configuration?.fixedProvider && !candidate.provider) throw new RoutingPolicyError(400, `${adapter.label} level ${level} mapping needs a provider`);
+        const provider = candidate.provider ?? adapter.configuration?.fixedProvider;
+        if (!automaticRoutingModelAllowed(provider, candidate.modelId)) throw new RoutingPolicyError(400, `${candidate.modelId} is not allowed for automatic routing`);
+        if (adapter.configuration && !adapter.configuration.thinkingLevels.includes(candidate.thinkingLevel as never)) {
+          throw new RoutingPolicyError(400, `${adapter.label} does not support thinking level ${candidate.thinkingLevel}`);
+        }
       }
     }
   }
@@ -218,47 +232,38 @@ export function routingEvalDue(policy: RoutingPolicy, promptOrdinal: number, las
   return promptOrdinal - lastEvalOrdinal >= (policy.evalCadence.n ?? Number.POSITIVE_INFINITY);
 }
 
-/** The Joint Bob preset's task categories. Jev chooses among these descriptions, so Pi
-    and Claude share them and differ only in the model each category runs on. */
-const DEFAULT_ROUTING_TASKS = [
-  { level: "1", description: "General questions about the app, the project, or how something works, answered by reading and explaining without changing code." },
-  { level: "2", description: "Terminal and git work: running CLI commands, shell inspection, reviewing diffs, committing, pushing, resolving straightforward conflicts, and managing existing branches." },
-  { level: "4", description: "Simple coding: a small, well-scoped code change such as a one-file edit, a rename, a config tweak, or a short script." },
-  { level: "6", description: "Complex coding: implementing or refactoring a feature across several files or components and verifying the result with tests." },
-  { level: "8", description: "Debugging a reported error or unexpected behaviour: reproducing the failure, tracing its root cause, and making the fix." },
-  { level: "10", description: "Planning: architecture, design, breaking down ambiguous multi-system work, or high-risk changes that need deep analysis before implementation." },
-] as const;
+export const routingDefaultsSchema = z.object({
+  reviewedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().max(2000),
+  categories: z.array(z.object({
+    level: z.string().regex(/^(10|[1-9])$/),
+    description: z.string().trim().min(1).max(1000),
+    /** Per harness, cheapest adequate model first. Routing never leaves the conversation's harness. */
+    candidates: z.record(z.string().min(1).max(80), z.array(routingCandidateSchema).min(1).max(9)),
+  }).strict()).min(1).max(10),
+}).strict();
+export type RoutingDefaults = z.infer<typeof routingDefaultsSchema>;
 
-const DEFAULT_ROUTING_MODELS: Record<string, Record<(typeof DEFAULT_ROUTING_TASKS)[number]["level"], { provider: string; modelId: string; thinkingLevel: string }>> = {
-  pi: {
-    "1": { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "xhigh" },
-    "2": { provider: "openai-codex", modelId: "gpt-6-luna", thinkingLevel: "medium" },
-    "4": { provider: "openai-codex", modelId: "gpt-6.1-sol", thinkingLevel: "medium" },
-    "6": { provider: "openai-codex", modelId: "gpt-6.1-sol", thinkingLevel: "medium" },
-    "8": { provider: "openai-codex", modelId: "gpt-6-astra", thinkingLevel: "xhigh" },
-    "10": { provider: "openai-codex", modelId: "gpt-6-astra", thinkingLevel: "xhigh" },
-  },
-  claude: {
-    "1": { provider: "claude", modelId: "haiku", thinkingLevel: "xhigh" },
-    "2": { provider: "claude", modelId: "haiku", thinkingLevel: "medium" },
-    "4": { provider: "claude", modelId: "haiku", thinkingLevel: "xhigh" },
-    "6": { provider: "claude", modelId: "sonnet", thinkingLevel: "medium" },
-    "8": { provider: "claude", modelId: "opus", thinkingLevel: "xhigh" },
-    "10": { provider: "claude", modelId: "opus", thinkingLevel: "xhigh" },
-  },
-};
+/** The shipped defaults (src/routing-defaults.json), updated through releases. The path
+    resolves to the package's src/ from both src/ and the compiled dist/. */
+export function readRoutingDefaults(): RoutingDefaults {
+  return routingDefaultsSchema.parse(JSON.parse(readFileSync(new URL("../src/routing-defaults.json", import.meta.url), "utf8")));
+}
 
-/** Builds the immutable Joint Bob preset. Kiro and unknown harnesses stay blank;
-    only Pi and Claude have an intentional task-to-model mapping. */
+/** Builds the immutable Joint Bob preset from src/routing-defaults.json. Harnesses the file
+    does not list stay blank. */
 export function defaultRoutingPolicy(): RoutingPolicy {
+  const defaults = readRoutingDefaults();
   const harnesses: RoutingPolicy["harnesses"] = {};
   for (const adapter of listDiscoveredHarnesses()) {
     if (!adapter.configuration) continue;
     const levelsMap: RoutingPolicy["harnesses"][string]["levels"] = {};
-    const models = DEFAULT_ROUTING_MODELS[adapter.id];
-    for (const task of models ? DEFAULT_ROUTING_TASKS : []) {
-      const model = models![task.level];
-      levelsMap[task.level] = { ...(adapter.configuration.fixedProvider ? {} : { provider: model.provider }), modelId: model.modelId, thinkingLevel: model.thinkingLevel, description: task.description };
+    for (const category of defaults.categories) {
+      const candidates = category.candidates[adapter.id];
+      if (!candidates) continue;
+      const fixed = adapter.configuration.fixedProvider;
+      const [first, ...rest] = candidates.map(({ provider, modelId, thinkingLevel }) => ({ ...(fixed ? {} : { provider }), modelId, thinkingLevel }));
+      levelsMap[category.level] = { ...first, description: category.description, ...(rest.length ? { fallbacks: rest } : {}) };
     }
     harnesses[adapter.id] = { levels: levelsMap };
   }

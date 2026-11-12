@@ -1,12 +1,21 @@
 import type { ChatMessage } from '../types.js';
 import { fingerprint, QUALITY_VERSION, replyWindows, type QualityReply, type QualityResult, QualityStore } from '../quality-analytics.js';
 
+export interface LoadedTranscript {
+  messages: ChatMessage[]; lastHarness: string; complete: boolean; evaluationRevision?: string;
+  current?: () => Promise<{ unchanged: boolean; complete: boolean; evaluationRevision?: string }>;
+}
 export class QualityCollectionError extends Error {}
 export class QualityEvidenceUnavailable extends QualityCollectionError {}
 export class QualityReplyError extends QualityCollectionError {}
 export interface QualityRuntime {
   inventory(projectId?: string): Promise<Array<{ projectId: string; conversationId: string; revision?: string }>>;
-  load(projectId: string, conversationId: string): Promise<{ messages: ChatMessage[]; lastHarness: string; complete: boolean; evaluationRevision?: string }>;
+  /**
+   * `current`, when given, says without reading the transcript again whether it is still the one that
+   * was loaded, and what `complete` and `evaluationRevision` are now. The collector asks it after each
+   * analysis; without it, or when the files changed, it loads the conversation again.
+   */
+  load(projectId: string, conversationId: string): Promise<LoadedTranscript>;
   analyze(projectId: string, conversationId: string, reply: QualityReply, signal: AbortSignal): Promise<QualityResult>;
   feedback(projectId: string, conversationId: string): Promise<{ rating: string; source: string; description: string } | null>;
 }
@@ -56,6 +65,8 @@ export class QualityCollector {
       if (!transcript.messages.length) { this.store.jobState(projectId, conversationId, 'unavailable', 'No local transcript evidence'); return; }
       if (!transcript.complete) { this.store.jobState(projectId, conversationId, 'waiting', 'Waiting for a completed local turn'); return; }
       let failedReplies = 0;
+      // The newest load: what `current` compares the files with.
+      let loaded = transcript;
       const replies = replyWindows(transcript.messages, transcript.lastHarness);
       this.store.coverage(projectId, conversationId, replies.length);
       for (const reply of replies) {
@@ -71,8 +82,13 @@ export class QualityCollector {
           continue;
         }
         if (!this.store.enabled() || signal.aborted) return;
-        const latest = await this.runtime.load(projectId, conversationId);
-        const latestReply = replyWindows(latest.messages, latest.lastHarness).find(candidate => candidate.id === reply.id);
+        // The evidence is checked again after every analysis. That needs the transcript read again only when its
+        // files changed meanwhile: reading a long conversation once per reply held a node for seconds each time.
+        const now = await loaded.current?.().catch(() => undefined);
+        const latest: LoadedTranscript = now?.unchanged ? { ...loaded, complete: now.complete, evaluationRevision: now.evaluationRevision } : await this.runtime.load(projectId, conversationId);
+        const sameMessages = latest.messages === transcript.messages;
+        loaded = latest;
+        const latestReply = sameMessages ? reply : replyWindows(latest.messages, latest.lastHarness).find(candidate => candidate.id === reply.id);
         const latestFeedback = await this.runtime.feedback(projectId, conversationId);
         if (!latest.complete || latest.evaluationRevision !== transcript.evaluationRevision || !latestReply || fingerprint({ ...latestReply, conversationFeedback: latestFeedback }) !== fingerprint(reply)) {
           this.store.jobState(projectId, conversationId, 'waiting', 'Evidence changed during analysis.');

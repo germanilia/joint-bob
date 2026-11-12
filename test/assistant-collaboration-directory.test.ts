@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { askableHelpers, localAssistantSummaries } from "../src/assistant-collaboration/directory.js";
 import { setAskSwitch } from "../src/assistant-collaboration/store.js";
@@ -17,6 +16,7 @@ import { createAction, setActionStatus } from "../src/social/actions.js";
 import { addProject } from "../src/store.js";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function privateProject(name: string): Promise<string> {
   const folder = path.join(os.homedir(), `directory-${name}-${randomUUID()}`);
@@ -100,7 +100,7 @@ test("twins exchange assistant lists without polling", { timeout: 180_000 }, asy
     const created = await api<{ assistant: { id: string } }>(b, sb, "POST", "/personal-assistants", { projectId, engine: conversation.harnessId, sessionId: conversation.id, name: "On B", instructions: "Helps from B" });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     // The announce from B is the only thing that makes A pull.
-    const db = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try {
       const summary = await eventually(() => {
         // The table appears with the first pull.

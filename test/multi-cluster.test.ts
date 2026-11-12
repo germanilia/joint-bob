@@ -6,12 +6,12 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket from "ws";
 import { claudeProjectDir } from "../src/session-paths.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check: () => Promise<void>): Promise<void> {
   const deadline = Date.now() + 30_000;
@@ -198,7 +198,7 @@ test("a node in two clusters shares each project only with the cluster it was se
     for (const file of [".env", "node_modules", ".joint-bob/worktree-local-files.json"]) {
       await assert.rejects(lstat(path.join(worktree, file)), { code: "ENOENT" }, "read-only opens must not provision worktree files");
     }
-    const database = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try {
       const draftId = randomUUID();
       const now = new Date().toISOString();

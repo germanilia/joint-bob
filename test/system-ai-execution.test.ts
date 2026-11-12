@@ -14,6 +14,7 @@ import { defaultRoutingPolicy } from '../src/routing-policy.js';
 import { saveSecretAccount } from '../src/secrets.js';
 import type { ProjectRecord } from '../src/types.js';
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from './dev-nodes.js';
+import { openNodeDatabase } from "../src/node-database.js";
 
 test('explicit unavailable background choices remain readable but never execute another harness', () => {
   const db = settingsDatabase();
@@ -82,7 +83,7 @@ test('System AI API rejects invalid local harness/provider choices and retains u
     }
     // Simulate a replicated selection whose harness/secret/profile has not arrived here.
     const { DatabaseSync } = await import('node:sqlite');
-    const remote = new DatabaseSync(path.join(node.dataDir, 'node.db'));
+    const remote = openNodeDatabase(path.join(node.dataDir, 'node.db'));
     const missing = structuredClone(system);
     missing.operations.feedback = agent as SystemAiSettings['operations']['feedback'];
     missing.decision.typesafeAccountId = randomUUID(); missing.profiles.claude = randomUUID();

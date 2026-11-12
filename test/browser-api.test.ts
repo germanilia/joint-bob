@@ -24,9 +24,9 @@ after(async () => { await Promise.all(servers.map(stopDevNode)); if (root) await
 
 function signedSocketAuthorization(sender: SeededNode, recipient: SeededNode, target: string): string {
   return execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-    import { DatabaseSync } from "node:sqlite";
+    import { openNodeDatabase } from "./src/node-database.ts";
     import { signClusterRequest } from "./src/cluster-protocol.ts";
-    const db = new DatabaseSync(process.env.JOINT_BOB_DATA_DIR + "/node.db");
+    const db = openNodeDatabase(process.env.JOINT_BOB_DATA_DIR + "/node.db");
     process.stdout.write(signClusterRequest(db, ${JSON.stringify(sender.nodeId)}, ${JSON.stringify(recipient.nodeId)}, "GET", ${JSON.stringify(target)}, Buffer.alloc(0)));
     db.close();
   `], { env: { ...process.env, HOME: environment.home, JOINT_BOB_DATA_DIR: sender.dataDir }, encoding: "utf8" });

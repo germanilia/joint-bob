@@ -5,6 +5,7 @@ import test from "node:test";
 import { startSupervisor } from "../../scripts/joint-bob-supervisor.mjs";
 import { supervisorRequest } from "../../scripts/supervisor-client.mjs";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 const UUID_A = "00000000-0000-4000-8000-000000000201";
 const UUID_B = "00000000-0000-4000-8000-000000000202";
@@ -99,7 +100,7 @@ test("unexpected task-request aborts remain visible instead of looking like inte
       return originalFetch(input, options);
     };
   });
-  await page.getByTestId("background-tasks-open").click();
+  await (await reach(page, "background-tasks-open")).click();
   const summary = page.locator("#backgroundTasksSummary");
   await summary.getByText("Tasks unavailable", { exact: false }).waitFor();
   assert.match(await summary.textContent() || "", /GET \/api\/background-tasks.*interrupted/);
@@ -151,7 +152,7 @@ test("tasks are listed for the open conversation's project, not the sidebar sele
       const url = new URL(request.url());
       return url.pathname === "/api/background-tasks" && url.searchParams.get("conversationId") === scope.conversationId;
     });
-    await page.getByTestId("background-tasks-open").click();
+    await (await reach(page, "background-tasks-open")).click();
     assert.equal(new URL((await listed).url()).searchParams.get("projectId"), scope.projectId);
   } catch (error) {
     await recordFailure(page, diagnostics);
@@ -176,7 +177,8 @@ test("a live supervisor task streams safely, stops, and remains in history after
       cwd: environment.root, env: {},
     });
 
-    const button = page.getByTestId("background-tasks-open");
+    // On the desktop workspace Tasks opens from the details column's Tasks summary.
+    const button = await reach(page, "background-tasks-open");
     await button.click();
     const dialog = page.getByTestId("background-tasks-dialog");
     const row = page.getByTestId("background-task-row").filter({ hasText: "Browser heartbeat" });
@@ -206,14 +208,15 @@ test("a live supervisor task streams safely, stops, and remains in history after
 
     await page.reload();
     await loginAndOpenShortOne(page, environment, node, false);
-    await page.getByTestId("background-tasks-open").click();
+    await (await reach(page, "background-tasks-open")).click();
     const persisted = page.getByTestId("background-task-row").filter({ hasText: "Browser heartbeat" });
     assert.equal(await persisted.count(), 0, "running is the default filter, so stopped tasks stay out of the list");
     await page.getByTestId("background-tasks-filter").selectOption("stopped");
     await persisted.waitFor();
     assert.match(await persisted.textContent() ?? "", /Stopped/);
 
-    for (const viewport of [{ width: 1440, height: 900, inset: 12 }, { width: 390, height: 500, inset: 8 }]) {
+    // On a phone the dialog is a page that fills the screen (public/phone.css); on the desktop it floats with a margin.
+    for (const viewport of [{ width: 1440, height: 900, inset: 12 }, { width: 390, height: 500, inset: 0 }]) {
       await page.setViewportSize(viewport);
       const cardBox = await dialog.locator(".dialog-card").boundingBox();
       const gridBox = await dialog.locator("#backgroundTasksGrid").boundingBox();
@@ -286,7 +289,7 @@ test("delayed output cannot overwrite a newer task or conversation selection", {
       }
     });
 
-    await page.getByTestId("background-tasks-open").click();
+    await (await reach(page, "background-tasks-open")).click();
     const rowA = page.getByTestId("background-task-row").filter({ hasText: "Held A" });
     const rowB = page.getByTestId("background-task-row").filter({ hasText: "Held B" });
     await rowA.waitFor();
@@ -317,7 +320,7 @@ test("delayed output cannot overwrite a newer task or conversation selection", {
     assert.equal(socketChanged, true, "the stale frame was dispatched on the replaced socket");
     assert.deepEqual(await activeScope(page), secondScope);
     release();
-    await page.getByTestId("background-tasks-open").click();
+    await (await reach(page, "background-tasks-open")).click();
     await page.locator("#backgroundTasksDetails h3").waitFor({ state: "detached" });
     assert.equal(await page.getByTestId("background-task-row").count(), 0);
     await page.getByTestId("background-tasks-empty").waitFor();

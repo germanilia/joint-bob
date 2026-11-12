@@ -12,11 +12,13 @@ export const THEMES = [
   { id: "sepia", label: "Sepia", base: "light" },
 ];
 
+// The ids stay as stored; on the desktop workspace "projects" sizes the left column (places, groups, the project picker),
+// "conversations" a project's conversation list in it and the Show all lists, "activity" the details column.
 export const SECTIONS = [
-  { id: "projects", label: "Projects panel" },
-  { id: "conversations", label: "Conversations panel" },
+  { id: "projects", label: "Left column" },
+  { id: "conversations", label: "Conversation lists" },
   { id: "chat", label: "Conversation" },
-  { id: "activity", label: "Activity pane (on top of conversation)" },
+  { id: "activity", label: "Details column (on top of conversation)" },
   { id: "headers", label: "Headers" },
 ];
 
@@ -68,10 +70,14 @@ function applyScales() {
   root.setProperty("--ui-zoom-headers", String(settings.sections.headers));
 }
 
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+
 function applyTheme() {
   const theme = THEMES.find((item) => item.id === settings.theme);
   if (!theme) {
+    // System: no stored theme, so the device's light or dark setting decides, as at boot.
     delete document.documentElement.dataset.palette;
+    setTheme(systemDark.matches ? "dark" : "light");
     return;
   }
   setTheme(theme.base);
@@ -132,12 +138,18 @@ function sectionSlider(section) {
 
 function renderThemes() {
   const active = currentThemeId();
-  themeRow.replaceChildren(...THEMES.map((theme) => choiceButton(theme.label, `appearance-theme-${theme.id}`, theme.id === active, () => {
-    settings.theme = theme.id;
+  // The same six choices as Settings › Account: System (no stored theme, follows the device) first.
+  const choose = (id) => () => {
+    settings.theme = id;
     applyTheme();
     save();
     renderThemes();
-  })));
+    renderAccountAppearance();
+  };
+  themeRow.replaceChildren(
+    choiceButton("System", "appearance-theme-system", !settings.theme, choose("")),
+    ...THEMES.map((theme) => choiceButton(theme.label, `appearance-theme-${theme.id}`, Boolean(settings.theme) && theme.id === active, choose(theme.id))),
+  );
 }
 
 function renderPresets() {
@@ -149,6 +161,7 @@ function renderPresets() {
     save();
     render();
   })));
+  renderAccountAppearance();
 }
 
 function render() {
@@ -157,10 +170,91 @@ function render() {
   sectionList.replaceChildren(...SECTIONS.map(sectionSlider));
 }
 
-function open() {
+/* ---- Settings › Account › Appearance: the six themes as tiles that preview them, and text size. ---- */
+
+/** Each tile shows the theme's page and card colours, as the mock does; System splits light and dark. */
+export const THEME_TILES = [
+  { id: "", key: "system", label: "System", page: "#fffbf4", card: "#211d1a" },
+  { id: "light", key: "light", label: "Light", page: "#f2ebdf", card: "#fffbf4" },
+  { id: "sepia", key: "sepia", label: "Sepia", page: "#e4d8c1", card: "#fbf5e8" },
+  { id: "dark", key: "dark", label: "Dark", page: "#171412", card: "#2e2925" },
+  { id: "midnight", key: "midnight", label: "Midnight", page: "#0e1320", card: "#212b44" },
+  { id: "graphite", key: "graphite", label: "Graphite", page: "#1a1a1b", card: "#313134" },
+];
+
+const accountTiles = document.querySelector("#settingsThemeTiles");
+const accountPresets = document.querySelector("#settingsTextSizePresets");
+const accountAreas = document.querySelector("#settingsTextSizeAreas");
+
+function chooseTheme(id) {
+  settings.theme = id;
+  applyTheme();
+  save();
+  render();
+}
+
+function themeTile(tile) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "theme-tile";
+  button.dataset.testid = `settings-theme-${tile.key}`;
+  button.setAttribute("role", "radio");
+  const chosen = settings.theme === tile.id;
+  button.setAttribute("aria-checked", String(chosen));
+  button.tabIndex = chosen ? 0 : -1;
+  const preview = document.createElement("span");
+  preview.className = "theme-tile-preview";
+  preview.style.setProperty("--tile-page", tile.page);
+  preview.style.setProperty("--tile-card", tile.card);
+  preview.setAttribute("aria-hidden", "true");
+  button.append(preview, tile.label);
+  button.addEventListener("click", () => chooseTheme(tile.id));
+  // A radio group: the arrows move the choice.
+  button.addEventListener("keydown", (event) => {
+    const step = ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = THEME_TILES[(THEME_TILES.indexOf(tile) + step + THEME_TILES.length) % THEME_TILES.length];
+    chooseTheme(next.id);
+    accountTiles.querySelector(`[data-testid="settings-theme-${next.key}"]`)?.focus();
+  });
+  return button;
+}
+
+function accountSlider(section) {
+  const slider = sectionSlider(section);
+  slider.querySelector("input").dataset.testid = `settings-text-size-${section.id}`;
+  return slider;
+}
+
+function renderAccountAppearance() {
+  if (!accountTiles) return;
+  accountTiles.replaceChildren(...THEME_TILES.map(themeTile));
+  const sectionsDefault = SECTIONS.every((section) => settings.sections[section.id] === 1);
+  accountPresets.replaceChildren(...PRESETS.map((preset) => {
+    const button = choiceButton(preset.label, `settings-text-size-preset-${preset.id}`, sectionsDefault && preset.global === settings.global, () => {
+      settings = { ...settings, global: preset.global, sections: defaults().sections };
+      applyScales();
+      save();
+      render();
+    });
+    button.className = "settings-segment";
+    return button;
+  }));
+  // Typing in a slider re-renders only its own label, so a drag is not cut short.
+  if (!accountAreas.contains(document.activeElement)) accountAreas.replaceChildren(...SECTIONS.map(accountSlider));
+}
+
+/** The chosen theme's name: "System" while none is stored. */
+export function themeLabel() {
+  return THEMES.find((theme) => theme.id === settings.theme)?.label ?? "System";
+}
+
+export function openAppearance() {
   render();
   dialog.showModal();
 }
+const open = openAppearance;
 
 const logo = document.querySelector("#brandMark");
 logo.addEventListener("click", open);
@@ -169,12 +263,8 @@ logo.addEventListener("keydown", (event) => {
   event.preventDefault();
   open();
 });
-// The Settings toggle flips plain light and dark, and is kept on this device like the palettes.
-document.querySelector("#themeToggleButton").addEventListener("click", () => {
-  settings.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  applyTheme();
-  save();
-});
+// System follows the device while it is chosen, also when the device switches at sunset.
+systemDark.addEventListener("change", () => { if (!settings.theme) applyTheme(); });
 dialog.querySelector("#appearanceCloseButton").addEventListener("click", () => dialog.close());
 dialog.querySelector("#appearanceResetButton").addEventListener("click", () => {
   settings = defaults();
@@ -204,8 +294,10 @@ export function applyAppearance(next) {
   applyTheme();
   applyScales();
   save();
-  if (dialog.open) render();
+  render();
 }
 
 applyTheme();
 applyScales();
+
+renderAccountAppearance();

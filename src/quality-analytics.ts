@@ -24,10 +24,15 @@ export const fingerprint = (value: unknown): string => createHash('sha256').upda
 export function replyWindows(messages: ChatMessage[], harness: string): QualityReply[] {
   const replies: QualityReply[] = [];
   let request = '';
+  // The user message that follows each position, found in one pass from the end. Searching a copy of
+  // the rest of the conversation for every reply took time that grew with the square of its length.
+  const following: Array<ChatMessage | undefined> = new Array(messages.length);
+  let upcoming: ChatMessage | undefined;
+  for (let index = messages.length - 1; index >= 0; index--) { following[index] = upcoming; if (messages[index].role === 'user') upcoming = messages[index]; }
   for (const [index, message] of messages.entries()) {
     if (message.role === 'user') { request = message.text; continue; }
     if (message.role !== 'assistant' || !message.text.trim()) continue;
-    const nextUser = messages.slice(index + 1).find(candidate => candidate.role === 'user');
+    const nextUser = following[index];
     const chunks: QualityChunk[] = [];
     const parts = (text: string) => text.match(/[\s\S]{1,8000}/g) ?? [''];
     const requests = parts(request), answers = parts(message.text), feedback = parts(nextUser?.text ?? '');

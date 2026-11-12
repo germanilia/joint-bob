@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type WebSocket from "ws";
 import { enableAutoRespond, disableAutoRespond, retryAutoRespond, assistantMessageKey, autoRespondInput, parseAutoRespondDecision, responderPrompt, type AutoRespondConfig } from "../src/conversation-auto-respond.js";
@@ -16,6 +16,7 @@ import type { ChatMessage } from "../src/types.js";
 import { getHarnessRuntime } from "../src/harnesses.js";
 import type { HarnessSession } from "../src/harnesses/runtime.js";
 import { kiroV3SessionFixture } from "./kiro-v3-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const config: AutoRespondConfig = { harnessId: "kiro", provider: "kiro", modelId: "default", thinkingLevel: "medium", instructions: "Keep going.", stopInstructions: "- Stop when finished.", maxResponses: 2, useTools: true };
 
@@ -125,7 +126,7 @@ export default async function responder(input) {
 `;
 
 function configureKiro(dataDir: string, executable: string, configPath: string, sessionPath: string): void {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   const save = db.prepare("INSERT INTO node_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at");
   const now = new Date().toISOString();
   save.run("kiro.executable", executable, now);
@@ -399,7 +400,7 @@ test("scheduled auto reply survives a restart without a browser and finishes its
     assert.equal(created.status, 200, JSON.stringify(created.body));
     const taskId = created.body.task.id;
     assert.equal((await api(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "run", id: taskId, projectId: project.id } })).status, 200);
-    db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     const responderState = () => db!.prepare("SELECT status, stop_kind, responses FROM conversation_auto_responders WHERE project_id = ?").get(project.id) as { status: string; stop_kind: string; responses: number } | undefined;
     const history = () => db!.prepare("SELECT status, error FROM cron_runs WHERE task_id = ?").all(taskId) as Array<{ status: string; error: string | null }>;
     await waitFor([], () => responderState()?.responses === 1);
@@ -450,7 +451,7 @@ test("scheduled auto-reply runs sharing a conversation do not replace each other
     await api(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "run", id: taskIds[0], projectId: project.id } });
     await waitFor(chat.messages, () => chat.messages.some(message => message.type === "autoRespond" && (message.state as { retry?: unknown })?.retry));
     await api(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "run", id: taskIds[1], projectId: project.id } });
-    db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     const completed = () => db!.prepare("SELECT COUNT(*) AS count FROM cron_runs WHERE status = 'succeeded' AND task_id IN (?, ?)").get(...taskIds)!.count;
     await waitFor(chat.messages, () => completed() === 2, 40_000);
     assert.equal(chat.messages.filter(message => message.type === "userMessage" && message.auto).length, 2);

@@ -16,7 +16,7 @@ test("Google Antigravity transcript restores native session, settings, messages 
     const project = await addProject("Antigravity storage fixture", root, { writeInstructions: false });
     const options = { projectId: project.id, cwd: root, sessionId: "antigravity-storage-1" };
     const file = await initializeAntigravitySession(options, { provider: "antigravity", modelId: "default", reasoning: "medium" });
-    await appendAntigravityRecord(file, { type: "native-session", id: "native-session-1", handoffPending: true, timestamp });
+    await appendAntigravityRecord(file, { type: "native-session", id: "native-session-1", profileId: "profile-antigravity-1", handoffPending: true, timestamp });
     await appendAntigravityRecord(file, { type: "message", role: "user", text: "Inspect Antigravity storage", timestamp });
     await appendAntigravityRecord(file, { type: "settings", modelId: "gemini-3.1-pro", reasoning: "high", enabledTools: ["commands"], timestamp });
     await appendAntigravityRecord(file, { type: "message", role: "assistant", text: "Transcript restored", modelId: "gemini-3.1-pro", reasoning: "high", timestamp });
@@ -24,6 +24,7 @@ test("Google Antigravity transcript restores native session, settings, messages 
 
     const restored = await readAntigravitySession(file);
     assert.equal(restored.nativeSessionId, "native-session-1");
+    assert.equal(restored.nativeProfileId, "profile-antigravity-1");
     assert.equal(restored.handoffPending, true);
     assert.deepEqual({ modelId: restored.modelId, reasoning: restored.reasoning, enabledTools: restored.enabledTools }, {
       modelId: "gemini-3.1-pro", reasoning: "high", enabledTools: ["commands"],

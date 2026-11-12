@@ -87,6 +87,8 @@ export function shellTimeoutMs(value) {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
+/** A command that prints nothing for this long has hung: it is stopped so the agent's turn can go on. */
+export const DEFAULT_SHELL_SILENCE_MS = 30 * 60_000;
 function describeSeconds(milliseconds) {
   const seconds = Math.round(milliseconds / 1000);
   return `${seconds} second${seconds === 1 ? "" : "s"}`;
@@ -96,6 +98,7 @@ const pause = milliseconds => new Promise(resolve => setTimeout(resolve, millise
 export async function runSupervisedShell({ args, cwd, env, onData, signal, timeoutMs }) {
   validateArgs(args);
   const limit = timeoutMs === undefined ? shellTimeoutMs(env?.JOINT_BOB_SHELL_TIMEOUT_MS) : shellTimeoutMs(timeoutMs);
+  const silenceLimit = shellTimeoutMs(env?.JOINT_BOB_SHELL_SILENCE_MS) ?? DEFAULT_SHELL_SILENCE_MS;
   if (timeoutMs !== undefined && limit === undefined) throw new RangeError("Invalid supervised shell time limit");
   if (signal?.aborted) throw new Error("Shell command aborted");
   const realCwd = realpathSync(cwd);
@@ -117,6 +120,7 @@ export async function runSupervisedShell({ args, cwd, env, onData, signal, timeo
   let offset = 0;
   let emitted = 0;
   let truncation = false;
+  let lastOutputAt = Date.now();
   const request = body => tasks.request(body);
   const show = async () => { if (!visible) { visible = true; await tasks.setState(id, "background", Date.now() + LEASE_GRACE_MS); } };
   const stop = () => { if (accepted && !stopSent) { stopSent = true; void show().catch(() => {}); void request({ action: "stop", id }).catch(() => {}); } };
@@ -125,6 +129,7 @@ export async function runSupervisedShell({ args, cwd, env, onData, signal, timeo
     const output = await request({ action: "output", id, offset, limit: 65536 });
     const chunk = Buffer.from(output.chunk, "base64");
     offset = output.nextOffset;
+    if (chunk.length) lastOutputAt = Date.now();
     if (chunk.length && emitted < 131072) {
       const shown = chunk.subarray(0, 131072 - emitted); emitted += shown.length; onData?.(shown);
       if (shown.length < chunk.length && !truncation) { truncation = true; onData?.(Buffer.from(`\nJoint Bob task ${id} output truncated; inspect it in Tasks.\n`)); }
@@ -165,6 +170,11 @@ export async function runSupervisedShell({ args, cwd, env, onData, signal, timeo
         timedOut = true;
         stop();
         onData?.(Buffer.from(`\nJoint Bob stopped this command after ${describeSeconds(limit)}: the node's shell command time limit was reached.\n`));
+      }
+      if (!timedOut && shellCode === undefined && now - lastOutputAt >= silenceLimit) {
+        timedOut = true;
+        stop();
+        onData?.(Buffer.from(`\nJoint Bob stopped this command: it printed nothing for ${describeSeconds(silenceLimit)} and looked hung. Check what it was waiting for before running it again, and run a long quiet job in the background with the task CLI.\n`));
       }
       const status = await request({ action: "task", id });
       await drain();

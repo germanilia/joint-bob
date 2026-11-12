@@ -609,7 +609,7 @@ function renderOverview(section) {
     overview.unchanged ? h("p", { class: "gs-unchanged" }, overview.unchanged) : null,
     sectionHead("How it flows", diagram ? "Click a step to see what it does and which files implement it." : ""),
     diagram ? wrap : pendingBlock("The reviewer is drawing the flow diagram."));
-  if (diagram) mountStoryDiagram(wrap, canvas, diagram, { fileLine });
+  if (diagram) mountStoryDiagram(wrap, canvas, diagram, { fileLine, remember: true });
 }
 
 function phaseFiles(phase) {

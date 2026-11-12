@@ -4,12 +4,13 @@ import { createHash } from "node:crypto";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("install once exposes all harnesses, native bridge calls work and revoked access is checked on each call", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mcp-api-")); let server: ChildProcess | undefined;
@@ -28,7 +29,7 @@ test("install once exposes all harnesses, native bridge calls work and revoked a
     const csrf = await fetch(`${node.url}/api${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: session.cookie }, body: JSON.stringify(definition) }); assert.equal(csrf.status, 403);
 
     // Synthetic capability, bound to the fixture account and a real seeded project.
-    db = new DatabaseSync(path.join(node.dataDir, "node.db")); db.exec("PRAGMA busy_timeout=5000");
+    db = openNodeDatabase(path.join(node.dataDir, "node.db")); db.exec("PRAGMA busy_timeout=5000");
     const user = db.prepare("SELECT id, username, account_id FROM users WHERE username=?").get(environment.username) as { id: string; username: string; account_id: string };
     const identity = { account: { accountId: user.account_id, userId: user.id, username: user.username, role: "admin", isRemoteLogin: false, homeNodeId: null }, projectId: node.projects[0].id, conversationId: "mcp-fixture", engine: "claude" };
     db.exec("CREATE TABLE IF NOT EXISTS mcp_agent_tokens (hash TEXT PRIMARY KEY, identity TEXT NOT NULL, expires INTEGER NOT NULL)");

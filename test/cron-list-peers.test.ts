@@ -7,9 +7,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, freePort, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("the scheduled task list asks only nodes sharing the project and does not wait long for a silent one", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "cron-peers-"));
@@ -32,7 +32,7 @@ test("the scheduled task list asks only nodes sharing the project and does not w
     const unshared = a.projects.find((project) => project.name === "Infra Scripts")!;
     assert.equal((await api(a, sa, "PUT", `/clusters/${clusterId}/sharing`, { projectIds: [shared.id], workspaceIds: [], confirmOwnedData: true })).status, 200);
 
-    const db = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try { db.prepare("UPDATE cluster_v2_peer_endpoints SET url=? WHERE node_id=?").run(`http://127.0.0.1:${silentPort}`, b.nodeId); }
     finally { db.close(); }
 

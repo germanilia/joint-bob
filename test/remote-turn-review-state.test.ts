@@ -9,10 +9,10 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { openPiRuntimeDatabase, publishPiRuntime } from "../src/pi-runtime.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface Row { id: string; path: string; updatedAt: string; reviewState: string; running: boolean }
 
@@ -25,7 +25,7 @@ async function eventually<T>(check: () => Promise<T>, timeout = 60_000): Promise
 }
 
 function receipts(node: SeededNode, projectId: string): string[] {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     return (db.prepare("SELECT session_id FROM cluster_v2_transcript_receipts WHERE project_id=?").all(projectId) as Array<{ session_id: string }>).map((row) => row.session_id);
   } catch { return []; } finally { db.close(); }

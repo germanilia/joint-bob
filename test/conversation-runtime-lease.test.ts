@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /**
  * Runtime leases are the cross-node running signal: newer ownership epochs beat
@@ -27,7 +28,7 @@ async function withRuntime<T>(run: (runtime: typeof import("../src/conversation-
   try {
     const runtime = await import(`../src/conversation-runtime.ts?lease=${Date.now()}-${Math.random()}`) as typeof import("../src/conversation-runtime.js");
     const { DatabaseSync } = await import("node:sqlite");
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     return await run(runtime, db);
   } finally {
     if (previous === undefined) delete process.env.PI_WEB_DATA_DIR;

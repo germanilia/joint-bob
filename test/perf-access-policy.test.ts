@@ -10,6 +10,7 @@ import {
   mayReceiveResource, recordRelaySharingHeartbeat, registerOwnedResource, relaySharingGroupActive,
   removeSharingMember, setResourceShares, setTrustedTwin, untilWriteOrLeaseEnd,
 } from "../src/cluster-sharing-policy.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /* The sharing lookups keep their answers until the next write. These tests hold them to that: an
    answer follows every change at once, whichever connection made it; nothing is asked of the
@@ -332,7 +333,7 @@ test("grouped lookups read the write counters once and still follow every write"
 
 test("the policy schema is made sure of once per connection, and again after a rollback took it away", (t) => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "jb-perf-access-schema-"));
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
   const tables = (): number => (db.prepare("SELECT COUNT(*) total FROM sqlite_master WHERE type='table' AND name LIKE 'sharing_%'").get() as { total: number }).total;
   // A table from before shares could name their nodes gains the column on the first call.

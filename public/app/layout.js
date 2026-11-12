@@ -45,7 +45,8 @@ export function setPanelCollapsed(panel, collapsed) {
 }
 
 export function togglePanel(panel) {
-  if (matchMedia("(max-width: 1023px)").matches) return;
+  // Above the phone width the workspace's left column folds to a rail of icons (workspace.css).
+  if (matchMedia("(max-width: 700px)").matches) return;
   setPanelCollapsed(panel, !document.body.classList.contains(`${panel}-collapsed`));
 }
 
@@ -68,7 +69,9 @@ export function toggleControlView() {
 }
 
 /** The view one level up: a conversation or the board returns to its project's list, and the list and the control center to the projects. */
-function parentView(view) {
+export function parentView(view) {
+  // A conversation opened from the phone's Home goes back there (phone-ui.js sets the mark).
+  if (view === "chat" && state.chatFromHome) return "projects";
   if (view === "chat" || view === "board") return state.activeProjectId ? "sessions" : "projects";
   if (view === "sessions" || view === "control") return "projects";
   return null;
@@ -77,14 +80,59 @@ function controlExitView() {
   return state.viewBeforeControl || (state.activeProjectId ? "sessions" : "projects");
 }
 
-// History holds the base entry and exactly one entry above it for the current view, so Back always climbs one level
-// instead of replaying every place visited, and Back on the projects view stays in the app.
-function recordView(view) {
-  if (history.state?.appTop) history.replaceState({ ...history.state, mobileView: view, appTop: true }, "");
-  else history.pushState({ ...history.state, mobileView: view, appTop: true }, "");
+// Back climbs one level and never leaves the app; it does not replay the places visited. History holds a stack of
+// placeholder steps for Back to use up, and each tap or key press tops it up. Chrome's Back skips steps a page added
+// without a tap or key press, so steps are added only during one. A phone keeps 20 steps, wider screens one.
+const BACK_STEPS = matchMedia("(max-width: 700px)").matches ? 20 : 1;
+let currentStep = history.state?.backStep ?? 0;
+
+function refillBackSteps() {
+  if (!navigator.userActivation.isActive) return;
+  while (currentStep < BACK_STEPS) {
+    currentStep += 1;
+    history.pushState({ backStep: currentStep }, "");
+  }
+}
+for (const type of ["pointerup", "keydown"]) document.addEventListener(type, refillBackSteps, true);
+
+/**
+ * What lies over the views takes Back before the views do, newest first: a list sheet, a menu sheet, a dialog (inside
+ * Settings on a phone, a section first returns to the Settings list), then the phone's ⋯ sheet. Where the browser has
+ * CloseWatcher (Android Chrome), Back goes to a dialog's or a sheet's own watcher and never reaches history, so
+ * nothing here runs twice; this is what Back does in the others (iOS Safari), where it used to close all of Settings,
+ * or leave the conversation under an open sheet. True when something closed.
+ */
+function closeTopLayer() {
+  const sheet = [...document.querySelectorAll(".choice-scrim")].find((scrim) => !scrim.hidden);
+  if (sheet) {
+    // The scrim's own press handler closes the list and returns focus to its field.
+    sheet.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+    return true;
+  }
+  const menu = [...document.querySelectorAll("[popover]")].filter((popover) => popover.matches(":popover-open")).at(-1);
+  if (menu) { menu.hidePopover(); return true; }
+  const dialog = [...document.querySelectorAll("dialog[open]")].filter((open) => open.matches(":modal")).at(-1);
+  // Signing in cannot be backed out of.
+  if (dialog && dialog !== elements.loginDialog) {
+    const form = dialog.querySelector("#settingsForm");
+    if (form?.dataset.mobileView === "panel" && matchMedia("(max-width: 700px)").matches) { form.dataset.mobileView = "menu"; return true; }
+    // As the browser's own close request: the dialog may refuse (an editor with unsaved text asks first).
+    if (dialog.dispatchEvent(new Event("cancel", { cancelable: true }))) dialog.close();
+    return true;
+  }
+  if (dialog) return true;
+  const focusSheet = document.getElementById("focusControls");
+  if (focusSheet && !focusSheet.hidden && document.body.classList.contains("focus-ui")) { document.getElementById("focusScrim")?.click(); return true; }
+  return false;
 }
 
-export function setMobileView(view, updateHistory = true) {
+function climbOneLevel() {
+  if (closeTopLayer()) return;
+  const parent = parentView(currentMobileView());
+  if (parent) setMobileView(parent);
+}
+
+export function setMobileView(view) {
   if (state.keepControlView && view !== "control") return;
   if (view === "control" && currentMobileView() !== "control") state.viewBeforeControl = currentMobileView();
   if (state.preferencesLoaded) savePreferencesInBackground({ mobileView: view });
@@ -100,18 +148,18 @@ export function setMobileView(view, updateHistory = true) {
     navButton.classList.toggle("active", name === view);
   }
   if (view === "control") activateControlCenter().catch((error) => toast.error(error.message));
-  if (updateHistory) recordView(view);
   window.dispatchEvent(new CustomEvent("app-view-changed"));
 }
 
-history.replaceState({ ...history.state, mobileView: "projects", appTop: false }, "");
-window.addEventListener("popstate", (event) => {
-  if (event.state?.appTop) { setMobileView(event.state.mobileView, false); return; }
-  // Back lands on the base entry: show the parent, or stay on the projects view, and put the entry above the base back.
-  const parent = parentView(currentMobileView());
-  if (parent) setMobileView(parent, false);
-  recordView(currentMobileView());
+window.addEventListener("popstate", () => {
+  const wentBack = (history.state?.backStep ?? 0) < currentStep;
+  currentStep = history.state?.backStep ?? 0;
+  if (wentBack) climbOneLevel();
 });
+
+// Before the first tap there are no steps, so the first Back after opening the app would close it. Chrome lets a page
+// hold one close watcher without a tap, and Back reaches it before history.
+if (BACK_STEPS > 1 && "CloseWatcher" in window) new CloseWatcher().addEventListener("close", climbOneLevel);
 
 export function selectedProject() {
   return state.projects.find((project) => project.id === state.activeProjectId) || null;
@@ -195,7 +243,7 @@ elements.navBoardButton.addEventListener("click", () => {
 elements.navChatButton.addEventListener("click", () => setMobileView("chat"));
 elements.backToProjectsButton.addEventListener("click", () => setMobileView("projects"));
 elements.backToChatsButton.addEventListener("click", () => setMobileView("sessions"));
-elements.backToSessionsButton.addEventListener("click", () => setMobileView("sessions"));
+elements.backToSessionsButton.addEventListener("click", () => setMobileView(parentView("chat")));
 elements.taskBacklinkButton.addEventListener("click", () => {
   const task = conversationTask();
   if (!task) return;

@@ -114,8 +114,12 @@ Values are in `mocks/ui-redo/src/n.css` (`.dN` base, `.v2` Paper, the theme bloc
   Share and Schedule.
 - Everything in today's toolbar that is not shown above goes into the ⋯ menu (rename, notify,
   dashboard, install, copy home-screen link, create assistant, conversation actions).
-- **Projects** switches the left column to a project picker, then that project's conversations
-  with today's filters (labels, clusters, done, scheduled) and its Notes. *(my call)*
+- **Projects** shows two columns: the projects under the places (search, cluster filter, groups,
+  rows, pager) and beside them the chosen project's conversations with today's filters (labels,
+  clusters, done, scheduled) and its Notes. Each column folds on its own chevron; a window too
+  narrow for both and a readable conversation puts the details away first, then folds the left
+  column to its rail. *(changed 2026-11-12 on the user's word: "two columns, one for projects,
+  one for conversations")*
 - **Board** is today's per-project task board (`#boardPanel`), shown in the middle. *(my call)*
 - Each group in the left column shows the rows that fit, with "Show all" opening that group as
   a paged list in the middle. The column never scrolls. *(my call)*

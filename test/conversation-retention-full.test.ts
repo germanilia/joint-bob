@@ -5,10 +5,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { access, mkdir, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { RetentionSwitches } from "../src/server/conversation-retention.js";
 import { createSourceTables, fillRow } from "./source-schema.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const DAY = 86_400_000, HOUR = 3_600_000;
 const exists = (file: string) => access(file).then(() => true, () => false);
@@ -33,7 +33,7 @@ async function build() {
   const retention = await import("../src/server/conversation-retention.js");
   const local = await getClusterNode();
   // The fixture writes single rows into tables that refer to others (a topic to its assistant), so this connection does not check references.
-  const db = new DatabaseSync(path.join(root, "node.db"), { enableForeignKeyConstraints: false });
+  const db = openNodeDatabase(path.join(root, "node.db"), { enableForeignKeyConstraints: false });
   db.exec("PRAGMA busy_timeout = 5000");
   // Another folder under the same harness folder that no project lists.
   const elsewhere = claudeProjectDir(path.join(root, "no-project-here"), sessionRoot);

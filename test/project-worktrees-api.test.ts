@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { claudeProjectDir } from "../src/harnesses/claude/paths.ts";
-import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { serverArgs } from "./server-entry.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface StartedNode { baseUrl: string; child: ChildProcess; homeDir: string; output: () => string; }
 
@@ -175,7 +175,7 @@ test("a conversation is listed under its worktree before the worktree's files re
     const listedWorktree = async (id: string) => (await sessions()).find((entry) => entry.id === id)?.worktree;
     assert.equal(await listedWorktree(awaitingFiles), undefined, node.output());
 
-    const db = new DatabaseSync(path.join(root, "data", "node.db"));
+    const db = openNodeDatabase(path.join(root, "data", "node.db"));
     db.exec("PRAGMA busy_timeout = 5000");
     const at = "2026-10-11T07:09:10.562Z";
     const record = db.prepare("INSERT INTO conversation_records (project_id, engine, session_id, created_at, updated_at, origin_node_id, worktree, worktree_at) VALUES (?, 'claude', ?, ?, ?, 'peer', ?, ?)");

@@ -8,6 +8,7 @@ import test from "node:test";
 import { taskApi } from "../bin/joint-bob-task.mjs";
 import { mintTaskToken, readSupervisorControl, supervisorRequest } from "../scripts/supervisor-client.mjs";
 import { backgroundClusterFixture, closeBackgroundClusterFixture, startSyntheticTask } from "./background-tasks-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const execute = promisify(execFile);
 const cli = path.resolve("bin/joint-bob-task.mjs");
@@ -33,7 +34,7 @@ async function runCli(nodeUrl: string, dataDir: string, token: string, args: str
 }
 
 function seedReturnedShellCalls(dataDir: string, root: string, identity: string): void {
-  const node = new DatabaseSync(path.join(dataDir, "node.db"));
+  const node = openNodeDatabase(path.join(dataDir, "node.db"));
   const supervisor = new DatabaseSync(path.join(dataDir, "supervisor.db"));
   try {
     node.exec("PRAGMA busy_timeout=5000");
@@ -95,7 +96,7 @@ test("scoped task CLI reads and stops a task on its explicit source node", { tim
     assert.equal((await supervisorRequest<{ status: string }>(nodeB.dataDir, { action: "task", id: completedTask })).status, "completed");
     const finished = await runCli(nodeA.url, nodeA.dataDir, token, ["output", completedTask, "--node", nodeB.nodeId]);
     assert.match(finished.stdout, /safe-output/);
-    const queue = new DatabaseSync(path.join(nodeA.dataDir, "node.db"), { readOnly: true });
+    const queue = openNodeDatabase(path.join(nodeA.dataDir, "node.db"), { readOnly: true });
     try {
       const table = queue.prepare("SELECT 1 FROM sqlite_master WHERE name='queued_prompts'").get();
       if (table) assert.equal(Number((queue.prepare("SELECT COUNT(*) AS n FROM queued_prompts").get() as { n: number }).n), 0, "a finished task must not queue a conversation prompt");

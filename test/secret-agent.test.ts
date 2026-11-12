@@ -3,12 +3,12 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const root = mkdtempSync(path.join(os.tmpdir(), "joint-bob-secret-agent-"));
 process.env.PI_WEB_DATA_DIR = root;
-const setup = new DatabaseSync(path.join(root, "node.db"));
+const setup = openNodeDatabase(path.join(root, "node.db"));
 setup.exec("CREATE TABLE workspaces (id TEXT PRIMARY KEY); CREATE TABLE projects (id TEXT PRIMARY KEY, workspace_id TEXT); CREATE TABLE project_aliases (alias_id TEXT PRIMARY KEY, project_id TEXT); INSERT INTO workspaces VALUES ('work'); INSERT INTO projects VALUES ('project-a','work'), ('project-b','work');");
 setup.close();
 const secrets = await import("../src/secrets.js");
@@ -56,7 +56,7 @@ test("selects only attached accounts for one command without exposing values in 
     assert.doesNotMatch(denied.stdout, /ran/);
     await secrets.setScopeSecretAccounts("workspace", "work", [one.id]);
     assert.throws(() => agent.secretAgentAccountEnvironment(token, two.id), /not available/, "removing an attachment revokes existing tokens");
-    const database = new DatabaseSync(path.join(root, "node.db"));
+    const database = openNodeDatabase(path.join(root, "node.db"));
     database.prepare("UPDATE secret_agent_tokens SET expires_at=0").run();
     database.close();
     assert.throws(() => agent.secretAgentAccounts(token), /unavailable/);

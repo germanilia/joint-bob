@@ -6,6 +6,7 @@ import path from "node:path";
 import test, { after, before } from "node:test";
 import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
+import { reach } from "./workspace-menus.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "../dev-nodes.js";
 
 const NOTE_IMAGE = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -74,8 +75,6 @@ test("notes can be reordered and retain order after reload", async () => {
     assert.equal(await page.getByTestId("quick-note-move-up").first().isDisabled(), true);
     assert.equal(await page.getByTestId("quick-note-move-down").last().isDisabled(), true);
     await page.getByTestId("conversations-tab").click();
-    await page.setViewportSize({ width: 720, height: 844 });
-    await page.getByTestId("nav-projects-button").click();
   } finally {
     for (const id of ids) await fetch(`${node.url}/api/quick-notes/${id}`, { method: "DELETE", headers: { Cookie: authSession.cookie, "x-csrf-token": authSession.csrfToken } });
   }
@@ -104,47 +103,35 @@ test("notes search matches titles and content like conversation search", async (
     await search.fill("");
     assert.equal(await page.getByTestId("quick-note-row").filter({ hasText: "Release checklist" }).count(), 1, "clearing search restores notes");
   } finally {
-    await page.getByTestId("nav-projects-button").click();
+    await page.getByTestId("conversations-tab").click();
     for (const id of ids) await fetch(`${node.url}/api/quick-notes/${id}`, { method: "DELETE", headers: { Cookie: authSession.cookie, "x-csrf-token": authSession.csrfToken } });
   }
 });
 
-test("mobile keeps creation actions together and switches conversations and notes with tabs", async t => {
+test("a narrow window keeps creation in New and switches conversations and notes with tabs", async t => {
+  // 701–1023 px is the desktop workspace (the phone starts at 700 px): the left column's New holds the quick note
+  // the old narrow layout had on its Projects screen, and the project's column keeps its two tabs.
   t.after(async () => {
     await page.setViewportSize({ width: 1440, height: 900 });
   });
   await page.setViewportSize({ width: 720, height: 844 });
   const projectId = node.projects.find((project) => project.name === "Internal Assistant")!.id;
+  await page.getByTestId("workspace-projects-button").click();
+  // This narrow, the left column is its rail beside an open project's conversations; its button unfolds it.
+  const unfold = page.getByTestId("projects-panel-expand-button");
+  if (await unfold.isVisible()) await unfold.click();
   await page.locator(`[data-project-id="${projectId}"] .project-card`).click();
   await page.getByTestId("session-list-loading-bar").waitFor({ state: "hidden" });
 
-  await page.getByTestId("nav-projects-button").click();
-  const projectQuickNote = page.getByTestId("projects-quick-note-create-button");
-  assert.equal(await projectQuickNote.isVisible(), true, "Projects has a mobile quick-note action");
-  const [noteLook, toolLook] = await Promise.all([projectQuickNote, page.getByTestId("settings-open-button")].map((button) => button.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { background: style.backgroundColor, outline: style.boxShadow };
-  })));
-  assert.deepEqual(noteLook, toolLook, "the quick-note action carries the same surface and outline as the project tools");
-  const noteIcon = await projectQuickNote.locator("svg").boundingBox();
-  assert.ok(noteIcon && Math.abs(noteIcon.width - 22) < 1, `the quick-note icon is sized like the project tools' icons, got ${noteIcon?.width}px`);
-  await projectQuickNote.click();
+  await page.getByTestId("workspace-new-button").click();
+  await page.getByTestId("workspace-new-note").click();
   await page.getByTestId("quick-note-dialog").waitFor({ state: "visible" });
-  assert.equal(await page.getByTestId("quick-note-project-select").textContent(), "Internal Assistant", "the Projects action uses the active project");
+  assert.equal(await page.getByTestId("quick-note-project-select").textContent(), "Internal Assistant", "New › Quick note uses the active project");
   await page.getByTestId("quick-note-cancel-button").click();
-  await page.getByTestId("nav-chats-button").click();
-
-  const newConversation = page.getByTestId("new-conversation-mobile-button");
-  const newNote = page.getByTestId("quick-note-create-mobile-button");
-  await newConversation.waitFor({ state: "visible" });
-  await newNote.waitFor({ state: "visible" });
-  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  const [conversationBox, noteBox] = await Promise.all([newConversation.boundingBox(), newNote.boundingBox()]);
-  assert.ok(conversationBox && noteBox, "both mobile creation actions are visible");
-  assert.ok(Math.abs(conversationBox.y - noteBox.y) < 2, `mobile creation actions share one row: conversation=${JSON.stringify(conversationBox)}, note=${JSON.stringify(noteBox)}`);
 
   const conversationsTab = page.getByTestId("conversations-tab");
   const notesTab = page.getByTestId("notes-tab");
+  await conversationsTab.waitFor({ state: "visible" });
   assert.equal(await conversationsTab.getAttribute("aria-selected"), "true", "conversations is the default tab");
   assert.equal(await page.getByTestId("conversation-list-pane").isVisible(), true);
   assert.equal(await page.getByTestId("quick-notes-section").isVisible(), false);
@@ -182,7 +169,9 @@ test("a quick note can move, start a conversation, and be deleted", async () => 
 
   const notesSection = page.getByTestId("quick-notes-section");
   const notesShortcut = page.getByTestId("projects-open-notes-button");
-  assert.equal(await notesShortcut.isVisible(), true, "the hidden Board action is replaced by Notes");
+  // The desktop workspace keeps Notes in the left column's ⋯ menu (Board is a place of its own).
+  await reach(page, "projects-open-notes-button");
+  assert.equal(await notesShortcut.isVisible(), true, "Notes is in the left column's ⋯ menu");
   assert.equal(await notesShortcut.locator(".shortcut-hint").count(), 1, "the Notes action advertises its shortcut");
   await notesShortcut.click();
   const projectFilter = page.getByTestId("quick-notes-project-filter");

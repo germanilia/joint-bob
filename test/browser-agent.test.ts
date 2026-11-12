@@ -3,13 +3,13 @@ import { createHash } from "node:crypto";
 import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { startSupervisor } from "../scripts/joint-bob-supervisor.mjs";
 import { browserAgentEnvironment, browserAgentIdentity, browserAgentInstructions } from "../src/browser-agent.js";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { openChat, waitFor } from "./queued-prompt-harness.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("browser tokens carry immutable project/engine/conversation identity and only hashes persist", async () => {
   const identities = [
@@ -31,7 +31,7 @@ test("browser tokens carry immutable project/engine/conversation identity and on
     assert.ok(!browserAgentInstructions.includes(token));
   }
   assert.equal(tokens.size, identities.length);
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   try {
     const rows = db.prepare("SELECT * FROM browser_agent_tokens").all();
     for (const token of tokens) {
@@ -50,7 +50,7 @@ test("browser tokens expire at 30 days, reject malformed/unknown tokens, and cle
   t.mock.timers.tick(1);
   assert.equal(browserAgentIdentity(env.JOINT_BOB_BROWSER_TOKEN!), undefined);
   browserAgentEnvironment("fresh", "pi", "session");
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   try { assert.equal(db.prepare("SELECT count(*) AS n FROM browser_agent_tokens").get()!.n, 1); }
   finally { db.close(); t.mock.timers.reset(); }
 });
@@ -129,7 +129,7 @@ console.log(JSON.stringify({type:'system',subtype:'init',session_id:sessionId}))
 console.log(JSON.stringify({type:'result',is_error:false}));
 `);
     await chmod(executable, 0o755);
-    const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try { db.prepare("UPDATE node_settings SET value = ? WHERE key = 'claude.executable'").run(executable); }
     finally { db.close(); }
     child = await startDevNode(environment, node);
@@ -149,7 +149,7 @@ console.log(JSON.stringify({type:'result',is_error:false}));
     assert.equal(runs.length, 2);
     assert.equal(runs[0].sessionId, runs[1].sessionId);
     assert.notEqual(runs[0].token, runs[1].token, "Claude gets a new environment each spawn");
-    const tokens = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const tokens = openNodeDatabase(path.join(node.dataDir, "node.db"));
     try {
       for (const run of runs) {
         assert.match(run.token, /^[a-f0-9]{64}$/);

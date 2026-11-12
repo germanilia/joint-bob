@@ -14,8 +14,9 @@ import { state } from "./state.js";
 // counted from the steps the page holds, and the skills the summary writer suggests. The
 // steps start collapsed.
 
-// Below this width the panel floats over the transcript instead of sharing the row.
-const OVERLAY_QUERY = window.matchMedia("(max-width: 900px)");
+// Below this width the panel floats over the transcript instead of sharing the row (workspace.css floats the details
+// column there; styles.css's own float starts at 900px, for the layouts the workspace does not cover).
+const OVERLAY_QUERY = window.matchMedia("(max-width: 1023px)");
 // The thread keeps at least this width beside the panel while the Browser panel shares the row.
 const THREAD_MIN_WIDTH = 400;
 // On a phone the whole panel scrolls as one page, so it, not the steps list, follows new steps.
@@ -43,7 +44,7 @@ let statsFrame = 0;
 const resizeHandle = document.getElementById("activityPanelResize");
 const WIDTH_STORAGE_KEY = "joint-bob-activity-width";
 function applyPanelWidth(width) {
-  const maximum = elements.messagesWrap.clientWidth * (panelFloats() ? 0.92 : 0.65);
+  const maximum = rowWidth() * (panelFloats() ? 0.92 : 0.65);
   const bounded = Math.round(Math.max(280, Math.min(width, maximum)));
   elements.messagesWrap.style.setProperty("--activity-preferred-width", `${bounded}px`);
   resizeHandle.setAttribute("aria-valuenow", String(bounded));
@@ -90,6 +91,14 @@ resizeHandle.addEventListener("keydown", (event) => {
   savePanelWidth();
 });
 
+/**
+ * The width of the row the panel shares with the thread. On the desktop workspace the wrapper lends its children to the
+ * chat panel's grid (display: contents, workspace.css) and has no box of its own, so the chat panel is measured instead.
+ */
+function rowWidth() {
+  return elements.messagesWrap.clientWidth || elements.messagesWrap.parentElement?.clientWidth || window.innerWidth;
+}
+
 function storedOpen() {
   if (chosenOpen !== null) return chosenOpen;
   return window.innerWidth >= 1280;
@@ -106,7 +115,7 @@ function panelFloats() {
 // Whether the panel, at the width `--activity-width` in styles.css gives it, leaves the thread
 // too little room.
 function crowdsThread() {
-  const wrap = elements.messagesWrap.clientWidth;
+  const wrap = rowWidth();
   const preferred = parseFloat(elements.messagesWrap.style.getPropertyValue("--activity-preferred-width")) || Math.min(420, Math.max(300, window.innerWidth * 0.28));
   return wrap - Math.max(280, Math.min(preferred, wrap * 0.65)) < THREAD_MIN_WIDTH;
 }
@@ -708,6 +717,8 @@ elements.activityPanel.addEventListener("keydown", (event) => {
 });
 setActivityPanelOpen(storedOpen(), false);
 new MutationObserver(fitBesideBrowser).observe(document.body, { attributes: true, attributeFilter: ["class"] });
-new ResizeObserver(fitBesideBrowser).observe(elements.messagesWrap);
+const rowObserver = new ResizeObserver(fitBesideBrowser);
+rowObserver.observe(elements.messagesWrap);
+rowObserver.observe(elements.chatPanel);
 setActivityStepsOpen(stepsOpen);
 renderStats();

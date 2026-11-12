@@ -87,7 +87,7 @@ function fixture(overrides: Record<string, any> = {}) {
     send: (client: any, frame: any) => { if (client.readyState === 1) client.frames.push(structuredClone(frame)); },
     promptQueuePaused: () => false,
     listQueuedPrompts: () => queue,
-    assertQueuedPromptEditor: () => {},
+    assertQueuedPromptEditor: () => {}, takesOverQueuedPrompt: () => false,
     isScheduledPromptText: () => false,
     conversationBelongsToDoneTask: async () => false,
     requireLocalConversationOwner: async () => {}, markHarnessInput: () => {},

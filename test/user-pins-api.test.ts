@@ -3,10 +3,10 @@ import type { ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { ensureUserPinSchema, type UserPins } from "../src/user-pins.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("stale pins can be removed without their conversation or project", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-stale-pins-"));
@@ -23,7 +23,7 @@ test("stale pins can be removed without their conversation or project", async (t
     { kind: "project", projectId: "deleted-project" },
   ] as const;
   // Model persisted pins whose filesystem-owned targets are no longer available.
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     ensureUserPinSchema(db);
     for (const target of targets) {

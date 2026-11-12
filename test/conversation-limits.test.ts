@@ -3,12 +3,12 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { conversationLimits, createConversationLimiter } from "../scripts/conversation-limits.mjs";
 import { startSupervisor } from "../scripts/joint-bob-supervisor.mjs";
 import { requestSupervisor } from "../scripts/supervisor-client.mjs";
 import { processTable, watchSubprocess } from "../scripts/subprocess-lifetime.mjs";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 type Row = { pid: number; parent: number; uid: number; birth: string; rssKb: number; cpuMs: number };
@@ -32,7 +32,7 @@ test("the stored limits are read per node and default to none", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "jb-limits-"));
   try {
     assert.deepEqual(conversationLimits(root), { cpuCores: null, memoryGb: null }, "a node without settings has no limits");
-    const db = new DatabaseSync(path.join(root, "node.db"));
+    const db = openNodeDatabase(path.join(root, "node.db"));
     db.exec("CREATE TABLE node_settings(key TEXT PRIMARY KEY,value TEXT); INSERT INTO node_settings VALUES('conversationCpuLimitCores','2.5'),('conversationMemoryLimitGb','unlimited')");
     assert.deepEqual(conversationLimits(root), { cpuCores: 2.5, memoryGb: null });
     db.exec("UPDATE node_settings SET value='-1' WHERE key='conversationCpuLimitCores'; UPDATE node_settings SET value='8' WHERE key='conversationMemoryLimitGb'");
@@ -173,7 +173,7 @@ test("a real process tree over its CPU limit is slowed and left running", { time
 
 test("the supervisor stops a task whose conversation is over the memory limit and says why", { timeout: 30_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "jb-limits-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   db.exec("CREATE TABLE node_settings(key TEXT PRIMARY KEY,value TEXT); INSERT INTO node_settings VALUES('conversationMemoryLimitGb','unlimited')");
   let supervisor: Awaited<ReturnType<typeof startSupervisor>> | undefined;
   try {

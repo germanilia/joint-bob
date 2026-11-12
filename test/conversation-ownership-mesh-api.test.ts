@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
-import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
 import { pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface Mesh { environment: DevEnvironment; projectId: string; invocationLog: string; holdDir: string; sessions: Map<SeededNode, SignedIn> }
 
@@ -79,9 +79,9 @@ function openConversation(mesh: Mesh, node: SeededNode, sessionPath: string): Pr
   url.searchParams.set("nodeSession", "1");
   // A routed node session, signed by the node that serves it.
   const authorization = execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-    import {DatabaseSync} from 'node:sqlite';
+    import { openNodeDatabase } from './src/node-database.ts';
     import {signClusterRequest} from './src/cluster-protocol.ts';
-    const db=new DatabaseSync(process.env.JOINT_BOB_DATA_DIR+'/node.db');
+    const db=openNodeDatabase(process.env.JOINT_BOB_DATA_DIR+'/node.db');
     process.stdout.write(signClusterRequest(db,${JSON.stringify(node.nodeId)},${JSON.stringify(node.nodeId)},'GET',${JSON.stringify(url.pathname + url.search)},Buffer.alloc(0)));db.close();
   `], { env: { ...process.env, HOME: mesh.environment.home, JOINT_BOB_DATA_DIR: node.dataDir }, encoding: "utf8" });
   return new Promise((resolve, reject) => {
@@ -249,7 +249,7 @@ test("force takeover stops an active owner only after an explicit request", { ti
     assert.notEqual(normal.status, 200, "normal takeover must not interrupt a turn");
     // Reproduce the incident: metadata names the destination, but the source is still running.
     for (const node of environment.nodes) {
-      const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+      const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
       try { db.prepare("UPDATE conversation_ownership SET owner_node_id = ?, epoch = epoch + 1 WHERE session_id = ?").run(destination.nodeId, "force-session"); }
       finally { db.close(); }
     }

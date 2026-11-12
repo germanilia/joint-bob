@@ -4,6 +4,8 @@
 
 import { api } from "./api.js";
 import { elements } from "./elements.js";
+import { markedText } from "./choice-popover.js";
+import { fuzzyHits, rankChoices } from "./fuzzy.js";
 import { attachDigitShortcuts, isRowSelectorQuery, LIST_SHORTCUT_LIMIT, shortcutIndexBadge } from "./list-shortcuts.js";
 import { setMobileView } from "./layout.js";
 import { selectProject } from "./project-selection.js";
@@ -17,9 +19,15 @@ let generation = 0;
 let results = [];
 let highlighted = 0;
 
+/** The desktop workspace's left column follows a destination that names it (app/workspace.js listens). */
+const place = (name) => window.dispatchEvent(new CustomEvent("workspace-place", { detail: { place: name } }));
+
 const workspaceDestinations = [
-  { kind: "destination", title: "Projects window", subtitle: "Workspace window", action: () => setMobileView("projects") },
-  { kind: "destination", title: "Conversations window", subtitle: "Workspace window", action: () => setMobileView("sessions") },
+  { kind: "destination", title: "Projects window", subtitle: "Workspace window", action: () => { place("projects"); setMobileView("projects"); } },
+  { kind: "destination", title: "Conversations window", subtitle: "Workspace window", action: () => { place("project"); setMobileView("sessions"); } },
+  { kind: "destination", title: "Inbox", subtitle: "Needs you, running and to review, in every project", action: () => place("inbox") },
+  { kind: "destination", title: "Automations", subtitle: "Scheduled runs, webhooks and triggers", action: () => place("automations") },
+  { kind: "destination", title: "Costs", subtitle: "Costs and subscriptions", action: () => document.querySelector("[data-usage-open]").click() },
   { kind: "destination", title: "Messages window", subtitle: "Current conversation", action: () => setMobileView("chat") },
   { kind: "destination", title: "Control center", subtitle: "Every running conversation", action: () => setMobileView("control") },
   { kind: "destination", title: "Recent conversations", subtitle: "Recently opened conversations", action: () => document.querySelector("[data-recent-sessions-open]").click() },
@@ -32,12 +40,25 @@ const workspaceDestinations = [
 ];
 
 function matchingDestinations(query) {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
-  return workspaceDestinations.filter((result) => {
-    const text = `${result.title} ${result.subtitle}`.toLowerCase();
-    return words.every((word) => text.includes(word));
-  });
+  if (!query.trim()) return [];
+  return rankChoices(query, workspaceDestinations.map((result) => ({ ...result, label: result.title, detail: result.subtitle })))
+    .map(({ choice }) => choice);
+}
+
+/** The last row hands what was typed to Bob: his chat opens with it, ready to send. */
+function askBob(query) {
+  const text = query.trim();
+  if (!text) return [];
+  return [{
+    kind: "bob", title: "Ask Bob", subtitle: "Opens Bob's chat with what you typed",
+    action: () => {
+      setMobileView("control");
+      const input = document.querySelector("#controlChatInput");
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+    },
+  }];
 }
 
 function renderResults() {
@@ -55,9 +76,9 @@ function renderResults() {
     if (index < LIST_SHORTCUT_LIMIT) option.append(shortcutIndexBadge("spotlight-option-index", index + 1));
     const kind = document.createElement("span");
     kind.className = "spotlight-kind";
-    kind.textContent = ({ project: "Project", conversation: "Chat", destination: "Go to", settings: "Settings" })[result.kind];
+    kind.textContent = ({ project: "Project", conversation: "Chat", destination: "Go to", settings: "Settings", bob: "Bob" })[result.kind];
     const title = document.createElement("strong");
-    title.textContent = result.title;
+    title.append(markedText(result.title, fuzzyHits(elements.spotlightInput.value, result.title)?.hits ?? []));
     const subtitle = document.createElement("span");
     subtitle.className = "spotlight-subtitle";
     subtitle.textContent = result.subtitle;
@@ -80,7 +101,7 @@ async function runSearch() {
   try {
     const body = await api(`/api/search?q=${encodeURIComponent(query)}`);
     if (mine !== generation) return;
-    results = [...matchingDestinations(query), ...(body.results || [])];
+    results = [...matchingDestinations(query), ...(body.results || []), ...askBob(query)];
     highlighted = 0;
     renderResults();
   } catch (error) {
@@ -94,7 +115,7 @@ let searchTimer = null;
 function scheduleSearch() {
   clearTimeout(searchTimer);
   generation += 1;
-  results = matchingDestinations(elements.spotlightInput.value.trim());
+  results = [...matchingDestinations(elements.spotlightInput.value.trim()), ...askBob(elements.spotlightInput.value)];
   highlighted = 0;
   renderResults();
   searchTimer = setTimeout(() => { void runSearch(); }, 120);
@@ -110,7 +131,7 @@ async function chooseResult(index) {
       return;
     }
     await selectProject(result.projectId);
-    if (result.kind === "project") return;
+    if (result.kind === "project") { place("project"); return; }
     const session = state.sessions.find((candidate) => candidate.path === result.sessionPath)
       || state.sessions.find((candidate) => candidate.id === result.sessionId);
     if (!session) {
@@ -123,18 +144,26 @@ async function chooseResult(index) {
   }
 }
 
-export function openSpotlight() {
+/** The shortcut toggles the search. The workspace's search box opens it with what was typed there (`initial`). */
+export function openSpotlight(initial) {
+  const typed = typeof initial === "string" ? initial : null;
   if (elements.spotlightDialog.open) {
-    elements.spotlightDialog.close();
+    if (typed === null) { elements.spotlightDialog.close(); return; }
+    elements.spotlightInput.value += typed;
+    elements.spotlightInput.focus();
+    scheduleSearch();
     return;
   }
-  elements.spotlightInput.value = "";
+  elements.spotlightInput.value = typed ?? "";
   results = [];
   highlighted = 0;
   renderResults();
   elements.spotlightDialog.showModal();
   elements.spotlightInput.focus();
-  void runSearch();
+  if (!typed) { void runSearch(); return; }
+  const end = elements.spotlightInput.value.length;
+  elements.spotlightInput.setSelectionRange(end, end);
+  scheduleSearch();
 }
 
 elements.spotlightInput.addEventListener("input", scheduleSearch);

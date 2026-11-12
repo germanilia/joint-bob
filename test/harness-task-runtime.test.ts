@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { kiroV3SessionFixture } from "./kiro-v3-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const fixture = `#!/usr/bin/env node
 ${kiroV3SessionFixture}
@@ -20,7 +20,7 @@ rl.on("line",line=>{const r=JSON.parse(line);if(r.method==="initialize")return s
 `;
 
 function configure(dataDir: string, executable: string, configPath: string, sessionPath: string): void {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   const save = db.prepare("INSERT INTO node_settings (key,value,is_secret,updated_at) VALUES (?,?,0,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   for (const [key, value] of [["kiro.executable", executable], ["kiro.configPath", configPath], ["kiro.sessionPath", sessionPath]]) save.run(key, value, new Date().toISOString());
   db.close();

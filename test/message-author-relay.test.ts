@@ -31,10 +31,10 @@ async function until(received: Array<Record<string, unknown>>, predicate: (frame
 
 function signedUrl(environment: DevEnvironment, node: SeededNode, url: URL): string {
   return execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-    import {DatabaseSync} from 'node:sqlite';
+    import { openNodeDatabase } from './src/node-database.ts';
     import {signClusterRequest} from './src/cluster-protocol.ts';
     import {getOrCreateClusterIdentity, pinClusterPublicKey} from './src/cluster-identity.ts';
-    const db=new DatabaseSync(process.env.JOINT_BOB_DATA_DIR+'/node.db');
+    const db=openNodeDatabase(process.env.JOINT_BOB_DATA_DIR+'/node.db');
     pinClusterPublicKey(db,${JSON.stringify(node.nodeId)},getOrCreateClusterIdentity(db,${JSON.stringify(node.nodeId)}).publicKey);
     process.stdout.write(signClusterRequest(db,${JSON.stringify(node.nodeId)},${JSON.stringify(node.nodeId)},'GET',${JSON.stringify(url.pathname + url.search)},Buffer.alloc(0)));db.close();
   `], { env: { ...process.env, HOME: environment.home, JOINT_BOB_DATA_DIR: node.dataDir }, encoding: "utf8" });

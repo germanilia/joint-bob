@@ -5,7 +5,7 @@ import { bobDashboardIds } from "../control-center/dashboards-made.js";
 import type { DashboardEntity } from "../dashboards/contract.js";
 import { resolveEntity } from "../dashboards/entity.js";
 import { readSharedPayload } from "../dashboards/files.js";
-import { hasOwnSavedDashboard, listAllDashboards, type DashboardRecord, type DashboardRefresh } from "../dashboards/store.js";
+import { hasOwnSavedDashboard, listAllDashboards, listDashboards, type DashboardRecord, type DashboardRefresh } from "../dashboards/store.js";
 import { NotFoundError } from "../not-found.js";
 import { buildingDashboardIds } from "./control-center-dashboard-builds.js";
 import { isTwinOwner } from "./dashboard-sharing.js";
@@ -65,7 +65,7 @@ export async function listDashboardCards(session: AuthSession): Promise<Dashboar
   const working = buildingDashboardIds();
   const byEntity = new Map<string, DashboardRecord[]>();
   for (const record of listAllDashboards()) {
-    if (record.entity.kind === "conversation") continue;
+    if (record.entity.kind === "conversation" || record.entity.kind === "account") continue;
     const key = `${record.entity.kind}:${record.entity.id}`;
     byEntity.set(key, [...byEntity.get(key) ?? [], record]);
   }
@@ -97,6 +97,33 @@ export async function listDashboardCards(session: AuthSession): Promise<Dashboar
     }
   }
   return cards.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+}
+
+/** One of the person's dashboards over everything they can see, in the control center's Dashboard view. */
+export interface OverviewDashboard {
+  id: string;
+  title: string;
+  hostProjectId: string;
+  /** The one the Dashboard view opens with. */
+  isDefault: boolean;
+  refreshMethod: "script" | "ai" | null;
+  status: "ready" | "building" | "draft";
+  lastRefresh: DashboardRefresh | null;
+  changing: boolean;
+  updatedAt: string;
+}
+
+/** The person's dashboards over all their projects and workspaces: every one of them, the default first, then by name. */
+export function listOverviewDashboards(session: AuthSession): OverviewDashboard[] {
+  const working = buildingDashboardIds();
+  return listDashboards({ kind: "account", id: session.accountId }).map((record) => {
+    const saved = record.definitionDigest !== null;
+    return {
+      id: record.id, title: record.title || "New dashboard", hostProjectId: record.hostProjectId, isDefault: record.active, refreshMethod: record.refreshMethod,
+      status: saved ? "ready" as const : working.has(record.id) ? "building" as const : "draft" as const,
+      lastRefresh: record.lastRefresh, changing: saved && working.has(record.id), updatedAt: record.updatedAt,
+    };
+  }).sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
 }
 
 const KNOWN_LIMIT = 20;

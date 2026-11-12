@@ -17,6 +17,7 @@ export interface AntigravityStoredSession {
   id: string;
   cwd: string;
   nativeSessionId: string | null;
+  nativeProfileId: string | null;
   modelId: string;
   reasoning: string;
   enabledTools?: string[];
@@ -81,6 +82,7 @@ function applyRecord(session: AntigravityStoredSession, value: JsonObject, index
   session.updatedAt = timestamp(value.timestamp);
   if (value.type === "native-session") {
     session.nativeSessionId = nonempty(value.id, "native session ID");
+    session.nativeProfileId = value.profileId === undefined || value.profileId === null ? null : nonempty(value.profileId, "profile ID");
     if (value.handoffPending !== undefined) {
       if (typeof value.handoffPending !== "boolean") throw new Error("Invalid Google Antigravity handoff state");
       session.handoffPending = value.handoffPending;
@@ -125,7 +127,7 @@ export async function readAntigravitySession(file: string): Promise<AntigravityS
   validateHeader(header, resolved);
   const createdAt = timestamp(header.timestamp);
   const session: AntigravityStoredSession = {
-    id: String(header.id), cwd: String(header.cwd), nativeSessionId: header.nativeSessionId as string | null,
+    id: String(header.id), cwd: String(header.cwd), nativeSessionId: header.nativeSessionId as string | null, nativeProfileId: null,
     modelId: String(header.modelId), reasoning: String(header.reasoning), handoffPending: header.handoffPending === true,
     ...(Array.isArray(header.enabledTools) ? { enabledTools: [...header.enabledTools] as string[] } : {}),
     messages: [], createdAt, updatedAt: createdAt,

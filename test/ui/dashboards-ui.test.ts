@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 /** Builds a one-number script dashboard in the draft folder, like the real agent would. */
 const fakeAgent = `import { mkdir, writeFile } from "node:fs/promises";
@@ -129,7 +130,8 @@ test("workspaces and conversations open their own dashboard mode", { timeout: 18
   await page.locator("#projectList .list-row").first().click();
   await page.locator("#sessionList .list-row").first().click();
   await page.waitForFunction(() => document.querySelector("#sessionTitle")?.textContent !== "Select a conversation");
-  await page.getByTestId("chat-dashboard-button").click();
+  // The desktop header keeps the dashboard in its ⋯ menu (the phone shows the header icon).
+  await (await reach(page, "chat-more-dashboard-button")).click();
   await page.waitForFunction(() => document.querySelector("#dashboardDialog")?.open || document.querySelector(".toast"));
   const problem = await page.evaluate(() => document.querySelector(".toast .toast-message")?.textContent ?? "");
   assert.equal(problem, "", "opening the conversation dashboard shows no error");
@@ -179,7 +181,7 @@ test("on a phone, the project sheet and the conversation tools open dashboard mo
   await page.locator("#sessionList .session-card").first().click();
   await page.locator("body.view-chat").waitFor();
   await page.getByTestId("focus-controls-button").click();
-  await page.getByTestId("focus-tools").click();
+  // The conversation's tools are listed in its details sheet.
   await page.getByTestId("focus-tool-chat-more-dashboard-button").click();
   await page.locator("#dashboardDialog[open]").waitFor();
   assert.match(await page.getByTestId("dashboard-eyebrow").textContent() ?? "", /Conversation dashboard/);

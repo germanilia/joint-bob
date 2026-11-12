@@ -7,6 +7,7 @@ import {getClusterNode} from "../src/cluster.js";
 import {resolveDataDirectory} from "../src/data-directory.js";
 import {receiveReplicationBatch,type ReplicationEvent} from "../src/replication.js";
 import {applyQueuedPromptEvent,ensurePromptQueueSchema} from "../src/prompt-queue.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("a task event cannot overwrite a private project's globally identified task",async()=>{
  const local=await getClusterNode(),id=randomUUID(),origin=randomUUID(),now=new Date().toISOString();
@@ -15,7 +16,7 @@ test("a task event cannot overwrite a private project's globally identified task
  await receiveReplicationBatch({events:[event("private-project")]});
  task.title="Malicious edit";task.updatedAt=new Date(Date.now()+1000).toISOString();
  await assert.rejects(receiveReplicationBatch({events:[event("shared-project")]}),/Task identity belongs to a different project/);
- const db=new DatabaseSync(path.join(resolveDataDirectory(),"node.db"));
+ const db=openNodeDatabase(path.join(resolveDataDirectory(),"node.db"));
  try{assert.equal((db.prepare("SELECT title FROM tasks WHERE id=?").get(id) as {title:string}).title,"Private title");}finally{db.close();}
 });
 test("a conversation record cannot rebind a private runtime identity to a shared project",async()=>{

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { EventEmitter } from "node:events";
-import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import { readFile, stat, access, rm, writeFile, mkdir } from "node:fs/promises";
@@ -11,6 +10,7 @@ import { chromium } from "playwright-core";
 import { BrowserRuntime } from "../src/browser-runtime.js";
 import { BrowserStore } from "../src/browser-store.js";
 import { resolveDataDirectory } from "../src/data-directory.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function mockChrome(t: TestContext, failures: { launch?: (directory: string) => boolean; import?: boolean; startupPage?: boolean } = {}) {
   const previous = process.env.PI_WEB_DATA_DIR;
@@ -426,7 +426,7 @@ test("corrupt persisted recovery never reaches native navigation and human can d
   try {
     const first = await runtime.create(identity());
     await runtime.close();
-    const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+    const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
     try {
       db.prepare("UPDATE browser_sessions SET recovery = ? WHERE id = ?").run(JSON.stringify({ origins: ["https://example.com/callback?code=sensitive-fixture"], activeIndex: 0, human: "quarantined-owner" }), first.id);
     } finally { db.close(); }

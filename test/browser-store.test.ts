@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import { BrowserStore } from "../src/browser-store.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("native browser profiles do not require the separate Secrets encryption key", () => {
   const previous = process.env.JOINT_BOB_SECRET_KEY;
@@ -14,7 +14,7 @@ test("native browser profiles do not require the separate Secrets encryption key
   try {
     const profile = store.createProfile(randomUUID(), "Native login");
     assert.equal(profile.persistent, true);
-    const database = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+    const database = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
     try { assert.equal(database.prepare("SELECT stateEncrypted FROM browser_profiles WHERE id = ?").get(profile.id)!.stateEncrypted, ""); }
     finally { database.close(); }
   } finally {
@@ -43,7 +43,7 @@ test("browser metadata survives reopening and running sessions become interrupte
 
 test("forget removes a stopped session and its downloads but refuses live or restore-pending rows", () => {
   const store = new BrowserStore();
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   try {
     const start = { projectId: "project", engine: "pi" as const, conversationId: randomUUID(), appNodeId: randomUUID() };
     const running = store.create(start);
@@ -68,7 +68,7 @@ for (const partialUpgrade of [false, true]) test(`legacy duplicate snapshot sess
   process.env.PI_WEB_DATA_DIR = root;
   mkdirSync(root, { recursive: true });
   t.after(() => { process.env.PI_WEB_DATA_DIR = previous; rmSync(root, { recursive: true, force: true }); });
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   db.exec(`CREATE TABLE browser_sessions (
     id TEXT PRIMARY KEY, projectId TEXT NOT NULL, engine TEXT NOT NULL, conversationId TEXT NOT NULL,
     appNodeId TEXT NOT NULL, url TEXT, profileId TEXT, state TEXT NOT NULL,
@@ -93,7 +93,7 @@ for (const partialUpgrade of [false, true]) test(`legacy duplicate snapshot sess
       assert.equal(store.get(id).profileId, "snapshot");
       assert.equal(store.get(id).createdAt, "then");
     }
-    const raw = new DatabaseSync(path.join(root, "node.db"));
+    const raw = openNodeDatabase(path.join(root, "node.db"));
     try { assert.equal(raw.prepare("SELECT stateEncrypted FROM browser_profiles").get()!.stateEncrypted, "encrypted-fixture"); }
     finally { raw.close(); }
   } finally { store.close(); }
@@ -114,7 +114,7 @@ test("recovery origins are inserted atomically with the session", () => {
 
 test("storage rejects unsafe or malformed recovery on write and read", () => {
   const store = new BrowserStore();
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   try {
     const row = store.create({ projectId: randomUUID(), engine: "pi", conversationId: randomUUID(), appNodeId: randomUUID() });
     const valid = { origins: ["https://example.com"], activeIndex: 0, human: null };
@@ -163,7 +163,7 @@ test("profile secrets encrypted in node.db, scoped to project, immutable on retr
   assert.deepEqual(store.profileState(profile.id, "project"), secret);
   assert.throws(() => store.profileState(profile.id, "other"), /profile/i);
   assert.throws(() => store.deleteProfile(profile.id, "other"), /profile/i);
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   const row = db.prepare("SELECT * FROM browser_profiles WHERE id = ?").get(profile.id);
   assert.ok(!JSON.stringify(row).includes("distinct-secret-cookie"));
   db.close();

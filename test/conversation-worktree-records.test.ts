@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type Records = typeof import("../src/conversation-records.ts");
 type Event = Parameters<Records["applyConversationRecordEvent"]>[1];
@@ -30,7 +31,7 @@ test("a conversation's record carries its worktree to other nodes, through renam
   try {
     // A database from before the worktree columns existed gains them on open.
     await mkdir(process.env.JOINT_BOB_DATA_DIR, { recursive: true });
-    const legacy = new DatabaseSync(path.join(process.env.JOINT_BOB_DATA_DIR, "node.db"));
+    const legacy = openNodeDatabase(path.join(process.env.JOINT_BOB_DATA_DIR, "node.db"));
     legacy.exec(`CREATE TABLE conversation_records (project_id TEXT NOT NULL, engine TEXT NOT NULL, session_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       origin_node_id TEXT NOT NULL DEFAULT '', task_id TEXT, conversation_id TEXT, segment_index INTEGER NOT NULL DEFAULT 0, cron_task_id TEXT, silent_review_from TEXT, silent_review_until TEXT,
       PRIMARY KEY (project_id, engine, session_id))`);
@@ -38,7 +39,7 @@ test("a conversation's record carries its worktree to other nodes, through renam
     const records: Records = await import(`../src/conversation-records.ts?worktree=${Date.now()}`);
 
     // The node the conversation starts on: its events are what every other node receives.
-    const local = new DatabaseSync(path.join(root, "data", "node.db"));
+    const local = openNodeDatabase(path.join(root, "data", "node.db"));
     const sent = (): Event[] => (local.prepare("SELECT * FROM replication_outbox WHERE entity_type = 'conversation.record' ORDER BY rowid").all() as Array<Record<string, string>>)
       .map((row) => ({ id: row.event_id, originNodeId: row.origin_node_id, entityType: row.entity_type, entityKey: row.entity_key, operation: row.operation, payload: JSON.parse(row.payload), createdAt: row.created_at }));
 

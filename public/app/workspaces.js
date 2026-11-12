@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import { openBudgetDialog, workspaceBudgetTarget } from "./budget-dialog.js";
 import { isNodeAdmin } from "./node-admin.js";
 import { elements } from "./elements.js";
+import { createListPager, rowActions } from "./list-pager.js";
 import { fillProjectBases } from "./project-forms.js";
 import { openSecretScope } from "./secrets.js";
 import { confirmAction, toast } from "./shell.js";
@@ -39,82 +40,74 @@ function fillWorkspaceSelect() {
   elements.projectWorkspaceInput.value = shared.workspaces.some((workspace) => workspace.id === previous) ? previous : shared.workspaces[0]?.id ?? "";
 }
 
+// The list fits the section and pages (list-pager.js); `revealWorkspaceId` turns to a new workspace's page once.
+const workspacePager = createListPager({ list: elements.workspaceList, prefix: "workspace", label: "Workspace pages", render: renderWorkspaces });
+let revealWorkspaceId = null;
+
 function renderWorkspaces() {
-  elements.workspaceList.replaceChildren();
-  if (!shared.workspaces.length) {
+  const rows = workspacePager.slice(shared.workspaces, shared.workspaces.findIndex((workspace) => workspace.id === revealWorkspaceId)).map(workspaceRow);
+  revealWorkspaceId = null;
+  if (!rows.length) {
     const empty = document.createElement("p");
-    empty.className = "project-type-empty";
+    empty.className = "project-type-empty long-list-empty";
     empty.textContent = "No workspaces yet. Add one to choose where new projects land.";
-    elements.workspaceList.append(empty);
-    return;
+    rows.push(empty);
   }
-  for (const workspace of shared.workspaces) {
-    const row = document.createElement("div");
-    row.className = "project-type-row";
-    row.dataset.testid = "workspace-row";
+  elements.workspaceList.replaceChildren(...rows);
+  workspacePager.update();
+}
 
-    const name = document.createElement("strong");
-    name.textContent = workspaceName(workspace);
-    row.append(name);
+/** One row of fixed height: the name, its folder, and its actions (behind ⋯ on a phone). */
+function workspaceRow(workspace) {
+  const row = document.createElement("div");
+  row.className = "project-type-row long-list-row";
+  row.dataset.testid = "workspace-row";
 
-    const folder = document.createElement("code");
-    folder.textContent = `/${workspace.id}`;
-    row.append(folder);
+  const main = document.createElement("span");
+  main.className = "long-row-main";
+  const name = document.createElement("strong");
+  name.textContent = workspaceName(workspace);
+  name.title = name.textContent;
+  main.append(name);
 
-    const secrets = document.createElement("button");
-    secrets.type = "button";
-    secrets.className = "ghost compact";
-    secrets.textContent = "Secrets";
-    secrets.dataset.testid = "workspace-secrets-button";
-    secrets.addEventListener("click", () => openSecretScope("workspace", workspace.id, workspace.label).catch((error) => toast.error(error.message)));
-    row.append(secrets);
+  const folder = document.createElement("code");
+  folder.className = "long-row-folder";
+  folder.textContent = `/${workspace.id}`;
+  folder.title = folder.textContent;
 
-    if (!workspace.source) {
-      const share = document.createElement("button");
-      share.type = "button";
-      share.className = "ghost compact";
-      share.textContent = "Share";
-      share.dataset.testid = "workspace-share-button";
-      share.addEventListener("click", () => openWorkspaceSharing(workspace).catch((error) => toast.error(error.message)));
-      row.append(share);
-    }
-
-    if (isNodeAdmin() && !workspace.source) {
-      const budget = document.createElement("button");
-      budget.type = "button";
-      budget.className = "ghost compact";
-      budget.textContent = "Budget";
-      budget.dataset.testid = "workspace-budget-button";
-      budget.addEventListener("click", () => openBudgetDialog(workspaceBudgetTarget(workspace)).catch((error) => toast.error(error.message)));
-      row.append(budget);
-    }
-
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "ghost compact danger";
-    remove.textContent = "Delete";
-    remove.dataset.testid = "workspace-delete-button";
-    remove.addEventListener("click", async () => {
-      const confirmed = await confirmAction({
-        eyebrow: "Delete workspace",
-        title: `Delete the "${workspace.label}" workspace?`,
-        message: "Its folder stays on disk.",
-        confirmLabel: "Delete workspace",
-        destructive: true,
-      });
-      if (!confirmed) return;
-      try {
-        await api(`/api/workspaces/${encodeURIComponent(workspace.id)}`, { method: "DELETE" });
-        await loadWorkspaces();
-        toast(`Deleted ${workspace.label}`);
-      } catch (error) {
-        toast.error(error.message);
-      }
+  const action = (label, testid, onClick, extra = "") => {
+    const control = document.createElement("button");
+    control.type = "button";
+    control.className = `ghost compact${extra}`;
+    control.textContent = label;
+    control.dataset.testid = testid;
+    control.addEventListener("click", onClick);
+    return control;
+  };
+  const buttons = [action("Secrets", "workspace-secrets-button", () => openSecretScope("workspace", workspace.id, workspace.label).catch((error) => toast.error(error.message)))];
+  if (!workspace.source) buttons.push(action("Share", "workspace-share-button", () => openWorkspaceSharing(workspace).catch((error) => toast.error(error.message))));
+  if (isNodeAdmin() && !workspace.source) buttons.push(action("Budget", "workspace-budget-button", () => openBudgetDialog(workspaceBudgetTarget(workspace)).catch((error) => toast.error(error.message))));
+  buttons.push(action("Delete", "workspace-delete-button", async () => {
+    const confirmed = await confirmAction({
+      eyebrow: "Delete workspace",
+      title: `Delete the "${workspace.label}" workspace?`,
+      message: "Its folder stays on disk.",
+      confirmLabel: "Delete workspace",
+      destructive: true,
     });
-    row.append(remove);
-
-    elements.workspaceList.append(row);
-  }
+    if (!confirmed) return;
+    try {
+      await api(`/api/workspaces/${encodeURIComponent(workspace.id)}`, { method: "DELETE" });
+      await loadWorkspaces();
+      toast(`Deleted ${workspace.label}`);
+    } catch (error) {
+      toast.error(error.message);
+    }
+  }, " danger"));
+  const { actions, more } = rowActions(buttons, `Actions for ${workspace.label}`);
+  more.dataset.testid = "workspace-more";
+  row.append(main, folder, actions, more);
+  return row;
 }
 
 async function addWorkspace() {
@@ -122,11 +115,14 @@ async function addWorkspace() {
   if (!label) return;
   if (elements.workspaceAddButton.disabled) return;
   elements.workspaceAddButton.disabled = true;
+  let created;
   try {
-    await api("/api/workspaces", { method: "PUT", body: JSON.stringify({ label, sharing: workspaceCreationSharing() }) });
+    created = await api("/api/workspaces", { method: "PUT", body: JSON.stringify({ label, sharing: workspaceCreationSharing() }) });
   } finally { elements.workspaceAddButton.disabled = false; }
   elements.workspaceNameInput.value = "";
   resetWorkspaceCreationSharing();
+  // The new workspace's page shows, wherever the list was.
+  revealWorkspaceId = created?.workspace?.id ?? null;
   await loadWorkspaces();
   toast(`Added ${label}`);
 }

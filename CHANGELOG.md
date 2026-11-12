@@ -1,7 +1,124 @@
 # Changelog
 
+## 2.274.0 — 2026-11-12
+
+- **Projects and conversations sit in two columns on the desktop.** The project list is under the places, and the chosen project's conversations have their own column beside it. Both lists page with whole rows and no inner scrollbar; pin and ⋯ show when you point at a row or focus it. `[` and `]` fold each column. A narrow window puts the details column away first, then folds the left column.
+- Fixed the conversation list jumping back to its first page a second after you moved to another page. A list keeps its page until the project, search or filters change.
+- Fixed the conversation jumping while you type or while the agent works: the message box no longer collapses to one line on every key, and the view stays at the bottom when the pane changes size.
+- Fixed padding in the left column: an icon and its label sat above the middle of the selected row's fill, and the AUTO badge on the model chip had an oversized ring.
+- The left column no longer rebuilds its groups and re-reads Git status on every redraw of the open conversation.
+- Phone: the new-conversation sheet keeps its fields and its Start button above the keyboard, with Back and Next laid out per step; the tapped tab no longer shows a ring cut off by the screen edge; dialogs with fields stay usable with the keyboard up.
+
+## 2.273.5 — 2026-11-12
+
+- **Model routing:** the daily review of the default models is no longer part of the app. The instruction files, the data script and the review instructions in **Settings → System AI** are gone; a review like this is a scheduled task you set up yourself, with its instructions in the task. Model routing itself is unchanged.
+
+## 2.273.4 — 2026-11-12
+
+- Made the Google Antigravity icon readable in light and dark themes so its enabled button no longer looks disabled.
+
+## 2.273.3 — 2026-11-12
+
+- Restored the model-routing dispatch tests that a test-database change had put back to their old project-key version, so the release suite checks routing with the System AI decision credential again.
+
+## 2.273.2 — 2026-11-12
+
+- No change to the app's behaviour. The tests that read or write a node's database directly now go through the same database module the app uses, so they run against PostgreSQL as well as SQLite (`JOINT_BOB_DATABASE_URL`). The SQLite runs are unchanged.
+
+## 2.273.1 — 2026-11-12
+
+- Fixed saving edits to connection pools containing Google Antigravity profiles.
+
+## 2.273.0 — 2026-11-12
+
+- **Model routing:** Bob auto now uses the decision credential from **Settings → System AI** instead of each project's attached secrets, so projects without a TypeSafe key (about 40% of prompts before) are routed again. Twins share the key; a machine that serves a relay can lend its decision model to the relay's machines without the key leaving it.
+- **Model routing:** each kind of task has an ordered list of models per agent, cheapest suitable first by API price. When a model cannot run on a machine the next one is tried, and every prompt that is not routed records why. Routing never moves a conversation to another agent. New defaults add Sonnet 5.5 for complex coding, Fable 5.2 for planning, Pi's Z.ai and Anthropic models, and Kiro.
+- **System AI** has a Model routing section: an on/off switch for this machine, the relay sharing switch, where decisions come from, the default models and the instructions of the two daily review tasks that run on the Homeserver.
+
+## 2.272.1 — 2026-11-12
+
+- Allowed Google Antigravity profiles to be selected and saved in connection pools alongside other providers.
+
+## 2.272.0 — 2026-11-12
+
+- **A new look for the whole app, on desktop and phone.** Cream cards on a sand background, serif headings, one forest-green accent, in all six themes (System, Light, Sepia, Dark, Midnight, Graphite). Nothing was removed; some actions moved.
+- **Desktop workspace.** The left column holds Bob, Inbox, Projects, Board, Automations and Costs (the logo opens Home), then your conversations in three groups: Needs you, Running, To review. The open conversation sits in the middle with its agent, model, effort and machine as chips, and a details column on the right (Activity, Files, Git, Tasks, More). Actions that were toolbar icons are in the conversation's ⋯ menu.
+- **Phone.** Four tabs: Inbox, Bob, Projects, Settings. A conversation's settings open as a Details sheet from the bottom, dialogs are bottom sheets or full pages, and controls are at least 44 px tall. Back closes one level at a time: an open sheet, then the section, then the screen.
+- **Settings is a page.** Every section has the same head: its group, title, one sentence, where the setting applies, and a line saying changes save as you make them. The shared **Save settings** button is gone; each change saves on its own. Deleting more conversations, or sooner, asks first. Long lists fit the window and page.
+- **Search in every dropdown.** Every dropdown opens with a search box that matches letters in order ("op55" finds Opus 5.5); on the phone it opens as a sheet. The workspace search suggests conversations, projects, settings and actions, and the composer suggests commands after `/` and files after `@`.
+- **Home and Bob.** Home shows what needs you, what is running and what is ready to review, with **Push it on** on each card. Bob's chat and his tabs are one page.
+- The assistant app follows the same look and the theme you chose.
+
+## 2.271.2 — 2026-11-11
+
+- Clarified the browser sign-in confirmation after the website removes its login form.
+- Made fullscreen browser sign-in fill the available space on wide screens and follow desktop-to-phone resizing without stretching the page.
+
+## 2.271.1 — 2026-11-11
+
+- Deleting a dashboard in the control center's Dashboard view asks in the app's own confirmation dialog. This release also carries the Dashboard view itself, since 2.271.0 was not published.
+
+## 2.271.0 — 2026-11-11
+
+- The control center has a **Dashboard** view next to **Live agents**: one click swaps the conversations for a dashboard of your own, and one click swaps back. These dashboards cover every project and workspace you can see, not one of them.
+- Press **+ New dashboard** and say what you want to see; Bob builds it with the dashboard agent and tells you in the chat when it is ready. Keep as many as you like, switch between them with the chips above the page, and choose the default the view opens with using **Make default**.
+
+## 2.270.3 — 2026-11-11
+
+- Fixed "Only the prompt's author may change it" when you tried to start now, edit or delete a message Bob or one of your automations queued in your conversation. You can manage those now, and one you edit becomes your own message.
+- Stepping in makes Bob stand back: when you press Stop, or change or delete a message Bob queued, he stops pushing that conversation on and removes his queued pushes. He starts again when you press **Push it on**, tell him to take the conversation over, or turn on System control for it.
+
+## 2.270.2 — 2026-11-11
+
+- A node that keeps its database in PostgreSQL now keeps settings, sharing rules and names between writes, as a node on SQLite already did, instead of reading them from the database on every request. Any write committed by any process on the node clears them at once.
+
+## 2.270.1 — 2026-11-11
+
+- Fixed the phone's Back button closing the installed app. Chrome skips a history step the page added without a tap, so opening the app on a saved screen, or pressing Back once, left nothing to catch the next Back. Back now goes up one level and stays in the app.
+
+## 2.270.0 — 2026-11-11
+
+- Bob now gets stuck conversations going again. A shell command that prints nothing for 30 minutes is stopped as hung, so the agent carries on instead of waiting hours for it. A turn with no input or output for 30 minutes is stopped as before, and now Bob tells the conversation to check what it left hanging and continue, on the same account and subscription pool, and says so in his chat. After 3 restarts in 6 hours he leaves it to you.
+
+## 2.269.0 — 2026-11-11
+
+- System control: put any conversation in Bob's hands with your instructions. Write your standing instructions in Bob's settings, and turn on **System control** in a conversation's Auto respond dialog, with anything you add for that conversation. Bob drives it firmly: he decides for you, answers the agent, approves its plans and keeps it going, with no limit on answers, until the work is ready for review, needs a password or sign-in only you have, or reaches an irreversible step.
+- It runs on the conversation's own model and subscription pool, so when an account reaches its limit both the agent and Bob move to the next one. It keeps going after restarts and updates.
+- **New conversations start under system control** in Bob's settings puts every new conversation under it; it is off by default.
+
+## 2.268.0 — 2026-11-11
+
+- Added Google Antigravity profiles to Connections, with scoped assignments and separate native sign-ins on each execution node.
+
+## 2.267.4 — 2026-11-11
+
+- Fixed built-in file sync on Linux missing changes inside folders it had created itself while downloading. Those folders were never watched, so a file someone added there later, such as a worktree's conversation marker, was not sent to the other machines until a full rescan.
+
+## 2.267.3 — 2026-11-11
+
+- Fixed a node that keeps its database in PostgreSQL failing every database call with "PostgreSQL worker answered out of turn" until it restarted. A late wake-up from the database worker was taken as the answer to the next query, and from then on each query read the answer meant for the one before it.
+
+## 2.267.2 — 2026-11-11
+
+- Fixed Bob continuations using the person’s subscription profiles and allowing them to manage the queued prompt.
+
 Every deployment is a version. The newest section must always match the
 `version` field in `package.json`; the pre-push hook writes it for you.
+
+## 2.267.1 — 2026-11-11
+
+- After "Check that backups can be written" succeeds, a backup problem shown under the backup settings goes away at once, not when Settings is opened the next time.
+- A command-line deploy that is interrupted now removes its work folder, and every deploy first removes work folders that are a day old. Deploys that were killed had left them in the home folder, about 1 GB each.
+
+## 2.267.0 — 2026-11-11
+
+- The hourly clean-up can back a conversation up before it deletes it. In Settings > Account > Conversation history > "Backup before deleting", choose a folder on the machine or an S3 bucket, and for how many days a backup is kept (30 unless changed; 0 keeps backups for good). A conversation then stays in the app for the retention days, stays as a backup for the backup days, and is gone after that. Backups are off until a place is chosen, so nothing changes on a machine until its admin turns them on.
+- A backup is one `.tar.gz` per conversation with its transcripts, sub-agent transcripts and tool results at the paths they had, and a `conversation.json` with the project, title and dates. Any archive tool opens it. The app does not list backups or restore them.
+- If a backup cannot be written, the conversation is not deleted and the reason shows under the backup settings. "Check that backups can be written" tries the folder or the bucket before you save. A folder inside a project or inside an agent's transcript folder is refused when it is saved.
+- Not backed up: a conversation you delete by hand, an empty conversation, and Joint Bob's own background runs. Pinned conversations are still never deleted.
+- S3 sign-in is an access key (the secret is stored encrypted and never shown again) or an AWS profile on the machine, which needs the AWS command line tool. An S3-compatible service can be used by giving its address.
+- Fixed a machine stalling for seconds at a time when it holds a very long conversation. The quality analysis read the whole conversation again after every reply it checked, and reading a long transcript held up everything else. It now reads the conversation once, and long transcripts are read in small steps (seen on a machine with a 170 MB scheduled conversation).
+- Fixed a harness version check that did not answer staying behind as a process.
 
 ## 2.266.1 — 2026-11-11
 

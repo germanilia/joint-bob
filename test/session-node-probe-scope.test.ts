@@ -11,6 +11,7 @@ import { clusterPublicKeyFingerprint } from "../src/cluster-identity.js";
 import { createMembershipCluster, createMembershipInvitation, prepareMembershipJoin, redeemMembershipInvitation } from "../src/cluster-membership.js";
 import { registerLocalSharingResource, updateResourceSharing } from "../src/cluster-sharing.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const presencePath = "/api/cluster/v2/runtime/projects/presence";
 
@@ -77,7 +78,7 @@ test("session-node discovery scopes presence probes to the authorized target", {
     peers.push(await presencePeer("Blackholed peer", true));
     peers.push(await presencePeer("Unshared peer"));
     const [selected, blackholed, unshared] = peers;
-    const db = new DatabaseSync(path.join(local.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(local.dataDir, "node.db"));
     try {
       const sharedCluster = randomUUID(), otherCluster = randomUUID();
       const descriptor = { nodeId: local.nodeId, name: local.name, url: local.url };

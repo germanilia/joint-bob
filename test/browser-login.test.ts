@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { chromium } from "playwright-core";
 import { BrowserRuntime } from "../src/browser-runtime.js";
@@ -10,6 +9,7 @@ import { BrowserStore } from "../src/browser-store.js";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import { browserLoginDetectionScript } from "../src/browser-login-detection.js";
 import { waitForAssertion } from "./async-assertion.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const agent = { kind: "agent" } as const;
 const human = (id: string) => ({ kind: "human" as const, id });
@@ -362,7 +362,7 @@ test("login request is shared, survives checkpoints, and corrupt storage fails c
   try {
     const pending = await runtime.execute(session.id, request, agent) as any; assert.equal(store.loginRequest(session.id)?.id, pending.loginRequest.id);
     page.setUrl("https://mail.google.com/next"); assert.equal(store.loginRequest(session.id)?.id, pending.loginRequest.id);
-    const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db")); try { db.prepare("UPDATE browser_sessions SET loginRequest = ? WHERE id = ?").run("{bad", session.id); } finally { db.close(); }
+    const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db")); try { db.prepare("UPDATE browser_sessions SET loginRequest = ? WHERE id = ?").run("{bad", session.id); } finally { db.close(); }
     assert.throws(() => store.loginRequest(session.id), /Invalid browser login request/); await assert.rejects(runtime.execute(session.id, { action: "snapshot" }, agent), /Invalid browser login request/);
     store.setLoginRequest(session.id, pending.loginRequest);
   } finally { store.close(); await cleanup(runtime, session.id, "cleanup"); }

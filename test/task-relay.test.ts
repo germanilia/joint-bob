@@ -7,8 +7,8 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { configure, environment, startServer, stopServer, temporaryRoot } from "./queued-prompt-harness.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function run(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ code: number | null; stdout: string; stderr: string }> {
   const child = spawn(executable, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
@@ -58,7 +58,7 @@ test("agents under an account run shells and tasks through the relay, as that ac
     const shell = await run(process.execPath, [path.resolve("bin/joint-bob-bash.mjs"), "-c", "printf \"$JOINT_BOB_FAKE_ACCOUNT in $PWD\"; exit 3"], project, agentEnv);
     assert.equal(shell.code, 3, JSON.stringify(shell));
     assert.equal(shell.stdout, `admin in ${await import("node:fs").then((fs) => fs.realpathSync(project))}`, "the command ran through the helper as the project's account, in its folder");
-    const db = new DatabaseSync(path.join(data, "node.db"), { readOnly: true });
+    const db = openNodeDatabase(path.join(data, "node.db"), { readOnly: true });
     try {
       const calls = db.prepare("SELECT state FROM supervised_shell_calls").all() as Array<{ state: string }>;
       assert.deepEqual(calls.map((call) => call.state), ["returned"], "the relay recorded the short call so Tasks hides it");

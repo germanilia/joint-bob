@@ -10,6 +10,7 @@ import { supervisorRequest } from "../scripts/supervisor-client.mjs";
 import { abandonedShellReason, MISSING_CONVERSATION_GRACE_MS, readImplicitShellTasks } from "../src/background-tasks.js";
 import { CONVERSATION_INACTIVITY_TIMEOUT_MS } from "../src/conversation-watchdog.js";
 import { reapInactiveConversations } from "../src/server/maintenance.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const identity = JSON.stringify(["project-1", "conversation-1"]);
 
@@ -24,7 +25,7 @@ function insertTask(db: DatabaseSync, id: string, status: string, startedAt: str
 }
 
 function createPolicyDatabase(directory: string): DatabaseSync {
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   db.exec("CREATE TABLE supervised_shell_calls(task_id TEXT PRIMARY KEY,state TEXT NOT NULL,foreground_until INTEGER NOT NULL)");
   return db;
 }
@@ -145,7 +146,7 @@ test("the maintenance watcher stops an abandoned shell process group", { timeout
     supervisor.close();
 
     const now = Date.parse(old) + MISSING_CONVERSATION_GRACE_MS + 1;
-    const caller = new DatabaseSync(path.join(directory, "node.db"));
+    const caller = openNodeDatabase(path.join(directory, "node.db"));
     try {
       for (const state of ["foreground", "background"]) {
         caller.prepare("UPDATE supervised_shell_calls SET state=?,foreground_until=? WHERE task_id=?").run(state, now + 20_000, id);

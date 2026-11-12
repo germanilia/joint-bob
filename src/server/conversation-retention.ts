@@ -19,6 +19,13 @@
 //                   are never listed and nobody opens them; the one exception is a side chat's
 //                   agent, kept while its side chat exists.
 //
+// With the owner's backup setting on (`conversationBackup`), a conversation that goes for its age,
+// and what an earlier delete left behind, is written to the backup destination first
+// (conversation-backup.ts). One that cannot be backed up stays, and so does every other one of that
+// pass: a destination that refuses one backup would refuse them all. Background runs and empty
+// conversations are not backed up. Backups older than the setting's days are removed at the end of
+// every sweep.
+//
 // Only the machine that owns a conversation deletes it; the tombstone makes the others follow.
 // Every candidate is checked again right before it goes (mayDeleteNow), and the dry run applies
 // the same checks without deleting, so it reports what a sweep would delete at that moment.
@@ -45,6 +52,7 @@ import { listTasks } from "../tasks.js";
 import type { ProjectRecord, TaskRecord } from "../types.js";
 import { pinnedConversationKeys } from "../user-pins.js";
 import { conversationBelongsToDoneTask, taskConversationIdentity } from "./cluster-helpers.js";
+import { ConversationBackups, conversationBackupStatus, noteBackupProblem, removeExpiredBackups, type BackupStatus } from "./conversation-backup.js";
 import { finishAllPendingDeletes, heldBack, queueLeftovers, retentionDatabase, type ConversationSegment, type FilesByHarness } from "./conversation-delete.js";
 import { harnessFiles, measureSessionFiles, removeSessionFiles, type HarnessFiles, type SessionFiles } from "./conversation-files.js";
 import { findHarnessSession, harnessSessionBusy } from "./harness-sessions.js";
@@ -108,6 +116,8 @@ export interface RetentionPreview {
   /** With `full`: conversations of this machine's projects that are old enough and stay, by the reason they stay. */
   kept: Record<string, number>;
   passLimit: number;
+  /** Where an expired conversation and a leftover are backed up before they go, and what is kept there now. */
+  backup: BackupStatus;
   /** `engine:sessionId` of everything counted above, by category. */
   conversations: Record<RetentionCategory, string[]>;
 }
@@ -474,6 +484,7 @@ export async function previewConversationRetention(switches: RetentionSwitches =
   const preview: RetentionPreview = {
     generatedAt: new Date(now).toISOString(), switches: plan.switches, retentionDays: plan.retentionDays,
     totals: { expired: zero(), empty: zero(), background: zero(), leftover: zero(), held: zero() }, projects: [], kept: plan.kept, passLimit: SWEEP_PASS_LIMIT,
+    backup: await conversationBackupStatus(),
     conversations: { expired: [], empty: [], background: [], leftover: [], held: [] },
   };
   const projects = new Map<string, RetentionPreview["projects"][number]>();
@@ -511,13 +522,45 @@ export function sweepConversationRetention(now = Date.now(), switches: Retention
 }
 
 async function runSweep(now: number, switches: RetentionSwitches): Promise<number> {
+  try { return await deleteByAge(now, switches); }
+  finally {
+    // Backups that are past the owner's days go, whatever else this sweep did.
+    await removeExpiredBackups(now).catch((error) => console.warn("Removing old conversation backups failed", error));
+  }
+}
+
+async function deleteByAge(now: number, switches: RetentionSwitches): Promise<number> {
   // Deletes that did not finish come first, whatever the boxes say: a file that could not be removed, a machine that stopped half-way.
   await finishAllPendingDeletes();
   const plan = await buildPlan(now, switches);
   const db = retentionDatabase();
+  // The owner's backup setting. With it on nothing goes for its age unless its backup is stored first.
+  const setting = getSettings().conversationBackup;
+  const backup = { on: setting.destination !== "off", store: undefined as ConversationBackups | undefined, failed: false, made: 0 };
+  const backupFailed = (what: string, error: unknown): void => {
+    backup.failed = true;
+    const message = `${what}: ${(error instanceof Error ? error.message : String(error)).replace(/\.+$/, "")}. Nothing more is deleted for its age until a backup succeeds.`;
+    noteBackupProblem(message, now);
+    console.warn(message);
+  };
+  if (backup.on) {
+    try { backup.store = await ConversationBackups.open(setting); }
+    catch (error) { backupFailed("Conversation backups could not be started", error); }
+  }
   if (plan.switches.leftovers) {
     // The owner's box: what deletes made before the complete delete left here goes into the queue, and the queue is worked off.
-    const taken = await queueLeftovers((projectId) => plan.readings.forProject(projectId));
+    const projects = backup.on ? new Map((await listProjects()).map((project) => [project.id, project])) : new Map<string, ProjectRecord>();
+    const taken = await queueLeftovers((projectId) => plan.readings.forProject(projectId), !backup.on ? undefined : async (left, files) => {
+      if (backup.failed || !backup.store) throw new Error("Backups are not working");
+      const project = projects.get(left.projectId);
+      try {
+        const saved = await backup.store.save({
+          reason: "leftover", project: { id: left.projectId, name: project?.name ?? `Project ${left.projectId}`, ...(project ? { path: project.path } : {}) },
+          engine: left.engine, sessionId: left.sessionId, conversationId: left.sessionId, segments: [{ engine: left.engine as ConversationEngine, sessionId: left.sessionId }], files,
+        }, now);
+        if (saved && !saved.reused) backup.made += 1;
+      } catch (error) { backupFailed(`What was left of conversation ${left.engine}:${left.sessionId} could not be backed up`, error); throw error; }
+    });
     if (taken.queued) await finishAllPendingDeletes();
   }
   let deleted = 0, runs = 0, handled = 0;
@@ -530,8 +573,21 @@ async function runSweep(now: number, switches: RetentionSwitches): Promise<numbe
         if (deleted >= SWEEP_PASS_LIMIT) continue;
         const project = candidate.project;
         // A delete relies on a reading of the folders: one taken long ago could miss a transcript written since.
-        const files = await plan.readings.forProject(project.id, READING_MAX_AGE_MS);
+        let files = await plan.readings.forProject(project.id, READING_MAX_AGE_MS);
         if (!await mayDeleteNow(candidate, plan, files, conversationsWithActiveTasks())) continue;
+        if (backup.on && candidate.category === "expired") {
+          if (backup.failed || !backup.store) continue;
+          try {
+            const saved = await backup.store.save({
+              reason: "expired", project: { id: project.id, name: project.name, path: project.path },
+              engine: candidate.engine, sessionId: candidate.sessionId, conversationId: candidate.conversationId, segments: candidate.segments, files,
+            }, now);
+            if (saved && !saved.reused) backup.made += 1;
+          } catch (error) { backupFailed(`Conversation ${candidate.engine}:${candidate.sessionId} in ${project.name} could not be backed up`, error); continue; }
+          // A backup takes a while, an upload longer: whatever happened to the conversation meanwhile counts.
+          files = await plan.readings.forProject(project.id, READING_MAX_AGE_MS);
+          if (!await mayDeleteNow(candidate, plan, files, conversationsWithActiveTasks())) continue;
+        }
         await deleteOwnedConversation(project, candidate.engine, candidate.sessionId, candidate.segments, files);
         deleted += 1;
         console.log(`Deleted ${candidate.category} conversation ${candidate.engine}:${candidate.sessionId} in ${project.name}`);
@@ -551,5 +607,6 @@ async function runSweep(now: number, switches: RetentionSwitches): Promise<numbe
     }
   }
   if (runs) console.log(`Retention removed ${runs} background run(s)`);
+  if (backup.made && backup.store) console.log(`Backed up ${backup.made} conversation(s) to ${backup.store.where} before deleting them`);
   return deleted;
 }

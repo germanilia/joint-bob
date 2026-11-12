@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 test("conversation Git review hides other files and orders guided comments with opposite reviewer", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
@@ -41,7 +42,7 @@ test("conversation Git review hides other files and orders guided comments with 
   await page.getByTestId("login-submit-button").click();
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-file").first().waitFor();
   assert.equal(await page.getByTestId("git-review-file").count(), 2);
   assert.match(await page.getByTestId("git-review-list").innerText(), /mine.ts/);
@@ -94,7 +95,7 @@ test("conversation Git review shows all pending files when none are claimed, ali
   await page.getByTestId("login-submit-button").click();
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-file").first().waitFor();
   assert.equal(await page.getByTestId("git-review-file").count(), 2);
   assert.equal(await page.getByTestId("git-review-all-changes").isChecked(), true);

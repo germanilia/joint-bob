@@ -17,9 +17,12 @@ test("settings search finds a setting by its name, opens its section, and flashe
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-conversations").click();
 
-  // Sections are grouped in the sidebar, each with a coloured icon tile.
+  // Sections are grouped in the list: the open section's group shows a row with an icon per section,
+  // the other groups a short line of section names that still open them.
   assert.deepEqual(await page.locator(".settings-group-label").allTextContents(), ["You", "Workspace", "Agents", "Network", "This node"]);
-  assert.ok(await page.locator('[data-testid="settings-tab-account"] .settings-tab-icon').isVisible());
+  assert.ok(await page.locator('[data-testid="settings-tab-conversations"] .settings-tab-icon').isVisible());
+  assert.equal(await page.locator('[data-testid="settings-tab-account"] .settings-tab-icon').isVisible(), false);
+  assert.ok(await page.getByTestId("settings-tab-account").isVisible(), "a closed group's sections can still be clicked");
 
   // A field name finds its setting even when another section is open.
   const search = page.getByTestId("settings-search-input");

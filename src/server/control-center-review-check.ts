@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { AuthSession } from "../auth.js";
 import { actingAccountFromSession, runAsAccount, type ActingAccount } from "../account-context.js";
 import { askSystemOneChoices } from "../classifiers/typesafe.js";
-import { bobSays, registerBobAction } from "../control-center/bob-actions.js";
+import { BobActionError, bobSays, registerBobAction } from "../control-center/bob-actions.js";
 import { appendBobMessage, askBobRecheck, bobDatabase, listBobAccounts, readBobSettings, type BobAction, type BobSettings } from "../control-center/bob-store.js";
 import { isLeased } from "../control-center/leases.js";
 import { createMoveEnvironment } from "../control-center/moves-runtime.js";
@@ -124,6 +124,7 @@ async function check(shared: SharedHarnessSession, actor: ActingAccount, turnEnd
   const answer = [...messages].reverse().find((message) => message.role === "assistant")?.text?.trim();
   if (!answer) return;
   const previous = readReviewCheck(db, shared.projectId, shared.conversationId);
+  if (previous?.by === TAKEN_OVER_BY) return;
   // The same words can end two turns ("Done."); the count of messages tells the turns apart.
   const hash = answerHash(`${messages.length}:${answer}`);
   if (previous?.answerHash === hash) return;
@@ -161,6 +162,30 @@ async function check(shared: SharedHarnessSession, actor: ActingAccount, turnEnd
   broadcastToAllClients({ type: "controlCenterChanged" }, actor.accountId);
   // What Bob found settles his older items about it: a newer one replaces them, and a note that he pushed it on has its answer.
   askBobRecheck(actor.accountId);
+}
+
+/**
+ * The person stepped into the conversation (they stopped it, or changed or removed what Bob queued): Bob leaves it to them and
+ * does not push it on again until they press Push it on.
+ */
+export const TAKEN_OVER_BY = "you stepped in";
+
+export async function leaveToPerson(projectId: string, conversationId: string, accountId: string): Promise<void> {
+  const db = await bobDatabase();
+  const previous = readReviewCheck(db, projectId, conversationId);
+  writeReviewCheck(db, {
+    projectId, conversationId, accountId: previous?.accountId ?? accountId, verdict: "done", reason: "You stepped in, so Bob left it to you.", by: TAKEN_OVER_BY,
+    answerHash: previous?.answerHash ?? "", pushes: 0, pushPending: false, needsYou: false, checkedAt: new Date().toISOString(),
+  });
+  broadcastToAllClients({ type: "controlCenterChanged" }, accountId);
+  askBobRecheck(accountId);
+}
+
+/** The person handed the conversation to Bob again (delegated it, or put it under system control): his checks of it resume. */
+export async function resumeBobChecks(projectId: string, conversationId: string): Promise<void> {
+  const db = await bobDatabase();
+  const previous = readReviewCheck(db, projectId, conversationId);
+  if (previous?.by === TAKEN_OVER_BY) writeReviewCheck(db, { ...previous, by: "you", reason: "You handed it to Bob again." });
 }
 
 const BUSY_RETRIES = 5;
@@ -210,9 +235,9 @@ registerBobAction("review.push", async ({ db, session, action, note }) => {
   const conversation = conversationData.parse(action.data);
   if (isLeased(conversation.projectId, conversation.conversationId)) return [bobSays(db, session, `You are in "${conversation.title}" now, so I left it to you.`, { projectId: conversation.projectId, projectName: conversation.projectName })];
   const previous = readReviewCheck(db, conversation.projectId, conversation.conversationId);
-  await pushForPerson(actingAccountFromSession(session), conversation, previous?.reason ?? "", note);
+  await pushForPerson(actingAccountFromSession(session), conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
   // Instructions are a message from the person: Bob's count of pushes in a row starts again.
-  if (previous) writeReviewCheck(db, { ...previous, pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
+  if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
   return [bobSays(db, session, note ? `Told "${conversation.title}" to go on, with your instructions.` : `Told "${conversation.title}" to go on.`, { importance: "done", projectId: conversation.projectId, projectName: conversation.projectName, via: "Review check · you pressed the button" })];
 });
 
@@ -247,6 +272,24 @@ export async function closeFromBoard(session: AuthSession, ref: { projectId: str
   const db = await bobDatabase();
   const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
   if (previous) writeReviewCheck(db, { ...previous, verdict: "done", reason: "You marked it done.", by: "you", needsYou: false, pushPending: false });
+  broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
+  askBobRecheck(session.accountId);
+}
+
+/**
+ * Push it on from a card (Home, the board), for a conversation that may have no message of Bob's to press: the same push
+ * as the button in Bob's chat, with the person's instructions, found from the board's reference. A conversation the person
+ * is in is left to them.
+ */
+export async function pushFromBoard(session: AuthSession, ref: { projectId: string; conversationId: string }, note: string): Promise<void> {
+  if (isLeased(ref.projectId, ref.conversationId)) throw new BobActionError(409, "You are in this conversation now, so it is left to you");
+  const found = await createMoveEnvironment(session).resolve(ref);
+  if (!found) throw new NotFoundError("Conversation not found");
+  const conversation: Conversation = { projectId: ref.projectId, projectName: found.projectName, conversationId: ref.conversationId, engine: found.harnessId, sessionId: found.sessionId, title: found.title };
+  const db = await bobDatabase();
+  const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
+  await pushForPerson(actingAccountFromSession(session), conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
+  if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
   broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
   askBobRecheck(session.accountId);
 }

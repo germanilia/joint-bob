@@ -6,11 +6,11 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { accountIdFor } from "../src/accounts.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { addMember } from "./node-script.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check: () => Promise<void>, timeoutMs = 60_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -60,7 +60,7 @@ test("people join clusters themselves and roam only where they signed in", { tim
     const [sa, sb] = await Promise.all([signIn(envA, a), signIn(envB, b)]);
     const dana = await member(envA, a, "dana");
     const visitorOnB = (name: string) => {
-      const db = new DatabaseSync(path.join(b.dataDir, "node.db"), { readOnly: true });
+      const db = openNodeDatabase(path.join(b.dataDir, "node.db"), { readOnly: true });
       try { return Boolean(db.prepare("SELECT 1 FROM users WHERE username = ? AND home_node_id IS NOT NULL").get(name)); } finally { db.close(); }
     };
 
@@ -96,7 +96,7 @@ test("people join clusters themselves and roam only where they signed in", { tim
     assert.equal((await api(a, sa, "PUT", "/preferences", { theme: "dark", terminalDock: homeTerminalDock })).status, 200);
     const anaId = accountIdFor(a.nodeId, "ana");
     const rowsOnB = () => {
-      const db = new DatabaseSync(path.join(b.dataDir, "node.db"), { readOnly: true });
+      const db = openNodeDatabase(path.join(b.dataDir, "node.db"), { readOnly: true });
       try { return (db.prepare("SELECT count(*) count FROM account_settings WHERE account_id = ?").get(anaId) as { count: number }).count; }
       catch { return 0; } finally { db.close(); }
     };
@@ -170,7 +170,7 @@ test("each person shares only their own projects, and a pin set while visiting r
     assert.equal((await api(a, sa, "PUT", "/pins", { kind: "project", projectId: anaProject, pinned: true })).status, 200);
     const anaId = accountIdFor(a.nodeId, "ana");
     const pinsOnB = () => {
-      const db = new DatabaseSync(path.join(b.dataDir, "node.db"), { readOnly: true });
+      const db = openNodeDatabase(path.join(b.dataDir, "node.db"), { readOnly: true });
       try { return (db.prepare("SELECT count(*) count FROM user_pins WHERE username = ?").get(anaId) as { count: number }).count; }
       catch { return 0; } finally { db.close(); }
     };

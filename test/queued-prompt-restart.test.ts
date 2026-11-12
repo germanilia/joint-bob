@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket from "ws";
 
 import { freePort } from "./dev-nodes.js";
 import { configure, environment, gatedClaude, killNode, login, openChat, queuedTexts, spawnNode, temporaryRoot, waitFor, waitForInvocations } from "./queued-prompt-harness.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 for (const stopped of [false, true]) test(`a queued prompt survives a node crash and ${stopped ? "stays paused after Stop" : "runs when the node comes back"}`, async () => {
   const root = await temporaryRoot("joint-bob-queue-restart-");
@@ -49,7 +49,7 @@ for (const stopped of [false, true]) test(`a queued prompt survives a node crash
     await waitFor(reopened.messages, () => reopened.messages.some((message) => message.type === "queuedPrompts"));
     assert.deepEqual(queuedTexts(reopened.messages), ["second"]);
     if (stopped) {
-      const db = new DatabaseSync(path.join(root, "data", "node.db"), { readOnly: true });
+      const db = openNodeDatabase(path.join(root, "data", "node.db"), { readOnly: true });
       try { assert.equal(db.prepare("SELECT paused FROM queued_prompt_control WHERE queue_key = ?").get(`${fixture.projectId}:${opened.messages.find(message => message.type === "ready")!.sessionId}`)?.paused, 1); }
       finally { db.close(); }
       const queued = (reopened.messages.find(message => message.type === "queuedPrompts")!.prompts as Array<{ id: string; revision: number }>)[0];
@@ -96,7 +96,7 @@ test("a prompt queued before native initialization survives a crash under its re
     await waitFor(opened.messages, () => opened.messages.some((message) => message.type === "userMessage" && message.queued === true && message.text === "second"));
     assert.equal(opened.messages.some((message) => message.type === "sessionFile"), false, "native init has not reported a session file");
 
-    const database = new DatabaseSync(path.join(root, "data", "node.db"));
+    const database = openNodeDatabase(path.join(root, "data", "node.db"));
     const queueRows = database.prepare("SELECT queue_key FROM queued_prompts ORDER BY sequence").all() as Array<{ queue_key: string }>;
     database.close();
     assert.deepEqual(queueRows.map(({ queue_key }) => queue_key), [

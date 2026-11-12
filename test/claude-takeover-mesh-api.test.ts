@@ -75,9 +75,9 @@ function openConversation(environment: DevEnvironment, node: SeededNode, session
   url.searchParams.set("nodeSession", "1");
   // A routed node session, signed by the node that serves it.
   const authorization = execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-    import {DatabaseSync} from 'node:sqlite';
+    import { openNodeDatabase } from './src/node-database.ts';
     import {signClusterRequest} from './src/cluster-protocol.ts';
-    const db=new DatabaseSync(process.env.JOINT_BOB_DATA_DIR+'/node.db');
+    const db=openNodeDatabase(process.env.JOINT_BOB_DATA_DIR+'/node.db');
     process.stdout.write(signClusterRequest(db,${JSON.stringify(node.nodeId)},${JSON.stringify(node.nodeId)},'GET',${JSON.stringify(url.pathname + url.search)},Buffer.alloc(0)));db.close();
   `], { env: { ...process.env, HOME: environment.home, JOINT_BOB_DATA_DIR: node.dataDir }, encoding: "utf8" });
   return new Promise((resolve, reject) => {

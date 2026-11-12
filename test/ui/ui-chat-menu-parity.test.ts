@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { launchChrome } from "./launch-chrome.js";
+import { reach } from "./workspace-menus.js";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 
 /** The conversation list's row menu and the open conversation's menu are the same
@@ -35,19 +36,21 @@ test("the open conversation offers the same menu its row offers", { timeout: 120
 
     await row.locator("button").first().click();
     await page.locator("#sessionTitle").filter({ hasText: "Short one" }).waitFor();
-    await page.getByTestId("chat-session-menu-button").click();
+    // On the desktop workspace Conversation actions is in the header's ⋯ menu.
+    await (await reach(page, "chat-session-menu-button")).click();
     assert.deepEqual(await page.locator("#rowMenu button").allInnerTexts(), rowLabels, "the open conversation offers exactly the row's actions");
 
     // The actions act on the open conversation, not on whatever the list last touched.
     await page.getByTestId("session-done-button").click();
     await page.getByTestId("conversation-feedback-submit").click();
     await page.locator("#sessionList").getByText("Short one", { exact: true }).waitFor({ state: "hidden" });
-    await page.getByTestId("chat-session-menu-button").click();
+    await (await reach(page, "chat-session-menu-button")).click();
     assert.equal(await page.getByTestId("session-done-button").innerText(), "Mark not done");
     await page.keyboard.press("Escape");
 
-    // On a phone the toolbar hides its actions behind More, so the entry lives there.
+    // A narrow window keeps the actions behind ⋯ as well, so the entry lives there.
     await page.setViewportSize({ width: 720, height: 844 });
+    if (await page.locator("#chatMoreMenu[open]").count()) await page.getByTestId("chat-more-button").click();
     assert.equal(await page.getByTestId("chat-session-menu-button").isVisible(), false);
     await page.getByTestId("chat-more-button").click();
     await page.getByTestId("chat-session-menu-button").click();

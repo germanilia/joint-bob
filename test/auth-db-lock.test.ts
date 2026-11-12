@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { serverArgs } from "./server-entry.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // The auth check writes (it sweeps expired login sessions) on every authenticated
 // request. When another process holds the database write lock, that request must
@@ -44,7 +44,7 @@ test("an authenticated request waits out a database write lock instead of dying"
     assert.equal((await fetch(`${base}/api/auth/change-password`, { method: "POST", headers, body: JSON.stringify({ currentPassword: "initial-password", newPassword: "replacement-password" }) })).status, 204);
     assert.equal((await fetch(`${base}/api/projects`, { headers })).status, 200);
 
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     db.exec("PRAGMA busy_timeout=5000");
     db.exec("BEGIN IMMEDIATE");
     const pending = fetch(`${base}/api/projects`, { headers });

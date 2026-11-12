@@ -62,6 +62,8 @@ function showLogin() {
 }
 
 export function showSignedOut() {
+  // A late 401 from a request sent before sign-out must not wipe what the person is typing into the sign-in form.
+  if (!state.authenticated && elements.loginDialog.open) return;
   applyAuthStatus({ authenticated: false, setupRequired: false });
   elements.loginPasswordInput.value = "";
   elements.newPasswordInput.value = "";
@@ -158,9 +160,18 @@ function applyAuthStatus(status) {
   }
 }
 
+let announceAuthKnown;
+/**
+ * Resolves once this node has said who is signed in. Until then `state.role` is empty, and a screen that draws
+ * its admin-only parts from it draws them wrong for the whole visit: Settings opened by a key or a script while the
+ * app was still starting showed Harnesses without its path fields.
+ */
+export const authKnown = new Promise((resolve) => { announceAuthKnown = resolve; });
+
 export async function initializeApplication() {
   const status = await api("/api/auth/status", { signal: AbortSignal.timeout(BOOT_REQUEST_TIMEOUT_MS) });
   applyAuthStatus(status);
+  announceAuthKnown();
   if (!status.authenticated) {
     revealApplication();
     showLogin();

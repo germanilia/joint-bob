@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
+import { type SQLInputValue, type StatementSync } from "node:sqlite";
 import test from "node:test";
 import { syncConversationReviewStates } from "../src/conversation-reviews.js";
 import { resolveDataDirectory } from "../src/data-directory.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("review reconciliation reserves the writer before reading", (t) => {
   const session = {
@@ -15,7 +16,7 @@ test("review reconciliation reserves the writer before reading", (t) => {
   };
   syncConversationReviewStates("u", "user", "project", [session]);
 
-  const writer = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const writer = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   try {
     writer.exec("PRAGMA busy_timeout = 0; CREATE TABLE review_lock_probe(value INTEGER); INSERT INTO review_lock_probe VALUES (0);");
     const statementPrototype = Object.getPrototypeOf(writer.prepare("SELECT 1")) as object;

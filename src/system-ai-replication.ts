@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { backgroundAgentSchema, dashboardAgentSchema, syncCheckSchema } from './settings.js';
 import { summaryInstructionsSchema, summaryPolicySchema } from './conversation-summary-policy.js';
-import { systemAiSchema } from './system-ai-config.js';
+import { systemAiSchema, withStoredRouting } from './system-ai-config.js';
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from './replication.js';
 import { save, settingsDatabase } from './settings-store.js';
 import { getClusterNode } from './cluster.js';
@@ -21,7 +21,7 @@ function schema(db: DatabaseSync): void {
   db.exec('CREATE TABLE IF NOT EXISTS system_ai_versions (key TEXT PRIMARY KEY,value TEXT NOT NULL,revision INTEGER NOT NULL,origin_node_id TEXT NOT NULL)');
 }
 function store(db: DatabaseSync, input: z.infer<typeof eventSchema>): void {
-  save(db, input.key, input.value);
+  save(db, input.key, input.key === 'systemAI' ? JSON.stringify(withStoredRouting(JSON.parse(input.value))) : input.value);
   db.prepare('INSERT INTO system_ai_versions VALUES (?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,revision=excluded.revision,origin_node_id=excluded.origin_node_id')
     .run(input.key, input.value, input.revision, input.originNodeId);
 }

@@ -1,8 +1,9 @@
 // Synthetic authenticator for isolated repository tests. Never use with real accounts.
 import { createHmac } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import type { SeededNode, SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 export function fixtureTotp(secret: string, offset = 0): string {
   const bits = [...secret].map(char => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(char).toString(2).padStart(5, "0")).join("");
@@ -14,7 +15,7 @@ export function fixtureTotp(secret: string, offset = 0): string {
 }
 
 export function fixtureDatabase(node: SeededNode): DatabaseSync {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   db.exec("PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
   return db;
 }

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("a pre-groups database drops the project_type CHECK without losing rows", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-project-type-migration-"));
@@ -11,7 +11,7 @@ test("a pre-groups database drops the project_type CHECK without losing rows", a
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
 
   // Recreate the exact schema the previous build shipped, including the two-value CHECK.
-  const legacy = new DatabaseSync(path.join(dataDir, "node.db"));
+  const legacy = openNodeDatabase(path.join(dataDir, "node.db"));
   legacy.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE projects (
@@ -56,7 +56,7 @@ test("a pre-groups database drops the project_type CHECK without losing rows", a
     assert.equal(projects[0].syncFolderId, "legacy-folder");
     assert.deepEqual(projects[0].locations, [{ nodeId: "node-1", path: "/tmp/joint-bob-legacy-project" }]);
 
-    const inspector = new DatabaseSync(path.join(dataDir, "node.db"));
+    const inspector = openNodeDatabase(path.join(dataDir, "node.db"));
     try {
       const schema = inspector.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'projects'").get() as { sql: string };
       assert.doesNotMatch(schema.sql, /CHECK/i);

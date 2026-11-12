@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { access, mkdir, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { EMPTY_CONVERSATION_GRACE_MS, UNOWNED_EMPTY_CONVERSATION_GRACE_MS, retentionReason, type RetentionContext } from "../src/conversation-retention.js";
 import type { SessionSummary } from "../src/types.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const DAY = 86_400_000;
 const now = Date.parse("2026-09-30T12:00:00Z");
@@ -87,7 +87,7 @@ test("the sweep deletes this node's expired and empty conversations and keeps th
   const expired = await transcript(45), recent = await transcript(5), pinned = await transcript(45);
   setUserPin("admin", { kind: "conversation", projectId: project.id, engine: "claude", sessionId: pinned.id }, true, local.id);
 
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   db.exec("PRAGMA busy_timeout = 5000");
   const draft = async (ageMs: number, origin = local.id, owned = true): Promise<string> => {
     const id = randomUUID();

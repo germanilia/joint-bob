@@ -36,6 +36,9 @@ export type UsageEvent = z.infer<typeof usageEventSchema>;
 export const usageDifficultySchema = z.object({
   turnId: z.string().min(1), projectId: z.string().min(1), conversationId: z.string().min(1), sessionId: z.string().min(1), engine: z.string().min(1), occurredAt: z.string().datetime(),
   status: z.string().min(1), level: z.number().int().min(1).max(10).nullable(), confidence: z.number().min(0).max(1).nullable(), classifierId: z.string().nullable().optional(), configId: z.string().nullable().optional(), configRevision: z.number().int().nullable().optional(), inheritedFrom: z.string().nullable().optional(), mapped: z.boolean().optional(), startedAt: z.string().datetime().nullable().optional(), endedAt: z.string().datetime().nullable().optional(), queuedAt: z.string().datetime().nullable().optional(), turnKind: z.enum(["normal", "scheduled", "goal"]).optional(), outcome: z.enum(["completed", "failed"]).optional(),
+  /** Why routing did or did not change the model, and what it chose; read by the daily routing review. */
+  reason: z.string().max(200).optional(), decisionSource: z.string().max(200).optional(), candidateIndex: z.number().int().min(0).max(8).optional(),
+  provider: z.string().max(200).optional(), modelId: z.string().max(300).optional(), thinkingLevel: z.string().max(16).optional(),
 }).strict();
 export type UsageDifficulty = z.infer<typeof usageDifficultySchema>;
 

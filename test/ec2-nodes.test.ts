@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test, { after, before } from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type Fixture = { accountId: string; otherId: string; log: string; ec2: typeof import("../src/ec2-nodes.js") };
 // secrets.ts is reached through ec2-nodes.ts by a bare import, so every test here shares one instance pinned to one data dir.
@@ -15,7 +15,7 @@ before(async () => {
   dir = await mkdtemp(path.join(os.tmpdir(), "joint-bob-ec2-"));
   process.env.PI_WEB_DATA_DIR = dir;
   process.env.JOINT_BOB_SECRET_KEY = Buffer.alloc(32, 7).toString("base64");
-  const database = new DatabaseSync(path.join(dir, "node.db"));
+  const database = openNodeDatabase(path.join(dir, "node.db"));
   database.exec("CREATE TABLE workspaces (id TEXT PRIMARY KEY); CREATE TABLE projects (id TEXT PRIMARY KEY, workspace_id TEXT); CREATE TABLE project_aliases (alias_id TEXT PRIMARY KEY, project_id TEXT);");
   database.close();
   const secrets = await import("../src/secrets.js");

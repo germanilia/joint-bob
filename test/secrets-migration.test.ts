@@ -3,8 +3,8 @@ import { createCipheriv, randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // `src/secrets.js` is reached through bare imports, so every test in this file shares one
 // instance of it, pinned to the first data dir. A configured key keeps the fixture and that
@@ -36,7 +36,7 @@ async function legacyNode(tag: string): Promise<{ root: string; dataDir: string 
   const key = TEST_KEY;
   await writeFile(path.join(dataDir, "secret.key"), key.toString("base64"), { mode: 0o600 });
 
-  const legacy = new DatabaseSync(path.join(dataDir, "node.db"));
+  const legacy = openNodeDatabase(path.join(dataDir, "node.db"));
   legacy.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE projects (
@@ -118,7 +118,7 @@ test("the migration is marker-gated and a second run changes nothing", async () 
     const { listProjects } = await import(`../src/store.js?secrets-migration-idempotent=${tag}`);
     await listProjects();
 
-    const inspector = new DatabaseSync(path.join(dataDir, "node.db"));
+    const inspector = openNodeDatabase(path.join(dataDir, "node.db"));
     try {
       const snapshot = () => JSON.stringify({
         accounts: inspector.prepare("SELECT id, label, provider FROM secret_accounts ORDER BY id").all(),
@@ -148,7 +148,7 @@ test("the migration converts groups into accounts and drops the legacy GitHub sc
     const { listProjects } = await import(`../src/store.js?secrets-migration-shape=${tag}`);
     await listProjects();
 
-    const inspector = new DatabaseSync(path.join(dataDir, "node.db"));
+    const inspector = openNodeDatabase(path.join(dataDir, "node.db"));
     try {
       const accounts = inspector.prepare("SELECT label, provider, replicate FROM secret_accounts ORDER BY label").all() as unknown as Array<{ label: string; provider: string; replicate: number }>;
       // Three groups plus the per-project override's own account.

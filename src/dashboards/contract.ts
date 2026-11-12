@@ -23,6 +23,8 @@ export const dashboardEntitySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("conversation"), id: entityId, projectId: entityId }).strict(),
   z.object({ kind: z.literal("project"), id: entityId }).strict(),
   z.object({ kind: z.literal("workspace"), id: entityId }).strict(),
+  // A person's own dashboard over every project and workspace they can see; the id is their account. The control center shows these.
+  z.object({ kind: z.literal("account"), id: entityId }).strict(),
 ]);
 export type DashboardEntity = z.infer<typeof dashboardEntitySchema>;
 export type DashboardEntityKind = DashboardEntity["kind"];

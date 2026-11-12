@@ -181,7 +181,7 @@ test('Quality controls fit a phone without full-width checkboxes or cramped filt
     const refresh = await page.getByTestId('quality-refresh').boundingBox();
     assert.ok(refresh && refresh.height >= 44, 'dashboard actions have phone-sized touch targets');
     await page.getByTestId('quality-filters-toggle').click();
-    const project = await page.locator('#qualityProject').boundingBox(), from = await page.locator('#qualityFrom').boundingBox();
+    const project = await page.locator('#qualityProject').locator('..').boundingBox(), from = await page.locator('#qualityFrom').locator('..').boundingBox();
     assert.ok(project && from && Math.abs(project.x - from.x) < 2 && from.y > project.y, 'phone filters use full-width rows');
     const panel = await page.getByTestId('settings-panel-quality').evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth }));
     assert.ok(panel.scroll <= panel.width + 2, JSON.stringify(panel));
@@ -204,7 +204,10 @@ test('Quality saves inline, reports failures, and never submits unrelated settin
   await page.evaluate(async () => { const { openSettings } = await import('/app/settings.js'); await openSettings('quality'); });
   const toggle = page.getByTestId('quality-enabled'), status = page.getByTestId('quality-save-status');
   await page.getByTestId('quality-summary').getByText('0 evaluated replies', { exact: false }).waitFor();
-  assert.equal(await page.getByTestId('settings-save-button').isVisible(), false, 'Quality is autosaved, not part of the general form');
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
+  const saveLine = page.getByTestId('settings-save-state');
+  assert.equal(await page.locator('#settingsForm button[type=submit]').count(), 0, 'Settings has no shared save button; Quality saves inline');
+  assert.equal(await saveLine.getAttribute('data-state'), 'idle');
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   let fail = true, enabled = false;
@@ -236,12 +239,15 @@ test('Quality saves inline, reports failures, and never submits unrelated settin
     await page.getByTestId('quality-filters-toggle').click();
     await page.locator('#qualityModel').press('Enter');
     await page.evaluate(() => document.querySelector<HTMLFormElement>('#settingsForm')!.requestSubmit());
+    await page.waitForTimeout(500);
     assert.deepEqual(settingsWrites, [], 'filter Enter must not run the general save');
-    assert.equal(await page.locator('#settingsForm button[type=submit]').innerText(), 'Save settings');
+    assert.equal(await saveLine.getAttribute('data-state'), 'idle', "Quality's own saves never show on the general save line");
     assert.equal(await page.locator('#settingsDialog').evaluate((element: HTMLDialogElement) => element.open), true);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.getByTestId('settings-tab-account').click();
-    assert.equal(await page.getByTestId('settings-save-button').isVisible(), true, 'other tabs still offer their save action');
+    // Other sections save as they change, on the line in their head.
+    assert.equal(await page.getByTestId('settings-section-head-account').getByTestId('settings-save-state').isVisible(), true, 'other sections show the save line');
+    assert.equal(await saveLine.innerText(), 'Changes save as you make them');
   } finally {
     release();
     await page.unrouteAll({ behavior: 'wait' });

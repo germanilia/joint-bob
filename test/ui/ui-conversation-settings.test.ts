@@ -116,11 +116,13 @@ async function configureHarnessDefaults(page: Page) {
   } }));
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-commands").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await page.getByTestId("settings-start-conversation-enabled").check();
   await page.getByTestId("settings-start-conversation-prompt").fill("Update from main first.");
   await page.getByTestId("settings-end-conversation-enabled").check();
   await page.getByTestId("settings-end-conversation-prompt").fill("Commit, push, and monitor CI.");
+  // Each change saves on its own; the prompts are saved before the section changes.
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
   await page.getByTestId("settings-tab-engines").click();
   assert.deepEqual(await page.evaluate(`['Pi', 'Claude'].map(harness => document.querySelector('#settings' + harness + 'DefaultThinking')?.value)`), ["medium", "medium"], "both harnesses need editable medium defaults");
   await pickOption(page, "settings-pi-default-provider", "anthrop", "anthropic");
@@ -129,9 +131,10 @@ async function configureHarnessDefaults(page: Page) {
   await page.getByTestId("harness-tab-claude").click();
   await pickOption(page, "settings-claude-default-model", "sonn", "sonnet");
   await page.locator("#settingsClaudeDefaultThinking").selectOption("high");
-  await page.getByTestId("settings-save-button").click();
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+  assert.equal(await page.locator('#settingsDialog').evaluate((dialog: HTMLDialogElement) => dialog.open), true, "saving never closes Settings");
+  await page.getByTestId("settings-cancel-button").click();
   await page.locator('#settingsDialog[open]').waitFor({ state: "hidden" });
-  await page.getByText("Settings saved", { exact: true }).waitFor();
   const settings = await page.evaluate('(async () => await (await fetch("/api/settings")).json())()');
   assert.deepEqual(settings.conversationDefaults, {
     pi: { provider: "anthropic", modelId: "claude-sonnet-4-5", thinkingLevel: "low" },
@@ -198,7 +201,7 @@ test("Settings edit per-harness model and thinking defaults for new conversation
   await page.locator('#sessionList [data-testid="session-menu-button"]').first().waitFor();
   await page.getByTestId("settings-open-button").click();
   await page.locator('#settingsDialog[open]').waitFor();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   assert.equal(await page.locator("#settingsPiDefaultThinking").inputValue(), "low", "saved defaults survive reload");
   assert.equal(await page.locator("#settingsClaudeDefaultModel").getAttribute("data-value"), "sonnet");
   await page.evaluate('document.querySelector("#settingsDialog").close(); true');

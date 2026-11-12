@@ -4,7 +4,8 @@
  * once. The title is parked in a data attribute while the pointer is over the
  * control so the native tooltip never doubles it.
  */
-const SCOPE = "#chatToolbar";
+// The desktop workspace's header actions and its left column (whose places fold to icons) name themselves the same way.
+const SCOPE = ":is(#chatToolbar, #chatHeadActions, #workspaceSide, #workspaceFoot)";
 const SHOW_DELAY_MS = 120;
 
 const tip = document.createElement("div");

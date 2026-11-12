@@ -1,0 +1,734 @@
+/* Paper · Editorial — the desktop workspace (wider than 700 px; the phone, body.focus-ui, keeps its layout).
+   Left column (brand and New, search, places, then the three groups or, in Projects, one list at a time: the
+   projects, then one project's conversations; Settings and the person), the middle (the conversation, the board, the control center or
+   a group's full list) and the conversation's details column. Spec: "Layout › Desktop workspace" in
+   docs/superpowers/specs/2026-11-10-ui-redo-paper-design.md; mock: mocks/ui-redo, "Desktop · A conversation".
+   Markup: public/index.html (#workspaceSide, #workspaceGroups, #workspaceFoot, #workspaceGroupPage, the
+   chat header slots and the details panes); behaviour: app/workspace.js, app/conversation-details.js. */
+
+:root {
+  --ws-need: #b86e00; --ws-need-fill: #e8a13a; --ws-run: var(--accent); --ws-rev: #5b5bd6;
+  --ws-side-width: clamp(244px, 19vw, 288px);
+  /* The conversations column of the Projects place (app/workspace.js syncRail mirrors both widths). */
+  --ws-list-width: clamp(288px, 20vw, 336px);
+  --ws-card-radius: 24px;
+  --ws-gap: 14px;
+}
+:root[data-theme="dark"] { --ws-need: #f0b45a; --ws-need-fill: #f0b45a; --ws-rev: #a3a3f5; }
+
+/* Only the desktop shows these; the phone keeps today's panels and its own menu. */
+.ws-side, .ws-groups, .ws-foot, .ws-group-page, .ws-head-actions, .ws-chat-meta, .ws-seg-tab, .ws-pane,
+.ws-details-foot, .ws-picker-title, .ws-label, .ws-item-label, .conversation-filters-toggle { display: none; }
+.ws-menu:not(:popover-open) { display: none; }
+#activityPanel .ws-seg-tab { display: none; }
+
+@media (min-width: 701px) {
+  /* ---------- the frame ---------- */
+  /* Columns: the left column (places, then the groups or the projects), in Projects the chosen project's
+     conversations, the middle, and the Browser beside it on a wide window. */
+  body:not(.focus-ui) .shell {
+    --ws-col-side: var(--ws-side-width); --ws-col-list: var(--ws-list-width);
+    display: grid;
+    grid-template-columns: var(--ws-col-side) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "side-top main" "side-body main" "side-foot main";
+    column-gap: var(--ws-gap);
+    row-gap: 0;
+    height: 100dvh;
+    padding: var(--ws-gap) var(--ws-gap) var(--ws-gap) 0;
+  }
+  body:not(.focus-ui).ws-column-projects:is(:not(.ws-picker), .chats-collapsed) .shell {
+    grid-template-columns: var(--ws-col-side) var(--ws-col-list) minmax(0, 1fr);
+    grid-template-areas: "side-top list main" "side-body list main" "side-foot list main";
+  }
+  @media (min-width: 1200px) {
+    body:not(.focus-ui).browser-visible .shell {
+      grid-template-columns: var(--ws-col-side) minmax(320px, 1fr) minmax(320px, 1.1fr);
+      grid-template-areas: "side-top main browser" "side-body main browser" "side-foot main browser";
+    }
+    body:not(.focus-ui).browser-visible.ws-column-projects:is(:not(.ws-picker), .chats-collapsed) .shell {
+      grid-template-columns: var(--ws-col-side) var(--ws-col-list) minmax(320px, 1fr) minmax(320px, 1.1fr);
+      grid-template-areas: "side-top list main browser" "side-body list main browser" "side-foot list main browser";
+    }
+    body:not(.focus-ui).browser-visible #browserPanel { grid-area: browser; position: static; height: 100%; border-radius: var(--ws-card-radius); }
+  }
+  body:not(.focus-ui) :is(.mobile-nav, .app-menu, .back-button) { display: none !important; }
+  /* styles.css hides these below 1024 px, where the phone menu once held them; the column holds them now. */
+  body:not(.focus-ui) :is(#settingsButton, #openControlCenterButton) { display: flex; }
+  body:not(.focus-ui) .ws-menu #projectNotesButton { display: flex; }
+  body:not(.focus-ui) .ws-side { grid-area: side-top; display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 4px 0 6px var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
+  body:not(.focus-ui) .ws-groups { grid-area: side-body; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; padding: 0 0 0 var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
+  body:not(.focus-ui) .ws-foot { grid-area: side-foot; display: grid; gap: 2px; min-width: 0; padding: 8px 0 0 var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
+
+  body:not(.focus-ui) :is(#chatPanel, #boardPanel, #controlCenterPanel, #workspaceGroupPage) { grid-area: main; min-width: 0; min-height: 0; height: auto; }
+
+  /* What the left column's body holds: the groups (Inbox, the default) or the projects (Projects). In Projects the
+     chosen project's conversations have a column of their own beside it, the height of the window. Nothing in either
+     column scrolls: both lists fit the height and page (app/session-pager.js). */
+  body:not(.focus-ui) .shell > :is(#projectsPanel, #chatsPanel) { display: none; min-width: 0; min-height: 0; max-height: none; animation: none; }
+  body:not(.focus-ui) .shell > #projectsPanel { grid-area: side-body; margin: 0 0 0 var(--ws-gap); }
+  body:not(.focus-ui) .shell > #chatsPanel { grid-area: list; margin: 0; }
+  body:not(.focus-ui).ws-column-projects .ws-groups { display: none; }
+  /* Until a project is chosen there is no second column, unless it is folded: its strip holds the way to unfold it. */
+  body:not(.focus-ui).ws-column-projects .shell > #projectsPanel,
+  body:not(.focus-ui).ws-column-projects:is(:not(.ws-picker), .chats-collapsed) .shell > #chatsPanel { display: flex; }
+  body:not(.focus-ui) :is(#sessionList, #projectList) .usage-cost { display: none; }
+
+  /* The middle holds one thing: the conversation, the board, the control center, or a group's full list. */
+  body:not(.focus-ui) #chatPanel { display: grid; }
+  body:not(.focus-ui) #boardPanel, body:not(.focus-ui) #controlCenterPanel { display: none; }
+  body:not(.focus-ui).view-board #boardPanel, body:not(.focus-ui).view-control #controlCenterPanel { display: flex; }
+  body:not(.focus-ui):is(.view-board, .view-control) #chatPanel { display: none; }
+  body:not(.focus-ui).ws-page-open :is(#chatPanel, #boardPanel, #controlCenterPanel) { display: none; }
+  body:not(.focus-ui).ws-page-open #workspaceGroupPage:not([hidden]) { display: flex; }
+  /* A conversation opened from Bob's board floats over it, as it always has. */
+  body:not(.focus-ui).view-control.control-popup .shell > #chatPanel { display: grid; position: fixed; inset: 48px max(16px, 5vw) 16px; height: auto; z-index: 40; }
+
+  /* Cards on sand: the middle and the details are cream cards; the left column sits on the page. */
+  body:not(.focus-ui) :is(#boardPanel, #controlCenterPanel, #workspaceGroupPage) {
+    border: 0; border-radius: var(--ws-card-radius); background: var(--panel); box-shadow: var(--shadow-soft); overflow: hidden;
+  }
+  /* The install card sat over the message box. On the desktop it is a small card at the foot of the left column,
+     above Settings and the person. */
+  body:not(.focus-ui) .install-banner {
+    left: var(--ws-gap); bottom: 104px; transform: none; width: calc(var(--ws-side-width) - var(--ws-gap)); flex-wrap: wrap; gap: 10px;
+    padding: 12px; border: 0; border-radius: 18px;
+  }
+  body:not(.focus-ui) .install-banner-copy { flex: 1 1 0; }
+  body:not(.focus-ui) .install-banner-actions { flex: 1 0 100%; justify-content: flex-end; margin-left: 0; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .install-banner { width: 300px; }
+  /* The board's five columns share the card and keep its margin; a narrow window scrolls them without losing it. */
+  body:not(.focus-ui) #boardPanel .board-columns { gap: 12px; padding: 14px 18px 18px; scroll-padding-inline: 18px; }
+  body:not(.focus-ui) #boardPanel .board-column { min-width: 176px; border-color: transparent; background: var(--field); }
+  body:not(.focus-ui) #boardPanel > .panel-bar { padding-inline: 22px; border-bottom-color: transparent; }
+  /* Dark themes draw a hairline instead of a shadow. */
+  :root[data-theme="dark"] body:not(.focus-ui) :is(#boardPanel, #controlCenterPanel, #workspaceGroupPage),
+  :root[data-theme="dark"] body:not(.focus-ui) #chatPanel::before,
+  :root[data-theme="dark"] body:not(.focus-ui) #chatPanel > .messages-wrap > #activityPanel { box-shadow: 0 0 0 1px var(--line); }
+  /* The columns stay put, so the phone's slide-in for each screen is not used; its fill would also give every header
+     a stacking context and put the ⋯ menu under the messages. */
+  body:not(.focus-ui) :is(#chatPanel, #projectsPanel, #chatsPanel, #boardPanel, #controlCenterPanel),
+  body:not(.focus-ui) :is(#chatPanel, #projectsPanel, #chatsPanel, #boardPanel) :is(.panel-bar, .chat-topbar, .panel-scroll, .board-columns, .messages) { animation: none; }
+
+  /* ---------- left column: brand, New, search, places ---------- */
+  .ws-brand { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 2px 2px 4px; }
+  .ws-mark { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--paper-raised); }
+  .ws-mark img { width: 24px; height: 24px; }
+  .ws-name { min-width: 0; flex: 1; overflow: hidden; font: 400 19px/1.1 var(--serif); color: var(--heading); white-space: nowrap; text-overflow: ellipsis; }
+  .ws-icon-button { width: 28px; min-width: 28px; min-height: 32px; color: var(--muted); }
+  .ws-icon-button svg { width: 18px; height: 18px; }
+  .ws-new-button { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 11px 0 8px; border-radius: 10px; font-size: 13.5px; font-weight: 650; }
+  .ws-new-button svg { width: 15px; height: 15px; }
+
+  .ws-search { position: relative; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 12px; border-radius: 12px; background: var(--field); color: var(--muted); cursor: text; }
+  .ws-search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
+  .ws-search svg { width: 16px; height: 16px; flex: none; }
+  .ws-search input { min-width: 0; flex: 1; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; box-shadow: none; color: var(--text); font-size: 13.5px; }
+  .ws-search input::placeholder { color: var(--muted); opacity: 0.85; }
+  .ws-search input::-webkit-search-cancel-button { display: none; }
+  .ws-search-key { flex: none; color: var(--muted); font: 500 11px/1 var(--mono); opacity: 0.8; }
+
+  .ws-places { display: grid; gap: 1px; }
+  .ws-place, .ws-foot .ws-place {
+    position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; height: 34px; min-height: 34px;
+    padding: 0 10px; border: 0; border-radius: 10px; background: transparent; box-shadow: none; color: var(--muted);
+    font-size: 13.5px; font-weight: 550; text-align: left;
+    /* Not `place-items: initial`: that shorthand also resets align-items, and the icon and label then sit at the top of the fill. */
+    justify-items: initial; align-items: center; justify-content: flex-start;
+  }
+  .ws-place:hover:not(:disabled) { background: color-mix(in srgb, var(--paper-raised) 60%, transparent); color: var(--text); }
+  .ws-place.on { background: var(--paper-raised); color: var(--text); }
+  .ws-place > svg { width: 17px; height: 17px; flex: none; }
+  .ws-place-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-place-note { flex: none; max-width: 48%; overflow: hidden; color: var(--muted); font-size: 12px; font-style: normal; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-place-note.needs { color: var(--ws-need); }
+  .ws-place-note:empty { display: none; }
+  /* Bob: his hat and what waits for you in his chat. */
+  .ws-place-bob > svg { color: var(--accent); }
+  .ws-place-bob .control-icon-badge { position: static; display: inline-grid; place-items: center; min-width: 20px; height: 18px; margin-left: auto; padding: 0 6px; border: 0; border-radius: 9px; background: color-mix(in srgb, var(--ws-need-fill) 22%, transparent); color: var(--ws-need); font-size: 11px; font-weight: 700; }
+  .ws-place-bob .control-icon-badge[hidden] { display: none; }
+  .ws-place .shortcut-hint { left: 50%; }
+
+  /* ---------- menus (New, More, the details column's More) ---------- */
+  .ws-menu:popover-open { display: grid; }
+  .ws-menu {
+    position: fixed; inset: auto; margin: 0; gap: 2px; min-width: 232px; max-width: min(320px, calc(100vw - 16px));
+    padding: 6px; border: 0; border-radius: 16px; background: var(--panel); color: var(--text); box-shadow: var(--shadow);
+    /* A menu is as tall as its rows and never taller than the window. Said outright, whatever the browser's own
+       popover rules are: with a bottom edge and no height of its own, the grid spread its rows over the whole window. */
+    right: auto !important; bottom: auto !important; height: fit-content; max-height: calc(100dvh - 16px); overflow: hidden auto;
+    align-content: start; grid-auto-rows: max-content;
+  }
+  :root[data-theme="dark"] .ws-menu { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow); }
+  .ws-menu > :is(button, a), .ws-menu .ws-menu-item, .ws-menu-harnesses > button {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; height: auto; padding: 6px 10px; border: 0;
+    border-radius: 10px; background: transparent; box-shadow: none; color: var(--text); font-size: 13.5px; font-weight: 550;
+    text-align: left; text-decoration: none; justify-items: initial; align-items: center; justify-content: flex-start;
+  }
+  .ws-menu :is(button, a):hover:not(:disabled), .ws-menu :is(button, a):focus-visible { background: var(--field); outline: none; }
+  .ws-menu :is(button, a):disabled { opacity: 0.45; }
+  .ws-menu :is(button, a) > svg { width: 17px; height: 17px; flex: none; color: var(--muted); }
+  .ws-menu :is(button, a) > span:not(.reviews-badge):not(.shortcut-hint) { display: grid; min-width: 0; flex: 1; }
+  .ws-menu small { color: var(--muted); font-size: 12px; font-weight: 450; }
+  .ws-menu .ws-item-label { display: block; }
+  .ws-menu .reviews-badge { position: static; margin-left: auto; }
+  /* In a menu the chord is written out at the end of its row, always (the badge keeps the key alone for the buttons). */
+  :is(.ws-menu, .chat-more-actions) .shortcut-hint {
+    position: static !important; display: inline-block !important; flex: none; order: 9; margin-left: auto; padding: 0; border: 0;
+    background: none; box-shadow: none; color: var(--muted); font-size: 0; transform: none; opacity: 0.85;
+  }
+  :is(.ws-menu, .chat-more-actions) .shortcut-hint::after { content: attr(title); font: 500 11.5px/1 var(--mono); }
+  body.focus-ui .chat-more-actions .shortcut-hint { display: none !important; }
+  .ws-menu-harnesses { display: grid; gap: 2px; padding: 2px 0; border-block: 1px solid var(--line); }
+  .ws-menu-harnesses:empty, .ws-menu-harnesses[hidden] { display: none; }
+  .ws-menu-harnesses svg { width: 17px; height: 17px; flex: none; }
+  .ws-menu-harnesses .pi { color: var(--accent); } .ws-menu-harnesses .claude { color: var(--claude); } .ws-menu-harnesses .kiro { color: var(--kiro); }
+
+  /* ---------- the groups ---------- */
+  .ws-group { display: flex; flex-direction: column; min-height: 0; }
+  .ws-lab { display: flex; align-items: baseline; gap: 6px; height: 34px; padding: 12px 10px 4px; color: var(--muted); font: 400 15px/1.2 var(--serif); }
+  .ws-lab > i { font: 600 12px/1 var(--sans); font-style: normal; opacity: 0.85; }
+  .ws-show-all { margin-left: auto; min-height: 0; padding: 0; border: 0; background: none; color: var(--accent); font: 600 12px/1 var(--sans); cursor: pointer; }
+  .ws-show-all:hover { text-decoration: underline; }
+  .ws-empty { margin: 0; padding: 2px 10px 6px; height: 26px; color: var(--muted); font-size: 12.5px; opacity: 0.85; }
+  .ws-row {
+    display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 0; margin: 0 0 2px; padding: 8px 10px;
+    border: 0; border-radius: 12px; background: transparent; color: var(--text); text-align: left; font-weight: 400;
+  }
+  .ws-row:hover { background: color-mix(in srgb, var(--paper-raised) 55%, transparent); }
+  .ws-row.sel { background: var(--panel); box-shadow: var(--shadow-soft); }
+  .ws-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .ws-dot { display: inline-block; flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--muted); }
+  .ws-dot.need { background: var(--ws-need-fill); }
+  .ws-dot.rev { background: var(--ws-rev); }
+  .ws-dot.run { background: var(--ws-run); animation: ws-pulse 1.8s ease-in-out infinite; }
+  @keyframes ws-pulse { 50% { opacity: 0.35; } }
+  .ws-row-copy { display: grid; min-width: 0; flex: 1; gap: 1px; }
+  .ws-row-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .ws-row-top b { min-width: 0; flex: 1; overflow: hidden; font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-row-top time { flex: none; color: var(--muted); font-size: 11.5px; }
+  .ws-row-line { overflow: hidden; color: var(--muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---------- left column foot: Settings and the person ---------- */
+  .ws-me { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 10px; border: 0; border-radius: 12px; background: transparent; color: var(--text); text-align: left; font-weight: 400; }
+  .ws-me:hover { background: color-mix(in srgb, var(--paper-raised) 60%, transparent); }
+  .ws-avatar { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-size: 12px; font-weight: 700; }
+  .ws-me-copy { display: grid; min-width: 0; flex: 1; }
+  .ws-me-copy b { overflow: hidden; font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-me-copy small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-me > svg { width: 17px; height: 17px; flex: none; color: var(--muted); }
+
+  /* ---------- Projects: two columns, the projects and the chosen project's conversations ---------- */
+  /* Both lists sit on the page as the Inbox groups do: no card, quiet rows, one highlight. */
+  body:not(.focus-ui) :is(#projectsPanel, #chatsPanel) { border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: hidden; }
+  body:not(.focus-ui) :is(#projectsPanel, #chatsPanel) > .panel-bar { flex: none; gap: 4px; height: 34px; min-height: 34px; padding: 0 0 0 10px; border: 0; background: transparent; }
+  body:not(.focus-ui) #projectsPanel .brand { display: none; }
+  body:not(.focus-ui) #projectsPanel .ws-picker-title { display: block; }
+  body:not(.focus-ui) #projectsPanel .panel-title h1 { color: var(--muted); font: 400 15px/1.2 var(--serif); }
+  /* The conversations column is headed by its project's name, level with the brand. */
+  body:not(.focus-ui) #chatsPanel > .panel-bar { height: 44px; min-height: 44px; margin-top: 4px; padding-left: 10px; }
+  body:not(.focus-ui) #chatsPanel .panel-title h1 { color: var(--heading); font: 400 19px/1.1 var(--serif); }
+  /* The folder is on the project's row in the list of projects; here the name alone keeps the line. */
+  body:not(.focus-ui) #chatsPanel .panel-title p { display: none; }
+  body:not(.focus-ui) :is(#chatsRecentSessionsButton, #chatsRunningConversationsButton) { display: none !important; }
+  body:not(.focus-ui) .collapse-button { display: inline-grid; flex: none; width: 28px; min-width: 28px; height: 28px; min-height: 28px; border-radius: 9px; color: var(--muted); }
+  body:not(.focus-ui) .collapse-button svg { width: 16px; height: 16px; }
+
+  /* The tools over each list: a search box and small square buttons, 32 px high. */
+  body:not(.focus-ui) .project-search-row { flex: none; gap: 4px; margin: 2px 0 6px; }
+  body:not(.focus-ui) #projectsPanel .project-search-row input,
+  body:not(.focus-ui) #conversationListPane .conversation-search input,
+  body:not(.focus-ui) #quickNotesSection .quick-note-search input { min-height: 32px; height: 32px; padding-block: 0; border-radius: 10px; font-size: 13px; }
+  body:not(.focus-ui) #projectsPanel .project-search-row .icon-button,
+  body:not(.focus-ui) .conversation-filters-toggle {
+    position: relative; display: inline-grid; flex: none; place-items: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; margin: 0;
+    border: 0; border-radius: 10px; background: var(--field); box-shadow: none; color: var(--muted);
+  }
+  body:not(.focus-ui) #projectsPanel .project-search-row .icon-button.primary { background: var(--accent); color: var(--surface); font-size: 17px; font-weight: 500; line-height: 1; }
+  body:not(.focus-ui) #projectsPanel .project-search-row .icon-button svg,
+  body:not(.focus-ui) .conversation-filters-toggle svg { width: 16px; height: 16px; }
+  body:not(.focus-ui) :is(.conversation-filters-toggle, #allProjectIssuesButton):is(:hover, [aria-expanded="true"], .on) { color: var(--accent); }
+  body:not(.focus-ui) .conversation-filters-toggle[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 14%, var(--field)); }
+  body:not(.focus-ui) .conversation-filters-toggle[hidden] { display: none; }
+  body:not(.focus-ui) .conversation-filters-count {
+    position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+    background: var(--accent); color: var(--surface); font: 600 10.5px/16px var(--sans); text-align: center;
+  }
+  body:not(.focus-ui) .conversation-filters-count[hidden] { display: none; }
+  body:not(.focus-ui) :is(.new-chat-mobile, .quick-note-mobile, .projects-quick-note-mobile) { display: none; }
+  /* The projects' cluster filter folds behind its button, as a project's filters do (app/workspace.js). */
+  body:not(.focus-ui) #projectFilterRow { flex: none; margin: 0 0 6px; }
+  body:not(.focus-ui) #projectsPanel:not(.filters-open) > #projectFilterRow { display: none; }
+
+  /* A project's list: start a conversation with an agent, Conversations or Notes, then the search and its filters. */
+  body:not(.focus-ui) .new-chat-row { display: block; flex: none; margin: 2px 0 0; }
+  body:not(.focus-ui) #chatsPanel .new-chat-harnesses { display: flex; align-items: center; gap: 4px; min-height: 32px; }
+  body:not(.focus-ui) #chatsPanel .new-chat-harnesses:not(:empty)::before { content: "New"; flex: none; margin: 0 6px 0 10px; color: var(--muted); font: 600 12.5px/1 var(--sans); }
+  body:not(.focus-ui) #chatsPanel .new-chat-harness-button { flex: 0 0 36px; width: 36px; min-width: 36px; height: 32px; min-height: 32px; border: 0; border-radius: 10px; background: var(--field); box-shadow: none; }
+  body:not(.focus-ui) #chatsPanel .new-chat-harness-button:hover:not(:disabled) { background: var(--paper-raised); }
+  body:not(.focus-ui) #chatsPanel .new-chat-harness-icon { width: 17px; height: 17px; }
+  body:not(.focus-ui) #chatsPanel .conversation-tabs { flex: none; gap: 2px; margin: 6px 0 0; padding: 3px; border: 0; border-radius: 12px; background: var(--paper-raised); }
+  body:not(.focus-ui) #chatsPanel .conversation-tabs button { min-height: 26px; height: 26px; border-radius: 9px; font-size: 12.5px; }
+  body:not(.focus-ui) #chatsPanel .conversation-tabs button.active { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+  body:not(.focus-ui) .chat-filters { margin: 0 0 6px; }
+  body:not(.focus-ui) :is(.classification-filter, .list-filter-row) { margin-inline: 0; }
+  body:not(.focus-ui) #quickNotesSection .section-title { margin-inline: 10px 0; }
+  body:not(.focus-ui) #quickNotesSection .quick-note-search { margin-inline: 0; }
+  /* The list's own title repeats the tab, so its row lends Mark all reviewed a line of its own under the filters. The
+     label and cluster lists have the column's whole width, so an open list is never wider than its row. */
+  body:not(.focus-ui) #conversationListPane {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-content: start;
+    grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "search search search" "chips chips chips" "labels labels labels" "done sched sched" "mark mark mark" "list list list" "pager pager pager";
+  }
+  body:not(.focus-ui) #conversationListPane[hidden] { display: none; }
+  body:not(.focus-ui) #conversationListPane > .section-title { display: contents; }
+  body:not(.focus-ui) #conversationListPane > .section-title::after,
+  body:not(.focus-ui) #conversationListPane > .section-title > span:first-child { display: none; }
+  body:not(.focus-ui) #conversationListPane #chatsLiveDot { grid-area: mark; justify-self: end; align-self: center; margin: 0 12px 6px 0; }
+  body:not(.focus-ui) #conversationListPane .mark-all-reviewed-button { grid-area: mark; justify-self: start; align-self: center; margin: 0 0 6px 8px; }
+  body:not(.focus-ui) #conversationListPane > .section-title .mark-all-reviewed-button { min-width: 0; min-height: 22px; overflow: hidden; padding: 0 8px; font: 600 11.5px/20px var(--sans); text-overflow: ellipsis; white-space: nowrap; }
+  body:not(.focus-ui) #conversationListPane > .conversation-search-row { grid-area: search; display: flex; align-items: center; gap: 4px; margin: 6px 0; }
+  body:not(.focus-ui) #conversationListPane .conversation-search { flex: 1; min-width: 0; margin: 0; }
+  body:not(.focus-ui) #conversationListPane > .chat-filters { grid-area: chips; }
+  body:not(.focus-ui) #conversationListPane .chat-filters button { min-height: 28px; }
+  body:not(.focus-ui) #conversationListPane > #conversationFilterRow { grid-area: labels; margin-right: 0; }
+  body:not(.focus-ui) #conversationListPane > .done-filter[for="showDoneConversations"] { grid-area: done; }
+  body:not(.focus-ui) #conversationListPane > .done-filter[for="showScheduledConversations"] { grid-area: sched; }
+  body:not(.focus-ui) #conversationListPane .done-filter { grid-column: auto; margin: 2px 2px 6px 8px; font-size: 12px; white-space: nowrap; }
+  body:not(.focus-ui) #conversationListPane > #sessionList { grid-area: list; min-height: 0; }
+  body:not(.focus-ui) #conversationListPane:not(.filters-open) > :is(.chat-filters, #conversationFilterRow, .done-filter),
+  body:not(.focus-ui) #conversationListPane:not(.filters-open) :is(#markAllReviewedButton, #chatsLiveDot) { display: none; }
+
+  /* Both lists fit the column and page (app/session-pager.js): no scroll bar, never a row cut in half. */
+  body:not(.focus-ui) :is(#projectList, #sessionList).panel-scroll { gap: 2px; padding: 0 0 2px; }
+  body:not(.focus-ui) :is(#projectList, #sessionList).ws-paged { overflow: hidden; }
+  body:not(.focus-ui) .ws-session-pager { flex: none; grid-area: pager; display: flex; align-items: center; justify-content: center; gap: 8px; height: 32px; margin: 0; }
+  body:not(.focus-ui) .ws-session-pager[hidden] { display: none; }
+  body:not(.focus-ui) .ws-session-pager > :first-child { order: 1; }
+  body:not(.focus-ui) .ws-session-pager > .list-pager-label { order: 2; min-width: 72px; text-align: center; font-size: 12.5px; color: var(--muted); }
+  body:not(.focus-ui) .ws-session-pager > :last-child { order: 3; }
+  body:not(.focus-ui) .ws-session-pager .list-pager-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
+
+  /* The projects' groups (Personal, Work, a machine): a quiet serif label with its count, as the Inbox groups have. */
+  body:not(.focus-ui) #projectList .project-group { gap: 2px; }
+  body:not(.focus-ui) #projectList .project-group + .project-group { margin-top: 4px; padding-top: 0; border-top: 0; }
+  body:not(.focus-ui) #projectList .project-group > .list-row + .list-row { border-top: 0; }
+  body:not(.focus-ui) #projectList .project-group-summary {
+    gap: 6px; min-height: 30px; margin: 0; padding: 0 4px 0 10px; border-radius: 10px; color: var(--muted);
+    font: 400 15px/1.2 var(--serif); letter-spacing: 0; text-transform: none;
+  }
+  body:not(.focus-ui) #projectList .project-group-summary:hover { background: color-mix(in srgb, var(--paper-raised) 55%, transparent); }
+  body:not(.focus-ui) #projectList .project-group-count { margin-left: 0; min-width: 0; padding: 0; background: none; font: 600 12px/1 var(--sans); opacity: 0.85; }
+
+  /* A row is one line of title and one quiet line under it. The row holds the highlight. Its pin and ⋮ lie over its
+     end and show when the pointer or the keyboard is on the row (the title then ends before them); a pinned row keeps
+     its pin in sight, and a touch screen keeps ⋮, which also pins. --row-lead is the room a row's own mark takes
+     there: the count of its sub-agent conversations, its ticket. */
+  body:not(.focus-ui) #projectList .list-row,
+  body:not(.focus-ui) #sessionList .list-row-main { --row-lead: 4px; --row-end: calc(var(--row-lead) + 2px); position: relative; display: flex; align-items: center; min-width: 0; border-radius: 12px; }
+  body:not(.focus-ui) #sessionList .list-row:is(.has-children, .has-ticket) > .list-row-main { --row-lead: 36px; }
+  body:not(.focus-ui) #sessionList .list-row.has-children.has-ticket > .list-row-main { --row-lead: 68px; }
+  body:not(.focus-ui) #projectList .list-row:has(> .pin-button.pinned),
+  body:not(.focus-ui) #sessionList .list-row-main:has(> .pin-button.pinned) { --row-end: calc(var(--row-lead) + 32px); }
+  body:not(.focus-ui) #projectList .list-row:hover,
+  body:not(.focus-ui) #sessionList .list-row-main:hover { background: color-mix(in srgb, var(--paper-raised) 55%, transparent); }
+  body:not(.focus-ui) #projectList .list-row.active,
+  body:not(.focus-ui) #sessionList .list-row.active > .list-row-main { background: var(--panel); box-shadow: var(--shadow-soft); }
+  :root[data-theme="dark"] body:not(.focus-ui) #projectList .list-row.active,
+  :root[data-theme="dark"] body:not(.focus-ui) #sessionList .list-row.active > .list-row-main { box-shadow: 0 0 0 1px var(--line); }
+  body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card),
+  body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card):is(:hover, .active) {
+    flex: 1 1 0; width: auto; min-width: 0; min-height: 0; padding: 8px var(--row-end) 8px 10px; border: 0; border-radius: 12px; background: transparent; box-shadow: none;
+  }
+  body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* A project's or a conversation's own colour is a line at the start of its row. */
+  body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card)[data-color],
+  body:not(.focus-ui) :is(#projectList .project-card, #sessionList .session-card)[data-color]:is(:hover, .active) { box-shadow: inset 3px 0 0 var(--project-hue); }
+  body:not(.focus-ui) #sessionList .session-card > strong,
+  body:not(.focus-ui) #projectList .project-card strong { display: block; overflow: hidden; margin-bottom: 2px; font-size: 13.5px; font-weight: 600; line-height: 1.35; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; }
+  body:not(.focus-ui) #projectList .project-card-heading { flex-wrap: nowrap; align-items: center; margin-bottom: 2px; }
+  body:not(.focus-ui) #projectList .project-card-heading strong { flex: 0 1 auto; margin: 0; }
+  body:not(.focus-ui) #sessionList .session-card > span,
+  body:not(.focus-ui) #projectList .project-card > span { display: block; overflow: hidden; font-size: 11.5px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
+  body:not(.focus-ui) #projectList .project-card > span { font-family: var(--sans); }
+  /* A project's second line: its folder, then what there is to say about it (syncing, locked, at home). "Not shared"
+     is how most projects are and says itself by saying nothing. */
+  body:not(.focus-ui) #projectList .project-card { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; text-align: left; }
+  body:not(.focus-ui) #projectList .project-card-heading { flex: 0 0 100%; min-width: 0; }
+  body:not(.focus-ui) #projectList .project-card > .project-path { flex: 1 1 60px; min-width: 0; }
+  body:not(.focus-ui) #projectList .project-card > em { flex: none; max-width: 100%; margin: 0; font-size: 11px; line-height: 1.4; }
+  body:not(.focus-ui) #projectList .project-sync-status-unavailable { display: none; }
+  body:not(.focus-ui) #projectList .project-group-dashboard { width: 26px; min-width: 26px; height: 26px; min-height: 26px; margin-left: auto; border-radius: 8px; color: var(--muted); }
+  body:not(.focus-ui) #projectList .project-group-dashboard svg { width: 15px; height: 15px; }
+  body:not(.focus-ui) #projectsPanel .project-search-row .projects-quick-note-mobile { display: none; }
+  body:not(.focus-ui) :is(#projectList, #sessionList) .row-action-button {
+    top: 50%; right: var(--row-lead); transform: translateY(-50%); width: 28px; min-width: 28px; height: 28px; min-height: 28px; border-radius: 8px; background: transparent; box-shadow: none;
+  }
+  body:not(.focus-ui) :is(#projectList, #sessionList) .row-action-button:hover { background: var(--field); }
+  body:not(.focus-ui) :is(#projectList, #sessionList) .pin-button:not(.pinned) { opacity: 0; }
+  body:not(.focus-ui) :is(#projectList .list-row, #sessionList .list-row-main):is(:hover, :focus-within),
+  body:not(.focus-ui) #projectList .list-row.menu-open,
+  body:not(.focus-ui) #sessionList .list-row.menu-open > .list-row-main { --row-end: calc(var(--row-lead) + 62px); }
+  body:not(.focus-ui) :is(#projectList .list-row, #sessionList .list-row-main):is(:hover, :focus-within) .pin-button,
+  body:not(.focus-ui) :is(#projectList, #sessionList) .list-row.menu-open .pin-button { right: calc(var(--row-lead) + 30px); opacity: 1; }
+  @media (hover: hover) {
+    body:not(.focus-ui) :is(#projectList, #sessionList) .row-menu-button { opacity: 0; }
+    body:not(.focus-ui) :is(#projectList .list-row, #sessionList .list-row-main):is(:hover, :focus-within) .row-menu-button,
+    body:not(.focus-ui) :is(#projectList, #sessionList) .list-row.menu-open .row-menu-button { opacity: 1; }
+  }
+  @media (hover: none) {
+    body:not(.focus-ui) #projectList .list-row,
+    body:not(.focus-ui) #sessionList .list-row-main { --row-end: calc(var(--row-lead) + 32px); }
+    body:not(.focus-ui) #projectList .list-row:has(> .pin-button.pinned),
+    body:not(.focus-ui) #sessionList .list-row-main:has(> .pin-button.pinned) { --row-end: calc(var(--row-lead) + 62px); }
+    body:not(.focus-ui) :is(#projectList, #sessionList) .pin-button { right: calc(var(--row-lead) + 30px); }
+  }
+  /* A conversation's sub-agent conversations open from the count at the end of its row; it never moves. */
+  body:not(.focus-ui) #sessionList .session-children-toggle { right: 4px; width: 30px; min-width: 30px; padding: 0; opacity: 1; color: var(--muted); font: 600 10.5px/1 var(--mono); }
+  body:not(.focus-ui) #sessionList .ticket-link-button { right: 4px; opacity: 1; }
+  body:not(.focus-ui) #sessionList .list-row.has-children .ticket-link-button { right: 36px; }
+  body:not(.focus-ui) #sessionList .list-row[data-session-depth="1"] .session-card { min-height: 0; }
+  /* Its sub-agent steps are a quiet line at the end of the row's second line, so every folded row has the same
+     height; opened, the steps list under the row. */
+  body:not(.focus-ui) #sessionList .list-row:has(> .agent-run-toggle[aria-expanded="false"]) .session-card > span { margin-right: 56%; }
+  body:not(.focus-ui) #sessionList .agent-run-toggle[aria-expanded="false"] {
+    position: absolute; right: 8px; bottom: 7px; z-index: 1; max-width: 54%; height: 18px; min-height: 0; margin: 0; padding: 0 2px; overflow: hidden; border: 0; background: transparent;
+    font-size: 11px; line-height: 18px; text-align: right; text-overflow: ellipsis; white-space: nowrap;
+  }
+  body:not(.focus-ui) #sessionList .list-row:is(.has-children, .has-ticket) > .agent-run-toggle[aria-expanded="false"] { right: 40px; }
+  body:not(.focus-ui) #sessionList .agent-run-toggle[aria-expanded="true"] { margin-left: 10px; }
+  body:not(.focus-ui) #sessionList .agent-run-list { margin-left: 10px; }
+  /* Notes: the queue's explanation is one line until the pointer or the focus is on the queue, so the notes keep the column. */
+  body:not(.focus-ui) #quickNotesQueue .quick-note-queue-hint { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  body:not(.focus-ui) #quickNotesQueue:is(:hover, :focus-within) .quick-note-queue-hint { white-space: normal; }
+  /* Worktrees and its two actions share one line. */
+  body:not(.focus-ui) #chatsPanel .worktree-subsection-title { flex-wrap: nowrap; gap: 4px; margin: 2px 0 2px 10px; }
+  body:not(.focus-ui) #chatsPanel .worktree-subsection-title::after { display: none; }
+  body:not(.focus-ui) #chatsPanel .worktree-subsection-title > span { flex: 0 0 auto; margin-right: auto; font-size: 13px; }
+  body:not(.focus-ui) #chatsPanel .worktree-subsection-title > button { min-width: 0; min-height: 24px; padding: 0 5px; font: 600 11.5px/1 var(--sans); white-space: nowrap; }
+
+  /* The places are one column of rows with their names, in Inbox and in Projects. Only a window under 720 px high
+     folds them to one row of icons in Projects (their names are the tooltips), so some projects still fit under them. */
+  @media (max-height: 719px) {
+    body:not(.focus-ui).ws-column-projects .ws-places { display: flex; gap: 2px; }
+    body:not(.focus-ui).ws-column-projects .ws-places > .ws-place { flex: 1 1 0; justify-content: center; padding: 0; }
+    body:not(.focus-ui).ws-column-projects .ws-places :is(.ws-place-label, .ws-place-note) { display: none; }
+    body:not(.focus-ui).ws-column-projects .ws-places .control-icon-badge { position: absolute; top: 1px; right: 2px; min-width: 16px; height: 15px; margin: 0; padding: 0 4px; font-size: 10px; }
+  }
+
+  /* Each column folds on its own chevron ([ and ]). The left column folds to a rail of icons with its expand button;
+     a window too narrow for both columns folds it by itself (.ws-auto-rail, app/workspace.js syncRail). The
+     conversations fold to a strip with theirs. */
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .shell { --ws-col-side: 64px; }
+  body:not(.focus-ui).chats-collapsed .shell { --ws-col-list: 40px; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) :is(.ws-name, .ws-search, .ws-place-label, .ws-place-note, .ws-me-copy, .ws-me > svg, .ws-groups) { display: none !important; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-brand { flex-direction: column; justify-content: center; padding-inline: 0; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-new-button { width: 32px; padding: 0; justify-content: center; font-size: 0; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) :is(.ws-place, .ws-me) { justify-content: center; padding: 0; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) :is(.ws-side, .ws-foot) { padding-left: 10px; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-places { display: grid; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-places .control-icon-badge { position: absolute; top: 1px; right: 2px; min-width: 16px; height: 15px; margin: 0; padding: 0 4px; font-size: 10px; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .shell > #projectsPanel { display: flex; margin-left: 10px; }
+  body:not(.focus-ui) :is(#projectsPanel, #chatsPanel).collapsed .panel-rail { align-items: center; padding-top: 6px; }
+  body:not(.focus-ui) .view-panel.collapsed > :not(.panel-rail) { display: none !important; }
+  body:not(.focus-ui) .view-panel.collapsed .panel-rail { display: flex; }
+
+  /* ---------- a group's full list in the middle ---------- */
+  .ws-group-page { flex-direction: column; min-height: 0; padding: 30px clamp(24px, 4vw, 56px) 18px; zoom: var(--ui-zoom-conversations, 1); }
+  .ws-page-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; zoom: var(--ui-zoom-headers, 1); }
+  .ws-page-heading { min-width: 0; flex: 1; }
+  .ws-page-crumb { margin: 0; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+  .ws-page-heading h1 { margin: 4px 0 0; font: 400 clamp(28px, 3vw, 40px)/1.08 var(--serif); color: var(--heading); }
+  .ws-page-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--paper-raised); }
+  .ws-page-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+  .ws-page-tabs button b { font-size: 11.5px; font-weight: 600; opacity: 0.75; }
+  .ws-page-tabs button[aria-selected="true"] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+  .ws-page-head > .icon-button { align-self: flex-start; }
+  .ws-page-list { display: grid; align-content: start; gap: 6px; min-height: 0; flex: 1; overflow: hidden; }
+  .ws-row.wide { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--field); }
+  .ws-row.wide:hover { background: color-mix(in srgb, var(--field) 70%, var(--paper-raised)); }
+  .ws-row.wide .ws-row-top b { font: 400 16px/1.3 var(--serif); }
+  .ws-row.wide .ws-row-line { font-size: 13px; }
+  .ws-page-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 10px; color: var(--muted); font-size: 12.5px; }
+  .ws-page-pager[hidden] { display: none; }
+
+  /* ---------- the conversation: one card, its details beside it ---------- */
+  body:not(.focus-ui) #chatPanel {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto auto auto auto auto;
+    grid-template-areas: "popup" "head" "lease" "chips" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
+    column-gap: var(--ws-gap);
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible;
+  }
+  /* The card behind the conversation's own column. */
+  body:not(.focus-ui) #chatPanel::before {
+    content: ""; grid-area: 1 / 1 / -1 / 2; border-radius: var(--ws-card-radius); background: var(--panel); box-shadow: var(--shadow-soft); pointer-events: none;
+  }
+  body:not(.focus-ui) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])):not(:has(> .messages-wrap.activity-floating)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "popup details" "head details" "lease details" "chips details" "msgs details" "reconnect details" "routing details" "strip details" "lock details" "done details" "login details" "composer details";
+  }
+  body:not(.focus-ui) #chatPanel > .messages-wrap { display: contents; }
+  body:not(.focus-ui) #chatPanel > .control-popup-bar { grid-area: popup; }
+  body:not(.focus-ui) #chatPanel > .chat-topbar { grid-area: head; }
+  body:not(.focus-ui) #chatPanel > .control-lease-banner { grid-area: lease; margin: 10px 28px 0; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar { grid-area: chips; }
+  body:not(.focus-ui) #chatPanel > .messages-wrap > :is(.messages, .jump-to-bottom, .story-return) { grid-area: msgs; }
+  body:not(.focus-ui) #chatPanel > .reconnect-banner { grid-area: reconnect; }
+  body:not(.focus-ui) #chatPanel > .routing-warning { grid-area: routing; }
+  body:not(.focus-ui) #chatPanel > .command-strip { grid-area: strip; }
+  body:not(.focus-ui) #chatPanel > #conversationLock { grid-area: lock; }
+  body:not(.focus-ui) #chatPanel > #doneConversationNotice { grid-area: done; }
+  body:not(.focus-ui) #chatPanel > .composer { grid-area: composer; }
+  /* A sign-in the agent asked for sits directly above the message box (app/browser-login.js). */
+  body:not(.focus-ui) #chatPanel > .browser-login-inline { grid-area: login; margin: 0 22px 8px; }
+  body:not(.focus-ui) #chatPanel > :is(.reconnect-banner, .routing-warning, .conversation-lock) { margin-inline: 22px; }
+
+  /* The header's first line: title, project, state; Stop, Mark done, the details toggle and ⋯ at the end. */
+  body:not(.focus-ui) #chatPanel > .chat-topbar {
+    display: flex; align-items: center; gap: 10px; height: auto; min-height: 0; padding: 24px 24px 0 30px; border: 0; background: transparent; zoom: var(--ui-zoom-headers, 1);
+  }
+  body:not(.focus-ui) #chatPanel .chat-title-block { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+  /* A narrow conversation keeps its title: the project tag goes and Mark done keeps only its icon. */
+  body:not(.focus-ui) #chatPanel > .chat-topbar { container: chathead / inline-size; }
+  @container chathead (max-width: 620px) {
+    #chatPanel .chat-project-name { display: none !important; }
+    #chatHeadActions #chatDoneButton { width: 34px !important; padding: 0 !important; justify-content: center; }
+    #chatHeadActions #chatDoneButton .chat-action-label { display: none !important; }
+  }
+  body:not(.focus-ui) #chatPanel .chat-topbar h2 { min-width: 80px; flex: 0 1 auto; font: 400 clamp(21px, 1.9vw, 28px)/1.15 var(--serif); color: var(--heading); }
+  body:not(.focus-ui) #chatPanel .chat-title-meta { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 auto; margin: 0; }
+  body:not(.focus-ui) #chatPanel .chat-project-name {
+    flex: 0 1 auto; min-width: 48px; max-width: 160px; padding: 3px 9px; border-radius: 999px; background: var(--paper-raised); color: var(--muted);
+    font: 600 12.5px/1.3 var(--sans); letter-spacing: 0; text-transform: none;
+  }
+  body:not(.focus-ui) #chatPanel .chat-actions { flex: 0 0 auto; margin: 0; padding: 0; gap: 6px; }
+  /* The state as words, not a traffic light: Idle, Connecting…, Connected, working. */
+  body:not(.focus-ui) #chatPanel #connectionStatus {
+    position: relative; width: auto; height: 24px; padding: 0 10px 0 22px; overflow: visible; border: 0; border-radius: 999px;
+    background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); font: 600 12.5px/24px var(--sans); text-indent: 0; animation: none;
+  }
+  /* In a narrow conversation the state gives way (its words are cut) before it runs under Stop. */
+  body:not(.focus-ui) #chatPanel #connectionStatus:is(.working, .connecting, :not(.live)) { flex: 0 1 auto; min-width: 24px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body:not(.focus-ui) #chatPanel #connectionStatus::before { content: ""; position: absolute; top: 8px; left: 9px; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  body:not(.focus-ui) #chatPanel #connectionStatus.live { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+  body:not(.focus-ui) #chatPanel #connectionStatus.connecting { background: color-mix(in srgb, var(--ws-need-fill) 18%, transparent); color: var(--ws-need); }
+  body:not(.focus-ui) #chatPanel #connectionStatus:is(.working, .connecting)::before { animation: ws-pulse 1.4s ease-in-out infinite; }
+  /* Connected and resting says itself with a green dot (its name stays the tooltip and the accessible name). */
+  body:not(.focus-ui) #chatPanel #connectionStatus.live:not(.working) { width: 24px; padding: 0; overflow: hidden; color: var(--accent); font-size: 0; }
+  body:not(.focus-ui) #chatPanel #chatDashboardButton { display: none; }
+  body:not(.focus-ui) .ws-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+  body:not(.focus-ui) .ws-head-actions > :is(button, details > summary) { min-height: 34px; height: 34px; }
+  body:not(.focus-ui) .ws-head-actions #abortButton { display: inline-flex; align-items: center; gap: 6px; width: auto; min-width: 0; padding: 0 12px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line); color: var(--danger); font-size: 13.5px; font-weight: 600; }
+  body:not(.focus-ui) .ws-head-actions #abortButton:disabled { display: none; }
+  body:not(.focus-ui) .ws-head-actions #abortButton svg { width: 15px; height: 15px; }
+  body:not(.focus-ui) .ws-head-actions .ws-label { display: inline; }
+  body:not(.focus-ui) .ws-head-actions #chatDoneButton { display: inline-flex; width: auto; gap: 6px; padding: 0 12px; border-radius: 10px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); font-size: 13.5px; font-weight: 600; }
+  body:not(.focus-ui) .ws-head-actions #chatDoneButton .chat-action-label { display: inline; }
+  body:not(.focus-ui) .ws-head-actions #chatDoneButton svg { width: 16px; height: 16px; }
+  body:not(.focus-ui) .ws-head-actions #activityToggleButton { display: inline-grid; place-items: center; width: 34px; min-width: 34px; padding: 0; border-radius: 10px; background: transparent; box-shadow: none; color: var(--muted); }
+  body:not(.focus-ui) .ws-head-actions #activityToggleButton .background-tasks-label { display: none; }
+  body:not(.focus-ui) .ws-head-actions #activityToggleButton.active { background: var(--paper-raised); color: var(--text); }
+  body:not(.focus-ui) .ws-head-actions #activityToggleButton svg { width: 18px; height: 18px; }
+  /* ⋯: every other conversation action, as a menu. */
+  body:not(.focus-ui) .ws-head-actions .chat-more { position: relative; display: block; }
+  body:not(.focus-ui) .ws-head-actions .chat-more > summary { display: inline-grid; place-items: center; width: 34px; min-width: 34px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); list-style: none; cursor: pointer; }
+  body:not(.focus-ui) .ws-head-actions .chat-more > summary::-webkit-details-marker { display: none; }
+  body:not(.focus-ui) .ws-head-actions .chat-more[open] > summary, body:not(.focus-ui) .ws-head-actions .chat-more > summary:hover { background: var(--paper-raised); color: var(--text); }
+  body:not(.focus-ui) .ws-head-actions .chat-more:not([open]) > .chat-more-actions { display: none; }
+  body:not(.focus-ui) .ws-head-actions .chat-more[open] > .chat-more-actions {
+    position: absolute; top: calc(100% + 6px); right: 0; bottom: auto; z-index: 30; display: grid; align-content: start; grid-auto-rows: max-content; gap: 2px; width: max-content; height: fit-content; min-width: 248px; max-width: min(380px, calc(100vw - 32px)); max-height: calc(100dvh - 120px); overflow: hidden auto;
+    padding: 6px; border: 0; border-radius: 16px; background: var(--panel); box-shadow: var(--shadow);
+  }
+  :root[data-theme="dark"] body:not(.focus-ui) .ws-head-actions .chat-more[open] > .chat-more-actions { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow); }
+  body:not(.focus-ui) .ws-head-actions .chat-more-actions > button {
+    display: flex; justify-content: flex-start; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: 10px;
+    background: transparent; box-shadow: none; color: var(--text); font-size: 13.5px; font-weight: 550; line-height: normal; text-align: left;
+  }
+  body:not(.focus-ui) .ws-head-actions .chat-more-actions > button[hidden] { display: none; }
+  body:not(.focus-ui) .ws-head-actions .chat-more-actions > button:hover:not(:disabled) { background: var(--field); }
+  body:not(.focus-ui) .ws-head-actions .chat-more-actions > button svg { width: 17px; height: 17px; color: var(--muted); }
+  body:not(.focus-ui) .ws-head-actions .chat-more-actions .chat-action-label { display: inline; white-space: nowrap; }
+  body:not(.focus-ui) .ws-head-actions .chat-more-actions .shortcut-hint { padding-left: 14px; }
+
+  /* The second line: agent, model, effort and machine as chips; context, time and cost as quiet meta. It is always one
+     line: model and machine names change while an agent works, and a row that re-wrapped on them moved the whole
+     conversation up and down, so chips and meta shrink (and cut their text) instead. */
+  body:not(.focus-ui) #chatPanel > .chat-toolbar {
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 12px 24px 14px 30px; border: 0; background: transparent; overflow: visible;
+  }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar :is(.chat-session-controls, .chat-toolbar-actions) { display: contents; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-control { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; max-width: none; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-control > span:not(.shortcut-hint) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-control[for="chatHarnessSelect"] { order: 1; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-model-control { order: 2; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-mode-control { order: 3; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-control[for="chatNodeSelect"] { order: 4; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-mode-control[hidden] { display: none !important; }
+  /* When the row is short, the quiet meta gives way first, then the model and the machine; the agent and the effort
+     are short words and keep them whole. */
+  body:not(.focus-ui) #chatPanel > .chat-toolbar :is(.chat-control[for="chatHarnessSelect"], .chat-mode-control) { flex-shrink: 0; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar :is(.chat-model-control, .chat-control[for="chatNodeSelect"]) { min-width: 72px; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-toolbar-control {
+    width: auto; min-width: 0; max-width: min(240px, 100%); height: 30px; min-height: 30px; padding: 0 28px 0 12px; border: 0; border-radius: 999px;
+    background-color: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 600 12.5px/30px var(--sans);
+    background-position: right 11px center; text-overflow: ellipsis; white-space: nowrap; field-sizing: content;
+  }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-toolbar-control:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar #chatNodeSelect { color: var(--muted); max-width: min(200px, 100%); }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar #modelButton { display: inline-flex; max-width: min(260px, 100%); }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar #modelButton.claude { color: var(--claude); }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar .auto-respond-pill { order: 5; }
+  body:not(.focus-ui) #chatPanel > .chat-toolbar :is(#chatRecentSessionsButton, #chatRunningConversationsButton) { display: none !important; }
+  body:not(.focus-ui) .ws-chat-meta { order: 9; display: flex; flex: 0 1000 auto; align-items: center; gap: 12px; margin-left: auto; min-width: 0; overflow: hidden; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  body:not(.focus-ui) .ws-chat-meta > * { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  body:not(.focus-ui) .ws-chat-meta :is(.turn-timer, .context-usage) { font: 500 12.5px/1 var(--sans); }
+  body:not(.focus-ui) .ws-chat-meta .ws-chat-cost[hidden] { display: none; }
+
+  /* The thread and the message box sit in a centred column, as in the mock. */
+  body:not(.focus-ui) #chatPanel .messages { padding-block: 8px 16px; padding-inline: max(28px, calc((100% - 760px) / 2)); }
+  body:not(.focus-ui) #chatPanel > .command-strip { justify-content: flex-start; gap: 4px; padding: 6px max(22px, calc((100% - 780px) / 2)) 0; border: 0; background: transparent; }
+  body:not(.focus-ui) #chatPanel > .command-strip button { min-height: 26px; height: 26px; padding: 0 10px; border: 0; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 600 12px/26px var(--sans); }
+  body:not(.focus-ui) #chatPanel > .command-strip button:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+  body:not(.focus-ui) #chatPanel > .composer { padding: 6px max(22px, calc((100% - 780px) / 2)) 20px; border: 0; background: transparent; }
+  body:not(.focus-ui) #chatPanel .composer-row { max-width: none; }
+  /* The / and @ suggestions float over the end of the thread. In the flow they took up to 320 px from the transcript on
+     the first key and gave it back on the next, so the conversation jumped while typing. */
+  body:not(.focus-ui) #chatPanel > .composer { position: relative; }
+  body:not(.focus-ui) #chatPanel > .composer > .command-autocomplete {
+    position: absolute; z-index: 8; bottom: 100%; left: max(22px, calc((100% - 780px) / 2)); right: max(22px, calc((100% - 780px) / 2));
+    width: auto; max-width: none; max-height: min(320px, 42dvh); margin: 0; border: 0; border-radius: 14px; box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  }
+
+  /* ---------- the details column ---------- */
+  body:not(.focus-ui) #chatPanel > .messages-wrap > #activityPanel {
+    grid-area: details; position: relative; flex: none;
+    width: clamp(280px, var(--activity-preferred-width, clamp(300px, 24vw, 360px)), 42vw);
+    /* Larger text (the conversation's and the column's own size) must not squeeze the conversation: the column never
+       takes more than about a third of the window, whatever the zoom. */
+    max-width: calc(36vw / var(--ui-zoom-chat, 1) / var(--ui-zoom-activity, 1));
+    border: 0; border-radius: var(--ws-card-radius); background: var(--panel); box-shadow: var(--shadow-soft); overflow: hidden;
+  }
+  /* Narrow windows, or beside the Browser: it floats over the thread, between the header and the message box, so
+     Mark done, ⋯ and the composer stay in reach. */
+  body:not(.focus-ui) #chatPanel > .messages-wrap.activity-floating > #activityPanel,
+  body:not(.focus-ui) #chatPanel:has(> .messages-wrap.activity-floating) > .messages-wrap > #activityPanel {
+    grid-area: msgs; position: absolute; z-index: 6; inset: 0 0 0 auto; width: min(92%, var(--activity-preferred-width, 360px)); max-width: none; box-shadow: var(--shadow);
+  }
+  body:not(.focus-ui) #activityPanel > .activity-panel-header { flex-wrap: wrap; gap: 6px; padding: 16px 14px 8px 16px; }
+  body:not(.focus-ui) #activityPanel .activity-tabs { flex: 1; display: flex; gap: 2px; min-width: 0; padding: 3px; border-radius: 12px; background: var(--paper-raised); }
+  body:not(.focus-ui) #activityPanel .activity-tabs > button {
+    display: flex; flex: 1; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 30px; height: 30px; padding: 0 6px;
+    border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  }
+  body:not(.focus-ui) #activityPanel .activity-tabs > button > svg { display: none; }
+  body:not(.focus-ui) #activityPanel .activity-tabs > button > span { display: inline; }
+  body:not(.focus-ui) #activityPanel .activity-tabs > button[aria-selected="true"] { border: 0; background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); color: var(--text); }
+  body:not(.focus-ui) #activityPanel .activity-tabs > .ws-seg-more:is(:hover, [aria-expanded="true"]) { color: var(--text); }
+  /* The side chat is one of More's rows: while it shows, More is the lit segment. */
+  body:not(.focus-ui) #activityPanel:has(#activityChatTab[aria-selected="true"]) .activity-tabs > .ws-seg-more { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); color: var(--text); }
+  body:not(.focus-ui) #activityPanel .ws-seg-count { color: var(--muted); font-size: 11px; font-weight: 600; }
+  body:not(.focus-ui) #activityPanel .ws-seg-count[hidden] { display: none; }
+  body:not(.focus-ui) #activityPanel .activity-modes { display: none; }
+  body:not(.focus-ui) #activityPanel .activity-panel-close { width: 30px; min-width: 30px; min-height: 30px; color: var(--muted); }
+  /* Side chat, Story and the Activity overview, under More. */
+  #detailsMoreMenu > button > span { display: inline !important; }
+  #detailsMoreMenu > button[role="tab"][aria-selected="true"] { background: var(--field); }
+  #detailsMoreMenu .shortcut-hint { display: none !important; }
+  body:not(.focus-ui) #activityPanel > :is(.activity-body, .conversation-chat, .ws-pane) { flex: 1 1 0; min-height: 0; }
+  body:not(.focus-ui) #activityPanel .ws-pane:not([hidden]) { display: flex; flex-direction: column; gap: 10px; overflow: hidden; padding: 6px 16px 10px; }
+  .ws-pane-head { display: flex; align-items: baseline; gap: 8px; }
+  .ws-pane-head h3 { margin: 0; font: 400 16px/1.2 var(--serif); color: var(--heading); }
+  .ws-pane-head small { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .ws-pane-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .ws-git-branch { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--field); font-size: 13px; }
+  .ws-git-branch:empty { display: none; }
+  .ws-git-branch b { font: 600 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-git-branch small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .ws-file-list { display: grid; margin: 0; padding: 0; list-style: none; overflow: hidden; border-radius: 12px; background: var(--field); }
+  .ws-file-list:empty { display: none; }
+  .ws-file-list li + li { box-shadow: inset 0 1px 0 var(--line); }
+  .ws-file { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; width: 100%; min-height: 0; padding: 7px 12px; border: 0; border-radius: 0; background: transparent; color: var(--text); text-align: left; font-weight: 400; }
+  .ws-file:hover { background: color-mix(in srgb, var(--field) 60%, var(--paper-raised)); }
+  .ws-file-name { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-file small { grid-column: 1; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-file em { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--muted); font-size: 11.5px; font-style: normal; }
+  .ws-pane-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ws-pane-actions > button {
+    display: inline-flex !important; align-items: center; gap: 6px; width: auto !important; min-width: 0 !important; min-height: 34px !important; padding: 0 12px !important;
+    border: 0; border-radius: 10px; background: var(--paper-raised) !important; box-shadow: none !important; color: var(--text); font-size: 13px; font-weight: 600; line-height: normal !important;
+  }
+  .ws-pane-actions > button svg { width: 16px; height: 16px; }
+  .ws-pane-actions :is(.chat-action-label, .background-tasks-label) { display: inline !important; }
+  .ws-pane-actions .background-tasks-badge { position: static !important; }
+  .ws-pane-actions .shortcut-hint { display: none !important; }
+  #detailsFilesActions .chat-action-label::before { content: "Browse "; }
+  #detailsGitActions .chat-action-label::after { content: " review"; }
+  #detailsTasksActions .background-tasks-label::before { content: "Open "; }
+
+  /* The two "when it stops" switches and the links, at the foot of the column. */
+  body:not(.focus-ui) #activityPanel .ws-details-foot { display: grid; flex: none; gap: 10px; padding: 10px 16px 16px; border-top: 1px solid var(--line); }
+  .ws-switches { overflow: hidden; border-radius: 14px; background: var(--field); }
+  .ws-switch-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 14px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 13.5px; font-weight: 500; text-align: left; }
+  .ws-switch-row + .ws-switch-row { box-shadow: inset 0 1px 0 var(--line); }
+  .ws-switch-row > span { min-width: 0; flex: 1; }
+  .ws-switch-row:disabled { opacity: 0.5; }
+  .ws-switch { position: relative; flex: none; width: 40px; height: 24px; border-radius: 12px; background: var(--paper-raised); box-shadow: inset 0 0 0 1px var(--line); transition: background 0.2s; }
+  .ws-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); transition: left 0.2s; }
+  .ws-switch-row[aria-checked="true"] .ws-switch { background: var(--accent); box-shadow: none; }
+  .ws-switch-row[aria-checked="true"] .ws-switch::after { left: 19px; }
+  .ws-links { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ws-link { min-height: 30px; height: 30px; padding: 0 12px; border: 0; border-radius: 15px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-size: 12.5px; font-weight: 600; }
+  .ws-link:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
+  .ws-link:disabled { opacity: 0.45; cursor: not-allowed; }
+  .ws-link[hidden] { display: none; }
+
+  /* Large text on a window that is not wide enough for both: the details float over the thread, as below 1024 px, so
+     the conversation keeps a readable width (app/workspace.js sets the class). */
+  body:not(.focus-ui).ws-details-float #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])):not(:has(> .messages-wrap.activity-floating)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "popup" "head" "lease" "chips" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
+  }
+  body:not(.focus-ui).ws-details-tucked #chatPanel > .messages-wrap > #activityPanel { display: none; }
+  body:not(.focus-ui).ws-details-tucked .ws-head-actions #activityToggleButton.active { background: transparent; color: var(--muted); }
+  body:not(.focus-ui).ws-details-float #chatPanel > .messages-wrap > #activityPanel {
+    grid-area: msgs; position: absolute; z-index: 6; inset: 0 8px 0 auto; width: min(92%, var(--activity-preferred-width, 360px)); max-width: none; box-shadow: var(--shadow);
+  }
+
+  /* Below 1200 px the column is at its narrowest width: New keeps its icon so the name fits beside it. */
+  @media (max-width: 1199px) {
+    .ws-new-button { width: 32px; padding: 0; justify-content: center; font-size: 0; }
+    .ws-new-button svg { width: 17px; height: 17px; }
+  }
+  /* While the column is narrow (under about 250 px) the search box keeps its words, not the key. */
+  @media (max-width: 1320px) {
+    .ws-search-key { display: none; }
+  }
+
+  /* ---------- 701–1023 px: a narrower column; the details float over the conversation ---------- */
+  @media (max-width: 1023px) {
+    :root { --ws-side-width: 232px; --ws-gap: 10px; }
+    body:not(.focus-ui) #chatPanel > .chat-topbar { padding: 18px 16px 0 20px; }
+    body:not(.focus-ui) #chatPanel > .chat-toolbar { padding: 10px 16px 12px 20px; }
+    body:not(.focus-ui) #chatPanel .chat-project-name { display: none; }
+    body:not(.focus-ui) .ws-head-actions #chatDoneButton .chat-action-label { display: none; }
+    body:not(.focus-ui) .ws-head-actions #chatDoneButton { width: 34px; padding: 0; justify-content: center; }
+    body:not(.focus-ui) .ws-group-page { padding: 22px 20px 14px; }
+    .ws-name { font-size: 17px; }
+    .ws-new-button { width: 32px; padding: 0; justify-content: center; font-size: 0; }
+    .ws-new-button svg { width: 17px; height: 17px; }
+    /* The details float over the thread, as the activity pane did on a narrow window; the header and the message box
+       stay in reach. */
+    body:not(.focus-ui) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])):not(:has(> .messages-wrap.activity-floating)) {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "popup" "head" "lease" "chips" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
+    }
+    body:not(.focus-ui) #chatPanel > .messages-wrap > #activityPanel {
+      grid-area: msgs; position: absolute; z-index: 6; inset: 0 8px 0 auto; width: min(92%, var(--activity-preferred-width, 360px)); max-width: none; box-shadow: var(--shadow);
+    }
+    /* The control center keeps its own narrow layout (control-phone.js) inside the middle. */
+    body:not(.focus-ui).view-control .shell > #controlCenterPanel { position: relative; }
+  }
+}

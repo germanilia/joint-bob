@@ -56,7 +56,7 @@ export function createBrowserLoginCard(host, { api, session: initial, isCurrent,
     get("origin").textContent = next.origin;
     status.textContent = next.challenge ? "This step needs the browser: complete the challenge or review the sign-in error there."
       : next.stepId ? "Sign in to continue. The agent stays paused."
-      : "No supported credential form is visible. Open the browser to continue, or confirm if you're signed in.";
+      : "If sign-in is complete, choose \"I'm signed in\" to return control to the agent. Otherwise, open the browser to finish.";
     done.hidden = Boolean(next.stepId || next.challenge);
     if (!next.stepId) return;
     next.fields.forEach((field, index) => {

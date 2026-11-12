@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import {
   api,
@@ -14,6 +14,7 @@ import {
   type SeededNode,
   type SignedIn,
 } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface Snapshot {
   body: {
@@ -90,7 +91,7 @@ test("v2 join retries securely and converges without importing resources", { tim
 
     const projectsBefore = await api<{ projects: Array<{ id: string }> }>(nodeB, sessionB, "GET", "/projects");
     assert.equal(projectsBefore.status, 200);
-    const dbB = new DatabaseSync(path.join(nodeB.dataDir, "node.db"), { readOnly: true }); databases.push(dbB);
+    const dbB = openNodeDatabase(path.join(nodeB.dataDir, "node.db"), { readOnly: true }); databases.push(dbB);
     const ownersBefore = scalar(dbB, "SELECT count(*) count FROM sharing_resource_owners");
 
     const invitationX = await api<{ link: string }>(nodeA, sessionA, "POST", `/clusters/${clusterX}/invitations`, { expectedEpoch: 1 });
@@ -103,7 +104,7 @@ test("v2 join retries securely and converges without importing resources", { tim
 
     const wrong = await api(nodeB, sessionB, "POST", "/clusters/join", { link: wrongLink, requestId });
     assert.equal(wrong.status, 401, `wrong-secret join returned ${wrong.status}`);
-    const dbA = new DatabaseSync(path.join(nodeA.dataDir, "node.db"), { readOnly: true }); databases.push(dbA);
+    const dbA = openNodeDatabase(path.join(nodeA.dataDir, "node.db"), { readOnly: true }); databases.push(dbA);
     assert.equal(scalar(dbA, "SELECT count(*) count FROM cluster_v2_public_keys WHERE node_id=?", nodeB.nodeId), 0);
     assert.equal(scalar(dbA, "SELECT count(*) count FROM sharing_memberships WHERE cluster_id=? AND node_id=?", clusterX, nodeB.nodeId), 0);
     const savedRequest = (dbB.prepare("SELECT request FROM cluster_v2_join_attempts WHERE request_id=?").get(requestId) as { request: string }).request;

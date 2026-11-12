@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Page } from "playwright";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 import { waitInPage } from "./wait-in-page.js";
 
 const status = { branch: "main", ahead: 0, behind: 0, detached: false, staged: [], unstaged: [
@@ -51,7 +52,7 @@ test("Git review fills most of the screen and shows diffs side by side", { timeo
   const { page, environment, node } = await nativeUiFixture(t);
   await routeFixtures(page);
   await signIn(page, node.url, environment.username, environment.password);
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-file").first().click();
   await page.getByTestId("git-diff-row").first().waitFor();
   const viewport = page.viewportSize()!;
@@ -70,7 +71,7 @@ test("Ask AI composer fits the Git dialog without clipping or empty space below"
   const { page, environment, node } = await nativeUiFixture(t);
   await routeFixtures(page);
   await signIn(page, node.url, environment.username, environment.password);
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-file").first().click();
   await page.getByTestId("git-review-ask-button").click();
   const card = await page.locator(".git-review-card").boundingBox();
@@ -103,11 +104,13 @@ test("Settings Git PR file limit saves and reloads", { timeout: 120_000 }, async
   await signIn(page, node.url, environment.username, environment.password);
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-git").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   const limit = page.getByTestId("settings-git-pull-file-limit");
   assert.equal(await limit.inputValue(), "1000");
+  // A number saves when the field is left.
   await limit.fill("750");
-  await page.getByTestId("settings-save-button").click();
+  await limit.press("Tab");
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
   await waitInPage(page, async () => (await (await fetch("/api/settings")).json()).gitPullFileLimit === 750);
   await page.reload();
   await page.getByTestId("settings-open-button").click();
@@ -116,8 +119,10 @@ test("Settings Git PR file limit saves and reloads", { timeout: 120_000 }, async
   assert.equal(await limit.inputValue(), "750");
   const timeout = page.getByTestId("settings-git-pull-timeout-seconds");
   assert.equal(await timeout.inputValue(), "360");
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await timeout.fill("600");
-  await page.getByTestId("settings-save-button").click();
+  await timeout.press("Tab");
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
   await waitInPage(page, async () => (await (await fetch("/api/settings")).json()).gitPullTimeoutSeconds === 600);
   await page.reload();
   await page.getByTestId("settings-open-button").click();
@@ -137,7 +142,7 @@ test("Settings default Git reviewer overrides the conversation-based choice", { 
   await page.getByTestId("settings-git-reviewer-thinking").selectOption("high");
   await waitInPage(page, async () => (await (await fetch("/api/preferences")).json()).gitReviewer?.thinkingLevel === "high");
   await page.getByTestId("settings-cancel-button").click();
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#gitReviewThinking")?.value === "high");
   assert.equal(await page.getByTestId("git-review-harness").inputValue(), "claude");
   assert.equal(await page.getByTestId("git-review-model").inputValue(), "claude|claude-sonnet-5-5");

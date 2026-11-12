@@ -104,3 +104,16 @@ dialog::backdrop { background: color-mix(in srgb, var(--ink) 28%, transparent); 
 /* Every dropdown leaves room for its chevron; the control center's compact pickers set their own padding. */
 .control-chat-settings label > select { padding-right: 28px; }
 .control-chat-filters select { padding-right: 26px; }
+
+/* ---------- final QA ---------- */
+/* Who wrote a message is a quiet line beside its time, not a second line of the message. */
+.message-author { font-size: 12px; }
+/* A radio's focus ring follows its shape. */
+input[type="radio"]:focus-visible { border-radius: 50%; outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: none; }
+/* Sliders, checkboxes and radios take the accent, not the browser's blue. */
+input:is([type="range"], [type="checkbox"], [type="radio"]) { accent-color: var(--accent); }
+/* The quick Appearance dialog: the six themes in two even rows. */
+#appearanceThemes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Git review › Story: the pull-request box shares its line with Explain PR instead of taking a line of its own, so
+   the flow diagram under the head keeps its height (in a 900 px window its lower steps were cut off). */
+.git-story .gs-head > .gs-state-actions input { flex: 1 1 220px; width: auto; max-width: 460px; }

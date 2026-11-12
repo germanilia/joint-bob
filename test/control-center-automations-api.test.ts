@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { AutomationRow } from "../src/control-center/automations.js";
 import type { BobMessage } from "../src/control-center/bob-store.js";
@@ -11,6 +11,7 @@ import type { CronTask } from "../src/cron.js";
 import type { Webhook } from "../src/webhooks.js";
 import { api, seedDevEnvironment, signIn, stopDevNode, waitForDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { serverArgs } from "./server-entry.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const BASE = "/control-center/automations";
 
@@ -39,7 +40,7 @@ async function until<T>(check: () => Promise<T | undefined | false>, what: strin
 }
 
 function nodeDatabase(node: SeededNode): DatabaseSync {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   db.exec("PRAGMA busy_timeout = 5000");
   return db;
 }

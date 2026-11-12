@@ -39,6 +39,7 @@ async function fixture(confirm = async () => true, configuredNode: string | null
     },
     Option: class { constructor(public label: string, public value: string) {} }, WebSocket: Socket,
     Image: class { constructor() { images.push(this); } },
+    ResizeObserver: class { observe() {} disconnect() {} },
     FileReader: class { result = "data:text/plain;base64,Zml4dHVyZQ=="; onload!: () => void; readAsDataURL() { this.onload(); } },
     setTimeout: () => 1, clearTimeout() {},
   });

@@ -77,8 +77,8 @@ export const DELEGATED_READY_VIA = "Delegated to Bob · ready for review";
 export async function resumeDelegation(projectId: string, conversationId: string): Promise<void> {
   const state = await getAutoRespond(projectId, conversationId);
   if (state?.status !== "stopped" || !readyForReview(state.stopReason)) return;
-  const { providerProfileId, harnessId, provider, modelId, thinkingLevel, instructions, stopInstructions, maxResponses, useTools } = state;
-  await enableAutoRespond(projectId, conversationId, { providerProfileId, harnessId, provider, modelId, thinkingLevel, instructions, stopInstructions, maxResponses, useTools }, state.enabledBy, state.creatorAccountId);
+  const { providerProfileId, harnessId, provider, modelId, thinkingLevel, instructions, stopInstructions, maxResponses, useTools, systemControl } = state;
+  await enableAutoRespond(projectId, conversationId, { providerProfileId, harnessId, provider, modelId, thinkingLevel, instructions, stopInstructions, maxResponses, useTools, ...(systemControl ? { systemControl } : {}) }, state.enabledBy, state.creatorAccountId);
 }
 
 /** The responder uses Bob's own agent settings when they name a model, otherwise the harness's first model. */

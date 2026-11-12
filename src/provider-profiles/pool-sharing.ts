@@ -5,7 +5,7 @@ import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent
 import type { ProfileProvider } from "./store.js";
 
 const uuid = z.string().uuid();
-export const poolProfileProviderSchema = z.enum(["claude", "openai-codex", "pi"]);
+export const poolProfileProviderSchema = z.enum(["claude", "openai-codex", "pi", "antigravity"]);
 const fallbackModelsSchema = z.object({
   claude: z.string().trim().min(1).max(200).optional(),
   "openai-codex": z.string().trim().min(1).max(200).optional(),

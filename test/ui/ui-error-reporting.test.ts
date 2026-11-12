@@ -36,8 +36,10 @@ async function openNotifications(page: Page): Promise<void> {
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-notifications").click();
   await page.getByTestId("error-reporting-settings").waitFor();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
 }
+
+const saveState = '[data-testid="settings-save-state"]';
 
 test("errors are sent to the ntfy topics chosen in Settings", { timeout: 120_000 }, async (t) => {
   const ntfy = await ntfyFixture(t);
@@ -64,15 +66,20 @@ test("errors are sent to the ntfy topics chosen in Settings", { timeout: 120_000
   assert.equal(await page.getByTestId("error-reporting-client-service").inputValue() !== "", true, "the saved server is preselected");
   assert.equal(await page.getByTestId("error-reporting-same-destination").isChecked(), true, "one destination for both is the default");
   assert.equal(await page.getByTestId("error-reporting-backend-destination").isVisible(), false, "a shared destination hides the backend fields");
+  // Turning it on takes a few steps: until a topic is typed the save line says what is missing, without a toast.
+  await page.locator(`${saveState}[data-state="failed"]`).waitFor();
+  await page.locator(saveState).getByText(/^Not saved: .*Client errors need a topic/).waitFor();
+  assert.equal(await page.locator(".toast", { hasText: "need a topic" }).count(), 0, "a step not yet taken is not an error toast");
   await page.getByTestId("error-reporting-client-topic").fill("ui-errors");
+  await page.locator(`${saveState}[data-state="saved"]`).waitFor();
   await page.getByTestId("error-reporting-same-destination").uncheck();
   await page.getByTestId("error-reporting-backend-destination").waitFor();
   await page.getByTestId("error-reporting-backend-topic").fill("bad/topic");
-  await page.getByTestId("error-reporting-save-button").click();
-  await page.locator(".toast", { hasText: "Backend errors need a topic" }).waitFor();
+  await page.locator(`${saveState}[data-state="failed"]`).waitFor();
+  await page.locator(saveState).getByText(/^Not saved: .*Backend errors need a topic/).waitFor();
   await page.getByTestId("error-reporting-backend-topic").fill("backend-errors");
-  await page.getByTestId("error-reporting-save-button").click();
-  await page.locator(".toast", { hasText: "Errors will be sent to ntfy" }).waitFor();
+  await page.locator(`${saveState}[data-state="saved"]`).waitFor();
+  assert.equal(await page.getByTestId("error-reporting-save-button").isVisible(), false, "error reporting has no save button of its own");
 
   await page.reload();
   await page.getByTestId("settings-open-button").waitFor();
@@ -98,8 +105,7 @@ test("errors are sent to the ntfy topics chosen in Settings", { timeout: 120_000
   await page.getByTestId("error-reporting-client-enabled").uncheck();
   assert.equal(await page.getByTestId("error-reporting-client-destination").isVisible(), false);
   assert.equal(await page.getByTestId("error-reporting-same-destination").isVisible(), false, "sharing needs both channels");
-  await page.getByTestId("error-reporting-save-button").click();
-  await page.locator(".toast", { hasText: "Errors will be sent to ntfy" }).last().waitFor();
+  await page.locator(`${saveState}[data-state="saved"]`).waitFor();
   const before = ntfy.published.length;
   await page.evaluate(`console.error("Backend-only mode ignores this UI error")`);
   await page.waitForTimeout(1_000);

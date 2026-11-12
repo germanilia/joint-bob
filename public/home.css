@@ -1,0 +1,116 @@
+/* Paper · Editorial — desktop Home (the Inbox place's middle with no conversation open) and the waiting card that
+   Home, the phone's Home and Bob's chat share. Markup: #homePage in public/index.html; behaviour: app/home.js.
+   Mock: mocks/ui-redo "Desktop · Home" (.dN.v2.ed). Loaded before paper.css. */
+
+/* The waiting card: project, time and agent; the title; the question; Answer, Push it on, Done … Open. */
+.ws-wait {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 18px 20px 14px;
+  border-radius: 16px; background: var(--field); color: var(--text);
+}
+.ws-wait-top { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.ws-wait-top .ws-dot { margin-top: 0; }
+.ws-wait-project { min-width: 0; overflow: hidden; color: var(--text); opacity: 0.8; text-overflow: ellipsis; white-space: nowrap; }
+.ws-wait-top time { flex: none; margin-left: auto; font-weight: 500; }
+.ws-wait-title { overflow: hidden; color: var(--heading); font: 400 18px/1.3 var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+.ws-wait-question {
+  display: -webkit-box; min-height: 2.9em; margin: 0; overflow: hidden; color: var(--muted); font-size: 13.5px; line-height: 1.45;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.ws-wait-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; }
+.ws-wait-actions > button { min-height: 30px; height: 30px; padding: 0 11px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.ws-wait-actions > .soft { border: 0; background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); box-shadow: none; }
+.ws-wait-actions > .soft:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.ws-wait-actions > .ghost:not(.ws-wait-open) { border: 0; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
+.ws-wait-open { display: inline-flex; align-items: center; gap: 2px; border: 0; background: transparent; box-shadow: none; color: var(--muted); }
+.ws-wait-open:hover:not(:disabled) { color: var(--text); background: transparent; }
+.ws-wait-open svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ws-wait .ws-home-spacer, .ws-home-spacer { flex: 1; }
+.ws-wait-push { display: grid; gap: 6px; margin-top: 4px; }
+.ws-wait-push textarea { min-height: 54px; resize: none; border-radius: 12px; font-size: 13.5px; }
+.ws-wait.pushing .ws-wait-question { -webkit-line-clamp: 1; min-height: 0; }
+/* While the instructions are written, the box's own Push it on and Cancel are the card's actions. */
+.ws-wait.pushing > .ws-wait-actions { display: none; }
+
+/* The phone's Home: the same card under the greeting, with 44 px buttons. */
+body.focus-ui .ws-wait.compact { gap: 4px; margin: 0 6px 8px; padding: 14px 14px 12px; }
+body.focus-ui .ws-wait.compact .ws-wait-top { font-size: 13px; }
+body.focus-ui .ws-wait.compact .ws-wait-title { font-size: 17.5px; }
+body.focus-ui .ws-wait.compact .ws-wait-question { font-size: 14.5px; min-height: 0; }
+body.focus-ui .ws-wait.compact .ws-wait-actions { gap: 6px; margin-top: 4px; }
+body.focus-ui .ws-wait.compact .ws-wait-actions > button { min-height: 44px; height: 44px; padding: 0 12px; font-size: 14px; }
+body.focus-ui .ws-wait.compact .ws-wait-open { padding: 0 4px; }
+body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
+
+/* The desktop only: the phone has its own Home (phone.css). */
+#homePage { display: none; }
+
+@media (min-width: 701px) {
+  /* The brand is the way Home: the mark and the name, as one quiet button. */
+  body:not(.focus-ui) .ws-home-button {
+    display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; min-height: 32px; padding: 0; border: 0; border-radius: 10px;
+    background: transparent; box-shadow: none; color: inherit; text-align: left; cursor: pointer; place-items: initial; justify-content: flex-start;
+  }
+  body:not(.focus-ui) .ws-home-button:hover:not(:disabled) { background: transparent; }
+  body:not(.focus-ui) .ws-home-button:hover .ws-name { color: var(--accent); }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-home-button { flex: none; justify-content: center; }
+  body:not(.focus-ui).ws-home .shell > :is(#chatPanel, #boardPanel, #controlCenterPanel) { display: none; }
+  body:not(.focus-ui).ws-home #homePage:not([hidden]) {
+    display: flex; grid-area: main; min-width: 0; min-height: 0; overflow: hidden;
+    border: 0; border-radius: var(--ws-card-radius, 24px); background: var(--panel); box-shadow: var(--shadow-soft);
+  }
+  :root[data-theme="dark"] body:not(.focus-ui).ws-home #homePage { box-shadow: 0 0 0 1px var(--line); }
+
+  .ws-home-in {
+    display: grid; grid-template-rows: auto minmax(0, 1.35fr) minmax(0, 1fr); gap: 0;
+    width: min(1120px, 100%); height: 100%; margin: 0 auto; padding: clamp(24px, 5.5vh, 52px) clamp(24px, 4.2vw, 60px) clamp(18px, 3vh, 32px);
+    zoom: var(--ui-zoom-conversation, 1);
+  }
+  #homePage.need-empty .ws-home-in { grid-template-rows: auto auto minmax(0, 1fr); }
+  .ws-home-head { min-width: 0; }
+  .ws-home-greet { margin: 0; overflow: hidden; color: var(--heading); font: 400 clamp(32px, 3.2vw, 46px)/1.05 var(--serif); letter-spacing: -0.01em; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-home-sub { min-height: 1.5em; margin: 8px 0 0; color: var(--muted); font-size: 16.5px; }
+  .ws-home-sub b { color: var(--ws-need, #b86e00); font-weight: 650; }
+
+  .ws-home-need, .ws-home-list { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+  .ws-home-sechead { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: clamp(14px, 3vh, 26px) 0 10px; }
+  .ws-home-sechead h2 { margin: 0; color: var(--heading); font: 400 22px/1.2 var(--serif); white-space: nowrap; }
+  .ws-home-count { color: var(--muted); font-size: 13px; font-weight: 600; }
+  .ws-home-all, .ws-home-pager button {
+    display: inline-flex; align-items: center; gap: 2px; min-height: 28px; height: 28px; padding: 0 6px; border: 0;
+    background: transparent; box-shadow: none; color: var(--muted); font-size: 13px; font-weight: 600; align-self: center;
+  }
+  .ws-home-all:hover, .ws-home-pager button:hover:not(:disabled) { color: var(--text); background: transparent; }
+  .ws-home-all svg, .ws-home-pager svg { width: 14px; height: 14px; }
+  .ws-home-all[hidden], .ws-home-pager[hidden] { display: none; }
+  .ws-home-pager { display: inline-flex; align-items: center; gap: 2px; align-self: center; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .ws-home-pager button { width: 28px; justify-content: center; padding: 0; }
+
+  .ws-home-cards { display: grid; grid-template-columns: repeat(var(--home-columns, 2), minmax(0, 1fr)); align-content: start; gap: 12px; min-height: 0; overflow: hidden; }
+  .ws-home-cards > .ws-empty, .ws-home-table > .ws-empty { height: auto; padding: 4px 0; }
+
+  .ws-home-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; min-height: 0; }
+  .ws-home-table { display: grid; align-content: start; min-height: 0; overflow: hidden; }
+  .ws-home-row { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 56px; padding: 6px 14px 6px 4px; background: var(--field); }
+  .ws-home-row:first-child { border-radius: 16px 16px 0 0; }
+  .ws-home-row:last-child { border-radius: 0 0 16px 16px; }
+  .ws-home-row:only-child { border-radius: 16px; }
+  .ws-home-row + .ws-home-row { box-shadow: inset 0 1px 0 var(--line); }
+  .ws-home-row-main {
+    display: flex; gap: 12px; min-width: 0; flex: 1; min-height: 44px; padding: 0 0 0 10px; border: 0;
+    background: transparent; box-shadow: none; color: var(--text); text-align: left; font: inherit; place-items: initial; align-items: center; justify-content: flex-start;
+  }
+  .ws-home-row-main:hover:not(:disabled) { background: transparent; }
+  .ws-home-row-main:hover b { text-decoration: underline; text-underline-offset: 3px; }
+  .ws-home-row-main .ws-dot { margin-top: 0; }
+  .ws-home-row-copy { display: grid; min-width: 0; }
+  .ws-home-row-copy b { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-home-row-copy small { overflow: hidden; color: var(--muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-home-row time { flex: none; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .ws-home-row > .soft { flex: none; min-height: 30px; height: 30px; padding: 0 11px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); box-shadow: none; font-size: 13px; font-weight: 600; }
+
+  /* Narrow middles: one column of cards, the two lists one over the other only when there is height for it. */
+  @media (max-width: 1023px) {
+    .ws-home-two { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+    .ws-home-two .ws-home-sechead { margin-top: 12px; }
+  }
+}

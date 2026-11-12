@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 test("Git review animates while the agent works and restores the saved review on reopen", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
@@ -34,7 +35,7 @@ test("Git review animates while the agent works and restores the saved review on
   await page.getByTestId("login-submit-button").click();
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-loading").waitFor();
   assert.match(await page.getByTestId("git-review-loading").innerText(), /coding agent/i);
   releaseScope();
@@ -43,7 +44,7 @@ test("Git review animates while the agent works and restores the saved review on
   await page.getByTestId("git-review-generate").click();
   await page.getByTestId("git-review-guide").getByText("Saved item", { exact: false }).waitFor();
   await page.getByTestId("git-review-close-button").click();
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-guide").getByText("Saved item", { exact: false }).waitFor();
   assert.equal(guidePosts, 1, "reopening restores the saved review without asking the agent again");
   assert.deepEqual(scopeRequests, ["", ""], "opening uses the cached scope; only Refresh forces a new check");

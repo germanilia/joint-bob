@@ -34,6 +34,27 @@ async function watchers(projectId: string): Promise<ActingAccount[]> {
   return found;
 }
 
+/**
+ * A conversation whose turn hung was stopped: Bob says he told it to go on, or, when it keeps getting stuck, that he left it to
+ * the person.
+ */
+export async function announceStuckConversation(projectId: string, conversationId: string, restarted: boolean): Promise<void> {
+  const project = await getProject(projectId);
+  const title = await conversationTitle(projectId, conversationId);
+  const name = title ? `"${title}"` : "A conversation";
+  const db = await bobDatabase();
+  for (const actor of await watchers(projectId)) {
+    appendBobMessage(db, actor.accountId, {
+      role: "system", importance: restarted ? "fyi" : "needs-you", projectId, projectName: project?.name ?? null,
+      text: restarted
+        ? `${name} was stuck: its turn had no input or output for 30 minutes. I stopped it and told it to check what it left hanging and carry on.`
+        : `${name} keeps getting stuck: I restarted it 3 times in 6 hours and it hung again, so I left it for you.`,
+      via: "Stuck conversation · Bob restarted it",
+      actions: [{ id: "open", label: "Open the conversation", style: "primary", data: { open: { projectId, conversationId, ...(title ? { title } : {}) } } }],
+    });
+  }
+}
+
 // ── Guardian: a step that needs the person's OK shows in the chat with the buttons to answer it ──────────
 
 async function announceReview(review: GuardianReview): Promise<void> {

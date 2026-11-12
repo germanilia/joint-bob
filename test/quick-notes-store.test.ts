@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("quick notes persist without creating a conversation", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-quick-note-store-"));
@@ -75,7 +75,7 @@ test("quick notes store launch metadata, scheduling, accounts, and filesystem-ow
     // Image bytes live on the node's filesystem, never as base64 inside SQLite.
     const imagePath = path.join(root, "data", "quick-note-images", created.id, imageId);
     assert.deepEqual(await readFile(imagePath), Buffer.from("fake-png-bytes"));
-    const database = new DatabaseSync(path.join(root, "data", "node.db"));
+    const database = openNodeDatabase(path.join(root, "data", "node.db"));
     try {
       const imageColumns = (database.prepare("PRAGMA table_info(quick_note_images)").all() as Array<{ name: string }>).map((column) => column.name);
       assert.ok(!imageColumns.includes("data"), `image data must stay out of SQLite, columns: ${imageColumns.join(",")}`);
@@ -248,7 +248,7 @@ test("pending quick notes list oldest-first across projects for dispatch", async
     const newest = notes.createQuickNote({ projectId: second.id, title: "Newest", content: "Body", harnessId: "pi" });
     // Timestamps share millisecond resolution, so the durable order is forced the
     // same way a slower save would produce it.
-    const database = new DatabaseSync(path.join(root, "data", "node.db"));
+    const database = openNodeDatabase(path.join(root, "data", "node.db"));
     try {
       const stamp = (id: string, value: string) => database.prepare("UPDATE quick_notes SET created_at = ? WHERE id = ?").run(value, id);
       stamp(oldest.id, "2026-01-01T00:00:01.000Z");

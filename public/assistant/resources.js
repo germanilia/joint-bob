@@ -123,7 +123,7 @@ const toBase64 = file => new Promise((resolve, reject) => {
 });
 
 function confirmDelete(title, detail, action) {
-  openSheet({ title, body: h("p", { style: "font-size:13.5px;color:#c9cdd1" }, detail), foot: [h("button", { type: "button", onclick: closeOverlay }, "Cancel"),
+  openSheet({ title, body: h("p", { class: "sheet-text" }, detail), foot: [h("button", { type: "button", onclick: closeOverlay }, "Cancel"),
     h("button", { type: "button", class: "danger", "data-testid": "assistant-resource-delete-confirm", onclick: async () => {
       try { await action(); closeOverlay(); renderResources(); } catch (error) { fail(error); }
     } }, "Delete")] });
@@ -466,7 +466,7 @@ export async function openSignIn(login) {
 }
 
 function viewerUrl(session, embedded) {
-  const query = new URLSearchParams({ ...(embedded ? { embedded: "1" } : {}), projectId: app.assistant.projectId, engine: app.assistant.engine, conversationId: app.assistant.sessionId, browserSessionId: session.id, nodeId: session.nodeId, theme: "dark" });
+  const query = new URLSearchParams({ ...(embedded ? { embedded: "1" } : {}), projectId: app.assistant.projectId, engine: app.assistant.engine, conversationId: app.assistant.sessionId, browserSessionId: session.id, nodeId: session.nodeId, theme: document.documentElement.dataset.theme === "dark" ? "dark" : "light" });
   return `/browser.html?${query}`;
 }
 
@@ -480,7 +480,7 @@ function openSignInSheet(login, session) {
   });
   openSheet({
     title: `Sign in to ${login.label}`, wide: true,
-    body: [h("p", { style: "font-size:13.5px;color:#c9cdd1;margin-bottom:10px" }, "Sign in yourself in this browser. Choose Done when you see your account."), fallback, frame,
+    body: [h("p", { class: "sheet-text gap-below" }, "Sign in yourself in this browser. Choose Done when you see your account."), fallback, frame,
       h("ul", { class: "bullets" },
         h("li", {}, icon("dot"), "For WhatsApp, open WhatsApp on your phone, then Settings → Linked devices → Link a device, and scan the code."),
         h("li", {}, icon("dot"), `The browser runs on ${app.resources?.executionNode.name ?? "the assistant's machine"}, and the login stays there.`),

@@ -419,14 +419,32 @@ export function focusProject(projectId) {
   render();
 }
 
-/** Closes a conversation as its project's list does, with the same question about what to learn; a working one is stopped first. */
-async function markDone(card) {
+/**
+ * Closes a conversation as its project's list does, with the same question about what to learn; a working one is stopped
+ * first. Home's cards (home.js) call it too. Resolves true once it is closed, false when the question was dismissed.
+ */
+export async function markDone(card) {
   const feedback = await chooseConversationFeedback(card);
-  if (!feedback) return;
+  if (!feedback) return false;
   await api("/api/control-center/cards/done", {
     method: "POST", body: JSON.stringify({ projectId: card.projectId, conversationId: card.conversationId, feedback }),
   });
   settledHere.set(cardKey(card), "Done");
+  await refreshControlCenter();
+  return true;
+}
+
+/** Push it on from a card: the conversation is told to go on, with what the person wrote (it can be empty). */
+export async function pushOn(card, note = "") {
+  await api("/api/control-center/cards/push", {
+    method: "POST", body: JSON.stringify({ projectId: card.projectId, conversationId: card.conversationId, ...(note ? { note } : {}) }),
+  });
+  await refreshControlCenter();
+}
+
+/** Allow once or Block for the Guardian step a card waits on. */
+export async function decideReview(card, review, decision) {
+  await api("/api/control-center/guardian/decide", { method: "POST", body: JSON.stringify({ projectId: card.projectId, conversationId: card.conversationId, reviewId: review.id, decision }) });
   await refreshControlCenter();
 }
 

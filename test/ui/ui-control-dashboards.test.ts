@@ -113,6 +113,8 @@ test("the Dashboards tab lists dashboards, shows one over the board, and every b
   await mockBoard(page, boardBody);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  // Bob's page opens on his chat; the board is his Live agents tab.
+  await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
 
   // Every project's group on the board has a dashboard button: the project's dashboard, or a way to ask Bob for one.
@@ -229,6 +231,8 @@ test("the Dashboards tab pages instead of scrolling, labels what Bob made, and B
   ];
   await page.evaluate((cards) => { (window as any).__dashboards = cards; }, many);
   await page.getByTestId("projects-open-control-center-button").click();
+  // Bob's page opens on his chat; the board is his Live agents tab.
+  await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
   await page.getByTestId("control-tab-dashboards").click();
   await page.waitForSelector('[data-testid="control-dashboard-card"]');

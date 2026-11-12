@@ -5,7 +5,7 @@ import { nativeUiFixture } from './native-ui-fixture.js';
 test('System AI centralizes shared choices and saves only its dedicated endpoint', { timeout: 120000 }, async t => {
   const { page, node, environment } = await nativeUiFixture(t);
   const choice = { harnessId: 'claude', provider: 'claude', modelId: 'saved-unavailable-model', thinkingLevel: 'high' };
-  let view = { system: { decision: { model: 'typesafe', typesafeAccountId: 'missing-account', layaAccountId: null }, operations: { feedback: null, knowledge: choice }, quality: { modelId: '' }, profiles: { claude: 'missing-profile', pi: null, kiro: null, 'openai-codex': null } }, backgroundAgent: { harnessId: '', provider: '', modelId: '', thinkingLevel: '' }, syncCheck: { ...choice, enabled: false }, dashboards: choice, node: { id: 'synthetic', name: 'Synthetic execution twin' }, secrets: [{ id: 'fixture-account', label: 'Synthetic account', variables: [{ name: 'TYPESAFE_AI_API_KEY', kind: 'secret', configured: true }] }], profiles: [], readiness: { decision: 'Selected account unavailable on this twin' } };
+  let view = { system: { decision: { model: 'typesafe', typesafeAccountId: 'missing-account', layaAccountId: null }, operations: { feedback: null, knowledge: choice }, quality: { modelId: '' }, profiles: { claude: 'missing-profile', pi: null, kiro: null, 'openai-codex': null }, routing: { enabled: true, shareWithRelay: false } }, backgroundAgent: { harnessId: '', provider: '', modelId: '', thinkingLevel: '' }, syncCheck: { ...choice, enabled: false }, dashboards: choice, node: { id: 'synthetic', name: 'Synthetic execution twin' }, secrets: [{ id: 'fixture-account', label: 'Synthetic account', variables: [{ name: 'TYPESAFE_AI_API_KEY', kind: 'secret', configured: true }] }], profiles: [], readiness: { decision: 'Selected account unavailable on this twin' }, routing: { enabled: true, shareWithRelay: false, servesRelay: false, source: 'Synthetic source', defaults: { reviewedAt: '2026-11-11', notes: '', categories: [] } } };
   const writes: any[] = [], unrelated: string[] = [];
   let fail = true;
   await page.route('**/api/system-ai', async route => {
@@ -42,21 +42,29 @@ test('System AI centralizes shared choices and saves only its dedicated endpoint
     const input = document.querySelector('#settingsProjectHome') as HTMLInputElement;
     input.required = true; input.value = '';
   });
+  // Each change saves on its own, through System AI's endpoint only; a failure shows on the save line and in a toast.
+  const line = page.getByTestId('settings-save-state');
   await page.getByTestId('system-ai-feedback-harness').selectOption('claude');
   await page.getByTestId('system-ai-feedback-model').waitFor({ state: 'attached' });
   await page.getByTestId('system-ai-feedback-harness').selectOption('');
   await page.getByTestId('system-ai-quality-model').fill('fixture-quality');
-  await page.getByTestId('settings-save-button').click();
+  await page.locator('[data-testid="settings-save-state"][data-state="failed"]').waitFor();
+  assert.match(await line.innerText(), /^Not saved: .*Synthetic save failure/);
+  await page.locator('.toast', { hasText: /Settings not saved: .*Synthetic save failure/ }).waitFor();
   await page.getByTestId('system-ai-status').getByText('Synthetic save failure', { exact: false }).waitFor();
+  assert.ok(writes.length >= 1);
   fail = false;
-  await page.getByTestId('settings-save-button').click();
+  const failedWrites = writes.length;
+  await page.getByTestId('settings-save-retry').click();
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
   await page.getByTestId('system-ai-status').getByText('Saved', { exact: false }).waitFor();
-  assert.equal(writes.length, 2);
-  assert.deepEqual(Object.keys(writes[1]).sort(), ['backgroundAgent', 'dashboards', 'syncCheck', 'system']);
-  assert.equal(writes[1].system.quality.modelId, 'fixture-quality');
-  assert.equal(writes[1].system.operations.feedback, null);
-  assert.deepEqual(writes[1].system.operations.knowledge, choice);
-  assert.equal(writes[1].system.profiles.claude, 'missing-profile');
+  assert.equal(writes.length, failedWrites + 1, 'Try again sends one request');
+  for (const write of writes) assert.deepEqual(Object.keys(write).sort(), ['backgroundAgent', 'dashboards', 'syncCheck', 'system']);
+  const last = writes.at(-1);
+  assert.equal(last.system.quality.modelId, 'fixture-quality');
+  assert.equal(last.system.operations.feedback, null);
+  assert.deepEqual(last.system.operations.knowledge, choice);
+  assert.equal(last.system.profiles.claude, 'missing-profile');
   assert.deepEqual(unrelated, []);
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });

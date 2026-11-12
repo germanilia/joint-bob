@@ -14,21 +14,25 @@ export function antigravitySettings() {
   return configuredRuntime("antigravity", getSettings().runtimes.antigravity);
 }
 
-export function antigravityEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function antigravityEnvironment(environment: NodeJS.ProcessEnv, home?: string): NodeJS.ProcessEnv {
   const settings = antigravitySettings();
-  const result: NodeJS.ProcessEnv = { ...environment, HOME: settings.configPath ? path.dirname(settings.configPath) : currentRuntime().home };
+  const result: NodeJS.ProcessEnv = { ...environment, HOME: home ?? (settings.configPath ? path.dirname(settings.configPath) : currentRuntime().home) };
   for (const name of GOOGLE_AUTH_ENV) delete result[name];
   return result;
 }
 
-export function spawnAntigravity(cwd: string, args: string[], environment: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
-  const settings = antigravitySettings();
-  return spawnInRuntime(currentRuntime(), settings.executable || "agy", args, {
-    cwd, env: antigravityEnvironment(environment), detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"],
+export function spawnAntigravity(cwd: string, args: string[], environment: NodeJS.ProcessEnv, home?: string): ChildProcessWithoutNullStreams {
+  const executable = antigravitySettings().executable || "agy";
+  const command = home ? "/usr/bin/env" : executable;
+  const commandArgs = home ? [`HOME=${home}`, executable, ...args] : args;
+  return spawnInRuntime(currentRuntime(), command, commandArgs, {
+    cwd, env: antigravityEnvironment(environment, home), detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"],
   });
 }
 
-export function antigravityRuntimeCommand(args: string[], environment: NodeJS.ProcessEnv) {
-  const settings = antigravitySettings();
-  return runtimeExec(settings.executable || "agy", args, antigravityEnvironment(environment));
+export function antigravityRuntimeCommand(args: string[], environment: NodeJS.ProcessEnv, home?: string) {
+  const executable = antigravitySettings().executable || "agy";
+  const command = home ? "/usr/bin/env" : executable;
+  const commandArgs = home ? [`HOME=${home}`, executable, ...args] : args;
+  return runtimeExec(command, commandArgs, antigravityEnvironment(environment, home));
 }

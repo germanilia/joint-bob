@@ -1,0 +1,60 @@
+{
+  "reviewedAt": "2026-11-11",
+  "notes": "Cheapest adequate first, by API price. Sonnet 5.5 leads complex coding (SWE-Bench Pro 81.3%, half Opus 5.5's price); Fable 5.2 at high effort matches Opus 5.5 at max for about half the cost per task, so it leads planning; GPT-6.1 Sol replaces Astra ($10/$50) as Pi's first pick for hard work. Kiro routes thinking level on its default model; Antigravity is left blank until its model IDs are confirmed.",
+  "categories": [
+    {
+      "level": "1",
+      "description": "General questions about the app, the project, or how something works, answered by reading and explaining without changing code.",
+      "candidates": {
+        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6-luna", "thinkingLevel": "medium" }, { "provider": "zai", "modelId": "glm-5.3-flash", "thinkingLevel": "medium" }],
+        "claude": [{ "provider": "claude", "modelId": "haiku", "thinkingLevel": "medium" }, { "provider": "claude", "modelId": "sonnet", "thinkingLevel": "low" }],
+        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "low" }]
+      }
+    },
+    {
+      "level": "2",
+      "description": "Terminal and git work: running CLI commands, shell inspection, reviewing diffs, committing, pushing, resolving straightforward conflicts, and managing existing branches.",
+      "candidates": {
+        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6-luna", "thinkingLevel": "low" }, { "provider": "zai", "modelId": "glm-5.3-flash", "thinkingLevel": "medium" }],
+        "claude": [{ "provider": "claude", "modelId": "haiku", "thinkingLevel": "low" }, { "provider": "claude", "modelId": "sonnet", "thinkingLevel": "low" }],
+        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "low" }]
+      }
+    },
+    {
+      "level": "4",
+      "description": "Simple coding: a small, well-scoped code change such as a one-file edit, a rename, a config tweak, or a short script.",
+      "candidates": {
+        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6.1-sol", "thinkingLevel": "low" }, { "provider": "zai", "modelId": "glm-5.3-flash", "thinkingLevel": "high" }],
+        "claude": [{ "provider": "claude", "modelId": "haiku", "thinkingLevel": "high" }, { "provider": "claude", "modelId": "sonnet", "thinkingLevel": "medium" }],
+        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "medium" }]
+      }
+    },
+    {
+      "level": "6",
+      "description": "Complex coding: implementing or refactoring a feature across several files or components and verifying the result with tests.",
+      "candidates": {
+        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6.1-sol", "thinkingLevel": "medium" }, { "provider": "anthropic", "modelId": "claude-sonnet-5-5", "thinkingLevel": "high" }],
+        "claude": [{ "provider": "claude", "modelId": "sonnet", "thinkingLevel": "high" }, { "provider": "claude", "modelId": "opus", "thinkingLevel": "high" }],
+        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "high" }]
+      }
+    },
+    {
+      "level": "8",
+      "description": "Debugging a reported error or unexpected behaviour: reproducing the failure, tracing its root cause, and making the fix.",
+      "candidates": {
+        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6.1-sol", "thinkingLevel": "high" }, { "provider": "anthropic", "modelId": "claude-opus-5-5", "thinkingLevel": "xhigh" }, { "provider": "openai-codex", "modelId": "gpt-6-astra", "thinkingLevel": "high" }],
+        "claude": [{ "provider": "claude", "modelId": "sonnet", "thinkingLevel": "xhigh" }, { "provider": "claude", "modelId": "opus", "thinkingLevel": "xhigh" }],
+        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "xhigh" }]
+      }
+    },
+    {
+      "level": "10",
+      "description": "Planning: architecture, design, breaking down ambiguous multi-system work, or high-risk changes that need deep analysis before implementation.",
+      "candidates": {
+        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6.1-sol", "thinkingLevel": "xhigh" }, { "provider": "anthropic", "modelId": "claude-fable-5-2", "thinkingLevel": "high" }, { "provider": "openai-codex", "modelId": "gpt-6-astra", "thinkingLevel": "xhigh" }],
+        "claude": [{ "provider": "claude", "modelId": "fable", "thinkingLevel": "high" }, { "provider": "claude", "modelId": "opus", "thinkingLevel": "xhigh" }],
+        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "xhigh" }]
+      }
+    }
+  ]
+}

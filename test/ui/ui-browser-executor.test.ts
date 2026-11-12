@@ -483,11 +483,15 @@ test("browser viewer UI", { timeout: 1_800_000 }, async (t) => {
         const rows = f.page.getByTestId("browser-profile-directory-row");
         await rows.nth(1).waitFor();
         const gmail = rows.filter({ hasText: "Gmail" }), team = rows.filter({ hasText: "Team login" });
-        assert.match(await gmail.innerText(), /Gmail · Ubuntu/);
-        assert.match(await gmail.innerText(), /Sites: mail\.google\.com/);
+        // One row of fixed height: name and who may use it, machine, sites, state, actions.
+        assert.equal(await gmail.locator(".long-row-main strong").innerText(), "Gmail");
+        assert.equal(await gmail.getByTestId("browser-profile-directory-machine").innerText(), "Ubuntu");
+        assert.match(await gmail.innerText(), /mail\.google\.com/);
         assert.match(await gmail.innerText(), /Conversation ·/);
         assert.match(await team.innerText(), /Everyone in cluster Home cluster/);
-        assert.match(await team.innerText(), /In use by another conversation · Shared with this machine · read-only/);
+        assert.equal(await team.getByTestId("browser-profile-directory-state").innerText(), "In use");
+        assert.equal(await team.getByTestId("browser-profile-directory-state").getAttribute("title"), "In use by another conversation");
+        assert.match(await team.innerText(), /Read-only/);
         assert.equal(await team.getByTestId("browser-profile-share").count(), 0, "another machine's shared profile is read-only here");
         await gmail.getByTestId("browser-profile-share").click();
         const dialog = f.page.getByTestId("browser-profile-share-dialog");

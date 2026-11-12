@@ -7,10 +7,10 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check: () => Promise<void>, timeout = 45_000): Promise<void> {
   const deadline = Date.now() + timeout;
@@ -21,7 +21,7 @@ async function eventually(check: () => Promise<void>, timeout = 45_000): Promise
 }
 
 function owner(node: SeededNode, projectId: string): string | undefined {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try { return (db.prepare("SELECT owner_node_id FROM sharing_resource_owners WHERE kind='project' AND resource_id=?").get(projectId) as { owner_node_id: string } | undefined)?.owner_node_id; }
   finally { db.close(); }
 }
@@ -73,7 +73,7 @@ test("a lost machine's twin takes over its projects and cluster, and a rebuilt m
 
     // Only the twin named in the dual-signed certificate may succeed the lost machine.
     const certificate = (() => {
-      const db = new DatabaseSync(path.join(survivor.dataDir, "node.db"));
+      const db = openNodeDatabase(path.join(survivor.dataDir, "node.db"));
       try {
         const row = db.prepare("SELECT body,acceptor_signature,inviter_signature FROM cluster_v2_twin_relationships WHERE relationship_id=?").get(relationshipId) as { body: string; acceptor_signature: string; inviter_signature: string };
         return { body: JSON.parse(row.body), acceptorSignature: row.acceptor_signature, inviterSignature: row.inviter_signature };

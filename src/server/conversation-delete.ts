@@ -240,10 +240,15 @@ export async function deleteConversationCompletely(projectId: string, engine: Co
  * The `leftovers` box: puts in the queue what deletes made before the complete delete left on this
  * machine, and clears their rows. Taken: a deleted conversation that is not in the queue, is not
  * held back, and either was already known as deleted when the complete delete first ran here or
- * has files on disk now. `filesOf` gives the harness folders for a project. Returns how many were
- * queued and how many are held back.
+ * has files on disk now. `filesOf` gives the harness folders for a project. `before` is called for
+ * each one that still has files, before it is queued: the sweep backs the files up there. When it
+ * throws, that conversation and the others with files stay as they are for a later pass. Returns
+ * how many were queued and how many are held back.
  */
-export async function queueLeftovers(filesOf: (projectId: string) => Promise<FilesByHarness> = (projectId) => projectHarnessFiles(projectId)): Promise<{ queued: number; held: number; rows: number }> {
+export async function queueLeftovers(
+  filesOf: (projectId: string) => Promise<FilesByHarness> = (projectId) => projectHarnessFiles(projectId),
+  before?: (deleted: ForgottenConversation, files: FilesByHarness) => Promise<void>,
+): Promise<{ queued: number; held: number; rows: number }> {
   await conversationRecordsReady();
   const db = retentionDatabase();
   const result = { queued: 0, held: 0, rows: 0 };
@@ -251,6 +256,7 @@ export async function queueLeftovers(filesOf: (projectId: string) => Promise<Fil
   for (const row of forgottenConversations(db)) {
     if (!row.pending) byProject.set(row.projectId, [...(byProject.get(row.projectId) ?? []), row]);
   }
+  let refused = false;
   for (const [projectId, deleted] of byProject) {
     let files: FilesByHarness;
     try { files = await filesOf(projectId); }
@@ -259,7 +265,14 @@ export async function queueLeftovers(filesOf: (projectId: string) => Promise<Fil
     for (const row of deleted) {
       if (heldBack(row, files)) { result.held += 1; continue; }
       const found = files.get(row.engine)?.sessions.get(row.sessionId);
-      if (row.earlier || (found && found.transcripts.length + found.leftovers.length + found.folders.length > 0)) take.push(row);
+      const onDisk = Boolean(found && found.transcripts.length + found.leftovers.length + found.folders.length > 0);
+      if (!row.earlier && !onDisk) continue;
+      if (onDisk && before) {
+        if (refused) continue;
+        try { await before(row, files); }
+        catch (error) { refused = true; console.warn(`What the delete of ${row.engine}:${row.sessionId} left behind stays: it could not be backed up first`, error); continue; }
+      }
+      take.push(row);
     }
     for (let start = 0; start < take.length; start += 200) {
       const batch = take.slice(start, start + 200);

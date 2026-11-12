@@ -42,7 +42,7 @@ if(process.argv.includes('login')){console.log('Open https://device.sso.us-east-
   await page.getByTestId('settings-open-button').click();
   await page.getByTestId('settings-tab-connections').click();
   await page.getByTestId('provider-profile-add').waitFor();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   const kiroTab=page.getByTestId('provider-profile-provider-kiro');
   assert.equal(await kiroTab.locator('svg').count(),1,'Kiro is a provider tab with its icon, like the others');
   await kiroTab.click();
@@ -99,7 +99,7 @@ if(process.argv.includes('login')){console.log('Open https://device.sso.us-east-
   await page.getByTestId('provider-profile-provider-kiro').click();
   await page.getByTestId('provider-profile-row').filter({hasText:'Kiro work'}).getByTestId('provider-profile-status').filter({hasText:'Signed in on this node'}).waitFor();
   await page.getByTestId('provider-profile-row').filter({hasText:'Kiro other'}).getByTestId('provider-profile-status').filter({hasText:'Not signed in'}).waitFor();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await page.getByTestId('provider-profiles-tab-assignments').click();
   await page.getByTestId('provider-assignment-provider-kiro').click();
   assert.equal((await page.getByTestId('provider-assignment-default-select').innerText()).trim(),'Kiro work');

@@ -11,6 +11,7 @@ import type { StoryScript } from "../src/story-script-schema.js";
 import { readyStoryMovie } from "../src/server/story-podcast.js";
 import type { ProjectRecord } from "../src/types.js";
 import { loadStoryScript, pruneStoryFiles, resetStoryPruneClock, saveStoryScript, storyVoiceDirectory } from "../src/story-scripts.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -32,7 +33,7 @@ function script(thread: GitReviewThread, updatedAt: string): StoryScript {
 
 /** What the second machine receives: the events the first one queued for this story. */
 function queued(): ReplicationEvent[] {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   const rows = db.prepare("SELECT * FROM replication_outbox WHERE entity_type = 'story' ORDER BY created_at, rowid").all() as Array<Record<string, string>>;
   db.close();
   return rows.map((row) => ({ id: row.event_id, originNodeId: row.origin_node_id, entityType: row.entity_type, entityKey: row.entity_key, operation: row.operation, payload: JSON.parse(row.payload), createdAt: row.created_at }));

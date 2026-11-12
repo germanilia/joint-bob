@@ -7,6 +7,7 @@ import { BrowserStore } from "../src/browser-store.js";
 import { createSharingCluster, ensureClusterSharingPolicySchema, removeSharingMember } from "../src/cluster-sharing-policy.js";
 import { getClusterNode } from "../src/cluster.js";
 import { resolveDataDirectory } from "../src/data-directory.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /* The browser store asks whether the sharing and node tables exist on every grant check. A table
    that was found is not looked for again; a missing one is, until another connection makes it. */
@@ -14,7 +15,7 @@ import { resolveDataDirectory } from "../src/data-directory.js";
 test("the browser store looks for the membership table until it is there, and not again", async (t) => {
   const local = (await getClusterNode()).id;
   const store = new BrowserStore();
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   t.after(() => { db.close(); store.close(); });
   assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name='sharing_memberships'").get(), undefined, "this test needs a node that has no sharing tables yet");
   const projectId = randomUUID(), cluster = randomUUID();

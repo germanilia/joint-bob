@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { signClusterRequest } from "../src/cluster-protocol.js";
 import {
@@ -13,13 +13,14 @@ import {
   api, seedDevEnvironment, signIn, startDevNode, stopDevNode,
   type SeededNode, type SignedIn,
 } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type Child = Awaited<ReturnType<typeof startDevNode>>;
 interface Project { id: string; name: string }
 interface Snapshot { body: { clusterId: string } }
 
 function openDb(node: SeededNode): DatabaseSync {
-  return new DatabaseSync(path.join(node.dataDir, "node.db"));
+  return openNodeDatabase(path.join(node.dataDir, "node.db"));
 }
 async function poll(action: () => void | Promise<void>, timeout = 25_000): Promise<void> {
   const end = Date.now() + timeout;

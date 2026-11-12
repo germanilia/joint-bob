@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("conversation records provide drafts until a transcript replaces them", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-conversation-records-"));
@@ -16,7 +17,7 @@ test("conversation records provide drafts until a transcript replaces them", asy
   const originNodeId = randomUUID();
   try {
     await mkdir(process.env.JOINT_BOB_DATA_DIR, { recursive: true });
-    const legacy = new DatabaseSync(path.join(process.env.JOINT_BOB_DATA_DIR, "node.db"));
+    const legacy = openNodeDatabase(path.join(process.env.JOINT_BOB_DATA_DIR, "node.db"));
     legacy.exec(`CREATE TABLE cluster_node (singleton INTEGER PRIMARY KEY, id TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE conversation_records (project_id TEXT NOT NULL, engine TEXT NOT NULL, session_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (project_id, engine, session_id));`);
     legacy.prepare("INSERT INTO cluster_node VALUES (1, ?, 'node', '', ?, ?)").run(originNodeId, "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
@@ -36,7 +37,7 @@ test("conversation records provide drafts until a transcript replaces them", asy
     assert.equal((await records.getConversationRecord(project.id, "pi", id))?.sessionId, id);
     assert.equal(first.originNodeId, originNodeId);
     assert.equal(second.originNodeId, originNodeId);
-    const outbox = new DatabaseSync(path.join(root, "data", "node.db"));
+    const outbox = openNodeDatabase(path.join(root, "data", "node.db"));
     assert.equal((outbox.prepare("SELECT COUNT(*) AS count FROM replication_outbox WHERE entity_type = 'conversation.record' AND operation = 'upsert'").get() as { count: number }).count, 3);
     assert.equal((outbox.prepare("PRAGMA table_info(conversation_records)").all() as Array<{ name: string; notnull: number }>).find((column) => column.name === "task_id")?.notnull, 0);
     outbox.close();
@@ -80,7 +81,7 @@ test("conversation records provide drafts until a transcript replaces them", asy
     assert.equal(merged[0].taskId, "ticket-1");
     assert.equal(await records.deleteConversationRecord(project.id, "pi", id, originNodeId), true);
     assert.equal(await records.getConversationRecord(project.id, "pi", id), undefined);
-    const db = new DatabaseSync(path.join(root, "data", "node.db"));
+    const db = openNodeDatabase(path.join(root, "data", "node.db"));
     assert.equal((db.prepare("SELECT origin_node_id FROM conversation_record_tombstones WHERE project_id = ? AND engine = ? AND session_id = ?").get(project.id, "pi", id) as { origin_node_id: string }).origin_node_id, originNodeId);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM replication_outbox WHERE entity_type = 'conversation.record' AND operation = 'delete'").get() as { count: number }).count, 1);
     db.close();

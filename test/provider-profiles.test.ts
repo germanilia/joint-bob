@@ -147,7 +147,7 @@ test("this machine's own sign-in is a choice that stops the single-profile defau
   assert.equal(resolveSubscriptionChoice(owner, "claude", scope)?.kind, "machine");
   assert.equal(machineSignInChosen(owner, "claude", elsewhere), false, "other projects keep the default");
   assert.equal(resolveProviderProfile(owner, "claude", elsewhere)?.profile.id, only.id);
-  assert.throws(() => profileSelectionSchema.parse({ provider: "pi", scope: "default", scopeId: "", profileId: null, machine: true }), /Only Claude and ChatGPT/);
+  assert.throws(() => profileSelectionSchema.parse({ provider: "pi", scope: "default", scopeId: "", profileId: null, machine: true }), /Only Claude, ChatGPT, and Google Antigravity/);
   assert.throws(() => profileSelectionSchema.parse({ provider: "claude", scope: "default", scopeId: "", profileId: only.id, machine: true }), /chosen alone/);
   setProviderProfileSelection(owner, { provider: "claude", scope: "project", scopeId: "p", profileId: null });
   assert.equal(resolveProviderProfile(owner, "claude", scope)?.profile.id, only.id, "clearing the exception brings the default back");

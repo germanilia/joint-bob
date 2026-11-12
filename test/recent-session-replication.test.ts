@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { replicationInvalidations } from "../src/replication.ts";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /** People are keyed by account id; legacy usernames are translated on receipt. */
 const ILIA = "0123456789abcdef0123456789abcdef";
@@ -19,7 +20,7 @@ async function freshRecents(dataDir: string) {
 }
 
 function createNode(dataDir: string): void {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   db.exec(`CREATE TABLE cluster_node (id TEXT NOT NULL, name TEXT NOT NULL, singleton INTEGER NOT NULL, url TEXT NOT NULL, paired_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     INSERT INTO cluster_node VALUES ('node-a', 'A', 1, 'http://127.0.0.1:1', NULL, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');`);
   db.close();
@@ -38,7 +39,7 @@ test("recent upserts and deletes publish stable per-conversation events", async 
     recents.removeUserRecentSession(ILIA, { projectId: "project-1", engine: "pi", sessionId: "session-1" }, "node-a");
     assert.deepEqual(recents.listUserRecentSessions(ILIA), []);
     assert.deepEqual(recents.listUserRecentSessions("other"), []);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+    const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
     const events = db.prepare("SELECT entity_type, entity_key, operation, payload FROM replication_outbox ORDER BY rowid").all() as Array<{ entity_type: string; entity_key: string; operation: string; payload: string }>;
     assert.deepEqual(events.map(({ entity_type, entity_key, operation }) => ({ entity_type, entity_key, operation })), [
       { entity_type: "user.recent", entity_key: `${ILIA}:project-1:pi:session-1`, operation: "upsert" },
@@ -62,7 +63,7 @@ test("re-reporting a recent with unchanged or older activity publishes nothing",
     const newer = recents.setUserRecentSession(ILIA, { ...reported, updatedAt: "2026-09-02T12:45:00.000Z" }, "node-a");
     assert.equal(newer.changed, true);
     assert.equal(newer.recentSessions[0].updatedAt, "2026-09-02T12:45:00.000Z");
-    const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+    const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
     assert.equal((db.prepare("SELECT count(*) n FROM replication_outbox WHERE entity_type = 'user.recent'").get() as { n: number }).n, 2);
     db.close();
   } finally { await rm(dataDir, { recursive: true, force: true }); }
@@ -76,7 +77,7 @@ test("recent paths are stored relative to the node home and legacy absolute rows
     const absolute = path.join(os.homedir(), ".pi", "agent", "sessions", "session-1.jsonl");
     recents.setUserRecentSession(ILIA, { ...recent(), sessionPath: absolute }, "node-a");
     assert.equal(recents.listUserRecentSessions(ILIA)[0].sessionPath, "~/.pi/agent/sessions/session-1.jsonl");
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     const payload = JSON.parse((db.prepare("SELECT payload FROM replication_outbox WHERE entity_type = 'user.recent'").get() as { payload: string }).payload);
     assert.equal(payload.recent.sessionPath, "~/.pi/agent/sessions/session-1.jsonl");
     db.prepare("UPDATE user_recent_sessions SET session_path = ?").run(absolute);
@@ -92,7 +93,7 @@ test("recent replication resolves aliases and converges out-of-order stamps", as
   process.env.PI_WEB_DATA_DIR = dataDir;
   try {
     createNode(dataDir);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     db.exec("CREATE TABLE project_aliases (alias_id TEXT PRIMARY KEY, project_id TEXT NOT NULL); INSERT INTO project_aliases VALUES ('remote', 'local')");
     db.close();
     const { receiveReplicationBatch } = await import(`../src/replication.ts?recents=${Date.now()}`);
@@ -165,7 +166,7 @@ test("different recents merge and legacy migration publishes stable rows once", 
     const olderLegacy = { ...recent("project-2", "legacy", "2020-01-01T00:00:00.000Z"), title: "Older legacy" };
     recents.migrateLegacyRecentSessions("other", [newestLegacy, olderLegacy], "node-a");
     recents.migrateLegacyRecentSessions("other", [newestLegacy, olderLegacy], "node-a");
-    const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+    const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
     const events = db.prepare("SELECT payload FROM replication_outbox WHERE entity_type = 'user.recent' AND entity_key = 'other:project-2:pi:legacy'").all() as Array<{ payload: string }>;
     assert.equal(events.length, 1);
     assert.deepEqual(JSON.parse(events[0].payload), {

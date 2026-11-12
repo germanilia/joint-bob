@@ -192,7 +192,9 @@ async function installedVersion(adapter: HarnessAdapter): Promise<string | null>
   if (!configuration) return null;
   const { executable } = configuredRuntime(adapter.id, configuration.defaults(os.homedir()));
   try {
-    const { stdout } = await execute(executable, ["--version"], { env: process.env, timeout: 15_000, maxBuffer: 64 * 1024 });
+    // Killed outright when it does not answer: a version probe has nothing to finish, and one that hung
+    // (seen with Pi) outlived a polite request to end and stayed behind for days.
+    const { stdout } = await execute(executable, ["--version"], { env: process.env, timeout: 15_000, killSignal: "SIGKILL", maxBuffer: 64 * 1024 });
     return /\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/.exec(stdout)?.[0] ?? null;
   } catch { return null; }
 }

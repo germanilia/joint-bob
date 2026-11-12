@@ -20,7 +20,18 @@ async function openHarnessSettings(page: Page) {
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
   await page.getByTestId("settings-tab-engines").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
+}
+
+/** Every change saves on its own; this waits for the save line to say it did. */
+async function waitForSaved(page: Page) {
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+}
+
+/** Leaves Settings with Back to Joint Bob, as a person does once their changes are saved. */
+async function leaveSettings(page: Page) {
+  await page.getByTestId("settings-cancel-button").click();
+  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
 }
 
 async function waitForHarnesses(page: Page) {
@@ -113,49 +124,54 @@ test("new conversation buttons are disabled for a harness that is not signed in"
   assert.equal(await option.evaluate((element: HTMLOptionElement) => element.disabled), true, "the harness switcher cannot pick a signed-out harness");
 });
 
-test("mobile harness dialog disables a harness that is not signed in", { timeout: 120_000 }, async (t) => {
+// 701–1023 px is the desktop workspace (the phone starts at 700 px). The one "+ New conversation" button with a harness
+// dialog that narrow window had is gone; the left column's New lists the project's agents instead.
+test("a narrow window's New disables a harness that is not signed in", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.setViewportSize({ width: 720, height: 844 });
   await markClaudeSignedOut(page);
   await signIn(page, node.url, environment.username, environment.password);
   await waitForHarnesses(page);
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
+  await page.locator('[data-testid="session-create-button"]:enabled').waitFor();
 
-  await page.getByTestId("new-conversation-mobile-button").click();
-  await page.getByTestId("choice-dialog").waitFor({ state: "visible" });
-  assert.equal(await page.locator('#choiceDialog input[value="claude"]').isDisabled(), true);
-  assert.equal(await page.locator('#choiceDialog input[value="pi"]').isEnabled(), true);
-  assert.equal(await page.getByTestId("choice-option").filter({ hasText: "Claude" }).locator(".choice-option-hint").textContent(), "Claude is not signed in on this node");
+  await page.getByTestId("workspace-new-button").click();
+  const claude = page.getByTestId("workspace-new-claude");
+  await claude.waitFor({ state: "visible" });
+  assert.equal(await claude.isDisabled(), true);
+  assert.equal(await page.getByTestId("workspace-new-pi").isEnabled(), true);
+  assert.equal(await claude.getAttribute("title"), "Claude is not signed in on this node");
 });
 
-test("mobile uses one new conversation button with a dynamic harness dialog", { timeout: 120_000 }, async (t) => {
+test("a narrow window's New starts a conversation with the agent chosen there", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.setViewportSize({ width: 720, height: 844 });
   await signIn(page, node.url, environment.username, environment.password);
   await waitForHarnesses(page);
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
+  await page.locator('[data-testid="session-create-button"]:enabled').waitFor();
 
-  await page.getByTestId("new-conversation-mobile-button").click();
-  await page.getByTestId("choice-dialog").waitFor({ state: "visible" });
-  assert.deepEqual(await page.getByTestId("choice-option").locator(".choice-option-label").allTextContents(), ["Pi", "Claude", "Kiro"]);
-  // The picker is a logo beside a small name, not a logo stacked above one.
-  const pickerRows = await page.getByTestId("choice-option").evaluateAll((rows) => rows.map((row) => {
-    const icon = row.querySelector(".choice-option-icon")!.getBoundingClientRect();
-    const label = row.querySelector(".choice-option-label")!.getBoundingClientRect();
-    return { sameRow: label.top < icon.bottom && icon.top < label.bottom, height: row.getBoundingClientRect().height };
+  await page.getByTestId("workspace-new-button").click();
+  const agents = page.getByTestId("workspace-new-harnesses").locator(".ws-menu-item > span");
+  await agents.first().waitFor({ state: "visible" });
+  const names = await agents.evaluateAll((spans) => spans.map((span) => span.firstChild?.textContent ?? ""));
+  assert.deepEqual(names.filter((name) => ["Pi", "Claude", "Kiro"].includes(name)), ["Pi", "Claude", "Kiro"], `the project's agents, in order: ${names.join(", ")}`);
+  // Each agent is a logo beside its name, on one compact row.
+  const rows = await page.getByTestId("workspace-new-harnesses").locator(".ws-menu-item").evaluateAll((items) => items.map((item) => {
+    const icon = item.querySelector("svg, img")!.getBoundingClientRect();
+    const label = item.querySelector("span")!.getBoundingClientRect();
+    return { sameRow: label.top < icon.bottom && icon.top < label.bottom, height: item.getBoundingClientRect().height };
   }));
-  assert.equal(pickerRows.length, 3);
-  for (const row of pickerRows) {
+  for (const row of rows) {
     assert.equal(row.sameRow, true, "the agent logo and its name share one row");
-    assert.ok(row.height < 56, `an agent option stays compact, got ${row.height}px`);
+    assert.ok(row.height < 56, `an agent row stays compact, got ${row.height}px`);
   }
-  await page.locator('#choiceDialog input[value="kiro"]').check();
-  await page.getByTestId("choice-accept-button").click();
+  await page.getByTestId("workspace-new-kiro").click();
   await page.getByTestId("new-session-name-dialog").waitFor({ state: "visible" });
   assert.equal(await page.evaluate(async () => (await import("/app/state.js")).state.newSessionDraft.sessionPath), "kiro:new");
 });
 
-test("mobile chat toolbar keeps model, reasoning and tasks on one row", { timeout: 120_000 }, async (t) => {
+test("a narrow window keeps agent, model, effort and machine on one row and Tasks in the details", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.setViewportSize({ width: 720, height: 844 });
   await signIn(page, node.url, environment.username, environment.password);
@@ -164,23 +180,23 @@ test("mobile chat toolbar keeps model, reasoning and tasks on one row", { timeou
   await page.locator("#sessionList .session-card").first().click();
   await page.locator("#chatToolbar").waitFor({ state: "visible" });
 
+  // No named helpers inside evaluate: the test compiler wraps them in a function the page does not have.
   const layout = await page.evaluate(() => {
-    const tasksIcon = document.querySelector(".background-tasks-icon")!;
-    const tasksLabel = document.querySelector(".background-tasks-label")!;
-    const reasoning = document.querySelector("#chatModeControl") as HTMLElement;
+    const [harness, model, reasoning, node] = ["#chatHarnessSelect", "#modelButton", "#reasoningLevelSelect", "#chatNodeSelect"].map((selector) => {
+      const box = document.querySelector(selector)!.getBoundingClientRect();
+      return Math.round(box.top + box.height / 2);
+    });
     return {
-      model: document.querySelector("#modelButton")!.getBoundingClientRect().bottom,
+      harness, model, node,
       // Harnesses without a reasoning control hide the whole label.
-      reasoning: reasoning.hidden ? null : document.querySelector("#reasoningLevelSelect")!.getBoundingClientRect().bottom,
-      tasks: document.querySelector("#backgroundTasksButton")!.getBoundingClientRect().bottom,
-      iconShown: getComputedStyle(tasksIcon).display !== "none",
-      labelShown: getComputedStyle(tasksLabel).display !== "none",
+      reasoning: (document.querySelector("#chatModeControl") as HTMLElement).hidden ? null : reasoning,
+      tasksInDetails: !!document.querySelector("#detailsTasks #backgroundTasksButton"),
     };
   });
-  if (layout.reasoning !== null) assert.equal(layout.reasoning, layout.model, "reasoning sits on the model's row");
-  assert.equal(layout.tasks, layout.model, "tasks sits on the model's row instead of a third row");
-  assert.equal(layout.iconShown, true, "tasks shows its icon on mobile");
-  assert.equal(layout.labelShown, false, "tasks drops its word on mobile");
+  assert.equal(layout.harness, layout.model, "agent and model share a row");
+  if (layout.reasoning !== null) assert.equal(layout.reasoning, layout.model, "effort sits on the model's row");
+  assert.equal(layout.node, layout.model, "the machine sits on the model's row");
+  assert.equal(layout.tasksInDetails, true, "Tasks moved into the details column");
 });
 
 test("model picker renders provider presentation metadata", { timeout: 120_000 }, async (t) => {
@@ -234,23 +250,24 @@ test("node settings configure or disable automatic context compaction", { timeou
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
 
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   const enabled = page.getByTestId("settings-auto-compact-enabled");
   const threshold = page.getByTestId("settings-auto-compact-threshold");
   assert.equal(await enabled.isChecked(), true);
   assert.equal(await threshold.inputValue(), "70");
   await threshold.fill("82");
-  await page.getByTestId("settings-save-button").click();
-  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
+  await threshold.press("Tab");
+  await waitForSaved(page);
+  await leaveSettings(page);
   assert.equal(await page.evaluate(async () => (await (await fetch("/api/settings")).json()).autoCompactThreshold), 82);
 
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await enabled.uncheck();
   assert.equal(await threshold.isDisabled(), true);
-  await page.getByTestId("settings-save-button").click();
-  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
+  await waitForSaved(page);
+  await leaveSettings(page);
   assert.equal(await page.evaluate(async () => (await (await fetch("/api/settings")).json()).autoCompactThreshold), null);
 });
 
@@ -260,7 +277,7 @@ test("node settings leave shell commands unlimited by default and can cap their 
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
 
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   const enabled = page.getByTestId("settings-shell-timeout-enabled");
   const seconds = page.getByTestId("settings-shell-timeout-seconds");
   assert.equal(await enabled.isChecked(), false);
@@ -268,19 +285,20 @@ test("node settings leave shell commands unlimited by default and can cap their 
   await enabled.check();
   assert.equal(await seconds.isDisabled(), false);
   await seconds.fill("900");
-  await page.getByTestId("settings-save-button").click();
-  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
+  await seconds.press("Tab");
+  await waitForSaved(page);
+  await leaveSettings(page);
   assert.equal(await page.evaluate(async () => (await (await fetch("/api/settings")).json()).shellCommandTimeoutSeconds), 900);
 
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   assert.equal(await enabled.isChecked(), true);
   assert.equal(await seconds.inputValue(), "900");
   await enabled.uncheck();
   assert.equal(await seconds.isDisabled(), true);
-  await page.getByTestId("settings-save-button").click();
-  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
+  await waitForSaved(page);
+  await leaveSettings(page);
   assert.equal(await page.evaluate(async () => (await (await fetch("/api/settings")).json()).shellCommandTimeoutSeconds), null);
 });
 
@@ -299,8 +317,8 @@ test("harness settings and model picker follow runtime metadata", { timeout: 120
   await page.getByTestId("settings-kiro-default-model-search").fill("fixture");
   await page.locator('[data-testid="settings-kiro-default-model-option"][data-value="fixture-model"]').click();
   await page.getByTestId("settings-kiro-default-thinking").selectOption("high");
-  await page.getByTestId("settings-save-button").click();
-  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
+  await waitForSaved(page);
+  await leaveSettings(page);
 
   const defaults = await page.evaluate(async () => (await (await fetch("/api/settings")).json()).conversationDefaults);
   assert.deepEqual(defaults.kiro, { provider: "kiro", modelId: "fixture-model", thinkingLevel: "high" });
@@ -406,8 +424,8 @@ test("harness settings choose provider and model from searchable dropdowns of wh
   await providerOptions.filter({ hasText: "openai-codex" }).click();
   assert.equal(await model.getAttribute("data-value"), "", "switching provider asks for a model of that provider");
   assert.equal(await model.textContent(), "Choose a model");
-  await page.getByTestId("settings-save-button").click();
-  await page.locator('#settingsRestartMessage').filter({ hasText: 'Could not save settings: Choose a Pi model for new conversations' }).waitFor();
+  // The provider saves at once; a missing model is refused on the save line, with nothing sent.
+  await page.getByTestId("settings-save-state").getByText("Not saved: Choose a Pi model for new conversations", { exact: true }).waitFor();
   await model.click();
   await modelSearch.fill("sol");
   assert.equal(await modelOptions.count(), 1, "typing filters models by label or ID");
@@ -424,8 +442,8 @@ test("harness settings choose provider and model from searchable dropdowns of wh
   assert.equal(await model.textContent(), "GPT 6 Sol", "an unlisted entry cannot be chosen");
 
   await page.locator("#settingsPiDefaultThinking").selectOption("xhigh");
-  await page.getByTestId("settings-save-button").click();
-  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
+  await waitForSaved(page);
+  await leaveSettings(page);
   const defaults = await page.evaluate(async () => (await (await fetch("/api/settings")).json()).conversationDefaults);
   assert.deepEqual(defaults.pi, { provider: "openai-codex", modelId: "gpt-6-sol", thinkingLevel: "xhigh" });
 });
@@ -489,7 +507,7 @@ test("node settings run the sync check by default and let the user pick its harn
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
 
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await page.getByTestId('settings-tab-system-ai').click();
   await page.getByTestId('system-ai-decision-model').waitFor();
   const enabled = page.getByTestId("settings-sync-check-enabled");
@@ -500,7 +518,7 @@ test("node settings run the sync check by default and let the user pick its harn
 
   await harness.selectOption("claude");
   await enabled.uncheck();
-  await page.getByTestId("settings-save-button").click();
+  await waitForSaved(page);
   await page.getByTestId('system-ai-status').getByText('Saved', { exact: false }).waitFor();
   const saved = await page.evaluate(async () => (await (await fetch("/api/settings")).json()) as { syncCheck: Record<string, unknown>; conversationDefaults: Record<string, Record<string, unknown>> });
   assert.equal(saved.syncCheck.enabled, false);
@@ -514,7 +532,7 @@ test("node settings let the user pick the dashboard agent's harness and model", 
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
 
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await page.getByTestId('settings-tab-system-ai').click();
   await page.getByTestId('system-ai-decision-model').waitFor();
   const harness = page.getByTestId("settings-dashboards-harness");
@@ -522,7 +540,7 @@ test("node settings let the user pick the dashboard agent's harness and model", 
   await page.getByTestId("settings-dashboards-model").waitFor({ state: "attached" });
 
   await harness.selectOption("claude");
-  await page.getByTestId("settings-save-button").click();
+  await waitForSaved(page);
   await page.getByTestId('system-ai-status').getByText('Saved', { exact: false }).waitFor();
   const saved = await page.evaluate(async () => (await (await fetch("/api/settings")).json()) as { dashboards: Record<string, unknown>; conversationDefaults: Record<string, Record<string, unknown>> });
   assert.equal(saved.dashboards.harnessId, "claude");
@@ -535,7 +553,7 @@ test("node settings run background work on an automatic agent and let the user c
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
 
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await page.getByTestId('settings-tab-system-ai').click();
   await page.getByTestId('system-ai-decision-model').waitFor();
   const harness = page.getByTestId("settings-background-agent-harness");
@@ -545,7 +563,7 @@ test("node settings run background work on an automatic agent and let the user c
 
   await harness.selectOption("claude");
   await page.getByTestId("settings-background-agent-model").waitFor({ state: "attached" });
-  await page.getByTestId("settings-save-button").click();
+  await waitForSaved(page);
   await page.getByTestId('system-ai-status').getByText('Saved', { exact: false }).waitFor();
   const saved = await page.evaluate(async () => (await (await fetch("/api/settings")).json()) as { backgroundAgent: Record<string, unknown>; conversationDefaults: Record<string, Record<string, unknown>> });
   assert.equal(saved.backgroundAgent.harnessId, "claude");

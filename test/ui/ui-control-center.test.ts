@@ -100,6 +100,8 @@ test("the control center shows the live board, filters by project, colors cards 
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  // Bob's page opens on his chat; the board is his Live agents tab.
+  await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
   assert.equal(await page.locator("body.view-control").count(), 1);
   assert.equal(await page.getByTestId("control-center-card").count(), 3);
@@ -167,6 +169,9 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.locator('[data-key="p1:c1"]').hover();
   await page.waitForFunction(() => document.querySelector('[data-testid="control-card-brief"]')?.textContent?.startsWith("Mobile menu"));
   assert.match(await brief.innerText(), /^Mobile menu\s+Now: Bash · npm run test:ui -- test\/ui\/menu\.test\.ts\s+Running the UI tests$/);
+  // Beside the left column the middle is narrower and the open brief can lie over the next card: leave it first.
+  await page.mouse.move(1, 1);
+  await brief.waitFor({ state: "hidden" });
   await page.locator('[data-key="p2:c2"]').hover();
   await page.waitForFunction(() => document.querySelector('[data-testid="control-card-brief"] h3')?.textContent?.endsWith("then map it"));
   assert.match(await brief.innerText(), /No summary yet/);
@@ -315,7 +320,7 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await check.getAttribute("data-color"), "violet", "the same color as the project's group on the board");
   assert.equal(await check.getByTestId("control-chat-about").evaluate((link) => link.tagName), "BUTTON", "the conversation opens from its name");
   assert.equal(await check.locator(".control-via").textContent(), "Decision model 96%");
-  assert.deepEqual(await check.locator(".control-action").allTextContents(), ["Push it on", "Done", "Abandon", "Open", "Reply", "Dismiss"], "its own buttons, then reply and dismiss; it has its own Done");
+  assert.deepEqual(await check.locator(".control-action").allTextContents(), ["Answer", "Push it on", "Done", "Abandon", "Open", "Dismiss"], "Answer first, its own buttons, then dismiss; it has its own Done");
   // A finished card can be closed from the board too.
   assert.equal(await page.locator('[data-key="p1:c3"]').getByTestId("control-card-action-done").isVisible(), true);
   // It shows where its conversation stands now, as the board does, and follows the board as that changes: the board is read
@@ -368,7 +373,7 @@ test("the control center shows the live board, filters by project, colors cards 
   });
   const asking = page.getByTestId("control-chat-entry").filter({ hasText: "Where should I build it?" });
   await asking.waitFor();
-  assert.deepEqual(await asking.locator(".control-action").allTextContents(), ["Open", "Reply", "Done", "Dismiss"]);
+  assert.deepEqual(await asking.locator(".control-action").allTextContents(), ["Answer", "Open", "Done", "Dismiss"]);
   await asking.getByTestId("control-item-reply").click();
   const replyBox = asking.getByTestId("control-chat-reply").locator("textarea");
   await replyBox.waitFor();
@@ -520,10 +525,12 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.getByTestId("control-center-close-button").click();
   assert.equal(await page.locator("body.view-control").count(), 0);
   await page.getByTestId("projects-open-control-center-button").click();
+  // Bob's page opens on his chat; the board is his Live agents tab.
+  await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
-  // The side bars are not shown here; Esc once asks, and Esc again leaves.
-  assert.equal(await page.locator("#projectsPanel").isVisible(), false);
-  assert.equal(await page.locator("#chatsPanel").isVisible(), false);
+  // The workspace's left column stays beside Bob (the middle holds the control center); Esc once asks, and Esc again leaves.
+  assert.equal(await page.getByTestId("workspace-side").isVisible(), true);
+  assert.equal(await page.locator("#chatPanel").isVisible(), false);
   await page.keyboard.press("Escape");
   await page.getByTestId("control-exit-prompt").waitFor({ state: "visible" });
   assert.equal(await page.locator("body.view-control").count(), 1, "one Esc does not leave");

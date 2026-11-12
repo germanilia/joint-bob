@@ -10,9 +10,9 @@ import { forgetDraftRefresh, runningState, startCreatorTurn, startRefresh } from
 import { activateDashboard, createDashboard, deleteDashboard, getDashboard, recordSavedDefinition, type DashboardRecord } from "../dashboards/store.js";
 import { announceDashboardChanges } from "./dashboard-sharing.js";
 
-/** What a dashboard Bob builds is for: a project, or the person's own workspace. */
+/** What a dashboard Bob builds is for: a project, the person's own workspace, or everything the person can see. */
 export interface BuildTarget {
-  entity: Extract<DashboardEntity, { kind: "project" | "workspace" }>;
+  entity: Extract<DashboardEntity, { kind: "project" | "workspace" | "account" }>;
   /** The project the dashboard's agent and scripts run in. */
   hostProjectId: string;
   /** What the person calls it: the project's name, or the workspace's. */
@@ -42,7 +42,7 @@ function announce(): void {
   void announceDashboardChanges().catch((error: unknown) => console.warn("Dashboard change notice failed", error));
 }
 
-const where = (target: BuildTarget) => target.entity.kind === "project" ? `"${target.label}"` : `your workspace "${target.label}"`;
+const where = (target: BuildTarget) => target.entity.kind === "project" ? `"${target.label}"` : target.entity.kind === "account" ? "the control center" : `your workspace "${target.label}"`;
 
 /** The whole of what the person is told, once the dashboard agent has finished. */
 async function conclude(session: AuthSession, target: BuildTarget, id: string, kind: "created" | "changed"): Promise<{ text: string; via: string; importance: "done" | "needs-you" }> {
@@ -63,7 +63,8 @@ async function conclude(session: AuthSession, target: BuildTarget, id: string, k
   recordSavedDefinition(id, { title: saved.manifest.title, refreshMethod: saved.manifest.refresh.method, digest: saved.digest });
   forgetDraftRefresh(id);
   // A dashboard the person asked for is the one their project or workspace shows from now on; older ones stay as alternatives.
-  if (kind === "created") activateDashboard(id);
+  // The control center keeps several, and its default is the person's choice: a new one becomes it only when there is none.
+  if (kind === "created" && target.entity.kind !== "account") activateDashboard(id);
   announce();
   const title = saved.manifest.title;
   const lead = kind === "created" ? `Done. "${title}" is ready for ${where(target)}.` : `Done. I changed "${title}".`;

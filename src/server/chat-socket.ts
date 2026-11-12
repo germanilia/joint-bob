@@ -209,7 +209,7 @@ async function handleConnection(socket: WebSocket, request: IncomingMessage): Pr
 async function peerAuthor(peer: string, author: MessageAuthor | undefined): Promise<MessageAuthor | undefined> {
   if (!author || author.homeNodeId) return author;
   const db = await clusterV2Database(), local = await getClusterNode();
-  return isTrustedTwin(db, local.id, peer) ? author : { ...author, homeNodeId: peer };
+  return peer === local.id || isTrustedTwin(db, local.id, peer) ? author : { ...author, homeNodeId: peer };
 }
 
 async function socketRuntime(projectId: string | null): Promise<RuntimeAccount | "unconfined" | undefined> {

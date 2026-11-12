@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { agentCapabilityEnvironment } from "../../agent-capabilities.js";
 import { agentEnvironment, persistConversationSecretAccounts } from "../../secrets.js";
 import { buildHandoffContext, stripHandoffEnvelope } from "../../handoff-context.js";
@@ -11,8 +12,15 @@ import type { HarnessEvent, HarnessModelSettings, HarnessOpenOptions, HarnessPro
 import { antigravityConfigOptions, antigravityThinkingLevels, applyAntigravitySettings, checkAntigravityExecutable, probeAntigravity } from "./models.js";
 import { appendAntigravityRecord, initializeAntigravitySession, readAntigravitySession } from "./storage.js";
 import { createAntigravityConnection } from "./transport.js";
-import { spawnAntigravity } from "./process.js";
+import { spawnAntigravity, antigravityEnvironment } from "./process.js";
 import { antigravityLogins } from "./login.js";
+import { projectProviderProfile } from "../../provider-profiles/service.js";
+import { useProviderProfile } from "../../provider-profiles/execution.js";
+import type { ProviderProfile } from "../../provider-profiles/store.js";
+import { actingAccount } from "../../account-context.js";
+import { adminAccountId } from "../../ownership.js";
+import { listAccessibleProviderProfiles } from "../../provider-profiles/store.js";
+import { antigravityProfileLoginState, prepareAntigravityProfile } from "../../antigravity-profiles/native.js";
 
 type Listener = (event: HarnessEvent) => void;
 type JsonObject = Record<string, unknown>;
@@ -42,10 +50,16 @@ function defaultSettings(): HarnessModelSettings {
   return { provider: "antigravity", modelId: selected.modelId, reasoning: selected.thinkingLevel };
 }
 
-function loginProblem(error: unknown): string | undefined {
-  return error instanceof Error && error.message.includes("Authentication required")
-    ? "Google Antigravity is not signed in on this node. Open Settings > Harnesses > Google Antigravity and sign in with Google."
-    : undefined;
+function loginProblem(error: unknown, profile?: ProviderProfile): string | undefined {
+  if (!(error instanceof Error) || !error.message.includes("Authentication required")) return undefined;
+  return profile
+    ? `Google Antigravity profile ${profile.label} is not signed in on this node. Open Settings > Connections and sign in to that profile.`
+    : "Google Antigravity is not signed in on this node. Open Settings > Harnesses > Google Antigravity and sign in with Google.";
+}
+
+function ownedAntigravityProfiles(): ProviderProfile[] {
+  const owner = actingAccount()?.accountId ?? adminAccountId();
+  return owner ? listAccessibleProviderProfiles(owner, "interactive").filter((profile) => profile.provider === "antigravity") : [];
 }
 
 class AntigravitySession implements HarnessSession {
@@ -60,6 +74,9 @@ class AntigravitySession implements HarnessSession {
   private actualModel: ModelSummary | undefined;
   private availableThinking = ["medium"];
   private readonly listeners = new Set<Listener>();
+  private readonly profileContext = new AsyncLocalStorage<ProviderProfile | undefined>();
+  private get profile(): ProviderProfile | undefined { return this.profileContext.getStore(); }
+  private nativeProfileId: string | null = null;
   private running = false;
   private replaying = false;
   private cancelRequested = false;
@@ -84,6 +101,7 @@ class AntigravitySession implements HarnessSession {
     const stored = await readAntigravitySession(this.aliasFile);
     this.transcript = stored.messages;
     this.nativeSessionId = stored.nativeSessionId;
+    this.nativeProfileId = stored.nativeProfileId;
     this.title = stored.title;
     this.handoffPending = stored.handoffPending;
     this.config = { provider: "antigravity", modelId: stored.modelId, reasoning: stored.reasoning };
@@ -119,23 +137,37 @@ class AntigravitySession implements HarnessSession {
     return { projectId: this.options.projectId, conversationId: this.options.conversationId ?? this.id, harness: "antigravity", cwd: this.options.cwd, canReplaceTool: false };
   }
 
-  private environment(): NodeJS.ProcessEnv {
+  private async withProfile<T>(work: () => Promise<T>): Promise<T> {
+    const profile = await projectProviderProfile(this.options.projectId, this.options.conversationId ?? this.id, "antigravity", "antigravity");
+    return useProviderProfile(profile, () => this.profileContext.run(profile, async () => {
+      if (antigravityLogins.busy(profile)) throw new Error("Finish Google Antigravity sign-in before starting a turn");
+      if (profile && !(await antigravityProfileLoginState(profile)).signedIn) throw new Error(`Sign in to Antigravity profile ${profile.label} on this node. No other account was used.`);
+      return work();
+    }));
+  }
+
+  private async environment(): Promise<NodeJS.ProcessEnv> {
     const conversation = { engine: "antigravity", sessionId: this.id };
-    return {
+    const environment = {
       ...process.env,
       ...agentEnvironment(this.options.projectId, conversation),
       ...agentCapabilityEnvironment(this.options.projectId, "antigravity", this.options.conversationId ?? this.id, conversation),
     };
+    return this.profile ? antigravityEnvironment(environment, await prepareAntigravityProfile(this.profile)) : environment;
   }
 
-  async preflight(): Promise<void> {
-    if (antigravityLogins.busy()) throw new Error("Finish Google Antigravity sign-in before starting a turn");
-    await checkAntigravityExecutable(this.options.cwd, this.environment());
-    try { await probeAntigravity(this.options.cwd); }
-    catch (error) { throw new Error(loginProblem(error) ?? (error instanceof Error ? error.message : String(error))); }
+  async preflight(): Promise<void> { return this.withProfile(() => this.checkReady()); }
+
+  private async checkReady(): Promise<void> {
+    const environment = await this.environment(), home = this.profile ? environment.HOME : undefined;
+    await checkAntigravityExecutable(this.options.cwd, environment, home);
+    try { await probeAntigravity(this.options.cwd, environment, home); }
+    catch (error) { throw new Error(loginProblem(error, this.profile) ?? (error instanceof Error ? error.message : String(error))); }
   }
 
-  async prompt(input: HarnessPrompt): Promise<void> {
+  async prompt(input: HarnessPrompt): Promise<void> { return this.withProfile(() => this.promptWithProfile(input)); }
+
+  private async promptWithProfile(input: HarnessPrompt): Promise<void> {
     if (this.running) throw new Error("Google Antigravity session is busy");
     this.running = true;
     this.currentInput = input;
@@ -147,7 +179,6 @@ class AntigravitySession implements HarnessSession {
     this.emit({ type: "agent_start" });
     let failure: unknown;
     try {
-      if (antigravityLogins.busy()) throw new Error("Finish Google Antigravity sign-in before starting a turn");
       await this.startProcess();
       await this.initializeNativeSession();
       const text = await guardAntigravityPrompt(this.identity(), input.text);
@@ -158,7 +189,7 @@ class AntigravitySession implements HarnessSession {
       await this.finishPrompt(response);
     } catch (error) {
       this.persistAssistant();
-      failure = this.cancelRequested ? new Error("Google Antigravity turn cancelled") : new Error(loginProblem(error) ?? (error instanceof Error ? error.message : String(error)));
+      failure = this.cancelRequested ? new Error("Google Antigravity turn cancelled") : new Error(loginProblem(error, this.profile) ?? (error instanceof Error ? error.message : String(error)));
     }
     for (const finish of [() => this.finishWrites(), () => this.cleanup()]) {
       try { await finish(); }
@@ -178,8 +209,13 @@ class AntigravitySession implements HarnessSession {
   }
 
   private async startProcess(): Promise<void> {
-    const env = this.environment();
-    this.child = spawnAntigravity(this.options.cwd, ["acp"], env);
+    const env = await this.environment();
+    const profileId = this.profile?.id ?? null;
+    if (this.nativeProfileId !== profileId) {
+      this.nativeSessionId = null;
+      this.handoffPending = this.transcript.length > 0;
+    }
+    this.child = spawnAntigravity(this.options.cwd, ["acp"], env, this.profile ? env.HOME : undefined);
     this.connection = createAntigravityConnection(this.child, (method, params) => this.notification(method, params), (method, params) => this.serverRequest(method, params));
   }
 
@@ -201,7 +237,8 @@ class AntigravitySession implements HarnessSession {
     this.applyConfiguration(options);
     if (method === "session/new") {
       if (!this.aliasFile) this.aliasFile = await initializeAntigravitySession(this.options, this.settings());
-      this.queueRecord({ type: "native-session", id: this.nativeSessionId, handoffPending: this.handoffPending, timestamp: new Date().toISOString() });
+      this.nativeProfileId = this.profile?.id ?? null;
+      this.queueRecord({ type: "native-session", id: this.nativeSessionId, profileId: this.nativeProfileId, handoffPending: this.handoffPending, timestamp: new Date().toISOString() });
       this.emit({ type: "sessionFile", sessionId: this.id, sessionFile: this.file });
     }
   }
@@ -402,7 +439,14 @@ const runtime: HarnessRuntime = {
 
   async signInProblems() {
     try { await probeAntigravity(); return []; }
-    catch (error) { return [loginProblem(error) ?? `Google Antigravity sign-in check failed: ${error instanceof Error ? error.message : String(error)}`]; }
+    catch (error) {
+      const problems: string[] = [];
+      for (const profile of ownedAntigravityProfiles()) {
+        try { if ((await antigravityProfileLoginState(profile)).signedIn) return []; }
+        catch { problems.push(`Google Antigravity profile ${profile.label} is unavailable on this node`); }
+      }
+      return problems.length ? problems : [loginProblem(error) ?? `Google Antigravity sign-in check failed: ${error instanceof Error ? error.message : String(error)}`];
+    }
   },
 };
 

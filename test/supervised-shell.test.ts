@@ -4,11 +4,11 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { runSupervisedShell } from "../scripts/supervised-shell.mjs";
 import { startSupervisor } from "../scripts/joint-bob-supervisor.mjs";
 import { mintTaskToken, readSupervisorControl, requestSupervisor } from "../scripts/supervisor-client.mjs";
 import { readBackgroundTasks, readImplicitShellTasks } from "../src/background-tasks.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const identity = JSON.stringify(["p", "c"]);
 
@@ -152,7 +152,7 @@ test("a long command becomes visible in Tasks while it is still running", { time
     assert.deepEqual(readBackgroundTasks(f.state, [identity], 10).tasks, [], "a fresh command is not yet listed");
     const listed = await eventually(async () => readBackgroundTasks(f.state, [identity], 10).tasks, (tasks) => tasks.length === 1, "long command was never promoted into Tasks");
     assert.equal(listed[0].status, "running");
-    const policy = new DatabaseSync(path.join(f.state, "node.db"));
+    const policy = openNodeDatabase(path.join(f.state, "node.db"));
     try { policy.prepare("UPDATE supervised_shell_calls SET foreground_until=0 WHERE task_id=?").run(listed[0].id); }
     finally { policy.close(); }
     await eventually(async () => readImplicitShellTasks(f.state)[0].callerUntil, (until) => until > Date.now(), "a visible silent command must renew its caller heartbeat");
@@ -161,7 +161,7 @@ test("a long command becomes visible in Tasks while it is still running", { time
     await requestSupervisor(f.control.socketPath, f.token, { action: "stop", id: listed[0].id });
     const result = await running;
     assert.equal(result.exitCode, 130);
-    const finishedPolicy = new DatabaseSync(path.join(f.state, "node.db"));
+    const finishedPolicy = openNodeDatabase(path.join(f.state, "node.db"));
     try {
       assert.equal((finishedPolicy.prepare("SELECT foreground_until FROM supervised_shell_calls WHERE task_id=?").get(listed[0].id) as { foreground_until: number }).foreground_until, 0, "returning releases the caller heartbeat");
     } finally { finishedPolicy.close(); }
@@ -190,6 +190,20 @@ test("a configured time limit stops an overlong command and says so", { timeout:
     assert.deepEqual(readBackgroundTasks(f.state, [identity], 10).tasks.map((task) => task.id), [tasks[0].id], "a stopped command stays visible");
   } finally {
     if (pid && processAlive(pid)) { try { process.kill(pid, "SIGKILL"); } catch {} }
+    await f.runtime.close(); await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test("a command that prints nothing for too long is stopped as hung, and one that keeps printing is not", { timeout: 30_000 }, async () => {
+  const f = await fixture();
+  try {
+    const hung = await wrapper(f, "printf started; exec sleep 60", { JOINT_BOB_SHELL_SILENCE_MS: "3000" });
+    assert.equal(hung.code, 124);
+    assert.match(hung.stdout, /^started\nJoint Bob stopped this command: it printed nothing for 3 seconds and looked hung\./);
+    const talking = await wrapper(f, "for i in 1 2 3 4 5 6; do printf .; sleep 1; done; printf done", { JOINT_BOB_SHELL_SILENCE_MS: "3000" });
+    assert.equal(talking.code, 0);
+    assert.equal(talking.stdout, "......done");
+  } finally {
     await f.runtime.close(); await rm(f.root, { recursive: true, force: true });
   }
 });

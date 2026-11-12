@@ -7,7 +7,7 @@ import { createWebhook, updateWebhook, webhookInputSchema, webhookForSecret } fr
 import { createProviderProfile, setProviderProfileShared, deleteProviderProfile } from "../src/provider-profiles/store.js";
 import { automationProfileContext } from "../src/provider-profiles/context.js";
 import { assertAutomationCreator, runWithAutomationProfile } from "../src/server/automation-profile.js";
-import { assertQueuedPromptEditor, enqueuePrompt, listQueuedPrompts, mergeQueuedPrompts, clearQueuedPrompts } from "../src/prompt-queue.js";
+import { assertQueuedPromptEditor, editQueuedPrompt, enqueuePrompt, listQueuedPrompts, mergeQueuedPrompts, clearQueuedPrompts } from "../src/prompt-queue.js";
 
 test("queued automation identity survives persistence and cannot merge into an interactive turn", async () => {
   await (await import("../src/cluster.js")).getClusterNode();
@@ -36,7 +36,14 @@ test("queue edits and merges cannot turn another author's profile into an execut
     assert.throws(() => assertQueuedPromptEditor(first, undefined), /author/);
     assert.equal(mergeQueuedPrompts(key, [first, second]), null);
     const automated = enqueuePrompt(key, "auto", "auto", { ...metadata, author: author(alice), automationProfile: { accountId: alice, profileId: null, nodeId: randomUUID() } });
-    assert.throws(() => assertQueuedPromptEditor(automated, alice), /automation/);
+    assertQueuedPromptEditor(automated, alice);
+    assert.throws(() => assertQueuedPromptEditor(automated, bob), /author/, "another person's automation stays theirs");
+    const bobs = enqueuePrompt(key, "bob's push", "bob's push", metadata);
+    assertQueuedPromptEditor(bobs, alice);
+    assert.throws(() => assertQueuedPromptEditor(bobs, undefined), /author/);
+    assert.equal(editQueuedPrompt(key, automated.id, "mine", "mine", "mine", undefined, automated.revision, author(alice)), true);
+    const adopted = listQueuedPrompts(key).find((prompt) => prompt.id === automated.id)!;
+    assert.deepEqual([adopted.author?.accountId, adopted.automationProfile], [alice, undefined], "rewritten words run as their editor, not on the automation");
   } finally { clearQueuedPrompts(key); }
 });
 

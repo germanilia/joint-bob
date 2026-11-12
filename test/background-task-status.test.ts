@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, projectNamed, signIn, type SeededNode } from "./dev-nodes.js";
 import { backgroundClusterFixture, backgroundFixture, closeBackgroundClusterFixture, closeBackgroundFixture, startSyntheticTask } from "./background-tasks-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /**
  * A supervised command that outlives its turn must hold its conversation in the
@@ -40,7 +40,7 @@ async function waitForBackground(node: SeededNode, session: Signed, projectId: s
 }
 
 function linkSegments(node: SeededNode, projectId: string, conversationId: string, segments: Array<{ engine: string; sessionId: string }>): void {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout=5000");
     const insert = db.prepare(`INSERT OR REPLACE INTO conversation_records

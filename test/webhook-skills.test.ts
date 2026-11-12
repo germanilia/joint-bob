@@ -12,12 +12,13 @@ import { resolveWebhookResources, snapshotWebhookResources } from "../src/webhoo
 import { discoverWebhookGitSkills, importExistingWebhookSkill, importWebhookGitSkill, listSelectableWebhookSkills, removeWebhookSkill, uploadWebhookSkill } from "../src/webhook-skills.js";
 import type { SkillRoots } from "../src/skills.js";
 import { getSettings, updateSettings } from "../src/settings.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const input = webhookInputSchema.parse({ name: "Issues", target: { kind: "project", projectId: "p1" } });
 
 test("a local skill folder is copied into webhook-private storage with its references", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-skills-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const skill = await uploadWebhookSkill(db, webhook.id, [
@@ -36,7 +37,7 @@ test("a local skill folder is copied into webhook-private storage with its refer
 test("Git skills are discovered and imported at the selected commit without global installation", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-git-skills-"));
   const repo = path.join(root, "repo");
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     await import("node:fs/promises").then(fs => fs.mkdir(path.join(repo, "skills", "csv-review"), { recursive: true }));
     execFileSync("git", ["init", "--initial-branch=main", repo]);
@@ -100,7 +101,7 @@ test("existing skills can be snapshotted privately without changing their source
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-existing-skill-"));
   const project = path.join(root, "project");
   const folder = path.join(project, ".agents", "skills", "local-review");
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     await import("node:fs/promises").then(fs => fs.mkdir(folder, { recursive: true }));
     const original = "---\nname: local-review\ndescription: Local review skill.\n---\nKeep this source.";
@@ -122,7 +123,7 @@ test("existing skills can be snapshotted privately without changing their source
 
 test("removing a skill prevents future snapshots but retains an accepted version", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-skill-remove-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     const skill = await uploadWebhookSkill(db, webhook.id, [{ relativePath: "SKILL.md", data: Buffer.from("---\nname: review\ndescription: Review.\n---\n") }], { root });
@@ -140,7 +141,7 @@ test("removing a skill prevents future snapshots but retains an accepted version
 
 test("local skill uploads reject traversal, duplicate paths and missing SKILL.md", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-skills-invalid-"));
-  const db = new DatabaseSync(path.join(root, "node.db"));
+  const db = openNodeDatabase(path.join(root, "node.db"));
   try {
     const { webhook } = createWebhook(db, input);
     await assert.rejects(uploadWebhookSkill(db, webhook.id, [{ relativePath: "../outside", data: Buffer.from("x") }], { root }), /path/i);

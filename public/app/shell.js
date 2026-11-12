@@ -96,6 +96,8 @@ function placeToasts() {
 // Keep notifications visible when a dialog opens or closes, including nested dialogs.
 document.addEventListener("focusin", placeToasts);
 document.addEventListener("close", placeToasts, true);
+// A dialog's close event is a queued task and focus may not move when it closes, so the open attribute is watched too.
+new MutationObserver(placeToasts).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["open"] });
 
 export function toast(message, duration = 3200, severity = "info") {
   const existing = [...toastStack.children].find((node) => node.dataset.severity === severity && node.querySelector(".toast-message")?.textContent === message);
@@ -131,9 +133,7 @@ export function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
 
   const isDark = theme === "dark";
-  elements.themeToggleButton.textContent = isDark ? "☀ Switch to light theme" : "☾ Switch to dark theme";
-  elements.themeToggleButton.setAttribute("aria-label", `Switch to ${isDark ? "light" : "dark"} theme`);
-  elements.themeToggleButton.title = elements.themeToggleButton.getAttribute("aria-label");
+  // Settings › Account › Appearance shows the themes as tiles (appearance.js).
   document.querySelector('meta[name="theme-color"]').content = isDark ? "#0d0e10" : "#f2f2f0";
 }
 

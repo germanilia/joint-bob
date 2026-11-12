@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface Project { id: string; name: string; path: string }
 interface SharingView { ownerNodeId: string; generation: number; deleted: boolean; editable: boolean; shares: Array<{ clusterId: string; projectId: null }>; pendingDeliveries: number }
@@ -32,7 +32,7 @@ test("new projects atomically receive owner policy, auto-shares, and CAS semanti
   const fixture = await startFixture(root);
   try {
     const clusterId = await createCluster(fixture.node, fixture.session);
-    const topology = new DatabaseSync(path.join(fixture.node.dataDir, "node.db"));
+    const topology = openNodeDatabase(path.join(fixture.node.dataDir, "node.db"));
     topology.exec("PRAGMA busy_timeout=5000");
     topology.prepare("INSERT INTO sharing_memberships(cluster_id,node_id,auto_share_projects,join_sequence) VALUES(?,?,0,2)").run(clusterId, randomUUID());
     topology.close();
@@ -75,7 +75,7 @@ test("canonical aliases mutate one owner policy and bulk sharing covers every re
     const clusterId = await createCluster(fixture.node, fixture.session);
     const created = await createProject(fixture.node, fixture.session, "Canonical", path.join(root, "canonical"));
     const alias = `alias-${randomUUID()}`;
-    const db = new DatabaseSync(path.join(fixture.node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(fixture.node.dataDir, "node.db"));
     db.exec("PRAGMA busy_timeout=5000");
     db.prepare("INSERT INTO project_aliases(alias_id,project_id,created_at) VALUES(?,?,?)").run(alias, created.body.project.id, new Date().toISOString());
     db.close();
@@ -104,7 +104,7 @@ test("project creation rolls back project and policy rows when delivery insertio
     const clusterId = await createCluster(fixture.node, fixture.session);
     const warmup = await createProject(fixture.node, fixture.session, "Policy schema warmup", path.join(root, "warmup"));
     assert.equal(warmup.status, 201);
-    const db = new DatabaseSync(path.join(fixture.node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(fixture.node.dataDir, "node.db"));
     db.exec("PRAGMA busy_timeout=5000");
     db.prepare("INSERT INTO sharing_memberships(cluster_id,node_id,auto_share_projects,join_sequence) VALUES(?,?,0,2)").run(clusterId, randomUUID());
     await api(fixture.node, fixture.session, "PATCH", `/clusters/${clusterId}/membership`, { autoShareProjects: true });

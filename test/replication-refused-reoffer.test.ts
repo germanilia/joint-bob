@@ -4,10 +4,11 @@
 // what was refused is remembered and only that is offered again.
 import assert from "node:assert/strict";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, eventsForPeer, forgetOutboxScans, outboxScanState, recordPeerReceipt, type ReplicationEvent } from "../src/replication.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const MINUTE = 60_000;
 
@@ -15,7 +16,7 @@ interface Fixture { db: DatabaseSync; peer: string; delivered: string[]; refused
 
 /** `history` delivered events with `refusedCount` undelivered ones scattered among them, all older than the peer's first pass. */
 function fixture(name: string, history: number, refusedCount: number): Fixture {
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = `${name}-peer`, delivered: string[] = [], refused: string[] = [];
   const start = new Date("2026-05-01T00:00:00.000Z");
@@ -175,7 +176,7 @@ test("a restart reads the outbox once more and remembers the refused events agai
 
 test("when the accounts a peer takes change, history is searched once more for the events it never judged", async () => {
   forgetOutboxScans();
-  const db = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const db = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   ensureReplicationSchema(db);
   const peer = "reoffer-scope-peer", first = "11111111111111111111111111111111", second = "22222222222222222222222222222222";
   const own = (account: string, index: number) => enqueueReplicationEvent(db, { originNodeId: "local", entityType: "user.recent", entityKey: `reoffer-scope-${account}-${index}`, operation: "upsert", payload: { username: account, projectId: "scope" } }).id;

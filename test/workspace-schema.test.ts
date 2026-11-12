@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /** Rebuilds the exact pre-workspace schema the previous build shipped. */
 async function legacyHome(tag: string): Promise<{ root: string; dataDir: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), `joint-bob-${tag}-`));
   const dataDir = path.join(root, "data");
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
-  const legacy = new DatabaseSync(path.join(dataDir, "node.db"));
+  const legacy = openNodeDatabase(path.join(dataDir, "node.db"));
   legacy.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE projects (
@@ -69,7 +69,7 @@ test("renaming project types to workspaces keeps ids, labels and project members
     // Membership survives the rename because the workspace id never changed.
     assert.equal(projects[0].type, "work");
 
-    const inspector = new DatabaseSync(path.join(dataDir, "node.db"));
+    const inspector = openNodeDatabase(path.join(dataDir, "node.db"));
     try {
       const columns = (inspector.prepare("PRAGMA table_info(projects)").all() as unknown as Array<{ name: string }>).map((column) => column.name);
       assert.ok(columns.includes("workspace_id"));

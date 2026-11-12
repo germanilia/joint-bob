@@ -4,15 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import test, { after, before } from "node:test";
 import type { ChildProcess } from "node:child_process";
-import { DatabaseSync } from "node:sqlite";
 import { ensureClusterSharingPolicySchema } from "../src/cluster-sharing-policy.js";
 import { ensureUsageSchema } from "../src/usage-ledger.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 let root: string; let environment: DevEnvironment; let node: SeededNode; let session: SignedIn; let child: ChildProcess;
 before(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-usage-integration-")); environment = await seedDevEnvironment(root, 1); node = environment.nodes[0];
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db")); ensureUsageSchema(db);
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db")); ensureUsageSchema(db);
   const insert = db.prepare("INSERT INTO model_usage_events(id,project_id,conversation_id,session_id,engine,occurred_at,payload,origin_node_id) VALUES(?,?,?,?,?,?,?,?)");
   for (let index = 0; index < 45; index++) {
     const id = `pagination-${String(index).padStart(2, "0")}`; const occurredAt = `2025-01-${String(index % 28 + 1).padStart(2, "0")}T12:00:00.000Z`;
@@ -75,7 +75,7 @@ test("custom label filter is accepted and accounts are not exposed", async () =>
 test("usage API filters by the node the usage was recorded on", async () => {
   const clusterId = "6f1f6a8e-2b0e-4c55-9f53-0d1b6e2a7c11";
   const peerId = "9b2c7d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d";
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   ensureClusterSharingPolicySchema(db);
   db.prepare("INSERT INTO sharing_clusters(id,name,original_node_id,manager_node_id,manager_epoch,next_join_sequence,closed) VALUES(?,?,?,?,1,3,0)").run(clusterId, "Usage cluster", node.nodeId, node.nodeId);
   db.prepare("INSERT INTO sharing_memberships(cluster_id,node_id,join_sequence) VALUES(?,?,1),(?,?,2)").run(clusterId, node.nodeId, clusterId, peerId);
@@ -111,7 +111,7 @@ test("local analysis preflight, scoped drafts, and explicit review approval", as
 test("cluster report excludes private projects despite cluster membership and separates nodes", async () => {
   const clusterId = "6f1f6a8e-2b0e-4c55-9f53-0d1b6e2a7c11";
   const peerId = "9b2c7d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d";
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   ensureClusterSharingPolicySchema(db);
   db.prepare("INSERT INTO sharing_clusters(id,name,original_node_id,manager_node_id,manager_epoch,next_join_sequence,closed) VALUES(?,?,?,?,1,3,0)").run(clusterId, "Report cluster", node.nodeId, node.nodeId);
   db.prepare("INSERT INTO sharing_memberships(cluster_id,node_id,join_sequence) VALUES(?,?,1),(?,?,2)").run(clusterId, node.nodeId, clusterId, peerId);
@@ -134,7 +134,7 @@ test("cluster report excludes private projects despite cluster membership and se
   }
 });
 test("comparison day route respects DST, partial pricing, and date scope", async () => {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   const insert = db.prepare("INSERT INTO model_usage_events(id,project_id,conversation_id,session_id,engine,occurred_at,payload,origin_node_id) VALUES(?,?,?,?,?,?,?,?)");
   for (const [index, occurredAt] of ["2025-03-09T04:30:00.000Z", "2025-03-09T05:30:00.000Z", "2025-03-10T03:30:00.000Z", "2025-03-10T04:30:00.000Z"].entries()) {
     const id = `dst-${index}`;
@@ -147,7 +147,7 @@ test("comparison day route respects DST, partial pricing, and date scope", async
   } finally { db.exec("DELETE FROM model_usage_events WHERE id LIKE 'dst-%'"); db.close(); }
 });
 test("hour buckets distinguish fall-back repeated hour and minute-offset zones", async () => {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   const insert = db.prepare("INSERT INTO model_usage_events(id,project_id,conversation_id,session_id,engine,occurred_at,payload,origin_node_id) VALUES(?,?,?,?,?,?,?,?)");
   for (const [index, occurredAt] of ["2025-11-02T05:30:00.000Z", "2025-11-02T06:30:00.000Z"].entries()) {
     const id = `hour-${index}`;
@@ -160,7 +160,7 @@ test("hour buckets distinguish fall-back repeated hour and minute-offset zones",
   } finally { db.exec("DELETE FROM model_usage_events WHERE id LIKE 'hour-%'"); db.close(); }
 });
 test("usage API reads dates and day buckets in the viewer's time zone", async () => {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   const payload = { id: "late-evening", projectId: node.projects[0].id, conversationId: "late-evening", sessionId: "late-evening", engine: "pi", provider: "test", modelId: "fixture", occurredAt: "2025-03-01T22:30:00.000Z", requestId: null, input: 1, output: 1, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheWriteUnknown: 0, reasoning: 0, apiCostUsd: 3, pricing: null, usageStatus: "reported", difficultyLevel: null, difficultyConfidence: null, difficultyStatus: "unknown", turnId: null, toolCalls: 0, toolErrors: 0 };
   db.prepare("INSERT INTO model_usage_events(id,project_id,conversation_id,session_id,engine,occurred_at,payload,origin_node_id) VALUES(?,?,?,?,?,?,?,?)").run(payload.id, payload.projectId, payload.id, payload.id, "pi", payload.occurredAt, JSON.stringify(payload), node.nodeId);
   try {

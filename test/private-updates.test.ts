@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const apiBase = "https://api.github.com/repos/germanilia/joint-bob";
 const publicApi = "https://api.github.com/repos/germanilia/joint-bob-releases";
@@ -149,7 +150,7 @@ test("hourly automatic checks use the public releases-only feed and ignore cache
   const updater = await import(`../src/updater.ts?private=${Date.now()}`);
   updater.setAutoUpdate(true);
   const { DatabaseSync } = await import("node:sqlite");
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   t.after(() => db.close());
   const old = { version: "9.9.9", archiveUrl: "https://github.com/iliagerman/joint-bob/releases/download/v9.9.9/joint-bob.tar.gz" };
   db.prepare("UPDATE update_preferences SET latest_json = ?, latest_version = ?, latest_checked_at = ?").run(JSON.stringify(old), old.version, new Date(Date.now() - 61 * 60_000).toISOString());

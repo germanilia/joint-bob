@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const releasePayload = (version: string) => ({
   tag_name: `v${version}`,
@@ -169,7 +170,7 @@ test("the detached helper downloads, verifies, installs, and records success", a
     const healthPort = (healthServer.address() as { port: number }).port;
 
     await mkdir(stateDir, { recursive: true });
-    const db = new DatabaseSync(path.join(stateDir, "node.db"));
+    const db = openNodeDatabase(path.join(stateDir, "node.db"));
     db.exec("CREATE TABLE update_jobs (id TEXT PRIMARY KEY, target_version TEXT NOT NULL, state TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
     const now = new Date().toISOString();
     db.prepare("INSERT INTO update_jobs (id, target_version, state, error, created_at, updated_at) VALUES ('job-1', '9.9.9', 'downloading', NULL, ?, ?)").run(now, now);
@@ -227,7 +228,7 @@ test("the detached helper fails the job and installs nothing on a checksum misma
     });
     await new Promise<void>((resolve) => assetServer.listen(0, "127.0.0.1", resolve));
     const port = (assetServer.address() as { port: number }).port;
-    const db = new DatabaseSync(path.join(stateDir, "node.db"));
+    const db = openNodeDatabase(path.join(stateDir, "node.db"));
     db.exec("CREATE TABLE update_jobs (id TEXT PRIMARY KEY, target_version TEXT NOT NULL, state TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
     const now = new Date().toISOString();
     db.prepare("INSERT INTO update_jobs (id, target_version, state, error, created_at, updated_at) VALUES ('job-2', '9.9.9', 'downloading', NULL, ?, ?)").run(now, now);
@@ -268,7 +269,7 @@ test("the detached helper records which download failed and why", async () => {
   try {
     const stateDir = path.join(root, "state");
     await mkdir(stateDir, { recursive: true });
-    const db = new DatabaseSync(path.join(stateDir, "node.db"));
+    const db = openNodeDatabase(path.join(stateDir, "node.db"));
     db.exec("CREATE TABLE update_jobs (id TEXT PRIMARY KEY, target_version TEXT NOT NULL, state TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
     const now = new Date().toISOString();
     db.prepare("INSERT INTO update_jobs (id, target_version, state, error, created_at, updated_at) VALUES ('job-3', '9.9.9', 'downloading', NULL, ?, ?)").run(now, now);
@@ -317,7 +318,7 @@ test("the helper does not start while turns an earlier update interrupted are st
   try {
     const stateDir = path.join(root, "state");
     await mkdir(stateDir, { recursive: true });
-    const db = new DatabaseSync(path.join(stateDir, "node.db"));
+    const db = openNodeDatabase(path.join(stateDir, "node.db"));
     db.exec("CREATE TABLE update_jobs (id TEXT PRIMARY KEY, target_version TEXT NOT NULL, state TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
     db.exec("CREATE TABLE update_recoveries (id TEXT PRIMARY KEY, status TEXT NOT NULL)");
     db.exec("INSERT INTO update_recoveries VALUES ('r1', 'pending'), ('r2', 'failed')");

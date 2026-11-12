@@ -9,7 +9,7 @@ import { loadBrowserStatus } from "./browser.js";
 import { loadBrowserProfileDirectory } from "./browser-profiles-settings.js";
 import { fillShortcutSettings } from "./shortcut-settings.js";
 import { loadSkills } from "./composer-dialogs.js";
-import { showSignedOut } from "./auth.js";
+import { authKnown, showSignedOut } from "./auth.js";
 import { loadClusterPanel } from "./cluster-panel.js";
 import { loadRelayServing } from "./relay-serving.js";
 import { loadWebhooks } from "./webhooks.js";
@@ -39,6 +39,20 @@ import { loadGuardianSettings } from "./guardian-settings.js";
 import { loadQualityAnalytics } from "./quality-analytics.js";
 import { loadSystemAiSettings, saveSystemAiSettings } from "./system-ai-settings.js";
 import { loadConversationChatSettings } from "./conversation-chat.js";
+import { buildSectionHeads, drawSectionIcons, installSettingsPage, openGroup, showSection } from "./settings-page.js";
+import { autosaveFields, deferSave, invalidSetting, settingsAutosave, stillTyping } from "./settings-autosave.js";
+
+const settingsGroups = [...document.querySelectorAll("#settingsForm .settings-group")];
+const settingsSaveState = document.querySelector("#settingsSaveState");
+buildSectionHeads(elements.settingsTabs);
+drawSectionIcons(elements.settingsTabs);
+installSettingsPage(elements.settingsForm);
+for (const group of settingsGroups) {
+  group.querySelector(".settings-group-label").addEventListener("click", () => openGroup(group, settingsGroups));
+}
+// Every change saves on its own; this line in the open section says how that went.
+const autosave = settingsAutosave();
+autosave.onError = (error) => toast.error(`Settings not saved: ${error.message}`);
 
 /** Compares two "major.minor.patch" strings; anything else never counts as newer. */
 function isNewerVersion(candidate, baseline) {
@@ -113,9 +127,11 @@ const ownLoading = (panel) => ["settingsPanel-cluster", "settingsPanel-relay", "
 function selectSettingsTab(requested) {
   // A tab hidden from this account (Relay for a replicated user, admin tabs for a member) falls back to Account.
   const name = elements.settingsTabs.some((tab) => tab.dataset.settingsTab === requested && !tab.hidden && (isNodeAdmin() || !tab.hasAttribute("data-admin-only"))) ? requested : "account";
+  // Leaving Classifiers commits the routing configuration being edited.
+  if (elements.settingsForm.dataset.tab === "classifiers" && name !== "classifiers" && autosave.waiting("routing")) autosave.schedule("routing", 0);
   elements.settingsForm.dataset.tab = name;
-  // System AI has its own endpoint and must not validate hidden settings in other tabs.
-  elements.settingsForm.noValidate = name === "system-ai";
+  // Saving checks its own fields; the form never validates as a whole.
+  elements.settingsForm.noValidate = true;
   for (const tab of elements.settingsTabs) {
     const selected = tab.dataset.settingsTab === name;
     tab.setAttribute("aria-selected", selected ? "true" : "false");
@@ -124,7 +140,8 @@ function selectSettingsTab(requested) {
   for (const panel of elements.settingsPanels) panel.hidden = panel.id !== `settingsPanel-${name}`;
   // Phones show either the section list or one section; desktop CSS ignores this.
   elements.settingsForm.dataset.mobileView = "panel";
-  elements.settingsCurrentTitle.textContent = elements.settingsTabs.find((tab) => tab.dataset.settingsTab === name).querySelector(".settings-tab-label").textContent;
+  showSection(elements.settingsTabs.find((tab) => tab.dataset.settingsTab === name), { groups: settingsGroups, title: elements.settingsCurrentTitle, crumb: document.querySelector("#settingsCurrentCrumb"), saveState: settingsSaveState, restartMessage: elements.settingsRestartMessage });
+  autosave.quiet();
   document.querySelector(`#settingsPanel-${name}`).scrollTop = 0;
   if (name === "cluster" || name === "browser") void loadBrowserStatus();
   if (name === "browser") void loadBrowserProfileDirectory();
@@ -182,7 +199,8 @@ function runtimeFieldsValue() { return Object.fromEntries(Object.entries(runtime
 function blankHarnessPayload() { return { executable: "", configPath: "", sessionPath: "" }; }
 function controlPrefix(id) { return id[0].toUpperCase() + id.slice(1); }
 function labeledControl(text, control) { const label = document.createElement("label"); label.append(text, control); return label; }
-function makeInput(id, testid) { const input = document.createElement("input"); input.id = id; input.dataset.testid = testid; input.autocomplete = "off"; return input; }
+// Paths save when the field is left (settings-autosave.js): a half-typed path must never apply.
+function makeInput(id, testid) { const input = document.createElement("input"); input.id = id; input.dataset.testid = testid; input.autocomplete = "off"; input.dataset.saveWhenLeft = ""; return input; }
 
 const UNAVAILABLE = " (not available on this node)";
 
@@ -447,7 +465,7 @@ function renderRuntimeReadiness(readiness) {
   })));
 }
 async function checkRuntimePaths() { const readiness = await api("/api/settings/runtime-check", { method: "POST", body: JSON.stringify(runtimeFieldsValue()) }); renderRuntimeReadiness(readiness); return readiness; }
-function useHarnessDefaults(id) { clearedHarnessesOnSave.add(id); for (const input of Object.values(runtimeFields[id])) input.value = ""; checkRuntimePaths().catch((error) => toast.error(error.message)); }
+function useHarnessDefaults(id) { clearedHarnessesOnSave.add(id); for (const input of Object.values(runtimeFields[id])) input.value = ""; autosave.schedule("main", 0); }
 function invalidRuntimeOverrides(readiness, values) { return Object.entries(readiness).filter(([id]) => id !== "kiro" || kiroEnabledValue()).flatMap(([id, fields]) => Object.entries(fields).filter(([field, result]) => !result.ok && values[id][field] !== runtimeDefaults[id][field]).map(([field]) => runtimeLabels[id][field])); }
 export const projectResourceFields = { skills: elements.projectResourceSkillsPaths, prompts: elements.projectResourcePromptsPaths, rules: elements.projectResourceRulesPaths, plugins: elements.projectResourcePluginsPaths };
 export function fillResourceFields(fields, resources) { for (const [type, field] of Object.entries(fields)) field.value = (resources[type] || []).join("\n"); }
@@ -455,9 +473,37 @@ export function resourceFieldsValue(fields) { return Object.fromEntries(Object.e
 
 let settingsLoading = false;
 let settingsReady = false;
+/** The retention choices last saved, so a change that deletes more asks first. */
+let savedRetention = { days: 0, scope: {} };
+
+/**
+ * The fields the node's settings request carries (PUT /api/settings, or /api/settings/personal
+ * for a member). Changing one saves them all, as the Save settings button did.
+ */
+const MAIN_FIELDS = [
+  "#settingsShowProjectsOnOtherNodes", "#settingsConversationHistoryDays", "#settingsConversationRetentionDays", "[data-retention-scope]", "#settingsBackup input", "#settingsBackup select",
+  "#settingsAutoCompactEnabled", "#settingsAutoCompactThreshold", "#settingsDigestAttachments",
+  "#settingsShellTimeoutEnabled", "#settingsShellTimeoutSeconds", "#settingsSubprocessMaxLifetimeMinutes",
+  "#settingsConversationCpuLimitEnabled", "#settingsConversationCpuLimitCores", "#settingsConversationMemoryLimitEnabled", "#settingsConversationMemoryLimitGb",
+  "#settingsConversationLabels", "#settingsLabelIcons input",
+  "#settingsNewConversationWorktree",
+  "#settingsStartConversationEnabled", "#settingsStartConversationPrompt", "#settingsEndConversationEnabled", "#settingsEndConversationPrompt",
+  "#savedCommandsList > .saved-command-row input", "#savedCommandsList > .saved-command-row textarea",
+  "#settingsProjectHome", "#settingsGitPullFileLimit", "#settingsGitPullTimeoutSeconds",
+  "#harnessPanels input[data-save-when-left]", "#harnessPanels [data-testid='settings-kiro-enabled']",
+  "#harnessPanels .searchable-select-trigger[data-testid*='-default-']", "#harnessPanels select[data-testid*='-default-']",
+  "#settingsRemoteTerminalTwins", "#settingsRemoteTerminalOtherNodes", "#settingsRunnerOtherNodes",
+  "#settingsResourceSkillsPaths", "#settingsResourcePromptsPaths", "#settingsResourceRulesPaths", "#settingsResourcePluginsPaths",
+].join(", ");
+/** Saved when the field is left, not while typing: a half-typed number or path must never apply. */
+const SAVE_WHEN_LEFT = "input[type='number'], #settingsProjectHome, #harnessPanels [data-testid$='-input'], .resource-paths-input, #settingsBackup input";
 
 /** Without a tab, phones open on the section list; desktop shows Account beside the list. */
 export async function openSettings(tab) {
+  // Who is signed in decides which sections and fields exist (the admin's paths, Updates, Users): a request made
+  // while the app is still starting waits for the node's answer, and nobody signed out opens Settings.
+  await authKnown;
+  if (!state.authenticated) return;
   applyAdminVisibility();
   // Reopening a closed dialog must not wait for its previous request to finish.
   if (!elements.settingsDialog.open) elements.settingsDialog.showModal();
@@ -466,14 +512,14 @@ export async function openSettings(tab) {
   if (settingsLoading) return;
   settingsLoading = true;
   settingsReady = false;
-  const save = elements.settingsForm.querySelector('[type="submit"]');
-  save.disabled = true;
+  // Nothing saves until the saved values are on the page: an unfinished read must never overwrite them.
+  elements.settingsForm.dataset.ready = "false";
+  autosave.setBase("loading");
   elements.settingsForm.setAttribute("aria-busy", "true");
-  elements.settingsRestartMessage.hidden = false;
-  elements.settingsRestartMessage.classList.add("is-loading");
-  elements.settingsRestartMessage.textContent = "Loading settings…";
+  elements.settingsRestartMessage.hidden = true;
+  elements.settingsRestartMessage.textContent = "";
   // Navigation stays usable. Cluster actions have their own loading guard and
-  // do not depend on local harness/model discovery or Save settings.
+  // do not depend on local harness/model discovery.
   for (const panel of elements.settingsPanels) panel.inert = !ownLoading(panel);
   for (const load of [loadSecretAccounts, loadChangelogPanel, loadMfaSettings, loadClusterPanel, ...(isNodeAdmin() ? [loadUpdatesPanel] : []), loadWorkspaces]) {
     void load().catch((error) => toast.error(error.message));
@@ -481,14 +527,20 @@ export async function openSettings(tab) {
   try {
     await loadSettings();
     settingsReady = true;
-    save.disabled = false;
   } finally {
     settingsLoading = false;
     elements.settingsForm.removeAttribute("aria-busy");
-    elements.settingsRestartMessage.classList.remove("is-loading");
     for (const panel of elements.settingsPanels) panel.inert = !settingsReady && !ownLoading(panel);
-    if (!settingsReady) elements.settingsRestartMessage.textContent = "Could not load settings. Close and try again.";
+    elements.settingsForm.dataset.ready = String(settingsReady);
+    autosave.setBase(settingsReady ? "ready" : "unavailable");
   }
+}
+
+/** Leaves Settings for the workspace. A change still waiting is saved on the way out. */
+export function closeSettings() {
+  // A field that saves when it is left (numbers, paths) must be left before the page goes.
+  if (elements.settingsDialog.contains(document.activeElement)) document.activeElement.blur();
+  if (elements.settingsDialog.open) elements.settingsDialog.close();
 }
 
 async function loadSettings() {
@@ -532,6 +584,10 @@ async function loadSettings() {
   elements.settingsProjectHome.value = settings.projects.homePath;
   document.querySelector("#settingsConversationRetentionDays").value = settings.conversationRetentionDays;
   fillRetentionScope(settings.conversationRetentionScope);
+  savedRetention = { days: settings.conversationRetentionDays, scope: retentionScopeValue() };
+  fillBackup(settings.conversationBackup);
+  // Not part of the settings, and not a reason to keep them from opening.
+  void loadBackupStatus();
   elements.settingsShellTimeoutEnabled.checked = settings.shellCommandTimeoutSeconds !== null;
   elements.settingsShellTimeoutSeconds.value = settings.shellCommandTimeoutSeconds ?? 600;
   elements.settingsSubprocessMaxLifetimeMinutes.value = settings.subprocessMaxLifetimeMinutes ?? 360;
@@ -585,16 +641,19 @@ function addSavedCommandRow(command = { name: "", prompt: "" }) {
   remove.textContent = "Remove";
   remove.dataset.testid = "saved-command-remove";
   remove.setAttribute("aria-label", "Remove saved command");
-  remove.addEventListener("click", () => row.remove());
+  remove.addEventListener("click", () => { row.remove(); autosave.schedule("main", 0); });
   const share = document.createElement("button");
   share.type = "button"; share.className = "ghost compact";
   share.textContent = "Share"; share.dataset.testid = "saved-command-share";
-  share.title = state.isRemoteLogin ? "Change command sharing on the owning node." : "Save command changes with Save settings before sharing. Sharing does not save other settings.";
+  share.title = state.isRemoteLogin ? "Change command sharing on the owning node." : "Offer this command to other machines. Its latest changes are saved first.";
   share.disabled = state.isRemoteLogin;
   share.addEventListener("click", async () => {
     try {
-      if (!command.id || JSON.stringify(savedCommandsValue()) !== savedCommandSnapshot) {
-        toast("Save settings before sharing new or edited commands, then reopen Settings.");
+      // Sharing reads the saved command, so a change still waiting is saved first.
+      const errors = await autosave.flush();
+      const saved = JSON.parse(savedCommandSnapshot || "[]");
+      if (errors.length || !saved.some((item) => item.id === row.dataset.commandId)) {
+        toast(errors.length ? `Fix the command first: ${errors[0]}` : "Give the command a name and a prompt before sharing it.");
         return;
       }
       const { openCommandSharing } = await import("./command-sharing.js");
@@ -609,11 +668,12 @@ function addSavedCommandRow(command = { name: "", prompt: "" }) {
 document.querySelector("#addSavedCommand").addEventListener("click", () => addSavedCommandRow());
 
 function savedCommandsValue() {
-  const rows = [...savedCommandsList.children];
-  if (rows.length > 50) throw new Error("Save at most 50 commands");
+  // A row added but not yet typed into is a draft, not a command.
+  const rows = [...savedCommandsList.querySelectorAll(":scope > .saved-command-row")].filter((row) => [...row.querySelectorAll("input, textarea")].some((field) => field.value.trim()));
+  if (rows.length > 50) throw invalidSetting("Save at most 50 commands");
   return rows.map((row) => {
     const [name, prompt] = row.querySelectorAll("input, textarea");
-    if (!name.value.trim() || !prompt.value.trim()) throw new Error("Saved commands need a name and prompt");
+    if (!name.value.trim() || !prompt.value.trim()) throw invalidSetting("Saved commands need a name and prompt");
     return { id: row.dataset.commandId, name: name.value.trim(), prompt: prompt.value.trim() };
   });
 }
@@ -636,30 +696,45 @@ function personalSettingsValue() {
 
 /** A member saves only their own settings; nothing they send can change the node's. */
 async function savePersonalSettings() {
-  const saved = await api("/api/settings/personal", { method: "PUT", body: JSON.stringify(personalSettingsValue()) });
+  const value = personalSettingsValue();
+  const saved = await api("/api/settings/personal", { method: "PUT", body: JSON.stringify(value) });
+  savedCommandSnapshot = JSON.stringify(value.conversationCommands.presets);
   state.conversationLabels = saved.conversationLabels;
   if (state.activeProjectId) void refreshSessionsQuietly();
   else renderSessions();
-  elements.settingsDialog.close();
-  toast("Settings saved");
 }
 
-async function saveSettings(event) {
-  event.preventDefault();
-  if (elements.settingsForm.dataset.tab === "system-ai") { await saveSystemAiSettings(); return; }
-  if (!settingsReady || settingsLoading) return;
+/** The fields this save sends, checked the way the browser would before a form submit. */
+function checkMainFields() {
+  for (const field of elements.settingsForm.querySelectorAll(MAIN_FIELDS)) {
+    // Saved commands are checked by savedCommandsValue, which leaves a row not yet typed into out.
+    if (field.disabled || !field.willValidate || field.closest("#savedCommandsList") || field.checkValidity()) continue;
+    const label = field.closest("label")?.firstChild?.textContent?.trim() || field.getAttribute("aria-label") || field.id;
+    throw invalidSetting(`${label}: ${field.validationMessage}`);
+  }
+}
+
+/** Saves every setting the page holds for the node: what the Save settings button used to send. */
+async function saveSettings() {
+  if (!settingsReady || settingsLoading) throw invalidSetting("Settings are still loading");
+  checkMainFields();
   for (const descriptor of harnessDescriptors) {
     if (descriptor.id === "kiro" && !kiroEnabledValue()) continue;
     const { provider, model } = conversationFields[descriptor.id];
-    if (provider && !provider.value) throw new Error(`Choose a ${descriptor.label} provider for new conversations`);
-    if (!model.value) throw new Error(`Choose a ${descriptor.label} model for new conversations`);
+    if (provider && !provider.value) throw invalidSetting(`Choose a ${descriptor.label} provider for new conversations`);
+    if (!model.value) throw invalidSetting(`Choose a ${descriptor.label} model for new conversations`);
   }
   if (!isNodeAdmin()) { await savePersonalSettings(); return; }
   const runtime = runtimeFieldsValue();
   for (const harness of clearedHarnessesOnSave) runtime[harness] = blankHarnessPayload();
   const invalid = invalidRuntimeOverrides(await checkRuntimePaths(), runtime);
-  if (invalid.length) throw new Error(`Fix unavailable custom paths: ${invalid.join(", ")}`);
-  await saveDirtyRoutingConfig();
+  // The page is read after that round trip: a number started meanwhile waits until it is left.
+  if (stillTyping("main")) throw deferSave();
+  if (invalid.length) throw invalidSetting(`Fix unavailable custom paths: ${invalid.join(", ")}`);
+  const presets = savedCommandsValue();
+  const retention = retentionToSave();
+  showBackupSaveError(null);
+  const backup = backupKnown ? backupToSave() : null;
   const saved = await api("/api/settings", {
     method: "PUT",
     body: JSON.stringify({
@@ -671,8 +746,9 @@ async function saveSettings(event) {
       conversationLabels: document.querySelector("#settingsConversationLabels").value.split("\n").map((label) => label.trim()).filter(Boolean),
       conversationLabelIcons: labelIconsValue(),
       conversationHistoryDays: Number(document.querySelector("#settingsConversationHistoryDays").value),
-      conversationRetentionDays: Number(document.querySelector("#settingsConversationRetentionDays").value),
-      conversationRetentionScope: retentionScopeValue(),
+      conversationRetentionDays: retention.days,
+      conversationRetentionScope: retention.scope,
+      ...(backup ? { conversationBackup: backup } : {}),
       autoCompactThreshold: elements.settingsAutoCompactEnabled.checked ? Number(elements.settingsAutoCompactThreshold.value) : null,
       shellCommandTimeoutSeconds: elements.settingsShellTimeoutEnabled.checked ? Number(elements.settingsShellTimeoutSeconds.value) : null,
       subprocessMaxLifetimeMinutes: Number(elements.settingsSubprocessMaxLifetimeMinutes.value),
@@ -685,21 +761,27 @@ async function saveSettings(event) {
       gitPullTimeoutSeconds: Number(elements.settingsGitPullTimeoutSeconds.value),
       remoteTerminal: { twins: elements.settingsRemoteTerminalTwins.checked, otherNodes: elements.settingsRemoteTerminalOtherNodes.checked },
       runnerAccess: { otherNodes: elements.settingsRunnerOtherNodes.checked },
-      conversationCommands: personalSettingsValue().conversationCommands,
+      conversationCommands: { ...personalSettingsValue().conversationCommands, presets },
     }),
-  });
+  }).catch((error) => { showBackupSaveError(error); throw error; });
+  savedCommandSnapshot = JSON.stringify(presets);
+  savedRetention = { days: saved.conversationRetentionDays ?? retention.days, scope: { ...(saved.conversationRetentionScope ?? retention.scope) } };
+  // The form takes what the node saved: the secret key leaves its field. A field changed while
+  // the request ran stays as typed, and is saved next. The status follows the new setting.
+  if (backup && JSON.stringify(conversationBackupValue()) === JSON.stringify(backup)) fillBackupFields(saved.conversationBackup);
+  void loadBackupStatus();
   await saveChangedTerminalPolicy();
   state.conversationLabels = saved.conversationLabels;
   state.conversationLabelIcons = saved.conversationLabelIcons;
   // Refreshes can keep queuing during live activity; they are not part of saving.
   if (state.activeProjectId) void refreshSessionsQuietly();
   else renderSessions();
-  const restartRequired = harnessDescriptors.filter(({ id }) => saved.restartRequired[id]).map(({ label }) => `${label} configuration`);
-  elements.settingsRestartMessage.hidden = restartRequired.length === 0;
-  elements.settingsRestartMessage.textContent = restartRequired.length ? `Settings saved. Restart required for ${restartRequired.join(" and ")} changes.` : "";
-  if (!restartRequired.length) elements.settingsDialog.close();
-  // A toast inside a closed dialog is invisible, so close it before announcing success.
-  toast("Settings saved");
+  const restartRequired = harnessDescriptors.filter(({ id }) => saved.restartRequired?.[id]).map(({ label }) => `${label} configuration`);
+  // A restart notice stays until Settings is opened again, so it is not lost to the next save.
+  if (restartRequired.length) {
+    elements.settingsRestartMessage.hidden = false;
+    elements.settingsRestartMessage.textContent = `Restart required for ${restartRequired.join(" and ")} changes.`;
+  }
 }
 
 elements.settingsButton.addEventListener("click", () => openSettings().catch((error) => toast.error(error.message)));
@@ -774,10 +856,26 @@ function retentionTable(testId, caption, headings, rows) {
   return table;
 }
 
+/** The line over the dry run's tables: what is kept of a conversation before it goes. `saved` is the node's saved backup setting. */
+function retentionBackupLine(saved) {
+  const line = document.createElement("p");
+  line.className = "settings-hint";
+  line.dataset.testid = "settings-retention-preview-backup";
+  const days = saved.keepDays;
+  const kept = days > 0 ? `Each backup is deleted after ${days.toLocaleString()} ${days === 1 ? "day" : "days"}.` : "The backups are kept for good.";
+  line.textContent = saved.destination === "off"
+    ? "No backup is made: what is deleted is gone."
+    : `Expired conversations and left-behind files are backed up to ${saved.where} first. ${kept} Empty conversations and background runs are not backed up.`;
+  // The boxes are read from the page, the backup setting from the node: say so when the two differ.
+  if (backupChanged()) line.textContent += " This is the saved backup setting. Your changes below are not saved yet.";
+  return line;
+}
+
 function retentionPreviewTables(preview) {
   const count = (total) => [total.conversations.toLocaleString(), total.files.toLocaleString(), retentionSize(total.bytes)];
   const { totals } = preview;
-  const tables = [retentionTable("settings-retention-preview-totals", "With the boxes ticked above, on this machine", ["", "Conversations", "Files", "Size"], [
+  // A node that predates backups says nothing about them.
+  const tables = [...(preview.backup ? [retentionBackupLine(preview.backup)] : []), retentionTable("settings-retention-preview-totals", "With the boxes ticked above, on this machine", ["", "Conversations", "Files", "Size"], [
     { kind: "expired", cells: [`Expired: no activity for ${preview.retentionDays} days`, ...count(totals.expired)] },
     { kind: "empty", cells: ["Empty: never got a message", ...count(totals.empty)] },
     { kind: "background", cells: ["Background runs", ...count(totals.background)] },
@@ -826,6 +924,219 @@ async function showRetentionPreview() {
   }
 }
 
+/* Backup before deleting: where the hourly check writes a conversation before it deletes it, and
+   for how many days the backup is kept. Saved with the other settings, each field when it is left;
+   a bucket is saved once nothing it needs is missing. The check button tries the place that is
+   typed, saved or not, and the status says what this machine keeps now. */
+const backupForm = {
+  group: document.getElementById("settingsBackup"),
+  destination: document.getElementById("settingsBackupDestination"),
+  keepDays: document.getElementById("settingsBackupKeepDays"),
+  folder: document.getElementById("settingsBackupFolder"),
+  folderHint: document.getElementById("settingsBackupFolderHint"),
+  credentials: document.getElementById("settingsBackupS3Credentials"),
+  secret: document.getElementById("settingsBackupS3SecretAccessKey"),
+  secretSaved: document.getElementById("settingsBackupS3SecretSaved"),
+  more: document.getElementById("settingsBackupS3More"),
+  checkButton: document.getElementById("settingsBackupCheckButton"),
+  checkResult: document.getElementById("settingsBackupCheckResult"),
+  saveError: document.getElementById("settingsBackupSaveError"),
+  status: document.getElementById("settingsBackupStatus"),
+  // A bucket's text fields, each under the name it has in the setting.
+  s3: {
+    bucket: document.getElementById("settingsBackupS3Bucket"),
+    region: document.getElementById("settingsBackupS3Region"),
+    prefix: document.getElementById("settingsBackupS3Prefix"),
+    endpoint: document.getElementById("settingsBackupS3Endpoint"),
+    accessKeyId: document.getElementById("settingsBackupS3AccessKeyId"),
+    profile: document.getElementById("settingsBackupS3Profile"),
+  },
+};
+/** False on a node that predates backups: the group stays hidden and a save leaves the setting out. */
+let backupKnown = false;
+/** What the form held when it was last filled from the node, to tell a choice that is not saved yet. */
+let backupSnapshot = "";
+let backupCheckRun = 0;
+let backupStatusRun = 0;
+
+/** A line with a tick, or a cross and the page's error colour. Its text is the node's, so it is set as text. */
+function backupNote(kind, text, testId) {
+  const note = document.createElement("p");
+  note.className = `retention-backup-note ${kind}`;
+  if (kind === "failed") note.setAttribute("role", "alert");
+  if (testId) note.dataset.testid = testId;
+  const words = document.createElement("span");
+  words.textContent = text;
+  note.append(menuIcon(kind === "failed" ? "close" : "check"), words);
+  return note;
+}
+
+/** Shows the rows of the chosen place ("on": of any place) and of the chosen way to sign in, and no others. */
+function syncBackupFields() {
+  const destination = backupForm.destination.value;
+  for (const row of backupForm.group.querySelectorAll("[data-backup-kind]")) {
+    const { backupKind: kind, backupCredentials: credentials } = row.dataset;
+    row.hidden = (kind === "on" ? destination === "off" : kind !== destination) || (credentials !== undefined && credentials !== backupForm.credentials.value);
+  }
+  // A number field that is not on screen must not hold up a save: the browser cannot point at it.
+  backupForm.keepDays.disabled = destination === "off";
+}
+
+/** `saved` is the node's `conversationBackup`, when Settings open. What a check or a refused save said goes. */
+function fillBackup(saved) {
+  backupKnown = Boolean(saved);
+  backupForm.group.hidden = !backupKnown;
+  // A group that is not shown must not hold up a save with a number nobody can see.
+  if (!backupKnown) { backupForm.keepDays.disabled = true; return; }
+  fillBackupFields(saved);
+  // An address that is saved must not hide behind a closed line.
+  backupForm.more.open = Boolean(saved.s3.endpoint);
+  backupCheckRun += 1;
+  backupForm.checkResult.replaceChildren();
+  backupForm.saveError.replaceChildren();
+}
+
+/** The fields as the node has them, also after a save. The secret key never comes back, so its field ends empty. */
+function fillBackupFields(saved) {
+  backupForm.destination.value = saved.destination;
+  backupForm.keepDays.value = saved.keepDays;
+  backupForm.folder.value = saved.folder;
+  backupForm.folder.placeholder = saved.defaultFolder;
+  const defaultFolder = document.createElement("code");
+  defaultFolder.textContent = saved.defaultFolder;
+  backupForm.folderHint.replaceChildren("Leave this empty to use ", defaultFolder, ". Use a folder outside your projects.");
+  for (const [name, input] of Object.entries(backupForm.s3)) input.value = saved.s3[name];
+  backupForm.credentials.value = saved.s3.credentials;
+  backupForm.secret.value = "";
+  backupForm.secret.placeholder = saved.hasSecretAccessKey ? "A key is saved. Type a new one to replace it." : "";
+  // A narrow field cuts its placeholder short, so the line under the field says it too.
+  backupForm.secretSaved.hidden = !saved.hasSecretAccessKey;
+  syncBackupFields();
+  backupSnapshot = JSON.stringify(conversationBackupValue());
+}
+
+/** The setting as the form has it, in the shape a save takes: the fields of the chosen place and no others. */
+function conversationBackupValue() {
+  const destination = backupForm.destination.value;
+  // With backups off the days are not on screen, so the saved number stays.
+  if (destination === "off") return { destination };
+  const value = { destination, keepDays: Number(backupForm.keepDays.value) };
+  if (destination === "folder") return { ...value, folder: backupForm.folder.value.trim() };
+  const typed = (name) => backupForm.s3[name].value.trim();
+  const credentials = backupForm.credentials.value;
+  const secretAccessKey = backupForm.secret.value.trim();
+  return {
+    ...value,
+    s3: {
+      bucket: typed("bucket"), region: typed("region"), prefix: typed("prefix"), endpoint: typed("endpoint"), credentials,
+      // The secret key goes only when one was typed: leaving it out keeps the saved one.
+      ...(credentials === "keys" ? { accessKeyId: typed("accessKeyId"), ...(secretAccessKey ? { secretAccessKey } : {}) } : { profile: typed("profile") }),
+    },
+  };
+}
+
+/** What a bucket still needs before the node would take it, in the node's words; "" when nothing. */
+function backupMissing({ destination, s3 }) {
+  if (destination !== "s3") return "";
+  if (!s3.bucket) return "Backups to S3 need a bucket";
+  if (!s3.region) return "Backups to S3 need the bucket's region";
+  if (s3.credentials === "keys" && (!s3.accessKeyId || (!s3.secretAccessKey && backupForm.secretSaved.hidden))) return "Backups to S3 need an access key ID and its secret key, or a profile";
+  return "";
+}
+
+/**
+ * The backup setting a save sends. Choosing a bucket shows its empty fields, so a bucket that still
+ * misses a part is not sent: the save waits until the fields are filled, and says so next to them
+ * (the save line is at the top of the page).
+ */
+function backupToSave() {
+  const value = conversationBackupValue();
+  const missing = backupMissing(value);
+  if (!missing) return value;
+  const note = document.createElement("p");
+  note.className = "settings-hint";
+  note.dataset.testid = "settings-backup-unfinished";
+  note.textContent = `Not saved yet. ${missing}.`;
+  backupForm.saveError.replaceChildren(note);
+  throw invalidSetting(missing);
+}
+
+/** Whether the form holds a backup choice that the node has not saved. */
+function backupChanged() {
+  return backupKnown && JSON.stringify(conversationBackupValue()) !== backupSnapshot;
+}
+
+function backupKeptText({ kept, nextRemovalAt }) {
+  if (!kept.backups) return "No backups yet.";
+  const one = kept.backups === 1;
+  const count = `${kept.backups.toLocaleString()} ${one ? "backup" : "backups"}`;
+  // One conversation's backup is often far below a megabyte.
+  const size = kept.bytes > 0 && kept.bytes < 1e6 ? `${Math.max(1, Math.round(kept.bytes / 1e3))} KB` : retentionSize(kept.bytes);
+  if (!nextRemovalAt) return `${count} kept for good (${size}).`;
+  const due = new Date(nextRemovalAt);
+  const when = due.getTime() <= Date.now() ? "at the next hourly check" : `on ${due.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}`;
+  return `${count} kept (${size}). ${one ? "It" : "The oldest"} is removed ${when}.`;
+}
+
+function backupStatusNotes(status) {
+  const kept = document.createElement("p");
+  kept.className = "settings-hint";
+  kept.dataset.testid = "settings-backup-kept";
+  kept.textContent = backupKeptText(status);
+  if (!status.problem) return [kept];
+  const at = new Date(status.problem.at);
+  const when = Number.isFinite(at.getTime()) ? ` on ${at.toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" })}` : "";
+  return [kept, backupNote("failed", `Problem${when}: ${status.problem.message}`, "settings-backup-problem")];
+}
+
+/** What this machine keeps now and the last problem. Asked when settings open, after a save, and after a check that went well. */
+async function loadBackupStatus() {
+  if (!backupKnown) return;
+  const run = ++backupStatusRun;
+  let notes;
+  try { notes = backupStatusNotes(await api("/api/settings/conversation-backups")); }
+  catch (error) { notes = [backupNote("failed", error.message, "settings-backup-status-error")]; }
+  // An answer that a later request overtook is out of date.
+  if (run === backupStatusRun) backupForm.status.replaceChildren(...notes);
+}
+
+async function checkBackupDestination() {
+  // The days go with the request, so let the browser point at a number the node would refuse.
+  if (!backupForm.keepDays.reportValidity()) return;
+  const run = ++backupCheckRun;
+  const label = backupForm.checkButton.textContent;
+  backupForm.checkButton.disabled = true;
+  backupForm.checkButton.textContent = "Checking…";
+  backupForm.checkResult.replaceChildren();
+  let note;
+  try {
+    // What is typed, whether or not it is saved yet.
+    const answer = await api("/api/settings/conversation-backups/check", { method: "POST", body: JSON.stringify(conversationBackupValue()) });
+    note = answer.ok ? backupNote("ok", `Joint Bob can write backups to ${answer.where}.`) : backupNote("failed", answer.message);
+    // On the node a check of the saved place that goes well ends a problem about making backups, so the status is read again.
+    if (answer.ok) void loadBackupStatus();
+  } catch (error) {
+    note = backupNote("failed", error.message);
+  } finally {
+    backupForm.checkButton.disabled = false;
+    backupForm.checkButton.textContent = label;
+  }
+  // An answer about values that changed while it was on its way would mislead.
+  if (run === backupCheckRun) backupForm.checkResult.replaceChildren(note);
+}
+
+/** A save the node refused because of the backup setting: its reason goes over the fields, in the node's words. */
+function showBackupSaveError(error) {
+  // The node names the setting it refused, so a refusal about another one stays out of this group.
+  const refused = error?.details?.setting === "conversationBackup";
+  backupForm.saveError.replaceChildren(...(refused ? [backupNote("failed", error.cause?.message || error.message)] : []));
+}
+
+backupForm.destination.addEventListener("change", syncBackupFields);
+backupForm.credentials.addEventListener("change", syncBackupFields);
+backupForm.checkButton.addEventListener("click", () => { void checkBackupDestination(); });
+// What a check or a refused save said was about the values as they were.
+backupForm.group.addEventListener("input", () => { backupCheckRun += 1; backupForm.checkResult.replaceChildren(); backupForm.saveError.replaceChildren(); });
 document.querySelector("#settingsRetentionFull").addEventListener("change", syncRetentionScope);
 document.querySelector("#settingsRetentionPreviewButton").addEventListener("click", () => { void showRetentionPreview(); });
 elements.settingsSyncSkillsButton.addEventListener("click", () => runSkillOperation(syncLocalSkills));
@@ -874,6 +1185,11 @@ const settingsSearch = createSettingsSearch({
     selectSettingsTab(tab.dataset.settingsTab);
     const target = entry.accountId ? revealSecretAccount(entry.accountId) : element;
     if (!target || target === tab) return;
+    // A section's own tab (Relay › Serving) opens that tab.
+    if (target.matches("[role='tab']")) target.click();
+    // A setting behind a closed disclosure has no place on the page to scroll to until it opens.
+    const closed = target.closest("details:not([open])");
+    if (closed) closed.open = true;
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.remove("settings-hit");
     void target.offsetWidth;
@@ -884,7 +1200,7 @@ elements.settingsDialog.addEventListener("keydown", (event) => {
   // ⌘F inside Settings jumps to the search box instead of the browser's find bar.
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") { event.preventDefault(); settingsSearch.focus(); }
 });
-elements.cancelSettingsButton.addEventListener("click", () => elements.settingsDialog.close());
+elements.cancelSettingsButton.addEventListener("click", closeSettings);
 elements.settingsClientLogsCopyButton.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(window.jointBobClientLogs?.entries().join("\n") || "");
@@ -938,27 +1254,81 @@ elements.settingsChangePasswordButton.addEventListener("click", async () => {
     toast.error(error.message);
   }
 });
-let settingsSaving = false;
-elements.settingsForm.addEventListener("submit", async (event) => {
+/* ---- Saving as you go ----
+   The node's settings save through the request the Save settings button used to send; System AI
+   through its own. Text saves after a pause in typing, numbers and paths when the field is left,
+   everything else at once. */
+autosave.channel("main", saveSettings);
+autosave.channel("system-ai", saveSystemAiSettings);
+// Terminal access has its own request (node-admin.js); it used to ride on Save settings too.
+autosave.channel("terminal", saveChangedTerminalPolicy);
+autosaveFields(document.querySelector('[data-testid="settings-terminal-policy"]'), "terminal");
+// A routing configuration has its own Save button and is redrawn after every save, so an edit
+// waits until you leave the configuration's section or Settings, as Save settings used to commit it.
+autosave.channel("routing", saveDirtyRoutingConfig);
+for (const type of ["input", "change", "choice-change"]) {
+  document.querySelector("#routingConfigEditor").addEventListener(type, (event) => { if (!event.target.closest?.(".searchable-select-popover")) autosave.mark("routing"); });
+}
+document.addEventListener("routing-config-saved", () => autosave.settle("routing"));
+const summaryFieldset = document.querySelector("#settingsSummaryWriter")?.closest("fieldset");
+for (const field of elements.settingsForm.querySelectorAll(SAVE_WHEN_LEFT)) field.dataset.saveWhenLeft = "";
+autosaveFields(elements.settingsForm, "main", { accept: (target) => settingsReady && target.matches(MAIN_FIELDS), askFirst: confirmDeletingMore });
+// The activity summary, moved into System AI, saves on its own (summary-model-settings.js).
+autosaveFields(document.querySelector("#settingsPanel-system-ai"), "system-ai", { accept: (target) => !summaryFieldset?.contains(target) && target.matches("input, select, textarea, .searchable-select-trigger") });
+// Enter in a field, or a button without a type, submits the form: that saves now, and never closes Settings.
+elements.settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (elements.settingsForm.dataset.tab === "system-ai") { await saveSystemAiSettings(); return; }
-  if (elements.settingsForm.dataset.tab === "quality" || settingsSaving || !settingsReady || settingsLoading) return;
-  settingsSaving = true;
-  const button = elements.settingsForm.querySelector('[type="submit"]');
-  button.disabled = true;
-  button.textContent = "Saving…";
-  elements.settingsRestartMessage.hidden = false;
-  elements.settingsRestartMessage.classList.add("is-loading");
-  elements.settingsRestartMessage.textContent = "Saving settings…";
-  try {
-    await saveSettings(event);
-  } catch (error) {
-    elements.settingsRestartMessage.textContent = `Could not save settings: ${error.message}`;
-    toast.error(error.message);
-  } finally {
-    settingsSaving = false;
-    button.disabled = false;
-    button.textContent = "Save settings";
-    elements.settingsRestartMessage.classList.remove("is-loading");
+  void autosave.flush();
+});
+
+const RETENTION_WORDS = {
+  full: "older conversations that a project's list no longer shows",
+  includeUnrecorded: "old transcripts that have no conversation record",
+  includeScheduled: "old conversations started by schedules and webhooks",
+  includeTickets: "old conversations of finished tickets",
+  leftovers: "files left behind by conversations that were already deleted",
+  backgroundRuns: "Joint Bob's own background-run transcripts after 7 days",
+};
+
+/**
+ * Deleting more conversations, or sooner, is asked first; No puts the allowed choice back. Until it
+ * is allowed, saving sends the choice allowed before (see retentionToSave), so no other save sends it.
+ */
+async function confirmDeletingMore(target) {
+  const days = document.querySelector("#settingsConversationRetentionDays");
+  const widens = target.matches("[data-retention-scope]") ? target.checked && !savedRetention.scope[target.dataset.retentionScope]
+    : target === days ? Number(days.value) > 0 && Number(days.value) < Number(savedRetention.days) : false;
+  if (!widens) return true;
+  const what = target === days ? `conversations with no activity for ${Number(days.value).toLocaleString()} days` : RETENTION_WORDS[target.dataset.retentionScope];
+  const confirmed = await confirmAction({
+    title: "Delete more conversations?",
+    message: `From the next hourly check this machine deletes ${what}, on every node. If you are not sure, choose Cancel and use Show what would be deleted first.`,
+    confirmLabel: "Delete them",
+    destructive: true,
+  });
+  if (confirmed) {
+    if (target === days) savedRetention.days = Number(days.value);
+    else savedRetention.scope[target.dataset.retentionScope] = true;
+    return true;
   }
+  if (target === days) days.value = savedRetention.days;
+  else { target.checked = false; syncRetentionScope(); }
+  return false;
+}
+
+/** The retention choices a save may send: fewer deletions at once, more only once allowed. */
+function retentionToSave() {
+  const days = Number(document.querySelector("#settingsConversationRetentionDays").value);
+  const scope = retentionScopeValue();
+  for (const [box, ticked] of Object.entries(scope)) if (ticked && !savedRetention.scope[box]) scope[box] = false;
+  return { days: savedRetention.days && days < savedRetention.days ? savedRetention.days : days, scope };
+}
+
+// Leaving Settings saves what is still waiting; whatever cannot be saved is said in the workspace.
+elements.settingsDialog.addEventListener("cancel", () => {
+  if (elements.settingsDialog.contains(document.activeElement)) document.activeElement.blur();
+});
+elements.settingsDialog.addEventListener("close", () => {
+  if (!autosave.pending) return;
+  void autosave.flush().then((errors) => { for (const error of new Set(errors)) toast.error(`Settings not saved: ${error}`); });
 });

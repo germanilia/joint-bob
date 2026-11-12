@@ -4,9 +4,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { signedNodeRequest } from "./signed-node-request.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // Twin sync on a loaded CI runner can take longer than 30 seconds to converge.
 async function eventually(check: () => Promise<void>): Promise<void> {
@@ -20,7 +20,7 @@ async function eventually(check: () => Promise<void>): Promise<void> {
 const claudeLine = (sessionId: string, cwd: string): string =>
   `${JSON.stringify({ type: "user", sessionId, cwd, timestamp: new Date().toISOString(), message: { role: "user", content: "Synthetic turn" } })}\n`;
 function recordIds(dataDir: string, projectId: string): string[] {
-  const database = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+  const database = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
   try {
     return (database.prepare("SELECT session_id FROM conversation_records WHERE project_id = ? AND engine = 'claude'").all(projectId) as Array<{ session_id: string }>).map((row) => row.session_id);
   } finally { database.close(); }
@@ -69,7 +69,7 @@ test("sharing a Claude sub-agent transcript never makes it a conversation of its
 
     // Records created by older releases are removed when the node starts.
     await stopDevNode(children.shift()!);
-    const stopped = new DatabaseSync(path.join(left.dataDir, "node.db"));
+    const stopped = openNodeDatabase(path.join(left.dataDir, "node.db"));
     try {
       const at = new Date().toISOString();
       stopped.prepare("INSERT INTO conversation_records (project_id, engine, session_id, created_at, updated_at, origin_node_id) VALUES (?, 'claude', ?, ?, ?, ?)")

@@ -3,10 +3,10 @@ import { execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import WebSocket from "ws";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 interface TaskView { id: string; title: string; currentNodeId: string; executionState: string; leaseOwnerNodeId: string | null; leaseExpiresAt: string | null }
 
@@ -18,7 +18,7 @@ function createTaskOn(environment: DevEnvironment, node: SeededNode, projectId: 
 }
 
 function updateOwnerRow(node: SeededNode, sql: string, ...values: Array<string | null>): void {
-  const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
   try {
     db.exec("PRAGMA busy_timeout=5000");
     assert.equal(db.prepare(sql).run(...values).changes, 1);
@@ -113,7 +113,7 @@ test("task mutations and task watch sockets route through the recorded owner", {
     const failedSetup = await waitForTask(a, aAuth, project.id, invalidModel.id, (task) => task.executionState === "failed");
     assert.equal(failedSetup.leaseOwnerNodeId, null);
     assert.equal(failedSetup.leaseExpiresAt, null);
-    const aDb = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const aDb = openNodeDatabase(path.join(a.dataDir, "node.db"));
     try {
       assert.equal((aDb.prepare("SELECT lease_token FROM tasks WHERE project_id = ? AND id = ?").get(project.id, invalidModel.id) as { lease_token: string | null }).lease_token, null);
     } finally { aDb.close(); }

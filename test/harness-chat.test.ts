@@ -4,12 +4,12 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type WebSocket from "ws";
 import { projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { openChat, waitFor } from "./queued-prompt-harness.js";
 import { kiroV3SessionFixture } from "./kiro-v3-fixture.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const fixtureSource = `#!/usr/bin/env node
 ${kiroV3SessionFixture}
@@ -56,7 +56,7 @@ rl.on("close", () => process.exit(0));
 `;
 
 function configureKiro(dataDir: string, executable: string, configPath: string, sessionPath: string): void {
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   const save = db.prepare("INSERT INTO node_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at");
   const now = new Date().toISOString();
   save.run("kiro.executable", executable, now);
@@ -101,7 +101,7 @@ test("websocket chat routes Kiro prompts through the generic harness runtime", a
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "queuedPrompts" && Array.isArray(message.prompts) && message.prompts.length === 0));
 
     const readyFrame = first.messages.find((message) => message.type === "ready")!;
-    const workDb = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const workDb = openNodeDatabase(path.join(node.dataDir, "node.db"));
     workDb.exec("CREATE TABLE IF NOT EXISTS conversation_work (engine TEXT NOT NULL, session_id TEXT NOT NULL, run_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (engine, session_id, run_id))");
     const backgroundWork = { engine: "kiro", sessionId: String(readyFrame.sessionId), summary: { runId: "background-worker", status: "running", tasks: [{ name: "worker", role: "worker", status: "running" }] } };
     workDb.prepare("INSERT OR REPLACE INTO conversation_work VALUES (?,?,?,?)").run("kiro", String(readyFrame.sessionId), "background-worker", JSON.stringify(backgroundWork));
@@ -112,7 +112,7 @@ test("websocket chat routes Kiro prompts through the generic harness runtime", a
     const backgroundAcknowledgement = first.messages.find((message) => message.type === "userMessage" && message.requestId === backgroundRequest)!;
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "promptCompleted" && message.queueId === backgroundAcknowledgement.queueId));
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "textDelta" && message.text === "background writable"));
-    const clearWork = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const clearWork = openNodeDatabase(path.join(node.dataDir, "node.db"));
     clearWork.prepare("DELETE FROM conversation_work WHERE engine=? AND session_id=? AND run_id=?").run("kiro", readyFrame.sessionId, "background-worker");
     clearWork.close();
 

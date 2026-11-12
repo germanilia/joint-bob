@@ -58,13 +58,17 @@ test("on a phone, settings opens on the section list and a section has a way bac
   const list = page.getByTestId("settings-tab-connections");
   await list.waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("settings-panel-account").isVisible(), false, "the list replaces the section");
-  assert.equal(await page.getByTestId("settings-save-button").isVisible(), false, "Save belongs to a section");
+  assert.equal(await page.locator("#settingsForm").getAttribute("data-mobile-view"), "menu");
+  assert.equal(await page.getByTestId("settings-save-state").isVisible(), false, "the save line belongs to a section");
   if (process.env.SETTINGS_SHOTS) await page.screenshot({ path: `${process.env.SETTINGS_SHOTS}/menu.png` });
 
   await list.click();
   await page.getByTestId("settings-panel-connections").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("settings-current-title").textContent(), "Connections");
+  assert.equal(await page.getByTestId("settings-current-crumb").textContent(), "Settings · Agents");
+  assert.equal(await page.locator("#settingsForm").getAttribute("data-mobile-view"), "panel");
   assert.equal(await page.getByTestId("settings-tab-account").isVisible(), false, "the section replaces the list");
+  assert.equal(await page.getByTestId("settings-section-head-connections").getByTestId("settings-save-state").isVisible(), true, "the section says how its changes save");
   const card = await page.locator("#settingsForm").boundingBox();
   assert.deepEqual([card?.x, card?.width], [0, 390], "the dialog fills the phone's width");
   await page.getByTestId("provider-profiles-panel").waitFor({ state: "visible" });

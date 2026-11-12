@@ -10,7 +10,9 @@ import type { DatabaseSync } from "node:sqlite";
    Kept on purpose: the tombstones, the usage ledger (model_usage_events, usage_difficulty,
    usage_inventory), quality rows, audit rows, the replication tables, pins, browser profiles and
    their sessions, worktrees, attachments, schedules and their run history, quick notes, the
-   assistants' own tables and the skill sharing lists (a skill's list is compared between machines).
+   assistants' own tables, the skill sharing lists (a skill's list is compared between machines), and the
+   list of backups the retention sweep made (conversation_backups): it is how a backup is found again
+   to be removed when its days are up.
 
    A table that a module has not created yet on this machine is skipped. */
 

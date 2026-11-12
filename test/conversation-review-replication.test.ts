@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { openNodeDatabase } from "../src/node-database.js";
 
 /** People are keyed by account id; legacy usernames are translated on receipt. */
 const ILIA = "0123456789abcdef0123456789abcdef";
@@ -16,7 +17,7 @@ const ILIA = "0123456789abcdef0123456789abcdef";
 
 async function withClusterNode(dataDir: string): Promise<void> {
   const { DatabaseSync } = await import("node:sqlite");
-  const db = new DatabaseSync(path.join(dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(dataDir, "node.db"));
   db.exec("CREATE TABLE IF NOT EXISTS cluster_node (id TEXT NOT NULL, name TEXT NOT NULL, singleton INTEGER NOT NULL, url TEXT NOT NULL, paired_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
   db.prepare("INSERT INTO cluster_node (id, name, singleton, url, created_at, updated_at) VALUES ('local-node', 'Local', 1, 'http://127.0.0.1:1', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')").run();
   db.close();
@@ -39,7 +40,7 @@ test("marking a conversation reviewed enqueues a replication event keyed by stab
       { path: "/Users/me/.claude/projects/x/session-a.jsonl", engine: "claude", sessionId: "session-a", updatedAt: "2026-09-01T10:00:00.000Z" },
     ], "node-a");
 
-    const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+    const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
     const events = db.prepare("SELECT origin_node_id, entity_type, entity_key, operation, payload FROM replication_outbox WHERE entity_type = 'conversation.review'").all() as Array<{ origin_node_id: string; entity_type: string; entity_key: string; operation: string; payload: string }>;
     assert.equal(events.length, 1);
     assert.equal(events[0].entity_key, `${ILIA}:project-1:claude:session-a`);
@@ -59,7 +60,7 @@ test("a local review follows its conversation from draft to transcript, like a p
     const reviews = await freshModule(dataDir, `${Date.now()}-path`);
     const draft = { path: "draft:pi:session-a", engine: "pi" as const, sessionId: "session-a", updatedAt: "2026-09-01T10:00:00.000Z", running: false };
     reviews.syncConversationReviewStates("user-1", ILIA, "project-1", [draft]);
-    const db = new DatabaseSync(path.join(dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(dataDir, "node.db"));
     db.prepare("UPDATE conversation_review_tracking SET initialized_at = '2026-01-01T00:00:00.000Z'").run();
     reviews.markConversationReviewed("user-1", ILIA, "project-1", draft, "node-a");
     const transcript = { ...draft, path: "/home/user/.pi/agent/sessions/session-a.jsonl" };
@@ -92,7 +93,7 @@ test("replicated watermarks keep the highest value through duplicates and reorde
     const first = await receiveReplicationBatch({ events: [event("2026-09-01T10:00:00.000Z", "fixed-id-1")] });
     const duplicate = await receiveReplicationBatch({ events: [event("2026-09-01T13:00:00.000Z", "fixed-id-1")] });
 
-    const db = new DatabaseSync(path.join(dataDir, "node.db"), { readOnly: true });
+    const db = openNodeDatabase(path.join(dataDir, "node.db"), { readOnly: true });
     const rows = db.prepare("SELECT reviewed_at FROM replicated_review_watermarks WHERE username = '0123456789abcdef0123456789abcdef' AND project_id = 'project-1'").all() as Array<{ reviewed_at: string }>;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].reviewed_at, "2026-09-01T12:00:00.000Z");

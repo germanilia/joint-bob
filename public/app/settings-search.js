@@ -30,13 +30,16 @@ export function createSettingsSearch({ input, results, tabs, panels, isAvailable
       entries.push({ tab, element: tab, title: name, section: "", key: name, search: name });
       const panel = panels.find((item) => item.id === `settingsPanel-${tab.dataset.settingsTab}`);
       if (!panel) continue;
-      for (const element of panel.querySelectorAll("legend, label, h2, h3")) {
-        // Skip anything the panel itself hides (admin-only rows, collapsed sections).
-        if (element.closest("[hidden]:not(.settings-panel)")) continue;
+      // A section's own tabs are found too, so "serving" finds Relay › Serving.
+      for (const element of panel.querySelectorAll("legend, label, h2, h3, [role='tab']")) {
+        // Skip anything the panel itself hides (admin-only rows, collapsed sections), and the section's head.
+        if (element.closest("[hidden]:not(.settings-panel), .settings-section-head")) continue;
         const title = ownText(element);
         if (!title || title.length > MAX_LABEL_LENGTH) continue;
         const section = element.closest("fieldset")?.querySelector("legend")?.textContent.replace(/\s+/g, " ").trim() ?? "";
-        entries.push({ tab, element, title, section, key: `${name} › ${section || name}`, search: `${title} ${section} ${name}` });
+        // A section's own tab reads as where it leads: "Relay › Serving".
+        const key = element.matches("[role='tab']") ? `${name} › ${title}` : `${name} › ${section || name}`;
+        entries.push({ tab, element, title, section, key, search: `${title} ${section} ${name}` });
       }
     }
     entries.push(...getExtraEntries());

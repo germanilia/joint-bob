@@ -5,7 +5,6 @@ import { syncBuiltinESMExports } from "node:module";
 import { appendFile, mkdtemp, readFile, rm, unlink, utimes } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import {
@@ -16,6 +15,7 @@ import {
   readKiroSession,
   refreshKiroSessions,
 } from "../src/harnesses/kiro/storage.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 function project(root: string) {
   return { id: "p", name: "Project", path: root, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" };
@@ -62,7 +62,7 @@ test("Kiro storage rejects traversal IDs and invalid header field types", async 
 });
 
 test("browser token migration retains old hashes and accepts Kiro identities", async () => {
-  const database = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const database = openNodeDatabase(path.join(resolveDataDirectory(), "node.db"));
   database.exec("DROP INDEX IF EXISTS browser_agent_tokens_expiry; DROP TABLE IF EXISTS browser_agent_tokens");
   database.exec("CREATE TABLE browser_agent_tokens (token_hash TEXT PRIMARY KEY, project_id TEXT NOT NULL, engine TEXT NOT NULL CHECK(engine IN ('pi', 'claude')), conversation_id TEXT NOT NULL, expires_at INTEGER NOT NULL)");
   const oldToken = "a".repeat(64);

@@ -11,6 +11,7 @@ import {
   api, seedDevEnvironment, signIn, startDevNode, stopDevNode,
   type SeededNode, type SignedIn,
 } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 type Child = Awaited<ReturnType<typeof startDevNode>>;
 interface Project { id: string; name: string; ownerNodeId?: string }
@@ -44,7 +45,7 @@ async function signedMetadataPost(sender: SeededNode, recipient: SeededNode, env
   const target = "/api/cluster/v2/resources/project-metadata";
   const body = Buffer.from(JSON.stringify(envelope));
   const key = await readFile(path.join(sender.dataDir, "secret.key"), "utf8");
-  const db = new DatabaseSync(path.join(sender.dataDir, "node.db"));
+  const db = openNodeDatabase(path.join(sender.dataDir, "node.db"));
   const previous = process.env.JOINT_BOB_SECRET_KEY;
   try {
     process.env.JOINT_BOB_SECRET_KEY = key.trim();
@@ -154,8 +155,8 @@ test("metadata HTTP boundary rejects invalid requests and protects revision orde
     await waitForProject(nodeB, sessionB, project.id);
     await stopDevNode(childA); children.delete(childA);
 
-    const dbA = new DatabaseSync(path.join(nodeA.dataDir, "node.db")); databases.add(dbA);
-    const dbB = new DatabaseSync(path.join(nodeB.dataDir, "node.db")); databases.add(dbB);
+    const dbA = openNodeDatabase(path.join(nodeA.dataDir, "node.db")); databases.add(dbA);
+    const dbB = openNodeDatabase(path.join(nodeB.dataDir, "node.db")); databases.add(dbB);
     const statementRow = dbA.prepare(`SELECT statement FROM cluster_v2_resource_contexts
       WHERE kind='project' AND resource_id=? AND recipient_id=? AND active=1 ORDER BY rowid DESC LIMIT 1`)
       .get(project.id, nodeB.nodeId) as { statement: string };
@@ -253,8 +254,8 @@ test("deleted native replicas reconstruct from retained metadata and private wor
     await waitForProject(nodeB, sessionB, project.id);
     await stopDevNode(childA); children.delete(childA);
 
-    const dbA = new DatabaseSync(path.join(nodeA.dataDir, "node.db")); databases.add(dbA);
-    const dbB = new DatabaseSync(path.join(nodeB.dataDir, "node.db")); databases.add(dbB);
+    const dbA = openNodeDatabase(path.join(nodeA.dataDir, "node.db")); databases.add(dbA);
+    const dbB = openNodeDatabase(path.join(nodeB.dataDir, "node.db")); databases.add(dbB);
     const statement = dbA.prepare(`SELECT statement FROM cluster_v2_resource_contexts
       WHERE kind='project' AND resource_id=? AND recipient_id=? AND active=1 ORDER BY rowid DESC LIMIT 1`)
       .get(project.id, nodeB.nodeId) as { statement: string };
@@ -357,8 +358,8 @@ test("another admitted member cannot forge original-owner project metadata", { t
 
     await stopDevNode(childA); children.delete(childA);
     await stopDevNode(childD); children.delete(childD);
-    const dbA = new DatabaseSync(path.join(nodeA.dataDir, "node.db")); databases.add(dbA);
-    const dbB = new DatabaseSync(path.join(nodeB.dataDir, "node.db")); databases.add(dbB);
+    const dbA = openNodeDatabase(path.join(nodeA.dataDir, "node.db")); databases.add(dbA);
+    const dbB = openNodeDatabase(path.join(nodeB.dataDir, "node.db")); databases.add(dbB);
     const statementRow = dbA.prepare(`SELECT statement FROM cluster_v2_resource_contexts
       WHERE kind='project' AND resource_id=? AND recipient_id=? AND active=1 ORDER BY rowid DESC LIMIT 1`)
       .get(project.id, nodeB.nodeId) as { statement: string };

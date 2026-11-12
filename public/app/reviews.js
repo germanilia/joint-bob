@@ -95,6 +95,7 @@ async function refreshPendingReviewSnapshots() {
     if (version !== pendingReviewsVersion || markingAllPending) continue;
     state.pendingReviews = body.projects;
     renderProjects();
+    window.dispatchEvent(new CustomEvent("pending-reviews-refreshed"));
   }
 }
 

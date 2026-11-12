@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "../src/node-database.js";
 
 // The deploy script asks each machine's database how many interrupted turns it still finishes.
 const deployScript = readFileSync(new URL("../scripts/deploy-installed-nodes.sh", import.meta.url), "utf8");
@@ -23,7 +23,7 @@ function count(dataDirectory: string, env: Record<string, string> = {}): string 
 test("a SQLite node counts its pending recoveries, and none before any update ran", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "joint-bob-deploy-recoveries-"));
   assert.equal(count(directory), "0", "no node.db yet");
-  const db = new DatabaseSync(path.join(directory, "node.db"));
+  const db = openNodeDatabase(path.join(directory, "node.db"));
   db.exec("CREATE TABLE update_recoveries (id TEXT PRIMARY KEY, status TEXT NOT NULL); INSERT INTO update_recoveries VALUES ('a', 'pending'), ('b', 'pending'), ('c', 'done')");
   db.close();
   assert.equal(count(directory), "2");
@@ -32,7 +32,7 @@ test("a SQLite node counts its pending recoveries, and none before any update ra
 test("a PostgreSQL node is counted in PostgreSQL, not in its leftover node.db", live, () => {
   const url = process.env.JOINT_BOB_TEST_POSTGRES_URL!;
   const directory = mkdtempSync(path.join(os.tmpdir(), "joint-bob-deploy-recoveries-"));
-  const stale = new DatabaseSync(path.join(directory, "node.db"));
+  const stale = openNodeDatabase(path.join(directory, "node.db"));
   stale.exec("CREATE TABLE update_recoveries (id TEXT PRIMARY KEY, status TEXT NOT NULL); INSERT INTO update_recoveries VALUES ('old', 'pending')");
   stale.close();
   writeFileSync(path.join(directory, "node-database-is-postgres"), "");

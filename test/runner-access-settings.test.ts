@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { saveServingSettings } from "../src/relay/store.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("other nodes may not run here by default, the choice is node-local and persists", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-runner-access-settings-"));
@@ -39,7 +39,7 @@ test("a node serving a relay accepts runs from other nodes until told otherwise"
   try {
     const environment = await seedDevEnvironment(root, 1);
     const node = environment.nodes[0];
-    const db = new DatabaseSync(path.join(node.dataDir, "node.db"));
+    const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     saveServingSettings(db, { enabled: true, origin: "https://relay.example.test", environment: "test", requestsEnabled: true, maxMachines: 10, monthlyCapBytes: 0, alertTopic: "", ownMachinesOnly: false });
     db.close();
     server = await startDevNode(environment, node);

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 test("project files read as a compact desktop file explorer", async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
@@ -20,8 +21,8 @@ test("project files read as a compact desktop file explorer", async (t) => {
       { name: "README.md", path: "README.md", type: "file", size: 4096 },
     ] }),
   }));
-  if (await page.getByTestId("chat-more-button").isVisible()) await page.getByTestId("chat-more-button").click();
-  await page.getByTestId("chat-files-button").click();
+  // The desktop workspace opens Files from the details column's Files summary.
+  await (await reach(page, "chat-files-button")).click();
 
   const dialog = page.getByTestId("project-files-dialog");
   await dialog.waitFor();

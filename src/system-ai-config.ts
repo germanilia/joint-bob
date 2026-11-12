@@ -11,14 +11,23 @@ export const systemAiSchema = z.object({
   operations: z.object({ feedback: systemAgentSchema.nullable(), knowledge: systemAgentSchema.nullable() }).strict(),
   quality: z.object({ modelId: z.string().trim().max(300) }).strict(),
   profiles: z.object({ claude: profile, pi: profile, kiro: profile, 'openai-codex': profile }).strict(),
+  /** enabled drives the Joint Bob default routing on this machine; shareWithRelay lends the decision model to the machines of the relay this machine serves. */
+  routing: z.object({ enabled: z.boolean(), shareWithRelay: z.boolean() }).strict().default({ enabled: true, shareWithRelay: false }),
 }).strict();
 export type SystemAiSettings = z.infer<typeof systemAiSchema>;
 export type SystemOperation = keyof SystemAiSettings['operations'];
 export function systemAiDefaults(): SystemAiSettings {
   return { decision: { model: 'typesafe', typesafeAccountId: null, layaAccountId: null }, operations: { feedback: null, knowledge: null },
-    quality: { modelId: '' }, profiles: { claude: null, pi: null, kiro: null, 'openai-codex': null } };
+    quality: { modelId: '' }, profiles: { claude: null, pi: null, kiro: null, 'openai-codex': null }, routing: { enabled: true, shareWithRelay: false } };
 }
 export function systemAiSettings(): SystemAiSettings {
   const stored = value('systemAI');
   return stored ? systemAiSchema.parse(JSON.parse(stored)) : systemAiDefaults();
+}
+
+/** An older twin or a page still on old assets saves System AI without routing; keep what is stored
+    instead of letting the schema default switch routing back on and relay sharing off. */
+export function withStoredRouting(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || 'routing' in raw) return raw;
+  return { ...raw, routing: systemAiSettings().routing };
 }

@@ -32,3 +32,19 @@ document.addEventListener("beforetoggle", event => {
     prepareDialog(event.target);
   }
 }, true);
+
+// A phone's keyboard makes the page shorter (viewport: interactive-widget=resizes-content), and a sheet's fields
+// scroll inside its body: when the page's height changes, the field being typed in is brought back above the
+// keyboard (the nearest edge; a field already in view does not move).
+function keepFocusedFieldInView() {
+  const field = document.activeElement;
+  if (!(field instanceof HTMLElement) || !field.matches("input, textarea, select, [contenteditable]")) return;
+  if (field.closest("dialog[open]")) field.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+let fieldFrame = 0;
+function scheduleFieldInView() {
+  cancelAnimationFrame(fieldFrame);
+  fieldFrame = requestAnimationFrame(keepFocusedFieldInView);
+}
+window.addEventListener("resize", scheduleFieldInView);
+window.visualViewport?.addEventListener("resize", scheduleFieldInView);

@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { Page, Route } from "playwright";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 const facts = {
   conversation: true,
@@ -71,7 +72,7 @@ async function openGit(page: Page, environment: { username: string; password: st
   await page.locator("#sessionList .session-card").first().click();
   // The conversation becomes active a moment after its card is clicked; until then Git opens project-wide.
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    await page.getByTestId("chat-git-button").click();
+    await (await reach(page, "chat-git-button")).click();
     if (await page.locator("#gitReviewContext").textContent() === "Conversation changes") return;
     await page.getByTestId("git-review-close-button").click();
     await page.waitForTimeout(250);
@@ -367,7 +368,7 @@ test("the activity panel Story button writes a conversation's first story once, 
   if (await page.getByTestId("chat-activity-toggle").getAttribute("aria-expanded") !== "true") await page.getByTestId("chat-activity-toggle").click();
 
   // The first story on this node asks which voice narrates, and keeps the answer.
-  await page.getByTestId("activity-story-button").click();
+  await (await reach(page, "activity-story-button")).click();
   const voiceQuestion = page.getByTestId("choice-dialog");
   await voiceQuestion.waitFor();
   assert.equal(await page.locator("#choiceTitle").innerText(), "Which voice should narrate?");
@@ -406,7 +407,7 @@ test("the activity panel Story button writes a conversation's first story once, 
 
   // Closing and using the button again opens the saved story on the same page; nothing is written twice.
   await page.getByTestId("git-review-close-button").click();
-  await page.getByTestId("activity-story-button").click();
+  await (await reach(page, "activity-story-button")).click();
   await page.getByTestId("git-story-title").waitFor();
   assert.equal(await voiceQuestion.isVisible(), false, "the voice is asked only once on this node");
   await page.getByTestId("git-story-phase").nth(1).waitFor();
@@ -625,7 +626,7 @@ async function openSavedStory(page: Page, environment: { username: string; passw
   // The conversation becomes active a moment after its card is clicked.
   const opened = () => fixture.via === "overview" ? (fixture.overviewPosts?.length ?? 0) > 0 : page.locator("#gitReviewDialog[open]").count();
   for (let attempt = 0; attempt < 40 && !(await opened()); attempt += 1) {
-    await page.getByTestId(fixture.via === "overview" ? "activity-overview-button" : "activity-story-button").click();
+    await (await reach(page, fixture.via === "overview" ? "activity-overview-button" : "activity-story-button")).click();
     if (fixture.answerVoice) {
       // Until the conversation is active the click only says so; once it is, the first-use voice question opens.
       try { await page.getByTestId("choice-dialog").waitFor({ timeout: 2_000 }); } catch { continue; }
@@ -863,7 +864,7 @@ test("Activity overview plays the drawn movie from the activity panel without a 
   await dock.waitFor();
   assert.equal(await movie.isVisible(), false);
   assert.match(await dock.innerText(), /Activity overview · paused/);
-  await page.getByTestId("activity-overview-button").click();
+  await (await reach(page, "activity-overview-button")).click();
   await movie.waitFor({ state: "visible" });
   assert.equal(await dock.isVisible(), false);
   assert.equal(overviewPosts.length, 1, "reopening asks the server for nothing");
@@ -874,13 +875,15 @@ test("Activity overview plays the drawn movie from the activity panel without a 
   await dock.getByTestId("git-story-podcast-dock-end").click();
   await movie.waitFor({ state: "detached" });
   assert.equal(await dock.count(), 0);
+  // A narrow window is the desktop workspace too (the old bottom bar with its Story and Overview buttons is gone):
+  // the details column's More menu offers both.
   await page.setViewportSize({ width: 720, height: 800 });
-  assert.equal(await page.getByTestId("nav-story-button").isVisible(), true);
-  assert.equal(await page.getByTestId("nav-overview-button").isVisible(), true);
-  assert.equal(await page.getByTestId("nav-overview-button").getAttribute("aria-label"), "Activity overview");
+  assert.equal(await (await reach(page, "activity-story-button")).isVisible(), true);
+  assert.equal(await page.getByTestId("activity-overview-button").isVisible(), true);
+  assert.equal(await page.getByTestId("activity-overview-button").getAttribute("aria-label"), "Activity overview");
 });
 
-test("the activity panel header keeps its tabs, Story and Overview on one row, each with an icon", { timeout: 120_000 }, async (t) => {
+test("the details column keeps Activity as a segment, and More holds the side chat, Story and Overview, each with an icon", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.getByTestId("login-username-input").fill(environment.username);
@@ -889,15 +892,15 @@ test("the activity panel header keeps its tabs, Story and Overview on one row, e
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
   if (await page.getByTestId("chat-activity-toggle").getAttribute("aria-expanded") !== "true") await page.getByTestId("chat-activity-toggle").click();
-  await page.getByTestId("activity-modes").waitFor();
-  const controls = ["activity-activity-tab", "activity-chat-tab", "activity-story-button", "activity-overview-button", "activity-panel-close"];
-  const layout = await page.evaluate((ids) => {
-    const header = document.querySelector<HTMLElement>(".activity-panel-header")!;
-    return { middles: ids.map((id) => { const box = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect(); return Math.round(box.top + box.height / 2); }), fits: header.scrollWidth <= header.clientWidth };
-  }, controls);
-  assert.ok(Math.max(...layout.middles) - Math.min(...layout.middles) <= 2, `every control sits on one row, got ${JSON.stringify(layout.middles)}`);
-  assert.equal(layout.fits, true, "the header fits the panel width without wrapping or overflow");
-  for (const id of ["activity-activity-tab", "activity-chat-tab", "activity-story-button", "activity-overview-button"]) {
+  // The desktop workspace shows Activity, Files, Git and Tasks as one segmented row; the side chat, Story and the
+  // Activity overview are the rows of its More menu.
+  await page.getByTestId("activity-activity-tab").waitFor();
+  const segments = ["activity-activity-tab", "details-files-tab", "details-git-tab", "details-tasks-tab", "details-more-button"];
+  const middles = await page.evaluate((ids) => ids.map((id) => { const box = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect(); return Math.round(box.top + box.height / 2); }), segments);
+  assert.ok(Math.max(...middles) - Math.min(...middles) <= 2, `every segment sits on one row, got ${JSON.stringify(middles)}`);
+  await page.getByTestId("details-more-button").click();
+  for (const id of ["activity-chat-tab", "activity-story-button", "activity-overview-button"]) {
+    assert.equal(await page.getByTestId(id).isVisible(), true, `${id} is in More`);
     assert.equal(await page.getByTestId(id).locator("svg").isVisible(), true, `${id} has an icon`);
   }
 });
@@ -914,7 +917,7 @@ test("Activity overview asks once which voice narrates, saves it, and installs t
   assert.equal(installs.length, 1, "the voice installs through the project's route, on the computer that narrates");
   assert.equal((overviewPosts[0].settings as { voiceProvider: string }).voiceProvider, "kokoro", "the movie uses the voice just chosen");
   await page.getByRole("button", { name: "Hide Activity overview" }).click();
-  await page.getByTestId("activity-overview-button").click();
+  await (await reach(page, "activity-overview-button")).click();
   await page.getByTestId("git-story-podcast").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("choice-dialog").isVisible(), false, "the voice is asked once");
   assert.equal(settingsPuts.length, 1);

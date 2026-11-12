@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import type WebSocket from "ws";
+import { openChat, waitFor } from "./queued-prompt-harness.js";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -43,6 +45,7 @@ async function startNode(environment: DevEnvironment, node: SeededNode, root: st
     ...process.env, PORT: String(node.port), NODE_ENV: "test", HOME: environment.home, JOINT_BOB_DATA_DIR: node.dataDir, JOINT_BOB_SESSION_COOKIE: node.cookieName,
     JOINT_BOB_INSECURE_COOKIE: "1", JOINT_BOB_RELEASE: "development", JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log"), JOINT_BOB_TEST_ENGINE_DETAIL_LOG: path.join(root, "prompts.log"),
     JOINT_BOB_TEST_AUTOMATION_DIR: path.join(root, "stubs"), JOINT_BOB_TEST_REVIEW_CHECK_MS: "300", JOINT_BOB_TYPESAFE_ENDPOINT: endpoint,
+    JOINT_BOB_TEST_ENGINE_HOLD_DIR: path.join(root, "holds"),
   };
   delete env.TYPESAFE_AI_API_KEY;
   const child = spawn(process.execPath, serverArgs(env, ["./test/stub-harness-bootstrap.ts", "./test/stub-automation-bootstrap.ts"]), { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe"] });
@@ -62,10 +65,13 @@ test("a conversation that stops before its task is done is told to go on, one th
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-review-check-"));
   const classifier = await decisionModel();
   let child: ChildProcess | undefined;
+  let socket: WebSocket | undefined;
   try {
     const environment = await seedDevEnvironment(root, 1);
     const node = environment.nodes[0];
     await mkdir(path.join(root, "stubs"), { recursive: true });
+    await mkdir(path.join(root, "holds"));
+    for (const engine of ["claude", "pi"]) await writeFile(path.join(root, "holds", `${engine}.release`), "");
     child = await startNode(environment, node, root, classifier.url);
     const auth = await signIn(environment, node);
     const project = projectNamed(node, "Joint Bob");
@@ -134,12 +140,43 @@ test("a conversation that stops before its task is done is told to go on, one th
     assert.ok(waitsHeader.actions.some((action) => action.id === "review.push"));
     const tooLong = await api(node, auth, "POST", "/control-center/bob/action", { messageId: waitsHeader.id, actionId: "review.push", note: "x".repeat(4_001) });
     assert.equal(tooLong.status, 400, "a note has a limit");
+    const target = waitsHeader.actions.find(action => action.id === "review.push")!.data as { engine: string; sessionId: string };
+    const listed = (await api<{ sessions: Array<{ id: string; path: string }> }>(node, auth, "GET", `/projects/${project.id}/sessions`)).body.sessions.find(entry => entry.id === target.sessionId)!;
+    assert.ok(listed);
+    const opened = openChat(node.url, auth.cookie, project.id, listed.path);
+    socket = opened.socket;
+    await waitFor(opened.messages, () => opened.messages.some(event => event.type === "ready"));
+    // Keep one turn running while Bob queues a reply; its owner can edit and cancel that reply.
+    await rm(path.join(root, "holds", `${target.engine}.release`));
+    opened.messages.length = 0;
+    socket.send(JSON.stringify({ type: "prompt", message: "Hold this turn while I manage the queue" }));
+    await waitFor(opened.messages, () => opened.messages.some(event => event.type === "promptStarted"));
+    const ownMessage = opened.messages.find(event => event.type === "userMessage")!;
     const pushedOn = await api<{ messages: BobMessage[] }>(node, auth, "POST", "/control-center/bob/action", { messageId: waitsHeader.id, actionId: "review.push", note: "Use the blue header from the mock, and keep the logo." });
     assert.equal(pushedOn.status, 200, JSON.stringify(pushedOn.body));
     assert.equal(pushedOn.body.messages[0].text, 'Told "fix the login page header in Joint Bob" to go on, with your instructions.');
-    const instructed = await eventually(async () => (await prompts()).find((prompt) => prompt.startsWith("Use the blue header from the mock")), "the conversation got the instructions");
-    assert.match(instructed, /^Use the blue header from the mock, and keep the logo\.\n\nContinue with the task: you stopped before it was done/);
+    await waitFor(opened.messages, () => opened.messages.some(event => event.type === "userMessage" && String(event.text).startsWith("Use the blue header")));
+    const queued = opened.messages.find(event => event.type === "userMessage" && String(event.text).startsWith("Use the blue header"))!;
+    assert.match(String(queued.text), /^Use the blue header from the mock, and keep the logo\.\n\nContinue with the task: you stopped before it was done/);
+    assert.ok(queued.author, "Bob's continuation carries the person's identity to the browser");
+    assert.deepEqual(queued.author, ownMessage.author);
+    assert.equal((queued.author as { homeNodeId: string | null }).homeNodeId, null);
+    socket.send(JSON.stringify({ type: "editQueuedPrompt", queueId: queued.queueId, queueRevision: queued.revision, message: "My corrected instructions" }));
+    await waitFor(opened.messages, () => opened.messages.some(event => event.type === "queuedPrompts" && (event.prompts as Array<{ editableText: string }>).some(prompt => prompt.editableText === "My corrected instructions")));
+    const edited = (opened.messages.filter(event => event.type === "queuedPrompts").at(-1)!.prompts as Array<{ id: string; revision: number }>).find(prompt => prompt.id === queued.queueId)!;
+    socket.send(JSON.stringify({ type: "cancelQueuedPrompt", queueId: edited.id, queueRevision: edited.revision }));
+    await waitFor(opened.messages, () => opened.messages.some(event => event.type === "queuedPromptCancelled" && event.queueId === queued.queueId));
+    socket.send(JSON.stringify({ type: "stop" }));
+    await writeFile(path.join(root, "holds", `${target.engine}.release`), "");
+    await waitFor(opened.messages, () => opened.messages.some(event => event.type === "stopped"));
+    assert.equal(opened.messages.some(event => event.type === "error" && /author|permission/.test(String(event.error))), false);
+    assert.equal((await prompts()).some(prompt => prompt.includes("My corrected instructions")), false, "the cancelled prompt never ran");
+    // Changing what Bob queued, and stopping the conversation, is the person stepping in: Bob leaves it to them.
+    const steppedIn = await eventually(async () => (await api<{ cards: Array<{ title: string; reviewCheck: { by: string; reason: string } | null }> }>(node, auth, "GET", "/control-center/board")).body.cards
+      .find((entry) => entry.title === "fix the login page header in Joint Bob" && entry.reviewCheck?.by === "you stepped in"), "Bob to stand back");
+    assert.equal(steppedIn.reviewCheck!.reason, "You stepped in, so Bob left it to you.");
   } finally {
+    socket?.terminate();
     if (child) await stopDevNode(child);
     classifier.server.close();
     await rm(root, { recursive: true, force: true });

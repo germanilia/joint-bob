@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 import { launchChrome } from "./launch-chrome.js";
+import { reach } from "./workspace-menus.js";
 
 test("personal assistant opens from conversation and saves a link with its screenshot", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "personal-assistant-ui-"));
@@ -26,12 +27,15 @@ test("personal assistant opens from conversation and saves a link with its scree
     const button = page.getByTestId("chat-personal-assistant-button");
     assert.equal(await button.getAttribute("aria-label"), "Create assistant");
     assert.equal(await button.getAttribute("title"), "Create assistant");
-    assert.equal(await button.isVisible(), true, "create assistant is visible in the desktop toolbar");
+    // The desktop workspace keeps it in the conversation header's ⋯ menu, named, at every width.
+    await reach(page, "chat-personal-assistant-button");
+    assert.equal(await button.isVisible(), true, "create assistant is in the header's ⋯ menu");
     assert.equal(await button.locator("svg.chat-toolbar-icon").count(), 1);
-    assert.ok((await button.boundingBox())!.width <= 40, "assistant fits the icon toolbar");
+    assert.equal(await button.getByText("Create assistant", { exact: true }).isVisible(), true, "the menu names the create action");
+    await page.getByTestId("chat-more-button").click();
     await page.setViewportSize({ width: 720, height: 844 });
     await page.getByTestId("chat-more-button").click();
-    assert.equal(await button.getByText("Create assistant", { exact: true }).isVisible(), true, "mobile menu names the create action");
+    assert.equal(await button.getByText("Create assistant", { exact: true }).isVisible(), true, "a narrow window's menu names the create action");
     await button.click();
     const dialog = page.getByTestId("personal-assistant-dialog");
     await dialog.waitFor({ state: "visible" });
@@ -165,7 +169,7 @@ test("personal assistant opens from conversation and saves a link with its scree
     await page.locator("#chat").click();
     await page.locator("body.view-chat #chatPanel").waitFor({ state: "visible" });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.getByTestId("chat-personal-assistant-button").click();
+    await (await reach(page, "chat-personal-assistant-button")).click();
     await page.locator("#heading").getByText("Phone assistant").waitFor();
     assert.equal(new URL(page.url()).searchParams.get("id"), id, "conversation icon reopens the same assistant");
     await page.getByTestId("assistant-view-saved-items").click();

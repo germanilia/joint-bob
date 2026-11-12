@@ -31,7 +31,9 @@ async function signIn(page: Page, node: { url: string }, environment: { username
 /** Everything inside Bob's chat must sit inside the screen, and the page itself must not scroll sideways. */
 async function sideways(page: Page) {
   return page.evaluate(() => {
+    // The chip rows scroll sideways on their own (one row, as a phone's chips do); what they scroll is not sticking out.
     const outside = [...document.querySelectorAll("#controlChat *")].filter((element) => {
+      if (element.closest(".phone-strip, #controlChatFilters")) return false;
       const box = element.getBoundingClientRect();
       return box.width > 0 && (box.right > innerWidth + 1 || box.left < -1);
     }).map((element) => `${element.tagName.toLowerCase()}.${element.className}`);
@@ -135,7 +137,8 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
 
   // The header shows Bob's state; the composer has the project and agent chips, and send.
   assert.equal(await page.getByTestId("control-chat-monitor").textContent(), "Monitoring");
-  assert.equal(await page.getByTestId("control-phone-back").isVisible(), true);
+  // Bob is one of the phone's tabs, so his head has no Back; Monitoring and Settings are in its ⋯ sheet.
+  assert.equal(await page.getByTestId("control-phone-back").isVisible(), false);
   assert.equal(await page.getByTestId("control-chat-project").isVisible(), true);
   assert.equal(await page.getByTestId("control-phone-agent").isVisible(), true);
   assert.equal(await page.getByTestId("control-chat-send").isVisible(), true);
@@ -239,15 +242,20 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
   await page.getByTestId("control-phone-sheet-close").click();
   await page.getByTestId("control-phone-sheet").waitFor({ state: "hidden" });
 
-  // The agent chip opens Bob's settings; the settings panel fits the screen.
+  // The agent chip opens Bob's settings as a screen of their own; it fits the screen and its ‹ goes back to the chat.
   await page.getByTestId("control-phone-agent").click();
   await page.getByTestId("control-chat-settings").waitFor({ state: "visible" });
   assert.deepEqual(await sideways(page), { page: 0, chat: 0, outside: [] });
-  await page.getByTestId("control-phone-agent").click();
+  assert.equal(await page.getByTestId("control-chat-input").isVisible(), false, "the settings have the screen");
+  await page.getByTestId("bob-settings-back").click();
   await page.getByTestId("control-chat-settings").waitFor({ state: "hidden" });
 
-  // Dashboards cover the chat, with the way back.
-  await page.getByTestId("control-phone-chip-dashboards").click();
+  // Dashboards cover the chat, with the way back. They are in the ⋯ sheet of Bob's head.
+  const openDashboards = async () => {
+    await page.locator("#focusControlsButton").click();
+    await page.getByTestId("focus-action-dashboards").click();
+  };
+  await openDashboards();
   await page.getByTestId("control-dashboards-list").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("control-phone-view-title").textContent(), "Dashboards");
   assert.equal(await page.getByTestId("control-chat-input").evaluate((input) => {
@@ -261,7 +269,7 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
   assert.equal(await page.getByTestId("control-chat-input").inputValue(), "Create a dashboard for ");
   assert.equal(await page.getByTestId("control-dashboards-list").isVisible(), false);
   await page.getByTestId("control-chat-input").fill("");
-  await page.getByTestId("control-phone-chip-dashboards").click();
+  await openDashboards();
   await page.getByTestId("control-dashboards-list").waitFor({ state: "visible" });
   await page.getByTestId("control-phone-view-back").click();
   await page.getByTestId("control-dashboards-list").waitFor({ state: "hidden" });
@@ -305,22 +313,23 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
   await page.getByTestId("control-chat-importance-important").click();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="control-chat-entry"]')].every((entry) => ["needs-ok", "needs-you", "urgent"].includes(entry.getAttribute("data-importance") ?? "")));
 
-  // The back button leaves the control center, and the app icon's shortcut comes straight to it.
-  await page.getByTestId("control-phone-back").click();
+  // Another tab leaves the control center, and the app icon's shortcut comes straight to it.
+  await page.getByTestId("phone-tab-inbox").click();
   assert.equal(await page.locator("body.view-control").count(), 0);
   await page.waitForFunction(async () => (await (await fetch("/api/preferences")).json()).mobileView !== "control");
   await page.goto(`${node.url}/?action=control-center`);
   await page.locator("body.view-control").waitFor();
-  await page.getByTestId("control-phone-strip").waitFor({ state: "visible" });
+  await page.getByTestId("control-chat-input").waitFor({ state: "visible" });
   assert.deepEqual(errors, []);
 });
 
-test("a screen between a phone and a desktop reaches the control center from the app menu, and keeps it when the window changes", { timeout: 240_000 }, async (t) => {
+test("a screen between a phone and a desktop reaches the control center from the left column, and keeps it when the window changes", { timeout: 240_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node, environment);
 
   // On a desktop the board and Bob sit side by side, as before.
   await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("control-tab-live").click();
   await page.getByTestId("control-center-board").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("control-phone-strip").isVisible(), false, "the phone strip is not shown on a desktop");
   assert.equal(await page.getByTestId("control-phone-back").isVisible(), false);
@@ -332,25 +341,25 @@ test("a screen between a phone and a desktop reaches the control center from the
   assert.equal(await page.locator("body.view-control").count(), 1);
   assert.equal(await page.getByTestId("control-center-board").isVisible(), false);
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
-  const head = (await page.locator(".control-chat-head").boundingBox())!;
-  const menu = (await page.getByTestId("app-menu-button").boundingBox())!;
+  // 701–1023 px is the desktop workspace: the left column stays and the control center keeps its narrow layout in the
+  // middle (no app menu or bottom navigation there).
+  assert.equal(await page.getByTestId("workspace-side").isVisible(), true);
   const monitor = (await page.getByTestId("control-chat-monitor").boundingBox())!;
-  assert.ok(monitor.x + monitor.width <= menu.x, `the header does not run under the app menu: ${JSON.stringify({ head, menu, monitor })}`);
-  const navigation = (await page.locator(".mobile-nav").boundingBox())!;
   const panel = (await page.locator("#controlCenterPanel").boundingBox())!;
-  assert.ok(panel.y + panel.height <= navigation.y, "the chat ends above the bottom navigation");
+  assert.ok(monitor.x + monitor.width <= panel.x + panel.width, `the header stays inside the middle: ${JSON.stringify({ monitor, panel })}`);
+  assert.ok(panel.y + panel.height <= 900, "the chat ends inside the window");
   assert.deepEqual(await sideways(page), { page: 0, chat: 0, outside: [] });
 
-  // From the app menu on that screen.
+  // Bob, in the left column, comes back to it.
   await page.getByTestId("control-phone-back").click();
   assert.equal(await page.locator("body.view-control").count(), 0);
-  await page.getByTestId("app-menu-button").click();
-  await page.getByTestId("app-menu-control-center-button").click();
+  await page.getByTestId("projects-open-control-center-button").click();
   await page.locator("body.view-control").waitFor();
-  assert.equal(await page.locator("#appMenu[open]").count(), 0, "the menu closes");
 
-  // Back to a desktop: the board is there again.
+  // Back to a desktop: Bob's page, his chat with what he looks after; the board is one press away.
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("bob-side").waitFor({ state: "visible" });
+  await page.getByTestId("control-tab-live").click();
   await page.getByTestId("control-center-board").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("control-phone-strip").isVisible(), false);
 });

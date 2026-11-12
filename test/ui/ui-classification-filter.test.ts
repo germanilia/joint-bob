@@ -84,17 +84,19 @@ test("classification filters combine with search and status, include custom labe
 
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-labels").click();
-    await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+    await page.locator('#settingsForm[data-ready="true"]').waitFor();
     await page.getByTestId("settings-conversation-labels").fill("Research\nBug\nFeature\nPOC\nSupport");
-    await page.getByTestId("settings-save-button").click();
+    await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+    await page.getByTestId("settings-cancel-button").click();
     await page.locator("#settingsDialog").waitFor({ state: "hidden" });
     await filter.choose("Support");
     assert.equal(await rows.count(), 0, "new predefined labels are immediately filterable without conversations");
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-labels").click();
-    await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+    await page.locator('#settingsForm[data-ready="true"]').waitFor();
     await page.getByTestId("settings-conversation-labels").fill("Research\nBug\nFeature\nPOC");
-    await page.getByTestId("settings-save-button").click();
+    await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+    await page.getByTestId("settings-cancel-button").click();
     await page.locator("#settingsDialog").waitFor({ state: "hidden" });
     assert.deepEqual(await filter.selected(), ["Support"], "removing a preset never hides the active filter");
     await filter.choose();

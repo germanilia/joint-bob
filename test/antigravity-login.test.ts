@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -18,7 +18,7 @@ if(args.includes('--login')){
  process.stdout.write('https://accounts.google.com/o/oauth2/auth?client_id=fixture&state=fixture\\n');
  process.stdout.write('Then paste the authorization code, or the full URL of the page you land on, and press Enter:\\n');
  readline.createInterface({input:process.stdin}).on('line',code=>{
-  if(code==='good-code'){fs.writeFileSync(path.join(process.env.HOME,'signed-in'),'fixture');process.exit(0);}
+  if(code==='good-code'){fs.writeFileSync(path.join(process.env.HOME,'signed-in'),'fixture');if(process.env.AGY_FIXTURE_HOME_RECORD)fs.writeFileSync(process.env.AGY_FIXTURE_HOME_RECORD,process.env.HOME);process.exit(0);}
   process.stderr.write('private submitted value: '+code);process.exit(1);
  });
 }else{
@@ -45,8 +45,8 @@ test("native Google sign-in captures only Google URLs, accepts codes privately, 
     const executable = path.join(root, "agy");
     await writeFile(executable, fixture); await chmod(executable, 0o700);
     updateSettings({ runtimes: { ...previous.runtimes, antigravity: { executable, configPath: path.join(root, ".gemini"), sessionPath: path.join(root, "sessions") } } });
-    logins.start("owner");
-    assert.throws(() => logins.start("other"), /already in progress/);
+    await logins.start("owner");
+    await assert.rejects(logins.start("other"), /already in progress/);
     assert.equal(logins.status("other"), undefined);
     await waitFor(() => Boolean(logins.status("owner")?.prompt));
     assert.match(logins.status("owner")!.url!, /^https:\/\/accounts.google.com\//);
@@ -56,16 +56,42 @@ test("native Google sign-in captures only Google URLs, accepts codes privately, 
     logins.answer("owner", "good-code");
     await waitFor(() => logins.status("owner")?.state === "complete");
     assert.doesNotMatch(JSON.stringify(logins.status("owner")), /good-code|state=fixture/);
-    logins.start("owner");
+    await logins.start("owner");
     await waitFor(() => Boolean(logins.status("owner")?.prompt));
     logins.answer("owner", "wrong-private-code");
     await waitFor(() => logins.status("owner")?.state === "failed");
     assert.doesNotMatch(JSON.stringify(logins.status("owner")), /wrong-private-code/);
-    logins.start("owner");
+    await logins.start("owner");
     await logins.cancel("owner");
     assert.equal(logins.status("owner")?.state, "cancelled");
   } finally {
     if (logins.status("owner")?.state === "waiting") await logins.cancel("owner");
+    updateSettings({ runtimes: previous.runtimes });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Antigravity profile sign-in uses a separate CLI home", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "agy-profile-login-test-")), previous = getSettings();
+  const previousHomeRecord = process.env.AGY_FIXTURE_HOME_RECORD;
+  const logins = new AntigravityLogins();
+  const profile = { id: "00000000-0000-4000-8000-000000000010", owner: "owner", label: "Work", provider: "antigravity", createdAt: new Date().toISOString(), shared: false } as const;
+  try {
+    const executable = path.join(root, "agy");
+    await writeFile(executable, fixture); await chmod(executable, 0o700);
+    updateSettings({ runtimes: { ...previous.runtimes, antigravity: { executable, configPath: path.join(root, ".gemini"), sessionPath: path.join(root, "sessions") } } });
+    const homeRecord = path.join(root, "profile-home");
+    process.env.AGY_FIXTURE_HOME_RECORD = homeRecord;
+    await logins.start("owner", profile);
+    await waitFor(() => Boolean(logins.status("owner", profile)?.prompt));
+    logins.answer("owner", "good-code", profile);
+    await waitFor(() => logins.status("owner", profile)?.state === "complete");
+    assert.notEqual(await readFile(homeRecord, "utf8"), path.dirname(path.join(root, ".gemini")));
+    assert.doesNotMatch(JSON.stringify(logins.status("owner", profile)), /good-code/);
+  } finally {
+    if (logins.status("owner", profile)?.state === "waiting") await logins.cancel("owner", profile);
+    if (previousHomeRecord === undefined) delete process.env.AGY_FIXTURE_HOME_RECORD;
+    else process.env.AGY_FIXTURE_HOME_RECORD = previousHomeRecord;
     updateSettings({ runtimes: previous.runtimes });
     await rm(root, { recursive: true, force: true });
   }

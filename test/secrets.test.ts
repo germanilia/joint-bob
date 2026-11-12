@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { openNodeDatabase } from "../src/node-database.js";
 
 const exec = promisify(execFile);
 
@@ -15,7 +15,7 @@ const exec = promisify(execFile);
 async function loadSecrets(tag: string) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), `joint-bob-secrets-${tag}-`));
   process.env.PI_WEB_DATA_DIR = dataDir;
-  const database = new DatabaseSync(path.join(dataDir, "node.db"));
+  const database = openNodeDatabase(path.join(dataDir, "node.db"));
   database.exec("CREATE TABLE workspaces (id TEXT PRIMARY KEY); CREATE TABLE projects (id TEXT PRIMARY KEY, workspace_id TEXT); CREATE TABLE project_aliases (alias_id TEXT PRIMARY KEY, project_id TEXT);");
   database.exec("INSERT INTO workspaces VALUES ('work'); INSERT INTO projects VALUES ('project-a', 'work'); INSERT INTO project_aliases VALUES ('project-alias', 'project-a');");
   database.close();
@@ -91,7 +91,7 @@ test("Azure service principal credentials stay encrypted, scoped and redacted", 
     const context = secrets.agentCredentialContext("project-a");
     assert.match(context, /Azure Identity EnvironmentCredential/);
     assert.match(context, /do not sign az in automatically/);
-    const database = new DatabaseSync(path.join(secrets.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(secrets.dataDir, "node.db"));
     try {
       const row = database.prepare("SELECT variables_encrypted FROM secret_accounts WHERE id = ?").get(account.id) as { variables_encrypted: string };
       for (const { value } of variables) {
@@ -123,7 +123,7 @@ test("GitLab credentials stay redacted, retain edits and export only when attach
       assert.ok(!JSON.stringify(await secrets.listSecretAccounts()).includes(value));
       assert.ok(!context.includes(value));
     }
-    const database = new DatabaseSync(path.join(secrets.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(secrets.dataDir, "node.db"));
     try {
       const row = database.prepare("SELECT variables_encrypted FROM secret_accounts WHERE id = ?").get(account.id) as { variables_encrypted: string };
       for (const { value } of variables) assert.ok(!row.variables_encrypted.includes(value));
@@ -168,7 +168,7 @@ test("Jira credentials stay redacted, retain edits and export only when attached
       assert.ok(!JSON.stringify(await secrets.listSecretAccounts()).includes(value));
       assert.ok(!context.includes(value));
     }
-    const database = new DatabaseSync(path.join(secrets.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(secrets.dataDir, "node.db"));
     try {
       const row = database.prepare("SELECT variables_encrypted FROM secret_accounts WHERE id = ?").get(account.id) as { variables_encrypted: string };
       for (const { value } of variables) assert.ok(!row.variables_encrypted.includes(value));
@@ -510,7 +510,7 @@ test("deleting an account removes its attachments and a dangling attachment is i
     assert.deepEqual(await secrets.getScopeSecretAccounts("conversation", "pi:session-1"), { accountIds: [] });
 
     // A row left pointing at a missing account never blocks the remaining scopes.
-    const database = new DatabaseSync(path.join(secrets.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(secrets.dataDir, "node.db"));
     database.prepare("INSERT INTO secret_assignments (scope_type, scope_id, account_id) VALUES ('project', 'project-a', ?)").run("00000000-0000-4000-8000-000000000000");
     database.close();
     assert.equal(secrets.genericSecretEnvironment("project-a").WORKSPACE_TOKEN, "workspace");
@@ -541,7 +541,7 @@ test("deleting a project or a workspace deletes its attachments, and an alias me
 
     await secrets.setScopeSecretAccounts("project", canonical.id, [account.id]);
     await store.removeProject(canonical.id);
-    const database = new DatabaseSync(path.join(root, "node.db"));
+    const database = openNodeDatabase(path.join(root, "node.db"));
     try {
       assert.equal((database.prepare("SELECT COUNT(*) AS total FROM secret_assignments WHERE scope_type = 'project'").get() as { total: number }).total, 0);
       await store.deleteWorkspace("work");

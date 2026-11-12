@@ -146,16 +146,17 @@ function closeReply() {
  * Bob), close that conversation, or clear the message. A Guardian step is answered only with its own buttons.
  */
 function itemControls(message, about) {
-  const control = (label, title, run) => {
+  const control = (label, title, run, testid = `control-item-${label.toLowerCase()}`) => {
     const button = element("button", "control-action quiet", label);
     button.type = "button";
     button.title = title;
-    button.dataset.testid = `control-item-${label.toLowerCase()}`;
+    button.dataset.testid = testid;
     button.addEventListener("click", () => run(button));
     return button;
   };
   const conversation = about?.open ? about : null;
-  const controls = [control("Reply", conversation ? `Answer “${conversation.title}” in the conversation, as you` : "Answer Bob about this", () => openReply(message))];
+  // About a conversation it is answering that conversation, as on Home's cards; otherwise a reply to Bob.
+  const controls = [control(conversation ? "Answer" : "Reply", conversation ? `Answer “${conversation.title}” in the conversation, as you` : "Answer Bob about this", () => openReply(message), "control-item-reply")];
   if (conversation && message.importance !== "report" && !message.actions.some((action) => action.id === "conversation.done")) {
     controls.push(control("Done", "Close this conversation, as marking it done in its project does, and clear the message", () => settle(message, conversation, "done")));
   }
@@ -174,10 +175,17 @@ function renderActions(message, about) {
     if (action.id === PUSH && replying?.id === message.id && replying.push) continue;
     const button = element("button", `control-action ${action.style ?? ""}`, action.label);
     button.type = "button";
+    // Open goes to the end of the row, as on Home's cards.
+    if (action.id === "open") button.dataset.open = "";
     button.addEventListener("click", () => (action.id === PUSH ? openPush(message, action) : runAction(message, action)));
     actions.append(button);
   }
-  if (settleable) actions.append(...itemControls(message, about));
+  if (settleable) {
+    // Answer leads the row, as on Home's cards: Answer, Push it on, Done … Open.
+    const [answer, ...rest] = itemControls(message, about);
+    if (about?.open) actions.prepend(answer); else actions.append(answer);
+    actions.append(...rest);
+  }
   return actions;
 }
 
@@ -565,6 +573,8 @@ function fillSettingsForm() {
   elements.controlBobAutoRespond.value = settings.autoRespond;
   elements.controlBobReviewCheck.value = settings.reviewCheck;
   elements.controlBobAsk.checked = settings.askBeforeSaving;
+  elements.controlBobSystemControl.checked = settings.systemControl;
+  if (document.activeElement !== elements.controlBobSystemInstructions) elements.controlBobSystemInstructions.value = settings.systemInstructions;
 }
 
 async function saveSettings(change) {
@@ -632,6 +642,8 @@ elements.controlBobClassifier.addEventListener("change", () => { void saveSettin
 elements.controlBobAutoRespond.addEventListener("change", () => { void saveSettings({ autoRespond: elements.controlBobAutoRespond.value }); });
 elements.controlBobReviewCheck.addEventListener("change", () => { void saveSettings({ reviewCheck: elements.controlBobReviewCheck.value }); });
 elements.controlBobAsk.addEventListener("change", () => { void saveSettings({ askBeforeSaving: elements.controlBobAsk.checked }); });
+elements.controlBobSystemControl.addEventListener("change", () => { void saveSettings({ systemControl: elements.controlBobSystemControl.checked }); });
+elements.controlBobSystemInstructions.addEventListener("change", () => { void saveSettings({ systemInstructions: elements.controlBobSystemInstructions.value.trim() }); });
 elements.controlBobThreshold.addEventListener("change", () => {
   const percent = Number(elements.controlBobThreshold.value);
   if (Number.isFinite(percent) && percent >= 0 && percent <= 100) void saveSettings({ threshold: percent / 100 });

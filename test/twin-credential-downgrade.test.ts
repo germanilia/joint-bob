@@ -4,10 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {DatabaseSync} from 'node:sqlite';
 import test from 'node:test';
 import {api,seedDevEnvironment,signIn,startDevNode,stopDevNode} from './dev-nodes.js';
 import {signedNodeRequest} from './signed-node-request.js';
+import { openNodeDatabase } from "../src/node-database.js";
 
 async function eventually(check:()=>Promise<void>) {
  const deadline=Date.now()+20000;
@@ -28,7 +28,7 @@ test('Twin to Selected reuses same-origin credentials but restricts workspace re
   const invite=await api<{link:string;relationshipId:string}>(left,sa,'POST','/twins/invitations',{confirmOwnedData:true});
   assert.equal((await api(right,sb,'POST','/twins/accept',{link:invite.body.link,confirmOwnedData:true})).status,201);
   const p=left.projects[0];
-  const sourceDb=new DatabaseSync(path.join(left.dataDir,'node.db'));
+  const sourceDb=openNodeDatabase(path.join(left.dataDir,'node.db'));
   const workspace=(sourceDb.prepare('SELECT workspace_id FROM projects WHERE id=?').get(p.id) as {workspace_id:string}).workspace_id;sourceDb.close();
   const account=await api<{account:{id:string}}>(left,sa,'POST','/secrets/accounts',{label:'Synthetic workspace',provider:'custom',replicate:true,variables:[{name:'DOWNGRADE_SECRET',kind:'value',value:'synthetic-only'}]});
   assert.equal(account.status,201);
@@ -42,7 +42,7 @@ test('Twin to Selected reuses same-origin credentials but restricts workspace re
    assert.equal(values.TWIN_ONLY_SECRET,'synthetic-twin-only','owned accounts reach twins without cluster replication');
   });
   const runningSnapshot=resolve(p.id);
-  const db=new DatabaseSync(path.join(right.dataDir,'node.db'));
+  const db=openNodeDatabase(path.join(right.dataDir,'node.db'));
   let targetWorkspace:string;
   try{targetWorkspace=(db.prepare('SELECT workspace_id FROM projects WHERE id=?').get(p.id) as {workspace_id:string}).workspace_id;}finally{db.close();}
   assert.equal((await api(left,sa,'PUT',`/clusters/${clusterId}/sharing`,{projectIds:[p.id],workspaceIds:[],confirmOwnedData:true})).status,200);
@@ -63,7 +63,7 @@ test('Twin to Selected reuses same-origin credentials but restricts workspace re
   for(const foreign of [false,true]){
    const protectedAccount=await api<{account:{id:string}}>(right,sb,'POST','/secrets/accounts',{label:foreign?'Other origin':'Local account',provider:'custom',variables:[{name:foreign?'OTHER_SECRET':'LOCAL_SECRET',kind:'value',value:'preserved-synthetic'}]});
    assert.equal(protectedAccount.status,201);
-   if(foreign){const handle=new DatabaseSync(path.join(right.dataDir,'node.db'));try{handle.prepare('UPDATE secret_accounts SET origin_node_id=? WHERE id=?').run(randomUUID(),protectedAccount.body.account.id);}finally{handle.close();}}
+   if(foreign){const handle=openNodeDatabase(path.join(right.dataDir,'node.db'));try{handle.prepare('UPDATE secret_accounts SET origin_node_id=? WHERE id=?').run(randomUUID(),protectedAccount.body.account.id);}finally{handle.close();}}
    const collision=await signedNodeRequest(a,left,right,'POST','/api/cluster/v2/credentials/scoped',{accounts:[{...payload.accounts[0],id:protectedAccount.body.account.id}]});
    assert.equal(collision.status,409,'local and other-origin account identities remain protected');
    const accounts=await api<{accounts:Array<{id:string;label:string}>}>(right,sb,'GET','/secrets');

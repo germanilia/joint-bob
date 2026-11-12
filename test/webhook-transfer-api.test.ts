@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import { createAutomationExecution } from "../src/automation-executions.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -9,6 +8,7 @@ import path from "node:path";
 import test from "node:test";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import type { Webhook } from "../src/webhooks.js";
+import { openNodeDatabase } from "../src/node-database.js";
 
 test("webhook transfer preserves settings, resources, memory and calls on the chosen machine", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "webhook-transfer-"));
@@ -24,7 +24,7 @@ test("webhook transfer preserves settings, resources, memory and calls on the ch
     const id = created.body.webhook.id;
     const url = `/webhooks/${id}`;
     assert.equal((await api(a, auth, "POST", `${url}/transfer`, { nodeId: randomUUID() })).status, 403);
-    const database = new DatabaseSync(path.join(a.dataDir, "node.db"));
+    const database = openNodeDatabase(path.join(a.dataDir, "node.db"));
     const runId = randomUUID();
     try {
       database.exec("PRAGMA busy_timeout=5000");

@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import { actingAccount } from "../account-context.js";
 import type { AutoRespondConfig } from "../conversation-auto-respond.js";
 import { getClusterNode } from "../cluster.js";
 import { getConversationRecord } from "../conversation-records.js";
@@ -45,7 +46,13 @@ async function localChatSocket(options: Pick<ConversationPromptOptions, "project
   const address = server.address();
   if (!address || typeof address === "string") throw new Error(`${options.label} executor server is not listening`);
   const url = new URL(`ws://127.0.0.1:${address.port}/ws`);
-  const parameters: Record<string, string> = { projectId: options.projectId, sessionId: options.sessionId, sessionPath: `draft:${options.engine}:${options.sessionId}`, nodeSession: "1", ...(options.worktreeId ? { worktreeId: options.worktreeId } : {}), ...(options.author ? { author: encodeAuthor(options.author) } : {}) };
+  // Account context does not cross a WebSocket. Bob's requests carry the person he acts for,
+  // while scheduled/webhook assignments retain their separate automation ownership.
+  const actor = actingAccount();
+  const author = options.author ?? (!options.automationProfile && actor
+    ? { accountId: actor.accountId, username: actor.username, email: actor.email ?? null, homeNodeId: actor.homeNodeId }
+    : undefined);
+  const parameters: Record<string, string> = { projectId: options.projectId, sessionId: options.sessionId, sessionPath: `draft:${options.engine}:${options.sessionId}`, nodeSession: "1", ...(options.worktreeId ? { worktreeId: options.worktreeId } : {}), ...(author ? { author: encodeAuthor(author) } : {}) };
   if (options.automationProfile) parameters.automationProfile = JSON.stringify(options.automationProfile);
   for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, value);
   return { url, headers: await runtimeSocketHeaders((await getClusterNode()).id, url) };

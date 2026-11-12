@@ -19,6 +19,7 @@ import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "../dev-nodes.js";
 import { waitInPage } from "./wait-in-page.js";
+import { reach, showProjects } from "./workspace-menus.js";
 
 let root: string;
 let environment: DevEnvironment;
@@ -125,6 +126,8 @@ test("shortcut badges are readable and sit below their buttons", async () => {
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
+// The project and conversation lists share the workspace's left column; either shortcut folds the column to a rail of
+// icons, where each list keeps its own expand button (ui-workspace-layout.test.ts covers the rail itself).
 test("both side panels have independent collapse and expand shortcuts", async () => {
   for (const [panel, key] of [["projects", "["], ["chats", "]"]]) {
     const collapse = page.getByTestId(`${panel}-panel-collapse-button`);
@@ -133,7 +136,7 @@ test("both side panels have independent collapse and expand shortcuts", async ()
     await page.getByTestId(`${panel}-panel-expand-button`).waitFor();
     assert.equal(await page.locator("body").evaluate((body, name) => body.classList.contains(`${name}-collapsed`), panel), true);
     await page.keyboard.press(`Control+Alt+${key}`);
-    await collapse.waitFor();
+    await page.getByTestId(`${panel}-panel-expand-button`).waitFor({ state: "hidden" });
     assert.equal(await page.locator("body").evaluate((body, name) => body.classList.contains(`${name}-collapsed`), panel), false);
   }
 });
@@ -157,7 +160,7 @@ test("harness settings show per-harness tabs and restore node defaults", async (
   try {
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-engines").click();
-    await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+    await page.locator('#settingsForm[data-ready="true"]').waitFor();
     const claudePanel = page.locator("[data-harness-panel='claude']");
     const piPanel = page.locator("[data-harness-panel='pi']");
     assert.equal(await piPanel.isVisible(), true, "the Pi tab shows first");
@@ -171,11 +174,12 @@ test("harness settings show per-harness tabs and restore node defaults", async (
     await page.getByTestId("harness-tab-pi").click();
     const piExecutable = page.getByTestId("settings-pi-executable-input");
     await piExecutable.fill("custom-pi");
+    // "Use node defaults" clears the paths and saves at once.
     await page.getByTestId("settings-use-pi-defaults-button").click();
     await page.getByTestId("settings-runtime-status").getByText(/Pi executable: Blank \(uses node default\)/).waitFor();
-    await page.getByTestId("settings-save-button").click();
+    await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
     const restartMessage = page.locator("#settingsRestartMessage");
-    await restartMessage.filter({ hasText: /Settings saved\. Restart required/i }).waitFor();
+    await restartMessage.filter({ hasText: /Restart required/i }).waitFor();
     assert.match(await restartMessage.innerText(), /restart required/i);
     const database = openFixtureDatabase();
     try {
@@ -189,7 +193,7 @@ test("harness settings show per-harness tabs and restore node defaults", async (
     await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-engines").click();
-    await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+    await page.locator('#settingsForm[data-ready="true"]').waitFor();
     assert.equal(await piExecutable.inputValue(), "", "blank overrides keep the effective node default");
     await page.getByTestId("settings-cancel-button").click();
   } finally {
@@ -256,20 +260,23 @@ test("resource path fields save and reload in Settings", async () => {
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-resources").click();
   await page.getByTestId("resources-tab-paths").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   const values = { skills: `${path.join(root, "global-skills")}\n${path.join(root, "global-skills-second")}`, prompts: path.join(root, "global-prompts"), rules: path.join(root, "global-rules"), plugins: path.join(root, "global-plugins") };
   await page.getByTestId("settings-resource-skills-paths").fill(values.skills);
   await page.getByTestId("settings-resource-prompts-paths").fill(values.prompts);
   await page.getByTestId("settings-resource-rules-paths").fill(values.rules);
   await page.getByTestId("settings-resource-plugins-paths").fill(values.plugins);
-  await page.getByTestId("settings-save-button").click();
+  // Paths save when the field is left.
+  await page.getByTestId("settings-resource-plugins-paths").press("Tab");
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+  await page.getByTestId("settings-cancel-button").click();
   await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByText("Internal Assistant", { exact: true }).waitFor({ timeout: 20_000 });
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-resources").click();
   await page.getByTestId("resources-tab-paths").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   for (const [id, value] of Object.entries({ "settings-resource-skills-paths": values.skills, "settings-resource-prompts-paths": values.prompts, "settings-resource-rules-paths": values.rules, "settings-resource-plugins-paths": values.plugins })) assert.equal(await page.getByTestId(id).inputValue(), value);
   await page.getByTestId("settings-cancel-button").click();
 });
@@ -333,7 +340,7 @@ test("recent conversations persist through the replicated recents endpoint", asy
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator(".session-card", { hasText: "Thread-Based Agent Builder" }).first().click();
   await page.locator(".message").first().waitFor({ timeout: 20_000 });
-  await page.getByTestId("recent-sessions-open-button").click();
+  await (await reach(page, "recent-sessions-open-button")).click();
   await page.getByTestId("recent-sessions-dialog").getByText("Thread-Based Agent Builder", { exact: true }).waitFor({ timeout: 20_000 });
   const recentsSearch = page.getByTestId("recent-sessions-search-input");
   assert.equal(await recentsSearch.evaluate((input) => input === document.activeElement), true, "recents search is ready for typing when the dialog opens");
@@ -342,7 +349,7 @@ test("recent conversations persist through the replicated recents endpoint", asy
   await page.getByTestId("recent-sessions-close-button").click();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().waitFor({ timeout: 20_000 });
-  await page.getByTestId("recent-sessions-open-button").click();
+  await (await reach(page, "recent-sessions-open-button")).click();
   await page.getByTestId("recent-sessions-dialog").getByText("Thread-Based Agent Builder", { exact: true }).waitFor({ timeout: 20_000 });
   await page.getByTestId("recent-sessions-close-button").click();
 });
@@ -351,7 +358,7 @@ test("a digit opens the row it numbers in the recents dialog", async () => {
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator(".session-card", { hasText: "Mobile Multi-Agent Threads" }).first().click();
   await page.locator(".message").first().waitFor({ timeout: 20_000 });
-  await page.getByTestId("recent-sessions-open-button").click();
+  await (await reach(page, "recent-sessions-open-button")).click();
   const rows = page.getByTestId("recent-session-option");
   await rows.first().waitFor({ timeout: 20_000 });
 
@@ -412,45 +419,46 @@ test("the selected project and conversation stay highlighted in their sidebars",
   assert.equal(await project.getAttribute("aria-current"), "true", "selected project is announced as current");
   assert.equal(await conversation.getAttribute("aria-current"), "true", "selected conversation is announced as current");
 
+  // The selected row is a raised card on the column: its own fill and a shadow (a hairline in the dark themes), which
+  // no other row has.
   for (const [label, row] of [["project", project], ["conversation", conversation]] as const) {
-    const border = await row.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return { color: style.borderTopColor, width: style.borderTopWidth };
+    // (No helper function inside the page's function: the test loader's wrapper for named functions is not in the page.)
+    const fill = await row.evaluate((element) => {
+      const holder = element.closest(".list-row-main") ?? element.closest(".list-row");
+      const other = [...document.querySelectorAll(element.closest("#projectList") ? "#projectList .list-row" : "#sessionList .list-row-main")].find((item) => item !== holder && !item.matches(":hover"));
+      const mine = getComputedStyle(holder);
+      const theirs = other ? getComputedStyle(other) : null;
+      return { selected: { fill: mine.backgroundColor, shadow: mine.boxShadow }, other: theirs ? { fill: theirs.backgroundColor, shadow: theirs.boxShadow } : null };
     });
-    assert.notEqual(border.width, "0px", `selected ${label} has a border`);
-    assert.notEqual(border.color, "rgba(0, 0, 0, 0)", `selected ${label} border is visible`);
+    assert.notEqual(fill.selected.fill, "rgba(0, 0, 0, 0)", `selected ${label} has a fill`);
+    assert.notEqual(fill.selected.shadow, "none", `selected ${label} is raised`);
+    if (fill.other) assert.notDeepEqual(fill.selected, fill.other, `selected ${label} looks unlike the other rows`);
   }
 });
 
-// The toolbar's overflow actions live in a <details> that desktop flattens into
-// the row with `display: contents`. Current browsers hide a closed <details>'s
-// content through `::details-content`, which made Terminal, Notify, Rename
-// and Browser vanish on wide screens while still occupying
-// layout. Only a real browser sees that.
+// The conversation's actions live in a <details> (the ⋯ menu in the header). Current browsers hide a closed
+// <details>'s content through `::details-content`, which once made Terminal, Notify, Rename and Browser vanish while
+// still occupying layout. Only a real browser sees that: the menu must show them when open, at every desktop width.
 test("the chat toolbar actions are visible on a wide screen and fold into the menu on a phone", async () => {
   const ids = ["chat-open-terminal-button", "chat-open-browser-button", "chat-notify-button", "chat-rename-button", "chat-cron-button"];
-  for (const id of ids) {
-    assert.equal(await page.getByTestId(id).isVisible(), true, `${id} is visible in the desktop toolbar`);
+  for (const width of [1440, 720]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.getByTestId("chat-more-button").isVisible(), true, `the ⋯ menu is in the header at ${width}px`);
+    assert.equal(await page.getByTestId("chat-open-terminal-button").isVisible(), false, `the actions wait in the menu at ${width}px`);
+    await page.getByTestId("chat-more-button").click();
+    for (const id of ids) {
+      assert.equal(await page.getByTestId(id).isVisible(), true, `${id} is visible once the menu is open at ${width}px`);
+    }
+    const [terminalBox, browserBox] = await Promise.all([
+      page.getByTestId("chat-open-terminal-button").boundingBox(),
+      page.getByTestId("chat-open-browser-button").boundingBox(),
+    ]);
+    assert.ok(terminalBox && browserBox, "the menu's actions have layout boxes");
+    assert.equal(browserBox.x, terminalBox.x, "Browser lines up with the other actions in the menu");
+    assert.equal(browserBox.height, terminalBox.height, "Browser and Terminal are rows of one height");
+    await page.getByTestId("chat-more-button").click();
   }
-  const [terminalBox, browserBox] = await Promise.all([
-    page.getByTestId("chat-open-terminal-button").boundingBox(),
-    page.getByTestId("chat-open-browser-button").boundingBox(),
-  ]);
-  assert.ok(terminalBox && browserBox, "desktop toolbar actions have layout boxes");
-  assert.equal(browserBox.y, terminalBox.y, "Browser aligns vertically with the other toolbar actions");
-  assert.equal(browserBox.height, terminalBox.height, "Browser and Terminal reserve the same shortcut badge row");
-  assert.equal(await page.getByTestId("chat-more-button").isVisible(), false, "the overflow summary stays hidden on desktop");
-
-  await page.setViewportSize({ width: 720, height: 900 });
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await page.getByTestId("chat-open-terminal-button").isVisible(), false, "the actions fold away on a phone");
-  assert.equal(await page.getByTestId("chat-more-button").isVisible(), true, "the overflow summary appears on a phone");
-
-  await page.getByTestId("chat-more-button").click();
-  for (const id of ids) {
-    assert.equal(await page.getByTestId(id).isVisible(), true, `${id} is visible once the menu is open`);
-  }
-
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 });
@@ -473,8 +481,10 @@ test("a phone reloads conversations missed while its watch socket was disconnect
     await mobilePage.getByTestId("login-submit-button").click();
     await mobilePage.locator(".project-card", { hasText: project.name }).first().waitFor({ state: "attached" });
     await mobilePage.getByTestId("session-list-loading-bar").waitFor({ state: "hidden" });
-    await mobilePage.getByTestId("nav-projects-button").click();
-    await mobilePage.locator("body.view-projects #projectsPanel").waitFor();
+    // 720px is the desktop workspace now: the project list is in its left column, without the old bottom bar.
+    if (await mobilePage.getByTestId("nav-projects-button").isVisible()) await mobilePage.getByTestId("nav-projects-button").click();
+    await showProjects(mobilePage);
+    await mobilePage.locator("#projectsPanel").waitFor();
     await mobilePage.locator(".project-card", { hasText: project.name }).first().click();
     await mobilePage.locator("#chatsLiveDot").waitFor({ state: "visible" });
     await mobileContext.setOffline(true);
@@ -752,7 +762,9 @@ test("a top toast stays above the mobile composer", async () => {
     await project.waitFor({ state: "attached", timeout: 20_000 });
     await mobilePage.locator("#loginDialog").waitFor({ state: "hidden" });
     await waitInPage(mobilePage, async () => (await import('/app/state.js')).state.preferencesLoaded);
-    await mobilePage.getByTestId("nav-projects-button").click();
+    // 720px is the desktop workspace now: the project list is in its left column, without the old bottom bar.
+    if (await mobilePage.getByTestId("nav-projects-button").isVisible()) await mobilePage.getByTestId("nav-projects-button").click();
+    await showProjects(mobilePage);
     await project.waitFor({ timeout: 20_000 });
     await project.click();
     await mobilePage.locator(".session-card", { hasText: "Thread-Based Agent Builder" }).first().click();
@@ -803,9 +815,12 @@ test("opening a conversation that is waiting for review updates the badge at onc
   await page.goto(node.url, { waitUntil: "domcontentloaded" });
   const pending = await (await pendingLoaded).json() as { projects: Array<{ sessions: Array<{ title: string }> }> };
   assert.ok(pending.projects.some((group) => group.sessions.some((session) => session.title === "Thread Notifications Naming and Pinning")), `the server counts the new reply as waiting for review (got ${JSON.stringify(pending.projects)})`);
+  // The count rides Pending reviews in the column's ⋯ menu.
+  await page.getByTestId("workspace-more-button").click();
   const badge = page.getByTestId("pending-reviews-badge");
   await badge.waitFor({ timeout: 20_000 });
   assert.equal(await badge.innerText(), "1", "the answered conversation is counted as waiting for review");
+  await page.keyboard.press("Escape");
   const projectReviewBadge = page.locator('.project-card', { hasText: 'Joint Bob' }).getByTestId('project-review-badge');
   await projectReviewBadge.waitFor();
   assert.equal(await projectReviewBadge.innerText(), '1');
@@ -874,7 +889,7 @@ test("a new conversation appears in recents immediately", async () => {
   const recentSaved = page.waitForResponse((response) =>
     response.request().method() === "PUT" && new URL(response.url()).pathname === "/api/recents" && response.ok());
   await page.getByTestId("new-session-name-start-button").click();
-  await page.getByTestId("recent-sessions-open-button").click();
+  await (await reach(page, "recent-sessions-open-button")).click();
   await page.getByTestId("recent-sessions-dialog").getByText(title, { exact: true }).waitFor();
   await recentSaved;
   await page.getByTestId("recent-sessions-close-button").click();
@@ -890,7 +905,7 @@ test("the terminal fills its frame without overflowing it", async () => {
   // A service-worker upgrade can briefly pair the new terminal module with an
   // older page that did not load xterm. Opening the terminal must recover.
   await page.evaluate(() => { delete window.Terminal; delete window.FitAddon; });
-  await page.getByTestId("chat-open-terminal-button").click();
+  await (await reach(page, "chat-open-terminal-button")).click();
   await page.getByTestId("terminal-panel").waitFor({ state: "visible", timeout: 20_000 });
   assert.deepEqual(await page.evaluate(() => [typeof window.Terminal, typeof window.FitAddon?.FitAddon]), ["function", "function"]);
   // The shell has to answer before the emulator holds a real screen to measure.
@@ -924,7 +939,8 @@ test("the Settings shortcuts tab edits every shortcut in one place", async () =>
   await page.keyboard.press("Meta+Shift+Slash");
   await page.getByTestId("settings-dialog").waitFor({ state: "visible" });
   await page.getByTestId("keymap-spotlight-input").waitFor({ state: "visible" });
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
+  const savedLine = page.locator('[data-testid="settings-save-state"][data-state="saved"]');
 
   const spotlight = page.getByTestId("keymap-spotlight-input");
   const paneSearch = page.getByTestId("keymap-quick-note-input");
@@ -954,13 +970,14 @@ test("the Settings shortcuts tab edits every shortcut in one place", async () =>
   // Two commands cannot share one chord, and the panel says so instead of saving.
   await paneSearch.click();
   await page.keyboard.press("Control+Alt+KeyP");
-  await page.getByTestId("keymap-save-button").click();
   await page.getByTestId("keymap-status").filter({ hasText: /cannot share/ }).waitFor();
+  await page.locator('[data-testid="settings-save-state"][data-state="failed"]').waitFor();
+  assert.match(await page.getByTestId("settings-save-state").innerText(), /^Not saved: .*cannot share/);
 
-  // A recorded chord is accepted and takes effect without a reload.
+  // A recorded chord is accepted, saves on its own, and takes effect without a reload.
   await paneSearch.click();
   await page.keyboard.press("Control+BracketLeft");
-  await page.getByTestId("keymap-save-button").click();
+  await savedLine.waitFor();
   await page.getByTestId("keymap-status").filter({ hasText: "Saved." }).waitFor();
   await page.getByTestId("settings-cancel-button").click();
   await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
@@ -968,11 +985,11 @@ test("the Settings shortcuts tab edits every shortcut in one place", async () =>
   await page.reload();
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-shortcuts").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   assert.equal(await paneSearch.inputValue(), `${expectedModifiers.ctrl}[`, "the saved chord survives a reload");
   // Put the defaults back so later tests type the shortcuts they expect.
   await page.getByTestId("keymap-reset-button").click();
-  await page.getByTestId("keymap-save-button").click();
+  await savedLine.waitFor();
   await page.getByTestId("keymap-status").filter({ hasText: "Saved." }).waitFor();
   await page.getByTestId("settings-cancel-button").click();
   await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
@@ -1059,7 +1076,8 @@ test("running badge follows active conversation changes without waiting for the 
       (engine, session_id, owner_node_id, ownership_epoch, run_id, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
       .run(target.harnessId, target.id, node.nodeId, 1, randomUUID(), now.toISOString(), new Date(now.getTime() + 60_000).toISOString());
     await page.evaluate(async () => (await import("/app/socket.js")).refreshSessionsQuietly());
-    await badge.waitFor({ state: "visible", timeout: 10_000 });
+    // The count rides Running conversations in the column's ⋯ menu, so it is read whether or not the menu is open.
+    await page.locator('[data-testid="running-conversations-badge"]:not([hidden])').waitFor({ state: "attached", timeout: 10_000 });
     assert.equal(await badge.textContent(), "1");
     const projectRunningBadge = page.locator('.project-card', { hasText: 'Internal Assistant' }).getByTestId('project-running-badge');
     await projectRunningBadge.waitFor();
@@ -1071,7 +1089,7 @@ test("running badge follows active conversation changes without waiting for the 
     database.close();
     await page.evaluate(async () => (await import("/app/socket.js")).refreshSessionsQuietly());
   }
-  await badge.waitFor({ state: "hidden", timeout: 10_000 });
+  await page.locator('[data-testid="running-conversations-badge"][hidden]').waitFor({ state: "attached", timeout: 10_000 });
   await page.locator('.project-card', { hasText: 'Internal Assistant' }).getByTestId('project-running-badge').waitFor({ state: 'hidden' });
 });
 
@@ -1094,7 +1112,7 @@ test("running conversations open their live conversation in another project", as
     await remoteBadge.waitFor();
     assert.equal(await remoteBadge.innerText(), '1', 'an unselected project shows live activity');
     assert.equal(await remoteBadge.getAttribute('aria-label'), `1 conversations running in ${project.name}`);
-    await page.getByTestId("running-conversations-open-button").click();
+    await (await reach(page, "running-conversations-open-button")).click();
     const dialog = page.getByTestId("running-conversations-dialog");
     await dialog.getByText(project.name, { exact: true }).waitFor();
     const offset = await dialog.locator(".list-shortcut-index").first().evaluate((badge) => {
@@ -1192,7 +1210,7 @@ test("a digit typed into a dialog's search box names a row, and Enter opens it",
 // Escape belongs to the shell whenever a full-screen program is running in it, and
 // to the dialog the rest of the time.
 test("Escape closes the terminal, and reaches the shell while a full-screen program runs", async () => {
-  await page.getByTestId("chat-open-terminal-button").click();
+  await (await reach(page, "chat-open-terminal-button")).click();
   await page.getByTestId("terminal-panel").waitFor({ state: "visible", timeout: 20_000 });
   await page.locator('#terminalStatus[data-state="live"]').waitFor({ timeout: 20_000 });
 
@@ -1205,7 +1223,7 @@ test("Escape closes the terminal, and reaches the shell while a full-screen prog
 
   // The alternate screen buffer is what vim, less and htop draw on. Entering it
   // directly proves the guard without depending on which programs the box has.
-  await page.getByTestId("chat-open-terminal-button").click();
+  await (await reach(page, "chat-open-terminal-button")).click();
   await page.locator('#terminalStatus[data-state="live"]').waitFor({ timeout: 20_000 });
   await page.getByTestId("terminal-panel").locator(".xterm-helper-textarea").focus();
   await page.keyboard.type("printf '\\033[?1049h'; read -r line");
