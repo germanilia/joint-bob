@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.293.1 — 2026-11-12
+
+- Fixed the browser viewer closing or appearing behind conversations opened from the control center.
+
 ## Unreleased
 
 - **Automations:** Pi uses only app logins, never native credentials; scheduled execution skips browser history to avoid startup timeouts on long monitor conversations.
