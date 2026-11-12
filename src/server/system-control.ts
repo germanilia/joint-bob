@@ -2,7 +2,7 @@ import { personalContinuationAllowed, READY_FOR_REVIEW } from "../control-center
 import { actingAccountFromSession } from "../account-context.js";
 import { bobDatabase, readBobSettings, rememberBobAccount } from "../control-center/bob-store.js";
 import { bobSessionFor } from "./control-center-session.js";
-import { DEFAULT_AUTO_RESPOND_INSTRUCTIONS, enableAutoRespond, getAutoRespond, type AutoRespondConfig, type AutoRespondState } from "../conversation-auto-respond.js";
+import { DEFAULT_AUTO_RESPOND_INSTRUCTIONS, enableAutoRespond, getAutoRespond, type AutoRespondConfig, type AutoRespondState, type SystemControlLimits } from "../conversation-auto-respond.js";
 import type { MessageAuthor } from "../message-author-schema.js";
 
 // System control: a conversation the person puts under it is driven by Bob's responder, on the conversation's own agent and model
@@ -20,16 +20,16 @@ const DRIVE = [
 ].join("\n\n");
 
 export const SYSTEM_CONTROL_STOP_INSTRUCTIONS = [
-  `${READY_FOR_REVIEW}: the task is implemented and verified end to end, you checked the evidence yourself, and the agent's last message is its review report. Start REASON with "${READY_FOR_REVIEW}:" and say what you checked.`,
+  `${READY_FOR_REVIEW}: the conversation's goal is achieved and verified end to end. For software, require relevant test coverage, passing tests and evidence the feature works. Require successful deployment only when explicitly requested. You checked the evidence yourself, and the agent's last message is its review report. Start REASON with "${READY_FOR_REVIEW}:" and say what you checked.`,
   "The agent needs something only the user can supply: a password, token, one-time code, sign-in or payment detail.",
-  "The next step is irreversible or touches production: deploying, deleting data, force pushing, sending messages or email, spending money.",
+  "The next step needs authorization the user has not given: deployment not explicitly requested, deleting data, force pushing, sending messages or email, spending money. Never answer Guardian approvals or bypass sign-in challenges; those require the person.",
 ].map((line) => `- ${line}`).join("\n");
 
 /** The model the conversation runs on, which the responder runs on too. */
 export interface ConversationModel { harnessId: string; provider: string; modelId: string; reasoning: string }
 
 /** The responder's setup for a conversation under system control: no limit, tools on, the person's instructions inside. */
-export function systemControlConfig(standing: string, extra: string, model: ConversationModel): AutoRespondConfig {
+export function systemControlConfig(standing: string, extra: string, model: ConversationModel, limits: SystemControlLimits = {}): AutoRespondConfig {
   const instructions = [
     DRIVE,
     standing.trim() && `The user's standing instructions:\n${standing.trim()}`,
@@ -38,20 +38,20 @@ export function systemControlConfig(standing: string, extra: string, model: Conv
   return {
     providerProfileId: null, harnessId: model.harnessId, provider: model.provider, modelId: model.modelId,
     thinkingLevel: (model.reasoning || "default") as AutoRespondConfig["thinkingLevel"],
-    instructions, stopInstructions: SYSTEM_CONTROL_STOP_INSTRUCTIONS, maxResponses: null, useTools: true,
-    systemControl: { instructions: extra.trim() },
+    instructions, stopInstructions: SYSTEM_CONTROL_STOP_INSTRUCTIONS, maxResponses: limits.maxResponses ?? null, useTools: true,
+    systemControl: { instructions: extra.trim(), maxMinutes: limits.maxMinutes ?? null, deadline: limits.maxMinutes ? new Date(Date.now() + limits.maxMinutes * 60_000).toISOString() : null },
   };
 }
 
 /** Puts a conversation under system control as the person, with their standing instructions and what they add for it. */
-export async function enableSystemControl(projectId: string, conversationId: string, model: ConversationModel, author: MessageAuthor, extra: string): Promise<AutoRespondState> {
+export async function enableSystemControl(projectId: string, conversationId: string, model: ConversationModel, author: MessageAuthor, extra: string, limits: SystemControlLimits = {}): Promise<AutoRespondState> {
   const db = await bobDatabase();
   // Bob tells the people he knows: what comes back from a conversation under system control reaches its person.
   const session = bobSessionFor(author.accountId, "system-control");
   if (session) rememberBobAccount(db, actingAccountFromSession(session));
   const settings = readBobSettings(db, author.accountId);
   await (await import("./control-center-review-check.js")).resumeBobChecks(projectId, conversationId);
-  return enableAutoRespond(projectId, conversationId, systemControlConfig(settings.systemInstructions, extra, model), author, author.accountId);
+  return enableAutoRespond(projectId, conversationId, systemControlConfig(settings.systemInstructions, extra, model, limits), author, author.accountId);
 }
 
 /**

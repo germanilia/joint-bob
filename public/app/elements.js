@@ -166,6 +166,7 @@ export const elements = {
   autoRespondInstructions: document.querySelector("#autoRespondInstructions"),
   autoRespondStopInstructions: document.querySelector("#autoRespondStopInstructions"),
   autoRespondLimit: document.querySelector("#autoRespondLimit"),
+  autoRespondMaxMinutes: document.querySelector("#autoRespondMaxMinutes"),
   autoRespondUseTools: document.querySelector("#autoRespondUseTools"),
   autoRespondPreset: document.querySelector("#autoRespondPreset"),
   cancelAutoRespondButton: document.querySelector("#cancelAutoRespondButton"),

@@ -99,6 +99,32 @@ const startingIds = new Set<string>();
 interface AutoDecision { controller: AbortController; startedAt: string; step: string | null }
 const autoDecisions = new Map<string, AutoDecision>();
 const autoRetryTimers = new Map<string, NodeJS.Timeout>();
+const systemControlTimers = new Map<string, NodeJS.Timeout>();
+
+/** Absolute deadlines survive reconnects and restarts; a deadline also interrupts a busy turn. */
+function armSystemControlDeadline(connection: HarnessChatConnection, state: AutoRespondState | undefined): void {
+  if (connection.readOnly) return;
+  const key = queueKey(connection);
+  clearTimeout(systemControlTimers.get(key));
+  systemControlTimers.delete(key);
+  const deadline = state?.systemControl?.deadline;
+  if (state?.status !== "active" || !deadline) return;
+  const timer = setTimeout(() => {
+    systemControlTimers.delete(key);
+    void serializeMutation(connection, () => expireSystemControl(connection, deadline)).catch(promptQueueFailed(connection));
+  }, Math.min(2_147_483_647, Math.max(0, Date.parse(deadline) - Date.now())));
+  timer.unref();
+  systemControlTimers.set(key, timer);
+}
+
+async function expireSystemControl(connection: HarnessChatConnection, deadline: string): Promise<void> {
+  const current = await getAutoRespond(connection.project.id, connection.conversationId);
+  if (current?.status !== "active" || current.systemControl?.deadline !== deadline) return;
+  if (Date.parse(deadline) > Date.now()) { armSystemControlDeadline(connection, current); return; }
+  await writable(connection);
+  await stopAutoRespondFor(connection, "limit", "System control reached its time limit");
+  await stopConversation(connection);
+}
 
 function clearAutoRetry(key: string): void {
   clearTimeout(autoRetryTimers.get(key));
@@ -240,6 +266,7 @@ function autoDecisionView(connection: HarnessChatConnection): { startedAt: strin
 }
 
 function publishAutoRespond(connection: HarnessChatConnection, state: AutoRespondState | undefined): void {
+  armSystemControlDeadline(connection, state);
   publish(connection, { type: "autoRespond", state: state ?? null, decision: autoDecisionView(connection), message: autoRespondMessage(state) });
 }
 
@@ -907,6 +934,10 @@ async function runAutoResponse(connection: HarnessChatConnection): Promise<boole
   const projectId = connection.project.id;
   const state = await getAutoRespond(projectId, connection.conversationId);
   if (state?.status !== "active") return false;
+  if (state.systemControl?.deadline && Date.parse(state.systemControl.deadline) <= Date.now()) {
+    await stopAutoRespondFor(connection, "limit", "System control reached its time limit");
+    return false;
+  }
   if (await autoRespondHeldBack(state)) return false;
   if (state.retry && Date.parse(state.retry.nextAt) > Date.now()) { armAutoRetry(connection, state); return false; }
   const shared = connection.shared;
@@ -950,6 +981,10 @@ async function runAutoResponse(connection: HarnessChatConnection): Promise<boole
     const automationProfile = connection.automationProfile ?? { accountId: state.creatorAccountId!, profileId: null, nodeId: (await getClusterNode()).id };
     const latest = await getAutoRespond(projectId, connection.conversationId);
     if (latest?.status !== "active" || latest.revision !== state.revision) return false;
+    if (state.systemControl?.deadline && Date.parse(state.systemControl.deadline) <= Date.now()) {
+      await stopAutoRespondFor(connection, "limit", "System control reached its time limit");
+      return false;
+    }
     if (decision.decision === "stop") {
       if (!state.stopInstructions.trim()) throw new Error("The responder returned STOP without configured stop criteria");
       await stopAutoRespondFor(connection, "stop-instruction", decision.reason);
@@ -1406,7 +1441,7 @@ async function autoRespondCommand(connection: HarnessChatConnection, request: No
     if (!connection.author) throw new Error("System control needs the person whose conversation it is");
     await resumePromptQueue(connection);
     autoDecisions.get(key)?.controller.abort("settings-changed");
-    publishAutoRespond(connection, await enableSystemControl(connection.project.id, connection.conversationId, conversationModel(connection), connection.author, request.systemControl.instructions));
+    publishAutoRespond(connection, await enableSystemControl(connection.project.id, connection.conversationId, conversationModel(connection), connection.author, request.systemControl.instructions, request.systemControl));
     broadcastToProject(connection.project.id, { type: "sessionsChanged" });
     void drainHarnessPromptQueue(connection).catch(promptQueueFailed(connection));
     return;
@@ -1513,6 +1548,7 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
     };
     const goal = await getConversationGoal(options.project.id, conversationId);
     const autoRespond = await getAutoRespond(options.project.id, conversationId);
+    armSystemControlDeadline(connection, autoRespond);
     const routing = await routingClientState(connection, local.id);
     const routingMode = routing ? routing.mode : "manual";
     const conversationCommands = getSettings().conversationCommands;

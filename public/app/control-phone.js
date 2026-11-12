@@ -197,6 +197,11 @@ function buildRow(entry) {
       }));
     }
   }
+  const systemControl = cardActionList(card).find((action) => action.id === "system-control");
+  if (systemControl) actions.append(button("Let Bob control", "phone-action", "control-phone-system-control", () => {
+    closeSheet();
+    Promise.resolve(systemControl.run(card)).catch((error) => toast.error(error.message));
+  }));
   row.append(text, actions);
   return row;
 }

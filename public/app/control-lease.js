@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { openAutoRespond } from "./auto-respond.js";
 import { registerCardAction, registerCardDecorator } from "./control-cards.js";
 import { closeConversationPopup, openConversation, refreshControlCenter } from "./control-center.js";
 import { toast } from "./shell.js";
@@ -21,6 +22,25 @@ let held = null;
 let timer = null;
 /** The card whose conversation is open over the board. */
 let popupCard = null;
+let systemControlTarget = null;
+
+document.addEventListener("conversation-chat-reconnected", () => {
+  if (!systemControlTarget || state.activeConversationProjectId !== systemControlTarget.projectId || state.activeConversationId !== systemControlTarget.conversationId) return;
+  systemControlTarget = null;
+  if (state.conversationReadOnly) { toast.error(state.conversationReadOnlyReason || "This conversation is read-only"); return; }
+  void openAutoRespond({ system: true }).catch((error) => toast.error(error.message));
+});
+
+registerCardAction({
+  id: "system-control", label: "Let Bob control", title: "Give Bob instructions and optional iteration and time limits",
+  order: 6, visible: (card) => card.controlledBy !== "someone-else",
+  run: async (card) => {
+    await giveBack(card);
+    systemControlTarget = { projectId: card.projectId, conversationId: card.conversationId };
+    try { await openConversation(card); }
+    catch (error) { systemControlTarget = null; throw error; }
+  },
+});
 
 const sameConversation = (a, b) => Boolean(a && b) && a.projectId === b.projectId && a.conversationId === b.conversationId;
 
@@ -84,6 +104,7 @@ window.addEventListener("control-popup-opened", (event) => { popupCard = event.d
 // Closing the conversation hands it back to Bob.
 window.addEventListener("control-popup-closed", () => {
   popupCard = null;
+  systemControlTarget = null;
   if (held) void giveBack(null).catch((error) => toast.error(error.message));
 });
 

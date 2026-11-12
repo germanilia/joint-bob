@@ -25,6 +25,13 @@ export const DEFAULT_AUTO_RESPOND_STOP_INSTRUCTIONS = [
   "The agent says it is blocked by something it cannot fix.",
 ].map((line) => `- ${line}`).join("\n");
 
+export const systemControlRequestSchema = z.object({
+  instructions: z.string().max(20_000),
+  maxResponses: z.number().int().min(1).max(500).nullable().optional(),
+  maxMinutes: z.number().finite().positive().max(525_600).nullable().optional(),
+}).strict();
+export type SystemControlLimits = Pick<z.input<typeof systemControlRequestSchema>, "maxResponses" | "maxMinutes">;
+
 export const autoRespondConfigSchema = z.object({
   providerProfileId: z.string().uuid().nullable().default(null),
   harnessId: z.string().min(1).max(100),
@@ -37,7 +44,7 @@ export const autoRespondConfigSchema = z.object({
   /** The responder may read the project and run commands to check the agent's work. */
   useTools: z.boolean().default(true),
   /** Set when the conversation is under system control (src/server/system-control.ts): what the person added for it. */
-  systemControl: z.object({ instructions: z.string().max(20_000) }).strict().optional(),
+  systemControl: systemControlRequestSchema.extend({ deadline: z.string().datetime().nullable().optional() }).optional(),
 }).strict();
 export type AutoRespondConfig = z.input<typeof autoRespondConfigSchema>;
 
@@ -211,10 +218,10 @@ export async function listActiveAutoResponders(): Promise<AutoRespondState[]> {
   return ((await database()).prepare("SELECT * FROM conversation_auto_responders WHERE status = 'active'").all() as unknown as Row[]).map(fromRow);
 }
 
-/** A person wrote: the unattended run starts over. */
+/** A person wrote: ordinary auto respond starts over; system control keeps its total iteration budget. */
 export async function resetAutoRespondCount(projectId: string, conversationId: string): Promise<void> {
   const db = await database();
-  db.prepare("UPDATE conversation_auto_responders SET responses = 0 WHERE project_id = ? AND conversation_id = ? AND responses <> 0").run(projectId, conversationId);
+  db.prepare("UPDATE conversation_auto_responders SET responses = 0 WHERE project_id = ? AND conversation_id = ? AND responses <> 0 AND json_extract(config, '$.systemControl') IS NULL").run(projectId, conversationId);
 }
 
 /** Identifies one assistant message by position and content. */

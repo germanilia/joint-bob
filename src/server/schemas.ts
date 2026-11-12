@@ -1,6 +1,6 @@
 import path from "node:path";
 import { closeoutFeedbackSchema } from "../conversation-closeout.js";
-import { autoRespondConfigSchema } from "../conversation-auto-respond.js";
+import { autoRespondConfigSchema, systemControlRequestSchema } from "../conversation-auto-respond.js";
 import { conversationDefaultsSchema } from "../harnesses/defaults.js";
 import { queuedSettingsSchema } from "../prompt-queue.js";
 import { z } from "zod";
@@ -534,7 +534,7 @@ export const socketMessageSchema = z.object({
   autoRespond: z.object({
     enabled: z.boolean(), config: autoRespondConfigSchema.optional(),
     /** System control instead of a config: the server builds it from the person's standing instructions and these. */
-    systemControl: z.object({ instructions: z.string().max(20_000) }).strict().optional(),
+    systemControl: systemControlRequestSchema.optional(),
   }).strict().optional(),
   /** guardianDecision: the person's answer to a paused action. */
   reviewId: z.string().uuid().optional(),

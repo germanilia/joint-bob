@@ -91,7 +91,7 @@ function fillPickers(saved) {
 
 // Opens at once: listing harnesses and models can take seconds, and a dialog that
 // appeared only afterwards popped up behind whatever the user had moved on to.
-async function openAutoRespond() {
+export async function openAutoRespond({ system = false } = {}) {
   elements.chatMoreMenu.open = false;
   const saved = state.autoRespond;
 
@@ -112,7 +112,9 @@ async function openAutoRespond() {
   elements.autoRespondLimit.value = saved ? saved.maxResponses ?? "" : defaults?.maxResponses ?? "";
   elements.autoRespondUseTools.checked = saved ? saved.useTools !== false : true;
   elements.autoRespondEnabled.checked = !saved || saved.status !== "off";
-  elements.autoRespondSystemControl.checked = Boolean(saved?.systemControl);
+  elements.autoRespondSystemControl.checked = system || Boolean(saved?.systemControl);
+  if (system && !saved?.systemControl) elements.autoRespondLimit.value = "";
+  elements.autoRespondMaxMinutes.value = saved?.systemControl?.maxMinutes ?? "";
   elements.autoRespondSystemInstructions.value = saved?.systemControl?.instructions ?? "";
   showSystemControl();
   renderStatus();
@@ -151,7 +153,8 @@ function applyPreset() {
 function showSystemControl() {
   const system = elements.autoRespondSystemControl.checked;
   elements.autoRespondSystemExtra.hidden = !system;
-  for (const field of [elements.autoRespondPreset, elements.autoRespondHarness, elements.autoRespondModel, elements.autoRespondThinking, elements.autoRespondInstructions, elements.autoRespondStopInstructions, elements.autoRespondUseTools, elements.autoRespondLimit]) {
+  elements.autoRespondMaxMinutes.closest("label").hidden = !system;
+  for (const field of [elements.autoRespondPreset, elements.autoRespondHarness, elements.autoRespondModel, elements.autoRespondThinking, elements.autoRespondInstructions, elements.autoRespondStopInstructions, elements.autoRespondUseTools]) {
     field.closest("label").hidden = system;
   }
 }
@@ -164,7 +167,11 @@ function save(event) {
     return;
   }
   if (elements.autoRespondSystemControl.checked) {
-    const systemControl = { instructions: elements.autoRespondSystemInstructions.value.trim() };
+    const systemControl = {
+      instructions: elements.autoRespondSystemInstructions.value.trim(),
+      maxResponses: elements.autoRespondLimit.value ? Number(elements.autoRespondLimit.value) : null,
+      maxMinutes: elements.autoRespondMaxMinutes.value ? Number(elements.autoRespondMaxMinutes.value) : null,
+    };
     if (sendSocket({ type: "autoRespond", autoRespond: { enabled: true, systemControl } })) elements.autoRespondDialog.close();
     else toast.error("Not connected");
     return;
@@ -204,7 +211,10 @@ elements.autoRespondModel.addEventListener("change", () => {
 });
 elements.autoRespondPreset.addEventListener("change", applyPreset);
 elements.autoRespondSystemControl.addEventListener("change", () => {
-  if (elements.autoRespondSystemControl.checked) elements.autoRespondEnabled.checked = true;
+  if (elements.autoRespondSystemControl.checked) {
+    elements.autoRespondEnabled.checked = true;
+    elements.autoRespondLimit.value = state.autoRespond?.systemControl ? state.autoRespond.maxResponses ?? "" : "";
+  }
   showSystemControl();
 });
 
