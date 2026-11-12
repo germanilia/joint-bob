@@ -79,11 +79,13 @@ modelPicker.onChange(chooseModel);
 const chips = {
   harness: createSearchableSelect({ id: "phoneChipHarness", testid: "phone-chip-harness", label: "Agent", prompt: "Agent", placeholder: "Search agents", emptyText: "No agents found" }),
   model: createSearchableSelect({ id: "phoneChipModel", testid: "phone-chip-model", label: "Model", prompt: "Model", placeholder: "Search models", emptyText: "No models found" }),
+  effort: createSearchableSelect({ id: "phoneChipEffort", testid: "phone-chip-effort", label: "Effort", prompt: "Effort", placeholder: "Search effort levels", emptyText: "No effort levels found" }),
   node: createSearchableSelect({ id: "phoneChipNode", testid: "phone-chip-node", label: "Runs on", prompt: "Machine", placeholder: "Search machines", emptyText: "No machines found" }),
 };
-document.querySelector("#phoneChips").append(chips.harness.root, chips.model.root, chips.node.root);
+document.querySelector("#phoneChips").append(chips.harness.root, chips.model.root, chips.effort.root, chips.node.root);
 chips.harness.onChange(value => chooseSelectValue(elements.chatHarnessSelect, value));
 chips.model.onChange(chooseModel);
+chips.effort.onChange(value => chooseSelectValue(elements.reasoningLevelSelect, value));
 chips.node.onChange(value => chooseSelectValue(elements.chatNodeSelect, value));
 
 function currentView() {
@@ -272,6 +274,11 @@ export function syncQuickActionLabels() {
     picker.setValue(source.value);
     picker.disabled = source.disabled;
   }
+  // The effort chip shows only when the model has levels, like the toolbar's Reasoning; Bob auto locks it.
+  chips.effort.setOptions(selectOptions(elements.reasoningLevelSelect));
+  chips.effort.setValue(elements.reasoningLevelSelect.value);
+  chips.effort.disabled = elements.reasoningLevelSelect.disabled;
+  chips.effort.root.hidden = elements.chatModeControl.hidden;
 }
 /** The two "when it stops" switches show their toolbar buttons' state. */
 function syncSwitches() {

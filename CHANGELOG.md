@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.286.1 — 2026-11-12
+
+- On a phone, a conversation's chips now include its effort level beside the model, so you can change it without opening the ⋯ sheet. It shows only for models that have effort levels and stays locked while Bob auto picks the level.
+
 ## 2.286.0 — 2026-11-12
 
 - A cluster assistant now runs only on its cluster's subscriptions: the pool a relay assigned to the group, or the profile or pool its owner chose for that cluster in Settings › Connections. It no longer falls back to the owner's other subscriptions. Bob refuses to create one while the cluster has none for its agent, and says how to add one.
