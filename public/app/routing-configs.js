@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { renderAllocationPreview } from "./model-allocation.js";
 import { elements } from "./elements.js";
 import { confirmAction, toast } from "./shell.js";
 
@@ -203,6 +204,7 @@ export async function loadRoutingConfigs(preferredEditId = editingId) {
   renderConfigList();
   fillEditor(configById(preferredEditId));
   elements.routingConfigCreateButton.disabled = false;
+  await renderAllocationPreview();
 }
 
 function editorFormValue() {

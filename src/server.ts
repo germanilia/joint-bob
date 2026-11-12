@@ -67,6 +67,7 @@ import "./server/routes/provider-profiles.js";
 import "./server/routes/automation-tags.js";
 import "./server/routes/automation-executions.js";
 import "./server/routes/routing.js";
+import "./server/routes/model-allocation.js";
 import "./server/routes/cluster.js";
 import "./server/routes/cluster-tasks.js";
 import "./server/routes/platform.js";

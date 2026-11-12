@@ -1,0 +1,29 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { nativeUiFixture } from "./native-ui-fixture.js";
+
+test("allocation preview stays in Settings and reports uncertainty without switching models", { timeout: 120000 }, async t => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  await page.goto(node.url);
+  await page.getByTestId("login-username-input").fill(environment.username);
+  await page.getByTestId("login-password-input").fill(environment.password);
+  await page.getByTestId("login-submit-button").click();
+  await page.locator("#projectList .project-card").first().waitFor();
+  await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-classifiers").click();
+  await page.getByTestId("allocation-preview").waitFor();
+  assert.match(await page.getByTestId("allocation-status").innerText(), /recommendation|Recommendation/);
+  const assessment = { taskId: "task", domain: "software-repair", complexity: 4, risk: "low", capabilities: [], classifier: "fixture-v1", confidence: 0.9 };
+  await page.route("**/api/routing-configs/allocation/assess", route => route.fulfill({ json: { assessment } }));
+  await page.getByTestId("allocation-task").fill("Repair a parser");
+  await page.getByTestId("allocation-assess").click();
+  await page.getByTestId("allocation-assessment").filter({ hasText: "software-repair" }).waitFor();
+  const identity = { provider: "fixture", modelId: "model", release: "1", harness: "pi", scaffold: "1", reasoning: "high" };
+  await page.getByText("Candidate estimates and benchmark snapshots", { exact: true }).click();
+  await page.getByTestId("allocation-pinned").uncheck();
+  await page.getByTestId("allocation-candidates").fill(JSON.stringify([{ identity, authorized: true, available: true, capabilities: [], attemptCost: 1, handoffCost: 0, evaluationCost: 0, recoveryCost: 1 }]));
+  await page.getByTestId("allocation-compare").click();
+  await page.getByTestId("allocation-result").filter({ hasText: "No qualified candidate" }).waitFor();
+  assert.match(await page.getByTestId("allocation-result").innerText(), /0\/20/);
+  assert.equal(await page.locator("#settingsDialog[open]").count(), 1);
+});
