@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.293.4 — 2026-11-13
 
 - A conversation whose agent has answered now waits under Review even while its background tasks keep running, and its status reads "Waiting for you · background tasks running" instead of "working"; the background tasks keep running and are not stopped.
 
