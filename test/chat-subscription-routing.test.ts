@@ -91,7 +91,7 @@ function fixture(selection: Selection, failure?: string) {
     runWithAutomationProfile: (input: any, work: () => any) => withAutomationProfile({ accountId: input.creatorAccountId, profileId: input.providerProfileId }, work),
     getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
     getProject: async () => connection.project,
-    resolveClusterSubscriptionPools: () => selection === "relay-pool" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
+    clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => selection === "relay-pool" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
     resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
       lookups.push({ account, provider, scope, usage });
       return selection === "pool" ? { kind: "pool", pool } : undefined;

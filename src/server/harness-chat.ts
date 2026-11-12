@@ -14,6 +14,8 @@ import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import WebSocket from "ws";
 import { getClusterNode } from "../cluster.js";
+import { clusterOfAssistantsProject } from "../cluster-assistants.js";
+import { clusterSubscriptionMissing } from "../provider-profiles/cluster-assistant-subscriptions.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscriptionPoolAssignment } from "../provider-profiles/pool-sharing.js";
 import { automationFallbackPool, poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
@@ -292,7 +294,7 @@ function currentSettings(connection: HarnessChatConnection): QueuedSettings {
 function selectedHarness(settings: QueuedSettings): HarnessId { return settings.harnessId ?? harnessForProvider(settings.provider).id; }
 
 export interface TurnSubscriptionPool { id: string; name: string; harnessId: HarnessId; fallbackModels: Partial<Record<string, string>>; candidates: PoolProfileContext[]; sameProviderOnly: boolean }
-function profileProviderForRuntime(provider: string): ProfileProvider | undefined {
+export function profileProviderForRuntime(provider: string): ProfileProvider | undefined {
   if (provider === "anthropic" || provider === "claude") return "claude";
   if (provider === "antigravity") return "antigravity";
   return provider === "openai-codex" ? provider : "pi";
@@ -307,6 +309,9 @@ interface SubscriptionPoolRequest {
 }
 export async function resolveSubscriptionPool(request: SubscriptionPoolRequest): Promise<TurnSubscriptionPool | undefined> {
   const { engine, accountId, usage } = request;
+  // A cluster assistant's turn runs only on its cluster's subscriptions (provider-profiles/cluster-assistant-subscriptions.ts).
+  const assistantCluster = clusterOfAssistantsProject(request.projectId);
+  if (assistantCluster && (engine === "kiro" || engine === "antigravity")) throw new Error(clusterSubscriptionMissing(await clusterV2Database(), assistantCluster));
   if (engine === "kiro" || engine === "antigravity") return undefined;
   const preferred = profileProviderForRuntime(request.provider);
   const local = await getClusterNode(), db = await clusterV2Database();
@@ -320,10 +325,13 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
       candidates: assignment.manifest.members.map((member) => ({ profileId: member.profileId, provider: member.provider, label: member.label,
         poolId: assignment.poolId, clusterId: assignment.clusterId, poolOwnerNodeId: assignment.poolOwnerNodeId })) };
   }
+  if (assistantCluster && (request.fixedProfile || !preferred || !accountId)) throw new Error(clusterSubscriptionMissing(db, assistantCluster));
   if (request.fixedProfile || !preferred || !accountId) return undefined;
   const scope = { projectId: request.projectId, workspaceId: request.workspaceId, conversationId: request.conversationId, clusterIds: projectClusterIds(db, local.id, request.projectId) };
   const choice = (engine === "pi" ? resolveSubscriptionChoice(accountId, "pi", scope, usage) : undefined)
     ?? resolveSubscriptionChoice(accountId, preferred, scope, usage);
+  // No relay pool: only the owner's choice for the cluster itself counts, never their general choice or the machine's sign-in.
+  if (assistantCluster && (choice?.source !== "cluster" || choice.kind === "machine")) throw new Error(clusterSubscriptionMissing(db, assistantCluster));
   const pool = choice?.kind === "pool" ? choice.pool
     : !choice && usage === "automation" ? automationFallbackPool(engine === "pi" ? ["pi", preferred] : [preferred], scope) : undefined;
   if (!pool) return undefined;

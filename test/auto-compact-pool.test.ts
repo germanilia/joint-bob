@@ -42,7 +42,7 @@ function fixture(selection: "cluster" | "conversation" | "none", failure?: Error
     ownerAsActor: (accountId: string) => ({ accountId }), resourceOwner: () => "owner",
     runWithAutomationProfile: (input: any, work: () => any) => withAutomationProfile({ accountId: input.creatorAccountId, profileId: input.providerProfileId }, work),
     getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
-    resolveClusterSubscriptionPools: () => selection === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
+    clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => selection === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
     resolveSubscriptionChoice: (accountId: string) => { lookups.push(accountId); return selection === "conversation" ? { kind: "pool", pool } : undefined; },
     poolCandidates: () => profiles,
     getAutoRespond: async () => undefined, getConversationGoal: async () => { goalReads++; return undefined; },

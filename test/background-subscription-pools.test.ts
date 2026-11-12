@@ -65,7 +65,7 @@ for (const runner of runners) for (const source of ["cluster", "conversation", "
       // The fallback model has no "medium", like Claude Opus 5.5 has no "off".
       listHarnessModels: async (harness: string) => harness === "claude" ? [{ provider: "claude", id: "sonnet", thinkingLevels: ["medium"] }] : [{ provider: "openai-codex", id: "gpt-fixture", thinkingLevels: ["minimal", "low", "high"] }],
       getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
-      resolveClusterSubscriptionPools: () => source !== "conversation" && source !== "none" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
+      clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => source !== "conversation" && source !== "none" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
       resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
         lookups.push({ account, provider, scope, usage });
         return source === "conversation" ? { kind: "pool", pool } : undefined;

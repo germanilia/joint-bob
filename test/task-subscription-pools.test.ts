@@ -54,7 +54,7 @@ function fixture(pooled: boolean, failure?: string) {
     listHarnessModels: async () => [{ provider: "claude", id: "opus", thinkingLevels: ["high"] }],
     nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
     getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => [],
-    resolveClusterSubscriptionPools: () => [], resolveSubscriptionChoice: () => pooled ? { kind: "pool", pool } : undefined, poolCandidates: () => profiles,
+    clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => [], resolveSubscriptionChoice: () => pooled ? { kind: "pool", pool } : undefined, poolCandidates: () => profiles,
     getProject: async () => project, ownerAsActor: actor, resourceOwner: () => "project-owner",
     getHarness: () => ({ paths: { ownsSession: () => true, sessionId: () => "session" } }), getHarnessRuntime: async () => runtime,
     claimTaskLease: async () => ({ task, leaseToken: "lease" }), claimConversationLocally: async () => {},

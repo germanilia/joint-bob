@@ -15,6 +15,7 @@ import { signClusterRequest } from "../cluster-protocol.js";
 import { getSharingCluster, listSharingClusterMembers, listSharingMemberships } from "../cluster-sharing-policy.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { deletePersonalAssistant, getPersonalAssistantById, personalAssistantDatabase, savePersonalAssistant } from "../personal-assistants.js";
+import { listWebhookSkills, removeWebhookSkill } from "../webhook-skills.js";
 import { peerFetch } from "../relay/transport.js";
 import { sendError } from "./http-auth.js";
 import { peers } from "./saved-commands.js";
@@ -196,26 +197,107 @@ app.post(STATUS_TARGET, memberRoute(async (sender, response, body) => {
   response.json(await hostedStatus(input.askId, { nodeId: sender, accountId: input.accountId }, 0));
 }));
 
-// ── The people on this machine: seeing, changing and auditing what it hosts ──────────────────────────────
+// ── Changing one: on its host, or from the cluster's manager machine ─────────────────────────────────────
+// Three kinds of people may change a cluster assistant, delete it and read its log: its creator and the admins of its host
+// machine who are in the cluster (on the host), and the admins of the cluster's manager machine (from there, over the signed
+// channel). A cluster has a manager machine and no admin role for people, so that machine's admins are the cluster's.
 
-/** Its creator, and any admin of this machine who is in the assistant's cluster, may change a cluster assistant and read its log. */
-async function manages(session: AuthSession, record: ClusterAssistantRecord): Promise<boolean> {
+const MANAGE_TARGET = "/api/cluster/v2/cluster-assistants/manage";
+type Hosted = NonNullable<Awaited<ReturnType<typeof getPersonalAssistantById>>>;
+/** Who is changing it: the person, and the machine they are on when that is not the host. */
+interface Manager { accountId: string; name: string; nodeId: string | null }
+
+const manageSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("read") }).strict(),
+  z.object({ action: z.literal("change"), name: z.string().trim().min(1).max(100), instructions: z.string().max(20_000) }).strict(),
+  z.object({ action: z.literal("remove-skill"), skillId: z.string().uuid() }).strict(),
+  z.object({ action: z.literal("delete") }).strict(),
+  z.object({ action: z.literal("audit") }).strict(),
+]);
+type ManageCommand = z.infer<typeof manageSchema>;
+
+const by = (manager: Manager) => ({ by: manager.name, ...(manager.nodeId ? { fromNodeId: manager.nodeId } : {}) });
+
+/** Does what a manager asked to the assistant this machine hosts, and writes each change to its audit log. */
+async function manageHosted(assistant: Hosted, manager: Manager, command: ManageCommand): Promise<unknown> {
+  const db = await personalAssistantDatabase();
+  const actor = { type: "user" as const, id: manager.accountId };
+  if (command.action === "read") {
+    return { name: assistant.name, instructions: assistant.instructions, skills: listWebhookSkills(db, assistant.id).map((skill) => ({ id: skill.id, name: skill.name })) };
+  }
+  if (command.action === "audit") {
+    return { events: listEntityAuditEvents(AUDIT_ENTITY, assistant.id, 200).map(({ id, eventType, actorId, details, createdAt }) => ({ id, eventType, actorId, details, createdAt })) };
+  }
+  if (command.action === "change") {
+    await savePersonalAssistant(assistant.accountId, { ...assistant, name: command.name, instructions: command.instructions }, assistant.id);
+    audit("changed", assistant.id, actor, { ...by(manager), name: command.name, renamed: command.name !== assistant.name, instructionsChanged: command.instructions !== assistant.instructions });
+  } else if (command.action === "remove-skill") {
+    const skill = listWebhookSkills(db, assistant.id).find((candidate) => candidate.id === command.skillId);
+    if (!skill) throw new ManageRefusal(404, "Skill not found");
+    await removeWebhookSkill(db, assistant.id, skill.id);
+    audit("skill-removed", assistant.id, actor, { ...by(manager), skill: skill.name });
+  } else {
+    await deletePersonalAssistant(assistant.accountId, assistant.id);
+    await removeAssistantCapabilities(db, assistant.id);
+    forgetClusterAssistant(assistant.id);
+    audit("deleted", assistant.id, actor, { ...by(manager), name: assistant.name });
+  }
+  announceAssistantChanges();
+  directory.clear();
+  return { done: true };
+}
+
+class ManageRefusal extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+
+// The manager machine vouches for its own admin: its signature proves the machine, and only the cluster's manager is heard.
+app.post(MANAGE_TARGET, memberRoute(async (sender, response, body) => {
+  const input = z.object({ assistantId: z.string().uuid(), accountId: z.string().min(1).max(200), name: z.string().trim().min(1).max(200), command: manageSchema }).strict().parse(body);
+  const record = clusterAssistant(input.assistantId);
+  const assistant = record && getSharingCluster(await clusterV2Database(), record.clusterId).managerNodeId === sender ? await getPersonalAssistantById(record.assistantId) : undefined;
+  if (!assistant) { sendError(response, 404, "Assistant not found"); return; }
+  try { response.json(await manageHosted(assistant, { accountId: input.accountId, name: input.name, nodeId: sender }, input.command)); }
+  catch (error) { if (error instanceof ManageRefusal) { sendError(response, error.status, error.message); return; } throw error; }
+}));
+
+/** On the host: its creator, and any admin of this machine who is in the assistant's cluster. */
+async function managesHere(session: AuthSession, record: ClusterAssistantRecord): Promise<boolean> {
   return session.accountId === record.createdBy || (session.role === "admin" && accountInCluster(await clusterV2Database(), session.accountId, record.clusterId));
+}
+
+/** From elsewhere: an admin of this machine, when this machine is the manager of the assistant's cluster. */
+async function managesFromHere(session: AuthSession, clusterId: string): Promise<boolean> {
+  const db = await clusterV2Database();
+  return session.role === "admin" && accountInCluster(db, session.accountId, clusterId) && getSharingCluster(db, clusterId).managerNodeId === (await getClusterNode()).id;
 }
 
 function personRoute(action: (session: AuthSession, request: Request, response: Response) => Promise<void>) {
   return (request: Request, response: Response, next: NextFunction): void => {
-    void action(response.locals.authSession as AuthSession, request, response)
-      .catch((error) => error instanceof z.ZodError ? sendError(response, 400, "Invalid cluster assistant change") : next(error));
+    void action(response.locals.authSession as AuthSession, request, response).catch((error) => {
+      if (error instanceof z.ZodError) sendError(response, 400, "Invalid cluster assistant change");
+      else if (error instanceof ManageRefusal) sendError(response, error.status, error.message);
+      else next(error);
+    });
   };
 }
 
-/** The hosted assistant the person may manage; a 404 for anyone else, as if it were not here. */
-async function managed(session: AuthSession, request: Request, response: Response): Promise<{ record: ClusterAssistantRecord; assistant: NonNullable<Awaited<ReturnType<typeof getPersonalAssistantById>>> } | undefined> {
-  const record = clusterAssistant(z.string().uuid().parse(request.params.id));
-  const assistant = record && await manages(session, record) ? await getPersonalAssistantById(record.assistantId) : undefined;
-  if (!record || !assistant) { sendError(response, 404, "Assistant not found"); return undefined; }
-  return { record, assistant };
+/** Runs a manager's command on the assistant: here when this machine hosts it, otherwise on its host. Anyone else gets a 404. */
+async function manage(session: AuthSession, id: string, command: ManageCommand): Promise<unknown> {
+  const assistantId = z.string().uuid().parse(id);
+  const record = clusterAssistant(assistantId);
+  if (record) {
+    const assistant = await managesHere(session, record) ? await getPersonalAssistantById(assistantId) : undefined;
+    if (!assistant) throw new ManageRefusal(404, "Assistant not found");
+    return manageHosted(assistant, { accountId: session.accountId, name: session.username, nodeId: null }, command);
+  }
+  const view = (await clusterAssistantsFor(session.accountId)).find((candidate) => candidate.id === assistantId);
+  if (!view || !await managesFromHere(session, view.clusterId)) throw new ManageRefusal(404, "Assistant not found");
+  const answer = await signedPost(view.nodeId, MANAGE_TARGET, { assistantId, accountId: session.accountId, name: session.username, command }, 15_000);
+  const result = await answer.json() as { error?: string };
+  if (!answer.ok) throw new ManageRefusal(answer.status === 404 ? 404 : 502, result.error ?? `${view.machineName} refused the change`);
+  if (command.action !== "read" && command.action !== "audit") directory.clear();
+  return result;
 }
 
 app.get("/api/control-center/cluster-assistants", personRoute(async (session, request, response) => {
@@ -224,38 +306,27 @@ app.get("/api/control-center/cluster-assistants", personRoute(async (session, re
   const views = await clusterAssistantsFor(session.accountId);
   response.json({ assistants: await Promise.all(views.map(async (view) => {
     const record = view.nodeId === local ? clusterAssistant(view.id) : undefined;
-    const canManage = Boolean(record && await manages(session, record));
-    const instructions = canManage ? (await getPersonalAssistantById(view.id))!.instructions : null;
-    return { ...view, local: view.nodeId === local, canManage, instructions };
+    return { ...view, local: view.nodeId === local, canManage: record ? await managesHere(session, record) : await managesFromHere(session, view.clusterId) };
   })) });
 }));
 
+app.get("/api/control-center/cluster-assistants/:id", personRoute(async (session, request, response) => {
+  response.json(await manage(session, request.params.id, { action: "read" }));
+}));
+
 app.put("/api/control-center/cluster-assistants/:id", personRoute(async (session, request, response) => {
-  const found = await managed(session, request, response);
-  if (!found) return;
   const input = z.object({ name: z.string().trim().min(1).max(100), instructions: z.string().max(20_000) }).strict().parse(request.body);
-  const { assistant } = found;
-  await savePersonalAssistant(assistant.accountId, { ...assistant, name: input.name, instructions: input.instructions }, assistant.id);
-  audit("changed", assistant.id, { type: "user", id: session.accountId }, { by: session.username, name: input.name, renamed: input.name !== assistant.name, instructionsChanged: input.instructions !== assistant.instructions });
-  announceAssistantChanges();
-  response.json({ saved: true });
+  response.json(await manage(session, request.params.id, { action: "change", ...input }));
+}));
+
+app.delete("/api/control-center/cluster-assistants/:id/skills/:skillId", personRoute(async (session, request, response) => {
+  response.json(await manage(session, request.params.id, { action: "remove-skill", skillId: z.string().uuid().parse(request.params.skillId) }));
 }));
 
 app.delete("/api/control-center/cluster-assistants/:id", personRoute(async (session, request, response) => {
-  const found = await managed(session, request, response);
-  if (!found) return;
-  const { assistant } = found;
-  await deletePersonalAssistant(assistant.accountId, assistant.id);
-  await removeAssistantCapabilities(await personalAssistantDatabase(), assistant.id);
-  forgetClusterAssistant(assistant.id);
-  audit("deleted", assistant.id, { type: "user", id: session.accountId }, { by: session.username, name: assistant.name });
-  announceAssistantChanges();
-  response.json({ deleted: true });
+  response.json(await manage(session, request.params.id, { action: "delete" }));
 }));
 
 app.get("/api/control-center/cluster-assistants/:id/audit", personRoute(async (session, request, response) => {
-  const found = await managed(session, request, response);
-  if (!found) return;
-  response.json({ events: listEntityAuditEvents(AUDIT_ENTITY, found.assistant.id, 200).map(({ id, eventType, actorId, details, createdAt }) => ({ id, eventType, actorId, details, createdAt })) });
+  response.json(await manage(session, request.params.id, { action: "audit" }));
 }));
-

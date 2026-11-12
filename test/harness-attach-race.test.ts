@@ -76,7 +76,7 @@ function fixture(overrides: Record<string, any> = {}) {
     getAutoRespond: async () => undefined,
     activeRoutingConfig: () => null, routingConfigDatabase: () => ({}),
     // No cluster subscription pool is assigned to the project.
-    clusterV2Database: async () => ({}), resolveClusterSubscriptionPools: () => [],
+    clusterV2Database: async () => ({}), clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => [],
     // No profile is chosen, so a turn shows this machine's own sign-in.
     projectProviderProfile: async () => undefined,
     summaryPolicyNow: async () => ({ updates: "manual", writer: { source: "automatic" }, from: { kind: "node" } }),

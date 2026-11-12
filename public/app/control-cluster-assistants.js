@@ -4,8 +4,8 @@ import { confirmAction, toast } from "./shell.js";
 
 /*
  * Cluster assistants in the Assistants tab: the assistants of the clusters the person joined, on whichever machine hosts
- * them. Everyone in the cluster asks them through Bob. On the host, the assistant's creator and the machine's admins in that
- * cluster can change it, delete it and read its audit log (who asked it, who changed it).
+ * them. Everyone in the cluster asks them through Bob. Its creator and its host machine's admins (on the host) and the admins of
+ * the cluster's manager machine (from there) can change it, remove its skills, delete it and read its audit log.
  */
 
 const EVENT_WORDS = { "cluster-assistant.created": "Created", "cluster-assistant.asked": "Asked", "cluster-assistant.changed": "Changed", "cluster-assistant.deleted": "Deleted" };
@@ -56,16 +56,35 @@ const nameField = el("label", "control-secret-field");
 nameField.append(el("span", "", "Name"), nameInput);
 const instructionsField = el("label", "control-secret-field");
 instructionsField.append(el("span", "", "Standing instructions"), instructionsInput);
+const skillsField = el("div", "control-secret-field");
+skillsField.dataset.testid = "control-cluster-assistant-skills";
 const editorForm = el("form", "dialog-card control-secret-card control-cluster-asst-card");
-editorForm.append(el("span", "eyebrow", "Cluster assistant"), editorTitle, nameField, instructionsField, el("p", "control-hint", "The change is written to the assistant's audit log."), editorActions);
+editorForm.append(el("span", "eyebrow", "Cluster assistant"), editorTitle, nameField, instructionsField, skillsField, el("p", "control-hint", "The change is written to the assistant's audit log."), editorActions);
 editor.append(editorForm);
 let editing = null;
 
-function openEditor(assistant) {
+const assistantPath = (assistant, suffix = "") => `/api/control-center/cluster-assistants/${encodeURIComponent(assistant.id)}${suffix}`;
+
+function renderSkills(assistant, skills) {
+  skillsField.replaceChildren(el("span", "", "Its own skills"), ...(skills.length ? skills.map((skill) => {
+    const row = el("div", "control-cluster-asst-skill");
+    row.append(el("span", "", skill.name), button("Remove", "control-cluster-assistant-skill-remove", async () => {
+      if (!await confirmAction({ title: `Remove the skill ${skill.name}?`, message: `${assistant.name} can no longer use it.`, confirmLabel: "Remove", destructive: true })) return;
+      await api(assistantPath(assistant, `/skills/${encodeURIComponent(skill.id)}`), { method: "DELETE" });
+      renderSkills(assistant, (await api(assistantPath(assistant))).skills);
+    }));
+    return row;
+  }) : [el("span", "control-hint", "None.")]));
+}
+
+/** Its instructions and skills are read from its host when the box opens: the list does not carry them. */
+async function openEditor(assistant) {
+  const detail = await api(assistantPath(assistant));
   editing = assistant;
-  editorTitle.textContent = `Change ${assistant.name}`;
-  nameInput.value = assistant.name;
-  instructionsInput.value = assistant.instructions ?? "";
+  editorTitle.textContent = `Change ${detail.name}`;
+  nameInput.value = detail.name;
+  instructionsInput.value = detail.instructions;
+  renderSkills(assistant, detail.skills);
   editor.showModal();
 }
 
@@ -94,6 +113,8 @@ document.body.append(editor, log);
 function describe(event) {
   const details = event.details ?? {};
   if (event.eventType === "cluster-assistant.asked") return `${details.askerName ?? "Someone"} asked it${details.purpose ? `: ${details.purpose}` : ""}`;
+  if (event.eventType === "cluster-assistant.skill-removed") return `${details.by ?? "Someone"} removed the skill ${details.skill ?? ""}`;
+  if (event.eventType === "cluster-assistant.deleted") return `${details.by ?? "Someone"} deleted it`;
   if (event.eventType === "cluster-assistant.changed") return `${details.by ?? "Someone"} changed ${[details.renamed ? "its name" : "", details.instructionsChanged ? "its instructions" : ""].filter(Boolean).join(" and ") || "nothing"}`;
   if (event.eventType === "cluster-assistant.created") return `Created as "${details.name ?? ""}"`;
   return EVENT_WORDS[event.eventType] ?? event.eventType;

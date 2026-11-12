@@ -13,6 +13,11 @@ function database(): DatabaseSync {
   return db;
 }
 
+/** A machine that never had an assistant has no assistants table yet, and so hosts no cluster assistant. */
+function hasAssistants(db: DatabaseSync): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='personal_assistants'").get());
+}
+
 const COLUMNS = "c.assistant_id assistantId, c.cluster_id clusterId, c.created_by createdBy, c.created_at createdAt";
 
 export function markClusterAssistant(assistantId: string, clusterId: string, createdBy: string): void {
@@ -21,12 +26,24 @@ export function markClusterAssistant(assistantId: string, clusterId: string, cre
 
 /** The cluster an assistant on this machine was made for; undefined for a person's own assistant, or one that was deleted. */
 export function clusterAssistant(assistantId: string): ClusterAssistantRecord | undefined {
-  return database().prepare(`SELECT ${COLUMNS} FROM cluster_assistants c JOIN personal_assistants a ON a.id = c.assistant_id WHERE c.assistant_id = ?`).get(assistantId) as ClusterAssistantRecord | undefined;
+  const db = database();
+  if (!hasAssistants(db)) return undefined;
+  return db.prepare(`SELECT ${COLUMNS} FROM cluster_assistants c JOIN personal_assistants a ON a.id = c.assistant_id WHERE c.assistant_id = ?`).get(assistantId) as ClusterAssistantRecord | undefined;
 }
 
 /** The cluster assistants this machine hosts, oldest first. */
 export function hostedClusterAssistants(): ClusterAssistantRecord[] {
-  return database().prepare(`SELECT ${COLUMNS} FROM cluster_assistants c JOIN personal_assistants a ON a.id = c.assistant_id ORDER BY c.created_at, c.assistant_id`).all() as unknown as ClusterAssistantRecord[];
+  const db = database();
+  if (!hasAssistants(db)) return [];
+  return db.prepare(`SELECT ${COLUMNS} FROM cluster_assistants c JOIN personal_assistants a ON a.id = c.assistant_id ORDER BY c.created_at, c.assistant_id`).all() as unknown as ClusterAssistantRecord[];
+}
+
+/** The cluster whose assistants live in this project; undefined for any other project. Every conversation in it is a cluster assistant's. */
+export function clusterOfAssistantsProject(projectId: string): string | undefined {
+  const db = database();
+  if (!hasAssistants(db)) return undefined;
+  const row = db.prepare("SELECT c.cluster_id clusterId FROM cluster_assistants c JOIN personal_assistants a ON a.id = c.assistant_id WHERE a.project_id = ? LIMIT 1").get(projectId) as { clusterId: string } | undefined;
+  return row?.clusterId;
 }
 
 export function forgetClusterAssistant(assistantId: string): void {

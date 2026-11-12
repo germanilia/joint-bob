@@ -38,6 +38,7 @@ test("the Assistants tab lists cluster assistants; those who manage one edit it,
     const remote = { ...hosted, id: "22222222-2222-4222-8222-222222222222", name: "Scheduler", machineName: "Laptop", local: false, canManage: false, instructions: null };
     window.__list = [hosted, remote];
     window.__sent = [];
+    window.__skills = [{ id: "33333333-3333-4333-8333-333333333333", name: "poster" }];
     const originalFetch = window.fetch;
     const reply = (body) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
     window.fetch = async (...args) => {
@@ -47,6 +48,8 @@ test("the Assistants tab lists cluster assistants; those who manage one edit it,
         { id: "e2", eventType: "cluster-assistant.asked", actorId: "a2", details: { askerName: "maya", purpose: "this week's post" }, createdAt: "2026-11-12T10:00:00.000Z" },
         { id: "e1", eventType: "cluster-assistant.created", actorId: "a1", details: { name: "Poster" }, createdAt: "2026-11-12T09:00:00.000Z" },
       ] });
+      if (method === "GET" && url.startsWith("/api/control-center/cluster-assistants/")) return reply({ name: "Poster", instructions: "Draft only.", skills: window.__skills });
+      if (url.includes("/skills/")) { window.__sent.push({ method, url, body: null }); window.__skills = []; return reply({ done: true }); }
       if (url.startsWith("/api/control-center/cluster-assistants/")) {
         window.__sent.push({ method, url, body: args[1].body ? JSON.parse(String(args[1].body)) : null });
         if (method === "DELETE") window.__list = window.__list.slice(1);
@@ -77,16 +80,22 @@ test("the Assistants tab lists cluster assistants; those who manage one edit it,
   // Editing sends the name and the instructions.
   await rows.nth(0).getByTestId("control-cluster-assistant-edit").click();
   assert.equal(await page.getByTestId("control-cluster-assistant-instructions").inputValue(), "Draft only.");
+  // Its own skills are listed there, and one can be removed.
+  await page.getByTestId("control-cluster-assistant-skill-remove").click();
+  await page.locator("#confirmDialog[open] button", { hasText: "Remove" }).click();
+  await sent(page, 1);
+  await page.locator('[data-testid="control-cluster-assistant-skills"]', { hasText: "None." }).waitFor();
   await page.getByTestId("control-cluster-assistant-name").fill("Team poster");
   await page.getByTestId("control-cluster-assistant-instructions").fill("Draft only; never publish.");
   await page.getByTestId("control-cluster-assistant-save").click();
-  await sent(page, 1);
+  await sent(page, 2);
 
   // Deleting asks first, in the app's own dialog.
   await rows.nth(0).getByTestId("control-cluster-assistant-delete").click();
-  await page.locator("dialog[open] button", { hasText: "Delete" }).click();
-  await sent(page, 2);
+  await page.locator("#confirmDialog[open] button", { hasText: "Delete" }).click();
+  await sent(page, 3);
   assert.deepEqual(await page.evaluate("window.__sent"), [
+    { method: "DELETE", url: "/api/control-center/cluster-assistants/11111111-1111-4111-8111-111111111111/skills/33333333-3333-4333-8333-333333333333", body: null },
     { method: "PUT", url: "/api/control-center/cluster-assistants/11111111-1111-4111-8111-111111111111", body: { name: "Team poster", instructions: "Draft only; never publish." } },
     { method: "DELETE", url: "/api/control-center/cluster-assistants/11111111-1111-4111-8111-111111111111", body: null },
   ]);

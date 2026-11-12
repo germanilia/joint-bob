@@ -21,7 +21,7 @@ test("automations without an explicit profile resolve the creator's inherited po
   const pool = { id: "pool", name: "inherited", fallbackModels: {} };
   const boundaries = new Proxy({
     getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}),
-    projectClusterIds: () => ["cluster"], resolveClusterSubscriptionPools: () => [],
+    projectClusterIds: () => ["cluster"], clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => [],
     resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
       requests.push({ account, provider, scope, usage });
       return { kind: "pool", pool };
@@ -73,7 +73,7 @@ for (const scope of ["project", "workspace", "cluster", "none"] as const) {
       nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
       getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}),
       projectClusterIds: () => ["cluster"],
-      resolveClusterSubscriptionPools: () => scope === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
+      clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => scope === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
       resolveSubscriptionChoice: (_account: string, _provider: string, requestedScope: any) => {
         assert.equal(_account, "owner");
         lookups.push(requestedScope);

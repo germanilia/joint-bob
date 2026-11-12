@@ -99,3 +99,4 @@
 .control-cluster-asst-card textarea { width: 100%; resize: vertical; }
 .control-cluster-asst-log { display: grid; gap: 6px; max-height: min(420px, 60dvh); overflow: auto; }
 .control-cluster-asst-event { display: grid; gap: 1px; font-size: 13px; }
+.control-cluster-asst-skill { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

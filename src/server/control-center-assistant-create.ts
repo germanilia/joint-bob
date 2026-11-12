@@ -6,6 +6,9 @@ import { announceAssistantChanges } from "../assistant-collaboration/twin-sync.j
 import { accountInCluster } from "../cluster-accounts.js";
 import { markClusterAssistant } from "../cluster-assistants.js";
 import { getClusterNode } from "../cluster.js";
+import { clusterHasSubscription, clusterSubscriptionMissing } from "../provider-profiles/cluster-assistant-subscriptions.js";
+import { getSettings } from "../settings.js";
+import { profileProviderForRuntime } from "./harness-chat.js";
 import { getSharingCluster } from "../cluster-sharing-policy.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { auditClusterAssistantCreated } from "./cluster-assistants.js";
@@ -46,12 +49,16 @@ export const clusterAssistantsProject = (clusterName: string): string => `${ASSI
  * Where a new assistant lives. A person's own go to their private Assistants project. A cluster's go to that cluster's project,
  * shared with the cluster: its members can read its conversations, and its turns run on the cluster's subscriptions.
  */
-async function projectFor(accountId: string, clusterId: string | undefined): Promise<ProjectRecord> {
+async function projectFor(accountId: string, clusterId: string | undefined, harnessId: HarnessId): Promise<ProjectRecord> {
   if (!clusterId) return ownProject(accountId, ASSISTANTS_PROJECT);
   const db = await clusterV2Database();
   if (!accountInCluster(db, accountId, clusterId)) throw new Error("You are not in that cluster on this machine");
   const cluster = getSharingCluster(db, clusterId);
   if (cluster.closed) throw new Error("That cluster is closed");
+  // It may only ever run on the cluster's subscriptions, so it is not made before the cluster has one for its agent.
+  const provider = profileProviderForRuntime(getSettings().conversationDefaults[harnessId]?.provider ?? harnessId);
+  const providers = [...(harnessId === "pi" ? ["pi" as const] : []), ...(provider ? [provider] : [])];
+  if (!clusterHasSubscription(db, clusterId, accountId, providers)) throw new Error(clusterSubscriptionMissing(db, clusterId));
   const project = await ownProject(accountId, clusterAssistantsProject(cluster.name));
   await shareProjectWithCluster(clusterId, project.id);
   return project;
@@ -64,8 +71,8 @@ async function projectFor(accountId: string, clusterId: string | undefined): Pro
  */
 export async function createAssistantWithSetup(session: AuthSession, settings: BobSettings, name: string, purpose: string, clusterId?: string): Promise<{ project: ProjectRecord; assistantId: string }> {
   if ((await listPersonalAssistants(session.accountId)).some((assistant) => assistant.name.toLowerCase() === name.toLowerCase())) throw new Error(`You already have an assistant called "${name}"`);
-  const project = await projectFor(session.accountId, clusterId);
   const harnessId = (settings.harnessId || iconHarnessId()) as HarnessId;
+  const project = await projectFor(session.accountId, clusterId, harnessId);
   const sessionId = randomUUID();
   await ensureConversationRecord(project.id, harnessId, sessionId, (await getClusterNode()).id);
   await ensureSessionTitle(sessionId, name);
