@@ -307,17 +307,23 @@ export async function markConversationDoneAsActor(projectId: string, raw: unknow
     await setSessionFeedback(payload.sessionId, null);
     await setSessionDone(payload.sessionId, false);
   }
-  const cleanup = payload.done && !await feedbackPending(project.id) ? await cleanupDone(project) : undefined;
+  // The mark is durable now. Filesystem scans and peer checks must not delay its reply.
+  if (payload.done) setImmediate(() => { void cleanupDone(project); });
   broadcastToProject(project.id, { type: "sessionsChanged" });
-  return { ...cleanup };
+  return { deletedWorktreeIds: [], retainedWorktrees: {} };
 }
 
 const feedbackPending = async (projectId: string): Promise<boolean> => Object.values(await sessionFeedbackOverrides()).some((record) => record.projectId === projectId && record.status !== "complete");
 
-const cleanupDone = (project: ProjectRecord) => cleanupDoneWorktrees(project).catch((error) => {
-  console.warn("Done worktree cleanup failed", error);
-  return undefined;
-});
+const cleanupDone = async (project: ProjectRecord): Promise<void> => {
+  try {
+    await withProjectRuntime(project.id, async () => {
+      if (!await feedbackPending(project.id)) await cleanupDoneWorktrees(project);
+    });
+  } catch (error) {
+    console.warn("Done worktree cleanup failed", error);
+  }
+};
 
 app.put("/api/projects/:projectId/sessions/done", async (request, response, next) => {
   try {

@@ -63,7 +63,14 @@ test("the chat More menu closes a conversation out without a nested menu", { tim
     await page.locator(".toast-message").first().waitFor();
     assert.equal(await page.locator(".toast-message").first().innerText(), "Conversation marked done");
 
-    assert.equal(await page.getByTestId("chat-done-button").locator(".chat-action-label").textContent(), "Mark not done", "the label follows the conversation");
+    assert.equal(await page.locator("body").evaluate(body => body.classList.contains("view-sessions")), true, "Done returns to the conversation list on mobile");
+    assert.equal(await page.locator("#sessionTitle").textContent(), "Select a conversation", "Done closes the chat");
+    assert.equal(await doneButton.isDisabled(), true, "there is no active conversation left to close");
+    await page.getByTestId("show-done-conversations-toggle").check();
+    await row.locator(".session-done-badge").waitFor();
+    await row.locator("button").first().click();
+    await page.locator("#sessionTitle").filter({ hasText: "Short one" }).waitFor();
+    assert.equal(await doneButton.locator(".chat-action-label").textContent(), "Mark not done", "a reopened done conversation can still be marked not done");
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

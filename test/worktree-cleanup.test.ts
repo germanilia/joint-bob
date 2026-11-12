@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { promises as fs } from "node:fs";
 import { access, mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { ensureConversationRecord } from "../src/conversation-records.js";
 import { holdEndedRun, releaseEndedRun } from "../src/conversation-runtime.js";
-import { setSessionDone } from "../src/names.js";
-import { createProjectWorktree, markWorktreeConversation, recordWorktreePullRequest } from "../src/project-worktrees.js";
+import { sessionDoneOverrides, setSessionDone } from "../src/names.js";
+import { createProjectWorktree, markWorktreeConversation, projectWorktreeRoot, recordWorktreePullRequest } from "../src/project-worktrees.js";
 import { cleanupDoneWorktrees, sweepWorktrees } from "../src/server/worktree-cleanup.js";
 import { addProject } from "../src/store.js";
 
@@ -31,6 +32,31 @@ async function fixture(context: test.TestContext, verified = true) {
   }
   return { project, worktree, sessionId };
 }
+
+test("Done saves and returns while worktree cleanup is still blocked", { timeout: 30_000 }, async (context) => {
+  const { markConversationDoneAsActor } = await import("../src/server/routes/projects.js");
+  const { project, sessionId } = await fixture(context, false);
+  const directory = projectWorktreeRoot(project.id);
+  const readdir = fs.readdir.bind(fs);
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  context.mock.method(fs, "readdir", async (...args: Parameters<typeof fs.readdir>) => {
+    if (args[0] === directory) { started.resolve(); await release.promise; }
+    return readdir(...args);
+  });
+  let returned = false;
+  const save = markConversationDoneAsActor(project.id, { sessionId, engine: "pi", done: true }).then(result => { returned = true; return result; });
+  try {
+    await started.promise;
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(returned, true, "the saved Done mark must not wait for cleanup I/O");
+    assert.ok((await sessionDoneOverrides())[sessionId], "Done is persisted before the reply");
+  } finally {
+    release.resolve();
+    await save;
+    await cleanupDoneWorktrees(project);
+  }
+});
 
 test("cleanup handles old done marks, keeps new empty worktrees, and is idempotent", async (context) => {
   const { project, worktree, sessionId } = await fixture(context);

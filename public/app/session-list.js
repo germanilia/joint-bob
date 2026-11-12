@@ -21,7 +21,7 @@ import { openSecretScope } from "./secrets.js";
 import { labelIcon, labelOptionText } from "./classification.js";
 import { openConversationClassificationDialog, openConversationColorDialog, openRenameDialog, sessionEngine } from "./session-identity.js";
 import { autoRespondBadge, isSessionPinned, nestedSessionRows, togglePinnedSession } from "./session-rows.js";
-import { loadWorktrees, otherWorktreesSection, worktreeBadge, worktreeDeleting, worktreeSectionHeader, worktreesHeading } from "./worktrees.js";
+import { otherWorktreesSection, worktreeBadge, worktreeDeleting, worktreeSectionHeader, worktreesHeading } from "./worktrees.js";
 import { confirmAction, enableNotifications, formatDate, toast } from "./shell.js";
 import { closeSocket, refreshSessionsQuietly } from "./socket.js";
 import { chooseTransferDestination } from "./session-transfer.js";
@@ -574,36 +574,31 @@ async function transferSessionFromRow(session, sessionActive) {
   toast(`Conversation ${choice.mode === "move" ? "moved" : "copied"} to ${destination?.name ?? "the project"}`);
 }
 
-/**
- * Closing a conversation out is list housekeeping, so it works on read-only rows too. The row
- * moves at once; the server also clears out worktrees left with only done conversations,
- * which can take seconds, and reports what it removed or kept when it is finished.
- */
+/** Closing Done hides the row and closes its chat immediately. Cleanup runs on the server
+ * without holding up the save; a refusal restores the row and, if still empty, the chat. */
 async function toggleSessionDone(session) {
   const done = !session.doneAt;
   const projectId = state.activeProjectId;
   const engine = sessionEngine(session);
   const feedback = done ? await chooseConversationFeedback(session) : undefined;
-  if (done && !feedback) return;
+  if ((done && !feedback) || state.activeProjectId !== projectId) return;
+  const active = activeChatSession();
+  const closeActive = done && active && (active.conversationId || active.id) === (session.conversationId || session.id);
+  if (closeActive) clearActiveSession();
   toast(done ? (feedback.rating === "unimportant" ? "Conversation marked done" : "Conversation marked done; learning from it in the background") : "Conversation reopened");
-  let result;
   try {
-    result = await changeSessionOptimistically(session, { patch: { doneAt: done ? new Date().toISOString() : undefined } }, () => api(`/api/projects/${encodeURIComponent(projectId)}/sessions/done`, {
+    await changeSessionOptimistically(session, { patch: { doneAt: done ? new Date().toISOString() : undefined } }, () => api(`/api/projects/${encodeURIComponent(projectId)}/sessions/done`, {
       method: "PUT",
       body: JSON.stringify({ sessionId: session.conversationId || session.id, engine, done, ...(feedback ? { feedback } : {}) }),
     }), renderSessions);
   } catch (error) {
+    if (closeActive && state.activeProjectId === projectId && !state.activeSessionPath && !state.activeSessionId) {
+      openListedSession(active, { keepView: document.body.classList.contains("view-control") });
+    }
     throw new Error(`${done ? "Could not mark the conversation done" : "Could not reopen the conversation"}: ${error.message}`);
   }
   if (done && feedback.rating !== "unimportant") learning.set(session.conversationId || session.id, projectId);
-  if (state.activeProjectId !== projectId) return;
-  void refreshSessionsQuietly();
-  state.worktreeCleanupReasons = result.retainedWorktrees || {};
-  const deleted = result.deletedWorktreeIds?.length;
-  if (deleted) await loadWorktrees();
-  renderSessions();
-  const retained = result.retainedWorktrees?.[session.worktree?.id];
-  if (retained || deleted) toast(retained || "Empty worktrees deleted");
+  if (state.activeProjectId === projectId) void refreshSessionsQuietly();
 }
 
 async function toggleSessionReviewNotifications(session) {
@@ -626,7 +621,7 @@ function clearActiveSession() {
   if (state.preferencesLoaded) savePreferencesInBackground({ activeSessionPath: null, activeSessionId: null });
   elements.sessionTitle.textContent = "Select a conversation";
   setComposerEnabled(false);
-  setMobileView("sessions");
+  if (!document.body.classList.contains("view-control")) setMobileView("sessions");
 }
 
 async function removeSessionFromRow(session, sessionActive) {

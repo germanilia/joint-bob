@@ -11,11 +11,13 @@ import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "../d
 /** Holds every matching request until the test lets it through, or answers it with an error. */
 function gate() {
   const held: Route[] = [];
+  let arrival = Promise.withResolvers<void>();
   return {
-    handle: (route: Route) => { held.push(route); },
+    handle: (route: Route) => { held.push(route); arrival.resolve(); },
+    wait: async () => { if (!held.length) await arrival.promise; },
     count: () => held.length,
-    pass: async () => { for (const route of held.splice(0)) await route.continue(); },
-    refuse: async (error: string) => { for (const route of held.splice(0)) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error }) }); },
+    pass: async () => { for (const route of held.splice(0)) await route.continue(); arrival = Promise.withResolvers<void>(); },
+    refuse: async (error: string) => { for (const route of held.splice(0)) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error }) }); arrival = Promise.withResolvers<void>(); },
   };
 }
 
@@ -49,26 +51,50 @@ test("conversation actions change the row before the server answers and undo on 
     const row = page.locator(`#sessionList [data-session-path="${target.path}"]`);
     await row.waitFor();
 
+    await row.locator(".session-card").click();
+    await page.waitForFunction(async (id) => (await import("/app/state.js" as string)).state.activeSessionId === id, target.id);
     const done = gate();
     await page.route("**/sessions/done", done.handle);
+
+    // Cancelling feedback must leave the open chat untouched.
+    await page.getByTestId("chat-done-button").click();
+    await page.getByTestId("conversation-feedback-dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+    assert.equal(await page.evaluate(async () => (await import("/app/state.js" as string)).state.activeSessionId), target.id);
+    assert.equal(done.count(), 0);
+
+    // A failed save restores the chat as well as its row.
+    await page.getByTestId("chat-done-button").click();
+    await page.getByTestId("conversation-feedback-submit").click();
+    await row.waitFor({ state: "detached" });
+    assert.equal(await page.evaluate(async () => (await import("/app/state.js" as string)).state.activeSessionId), null, "Done closes the chat before the server answers");
+    await done.wait();
+    await done.refuse("Done marks are unavailable");
+    await page.getByText(/^Could not mark the conversation done: .*Done marks are unavailable$/).waitFor();
+    await row.waitFor();
+    await page.waitForFunction(async (id) => (await import("/app/state.js" as string)).state.activeSessionId === id, target.id);
+
     await row.getByTestId("session-menu-button").click();
     await page.getByTestId("session-done-button").click();
     await page.getByTestId("conversation-feedback-submit").click();
     await row.waitFor({ state: "detached" });
+    await done.wait();
     assert.equal(done.count(), 1, "the row left the list while the server had not answered");
+    assert.equal(await page.evaluate(async () => (await import("/app/state.js" as string)).state.activeSessionId), null, "row-menu Done also closes the active chat");
     // A list asked for before the server saved the mark must not bring the row back.
     await page.evaluate(async () => (await import("/app/socket.js")).refreshSessionsQuietly());
     assert.equal(await row.count(), 0, "a refresh in flight keeps the pending mark");
+    const saved = page.waitForResponse((response) => response.url().endsWith("/sessions/done"));
     await done.pass();
-    await page.waitForResponse((response) => response.url().endsWith("/sessions/done"));
+    await saved;
 
     await page.getByTestId("show-done-conversations-toggle").check();
     await row.locator(".session-done-badge").waitFor();
     await row.getByTestId("session-menu-button").click();
     await page.getByTestId("session-done-button").click();
     await row.locator(".session-done-badge").waitFor({ state: "detached" });
+    await done.wait();
     await done.refuse("Done marks are unavailable");
-    await page.getByText("Could not reopen the conversation: Done marks are unavailable", { exact: true }).waitFor();
+    await page.getByText(/^Could not reopen the conversation: .*Done marks are unavailable$/).waitFor();
     await row.locator(".session-done-badge").waitFor();
     await page.unroute("**/sessions/done");
 
@@ -79,9 +105,10 @@ test("conversation actions change the row before the server answers and undo on 
     await page.locator("#confirmDialog[open]").waitFor();
     await page.locator("#confirmAcceptButton").click();
     await row.waitFor({ state: "detached" });
+    await removal.wait();
     assert.equal(removal.count(), 1, "the row left the list while the delete was in flight");
     await removal.refuse("Conversation owner is unavailable");
-    await page.getByText("Could not remove the conversation: Conversation owner is unavailable", { exact: true }).waitFor();
+    await page.getByText(/^Could not remove the conversation: .*Conversation owner is unavailable$/).waitFor();
     await row.waitFor();
     assert.equal((await api<{ sessions: SessionSummary[] }>(node, auth, "GET", `/projects/${project.id}/sessions`)).body.sessions.some((entry) => entry.path === target.path), true, "nothing was deleted");
     assert.deepEqual(errors, []);
