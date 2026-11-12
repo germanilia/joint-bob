@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.280.0 — 2026-11-12
 
 - **New conversation** in the control center is now a wizard: project, then title and content, agent, where it runs, and secret accounts. Enter moves to the next field and then the next step, Shift+Enter adds a line, and ⌘/Ctrl+Enter starts the conversation at once. **Control+Option+Shift+N** opens it from anywhere (change it in Settings → Shortcuts).
 
