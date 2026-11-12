@@ -13,18 +13,38 @@ import { forgetHarnessReadiness } from '../../background-agent.js';
 import { requireAdmin } from '../admin.js';
 import { sendError } from '../http-auth.js';
 import { app } from '../state.js';
+import { readFileSync } from 'node:fs';
+import { clusterV2Database } from '../../cluster-v2-store.js';
+import { listMemberships, servingSettings } from '../../relay/store.js';
+import { relayPolicyLabel } from '../../relay/resource-policy.js';
+import { readRoutingDefaults } from '../../routing-policy.js';
+
+/** The daily routing review's instructions ship with the app (scripts/ is in the package). */
+function reviewInstructions(file: string): string {
+  return readFileSync(new URL(`../../../scripts/routing-review/${file}`, import.meta.url), 'utf8');
+}
+
+async function routingView(system: ReturnType<typeof systemAiSettings>, localKey: boolean) {
+  const db = await clusterV2Database();
+  const relays = listMemberships(db).filter(relay => relay.status === 'admitted' && relay.relayNodeId).map(relayPolicyLabel);
+  const source = localKey ? 'This machine classifies with its own decision credential.'
+    : relays.length ? `No decision credential here: routing asks ${relays.join(', ')} when it shares its decision model.`
+      : 'No decision credential here and no relay to ask: prompts are not routed.';
+  return { ...system.routing, servesRelay: servingSettings(db).enabled, source, defaults: readRoutingDefaults(),
+    instructions: { qualityReview: reviewInstructions('quality-review.md'), routingUpdate: reviewInstructions('routing-update.md') } };
+}
 
 const inputSchema = z.object({ system: systemAiSchema, backgroundAgent: backgroundAgentSchema.optional(), syncCheck: syncCheckSchema.optional(), dashboards: dashboardAgentSchema.optional() }).strict();
 async function view() {
   const system = systemAiSettings(), settings = nodeSettings(), node = await getClusterNode();
-  let decision = 'System decision credential is available on this machine.';
+  let decision = 'System decision credential is available on this machine.', localKey = true;
   try { systemDecisionKey(system.decision.model); }
-  catch (error) { decision = (error as Error).message; }
+  catch (error) { decision = (error as Error).message; localKey = false; }
   const owner = adminAccountId();
   return { system, backgroundAgent: settings.backgroundAgent, syncCheck: settings.syncCheck, dashboards: settings.dashboards,
     node: { id: node.id, name: node.name }, secrets: systemSecretAccounts(),
     profiles: owner ? listProviderProfiles(owner).filter(profile => profile.owner === owner).map(({ id, label, provider }) => ({ id, label, provider })) : [],
-    readiness: { decision } };
+    readiness: { decision }, routing: await routingView(system, localKey) };
 }
 
 app.get('/api/system-ai', requireAdmin, async (_request, response, next) => {

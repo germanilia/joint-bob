@@ -5470,6 +5470,10 @@ body:not(.node-admin) [data-admin-only] { display: none !important; }
 .system-ai-panel output, #systemAiNode { overflow-wrap: anywhere; }
 .system-ai-panel .checkbox-row input[type="checkbox"] { width: auto; flex: 0 0 auto; }
 .system-ai-panel fieldset > div { display: grid; gap: 8px; }
+.system-ai-routing-instructions { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; font-size: 0.85em; }
+.system-ai-routing-defaults { margin: 8px 0 0; overflow-wrap: anywhere; }
+.system-ai-routing-defaults dt { font-weight: 600; margin-top: 8px; }
+.system-ai-routing-defaults dd { margin: 2px 0 0 12px; }
 @media (max-width: 600px) {
   .quality-filters { grid-template-columns: minmax(0, 1fr); }
   .quality-actions > label { flex-basis: 100%; }

@@ -24,6 +24,13 @@ test('System AI selects unattached credentials, replicates between twins, and le
     const system = initial.body.system;
     system.decision.typesafeAccountId = created.body.account.id;
     system.quality.modelId = 'quality-fixture';
+    system.routing = { enabled: false, shareWithRelay: true };
+    const routingView = (initial.body as unknown as { routing: { enabled: boolean; servesRelay: boolean; source: string; defaults: { reviewedAt: string; categories: unknown[] }; instructions: { qualityReview: string; routingUpdate: string } } }).routing;
+    assert.equal(routingView.servesRelay, false);
+    assert.match(routingView.defaults.reviewedAt, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(routingView.defaults.categories.length >= 1);
+    assert.match(routingView.instructions.qualityReview, /routing-review/);
+    assert.match(routingView.instructions.routingUpdate, /routing-defaults\.json/);
     const agent = { harnessId: 'claude', provider: 'claude', modelId: 'system-fixture', thinkingLevel: 'low' };
     const saved = await api(a, authA, 'PUT', '/system-ai', { system, backgroundAgent: agent });
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
@@ -39,6 +46,15 @@ test('System AI selects unattached credentials, replicates between twins, and le
       await new Promise(resolve => setTimeout(resolve, 250));
     } while (Date.now() < until);
     assert.deepEqual(received!.body.system, system);
+    assert.deepEqual(received!.body.system.routing, { enabled: false, shareWithRelay: true }, 'routing settings follow the twin');
+    const keyUntil = Date.now() + 60000;
+    let twinReadiness: string;
+    do {
+      twinReadiness = (await api<{ readiness: { decision: string } }>(b, authB, 'GET', '/system-ai')).body.readiness.decision;
+      if (/available on this machine/.test(twinReadiness)) break;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    } while (Date.now() < keyUntil);
+    assert.match(twinReadiness, /available on this machine/, 'the decision key itself reaches the twin');
     assert.deepEqual(received!.body.backgroundAgent, agent);
     for (const node of [a, b]) {
       const auth = node === a ? authA : authB;
