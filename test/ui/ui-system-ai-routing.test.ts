@@ -32,10 +32,10 @@ test('System AI shows model routing and its defaults, without daily review instr
   await page.getByTestId('system-ai-routing-enabled').waitFor();
   assert.match(await page.getByTestId('system-ai-routing-source').innerText(), /asks relay\.example/);
   assert.match(await page.getByTestId('system-ai-routing-reviewed').innerText(), /2026-11-11.*Synthetic review notes/s);
-  await panel.getByText('Default models, cheapest first').click();
+  await panel.getByText('Default models, in the order they are tried').click();
   const candidates = await page.getByTestId('system-ai-routing-defaults').innerText();
   assert.match(candidates, /Terminal and git work/);
-  assert.match(candidates, /zai · glm-fixture · medium[\s\S]*openai-codex · gpt-6-luna · medium/, 'candidates are listed cheapest first');
+  assert.match(candidates, /zai · glm-fixture · medium[\s\S]*openai-codex · gpt-6-luna · medium/, 'candidates are listed in the order they are tried');
   assert.equal(await panel.getByText(/review instructions/i).count(), 0, 'no daily review instructions in the app');
   assert.doesNotMatch(await page.getByTestId('system-ai-routing-hint').innerText(), /Homeserver|reviewed daily/);
   // Each change saves on its own through System AI's endpoint.

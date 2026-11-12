@@ -14,13 +14,13 @@ Null operation overrides retain existing summary-writer behavior, and an unselec
 
 ## Model routing
 
-Bob auto picks a model for each prompt: the cheapest one that does the job, on the conversation's own agent. It never moves a conversation to another agent. The classifier (TypeSafe or Laya) uses the decision credential above, never a project's attached secrets. Because System AI settings and admin-owned secret accounts follow trusted twins, setting the key once on one twin is enough.
+Bob auto picks a model for each prompt: one good enough for the job, on the conversation's own agent, preferring a subscription over API billing and then the cheapest. It never moves a conversation to another agent. The classifier (TypeSafe or Laya) uses the decision credential above, never a project's attached secrets. Because System AI settings and admin-owned secret accounts follow trusted twins, setting the key once on one twin is enough.
 
 - **Route prompts with the Joint Bob default on this machine** turns the default routing on or off here. Named routing configurations people chose themselves are not affected.
 - **Let machines on this relay use this decision model** appears only on a machine that serves a relay. A machine using the relay that has no decision credential of its own then sends the prompt text and the routing choices to the relay, which classifies them with its own key and returns only the answer. The key never leaves the relay. A relay that is off, refuses or cannot be reached is not asked again for ten minutes; the prompt then runs on its current model.
-- The section shows where decisions come from on this machine, and the default models for each kind of task, cheapest first. When the first model cannot run here (not installed, not signed in, rejected), the next one is tried. If none can, the model is left as it is and the reason is recorded.
+- The section shows where decisions come from on this machine, and the default models for each kind of task in the order they are tried, with each model's billing and score. When the first model cannot run here (not installed, not signed in, rejected), the next one is tried. If none can, the model is left as it is and the reason is recorded.
 
-The defaults live in `src/routing-defaults.json` and ship with each release.
+The defaults live in `src/routing-defaults.json` and ship with each release. For every harness the file lists its models with billing (subscription or API), API price and a 0–100 score per task level taken from public evals, citing their sources. A level's candidates are the models scoring at least its `minimumScore`: subscription first, then cheapest (input and output price blended 3:1), then strongest; when none qualifies, the strongest come first. Pi routes only to its Codex and Z.ai subscriptions. Kiro and Antigravity route only the thinking level on their default model. A custom configuration's candidates are also tried subscription first.
 
 ## Saving and conversation feedback
 

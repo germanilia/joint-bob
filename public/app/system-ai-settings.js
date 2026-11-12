@@ -35,7 +35,7 @@ function paragraph(box, text, testid) {
     Returns the value to save. */
 function renderRouting(routing) {
   const box = fieldset('Model routing');
-  paragraph(box, 'Bob auto picks the cheapest model that does the job, on the conversation\'s own agent. The defaults ship with each release.', 'system-ai-routing-hint');
+  paragraph(box, 'Bob auto picks a model good enough for the job on the conversation\'s own agent: subscription before API, then the cheapest. Scores come from public evals and ship with each release.', 'system-ai-routing-hint');
   const enabled = checkbox(box, 'Route prompts with the Joint Bob default on this machine', 'system-ai-routing-enabled', routing.enabled);
   const share = routing.servesRelay ? checkbox(box, 'Let machines on this relay use this decision model', 'system-ai-routing-share', routing.shareWithRelay) : null;
   paragraph(box, routing.source, 'system-ai-routing-source');
@@ -45,11 +45,11 @@ function renderRouting(routing) {
     const term = document.createElement('dt'); term.textContent = category.description; list.append(term);
     for (const [harness, candidates] of Object.entries(category.candidates)) {
       const detail = document.createElement('dd');
-      detail.textContent = `${harness}: ${candidates.map(item => [item.provider, item.modelId, item.thinkingLevel].filter(Boolean).join(' · ')).join(' → ')}`;
+      detail.textContent = `${harness}: ${candidates.map(item => [item.provider, item.modelId, item.thinkingLevel, item.billing, item.score === undefined ? '' : `score ${item.score}`].filter(Boolean).join(' · ')).join(' → ')}`;
       list.append(detail);
     }
   }
-  const models = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Default models, cheapest first';
+  const models = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Default models, in the order they are tried';
   models.append(summary, list); box.append(models);
   return () => ({ enabled: enabled.checked, shareWithRelay: share ? share.checked : routing.shareWithRelay });
 }

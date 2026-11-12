@@ -1,30 +1,65 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultRoutingPolicy, readRoutingDefaults, routingPolicySchema, validateRoutingPolicy, type RoutingPolicy } from "../src/routing-policy.js";
+import { defaultRoutingPolicy, readRoutingDefaults, routingDefaultsSchema, routingPolicySchema, scoredCandidates, subscriptionFirst, validateRoutingPolicy, type RoutingPolicy } from "../src/routing-policy.js";
 
-test("routing-defaults.json parses and every candidate passes validateRoutingPolicy", () => {
+test("routing-defaults.json parses, every model cites its evidence, and the generated policy validates", () => {
   const defaults = readRoutingDefaults();
   assert.match(defaults.reviewedAt, /^\d{4}-\d{2}-\d{2}$/);
-  assert.ok(defaults.categories.length >= 1);
-  for (const category of defaults.categories) {
-    for (const [harness, candidates] of Object.entries(category.candidates)) assert.ok(candidates.length >= 1, `${harness} level ${category.level} has candidates`);
+  assert.ok(defaults.sources.length >= 1);
+  for (const [harness, models] of Object.entries(defaults.models)) {
+    for (const model of models) assert.ok(model.evidence.trim(), `${harness} ${model.modelId} cites evidence`);
   }
   assert.doesNotThrow(() => validateRoutingPolicy(defaultRoutingPolicy()));
 });
 
-test("defaultRoutingPolicy uses the first candidate as mapping and the rest as fallbacks", () => {
+test("Pi routes only to its subscriptions: Codex and Z.ai", () => {
+  const providers = new Set(readRoutingDefaults().models.pi.map((model) => model.provider));
+  assert.deepEqual([...providers].sort(), ["openai-codex", "zai"]);
+});
+
+test("defaultRoutingPolicy maps each level to its scored candidates, first as mapping, rest as fallbacks", () => {
   const defaults = readRoutingDefaults();
   const policy = defaultRoutingPolicy();
   for (const category of defaults.categories) {
-    for (const [harness, [first, ...rest]] of Object.entries(category.candidates)) {
+    for (const harness of Object.keys(defaults.models)) {
+      const [first, ...rest] = scoredCandidates(defaults, harness, category.level);
       const mapping = policy.harnesses[harness]?.levels[category.level];
+      if (!first) { assert.equal(mapping, undefined); continue; }
       assert.ok(mapping, `${harness} level ${category.level} is mapped`);
-      assert.equal(mapping.modelId, first.modelId);
-      assert.equal(mapping.thinkingLevel, first.thinkingLevel);
-      assert.equal(mapping.description, category.description);
+      assert.deepEqual([mapping.modelId, mapping.thinkingLevel, mapping.description], [first.modelId, first.thinkingLevel, category.description]);
       assert.deepEqual((mapping.fallbacks ?? []).map(({ modelId, thinkingLevel }) => [modelId, thinkingLevel]), rest.map(({ modelId, thinkingLevel }) => [modelId, thinkingLevel]));
     }
   }
+});
+
+const synthetic = routingDefaultsSchema.parse({
+  reviewedAt: "2026-11-12", notes: "", sources: [{ id: "s1", title: "Fixture", url: "https://example.com", date: "2026-11-12" }],
+  categories: [{ level: "6", description: "Complex coding", minimumScore: 70 }],
+  models: { pi: [
+    { provider: "api-cheap", modelId: "api-cheap", billing: "api", priceUsdPerMTok: { input: 0.1, output: 0.1 }, levels: { "6": { score: 90, thinkingLevel: "high" } }, evidence: "s1" },
+    { provider: "sub", modelId: "sub-pricey", billing: "subscription", priceUsdPerMTok: { input: 5, output: 25 }, levels: { "6": { score: 80, thinkingLevel: "high" } }, evidence: "s1" },
+    { provider: "sub", modelId: "sub-cheap", billing: "subscription", priceUsdPerMTok: { input: 1, output: 4 }, levels: { "6": { score: 75, thinkingLevel: "medium" } }, evidence: "s1" },
+    { provider: "sub", modelId: "sub-weak", billing: "subscription", priceUsdPerMTok: { input: 0.1, output: 0.4 }, levels: { "6": { score: 40, thinkingLevel: "low" } }, evidence: "s1" },
+  ] },
+});
+
+test("adequate models are tried subscription first, then cheapest; weaker ones are left out", () => {
+  assert.deepEqual(scoredCandidates(synthetic, "pi", "6").map((item) => item.modelId), ["sub-cheap", "sub-pricey", "api-cheap"]);
+});
+
+test("when no model is good enough for a level, the strongest are tried first", () => {
+  const strict = { ...synthetic, categories: [{ ...synthetic.categories[0], minimumScore: 95 }] };
+  assert.deepEqual(scoredCandidates(strict, "pi", "6").map((item) => item.modelId), ["api-cheap", "sub-pricey", "sub-cheap", "sub-weak"]);
+});
+
+test("subscriptionFirst moves API-billed candidates of a custom configuration after subscription ones", () => {
+  const ordered = subscriptionFirst("pi", [
+    { provider: "anthropic", modelId: "claude-sonnet-5-5" },
+    { provider: "openai-codex", modelId: "gpt-6.1-sol" },
+    { provider: "zai", modelId: "glm-5.3" },
+  ]);
+  assert.deepEqual(ordered.map((item) => item.provider), ["openai-codex", "zai", "anthropic"]);
+  assert.deepEqual(subscriptionFirst("claude", [{ modelId: "sonnet" }, { modelId: "opus" }]).map((item) => item.modelId), ["sonnet", "opus"], "a fixed-provider harness keeps its order");
 });
 
 function piPolicy(fallbacks: unknown[]): RoutingPolicy {

@@ -1,60 +1,564 @@
 {
-  "reviewedAt": "2026-11-11",
-  "notes": "Cheapest adequate first, by API price. Sonnet 5.5 leads complex coding (SWE-Bench Pro 81.3%, half Opus 5.5's price); Fable 5.2 at high effort matches Opus 5.5 at max for about half the cost per task, so it leads planning; GPT-6.1 Sol replaces Astra ($10/$50) as Pi's first pick for hard work. Kiro routes thinking level on its default model; Antigravity is left blank until its model IDs are confirmed.",
+  "reviewedAt": "2026-11-12",
+  "notes": "Scores 0-100 per level from public evals; routing tries models at or above a level's minimum, subscription before API, then cheapest. Pi uses only its Codex and Z.ai subscriptions. Kiro and Antigravity route the thinking level on their default model until their model IDs are listed on a signed-in machine (Kiro offers Claude, GPT-5.6 and GLM models [s12]; Antigravity offers Gemini 4 Carbon/Argon and 3.8 Flash [s14]).",
+  "sources": [
+    {
+      "id": "s1",
+      "title": "Terminal-Bench 4.0 Leaderboard (Vals AI, Mini-SWE-agent harness, avg@3)",
+      "url": "https://www.vals.ai/benchmarks/terminal-bench-4",
+      "date": "2026-11-09"
+    },
+    {
+      "id": "s2",
+      "title": "Claude Fable 5.2 (max) - Artificial Analysis",
+      "url": "https://artificialanalysis.ai/models/claude-fable-5-2",
+      "date": "2026-11"
+    },
+    {
+      "id": "s3",
+      "title": "Best AI Model for Coding, November 2026 (Morph)",
+      "url": "https://www.morphllm.com/best-ai-model-for-coding",
+      "date": "2026-11-09"
+    },
+    {
+      "id": "s4",
+      "title": "Claude Benchmarks (2026): Opus 5.5, Sonnet 5.5, Haiku 5.5 (Morph)",
+      "url": "https://www.morphllm.com/claude-benchmarks",
+      "date": "2026"
+    },
+    {
+      "id": "s5",
+      "title": "GPT-6 API Pricing: Luna, Terra, Sol and Astra Compared (Nadir)",
+      "url": "https://getnadir.com/blog/gpt-6-sol-luna-pricing-terra-retired-routing/",
+      "date": "2026-11-02"
+    },
+    {
+      "id": "s6",
+      "title": "GPT-6.1 Terra vs GPT-6.1 Sol (CometAPI)",
+      "url": "https://www.cometapi.com/gpt-6-1-terra-vs-gpt-6-1-sol/",
+      "date": "2026"
+    },
+    {
+      "id": "s7",
+      "title": "Z.ai pricing (official docs)",
+      "url": "https://docs.z.ai/guides/overview/pricing",
+      "date": "2026-11"
+    },
+    {
+      "id": "s8",
+      "title": "GLM-5.3 Benchmarks Explained (MindStudio)",
+      "url": "https://www.mindstudio.ai/blog/glm-5-3-coding-benchmarks",
+      "date": "2026"
+    },
+    {
+      "id": "s9",
+      "title": "SWE-bench Pro Leaderboard (BenchLM)",
+      "url": "https://benchlm.ai/benchmarks/swe-bench-pro",
+      "date": "2026-11"
+    },
+    {
+      "id": "s10",
+      "title": "SWE-Bench Pro V2 HARD Leaderboard (BenchLM / Scale Labs)",
+      "url": "https://benchlm.ai/benchmarks/scale-swe-bench-pro-public-v2-hard",
+      "date": "2026-11"
+    },
+    {
+      "id": "s11",
+      "title": "Claude Fable 5.2 Benchmarks (Layer3Labs)",
+      "url": "https://www.layer3labs.io/guides/claude-fable-5-2-benchmarks",
+      "date": "2026-11"
+    },
+    {
+      "id": "s12",
+      "title": "Kiro - Available models (official docs)",
+      "url": "https://kiro.dev/docs/models/available-models/",
+      "date": "2026-11-11"
+    },
+    {
+      "id": "s14",
+      "title": "Antigravity - Choose a model (official docs)",
+      "url": "https://antigravity.google/docs/models/",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "s15",
+      "title": "Google unveils Gemini 4 Carbon (VentureBeat)",
+      "url": "https://www.venturebeat.com/2026/10/28/google-unveils-gemini-4-carbon-retaking-the-worlds-no-1-spot-on-updated-harder-benchmarks-but-access-is-limited/",
+      "date": "2026-10-28"
+    },
+    {
+      "id": "s17",
+      "title": "GPT-6 pricing roundup (aitokenprice)",
+      "url": "https://aitokenprice.com/news/gpt-6-pricing",
+      "date": "2026-10"
+    }
+  ],
   "categories": [
     {
       "level": "1",
       "description": "General questions about the app, the project, or how something works, answered by reading and explaining without changing code.",
-      "candidates": {
-        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6-luna", "thinkingLevel": "medium" }, { "provider": "zai", "modelId": "glm-5.3-flash", "thinkingLevel": "medium" }],
-        "claude": [{ "provider": "claude", "modelId": "haiku", "thinkingLevel": "medium" }, { "provider": "claude", "modelId": "sonnet", "thinkingLevel": "low" }],
-        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "low" }]
-      }
+      "minimumScore": 60
     },
     {
       "level": "2",
       "description": "Terminal and git work: running CLI commands, shell inspection, reviewing diffs, committing, pushing, resolving straightforward conflicts, and managing existing branches.",
-      "candidates": {
-        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6-luna", "thinkingLevel": "low" }, { "provider": "zai", "modelId": "glm-5.3-flash", "thinkingLevel": "medium" }],
-        "claude": [{ "provider": "claude", "modelId": "haiku", "thinkingLevel": "low" }, { "provider": "claude", "modelId": "sonnet", "thinkingLevel": "low" }],
-        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "low" }]
-      }
+      "minimumScore": 60
     },
     {
       "level": "4",
       "description": "Simple coding: a small, well-scoped code change such as a one-file edit, a rename, a config tweak, or a short script.",
-      "candidates": {
-        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6.1-sol", "thinkingLevel": "low" }, { "provider": "zai", "modelId": "glm-5.3-flash", "thinkingLevel": "high" }],
-        "claude": [{ "provider": "claude", "modelId": "haiku", "thinkingLevel": "high" }, { "provider": "claude", "modelId": "sonnet", "thinkingLevel": "medium" }],
-        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "medium" }]
-      }
+      "minimumScore": 65
     },
     {
       "level": "6",
       "description": "Complex coding: implementing or refactoring a feature across several files or components and verifying the result with tests.",
-      "candidates": {
-        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6.1-sol", "thinkingLevel": "medium" }, { "provider": "anthropic", "modelId": "claude-sonnet-5-5", "thinkingLevel": "high" }],
-        "claude": [{ "provider": "claude", "modelId": "sonnet", "thinkingLevel": "high" }, { "provider": "claude", "modelId": "opus", "thinkingLevel": "high" }],
-        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "high" }]
-      }
+      "minimumScore": 80
     },
     {
       "level": "8",
       "description": "Debugging a reported error or unexpected behaviour: reproducing the failure, tracing its root cause, and making the fix.",
-      "candidates": {
-        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6.1-sol", "thinkingLevel": "high" }, { "provider": "anthropic", "modelId": "claude-opus-5-5", "thinkingLevel": "xhigh" }, { "provider": "openai-codex", "modelId": "gpt-6-astra", "thinkingLevel": "high" }],
-        "claude": [{ "provider": "claude", "modelId": "sonnet", "thinkingLevel": "xhigh" }, { "provider": "claude", "modelId": "opus", "thinkingLevel": "xhigh" }],
-        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "xhigh" }]
-      }
+      "minimumScore": 80
     },
     {
       "level": "10",
       "description": "Planning: architecture, design, breaking down ambiguous multi-system work, or high-risk changes that need deep analysis before implementation.",
-      "candidates": {
-        "pi": [{ "provider": "openai-codex", "modelId": "gpt-6.1-sol", "thinkingLevel": "xhigh" }, { "provider": "anthropic", "modelId": "claude-fable-5-2", "thinkingLevel": "high" }, { "provider": "openai-codex", "modelId": "gpt-6-astra", "thinkingLevel": "xhigh" }],
-        "claude": [{ "provider": "claude", "modelId": "fable", "thinkingLevel": "high" }, { "provider": "claude", "modelId": "opus", "thinkingLevel": "xhigh" }],
-        "kiro": [{ "provider": "kiro", "modelId": "default", "thinkingLevel": "xhigh" }]
-      }
+      "minimumScore": 84
     }
-  ]
+  ],
+  "models": {
+    "pi": [
+      {
+        "provider": "openai-codex",
+        "modelId": "gpt-6-luna",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 0.1,
+          "output": 0.5
+        },
+        "levels": {
+          "1": {
+            "score": 60,
+            "thinkingLevel": "medium"
+          },
+          "2": {
+            "score": 22,
+            "thinkingLevel": "high"
+          },
+          "4": {
+            "score": 45,
+            "thinkingLevel": "high"
+          },
+          "6": {
+            "score": 25,
+            "thinkingLevel": "xhigh"
+          },
+          "8": {
+            "score": 22,
+            "thinkingLevel": "xhigh"
+          },
+          "10": {
+            "score": 25,
+            "thinkingLevel": "xhigh"
+          }
+        },
+        "evidence": "Terminal-Bench 4.0 13.6% [s1]; AA Intelligence Index 37 [s5]. Q&A and trivial edits only."
+      },
+      {
+        "provider": "openai-codex",
+        "modelId": "gpt-6.1-terra",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 1,
+          "output": 5
+        },
+        "levels": {
+          "1": {
+            "score": 80,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 76,
+            "thinkingLevel": "medium"
+          },
+          "4": {
+            "score": 79,
+            "thinkingLevel": "low"
+          },
+          "6": {
+            "score": 74,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 73,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 72,
+            "thinkingLevel": "xhigh"
+          }
+        },
+        "evidence": "Terminal-Bench 4.0 49.5% [s1], trails 6.1 Sol at every effort [s6]; no SWE-bench score published [s3]."
+      },
+      {
+        "provider": "openai-codex",
+        "modelId": "gpt-6.1-sol",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 2,
+          "output": 10
+        },
+        "levels": {
+          "1": {
+            "score": 85,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 84,
+            "thinkingLevel": "medium"
+          },
+          "4": {
+            "score": 84,
+            "thinkingLevel": "low"
+          },
+          "6": {
+            "score": 84,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 83,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 84,
+            "thinkingLevel": "xhigh"
+          }
+        },
+        "evidence": "Terminal-Bench 4.0 55.1% at $1.72/test, best cost per point among frontier models [s1]; AA Index 52 vs Astra 53 [s17]."
+      },
+      {
+        "provider": "openai-codex",
+        "modelId": "gpt-6-astra",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 10,
+          "output": 50
+        },
+        "levels": {
+          "1": {
+            "score": 88,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 88,
+            "thinkingLevel": "medium"
+          },
+          "4": {
+            "score": 85,
+            "thinkingLevel": "low"
+          },
+          "6": {
+            "score": 90,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 89,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 92,
+            "thinkingLevel": "high"
+          }
+        },
+        "evidence": "Terminal-Bench 4.0 59.6% [s1]; AA Index 53 [s17]; FrontierSWE 2 65.5% [s15]; SWE-bench Pro v2 96.9 [s9]. Costly for simple work."
+      },
+      {
+        "provider": "zai",
+        "modelId": "glm-5.3-flash",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 0.15,
+          "output": 0.5
+        },
+        "levels": {
+          "1": {
+            "score": 65,
+            "thinkingLevel": "medium"
+          },
+          "2": {
+            "score": 57,
+            "thinkingLevel": "high"
+          },
+          "4": {
+            "score": 66,
+            "thinkingLevel": "medium"
+          },
+          "6": {
+            "score": 55,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 50,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 45,
+            "thinkingLevel": "high"
+          }
+        },
+        "evidence": "Terminal-Bench 4.0 37.4% at $1.22/test [s1]; Terminal-Bench 2.1 84.3 [s8]; price [s7]."
+      },
+      {
+        "provider": "zai",
+        "modelId": "glm-5.3",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 1.4,
+          "output": 4.4
+        },
+        "levels": {
+          "1": {
+            "score": 72,
+            "thinkingLevel": "medium"
+          },
+          "2": {
+            "score": 60,
+            "thinkingLevel": "high"
+          },
+          "4": {
+            "score": 72,
+            "thinkingLevel": "medium"
+          },
+          "6": {
+            "score": 68,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 62,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 60,
+            "thinkingLevel": "high"
+          }
+        },
+        "evidence": "Terminal-Bench 4.0 38.9% [s1]; SWE-bench Verified 95.4% [s3]; SWE-bench Pro v2 HARD 84.3% [s10]; DeepSWE 66.9 (vendor) [s8]."
+      }
+    ],
+    "claude": [
+      {
+        "provider": "claude",
+        "modelId": "haiku",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 0.1,
+          "output": 0.5
+        },
+        "levels": {
+          "1": {
+            "score": 72,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 56,
+            "thinkingLevel": "medium"
+          },
+          "4": {
+            "score": 68,
+            "thinkingLevel": "medium"
+          },
+          "6": {
+            "score": 52,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 50,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 45,
+            "thinkingLevel": "high"
+          }
+        },
+        "evidence": "Haiku 5.5: Terminal-Bench 4.0 36.4% [s1], 39.2% vendor [s3]."
+      },
+      {
+        "provider": "claude",
+        "modelId": "sonnet",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 2,
+          "output": 10
+        },
+        "levels": {
+          "1": {
+            "score": 90,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 98,
+            "thinkingLevel": "medium"
+          },
+          "4": {
+            "score": 92,
+            "thinkingLevel": "low"
+          },
+          "6": {
+            "score": 90,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 90,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 86,
+            "thinkingLevel": "xhigh"
+          }
+        },
+        "evidence": "Sonnet 5.5: Terminal-Bench 4.0 64.1% (#3) [s1]; SWE-bench Pro 81.3% [s4]; half Opus's price."
+      },
+      {
+        "provider": "claude",
+        "modelId": "opus",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 4,
+          "output": 20
+        },
+        "levels": {
+          "1": {
+            "score": 95,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 100,
+            "thinkingLevel": "medium"
+          },
+          "4": {
+            "score": 90,
+            "thinkingLevel": "low"
+          },
+          "6": {
+            "score": 98,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 98,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 96,
+            "thinkingLevel": "high"
+          }
+        },
+        "evidence": "Opus 5.5: Terminal-Bench 4.0 65.2%, tied #1 [s1]; SWE-bench Pro 89.9% [s9]."
+      },
+      {
+        "provider": "claude",
+        "modelId": "fable",
+        "billing": "subscription",
+        "priceUsdPerMTok": {
+          "input": 8,
+          "output": 40
+        },
+        "levels": {
+          "1": {
+            "score": 97,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 99,
+            "thinkingLevel": "medium"
+          },
+          "4": {
+            "score": 88,
+            "thinkingLevel": "low"
+          },
+          "6": {
+            "score": 100,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 100,
+            "thinkingLevel": "high"
+          },
+          "10": {
+            "score": 100,
+            "thinkingLevel": "high"
+          }
+        },
+        "evidence": "Fable 5.2: AA Intelligence Index 65, #1 [s2]; Terminal-Bench 4.0 65.2%, tied #1 at $14.56/test [s1]; FrontierCode 2.0 49.1% [s11]."
+      }
+    ],
+    "kiro": [
+      {
+        "provider": "kiro",
+        "modelId": "default",
+        "billing": "subscription",
+        "priceUsdPerMTok": null,
+        "levels": {
+          "1": {
+            "score": 85,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 85,
+            "thinkingLevel": "low"
+          },
+          "4": {
+            "score": 85,
+            "thinkingLevel": "medium"
+          },
+          "6": {
+            "score": 85,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 85,
+            "thinkingLevel": "xhigh"
+          },
+          "10": {
+            "score": 85,
+            "thinkingLevel": "xhigh"
+          }
+        },
+        "evidence": "Kiro's own model choice; only the thinking level is routed [s12]."
+      }
+    ],
+    "antigravity": [
+      {
+        "provider": "antigravity",
+        "modelId": "default",
+        "billing": "subscription",
+        "priceUsdPerMTok": null,
+        "levels": {
+          "1": {
+            "score": 85,
+            "thinkingLevel": "low"
+          },
+          "2": {
+            "score": 85,
+            "thinkingLevel": "low"
+          },
+          "4": {
+            "score": 85,
+            "thinkingLevel": "medium"
+          },
+          "6": {
+            "score": 85,
+            "thinkingLevel": "high"
+          },
+          "8": {
+            "score": 85,
+            "thinkingLevel": "xhigh"
+          },
+          "10": {
+            "score": 85,
+            "thinkingLevel": "xhigh"
+          }
+        },
+        "evidence": "Antigravity's own model choice; only the thinking level is routed [s14]."
+      }
+    ]
+  }
 }

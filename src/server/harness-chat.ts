@@ -26,7 +26,7 @@ import type { UsageDifficulty } from "../usage-types.js";
 import { inheritedDifficulty, latestDifficultyForConversation, saveDifficulty } from "../usage-ledger.js";
 import { classifyForRouting } from "../routing-decision.js";
 import { systemAiSettings } from "../system-ai-config.js";
-import { automaticRoutingModelAllowed, routingCandidateListed, routingEvalDue, type RoutingCandidate } from "../routing-policy.js";
+import { automaticRoutingModelAllowed, routingCandidateListed, routingEvalDue, subscriptionFirst, type RoutingCandidate } from "../routing-policy.js";
 import { activeRoutingConfig, DEFAULT_ROUTING_CONFIG_ID, routingConfigDatabase, routingConfigWarning, type StoredRoutingConfig } from "../routing-configs.js";
 import { applySystemControlDefault, enableSystemControl, type ConversationModel } from "./system-control.js";
 import { blockConversationGoal, cancelConversationGoal, getConversationGoal, goalPrompt, goalStatusMessage, parseBobGoalCommand, recordConversationGoalResponse, startConversationGoal, type ConversationGoal } from "../conversation-goals.js";
@@ -618,7 +618,7 @@ async function routePromptByDifficulty(connection: HarnessChatConnection, queued
     publish(connection, { type: "promptRouted", queueId: queued.id, level: classification.level, confidence: classification.confidence, mapped: false });
     return result("classified", { ...decided, level: classification.level, confidence: classification.confidence, mapped: false, reason: "level not mapped" });
   }
-  const routed = await applyFirstAvailableCandidate(connection, poolActive ? [mapping] : [mapping, ...(mapping.fallbacks ?? [])], poolActive);
+  const routed = await applyFirstAvailableCandidate(connection, poolActive ? [mapping] : subscriptionFirst(connection.engine, [mapping, ...(mapping.fallbacks ?? [])]), poolActive);
   if (!routed) return skip("no candidate available", "unavailable", undefined, classification.confidence, { ...decided, level: classification.level, reason: "no candidate available" });
   const { settings, index } = routed;
   publish(connection, { type: "promptRouted", queueId: queued.id, level: classification.level, confidence: classification.confidence, mapped: true, provider: settings.provider, modelId: settings.modelId, thinkingLevel: settings.reasoning, classifierId, candidateIndex: index });

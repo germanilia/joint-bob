@@ -12,7 +12,7 @@ import { type ReplicationEvent } from "./replication.js";
 /** The routing policy of the implicit legacy cluster, where every peer sees every project. */
 export const LEGACY_CLUSTER_ID = "";
 export const ROUTING_LEVELS = 10;
-export const CODEX_ROUTING_MODELS = ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra"] as const;
+export const CODEX_ROUTING_MODELS = ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-astra"] as const;
 const codexRoutingModels = new Set<string>(CODEX_ROUTING_MODELS);
 
 export function automaticRoutingModelAllowed(provider: string | undefined, modelId: string): boolean {
@@ -232,17 +232,32 @@ export function routingEvalDue(policy: RoutingPolicy, promptOrdinal: number, las
   return promptOrdinal - lastEvalOrdinal >= (policy.evalCadence.n ?? Number.POSITIVE_INFINITY);
 }
 
+const levelKeySchema = z.string().regex(/^(10|[1-9])$/);
+
 export const routingDefaultsSchema = z.object({
   reviewedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   notes: z.string().max(2000),
+  sources: z.array(z.object({ id: z.string().min(1).max(20), title: z.string().min(1).max(300), url: z.string().url(), date: z.string().max(40) }).strict()).max(60),
   categories: z.array(z.object({
-    level: z.string().regex(/^(10|[1-9])$/),
+    level: levelKeySchema,
     description: z.string().trim().min(1).max(1000),
-    /** Per harness, cheapest adequate model first. Routing never leaves the conversation's harness. */
-    candidates: z.record(z.string().min(1).max(80), z.array(routingCandidateSchema).min(1).max(9)),
+    /** A model scoring below this on the level is not good enough for it. */
+    minimumScore: z.number().min(0).max(100),
   }).strict()).min(1).max(10),
+  /** Per harness, every model with its billing, API price and a 0–100 score per level from public evals.
+      Routing never leaves the conversation's harness. */
+  models: z.record(z.string().min(1).max(80), z.array(z.object({
+    provider: z.string().trim().min(1).max(200),
+    modelId: z.string().trim().min(1).max(300),
+    billing: z.enum(["subscription", "api"]),
+    /** USD per million tokens; null when the model has no public API price. */
+    priceUsdPerMTok: z.object({ input: z.number().min(0), output: z.number().min(0) }).strict().nullable(),
+    levels: z.record(levelKeySchema, z.object({ score: z.number().min(0).max(100), thinkingLevel: z.string().trim().min(1).max(16) }).strict()),
+    evidence: z.string().max(1000),
+  }).strict()).min(1).max(30)),
 }).strict();
 export type RoutingDefaults = z.infer<typeof routingDefaultsSchema>;
+export type ScoredRoutingCandidate = { provider: string; modelId: string; thinkingLevel: string; score: number; billing: "subscription" | "api"; adequate: boolean };
 
 /** The shipped defaults (src/routing-defaults.json), updated through releases. The path
     resolves to the package's src/ from both src/ and the compiled dist/. */
@@ -250,22 +265,70 @@ export function readRoutingDefaults(): RoutingDefaults {
   return routingDefaultsSchema.parse(JSON.parse(readFileSync(new URL("../src/routing-defaults.json", import.meta.url), "utf8")));
 }
 
-/** Builds the immutable Joint Bob preset from src/routing-defaults.json. Harnesses the file
-    does not list stay blank. */
+/** Input:output blended 3:1, as public price comparisons do. Unknown prices sort last. */
+function blendedPrice(price: { input: number; output: number } | null): number {
+  return price ? (3 * price.input + price.output) / 4 : Number.POSITIVE_INFINITY;
+}
+
+/** One harness's candidates for a level: models scoring at least the level's minimum, subscription
+    before API, then cheapest, then strongest. When none is good enough, the strongest come first. */
+export function scoredCandidates(defaults: RoutingDefaults, harness: string, level: string): ScoredRoutingCandidate[] {
+  const category = defaults.categories.find((item) => item.level === level);
+  if (!category) return [];
+  const scored = (defaults.models[harness] ?? []).flatMap((model) => {
+    const entry = model.levels[level];
+    return entry ? [{ model, candidate: { provider: model.provider, modelId: model.modelId, thinkingLevel: entry.thinkingLevel, score: entry.score, billing: model.billing, adequate: entry.score >= category.minimumScore } }] : [];
+  });
+  const adequate = scored.filter((item) => item.candidate.adequate).sort((left, right) =>
+    Number(left.model.billing === "api") - Number(right.model.billing === "api")
+    || blendedPrice(left.model.priceUsdPerMTok) - blendedPrice(right.model.priceUsdPerMTok)
+    || right.candidate.score - left.candidate.score);
+  const ordered = adequate.length ? adequate : scored.sort((left, right) => right.candidate.score - left.candidate.score);
+  return ordered.slice(0, 9).map((item) => item.candidate);
+}
+
+/** Providers a harness reaches through a subscription, from the shipped defaults. */
+export function subscriptionProviders(harness: string, defaults: RoutingDefaults = readRoutingDefaults()): Set<string> {
+  return new Set((defaults.models[harness] ?? []).filter((model) => model.billing === "subscription").map((model) => model.provider));
+}
+
+/** Subscription before API, keeping the configured order within each. */
+export function subscriptionFirst<T extends { provider?: string }>(harness: string, candidates: T[]): T[] {
+  const subscribed = subscriptionProviders(harness);
+  const billedBySubscription = (candidate: T) => candidate.provider === undefined || subscribed.has(candidate.provider);
+  return [...candidates.filter(billedBySubscription), ...candidates.filter((candidate) => !billedBySubscription(candidate))];
+}
+
+/** Builds the immutable Joint Bob preset from the scores in src/routing-defaults.json. Harnesses
+    the file does not list stay blank. */
 export function defaultRoutingPolicy(): RoutingPolicy {
   const defaults = readRoutingDefaults();
   const harnesses: RoutingPolicy["harnesses"] = {};
   for (const adapter of listDiscoveredHarnesses()) {
     if (!adapter.configuration) continue;
     const levelsMap: RoutingPolicy["harnesses"][string]["levels"] = {};
+    const fixed = adapter.configuration.fixedProvider;
     for (const category of defaults.categories) {
-      const candidates = category.candidates[adapter.id];
-      if (!candidates) continue;
-      const fixed = adapter.configuration.fixedProvider;
+      const candidates = scoredCandidates(defaults, adapter.id, category.level);
+      if (!candidates.length) continue;
       const [first, ...rest] = candidates.map(({ provider, modelId, thinkingLevel }) => ({ ...(fixed ? {} : { provider }), modelId, thinkingLevel }));
       levelsMap[category.level] = { ...first, description: category.description, ...(rest.length ? { fallbacks: rest } : {}) };
     }
     harnesses[adapter.id] = { levels: levelsMap };
   }
   return { enabled: true, classifierId: listDifficultyClassifiers()[0]?.id ?? "typesafe", evalCadence: { mode: "every-n", n: 1 }, contextMessages: 1, confidenceThreshold: 0.3, harnesses };
+}
+
+/** What Settings shows: each level's scored candidates per harness, in the order routing tries them. */
+export function routingDefaultsView() {
+  const defaults = readRoutingDefaults();
+  return {
+    reviewedAt: defaults.reviewedAt,
+    notes: defaults.notes,
+    categories: defaults.categories.map((category) => ({
+      level: category.level,
+      description: category.description,
+      candidates: Object.fromEntries(Object.keys(defaults.models).map((harness) => [harness, scoredCandidates(defaults, harness, category.level)]).filter(([, candidates]) => candidates.length)),
+    })),
+  };
 }

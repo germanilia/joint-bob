@@ -16,7 +16,7 @@ import { app } from '../state.js';
 import { clusterV2Database } from '../../cluster-v2-store.js';
 import { listMemberships, servingSettings } from '../../relay/store.js';
 import { relayPolicyLabel } from '../../relay/resource-policy.js';
-import { readRoutingDefaults } from '../../routing-policy.js';
+import { routingDefaultsView } from '../../routing-policy.js';
 
 async function routingView(system: ReturnType<typeof systemAiSettings>, localKey: boolean) {
   const db = await clusterV2Database();
@@ -24,7 +24,7 @@ async function routingView(system: ReturnType<typeof systemAiSettings>, localKey
   const source = localKey ? 'This machine classifies with its own decision credential.'
     : relays.length ? `No decision credential here: routing asks ${relays.join(', ')} when it shares its decision model.`
       : 'No decision credential here and no relay to ask: prompts are not routed.';
-  return { ...system.routing, servesRelay: servingSettings(db).enabled, source, defaults: readRoutingDefaults() };
+  return { ...system.routing, servesRelay: servingSettings(db).enabled, source, defaults: routingDefaultsView() };
 }
 
 const inputSchema = z.object({ system: systemAiSchema, backgroundAgent: backgroundAgentSchema.optional(), syncCheck: syncCheckSchema.optional(), dashboards: dashboardAgentSchema.optional() }).strict();
