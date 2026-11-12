@@ -170,6 +170,7 @@ function memberRow(cluster, member, matched, onChange) {
   row.dataset.sharingNodeId = member.nodeId;
   if (matched) row.dataset.match = "true";
   const { badges, actions } = memberTwinControls(cluster, member, onChange);
+  if (cluster.managerNodeId === data.localNodeId && !local) actions.append(managerTransferButton(cluster, member));
   if (manager) badges.prepend(badge("Manager", "manager"));
   if (local) badges.prepend(badge("You", "you"));
   const who = document.createElement("div"); who.className = "cluster-member-who";
@@ -182,6 +183,30 @@ function memberRow(cluster, member, matched, onChange) {
   const relationship = activeTwin(member.nodeId);
   if (relationship) row.append(twinSyncProblem(twins.status.get(relationship.relationshipId), onChange));
   return row;
+}
+
+function managerTransferButton(cluster, member) {
+  const button = text("button", "Transfer administration", "ghost compact");
+  button.type = "button"; button.dataset.testid = `cluster-transfer-manager-${member.nodeId}`;
+  const transferId = crypto.randomUUID();
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      if (!await confirmAction({ eyebrow: "Transfer administration", title: `Make ${member.name || member.nodeId} the admin?`,
+        message: `Administration of ${cluster.name}, including permission to delete the cluster, moves to this node. You remain a regular member. No recipient confirmation is required. Both nodes must connect to complete the transfer.`,
+        confirmLabel: "Transfer administration", destructive: true })) { button.disabled = false; return; }
+      if (selectedClusterId !== cluster.id) return;
+      await api(`/api/clusters/${cluster.id}/manager-transfer`, { method: "POST", body: JSON.stringify({
+        successorNodeId: member.nodeId, expectedEpoch: cluster.managerEpoch, transferId,
+      }) });
+      button.textContent = "Transfer requested";
+      toast("Transfer requested. Reopen Cluster settings to check the new manager.");
+    } catch (error) {
+      toast.error(error.message);
+      button.disabled = false;
+    }
+  });
+  return button;
 }
 
 function renderReceived(cluster) {
@@ -238,7 +263,7 @@ function headerActions(cluster) {
   }
   leave.addEventListener("click", () => leaveCluster().catch((error) => toast.error(error.message)));
   actions.append(inviteButton, leave);
-  if (cluster.originalNodeId === data.localNodeId && cluster.members.length > 1) {
+  if (cluster.managerNodeId === data.localNodeId && cluster.members.length > 1) {
     const close = text("button", "Delete cluster", "ghost compact danger"); close.type = "button";
     close.dataset.testid = "cluster-delete-button";
     close.addEventListener("click", () => closeCluster().catch((error) => toast.error(error.message)));

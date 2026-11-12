@@ -129,7 +129,7 @@ test("v2 HTTP membership preserves independent clusters and routes authority thr
   }
 });
 
-test("original owner closes a populated cluster and members leave on signed delivery", async () => {
+test("current manager closes a populated cluster and members leave on signed delivery", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-v2-close-"));
   const [envA, envB] = await Promise.all(["a", "b"].map((name) => seedDevEnvironment(path.join(root, name), 1)));
   const [a, b] = [envA.nodes[0], envB.nodes[0]];
@@ -151,7 +151,7 @@ test("original owner closes a populated cluster and members leave on signed deli
     const deadline = Date.now() + 15_000;
     while ((await call<ClusterStatus>(b, sb, "GET", "/clusters")).body.clusters.length && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
     assert.deepEqual((await call<ClusterStatus>(b, sb, "GET", "/clusters")).body.clusters, []);
-    assert.equal((await call(a, sa, "POST", `/clusters/${id}/close`, { expectedEpoch: 1 })).status, 409);
+    assert.equal((await call(a, sa, "POST", `/clusters/${id}/close`, { expectedEpoch: 1 })).status, 403);
   } finally {
     await Promise.all(children.map(stopDevNode));
   }

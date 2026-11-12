@@ -335,7 +335,7 @@ app.post("/api/clusters/:clusterId/close", handler(async (request, response) => 
   localOnly(response);
   const clusterId = uuid.parse(request.params.clusterId), { expectedEpoch } = epochSchema.parse(request.body);
   const local = await getClusterNode(), db = await clusterV2Database(), state = getSharingCluster(db, clusterId);
-  if (state.originalNodeId !== local.id) throw new ClusterV2HttpError(403, "Only the cluster owner may close it");
+  if (state.managerNodeId !== local.id) throw new ClusterV2HttpError(403, "Only the cluster manager may close it");
   const manager = clusterManager(db, clusterId);
   const snapshot = manager === local.id ? closeMembershipCluster(db, local.id, local.id, clusterId, expectedEpoch)
     : (await signedPost<{ snapshot: SignedMembershipSnapshot }>(db, local.id, manager, clusterId, "/api/cluster/v2/membership/close", { clusterId, expectedEpoch })).snapshot;

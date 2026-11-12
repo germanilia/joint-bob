@@ -31,7 +31,7 @@ async function join(manager: SeededNode, managerSession: SignedIn, member: Seede
   assert.equal(joined.status, 201, JSON.stringify(joined.body));
 }
 
- test("two-node manager transfer requires explicit successor consent and completed retries stay complete", async () => {
+ test("two-node manager transfer completes without successor consent and completed retries stay complete", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "manager-api-two-"));
   const [envA, envB] = await Promise.all([seedDevEnvironment(path.join(root, "a"), 1), seedDevEnvironment(path.join(root, "b"), 1)]);
   const [a, b] = [envA.nodes[0], envB.nodes[0]];
@@ -50,15 +50,9 @@ async function join(manager: SeededNode, managerSession: SignedIn, member: Seede
     assert.equal(unknown.status, 404);
     const offered = await poll("successor offer", () => api<{ transfer: Transfer }>(b, sb, "GET", `/clusters/${clusterId}/manager-transfer/${transferId}`), (value) => value.status === 200);
     assert.equal(offered.status, 200);
-    for (const [node, session] of [[a, sa], [b, sb]] as const) {
-      const current = cluster(await status(node, session), clusterId)!;
-      assert.deepEqual([current.managerNodeId, current.managerEpoch], [a.nodeId, 1]);
-    }
-    assert.equal((await api(b, sb, "POST", `/clusters/${clusterId}/invitations`, { expectedEpoch: 2 })).status, 409);
     assert.equal((await api(a, sa, "POST", `/clusters/${clusterId}/manager-transfer/${transferId}/accept`, {})).status, 403);
     const noCsrf = await fetch(`${b.url}/api/clusters/${clusterId}/manager-transfer/${transferId}/accept`, { method: "POST", headers: { Cookie: sb.cookie, "Content-Type": "application/json" }, body: "{}" });
     assert.equal(noCsrf.status, 403);
-    assert.equal((await api(b, sb, "POST", `/clusters/${clusterId}/manager-transfer/${transferId}/accept`, {})).status, 202);
     await poll("both manager projections", async () => Promise.all([status(a, sa), status(b, sb)]), (values) => values.every((value) => { const item = cluster(value, clusterId); return item?.managerNodeId === b.nodeId && item.managerEpoch === 2; }));
     for (const [node, session] of [[a, sa], [b, sb]] as const) assert.deepEqual(cluster(await status(node, session), clusterId)!.members.map((member) => member.joinSequence), [1, 2]);
     assert.equal((await api(a, sa, "POST", `/clusters/${clusterId}/invitations`, { expectedEpoch: 1 })).status, 409);
@@ -87,7 +81,7 @@ async function join(manager: SeededNode, managerSession: SignedIn, member: Seede
   }
 });
 
-test("original owner can close cluster after transferring management", async () => {
+test("only the new manager can close cluster after transferring management", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "manager-api-close-"));
   const [envA, envB] = await Promise.all(["a", "b"].map((name) => seedDevEnvironment(path.join(root, name), 1)));
   const [a, b] = [envA.nodes[0], envB.nodes[0]];
@@ -101,10 +95,10 @@ test("original owner can close cluster after transferring management", async () 
     const transferId = randomUUID();
     assert.equal((await api(a, sa, "POST", `/clusters/${id}/manager-transfer`, { successorNodeId: b.nodeId, expectedEpoch: 1, transferId })).status, 202);
     await poll("successor offer", () => api(b, sb, "GET", `/clusters/${id}/manager-transfer/${transferId}`), (value) => value.status === 200);
-    assert.equal((await api(b, sb, "POST", `/clusters/${id}/manager-transfer/${transferId}/accept`, {})).status, 202);
     await poll("manager transfer", async () => Promise.all([status(a, sa), status(b, sb)]), (values) => values.every((value) => cluster(value, id)?.managerNodeId === b.nodeId));
-    assert.equal((await api(b, sb, "POST", `/clusters/${id}/close`, { expectedEpoch: 2 })).status, 403);
-    const closed = await api<{ snapshot: { body: { closed: boolean; members: unknown[] } } }>(a, sa, "POST", `/clusters/${id}/close`, { expectedEpoch: 2 });
+    assert.equal((await api(a, sa, "POST", `/clusters/${id}/close`, { expectedEpoch: 2 })).status, 403);
+    assert.equal((await api(a, sa, "POST", `/clusters/${id}/manager-transfer`, { successorNodeId: a.nodeId, expectedEpoch: 2, transferId: randomUUID() })).status, 409);
+    const closed = await api<{ snapshot: { body: { closed: boolean; members: unknown[] } } }>(b, sb, "POST", `/clusters/${id}/close`, { expectedEpoch: 2 });
     assert.equal(closed.status, 200, JSON.stringify(closed.body));
     assert.equal(closed.body.snapshot.body.closed, true);
     assert.deepEqual(closed.body.snapshot.body.members, []);
@@ -131,7 +125,6 @@ test("offline old-manager certificate relay advances lagging member and unauthen
     const transferId = randomUUID();
     await api(a, sa, "POST", `/clusters/${clusterId}/manager-transfer`, { successorNodeId: b.nodeId, expectedEpoch: 1, transferId });
     await poll("B offer", () => api(b, sb, "GET", `/clusters/${clusterId}/manager-transfer/${transferId}`), (value) => value.status === 200);
-    await api(b, sb, "POST", `/clusters/${clusterId}/manager-transfer/${transferId}/accept`, {});
     const completed = await poll("B certificate", () => api<{ transfer: Transfer }>(b, sb, "GET", `/clusters/${clusterId}/manager-transfer/${transferId}`), (value) => Boolean(value.body.transfer?.certificate));
     await poll("B manager", () => status(b, sb), (value) => cluster(value, clusterId)?.managerNodeId === b.nodeId);
     await Promise.all([stopDevNode(running.get(a.nodeId)!), stopDevNode(running.get(b.nodeId)!)]); running.delete(a.nodeId); running.delete(b.nodeId);

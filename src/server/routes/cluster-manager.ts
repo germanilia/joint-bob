@@ -72,7 +72,14 @@ app.post("/api/cluster/v2/manager-transfer/offer", handler(async (request, respo
 const sender = machineOnly(response), { offer } = offerSchema.parse(request.body);
   const local = await getClusterNode();
   if (sender !== offer.body.fromNodeId || local.id !== offer.body.toNodeId) throw new ClusterV2HttpError(403, "Forbidden");
-  const db = await clusterV2Database(); ensureManagerHttpSchema(db); receiveMembershipManagerOffer(db, local.id, offer);
+  const db = await clusterV2Database(); ensureManagerHttpSchema(db);
+  savepoint(db, () => {
+    receiveMembershipManagerOffer(db, local.id, offer);
+    const saved = getMembershipManagerTransfer(db, offer.body.base.body.clusterId, offer.body.transferId);
+    if (saved.certificate) return;
+    const acceptance = acceptMembershipManagerTransfer(db, local.id, offer);
+    queueManagerStep(db, { step: "acceptance", payload: acceptance });
+  });
   response.json({ ok: true });
 }));
 
