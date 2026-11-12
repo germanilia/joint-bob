@@ -62,14 +62,14 @@ test("node-local profile API validates scopes, protects secrets, and refuses sel
     assert.equal((await api(node, member, "PUT", "/provider-profiles/selection", { provider: "openai-codex", scope: "default", scopeId: "", profileId: id })).status, 404);
     assert.equal((await api(node, session, "PUT", `/provider-profiles/${id}/sharing`, { shared: true })).status, 200);
     const interactive = await api<{ profiles: Array<{ id: string }> }>(node, session, "GET", "/provider-profiles/available?usage=interactive");
-    assert.equal(interactive.body.profiles.some((item) => item.id === id), false);
+    assert.equal(interactive.body.profiles.some((item) => item.id === id), true, "sharing a profile for automation does not take it from its owner");
     const automation = await api<{ profiles: Array<{ id: string }> }>(node, session, "GET", "/provider-profiles/available?usage=automation");
     assert.equal(automation.body.profiles.some((item) => item.id === id), true);
     const memberAutomation = await api<{ profiles: Array<{ id: string }> }>(node, member, "GET", "/provider-profiles/available?usage=automation");
     assert.equal(memberAutomation.body.profiles.some((item) => item.id === id), true);
     assert.equal((await api(node, member, "GET", `/provider-profiles/${id}/status`)).status, 404);
     assert.equal((await api(node, member, "PUT", `/provider-profiles/${id}/sharing`, { shared: false })).status, 404);
-    assert.equal((await api(node, session, "PUT", "/provider-profiles/selection", { provider: "openai-codex", scope: "default", scopeId: "", profileId: id })).status, 409);
+    assert.equal((await api(node, session, "PUT", "/provider-profiles/selection", { provider: "openai-codex", scope: "default", scopeId: "", profileId: id })).status, 200, "its owner may still choose it for their own turns");
     assert.equal((await api(node, session, "PUT", `/provider-profiles/${id}/sharing`, { shared: false })).status, 200);
     const state = await api<{ signedIn: boolean }>(node, session, "GET", `/provider-profiles/${id}/status`);
     assert.equal(state.body.signedIn, false);

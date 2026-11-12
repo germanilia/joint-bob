@@ -482,11 +482,11 @@ test("the sweep and done-cleanup keep a built-in project's worktree while its fi
   assert.equal(await worktreeSweepRefusal(project.id, { id: foreign.id, createdByNodeId: OTHER }), undefined);
   assert.equal(await worktreeSweepRefusal(project.id, { id: own.id, createdByNodeId: (await getClusterNode()).id }), undefined, "its own worktree needs no pull");
 
+  // With its files here, file sync no longer holds the worktree: what keeps it now is that its work was never verified as integrated.
   result = await cleanupDoneWorktrees(project);
-  assert.ok(result.deletedWorktreeIds.includes(own.id), JSON.stringify(result));
-  await assert.rejects(access(own.path), { code: "ENOENT" });
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.ok(stand.calls.scan.some((call) => (call as { paths: string[] }).paths.includes(own.path)), "the deletion is scanned at once");
+  assert.deepEqual(result.deletedWorktreeIds, [], JSON.stringify(result));
+  assert.equal(result.retainedWorktrees[own.id], "Worktree kept: no verified local integration or explicit PR finish path");
+  await access(own.path);
 });
 
 test("the sync check recognises the built-in engine's conflict copies and times them by when they appeared", async () => {

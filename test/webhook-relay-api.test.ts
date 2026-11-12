@@ -89,7 +89,8 @@ test("webhooks can be created and transferred to a shared relay without exposing
     assert.equal((await api(owner, sa, "PUT", `/webhooks/${created.body.webhook.id}?nodeId=${relay.nodeId}`, { ...execution, providerProfileId: null })).status, 200, "an unpinned webhook uses the relay project owner's subscriptions");
     assert.equal((await fetch(`${relay.url}/hooks/${created.body.secret}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Run on the relay with relay defaults" }) })).status, 202);
     await eventually(async () => assert.ok((await readFile(log, "utf8")).includes(`claude:${relay.nodeId}`), "the relay runs the unpinned webhook conversation"));
-    assert.equal((await api(relay, sb, "PUT", `/provider-profiles/${profile.body.profile.id}/sharing`, { shared: true })).status, 200);
+    // The unpinned call just ran on this profile, as the relay owner's own; it can be shared once that turn has let go of it.
+    await eventually(async () => assert.equal((await api(relay, sb, "PUT", `/provider-profiles/${profile.body.profile.id}/sharing`, { shared: true })).status, 200));
     assert.equal((await api(owner, sa, "PUT", `/webhooks/${created.body.webhook.id}?nodeId=${relay.nodeId}`, execution)).status, 200);
     const local = await api<{ webhook: { id: string } }>(owner, sa, "POST", "/webhooks", input);
     assert.equal(local.status, 201);

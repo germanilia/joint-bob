@@ -1,26 +1,69 @@
 import { api } from "./api.js";
 
+/** One element with its text, test id and plain properties; the app never builds markup from strings. */
+function el(tag, { text, testid, role, ...properties } = {}) {
+  const node = Object.assign(document.createElement(tag), properties);
+  if (text !== undefined) node.textContent = text;
+  if (testid) node.dataset.testid = testid;
+  if (role) node.setAttribute("role", role);
+  return node;
+}
+
+function labelled(text, control) {
+  const label = el("label", { text });
+  label.append(control);
+  return label;
+}
+
+function advancedDetails() {
+  const details = el("details");
+  details.append(
+    el("summary", { text: "Candidate estimates and benchmark snapshots" }),
+    el("p", { text: "Advanced preview: enter a JSON array of candidates with exact identity, capabilities and cost estimates. The first candidate is the baseline. Unknown costs must be null, not zero. Include no credentials. History is loaded only from your accessible projects on this machine." }),
+    labelled("Candidate estimates", el("textarea", { testid: "allocation-candidates", rows: 6, maxLength: 100000, spellcheck: false, value: "[]" })),
+    labelled("Verified benchmark snapshots (optional)", el("textarea", { testid: "allocation-evidence", rows: 3, maxLength: 200000, spellcheck: false, value: "[]" })),
+  );
+  return details;
+}
+
+function pinnedChoice() {
+  const label = el("label");
+  label.append(el("input", { type: "checkbox", testid: "allocation-pinned", checked: true }), " Keep manual baseline selection");
+  return label;
+}
+
+function resultLine() {
+  const result = el("p", { testid: "allocation-result", role: "status" });
+  result.style.whiteSpace = "pre-wrap";
+  result.style.overflowWrap = "anywhere";
+  return result;
+}
+
+function pagerButtons() {
+  const row = el("div");
+  row.append(el("button", { type: "button", testid: "allocation-previous", hidden: true, text: "Previous" }), " ", el("button", { type: "button", testid: "allocation-next", hidden: true, text: "Next" }));
+  return row;
+}
+
 /** An explicit, read-only preview. No polling, browser storage, or automatic model switch. */
 export async function renderAllocationPreview() {
   if (document.querySelector('[data-testid="allocation-preview"]')) return;
   const section = document.createElement("section");
   section.dataset.testid = "allocation-preview";
   section.className = "routing-config-editor";
-  section.innerHTML = `<h3>Evidence-based allocation preview</h3>
-    <p data-testid="allocation-status" role="status">Loading evidence availability…</p>
-    <p>Recommendation only. Existing routing and manual choices stay unchanged. Automatic recovery remains disabled until held-out acceptance and a finite approved allowance.</p>
-    <label>Task description<textarea data-testid="allocation-task" rows="3" maxlength="12000"></textarea></label>
-    <button type="button" data-testid="allocation-assess">Assess with configured decision model</button>
-    <p data-testid="allocation-assessment" role="status"></p>
-    <details><summary>Candidate estimates and benchmark snapshots</summary>
-      <p>Advanced preview: enter a JSON array of candidates with exact identity, capabilities and cost estimates. The first candidate is the baseline. Unknown costs must be null, not zero. Include no credentials. History is loaded only from your accessible projects on this machine.</p>
-      <label>Candidate estimates<textarea data-testid="allocation-candidates" rows="6" maxlength="100000" spellcheck="false">[]</textarea></label>
-      <label>Verified benchmark snapshots (optional)<textarea data-testid="allocation-evidence" rows="3" maxlength="200000" spellcheck="false">[]</textarea></label>
-    </details>
-    <label><input type="checkbox" data-testid="allocation-pinned" checked /> Keep manual baseline selection</label>
-    <button type="button" data-testid="allocation-compare">Preview recommendation</button>
-    <p data-testid="allocation-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
-    <div><button type="button" data-testid="allocation-previous" hidden>Previous</button> <button type="button" data-testid="allocation-next" hidden>Next</button></div>`;
+  section.append(
+    el("h3", { text: "Evidence-based allocation preview" }),
+    el("p", { testid: "allocation-status", role: "status", text: "Loading evidence availability…" }),
+    el("p", { text: "Recommendation only. Existing routing and manual choices stay unchanged. Automatic recovery remains disabled until held-out acceptance and a finite approved allowance." }),
+    labelled("Task description", el("textarea", { testid: "allocation-task", rows: 3, maxLength: 12000 })),
+    el("button", { type: "button", testid: "allocation-assess", text: "Assess with configured decision model" }),
+    el("p", { testid: "allocation-assessment", role: "status" }),
+    advancedDetails(),
+    pinnedChoice(),
+    el("button", { type: "button", testid: "allocation-compare", text: "Preview recommendation" }),
+    resultLine(),
+    pagerButtons(),
+  );
   document.querySelector("#settingsPanel-classifiers").append(section);
   const field = name => section.querySelector(`[data-testid="allocation-${name}"]`);
   let assessment = null;

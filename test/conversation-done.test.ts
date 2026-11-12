@@ -6,7 +6,10 @@ import test from "node:test";
 import type { SessionSummary } from "../src/types.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type SignedIn } from "./dev-nodes.js";
 
-test("marking the last worktree conversation done deletes the worktree, clean or not", async () => {
+const UNVERIFIED = "Worktree kept: no verified local integration or explicit PR finish path";
+
+// Deleting a verified worktree is covered where its integration is made (worktree-cleanup and worktree-local-integration tests).
+test("marking the last worktree conversation done keeps a worktree whose changes were not verified as integrated", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-worktree-done-"));
   const environment = await seedDevEnvironment(root, 1);
   const node = environment.nodes[0];
@@ -24,20 +27,22 @@ test("marking the last worktree conversation done deletes the worktree, clean or
     const done = (session: SessionSummary) => api<{ deletedWorktreeIds: string[]; retainedWorktrees: Record<string, string> }>(node, auth, "PUT", `/projects/${project.id}/sessions/done`, { sessionId: session.conversationId ?? session.id, engine: session.harnessId, done: true });
     assert.deepEqual((await done(first)).body.deletedWorktreeIds, [], "another active conversation keeps it");
     await access(worktree.path);
-    assert.deepEqual((await done(second)).body.deletedWorktreeIds, [worktree.id]);
-    await assert.rejects(access(worktree.path), { code: "ENOENT" });
+    const finished = await done(second);
+    assert.deepEqual(finished.body.deletedWorktreeIds, [], "Done alone does not delete work that was never verified as integrated");
+    assert.equal(finished.body.retainedWorktrees[worktree.id], UNVERIFIED);
+    await access(worktree.path);
 
     const dirty = (await api<{ worktree: { id: string; path: string } }>(node, auth, "POST", `/projects/${project.id}/worktrees`, { name: "dirty cleanup" })).body.worktree;
     const dirtyMarkers = path.join(dirty.path, ".joint-bob-worktree", "conversations");
     await mkdir(dirtyMarkers, { recursive: true });
     await writeFile(path.join(dirtyMarkers, `${first.harnessId}--${first.id}.json`), "{}\n");
     await writeFile(path.join(dirty.path, "unfinished.txt"), "keep this\n");
-    const removed = await done(first);
-    assert.deepEqual(removed.body.deletedWorktreeIds, [dirty.id], "unmerged edits do not keep a finished worktree");
-    await assert.rejects(access(dirty.path), { code: "ENOENT" });
+    const kept = await done(first);
+    assert.deepEqual(kept.body.deletedWorktreeIds, [], "unmerged edits are never deleted by Done");
+    assert.equal(kept.body.retainedWorktrees[dirty.id], UNVERIFIED);
+    await access(path.join(dirty.path, "unfinished.txt"));
 
-    // Simulate worktrees whose done marks predate this feature: a GET stays read-only,
-    // and opening the list's cleanup mutation reconciles those persisted marks.
+    // Worktrees whose done marks predate this rule: a GET stays read-only, and the list's cleanup keeps them too.
     const old = (await api<{ worktree: { id: string; path: string } }>(node, auth, "POST", `/projects/${project.id}/worktrees`, { name: "already finished" })).body.worktree;
     await mkdir(path.join(old.path, ".joint-bob-worktree", "conversations"), { recursive: true });
     await writeFile(path.join(old.path, ".joint-bob-worktree", "conversations", `${second.harnessId}--${second.id}.json`), "{}\n");
@@ -46,9 +51,9 @@ test("marking the last worktree conversation done deletes the worktree, clean or
     await access(old.path);
     const cleanup = await api<{ deletedWorktreeIds: string[]; worktrees: Array<{ id: string }> }>(node, auth, "POST", `/projects/${project.id}/worktrees/cleanup`, {});
     assert.equal(cleanup.status, 200);
-    assert.deepEqual(cleanup.body.deletedWorktreeIds, [old.id]);
-    assert.deepEqual(new Set(cleanup.body.worktrees.map(({ id }) => id)), new Set([empty.id]));
-    await assert.rejects(access(old.path), { code: "ENOENT" });
+    assert.deepEqual(cleanup.body.deletedWorktreeIds, []);
+    assert.deepEqual(new Set(cleanup.body.worktrees.map(({ id }) => id)), new Set([worktree.id, dirty.id, old.id, empty.id]));
+    await access(old.path);
     assert.equal((await api(node, auth, "POST", "/projects/missing/worktrees/cleanup", {})).status, 404);
   } finally {
     await stopDevNode(server);

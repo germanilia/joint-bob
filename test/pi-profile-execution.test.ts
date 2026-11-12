@@ -44,8 +44,9 @@ test("Pi-kind selections resolve scopes independently of legacy and Claude selec
     await assert.rejects(runAsAccount(actor, () => projectProviderProfile(project.id, "c1", "claude")), /Select your own/);
     const assigned = await withAutomationProfile({ accountId: actor.accountId, profileId: defaults.id }, () => resolve());
     assert.equal(assigned?.id, defaults.id);
+    // Sharing a profile for automation does not take it from its owner: their own turns still resolve to it.
     setProviderProfileShared(actor.accountId, conversation.id, true);
-    await assert.rejects(resolve(), /Shared profiles/);
+    assert.equal((await resolve())?.id, conversation.id);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
