@@ -234,9 +234,10 @@ async function load() {
 
 new ResizeObserver(() => renderSurface(tabSurface)).observe(tabList);
 new ResizeObserver(() => renderSurface(railSurface)).observe(railList);
-// The column replaces the tab on a wide screen, so a tab that is open then goes back to the board.
+// The column replaces the tab on a wide screen, so a tab that is open then goes back to the board. Bob's page keeps the
+// tab at every width and has no column (bob-page.css).
 WIDE.addEventListener("change", () => {
-  if (WIDE.matches && currentControlView() === "assistants") showControlView("live");
+  if (WIDE.matches && !document.body.classList.contains("bob-desk") && currentControlView() === "assistants") showControlView("live");
   renderAll();
 });
 window.addEventListener("control-center-activated", () => { void load().catch((error) => console.warn("Could not list the assistants", error)); });

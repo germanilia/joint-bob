@@ -1,12 +1,11 @@
 // Bob's page on the desktop (1024 px and wider; below that the control center is Bob's chat, control-phone.js).
-// The page is the stage, Bob's chat beside it, and on the right, always there, "What Bob looks after": the control
-// center's views (Live agents, Dashboard, Automations, Memory, Dashboards, Assistants, with their counts) as rows that
-// open the view on the stage, then Bob himself: his model, "Ask before saving to memory", "Pause everything Bob does",
-// the team context and all of his settings. The head toggles the stage between Live conversations and the Dashboard.
-// The view opened last opens again, on every browser (state.controlCenter.view). Bob's chat and the right column each
-// fold into a round button and open from it again (state.controlCenter.collapsed). Nothing here leaves the control
-// center: only the person does (Exit, Esc twice, the toggle shortcut). The tab strip and the team context move into the
-// right column and back, by markers. Styles: public/bob-page.css.
+// Version A of 12 Nov: a head with Bob's hat, what he does, the team context, what he watches, "Bob is on" (pause
+// everything he does on his own), "Bob's settings", Refresh and Exit; below it Bob's chat and the stage, whose tabs are
+// the control center's views (Live agents, Dashboard, Automations, Memory, Dashboards, Assistants) with their counts.
+// The view opened last opens again, on every browser (state.controlCenter.view). Bob's chat folds into the "Ask Bob"
+// button (state.controlCenter.collapsed). Nothing here leaves the control center: only the person does (Exit, Esc
+// twice, the toggle shortcut). The tab strip and the team context move into the page and back, by markers.
+// Styles: public/bob-page.css.
 
 import { saveControlCenter, toggleFolded } from "./control-center.js";
 import { currentControlView, showControlView } from "./control-views.js";
@@ -19,6 +18,7 @@ const panel = document.getElementById("controlCenterPanel");
 const header = panel.querySelector(":scope > .panel-bar");
 const heading = header.querySelector("h1");
 const tabs = document.getElementById("controlTabs");
+const stage = document.getElementById("controlViews");
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -32,118 +32,51 @@ function button(className, testid, text) {
   node.dataset.testid = testid;
   return node;
 }
-function hatImage(size) {
-  const hat = document.createElement("img");
-  hat.src = "/icon-mark.svg";
-  hat.alt = "";
-  hat.width = size;
-  hat.height = size;
-  return hat;
-}
 
-/* ---------- the head: Bob's hat, his name, the stage toggle and what he watches ---------- */
+/* ---------- the head ---------- */
 
 const avatar = element("span", "bob-head-avatar");
 avatar.setAttribute("aria-hidden", "true");
-avatar.append(hatImage(22));
+const hat = document.createElement("img");
+hat.src = "/icon-mark.svg";
+hat.alt = "";
+hat.width = 26;
+hat.height = 26;
+avatar.append(hat);
 const tag = element("span", "bob-head-tag", "Acts as you in every project");
 tag.dataset.testid = "bob-head-tag";
+const contextHere = element("span", "bob-head-context");
 const watching = element("span", "bob-head-state");
 watching.dataset.testid = "bob-head-state";
-header.prepend(avatar);
-heading.after(tag);
 
-/** The stage shows the live conversations or the Dashboard; another view opened from the right column presses neither. */
-const STAGE_VIEWS = [["live", "Live conversations"], ["my-dashboard", "Dashboard"]];
-const toggle = element("div", "bob-stage-toggle");
-toggle.setAttribute("role", "group");
-toggle.setAttribute("aria-label", "What the stage shows");
-toggle.dataset.testid = "bob-stage-toggle";
-for (const [view, label] of STAGE_VIEWS) {
-  const choice = button("bob-stage-choice", `bob-stage-${view}`, label);
-  choice.dataset.view = view;
-  choice.addEventListener("click", () => showControlView(view));
-  toggle.append(choice);
-}
-tag.after(toggle, watching);
-function markToggle() {
-  for (const choice of toggle.children) choice.setAttribute("aria-pressed", String(choice.dataset.view === currentControlView()));
-}
-
-/* ---------- the right column ---------- */
-
-const side = element("aside", "bob-side");
-side.id = "bobSide";
-side.dataset.testid = "bob-side";
-side.setAttribute("aria-label", "What Bob looks after");
-const sideFold = button("ghost compact bob-fold", "bob-side-fold", "»");
-sideFold.title = "Fold this column into a button";
-const looksAfter = element("div", "bob-side-lab bob-side-top");
-looksAfter.append(element("span", "", "What Bob looks after"), sideFold);
-const tabsHere = element("div", "bob-side-group bob-side-tabs");
-const bobLab = element("div", "bob-side-lab", "Bob");
-const bobGroup = element("div", "bob-side-group");
-
-function line(className, testid) {
-  return button(`bob-line ${className}`, testid);
-}
-function chevron() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("class", "bob-chev");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", "m9 18 6-6-6-6");
-  svg.append(path);
-  return svg;
-}
-
-const model = line("bob-model", "bob-side-model");
-const modelValue = element("em", "", "Bob's agent");
-model.append(element("span", "", "Model"), modelValue, chevron());
-model.title = "Bob's agent, model and effort";
-model.addEventListener("click", () => openSettings());
-
-function switchLine(label, testid, title) {
-  const node = line("bob-switch", testid);
-  node.setAttribute("role", "switch");
-  node.setAttribute("aria-checked", "false");
-  node.title = title;
-  node.append(element("span", "", label), element("i", "bob-switch-knob"));
-  return node;
-}
-const ask = switchLine("Ask before saving to memory", "bob-side-ask", "Bob asks you before he saves anything to his memory");
-ask.addEventListener("click", () => {
-  elements.controlBobAsk.checked = !elements.controlBobAsk.checked;
-  elements.controlBobAsk.dispatchEvent(new Event("change", { bubbles: true }));
-  ask.setAttribute("aria-checked", String(elements.controlBobAsk.checked));
-});
-const pause = switchLine("Pause everything Bob does", "bob-side-pause", "Pause everything Bob does on his own (Monitoring): agents keep running, nobody answers for them, and questions wait for you");
+const pause = button("bob-head-pause", "bob-head-pause");
+pause.setAttribute("role", "switch");
+pause.setAttribute("aria-checked", "true");
+pause.title = "Bob acts on his own: he answers agents for you and keeps work going. Off pauses all of it; agents keep running and questions wait for you";
+pause.append(element("span", "", "Bob is on"), element("i", "bob-switch-knob"));
 pause.addEventListener("click", () => elements.controlChatMonitor.click());
-const allSettings = line("bob-all", "bob-side-settings");
-allSettings.append(element("span", "", "All of Bob's settings"), chevron());
-allSettings.title = "Decision model, confidence, auto respond, unfinished work, system control and standing instructions";
-allSettings.addEventListener("click", () => openSettings());
-const contextHere = element("div", "bob-side-context");
-bobGroup.append(model, ask, pause, contextHere, allSettings);
-side.append(looksAfter, tabsHere, bobLab, bobGroup);
-panel.append(side);
 
-/* ---------- folding: Bob's chat and the right column fold into round buttons ---------- */
+const settingsButton = button("ghost compact bob-head-settings", "bob-head-settings", "Bob's settings");
+settingsButton.title = "Bob's agent, model, decision model, auto respond, unfinished work, system control, memory, Guardian and Telegram";
+settingsButton.addEventListener("click", () => openSettings());
+
+header.prepend(avatar);
+heading.after(tag, contextHere, watching, pause, settingsButton);
+
+/* ---------- folding: Bob's chat folds into the "Ask Bob" button ---------- */
 
 const chatFold = button("ghost compact bob-fold", "control-chat-fold", "–");
 chatFold.title = "Fold Bob's chat into a button";
 elements.controlChatSide.after(chatFold);
 const chatFab = button("bob-fab bob-fab-chat", "bob-fab-chat");
 chatFab.title = "Open Bob's chat";
-chatFab.append(hatImage(24));
-const sideFab = button("bob-fab bob-fab-side", "bob-fab-side", "«");
-sideFab.title = "Open What Bob looks after";
-panel.append(chatFab, sideFab);
+const fabCount = element("span", "bob-fab-count");
+fabCount.dataset.testid = "bob-fab-count";
+chatFab.append(element("i", "bob-fab-hat"), element("span", "", "Ask Bob"), fabCount);
+panel.append(chatFab);
 
 function applyFolds() {
   body.classList.toggle("bob-chat-folded", state.controlCenter.collapsed.includes("chat"));
-  body.classList.toggle("bob-side-folded", state.controlCenter.collapsed.includes("side"));
 }
 function fold(id) {
   toggleFolded(id);
@@ -151,8 +84,6 @@ function fold(id) {
 }
 chatFold.addEventListener("click", () => fold("chat"));
 chatFab.addEventListener("click", () => fold("chat"));
-sideFold.addEventListener("click", () => fold("side"));
-sideFab.addEventListener("click", () => fold("side"));
 
 // On a phone Bob's settings are a screen of their own (phone.css): its head says so and goes back to the chat.
 const settingsHead = element("div", "bob-settings-head");
@@ -164,23 +95,21 @@ settingsBack.addEventListener("click", () => { if (!elements.controlChatSettings
 settingsHead.append(settingsBack, element("b", "", "Bob's settings"));
 elements.controlChatSettings.prepend(settingsHead);
 
-/** Bob's settings open over his chat, where they always were; a folded chat opens first. */
+/** Bob's settings open over his chat, where they always were; a folded chat opens first. Pressed again, they close. */
 function openSettings() {
   if (state.controlCenter.collapsed.includes("chat")) fold("chat");
-  if (elements.controlChatSettings.hidden) elements.controlChatSettingsButton.click();
-  elements.controlChatSettings.scrollIntoView?.({ block: "nearest" });
+  elements.controlChatSettingsButton.click();
+  if (!elements.controlChatSettings.hidden) elements.controlChatSettings.scrollIntoView?.({ block: "nearest" });
 }
 
 window.addEventListener("control-bob-settings", (event) => {
-  const settings = event.detail ?? {};
-  const harness = settings.harnessId ? `${settings.harnessId[0].toUpperCase()}${settings.harnessId.slice(1)}` : "";
-  modelValue.textContent = harness ? [harness, settings.modelId].filter(Boolean).join(" · ") : "Bob's agent";
-  ask.setAttribute("aria-checked", String(Boolean(settings.askBeforeSaving)));
-  pause.setAttribute("aria-checked", String(settings.monitoring === false));
-  tag.textContent = settings.monitoring === false ? "Paused · agents wait for you" : "Acts as you in every project";
+  const on = event.detail?.monitoring !== false;
+  pause.setAttribute("aria-checked", String(on));
+  pause.firstElementChild.textContent = on ? "Bob is on" : "Bob is paused";
+  tag.textContent = on ? "Acts as you in every project" : "Paused · agents wait for you";
 });
 
-/* ---------- the views as rows ---------- */
+/* ---------- the views as tabs ---------- */
 
 const ICONS = {
   live: "M3 12h4l3-8 4 16 3-8h4",
@@ -201,12 +130,10 @@ function icon(view) {
   svg.append(path);
   return svg;
 }
-/** The tab strip is drawn anew whenever a count changes; each tab gets its icon and chevron (only used in the column). */
+/** The tab strip is drawn anew whenever a count changes; each tab gets its icon (only shown on Bob's page). */
 function decorateTabs() {
   for (const tab of tabs.querySelectorAll(".control-tab")) {
-    if (tab.querySelector(".bob-tab-icon")) continue;
-    tab.prepend(icon(tab.dataset.view));
-    tab.append(chevron());
+    if (!tab.querySelector(".bob-tab-icon")) tab.prepend(icon(tab.dataset.view));
   }
 }
 new MutationObserver(decorateTabs).observe(tabs, { childList: true });
@@ -216,14 +143,15 @@ decorateTabs();
 
 /** Where a moved element lives otherwise, so it goes back exactly there. */
 const homes = new Map();
-function moveInto(node, target) {
+function moveInto(node, target, { first = false } = {}) {
   if (!node || node.parentElement === target) return;
   if (!homes.has(node)) {
     const marker = document.createComment(`${node.id || node.className} lives here outside Bob's page`);
     node.before(marker);
     homes.set(node, marker);
   }
-  target.append(node);
+  if (first) target.prepend(node);
+  else target.append(node);
 }
 function restore() {
   for (const [node, marker] of homes) if (marker.isConnected) marker.replaceWith(node);
@@ -234,12 +162,18 @@ function onPage() {
   return wide.matches && body.classList.contains("ws-desktop") && !body.classList.contains("focus-ui");
 }
 
+let updatesFolded = false;
 function apply() {
   const page = onPage();
   body.classList.toggle("bob-desk", page);
   if (page) {
-    moveInto(tabs, tabsHere);
+    moveInto(tabs, stage, { first: true });
     moveInto(document.querySelector(".team-context-label"), contextHere);
+    // Background updates start folded at the top of the chat, once; the person opens them from their count.
+    if (!updatesFolded) {
+      document.querySelector('[data-testid="control-chat-updates"]').open = false;
+      updatesFolded = true;
+    }
   } else restore();
   heading.textContent = page ? "Bob" : "Control center";
 }
@@ -253,7 +187,6 @@ window.addEventListener("control-center-activated", () => {
   if (wide.matches && state.controlCenter.view !== currentControlView()) showControlView(state.controlCenter.view);
 });
 window.addEventListener("control-view-changed", (event) => {
-  markToggle();
   const id = event.detail.id;
   if (!wide.matches || !body.classList.contains("view-control") || state.controlCenter.view === id) return;
   state.controlCenter.view = id;
@@ -264,14 +197,21 @@ new MutationObserver(() => { if (body.classList.contains("bob-desk") !== onPage(
 
 /* ---------- what Bob watches ---------- */
 
+function pill(text, className) {
+  const node = element("span", `bob-state-pill ${className}`, text);
+  node.dataset.testid = `bob-head-${className.split(" ")[0]}`;
+  return node;
+}
 window.addEventListener("control-center-rendered", (event) => {
   const cards = event.detail?.cards ?? [];
   const running = cards.filter((card) => card.column === "running").length;
   const waiting = cards.filter((card) => card.column === "needs-you").length;
-  watching.textContent = [running ? `Watching ${running} running` : "Nothing running", waiting ? `${waiting} need${waiting === 1 ? "s" : ""} you` : ""].filter(Boolean).join(" · ");
-  watching.classList.toggle("live", running > 0);
+  watching.replaceChildren(
+    running ? pill(`Watching ${running} running`, "running live") : pill("Nothing running", "running"),
+    ...(waiting ? [pill(`${waiting} need${waiting === 1 ? "s" : ""} you`, "waiting")] : []),
+  );
+  fabCount.textContent = waiting ? String(waiting) : "";
 });
 
 apply();
 applyFolds();
-markToggle();
