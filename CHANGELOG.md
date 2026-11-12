@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.273.5 — 2026-11-12
+
+- **Model routing:** the daily review of the default models is no longer part of the app. The instruction files, the data script and the review instructions in **Settings → System AI** are gone; a review like this is a scheduled task you set up yourself, with its instructions in the task. Model routing itself is unchanged.
+
 ## 2.273.4 — 2026-11-12
 
 - Made the Google Antigravity icon readable in light and dark themes so its enabled button no longer looks disabled.
