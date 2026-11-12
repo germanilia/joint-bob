@@ -15,6 +15,7 @@ import { chooseSnooze } from "./control-snooze.js";
 import { drawChunked } from "./long-scroll.js";
 import { openNeedDetail } from "./needs-detail.js";
 import { elements } from "./elements.js";
+import { menuIcon } from "./icons.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { toast } from "./shell.js";
 import { state } from "./state.js";
@@ -105,8 +106,12 @@ export function waitingCard(card, { compact = false } = {}) {
     Promise.resolve().then(work).catch((error) => toast.error(error.message)).finally(() => { if (button.isConnected) button.disabled = false; });
   };
   const button = (label, className, testid, work) => {
-    const node = element("button", className, label);
+    const node = element("button", className);
     node.type = "button";
+    node.setAttribute("aria-label", label);
+    const icon = menuIcon({ Answer: "chat", "Push it on": "play", Snooze: "clock", Done: "check", Open: "transfer", "Allow once": "check", Block: "close" }[label]);
+    icon.classList.add("ws-wait-action-icon");
+    node.append(icon, element("span", "ws-wait-action-label", label));
     node.dataset.testid = testid;
     node.addEventListener("click", (event) => { event.stopPropagation(); run(node, work); });
     return node;
@@ -132,7 +137,9 @@ export function waitingCard(card, { compact = false } = {}) {
   done.title = card.turnRunning ? "Stop it and close it: it leaves Home, and you can open it again from its project" : "Close it: it leaves Home, and you can open it again from its project";
   actions.append(done, element("span", "ws-home-spacer"));
   const open = button("Open", "ghost compact ws-wait-open", "home-card-open", () => { requested = false; return openConversation(card); });
-  open.append(chevron());
+  const arrow = chevron();
+  arrow.classList.add("ws-wait-open-chevron");
+  open.append(arrow);
   actions.append(open);
   root.append(top, title, question, actions);
   // Looking at a card changes nothing; tapping it (not its buttons) shows what exactly it needs, over Home.

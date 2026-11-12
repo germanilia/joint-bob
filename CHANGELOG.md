@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.288.1 — 2026-11-12
+
+- Phone cards use accessible icon buttons so every action, including Open, stays inside the card.
+
 ## 2.288.0 — 2026-11-12
 
 - **Needs you on the phone is a deck you can swipe.** Every card that needs you sits in one row; swipe to move on, and nothing is done to a card by looking at it or swiping past it. Tap a card to see exactly what it needs without opening the conversation: the question or request, why it was flagged, how long it has waited, your last message, the agent's last message and its last few steps. Answer, Push it on, Allow or Block, Done and Snooze are in the same place.

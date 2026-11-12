@@ -180,6 +180,19 @@ test("the phone's Home shows what needs you as the same cards", async () => {
     const height = await button.evaluate((element) => element.getBoundingClientRect().height);
     assert.ok(height >= 44, `${testid} is a 44 px target (${height})`);
   }
+  for (const width of [320, 360, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const actions = await phoneCard.locator(".ws-wait-actions > button").evaluateAll((buttons) => buttons.map((button) => {
+      const box = button.getBoundingClientRect();
+      const card = button.closest(".ws-wait")!.getBoundingClientRect();
+      return { label: button.getAttribute("aria-label"), fits: box.left >= card.left && box.right <= card.right && box.right <= innerWidth, width: box.width, icon: !!button.querySelector("svg"), textHidden: getComputedStyle(button.querySelector(".ws-wait-action-label") ?? button).display === "none" };
+    }));
+    assert.equal(actions.length, 5);
+    for (const action of actions) {
+      assert.ok(action.fits && action.width >= 44, `action fits at ${width}px: ${JSON.stringify(action)}`);
+      assert.ok(action.label && action.icon && action.textHidden, `mobile action has a named icon: ${JSON.stringify(action)}`);
+    }
+  }
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
