@@ -76,7 +76,7 @@ export async function loadSystemAiSettings(bridge) {
     const laya = select(decision, 'Laya secret account', 'system-ai-laya-account', accounts('LAYA_API_KEY'), view.system.decision.layaAccountId);
     const routing = renderRouting(view.routing);
     const operations = {};
-    for (const [key, title] of [['feedback', 'Learning / feedback'], ['knowledge', 'Knowledge cleanup']]) {
+    for (const [key, title] of [['knowledge', 'Knowledge cleanup']]) {
       const box = fieldset(title);
       const saved = view.system.operations[key];
       const harness = select(box, 'Agent override', `system-ai-${key}-harness`, [['', 'Existing summary-writer behavior (no override)'], ...descriptors.map(item => [item.id, item.label])], saved?.harnessId);
@@ -92,15 +92,12 @@ export async function loadSystemAiSettings(bridge) {
       harness.onchange = render; render();
       operations[key] = () => !harness.value ? null : fields ? { harnessId: harness.value, provider: fields.provider ? fields.provider.value : descriptor.configuration.fixedProvider, modelId: fields.model.value, thinkingLevel: fields.thinking.value } : saved;
     }
-    const quality = fieldset('Quality evaluator');
-    const hint = document.createElement('p'); hint.className = 'settings-hint'; hint.textContent = 'Restricted, tool-free Claude evaluator, with TypeSafe judgments using the system TypeSafe account. Blank model keeps the current Claude default. Collection is machine-local and stays on Quality.'; quality.append(hint);
-    const qualityModel = document.createElement('input'); qualityModel.dataset.testid = 'system-ai-quality-model'; qualityModel.value = view.system.quality.modelId; qualityModel.placeholder = 'Current Claude default'; label(quality, 'Quality model', qualityModel);
     const profiles = fieldset('System login profiles');
     const profileControls = {};
     for (const key of ['claude', 'pi', 'kiro', 'openai-codex']) {
       profileControls[key] = select(profiles, key, `system-ai-profile-${key}`, [['', 'Existing sign-in selection'], ...view.profiles.filter(item => item.provider === key).map(item => [item.id, item.label])], view.system.profiles[key]);
     }
-    values = () => ({ system: { decision: { model: model.value, typesafeAccountId: typesafe.value || null, layaAccountId: laya.value || null }, operations: Object.fromEntries(Object.entries(operations).map(([key, get]) => [key, get()])), quality: { modelId: qualityModel.value.trim() }, profiles: Object.fromEntries(Object.entries(profileControls).map(([key, control]) => [key, control.value || null])), routing: routing() }, ...bridge.value() });
+    values = () => ({ system: { decision: { model: model.value, typesafeAccountId: typesafe.value || null, layaAccountId: laya.value || null }, operations: { ...view.system.operations, ...Object.fromEntries(Object.entries(operations).map(([key, get]) => [key, get()])) }, quality: view.system.quality, profiles: Object.fromEntries(Object.entries(profileControls).map(([key, control]) => [key, control.value || null])), routing: routing() }, ...bridge.value() });
     ready = true; status.textContent = '';
   } catch (error) { status.textContent = error.message; }
   finally { loading = false; }

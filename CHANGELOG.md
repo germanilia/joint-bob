@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.274.1 — 2026-11-12
+
+- Removed built-in Quality collection, its dashboard and evaluator controls. Conversation ratings and comments are still saved when marking Done, without starting an automatic learning agent. Review and system improvements can be handled by separately configured scheduled tasks.
+
 ## 2.274.0 — 2026-11-12
 
 - **Projects and conversations sit in two columns on the desktop.** The project list is under the places, and the chosen project's conversations have their own column beside it. Both lists page with whole rows and no inner scrollbar; pin and ⋯ show when you point at a row or focus it. `[` and `]` fold each column. A narrow window puts the details column away first, then folds the left column.

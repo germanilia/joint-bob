@@ -1,34 +1,36 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { openNodeDatabase } from '../src/node-database.js';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from './dev-nodes.js';
-import { isAdminRoute } from '../src/server/admin.js';
+import { QualityStore } from '../src/quality-analytics.js';
 
-test('quality routes are admin-only and default off on a disposable machine', { timeout: 120000 }, async () => {
-  assert.equal(isAdminRoute('GET', '/quality-analytics'), true);
-  assert.equal(isAdminRoute('PUT', '/quality-analytics/settings'), true);
-  const root = await mkdtemp(path.join(os.tmpdir(), 'jb-quality-api-'));
+test('retired Quality endpoints cannot collect and Done feedback is stored without inference', { timeout: 120_000 }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'jb-quality-retired-'));
   const environment = await seedDevEnvironment(root, 1), node = environment.nodes[0];
+  const db = openNodeDatabase(path.join(node.dataDir, 'node.db'));
+  new QualityStore(db).setEnabled(true); // A saved old switch must not restart collection.
   const server = await startDevNode(environment, node);
   try {
     const session = await signIn(environment, node);
-    const response = await api<any>(node, session, 'GET', '/quality-analytics');
-    assert.equal(response.status, 200); assert.equal(response.body.enabled, false);
-    assert.equal(response.body.totals.replies, 0);
-    const invalid = await api(node, session, 'GET', '/quality-analytics?page=-1'); assert.equal(invalid.status, 400);
-    const invalidToggle = await api(node, session, 'PUT', '/quality-analytics/settings', { enabled: 'yes' }); assert.equal(invalidToggle.status, 400);
-    const toggle = await api<any>(node, session, 'PUT', '/quality-analytics/settings', { enabled: false }); assert.equal(toggle.body.enabled, false);
-    const retry = await api(node, session, 'POST', '/quality-analytics/retry', {}); assert.equal(retry.status, 409);
-    const enabled = await api<any>(node, session, 'PUT', '/quality-analytics/settings', { enabled: true }); assert.equal(enabled.body.enabled, true);
-    let collected;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      collected = await api<any>(node, session, 'GET', '/quality-analytics');
-      if (collected.body.jobs.length) break;
-      await new Promise(resolve => setTimeout(resolve, 50));
+    for (const [method, endpoint, body] of [['GET', '/quality-analytics', undefined], ['PUT', '/quality-analytics/settings', { enabled: true }], ['POST', '/quality-analytics/retry', {}]] as const) {
+      const response = await api(node, session, method, endpoint, body);
+      assert.equal(response.status, 404, `${method} ${endpoint}`);
     }
-    assert.ok(collected!.body.jobs.length > 0, 'real local inventory is queued without a display listing');
-    const disabled = await api<any>(node, session, 'PUT', '/quality-analytics/settings', { enabled: false }); assert.equal(disabled.body.enabled, false);
-  } finally { await stopDevNode(server); await rm(root, { recursive: true, force: true }); }
+    const project = node.projects[0], conversationId = 'retired-quality-feedback';
+    const feedback = { rating: 'bad', description: 'Keep this exact feedback for the scheduled review.' };
+    const done = await api(node, session, 'PUT', `/projects/${project.id}/sessions/done`, { engine: 'pi', sessionId: conversationId, done: true, feedback });
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    const row = db.prepare("SELECT name FROM name_overrides WHERE scope='session_feedback' AND key=?").get(conversationId) as { name: string };
+    const stored = JSON.parse(row.name);
+    assert.deepEqual(stored.feedback, feedback);
+    assert.equal(stored.source, 'manual');
+    assert.equal(stored.status, 'complete', 'Done does not queue a built-in learning agent');
+    assert.equal((db.prepare('SELECT count(*) count FROM quality_jobs').get() as { count: number }).count, 0, 'the old enabled flag is ignored');
+    const reopened = await api(node, session, 'PUT', `/projects/${project.id}/sessions/done`, { engine: 'pi', sessionId: conversationId, done: false });
+    assert.equal(reopened.status, 200);
+    assert.equal(db.prepare("SELECT 1 FROM name_overrides WHERE scope='session_feedback' AND key=?").get(conversationId), undefined);
+  } finally { db.close(); await stopDevNode(server); await rm(root, { recursive: true, force: true }); }
 });

@@ -973,7 +973,6 @@
           <button class="settings-tab" type="button" data-settings-tab="connections" role="tab" id="settingsTab-connections" aria-controls="settingsPanel-connections" aria-selected="false" tabindex="-1" data-testid="settings-tab-connections"><span class="settings-tab-icon" style="--tile:#f59e0b" aria-hidden="true">🔌</span><span class="settings-tab-label">Connections</span></button>
           <button class="settings-tab" type="button" data-settings-tab="classifiers" role="tab" id="settingsTab-classifiers" aria-controls="settingsPanel-classifiers" aria-selected="false" tabindex="-1" data-testid="settings-tab-classifiers"><span class="settings-tab-icon" style="--tile:#14b8a6" aria-hidden="true">🧭</span><span class="settings-tab-label">Classifiers</span></button>
           <button class="settings-tab" type="button" data-settings-tab="system-ai" role="tab" id="settingsTab-system-ai" aria-controls="settingsPanel-system-ai" aria-selected="false" tabindex="-1" data-testid="settings-tab-system-ai" data-admin-only><span class="settings-tab-icon" style="--tile:#6366f1" aria-hidden="true">🧠</span><span class="settings-tab-label">System AI</span></button>
-          <button class="settings-tab" type="button" data-settings-tab="quality" role="tab" id="settingsTab-quality" aria-controls="settingsPanel-quality" aria-selected="false" tabindex="-1" data-testid="settings-tab-quality" data-admin-only><span class="settings-tab-icon" style="--tile:#0891b2" aria-hidden="true">📈</span><span class="settings-tab-label">Quality</span></button>
           <button class="settings-tab" type="button" data-settings-tab="guardian" role="tab" id="settingsTab-guardian" aria-controls="settingsPanel-guardian" aria-selected="false" tabindex="-1" data-testid="settings-tab-guardian" data-admin-only><span class="settings-tab-icon" style="--tile:#dc2626" aria-hidden="true">🛡️</span><span class="settings-tab-label">Guardian</span></button>
           <button class="settings-tab" type="button" data-settings-tab="secrets" role="tab" id="settingsTab-secrets" aria-controls="settingsPanel-secrets" aria-selected="false" tabindex="-1" data-testid="settings-tab-secrets"><span class="settings-tab-icon" style="--tile:#37cfab" aria-hidden="true">🔑</span><span class="settings-tab-label">Secrets</span></button>
           <button class="settings-tab" type="button" data-settings-tab="browser" role="tab" id="settingsTab-browser" aria-controls="settingsPanel-browser" aria-selected="false" tabindex="-1" data-testid="settings-tab-browser"><span class="settings-tab-icon" style="--tile:#3b82f6" aria-hidden="true">🌐</span><span class="settings-tab-label">Browser</span></button>
@@ -2026,15 +2025,11 @@
           </div>
         </section>
         <section class="settings-panel system-ai-panel" id="settingsPanel-system-ai" role="tabpanel" aria-labelledby="settingsTab-system-ai" tabindex="0" data-testid="settings-panel-system-ai" data-admin-only hidden>
-          <p class="settings-hint">Configuration is shared with trusted twins, not ordinary cluster peers. Credentials are resolved on the execution machine, never attached to projects. Collection and readiness remain machine-local.</p>
+          <p class="settings-hint">Configuration is shared with trusted twins, not ordinary cluster peers. Credentials are resolved on the execution machine, never attached to projects. Readiness remains machine-local.</p>
           <p id="systemAiNode" data-testid="system-ai-node"></p>
           <output id="systemAiReadiness" data-testid="system-ai-readiness"></output>
           <div id="systemAiChoices"></div>
           <output id="systemAiStatus" role="status" data-testid="system-ai-status"></output>
-        </section>
-
-        <section class="settings-panel" id="settingsPanel-quality" role="tabpanel" aria-labelledby="settingsTab-quality" tabindex="0" data-testid="settings-panel-quality" data-admin-only hidden>
-          <div class="quality-analytics" id="qualityAnalytics"></div>
         </section>
 
         <section class="settings-panel" id="settingsPanel-guardian" role="tabpanel" aria-labelledby="settingsTab-guardian" tabindex="0" data-testid="settings-panel-guardian" data-admin-only hidden>

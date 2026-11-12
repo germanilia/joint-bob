@@ -36,7 +36,6 @@ import { createSettingsSearch } from "./settings-search.js";
 // settings-page (P4): Settings → File sync.
 import { loadFileSyncSettings } from "./file-sync-settings.js";
 import { loadGuardianSettings } from "./guardian-settings.js";
-import { loadQualityAnalytics } from "./quality-analytics.js";
 import { loadSystemAiSettings, saveSystemAiSettings } from "./system-ai-settings.js";
 import { loadConversationChatSettings } from "./conversation-chat.js";
 import { buildSectionHeads, drawSectionIcons, installSettingsPage, openGroup, showSection } from "./settings-page.js";
@@ -121,7 +120,7 @@ function renderClientLogs() {
 }
 
 // These panels guard their own loading and do not depend on Save settings.
-const ownLoading = (panel) => ["settingsPanel-cluster", "settingsPanel-relay", "settingsPanel-webhooks", "settingsPanel-browser", "settingsPanel-node", "settingsPanel-users", "settingsPanel-file-sync", "settingsPanel-automation-tags", "settingsPanel-story", "settingsPanel-guardian", "settingsPanel-quality", "settingsPanel-system-ai"].includes(panel.id);
+const ownLoading = (panel) => ["settingsPanel-cluster", "settingsPanel-relay", "settingsPanel-webhooks", "settingsPanel-browser", "settingsPanel-node", "settingsPanel-users", "settingsPanel-file-sync", "settingsPanel-automation-tags", "settingsPanel-story", "settingsPanel-guardian", "settingsPanel-system-ai"].includes(panel.id);
 
 /** Shows one settings panel and hides the rest, keeping the tablist's roving tabindex correct. */
 function selectSettingsTab(requested) {
@@ -151,7 +150,6 @@ function selectSettingsTab(requested) {
   if (name === "notifications") { void loadNtfyServicesPanel(); void loadErrorReportingSettings(); }
   if (name === "classifiers") void loadRoutingConfigs().catch((error) => { elements.routingConfigStatus.textContent = error.message; });
   if (name === "guardian" || name === "classifiers") void loadGuardianSettings().catch((error) => toast.error(error.message));
-  if (name === "quality") void loadQualityAnalytics();
   if (name === "system-ai") {
     void loadSystemAiSettings({ controls: (descriptor, settings, prefix, options) => createConversationControls(descriptor, settings, prefix, { ...options, preserveUnavailableThinking: true }), render: (settings, descriptors) => {
       systemHarnessDescriptors = descriptors;

@@ -33,7 +33,8 @@ test('System AI centralizes shared choices and saves only its dedicated endpoint
   assert.equal(await panel.getByTestId('quality-enabled').count(), 0);
   assert.equal(await page.getByTestId('system-ai-typesafe-account').inputValue(), 'missing-account');
   assert.equal(await page.getByTestId('system-ai-profile-claude').inputValue(), 'missing-profile');
-  assert.equal(await page.getByTestId('system-ai-quality-model').inputValue(), '', 'blank preserves the Claude default');
+  assert.equal(await page.getByTestId('system-ai-quality-model').count(), 0);
+  assert.equal(await page.getByTestId('system-ai-feedback-harness').count(), 0);
   assert.deepEqual(await page.evaluate(() => {
     const ids = [...document.querySelectorAll('[id]')].map(el => el.id);
     return ids.filter((id, index) => ids.indexOf(id) !== index);
@@ -44,10 +45,7 @@ test('System AI centralizes shared choices and saves only its dedicated endpoint
   });
   // Each change saves on its own, through System AI's endpoint only; a failure shows on the save line and in a toast.
   const line = page.getByTestId('settings-save-state');
-  await page.getByTestId('system-ai-feedback-harness').selectOption('claude');
-  await page.getByTestId('system-ai-feedback-model').waitFor({ state: 'attached' });
-  await page.getByTestId('system-ai-feedback-harness').selectOption('');
-  await page.getByTestId('system-ai-quality-model').fill('fixture-quality');
+  await page.getByTestId('system-ai-decision-model').selectOption('laya');
   await page.locator('[data-testid="settings-save-state"][data-state="failed"]').waitFor();
   assert.match(await line.innerText(), /^Not saved: .*Synthetic save failure/);
   await page.locator('.toast', { hasText: /Settings not saved: .*Synthetic save failure/ }).waitFor();
@@ -61,7 +59,7 @@ test('System AI centralizes shared choices and saves only its dedicated endpoint
   assert.equal(writes.length, failedWrites + 1, 'Try again sends one request');
   for (const write of writes) assert.deepEqual(Object.keys(write).sort(), ['backgroundAgent', 'dashboards', 'syncCheck', 'system']);
   const last = writes.at(-1);
-  assert.equal(last.system.quality.modelId, 'fixture-quality');
+  assert.equal(last.system.quality.modelId, '', 'legacy configuration is preserved without exposing an evaluator');
   assert.equal(last.system.operations.feedback, null);
   assert.deepEqual(last.system.operations.knowledge, choice);
   assert.equal(last.system.profiles.claude, 'missing-profile');
@@ -72,9 +70,7 @@ test('System AI centralizes shared choices and saves only its dedicated endpoint
     const bounds = await panel.evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
     assert.ok(bounds.scroll <= bounds.width + 2, JSON.stringify(bounds));
   }
-  await page.evaluate(async () => { const { openSettings } = await import('/app/settings.js'); await openSettings('quality'); });
-  await page.getByTestId('quality-system-ai-link').click();
-  await panel.waitFor();
+  assert.equal(await page.getByTestId('settings-tab-quality').count(), 0);
   await page.evaluate(async () => {
     const { state } = await import('/app/state.js'); state.role = 'member';
     const { applyAdminVisibility } = await import('/app/node-admin.js'); applyAdminVisibility();

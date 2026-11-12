@@ -57,7 +57,7 @@ test('System AI selects unattached credentials, replicates between twins, and le
     assert.deepEqual(received!.body.backgroundAgent, agent);
     for (const node of [a, b]) {
       const auth = node === a ? authA : authB;
-      assert.equal((await api<{ enabled: boolean }>(node, auth, 'GET', '/quality-analytics')).body.enabled, false);
+      assert.equal((await api(node, auth, 'GET', '/quality-analytics')).status, 404);
     }
     const changed = { ...system, quality: { modelId: 'second-fixture' } };
     assert.equal((await api(b, authB, 'PUT', '/system-ai', { system: changed })).status, 200);
@@ -69,10 +69,10 @@ test('System AI selects unattached credentials, replicates between twins, and le
       await new Promise(resolve => setTimeout(resolve, 250));
     } while (Date.now() < backUntil);
     assert.equal(back!.body.system.quality.modelId, 'second-fixture');
-    // Remove the synthetic key before enabling collection: these tests must never call a provider.
+    // Removing the synthetic key must not re-enable the retired collection endpoint.
     assert.equal((await api(a, authA, 'DELETE', `/secrets/accounts/${created.body.account.id}`)).status, 200);
-    const enabled = await api<{ enabled: boolean }>(a, authA, 'PUT', '/quality-analytics/settings', { enabled: true });
-    assert.equal(enabled.body.enabled, true);
+    const enabled = await api(a, authA, 'PUT', '/quality-analytics/settings', { enabled: true });
+    assert.equal(enabled.status, 404);
     const changedAgain = { ...changed, quality: { modelId: 'third-fixture' } };
     assert.equal((await api(a, authA, 'PUT', '/system-ai', { system: changedAgain })).status, 200, 'preserve a missing selected key without substituting another');
     const finalUntil = Date.now() + 60000;
@@ -83,9 +83,9 @@ test('System AI selects unattached credentials, replicates between twins, and le
       await new Promise(resolve => setTimeout(resolve, 250));
     } while (Date.now() < finalUntil);
     assert.equal(final!.body.system.quality.modelId, 'third-fixture');
-    assert.equal((await api<{ enabled: boolean }>(a, authA, 'GET', '/quality-analytics')).body.enabled, true);
-    assert.equal((await api<{ enabled: boolean }>(b, authB, 'GET', '/quality-analytics')).body.enabled, false, 'a settings save never enables twin collection');
-    await api(a, authA, 'PUT', '/quality-analytics/settings', { enabled: false });
+    assert.equal((await api(a, authA, 'GET', '/quality-analytics')).status, 404);
+    assert.equal((await api(b, authB, 'GET', '/quality-analytics')).status, 404, 'a settings save never restores collection');
+    assert.equal((await api(a, authA, 'PUT', '/quality-analytics/settings', { enabled: false })).status, 404);
   } finally {
     await Promise.all(servers.map(stopDevNode));
     await rm(root, { recursive: true, force: true });
