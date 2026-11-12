@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { AuthSession } from "../auth.js";
 import { actingAccountFromSession, runAsAccount, type ActingAccount } from "../account-context.js";
 import { askSystemOneChoices } from "../classifiers/typesafe.js";
-import { bobSays, registerBobAction } from "../control-center/bob-actions.js";
+import { BobActionError, bobSays, registerBobAction } from "../control-center/bob-actions.js";
 import { appendBobMessage, askBobRecheck, bobDatabase, listBobAccounts, readBobSettings, type BobAction, type BobSettings } from "../control-center/bob-store.js";
 import { isLeased } from "../control-center/leases.js";
 import { createMoveEnvironment } from "../control-center/moves-runtime.js";
@@ -272,6 +272,24 @@ export async function closeFromBoard(session: AuthSession, ref: { projectId: str
   const db = await bobDatabase();
   const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
   if (previous) writeReviewCheck(db, { ...previous, verdict: "done", reason: "You marked it done.", by: "you", needsYou: false, pushPending: false });
+  broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
+  askBobRecheck(session.accountId);
+}
+
+/**
+ * Push it on from a card (Home, the board), for a conversation that may have no message of Bob's to press: the same push
+ * as the button in Bob's chat, with the person's instructions, found from the board's reference. A conversation the person
+ * is in is left to them.
+ */
+export async function pushFromBoard(session: AuthSession, ref: { projectId: string; conversationId: string }, note: string): Promise<void> {
+  if (isLeased(ref.projectId, ref.conversationId)) throw new BobActionError(409, "You are in this conversation now, so it is left to you");
+  const found = await createMoveEnvironment(session).resolve(ref);
+  if (!found) throw new NotFoundError("Conversation not found");
+  const conversation: Conversation = { projectId: ref.projectId, projectName: found.projectName, conversationId: ref.conversationId, engine: found.harnessId, sessionId: found.sessionId, title: found.title };
+  const db = await bobDatabase();
+  const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
+  await pushForPerson(actingAccountFromSession(session), conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
+  if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
   broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
   askBobRecheck(session.accountId);
 }

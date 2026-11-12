@@ -38,7 +38,7 @@ test("error notifications stay readable above dialogs and dismiss automatically"
     // Marking done answers at once; the lessons are worked out after, and this node has no decision model, so that fails and
     // the list reports it when it shows the conversation's feedback.
     await page.setViewportSize({ width: 720, height: 900 });
-    await page.getByTestId("chat-more-button").click();
+    // Mark done is on the conversation's header line (the desktop workspace runs down to 701 px).
     await page.getByTestId("chat-done-button").click();
     await page.getByTestId("conversation-feedback-good").check();
     await page.getByTestId("conversation-feedback-submit").click();

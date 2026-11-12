@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.272.0 — 2026-11-12
+
+- **A new look for the whole app, on desktop and phone.** Cream cards on a sand background, serif headings, one forest-green accent, in all six themes (System, Light, Sepia, Dark, Midnight, Graphite). Nothing was removed; some actions moved.
+- **Desktop workspace.** The left column holds Bob, Inbox, Projects, Board, Automations and Costs (the logo opens Home), then your conversations in three groups: Needs you, Running, To review. The open conversation sits in the middle with its agent, model, effort and machine as chips, and a details column on the right (Activity, Files, Git, Tasks, More). Actions that were toolbar icons are in the conversation's ⋯ menu.
+- **Phone.** Four tabs: Inbox, Bob, Projects, Settings. A conversation's settings open as a Details sheet from the bottom, dialogs are bottom sheets or full pages, and controls are at least 44 px tall. Back closes one level at a time: an open sheet, then the section, then the screen.
+- **Settings is a page.** Every section has the same head: its group, title, one sentence, where the setting applies, and a line saying changes save as you make them. The shared **Save settings** button is gone; each change saves on its own. Deleting more conversations, or sooner, asks first. Long lists fit the window and page.
+- **Search in every dropdown.** Every dropdown opens with a search box that matches letters in order ("op55" finds Opus 5.5); on the phone it opens as a sheet. The workspace search suggests conversations, projects, settings and actions, and the composer suggests commands after `/` and files after `@`.
+- **Home and Bob.** Home shows what needs you, what is running and what is ready to review, with **Push it on** on each card. Bob's chat and his tabs are one page.
+- The assistant app follows the same look and the theme you chose.
+
 ## 2.271.2 — 2026-11-11
 
 - Clarified the browser sign-in confirmation after the website removes its login form.

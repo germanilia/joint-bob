@@ -6,6 +6,7 @@ import test from "node:test";
 import type { Page } from "playwright-core";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 import { launchChrome } from "./launch-chrome.js";
+import { reach } from "./workspace-menus.js";
 
 /** Lists fit their space and page: none of them may scroll vertically. */
 async function assertListsFit(page: Page, label: string): Promise<void> {
@@ -39,7 +40,8 @@ test("assistant shell: resources, public actions, activity and discovery without
     }, projectId);
 
     // The desktop workspace switches to assistants with its own button, and back.
-    await page.getByTestId("projects-open-assistants-button").click();
+    // It sits in the left column's ⋯ menu.
+    await (await reach(page, "projects-open-assistants-button")).click();
     await page.locator("#rail-assistants").getByText("Work assistant").waitFor();
     await page.locator(".brand-workspace").click();
     await page.locator(".project-card").first().waitFor();

@@ -86,7 +86,10 @@ test("Settings → Resources shows a conversation's skills and MCP servers, keep
 
     await page.getByTestId("resources-tab-paths").click();
     await page.getByTestId("settings-resource-skills-paths").waitFor();
+    // On a phone a section's bar leads back to the list, and the list leads out of Settings.
+    await page.getByTestId("settings-back-button").click();
     await page.getByTestId("settings-cancel-button").click();
+    await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
     assert.deepEqual(errors, []);
   } finally { if (browser) await browser.close(); if (server) await stopDevNode(server); await rm(root, { recursive: true, force: true }); }
 });

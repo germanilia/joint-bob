@@ -31,7 +31,7 @@ test("phone focus keeps Bob in the top bar and edits a queued message full scree
   // A tap opens the menu once the gesture window closes, so wait for it rather than sampling at once.
   await page.locator("#focusControls").waitFor({ state: "visible" });
   const menu = await page.locator("#focusControls").boundingBox();
-  assert.ok(menu && menu.y >= handle.y + handle.height, "the menu drops down from the handle");
+  assert.ok(menu && Math.round(menu.y + menu.height) === 844 && menu.y > handle.y + handle.height, `the details rise as a sheet from the bottom: ${JSON.stringify(menu)}`);
   await page.getByTestId("focus-close").tap();
 
   await page.evaluate(async () => {

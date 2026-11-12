@@ -3,7 +3,7 @@ import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 import { api, signIn } from "../dev-nodes.js";
 
-test("focus chat header stays one line with elapsed time and a working-only colored context number", { timeout: 180_000 }, async t => {
+test("focus chat header keeps the title over its state line, with elapsed time and a working-only colored context number", { timeout: 180_000 }, async t => {
   const { page, environment, node } = await nativeUiFixture(t);
   const session = await signIn(environment, node);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -37,7 +37,11 @@ test("focus chat header stays one line with elapsed time and a working-only colo
         bar: document.querySelector<HTMLElement>(".context-usage-bar")!.checkVisibility(),
         overflow: document.documentElement.scrollWidth > innerWidth };
     }, color);
-    assert.ok(Math.max(...metrics.rects.map(r => r.center)) - Math.min(...metrics.rects.map(r => r.center)) < 3, `one header row: ${JSON.stringify(metrics.rects)}`);
+    // The phone header (Paper): the title, then a quiet line with the project and the elapsed time; the context number
+    // sits at the end beside them. All of it stays in the top bar.
+    const [title, timer, context] = metrics.rects;
+    assert.ok(title.center < timer.center && Math.max(...metrics.rects.map(r => r.center)) < 72, `title over its state line, in the top bar: ${JSON.stringify(metrics.rects)}`);
+    assert.ok(context.center > title.center - 3 && context.center < timer.center + 3, `the context number sits beside them: ${JSON.stringify(metrics.rects)}`);
     assert.match(metrics.timer, /^\d+m \d{2}s$/, "mobile shows cumulative duration without the Total label");
     assert.equal(metrics.bar, false);
     assert.equal(metrics.color, metrics.expectedColor);

@@ -73,6 +73,8 @@ test("a card can be picked, moved after its turn or stopped and moved now, and t
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  // Bob's page opens on his chat; the board is his Live agents tab.
+  await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
 
   // Every card has Story and Overview, and the machines show how many agents run on each.
@@ -177,6 +179,8 @@ test("Story and Overview on a card open that conversation and use the app's own 
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  // Bob's page opens on his chat; the board is his Live agents tab.
+  await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
 
   // Overview opens the card's conversation, then runs the Activity overview for it.

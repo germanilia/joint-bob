@@ -17,6 +17,7 @@ import { openRecentSessions } from "./app/recents.js";
 import { openRunningConversationsDialog } from "./app/running.js";
 import { startNewHarnessConversation, startGlobalConversation } from "./app/new-session.js";
 import { initializeFocusUi } from "./app/focus-ui.js";
+import { installSelectSearch } from "./app/select-search.js";
 import { openQuickNote, toggleQuickNotes } from "./app/quick-notes.js";
 import { confirmAction, SERVICE_WORKER_UPDATE_MS, setTheme, syncNotifyButton, toast, updateInstallButton, updateServiceWorker } from "./app/shell.js";
 import { state } from "./app/state.js";
@@ -85,6 +86,11 @@ import "./app/guardian-review.js";
 import "./app/usage-dashboard.js";
 import "./app/appearance.js";
 import "./app/conversation-sharing.js";
+import "./app/conversation-details.js";
+import "./app/workspace.js";
+import "./app/session-pager.js";
+import "./app/home.js";
+import "./app/bob-page.js";
 
 const assistantAutomationParameters = new URLSearchParams(location.search);
 const assistantAutomationMode = assistantAutomationParameters.get("assistantAutomation") === "1"
@@ -133,6 +139,7 @@ if ("serviceWorker" in navigator) {
 
 // Before the shortcuts, so a switcher key it handles never reaches them.
 installConversationSwitcher();
+installSelectSearch();
 installShortcuts({
   toggleView: toggleControlView,
   spotlight: openSpotlight,

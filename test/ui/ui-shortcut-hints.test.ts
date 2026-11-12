@@ -6,6 +6,7 @@ import path from "node:path";
 import test, { after, before } from "node:test";
 import { type Browser, type Page } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
+import { reach } from "./workspace-menus.js";
 import { seedDevEnvironment, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "../dev-nodes.js";
 
 let root: string;
@@ -71,24 +72,30 @@ test("header icons reveal the shortcut that opens them while the modifiers are h
   assert.equal(await hint("recent-sessions-open-button").getAttribute("title"), process.platform === "darwin" ? "\u2303\u2325K" : "Ctrl+Alt+K", "the badge spells the whole chord on hover");
 });
 
+// The old projects toolbar became the workspace's left column: Bob (the control center) and Costs are places,
+// Settings is in the foot, and the rest is in the column's ⋯ menu, where each row writes out its chord.
 test("the control center shares the top toolbar with larger icons and readable shortcut badges", async () => {
-  const tools = page.locator("#projectsPanel .project-actions");
-  assert.equal(await tools.locator("#openControlCenterButton").count(), 1, "The control center belongs beside Settings");
+  const places = page.getByTestId("workspace-places");
+  assert.equal(await places.locator("#openControlCenterButton").count(), 1, "the control center is the first place, Bob");
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  for (const button of await tools.locator("button:visible").all()) {
+  for (const button of [places.locator("#openControlCenterButton"), places.getByTestId("usage-open"), page.getByTestId("settings-open-button")]) {
     const icon = await button.locator("svg").boundingBox();
-    assert.ok(icon && icon.width >= 20, `toolbar icon must be at least 20px, got ${icon?.width}`);
-    const font = await button.locator(".shortcut-hint").evaluate((badge) => parseFloat(getComputedStyle(badge).fontSize));
+    assert.ok(icon && icon.width >= 16, `a place's icon must be at least 16px, got ${icon?.width}`);
+    const font = await holdingModifiers(() => button.locator(".shortcut-hint").evaluate((badge) => parseFloat(getComputedStyle(badge).fontSize)));
     assert.ok(font >= 13, `shortcut needs at least 13px, got ${font}`);
-    // The badge hangs under the button, so carrying one costs the button no height.
+    // The badge hangs under the row, so carrying one costs the row no height.
     const box = await button.boundingBox();
-    assert.ok(box && box.height <= 36, `a toolbar button stays icon-sized, got ${box?.height}px tall`);
+    assert.ok(box && box.height <= 36, `a place stays one line tall, got ${box?.height}px`);
   }
-  const assistants = tools.getByTestId("projects-open-assistants-button");
-  assert.equal(await assistants.isVisible(), true, "the toolbar has its own switch to assistants");
+  await page.getByTestId("workspace-more-button").click();
+  const menu = page.getByTestId("workspace-more-menu");
+  const assistants = menu.getByTestId("projects-open-assistants-button");
+  assert.equal(await assistants.isVisible(), true, "the column's ⋯ menu has its own switch to assistants");
   assert.equal(await assistants.getAttribute("href"), "/assistant.html");
-  const rows = await tools.locator(":is(button, a):visible").evaluateAll((controls) => controls.map((control) => control.getBoundingClientRect().top));
-  assert.ok(rows.every((top) => top === rows[0]), "all visible toolbar controls fit on one row");
+  const chord = await menu.getByTestId("recent-sessions-open-button").locator(".shortcut-hint").evaluate((badge) => getComputedStyle(badge, "::after").content);
+  assert.equal(chord, JSON.stringify(process.platform === "darwin" ? "⌃⌥K" : "Ctrl+Alt+K"), "a menu row writes out its chord");
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "hidden" });
 });
 
 test("chat controls advertise shortcuts", async () => {
@@ -102,13 +109,14 @@ test("chat controls advertise shortcuts", async () => {
 
 test("Escape closes recent conversations even with a search query", async () => {
   for (const query of ["", "Thread"]) {
-    await page.getByTestId("recent-sessions-open-button").click();
+    await (await reach(page, "recent-sessions-open-button")).click();
     const dialog = page.getByTestId("recent-sessions-dialog");
     await dialog.waitFor({ state: "visible" });
     await page.getByTestId("recent-sessions-search-input").fill(query);
     await page.keyboard.press("Escape");
     await dialog.waitFor({ state: "hidden", timeout: 2000 });
-    assert.equal(await page.getByTestId("recent-sessions-open-button").evaluate((button) => button === document.activeElement), true);
+    // Recent lives in the column's ⋯ menu, which closed when the dialog opened: focus goes back to the menu's button.
+    assert.equal(await page.getByTestId("workspace-more-button").evaluate((button) => button === document.activeElement), true);
   }
 });
 
@@ -129,8 +137,9 @@ test("a saved chord retitles the badges without a reload", async () => {
   await page.getByTestId("settings-tab-shortcuts").click();
   const recents = page.getByTestId("keymap-recents-input");
   await recents.click();
+  // A captured chord saves on its own.
   await page.keyboard.press("Control+KeyJ");
-  await page.getByTestId("keymap-save-button").click();
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
   await page.getByTestId("keymap-status").filter({ hasText: "Saved." }).waitFor();
   await page.getByTestId("settings-cancel-button").click();
   await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
@@ -141,7 +150,7 @@ test("a saved chord retitles the badges without a reload", async () => {
   await page.getByTestId("settings-dialog").waitFor({ state: "visible" });
   await page.getByTestId("settings-tab-shortcuts").click();
   await page.getByTestId("keymap-reset-button").click();
-  await page.getByTestId("keymap-save-button").click();
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
   await page.getByTestId("keymap-status").filter({ hasText: "Saved." }).waitFor();
   await page.getByTestId("settings-cancel-button").click();
   await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
@@ -164,20 +173,18 @@ test("the board stays hidden from navigation and keyboard shortcuts", async () =
   assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("view-board")), false, "the old board chord does nothing");
 });
 
+// Until a project is chosen the picker has the workspace's whole left column: its title row keeps collapse, search
+// sits under it, and the app's name is written once, at the top of the column, beside New.
 test("the project title keeps collapse while its action row sits above search", async () => {
   const header = await page.locator("#projectsPanel .panel-bar").boundingBox();
-  const actions = await page.locator("#projectsPanel .project-actions").boundingBox();
   const search = await page.locator("#projectsPanel .project-search-row").boundingBox();
-  assert.ok(header && actions && search, "the project panel rows rendered");
-  assert.equal(await page.locator("#projectsPanel .panel-bar > #collapseProjectsButton").count(), 1, "collapse stays in the title row");
-  assert.equal(await page.locator("#projectsPanel > .project-actions").count(), 1, "other actions leave the title row");
-  assert.ok(actions!.y >= header!.y + header!.height - 1, `actions row (y=${actions!.y}) starts below the title row (ends ${header!.y + header!.height})`);
-  assert.ok(actions!.y + actions!.height <= search!.y, `actions row ends above search (${actions!.y + actions!.height}px vs ${search!.y}px)`);
+  assert.ok(header && search, "the project panel rows rendered");
+  assert.equal(await page.locator("#projectsPanel .panel-bar > #collapseProjectsButton").isVisible(), true, "collapse stays in the title row");
+  assert.ok(search!.y >= header!.y + header!.height - 1, `search (y=${search!.y}) starts below the title row (ends ${header!.y + header!.height})`);
+  assert.equal(await page.locator("#projectsPanel > .project-actions:visible").count(), 0, "the old action row moved into the column");
 
-  // Neither the name nor the subtitle may be truncated now that the buttons moved away.
-  const cut = await page.locator("#projectsPanel .brand-copy")
-    .evaluate((node) => [...node.children].some((child) => child.scrollWidth > child.clientWidth + 1));
-  assert.equal(cut, false, "the app name and subtitle fit their row");
+  const cut = await page.locator("#workspaceSide .ws-name").evaluate((node) => node.scrollWidth > node.clientWidth + 1);
+  assert.equal(cut, false, "the app name fits its row");
 });
 
 test("the chat toolbar keeps its controls and actions on one row when there is room, and hangs the badges below them", async () => {
@@ -188,35 +195,26 @@ test("the chat toolbar keeps its controls and actions on one row when there is r
   await page.setViewportSize({ width: 2400, height: 900 });
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
+  // The desktop header: the four chips (agent, model, effort, machine) on one row under the title, and Mark done, the
+  // details toggle and ⋯ on the title's row; the rest of the actions wait in ⋯.
   const resting = await page.evaluate(() => {
     const bar = document.querySelector("#chatToolbar")!;
+    const head = document.querySelector("#chatHeadActions")!;
     return {
-      badges: [...bar.querySelectorAll(".shortcut-hint")].filter((badge) => badge.getBoundingClientRect().height > 0).length,
+      badges: [...bar.querySelectorAll(".shortcut-hint"), ...head.querySelectorAll(":scope > button .shortcut-hint")].filter((badge) => badge.getBoundingClientRect().height > 0).length,
       controls: ["#chatNodeSelect", "#chatHarnessSelect", "#modelButton", "#reasoningLevelSelect"]
         .map((selector) => bar.querySelector(selector)!.getBoundingClientRect())
         .map((box) => Math.round((box.top + box.bottom) / 2 * 10) / 10),
-      actions: ["#openTerminalButton", "#openBrowserButton", "#notifyButton", "#renameSessionButton", "#chatCronButton"]
-        .map((selector) => bar.querySelector(`${selector} .chat-toolbar-icon`))
-        .map((icon) => {
-          if (!icon) return null;
-          const box = icon.getBoundingClientRect();
-          return Math.round((box.top + box.bottom) / 2 * 10) / 10;
-        }),
-      // The trailing actions must stay inside the toolbar box instead of riding off the panel edge.
-      fits: (() => {
-        const barBox = bar.getBoundingClientRect();
-        const visible = [...bar.querySelectorAll("button")].filter((button) => button.getBoundingClientRect().height > 0);
-        const last = visible[visible.length - 1].getBoundingClientRect();
-        return last.right <= barBox.right + 0.5;
-      })(),
+      // The chips must stay inside the card instead of riding off its edge.
+      fits: [...bar.querySelectorAll(".chat-toolbar-control")].every((control) => control.getBoundingClientRect().right <= bar.getBoundingClientRect().right + 0.5),
     };
   });
 
   // Every badge hangs under the control it belongs to: clear of the label, still
   // centred on it, and out of the layout so it neither adds a line nor moves one.
   const overlays = await holdingModifiers(() => page.evaluate(() => {
-    const bar = document.querySelector("#chatToolbar")!;
-    return [...bar.querySelectorAll(".shortcut-hint")].map((badge) => {
+    const badges = [...document.querySelectorAll("#chatToolbar .shortcut-hint, #chatHeadActions > button .shortcut-hint")];
+    return badges.filter((badge) => badge.getBoundingClientRect().height > 0).map((badge) => {
       const host = badge.parentElement!.getBoundingClientRect();
       const box = badge.getBoundingClientRect();
       return {
@@ -229,20 +227,13 @@ test("the chat toolbar keeps its controls and actions on one row when there is r
 
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  assert.equal(resting.badges, 0, "a resting toolbar shows no badges at all");
-  assert.ok(overlays.length >= 7, `every toolbar control carries a badge, saw ${overlays.length}`);
+  assert.equal(resting.badges, 0, "a resting header shows no badges at all");
+  assert.ok(overlays.length >= 5, `the chips and the header's buttons carry badges, saw ${overlays.length}`);
   assert.ok(overlays.every((badge) => badge.below && badge.centred), `each badge sits under its own control, got ${JSON.stringify(overlays)}`);
-  assert.equal(resting.fits, true, "the trailing actions stay inside the toolbar");
-  // On a wide screen the selects, the model button and the action buttons share one
-  // row instead of the actions dropping to a second line that wastes the space.
+  assert.equal(resting.fits, true, "the chips stay inside the conversation");
   const controlLine = resting.controls[0];
   assert.ok(resting.controls.every((middle) => Math.abs(middle - controlLine) <= 1),
-    `selects and the model button share one row, got ${JSON.stringify(resting.controls)}`);
-  const actionLine = resting.actions[0]!;
-  assert.ok(resting.actions.every((middle) => middle !== null && Math.abs(middle - actionLine) <= 3),
-    `action icons share the row with the controls, got ${JSON.stringify(resting.actions)}`);
-  assert.ok(Math.abs(actionLine - controlLine) <= 3,
-    `the actions (${actionLine}) sit level with the controls (${controlLine})`);
+    `the chips share one row, got ${JSON.stringify(resting.controls)}`);
 });
 
 test("the chat toolbar icons share one size and name themselves on hover at once", async () => {
@@ -251,23 +242,32 @@ test("the chat toolbar icons share one size and name themselves on hover at once
   await page.locator("#modelButton:enabled").waitFor();
   await page.setViewportSize({ width: 1800, height: 900 });
 
-  const sizes = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#chatToolbar :is(.chat-action, #backgroundTasksButton)")]
+  // The actions are rows of the header's ⋯ menu now, each with its icon and its name.
+  await page.getByTestId("chat-more-button").click();
+  const sizes = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#chatMoreMenu .chat-action")]
     .filter((button) => button.getBoundingClientRect().height > 0)
     .map((button) => ({ id: button.id, width: Math.round(button.getBoundingClientRect().width), height: Math.round(button.getBoundingClientRect().height) })));
-  assert.ok(sizes.length >= 10, `the action row shows its icons, saw ${JSON.stringify(sizes)}`);
+  assert.ok(sizes.length >= 10, `the menu shows its actions, saw ${JSON.stringify(sizes)}`);
   assert.ok(sizes.every((size) => size.width === sizes[0].width && size.height === sizes[0].height),
-    `every action icon is the same size, got ${JSON.stringify(sizes)}`);
-  assert.equal(await page.locator("#backgroundTasksButton .background-tasks-icon").isVisible(), true, "Tasks shows an icon");
-  assert.equal(await page.locator("#backgroundTasksButton .background-tasks-label").isVisible(), false, "Tasks hides its word");
+    `every action row is the same size, got ${JSON.stringify(sizes)}`);
+  assert.equal(await page.locator("#chatMoreMenu .chat-action .chat-action-label").first().isVisible(), true, "each row names its action");
+  await page.getByTestId("chat-more-button").click();
+  // Tasks sits in the details column's Tasks summary, named in words.
+  const tasks = await reach(page, "background-tasks-open");
+  assert.equal(await tasks.locator(".background-tasks-icon").isVisible(), true, "Tasks shows an icon");
+  assert.equal(await tasks.locator(".background-tasks-label").isVisible(), true, "and its word");
 
+  // The header's icon-only buttons name themselves at once.
   const tooltip = page.locator(".quick-tooltip");
-  await page.locator("#chatGitButton").hover();
+  const toggle = page.getByTestId("chat-activity-toggle");
+  const title = await toggle.getAttribute("title");
+  await toggle.hover();
   await tooltip.waitFor({ state: "visible", timeout: 600 });
-  assert.equal(await tooltip.innerText(), "Git");
-  assert.equal(await page.locator("#chatGitButton").getAttribute("title"), null, "the native tooltip is held back while ours shows");
-  await page.mouse.move(5, 895);
+  assert.equal(await tooltip.innerText(), title);
+  assert.equal(await toggle.getAttribute("title"), null, "the native tooltip is held back while ours shows");
+  await page.mouse.move(700, 895);
   await tooltip.waitFor({ state: "hidden" });
-  assert.equal(await page.locator("#chatGitButton").getAttribute("title"), "Git", "the title comes back once the pointer leaves");
+  assert.equal(await toggle.getAttribute("title"), title, "the title comes back once the pointer leaves");
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
@@ -341,7 +341,8 @@ test("chat shortcuts focus selectors and open actions", async () => {
   await page.context().grantPermissions(["notifications"]);
   const before = await page.getByTestId("chat-notify-button").getAttribute("aria-pressed");
   await page.keyboard.press("Control+Alt+Y");
-  await page.locator(`#notifyButton[aria-pressed="${before === "true" ? "false" : "true"}"]`).waitFor();
+  // Notify lives in the conversation's ⋯ menu (and as a switch in the details), so it is not on screen.
+  await page.locator(`#notifyButton[aria-pressed="${before === "true" ? "false" : "true"}"]`).waitFor({ state: "attached" });
 });
 
 test("the shortcut journey produces no console errors", () => {

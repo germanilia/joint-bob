@@ -1,15 +1,25 @@
 // Settings → Browser → Profiles: every browser profile this machine may see across the
 // cluster. Logins stay on the machine that owns a profile; changes go to that machine.
+// The list fits the section and pages (list-pager.js); a filter box and a machine dropdown narrow it.
 import { api } from "./api.js";
 import { describeShare, shareGrantPayload, shareGrantValue, shareScopeLabel } from "./browser-profile-access.js";
+import { fuzzyMatch } from "./fuzzy.js";
+import { createListPager, rowActions } from "./list-pager.js";
 import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
 
 let loading = false;
 let targets = { localNodeId: null, nodes: [], clusters: [], workspaces: [] };
+let profiles = [];
 
 const container = () => document.querySelector("#browserProfileDirectory");
 const statusLine = () => document.querySelector("#browserProfileDirectoryStatus");
+const filters = () => document.querySelector("#browserProfileFilters");
+const filterInput = () => document.querySelector("#browserProfileFilter");
+const machineSelect = () => document.querySelector("#browserProfileMachine");
+const pager = createListPager({ list: container(), prefix: "browser-profile", label: "Browser profile pages", render });
+filterInput().addEventListener("input", () => { pager.reset(); render(); });
+machineSelect().addEventListener("change", () => { pager.reset(); render(); });
 
 function names(profile) {
   const machine = (id) => targets.nodes.find((node) => node.id === id)?.name ?? (id === profile.nodeId ? profile.nodeName : id);
@@ -29,10 +39,13 @@ export async function loadBrowserProfileDirectory() {
   try {
     const [directory, shareTargets] = await Promise.all([api("/api/browser/directory"), api("/api/browser/share-targets")]);
     targets = shareTargets;
-    render(directory.profiles);
+    profiles = directory.profiles;
+    // The status line sits under the list, so it is settled before the list measures its room.
     statusLine().textContent = directory.unavailableNodes.length
       ? `Not shown: ${directory.unavailableNodes.map((node) => `${node.name} (${node.reason})`).join("; ")}.`
       : "";
+    fillMachines();
+    render();
   } catch (error) { statusLine().textContent = `Browser profiles unavailable: ${error.message}`; }
   finally { loading = false; }
 }
@@ -51,30 +64,59 @@ function button(label, testid, onClick, extra = "") {
   return element;
 }
 
-function render(profiles) {
-  const list = container();
-  if (!profiles.length) { list.textContent = "No browser profiles yet. Agents create one the first time a conversation opens a browser."; return; }
-  list.replaceChildren(...profiles.map((profile) => {
-    const row = document.createElement("div"); row.className = "secret-account-row"; row.dataset.testid = "browser-profile-directory-row"; row.dataset.profileId = profile.id;
-    const meta = document.createElement("span"); meta.className = "secret-account-meta";
-    const label = names(profile);
-    meta.append(text("strong", "", `${profile.label} · ${label.machine(profile.nodeId)}`));
-    meta.append(text("span", "secret-account-vars", profile.sites?.length ? `Sites: ${profile.sites.map((site) => site.replace(/^https?:\/\//, "")).join(", ")}` : "No sites yet"));
-    const shares = profile.grants?.length ? profile.grants.map((grant) => describeShare(grant, label)).join("; ") : "Not usable by any conversation";
-    meta.append(text("span", "secret-account-vars", `${shareScopeLabel(profile.grants ?? [])} · ${shares}`));
-    const holderText = profile.holder ? (profile.holder.inUse ? "In use by another conversation" : `Open in a conversation on ${label.machine(profile.holder.appNodeId)}`) : "Idle";
-    const stateLine = text("span", "secret-account-vars", profile.canManage ? holderText : `${holderText} · Shared with this machine · read-only`);
-    stateLine.dataset.testid = "browser-profile-directory-state";
-    meta.append(stateLine);
-    row.append(meta);
-    if (profile.canManage) {
-      row.append(button("Share…", "browser-profile-share", () => void openShareDialog(profile).catch((error) => toast.error(error.message))));
-      row.append(button("Rename", "browser-profile-rename", () => startRename(row, profile)));
-      if (profile.holder) row.append(button("Close there", "browser-profile-close", () => void closeProfile(profile)));
-      else row.append(button("Delete", "browser-profile-delete", () => void deleteProfile(profile), " danger"));
-    }
+/** Every machine that holds a profile, so the dropdown never offers an empty choice. */
+function fillMachines() {
+  const select = machineSelect(), chosen = select.value;
+  const machines = new Map(profiles.map((profile) => [profile.nodeId, names(profile).machine(profile.nodeId)]));
+  select.replaceChildren(new Option("All machines", ""), ...[...machines].sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => new Option(name, id)));
+  select.value = machines.has(chosen) ? chosen : "";
+}
+
+const siteNames = (profile) => (profile.sites ?? []).map((site) => site.replace(/^https?:\/\//, ""));
+
+function render() {
+  filters().hidden = !profiles.length;
+  const query = filterInput().value.trim(), machine = machineSelect().value;
+  const shown = profiles.filter((profile) => (!machine || profile.nodeId === machine)
+    && (!query || fuzzyMatch(query, profile.label, names(profile).machine(profile.nodeId), siteNames(profile).join(" ")) !== null));
+  const rows = pager.slice(shown).map(profileRow);
+  container().replaceChildren(...(rows.length ? rows : [text("p", "long-list-empty", profiles.length
+    ? "No profiles match. Clear the filter or choose All machines."
+    : "No browser profiles yet. Agents create one the first time a conversation opens a browser.")]));
+  pager.update();
+}
+
+/** One row of fixed height: name and who may use it, machine, sites, state, actions. */
+function profileRow(profile) {
+  const row = document.createElement("div"); row.className = "long-list-row browser-profile-row"; row.dataset.testid = "browser-profile-directory-row"; row.dataset.profileId = profile.id;
+  const label = names(profile), machine = label.machine(profile.nodeId);
+  const shares = profile.grants?.length ? profile.grants.map((grant) => describeShare(grant, label)).join("; ") : "Not usable by any conversation";
+  const main = document.createElement("span"); main.className = "long-row-main";
+  const name = text("strong", "", profile.label); name.title = profile.label;
+  const who = text("small", "", `${shareScopeLabel(profile.grants ?? [])} · ${shares}`); who.title = who.textContent;
+  main.append(name, who);
+  const sites = siteNames(profile);
+  const where = document.createElement("span"); where.className = "long-row-where";
+  const machineName = text("span", "long-row-machine", machine); machineName.dataset.testid = "browser-profile-directory-machine";
+  const siteList = text("span", "long-row-sites", sites.length ? sites.join(", ") : "No sites yet"); siteList.title = sites.length ? `Sites: ${sites.join(", ")}` : "No sites yet";
+  where.append(machineName, siteList);
+  const holderText = profile.holder ? (profile.holder.inUse ? "In use by another conversation" : `Open in a conversation on ${label.machine(profile.holder.appNodeId)}`) : "Idle";
+  const tag = text("span", `long-row-tag${profile.holder ? " on" : ""}`, profile.holder ? (profile.holder.inUse ? "In use" : `Open on ${label.machine(profile.holder.appNodeId)}`) : "Idle");
+  tag.title = holderText; tag.dataset.testid = "browser-profile-directory-state";
+  row.append(main, where, tag);
+  if (!profile.canManage) {
+    const note = text("span", "long-row-note", "Read-only"); note.title = "Shared with this machine · read-only";
+    row.append(note);
     return row;
-  }));
+  }
+  const { actions, more } = rowActions([
+    button("Share…", "browser-profile-share", () => void openShareDialog(profile).catch((error) => toast.error(error.message))),
+    button("Rename", "browser-profile-rename", () => startRename(row, profile)),
+    profile.holder ? button("Close there", "browser-profile-close", () => void closeProfile(profile)) : button("Delete", "browser-profile-delete", () => void deleteProfile(profile), " danger"),
+  ], `Actions for ${profile.label}`);
+  more.dataset.testid = "browser-profile-more";
+  row.append(actions, more);
+  return row;
 }
 
 async function change(profile, body, success) {
@@ -82,11 +124,19 @@ async function change(profile, body, success) {
   if (success) toast(success);
 }
 
+/** The name box takes the name's place in the row, so the row keeps its height; Escape puts the name back. */
 function startRename(row, profile) {
+  if (row.querySelector(".browser-profile-rename")) return;
   const form = document.createElement("form"); form.className = "browser-profile-rename";
   const input = document.createElement("input"); input.value = profile.label; input.maxLength = 80; input.required = true; input.setAttribute("aria-label", "Profile name"); input.dataset.testid = "browser-profile-rename-input";
   const save = document.createElement("button"); save.type = "submit"; save.className = "ghost compact"; save.textContent = "Save";
   form.append(input, save);
+  const main = row.querySelector(".long-row-main");
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault(); event.stopPropagation();
+    form.replaceWith(main);
+  });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void (async () => {
@@ -94,7 +144,7 @@ function startRename(row, profile) {
       catch (error) { toast.error(error.message); }
     })();
   });
-  row.append(form); input.focus(); input.select();
+  main.replaceWith(form); input.focus(); input.select();
 }
 
 async function closeProfile(profile) {

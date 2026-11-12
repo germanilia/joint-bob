@@ -5,7 +5,7 @@ import { addTaskAttachments, clearTaskAttachments, renderTaskAttachments } from 
 import { renderChatSessionControls, renderConversationLock, setComposerEnabled } from "./chat-controls.js";
 import { requestPinChat } from "./chat-transcript.js";
 import { elements } from "./elements.js";
-import { selectedProject, setMobileView } from "./layout.js";
+import { currentMobileView, selectedProject, setMobileView } from "./layout.js";
 import { openFileAction } from "./project-files.js";
 import { openRowMenu, refreshRowMenuAnchor } from "./row-menu.js";
 import { renderSessions } from "./session-list.js";
@@ -238,9 +238,9 @@ export function openEditTaskDialog(task) {
     state.activeSessionId = null;
     // openSession switches the visible panel to the chat; the user opened this
     // from the board and expects to land back there when the dialog closes.
-    const returnView = history.state?.mobileView ?? "board";
+    const returnView = currentMobileView();
     openSession(task.sessionPath, task.title, false, true);
-    setMobileView(returnView, false);
+    setMobileView(returnView);
   }
 }
 

@@ -75,13 +75,15 @@ export async function loadSystemAiSettings(bridge) {
   finally { loading = false; }
 }
 
+/** Saves as the fields change (settings.js); a failure is thrown so the Settings save line shows it. */
 export async function saveSystemAiSettings() {
-  if (!isNodeAdmin() || !ready || loading || saving) return;
+  if (!isNodeAdmin()) return;
+  if (!ready || loading) throw Object.assign(new Error('System AI settings are still loading'), { invalidSetting: true });
   saving = true; status.textContent = 'Saving…';
   try {
     const saved = await api('/api/system-ai', { method: 'PUT', body: JSON.stringify(values()) });
     document.querySelector('#systemAiReadiness').textContent = saved.readiness.decision;
     status.textContent = 'Saved · shared with trusted twins. Readiness is machine-local.';
-  } catch (error) { status.textContent = error.message; }
+  } catch (error) { status.textContent = error.message; throw error; }
   finally { saving = false; }
 }

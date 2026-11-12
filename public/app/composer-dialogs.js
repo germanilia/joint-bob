@@ -3,7 +3,9 @@ import { api } from "./api.js";
 import { openByTheWay } from "./by-the-way.js";
 import { sendSocket } from "./chat-controls.js";
 import { setInputValue } from "./composer.js";
+import { markedText } from "./choice-popover.js";
 import { elements } from "./elements.js";
+import { rankChoices } from "./fuzzy.js";
 import { attachDigitShortcuts, isRowSelectorQuery, LIST_SHORTCUT_LIMIT, shortcutIndexBadge } from "./list-shortcuts.js";
 import { brandIcon } from "./icons.js";
 import { normalizedQuery } from "./layout.js";
@@ -411,9 +413,6 @@ function slashCommandQuery() {
   return match ? match[1].toLowerCase() : null;
 }
 
-function commandMatchesQuery(command, query) {
-  return !query || `${command.name}\n${command.description}`.toLowerCase().includes(query);
-}
 
 export function hideCommandAutocomplete() {
   state.commandSuggestions = [];
@@ -431,47 +430,121 @@ export function selectCommandSuggestion(index = state.commandAutocompleteIndex) 
   const suggestion = state.commandSuggestions[index];
   if (!suggestion) return;
   hideCommandAutocomplete();
+  if (suggestion.reference) { insertFileReference(suggestion); return; }
   if (!executeComposerCommand(suggestion.invocation, composerCommandHandlers())) {
     setInputValue(suggestion.invocation);
     elements.messageInput.focus();
   }
 }
 
-export function renderCommandAutocomplete() {
-  const query = slashCommandQuery();
-  if (query === null || elements.messageInput.disabled) {
-    hideCommandAutocomplete();
-    return;
-  }
-  if (state.activeProjectId && state.commandsKey !== commandSourceKey()) void loadCommands();
+// "@" followed by a path names a project file. The list walks one folder at a time with the
+// file browser's own listing: what comes after the last "/" is matched loosely against that
+// folder's entries, and choosing a folder steps into it.
+const folderListings = new Map();
 
+function fileReferenceQuery() {
+  const { selectionStart, selectionEnd, value } = elements.messageInput;
+  if (!state.activeProjectId || selectionStart !== selectionEnd) return null;
+  const match = /(?:^|\s)@([^\s@]*)$/.exec(value.slice(0, selectionEnd));
+  if (!match) return null;
+  const typed = match[1];
+  const slash = typed.lastIndexOf("/");
+  return { start: selectionEnd - typed.length - 1, end: selectionEnd, dir: slash < 0 ? "" : typed.slice(0, slash), leaf: typed.slice(slash + 1) };
+}
+
+function folderListingUrl(dir) {
+  const url = new URL(`/api/projects/${encodeURIComponent(state.activeProjectId)}/files`, location.origin);
+  url.searchParams.set("dir", dir);
+  if (state.activeNodeId) url.searchParams.set("nodeId", state.activeNodeId);
+  if (state.activeTaskId) url.searchParams.set("taskId", state.activeTaskId);
+  return `${url.pathname}${url.search}`;
+}
+
+/**
+ * The folder's entries, or null while they first load; the list draws again when they arrive.
+ * A listing older than half a minute is read again, so files the agent just wrote appear.
+ */
+function folderEntries(dir) {
+  const key = folderListingUrl(dir);
+  const listing = folderListings.get(key);
+  if (listing && (listing.loading || Date.now() - listing.at < 30_000)) return listing.entries;
+  const next = { entries: listing?.entries ?? null, at: Date.now(), loading: true };
+  folderListings.set(key, next);
+  api(key)
+    .then((body) => { next.entries = body.entries; })
+    .catch(() => { next.entries ??= []; })
+    .finally(() => { next.loading = false; next.at = Date.now(); if (fileReferenceQuery()) renderCommandAutocomplete(); });
+  return next.entries;
+}
+
+function insertFileReference(suggestion) {
+  const { value } = elements.messageInput;
+  const token = `@${suggestion.path}${suggestion.directory ? "/" : " "}`;
+  const caret = suggestion.start + token.length;
+  setInputValue(`${value.slice(0, suggestion.start)}${token}${value.slice(suggestion.end)}`);
+  elements.messageInput.setSelectionRange(caret, caret);
+  elements.messageInput.focus();
+  if (suggestion.directory) renderCommandAutocomplete();
+}
+
+function commandRows(query) {
+  if (state.activeProjectId && state.commandsKey !== commandSourceKey()) void loadCommands();
   const commands = state.commandsKey === commandSourceKey()
     ? state.commands
     : LOCAL_COMMANDS.map((command) => ({ ...command, harness: state.engine }));
-  state.commandSuggestions = commands
+  // Names match loosely ("cmp" finds compact); descriptions must contain what was typed.
+  return rankChoices(query, commands
     .filter((command) => command.harness === state.engine)
-    .filter((command) => commandMatchesQuery(command, query))
-    .slice(0, 10);
-  if (!state.commandSuggestions.length) {
+    .map((command) => ({ ...command, label: command.name, detail: command.description })))
+    .slice(0, 10)
+    .map(({ choice, hits }) => ({
+      suggestion: choice,
+      // A command typed as its own name shows which letters matched; any other form is shown as it is typed.
+      name: choice.invocation.trim() === `/${choice.name}` ? ["/", markedText(choice.name, hits)] : [choice.invocation.trim()],
+      description: choice.description,
+    }));
+}
+
+function fileRows(reference) {
+  const entries = folderEntries(reference.dir);
+  if (!entries) return [];
+  // Hidden files appear once a "." is typed.
+  const visible = entries.filter((entry) => reference.leaf.startsWith(".") || !entry.name.startsWith("."));
+  return rankChoices(reference.leaf, visible.map((entry) => ({ ...entry, label: entry.name, value: entry.name })))
+    .slice(0, 10)
+    .map(({ choice, hits }) => ({
+      suggestion: { reference: true, path: choice.path, directory: choice.type === "directory", start: reference.start, end: reference.end },
+      name: [markedText(choice.name, hits), choice.type === "directory" ? "/" : ""],
+      description: choice.type === "directory" ? "Folder" : "File",
+    }));
+}
+
+export function renderCommandAutocomplete() {
+  if (elements.messageInput.disabled) { hideCommandAutocomplete(); return; }
+  const query = slashCommandQuery();
+  const reference = query === null ? fileReferenceQuery() : null;
+  const rows = query !== null ? commandRows(query) : reference ? fileRows(reference) : [];
+  state.commandSuggestions = rows.map((row) => row.suggestion);
+  if (!rows.length) {
     hideCommandAutocomplete();
     return;
   }
 
   state.commandAutocompleteIndex = Math.min(state.commandAutocompleteIndex, state.commandSuggestions.length - 1);
   elements.commandAutocomplete.replaceChildren();
-  state.commandSuggestions.forEach((suggestion, index) => {
+  rows.forEach((row, index) => {
     const option = document.createElement("button");
     option.type = "button";
     option.id = `command-autocomplete-option-${index}`;
     option.setAttribute("role", "option");
     option.setAttribute("aria-selected", String(index === state.commandAutocompleteIndex));
-    option.dataset.testid = "chat-command-autocomplete-option";
+    option.dataset.testid = row.suggestion.reference ? "chat-file-autocomplete-option" : "chat-command-autocomplete-option";
     const name = document.createElement("span");
     name.className = "command-autocomplete-name";
-    name.textContent = suggestion.invocation.trim();
+    name.append(...row.name);
     const description = document.createElement("span");
     description.className = "command-autocomplete-description";
-    description.textContent = suggestion.description;
+    description.textContent = row.description;
     option.append(name, description);
     option.addEventListener("pointerdown", (event) => event.preventDefault());
     option.addEventListener("click", () => selectCommandSuggestion(index));

@@ -14,7 +14,13 @@ for (const theme of ["light", "dark"]) test(`focus mobile headers and shared FAB
   await page.locator(".project-card").first().waitFor();
   await page.getByTestId("focus-controls-button").click();
   await page.getByTestId("focus-settings").click();
-  if (theme === "dark") await page.getByTestId("settings-theme-toggle-button").click();
+  if (theme === "dark") {
+    // The theme is chosen on Account; a phone opens Settings on the section list.
+    await page.getByTestId("settings-tab-account").click();
+    await page.getByTestId("settings-theme-dark").click();
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+    await page.getByTestId("settings-back-button").click();
+  }
   await page.waitForFunction(() => document.body.classList.contains("focus-ui"));
   await page.getByTestId("settings-cancel-button").click();
   const sharedStyles = new Map<string, string>();
@@ -34,7 +40,9 @@ for (const theme of ["light", "dark"]) test(`focus mobile headers and shared FAB
     await page.getByTestId("focus-controls-button").click();
     await page.locator("#focusControls").waitFor();
     const menu = await page.locator("#focusControls").boundingBox();
-    assert.ok(menu && menu.height <= 700, `root menu is compact, not a toolbar dump: ${JSON.stringify(menu)}`);
+    // A sheet from the bottom that leaves the screen's top bar in sight; a conversation's details may fill the rest.
+    assert.ok(menu && Math.round(menu.y + menu.height) === 844 && menu.y >= 72, `the sheet rises from the bottom under the top bar: ${JSON.stringify(menu)}`);
+    if (view !== "chat") assert.ok(menu.height <= 560, `a list screen's sheet is short: ${JSON.stringify(menu)}`);
     for (const id of ["focus-new-conversation", "focus-new-note", "focus-reviews", "focus-running", "focus-settings"]) {
       const button = page.getByTestId(id);
       assert.equal(await button.locator("svg").count(), 1, `${id} has an outline icon`);
@@ -61,23 +69,27 @@ for (const theme of ["light", "dark"]) test(`focus mobile headers and shared FAB
   await page.getByTestId("activity-panel-close").click();
   await page.getByTestId("focus-controls-button").click();
   await page.locator("#focusControls").waitFor();
-  await page.getByTestId("focus-tools").click();
-  assert.equal(await page.locator("#focusContextTitle").textContent(), "Tools");
-  assert.equal(await page.locator("#chatToolbar").isVisible(), false, "Tools lists the tools, not the toolbar");
-  for (const id of ["chat-open-browser-button", "chat-git-button", "chat-share-button", "background-tasks-open", "chat-files-button", "chat-more-dashboard-button"]) {
-    assert.equal(await page.getByTestId(`focus-tool-${id}`).isVisible(), true, `${id} is reachable from Tools`);
+  // The details sheet: Activity / Files / Git / Tasks, the run settings, the two switches, Mark done, then every other
+  // conversation tool under "This conversation" (no Tools submenu any more).
+  const sheet = await page.locator("#focusControls").boundingBox();
+  assert.ok(sheet && Math.round(sheet.y + sheet.height) === 844 && sheet.width === 390, `the details rise as a sheet from the bottom: ${JSON.stringify(sheet)}`);
+  assert.equal(await page.getByTestId("focus-tools").count(), 0, "Tools is not a submenu any more");
+  assert.equal(await page.locator("#chatToolbar").isVisible(), false, "the sheet lists the tools, not the toolbar");
+  for (const id of ["focus-activity", "focus-files", "focus-git", "focus-tasks", "focus-model", "focus-harness", "focus-effort", "focus-node", "focus-auto-respond", "focus-notify", "focus-mark-done"]) {
+    assert.equal(await page.getByTestId(id).count(), 1, `${id} is in the details sheet`);
   }
-  for (const id of ["chat-done-button", "chat-auto-respond-button", "chat-activity-toggle"]) {
-    assert.equal(await page.getByTestId(`focus-tool-${id}`).count(), 0, `${id} is on the main menu, not repeated in Tools`);
+  for (const id of ["chat-open-browser-button", "chat-share-button", "chat-more-dashboard-button", "chat-rename-button", "chat-cron-button", "chat-open-terminal-button"]) {
+    await page.getByTestId(`focus-tool-${id}`).scrollIntoViewIfNeeded();
+    assert.equal(await page.getByTestId(`focus-tool-${id}`).isVisible(), true, `${id} is reachable from the sheet`);
   }
-  assert.equal(await page.getByTestId("focus-model").isVisible(), false, "the run settings stay on the main menu");
+  for (const id of ["chat-done-button", "chat-auto-respond-button", "chat-activity-toggle", "chat-git-button", "chat-files-button", "background-tasks-open", "chat-notify-button"]) {
+    assert.equal(await page.getByTestId(`focus-tool-${id}`).count(), 0, `${id} has its own place in the sheet, not repeated among the tools`);
+  }
   await page.screenshot({ path: `tmp/focus-${theme}-tools.png` });
-  await page.getByTestId("focus-tool-background-tasks-open").click();
+  await page.getByTestId("focus-tasks").click();
   await page.getByTestId("background-tasks-close").click();
   await page.getByTestId("focus-controls-button").click();
   await page.locator("#focusControls").waitFor();
-  await page.getByTestId("focus-tools").click();
-  await page.getByTestId("focus-back").click();
   await page.getByTestId("focus-harness").click();
   assert.ok(await page.getByTestId("focus-harness-option").count() > 0, "harness dropdown lists harnesses");
   await page.screenshot({ path: `tmp/focus-${theme}-harness.png` });

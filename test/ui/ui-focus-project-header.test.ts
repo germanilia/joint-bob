@@ -38,7 +38,9 @@ test("mobile project header hides clutter, offers copyable path and moves real f
   await page.getByTestId("focus-project-filters-close").click();
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.waitForFunction(() => document.querySelector("#conversationListPane .classification-filter") !== null);
-  assert.equal(await page.locator("#projectPath").isVisible(), true);
+  // The desktop workspace shows the path on the project's row in the Projects picker; the conversation list's own
+  // head folds away there, but keeps the path for when it is shown.
+  assert.equal(await page.locator("#projectPath").textContent(), path);
   assert.equal(await page.locator("#chatsRecentSessionsButton").isVisible(), false, "desktop keeps its existing global Recents control");
   assert.equal(await page.locator("#chatsRunningConversationsButton").isVisible(), false);
   assert.deepEqual(await multiSelect(page, "conversation-classification-filter").selected(), ["Unclassified"]);

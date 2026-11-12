@@ -30,7 +30,7 @@ test("the composer fits empty and wrapped text when appearance size changes", { 
   }
 
   async function preset(name: string) {
-    await page.getByTestId("appearance-open").click();
+    await page.getByTestId("workspace-person-button").click();
     await page.getByTestId(`appearance-preset-${name}`).click();
     await page.getByTestId("appearance-close-button").click();
   }
@@ -46,7 +46,7 @@ test("the composer fits empty and wrapped text when appearance size changes", { 
   const enlarged = await checkFits("existing draft at huge");
   assert.ok(enlarged.height > normal.height, "the input grows when the existing draft wraps onto more lines");
   assert.equal(await input.inputValue(), draft);
-  await page.getByTestId("appearance-open").click();
+  await page.getByTestId("workspace-person-button").click();
   await page.getByTestId("appearance-chat-slider").fill("1.2");
   await page.getByTestId("appearance-close-button").click();
   await checkFits("existing draft with custom conversation size");

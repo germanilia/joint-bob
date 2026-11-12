@@ -21,7 +21,9 @@ import { sharedProjectSessions } from "../sessions-helpers.js";
 import { startMemorySync } from "../../control-center/memory-sync.js";
 import { loadBoard } from "../control-center-board.js";
 import { startControlCenterWatch } from "../control-center-watch.js";
-import { closeFromBoard, startReviewChecks } from "../control-center-review-check.js";
+import { closeFromBoard, pushFromBoard, startReviewChecks } from "../control-center-review-check.js";
+import { BobActionError } from "../../control-center/bob-actions.js";
+import { NotFoundError } from "../../not-found.js";
 import { closeoutFeedbackSchema } from "../../conversation-closeout.js";
 import { startBobRecheck } from "../control-center-recheck.js";
 import { startBobSync } from "../../control-center/bob-sync.js";
@@ -44,11 +46,12 @@ app.get("/api/control-center/summary", async (_request, response, next) => {
   } catch (error) { next(error); }
 });
 
-app.get("/api/control-center/board", async (_request, response, next) => {
+app.get("/api/control-center/board", async (request, response, next) => {
   try {
     const session = response.locals.authSession as AuthSession;
-    // Opening the control center is how Bob learns who to tell about things that happen later.
-    rememberBobAccount(await bobDatabase(), actingAccountFromSession(session));
+    // Opening the control center is how Bob learns who to tell about things that happen later. The workspace's left column
+    // reads the same board for its three groups (`?look=1`); a glance at those is not opening the control center.
+    if (request.query.look !== "1") rememberBobAccount(await bobDatabase(), actingAccountFromSession(session));
     const { cards, projects } = await loadBoard(session);
     // The project's own color goes along: the board and Bob's chat draw each project in it.
     response.json({ cards, projects: projects.map((project) => ({ id: project.id, name: project.name, color: project.color ?? null })) });
@@ -130,6 +133,24 @@ app.post("/api/control-center/cards/done", async (request, response, next) => {
     response.json({ ok: true });
   } catch (error) {
     if (error instanceof z.ZodError) { sendError(response, 400, "Invalid request"); return; }
+    next(error);
+  }
+});
+
+const cardPushSchema = z.object({ projectId: z.string().min(1).max(200), conversationId: z.string().min(1).max(300), note: z.string().trim().max(4_000).optional() }).strict();
+
+/** Push it on from a card (Home, the board): tells the conversation to go on, with the person's instructions when written. */
+app.post("/api/control-center/cards/push", async (request, response, next) => {
+  try {
+    const input = cardPushSchema.parse(request.body);
+    if (!await projectVisible(input.projectId)) { sendError(response, 404, "Project not found"); return; }
+    await pushFromBoard(response.locals.authSession as AuthSession, input, input.note ?? "");
+    response.json({ ok: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid request"); return; }
+    if (error instanceof BobActionError) { sendError(response, error.status, error.message); return; }
+    if (error instanceof NotFoundError) { sendError(response, 404, error.message); return; }
+    if (error instanceof Error && /not writable on this node|Team continuation/.test(error.message)) { sendError(response, 409, error.message); return; }
     next(error);
   }
 });

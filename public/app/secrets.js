@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import { elements } from "./elements.js";
 import { brandIcon, brandIconPaths, menuIcon } from "./icons.js";
 import { fuzzyMatch } from "./fuzzy.js";
+import { createListPager, rowActions } from "./list-pager.js";
 import { createSearchableSelect } from "./searchable-select.js";
 import { parseMobaSshSession } from "./ssh-session-import.js";
 import { confirmAction, toast } from "./shell.js";
@@ -259,45 +260,59 @@ function githubVariables() {
   return variables;
 }
 
+// The list fits the section and pages (list-pager.js). `revealAccountId` turns to the page holding that account once.
+const secretPager = createListPager({ list: elements.secretAccountList, prefix: "secret-account", label: "Secret account pages", render: renderSecretAccounts });
+let revealAccountId = null;
+
 function renderSecretAccounts() {
-  elements.secretAccountList.replaceChildren();
   const query = elements.secretAccountSearch.value;
   const visible = secretAccounts.filter((account) => (secretTypeFilter === "all" || account.provider === secretTypeFilter)
     && (!query.trim() || fuzzyMatch(query, account.label, providerLabels[account.provider] ?? account.provider, account.websiteOrigin, account.variables.map((item) => item.name).join(" ")) !== null));
-  if (!visible.length) {
-    elements.secretAccountList.textContent = query.trim() ? "No matching accounts." : secretTypeFilter === "all" ? "No secret accounts." : `No ${providerLabels[secretTypeFilter] ?? secretTypeFilter} accounts.`;
-    return;
+  const rows = secretPager.slice(visible, visible.findIndex((account) => account.id === revealAccountId)).map(secretAccountRow);
+  revealAccountId = null;
+  if (!rows.length) {
+    const empty = document.createElement("p"); empty.className = "long-list-empty";
+    empty.textContent = query.trim() ? "No matching accounts." : secretTypeFilter === "all" ? "No secret accounts." : `No ${providerLabels[secretTypeFilter] ?? secretTypeFilter} accounts.`;
+    rows.push(empty);
   }
-  for (const account of visible) {
-    const row = document.createElement("div"); row.className = "secret-account-row"; row.dataset.provider = account.provider; row.dataset.accountId = account.id;
-    const meta = document.createElement("span"); meta.className = "secret-account-meta";
-    const owner = account.projectId ? ` · ${state.projects.find((project) => project.id === account.projectId)?.name ?? account.projectId}` : "";
-    const name = document.createElement("strong"); name.textContent = `${account.label} · ${providerLabels[account.provider] ?? account.provider}${owner}`;
-    const variables = document.createElement("span"); variables.className = "secret-account-vars";
-    variables.textContent = account.github ? githubSummary(account.github) : account.variables.map((item) => `${item.name}${item.kind === "file" ? " (file)" : ""}`).join(", ");
-    meta.append(name);
-    if (account.websiteOrigin) {
-      const origin = document.createElement("span"); origin.className = "secret-account-vars"; origin.textContent = account.websiteOrigin; meta.append(origin);
-    }
-    meta.append(variables);
-    if (account.shared) {
-      const status = document.createElement("span"); status.className = "secret-account-vars";
-      status.textContent = account.ownerTwin ? `From ${account.ownerNodeName || "your other machine"} · edit it there` : account.readOnly ? "Shared with me · read-only" : "Shared with other nodes";
-      status.dataset.testid = "secret-account-share-status";
-      meta.append(status);
-    }
+  elements.secretAccountList.replaceChildren(...rows);
+  secretPager.update();
+}
+
+/** One row of fixed height: the provider, name and what it exports, where it is shared, and its actions. */
+function secretAccountRow(account) {
+  const row = document.createElement("div"); row.className = "secret-account-row long-list-row"; row.dataset.provider = account.provider; row.dataset.accountId = account.id;
+  const meta = document.createElement("span"); meta.className = "secret-account-meta long-row-main";
+  const owner = account.projectId ? ` · ${state.projects.find((project) => project.id === account.projectId)?.name ?? account.projectId}` : "";
+  const name = document.createElement("strong"); name.textContent = `${account.label} · ${providerLabels[account.provider] ?? account.provider}${owner}`; name.title = name.textContent;
+  const variables = document.createElement("small"); variables.className = "secret-account-vars";
+  const exported = account.github ? githubSummary(account.github) : account.variables.map((item) => `${item.name}${item.kind === "file" ? " (file)" : ""}`).join(", ");
+  if (account.websiteOrigin) {
+    const origin = document.createElement("span"); origin.className = "secret-account-origin"; origin.textContent = account.websiteOrigin;
+    variables.append(origin, ` · ${exported}`);
+  } else variables.textContent = exported;
+  variables.title = variables.textContent;
+  meta.append(name, variables);
+  const status = document.createElement("span"); status.className = "long-row-tag";
+  if (account.shared) {
+    status.textContent = account.ownerTwin ? `From ${account.ownerNodeName || "your other machine"} · edit it there` : account.readOnly ? "Shared with me · read-only" : "Shared with other nodes";
+    status.title = status.textContent;
+    status.dataset.testid = "secret-account-share-status";
+  }
+  const badge = providerBadge(account.provider, "secret-account-provider-badge"); badge.classList.add("long-row-lead");
+  row.append(badge, meta, status);
+  if (!account.readOnly) {
+    const share = document.createElement("button"); share.type = "button"; share.className = "ghost compact"; share.textContent = "Share"; share.dataset.testid = "secret-account-share-button";
+    share.addEventListener("click", () => void openSecretSharing(account).catch((error) => toast.error(error.message)));
     const edit = document.createElement("button"); edit.type = "button"; edit.className = "ghost compact"; edit.textContent = "Edit"; edit.dataset.testid = "secret-account-edit-button";
     edit.addEventListener("click", () => openSecretAccount(account));
     const remove = document.createElement("button"); remove.type = "button"; remove.className = "ghost compact danger"; remove.textContent = "Delete"; remove.dataset.testid = "secret-account-delete-button";
     remove.addEventListener("click", () => deleteSecretAccount(account));
-    row.append(providerBadge(account.provider, "secret-account-provider-badge"), meta);
-    if (!account.readOnly) {
-      const share = document.createElement("button"); share.type = "button"; share.className = "ghost compact"; share.textContent = "Share"; share.dataset.testid = "secret-account-share-button";
-      share.addEventListener("click", () => void openSecretSharing(account).catch((error) => toast.error(error.message)));
-      row.append(share, edit, remove);
-    }
-    elements.secretAccountList.append(row);
+    const { actions, more } = rowActions([share, edit, remove], `Actions for ${account.label}`);
+    more.dataset.testid = "secret-account-more";
+    row.append(actions, more);
   }
+  return row;
 }
 
 async function openSecretSharing(account) {
@@ -354,7 +369,7 @@ const providerOptions = Object.entries(providerLabels).map(([value, label]) => (
 secretTypePicker.setOptions([{ value: "all", label: "All types" }, ...providerOptions]);
 // Icons are initialized after the module graph finishes loading (icons.js is cyclic).
 queueMicrotask(() => secretTypePicker.setValue("all"));
-elements.secretAccountSearch.addEventListener("input", renderSecretAccounts);
+elements.secretAccountSearch.addEventListener("input", () => { secretPager.reset(); renderSecretAccounts(); });
 
 export function revealSecretAccount(accountId) {
   const account = secretAccounts.find((item) => item.id === accountId);
@@ -362,10 +377,11 @@ export function revealSecretAccount(accountId) {
   secretTypeFilter = "all";
   secretTypePicker.setValue("all");
   elements.secretAccountSearch.value = account.label;
+  revealAccountId = accountId;
   renderSecretAccounts();
   return [...elements.secretAccountList.querySelectorAll(".secret-account-row")].find((row) => row.dataset.accountId === accountId) ?? null;
 }
-secretTypePicker.onChange((name) => { secretTypeFilter = name; renderSecretAccounts(); });
+secretTypePicker.onChange((name) => { secretTypeFilter = name; secretPager.reset(); renderSecretAccounts(); });
 elements.secretTypePicker.append(secretTypePicker.root);
 
 const secretProviderPicker = createSearchableSelect({
@@ -665,6 +681,8 @@ async function saveSecretAccount() {
   // Created from a picker: it stays open underneath, keeps the user's ticks, and shows
   // the new account already ticked.
   const notify = onAccountSaved;
+  // The saved account's page shows, wherever the list was.
+  revealAccountId = saved.account?.id ?? editingSecretAccountId;
   elements.secretAccountDialog.close(); await loadSecretAccounts();
   if (notify) notify(saved.account);
   toast("Secret account saved. Your twins receive it automatically");

@@ -12,6 +12,7 @@ import { captureChordInput } from "./key-capture.js";
 import { setShortcutKeymap } from "./shortcuts.js";
 import { syncShortcutHints } from "./shortcut-hints.js";
 import { state } from "./state.js";
+import { autosaveFields, invalidSetting, settingsAutosave } from "./settings-autosave.js";
 
 const commandsHost = document.querySelector("#keymapCommands");
 const statusLine = document.querySelector("#keymapStatus");
@@ -134,19 +135,20 @@ function keymapFromPanel() {
   return normalizeKeymap(draft);
 }
 
+/** Saves as a shortcut changes (settings-autosave.js); a clash or a failed save is thrown for the save line. */
 async function saveShortcutSettings() {
   let next;
   try {
     next = keymapFromPanel();
   } catch (error) {
     statusLine.textContent = error instanceof Error ? error.message : "Could not read these shortcuts";
-    return;
+    throw invalidSetting(statusLine.textContent);
   }
   try {
     await savePreferences({ canvasKeymap: next });
   } catch (error) {
     statusLine.textContent = error instanceof Error ? error.message : "Could not save these shortcuts";
-    return;
+    throw error;
   }
   state.keymap = next;
   syncSavedCommandsHelp(next);
@@ -155,8 +157,12 @@ async function saveShortcutSettings() {
   statusLine.textContent = "Saved.";
 }
 
-saveButton.addEventListener("click", () => { void saveShortcutSettings(); });
+settingsAutosave().channel("shortcuts", saveShortcutSettings);
+autosaveFields(commandsHost, "shortcuts", { accept: (target) => target.matches("input") });
+// The button is hidden: shortcuts save as they change. It stays for anything that presses it.
+saveButton.addEventListener("click", () => { settingsAutosave().schedule("shortcuts", 0); });
 resetButton.addEventListener("click", () => {
   fillFields(DEFAULT_KEYMAP);
   statusLine.textContent = "";
+  settingsAutosave().schedule("shortcuts", 0);
 });

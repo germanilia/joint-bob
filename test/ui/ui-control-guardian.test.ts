@@ -49,6 +49,8 @@ test("a step waiting for your OK shows under Needs you with answer buttons, and 
   assert.equal(await page.getByTestId("control-center-waiting-badge").textContent(), "2");
 
   await page.getByTestId("projects-open-control-center-button").click();
+  // Bob's page opens on his chat; the board is his Live agents tab.
+  await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
   assert.equal(await page.getByTestId("control-center-count").textContent(), "1 running · 2 need you · 1 watched by Bob");
   const review = page.locator('[data-key="p1:c1"]');

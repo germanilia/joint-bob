@@ -1,0 +1,649 @@
+/* Settings as a page (Paper · Editorial, phase 3). Settings fills the window instead of floating
+   over the app: its own list on the left, the open section on a card on the right. On a phone
+   (≤ 700 px) the list and one section take turns. Every section has the same head
+   (settings-page.js) and saves as it changes (settings-autosave.js). Three kinds of section:
+   [data-settings-kind="tabs"] a list with tabs, "form" titled groups of rows, "list" a long list
+   that pages. Scoped to #settingsForm: other dialogs reuse .settings-card and must not change. */
+
+/* ---------- the page ---------- */
+#settingsDialog {
+  position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; border-radius: 0; background: var(--bg); color: var(--text); overflow: hidden;
+}
+#settingsDialog::backdrop { background: var(--bg); backdrop-filter: none; }
+#settingsForm.settings-card {
+  display: flex; flex-direction: column; gap: 0; width: 100%; max-width: none; height: 100%; max-height: none;
+  margin: 0; padding: 12px 12px 12px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: hidden;
+}
+#settingsForm .settings-body {
+  display: grid; flex: 1; min-height: 0; gap: 0;
+  grid-template-columns: 288px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "head main" "side main";
+}
+
+/* The list's head: back to the workspace, then the page title. */
+#settingsForm .settings-head { grid-area: head; display: grid; justify-items: start; gap: 4px; min-height: 0; margin: 0; padding: 10px 14px 12px 20px; }
+#settingsForm .settings-head > :is(.eyebrow, p) { display: none; }
+#settingsForm .settings-exit {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 8px 0 4px; border: 0; border-radius: 10px;
+  background: none; color: var(--muted); font-size: 13.5px; font-weight: 600; box-shadow: none;
+}
+#settingsForm .settings-exit:hover { background: var(--field); color: var(--text); }
+#settingsForm .settings-chevron { display: inline-block; font-size: 22px; line-height: 1; transform: translateY(-1px); }
+#settingsForm .settings-back, #settingsForm .settings-current { display: none; }
+#settingsForm .settings-page-title { margin: 0; padding: 0 4px; color: var(--heading, var(--text)); font-family: var(--serif); font-size: 32px; font-weight: 400; line-height: 1.1; letter-spacing: 0; }
+
+/* ---------- the list ---------- */
+#settingsForm .settings-sidebar { grid-area: side; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 0 12px 4px 16px; }
+#settingsForm .settings-search-input {
+  min-height: 40px; padding: 8px 12px 8px 36px; border: 0; border-radius: 12px; background-color: var(--field);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23887d6f' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 12px 50%; background-size: 16px; font-size: 14px;
+}
+#settingsForm .settings-search-input:focus { border: 0; box-shadow: 0 0 0 2px var(--accent); }
+#settingsForm .settings-search-results { width: min(420px, calc(100vw - 32px)); }
+#settingsForm .settings-tabs--sidebar {
+  display: block; flex: 1 1 auto; height: auto; min-height: 0; padding: 0 0 8px; border: 0; border-radius: 0; background: none;
+  overflow-x: hidden; overflow-y: auto; scrollbar-width: thin;
+}
+#settingsForm .settings-group { padding: 6px 0 2px; }
+#settingsForm .settings-group-label {
+  display: block; width: 100%; min-height: 0; margin: 0; padding: 6px 10px 2px; border: 0; border-radius: 8px; background: none; box-shadow: none;
+  color: var(--muted); font-family: var(--serif); font-size: 15px; font-weight: 400; letter-spacing: 0; text-align: left; text-transform: none; cursor: pointer;
+}
+#settingsForm .settings-group-label:hover { color: var(--text); }
+#settingsForm .settings-group[data-open="true"] .settings-group-label { padding-bottom: 4px; color: var(--text); cursor: default; }
+/* The open group: one row per section. */
+#settingsForm .settings-group[data-open="true"] .settings-tab {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; height: auto; padding: 0 10px; border: 0; border-radius: 10px;
+  background: none; box-shadow: none; color: var(--muted); font-size: 13.5px; font-weight: 550; text-align: left;
+}
+#settingsForm .settings-group[data-open="true"] .settings-tab:hover { color: var(--text); background: color-mix(in srgb, var(--field) 70%, transparent); }
+#settingsForm .settings-group[data-open="true"] .settings-tab[aria-selected="true"] { background: var(--paper-raised, var(--field)); color: var(--text); box-shadow: none; }
+#settingsForm .settings-tab[hidden] { display: none !important; }
+#settingsForm .settings-tab-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 0; background: none; font-size: 13px; }
+#settingsForm .settings-tab-svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* A closed group: its sections as one short line of names, each still a link. */
+#settingsForm .settings-group:not([data-open="true"]) { padding: 6px 10px 4px; }
+#settingsForm .settings-group:not([data-open="true"]) .settings-group-label { padding: 0 0 1px; border-radius: 4px; }
+#settingsForm .settings-group:not([data-open="true"]) .settings-tab {
+  display: inline; min-height: 0; height: auto; margin: 0; padding: 0; border: 0; border-radius: 3px; background: none; box-shadow: none;
+  color: var(--muted); font-size: 12.5px; font-weight: 450; line-height: 1.55; text-align: left; white-space: nowrap; cursor: pointer;
+}
+#settingsForm .settings-group:not([data-open="true"]) .settings-tab:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+#settingsForm .settings-group:not([data-open="true"]) .settings-tab-icon { display: none; }
+#settingsForm .settings-group:not([data-open="true"]) .settings-tab-label { display: inline; overflow: visible; }
+#settingsForm .settings-group:not([data-open="true"]) .settings-tab:not([hidden]):has(~ .settings-tab:not([hidden]))::after { content: ","; }
+
+/* ---------- the section page ---------- */
+#settingsForm .settings-panel {
+  grid-area: main; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 14px;
+  height: auto; min-height: 0; padding: 40px clamp(24px, 5vw, 64px) 56px; border: 0; border-radius: 24px;
+  background: var(--panel); box-shadow: var(--shadow-soft); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  font-size: 14.5px;
+}
+#settingsForm .settings-panel[hidden] { display: none; }
+:root[data-theme="dark"] #settingsForm .settings-panel { box-shadow: 0 0 0 1px var(--line); }
+/* Forms read best at a line length; lists and maps take the width. */
+#settingsForm .settings-panel[data-settings-kind="form"] > * { width: 100%; max-width: 860px; }
+#settingsForm .settings-panel:is([data-settings-kind="tabs"], [data-settings-kind="list"]) > * { max-width: 1180px; }
+#settingsForm .settings-panel.relay-panel, #settingsForm .settings-panel.resources-panel { display: flex; flex-direction: column; }
+
+/* The same head on every section. */
+#settingsForm .settings-section-head { display: grid; gap: 6px; margin: 0 0 10px; }
+#settingsForm .settings-section-head .settings-crumb { margin: 0; color: var(--muted); font-size: 13px; font-weight: 600; line-height: 1.3; }
+#settingsForm .settings-section-head .settings-section-title { margin: 0; color: var(--heading, var(--text)); font-family: var(--serif); font-size: clamp(32px, 3.2vw, 46px); font-weight: 400; line-height: 1.05; letter-spacing: 0; }
+#settingsForm .settings-section-head .settings-section-text { max-width: 640px; margin: 4px 0 0; color: var(--muted); font-size: 16px; line-height: 1.5; }
+#settingsForm .settings-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 8px; }
+#settingsForm .settings-scope {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 11px; border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+}
+#settingsForm .settings-scope-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* The save line: "Changes save as you make them", then Saving…, Saved, or what failed. */
+#settingsForm .settings-saved { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+#settingsForm .settings-saved-icon { flex: none; width: 15px; height: 15px; }
+#settingsForm .settings-saved-icon::before { content: "✓"; display: block; color: var(--live, var(--accent)); font-size: 13px; font-weight: 700; line-height: 15px; text-align: center; }
+#settingsForm .settings-saved:is([data-state="pending"], [data-state="saving"], [data-state="loading"]) .settings-saved-icon::before {
+  content: ""; width: 11px; height: 11px; margin: 2px; border: 2px solid color-mix(in srgb, var(--muted) 45%, transparent); border-top-color: var(--muted); border-radius: 50%;
+  animation: settings-saving 0.8s linear infinite;
+}
+#settingsForm .settings-saved:is([data-state="failed"], [data-state="unavailable"]) { color: var(--danger); font-weight: 600; }
+#settingsForm .settings-saved:is([data-state="failed"], [data-state="unavailable"]) .settings-saved-icon::before { content: "!"; color: var(--danger); }
+#settingsForm .settings-saved-retry { min-height: 28px; padding: 0 10px; font-size: 12.5px; }
+#settingsForm .settings-restart-message { flex-basis: 100%; margin: 0; color: var(--amber) !important; font-size: 13px !important; }
+@keyframes settings-saving { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #settingsForm .settings-saved-icon::before { animation: none !important; } }
+/* The head is Settings' own: where a section is shown elsewhere (a project's webhooks), it stays out. */
+dialog:not(#settingsDialog) .settings-section-head { display: none; }
+
+/* ---------- type and controls inside a section ---------- */
+#settingsForm .settings-panel :is(p, li) { font-size: 14.5px; line-height: 1.55; }
+#settingsForm .settings-panel .settings-hint, #settingsForm .settings-panel .cluster-muted, #settingsForm .settings-panel .muted { color: var(--muted); font-size: 13px; line-height: 1.5; }
+#settingsForm .settings-panel label { color: var(--text); font-size: 14px; font-weight: 600; }
+/* Fields are filled: on the card they take the field colour, on a filled block the card's. */
+#settingsForm .settings-panel :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .searchable-select-trigger) {
+  min-height: 38px; border-color: transparent; border-radius: 10px; background-color: var(--field); font-size: 14px;
+}
+#settingsForm .settings-panel .phase-settings :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .searchable-select-trigger) { background-color: var(--panel); }
+#settingsForm .settings-panel h3 { margin: 18px 0 6px; color: var(--heading, var(--text)); font-family: var(--serif); font-size: 20px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+/* A button keeps its own width; secondary buttons are a quiet raised fill. */
+#settingsForm .settings-panel :is(.settings-panel > button, .phase-settings > button, .retention-scope > button) { justify-self: start; width: auto; }
+#settingsForm .settings-panel button.ghost:not(.settings-subtab):not(.searchable-select-trigger):not(.settings-saved-retry) {
+  min-height: 34px; border-color: transparent; border-radius: 10px; background: var(--paper-raised, var(--field)); color: var(--text); font-weight: 600;
+}
+#settingsForm .settings-panel button.ghost:not(.settings-subtab):not(.searchable-select-trigger):hover:not(:disabled) { background: color-mix(in srgb, var(--paper-raised, var(--field)) 82%, var(--text)); }
+#settingsForm .settings-panel button.ghost.danger { color: var(--danger); }
+#settingsForm .settings-panel .ntfy-service-add > button { justify-self: start; }
+#settingsForm .settings-panel .relay-form > button { align-self: end; justify-self: start; min-height: 38px; }
+/* A card inside a section (Harnesses, Connections) is the section itself now: no second frame or title. */
+#settingsForm .settings-panel > .engines-card, #settingsForm .settings-panel > .engines-card.provider-profiles { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+#settingsForm .settings-panel .engines-card > .engines-card-header { display: none; }
+/* Light themes: a field on a filled block gets a hairline so its edge reads. */
+#settingsForm .settings-panel .phase-settings :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { box-shadow: inset 0 0 0 1px var(--line); }
+
+/* ---------- kind: form — titled groups of rows ---------- */
+/* A titled group: the serif title, then its rows on one filled block (drawn behind them by
+   ::before, so the title stays above it), split by a hairline. */
+#settingsForm .settings-panel .phase-settings {
+  --legend-space: 38px;
+  position: relative; isolation: isolate; display: grid; gap: 0; min-width: 0; margin: 18px 0 0; padding: 0 0 6px; border: 0; border-radius: 0; background: none;
+}
+#settingsForm .settings-panel .phase-settings::before { content: ""; position: absolute; inset: var(--legend-space) 0 0; z-index: -1; border-radius: 16px; background: var(--field); }
+#settingsForm .settings-panel .phase-settings:not(:has(> legend)) { --legend-space: 0px; padding-top: 6px; }
+#settingsForm .settings-panel .phase-settings[disabled] { opacity: 1; }
+#settingsForm .settings-panel .phase-settings > legend {
+  float: left; width: 100%; height: calc(var(--legend-space) - 10px); margin: 0 0 10px; padding: 0; overflow: hidden; color: var(--heading, var(--text));
+  font-family: var(--serif); font-size: 22px; font-weight: 400; line-height: 1.25; letter-spacing: 0; text-transform: none; white-space: nowrap; text-overflow: ellipsis;
+}
+#settingsForm .settings-panel .phase-settings > :not(legend) { margin: 0; padding: 12px 18px; }
+#settingsForm .settings-panel .phase-settings > legend + * { padding-top: 14px; }
+#settingsForm .settings-panel .phase-settings > :not(legend):not(.settings-hint):not([hidden]) + :not(.settings-hint):not(button):not([hidden]) { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .settings-panel .phase-settings > .settings-hint { margin-top: -8px; padding-top: 0; }
+#settingsForm .settings-panel .phase-settings > legend + .settings-hint { margin-top: 0; padding-top: 14px; }
+#settingsForm .settings-panel .phase-settings > :is(.github-group-actions, .node-block-add, .settings-actions) { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-start; gap: 8px; }
+#settingsForm .settings-panel .phase-settings > button { margin: 4px 18px 10px; padding: 0 14px; }
+#settingsForm .settings-panel .phase-settings > [hidden] { display: none; }
+
+/* A row: the words on the left, the control on the right; text boxes and lists take the width. */
+#settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row) {
+  display: grid; grid-auto-flow: column; grid-template-columns: minmax(0, 1fr); grid-auto-columns: auto; align-items: center; gap: 6px 12px;
+}
+#settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row) > :is(select, .searchable-select, input:not([type="number"])) { width: min(340px, 46vw); }
+#settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row) > input[type="number"] { width: 96px; text-align: right; }
+#settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row):is(:has(> textarea), :has(> div), :has(> span.folder-input-row)) {
+  grid-auto-flow: row; grid-template-columns: minmax(0, 1fr);
+}
+#settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label > textarea { width: 100%; }
+#settingsForm .settings-panel[data-settings-kind="form"] > :is(label, .checkbox-row) { padding: 4px 0; }
+
+/* Yes/no rows: the words first, a switch at the end. */
+#settingsForm .settings-panel :is(.phase-settings > .checkbox-row, .retention-scope > .checkbox-row, [data-settings-kind="form"] > .checkbox-row, [data-harness-panel] > .checkbox-row) {
+  display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: 16px; min-height: 44px; font-weight: 600;
+}
+#settingsForm .settings-panel :is(.phase-settings > .checkbox-row, .retention-scope > .checkbox-row, [data-settings-kind="form"] > .checkbox-row, [data-harness-panel] > .checkbox-row) > input[type="checkbox"],
+#settingsForm .settings-panel .resources-auto-activate > input[type="checkbox"] {
+  position: relative; flex: none; width: 40px; min-width: 40px; height: 24px; margin: 0; border: 0; border-radius: 12px; appearance: none; -webkit-appearance: none;
+  background: var(--line-strong); cursor: pointer; transition: background-color 150ms ease;
+}
+#settingsForm .settings-panel :is(.phase-settings > .checkbox-row, .retention-scope > .checkbox-row, [data-settings-kind="form"] > .checkbox-row, [data-harness-panel] > .checkbox-row) > input[type="checkbox"]::before,
+#settingsForm .settings-panel .resources-auto-activate > input[type="checkbox"]::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 150ms ease;
+}
+#settingsForm .settings-panel :is(.phase-settings > .checkbox-row, .retention-scope > .checkbox-row, [data-settings-kind="form"] > .checkbox-row, [data-harness-panel] > .checkbox-row) > input[type="checkbox"]:checked,
+#settingsForm .settings-panel .resources-auto-activate > input[type="checkbox"]:checked { background: var(--accent); }
+#settingsForm .settings-panel :is(.phase-settings > .checkbox-row, .retention-scope > .checkbox-row, [data-settings-kind="form"] > .checkbox-row, [data-harness-panel] > .checkbox-row) > input[type="checkbox"]:checked::before,
+#settingsForm .settings-panel .resources-auto-activate > input[type="checkbox"]:checked::before { transform: translateX(16px); }
+#settingsForm .settings-panel .checkbox-row > input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
+#settingsForm .settings-panel .checkbox-row > input[type="checkbox"]:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent); }
+#settingsForm .settings-panel .resources-auto-activate { flex-direction: row-reverse; justify-content: space-between; }
+@media (prefers-reduced-motion: reduce) { #settingsForm .settings-panel .checkbox-row > input[type="checkbox"], #settingsForm .settings-panel .checkbox-row > input[type="checkbox"]::before { transition: none; } }
+/* The retention boxes sit in their own block inside the group. */
+#settingsForm .settings-panel .retention-scope { display: grid; gap: 0; justify-items: stretch; }
+#settingsForm .settings-panel .retention-scope > .checkbox-row + .checkbox-row { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .settings-panel .retention-scope > :is(button, .settings-hint) { justify-self: start; margin: 8px 0; }
+/* Backup before deleting: the rows of the chosen place come and go (settings.js). What a check, a
+   refused save and the status say are lines of the group; the other service's address opens under its own line. */
+#settingsForm .settings-panel .retention-backup > .retention-backup-notes { padding-block: 0 12px; box-shadow: none !important; }
+#settingsForm .settings-panel .retention-backup > .retention-backup-more { padding-block: 4px; }
+#settingsForm .settings-panel .retention-backup > .retention-backup-more[open] { padding-bottom: 12px; }
+#settingsForm .settings-panel .retention-backup-more > label { display: grid; gap: 6px; }
+#settingsForm .settings-panel .retention-backup-more > label > input { width: 100%; }
+#settingsForm .settings-panel .retention-backup-more > .settings-hint { margin: 6px 0 0; }
+@media (max-width: 700px) {
+  #settingsForm .settings-panel .retention-scope > .checkbox-row { min-height: 52px; padding-block: 6px; font-size: 16px; font-weight: 500; line-height: 1.3; }
+  #settingsForm .settings-panel .retention-backup-more > label { font-size: 15px; }
+  #settingsForm .settings-panel:not(#settingsPanel-cluster) .retention-backup details.retention-backup-more > summary { min-height: 44px; }
+}
+
+/* Account › Appearance: six tiles that preview each theme, then text size. */
+#settingsForm .settings-appearance-row { display: grid; gap: 12px; padding-block: 14px 16px !important; }
+#settingsForm .settings-row-text { display: grid; gap: 2px; }
+#settingsForm .settings-row-text strong { font-size: 14px; font-weight: 600; }
+.theme-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.theme-tile {
+  display: grid; gap: 7px; justify-items: stretch; min-height: 0; padding: 8px 8px 9px; border: 0; border-radius: 12px;
+  background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-size: 12.5px; font-weight: 600; text-align: center; cursor: pointer;
+}
+.theme-tile:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.theme-tile[aria-checked="true"] { box-shadow: inset 0 0 0 2px var(--accent); color: var(--text); }
+.theme-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px var(--focus-ring, color-mix(in srgb, var(--accent) 35%, transparent)); }
+.theme-tile-preview { display: block; height: 44px; border-radius: 9px; background: linear-gradient(135deg, var(--tile-page) 0 56%, var(--tile-card) 56%); box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.22); }
+.settings-text-size { display: flex; gap: 2px; width: min(100%, 380px); padding: 3px; border-radius: 12px; background: var(--paper-raised, var(--field)); }
+.settings-text-size .settings-segment {
+  flex: 1; min-height: 32px; padding: 0 10px; border: 0; border-radius: 9px; background: none; box-shadow: none; color: var(--muted); font-size: 13px; font-weight: 600;
+}
+.settings-text-size .settings-segment[aria-pressed="true"] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+#settingsForm .settings-text-size-areas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 22px; }
+#settingsForm .settings-text-size-areas .appearance-slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; font-size: 13px; font-weight: 550; }
+#settingsForm .settings-text-size-areas .appearance-slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+
+/* ---------- kind: a list with tabs ---------- */
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) {
+  display: flex; flex-wrap: nowrap; gap: 22px; max-width: 100%; padding: 0; overflow-x: auto; scrollbar-width: none;
+  border: 0; border-radius: 0; background: none; box-shadow: inset 0 -1px 0 var(--line);
+}
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button) {
+  flex: none; min-height: 40px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  color: var(--muted); font-size: 14px; font-weight: 600; white-space: nowrap;
+}
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button):hover { color: var(--text); background: none; }
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button)[aria-selected="true"] {
+  background: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--text);
+}
+/* Filter chips: pressed shows the ink. */
+#settingsForm .settings-panel .settings-subtabs:not([role="tablist"]) { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; border: 0; background: none; }
+#settingsForm .settings-panel .settings-subtabs:not([role="tablist"]) .settings-subtab {
+  min-height: 30px; padding: 0 12px; border: 0; border-radius: 15px; background: none; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--muted); font-size: 13px; font-weight: 600;
+}
+#settingsForm .settings-panel .settings-subtabs:not([role="tablist"]) .settings-subtab[aria-pressed="true"] { background: var(--ink); box-shadow: none; color: var(--on-ink, var(--panel)); }
+
+/* ---------- kind: a long list — rows on one filled block, paged ---------- */
+#settingsForm .settings-panel :is(.relay-pager, .resources-pager, .settings-pager) { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--muted); font-size: 13px; }
+#settingsForm .settings-panel :is(.relay-pager, .resources-pager, .settings-pager)[hidden] { display: none; }
+
+/* A short window (a laptop with the dock, a small tablet): the list tightens so it still fits without scrolling. */
+@media (min-width: 701px) and (max-height: 780px) {
+  #settingsForm .settings-head { padding-block: 6px 8px; }
+  #settingsForm .settings-page-title { font-size: 27px; }
+  #settingsForm .settings-search-input { min-height: 36px; }
+  #settingsForm .settings-group { padding-top: 3px; }
+  #settingsForm .settings-group[data-open="true"] .settings-tab { min-height: 28px; }
+  #settingsForm .settings-tabs--sidebar { padding-bottom: 0; }
+  #settingsForm .settings-group:not([data-open="true"]) { padding-block: 4px 2px; }
+  #settingsForm .settings-group:not([data-open="true"]) .settings-tab { line-height: 1.45; }
+  #settingsForm .settings-panel { padding-top: 28px; }
+}
+
+/* ---------- a phone: the list, or one section with a way back ---------- */
+@media (max-width: 700px) {
+  #settingsForm.settings-card { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+  #settingsForm .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "head" "main"; }
+  #settingsForm .settings-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 12px 4px; }
+  #settingsForm .settings-exit, #settingsForm .settings-back {
+    display: inline-flex; align-items: center; justify-content: center; width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 12px; color: var(--text);
+  }
+  #settingsForm .settings-exit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #settingsForm .settings-chevron { font-size: 30px; }
+  #settingsForm[data-mobile-view="menu"] .settings-back { display: none; }
+  #settingsForm[data-mobile-view="menu"] .settings-page-title { flex-basis: 100%; padding: 2px 8px 6px; font-size: 32px; }
+  #settingsForm[data-mobile-view="panel"] :is(.settings-exit, .settings-page-title) { display: none; }
+  #settingsForm[data-mobile-view="panel"] .settings-current { display: grid; flex: 1; min-width: 0; }
+  #settingsForm .settings-current-title { overflow: hidden; font-size: 17px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+  #settingsForm .settings-current-crumb { color: var(--muted); font-size: 13px; }
+  #settingsForm .settings-sidebar { grid-area: main; padding: 0 14px; }
+  #settingsForm[data-mobile-view="panel"] .settings-sidebar { display: none; }
+  #settingsForm[data-mobile-view="menu"] .settings-panel { display: none; }
+  #settingsForm .settings-search-input { min-height: 46px; font-size: 16px; }
+  /* Every group open, rows like a phone's own settings. */
+  #settingsForm .settings-tabs--sidebar { padding-bottom: 24px; }
+  /* `:is([data-open], :not([data-open]))` is every group, as specific as the computer's open/closed rules. */
+  #settingsForm .settings-group:is([data-open], :not([data-open])) { margin: 12px 0 0; padding: 0; }
+  #settingsForm .settings-group:is([data-open], :not([data-open])) .settings-group-label { padding: 6px 8px 6px; color: var(--muted); font-size: 15px; cursor: default; }
+  #settingsForm .settings-group:is([data-open], :not([data-open])) .settings-tab {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 0 14px; border-radius: 0; background: var(--panel);
+    color: var(--text); font-size: 16px; font-weight: 500; line-height: 1.2; text-decoration: none;
+  }
+  #settingsForm .settings-group:is([data-open], :not([data-open])) .settings-tab::after, #settingsForm .settings-group:not([data-open="true"]) .settings-tab:not([hidden]):has(~ .settings-tab:not([hidden]))::after { content: "›"; margin-left: auto; color: var(--muted); font-size: 22px; }
+  #settingsForm .settings-group:is([data-open], :not([data-open])) .settings-tab:is([aria-selected="true"], :hover) { background: var(--panel); color: var(--text); text-decoration: none; }
+  #settingsForm .settings-group:is([data-open], :not([data-open])) .settings-tab + .settings-tab { box-shadow: inset 0 1px 0 var(--line); }
+  #settingsForm .settings-group:is([data-open], :not([data-open])) .settings-tab:not([hidden]):not(:has(~ .settings-tab:not([hidden]))) { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+  #settingsForm .settings-group:is([data-open], :not([data-open])) .settings-group-label ~ .settings-tab:not([hidden]):not(.settings-tab:not([hidden]) ~ .settings-tab) { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+  #settingsForm .settings-group:is([data-open], :not([data-open])) .settings-tab-icon { display: inline-grid; width: 20px; height: 20px; color: var(--muted); }
+  #settingsForm .settings-tab-svg { width: 19px; height: 19px; }
+  #settingsForm .settings-panel {
+    grid-area: main; padding: 2px 16px 32px; border-radius: 0; background: none; box-shadow: none; font-size: 16px;
+  }
+  :root[data-theme="dark"] #settingsForm .settings-panel { box-shadow: none; }
+  #settingsForm .settings-section-head { gap: 4px; margin-bottom: 4px; }
+  /* The bar already names the group; the big title stays (Editorial). */
+  #settingsForm .settings-section-head .settings-crumb { display: none; }
+  #settingsForm .settings-section-head .settings-section-text { margin: 0; font-size: 15px; }
+  #settingsForm .settings-facts { margin-top: 4px; }
+  #settingsForm .settings-panel :is(p, li) { font-size: 15px; }
+  #settingsForm .settings-panel .settings-hint, #settingsForm .settings-panel .cluster-muted, #settingsForm .settings-panel .muted { font-size: 14px; }
+  #settingsForm .settings-panel label { font-size: 15px; }
+  #settingsForm .settings-panel :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .searchable-select-trigger) { min-height: 44px; font-size: 16px; }
+  #settingsForm .settings-panel :is(button, .settings-subtab, [role="tab"]):not(.theme-tile):not(.settings-segment) { min-height: 44px; }
+  #settingsForm .settings-panel .phase-settings { --legend-space: 34px; margin-top: 14px; }
+  #settingsForm .settings-panel .phase-settings > legend { font-size: 20px; margin-bottom: 8px; height: calc(var(--legend-space) - 8px); }
+  #settingsForm .settings-panel .phase-settings::before { background: var(--panel); box-shadow: var(--shadow-soft); }
+  :root[data-theme="dark"] #settingsForm .settings-panel .phase-settings::before { box-shadow: 0 0 0 1px var(--line); }
+  #settingsForm .settings-panel .phase-settings > :not(legend) { padding: 12px 14px; }
+  #settingsForm .settings-panel .phase-settings > button { margin: 4px 14px 10px; }
+  /* On the phone the page is sand and the rows are cards, so fields swap colours. */
+  #settingsForm .settings-panel :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .searchable-select-trigger) { background-color: var(--panel); }
+  #settingsForm .settings-panel .phase-settings :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .searchable-select-trigger) { background-color: var(--field); }
+  /* On a phone a row stacks: the words, then the control at full width; numbers stay short. */
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row) { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row) > :is(select, .searchable-select, input:not([type="number"])) { width: 100%; }
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row):has(> input[type="number"]) { grid-auto-flow: column; grid-template-columns: minmax(0, 1fr); }
+  .theme-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .theme-tile { min-height: 44px; font-size: 14px; }
+  .settings-text-size { width: 100%; }
+  .settings-text-size .settings-segment { min-height: 40px; font-size: 14px; }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) {
+    gap: 2px; padding: 3px; border-radius: 12px; background: var(--paper-raised, var(--field)); box-shadow: none;
+  }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button) { min-height: 38px; padding: 0 12px; border-radius: 9px; font-size: 14px; }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button)[aria-selected="true"] { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+  #settingsForm .settings-panel .settings-subtabs:not([role="tablist"]) .settings-subtab { min-height: 36px; font-size: 14px; }
+  /* A finger needs 44 px and an eye 13 px, whatever a section's own rules say for a computer. */
+  #settingsForm .settings-panel :is(button, [role="tab"], select, .searchable-select-trigger, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])):not(.theme-tile):not(.settings-segment) { min-height: 44px !important; }
+  #settingsForm .settings-panel :is(button, [role="tab"]):not(.theme-tile):not(.settings-segment) { font-size: 14px !important; }
+  #settingsForm .settings-panel :is(small, code, .cluster-node-url, .cluster-tab-count, .cluster-badge, .profile-tab-count, .updates-node-version, .updates-node-state, .engine-defaults,
+    .changelog-date, .guardian-settings span, .settings-hint span, .resources-badge, .profile-badge, .github-group-default, kbd, .relay-summary, .engine-readiness) { font-size: 13px !important; }
+  .settings-text-size .settings-segment { min-height: 44px; }
+  #settingsForm .settings-scope, #settingsForm .settings-saved { font-size: 13.5px; }
+}
+
+/* Opened from the assistant app for one automation: only the section and the way back to the assistant, no list. */
+html.assistant-automation #settingsForm .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "head" "main"; }
+html.assistant-automation #settingsForm :is(.settings-sidebar, .settings-section-head, .settings-head > :not(.settings-exit)) { display: none !important; }
+html.assistant-automation #settingsForm .settings-head { display: flex; padding: 6px 12px 0; }
+html.assistant-automation #settingsForm .settings-head > .settings-exit { display: inline-flex !important; }
+html.assistant-automation #settingsForm.settings-card { padding: 0; }
+
+/* ================= Settings polish (Editorial mock): quiet help, rows as cards, a native phone list ================= */
+/* Rows outside a titled group (Harnesses, Git, Labels…) sit in one rounded card like the grouped ones. */
+#settingsForm {
+  --set-row-bg: var(--field);
+  --set-faint: color-mix(in srgb, var(--muted) 78%, var(--panel));
+  --set-chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23978b7c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E");
+  --set-chev-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23978b7c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* The head: crumb, big serif title, one line of description, then where it applies and the save line on one quiet line. */
+#settingsForm .settings-section-head { gap: 4px; margin-bottom: 6px; }
+#settingsForm .settings-section-head .settings-crumb { color: var(--set-faint); font-size: 12.5px; }
+#settingsForm .settings-section-head .settings-section-text { margin-top: 6px; font-size: 15.5px; }
+#settingsForm .settings-facts { flex-wrap: nowrap; gap: 6px 12px; min-width: 0; margin-top: 10px; }
+#settingsForm .settings-scope { flex: none; min-height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; }
+#settingsForm .settings-scope-icon { width: 13px; height: 13px; }
+#settingsForm .settings-facts .settings-saved { flex-wrap: nowrap; min-width: 0; overflow: hidden; color: var(--set-faint); font-size: 12.5px; white-space: nowrap; }
+#settingsForm .settings-facts .settings-saved > span:not(.settings-saved-icon) { overflow: hidden; text-overflow: ellipsis; }
+#settingsForm .settings-facts:has(.settings-restart-message:not([hidden])), #settingsForm .settings-facts:has(.settings-saved:is([data-state="failed"], [data-state="unavailable"])) { flex-wrap: wrap; }
+#settingsForm .settings-facts .settings-saved:is([data-state="failed"], [data-state="unavailable"]) { flex-wrap: wrap; white-space: normal; }
+
+/* Help that runs long shows its first line; a tap opens the rest. */
+#settingsForm .settings-panel [data-help="long"] { padding-right: 22px; cursor: pointer; background: var(--set-chev-down) no-repeat right 2px top 3px / 15px; border-radius: 4px; }
+#settingsForm .settings-panel [data-help="long"][aria-expanded="false"]:not([hidden]) { display: block !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long line only an admin sees stays out for everyone else: the rule above would show it again. */
+body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help="long"] { display: none !important; }
+#settingsForm .settings-panel [data-help="long"][aria-expanded="true"] { background-image: none; }
+/* A group's first line starts lower, under the group's top edge: its arrow follows. */
+#settingsForm .settings-panel .phase-settings > legend + [data-help="long"] { background-position: right 2px top 17px; }
+#settingsForm .settings-panel [data-help="long"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The description under a title is read in full on a computer. */
+@media (min-width: 701px) { #settingsForm .settings-panel .settings-section-text[data-help="long"] { padding-right: 0; background: none; cursor: auto; white-space: normal !important; } }
+
+/* The section's opening paragraphs, collapsed at its end. */
+#settingsForm .settings-panel > .settings-about { order: 99; margin: 22px 0 0; padding: 0; color: var(--muted); }
+#settingsForm .settings-about > summary {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; color: var(--muted); font-size: 13.5px; font-weight: 600; cursor: pointer; list-style: none;
+}
+#settingsForm .settings-about > summary::-webkit-details-marker { display: none; }
+#settingsForm .settings-about > summary::before { content: ""; width: 15px; height: 15px; background: var(--set-chev) no-repeat center / 15px; transition: transform 150ms ease; }
+#settingsForm .settings-about[open] > summary::before { transform: rotate(90deg); }
+#settingsForm .settings-about > p { max-width: 640px; margin: 6px 0 0 21px; color: var(--muted); font-size: 13.5px !important; line-height: 1.55; }
+
+/* Code-like defaults (harness paths) are quiet: small, muted, two lines until tapped. */
+#settingsForm .settings-panel .engine-defaults:not(:empty) { padding: 2px 22px 2px 0; border: 0; border-radius: 0; background-color: transparent; color: var(--set-faint); font-size: 11.5px; }
+#settingsForm .settings-panel .engine-defaults[data-help="long"] { background: var(--set-chev-down) no-repeat right 2px top 2px / 15px; }
+
+/* Rows that are not inside a titled group still form one card. */
+#settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label:not(.sr-only):not(.keymap-search), .checkbox-row) {
+  margin: 0; padding: 12px 16px; background: var(--set-row-bg);
+}
+#settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label:not(.sr-only):not(.keymap-search), .checkbox-row):not(:is(label, .checkbox-row) + *):not(:is(label, .checkbox-row) + output:empty + *) { margin-top: 8px; border-top-left-radius: 16px; border-top-right-radius: 16px; }
+#settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label:not(.sr-only):not(.keymap-search), .checkbox-row):not(:has(+ :is(label, .checkbox-row))):not(:has(+ output:empty + :is(label, .checkbox-row))) { margin-bottom: 4px; border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+#settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label, .checkbox-row) + :is(label:not(.sr-only):not(.keymap-search), .checkbox-row), #settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label, .checkbox-row) + output:empty + :is(label:not(.sr-only):not(.keymap-search), .checkbox-row) { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm [data-harness-panel] { display: grid; gap: 0; }
+#settingsForm [data-harness-panel] > label:not(.checkbox-row) { display: grid; grid-auto-flow: column; grid-template-columns: minmax(0, 1fr); grid-auto-columns: auto; align-items: center; gap: 6px 12px; }
+#settingsForm [data-harness-panel] > label:not(.checkbox-row) > .searchable-select { width: min(340px, 46vw); }
+#settingsForm [data-harness-panel] > .engine-readiness:empty { display: none; }
+#settingsForm .settings-panel[data-settings-kind="form"] > :is(label, .checkbox-row) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .searchable-select-trigger),
+#settingsForm [data-harness-panel] > label :is(input:not([type="checkbox"]), select, textarea, .searchable-select-trigger) { background-color: var(--panel); box-shadow: inset 0 1px 0 0 transparent, inset 0 0 0 1px var(--line); }
+/* A help line under a loose row reads as the card's footnote. */
+#settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label, .checkbox-row) + :is(p.settings-hint, .settings-hint) { margin: 0 0 6px; padding: 6px 16px 0; }
+/* A group's own rows inside a plain holder (the model pickers a module draws) follow the group's rows. */
+#settingsForm .settings-panel .phase-settings > div:not([class]):not([hidden]):has(> label) { display: grid; gap: 0; padding: 0 !important; }
+#settingsForm .settings-panel .phase-settings > textarea { width: calc(100% - 32px); margin: 12px 16px !important; padding: 10px 12px; }
+#settingsForm .settings-panel .phase-settings > div:not([class]) > label { display: grid; grid-auto-flow: column; grid-template-columns: minmax(0, 1fr); grid-auto-columns: auto; align-items: center; gap: 6px 12px; padding: 12px 18px; }
+#settingsForm .settings-panel .phase-settings > div:not([class]) > label + label { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .settings-panel .phase-settings > div:not([class]) > label > :is(select, .searchable-select) { width: min(340px, 46vw); }
+#settingsForm .settings-panel .phase-settings > div:not([class]) > .engine-readiness:empty { display: none; }
+/* A dropdown beside its words: the group's searchable selects keep the same width as plain ones. */
+#settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row):has(> .searchable-select) { grid-auto-flow: column; grid-template-columns: minmax(0, 1fr); }
+#settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row) > .searchable-select { width: min(340px, 46vw); }
+
+/* Inner tabs never clip: they wrap onto a second line. */
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) { flex-wrap: wrap; row-gap: 0; overflow: visible; }
+
+/* ---------- the phone: a settings app ---------- */
+@media (max-width: 700px) {
+  #settingsForm { --set-row-bg: var(--panel); }
+  /* A compact bar that stays: back, then "Settings · group"; the section's name joins it once its title has scrolled away. */
+  #settingsForm[data-mobile-view="panel"] .settings-head { flex-wrap: nowrap; min-height: 52px; padding: 4px 10px; background: var(--bg); transition: box-shadow 150ms ease; }
+  #settingsForm[data-mobile-view="panel"][data-scrolled="true"] .settings-head { box-shadow: 0 1px 0 var(--line); }
+  #settingsForm[data-mobile-view="panel"] .settings-current { align-content: center; gap: 0; }
+  #settingsForm[data-mobile-view="panel"]:not([data-scrolled="true"]) .settings-current-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #settingsForm[data-mobile-view="panel"]:not([data-scrolled="true"]) .settings-current-crumb { color: var(--muted); font-size: 15px; font-weight: 600; }
+  #settingsForm[data-mobile-view="panel"] .settings-current-title { font-size: 16px; }
+  /* The section's own big serif title and one line about it. */
+  #settingsForm .settings-panel { padding: 0 16px 40px; }
+  #settingsForm .settings-section-head { margin: 0 0 4px; padding: 0 4px; }
+  #settingsForm .settings-section-head .settings-section-title { display: block; font-size: 32px; line-height: 1.08; }
+  #settingsForm .settings-section-head .settings-section-text { margin-top: 4px; font-size: 15px; line-height: 1.45; }
+  #settingsForm .settings-facts { margin-top: 8px; }
+  #settingsForm .settings-scope, #settingsForm .settings-facts .settings-saved { font-size: 12.5px; }
+  #settingsForm .settings-scope { min-height: 26px; }
+  /* One line of help per row, as the mock's muted small line. */
+
+  /* Group names are small serif labels over their card, as on a phone's settings. */
+  #settingsForm .settings-panel .phase-settings { --legend-space: 32px; margin-top: 16px; }
+  #settingsForm .settings-panel .phase-settings > legend { height: calc(var(--legend-space) - 8px); margin-bottom: 8px; padding: 0 4px; color: var(--muted); font-size: 16px; line-height: 24px; }
+  #settingsForm .settings-panel .phase-settings > :not(legend) { padding: 12px 16px; }
+  #settingsForm .settings-panel .phase-settings > .settings-hint, #settingsForm .settings-panel .phase-settings > p { padding-top: 0; color: var(--muted); font-size: 14px; }
+  #settingsForm .settings-panel .phase-settings > legend + :is(.settings-hint, p) { padding-top: 12px; }
+
+  /* A list row: the words on the left, the value and a chevron on the right; a tap opens the list as a sheet. */
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings, .settings-panel .phase-settings > div:not([class]), [data-harness-panel]) > label:not(.checkbox-row):not(.sr-only):is(:has(> select), :has(> .searchable-select)) {
+    display: grid; grid-auto-flow: column; grid-template-columns: minmax(52%, 1fr) minmax(0, max-content); align-items: center; gap: 12px;
+    min-height: 52px; padding-block: 6px; font-size: 16px; font-weight: 500; cursor: pointer;
+  }
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings, .settings-panel .phase-settings > div:not([class]), [data-harness-panel]) > label:not(.checkbox-row) > :is(select, .searchable-select) { width: auto; max-width: none; min-width: 0; justify-self: end; }
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings, .settings-panel .phase-settings > div:not([class]), [data-harness-panel]) > label:not(.checkbox-row) > select,
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings, .settings-panel .phase-settings > div:not([class]), [data-harness-panel]) > label:not(.checkbox-row) > .searchable-select > .searchable-select-trigger {
+    width: auto; max-width: none; min-width: 0; padding: 0 22px 0 4px !important; border: 0; background: var(--set-chev) no-repeat right 0 center / 16px !important; box-shadow: none !important;
+    color: var(--muted); font-size: 15.5px !important; font-weight: 500; text-align: right; text-align-last: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; appearance: none; -webkit-appearance: none;
+  }
+  #settingsForm .settings-panel label:not(.checkbox-row) > select:focus-visible, #settingsForm .settings-panel label:not(.checkbox-row) > .searchable-select > .searchable-select-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #settingsForm .settings-panel label:not(.checkbox-row) > .searchable-select > .searchable-select-trigger::after { display: none; }
+  /* A number is short: words left, the box right. Text, paths and long answers take their own full-width line below the words. */
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings, [data-harness-panel]) > label:not(.checkbox-row):has(> :is(input:not([type="checkbox"]):not([type="number"]), textarea, .folder-input-row)) {
+    display: grid; grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 8px; font-size: 15px; font-weight: 600;
+  }
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings, [data-harness-panel]) > label:not(.checkbox-row) > :is(input:not([type="checkbox"]):not([type="number"]), textarea) { width: 100%; }
+  #settingsForm .settings-panel label > input[type="number"] { width: 84px !important; justify-self: end; text-align: right; }
+  #settingsForm .settings-panel :is(.phase-settings, [data-settings-kind="form"], [data-harness-panel]) > .checkbox-row { min-height: 52px; font-size: 16px; font-weight: 500; line-height: 1.3; }
+  /* Loose rows become one card on the sand, like the grouped ones. */
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label:not(.sr-only):not(.keymap-search), .checkbox-row) { padding: 8px 16px; box-shadow: var(--shadow-soft); }
+  :root:is([data-theme="dark"], [data-theme="midnight"], [data-theme="graphite"]) #settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label:not(.sr-only):not(.keymap-search), .checkbox-row) { box-shadow: 0 0 0 1px var(--line); }
+  #settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label, .checkbox-row) + :is(label:not(.sr-only):not(.keymap-search), .checkbox-row), #settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label, .checkbox-row) + output:empty + :is(label:not(.sr-only):not(.keymap-search), .checkbox-row) { box-shadow: inset 0 1px 0 var(--line), var(--shadow-soft); }
+  :root:is([data-theme="dark"], [data-theme="midnight"], [data-theme="graphite"]) #settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label, .checkbox-row) + :is(label:not(.sr-only):not(.keymap-search), .checkbox-row), :root:is([data-theme="dark"], [data-theme="midnight"], [data-theme="graphite"]) #settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label, .checkbox-row) + output:empty + :is(label:not(.sr-only):not(.keymap-search), .checkbox-row) { box-shadow: inset 0 1px 0 var(--line), 0 0 0 1px var(--line); }
+  #settingsForm [data-harness-panel] > label :is(input:not([type="checkbox"]), select, textarea), #settingsForm .settings-panel[data-settings-kind="form"] > label :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea) { background-color: var(--field); box-shadow: none; }
+
+  /* Inner tabs: a segmented control that wraps instead of clipping a name. */
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) { flex-wrap: wrap; gap: 2px; margin-top: 4px; }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button) { flex: 1 1 auto; min-width: max-content; padding: 0 10px; }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button) :is(.settings-subtab-icon, img, svg) { flex: none; }
+  /* Long words (paths, addresses, ids) break instead of pushing the page sideways. */
+  #settingsForm .settings-panel :is(p, output, li, small, code) { overflow-wrap: break-word; }
+  #settingsForm .settings-panel .settings-about { margin-top: 18px; padding: 0 4px; }
+  #settingsForm .settings-about > summary { min-height: 44px; font-size: 14.5px; }
+  #settingsForm .settings-about > p { margin-left: 21px; font-size: 14px !important; }
+}
+
+/* Status lines a module writes at the top of a section: quiet text, and a readiness note as a soft callout. */
+#settingsForm .settings-panel > p[id]:not(.settings-hint) { color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+#settingsForm .settings-panel > output:not(:empty):not(.engine-readiness) { display: block; padding: 10px 14px; border-radius: 12px; background: var(--field); color: var(--text); font-size: 14px; line-height: 1.5; }
+@media (max-width: 700px) { #settingsForm .settings-panel > output:not(:empty):not(.engine-readiness) { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); } }
+#settingsForm .settings-panel .engine-readiness:not(:empty) { font-family: inherit; font-size: 13px; line-height: 1.45; }
+#settingsForm .settings-panel .phase-settings > div:not([class]) > label:not(:first-child) { box-shadow: inset 0 1px 0 var(--line); }
+@media (max-width: 700px) { #settingsForm .settings-panel .phase-settings > div:not([class]) > label { padding-inline: 16px; } }
+
+/* Phone: every dropdown with words is a list row, wherever its section puts it (filters, toolbars of a list). */
+@media (max-width: 700px) {
+  #settingsForm .settings-panel label:not(.checkbox-row):not(.sr-only):is(:has(> select), :has(> .searchable-select)) {
+    display: grid; grid-auto-flow: column; grid-template-columns: minmax(52%, 1fr) minmax(0, max-content); align-items: center; gap: 12px;
+    min-height: 52px; font-size: 16px; font-weight: 500; cursor: pointer;
+  }
+  #settingsForm .settings-panel label:not(.checkbox-row) > :is(select, .searchable-select) { width: 100% !important; max-width: none; min-width: 0; justify-self: stretch; }
+  #settingsForm .settings-panel label:not(.checkbox-row) > .searchable-select > .searchable-select-trigger { width: 100%; }
+  #settingsForm .settings-panel label:not(.checkbox-row) > select,
+  #settingsForm .settings-panel label:not(.checkbox-row) > .searchable-select > .searchable-select-trigger {
+    width: auto; max-width: none; min-width: 0; padding: 0 22px 0 4px !important; border: 0; background: var(--set-chev) no-repeat right 0 center / 16px !important; box-shadow: none !important;
+    color: var(--muted); font-size: 15.5px !important; font-weight: 500; text-align: right; text-align-last: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; appearance: none; -webkit-appearance: none;
+  }
+  /* A list's filters and its "new …" box become one card of rows. */
+  #settingsForm .settings-panel :is(.relay-form, .settings-panel > label:not(.checkbox-row)):not(.phase-settings *) { margin: 0; padding: 4px 16px; border-radius: 16px; background: var(--panel); box-shadow: var(--shadow-soft); }
+  :root:is([data-theme="dark"], [data-theme="midnight"], [data-theme="graphite"]) #settingsForm .settings-panel :is(.relay-form, .settings-panel > label:not(.checkbox-row)):not(.phase-settings *) { box-shadow: 0 0 0 1px var(--line); }
+  #settingsForm .settings-panel .relay-form:not(.phase-settings *) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+  #settingsForm .settings-panel .relay-form:not(.phase-settings *) > * + * { box-shadow: inset 0 1px 0 var(--line); }
+  #settingsForm .settings-panel .relay-form:not(.phase-settings *) > label { padding-block: 8px; }
+  #settingsForm .settings-panel .relay-form:not(.phase-settings *) > button { justify-self: start; margin: 8px 0; box-shadow: none; }
+  #settingsForm .settings-panel .relay-form:not(.phase-settings *) > label :is(input:not([type="checkbox"]), textarea) { background-color: var(--field); box-shadow: none; }
+}
+
+/* Shortcuts: one card of rows, the command on the left and its keys on the right. */
+#settingsForm .keymap-grid { gap: 0; overflow: hidden; border-radius: 16px; background: var(--set-row-bg); }
+#settingsForm .keymap-grid > .keymap-command { padding: 8px 10px 8px 16px; font-size: 14px; font-weight: 500; }
+#settingsForm .keymap-grid > .keymap-command + .keymap-command { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .keymap-grid > .keymap-command input { background-color: var(--panel); box-shadow: inset 0 0 0 1px var(--line); font-size: 13.5px; }
+@media (max-width: 700px) {
+  #settingsForm .keymap-grid { box-shadow: var(--shadow-soft); }
+  :root:is([data-theme="dark"], [data-theme="midnight"], [data-theme="graphite"]) #settingsForm .keymap-grid { box-shadow: 0 0 0 1px var(--line); }
+  #settingsForm .keymap-grid > .keymap-command { grid-template-columns: minmax(0, 1fr) 118px; min-height: 52px; font-size: 15px; line-height: 1.3; }
+  #settingsForm .keymap-grid > .keymap-command input { background-color: var(--field); box-shadow: none; }
+}
+/* Empty status lines take no room; a "new …" box inside a card is a soft inset, not a second frame. */
+#settingsForm .settings-panel .phase-settings > p:empty, #settingsForm .settings-panel > p:empty { display: none; }
+#settingsForm .settings-panel .phase-settings > .cluster-create-row { margin: 6px 16px 12px !important; padding: 12px !important; border: 0; border-radius: 12px; background: var(--paper-raised, var(--field)); box-shadow: none !important; }
+#settingsForm .settings-panel .phase-settings > .cluster-create-row :is(input:not([type="checkbox"]), select) { background-color: var(--panel); }
+
+/* One switch for a section's main yes/no outside a group (Guardian on, automatic updates). */
+#settingsForm .settings-panel :is(.settings-panel > .checkbox-row, .guardian-settings > .checkbox-row) {
+  display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: 16px; min-height: 52px; margin: 4px 0; padding: 8px 16px; border-radius: 16px; background: var(--set-row-bg); font-weight: 600;
+}
+#settingsForm .settings-panel :is(.settings-panel > .checkbox-row, .guardian-settings > .checkbox-row) > input[type="checkbox"] {
+  position: relative; flex: none; width: 40px; min-width: 40px; height: 24px; margin: 0; border: 0; border-radius: 12px; appearance: none; -webkit-appearance: none; background: var(--line-strong); cursor: pointer; transition: background-color 150ms ease;
+}
+#settingsForm .settings-panel :is(.settings-panel > .checkbox-row, .guardian-settings > .checkbox-row) > input[type="checkbox"]::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 150ms ease;
+}
+#settingsForm .settings-panel :is(.settings-panel > .checkbox-row, .guardian-settings > .checkbox-row) > input[type="checkbox"]:checked { background: var(--accent); }
+#settingsForm .settings-panel :is(.settings-panel > .checkbox-row, .guardian-settings > .checkbox-row) > input[type="checkbox"]:checked::before { transform: translateX(16px); }
+/* A section's own "more" disclosure reads like the About note. */
+#settingsForm .settings-panel:not(#settingsPanel-cluster) details:not(.settings-about) > summary { list-style: none; cursor: pointer; }
+#settingsForm .settings-panel:not(#settingsPanel-cluster) details:not(.settings-about) > summary::-webkit-details-marker { display: none; }
+#settingsForm .settings-panel:not(#settingsPanel-cluster) details:not(.settings-about) > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; color: var(--muted); font-size: 14px; font-weight: 600; }
+#settingsForm .settings-panel:not(#settingsPanel-cluster) details:not(.settings-about) > summary::before { content: ""; flex: none; width: 15px; height: 15px; background: var(--set-chev) no-repeat center / 15px; transition: transform 150ms ease; }
+#settingsForm .settings-panel:not(#settingsPanel-cluster) details[open]:not(.settings-about) > summary::before { transform: rotate(90deg); }
+@media (max-width: 700px) {
+  #settingsForm .settings-panel :is(.settings-panel > .checkbox-row, .guardian-settings > .checkbox-row) { font-size: 16px; font-weight: 500; box-shadow: var(--shadow-soft); }
+  :root:is([data-theme="dark"], [data-theme="midnight"], [data-theme="graphite"]) #settingsForm .settings-panel :is(.settings-panel > .checkbox-row, .guardian-settings > .checkbox-row) { box-shadow: 0 0 0 1px var(--line); }
+}
+
+/* Machine › terminal limits: two number rows inside the group. */
+#settingsForm .settings-panel .phase-settings > .terminal-policy-limits { display: grid; gap: 0; padding: 0 !important; }
+#settingsForm .terminal-policy-limits > label { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px 18px; }
+#settingsForm .terminal-policy-limits > label + label, #settingsForm .settings-panel .phase-settings > .terminal-policy-limits { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .terminal-policy-limits > label > input { width: 84px !important; text-align: right; }
+#settingsForm .settings-unit { color: var(--muted); font-weight: 500; }
+#settingsForm .terminal-policy-limits > label:not(:has(.settings-unit)) { grid-template-columns: minmax(0, 1fr) auto; }
+/* A section's lone Refresh sits at the end of its line, small. */
+#settingsForm .settings-panel .relay-head { align-items: center; justify-content: flex-end; }
+#settingsForm .settings-panel .relay-head > button { flex: none; width: auto; }
+/* Relay: the phone sign-in switch is a row like the others. */
+#settingsForm .settings-panel .relay-switch { display: grid; gap: 0; padding: 4px 16px 10px; border-radius: 16px; background: var(--set-row-bg); }
+#settingsForm .settings-panel .relay-switch > .checkbox-row { display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: 16px; min-height: 48px; font-weight: 600; }
+#settingsForm .settings-panel .relay-switch > .checkbox-row > input[type="checkbox"] { position: relative; flex: none; width: 40px; min-width: 40px; height: 24px; margin: 0; border: 0; border-radius: 12px; appearance: none; -webkit-appearance: none; background: var(--line-strong); cursor: pointer; }
+#settingsForm .settings-panel .relay-switch > .checkbox-row > input[type="checkbox"]::before { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 150ms ease; }
+#settingsForm .settings-panel .relay-switch > .checkbox-row > input[type="checkbox"]:checked { background: var(--accent); }
+#settingsForm .settings-panel .relay-switch > .checkbox-row > input[type="checkbox"]:checked::before { transform: translateX(16px); }
+@media (max-width: 700px) {
+  #settingsForm .terminal-policy-limits > label { min-height: 52px; padding: 6px 16px; font-size: 16px; font-weight: 500; }
+  #settingsForm .settings-panel .relay-switch { box-shadow: var(--shadow-soft); }
+  #settingsForm .settings-panel .relay-switch > .checkbox-row { font-size: 16px; font-weight: 500; }
+  /* Resources: the filters wrap two to a line instead of running off the side. */
+  #settingsForm #settingsPanel-resources .resources-toolbar { flex-wrap: wrap; overflow: visible; padding: 0; }
+  #settingsForm #settingsPanel-resources .resources-toolbar > select { flex: 1 1 calc(50% - 8px); min-width: 0; max-width: none; }
+  #settingsForm #settingsPanel-resources .resources-toolbar .search-shell { flex: 1 1 100%; min-width: 0; }
+  #settingsForm #settingsPanel-resources .resources-share-bar { display: grid; grid-template-columns: minmax(0, 1fr); border: 0; border-radius: 16px; background: var(--panel); }
+  #settingsForm #settingsPanel-resources .resources-share-bar > * { min-width: 0; max-width: 100%; }
+  #settingsForm .settings-panel .secret-type-toolbar { flex-wrap: wrap; }
+  #settingsForm .settings-panel .secret-type-toolbar > :is(input, .secret-account-search) { flex: 1 1 0; min-width: 0; }
+}
+@media (max-width: 700px) {
+  /* Resources: the bulk strip wraps into rows instead of scrolling sideways. */
+  #settingsForm #settingsPanel-resources .resources-bulk { flex-wrap: wrap !important; overflow: visible !important; }
+  #settingsForm #settingsPanel-resources .resources-bulk .resources-share-line > span, #settingsForm #settingsPanel-resources .resources-bulk > .resources-auto-activate { flex: 1 1 100% !important; box-shadow: none !important; padding-left: 6px !important; }
+  #settingsForm #settingsPanel-resources .resources-bulk .resources-share-line > button { flex: 1 1 auto !important; }
+}
+#settingsForm .settings-panel .relay-head > button { margin-left: auto; justify-self: end; align-self: flex-end; }
+
+/* Updates: one card of rows — name and version, then what happened, in the app's own type. */
+#settingsForm .settings-panel .updates-version-line { font-family: inherit; font-size: 13.5px; }
+#settingsForm .settings-panel .updates-node-list { gap: 0; padding: 0 !important; }
+#settingsForm .settings-panel .updates-node { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 12px; padding: 10px 18px; border: 0; border-radius: 0; background: none; }
+#settingsForm .settings-panel .updates-node + .updates-node { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .settings-panel .updates-node-name { font-size: 14.5px; font-weight: 600; }
+#settingsForm .settings-panel .updates-node-url { grid-column: 1 / -1; grid-row: 2; }
+#settingsForm .settings-panel :is(.updates-node-version, .updates-node-state) { font-family: inherit; font-size: 13px; }
+#settingsForm .settings-panel .updates-node-version { grid-column: 2; grid-row: 1; text-align: right; }
+#settingsForm .settings-panel .updates-node-state { grid-column: 1 / -1; margin: 0; text-align: left; }
+/* Users: a "new …" box's fields take the width on a phone. */
+@media (max-width: 700px) {
+  #settingsForm .settings-panel .node-block-add { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  #settingsForm .settings-panel .node-block-add > :is(label, input) { width: 100%; }
+  #settingsForm .settings-panel .node-block-add > label > input { width: 100%; }
+  #settingsForm .settings-panel .node-block-add > button { justify-self: start; }
+  #settingsForm .settings-panel .updates-node { padding: 10px 16px; }
+}
+/* A holder a module leaves empty (no model to pick yet) takes no room in its card. */
+#settingsForm .settings-panel .phase-settings > :is(div, output, span):empty { display: none; }
+#settingsForm .settings-panel .phase-settings > p:not([class]):not([id]) { color: var(--muted); font-size: 13.5px; }
+@media (max-width: 700px) {
+  /* A searchable dropdown's button fills its value column and ends in "…" rather than running past the edge. */
+  #settingsForm .settings-panel label:not(.checkbox-row) > .searchable-select { overflow: hidden; }
+  #settingsForm .settings-panel label:not(.checkbox-row) > .searchable-select > .searchable-select-trigger { display: block; width: 100% !important; max-width: 100% !important; }
+}
+
+/* Cluster: the section card is narrower than the old Settings dialog, so beside a 400 px inspector the map's pane fell
+   under the 640 px it needs and a 1440 px window drew the machines as a list. The inspector takes 340 px here, which
+   leaves the map its room whenever the two sit side by side. */
+@container cluster (min-width: 1000px) {
+  #settingsForm .cluster-layout { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); }
+}

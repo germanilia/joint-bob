@@ -10,7 +10,8 @@ test("Settings turns the per-conversation CPU and memory limits on, saves and re
   await page.getByTestId("login-password-input").fill(environment.password);
   await page.getByTestId("login-submit-button").click();
   await page.getByTestId("settings-open-button").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
+  const saved = page.locator('[data-testid="settings-save-state"][data-state="saved"]');
   const cpuEnabled = page.getByTestId("settings-conversation-cpu-limit-enabled");
   const cores = page.getByTestId("settings-conversation-cpu-limit-cores");
   const memoryEnabled = page.getByTestId("settings-conversation-memory-limit-enabled");
@@ -27,19 +28,19 @@ test("Settings turns the per-conversation CPU and memory limits on, saves and re
   }
   await cores.fill("2.5");
   await gigabytes.fill("12");
-  await page.getByTestId("settings-save-button").click();
-  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
-  const saved = await page.evaluate(async () => { const settings = await (await fetch("/api/settings")).json(); return [settings.conversationCpuLimitCores, settings.conversationMemoryLimitGb]; });
-  assert.deepEqual(saved, [2.5, 12]);
+  // Numbers save when they are left.
+  await gigabytes.press("Tab");
+  await saved.waitFor();
+  const stored = await page.evaluate(async () => { const settings = await (await fetch("/api/settings")).json(); return [settings.conversationCpuLimitCores, settings.conversationMemoryLimitGb]; });
+  assert.deepEqual(stored, [2.5, 12]);
   await page.reload();
   await page.getByTestId("settings-open-button").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   assert.equal(await cores.inputValue(), "2.5");
   assert.equal(await gigabytes.inputValue(), "12");
   await memoryEnabled.uncheck();
   assert.equal(await gigabytes.isDisabled(), true);
-  await page.getByTestId("settings-save-button").click();
-  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
+  await saved.waitFor();
   const cleared = await page.evaluate(async () => { const settings = await (await fetch("/api/settings")).json(); return [settings.conversationCpuLimitCores, settings.conversationMemoryLimitGb]; });
   assert.deepEqual(cleared, [2.5, null], "unticking a limit removes it");
 });

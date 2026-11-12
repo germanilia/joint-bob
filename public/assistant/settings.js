@@ -50,7 +50,7 @@ function showDelete() {
   document.querySelector("#settings-delete").replaceChildren(h("h2", {}, "Delete this assistant"),
     h("p", { class: "muted" }, "Its topics, saved items and settings are removed. If it belongs to a team, it leaves that team, and a Telegram bot it serves is disconnected."),
     h("button", { type: "button", class: "danger", "data-testid": "assistant-delete", onclick: () => openSheet({ title: `Delete ${name}?`,
-      body: h("p", { style: "font-size:13.5px;color:#c9cdd1" }, "This cannot be undone. Conversations it opened stay in their projects."),
+      body: h("p", { class: "sheet-text" }, "This cannot be undone. Conversations it opened stay in their projects."),
       foot: [h("button", { type: "button", onclick: closeOverlay }, "Cancel"),
         h("button", { type: "button", class: "danger", "data-testid": "assistant-delete-confirm", onclick: async () => {
           try { await del(`/api/personal-assistants/${app.assistant.id}`); location.href = "/assistant.html"; } catch (error) { fail(error); }

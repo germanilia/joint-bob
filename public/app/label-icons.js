@@ -82,6 +82,8 @@ function row(label) {
       const body = await api("/api/settings/label-icon", { method: "POST", body: JSON.stringify({ label, ...(harnessSelect.value ? { harnessId: harnessSelect.value, ...pickedModel() } : {}) }) });
       draft[label] = body.icon;
       input.value = body.icon;
+      // Settings saves as fields change; a generated icon is a change like a typed one.
+      input.dispatchEvent(new Event("input", { bubbles: true }));
     } catch (error) {
       toast.error(error.message);
     } finally {

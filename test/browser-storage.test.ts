@@ -31,10 +31,11 @@ test("browser storage is limited to legacy migration and request-scoped sign-in 
   for (const match of app.matchAll(/\.(?:getItem|setItem|removeItem)\(/g)) {
     const inMigration = match.index! >= migrationStart && match.index! < migrationEnd;
     const inDismissal = match.index! >= dismissalStart && match.index! < dismissalEnd;
-    // Per-browser display preferences: the activity pane's width and the appearance (theme and text sizes).
+    // Per-browser display preferences: the activity pane's width, the appearance (theme and text sizes), and in the
+    // workspace's left column which list is shown and whether its filters are open.
     const nearby = app.slice(Math.max(0, match.index! - 120), match.index! + 120);
-    const displayPreference = nearby.includes("WIDTH_STORAGE_KEY") || nearby.includes("APPEARANCE_STORAGE_KEY");
-    assert.ok(inMigration || inDismissal || displayPreference, "Web Storage access must be limited to migration, sign-in notice state, activity width or appearance");
+    const displayPreference = ["WIDTH_STORAGE_KEY", "APPEARANCE_STORAGE_KEY", "COLUMN_KEY", "FILTERS_OPEN_KEY"].some((key) => nearby.includes(key));
+    assert.ok(inMigration || inDismissal || displayPreference, "Web Storage access must be limited to migration, sign-in notice state, activity width, appearance or the left column's view");
   }
   assert.doesNotMatch(migration, /(?:credential|password|token)/i);
   assert.match(migration, /\["1", "true", "0", "false"\]\.includes\(legacy\.piWebNotifications\)/);

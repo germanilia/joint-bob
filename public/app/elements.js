@@ -181,7 +181,6 @@ export const elements = {
   cancelProjectRenameButton: document.querySelector("#cancelProjectRenameButton"),
   abortButton: document.querySelector("#abortButton"),
   newProjectButton: document.querySelector("#newProjectButton"),
-  themeToggleButton: document.querySelector("#themeToggleButton"),
   spotlightDialog: document.querySelector("#spotlightDialog"),
   spotlightInput: document.querySelector("#spotlightInput"),
   spotlightResults: document.querySelector("#spotlightResults"),

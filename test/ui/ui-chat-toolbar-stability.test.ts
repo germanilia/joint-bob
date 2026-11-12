@@ -15,12 +15,14 @@ const MEASURE_LABEL_CHANGES = `(async () => {
   const { renderReasoningOptions, syncModelButton } = await import('/app/composer-dialogs.js');
   const { renderChatSessionControls } = await import('/app/chat-controls.js');
   const { setStatus } = await import('/app/shell.js');
+  // The desktop workspace: the chips are #chatToolbar, one line under the title; the actions are the title line's
+  // Mark done, details toggle and ⋯ (#chatHeadActions).
   const toolbar = document.querySelector('#chatToolbar');
-  const actions = toolbar.querySelector('.chat-toolbar-actions');
+  const actions = document.querySelector('#chatHeadActions');
   const badge = document.querySelector('#backgroundTasksBadge');
   const status = document.querySelector('#connectionStatus');
   const read = () => {
-    const first = actions.querySelector('button:not([hidden])').getBoundingClientRect();
+    const first = actions.querySelector('#chatMoreMenu > summary').getBoundingClientRect();
     return {
       conversationTop: Math.round(document.querySelector('#messages').getBoundingClientRect().top),
       toolbarHeight: Math.round(toolbar.getBoundingClientRect().height),
@@ -66,9 +68,9 @@ const MEASURE_LABEL_CHANGES = `(async () => {
     restore();
   }
   const bar = toolbar.getBoundingClientRect();
-  const group = actions.getBoundingClientRect();
-  const controls = document.querySelector('#chatNodeSelect').getBoundingClientRect();
-  return { wrapped: group.top >= controls.bottom - 2, clipped: Math.max(0, Math.round(group.right - bar.right)), moved };
+  const chips = [...toolbar.querySelectorAll('.chat-toolbar-control')].filter((chip) => chip.getClientRects().length).map((chip) => chip.getBoundingClientRect());
+  const tops = chips.map((chip) => Math.round(chip.top));
+  return { wrapped: tops.some((top) => Math.abs(top - tops[0]) > 2), clipped: Math.max(0, ...chips.map((chip) => Math.round(chip.right - bar.right))), moved };
 })()`;
 
 test("the chat toolbar holds still while its labels change", { timeout: 180_000 }, async (t) => {
@@ -97,13 +99,9 @@ test("the chat toolbar holds still while its labels change", { timeout: 180_000 
     `a label change moved the toolbar or the conversation at ${moved.length} of ${reports.length} widths`);
 
   const clipped = reports.filter((report) => report.clipped > 0);
-  assert.deepEqual(clipped.map((report) => `${report.width}px: ${report.clipped}px`), [], "the action buttons run past the panel edge");
+  assert.deepEqual(clipped.map((report) => `${report.width}px: ${report.clipped}px`), [], "the chips run past the conversation's edge");
 
-  // Room is a property of the window: narrow panels stack the actions, wide ones do not,
-  // and there is one width where that changes rather than a band that flips back and forth.
-  assert.equal(reports[0].wrapped, true, "a narrow panel puts the actions on their own row");
-  assert.equal(reports.at(-1)!.wrapped, false, "a wide panel keeps the actions beside the selects");
-  const switches = reports.filter((report, index) => index > 0 && report.wrapped !== reports[index - 1].wrapped);
-  assert.deepEqual(switches.map((report) => report.width), switches.slice(0, 1).map((report) => report.width),
-    "the actions change rows at exactly one width");
+  // The chips are one row at every width: a row that wraps on a name is a row that can re-wrap while an agent works.
+  const wrapped = reports.filter((report) => report.wrapped);
+  assert.deepEqual(wrapped.map((report) => report.width), [], "the chips stay on one line");
 });

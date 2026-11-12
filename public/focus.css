@@ -71,59 +71,14 @@ body.focus-ui #abortButton:disabled { display: none; }
 @media (prefers-reduced-motion: reduce) {
   body.focus-ui .chat-actions:has(#abortButton:not(:disabled)) #contextUsageText { animation: none; }
 }
-:root[data-theme="dark"] body.focus-ui.view-chat :is(#chatPanel, #messages) { background: #000; }
+:root[data-theme="dark"] body.focus-ui.view-chat :is(#chatPanel, #messages) { background: var(--bg); }
 
 /* Outline glyphs and transparent targets, with one accent on the floating handle. */
 .focus-action-icon { display: none; }
 body.focus-ui .focus-action-icon { display: block; }
-#focusControlsButton { position: fixed; z-index: 55; right: 20px; bottom: max(24px, env(safe-area-inset-bottom)); display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--panel); color: var(--text); box-shadow: 0 6px 24px rgb(0 0 0 / .22); touch-action: none; user-select: none; cursor: grab; }
-body.view-chat #focusControlsButton { bottom: 160px; }
-#focusControlsButton img { display: block; width: 32px; height: 32px; pointer-events: none; }
+/* The ⋯ handle and the sheet it opens (#focusControls) are styled in phone.css: the sheet rises from the bottom. */
 .focus-pending-badge { position: absolute; top: -5px; right: -5px; display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 4px; border: 2px solid var(--panel); border-radius: 999px; background: var(--danger); color: #fff; font: 700 11px/1 var(--sans); pointer-events: none; }
 #focusRunningCount { background: var(--live); }
-#focusControlsButton[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
-#focusControlsButton:active { cursor: grabbing; }
-.focus-controls { position: fixed; z-index: 56; width: 336px; max-width: calc(100vw - 24px); max-height: min(690px, calc(var(--focus-height, 100dvh) - 24px)); display: flex; flex-direction: column; overflow: hidden; padding: 8px; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--panel); box-shadow: 0 16px 64px rgb(0 0 0 / .28); }
-.focus-controls [hidden] { display: none !important; }
-.focus-controls > header { flex-shrink: 0; display: flex; align-items: center; min-height: 44px; gap: 4px; padding: 0 4px 4px; border-bottom: 1px solid var(--line); }
-.focus-controls > header strong { flex: 1; padding-left: 8px; font: 600 17px var(--serif); }
-.focus-controls button:not(.searchable-select-trigger) { appearance: none; display: flex; align-items: center; gap: 10px; min-height: 44px; min-width: 0; padding: 10px; border: 0; border-radius: 10px; background: transparent; box-shadow: none; color: var(--text); font: 500 13px/1.3 var(--sans); text-align: left; cursor: pointer; }
-/* The model picker opens a list, so it keeps the shared chevron and room for it. */
-.focus-controls button.model-button:not(.searchable-select-trigger) { padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.5 1.75 6 6.25l4.5-4.5' fill='none' stroke='%238b9198' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 11px; }
-.focus-controls button:hover:not(:disabled) { background: var(--field); box-shadow: none; }
-.focus-controls button:disabled { opacity: .4; cursor: not-allowed; }
-.focus-controls button:focus-visible, #focusControlsButton:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.focus-controls button svg { flex: 0 0 20px; width: 20px; height: 20px; color: var(--muted); }
-.focus-controls > header button { flex: 0 0 40px; justify-content: center; padding: 8px; }
-.focus-context-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; }
-#focusContextActions { display: grid; grid-template-columns: 1fr 1fr; padding: 4px 0; }
-#focusContextActions:empty { display: none; }
-
-/* Run settings in two columns (chat only), then one tile grid for every view. The action dock stays pinned below. */
-#focusChatQuickActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: dense; column-gap: 8px; padding: 4px 0 2px; }
-.focus-setting { min-width: 0; margin-bottom: 8px; }
-.focus-setting-wide { grid-column: 1 / -1; }
-.focus-setting-label { display: block; margin: 0 4px 4px; font: 700 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
-.focus-controls .searchable-select-trigger { min-height: 44px; font: 500 14px/1.3 var(--sans); }
-.focus-controls .searchable-select-option { align-items: flex-start; text-align: left; }
-#focusNodeList { min-width: 0; }
-/* Tiles: icon above a short label, four to a row, in every view and the Tools submenu alike. */
-.focus-more { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 4px 0 6px; }
-.focus-tools-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 8px 0 4px; }
-.focus-controls :is(.focus-more, .focus-tools-list) button { position: relative; flex-direction: column; justify-content: flex-start; gap: 5px; min-height: 64px; padding: 10px 2px 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); font-size: 10.5px; font-weight: 560; line-height: 1.2; text-align: center; }
-.focus-tools-list button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-.focus-more :is(#focusRunningCount, #focusReviewCount), .focus-tools-list .focus-pending-badge { position: absolute; top: 3px; right: 3px; min-width: 18px; height: 18px; margin: 0; border: 0; font-size: 10px; }
-
-/* Action dock, pinned to the bottom of the menu: in a chat Mark done and Auto respond side by side, then the tiles. */
-.focus-dock { flex-shrink: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 8px 0 2px; border-top: 1px solid var(--line); }
-.focus-controls .focus-dock button { flex-direction: column; justify-content: center; gap: 5px; min-height: 58px; padding: 8px 2px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); font-size: 10.5px; font-weight: 600; line-height: 1.2; text-align: center; }
-.focus-dock :is(#focusMarkDone, #focusAutoRespond) { grid-column: span 2; flex-direction: row; gap: 8px; min-height: 46px; padding: 8px 10px; font-size: 12.5px; }
-.focus-dock #focusMarkDone { background: rgb(52 211 153 / .14); border-color: rgb(52 211 153 / .35); color: rgb(52 211 153); }
-.focus-dock #focusMarkDone svg { color: rgb(52 211 153); }
-.focus-state { margin-left: auto; color: var(--muted); font: 600 10px/1 var(--mono); }
-.focus-state::after { content: "OFF"; }
-body:has(#autoRespondButton.active) .focus-state { color: var(--accent); }
-body:has(#autoRespondButton.active) .focus-state::after { content: "ON"; }
 
 body.booting :is(#focusControlsButton, #focusControls) { visibility: hidden; }
 
@@ -153,26 +108,7 @@ body.booting :is(#focusControlsButton, #focusControls) { visibility: hidden; }
   body.focus-ui .session-card .chat-badge, body.focus-ui .session-card .session-done-badge { font-size: 12px; padding: 3px 8px; }
   body.focus-ui .chat-topbar .chat-title-block > h2 { font-size: 20px; }
   body.focus-ui .turn-timer { font-size: 13px; }
-  body.focus-ui #focusControlsButton { width: 60px; height: 60px; }
-  body.focus-ui #focusControlsButton img { width: 36px; height: 36px; }
-  .focus-controls { width: min(392px, calc(100vw - 16px)); }
-  .focus-controls > header strong { font: 600 21px var(--serif); }
-  .focus-controls button:not(.searchable-select-trigger) { min-height: 52px; font-size: 16px; }
-  .focus-controls button svg { flex-basis: 24px; width: 24px; height: 24px; }
-  .focus-setting-label { font-size: 12px; }
-  .focus-controls .searchable-select-trigger { min-height: 50px; font: 500 16px/1.3 var(--sans); }
-  .focus-controls :is(.focus-more, .focus-tools-list) button { min-height: 84px; gap: 6px; font-size: 13px; }
-  .focus-controls :is(.focus-more, .focus-tools-list) button svg { flex-basis: 26px; width: 26px; height: 26px; }
-  .focus-more :is(#focusRunningCount, #focusReviewCount), .focus-tools-list .focus-pending-badge { min-width: 22px; height: 22px; font-size: 12px; }
-  .focus-controls .focus-dock button { min-height: 76px; gap: 6px; font-size: 13px; }
-  .focus-dock :is(#focusMarkDone, #focusAutoRespond) { min-height: 56px; font-size: 16px; }
-  .focus-state { font-size: 12px; }
 }
-
-/* Bob's handle in the top bar: a plain icon at the end of the header, not a floating button. */
-body.focus-ui #focusControlsButton.in-bar { position: relative; top: auto; right: auto; bottom: auto; left: auto; width: 44px; height: 44px; border: 0; background: transparent; box-shadow: none; cursor: pointer; }
-body.focus-ui #focusControlsButton.in-bar img { width: 32px; height: 32px; }
-body.focus-ui #focusControlsButton.in-bar .focus-pending-badge { top: 2px; right: 2px; }
 
 /* Queued-message editor: its title and note are phone-only, and the hints stay on desktop, where the shortcuts work. */
 .queued-editor-top, .queued-editor-note { display: none; }

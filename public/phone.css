@@ -1,0 +1,378 @@
+/* Paper · Editorial — the phone (≤ 700 px, body.focus-ui). Home (greeting, search, the three groups), the four tabs
+   Inbox · Bob · Projects · Settings, the New button, the conversation's chips and the details sheet (#focusControls).
+   Spec: "Layout › Phone" in docs/superpowers/specs/2026-11-10-ui-redo-paper-design.md; mock: mocks/ui-redo, the phone
+   screens of "Editorial". Markup: public/index.html; behaviour: app/phone-ui.js, app/focus-ui.js, app/workspace.js.
+   Touch targets are at least 44 px and text at least 13 px. Loaded after workspace.css, before paper.css. */
+
+/* Only the phone shows these. */
+.ph-home, .ph-tabs, .ph-fab, .ph-chips, .focus-scrim, .focus-grab, .focus-heading, .focus-panels, .focus-switches, .focus-more-icon { display: none; }
+
+@media (max-width: 700px) {
+  body.focus-ui { --ph-tabs-h: calc(64px + env(safe-area-inset-bottom, 0px)); }
+
+  /* ---------- the tabs ---------- */
+  body.focus-ui:is(.view-projects, .view-sessions, .view-control) .ph-tabs, #settingsDialog[open] > .ph-tabs { display: grid; }
+  #settingsDialog:has(#settingsForm[data-mobile-view="panel"]) > .ph-tabs { display: none; }
+  .ph-tabs {
+    position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); height: var(--ph-tabs-h);
+    padding: 4px max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px));
+    background: var(--panel); box-shadow: 0 -1px 0 var(--line);
+  }
+  .ph-tabs button {
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; min-height: 56px;
+    padding: 0; border: 0; border-radius: 14px; background: transparent; box-shadow: none; color: var(--muted); font: 600 13px/1.1 var(--sans);
+  }
+  .ph-tabs button svg { width: 24px; height: 24px; flex: none; }
+  .ph-tabs button.on { color: var(--accent); }
+  .ph-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .ph-tab-badge { position: absolute; top: 3px; left: calc(50% + 6px); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--ws-need-fill); color: #fff; font: 700 13px/20px var(--sans); text-align: center; }
+  .ph-tab-badge[hidden] { display: none; }
+  /* Room for the tabs under the screens that show them. */
+  body.focus-ui:is(.view-projects, .view-sessions, .view-control) .shell { padding-bottom: var(--ph-tabs-h); }
+  #settingsDialog:has(> .ph-tabs) #settingsForm[data-mobile-view="menu"] .settings-sidebar { padding-bottom: calc(var(--ph-tabs-h) + 8px); }
+
+  /* ---------- Home: the greeting, search and the groups ---------- */
+  body.focus-ui.view-projects.ws-column-inbox .shell { display: flex; flex-direction: column; }
+  body.focus-ui.view-projects.ws-column-inbox .shell > #projectsPanel { display: none; }
+  body.focus-ui.view-projects.ws-column-inbox .shell > .ph-home { display: block; flex: none; }
+  .ph-home { padding-top: env(safe-area-inset-top, 0px); }
+  .ph-home-top { display: flex; align-items: center; gap: 2px; height: 56px; padding: 0 8px 0 16px; }
+  .ph-mark { display: grid; flex: none; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--paper-raised); }
+  .ph-mark img { width: 26px; height: 26px; }
+  .ph-spacer { flex: 1; }
+  .ph-icon-button { display: grid; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--muted); }
+  .ph-icon-button svg { width: 22px; height: 22px; }
+  .ph-avatar {
+    display: grid; place-items: center; width: 44px; height: 44px; padding: 4px; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--accent) 16%, transparent);
+    background-clip: content-box; box-shadow: none; color: var(--accent); font: 700 13px/1 var(--sans);
+  }
+  .ph-greeting { margin: 6px 20px 0; color: var(--heading); font: 400 clamp(28px, 9vw, 38px)/1.12 var(--serif); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+  .ph-counts { min-height: 22px; margin: 8px 20px 14px; color: var(--muted); font-size: 15.5px; }
+  .ph-counts b { color: var(--ws-need); font-weight: 650; }
+  .ph-search { display: flex; align-items: center; gap: 10px; height: 48px; margin: 0 16px 4px; padding: 0 14px; border-radius: 14px; background: var(--field); color: var(--muted); }
+  .ph-search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
+  .ph-search svg { width: 18px; height: 18px; flex: none; }
+  .ph-search input { flex: 1; min-width: 0; height: 100%; min-height: 0; padding: 0; border: 0; outline: 0; background: transparent; box-shadow: none; color: var(--text); font-size: 16px; }
+  .ph-search input::-webkit-search-cancel-button { display: none; }
+
+  /* The groups fit the screen and page through Show all (workspace.js deals the rows that fit). The margin keeps the last
+     row clear of the New button; it is outside the box the rows are fitted into. */
+  body.focus-ui.view-projects.ws-column-inbox .shell > .ws-groups {
+    --ws-lab-height: 44px; --ws-empty-height: 30px;
+    display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; margin: 0 0 70px; padding: 0 8px;
+  }
+  body.focus-ui .ws-groups .ws-group { display: block; }
+  body.focus-ui .ws-lab { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 44px; padding: 8px 6px 0 12px; color: var(--muted); font: 400 16px/1.2 var(--serif); }
+  body.focus-ui .ws-lab i { color: var(--muted); font: 600 13px/1 var(--sans); font-style: normal; opacity: 0.85; }
+  body.focus-ui .ws-show-all { min-height: 40px; margin-left: auto; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; box-shadow: none; color: var(--accent); font: 600 14px var(--sans); }
+  body.focus-ui .ws-empty { box-sizing: border-box; height: 30px; margin: 0; padding: 4px 12px 0; color: var(--muted); font-size: 14px; }
+  body.focus-ui .ws-row {
+    display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 64px; margin: 0; padding: 10px 12px; border: 0; border-radius: 14px;
+    background: transparent; box-shadow: none; color: var(--text); text-align: left; cursor: pointer;
+  }
+  body.focus-ui .ws-row:active, body.focus-ui .ws-row.sel { background: var(--panel); box-shadow: var(--shadow-soft); }
+  body.focus-ui .ws-dot { flex: none; width: 9px; height: 9px; margin-top: 9px; border-radius: 50%; background: var(--muted); }
+  body.focus-ui .ws-dot.need { background: var(--ws-need-fill); }
+  body.focus-ui .ws-dot.run { background: var(--ws-run); animation: ph-pulse 1.8s ease-in-out infinite; }
+  body.focus-ui .ws-dot.rev { background: var(--ws-rev); }
+  body.focus-ui .ws-row-copy { display: grid; flex: 1; gap: 3px; min-width: 0; }
+  body.focus-ui .ws-row-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  body.focus-ui .ws-row-top b { flex: 1; min-width: 0; overflow: hidden; color: var(--heading); font: 400 18px/1.3 var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+  body.focus-ui .ws-row-top time { flex: none; color: var(--muted); font-size: 13px; }
+  body.focus-ui .ws-row-line { overflow: hidden; color: var(--muted); font-size: 14.5px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Show all: one group as a paged screen of its own. */
+  body.focus-ui #workspaceGroupPage:not([hidden]) {
+    position: fixed; inset: 0; z-index: 52; display: flex; flex-direction: column; gap: 8px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    border: 0; border-radius: 0; background: var(--bg);
+  }
+  body.focus-ui #workspaceGroupPage :is(button) { min-height: 44px; }
+  body.focus-ui #workspaceGroupPage .ws-page-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 0 4px; }
+  body.focus-ui #workspaceGroupPage .ws-page-crumb { margin: 0; color: var(--muted); font-size: 13px; }
+  body.focus-ui #workspaceGroupPage h1 { margin: 0; color: var(--heading); font: 400 28px/1.2 var(--serif); }
+  body.focus-ui #workspaceGroupPage #workspaceGroupClose { grid-column: 2; grid-row: 1; width: 44px; height: 44px; border: 0; background: var(--field); border-radius: 50%; }
+  body.focus-ui #workspaceGroupPage .ws-page-tabs { grid-column: 1 / -1; display: flex; gap: 8px; }
+  body.focus-ui #workspaceGroupPage .ws-page-pager:not([hidden]) { display: flex; align-items: center; gap: 8px; }
+  body.focus-ui #workspaceGroupList { flex: 1; min-height: 0; margin: 0; padding: 0; overflow: hidden; display: grid; align-content: start; gap: 6px; }
+  body.focus-ui #workspaceGroupPage .ws-page-tabs button { flex: 0 1 auto; padding: 0 12px; border: 0; border-radius: 22px; background: var(--field); box-shadow: none; color: var(--text); font: 600 14px var(--sans); white-space: nowrap; }
+  body.focus-ui #workspaceGroupPage .ws-page-tabs button[aria-selected="true"] { background: var(--ink); color: var(--on-ink); }
+  body.focus-ui #workspaceGroupPage .ws-page-tabs b { margin-left: 6px; opacity: 0.7; }
+  body.focus-ui #workspaceGroupPage .ws-page-pager { justify-content: center; font-size: 14px; }
+
+  /* ---------- Projects: the list, then a project's conversations ---------- */
+  body.focus-ui #projectsPanel .ws-picker-title { display: block; flex: 1; min-width: 0; }
+  body.focus-ui #projectsPanel .ws-picker-title h1 { font: 400 28px/1.15 var(--serif); }
+  body.focus-ui #projectsPanel .brand-copy { display: none; }
+  body.focus-ui :is(.panel-bar) { border-bottom: 0; }
+  body.focus-ui #chatsPanel .panel-title h1 { font: 400 24px/1.2 var(--serif); }
+  body.focus-ui :is(.project-card, .session-card) :is(span, small, p, em, time, b) { font-size: max(13px, 1em); }
+  body.focus-ui :is(.project-card, .session-card) .project-sync-status { font-family: var(--sans); }
+  body.focus-ui :is(.pin-button, .row-menu-button) { min-width: 44px; min-height: 44px; font-size: 13px; }
+  body.focus-ui .project-card .project-sync-status, body.focus-ui .project-group-count { font-size: 13px; }
+  body.focus-ui :is(#brandMark, #workspaceDashboardButton, [data-testid="workspace-dashboard-button"], .project-group-toggle) { min-width: 44px; min-height: 44px; }
+  body.focus-ui #brandMark { display: grid; place-items: center; }
+  body.focus-ui #chatsPanel #projectName { display: flex; align-items: center; min-height: 44px; }
+  body.focus-ui #chatsPanel :is([data-testid="context-references-open-button"], [data-testid="worktree-create-button"], .worktree-reference-button, .worktree-add-button) { min-height: 44px; font-size: 13px; }
+  body.focus-ui #attachButton { min-width: 44px; min-height: 44px; }
+  body.focus-ui #contextUsageText { font-size: 13px; }
+
+  /* ---------- New: the desktop's New menu, as a sheet ---------- */
+  body.focus-ui.view-projects .ph-fab { display: inline-flex; }
+  .ph-fab {
+    position: fixed; z-index: 49; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(var(--ph-tabs-h) + 14px); align-items: center; gap: 6px;
+    height: 52px; padding: 0 20px 0 16px; border: 0; border-radius: 26px; background: var(--btn-bg); box-shadow: var(--shadow); color: var(--btn-fg); font: 650 16px var(--sans);
+  }
+  .ph-fab svg { width: 20px; height: 20px; }
+  /* The menus live in the desktop column; on the phone only they are shown, from their own buttons. */
+  body.focus-ui .ws-side { display: contents; }
+  body.focus-ui .ws-side > :not(.ws-menu) { display: none !important; }
+  body.focus-ui .ws-menu:popover-open {
+    position: fixed; inset: auto 0 0 0 !important; display: grid; gap: 2px; width: 100%; max-width: none; max-height: 80dvh; margin: 0; overflow: auto;
+    padding: 12px 12px calc(14px + env(safe-area-inset-bottom, 0px)); border: 0; border-radius: 28px 28px 0 0; background: var(--panel); color: var(--text);
+    box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.22);
+  }
+  body.focus-ui .ws-menu::backdrop { background: color-mix(in srgb, var(--ink) 32%, transparent); }
+  body.focus-ui .ws-menu-harnesses { display: grid; gap: 2px; }
+  body.focus-ui .ws-menu-harnesses[hidden] { display: none; }
+  body.focus-ui .ws-menu .ws-menu-item {
+    display: flex; align-items: center; gap: 14px; width: 100%; height: auto; min-height: 52px; padding: 6px 14px; border: 0; border-radius: 14px;
+    background: transparent; box-shadow: none; color: var(--text); font: 500 16px/1.3 var(--sans); text-align: left;
+  }
+  body.focus-ui .ws-menu .ws-menu-item:disabled { opacity: 0.45; }
+  body.focus-ui .ws-menu .ws-menu-item :is(svg, img) { flex: none; width: 22px; height: 22px; color: var(--muted); }
+  body.focus-ui .ws-menu .ws-menu-item small { display: block; color: var(--muted); font-size: 13px; }
+  body.focus-ui .ws-menu .ws-item-label { display: inline; }
+
+  /* ---------- the ⋯ handle at the end of every top bar ---------- */
+  body.focus-ui #focusControlsButton {
+    position: relative; inset: auto; display: grid; flex: none; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px;
+    background: transparent; box-shadow: none; color: var(--text); cursor: pointer; touch-action: manipulation; user-select: none;
+  }
+  body.focus-ui #focusControlsButton[hidden] { display: none; }
+  body.focus-ui #focusControlsButton .focus-more-icon { display: block; width: 22px; height: 22px; pointer-events: none; }
+  body.focus-ui #focusControlsButton .focus-pending-badge { top: 1px; right: 0; min-width: 20px; height: 20px; font-size: 13px; }
+  body.focus-ui #focusControlsButton:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* ---------- the sheet: a conversation's details, or a screen's actions ---------- */
+  body.focus-ui .focus-scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 55; background: color-mix(in srgb, var(--ink) 32%, transparent); }
+  .focus-controls {
+    position: fixed; z-index: 56; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; max-height: calc(var(--focus-height, 100dvh) - 72px - env(safe-area-inset-top, 0px));
+    padding: 8px 16px calc(12px + env(safe-area-inset-bottom, 0px)); border-radius: 28px 28px 0 0; background: var(--panel); color: var(--text);
+    box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.22);
+  }
+  .focus-controls[hidden], .focus-controls [hidden] { display: none !important; }
+  .focus-grab { display: block; flex: none; width: 36px; height: 4px; margin: 0 auto 8px; border-radius: 2px; background: var(--muted); opacity: 0.4; }
+  .focus-controls > header { display: flex; flex: none; align-items: flex-start; gap: 8px; padding: 0 0 12px; }
+  .focus-head-copy { display: grid; flex: 1; gap: 3px; min-width: 0; padding-top: 6px; }
+  #focusContextTitle { overflow: hidden; color: var(--heading); font: 400 22px/1.2 var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+  #focusContextMeta { overflow: hidden; color: var(--muted); font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .focus-controls button:not(.searchable-select-trigger) {
+    appearance: none; display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 48px; padding: 10px 12px; border: 0; border-radius: 14px;
+    background: transparent; box-shadow: none; color: var(--text); font: 500 15px/1.3 var(--sans); text-align: left; cursor: pointer;
+  }
+  .focus-controls button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .focus-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .focus-controls button svg { flex: 0 0 22px; width: 22px; height: 22px; color: var(--muted); }
+  .focus-controls > header button { flex: 0 0 44px; justify-content: center; width: 44px; min-height: 44px; padding: 0; border-radius: 50%; background: var(--field); }
+  .focus-controls > header button svg { flex-basis: 18px; width: 18px; height: 18px; }
+  .focus-context-scroll { flex: 1 1 auto; min-height: 0; margin: 0 -4px; padding: 0 4px 8px; overflow: auto; overscroll-behavior: contain; }
+  .focus-heading { display: block; margin: 14px 4px 6px; color: var(--muted); font: 400 15px/1.2 var(--serif); }
+
+  /* Activity / Files / Git / Tasks */
+  .focus-panels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .focus-controls .focus-panels button { position: relative; flex-direction: column; justify-content: center; gap: 5px; min-height: 64px; padding: 6px 2px; background: var(--field); font-size: 13px; font-weight: 600; text-align: center; }
+  .focus-panel-count { position: absolute; top: 5px; right: 8px; color: var(--ws-rev); font: 700 13px/1 var(--sans); }
+
+  /* The four run settings and the two switches: rows on one filled block. */
+  .focus-group { display: grid; margin: 0 0 12px; overflow: hidden; border-radius: 16px; background: var(--field); }
+  .focus-setting { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 52px; margin: 0; padding: 0 4px 0 14px; }
+  .focus-setting + .focus-setting { box-shadow: inset 0 1px 0 var(--line); }
+  .focus-setting-label { flex: none; margin: 0; color: var(--text); font: 500 16px/1.2 var(--sans); letter-spacing: 0; text-transform: none; }
+  .focus-setting > :last-child { display: flex; flex: 1; justify-content: flex-end; min-width: 0; }
+  .focus-setting .searchable-select { min-width: 0; max-width: 100%; }
+  .focus-controls .focus-setting .searchable-select-trigger {
+    min-height: 48px; max-width: 100%; padding: 0 30px 0 8px; border: 0; background-color: transparent; background-position: right 10px center; box-shadow: none;
+    color: var(--muted); font: 500 15px/48px var(--sans); text-align: right;
+  }
+  .focus-controls .searchable-select-option { align-items: flex-start; text-align: left; }
+  .focus-controls .focus-switches button { justify-content: flex-start; width: 100%; min-height: 52px; padding: 0 14px; border-radius: 0; font-size: 16px; }
+  .focus-switches button + button { box-shadow: inset 0 1px 0 var(--line); }
+  .focus-switch-label { flex: 1; min-width: 0; }
+  .focus-switches .focus-state { position: relative; flex: none; width: 44px; height: 26px; border-radius: 13px; background: var(--paper-raised); box-shadow: inset 0 0 0 1px var(--line); transition: background 0.2s; }
+  .focus-switches .focus-state::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); transition: left 0.2s; }
+  .focus-switches button[aria-checked="true"] .focus-state { background: var(--accent); box-shadow: none; }
+  .focus-switches button[aria-checked="true"] .focus-state::after { left: 21px; }
+
+  /* This conversation's other tools, and the places: rows of two, icon then words. */
+  .focus-tools-list, .focus-more, #focusContextActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+  #focusContextActions { margin-bottom: 4px; }
+  #focusContextActions:empty { display: none; }
+  .focus-controls :is(.focus-more, .focus-tools-list, #focusContextActions) button { position: relative; min-height: 52px; padding: 8px 10px; background: var(--field); font-size: 14.5px; }
+  .focus-tools-list button[aria-pressed="true"] { color: var(--accent); }
+  .focus-tools-list button[aria-pressed="true"] svg { color: var(--accent); }
+  .focus-more :is(#focusRunningCount, #focusReviewCount), .focus-tools-list .focus-pending-badge, .focus-more .phone-waiting { position: static; margin-left: auto; min-width: 22px; height: 22px; border: 0; font-size: 13px; }
+
+  /* Mark done stays at the bottom of the sheet. */
+  .focus-dock { display: grid; flex: none; padding-top: 10px; }
+  .focus-controls .focus-dock #focusMarkDone { justify-content: center; min-height: 52px; border-radius: 14px; background: var(--btn-bg); color: var(--btn-fg); font-size: 16px; font-weight: 650; }
+  .focus-controls .focus-dock #focusMarkDone svg { color: currentColor; }
+  .focus-dock .focus-state, .focus-more .focus-state { display: none; }
+
+  /* ---------- a conversation: back, title and state, the chips, messages, composer ---------- */
+  body.focus-ui .chat-topbar { min-height: 60px; gap: 4px; padding: calc(6px + env(safe-area-inset-top, 0px)) 6px 6px; border-bottom: 0; }
+  body.focus-ui .chat-topbar .icon-button, body.focus-ui .chat-topbar .back-button { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  body.focus-ui .chat-topbar .back-button { font-size: 30px; line-height: 1; }
+  body.focus-ui .chat-title-block { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1px 6px; min-width: 0; }
+  body.focus-ui .chat-topbar .chat-title-block > h2 { grid-column: 1; overflow: hidden; font: 650 17px/1.25 var(--sans); text-overflow: ellipsis; white-space: nowrap; }
+  body.focus-ui .chat-title-meta { display: contents; }
+  body.focus-ui .chat-title-meta > .chat-project-name { display: block; grid-column: 1; max-width: none; overflow: hidden; color: var(--muted); font: 500 13px/1.3 var(--sans); letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
+  body.focus-ui .chat-title-meta > .turn-timer { grid-column: 1; font-size: 13px; }
+  body.focus-ui .chat-title-meta > .chat-actions { grid-column: 2; grid-row: 1 / span 3; }
+  body.focus-ui.view-chat .ph-chips { display: flex; flex: none; gap: 8px; min-width: 0; padding: 0 14px 10px; overflow: hidden; }
+  /* Each chip keeps its own words while they fit, and none takes more than its share. */
+  .ph-chips .searchable-select { flex: 0 1 auto; min-width: 56px; max-width: 42%; }
+  .ph-chips .searchable-select:first-child { max-width: 30%; }
+  .ph-chips .searchable-select-trigger {
+    min-height: 44px; height: 44px; padding: 0 28px 0 14px; border: 0; border-radius: 22px; background-color: transparent; background-position: right 11px center;
+    box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); font: 600 14px/44px var(--sans);
+  }
+  body.focus-ui.view-chat #chatPanel .composer { border-top: 0; }
+
+  /* ---------- Bob: the control center as a phone page, over the tabs ---------- */
+  body.focus-ui.view-control .shell > #controlCenterPanel { height: 100%; }
+  body.focus-ui #controlCenterPanel :is(.phone-back, .control-bell, #controlChatMonitor, #controlChatSettingsButton, .team-phone-entry, .phone-chip, .control-chip, #controlChatAttach, #controlChatFilterProject, #controlChatProject, .phone-view-bar button) {
+    min-width: 44px; min-height: 44px; font-size: 14px;
+  }
+  body.focus-ui #controlCenterPanel .phone-back { font-size: 28px; }
+  body.focus-ui #controlCenterPanel .control-chip { padding-inline: 12px; }
+
+  /* Phone-native Bob: a compact head (his name and state, then the ⋯ that holds Monitoring, Settings, Dashboards and
+     the shared team), one scrolling row of filters, the chat, and the composer over the tabs. Bob's settings are a
+     screen of their own with full-width rows. Bob is a tab, so his head has no Back. */
+  body.focus-ui #controlCenterPanel > .team-context-label { display: none; }
+  body.focus-ui .control-chat-head { gap: 4px; min-height: 56px; padding: 6px 6px 6px 18px; border: 0; }
+  body.focus-ui .control-chat-head > :is(.phone-back, #controlChatMonitor, #controlChatSettingsButton, #controlChatSide, .team-phone-entry) { display: none; }
+  body.focus-ui .control-chat-head > div > b { font: 400 24px/1.15 var(--serif); color: var(--heading); }
+  body.focus-ui .control-chat-head > div > small { font-size: 13px; }
+  body.focus-ui #controlCenterPanel .phone-strip { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding: 0 16px 8px; scrollbar-width: none; }
+  body.focus-ui #controlCenterPanel .phone-strip::-webkit-scrollbar, body.focus-ui #controlChatFilters::-webkit-scrollbar { display: none; }
+  body.focus-ui #controlCenterPanel .phone-strip > * { flex: none; }
+  body.focus-ui #controlCenterPanel .phone-strip > [data-testid="control-phone-chip-dashboards"] { display: none; }
+  body.focus-ui #controlCenterPanel .phone-strip:not(:has(> :not([data-testid="control-phone-chip-dashboards"]))) { display: none; }
+  body.focus-ui #controlChatFilters { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding: 4px 16px 10px; border: 0; scrollbar-width: none; scroll-padding-inline: 16px; }
+  body.focus-ui #controlChatFilters > * { flex: none; }
+  body.focus-ui #controlChatFilters select, body.focus-ui #controlChatFilters .searchable-select-trigger { max-width: 150px; border-radius: 22px; }
+  body.focus-ui #controlChatFilters .control-chip-word { display: inline; }
+  body.focus-ui .control-chat-messages { padding: 8px 16px 12px; }
+  body.focus-ui #controlChat { min-height: 0; }
+  body.focus-ui .control-chat-form { flex: none; padding: 8px 12px 10px; border-top: 1px solid var(--line); background: var(--panel); }
+
+  /* Bob's settings: their own screen over the chat, above the tabs, with a way back. */
+  body.focus-ui #controlChat:has(> #controlChatSettings:not([hidden])) > :is(.control-chat-head, .phone-strip, .control-chat-paused, #controlChatFilters, #controlChatMessages, #controlChatForm) { display: none; }
+  body.focus-ui #controlChatSettings:not([hidden]) {
+    position: static; display: flex; flex: 1 1 auto; flex-direction: column; gap: 0; min-height: 0; max-height: none; overflow-y: auto;
+    padding: 0 0 24px; border: 0; background: var(--bg); overscroll-behavior: contain;
+  }
+  body.focus-ui #controlChatSettings:not([hidden]) > * { flex: none; }
+  body.focus-ui #controlChatSettings input[type="checkbox"] { width: 22px; height: 22px; }
+  body.focus-ui #controlChatSettings > .bob-settings-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; min-height: 56px; padding: 6px 16px 6px 6px; background: var(--bg); }
+  body.focus-ui #controlChatSettings > .bob-settings-head b { font: 400 22px/1.2 var(--serif); color: var(--heading); }
+  body.focus-ui #controlChatSettings > .bob-settings-head button { min-width: 44px; min-height: 44px; font-size: 26px; }
+  body.focus-ui #controlChatSettings > b { margin: 12px 20px 6px; color: var(--muted); font: 400 15px/1.2 var(--serif); }
+  body.focus-ui #controlChatSettings > :is(label, .control-guard, .control-hint, .telegram-settings, section, div:not(.bob-settings-head)) { margin: 0 16px; }
+  body.focus-ui #controlChatSettings > label {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 14px; background: var(--field);
+    color: var(--text); font-size: 15px; box-shadow: inset 0 -1px 0 var(--line);
+  }
+  body.focus-ui #controlChatSettings > b + label { border-radius: 16px 16px 0 0; }
+  body.focus-ui #controlChatSettings > label:has(+ :not(label)) { border-radius: 0 0 16px 16px; box-shadow: none; margin-bottom: 12px; }
+  body.focus-ui #controlChatSettings > label > :is(select, .searchable-select-trigger) { flex: 0 1 auto; max-width: 58%; min-height: 44px; border: 0; background-color: transparent; box-shadow: none; color: var(--muted); font-size: 15px; text-align: right; }
+  body.focus-ui #controlChatSettings > label > input[type="number"] { flex: none; width: 72px; max-width: 72px; min-height: 40px; text-align: right; }
+  body.focus-ui #controlChatSettings > label.control-check { justify-content: flex-start; flex-direction: row-reverse; }
+  body.focus-ui #controlChatSettings > label.control-check input { margin-left: auto; width: 22px; height: 22px; }
+  /* The standing instructions: label over a full-width box. */
+  body.focus-ui #controlChatSettings > label:has(> textarea) { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 14px 14px; }
+  body.focus-ui #controlChatSettings > label > textarea { width: 100%; min-height: 140px; font-size: 16px; }
+  body.focus-ui #controlChatSettings > :is(.control-guard, div:not(.bob-settings-head):not(.control-guard)) { margin-top: 10px; padding: 12px 14px; border: 0; border-radius: 16px; background: var(--field); font-size: 14px; }
+  body.focus-ui #controlChatSettings .control-hint { margin-top: 10px; font-size: 13px; }
+  /* The open conversation's row keeps the same bare pin and ⋮ as the other rows. */
+  body.focus-ui :is(.session-list, .project-list) .list-row.active .row-action-button:not(.pinned) { background: transparent; }
+  /* Bob's messages and cards: buttons a thumb can hit (44 px), Answer in the accent on a card about a conversation,
+     and the quiet lines (who, labels, when, why) large enough to read. */
+  body.focus-ui #controlChatMessages .control-actions { gap: 8px; margin-top: 8px; }
+  body.focus-ui #controlChatMessages .control-action { min-height: 44px; padding: 0 16px; border-radius: 12px; font-size: 14.5px; }
+  body.focus-ui #controlChatMessages .control-entry.about .control-action[data-testid="control-item-reply"] { order: -1; border-color: transparent; background: var(--accent); color: var(--btn-fg, #fff); }
+  /* One filled button per card, as on the desktop: the other ways forward are tinted or plain. */
+  body.focus-ui #controlChatMessages .control-entry.about .control-action.primary:not([data-testid]) { border-color: transparent; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  body.focus-ui #controlChatMessages .control-entry.about .control-action.warn { border-color: var(--line-strong); background: transparent; color: var(--ws-need, #b86e00); }
+  body.focus-ui #controlChatMessages .control-source { font-size: 13.5px; }
+  body.focus-ui #controlChatMessages .control-label { font-size: 11.5px; }
+  body.focus-ui #controlChatMessages .control-time { font-size: 12.5px; }
+  body.focus-ui #controlChatMessages .control-via { font-size: 13px; line-height: 1.4; }
+  body.focus-ui #controlChatMessages [data-testid="control-chat-about"] { display: inline-flex; align-items: center; min-height: 44px; font: 400 18px/1.25 var(--serif); }
+
+  /* ---------- dialogs on the phone: a sheet from the bottom, or a page ---------- */
+  /* Every dialog is a sheet from the bottom edge, as tall as its content up to the screen; the long ones (a dashboard,
+     Git review, a diff, files, issues, tasks, costs, search, a task, a note, a secret) are pages that fill the screen.
+     Settings and Bob's side chat have their own full-screen layouts. Buttons and fields are at least 44 px. */
+  dialog[open]:not(#settingsDialog, .by-the-way-dialog, .message-image-viewer) { inset: auto 0 0 0; width: 100%; max-width: 100%; height: auto; margin: 0; }
+  dialog:not(#settingsDialog, .by-the-way-dialog, .message-image-viewer) > .dialog-card {
+    width: 100% !important; max-width: 100% !important; max-height: calc(100dvh - 16px - env(safe-area-inset-top, 0px));
+    /* Each card keeps its own padding (Git review, Files and the dashboards lay out their own edges); the home
+       indicator's inset is a clear border the card's fill shows through. */
+    border: 0 solid transparent; border-bottom-width: env(safe-area-inset-bottom, 0px); border-radius: 24px 24px 0 0;
+    box-shadow: 0 -10px 36px color-mix(in srgb, var(--ink) 16%, transparent);
+  }
+  dialog:is(#dashboardDialog, #gitReviewDialog, #gitDiffDialog, #projectFilesDialog, #projectIssuesDialog, #backgroundTasksDialog, #controlDashboardDialog, #controlAssistantDialog, #usageDialog, #spotlightDialog, #taskDialog, #quickNoteDialog, #secretAccountDialog, #fileActionDialog) > .dialog-card {
+    height: 100dvh !important; max-height: 100dvh !important; border-top-width: env(safe-area-inset-top, 0px); border-radius: 0; box-shadow: none;
+  }
+  /* ---------- Terminal and Browser on the phone: pages over the conversation ---------- */
+  /* Both were placed above a bottom bar the phone no longer has in a conversation (a strip of page showed under the
+     terminal, the browser floated with margins). Each fills the screen, with Close in its own head. */
+  body.focus-ui .terminal-dock:is([data-orientation="horizontal"], [data-orientation="vertical"]) {
+    inset: 0; z-index: 54; width: 100%; height: 100dvh; border: 0;
+    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+  }
+  body.focus-ui.terminal-open:is([data-terminal-orientation="horizontal"], [data-terminal-orientation="vertical"]) .shell { width: 100vw; height: 100dvh; }
+  body.focus-ui .terminal-dock :is(.terminal-resize-handle, .terminal-orientation) { display: none; }
+  body.focus-ui .terminal-dock .terminal-heading { flex-wrap: wrap; gap: 8px 10px; padding: 10px 12px 10px 18px; }
+  body.focus-ui .terminal-dock .terminal-heading h2 { font: 400 22px/1.2 var(--serif); }
+  body.focus-ui .terminal-dock .terminal-actions { margin-left: auto; }
+  body.focus-ui .terminal-dock .terminal-actions button { min-height: 44px; padding-inline: 14px; font-size: 14.5px; }
+  body.focus-ui.browser-visible #browserPanel { inset: 0; z-index: 53; border: 0; border-radius: 0; box-shadow: none; padding-top: env(safe-area-inset-top, 0px); }
+  body.focus-ui #browserPanel :is(.browser-heading-actions > *, button:not(.searchable-select-option)) { min-width: 44px; min-height: 44px; }
+  body.focus-ui #browserPanel .browser-heading-actions > a { display: inline-flex; align-items: center; }
+
+  /* ---------- small controls and small print elsewhere on the phone ---------- */
+  body.focus-ui #activityPanel :is(button, summary, [role="tab"]) { min-width: 44px; min-height: 44px; }
+  body.focus-ui #activityPanel :is(.activity-instructions-name, .activity-instructions-preview, #activitySummaryText, .activity-stat-label) { font-size: 13px; }
+  body.focus-ui .session-menu button, body.focus-ui .row-menu button { min-height: 48px; font-size: 15px; }
+  body.focus-ui .messages :is(.connection-note, .assistant-attribution, [data-testid="conversation-started-at"]) { font-size: 11.5px; }
+  body.focus-ui .messages .message-time { white-space: nowrap; }
+  /* The copy button stays small beside a message; its touch area is 44 px. */
+  body.focus-ui .messages .message-copy { position: relative; }
+  body.focus-ui .messages .message-copy::after { content: ""; position: absolute; inset: -8px; }
+  /* The message box is one line until something is typed: its hint never wraps. */
+  body.focus-ui #messageInput::placeholder { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  dialog:not(#settingsDialog) > .dialog-card :is(label, .field-label) { font-size: 13px; }
+  dialog:not(#settingsDialog) > .dialog-card .color-swatch, dialog [data-testid$="color-swatch"] { width: 36px; height: 36px; min-height: 36px; }
+  #usageDialog :is(#usageRefresh, [data-testid="usage-close"]) { min-width: 44px; }
+  #usageDialog [data-testid="usage-filter-add"] { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 14px; }
+  #dashboardClose { min-width: 44px; }
+  /* The install card sits above the tabs and the New button; a conversation (no tabs, the message box at the foot)
+     does not show it. */
+  body.focus-ui .install-banner { bottom: calc(var(--ph-tabs-h) + 84px); width: calc(100% - 24px); border: 0; border-radius: 18px; }
+  body.focus-ui.view-chat .install-banner, body.focus-ui.view-board .install-banner { display: none; }
+  body.focus-ui .install-banner-actions button { min-height: 44px; }
+  #usageDialog[open] { padding: 0; }
+  #usageDialog > .usage-card, .background-tasks-dialog > .background-tasks-card { margin: 0; }
+  dialog:not(#settingsDialog) > .dialog-card :is(button:not(.searchable-select-option, .color-swatch, .icon-button), input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, .searchable-select-trigger) { min-height: 44px; }
+  dialog:not(#settingsDialog) > .dialog-card .icon-button { min-width: 44px; min-height: 44px; }
+  dialog:not(#settingsDialog) > .dialog-card .dialog-actions { gap: 10px; }
+  dialog:not(#settingsDialog) > .dialog-card .dialog-actions > button { flex: 1 1 0; }
+}
+
+@keyframes ph-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) {
+  body.focus-ui .ws-dot.run { animation: none; }
+}

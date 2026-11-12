@@ -1,6 +1,7 @@
-// Settings → Notifications → Send errors to ntfy. Saved on its own button, node-local.
+// Settings → Notifications → Send errors to ntfy. Saved as it changes, node-local.
 import { api } from "./api.js";
 import { toast } from "./shell.js";
+import { autosaveFields, invalidSetting, settingsAutosave } from "./settings-autosave.js";
 
 const field = (id) => document.getElementById(id);
 const enabledInput = field("errorReportingEnabled");
@@ -61,18 +62,28 @@ export async function loadErrorReportingSettings() {
 
 for (const input of [enabledInput, sameInput, channels.client.enabled, channels.backend.enabled]) input.addEventListener("change", syncVisibility);
 
-saveButton.addEventListener("click", async () => {
+/** Saves as the fields change (settings-autosave.js); a failure is thrown for the Settings save line. */
+async function saveErrorReporting() {
+  if (!saved) throw invalidSetting("Error reporting is still loading");
   const destination = (channel) => ({ enabled: channel.enabled.checked, serviceId: channel.service.value || null, topic: channel.topic.value.trim() });
-  saveButton.disabled = true;
-  try {
-    fill(await api("/api/error-reporting", {
-      method: "PUT",
-      body: JSON.stringify({ enabled: enabledInput.checked, sameDestination: sameInput.checked, client: destination(channels.client), backend: destination(channels.backend) }),
-    }));
-    toast(enabledInput.checked ? "Errors will be sent to ntfy" : "Error reporting is off");
-  } catch (error) {
-    toast.error(error.message);
-  } finally {
-    saveButton.disabled = false;
+  // Turning it on takes a few steps; until a server and topic are chosen the line says what is missing (as the node would).
+  if (enabledInput.checked) {
+    if (!channels.client.enabled.checked && !channels.backend.enabled.checked) throw invalidSetting("Choose client errors, backend errors, or both");
+    for (const [name, label] of [["client", "Client errors"], ["backend", "Backend errors"]]) {
+      if (!channels[name].enabled.checked) continue;
+      const source = destination(name === "backend" && sameInput.checked && channels.client.enabled.checked ? channels.client : channels[name]);
+      if (!source.serviceId) throw invalidSetting(`${label} need a saved ntfy server`);
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(source.topic)) throw invalidSetting(`${label} need a topic of 1 to 64 letters, digits, - or _`);
+    }
   }
-});
+  // The answer is kept, not filled back in: a topic still being typed must not be reset.
+  saved = await api("/api/error-reporting", {
+    method: "PUT",
+    body: JSON.stringify({ enabled: enabledInput.checked, sameDestination: sameInput.checked, client: destination(channels.client), backend: destination(channels.backend) }),
+  });
+}
+
+settingsAutosave().channel("error-reporting", saveErrorReporting);
+autosaveFields(field("errorReportingEnabled").closest("fieldset"), "error-reporting", { accept: (target) => target.matches("input, select") });
+// The button is hidden: error reporting saves as it changes. It stays for anything that presses it.
+saveButton.addEventListener("click", () => { settingsAutosave().schedule("error-reporting", 0); });

@@ -52,7 +52,7 @@ test("the terminal button follows whether the execution node allows terminal acc
   assert.equal(await button.isDisabled(), false, "this node's own terminal stays available");
 });
 
-test("the global Settings save persists terminal access settings", { timeout: 120_000 }, async (t) => {
+test("terminal access settings save as they change", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   const session = await apiSignIn(environment, node);
   await signIn(page, node.url, environment.username, environment.password);
@@ -74,24 +74,29 @@ test("the global Settings save persists terminal access settings", { timeout: 12
   assert.equal(await others.evaluate((element) => Boolean(element.closest("#settingsPanel-node"))), true);
   // The dev seed turns terminal access on for its admin; the page fills this in just after the response.
   await page.waitForFunction(() => document.querySelector<HTMLSelectElement>('[data-testid="terminal-policy-mode"]')!.value === "admin");
-  await mode.selectOption("off");
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
+  assert.equal(await page.getByTestId("terminal-policy-save").isVisible(), false, "terminal access has no save button of its own");
+  // Terminal access has its own request, sent as soon as the choice changes.
   const separateSave = page.waitForResponse((response) => response.url().endsWith("/api/terminal-policy") && response.request().method() === "PUT");
-  await page.getByTestId("terminal-policy-save").click();
+  await mode.selectOption("off");
   assert.equal((await separateSave).status(), 200);
+  assert.equal((await api<{ mode: string }>(node, session, "GET", "/terminal-policy")).body.mode, "off");
+  const savedTerminalPolicy = page.waitForResponse((response) => response.url().endsWith("/api/terminal-policy") && response.request().method() === "PUT");
   await mode.selectOption("admin");
+  assert.equal((await savedTerminalPolicy).status(), 200, "changing terminal access saves it");
+  const saved = page.waitForResponse((response) => response.url().endsWith("/api/settings") && response.request().method() === "PUT");
   await twins.uncheck();
   await others.check();
-  const saved = page.waitForResponse((response) => response.url().endsWith("/api/settings") && response.request().method() === "PUT");
-  const savedTerminalPolicy = page.waitForResponse((response) => response.url().endsWith("/api/terminal-policy") && response.request().method() === "PUT");
-  await page.getByTestId("settings-save-button").click();
   assert.equal((await saved).status(), 200);
-  assert.equal((await savedTerminalPolicy).status(), 200, "global Save settings must save changed terminal access");
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
 
   const stored = await api<{ remoteTerminal: unknown }>(node, session, "GET", "/settings");
   assert.deepEqual(stored.body.remoteTerminal, { twins: false, otherNodes: true });
   const savedPolicy = await api<{ mode: string }>(node, session, "GET", "/terminal-policy");
-  assert.equal(savedPolicy.body.mode, "admin", "the global Settings save must persist Only me terminal access");
+  assert.equal(savedPolicy.body.mode, "admin", "Settings must persist Only me terminal access");
 
+  await page.getByTestId("settings-cancel-button").click();
+  await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
   await page.getByTestId("settings-open-button").click();
   await page.locator("#settingsDialog[open]").waitFor();
   const reloadedTerminalPolicy = page.waitForResponse((response) => response.url().endsWith("/api/terminal-policy") && response.request().method() === "GET");

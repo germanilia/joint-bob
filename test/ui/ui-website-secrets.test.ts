@@ -143,7 +143,12 @@ test("website usernames stay readable, other credentials stay masked, and accoun
     await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="secret-variable-value-input"]')].every((item) => (item as HTMLInputElement).value === ""));
     assert.deepEqual(await values.evaluateAll((items) => items.map((item) => (item as HTMLInputElement).value)), ["", ""], "cancel clears secret controls in the hidden DOM");
 
-    await page.getByTestId("secret-account-edit-button").click();
+    // The page is still phone-sized: a row's actions sit behind its ⋯ button.
+    const editOnPhone = async () => {
+      await page.getByTestId("secret-account-more").click();
+      await page.getByTestId("secret-account-edit-button").click();
+    };
+    await editOnPhone();
     await origin.fill("");
     assert.equal(await page.getByTestId("secret-account-replicate-toggle").isEnabled(), true);
     assert.deepEqual(await values.evaluateAll((items) => items.map((item) => item.tagName)), ["TEXTAREA", "TEXTAREA"]);
@@ -153,7 +158,7 @@ test("website usernames stay readable, other credentials stay masked, and accoun
     assert.equal(unbound.status(), 200);
     const unboundBody = await unbound.json() as { account: { websiteOrigin?: string } };
     assert.equal(unboundBody.account.websiteOrigin, undefined);
-    await page.getByTestId("secret-account-edit-button").click();
+    await editOnPhone();
     assert.equal(await origin.inputValue(), "");
     assert.deepEqual(await values.evaluateAll((items) => items.map((item) => (item as HTMLTextAreaElement).value)), ["", ""]);
     assert.equal(await storedValuesMatch(environment.home, node.dataDir, projectId, accountId, null, "rotated-synthetic-password"), true, "unbind exports preserved rotated values to generic environment");

@@ -83,15 +83,21 @@ test("routing configurations live under Classifiers, save mappings, and keep una
   await page.getByTestId("routing-context-messages").fill("6");
   await page.getByTestId("routing-confidence").fill("0.25");
   await page.getByTestId("routing-enabled").check();
-  // The dialog-wide Save button must save dirty classifier controls too. Otherwise it
-  // closes Settings successfully while silently restoring this configuration's defaults.
-  await page.getByTestId("settings-save-button").click();
+  // Settings has no shared Save button and saves what is still waiting on the way out, so leaving
+  // it must save dirty classifier controls too. Otherwise Back to Joint Bob closes Settings while
+  // silently restoring this configuration's defaults.
+  await page.getByTestId("settings-cancel-button").click();
   await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
 
   const configIdRow = db.prepare("SELECT id FROM routing_configs WHERE name = 'Field routing'").get() as { id: string } | undefined;
   assert.ok(configIdRow, "the configuration exists before it is selected");
   const configId = configIdRow.id;
-  const stored = db.prepare("SELECT policy FROM routing_configs WHERE name = 'Field routing'").get() as { policy: string } | undefined;
+  // The save on the way out finishes after the page has gone back to the workspace.
+  let stored: { policy: string } | undefined;
+  for (const deadline = Date.now() + 10_000; Date.now() < deadline; await page.waitForTimeout(250)) {
+    stored = db.prepare("SELECT policy FROM routing_configs WHERE name = 'Field routing'").get() as { policy: string } | undefined;
+    if (stored && JSON.parse(stored.policy).harnesses?.kiro?.levels?.["1"]?.description) break;
+  }
   assert.ok(stored, "the configuration is saved under its name");
   const saved = JSON.parse(stored!.policy);
   assert.ok(saved.harnesses.kiro?.levels?.["1"], `level 1 mapping must be saved: ${stored!.policy.slice(0, 400)}`);

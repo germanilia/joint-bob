@@ -1,12 +1,14 @@
 // Browser suite for the retention boxes in Settings: the three boxes that widen the first follow
-// it, "Show what would be deleted" asks for the ticked boxes (not the saved ones) and shows the
-// answer or the error, and saving sends the six boxes as one setting. The dry-run answer comes
-// from a fixture, so nothing is counted or deleted on the node.
+// it, a box or a number of days that deletes more asks first (Cancel leaves the setting as saved,
+// Delete them saves it), "Show what would be deleted" asks for the ticked boxes and shows the
+// answer or the error without saving, and every save sends the six boxes as one setting. The
+// dry-run answer comes from a fixture, so nothing is counted or deleted on the node.
 //
 // And for "Backup before deleting" under them: the fields of the chosen place show and no others,
-// the check button sends what is typed, a save sends the chosen place's fields only and the node
-// gives them back, a refused save says why where it can be seen, and the status shows what is kept
-// and the last problem. Saves and the folder check reach the node; a bucket is never contacted.
+// the check button sends what is typed, a field saves when it is left (a bucket once nothing it
+// needs is missing), a save sends the chosen place's fields only and the node gives them back, a
+// refused save says why where it can be seen, and the status shows what is kept and the last
+// problem. Saves and the folder check reach the node; a bucket is never contacted.
 //
 // Like the rest of test/ui it needs a Chrome binary, and it fails rather than skipping without one.
 import assert from "node:assert/strict";
@@ -15,6 +17,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test, { after, before } from "node:test";
+import { isDeepStrictEqual } from "node:util";
 import { type Browser, type Page, type Route } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "../dev-nodes.js";
@@ -56,6 +59,8 @@ const pageErrors: string[] = [];
 /** How the next dry run is answered, and a gate that holds the answer back until the test lets it go. */
 let next: { status: number; body: unknown } = { status: 200, body: answer };
 let release: (() => void) | undefined;
+/** The number of days the node starts with; saving the boxes never changes it. */
+let initialDays = 0;
 
 async function dryRun(route: Route): Promise<void> {
   asked.push(new URL(route.request().url()).search);
@@ -109,7 +114,12 @@ async function settingsRoute(route: Route): Promise<void> {
 
 const box = (name: string) => page.locator(`[data-retention-scope="${name}"]`);
 // Reopening keeps the last values on screen until the reload finishes, so wait for it.
-const settingsLoaded = () => page.waitForFunction(() => !document.querySelector("#settingsForm")!.hasAttribute("aria-busy"));
+const settingsLoaded = () => page.locator('#settingsForm[data-ready="true"]').waitFor();
+const waitForSaved = () => page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+const confirmOpen = () => page.locator("#confirmDialog[open]").waitFor();
+const confirmClosed = () => page.locator("#confirmDialog[open]").waitFor({ state: "hidden" });
+const storedSettings = async () => (await api<{ conversationRetentionScope: Record<string, boolean>; conversationRetentionDays: number }>(node, session, "GET", "/settings")).body;
+const ticked = (scope: unknown) => Object.values((scope ?? {}) as Record<string, boolean>).some(Boolean);
 const digits = (text: string) => text.replace(/[^\d]/g, "");
 
 async function rowOf(kind: string): Promise<string[]> {
@@ -128,15 +138,41 @@ async function openSettings(): Promise<void> {
   await page.getByTestId("settings-open-button").click();
   await settingsLoaded();
   await page.getByTestId("settings-backup").scrollIntoViewIfNeeded();
+  looked = saved.length;
 }
 
-/** Saves, waits for the dialog to close, and returns the backup part of the one request that made. */
-async function saveBackup(): Promise<unknown> {
-  const before = saved.length;
-  await page.getByTestId("settings-save-button").click();
-  await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
-  assert.equal(saved.length, before + 1, "one save, one request");
-  return saved.at(-1)!.conversationBackup;
+/** Leaves the field that was typed in, which saves what waits. */
+const leaveField = () => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+const saveState = () => page.getByTestId("settings-save-state");
+/** The save line once nothing waits: "saved", "failed" or "idle". */
+async function settled(): Promise<string> {
+  await page.locator('[data-testid="settings-save-state"]:is([data-state="saved"], [data-state="failed"], [data-state="idle"])').waitFor();
+  return (await saveState().getAttribute("data-state"))!;
+}
+
+/** How many saves the backup tests have looked at. */
+let looked = 0;
+/**
+ * Leaves the last field, waits until the page says Saved, and checks that a save since the last
+ * look carried `expected` as its backup part. It need not be the last: a save that was running
+ * when the field was left is followed by one more.
+ */
+async function savesBackup(expected: unknown, message = "the save"): Promise<void> {
+  await leaveField();
+  await waitForSaved();
+  const sent = saved.slice(looked).map((body) => body.conversationBackup);
+  looked = saved.length;
+  assert.ok(sent.some((backup) => isDeepStrictEqual(backup, expected)), `${message}: ${JSON.stringify(expected)} is not among ${JSON.stringify(sent)}`);
+}
+
+/** The setting of a node that never saved one. A secret key that was saved stays: no test reads it before saving its own. */
+const BLANK_BACKUP = { destination: "off", keepDays: 30, folder: "", s3: { bucket: "", region: "", prefix: "", endpoint: "", credentials: "keys", accessKeyId: "", profile: "" } };
+/** Fields save as they are left, so a test that tried places puts the node back as the next test expects to find it. */
+async function resetBackup(): Promise<void> {
+  await leaveField();
+  await settled();
+  await page.getByTestId("settings-dialog").evaluate((element: HTMLDialogElement) => element.close());
+  assert.equal((await api(node, session, "PUT", "/settings", { conversationBackup: BLANK_BACKUP })).status, 200);
 }
 
 async function storedBackup(): Promise<StoredBackup> {
@@ -208,22 +244,44 @@ test("every box starts unticked, and the three that widen the first follow it", 
   await page.getByTestId("settings-retention-scope").scrollIntoViewIfNeeded();
   const group = await page.getByTestId("settings-retention-scope").innerText();
   assert.match(group, /Only the conversations a project's list still shows are checked\. Older ones stay until you tick the first box\./);
-  assert.match(group, /Nothing is deleted until you save, and then only at the next hourly check\./);
+  assert.match(group, /Deleting more, or sooner, asks you first\. Nothing is deleted before the next hourly check\./);
+  initialDays = (await storedSettings()).conversationRetentionDays;
+  assert.ok(initialDays > 30, `the fixture keeps conversations longer than the days this suite lowers it to (${initialDays})`);
   for (const name of BOXES) assert.equal(await box(name).isChecked(), false, `${name} is off on a node that never saved the setting`);
   const dependents = ["includeUnrecorded", "includeScheduled", "includeTickets"];
   for (const name of dependents) assert.equal(await box(name).isDisabled(), true, `${name} waits for the first box`);
   for (const name of ["full", "leftovers", "backgroundRuns"]) assert.equal(await box(name).isEnabled(), true);
+  // Ticking a box deletes more, so it asks first. While it asks, the boxes under the first follow it.
   await box("full").check();
+  await confirmOpen();
+  const question = await page.getByTestId("confirm-dialog").innerText();
+  assert.match(question, /Delete more conversations\?/);
+  assert.match(question, /older conversations that a project's list no longer shows/);
   for (const name of dependents) assert.equal(await box(name).isEnabled(), true, `${name} can be ticked with the first box`);
-  await box("full").uncheck();
+  // Cancel puts the box back and leaves the setting as it was saved.
+  await page.getByTestId("confirm-cancel-button").click();
+  await confirmClosed();
+  // The answer arrives with the dialog's close event, just after it hides.
+  await page.waitForFunction(() => !(document.querySelector("#settingsRetentionFull") as HTMLInputElement).checked);
+  assert.equal(await box("full").isChecked(), false, "Cancel unticks the box");
   for (const name of dependents) assert.equal(await box(name).isDisabled(), true);
+  await waitForSaved();
+  assert.equal(saved.some((body) => ticked(body.conversationRetentionScope)), false, "no request ever carried the box that was refused");
+  assert.equal(ticked((await storedSettings()).conversationRetentionScope), false, "the setting stays as it was saved");
   assert.equal(await page.getByTestId("settings-retention-preview").isVisible(), false, "no table before anyone asks");
 });
 
 test("the dry run asks for the ticked boxes and shows what they would delete", async () => {
-  await box("full").check();
-  await box("includeTickets").check();
-  await box("backgroundRuns").check();
+  // Each box that deletes more asks; Delete them saves it.
+  for (const name of ["full", "includeTickets", "backgroundRuns"]) {
+    await box(name).check();
+    await confirmOpen();
+    await page.getByTestId("confirm-accept-button").click();
+    await confirmClosed();
+    await waitForSaved();
+    assert.equal(await box(name).isChecked(), true, `${name} stays ticked once allowed`);
+  }
+  const savesBefore = saved.length;
   const button = page.getByTestId("settings-retention-preview-button");
   assert.equal(await button.innerText(), "Show what would be deleted");
   release = undefined;
@@ -237,11 +295,10 @@ test("the dry run asks for the ticked boxes and shows what they would delete", a
   assert.equal(await button.innerText(), "Show what would be deleted");
   assert.equal(await button.isEnabled(), true);
 
-  // The boxes on the page were sent, though nothing is saved yet.
+  // The boxes on the page were sent, and looking saves nothing.
   const query = new URLSearchParams(asked.at(-1));
   assert.deepEqual(Object.fromEntries(BOXES.map((name) => [name, query.get(name)])), { full: "1", includeUnrecorded: "0", includeScheduled: "0", includeTickets: "1", leftovers: "0", backgroundRuns: "1" });
-  const stored = await api<{ conversationRetentionScope: Record<string, boolean> }>(node, session, "GET", "/settings");
-  assert.equal(Object.values(stored.body.conversationRetentionScope).some(Boolean), false, "looking saves nothing");
+  assert.equal(saved.length, savesBefore, "looking saves nothing");
 
   const expired = await rowOf("expired");
   assert.match(expired[0], /^Expired: no activity for 40 days$/);
@@ -278,15 +335,15 @@ test("an error takes the table's place", async () => {
 });
 
 test("saving sends the six boxes as one setting, and they come back ticked", async () => {
-  const days = (await api<{ conversationRetentionDays: number }>(node, session, "GET", "/settings")).body.conversationRetentionDays;
-  await page.getByTestId("settings-save-button").click();
-  await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
+  // The boxes saved as they were allowed; the last request carried all six as one setting.
   const expected = { full: true, includeUnrecorded: false, includeScheduled: false, includeTickets: true, leftovers: false, backgroundRuns: true };
   assert.deepEqual(saved.at(-1)?.conversationRetentionScope, expected);
-  const stored = await api<{ conversationRetentionScope: Record<string, boolean>; conversationRetentionDays: number }>(node, session, "GET", "/settings");
-  assert.deepEqual(stored.body.conversationRetentionScope, expected);
-  assert.equal(stored.body.conversationRetentionDays, days, "the number of days is saved with them, unchanged");
+  const stored = await storedSettings();
+  assert.deepEqual(stored.conversationRetentionScope, expected);
+  assert.equal(stored.conversationRetentionDays, initialDays, "the number of days is saved with them, unchanged");
 
+  await page.getByTestId("settings-cancel-button").click();
+  await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
   await page.getByTestId("settings-open-button").click();
   await settingsLoaded();
   await page.waitForFunction(() => (document.querySelector("#settingsRetentionFull") as HTMLInputElement).checked);
@@ -294,13 +351,50 @@ test("saving sends the six boxes as one setting, and they come back ticked", asy
   assert.equal(await box("includeUnrecorded").isEnabled(), true, "the first box is ticked, so the ones under it can be");
   assert.equal(await page.getByTestId("settings-retention-preview").isVisible(), false, "an earlier answer is not shown again as if it were current");
 
-  // Unticking everything saves that too: the page always sends all six.
+  // Unticking deletes less, so it saves without asking; the page always sends all six.
   // The first box last: unticking it locks the three under it as they are.
-  for (const name of [...BOXES].reverse()) if (await box(name).isChecked()) await box(name).uncheck();
-  await page.getByTestId("settings-save-button").click();
+  for (const name of [...BOXES].reverse()) {
+    if (!await box(name).isChecked()) continue;
+    await box(name).uncheck();
+    assert.equal(await page.locator("#confirmDialog[open]").count(), 0, `unticking ${name} does not ask`);
+  }
+  await waitForSaved();
+  assert.equal(ticked(saved.at(-1)?.conversationRetentionScope), false);
+  assert.equal(ticked((await storedSettings()).conversationRetentionScope), false);
+  assert.deepEqual(pageErrors, []);
+});
+
+test("fewer days asks first; Cancel puts the number back, Delete them saves it, more days just saves", async () => {
+  const days = page.getByTestId("settings-conversation-retention-days");
+  assert.equal(await days.inputValue(), String(initialDays));
+  // A number saves when the field is left.
+  await days.fill("25");
+  await days.press("Tab");
+  await confirmOpen();
+  assert.match(await page.getByTestId("confirm-dialog").innerText(), /conversations with no activity for 25 days/);
+  await page.getByTestId("confirm-cancel-button").click();
+  await confirmClosed();
+  await page.waitForFunction((expected) => (document.querySelector("#settingsConversationRetentionDays") as HTMLInputElement).value === expected, String(initialDays));
+  assert.equal(await days.inputValue(), String(initialDays), "Cancel puts the saved number back");
+  await waitForSaved();
+  assert.equal((await storedSettings()).conversationRetentionDays, initialDays);
+  assert.equal(saved.some((body) => body.conversationRetentionDays === 25), false, "no request carried the refused number");
+
+  await days.fill("25");
+  await days.press("Tab");
+  await confirmOpen();
+  await page.getByTestId("confirm-accept-button").click();
+  await confirmClosed();
+  await waitForSaved();
+  assert.equal((await storedSettings()).conversationRetentionDays, 25);
+
+  await days.fill("60");
+  await days.press("Tab");
+  await waitForSaved();
+  assert.equal(await page.locator("#confirmDialog[open]").count(), 0, "keeping conversations longer does not ask");
+  assert.equal((await storedSettings()).conversationRetentionDays, 60);
+  await page.getByTestId("settings-cancel-button").click();
   await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
-  assert.equal(Object.values(saved.at(-1)?.conversationRetentionScope as Record<string, boolean>).some(Boolean), false);
-  assert.equal(Object.values((await api<{ conversationRetentionScope: Record<string, boolean> }>(node, session, "GET", "/settings")).body.conversationRetentionScope).some(Boolean), false);
   assert.deepEqual(pageErrors, []);
 });
 
@@ -382,7 +476,10 @@ test("choosing a place shows its fields and no others", async () => {
 
   await field("destination").selectOption("off");
   for (const name of ["folder", ...S3_FIELDS, ...KEY_FIELDS, "s3-profile", "s3-endpoint", ...ON_FIELDS]) assert.equal(await field(name).isVisible(), false, `${name} goes when backups are off`);
-  assert.deepEqual(await storedBackup(), stored, "looking saves nothing");
+  // A place saves when it is chosen, a bucket only once it has what it needs: back at off, the node has what it had.
+  await waitForSaved();
+  assert.equal(saved.some((body) => (body.conversationBackup as { destination?: string } | undefined)?.destination === "s3"), false, "a bucket without a name was never sent");
+  assert.deepEqual(await storedBackup(), stored);
 });
 
 test("the check button sends what is typed and shows the node's answer", async () => {
@@ -406,7 +503,10 @@ test("the check button sends what is typed and shows the node's answer", async (
   assert.equal(await button.isEnabled(), true);
   const left = (await readdir(folder, { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile());
   assert.deepEqual(left, [], "the file the check wrote is gone again");
-  assert.equal((await storedBackup()).destination, "off", "checking saves nothing");
+  // Pressing the button left the folder's field, which saved it: the check's answer stays under the saved values.
+  await waitForSaved();
+  assert.equal((await storedBackup()).folder, folder);
+  assert.equal(await result.innerText(), `Joint Bob can write backups to ${folder}.`, "a save leaves the answer of a check");
 
   // A changed value takes the answer away: it was about the folder as it was.
   await field("folder").fill("backups/here");
@@ -467,7 +567,7 @@ test("the check button sends what is typed and shows the node's answer", async (
   await result.locator("p").waitFor();
   assert.equal(checked.length, asks + 1, "only the check with a number in range was sent");
   checkAnswer = undefined;
-  assert.equal((await storedBackup()).destination, "off", "none of it was saved");
+  await resetBackup();
 });
 
 test("the dry run says what is kept of a conversation before it goes", async () => {
@@ -486,11 +586,13 @@ test("the dry run says what is kept of a conversation before it goes", async () 
   next = { status: 200, body: { ...answer, backup: { ...kept, keepDays: 0 } } };
   assert.equal(await dryRunBackupLine(), `Expired conversations and left-behind files are backed up to /srv/backups <b> first. The backups are kept for good. ${rest}`);
 
-  // The dry run reads the saved backup setting. A choice that is not saved yet does not count, and the line says so.
+  // The dry run reads the saved backup setting. A choice that is not saved yet (a bucket still without a name) does not count, and the line says so.
   next = { status: 200, body: answer };
-  await field("destination").selectOption("folder");
+  await field("destination").selectOption("s3");
+  await page.getByTestId("settings-backup-unfinished").waitFor();
   assert.equal(await dryRunBackupLine(), "No backup is made: what is deleted is gone. This is the saved backup setting. Your changes below are not saved yet.");
   await field("destination").selectOption("off");
+  await waitForSaved();
   assert.equal(await dryRunBackupLine(), "No backup is made: what is deleted is gone.");
 
   // A node that predates backups says nothing about them, and the tables still show.
@@ -504,7 +606,8 @@ test("the dry run says what is kept of a conversation before it goes", async () 
 
 test("a save sends the fields of the chosen place and no others, and the node gives them back", async () => {
   await openSettings();
-  // A bucket with an access key. Saving checks the fields and contacts nobody.
+  const firstSave = saved.length;
+  // A bucket with an access key, saved once its last field is left. Saving checks the fields and contacts nobody.
   await field("destination").selectOption("s3");
   await field("keep-days").fill("14");
   await field("s3-bucket").fill(" team-backups ");
@@ -512,7 +615,7 @@ test("a save sends the fields of the chosen place and no others, and the node gi
   await field("s3-prefix").fill("/joint-bob/");
   await field("s3-access-key-id").fill(KEY_ID);
   await field("s3-secret-access-key").fill(SECRET);
-  assert.deepEqual(await saveBackup(), { destination: "s3", keepDays: 14, s3: { bucket: "team-backups", region: "eu-west-1", prefix: "/joint-bob/", endpoint: "", credentials: "keys", accessKeyId: KEY_ID, secretAccessKey: SECRET } });
+  await savesBackup({ destination: "s3", keepDays: 14, s3: { bucket: "team-backups", region: "eu-west-1", prefix: "/joint-bob/", endpoint: "", credentials: "keys", accessKeyId: KEY_ID, secretAccessKey: SECRET } });
   // The form takes the node's answer at once: the secret key is gone from the page, and the folder in the bucket reads as the node keeps it.
   assert.deepEqual(await Promise.all(["s3-secret-access-key", "s3-prefix"].map((name) => field(name).inputValue())), ["", "joint-bob"]);
   const settings = await api<{ conversationBackup: StoredBackup }>(node, session, "GET", "/settings");
@@ -535,7 +638,7 @@ test("a save sends the fields of the chosen place and no others, and the node gi
   await field("keep-days").fill("0");
   await field("s3-more").locator("summary").click();
   await field("s3-endpoint").fill("https://s3.example.test/");
-  assert.deepEqual(await saveBackup(), { destination: "s3", keepDays: 0, s3: { bucket: "team-backups", region: "eu-west-1", prefix: "joint-bob", endpoint: "https://s3.example.test/", credentials: "keys", accessKeyId: KEY_ID } }, "an empty secret key is left out");
+  await savesBackup({ destination: "s3", keepDays: 0, s3: { bucket: "team-backups", region: "eu-west-1", prefix: "joint-bob", endpoint: "https://s3.example.test/", credentials: "keys", accessKeyId: KEY_ID } }, "an empty secret key is left out");
   assert.deepEqual(await storedBackup(), { destination: "s3", keepDays: 0, folder: "", s3: { ...bucket, endpoint: "https://s3.example.test" }, hasSecretAccessKey: true, defaultFolder });
 
   // A profile instead: the key's fields are not sent.
@@ -545,7 +648,7 @@ test("a save sends the fields of the chosen place and no others, and the node gi
   await field("s3-endpoint").fill("");
   await field("s3-credentials").selectOption("profile");
   await field("s3-profile").fill("backup-writer");
-  assert.deepEqual(await saveBackup(), { destination: "s3", keepDays: 0, s3: { bucket: "team-backups", region: "eu-west-1", prefix: "joint-bob", endpoint: "", credentials: "profile", profile: "backup-writer" } });
+  await savesBackup({ destination: "s3", keepDays: 0, s3: { bucket: "team-backups", region: "eu-west-1", prefix: "joint-bob", endpoint: "", credentials: "profile", profile: "backup-writer" } });
   const profile = { ...bucket, credentials: "profile", profile: "backup-writer" };
   assert.deepEqual(await storedBackup(), { destination: "s3", keepDays: 0, folder: "", s3: profile, hasSecretAccessKey: true, defaultFolder });
 
@@ -556,15 +659,16 @@ test("a save sends the fields of the chosen place and no others, and the node gi
   const folder = path.join(root, "kept-backups");
   await field("destination").selectOption("folder");
   await field("folder").fill(folder);
-  // An empty number of days stops the save at the field, and nothing is sent.
+  await savesBackup({ destination: "folder", keepDays: 0, folder });
+  // An empty number of days stops the save at the field, and nothing is sent: the save line names the field.
   const puts = saved.length;
   await field("keep-days").fill("");
-  await page.getByTestId("settings-save-button").click();
+  await leaveField();
+  await saveState().filter({ hasText: "Not saved: Delete each backup after:" }).waitFor();
   assert.equal(await field("keep-days").evaluate((input: HTMLInputElement) => input.validity.valueMissing), true);
-  assert.equal(await page.getByTestId("settings-dialog").isVisible(), true);
+  assert.equal(saved.length, puts, "the save without a number was not sent");
   await field("keep-days").fill("21");
-  assert.deepEqual(await saveBackup(), { destination: "folder", keepDays: 21, folder });
-  assert.equal(saved.length, puts + 1, "the save without a number was not sent");
+  await savesBackup({ destination: "folder", keepDays: 21, folder });
   assert.deepEqual(await storedBackup(), { destination: "folder", keepDays: 21, folder, s3: profile, hasSecretAccessKey: true, defaultFolder });
 
   // A reload of the page shows what the node saved.
@@ -581,61 +685,69 @@ test("a save sends the fields of the chosen place and no others, and the node gi
   // holds up the save nor changes the saved number.
   await field("keep-days").fill("");
   await field("destination").selectOption("off");
-  assert.deepEqual(await saveBackup(), { destination: "off" });
+  await savesBackup({ destination: "off" });
   assert.deepEqual(await storedBackup(), { destination: "off", keepDays: 21, folder, s3: profile, hasSecretAccessKey: true, defaultFolder });
   for (const body of saved) {
     const sent = JSON.stringify(body.conversationBackup);
     assert.equal(/hasSecretAccessKey|defaultFolder|"secretAccessKey":""/.test(sent), false, `a save carries only what the node takes: ${sent}`);
   }
-  assert.equal(saved.filter((body) => JSON.stringify(body).includes(SECRET)).length, 1, "the secret key was sent once, when it was typed");
+  assert.equal(saved.slice(firstSave).filter((body) => JSON.stringify(body).includes(SECRET)).length, 1, "the secret key was sent once, when it was typed");
+  await resetBackup();
 });
 
 test("a save the node refuses says why, where it can be seen", async () => {
   await openSettings();
   const before = await storedBackup();
-  const footer = page.locator("#settingsRestartMessage");
+  const line = saveState().locator(".settings-saved-text");
   const inline = page.getByTestId("settings-backup-save-error");
-  const groupOutOfSight = async () => {
-    await page.locator("#settingsPanel-account").evaluate((panel) => { panel.scrollTop = 0; });
-    assert.equal(await onScreen('[data-testid="settings-backup-destination"]'), false, "the group is below what the panel shows");
-  };
-  await field("destination").selectOption("s3");
-  await field("s3-bucket").fill("");
-  await field("s3-region").fill("eu-west-1");
-  await field("keep-days").fill("30");
+  const puts = saved.length;
 
-  // The node itself refuses a bucket without a name. Saved from the top of the panel, where the group is out of sight.
-  await groupOutOfSight();
-  await page.getByTestId("settings-save-button").click();
-  await footer.filter({ hasText: "Could not save settings:" }).waitFor();
-  assert.match(await footer.innerText(), /^Could not save settings: .*Backups to S3 need a bucket$/);
-  assert.equal(await onScreen("#settingsRestartMessage"), true, "the reason is on screen, over the Save button");
-  await page.locator(".toast-error").filter({ hasText: "Backups to S3 need a bucket" }).waitFor();
-  // And next to the fields it is about, in the node's own words: the panel has moved to it.
+  // A bucket without a name is not sent at all. The save line is at the top of the page, so the group says it too, and not as an error.
+  await field("destination").selectOption("s3");
+  const unfinished = page.getByTestId("settings-backup-unfinished");
+  await unfinished.waitFor();
+  assert.equal(await unfinished.innerText(), "Not saved yet. Backups to S3 need a bucket.");
+  assert.equal(await onScreen('[data-testid="settings-backup-unfinished"]'), true, "next to the fields it is about");
+  assert.equal(await inline.locator('[role="alert"]').count(), 0);
+  assert.equal(await line.innerText(), "Not saved: Backups to S3 need a bucket");
+  // Each field that is left says what is still missing, until nothing is.
+  await field("s3-bucket").fill("Team Backups");
+  assert.equal(await unfinished.count(), 0, "typing takes the line away");
+  await field("s3-region").fill("eu-west-1");
+  await leaveField();
+  await unfinished.waitFor();
+  assert.equal(await unfinished.innerText(), "Not saved yet. Backups to S3 need an access key ID and its secret key, or a profile.");
+  assert.equal(saved.length, puts, "nothing was sent while a part was missing");
+
+  // The node itself refuses a name S3 would not take: its reason is on the save line, in a toast, and next to the fields in its own words.
+  await field("s3-credentials").selectOption("profile");
   await inline.locator('[role="alert"]').waitFor();
-  assert.equal(await inline.innerText(), "Backups to S3 need a bucket");
+  assert.equal(await inline.innerText(), "That is not a bucket name S3 accepts");
   assert.equal(await onScreen('[data-testid="settings-backup-save-error"]'), true, "the group's reason is on screen");
-  assert.equal(await page.getByTestId("settings-dialog").isVisible(), true, "the dialog stays for another try");
+  assert.match(await line.innerText(), /^Not saved: .*That is not a bucket name S3 accepts$/);
+  assert.equal(await saveState().getAttribute("role"), "alert");
+  await page.locator(".toast-error").filter({ hasText: "That is not a bucket name S3 accepts" }).waitFor();
+  assert.equal(await page.getByTestId("settings-dialog").isVisible(), true, "Settings stays for another try");
   assert.equal(await field("s3-region").inputValue(), "eu-west-1", "what was typed is still there");
-  assert.equal(await page.getByTestId("settings-save-button").isEnabled(), true);
   assert.deepEqual(await storedBackup(), before, "nothing was saved");
   // Correcting a field takes the reason away.
-  await field("s3-bucket").fill("Team Backups");
+  await field("s3-bucket").fill("team-backups");
   assert.equal(await inline.locator("p").count(), 0);
 
   // Whatever the node says is shown as text.
   saveAnswer = { status: 400, body: { error: "That is not a bucket name <b>S3</b> accepts", details: { setting: "conversationBackup" } } };
-  await page.getByTestId("settings-save-button").click();
+  await leaveField();
   await inline.locator('[role="alert"]').waitFor();
   assert.equal(await inline.innerText(), "That is not a bucket name <b>S3</b> accepts");
-  assert.match(await footer.innerText(), /^Could not save settings: .*That is not a bucket name <b>S3<\/b> accepts$/);
+  assert.match(await line.innerText(), /^Not saved: .*That is not a bucket name <b>S3<\/b> accepts$/);
 
   // A refusal about another setting stays out of the backup group, and takes the earlier reason with it.
   saveAnswer = { status: 400, body: { error: "Joint Bob home folder must be absolute" } };
-  await page.getByTestId("settings-save-button").click();
-  await footer.filter({ hasText: "Joint Bob home folder must be absolute" }).waitFor();
+  await page.getByTestId("settings-save-retry").click();
+  await line.filter({ hasText: "Joint Bob home folder must be absolute" }).waitFor();
   assert.equal(await inline.locator("p").count(), 0);
   assert.deepEqual(await storedBackup(), before, "the fixture answered, so the node saved nothing");
+  await resetBackup();
 });
 
 test("the status shows what is kept, when the oldest goes, and the last problem", async () => {
@@ -657,8 +769,13 @@ test("the status shows what is kept, when the oldest goes, and the last problem"
 
   // On the node, a check that goes well ends a problem about making backups. So the page reads
   // the status again after one, and not after a check the place refused.
-  const asked = statusAsked;
+  // Choosing the folder saves it, and a save reads the status again: it follows the new setting.
+  const beforeSave = statusAsked;
   await field("destination").selectOption("folder");
+  await waitForSaved();
+  while (statusAsked === beforeSave) await new Promise((resolve) => setTimeout(resolve, 20));
+  await alert.waitFor();
+  const asked = statusAsked;
   checkAnswer = { body: { ok: false, message: "The backup folder cannot be the whole disk" } };
   await field("check-button").click();
   await page.getByTestId("settings-backup-check-result").locator('[role="alert"]').waitFor();
@@ -671,6 +788,7 @@ test("the status shows what is kept, when the oldest goes, and the last problem"
   assert.equal(await page.getByTestId("settings-backup-check-result").innerText(), "Joint Bob can write backups to /srv/backups.");
   assert.equal(statusAsked, asked + 1, "read once more: after the check that went well, not after the refused one");
   checkAnswer = undefined;
+  await resetBackup();
 
   // One small backup that is kept for good, and no problem.
   statusAnswer = { status: 200, body: { ...noBackups, keepDays: 0, kept: { backups: 1, bytes: 340_000 } } satisfies BackupStatus };
@@ -692,7 +810,10 @@ test("the status shows what is kept, when the oldest goes, and the last problem"
   assert.equal(await page.getByTestId("settings-backup-kept").count(), 0);
   assert.equal(await field("destination").inputValue(), "off");
   statusAnswer = undefined;
-  assert.deepEqual(await saveBackup(), { destination: "off" });
+  await field("destination").selectOption("folder");
+  await waitForSaved();
+  await field("destination").selectOption("off");
+  await savesBackup({ destination: "off" });
 });
 
 test("a node that predates backups shows no backup group, and a save leaves the setting out", async () => {
@@ -712,13 +833,16 @@ test("a node that predates backups shows no backup group, and a save leaves the 
     await askDryRun();
     assert.equal(await page.getByTestId("settings-retention-preview-totals").count(), 1);
     assert.equal(await page.getByTestId("settings-retention-preview-backup").count(), 0);
-    // The empty number that nobody can see does not hold up the save, and the setting is not sent.
+    // The empty number that nobody can see does not hold up a save, and the setting is not sent.
     const puts = saved.length;
-    await page.getByTestId("settings-save-button").click();
-    await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
-    assert.equal(saved.length, puts + 1);
-    assert.equal("conversationBackup" in saved.at(-1)!, false, "a node that does not know the setting is not sent it");
+    const digest = page.getByTestId("settings-digest-attachments");
+    await digest.click();
+    await waitForSaved();
+    assert.ok(saved.length > puts);
+    assert.equal(saved.slice(puts).some((body) => "conversationBackup" in body), false, "a node that does not know the setting is not sent it");
     assert.equal("conversationRetentionScope" in saved.at(-1)!, true, "the rest of the settings goes as before");
+    await digest.click();
+    await waitForSaved();
   } finally {
     withoutBackup = false;
     next = { status: 200, body: answer };
@@ -747,7 +871,8 @@ test("on a phone the backup group stacks and nothing in it scrolls sideways", as
     const sideways = () => page.evaluate(() => {
       const panel = document.querySelector<HTMLElement>("#settingsPanel-account")!;
       const edge = panel.getBoundingClientRect().right + 1;
-      const wide = [...document.querySelectorAll<HTMLElement>("#settingsBackup, #settingsBackup *, #settingsRetentionPreview *")].filter((element) => element.getBoundingClientRect().right > edge);
+      // A long help line shows its first line until it is tapped: what it cuts off is not on the page.
+      const wide = [...document.querySelectorAll<HTMLElement>("#settingsBackup, #settingsBackup *, #settingsRetentionPreview *")].filter((element) => !element.matches('[data-help="long"][aria-expanded="false"] *') && element.getBoundingClientRect().right > edge);
       return { wide: wide.map((element) => `${element.tagName.toLowerCase()}#${element.id}.${element.className}`), panel: panel.scrollWidth - panel.clientWidth, page: document.documentElement.scrollWidth - window.innerWidth };
     });
     const fits = { wide: [], panel: 0, page: 0 };
@@ -759,7 +884,13 @@ test("on a phone the backup group stacks and nothing in it scrolls sideways", as
     await field("check-button").click();
     await page.getByTestId("settings-backup-check-result").locator("p").waitFor();
     assert.deepEqual(await sideways(), fits, "a folder, checked");
-    for (const name of ["folder", "keep-days"]) assert.equal(await field(name).evaluate((input) => Math.round(input.getBoundingClientRect().width) >= 300), true, `${name} takes the phone's width`);
+    assert.equal(await field("folder").evaluate((input) => Math.round(input.getBoundingClientRect().width) >= 300), true, "the folder takes the phone's width");
+    // A number is short: its box ends its row, as the page's other numbers do, and is tall enough for a finger.
+    assert.equal(await field("keep-days").evaluate((input) => {
+      const row = input.closest("label")!.getBoundingClientRect();
+      const box = input.getBoundingClientRect();
+      return box.width < 120 && box.left > row.left + row.width / 2 && box.right <= row.right && box.height >= 44;
+    }), true, "the number of days ends its row");
 
     await field("destination").selectOption("s3");
     await field("s3-credentials").selectOption("keys");
@@ -768,7 +899,10 @@ test("on a phone the backup group stacks and nothing in it scrolls sideways", as
     await field("check-button").click();
     await page.getByTestId("settings-backup-check-result").locator('[role="alert"]').waitFor();
     assert.deepEqual(await sideways(), fits, "a bucket, refused");
-    // One field under the other, each as wide as the group.
+    // One field under the other, and everything that is pressed is at least a finger tall.
+    const short = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#settingsBackup :is(input, button, summary), #settingsBackup label:has(> select)")]
+      .filter((element) => element.getClientRects().length && element.getBoundingClientRect().height < 44).map((element) => element.id || element.textContent!.trim()));
+    assert.deepEqual(short, []);
     const stacked = ["s3-bucket", "s3-region", "s3-prefix", "s3-access-key-id", "s3-secret-access-key", "s3-endpoint", "keep-days"];
     for (const name of stacked) assert.equal(await field(name).isVisible(), true, `${name} shows`);
     const tops = await Promise.all(stacked.map((name) => field(name).evaluate((input) => Math.round(input.getBoundingClientRect().top))));
@@ -783,7 +917,7 @@ test("on a phone the backup group stacks and nothing in it scrolls sideways", as
     next = { status: 200, body: answer };
     statusAnswer = undefined;
     checkAnswer = undefined;
-    await page.getByTestId("settings-dialog").evaluate((dialog: HTMLDialogElement) => dialog.close());
+    await resetBackup();
     await page.setViewportSize({ width: 1440, height: 900 });
   }
 });

@@ -24,8 +24,11 @@ export function captureChordInput(input, { modifierOnly = false } = {}) {
   };
   const committed = () => (input.dataset.chord ? JSON.parse(input.dataset.chord) : null);
   const show = (chord) => {
+    const before = input.dataset.chord ?? "";
     input.dataset.chord = chord ? JSON.stringify(chord) : "";
     input.value = chord ? chordLabel(chord) : "";
+    // A new shortcut is a change like a typed one: Settings saves on it.
+    if (input.dataset.chord !== before) input.dispatchEvent(new Event("change", { bubbles: true }));
   };
   const restore = () => {
     const chord = committed();

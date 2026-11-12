@@ -6,7 +6,9 @@ import test from "node:test";
 import { launchChrome } from "./launch-chrome.js";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 
-test("conversations scroll vertically inside the column while the page stays fixed", async () => {
+// The desktop workspace pages a project's list inside its column (public/app/session-pager.js: no scroll bar, a pager
+// under the rows); the phone keeps a scrolling list. Either way every conversation is reachable and the page stays fixed.
+test("conversations stay inside the column — paged on the desktop, scrolling on the phone — while the page stays fixed", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-conversation-scroll-"));
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
   let browser: Awaited<ReturnType<typeof launchChrome>> | undefined;
@@ -42,7 +44,12 @@ test("conversations scroll vertically inside the column while the page stays fix
           viewportHeight: innerHeight,
         };
       });
-      assert.equal(geometry.overflow, "auto", `at ${width}px, retain vertical list scrolling`);
+      if (width > 700) {
+        assert.equal(geometry.overflow, "hidden", `at ${width}px, the list pages instead of scrolling`);
+        assert.equal(await page.getByTestId("session-list-pager").isVisible(), true, `at ${width}px, the pager reaches the other pages`);
+      } else {
+        assert.equal(geometry.overflow, "auto", `at ${width}px, retain vertical list scrolling`);
+      }
       assert.ok(geometry.scrollHeight > geometry.height && geometry.scrollTop > 0, `at ${width}px, fixture must scroll inside the list`);
       assert.equal(geometry.scrollWidth, geometry.width, `at ${width}px, list must not scroll horizontally`);
       assert.ok(geometry.lastRow <= geometry.listBottom, `at ${width}px, last conversation stays reachable`);

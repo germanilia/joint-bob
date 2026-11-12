@@ -23,6 +23,8 @@ async function openStorySettings(page: Page, url: string, username: string, pass
   await page.locator("#settingsDialog[open]").waitFor();
   await page.getByTestId("settings-tab-story").click();
   await page.waitForFunction(() => (document.getElementById("storyInstructions") as HTMLTextAreaElement).value !== "");
+  // The save line reports saves once the rest of Settings has loaded too.
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
 }
 
 async function mockStoryApi(page: Page, local: { available: boolean; reason: string | null }) {
@@ -56,6 +58,8 @@ test("Settings → Story mode saves instructions, places, code and voices on thi
   assert.match(await page.getByTestId("story-voice-status").innerText(), /Local voice is installed on this node/);
   assert.equal(await page.getByTestId("story-host-voice").inputValue(), "af_heart");
 
+  assert.equal(await page.getByTestId("story-save").isVisible(), false, "the Activity overview saves as it changes, with no button of its own");
+  const saved = page.locator('[data-testid="settings-save-state"][data-state="saved"]');
   await page.getByTestId("story-instructions-reset").click();
   assert.equal(await page.getByTestId("story-instructions").inputValue(), "The default instructions.");
   await page.getByTestId("story-instructions").fill("Explain it like a lecture.");
@@ -65,20 +69,25 @@ test("Settings → Story mode saves instructions, places, code and voices on thi
   await page.getByTestId("story-max-code-lines").fill("8");
   await page.getByTestId("story-cohost-voice").selectOption("bf_emma");
   await page.getByTestId("story-speed").fill("1.1");
-  await page.getByTestId("story-save").click();
+  // Numbers save when the field is left.
+  await page.getByTestId("story-speed").press("Tab");
+  await saved.waitFor();
   await page.getByTestId("story-save-status").getByText("Saved on this node").waitFor();
-  assert.deepEqual(puts, [{
+  assert.ok(puts.length >= 1);
+  assert.deepEqual(puts.at(-1), {
     instructions: "Explain it like a lecture.", backdrops: true, locations: LOCATIONS.filter((id) => id !== "rooftop"), moods: false, codeSlides: true, codeWriteup: false,
     maxCodeLines: 8, ask: true, narrate: true, voiceProvider: "auto", hostVoice: "af_heart", cohostVoice: "bf_emma", elevenHostVoice: "EXAVITQu4vr4xnSDxMaL", elevenCohostVoice: "CwhRBWXzGAHq8TQ4Fs17", speed: 1.1, voiceChosen: true,
-  }]);
+  });
 
-  // Switching the places off hides the list, and the choice survives a reload of the tab.
+  // Switching the places off hides the list, saves at once, and the choice survives a reload of the tab.
   await page.getByTestId("story-backdrops").uncheck();
   assert.equal(await page.getByTestId("story-locations").isVisible(), false);
+  await saved.waitFor();
+  assert.equal(puts.at(-1)?.backdrops, false);
   await page.getByTestId("settings-tab-notifications").click();
   await page.getByTestId("settings-tab-story").click();
   await page.waitForFunction(() => (document.getElementById("storyInstructions") as HTMLTextAreaElement).value === "Explain it like a lecture.");
-  await page.waitForFunction(() => (document.getElementById("storyBackdrops") as HTMLInputElement).checked, undefined, { timeout: 5000 });
+  await page.waitForFunction(() => !(document.getElementById("storyBackdrops") as HTMLInputElement).checked, undefined, { timeout: 5000 });
 
   await page.getByTestId("story-test-voices").click();
   for (let wait = 0; wait < 50 && spoken.length < 2; wait += 1) await page.waitForTimeout(100);

@@ -8,7 +8,7 @@ import { launchChrome } from "./launch-chrome.js";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 
 /** Closing a conversation out is the action people reach for most from inside it, so
-    on a phone it has to sit in the More menu itself, not one nested menu deeper. */
+    it sits on the conversation's header line itself, not in a menu. (The phone's own menu has it in its dock.) */
 test("the chat More menu closes a conversation out without a nested menu", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-chat-done-"));
   const environment = await seedDevEnvironment(root, 1);
@@ -35,10 +35,13 @@ test("the chat More menu closes a conversation out without a nested menu", { tim
     await row.locator("button").first().click();
     await page.locator("#sessionTitle").filter({ hasText: "Short one" }).waitFor();
 
-    await page.setViewportSize({ width: 720, height: 844 });
-    await page.getByTestId("chat-more-button").click();
+    // On the desktop workspace Mark done is on the conversation's title line itself; a narrow window keeps its icon
+    // (and its name for assistive technology), so the label is read from the button's text, not what is painted.
     const doneButton = page.getByTestId("chat-done-button");
+    assert.equal(await page.getByTestId("chat-head-actions").getByTestId("chat-done-button").count(), 1, "Mark done is in the header, not in a menu");
     assert.equal(await doneButton.innerText(), "Mark done");
+    await page.setViewportSize({ width: 720, height: 844 });
+    assert.equal(await doneButton.locator(".chat-action-label").textContent(), "Mark done");
     await doneButton.click();
     const description = page.getByTestId("conversation-feedback-description");
     assert.equal(await description.isVisible(), false, "not important needs no explanation");
@@ -49,15 +52,13 @@ test("the chat More menu closes a conversation out without a nested menu", { tim
     }
     await page.keyboard.press("Escape");
     await page.getByTestId("conversation-feedback-dialog").waitFor({ state: "detached" });
-    await page.getByTestId("chat-more-button").click();
-    assert.equal(await doneButton.innerText(), "Mark done", "cancelling leaves the conversation active");
+    assert.equal(await doneButton.locator(".chat-action-label").textContent(), "Mark done", "cancelling leaves the conversation active");
     await doneButton.click();
     await page.getByTestId("conversation-feedback-submit").click();
     await page.locator(".toast-message").first().waitFor();
     assert.equal(await page.locator(".toast-message").first().innerText(), "Conversation marked done");
 
-    await page.getByTestId("chat-more-button").click();
-    assert.equal(await page.getByTestId("chat-done-button").innerText(), "Mark not done", "the label follows the conversation");
+    assert.equal(await page.getByTestId("chat-done-button").locator(".chat-action-label").textContent(), "Mark not done", "the label follows the conversation");
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

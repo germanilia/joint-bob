@@ -378,9 +378,11 @@ test("a conversation started in the worktree skips the start-of-conversation pro
   const START_PROMPT = "Update from main first.";
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-commands").click();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await page.getByTestId("settings-start-conversation-enabled").check();
   await page.getByTestId("settings-start-conversation-prompt").fill(START_PROMPT);
-  await page.getByTestId("settings-save-button").click();
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+  await page.getByTestId("settings-cancel-button").click();
   await page.locator("#settingsDialog[open]").waitFor({ state: "hidden", timeout: 20_000 });
   await page.getByTestId("worktree-menu-button").first().click();
   await page.getByTestId("worktree-menu-new-conversation").click();
@@ -434,8 +436,10 @@ test("with the setting on, each new conversation starts in a worktree of its own
   const AUTO_NAME = "Inbox persistence";
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-conversations").click();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await page.getByTestId("settings-new-conversation-worktree").check();
-  await page.getByTestId("settings-save-button").click();
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+  await page.getByTestId("settings-cancel-button").click();
   await page.locator("#settingsDialog[open]").waitFor({ state: "hidden", timeout: 20_000 });
 
   await page.getByTestId("session-create-button").click();

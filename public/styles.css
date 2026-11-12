@@ -2427,22 +2427,37 @@ body.terminal-open[data-terminal-orientation="horizontal"] .shell { height: calc
 .retention-preview caption { text-align: left; padding: 4px 0; color: var(--muted); font-size: 12px; }
 .retention-preview [role="alert"] { margin: 0; color: var(--danger, #b3261e); }
 /* Settings → backup before deleting: where the copy goes, a check button, and what is kept now.
-   The fields stack; a folder path or a bucket address wraps instead of widening the panel. */
-.retention-backup { display: grid; gap: 8px; min-width: 0; margin: 14px 0 0; padding: 4px 0 0; border: 0; border-top: 1px solid var(--line); }
-.retention-backup > legend { padding-left: 0; }
-.retention-backup-fields, .retention-backup-notes { display: grid; gap: 8px; min-width: 0; }
+   A group of rows like the others (settings-page.css); a folder path or a bucket address wraps instead of widening the panel. */
+.retention-backup { min-width: 0; }
+.retention-backup-notes { display: grid; gap: 8px; min-width: 0; }
 .retention-backup-notes:empty { display: none; }
 .retention-backup button { justify-self: start; }
 .retention-backup .settings-hint { overflow-wrap: anywhere; }
-.retention-backup-more > summary { width: fit-content; color: var(--muted); font-size: 12px; cursor: pointer; }
-.retention-backup-more[open] > summary { margin-bottom: 8px; }
 .retention-backup-note { display: flex; align-items: flex-start; gap: 7px; margin: 0; font-size: 12.5px; overflow-wrap: anywhere; }
 .retention-backup-note .row-menu-icon { width: 14px; height: 14px; margin-top: 2px; opacity: 1; }
 .retention-backup-note.ok .row-menu-icon { color: var(--live); }
 .retention-backup-note.failed { color: var(--danger); }
 #ntfyServiceList { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 #ntfyServiceList li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* The name and address take the room; the actions keep one line and move under them when it runs out. */
+#ntfyServiceList li { flex-wrap: wrap; }
+#ntfyServiceList li > span:first-child { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+#ntfyServiceList .ntfy-service-actions { flex: none; margin-left: auto; }
 .ntfy-service-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+/* The add form's fields line up with the rows above them on the group's filled block. */
+#settingsForm #settingsPanel-notifications #ntfyServiceAddForm > label { margin: 4px 18px; }
+#settingsForm #settingsPanel-notifications #ntfyServiceAddForm > button { margin: 8px 18px 12px; }
+/* A phone: the service's name and address on top, then every action on the next line, wrapping. */
+@media (max-width: 700px) {
+  #settingsForm #settingsPanel-notifications #ntfyServiceAddForm > label { margin-inline: 14px; }
+  #settingsForm #settingsPanel-notifications #ntfyServiceAddForm > button { margin-inline: 14px; }
+  #ntfyServiceList { gap: 0; }
+  #ntfyServiceList li { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 0; }
+  #ntfyServiceList li + li { box-shadow: inset 0 1px 0 var(--line); }
+  #ntfyServiceList li > span:first-child { flex: none; }
+  #ntfyServiceList .ntfy-service-actions { justify-content: flex-start; margin-left: 0; }
+  #ntfyServiceList .ntfy-share-pending { white-space: normal; }
+}
 .ntfy-share-progress { margin: 0; color: var(--muted); font-size: 12.5px; }
 .ntfy-share-progress::before, .ntfy-share-dialog button[aria-busy="true"]::before, .ntfy-share-pending::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 6px; border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent); border-top-color: var(--accent); border-radius: 50%; vertical-align: -1px; animation: queued-force-spin 0.7s linear infinite; }
 .ntfy-share-dialog button[aria-busy="true"]::before { border-color: color-mix(in srgb, currentColor 35%, transparent); border-top-color: currentColor; }
@@ -2657,6 +2672,141 @@ fieldset:has(> .ntfy-manage) { min-inline-size: 0; }
 .secret-account-meta strong { color: var(--text); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .secret-account-vars { color: var(--muted); font-family: var(--mono); font-size: 10.5px; overflow-wrap: anywhere; }
 
+/* ---- Settings › long lists: Browser profiles, Secrets, Workspaces (the spec's third kind of section).
+   A filter bar, rows of one fixed height on a filled block, a pager sized to the window (list-pager.js):
+   the section never grows with its list, and the group's notes follow the pager. The panel ids beat
+   settings-page.css, which draws every other group as titled form rows. */
+#settingsForm { --long-row-fill: var(--field); }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-list-group { gap: 12px; padding-bottom: 0; }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-list-group::before { display: none; }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-list-group > :not(legend) { margin: 0; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-list-group > p:not([role="status"]) { order: 1; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-list-group > [role="status"]:empty { display: none; }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) :is(.long-list-bar, .secret-type-toolbar, .project-type-add) :is(input:not([type="checkbox"]), select, .searchable-select-trigger) { background-color: var(--long-row-fill); box-shadow: none; }
+/* Secrets: the toolbar already names the list, so its group title is for screen readers only, and the
+   section's own introduction follows the list. */
+#settingsForm #settingsPanel-secrets > p { order: 1; margin: 0; color: var(--muted); font-size: 13px; }
+#settingsForm #settingsPanel-secrets .long-list-group > legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Workspaces: the list comes first; the home folder, set once, follows it. */
+#settingsForm #settingsPanel-workspaces > .phase-settings:not(.long-list-group) { order: 1; }
+.long-list-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.long-list-bar[hidden] { display: none; }
+.long-list-filter { flex: 0 1 300px; min-width: 0; }
+.long-list-bar > select { flex: 0 0 auto; width: auto; min-width: 180px; max-width: 280px; }
+
+/* Rows share their parent's columns (subgrid), so every row's cells line up; each list names its columns. */
+#settingsForm .long-list { display: grid; column-gap: 14px; row-gap: 0; align-content: start; min-width: 0; }
+#browserProfileDirectory { grid-template-columns: [main] minmax(0, 1.3fr) [machine] minmax(0, 0.7fr) [sites] minmax(0, 1.1fr) [tag] auto [actions] auto [end]; }
+#secretAccountList { grid-template-columns: [lead] auto [main] minmax(0, 1fr) [tag] auto [actions] auto [end]; }
+#workspaceList { grid-template-columns: [main] minmax(0, 1fr) [folder] minmax(0, 0.8fr) [actions] auto [end]; }
+#settingsForm .long-list > .long-list-row {
+  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; height: 58px; margin: 0; padding: 0 16px;
+  overflow: hidden; border: 0; border-radius: 0; background: var(--long-row-fill); color: var(--text); font-size: 13.5px;
+}
+#settingsForm .long-list > .long-list-row + .long-list-row { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .long-list > .long-list-row:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+#settingsForm .long-list > .long-list-row:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+.long-list-empty { grid-column: 1 / -1; margin: 0; padding: 18px 16px; border-radius: 16px; background: var(--long-row-fill); color: var(--muted); font-size: 13.5px; }
+.long-row-lead { grid-column: lead; }
+.long-row-main, .browser-profile-rename { grid-column: main; }
+.long-row-machine { grid-column: machine; }
+.long-row-sites { grid-column: sites; }
+.long-row-folder { grid-column: folder; }
+.long-row-tag { grid-column: tag; }
+:is(.long-row-actions, .long-row-note) { grid-column: actions; justify-self: end; }
+.long-row-main { display: grid; gap: 1px; min-width: 0; }
+.long-row-where { display: contents; }
+#settingsForm .long-list-row :is(.long-row-main > *, .long-row-machine, .long-row-sites, .long-row-folder, .long-row-tag, .long-row-note) {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal;
+}
+#settingsForm .long-list-row .long-row-main > strong { color: var(--text); font-family: var(--sans); font-size: 14px; font-weight: 600; }
+#settingsForm .long-list-row .long-row-main > :not(strong) { color: var(--muted); font-family: var(--sans); font-size: 12.5px; }
+.long-row-sites, .long-row-folder { color: var(--muted); font-size: 12.5px; }
+#settingsForm .long-list-row .long-row-folder { font-family: var(--mono); font-size: 12px; }
+.long-row-tag { justify-self: start; max-width: 190px; height: 24px; padding: 0 9px; border-radius: 12px; background: var(--paper-raised, var(--surface)); color: var(--muted); font-size: 12.5px; font-weight: 600; line-height: 24px; }
+.long-row-tag:empty { display: none; }
+.long-row-tag.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.long-row-note { color: var(--muted); font-size: 12.5px; }
+#settingsForm .long-list-row .secret-provider-badge { border: 0; background: var(--panel); }
+/* The actions sit in the row on a desktop; the browser's popover defaults only apply on a phone. */
+.long-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.long-row-actions[popover] { position: static; inset: auto; width: auto; height: auto; margin: 0; padding: 0; border: 0; overflow: visible; color: inherit; background: none; }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-row-actions > button {
+  min-height: 32px; padding: 0 10px; border-radius: 9px; background: none; color: var(--text); font-size: 13px; font-weight: 600;
+}
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-row-actions > button:hover:not(:disabled) { background: var(--paper-raised, var(--surface)); }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-row-actions > button.danger { color: var(--danger); }
+.long-row-more { display: none; }
+.browser-profile-rename { display: flex; gap: 6px; min-width: 0; }
+#settingsForm .browser-profile-rename input { flex: 1; min-width: 0; min-height: 36px; background-color: var(--panel); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+/* The pager: "1–8 of 31", then ‹ ›, at the bottom right. */
+#settingsForm .settings-panel .list-pager { gap: 4px; margin: 0; }
+.list-pager-label { order: -1; margin-right: 6px; font-variant-numeric: tabular-nums; }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .list-pager-button {
+  display: inline-grid; place-items: center; width: 34px; min-width: 34px; min-height: 34px; padding: 0; border-radius: 10px; background: none; color: var(--text);
+}
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .list-pager-button:hover:not(:disabled) { background: var(--field); }
+#settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .list-pager-button:disabled { opacity: 0.35; }
+.list-pager-icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* A narrow window (a tablet, a phone): the columns would crush the names, so a row stacks its cells
+   in two or three lines and its actions fold behind ⋯. */
+@media (max-width: 1100px) {
+  .long-list-filter { flex: 1 1 160px; }
+  .long-list-bar > select { flex: 1 1 140px; min-width: 0; max-width: 280px; }
+  #settingsForm .long-list > .long-list-row { grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 10px; row-gap: 1px; align-content: center; height: 74px; padding: 0 6px 0 14px; }
+  #settingsForm #workspaceList > .long-list-row { height: 58px; }
+  .long-row-main { display: contents; }
+  #settingsForm .long-list-row .long-row-main > strong { grid-area: name; }
+  #settingsForm .long-list-row .long-row-main > :not(strong) { grid-area: detail; }
+  .browser-profile-rename { grid-area: name / name / detail / detail; }
+  #settingsForm #browserProfileDirectory > .long-list-row { grid-template-columns: minmax(0, 1fr) auto 64px; grid-template-areas: "name tag more" "where where more" "detail detail more"; }
+  #browserProfileDirectory :is(.long-row-more, .long-row-note) { justify-self: end; }
+  .long-row-where { display: flex; grid-area: where; gap: 6px; min-width: 0; color: var(--muted); font-size: 12.5px; }
+  .long-row-machine { flex: none; max-width: 50%; }
+  .long-row-sites { flex: 1 1 auto; }
+  .long-row-sites::before { content: "· "; }
+  #settingsForm #secretAccountList > .long-list-row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "lead name more" "lead detail more" "lead tag more"; }
+  #settingsForm #workspaceList > .long-list-row { grid-template-areas: "name more" "folder more"; grid-template-columns: minmax(0, 1fr) auto; }
+  .long-row-lead { grid-area: lead; align-self: center; }
+  #settingsForm .long-list-row .long-row-folder { grid-area: folder; }
+  .long-row-tag { grid-area: tag; max-width: 100%; height: 22px; line-height: 22px; }
+  #secretAccountList .long-row-tag { justify-self: start; padding: 0; background: none; color: var(--muted); font-weight: 500; }
+  .long-row-note { grid-area: more; align-self: center; }
+  .long-row-more { display: inline-grid; grid-area: more; place-items: center; align-self: center; }
+  #settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-row-more {
+    width: 40px; min-width: 40px; min-height: 40px; padding: 0; border-radius: 12px; background: none; color: var(--text); font-size: 22px; line-height: 1;
+  }
+  .long-row-actions:not(:popover-open) { display: none; }
+  .long-row-actions:popover-open {
+    position: fixed; inset: auto; display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; gap: 2px; min-width: 200px; padding: 6px; border: 0; border-radius: 16px;
+    background: var(--panel); box-shadow: var(--shadow); color: var(--text);
+  }
+  #settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-row-actions > button { display: flex; align-items: center; justify-content: flex-start; width: 100%; min-height: 38px; padding: 0 14px; font-size: 14px; text-align: left; }
+  #settingsForm #settingsPanel-workspaces .project-type-add input { flex: 1 1 220px; }
+}
+@media (max-width: 700px) {
+  /* A phone: the page is sand and rows are cards, text and targets grow, and the pager is centred. */
+  #settingsForm { --long-row-fill: var(--panel); }
+  #settingsForm .long-list:has(> .long-list-row) { border-radius: 16px; box-shadow: var(--shadow-soft); }
+  :root[data-theme="dark"] #settingsForm .long-list:has(> .long-list-row) { box-shadow: 0 0 0 1px var(--line); }
+  .long-list-bar > select { max-width: none; }
+  #settingsForm .long-list > .long-list-row { height: 84px; font-size: 14px; }
+  #settingsForm #workspaceList > .long-list-row { height: 66px; }
+  #settingsForm .long-list-row .long-row-main > strong { font-size: 16px; }
+  #settingsForm .long-list-row .long-row-main > :not(strong) { font-size: 14px; }
+  .long-row-where, .long-row-sites { font-size: 14px; }
+  #settingsForm .long-list-row .long-row-folder { font-size: 13px; }
+  .long-row-tag, .long-row-note { font-size: 13px; }
+  #settingsForm .long-list-row .secret-provider-badge { background: var(--field); }
+  #settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-row-more { width: 44px; min-width: 44px; min-height: 44px; }
+  #settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .long-row-actions > button { min-height: 44px; font-size: 16px; }
+  #settingsForm .settings-panel .list-pager { justify-content: center; gap: 14px; }
+  .list-pager-label { order: 0; margin: 0; font-size: 14px; }
+  #settingsForm :is(#settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) .list-pager-button { width: 44px; min-width: 44px; min-height: 44px; border-radius: 50%; background: var(--field); }
+}
+
 /* Brand marks are filled glyphs, so they carry their own colour rather than the row's. */
 .secret-provider-badge { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--field); }
 .secret-provider-icon { width: 18px; height: 18px; }
@@ -2716,8 +2866,9 @@ fieldset:has(> .ntfy-manage) { min-inline-size: 0; }
 
 .settings-back, .settings-current-title { display: none; }
 /* Phones: a full-screen list of sections; picking one replaces the list with that
-   section and a back button, like a phone's own Settings app. */
-@media (max-width: 720px) {
+   section and a back button, like a phone's own Settings app. settings-page.css lays the page
+   out; 700 px is the one phone width (focus-ui.js). */
+@media (max-width: 700px) {
   #settingsDialog { width: 100vw; height: 100dvh; margin: 0; }
   .settings-card {
     width: 100vw;
@@ -2903,6 +3054,16 @@ label { display: grid; gap: 6px; min-width: 0; color: var(--muted); }
 .searchable-select-option:is(:hover, :focus-visible, .active) { background: var(--field); }
 .searchable-select-option[aria-selected="true"] { font-weight: 650; }
 .searchable-select-option-detail { display: block; color: var(--muted); font-family: var(--mono); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+/* The shared choice list (choice-popover.js): marked letters, group headings, and the phone sheet. */
+.searchable-select-option mark { background: none; color: var(--accent); font-weight: 700; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 2px; }
+.choice-group { padding: 8px 10px 3px; color: var(--muted); font-size: 12px; font-weight: 600; }
+body > .searchable-select-popover { z-index: 1200; }
+.choice-scrim { position: fixed; inset: 0; z-index: 1199; background: color-mix(in srgb, var(--ink) 30%, transparent); }
+.choice-scrim[hidden] { display: none; }
+.searchable-select-popover.sheet { position: fixed; top: auto; right: 0; bottom: 0; left: 0; z-index: 1200; grid-template-rows: auto minmax(0, 1fr); max-height: 74dvh; padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px)); border-width: 1px 0 0; border-radius: 22px 22px 0 0; font-size: 16px; }
+.searchable-select-popover.sheet input[type="search"] { min-height: 44px; font-size: 16px; }
+.searchable-select-popover.sheet .searchable-select-options { max-height: none; }
+.searchable-select-popover.sheet .searchable-select-option { min-height: 48px; font-size: 16px; }
 /* Several choices at once: each option carries a check box drawn in CSS. */
 .multi-select-option { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; align-items: center; }
 .multi-select-option::before {
@@ -4529,6 +4690,10 @@ li.git-hosting-step .git-hosting-note { margin: 0; }
 .resources-panel > .resources-page { min-height: 160px; }
 .resources-panel > [hidden] { display: none; }
 .resources-panel > .settings-hint { margin: 0; }
+/* The auto-activate switch and the bulk actions: their own rows on a desktop, one sideways strip on a phone. */
+.resources-bulk { display: contents; }
+.resources-bulk > * { flex: none; }
+.resources-bulk > [hidden] { display: none; }
 .resources-page { overflow-y: auto; scrollbar-width: thin; align-content: start; grid-auto-rows: max-content; }
 .resources-add { display: flex; flex-direction: column; gap: 10px; }
 .resources-add > * { flex: none; }
@@ -4629,6 +4794,38 @@ li.git-hosting-step .git-hosting-note { margin: 0; }
   /* A phone cannot fit the form, a repository and its items at once: the panel scrolls, its item list still pages. */
   .resources-git { overflow-y: auto; scrollbar-width: thin; }
   .resources-git > .resources-page { flex: none; min-height: 128px; }
+}
+/* Settings › Resources on a phone (700 px is the one phone width): the filters, the tabs and the bulk
+   actions are each one row that scrolls sideways, and the auto-activate switch follows the pager, so a
+   page holds several rows. Controls are 44 px tall, text at least 13 px. */
+@media (max-width: 700px) {
+  #settingsForm #settingsPanel-resources { gap: 6px; }
+  #settingsForm #settingsPanel-resources .resources-toolbar { gap: 6px; padding: 2px 0 4px; scrollbar-width: none; }
+  #settingsForm #settingsPanel-resources .resources-toolbar::-webkit-scrollbar { display: none; }
+  #settingsForm #settingsPanel-resources .resources-toolbar > select { flex: none; min-width: 0; max-width: 210px; padding-inline: 12px 30px; border-radius: 22px; font-size: 14px; }
+  #settingsForm #settingsPanel-resources .resources-toolbar .search-shell { flex: 0 0 150px; min-width: 150px; }
+  /* The strip: the bulk actions, then the auto-activate switch at its end. A share bar holding a form
+     (MCP setup, a sign-in) stays a block above the list. */
+  #settingsForm #settingsPanel-resources .resources-bulk:has(> .resources-share-bar:not([hidden])):not(:has(.resources-share-bar > :not(.resources-share-line), .resources-share-bar details)) {
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+    border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--surface);
+  }
+  #settingsForm #settingsPanel-resources .resources-bulk:has(> .resources-share-bar:not([hidden])):not(:has(.resources-share-bar > :not(.resources-share-line), .resources-share-bar details)) :is(.resources-share-bar, .resources-share-line) { display: contents; }
+  #settingsForm #settingsPanel-resources .resources-bulk:has(> .resources-share-bar:not([hidden])):not(:has(.resources-share-bar > :not(.resources-share-line), .resources-share-bar details)) .resources-share-line > span { flex: 0 0 250px; min-height: 0; padding: 0 6px; line-height: 1.35; }
+  #settingsForm #settingsPanel-resources .resources-bulk:has(> .resources-share-bar:not([hidden])):not(:has(.resources-share-bar > :not(.resources-share-line), .resources-share-bar details)) > .resources-auto-activate { order: 1; flex: 0 0 360px; gap: 10px; padding: 0 6px 0 12px; box-shadow: inset 1px 0 0 var(--line); line-height: 1.35; }
+  #settingsForm #settingsPanel-resources .resources-bulk::-webkit-scrollbar { display: none; }
+  #settingsForm #settingsPanel-resources .resources-share-line > button { flex: none; }
+  #settingsForm #settingsPanel-resources .resources-row { gap: 4px; padding: 6px 12px; }
+  #settingsForm #settingsPanel-resources .resources-row strong { font-size: 15px; line-height: 1.3; }
+  #settingsForm #settingsPanel-resources #resourcesList .skill-option-description { line-height: 1.35; }
+  #settingsForm #settingsPanel-resources :is(.resources-badge, .resources-activation, .resources-activation-reason, .resources-node, .resources-status, .resources-pager,
+    .resources-share-line > span, .resources-auto-activate, .resources-subheading, .resources-target-members, .skill-option-description, .model-shortcuts-empty, .resources-status-mark) { font-size: 13px; }
+  #settingsForm #settingsPanel-resources .resources-row-head input[type="checkbox"] { width: 20px; height: 20px; }
+  /* An agent switch keeps its small pill; its hidden box reaches 44 px for a finger. */
+  #settingsForm #settingsPanel-resources .resources-activation { min-height: 30px; padding: 0 9px; }
+  #settingsForm #settingsPanel-resources .resources-activation input { inset: -7px 0; width: auto; height: auto; }
+  #settingsForm :is(#settingsPanel-resources, #settingsPanel-notifications, #settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) :is(button, select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"])) { min-height: 44px; }
+  #settingsForm :is(#settingsPanel-resources, #settingsPanel-notifications, #settingsPanel-browser, #settingsPanel-secrets, #settingsPanel-workspaces) button.compact { font-size: 14px; }
 }
 
 /* ---- Git view: Story tab ----

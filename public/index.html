@@ -32,6 +32,11 @@
     <link rel="stylesheet" href="/vendor/codemirror/lib/codemirror.css" />
     <link rel="stylesheet" href="/vendor/codemirror/addon/dialog/dialog.css" />
     <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
+    <link rel="stylesheet" href="/settings-page.css" />
+    <link rel="stylesheet" href="/workspace.css" />
+    <link rel="stylesheet" href="/phone.css" />
+    <link rel="stylesheet" href="/home.css" />
+    <link rel="stylesheet" href="/bob-page.css" />
     <link rel="stylesheet" href="/paper.css" />
   </head>
   <body class="view-projects booting">
@@ -61,21 +66,36 @@
         <div class="app-boot-tagline">Agents, together.</div>
       </div>
     </div>
-    <button type="button" id="focusControlsButton" data-testid="focus-controls-button" aria-label="Show controls" aria-controls="focusControls" aria-expanded="false" title="Tap for controls. Drag to move. Double-tap to hide or restore. Triple-tap for recent conversations." hidden><img src="/icon-mark.svg" alt="" width="32" height="32" draggable="false" /><span id="focusPendingBadge" class="focus-pending-badge" data-testid="focus-pending-badge" aria-hidden="true" hidden>0</span></button>
+    <!-- Phone (≤ 700 px): the ⋯ button at the end of each screen's top bar opens #focusControls, a sheet from the
+         bottom. In a conversation it is the conversation's details (Activity / Files / Git / Tasks, the four run
+         settings, the two "when it stops" switches, Mark done, then every other conversation tool and the
+         places); elsewhere the screen's own actions and the places. app/focus-ui.js, public/phone.css. -->
+    <button type="button" id="focusControlsButton" data-testid="focus-controls-button" aria-label="Show controls" aria-controls="focusControls" aria-expanded="false" title="Details and actions. Double-tap the screen to hide or restore. Triple-tap for recent conversations." hidden><svg class="focus-more-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg><span id="focusPendingBadge" class="focus-pending-badge" data-testid="focus-pending-badge" aria-hidden="true" hidden>0</span></button>
+    <div class="focus-scrim" id="focusScrim" data-testid="focus-scrim" hidden></div>
     <nav id="focusControls" class="focus-controls" aria-label="Focus controls" hidden>
+      <span class="focus-grab" aria-hidden="true"></span>
       <header>
         <button type="button" id="focusBack" data-testid="focus-back" aria-label="Back to controls" hidden></button>
-        <strong id="focusContextTitle">Projects</strong>
+        <div class="focus-head-copy"><strong id="focusContextTitle">Projects</strong><small id="focusContextMeta" data-testid="focus-context-meta" hidden></small></div>
         <button type="button" id="focusClose" data-testid="focus-close" aria-label="Close controls"></button>
       </header>
       <div class="focus-context-scroll">
         <div id="focusContextActions"></div>
-        <div id="focusChatQuickActions" hidden>
-          <div class="focus-setting"><span class="focus-setting-label">Harness</span><span id="focusHarnessSelect"></span></div>
+        <div id="focusPanels" class="focus-panels" role="group" aria-label="Activity, files, Git and tasks" hidden>
+          <button type="button" id="focusFiles" data-testid="focus-files" title="The files of this conversation's project"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/></svg>Files</button>
+          <button type="button" id="focusGit" data-testid="focus-git" title="Branch, changes and review"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="9" r="2"/><path d="M7 8v8M17 11c0 3-4 3-8.5 5.5"/></svg>Git<b class="focus-panel-count" id="focusGitCount" data-testid="focus-git-count" hidden></b></button>
+          <button type="button" id="focusTasks" data-testid="focus-tasks" title="Background tasks of this conversation"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="m3.5 6.5 1.2 1.2L7 5.4M3.5 12l1.2 1.2L7 10.9M3.5 17.5l1.2 1.2L7 16.4"/></svg>Tasks<b class="focus-panel-count" id="focusTasksCount" data-testid="focus-tasks-count" hidden></b></button>
+        </div>
+        <div id="focusChatQuickActions" class="focus-group" hidden>
+          <div class="focus-setting"><span class="focus-setting-label">Agent</span><span id="focusHarnessSelect"></span></div>
           <div class="focus-setting focus-setting-wide"><span class="focus-setting-label">Model</span><span id="focusModelSelect"></span></div>
           <div class="focus-setting"><span class="focus-setting-label">Effort</span><span id="focusEffortSelect"></span></div>
           <div class="focus-setting focus-setting-wide"><span class="focus-setting-label">Runs on</span><div id="focusNodeList"></div></div>
         </div>
+        <div id="focusSwitches" class="focus-group focus-switches" hidden></div>
+        <p class="focus-heading" id="focusToolsHeading" hidden>This conversation</p>
+        <div id="focusToolsList" class="focus-tools-list" data-testid="focus-tools-list" hidden></div>
+        <p class="focus-heading" id="focusMoreHeading">Go to</p>
         <div id="focusMore" class="focus-more">
           <button type="button" id="focusActivity" data-testid="focus-activity" title="Show the activity panel"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg>Activity</button>
           <button type="button" id="focusTools" data-testid="focus-tools" aria-haspopup="true" aria-expanded="false" title="Git, files, tasks and the other conversation tools"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.1L4 16.7V20h3.3l5.3-5.3a4 4 0 0 0 5.1-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>Tools</button>
@@ -89,19 +109,93 @@
           <button type="button" id="focusCosts" data-usage-open data-testid="focus-usage-open" data-shortcut-hint="costs"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5h-4.5a2 2 0 0 0 0 4h3a2 2 0 0 1 0 4H9M12 6.5v11"/></svg>Costs</button>
           <button type="button" id="focusSettings" data-testid="focus-settings">Settings</button>
         </div>
-        <div id="focusToolsList" class="focus-tools-list" data-testid="focus-tools-list" hidden></div>
         <div id="focusChatControls" hidden></div>
       </div>
       <div id="focusDock" class="focus-dock" aria-label="Quick actions" hidden>
         <button type="button" id="focusMarkDone" data-testid="focus-mark-done" title="Mark conversation done"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.3 2.4 2.4 4.8-5"/></svg><span id="focusMarkDoneLabel">Mark done</span></button>
         <button type="button" id="focusAddSecret" data-testid="focus-add-secret" title="Attach an existing secret to this conversation">Add secret</button>
-        <button type="button" id="focusAutoRespond" data-testid="focus-auto-respond" title="Auto respond"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 13-5"/><path d="M18 3.5V7h-3.5"/><path d="M19.5 12a7.5 7.5 0 0 1-13 5"/><path d="M6 20.5V17h3.5"/></svg>Auto respond<span class="focus-state" aria-hidden="true"></span></button>
+        <button type="button" id="focusAutoRespond" data-testid="focus-auto-respond" role="switch" aria-checked="false" title="Answer for me when it stops (auto respond)"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 13-5"/><path d="M18 3.5V7h-3.5"/><path d="M19.5 12a7.5 7.5 0 0 1-13 5"/><path d="M6 20.5V17h3.5"/></svg><span class="focus-switch-label">Answer for me when it stops</span><span class="focus-state" aria-hidden="true"></span></button>
+        <button type="button" id="focusNotify" data-testid="focus-notify" role="switch" aria-checked="false" title="Notify me when it stops"><svg class="focus-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5h4"/></svg><span class="focus-switch-label">Notify me when it stops</span><span class="focus-state" aria-hidden="true"></span></button>
       </div>
 
     </nav>
+    <!-- Phone: New (the desktop New menu, #workspaceNewMenu) and the four tabs. public/phone.css, app/phone-ui.js. -->
+    <button class="ph-fab" id="phoneNewButton" type="button" popovertarget="workspaceNewMenu" aria-haspopup="menu" title="New conversation, quick note or project" data-testid="phone-new-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg>New</button>
+    <nav class="ph-tabs" id="phoneTabs" aria-label="Places" data-testid="phone-tabs">
+      <button type="button" id="phoneTabInbox" data-tab="inbox" data-testid="phone-tab-inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg><span>Inbox</span><b class="ph-tab-badge" id="phoneInboxBadge" data-testid="phone-inbox-badge" hidden></b></button>
+      <button type="button" id="phoneTabBob" data-tab="bob" data-testid="phone-tab-bob"><span>Bob</span></button>
+      <button type="button" id="phoneTabProjects" data-tab="projects" data-testid="phone-tab-projects"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span>Projects</span></button>
+      <button type="button" id="phoneTabSettings" data-tab="settings" data-testid="phone-tab-settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></button>
+    </nav>
     <div class="shell">
+      <!-- Desktop workspace (wider than 700 px): the left column is the app's navigation. Its top,
+           the body (the three groups, or the project picker and a project's conversations) and its
+           foot are separate grid items of .shell, so the project panels keep their place in it. The
+           phone hides these and keeps one panel at a time. public/workspace.css, app/workspace.js. -->
+      <aside class="ws-side" id="workspaceSide" aria-label="Workspace" data-testid="workspace-side">
+        <div class="ws-brand">
+          <button class="ws-home-button" id="workspaceHomeButton" type="button" title="Home: what needs you, what runs and what waits for review" aria-label="Home" data-testid="workspace-home-button"><span class="ws-mark" aria-hidden="true"><img src="/icon-mark.svg" alt="" width="26" height="26" /></span><strong class="ws-name">Joint Bob</strong></button>
+          <button class="ghost icon-button ws-icon-button" id="workspaceMoreButton" type="button" popovertarget="workspaceMoreMenu" aria-haspopup="menu" aria-label="More: recent, running, reviews, notes, assistants" title="Recent, running, reviews, notes, issues, assistants" data-testid="workspace-more-button"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18.5" cy="12" r="1.5"/></svg></button>
+          <button class="primary ws-new-button" id="workspaceNewButton" type="button" popovertarget="workspaceNewMenu" aria-haspopup="menu" title="New conversation, quick note or project" data-testid="workspace-new-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg>New</button>
+        </div>
+        <div class="ws-menu" id="workspaceNewMenu" popover role="menu" aria-label="New" data-testid="workspace-new-menu">
+          <button type="button" role="menuitem" class="ws-menu-item" id="workspaceNewConversation" data-testid="workspace-new-conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/></svg><span>Conversation…<small>Any project, any machine</small></span></button>
+          <div class="ws-menu-harnesses" id="workspaceNewHarnesses" role="group" aria-label="New conversation in this project" data-testid="workspace-new-harnesses"></div>
+          <button type="button" role="menuitem" class="ws-menu-item" id="workspaceNewNote" data-testid="workspace-new-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h9l3 3V20.5H6z"/><path d="M15 3.5v3h3M12 10v6M9 13h6"/></svg><span>Quick note</span></button>
+          <button type="button" role="menuitem" class="ws-menu-item" id="workspaceNewProject" data-testid="workspace-new-project"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg><span>Project</span></button>
+        </div>
+        <div class="ws-menu" id="workspaceMoreMenu" popover role="menu" aria-label="More" data-testid="workspace-more-menu">
+          <button class="ghost icon-button reviews-button ws-menu-item" id="pendingReviewsButton" type="button" role="menuitem" data-pending-reviews-open aria-label="Pending reviews" title="Pending reviews" data-shortcut-hint="pendingReviews" data-testid="pending-reviews-open-button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
+            <span class="ws-item-label">Pending reviews</span>
+            <span class="reviews-badge" id="pendingReviewsBadge" data-testid="pending-reviews-badge" hidden>0</span>
+          </button>
+          <button class="ghost icon-button ws-menu-item" id="recentSessionsButton" type="button" role="menuitem" data-recent-sessions-open aria-label="Recent conversations" title="Recent conversations" data-shortcut-hint="recents" data-testid="recent-sessions-open-button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3 4v4h4" /><path d="M12 7.5V12l3.2 1.9" /></svg>
+            <span class="ws-item-label">Recent conversations</span>
+          </button>
+          <button class="ghost icon-button ws-menu-item" type="button" role="menuitem" data-running-conversations-open aria-label="Running conversations" title="Running conversations" data-shortcut-hint="runningConversations" data-testid="running-conversations-open-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 5.5 10 6.5L8 18.5z"/></svg><span class="ws-item-label">Running conversations</span><span class="reviews-badge running-badge" data-running-count data-testid="running-conversations-badge" hidden>0</span></button>
+          <button class="ghost icon-button ws-menu-item" id="projectNotesButton" type="button" role="menuitem" data-notes-open aria-label="Project notes" title="Project notes" data-shortcut-hint="toggleNotes" data-testid="projects-open-notes-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h9l3 3V20.5H6z"/><path d="M15 3.5v3h3M9 11h6M9 15h6"/></svg><span class="ws-item-label">Project notes</span></button>
+          <button class="ghost icon-button ws-menu-item" id="workspaceIssuesButton" type="button" role="menuitem" aria-label="Issues across projects" title="Issues across projects" data-testid="workspace-issues-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 3v1"/></svg><span class="ws-item-label">Issues across projects</span></button>
+          <button class="ghost icon-button ws-menu-item" id="projectBoardButton" type="button" role="menuitem" aria-label="Project board" title="Project board" data-testid="projects-open-board-button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 4v16M16 4v16"/></svg><span class="ws-item-label">Project board</span></button>
+          <a class="ghost icon-button ws-menu-item" id="openAssistantsButton" href="/assistant.html" role="menuitem" aria-label="Switch to assistants" title="Assistants" data-testid="projects-open-assistants-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3"/><path d="M4.5 9a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3z"/><path d="M8.5 12h.01M15.5 12h.01M9 16h6"/></svg><span class="ws-item-label">Assistants app</span></a>
+        </div>
+        <label class="ws-search" for="workspaceSearchInput">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+          <span class="sr-only">Search or ask Bob</span>
+          <input id="workspaceSearchInput" type="search" autocomplete="off" placeholder="Search or ask Bob…" data-testid="workspace-search-input" />
+          <kbd class="ws-search-key" id="workspaceSearchKey" aria-hidden="true"></kbd>
+        </label>
+        <nav class="ws-places" aria-label="Places" data-testid="workspace-places">
+          <button class="ghost icon-button ws-place ws-place-bob" id="openControlCenterButton" type="button" aria-label="Open the control center" title="Bob: the control center (Bob's chat and every agent that runs)" data-shortcut-hint="toggleView" data-place="bob" data-testid="projects-open-control-center-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.6M12 17.9v2.6M3.5 12h2.6M17.9 12h2.6"/></svg><span class="ws-place-label">Bob</span></button>
+          <button class="ghost ws-place" id="workspaceInboxButton" type="button" data-place="inbox" aria-pressed="false" title="What needs you, what runs and what waits for review, in every project" data-testid="workspace-inbox-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg><span class="ws-place-label">Inbox</span><i class="ws-place-note" id="workspaceInboxNote" data-testid="workspace-inbox-note"></i></button>
+          <button class="ghost ws-place" id="workspaceProjectsButton" type="button" data-place="projects" aria-pressed="false" title="Choose a project, then its conversations and notes" data-testid="workspace-projects-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span class="ws-place-label">Projects</span><i class="ws-place-note" id="workspaceProjectNote"></i></button>
+          <button class="ghost ws-place" id="workspaceBoardButton" type="button" data-place="board" title="This project's task board" data-testid="workspace-board-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 4v16M16 4v16"/></svg><span class="ws-place-label">Board</span></button>
+          <button class="ghost ws-place" id="workspaceAutomationsButton" type="button" data-place="automations" title="Scheduled runs, webhooks and triggers, in Bob's control center" data-testid="workspace-automations-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg><span class="ws-place-label">Automations</span></button>
+          <button class="ghost icon-button ws-place usage-open" type="button" data-usage-open data-place="costs" data-shortcut-hint="costs" data-testid="usage-open" aria-label="Costs" title="Costs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5h-4.5a2 2 0 0 0 0 4h3a2 2 0 0 1 0 4H9M12 6.5v11"/></svg><span class="ws-place-label">Costs</span><kbd class="shortcut-hint" aria-hidden="true"></kbd></button>
+        </nav>
+      </aside>
+      <!-- Phone Home (≤ 700 px, the Inbox tab): the greeting, search, then the same three groups (#workspaceGroups).
+           public/phone.css, app/phone-ui.js. -->
+      <header class="ph-home" id="phoneHome" data-testid="phone-home">
+        <div class="ph-home-top" id="phoneHomeTop">
+          <span class="ph-mark" aria-hidden="true"><img src="/icon-mark.svg" alt="" width="26" height="26" /></span>
+          <span class="ph-spacer"></span>
+          <button class="ghost icon-button ph-icon-button" id="phoneThemeButton" type="button" aria-haspopup="dialog" aria-label="Theme and text size" title="Theme and text size" data-testid="phone-theme-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.9 1.4-1.9-.5-1.2.3-2.4 1.6-2.4H17a3.5 3.5 0 0 0 3.5-3.5c0-5.1-3.8-9.2-8.5-9.2z"/><circle cx="7.8" cy="11" r="1.1"/><circle cx="10.5" cy="7.4" r="1.1"/><circle cx="15" cy="7.6" r="1.1"/></svg></button>
+          <button class="ph-avatar" id="phoneAvatar" type="button" aria-label="Your account" title="Your account" data-testid="phone-avatar">·</button>
+        </div>
+        <h1 class="ph-greeting" id="phoneGreeting" data-testid="phone-greeting">Hello</h1>
+        <p class="ph-counts" id="phoneCounts" data-testid="phone-counts"></p>
+        <label class="ph-search" for="phoneSearchInput">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+          <span class="sr-only">Search or ask Bob</span>
+          <input id="phoneSearchInput" type="search" autocomplete="off" placeholder="Search or ask Bob…" data-testid="phone-search-input" />
+        </label>
+      </header>
+      <section class="ws-groups" id="workspaceGroups" aria-label="Needs you, running and to review, in every project" data-testid="workspace-groups"></section>
       <section class="panel view-panel" id="projectsPanel" aria-label="Projects">
         <header class="panel-bar">
+          <div class="panel-title ws-picker-title"><h1>Projects</h1></div>
           <div class="brand">
             <div class="brand-mark" id="brandMark" role="button" tabindex="0" aria-label="Appearance: themes and font size" title="Appearance: themes and font size" aria-haspopup="dialog" data-testid="appearance-open"><img src="/icon-mark.svg" alt="" width="32" height="32" /></div>
             <div class="brand-copy">
@@ -112,24 +206,10 @@
           <button class="ghost icon-button collapse-button" id="collapseProjectsButton" data-shortcut-hint="toggleProjects" type="button" aria-label="Collapse projects panel" title="Collapse projects panel" data-testid="projects-panel-collapse-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
         </header>
         <div class="list-loading" id="projectsLoading" role="progressbar" aria-label="Loading projects" data-testid="project-list-loading-bar"><span></span></div>
-        <div class="project-actions">
-          <button class="ghost icon-button reviews-button" id="pendingReviewsButton" type="button" data-pending-reviews-open aria-label="Pending reviews" title="Pending reviews" data-shortcut-hint="pendingReviews" data-testid="pending-reviews-open-button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
-            <span class="reviews-badge" id="pendingReviewsBadge" data-testid="pending-reviews-badge" hidden>0</span>
-          </button>
-          <button class="ghost icon-button" id="recentSessionsButton" type="button" data-recent-sessions-open aria-label="Recent conversations" title="Recent conversations" data-shortcut-hint="recents" data-testid="recent-sessions-open-button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3 4v4h4" /><path d="M12 7.5V12l3.2 1.9" /></svg>
-          </button>
-          <button class="ghost icon-button" type="button" data-running-conversations-open aria-label="Running conversations" title="Running conversations" data-shortcut-hint="runningConversations" data-testid="running-conversations-open-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 5.5 10 6.5L8 18.5z"/></svg><span class="reviews-badge running-badge" data-running-count data-testid="running-conversations-badge" hidden>0</span></button>
-          <button class="ghost icon-button" id="projectNotesButton" type="button" data-notes-open aria-label="Project notes" title="Project notes" data-shortcut-hint="toggleNotes" data-testid="projects-open-notes-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h9l3 3V20.5H6z"/><path d="M15 3.5v3h3M9 11h6M9 15h6"/></svg></button>
-          <button class="ghost icon-button" id="projectBoardButton" type="button" aria-label="Project board" title="Project board" data-testid="projects-open-board-button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 4v16M16 4v16"/></svg></button>
-          <a class="ghost icon-button" id="openAssistantsButton" href="/assistant.html" aria-label="Switch to assistants" title="Assistants" data-testid="projects-open-assistants-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3"/><path d="M4.5 9a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3z"/><path d="M8.5 12h.01M15.5 12h.01M9 16h6"/></svg></a>
-          <button class="ghost icon-button" id="openControlCenterButton" type="button" aria-label="Open the control center" title="Control center" data-shortcut-hint="toggleView" data-testid="projects-open-control-center-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.6M12 17.9v2.6M3.5 12h2.6M17.9 12h2.6"/></svg></button>
-          <button class="ghost icon-button usage-open" type="button" data-usage-open data-shortcut-hint="costs" data-testid="usage-open" aria-label="Costs" title="Costs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5h-4.5a2 2 0 0 0 0 4h3a2 2 0 0 1 0 4H9M12 6.5v11"/></svg><kbd class="shortcut-hint" aria-hidden="true"></kbd></button>
-          <button class="ghost icon-button" id="settingsButton" type="button" aria-label="Settings" title="Settings" data-shortcut-hint="settings" data-testid="settings-open-button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </button>
-        </div>
+        <!-- Its buttons moved into the left column: Bob and Costs are places, Settings is in the foot,
+             the rest is in the column's ⋯ menu (public/index.html #workspaceSide). The phone reaches
+             them from its own menu. -->
+        <div class="project-actions" hidden></div>
         <div class="project-search-row">
           <label class="search-shell" for="projectSearchInput">
             <span class="sr-only">Search projects</span>
@@ -182,6 +262,7 @@
           <input id="sessionSearchInput" type="search" autocomplete="off" placeholder="Search conversations" data-testid="conversation-list-search-input" />
         </label>
         <button type="button" class="ghost icon-button focus-search-create" id="conversationSearchCreateButton" aria-label="New conversation" title="New conversation" data-testid="conversation-search-create-button">+</button>
+        <button type="button" class="ghost icon-button conversation-filters-toggle" id="conversationFiltersToggle" aria-label="Filters" title="Filters" aria-expanded="false" aria-controls="chatFilters" data-testid="conversation-filters-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg><span class="conversation-filters-count" id="conversationFiltersCount" data-testid="conversation-filters-count" hidden></span></button>
         </div>
         <div class="chat-filters" id="chatFilters" role="group" aria-label="Filter conversations">
           <button type="button" data-filter="cron" data-testid="chats-filter-cron-button" title="Scheduled conversations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 1.9"/></svg><span class="sr-only">Cron</span><span data-filter-count="cron">0</span></button>
@@ -228,6 +309,17 @@
         </div>
       </section>
 
+      <footer class="ws-foot" id="workspaceFoot" data-testid="workspace-foot">
+        <button class="ghost icon-button ws-place" id="settingsButton" type="button" aria-label="Settings" title="Settings" data-shortcut-hint="settings" data-testid="settings-open-button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span class="ws-place-label">Settings</span>
+        </button>
+        <button class="ws-me" id="workspacePersonButton" type="button" aria-haspopup="dialog" title="Theme and text size" data-testid="workspace-person-button">
+          <span class="ws-avatar" id="workspaceAvatar" aria-hidden="true"></span>
+          <span class="ws-me-copy"><b id="workspacePersonName" data-testid="workspace-person-name">You</b><small id="workspacePersonDetail" data-testid="workspace-person-detail">This machine</small></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1 0 1.6-.8 1.6-1.6 0-.5-.3-.9-.3-1.4 0-.8.7-1.5 1.5-1.5h2a4 4 0 0 0 4-4c0-5-4-9.1-8.8-9.1z"/><circle cx="7.6" cy="11" r="1"/><circle cx="10.2" cy="7.4" r="1"/><circle cx="14.6" cy="7.4" r="1"/></svg>
+        </button>
+      </footer>
       <section class="panel view-panel board" id="boardPanel" aria-label="Kanban board">
         <header class="panel-bar">
           <button class="ghost icon-button back-button" id="backToChatsButton" type="button" aria-label="Back to conversations" data-testid="board-back-button">‹</button>
@@ -308,7 +400,7 @@
               <div class="control-chat-box">
                 <input class="sr-only" id="controlChatFiles" type="file" multiple data-testid="control-chat-files" />
                 <button class="ghost compact" id="controlChatAttach" type="button" aria-label="Attach files or images" title="Attach files or images; you can also paste or drop them" data-testid="control-chat-attach">+</button>
-                <textarea id="controlChatInput" rows="2" placeholder="Ask about any project, or give Bob a task…" data-testid="control-chat-input"></textarea>
+                <textarea id="controlChatInput" rows="2" placeholder="Ask Bob, or give him a task…" data-testid="control-chat-input"></textarea>
                 <button class="primary compact" type="submit" id="controlChatSend" data-testid="control-chat-send">Send</button>
               </div>
             </form>
@@ -330,11 +422,15 @@
                 <div class="status-pill" id="connectionStatus" role="status" title="Idle">Idle</div>
                 <div class="context-usage" id="contextUsage" role="status" data-testid="chat-context-usage" hidden><span class="context-usage-bar" aria-hidden="true"><i id="contextUsageFill"></i></span><span class="context-usage-text" id="contextUsageText"></span></div>
                 <button class="ghost icon-button" id="chatDashboardButton" type="button" aria-label="Conversation dashboard" title="Conversation dashboard" data-testid="chat-dashboard-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4z"/><path d="M13 4h7v4h-7z"/><path d="M13 10h7v10h-7z"/><path d="M4 13h7v7H4z"/></svg></button>
-                <button class="ghost icon-button danger" id="abortButton" type="button" disabled aria-label="Stop" title="Stop" data-testid="chat-abort-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
+                <button class="ghost icon-button danger" id="abortButton" type="button" disabled aria-label="Stop" title="Stop" data-testid="chat-abort-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg><span class="ws-label">Stop</span></button>
               </div>
             </div>
           </div>
+          <!-- Desktop: Stop, Mark done, the details toggle and the ⋯ menu move here (app/workspace.js). -->
+          <div class="ws-head-actions" id="chatHeadActions" data-testid="chat-head-actions"></div>
         </header>
+        <!-- Phone: agent, model and machine as chips under the title (app/focus-ui.js fills it). -->
+        <div class="ph-chips" id="phoneChips" role="group" aria-label="Agent, model and machine" data-testid="phone-chips"></div>
         <div class="control-lease-banner" id="controlLeaseBanner" hidden data-testid="control-lease-banner"><span>You're in control of this conversation. Bob and auto respond will not answer for the agent while you are here.</span><button class="ghost compact" id="controlLeaseGiveBack" type="button" data-testid="control-lease-give-back">Give back to Bob</button></div>
         <div class="chat-toolbar panel-toolbar" id="chatToolbar">
           <div class="chat-session-controls">
@@ -379,6 +475,8 @@
               </div>
             </details>
           </div>
+          <!-- Desktop: the context gauge, the conversation's time and its cost, quiet, at the end of the chip row. -->
+          <div class="ws-chat-meta" id="chatMeta" data-testid="chat-meta"><span class="ws-chat-cost" id="chatCostMeta" data-testid="chat-cost-meta" hidden></span></div>
         </div>
 
         <div class="messages-wrap" id="messagesWrap">
@@ -400,7 +498,13 @@
               <div class="activity-tabs" role="tablist" aria-label="Conversation panel">
                 <button type="button" role="tab" id="activityActivityTab" aria-label="Activity" title="Activity" aria-selected="true" aria-controls="activityBody" data-testid="activity-activity-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/><path d="M17 8.5h1M17 11.5h1M17 14.5h1"/></svg><span>Activity</span></button>
                 <button type="button" role="tab" id="activityChatTab" aria-label="Chat" title="Chat" aria-selected="false" aria-controls="conversationChat" data-testid="activity-chat-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5a2 2 0 0 1-2 2H8l-4.5 4v-14a2 2 0 0 1 2-2H18a2 2 0 0 1 2 2z"/></svg><span>Chat</span></button>
+                <!-- Desktop details column: summaries of the files, Git and tasks; the full screens open from them. -->
+                <button type="button" role="tab" class="ws-seg-tab" id="detailsFilesTab" aria-selected="false" aria-controls="detailsFiles" data-details-pane="files" data-testid="details-files-tab"><span>Files</span></button>
+                <button type="button" role="tab" class="ws-seg-tab" id="detailsGitTab" aria-selected="false" aria-controls="detailsGit" data-details-pane="git" data-testid="details-git-tab"><span>Git</span><b class="ws-seg-count" id="detailsGitCount" data-testid="details-git-count" hidden></b></button>
+                <button type="button" role="tab" class="ws-seg-tab" id="detailsTasksTab" aria-selected="false" aria-controls="detailsTasks" data-details-pane="tasks" data-testid="details-tasks-tab"><span>Tasks</span><b class="ws-seg-count" id="detailsTasksCount" data-testid="details-tasks-count" hidden></b></button>
+                <button type="button" class="ws-seg-tab ws-seg-more" id="detailsMoreButton" popovertarget="detailsMoreMenu" aria-haspopup="menu" title="Side chat, Story and the Activity overview" data-testid="details-more-button"><span>More</span></button>
               </div>
+              <div class="ws-menu" id="detailsMoreMenu" popover role="menu" aria-label="More about this conversation" data-testid="details-more-menu"></div>
               <div class="activity-modes" data-testid="activity-modes">
                 <button class="ghost compact activity-mode" id="activityStoryButton" data-shortcut-hint="explainConversation" type="button" data-testid="activity-story-button" title="Open this conversation's story: what changed, how it works and why" aria-label="Story"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg><span>Story</span></button>
                 <button class="ghost compact activity-mode" id="activityOverviewButton" type="button" data-testid="activity-overview-button" title="Watch two hosts explain what this conversation did, in a movie drawn on paper" aria-label="Activity overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9.5 4.5 2.5-4.5 2.5z"/></svg><span>Overview</span></button>
@@ -462,6 +566,35 @@
               <p class="activity-empty">Tool calls and thinking from this conversation appear here.</p>
             </div>
             </div>
+            <!-- Desktop details column (app/conversation-details.js). Summaries only: each opens today's full screen. -->
+            <section class="ws-pane" id="detailsFiles" role="tabpanel" aria-labelledby="detailsFilesTab" data-testid="details-files" hidden>
+              <div class="ws-pane-head"><h3>Changed files</h3><small id="detailsFilesStatus" data-testid="details-files-status"></small></div>
+              <ul class="ws-file-list" id="detailsFilesList" data-testid="details-files-list"></ul>
+              <div class="ws-pane-actions" id="detailsFilesActions"></div>
+            </section>
+            <section class="ws-pane" id="detailsGit" role="tabpanel" aria-labelledby="detailsGitTab" data-testid="details-git" hidden>
+              <div class="ws-pane-head"><h3>Git</h3><small id="detailsGitStatus" data-testid="details-git-status"></small></div>
+              <div class="ws-git-branch" id="detailsGitBranch" data-testid="details-git-branch"></div>
+              <ul class="ws-file-list" id="detailsGitList" data-testid="details-git-list"></ul>
+              <div class="ws-pane-actions" id="detailsGitActions"></div>
+            </section>
+            <section class="ws-pane" id="detailsTasks" role="tabpanel" aria-labelledby="detailsTasksTab" data-testid="details-tasks" hidden>
+              <div class="ws-pane-head"><h3>Tasks</h3><small id="detailsTasksStatus" data-testid="details-tasks-status"></small></div>
+              <p class="ws-pane-note" id="detailsTasksNote">Commands the agent left running: servers, watchers, long builds.</p>
+              <div class="ws-pane-actions" id="detailsTasksActions"></div>
+            </section>
+            <footer class="ws-details-foot" id="detailsFoot" data-testid="details-foot">
+              <div class="ws-switches">
+                <button type="button" class="ws-switch-row" id="detailsAutoRespondSwitch" role="switch" aria-checked="false" title="Auto respond: the responder answers the agent when it stops" data-testid="details-auto-respond-switch"><span>Answer for me when it stops</span><i class="ws-switch" aria-hidden="true"></i></button>
+                <button type="button" class="ws-switch-row" id="detailsNotifySwitch" role="switch" aria-checked="false" title="A notification on this device when a conversation needs review" data-testid="details-notify-switch"><span>Notify me when it stops</span><i class="ws-switch" aria-hidden="true"></i></button>
+              </div>
+              <nav class="ws-links" aria-label="Open" data-testid="details-links">
+                <button type="button" class="ws-link" data-proxy="openBrowserButton" data-testid="details-link-browser">Browser</button>
+                <button type="button" class="ws-link" data-proxy="openTerminalButton" data-testid="details-link-terminal">Terminal</button>
+                <button type="button" class="ws-link" data-proxy="shareConversationButton" data-testid="details-link-share">Share</button>
+                <button type="button" class="ws-link" data-proxy="chatCronButton" data-testid="details-link-schedule">Schedule</button>
+              </nav>
+            </footer>
           </aside>
         </div>
 
@@ -511,6 +644,57 @@
           </div>
         </form>
       </main>
+      <!-- "Show all" of a left-column group: the whole group, paged to fit, in the middle. -->
+      <section class="panel ws-group-page" id="workspaceGroupPage" aria-labelledby="workspaceGroupTitle" data-testid="workspace-group-page" hidden>
+        <header class="ws-page-head">
+          <div class="ws-page-heading">
+            <p class="ws-page-crumb">Every project</p>
+            <h1 id="workspaceGroupTitle" data-testid="workspace-group-title">Needs you</h1>
+          </div>
+          <div class="ws-page-tabs" id="workspaceGroupTabs" role="tablist" aria-label="Groups" data-testid="workspace-group-tabs"></div>
+          <button class="ghost icon-button" id="workspaceGroupClose" type="button" aria-label="Close" title="Close (Esc)" data-testid="workspace-group-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        </header>
+        <div class="ws-page-list" id="workspaceGroupList" role="list" data-testid="workspace-group-list"></div>
+        <nav class="ws-page-pager" id="workspaceGroupPager" aria-label="Pages" data-testid="workspace-group-pager" hidden>
+          <button class="ghost compact" id="workspaceGroupPrevious" type="button" data-testid="workspace-group-previous">Previous</button>
+          <span id="workspaceGroupPosition" aria-live="polite" data-testid="workspace-group-position"></span>
+          <button class="ghost compact" id="workspaceGroupNext" type="button" data-testid="workspace-group-next">Next</button>
+        </nav>
+      </section>
+      <!-- Desktop Home (the Inbox place with no conversation open, or Inbox pressed): the greeting with what waits and
+           today's spend, Needs you as cards with Answer / Push it on / Done / Open, then Running and Ready to review side
+           by side. Fits the window and pages. public/home.css, app/home.js. -->
+      <section class="panel ws-home" id="homePage" aria-labelledby="homeGreeting" data-testid="home-page" hidden>
+        <div class="ws-home-in">
+          <header class="ws-home-head">
+            <h1 class="ws-home-greet" id="homeGreeting" data-testid="home-greeting">Hello</h1>
+            <p class="ws-home-sub" id="homeCounts" data-testid="home-counts"></p>
+          </header>
+          <section class="ws-home-need" aria-labelledby="homeNeedTitle" data-testid="home-needs-you">
+            <div class="ws-home-sechead">
+              <h2 id="homeNeedTitle">Needs you</h2><span class="ws-home-count" id="homeNeedCount" data-testid="home-count-needs-you"></span>
+              <span class="ws-home-spacer"></span>
+              <nav class="ws-home-pager" id="homeNeedPager" aria-label="Pages of what needs you" data-testid="home-need-pager" hidden>
+                <button class="ghost icon-button" id="homeNeedPrevious" type="button" aria-label="Previous page" title="Previous page" data-testid="home-need-previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+                <span id="homeNeedPosition" aria-live="polite" data-testid="home-need-position"></span>
+                <button class="ghost icon-button" id="homeNeedNext" type="button" aria-label="Next page" title="Next page" data-testid="home-need-next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+              </nav>
+              <button class="ghost ws-home-all" type="button" data-group="needs-you" data-testid="home-show-all-needs-you">Show all<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            </div>
+            <div class="ws-home-cards" id="homeNeedCards" data-testid="home-need-cards"></div>
+          </section>
+          <div class="ws-home-two">
+            <section class="ws-home-list" aria-labelledby="homeRunTitle" data-testid="home-running">
+              <div class="ws-home-sechead"><h2 id="homeRunTitle">Running</h2><span class="ws-home-count" id="homeRunCount" data-testid="home-count-running"></span><span class="ws-home-spacer"></span><button class="ghost ws-home-all" type="button" data-group="running" data-testid="home-show-all-running">Show all<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button></div>
+              <div class="ws-home-table" id="homeRunList" data-testid="home-run-list"></div>
+            </section>
+            <section class="ws-home-list" aria-labelledby="homeReviewTitle" data-testid="home-review">
+              <div class="ws-home-sechead"><h2 id="homeReviewTitle">Ready to review</h2><span class="ws-home-count" id="homeReviewCount" data-testid="home-count-review"></span><span class="ws-home-spacer"></span><button class="ghost ws-home-all" type="button" data-group="review" data-testid="home-show-all-review">Show all<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button></div>
+              <div class="ws-home-table" id="homeReviewList" data-testid="home-review-list"></div>
+            </section>
+          </div>
+        </div>
+      </section>
       <details class="app-menu" id="appMenu">
         <summary class="ghost icon-button" aria-label="App menu" title="App menu" data-testid="app-menu-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg></summary>
         <div class="app-menu-panel">
@@ -751,34 +935,38 @@
     </dialog>
 
     <dialog id="settingsDialog" data-testid="settings-dialog">
-      <form method="dialog" class="dialog-card settings-card" id="settingsForm" data-tab="account" data-mobile-view="menu">
-        <div class="dialog-heading" tabindex="-1" autofocus>
-          <span class="eyebrow">Node configuration</span>
-          <h2>Settings</h2>
-          <button class="ghost settings-back" type="button" id="settingsBackButton" data-testid="settings-back-button" aria-label="All settings">‹</button>
-          <strong class="settings-current-title" id="settingsCurrentTitle" data-testid="settings-current-title"></strong>
-          <p>Paths are node-local. Your twins receive your secret accounts automatically; other cluster machines need sharing permission.</p>
-        </div>
-
+      <form method="dialog" class="dialog-card settings-card settings-page" id="settingsForm" data-tab="account" data-mobile-view="menu">
         <div class="settings-body">
+        <!-- Settings is a page: this head tops its own list on a computer, and is the phone's bar. -->
+        <div class="dialog-heading settings-head" tabindex="-1" autofocus>
+          <button class="ghost settings-exit" type="button" id="cancelSettingsButton" data-testid="settings-cancel-button" aria-label="Back to Joint Bob"><span class="settings-chevron" aria-hidden="true">‹</span><span class="settings-exit-label">Back to Joint Bob</span></button>
+          <button class="ghost settings-back" type="button" id="settingsBackButton" data-testid="settings-back-button" aria-label="All settings"><span class="settings-chevron" aria-hidden="true">‹</span></button>
+          <h2 class="settings-page-title">Settings</h2>
+          <div class="settings-current"><strong class="settings-current-title" id="settingsCurrentTitle" data-testid="settings-current-title"></strong><small class="settings-current-crumb" id="settingsCurrentCrumb" data-testid="settings-current-crumb"></small></div>
+        </div>
         <div class="settings-sidebar">
         <div class="settings-search">
           <input id="settingsSearchInput" type="search" class="settings-search-input" placeholder="Search settings" aria-label="Search settings" autocomplete="off" spellcheck="false" data-testid="settings-search-input" aria-autocomplete="list" />
           <div id="settingsSearchResults" class="settings-search-results" role="listbox" aria-label="Matching settings" data-testid="settings-search-results" hidden></div>
         </div>
         <div class="settings-tabs settings-tabs--sidebar" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
-          <div class="settings-group-label" role="presentation">You</div>
+          <div class="settings-group" data-settings-group="you" role="none">
+          <button class="settings-group-label" type="button" aria-expanded="true" data-testid="settings-group-you">You</button>
           <button class="settings-tab" type="button" data-settings-tab="account" role="tab" id="settingsTab-account" aria-controls="settingsPanel-account" aria-selected="true" data-testid="settings-tab-account"><span class="settings-tab-icon" style="--tile:#3b82f6" aria-hidden="true">👤</span><span class="settings-tab-label">Account</span></button>
           <button class="settings-tab" type="button" data-settings-tab="notifications" role="tab" id="settingsTab-notifications" aria-controls="settingsPanel-notifications" aria-selected="false" tabindex="-1" data-testid="settings-tab-notifications"><span class="settings-tab-icon" style="--tile:#ef4444" aria-hidden="true">🔔</span><span class="settings-tab-label">Notifications</span></button>
           <button class="settings-tab" type="button" data-settings-tab="shortcuts" role="tab" id="settingsTab-shortcuts" aria-controls="settingsPanel-shortcuts" aria-selected="false" tabindex="-1" data-testid="settings-tab-shortcuts"><span class="settings-tab-icon" style="--tile:#8b5cf6" aria-hidden="true">⌨️</span><span class="settings-tab-label">Shortcuts</span></button>
-          <div class="settings-group-label" role="presentation">Workspace</div>
+          </div>
+          <div class="settings-group" data-settings-group="workspace" role="none">
+          <button class="settings-group-label" type="button" aria-expanded="false" data-testid="settings-group-workspace">Workspace</button>
           <button class="settings-tab" type="button" data-settings-tab="conversations" role="tab" id="settingsTab-conversations" aria-controls="settingsPanel-conversations" aria-selected="false" tabindex="-1" data-testid="settings-tab-conversations"><span class="settings-tab-icon" style="--tile:#10b981" aria-hidden="true">💬</span><span class="settings-tab-label">Conversations</span></button>
           <button class="settings-tab" type="button" data-settings-tab="labels" role="tab" id="settingsTab-labels" aria-controls="settingsPanel-labels" aria-selected="false" tabindex="-1" data-testid="settings-tab-labels"><span class="settings-tab-icon" style="--tile:#f59e0b" aria-hidden="true">🏷️</span><span class="settings-tab-label">Labels</span></button>
           <button class="settings-tab" type="button" data-settings-tab="automation-tags" role="tab" id="settingsTab-automation-tags" aria-controls="settingsPanel-automation-tags" aria-selected="false" tabindex="-1" data-testid="settings-tab-automation-tags"><span class="settings-tab-icon" style="--tile:#f59e0b" aria-hidden="true">#</span><span class="settings-tab-label">Automation tags</span></button>
           <button class="settings-tab" type="button" data-settings-tab="commands" role="tab" id="settingsTab-commands" aria-controls="settingsPanel-commands" aria-selected="false" tabindex="-1" data-testid="settings-tab-commands"><span class="settings-tab-icon" style="--tile:#eab308" aria-hidden="true">⚡</span><span class="settings-tab-label">Commands</span></button>
           <button class="settings-tab" type="button" data-settings-tab="workspaces" role="tab" id="settingsTab-workspaces" aria-controls="settingsPanel-workspaces" aria-selected="false" tabindex="-1" data-testid="settings-tab-workspaces"><span class="settings-tab-icon" style="--tile:#06b6d4" aria-hidden="true">🗂️</span><span class="settings-tab-label">Workspaces</span></button>
           <button class="settings-tab" type="button" data-settings-tab="git" role="tab" id="settingsTab-git" aria-controls="settingsPanel-git" aria-selected="false" tabindex="-1" data-testid="settings-tab-git"><span class="settings-tab-icon" style="--tile:#f97316" aria-hidden="true">🌿</span><span class="settings-tab-label">Git</span></button>
-          <div class="settings-group-label" role="presentation">Agents</div>
+          </div>
+          <div class="settings-group" data-settings-group="agents" role="none">
+          <button class="settings-group-label" type="button" aria-expanded="false" data-testid="settings-group-agents">Agents</button>
           <button class="settings-tab" type="button" data-settings-tab="story" role="tab" id="settingsTab-story" aria-controls="settingsPanel-story" aria-selected="false" tabindex="-1" data-testid="settings-tab-story"><span class="settings-tab-icon" style="--tile:#ec4899" aria-hidden="true">🎙</span><span class="settings-tab-label">Activity overview</span></button>
           <button class="settings-tab" type="button" data-settings-tab="engines" role="tab" id="settingsTab-engines" aria-controls="settingsPanel-engines" aria-selected="false" tabindex="-1" data-testid="settings-tab-engines"><span class="settings-tab-icon" style="--tile:#a855f7" aria-hidden="true">🤖</span><span class="settings-tab-label">Harnesses</span></button>
           <button class="settings-tab" type="button" data-settings-tab="connections" role="tab" id="settingsTab-connections" aria-controls="settingsPanel-connections" aria-selected="false" tabindex="-1" data-testid="settings-tab-connections"><span class="settings-tab-icon" style="--tile:#f59e0b" aria-hidden="true">🔌</span><span class="settings-tab-label">Connections</span></button>
@@ -788,11 +976,15 @@
           <button class="settings-tab" type="button" data-settings-tab="guardian" role="tab" id="settingsTab-guardian" aria-controls="settingsPanel-guardian" aria-selected="false" tabindex="-1" data-testid="settings-tab-guardian" data-admin-only><span class="settings-tab-icon" style="--tile:#dc2626" aria-hidden="true">🛡️</span><span class="settings-tab-label">Guardian</span></button>
           <button class="settings-tab" type="button" data-settings-tab="secrets" role="tab" id="settingsTab-secrets" aria-controls="settingsPanel-secrets" aria-selected="false" tabindex="-1" data-testid="settings-tab-secrets"><span class="settings-tab-icon" style="--tile:#37cfab" aria-hidden="true">🔑</span><span class="settings-tab-label">Secrets</span></button>
           <button class="settings-tab" type="button" data-settings-tab="browser" role="tab" id="settingsTab-browser" aria-controls="settingsPanel-browser" aria-selected="false" tabindex="-1" data-testid="settings-tab-browser"><span class="settings-tab-icon" style="--tile:#3b82f6" aria-hidden="true">🌐</span><span class="settings-tab-label">Browser</span></button>
-          <div class="settings-group-label" role="presentation">Network</div>
+          </div>
+          <div class="settings-group" data-settings-group="network" role="none">
+          <button class="settings-group-label" type="button" aria-expanded="false" data-testid="settings-group-network">Network</button>
           <button class="settings-tab" type="button" data-settings-tab="cluster" role="tab" id="settingsTab-cluster" aria-controls="settingsPanel-cluster" aria-selected="false" tabindex="-1" data-testid="settings-tab-cluster"><span class="settings-tab-icon" style="--tile:#0ea5e9" aria-hidden="true">🕸️</span><span class="settings-tab-label">Cluster</span></button>
           <button class="settings-tab" type="button" data-settings-tab="relay" role="tab" id="settingsTab-relay" aria-controls="settingsPanel-relay" aria-selected="false" tabindex="-1" data-requires-settings data-testid="settings-tab-relay"><span class="settings-tab-icon" style="--tile:#6366f1" aria-hidden="true">📡</span><span class="settings-tab-label">Relay</span></button>
           <button class="settings-tab" type="button" data-settings-tab="webhooks" role="tab" id="settingsTab-webhooks" aria-controls="settingsPanel-webhooks" aria-selected="false" tabindex="-1" data-requires-settings data-testid="settings-tab-webhooks"><span class="settings-tab-icon" style="--tile:#ec4899" aria-hidden="true">🪝</span><span class="settings-tab-label">Webhooks</span></button>
-          <div class="settings-group-label" role="presentation">This node</div>
+          </div>
+          <div class="settings-group" data-settings-group="node" role="none">
+          <button class="settings-group-label" type="button" aria-expanded="false" data-testid="settings-group-node">This node</button>
           <button class="settings-tab" type="button" data-settings-tab="node" role="tab" id="settingsTab-node" aria-controls="settingsPanel-node" aria-selected="false" tabindex="-1" data-testid="settings-tab-node" data-admin-only><span class="settings-tab-icon" style="--tile:#64748b" aria-hidden="true">🖥️</span><span class="settings-tab-label">Node</span></button>
           <button class="settings-tab" type="button" data-settings-tab="resources" role="tab" id="settingsTab-resources" aria-controls="settingsPanel-resources" aria-selected="false" tabindex="-1" data-testid="settings-tab-resources" data-admin-only><span class="settings-tab-icon" style="--tile:#84cc16" aria-hidden="true">📊</span><span class="settings-tab-label">Resources</span></button>
           <button class="settings-tab" type="button" data-settings-tab="file-sync" role="tab" id="settingsTab-file-sync" aria-controls="settingsPanel-file-sync" aria-selected="false" tabindex="-1" data-testid="settings-tab-file-sync" data-admin-only><span class="settings-tab-icon" style="--tile:#14b8a6" aria-hidden="true">🔄</span><span class="settings-tab-label">File sync</span></button>
@@ -800,6 +992,7 @@
           <button class="settings-tab" type="button" data-settings-tab="updates" role="tab" id="settingsTab-updates" aria-controls="settingsPanel-updates" aria-selected="false" tabindex="-1" data-testid="settings-tab-updates" data-admin-only><span class="settings-tab-icon" style="--tile:#22c55e" aria-hidden="true">⬇️</span><span class="settings-tab-label">Updates</span></button>
           <button class="settings-tab" type="button" data-settings-tab="logs" role="tab" id="settingsTab-logs" aria-controls="settingsPanel-logs" aria-selected="false" tabindex="-1" data-testid="settings-tab-logs"><span class="settings-tab-icon" style="--tile:#78716c" aria-hidden="true">📜</span><span class="settings-tab-label">Client logs</span></button>
           <button class="settings-tab" type="button" data-settings-tab="changelog" role="tab" id="settingsTab-changelog" aria-controls="settingsPanel-changelog" aria-selected="false" tabindex="-1" data-testid="settings-tab-changelog"><span class="settings-tab-icon" style="--tile:#78716c" aria-hidden="true">🗒️</span><span class="settings-tab-label">Changelog</span></button>
+          </div>
         </div>
         </div>
 
@@ -822,11 +1015,12 @@
               </label>
               <label>Close an idle terminal after
                 <input id="terminalPolicyIdle" type="number" min="1" max="1440" step="1" value="30" data-testid="terminal-policy-idle" form="terminalPolicyForm" />
-                minutes
+                <span class="settings-unit">minutes</span>
               </label>
             </div>
             <p class="settings-hint">A terminal runs as its person, in their project folder. Visitors signed in from other nodes never get one. Every open and close is recorded in the node's audit log.</p>
-            <div class="node-block-add"><button class="ghost compact" type="button" id="terminalPolicySave" data-testid="terminal-policy-save">Save terminal settings</button></div>
+            <!-- Terminal access saves as it changes (settings.js); the button stays for scripts that press it. -->
+            <div class="node-block-add" hidden><button class="ghost compact" type="button" id="terminalPolicySave" data-testid="terminal-policy-save">Save terminal settings</button></div>
             <p class="settings-hint" id="terminalPolicyStatus" role="status" data-testid="terminal-policy-status"></p>
           </fieldset>
           <fieldset class="phase-settings" data-admin-only>
@@ -909,11 +1103,22 @@
             <label class="checkbox-row"><input type="checkbox" id="settingsShowProjectsOnOtherNodes" data-testid="settings-show-projects-on-other-nodes" /> Show my projects on other nodes</label>
             <p class="settings-hint">Signed in on one of these nodes, you see your unshared projects there too. They run here and are never copied there. Hide a single project from its menu.</p>
           </fieldset>
-          <label class="checkbox-row"><input type="checkbox" id="settingsFocusUi" data-testid="settings-focus-ui-toggle" /> Focus interface (experimental)</label>
-          <p class="muted compact-copy">One screen at a time, with floating contextual controls. Saves immediately for your account on this node. Turn off here to restore the classic interface without leaving your conversation.</p>
           <fieldset class="phase-settings">
+            <legend>Interface</legend>
+            <label class="checkbox-row"><input type="checkbox" id="settingsFocusUi" data-testid="settings-focus-ui-toggle" /> Focus interface (experimental)</label>
+            <p class="settings-hint compact-copy">One screen at a time, with floating contextual controls. Saves immediately for your account on this node. Turn off here to restore the classic interface without leaving your conversation.</p>
+          </fieldset>
+          <fieldset class="phase-settings settings-appearance" data-testid="settings-appearance">
             <legend>Appearance</legend>
-            <button class="ghost" id="themeToggleButton" type="button" aria-label="Switch to dark theme" title="Switch to dark theme" data-testid="settings-theme-toggle-button">☾ Switch to dark theme</button>
+            <div class="settings-appearance-row">
+              <div class="settings-row-text"><strong>Theme</strong><span class="settings-hint">Colours only. The layout stays the same. Kept in this browser.</span></div>
+              <div class="theme-tiles" id="settingsThemeTiles" role="radiogroup" aria-label="Theme" data-testid="settings-theme-tiles"></div>
+            </div>
+            <div class="settings-appearance-row">
+              <div class="settings-row-text"><strong>Text size</strong><span class="settings-hint">One size for everything, then a size for each area. Kept in this browser.</span></div>
+              <div class="settings-text-size" id="settingsTextSizePresets" role="group" aria-label="Text size" data-testid="settings-text-size-presets"></div>
+              <div class="settings-text-size-areas" id="settingsTextSizeAreas" data-testid="settings-text-size-areas"></div>
+            </div>
           </fieldset>
           <fieldset class="phase-settings">
             <legend>Conversation history</legend>
@@ -922,13 +1127,12 @@
               days
             </label>
             <p class="settings-hint">Older transcripts stay on disk and load only when opened from a pin, recent item, or direct link.</p>
-            <div data-admin-only>
-            <label>Delete conversations with no activity for
+            <label data-admin-only>Delete conversations with no activity for
               <input id="settingsConversationRetentionDays" type="number" min="1" max="3650" step="1" required data-testid="settings-conversation-retention-days" />
               days
             </label>
-            <p class="settings-hint">Deletion removes the transcript on every node. Pinned, ticket, and scheduled conversations are kept. Conversations that never got a message are deleted after an hour.</p>
-            <div class="retention-scope" data-testid="settings-retention-scope">
+            <p class="settings-hint" data-admin-only>Deletion removes the transcript on every node. Pinned, ticket, and scheduled conversations are kept. Conversations that never got a message are deleted after an hour.</p>
+            <div class="retention-scope" data-testid="settings-retention-scope" data-admin-only>
               <p class="settings-hint">Only the conversations a project's list still shows are checked. Older ones stay until you tick the first box.</p>
               <label class="checkbox-row">
                 <input id="settingsRetentionFull" type="checkbox" data-retention-scope="full" data-testid="settings-retention-full" />
@@ -955,81 +1159,69 @@
                 Remove Joint Bob's own background-run transcripts after 7 days
               </label>
               <button class="ghost" id="settingsRetentionPreviewButton" type="button" data-testid="settings-retention-preview-button">Show what would be deleted</button>
-              <p class="settings-hint">Nothing is deleted until you save, and then only at the next hourly check.</p>
+              <p class="settings-hint">Deleting more, or sooner, asks you first. Nothing is deleted before the next hourly check.</p>
               <div id="settingsRetentionPreview" class="retention-preview" data-testid="settings-retention-preview" aria-live="polite" hidden></div>
             </div>
-            <fieldset class="retention-backup" id="settingsBackup" data-testid="settings-backup">
-              <legend>Backup before deleting</legend>
-              <p class="settings-hint">With a place chosen, the hourly check deletes a conversation only after its backup is stored there. If a backup cannot be written, old conversations are kept and the problem is shown here.</p>
-              <p class="settings-hint">Not backed up: a conversation that someone deletes by hand, a conversation that never got a message, and Joint Bob's own background runs. Pinned conversations are never deleted.</p>
-              <label>Back up to
-                <select id="settingsBackupDestination" data-testid="settings-backup-destination">
-                  <option value="off">Do not back up</option>
-                  <option value="folder">A folder on this machine</option>
-                  <option value="s3">An Amazon S3 bucket</option>
-                </select>
+          </fieldset>
+          <!-- A row with data-backup-kind shows for that place ("on": any place); one with data-backup-credentials also needs that way to sign in. -->
+          <fieldset class="phase-settings retention-backup" id="settingsBackup" data-testid="settings-backup" data-admin-only>
+            <legend>Backup before deleting</legend>
+            <p class="settings-hint">With a place chosen, the hourly check deletes a conversation only after its backup is stored there. If a backup cannot be written, old conversations are kept and the problem is shown here.</p>
+            <p class="settings-hint">Not backed up: a conversation that someone deletes by hand, a conversation that never got a message, and Joint Bob's own background runs. Pinned conversations are never deleted.</p>
+            <label>Back up to
+              <select id="settingsBackupDestination" data-testid="settings-backup-destination">
+                <option value="off">Do not back up</option>
+                <option value="folder">A folder on this machine</option>
+                <option value="s3">An Amazon S3 bucket</option>
+              </select>
+            </label>
+            <div class="retention-backup-notes" id="settingsBackupSaveError" data-testid="settings-backup-save-error"></div>
+            <label data-backup-kind="folder" hidden>Folder
+              <input id="settingsBackupFolder" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1024" data-testid="settings-backup-folder" />
+            </label>
+            <p class="settings-hint" id="settingsBackupFolderHint" data-backup-kind="folder" data-testid="settings-backup-folder-hint" hidden>Leave this empty to use the folder shown in the field. Use a folder outside your projects.</p>
+            <label data-backup-kind="s3" hidden>Bucket
+              <input id="settingsBackupS3Bucket" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" data-testid="settings-backup-s3-bucket" />
+            </label>
+            <label data-backup-kind="s3" hidden>Region
+              <input id="settingsBackupS3Region" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32" placeholder="eu-west-1" data-testid="settings-backup-s3-region" />
+            </label>
+            <label data-backup-kind="s3" hidden>Folder in the bucket (optional)
+              <input id="settingsBackupS3Prefix" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" data-testid="settings-backup-s3-prefix" />
+            </label>
+            <p class="settings-hint" data-backup-kind="s3" hidden>Backups are stored under this machine's name, so several machines can share one bucket.</p>
+            <label data-backup-kind="s3" hidden>Sign in with
+              <select id="settingsBackupS3Credentials" data-testid="settings-backup-s3-credentials">
+                <option value="keys">An access key</option>
+                <option value="profile">An AWS profile on this machine</option>
+              </select>
+            </label>
+            <label data-backup-kind="s3" data-backup-credentials="keys" hidden>Access key ID
+              <input id="settingsBackupS3AccessKeyId" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="128" data-testid="settings-backup-s3-access-key-id" />
+            </label>
+            <label data-backup-kind="s3" data-backup-credentials="keys" hidden>Secret access key
+              <input id="settingsBackupS3SecretAccessKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="256" data-testid="settings-backup-s3-secret-access-key" />
+            </label>
+            <p class="settings-hint" data-backup-kind="s3" data-backup-credentials="keys" data-testid="settings-backup-s3-secret-hint" hidden><span id="settingsBackupS3SecretSaved" hidden>A key is saved. Leave this empty to keep it. </span>The secret key is stored encrypted on this machine and is never shown again.</p>
+            <label data-backup-kind="s3" data-backup-credentials="profile" hidden>Profile name
+              <input id="settingsBackupS3Profile" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="default profile" data-testid="settings-backup-s3-profile" />
+            </label>
+            <p class="settings-hint" data-backup-kind="s3" data-backup-credentials="profile" hidden>This needs the AWS command line tool on this machine. Leave the name empty to use the default profile.</p>
+            <details class="retention-backup-more" id="settingsBackupS3More" data-backup-kind="s3" data-testid="settings-backup-s3-more" hidden>
+              <summary>Other S3-compatible service</summary>
+              <label>Address of the service
+                <input id="settingsBackupS3Endpoint" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="https://" data-testid="settings-backup-s3-endpoint" />
               </label>
-              <div class="retention-backup-notes" id="settingsBackupSaveError" data-testid="settings-backup-save-error"></div>
-              <div class="retention-backup-fields" data-backup-kind="folder" hidden>
-                <label>Folder
-                  <input id="settingsBackupFolder" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1024" data-testid="settings-backup-folder" />
-                </label>
-                <p class="settings-hint" id="settingsBackupFolderHint" data-testid="settings-backup-folder-hint">Leave this empty to use the folder shown in the field. Use a folder outside your projects.</p>
-              </div>
-              <div class="retention-backup-fields" data-backup-kind="s3" hidden>
-                <label>Bucket
-                  <input id="settingsBackupS3Bucket" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" data-testid="settings-backup-s3-bucket" />
-                </label>
-                <label>Region
-                  <input id="settingsBackupS3Region" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32" placeholder="eu-west-1" data-testid="settings-backup-s3-region" />
-                </label>
-                <label>Folder in the bucket (optional)
-                  <input id="settingsBackupS3Prefix" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" data-testid="settings-backup-s3-prefix" />
-                </label>
-                <p class="settings-hint">Backups are stored under this machine's name, so several machines can share one bucket.</p>
-                <label>Sign in with
-                  <select id="settingsBackupS3Credentials" data-testid="settings-backup-s3-credentials">
-                    <option value="keys">An access key</option>
-                    <option value="profile">An AWS profile on this machine</option>
-                  </select>
-                </label>
-                <div class="retention-backup-fields" data-backup-credentials="keys">
-                  <label>Access key ID
-                    <input id="settingsBackupS3AccessKeyId" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="128" data-testid="settings-backup-s3-access-key-id" />
-                  </label>
-                  <label>Secret access key
-                    <input id="settingsBackupS3SecretAccessKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="256" data-testid="settings-backup-s3-secret-access-key" />
-                  </label>
-                  <p class="settings-hint" data-testid="settings-backup-s3-secret-hint"><span id="settingsBackupS3SecretSaved" hidden>A key is saved. Leave this empty to keep it. </span>The secret key is stored encrypted on this machine and is never shown again.</p>
-                </div>
-                <div class="retention-backup-fields" data-backup-credentials="profile" hidden>
-                  <label>Profile name
-                    <input id="settingsBackupS3Profile" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="default profile" data-testid="settings-backup-s3-profile" />
-                  </label>
-                  <p class="settings-hint">This needs the AWS command line tool on this machine. Leave the name empty to use the default profile.</p>
-                </div>
-                <details class="retention-backup-more" id="settingsBackupS3More" data-testid="settings-backup-s3-more">
-                  <summary>Other S3-compatible service</summary>
-                  <div class="retention-backup-fields">
-                    <label>Address of the service
-                      <input id="settingsBackupS3Endpoint" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="https://" data-testid="settings-backup-s3-endpoint" />
-                    </label>
-                    <p class="settings-hint">Leave this empty for Amazon S3.</p>
-                  </div>
-                </details>
-              </div>
-              <div class="retention-backup-fields" id="settingsBackupOn" hidden>
-                <label>Delete each backup after
-                  <input id="settingsBackupKeepDays" type="number" min="0" max="3650" step="1" required disabled data-testid="settings-backup-keep-days" />
-                  days
-                </label>
-                <p class="settings-hint">0 keeps backups for good. The number also applies to backups already made.</p>
-                <button class="ghost" id="settingsBackupCheckButton" type="button" data-testid="settings-backup-check-button">Check that backups can be written</button>
-                <div class="retention-backup-notes" id="settingsBackupCheckResult" data-testid="settings-backup-check-result" aria-live="polite"></div>
-              </div>
-              <div class="retention-backup-notes" id="settingsBackupStatus" data-testid="settings-backup-status"></div>
-            </fieldset>
-            </div>
+              <p class="settings-hint">Leave this empty for Amazon S3.</p>
+            </details>
+            <label data-backup-kind="on" hidden>Delete each backup after
+              <input id="settingsBackupKeepDays" type="number" min="0" max="3650" step="1" required disabled data-testid="settings-backup-keep-days" />
+              days
+            </label>
+            <p class="settings-hint" data-backup-kind="on" hidden>0 keeps backups for good. The number also applies to backups already made.</p>
+            <button class="ghost" id="settingsBackupCheckButton" type="button" data-backup-kind="on" data-testid="settings-backup-check-button" hidden>Check that backups can be written</button>
+            <div class="retention-backup-notes" id="settingsBackupCheckResult" data-backup-kind="on" data-testid="settings-backup-check-result" aria-live="polite" hidden></div>
+            <div class="retention-backup-notes" id="settingsBackupStatus" data-testid="settings-backup-status"></div>
           </fieldset>
           <fieldset class="phase-settings">
             <legend>Context compaction</legend>
@@ -1179,7 +1371,7 @@
           </fieldset>
           <fieldset class="phase-settings" data-testid="error-reporting-settings">
             <legend>Send errors to ntfy</legend>
-            <p class="settings-hint">Forwards UI errors from browsers signed in to this node and this node's backend errors, with their stack traces. The same error is sent once every 10 minutes, at most 20 per channel. Applies to this node when you press Save error reporting.</p>
+            <p class="settings-hint">Forwards UI errors from browsers signed in to this node and this node's backend errors, with their stack traces. The same error is sent once every 10 minutes, at most 20 per channel. Applies to this node.</p>
             <label class="checkbox-row"><input id="errorReportingEnabled" type="checkbox" data-testid="error-reporting-enabled" /> Send errors to ntfy</label>
             <div id="errorReportingOptions" class="ntfy-service-add" data-testid="error-reporting-options" hidden>
               <label class="checkbox-row"><input id="errorReportingClientEnabled" type="checkbox" data-testid="error-reporting-client-enabled" /> Client (UI) errors</label>
@@ -1202,7 +1394,7 @@
                 </label>
               </div>
             </div>
-            <button class="ghost" id="errorReportingSaveButton" type="button" data-testid="error-reporting-save-button">Save error reporting</button>
+            <button class="ghost" id="errorReportingSaveButton" type="button" data-testid="error-reporting-save-button" hidden>Save error reporting</button>
           </fieldset>
         </section>
 
@@ -1284,7 +1476,7 @@
             <label>End conversation prompt<textarea id="settingsEndConversationPrompt" rows="4" maxlength="10000" data-testid="settings-end-conversation-prompt"></textarea></label>
             <p class="settings-hint">When enabled, the start prompt runs before your first message. Double-clicking Send submits the end prompt and leaves your draft and attachments untouched.</p>
             <div><strong>Custom commands</strong> <button type="button" class="ghost compact" id="addSavedCommand" data-testid="add-saved-command">Add command</button></div>
-            <p class="settings-hint" data-testid="saved-commands-instructions">Add a command with a name and prompt, then click Save settings. The machine owner's commands are automatically shared with its twins; no sharing changes are needed. Before sharing new or edited commands with other machines, save settings and reopen this panel. Sharing never saves other settings. In a conversation, <span id="savedCommandsShortcutHelp"></span> or click Custom commands. Type to search, use ↑/↓ to choose, then press Enter to paste the prompt into your chat draft. Nothing is sent until you click Send. Change the keyboard shortcut in Settings → Shortcuts under “Saved / custom commands”.</p>
+            <p class="settings-hint" data-testid="saved-commands-instructions">Add a command with a name and prompt; it saves as you type. The machine owner's commands are automatically shared with its twins; no sharing changes are needed. Share offers a saved command to other machines. In a conversation, <span id="savedCommandsShortcutHelp"></span> or click Custom commands. Type to search, use ↑/↓ to choose, then press Enter to paste the prompt into your chat draft. Nothing is sent until you click Send. Change the keyboard shortcut in Settings → Shortcuts under “Saved / custom commands”.</p>
             <div id="savedCommandsList" data-testid="saved-commands-list"></div>
           </fieldset>
         </section>
@@ -1296,7 +1488,6 @@
         </section>
 
         <section class="settings-panel" id="settingsPanel-cluster" role="tabpanel" aria-labelledby="settingsTab-cluster" tabindex="0" data-testid="settingsPanel-cluster" hidden>
-          <p class="settings-hint">Cluster actions apply immediately. They do not require Save settings.</p>
           <div class="settings-load-status" id="clusterLoading" role="status" data-testid="cluster-loading" hidden>
             <span id="clusterLoadMessage">Loading clusters…</span>
             <button class="ghost compact" type="button" id="clusterRetry" data-testid="cluster-retry" hidden>Retry</button>
@@ -1590,7 +1781,7 @@
 
         <section class="settings-panel relay-panel" id="settingsPanel-relay" role="tabpanel" aria-labelledby="settingsTab-relay" tabindex="0" data-testid="settingsPanel-relay" hidden>
           <div class="relay-head">
-            <p class="settings-hint">Relay actions apply immediately. They do not require Save settings. Serving is off by default, and this machine stays a normal working machine either way.</p>
+            <p class="settings-hint">Serving is off by default, and this machine stays a normal working machine either way.</p>
             <button class="ghost compact" type="button" id="relayRefreshButton" data-testid="relay-refresh-button">Refresh</button>
           </div>
           <p class="settings-hint relay-inline-status" id="relayStatus" role="status" data-testid="relay-load-status"></p>
@@ -1711,6 +1902,10 @@
           <fieldset class="phase-settings" data-testid="settings-browser-profiles">
             <legend>Profiles</legend>
             <p>Signed-in browser profiles on every machine you can reach. A profile's logins stay on its machine; a shared conversation anywhere opens it there. A new profile is usable only by the conversation that created it until you share it.</p>
+            <div class="long-list-bar" id="browserProfileFilters" data-testid="browser-profile-filters" hidden>
+              <input id="browserProfileFilter" type="search" class="long-list-filter" placeholder="Filter profiles" aria-label="Filter browser profiles" autocomplete="off" spellcheck="false" data-testid="browser-profile-filter" />
+              <select id="browserProfileMachine" aria-label="Machine" data-testid="browser-profile-machine"><option value="">All machines</option></select>
+            </div>
             <div id="browserProfileDirectory" class="secret-account-list" data-testid="browser-profile-directory"></div>
             <p class="settings-hint" id="browserProfileDirectoryStatus" role="status" data-testid="browser-profile-directory-status"></p>
           </fieldset>
@@ -1774,7 +1969,7 @@
           <label id="settingsGitReviewerModelLabel">Model<select id="settingsGitReviewerModel" data-testid="settings-git-reviewer-model"></select></label>
           <label id="settingsGitReviewerThinkingLabel">Effort<select id="settingsGitReviewerThinking" data-testid="settings-git-reviewer-thinking"></select></label>
           <label data-admin-only>PR file limit<input type="number" id="settingsGitPullFileLimit" min="1" max="3000" step="1" value="1000" required data-testid="settings-git-pull-file-limit" /></label>
-          <p class="settings-hint" data-admin-only>Maximum changed files in worktree PRs, PR details, and PR explanations on this node. Default 1,000; GitHub lists at most 3,000. Save settings to apply.</p>
+          <p class="settings-hint" data-admin-only>Maximum changed files in worktree PRs, PR details, and PR explanations on this node. Default 1,000; GitHub lists at most 3,000.</p>
           <label data-admin-only>PR timeout (seconds)<input type="number" id="settingsGitPullTimeoutSeconds" min="60" max="3600" step="1" value="360" required data-testid="settings-git-pull-timeout-seconds" /></label>
           <p class="settings-hint" data-admin-only>How long a worktree command waits for this node before it reports that the outcome is unknown. Default 360 seconds. Applies to conversations that start after you save.</p>
         </section>
@@ -1825,12 +2020,11 @@
             <button class="ghost compact" type="button" id="storyTestVoices" data-testid="story-test-voices">Test voices</button>
           </fieldset>
           <div class="settings-actions">
-            <button class="primary" type="button" id="storySave" data-testid="story-save">Save Activity overview</button>
+            <button class="primary" type="button" id="storySave" data-testid="story-save" hidden>Save Activity overview</button>
             <span id="storySaveStatus" class="settings-hint" role="status" data-testid="story-save-status"></span>
           </div>
         </section>
         <section class="settings-panel system-ai-panel" id="settingsPanel-system-ai" role="tabpanel" aria-labelledby="settingsTab-system-ai" tabindex="0" data-testid="settings-panel-system-ai" data-admin-only hidden>
-          <h2>System AI</h2>
           <p class="settings-hint">Configuration is shared with trusted twins, not ordinary cluster peers. Credentials are resolved on the execution machine, never attached to projects. Collection and readiness remain machine-local.</p>
           <p id="systemAiNode" data-testid="system-ai-node"></p>
           <output id="systemAiReadiness" data-testid="system-ai-readiness"></output>
@@ -1916,8 +2110,10 @@
             <button type="button" role="tab" data-resources-tab="git" aria-selected="false" data-testid="resources-tab-git">Git repos <span id="resourcesGitCount"></span></button>
             <button type="button" role="tab" data-resources-tab="paths" aria-selected="false" data-testid="resources-tab-paths">Load paths</button>
           </div>
-          <label class="checkbox-row resources-auto-activate"><input id="resourcesAutoActivate" type="checkbox" data-testid="resources-auto-activate" checked /> Auto-activate received skills, MCP servers and plugins on the selected node</label>
-          <div class="resources-share-bar" id="resourcesShareBar" data-testid="resources-share-bar" hidden></div>
+          <div class="resources-bulk">
+            <label class="checkbox-row resources-auto-activate"><input id="resourcesAutoActivate" type="checkbox" data-testid="resources-auto-activate" checked /> Auto-activate received skills, MCP servers and plugins on the selected node</label>
+            <div class="resources-share-bar" id="resourcesShareBar" data-testid="resources-share-bar" hidden></div>
+          </div>
           <div class="resources-list resources-page" id="resourcesList" role="tabpanel" data-testid="resources-list"></div>
           <div class="resources-pager" id="resourcesListPager" data-testid="resources-list-pager" hidden></div>
           <section class="resources-add" id="resourcesAddPanel" role="tabpanel" data-testid="resources-add-panel" hidden>
@@ -1955,7 +2151,7 @@
             <label>Skills
               <span class="folder-input-row resource-paths-row"><textarea class="resource-paths-input" id="settingsResourceSkillsPaths" data-testid="settings-resource-skills-paths"></textarea><button class="ghost" type="button" id="settingsResourceSkillsBrowse" data-testid="settings-resource-skills-browse">Browse</button></span>
             </label>
-            <p class="settings-hint">Save settings first when changing load paths. Sync local skills copies whole skill folders from these paths, scripts included, into this node's managed skills. They stay on this node until you share them from the Skills tab. Local sources stay untouched; matching managed skills are backed up and replaced.</p>
+            <p class="settings-hint">Load paths save as you type. Sync local skills copies whole skill folders from these paths, scripts included, into this node's managed skills. They stay on this node until you share them from the Skills tab. Local sources stay untouched; matching managed skills are backed up and replaced.</p>
             <div class="github-group-actions"><button class="ghost" type="button" id="settingsSyncSkillsButton" data-testid="settings-sync-skills-button">Sync local skills</button><button class="ghost" type="button" id="settingsReloadSkillsButton" data-testid="settings-reload-skills-button">Reload skills</button></div>
             <p class="settings-hint">Reload updates idle Pi sessions on this node. Claude and Kiro pick up changes on their next run.</p>
             <p id="settingsSkillsStatus" data-testid="settings-skills-status" role="status" aria-live="polite"></p>
@@ -1991,7 +2187,7 @@
           <p class="picker-status" id="keymapStatus" role="status" data-testid="keymap-status"></p>
           <div class="shortcut-actions">
             <button class="ghost" id="keymapResetButton" type="button" data-testid="keymap-reset-button">Reset to defaults</button>
-            <button class="primary" id="keymapSaveButton" type="button" data-testid="keymap-save-button">Save shortcuts</button>
+            <button class="primary" id="keymapSaveButton" type="button" data-testid="keymap-save-button" hidden>Save shortcuts</button>
           </div>
         </section>
 
@@ -2106,11 +2302,9 @@
         </section>
         </div>
 
+        <!-- No shared Save button: each change saves on its own. settings.js moves these two into the open section's head. -->
+        <p class="settings-saved" id="settingsSaveState" data-testid="settings-save-state" data-state="loading" role="status" aria-live="polite"><span class="settings-saved-icon" aria-hidden="true"></span><span class="settings-saved-text">Loading settings…</span></p>
         <p class="settings-restart-message settings-load-status" id="settingsRestartMessage" role="status" hidden></p>
-        <div class="dialog-actions">
-          <button class="ghost" type="button" id="cancelSettingsButton" data-testid="settings-cancel-button">Close</button>
-          <button class="primary" type="submit" data-testid="settings-save-button">Save settings</button>
-        </div>
       </form>
     </dialog>
 

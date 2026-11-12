@@ -45,8 +45,11 @@ test("conversation history window saves and reloads", async () => {
   await page.waitForFunction(() => (document.querySelector("#settingsConversationHistoryDays") as HTMLInputElement).value === "30");
   assert.equal(await input.inputValue(), "30");
   for (const value of ["45", "90"]) {
+    // A number saves when the field is left.
     await input.fill(value);
-    await page.getByTestId("settings-save-button").click();
+    await input.press("Tab");
+    await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+    await page.getByTestId("settings-cancel-button").click();
     await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
     await page.getByTestId("settings-open-button").click();
     await settingsLoaded();

@@ -202,14 +202,14 @@ test("usage dashboard groups, filters by cluster, paginates, remains responsive,
     assert.equal(await costsOpener.getAttribute("data-shortcut-hint"), "costs");
     assert.equal(await costsOpener.locator("svg").count(), 1);
   }
-  assert.equal((await opener.textContent())?.includes("Costs"), false, "toolbar icon opener has no visible Costs text");
+  assert.equal(await opener.locator(".ws-place-label").textContent(), "Costs", "the left column's Costs place is named like its neighbours");
   assert.equal((await focusOpener.textContent())?.includes("Costs"), true, "mobile controls label Costs like their neighbors");
   assert.equal(await opener.getAttribute("aria-label"), "Costs", "icon opener has an accessible name");
   const iconBox = await opener.locator("svg").boundingBox();
   assert.ok(iconBox && iconBox.width > 0 && iconBox.height > 0, "costs icon has visible geometry");
   const openerBox = await opener.boundingBox();
-  const settingsBox = await page.getByTestId("settings-open-button").boundingBox();
-  assert.ok(openerBox && settingsBox && openerBox.width === settingsBox.width, "costs opener matches neighboring icon width");
+  const neighbourBox = await page.getByTestId("workspace-automations-button").boundingBox();
+  assert.ok(openerBox && neighbourBox && openerBox.width === neighbourBox.width, "the Costs place is as wide as the place above it");
 
   await page.keyboard.down("Control");
   await page.keyboard.down("Alt");

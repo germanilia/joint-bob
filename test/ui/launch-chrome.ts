@@ -19,6 +19,38 @@ export async function chromeExecutable(): Promise<string> {
 }
 
 export async function launchChrome(options: LaunchOptions = {}): Promise<Browser> {
-  if (!process.env.CHROME_PATH && process.env.CHROME_CHANNEL) return chromium.launch({ ...options, channel: process.env.CHROME_CHANNEL });
-  return chromium.launch({ ...options, executablePath: await chromeExecutable() });
+  const browser = !process.env.CHROME_PATH && process.env.CHROME_CHANNEL
+    ? await chromium.launch({ ...options, channel: process.env.CHROME_CHANNEL })
+    : await chromium.launch({ ...options, executablePath: await chromeExecutable() });
+  return startInProjectsColumn(browser);
+}
+
+/** The desktop workspace's left column remembers Inbox or Projects in this key (public/app/workspace.js). */
+export const WORKSPACE_COLUMN_KEY = "joint-bob-workspace-column";
+
+/**
+ * A project's list folds its filters (state chips, labels, Show done, Show scheduled, Mark all reviewed) behind the
+ * Filters button and remembers the choice in this key; the suite, written against the filters, starts with them open.
+ */
+export const CONVERSATION_FILTERS_KEY = "joint-bob-conversation-filters-open";
+
+/**
+ * The suite was written against the project and conversation lists, which the desktop workspace shows when its left
+ * column is in Projects; a person who never chose starts in Inbox. Every context this browser opens starts in Projects
+ * unless the page has chosen already, so a test that switches to Inbox keeps it through a reload. Tests of the Inbox
+ * column set the key themselves (see ui-workspace-layout.test.ts).
+ */
+function startInProjectsColumn(browser: Browser): Browser {
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...args: Parameters<Browser["newContext"]>) => {
+    const context = await newContext(...args);
+    await context.addInitScript(([key, filtersKey]) => {
+      try {
+        if (localStorage.getItem(key) === null) localStorage.setItem(key, "projects");
+        if (localStorage.getItem(filtersKey) === null) localStorage.setItem(filtersKey, "1");
+      } catch { /* opaque origins have no storage */ }
+    }, [WORKSPACE_COLUMN_KEY, CONVERSATION_FILTERS_KEY]);
+    return context;
+  };
+  return browser;
 }

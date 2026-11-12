@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 test("the running conversations button shows how many conversations are running", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
@@ -27,6 +28,8 @@ test("the running conversations button shows how many conversations are running"
     await refreshRunningConversations();
   })()`);
   assert.equal(await badge.textContent(), "3");
+  // On the desktop workspace the button is in the left column's ⋯ menu.
+  await reach(page, "running-conversations-open-button");
   assert.equal(await badge.isVisible(), true);
   assert.equal(await page.getByTestId("running-conversations-open-button").getAttribute("aria-label"), "Running conversations, 3 running");
 });

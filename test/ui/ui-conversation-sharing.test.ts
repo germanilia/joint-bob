@@ -7,6 +7,7 @@ import test, { after, before } from "node:test";
 import { type Browser, type Page } from "playwright-core";
 import { seedDevEnvironment, startDevNode, stopDevNode, type DevEnvironment } from "../dev-nodes.js";
 import { launchChrome } from "./launch-chrome.js";
+import { reach } from "./workspace-menus.js";
 
 let root: string;
 let environment: DevEnvironment;
@@ -50,7 +51,7 @@ test("Share copies the open conversation's identity and its link overrides saved
       writeText: async (text) => { document.body.dataset.copiedLink = text; },
     } });
   `);
-  await page.getByTestId("chat-share-button").click();
+  await (await reach(page, "chat-share-button")).click();
   const copied = await page.locator("body").getAttribute("data-copied-link");
   assert.ok(copied);
   const link = new URL(copied);
@@ -77,7 +78,7 @@ test("Pin to home screen copies this conversation's link and shows Chrome steps"
     writeText: async (text) => { document.body.dataset.pinnedLink = text; },
   } });`);
   await page.getByTestId("chat-more-button").click();
-  await page.getByTestId("chat-pin-button").click();
+  await (await reach(page, "chat-pin-button")).click();
   const copied = await page.locator("body").getAttribute("data-pinned-link");
   assert.ok(copied);
   assert.ok(new URL(copied).searchParams.get("sessionId"));
@@ -86,7 +87,7 @@ test("Pin to home screen copies this conversation's link and shows Chrome steps"
     writeText: async () => { throw new Error("Synthetic clipboard rejection"); },
   } });`);
   await page.getByTestId("chat-more-button").click();
-  await page.getByTestId("chat-pin-button").click();
+  await (await reach(page, "chat-pin-button")).click();
   await page.getByText("Failed to copy link: Synthetic clipboard rejection", { exact: true }).waitFor();
 });
 
@@ -97,13 +98,13 @@ test("native sharing uses the conversation link and reports share or clipboard f
     } });
   `);
   await page.getByTestId("chat-more-button").click();
-  await page.getByTestId("chat-share-button").click();
+  await (await reach(page, "chat-share-button")).click();
   const shared = JSON.parse(await page.locator("body").getAttribute("data-shared-conversation") || "null");
   assert.match(shared.title, /Thread-Based Agent Builder/);
   assert.ok(new URL(shared.url).searchParams.get("sessionId"));
   await page.evaluate(`Object.defineProperty(navigator, "share", { configurable: true, value: async () => { throw new Error("Synthetic share rejection"); } });`);
   await page.getByTestId("chat-more-button").click();
-  await page.getByTestId("chat-share-button").click();
+  await (await reach(page, "chat-share-button")).click();
   await page.getByText("Failed to share link: Synthetic share rejection", { exact: true }).waitFor();
   await page.evaluate(`
     Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
@@ -112,7 +113,7 @@ test("native sharing uses the conversation link and reports share or clipboard f
     } });
   `);
   await page.getByTestId("chat-more-button").click();
-  await page.getByTestId("chat-share-button").click();
+  await (await reach(page, "chat-share-button")).click();
   await page.getByText("Failed to copy link: Synthetic clipboard rejection", { exact: true }).waitFor();
 });
 

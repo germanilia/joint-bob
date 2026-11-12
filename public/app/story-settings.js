@@ -1,6 +1,7 @@
 // Settings → Activity overview: how stories are written, shown and spoken on this node.
 import { api, apiBlob } from "./api.js";
 import { toast } from "./shell.js";
+import { autosaveFields, invalidSetting, settingsAutosave } from "./settings-autosave.js";
 
 const field = (id) => document.getElementById(id);
 const inputs = {
@@ -89,19 +90,21 @@ export async function loadStorySettings() {
 }
 
 inputs.backdrops.addEventListener("change", () => { locationBox.hidden = !inputs.backdrops.checked; });
-field("storyInstructionsReset").addEventListener("click", () => { inputs.instructions.value = defaultInstructions; });
+field("storyInstructionsReset").addEventListener("click", () => { inputs.instructions.value = defaultInstructions; settingsAutosave().schedule("story", 0); });
 
-saveButton.addEventListener("click", async () => {
-  saveButton.disabled = true;
-  try {
-    fill(await api("/api/story-settings", { method: "PUT", body: JSON.stringify(collect()) }));
-    saveStatus.textContent = "Saved on this node";
-  } catch (error) {
-    toast.error(error.message);
-  } finally {
-    saveButton.disabled = false;
-  }
-});
+/** Saves as the fields change (settings-autosave.js); a failure is thrown for the Settings save line. */
+async function saveStorySettings() {
+  if (!defaultInstructions) throw invalidSetting("Activity overview settings are still loading");
+  // Only the voice line is refreshed from the answer: text still being typed must not be reset.
+  const saved = await api("/api/story-settings", { method: "PUT", body: JSON.stringify(collect()) });
+  if (saved?.voice) showVoice(saved.voice);
+  saveStatus.textContent = "Saved on this node";
+}
+
+settingsAutosave().channel("story", saveStorySettings);
+autosaveFields(document.getElementById("settingsPanel-story"), "story", { accept: (target) => target.matches("input, select, textarea") });
+// The button is hidden: the Activity overview saves as it changes. It stays for anything that presses it.
+saveButton.addEventListener("click", () => { settingsAutosave().schedule("story", 0); });
 
 // Starts the download in the background on a computer that can run it; the status line follows it.
 installButton.addEventListener("click", async () => {

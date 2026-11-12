@@ -11,8 +11,10 @@ test("saved commands paste into chat through a keyboard shortcut without sending
   await page.getByTestId("login-submit-button").click();
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().waitFor();
   await page.evaluate(async () => (await import("/app/settings.js")).openSettings("commands"));
+  await page.locator('#settingsForm[data-ready="true"]').waitFor();
   const instructions = page.getByTestId("saved-commands-instructions");
   assert.match(await instructions.innerText(), /Enter to paste.*Nothing is sent/);
+  assert.match(await instructions.innerText(), /saves as you type/);
   assert.match(await page.locator("#savedCommandsShortcutHelp").innerText(), /L/);
   assert.match(await page.locator("#keymapCommand-savedCommands").locator("..").innerText(), /Saved \/ custom commands.*Settings → Commands/);
   await page.evaluate(async () => {
@@ -28,7 +30,8 @@ test("saved commands paste into chat through a keyboard shortcut without sending
   await page.getByTestId("add-saved-command").click();
   await page.locator("#savedCommandsList input").fill("Review changes");
   await page.locator("#savedCommandsList textarea").fill("Review my changes, do not send this yet.");
-  await page.getByTestId("settings-save-button").click();
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+  await page.getByTestId("settings-cancel-button").click();
   await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card", { hasText: "Thread-Based Agent Builder" }).click();

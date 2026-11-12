@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Page } from "playwright-core";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 async function signIn(page: Page, url: string, username: string, password: string) {
   await page.goto(url);
@@ -16,8 +17,9 @@ async function signIn(page: Page, url: string, username: string, password: strin
 async function openTerminal(page: Page) {
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
-  const openButton = page.getByTestId("chat-open-terminal-button");
-  await openButton.waitFor({ state: "visible" });
+  // The desktop workspace keeps Terminal in the conversation's ⋯ menu.
+  await page.locator("#openTerminalButton:enabled").waitFor({ state: "attached" });
+  const openButton = await reach(page, "chat-open-terminal-button");
   await openButton.click();
   await page.locator('#terminalStatus[data-state="live"]').waitFor();
 }

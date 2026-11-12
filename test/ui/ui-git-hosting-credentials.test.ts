@@ -6,6 +6,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import { api, signIn } from "../dev-nodes.js";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { reach } from "./workspace-menus.js";
 
 test("GitHub access errors let users retry with a scoped secret without exposing tokens or changing attachments", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t, (root) => {
@@ -46,7 +47,7 @@ test("GitHub access errors let users retry with a scoped secret without exposing
   await page.getByTestId("login-submit-button").click();
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
-  await page.getByTestId("chat-git-button").click();
+  await (await reach(page, "chat-git-button")).click();
   await page.getByTestId("git-review-tab-pipelines").click();
   await page.locator(".git-hosting-error").getByText("GitHub request failed (HTTP 404)", { exact: true }).waitFor();
   const picker = page.getByTestId("git-hosting-account");

@@ -109,17 +109,15 @@ test("a member sees no admin entries, never calls an admin route, and saves only
   assert.equal(await page.locator("[data-testid$='-executable-input']").count(), 0, "no harness paths for a member");
 
   await page.getByTestId("settings-tab-labels").click();
-  await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+  await page.locator('#settingsForm[data-ready="true"]').waitFor({ timeout: 40_000 });
+  // A member's change saves on its own, through their personal settings.
+  const saving = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings/personal" && response.request().method() === "PUT", { timeout: 40_000 });
   await page.locator("#settingsConversationLabels").fill("noam-label");
-  await page.getByTestId("settings-save-button").waitFor({ state: "visible" });
-  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#settingsForm [type='submit']")?.disabled, undefined, { timeout: 40_000 });
-  const saving = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings/personal" && response.request().method() === "PUT");
-  await page.locator("#settingsForm [type='submit']").click();
   const response = await saving;
   assert.equal(response.status(), 200);
   assert.deepEqual(response.request().postDataJSON().conversationLabels, ["noam-label"]);
   assert.deepEqual((await response.json()).conversationLabels, ["Research", "Bug", "Feature", "POC", "Deploy to prod", "Hotfix", "noam-label"]);
-  await page.getByText("Settings saved", { exact: true }).waitFor();
+  await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
   const saved = await runOnNode(environment, node, `
     const { DatabaseSync } = await import("node:sqlite");
     const db = new DatabaseSync(process.env.JOINT_BOB_DATA_DIR + "/node.db", { readOnly: true });

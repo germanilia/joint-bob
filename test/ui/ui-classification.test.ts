@@ -36,9 +36,10 @@ test("new Pi and Claude conversations keep predefined and free-text classificati
     await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-labels").click();
-    await page.locator('[data-testid="settings-save-button"]:enabled').waitFor();
+    await page.locator('#settingsForm[data-ready="true"]').waitFor();
     await page.getByTestId("settings-conversation-labels").fill("Research\nBug\nFeature\nPOC\nSupport");
-    await page.getByTestId("settings-save-button").click();
+    await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
+    await page.getByTestId("settings-cancel-button").click();
     await page.locator("#settingsDialog").waitFor({ state: "hidden" });
     await page.reload();
     await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();

@@ -45,6 +45,8 @@ test("a card opens its conversation over the board to watch; taking control lets
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  // Bob's page opens on his chat; the board is his Live agents tab.
+  await page.getByTestId("control-tab-live").click();
   const card = page.getByTestId("control-center-card");
   await card.waitFor();
   assert.equal(await card.getByTestId("control-card-action-give-back").count(), 0);
