@@ -70,7 +70,7 @@ for (const runner of runners) for (const source of ["cluster", "conversation", "
         lookups.push({ account, provider, scope, usage });
         return source === "conversation" ? { kind: "pool", pool } : undefined;
       },
-      poolCandidates: () => profiles,
+      poolCandidates: () => profiles, automationFallbackPool: () => undefined,
     } as Record<string, any>, { get: (target, key: string) => key in target ? target[key] : key === "flags" ? {} : () => () => {} });
     const poolRunner = load("server/harness-chat.ts", boundaries);
     const dependencies: Record<string, any> = {

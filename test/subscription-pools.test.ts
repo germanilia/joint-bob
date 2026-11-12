@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { settingsDatabase } from "../src/settings-store.js";
-import { createProviderProfile, deleteProviderProfile, profileSelectionSchema, providerProfile, setProviderProfileSelection, setProviderProfileShared } from "../src/provider-profiles/store.js";
+import { accessibleProviderProfile, createProviderProfile, deleteProviderProfile, listAccessibleProviderProfiles, profileSelectionSchema, providerProfile, setProviderProfileSelection, setProviderProfileShared } from "../src/provider-profiles/store.js";
+import { automationFallbackPool } from "../src/provider-profiles/pools.js";
+import { adminAccountId } from "../src/ownership.js";
+import { accountIdFor } from "../src/accounts.js";
 import { replicatedEntityTypes } from "../src/replication.js";
 import { EVENT_SCOPES } from "../src/server/replication-v2.js";
 import * as profileService from "../src/provider-profiles/service.js";
@@ -87,15 +90,49 @@ test("pool creation rejects empty, duplicate, foreign, or nonexistent profiles",
   assert.throws(() => create("pool-validation", { name: "Bad provider", profileIds: [alice.id], fallbackModels: { unknown: "model" } }), /unknown|unrecognized/i);
 });
 
-test("automation-only profiles cannot be shared into an interactive pool", () => {
+test("a pool member can be shared for automation and stays usable by its owner", () => {
   const create = required(poolApi.createSubscriptionPool);
   const candidates = required(poolApi.poolCandidates);
   const profile = createProviderProfile("pool-private", { label: "Private", provider: "claude" });
   const pool = create("pool-private", { name: "Private pool", profileIds: [profile.id] });
-  assert.throws(() => setProviderProfileShared("pool-private", profile.id, true), /pools/i);
-  assert.equal(providerProfile("pool-private", profile.id).shared, false);
-  settingsDatabase().prepare("UPDATE provider_profiles SET shared=1 WHERE id=?").run(profile.id);
-  assert.throws(() => candidates(pool, "claude"), /automation-only/i);
+  setProviderProfileShared("pool-private", profile.id, true);
+  assert.equal(providerProfile("pool-private", profile.id).shared, true);
+  assert.deepEqual(candidates(pool, "claude").map(({ id }) => id), [profile.id]);
+  assert.equal(accessibleProviderProfile("pool-private", profile.id, "interactive").id, profile.id);
+  assert.deepEqual(listAccessibleProviderProfiles("pool-private", "interactive").map(({ id }) => id), [profile.id]);
+  assert.throws(() => accessibleProviderProfile("pool-stranger", profile.id, "interactive"), /not found/i);
+  const shared = createProviderProfile("pool-private", { label: "Shared first", provider: "openai-codex" });
+  setProviderProfileShared("pool-private", shared.id, true);
+  assert.equal(create("pool-private", { name: "Shared pool", profileIds: [shared.id] }).members[0].profileId, shared.id);
+});
+
+test("automations with nothing of their own fall back to the administrator's cluster pool, else a pool on the node", async () => {
+  const db = settingsDatabase();
+  db.exec("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL, home_node_id TEXT, role TEXT, account_id TEXT)");
+  const saved = db.prepare("SELECT * FROM users").all() as Array<Record<string, unknown>>;
+  db.prepare("DELETE FROM users").run();
+  try {
+    const admin = accountIdFor((await getClusterNode()).id, "fallback-admin");
+    db.prepare("INSERT INTO users (id, username, home_node_id, role, account_id) VALUES ('u-fallback', 'fallback-admin', NULL, 'admin', ?)").run(admin);
+    assert.equal(adminAccountId(db), admin);
+    const clusterScope = { ...scope, clusterIds: ["cluster-a"] };
+    assert.equal(automationFallbackPool(["claude"], clusterScope), undefined);
+    const codex = createProviderProfile(admin, { label: "Codex", provider: "openai-codex" });
+    const claude = createProviderProfile(admin, { label: "Claude", provider: "claude" });
+    const codexPool = poolApi.createSubscriptionPool!(admin, { name: "Codex pool", profileIds: [codex.id] });
+    const first = poolApi.createSubscriptionPool!(admin, { name: "First Claude", profileIds: [claude.id] });
+    const second = poolApi.createSubscriptionPool!(admin, { name: "Cluster Claude", profileIds: [claude.id] });
+    assert.equal(automationFallbackPool(["claude"], clusterScope)?.id, first.id);
+    assert.equal(automationFallbackPool(["openai-codex"], clusterScope)?.id, codexPool.id);
+    poolApi.setSubscriptionPoolChoice!(admin, { scope: "cluster", scopeId: "cluster-a", poolId: second.id });
+    assert.equal(automationFallbackPool(["claude"], clusterScope)?.id, second.id);
+    assert.equal(automationFallbackPool(["claude"], { ...scope, clusterIds: ["cluster-b"] })?.id, first.id);
+    poolApi.setSubscriptionPoolChoice!(admin, { scope: "cluster", scopeId: "cluster-a", poolId: null });
+  } finally {
+    db.prepare("DELETE FROM users").run();
+    const insert = db.prepare("INSERT INTO users (id, username, home_node_id, role, account_id) VALUES (?,?,?,?,?)");
+    for (const row of saved) insert.run(row.id as string, row.username as string, row.home_node_id as string | null, row.role as string | null, row.account_id as string | null);
+  }
 });
 
 test("pool candidates try the preferred provider first and preserve order within each provider", () => {

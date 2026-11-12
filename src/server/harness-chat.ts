@@ -16,7 +16,7 @@ import WebSocket from "ws";
 import { getClusterNode } from "../cluster.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscriptionPoolAssignment } from "../provider-profiles/pool-sharing.js";
-import { poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
+import { automationFallbackPool, poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
 import { projectProviderProfile } from "../provider-profiles/service.js";
 import { withPoolProfile, type PoolProfileContext } from "../provider-profiles/context.js";
 import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../provider-profiles/pool-execution.js";
@@ -297,10 +297,12 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
   const scope = { projectId: request.projectId, workspaceId: request.workspaceId, conversationId: request.conversationId, clusterIds: projectClusterIds(db, local.id, request.projectId) };
   const choice = (engine === "pi" ? resolveSubscriptionChoice(accountId, "pi", scope, usage) : undefined)
     ?? resolveSubscriptionChoice(accountId, preferred, scope, usage);
-  if (choice?.kind !== "pool") return undefined;
-  const profiles = poolCandidates(choice.pool, preferred);
-  return { id: choice.pool.id, name: choice.pool.name, harnessId: engine, fallbackModels: choice.pool.fallbackModels, sameProviderOnly: engine === "claude",
-    candidates: profiles.map((profile) => ({ profileId: profile.id, provider: profile.provider, label: profile.label, poolId: choice.pool.id, profile })) };
+  const pool = choice?.kind === "pool" ? choice.pool
+    : !choice && usage === "automation" ? automationFallbackPool(engine === "pi" ? ["pi", preferred] : [preferred], scope) : undefined;
+  if (!pool) return undefined;
+  const profiles = poolCandidates(pool, preferred);
+  return { id: pool.id, name: pool.name, harnessId: engine, fallbackModels: pool.fallbackModels, sameProviderOnly: engine === "claude",
+    candidates: profiles.map((profile) => ({ profileId: profile.id, provider: profile.provider, label: profile.label, poolId: pool.id, profile })) };
 }
 function resolveTurnSubscriptionPool(connection: HarnessChatConnection, queued: { settings?: QueuedSettings | null; automationProfile?: QueuedPrompt["automationProfile"]; author?: MessageAuthor }): Promise<TurnSubscriptionPool | undefined> {
   return resolveSubscriptionPool({

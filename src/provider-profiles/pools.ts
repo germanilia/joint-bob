@@ -9,7 +9,7 @@ import {
   ensureProviderProfileSchema,
   listSubscriptionSelections,
   matchingSelection,
-  onlyPrivateProfile,
+  onlyOwnProfile,
   poolChoiceSchema,
   profileProviderSchema,
   providerProfile,
@@ -134,7 +134,6 @@ function writePool(db: DatabaseSync, pool: SubscriptionPool, deleted: boolean, a
 function poolProfiles(owner: string, profileIds: string[]): ProviderProfile[] {
   const profiles = profileIds.map((id) => providerProfile(owner, id));
   if (profiles.some((profile) => profile.provider === "kiro")) throw new Error("Kiro profiles are standalone and cannot join subscription pools");
-  if (profiles.some((profile) => profile.shared)) throw new Error("Automation-only profiles cannot be added to a subscription pool");
   return profiles;
 }
 function poolFromInput(owner: string, id: string, input: unknown, createdAt: string, updatedAt: string): SubscriptionPool {
@@ -199,8 +198,20 @@ export function resolveSubscriptionChoice(owner: string, provider: ProfileProvid
   if (match?.entry.poolId) return { kind: "pool", pool: getSubscriptionPool(owner, match.entry.poolId), source: match.source };
   if (match?.entry.profileId) return { kind: "profile", profile: accessibleProviderProfile(owner, match.entry.profileId, usage), source: match.source };
   if (match?.entry.machine) return { kind: "machine", source: match.source };
-  const only = onlyPrivateProfile(owner, profileProviderSchema.parse(provider));
+  const only = onlyOwnProfile(owner, profileProviderSchema.parse(provider));
   return only ? { kind: "profile", profile: only, source: "default" } : undefined;
+}
+/**
+ * An automation whose creator has no profile or pool for the turn runs on a pool of this node's
+ * administrator: the one chosen for the project's cluster (or its project, workspace or default),
+ * else the administrator's first pool holding one of the turn's providers.
+ */
+export function automationFallbackPool(providers: readonly ProfileProvider[], scope: ProfileScope): SubscriptionPool | undefined {
+  const admin = adminAccountId(database());
+  if (!admin) return undefined;
+  const chosen = matchingSelection(listSubscriptionSelections(admin).filter((entry) => entry.poolId && providers.includes(entry.provider)), scope);
+  if (chosen) return getSubscriptionPool(admin, chosen.entry.poolId!);
+  return listSubscriptionPools(admin).find((pool) => poolProviders(admin, pool).some((provider) => providers.includes(provider)));
 }
 export function poolCandidates(pool: SubscriptionPool, preferredProvider: ProfileProvider): ProviderProfile[] {
   const current = getSubscriptionPool(pool.owner, pool.id);

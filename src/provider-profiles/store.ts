@@ -160,10 +160,6 @@ export function setProviderProfileShared(owner: string, id: string, shared: bool
   const profile = providerProfile(owner, id), db = database();
   if (profile.provider === "kiro" && shared) throw new Error("Kiro profiles are private and standalone");
   if (profile.provider === "antigravity" && shared) throw new Error("Antigravity profiles are private and standalone");
-  const poolTablesExist = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='subscription_pool_members'").get();
-  if (shared && poolTablesExist && db.prepare("SELECT 1 FROM subscription_pool_members m JOIN subscription_pools p ON p.id=m.pool_id WHERE m.profile_id=? AND p.deleted=0 LIMIT 1").get(id)) {
-    throw new Error("Remove this profile from its pools before sharing it for automation");
-  }
   transaction(db, () => writeProfile(db, { ...profile, shared, deleted: false }, stamp(db, origin(db))));
   return providerProfile(owner, id);
 }
@@ -171,16 +167,14 @@ export function setProviderProfileShared(owner: string, id: string, shared: bool
 export function listAccessibleProviderProfiles(accountId: string, usage: ProfileUsage): ProviderProfile[] {
   const rows = usage === "automation"
     ? database().prepare("SELECT * FROM provider_profiles WHERE (owner=? OR shared=1) AND deleted=0 ORDER BY created_at,rowid").all(accountId)
-    : database().prepare("SELECT * FROM provider_profiles WHERE owner=? AND shared=0 AND deleted=0 ORDER BY created_at,rowid").all(accountId);
+    : database().prepare("SELECT * FROM provider_profiles WHERE owner=? AND deleted=0 ORDER BY created_at,rowid").all(accountId);
   return (rows as Array<Record<string, unknown>>).map(fromRow);
 }
 
 export function accessibleProviderProfile(accountId: string, id: string, usage: ProfileUsage): ProviderProfile {
   const row = database().prepare("SELECT * FROM provider_profiles WHERE id=? AND deleted=0").get(id) as Record<string, unknown> | undefined;
   if (!row || (row.owner !== accountId && !(usage === "automation" && row.shared === 1))) throw new Error("Provider profile not found or access revoked on this node");
-  const profile = fromRow(row);
-  if (usage === "interactive" && profile.shared) throw new Error("Shared profiles are for automation only. Select a private profile.");
-  return profile;
+  return fromRow(row);
 }
 
 /** A twin asks only about the administrator's profiles; twins never carry anyone else's. */
@@ -289,7 +283,7 @@ export function resolveProviderProfile(owner: string, provider: ProfileProvider,
   if (match?.entry.poolId) throw new Error("Selected subscription pool requires pool-aware execution");
   if (match?.entry.profileId) return { profile: accessibleProviderProfile(owner, match.entry.profileId, usage), source: match.source };
   if (match?.entry.machine) return undefined;
-  const only = onlyPrivateProfile(owner, provider);
+  const only = onlyOwnProfile(owner, provider);
   return only ? { profile: only, source: "default" } : undefined;
 }
 /** True when the choice that applies to this scope is this machine's own sign-in, which uses no profile. */
@@ -298,13 +292,13 @@ export function machineSignInChosen(owner: string, provider: ProfileProvider, sc
   return matchingSelection(listSubscriptionSelections(owner).filter((entry) => entry.provider === provider), scope)?.entry.machine === true;
 }
 /**
- * With no choice at any level, a provider's only private profile is the one meant; with two or more
+ * With no choice at any level, the owner's only profile for a provider is the one meant; with two or more
  * none is guessed. A Pi profile holds several providers, so the Pi engine instead checks whether a
  * single Pi profile holds the turn's provider (projectProviderProfile).
  */
-export function onlyPrivateProfile(owner: string, provider: ProfileProvider): ProviderProfile | undefined {
+export function onlyOwnProfile(owner: string, provider: ProfileProvider): ProviderProfile | undefined {
   if (provider === "pi") return undefined;
-  const candidates = listProviderProfiles(owner).filter((profile) => profile.provider === provider && !profile.shared);
+  const candidates = listProviderProfiles(owner).filter((profile) => profile.provider === provider);
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 

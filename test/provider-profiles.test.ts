@@ -47,7 +47,7 @@ test("profiles cannot be read or selected by another user or for another provide
   assert.throws(() => createProviderProfile("owner", { label: "", provider: "claude" }), /./);
 });
 
-test("shared profiles are available node-wide only for automation, including for their owner", async () => {
+test("shared profiles are available node-wide for automation and stay usable by their owner", async () => {
   const { setProviderProfileShared, accessibleProviderProfile, listAccessibleProviderProfiles } = await import("../src/provider-profiles/store.js");
   const profile = createProviderProfile("sharing-owner", { label: "Automation", provider: "claude" });
   assert.throws(() => accessibleProviderProfile("sharing-other", profile.id, "automation"), /not found|access/);
@@ -55,22 +55,23 @@ test("shared profiles are available node-wide only for automation, including for
   setProviderProfileShared("sharing-owner", profile.id, true);
   assert.equal(accessibleProviderProfile("sharing-other", profile.id, "automation").id, profile.id);
   assert.equal(listAccessibleProviderProfiles("sharing-other", "automation").some((entry) => entry.id === profile.id), true);
-  for (const user of ["sharing-owner", "sharing-other"]) {
-    assert.throws(() => accessibleProviderProfile(user, profile.id, "interactive"), /automation|access/);
-    assert.equal(listAccessibleProviderProfiles(user, "interactive").some((entry) => entry.id === profile.id), false);
-  }
-  assert.throws(() => setProviderProfileSelection("sharing-owner", { provider: "claude", scope: "default", scopeId: "", profileId: profile.id }), /automation|access/);
+  assert.throws(() => accessibleProviderProfile("sharing-other", profile.id, "interactive"), /not found|access/);
+  assert.equal(listAccessibleProviderProfiles("sharing-other", "interactive").some((entry) => entry.id === profile.id), false);
+  assert.equal(accessibleProviderProfile("sharing-owner", profile.id, "interactive").id, profile.id);
+  assert.equal(listAccessibleProviderProfiles("sharing-owner", "interactive").some((entry) => entry.id === profile.id), true);
+  setProviderProfileSelection("sharing-owner", { provider: "claude", scope: "default", scopeId: "", profileId: profile.id });
+  setProviderProfileSelection("sharing-owner", { provider: "claude", scope: "default", scopeId: "", profileId: null });
   setProviderProfileShared("sharing-owner", profile.id, false);
   assert.throws(() => accessibleProviderProfile("sharing-other", profile.id, "automation"), /not found|access/);
   assert.equal(accessibleProviderProfile("sharing-owner", profile.id, "interactive").id, profile.id);
 });
 
-test("sharing an already selected profile rejects interactive resolution rather than falling back", async () => {
+test("sharing an already selected profile keeps the owner's selection", async () => {
   const { setProviderProfileShared } = await import("../src/provider-profiles/store.js");
   const profile = createProviderProfile("revoked-interactive", { label: "Private", provider: "claude" });
   setProviderProfileSelection(profile.owner, { provider: "claude", scope: "default", scopeId: "", profileId: profile.id });
   setProviderProfileShared(profile.owner, profile.id, true);
-  assert.throws(() => resolveProviderProfile(profile.owner, "claude", { projectId: "p", workspaceId: "w" }), /automation|access/);
+  assert.equal(resolveProviderProfile(profile.owner, "claude", { projectId: "p", workspaceId: "w" })?.profile.id, profile.id);
 });
 
 test("deleting a selected profile is refused instead of silently falling back", () => {
@@ -89,7 +90,7 @@ test("profile selection schema accepts a pool choice without a profile choice", 
   if (parsed.success) assert.equal(parsed.data.poolId, poolId);
 });
 
-test("with nothing chosen, a provider's only private profile is used, and two or more are never guessed", async () => {
+test("with nothing chosen, a provider's only profile is used, and two or more are never guessed", async () => {
   const { resolveSubscriptionChoice } = await import("../src/provider-profiles/pools.js");
   const { setProviderProfileShared } = await import("../src/provider-profiles/store.js");
   const owner = "only-profile-owner", scope = { projectId: "p", workspaceId: "w" };
@@ -106,7 +107,7 @@ test("with nothing chosen, a provider's only private profile is used, and two or
   const second = createProviderProfile(owner, { label: "Second", provider: "openai-codex" });
   assert.equal(resolveProviderProfile(owner, "openai-codex", scope), undefined, "two profiles: the user chooses");
   setProviderProfileShared(owner, second.id, true);
-  assert.equal(resolveProviderProfile(owner, "openai-codex", scope)?.profile.id, only.id, "a profile shared for automation does not count");
+  assert.equal(resolveProviderProfile(owner, "openai-codex", scope), undefined, "a profile shared for automation still counts as the owner's");
   createProviderProfile(owner, { label: "Pi", provider: "pi" });
   assert.equal(resolveProviderProfile(owner, "pi", scope), undefined, "a Pi profile is never picked without a choice here");
 });

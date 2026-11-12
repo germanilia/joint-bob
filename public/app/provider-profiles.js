@@ -49,7 +49,7 @@ const sections = {};
 let loginTimer;
 
 const providerOf = (id) => PROVIDERS.find((item) => item.id === id);
-const privateProfiles = (provider) => profiles.filter((item) => item.provider === provider && !item.shared);
+const ownProfiles = (provider) => profiles.filter((item) => item.provider === provider);
 const profileNamed = (id) => profiles.find((item) => item.id === id);
 const poolNamed = (id) => pools.find((item) => item.id === id);
 const selectionValue = (entry) => entry?.poolId ? `pool:${entry.poolId}` : entry?.machine ? "machine" : entry?.profileId ? `profile:${entry.profileId}` : null;
@@ -174,7 +174,7 @@ function render() {
   title.append(heading, el("p", { text: "Sign in to your accounts under Profiles, group them for failover under Pools, and choose which one each conversation uses under Assignments." }));
   const synced = el("span", { className: "profile-badge synced", text: "Synced with your twins" }); synced.prepend(menuIcon("transfer"));
   header.append(icon, title, synced);
-  const about = el("p", { className: "settings-hint", text: "A sign-in stays on the machine where you signed in and never goes through the relay. Subscription profiles on a twin can borrow short-lived tokens from that machine; Kiro and Antigravity credentials never relay or borrow. Sign in locally on each machine that runs turns. A profile shared for automation serves automations only, never human turns." });
+  const about = el("p", { className: "settings-hint", text: "A sign-in stays on the machine where you signed in and never goes through the relay. Subscription profiles on a twin can borrow short-lived tokens from that machine; Kiro and Antigravity credentials never relay or borrow. Sign in locally on each machine that runs turns. A profile shared for automation stays yours to use as well." });
   for (const name of Object.keys(builders)) sections[name] = builders[name]();
   sections.header = header; sections.about = about;
   showView();
@@ -247,11 +247,11 @@ function poolMemberRow(index) {
   const row = el("div", { className: "pool-member-editor", testid: "subscription-pool-member-row" });
   const value = poolEditor.profileIds[index] ?? "";
   const usedElsewhere = new Set(poolEditor.profileIds.filter((id, position) => position !== index && id));
-  const options = profiles.filter((profile) => !profile.shared && profile.provider !== "kiro" && (!usedElsewhere.has(profile.id) || profile.id === value)).map((profile) => ({
+  const options = profiles.filter((profile) => profile.provider !== "kiro" && (!usedElsewhere.has(profile.id) || profile.id === value)).map((profile) => ({
     value: profile.id, label: profile.label, detail: `${providerOf(profile.provider).name} · ${profileStatusLabel(profile.id)}`,
   }));
   if (value && !options.some((option) => option.value === value)) options.unshift({ value, label: profileNamed(value)?.label ?? "Unavailable profile", detail: "Choose another profile" });
-  const picker = createSearchableSelect({ id: `subscriptionPoolMember${index}`, testid: `subscription-pool-member-${index}`, label: `Pool profile ${index + 1}`, prompt: "Choose a private profile", placeholder: "Search profiles", emptyText: "No private profiles found" });
+  const picker = createSearchableSelect({ id: `subscriptionPoolMember${index}`, testid: `subscription-pool-member-${index}`, label: `Pool profile ${index + 1}`, prompt: "Choose a profile", placeholder: "Search profiles", emptyText: "No profiles found" });
   picker.setOptions(options); picker.setValue(value);
   // The fallback fields depend on which providers the pool holds.
   picker.onChange((profileId) => { poolEditor.profileIds[index] = profileId; rerender("pools"); });
@@ -332,7 +332,7 @@ async function savePool() {
   if (!poolEditor.name.trim() || !profileIds.length) throw new Error("Enter a pool name and choose at least one profile");
   if (new Set(profileIds).size !== profileIds.length) throw new Error("Choose each profile only once");
   const members = profileIds.map((id) => profileNamed(id));
-  if (members.some((profile) => !profile || profile.shared)) throw new Error("Pools can contain only your private profiles");
+  if (members.some((profile) => !profile)) throw new Error("Pools can contain only your own profiles");
   const fallbackModels = Object.fromEntries(POOL_HARNESSES.map(({ id }) => [id, poolEditor.fallbackModels[id]?.trim()]).filter(([, value]) => value));
   const payload = { name: poolEditor.name.trim(), profileIds, fallbackModels };
   if (poolEditor.id) await api(`/api/provider-profiles/pools/${poolEditor.id}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -485,7 +485,7 @@ function profileCard(profile) {
   }, { icon: "transfer" });
   signOut.hidden = true;
   const share = actionButton(profile.shared ? "Make private" : "Share for automation", "provider-profile-sharing", async () => {
-    if (!await confirmAction({ title: profile.shared ? "Make profile private?" : "Share profile for automation?", message: profile.shared ? "Other users' automations using this profile will stop. Your interactive selections can use it again." : "Every user on this node can assign this profile to automations. It will no longer be available for interactive turns, including your own." })) return;
+    if (!await confirmAction({ title: profile.shared ? "Make profile private?" : "Share profile for automation?", message: profile.shared ? "Other users' automations using this profile will stop. You can still use it." : "Every user on this node can assign this profile to automations. You can still use it in your own conversations and pools." })) return;
     await api(`/api/provider-profiles/${profile.id}/sharing`, { method: "PUT", body: JSON.stringify({ shared: !profile.shared }) });
     await loadProviderProfiles();
   }, { icon: profile.shared ? "lock" : "share" });
@@ -575,7 +575,7 @@ function relayRuleNote(provider) {
 }
 /** What a turn uses when nothing is chosen at any level, as the server resolves it. */
 function automaticDefault(provider) {
-  const own = privateProfiles(provider);
+  const own = ownProfiles(provider);
   if (own.length !== 1) return undefined;
   return provider === "pi" ? { label: `Automatic: ${own[0].label}`, hint: `With none chosen, your only Pi profile, ${own[0].label}, is used for the providers it holds.` }
     : { label: `Automatic: ${own[0].label}`, hint: `With none chosen, your only ${providerOf(provider).name} profile, ${own[0].label}, is used. Once you add another, choose one here.` };
@@ -583,7 +583,7 @@ function automaticDefault(provider) {
 function choiceOptions(provider) {
   return [
     ...(provider === "claude" || provider === "openai-codex" || provider === "antigravity" ? [{ value: "machine", label: "This machine's own sign-in", detail: "No profile: the sign-in on this machine" }] : []),
-    ...privateProfiles(provider).map((profile) => ({ value: `profile:${profile.id}`, label: profile.label, detail: `${providerOf(provider).name} profile · ${profileStatusLabel(profile.id)}` })),
+    ...ownProfiles(provider).map((profile) => ({ value: `profile:${profile.id}`, label: profile.label, detail: `${providerOf(provider).name} profile · ${profileStatusLabel(profile.id)}` })),
     ...(provider === "kiro" ? [] : poolOptions().map((option) => ({ ...option, value: `pool:${option.value}` }))),
   ];
 }
@@ -592,7 +592,7 @@ function choiceLabel(value) {
   if (value.startsWith("pool:")) return poolNamed(value.slice(5))?.name ?? "Unavailable pool";
   return profileNamed(value.slice(8))?.label ?? "Unavailable profile";
 }
-/** A choice the provider can no longer use, such as a profile since shared for automation. */
+/** A choice the provider can no longer use, such as a deleted profile. */
 const usableChoice = (provider, value) => choiceOptions(provider).some((option) => option.value === value);
 function selectionPayload(provider, scope, scopeId, value) {
   if (value === "machine") return { provider, scope, scopeId, profileId: null, machine: true };

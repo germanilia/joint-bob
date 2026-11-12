@@ -134,7 +134,7 @@ async function projectScope(projectId: string, workspaceId: string, conversation
 }
 /** A single Pi profile serves a Pi turn whose provider it holds; it is never guessed for a provider it lacks. */
 function onlyPiProfileHolding(owner: string, provider: string): ProviderProfile | undefined {
-  const candidates = listProviderProfiles(owner).filter((profile) => profile.provider === "pi" && !profile.shared);
+  const candidates = listProviderProfiles(owner).filter((profile) => profile.provider === "pi");
   return candidates.length === 1 && readStoredCredential(provider, openAIAuthPath(candidates[0])) ? candidates[0] : undefined;
 }
 

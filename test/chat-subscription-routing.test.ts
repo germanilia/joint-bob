@@ -96,7 +96,7 @@ function fixture(selection: Selection, failure?: string) {
       lookups.push({ account, provider, scope, usage });
       return selection === "pool" ? { kind: "pool", pool } : undefined;
     },
-    poolCandidates: () => profiles, projectProviderProfile: async () => ({ label: selectedProfile() }),
+    poolCandidates: () => profiles, automationFallbackPool: () => undefined, projectProviderProfile: async () => ({ label: selectedProfile() }),
     getAutoRespond: async () => undefined, findHarnessSession: () => shared,
     teamQueuedTurn: async () => undefined, teamConversation: async () => undefined,
     getSettings: () => ({ digestAttachments: false, conversationDefaults: { claude: { provider: "claude", modelId: "opus", thinkingLevel: "high" } } }), markHarnessInput: () => {},
