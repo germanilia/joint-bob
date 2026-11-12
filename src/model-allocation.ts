@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { assessmentSchema, evidenceSchema, evidenceFresh, modelIdentitySchema, modelKey, outcomeSchema, type ModelIdentity, type ModelOutcome } from "./model-evidence.js";
 
-export const ALLOCATION_POLICY_VERSION = "1";
+export const ALLOCATION_POLICY_VERSION = "2";
 const minimumSamples = 20;
 const qualityFloors = { low: 0.6, medium: 0.75, high: 0.9 };
 const money = z.number().finite().nonnegative();
@@ -29,6 +29,7 @@ export function recommendModels(raw: AllocationInput) {
   if (input.pinned || input.assessment.confidence < 0.8 || input.assessment.domain === "other") return { mode: "recommendation-only" as const, version: ALLOCATION_POLICY_VERSION, baseline: input.baseline, recommended: null, ranked, excluded, reason: input.pinned ? "Manual selection wins" : "Assessment is uncertain or unsupported; retain baseline" };
   for (const candidate of input.candidates) {
     const exclude = (reason: string) => excluded.push({ identity: candidate.identity, reason });
+    if (candidate.identity.harness !== input.baseline.harness) { exclude("Recovery and allocation must stay in the same harness"); continue; }
     if (!candidate.authorized || !candidate.available) { exclude("Account or harness is not available and authorized"); continue; }
     if (input.assessment.capabilities.some(capability => !candidate.capabilities.includes(capability))) { exclude("Required capability unavailable"); continue; }
     if ([candidate.attemptCost, candidate.handoffCost, candidate.evaluationCost, candidate.recoveryCost].some(cost => cost === null)) { exclude("Unknown price; never treated as zero"); continue; }
@@ -57,7 +58,7 @@ export function recommendModels(raw: AllocationInput) {
     reason: ranked.length ? "Lowest estimated total cost among candidates meeting the quality floor" : "No qualified candidate; retain the approved baseline" };
 }
 
-export const recoveryStateSchema = z.object({ attempts: z.number().int().min(0).max(2), spent: money, reserved: money, allowance: money, pendingExternalOperation: z.boolean(), writerActive: z.boolean(), validated: z.boolean(), enabled: z.boolean() }).strict();
+export const recoveryStateSchema = z.object({ harness: z.string().trim().min(1).max(80), attempts: z.number().int().min(0).max(2), spent: money, reserved: money, allowance: money, pendingExternalOperation: z.boolean(), writerActive: z.boolean(), validated: z.boolean(), enabled: z.boolean() }).strict();
 export type RecoveryState = z.infer<typeof recoveryStateSchema>;
 export function reserveRecovery(raw: RecoveryState, cost: number, nextQuality: number, previousQuality: number): RecoveryState {
   const state = recoveryStateSchema.parse(raw);

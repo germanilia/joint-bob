@@ -10,6 +10,10 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-11-worktree-integration-and-evidence-routing-design.md` (sections 5–10; rollout phases 2–3)
 
+## Scope amendment, 2026-11-12
+
+The user confirmed that allocation and recovery must stay within the current harness. Model/provider changes are allowed only within that harness. This supersedes cross-harness switching in the original steps below. Recovery reservations bind the original harness durably, including after restart. No harness handoff is part of the remaining implementation.
+
 ## Global Constraints
 
 - Manual model/provider/harness choice and explicit task instructions take precedence.

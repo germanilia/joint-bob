@@ -5,6 +5,7 @@ import { outcomeSchema, type ModelOutcome } from "./model-evidence.js";
 import { recoveryStateSchema, reserveRecovery, type RecoveryState } from "./model-allocation.js";
 
 const reservationSchema = z.object({
+  harness: z.string().trim().min(1).max(80),
   taskId: z.string().min(1).max(200), operationId: z.string().min(1).max(200), cost: z.number().finite().nonnegative(),
   nextQuality: z.number().min(0).max(1), previousQuality: z.number().min(0).max(1),
   checkpoint: z.object({ worktreeId: z.string().min(1).max(200), baseCommit: z.string().regex(/^[a-f0-9]{40}$/), candidateCommit: z.string().regex(/^[a-f0-9]{40}$/), checkIds: z.array(z.string().min(1).max(200)).max(100) }).strict(),
@@ -66,6 +67,7 @@ export class AllocationStore {
       }
       const task = this.db.prepare("SELECT state FROM model_allocation_tasks WHERE owner_id=? AND task_id=?").get(ownerId, input.taskId) as { state: string } | undefined;
       const current = task ? recoveryStateSchema.parse(JSON.parse(task.state)) : initial;
+      if (input.harness !== current.harness) throw new Error("Recovery must stay in the same harness");
       const next = { ...reserveRecovery(current, input.cost, input.nextQuality, input.previousQuality), writerActive: true };
       this.db.prepare("INSERT INTO model_allocation_tasks VALUES(?,?,?) ON CONFLICT(owner_id,task_id) DO UPDATE SET state=excluded.state").run(ownerId, input.taskId, JSON.stringify(next));
       this.db.prepare("INSERT INTO model_allocation_reservations VALUES(?,?,?,?,?,0)").run(input.operationId, ownerId, hash, JSON.stringify(input), JSON.stringify(next));

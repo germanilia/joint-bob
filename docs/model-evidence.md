@@ -12,8 +12,9 @@ The official [SWE-bench leaderboard](https://www.swebench.com/) was inspected th
 
 A record expires after 90 days from publication or retrieval. Refreshing an old result's retrieval date cannot make the result fresh. Evidence must retain its source URL, dates, sample size and limitations. No background scraper runs.
 
-## Recommendation policy version 1
+## Recommendation policy version 2
 
+- Candidates must use the baseline's harness. Recovery also binds the task's original harness durably; another model/provider is permitted only within that harness.
 - At least 20 distinct known task outcomes in the same domain, complexity and risk group are required.
 - Unknown, authentication and unavailable-model outcomes are not successes.
 - A compatible public result contributes at most ten prior observations. It cannot raise the empirical conservative quality floor.
@@ -29,7 +30,7 @@ The preview's availability/capability/cost fields are caller-provided assumption
 
 Recovery primitives require explicit opt-in, held-out validation, a finite positive allowance, a stopped writer and no uncertain external operation. They reserve cost transactionally, allow at most two stronger attempts, and return `dispatch: false` when an operation ID is repeated. An interrupted reservation remains fenced until its actual execution is reconciled. Settlement records actual spending; it cannot authorize another attempt beyond the allowance.
 
-**Still gated:** automatic cross-provider/harness dispatch, production outcome attribution/collection integration and activation based on accepted held-out evidence. The preview and reservation primitives alone are not an autonomous router. No paid recovery or live evaluation was enabled by this change.
+**Still gated:** automatic model/provider dispatch within the current harness, production outcome attribution/collection integration and activation based on accepted held-out evidence. The preview and reservation primitives alone are not an autonomous router. No paid recovery or live evaluation was enabled by this change.
 
 ## API
 

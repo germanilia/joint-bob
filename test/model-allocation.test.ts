@@ -27,6 +27,15 @@ test("recommendation ranks qualified candidates by total expected cost, without 
   assert.ok(result.ranked[0].expectedCost > 1.15);
 });
 
+test("recommendations never leave the baseline harness even for cheaper qualified models", () => {
+  const value = input();
+  value.candidates[1].identity.harness = "claude";
+  value.outcomes = value.outcomes.map(row => row.identity.modelId === "cheap" ? { ...row, identity: { ...row.identity, harness: "claude" } } : row);
+  const result = recommendModels(value);
+  assert.equal(result.recommended?.modelId, "expensive");
+  assert.match(result.excluded.find(row => row.identity.modelId === "cheap")!.reason, /same harness/i);
+});
+
 test("manual pins, low confidence, unknown costs, access limits and sparse history retain baseline", () => {
   assert.equal(recommendModels({ ...input(), pinned: true }).recommended, null);
   assert.equal(recommendModels({ ...input(), assessment: { ...task, confidence: 0.2 } }).recommended, null);
@@ -44,7 +53,7 @@ test("authentication and unknown results never count as verified success", () =>
 });
 
 test("recovery reserves finite approved cost, stronger attempts only, never uncertain external work", () => {
-  const state = { attempts: 0, spent: 0, reserved: 0, allowance: 3, pendingExternalOperation: false, writerActive: false, validated: true, enabled: true };
+  const state = { harness: "pi", attempts: 0, spent: 0, reserved: 0, allowance: 3, pendingExternalOperation: false, writerActive: false, validated: true, enabled: true };
   assert.equal(reserveRecovery(state, 1, 0.9, 0.8).reserved, 1);
   for (const bad of [{ ...state, attempts: 2 }, { ...state, allowance: 0 }, { ...state, pendingExternalOperation: true }, { ...state, writerActive: true }, { ...state, validated: false }]) assert.throws(() => reserveRecovery(bad, 1, 0.9, 0.8));
   assert.throws(() => reserveRecovery(state, 1, 0.7, 0.8));

@@ -21,8 +21,8 @@ test("recovery reservations are durable, idempotent and scoped; interrupted atte
   const db = new DatabaseSync(":memory:");
   try {
     const store = new AllocationStore(db);
-    const state = { attempts: 0, spent: 0, reserved: 0, allowance: 3, pendingExternalOperation: false, writerActive: false, validated: true, enabled: true };
-    const input = { taskId: "task", operationId: "op", cost: 1, nextQuality: 0.9, previousQuality: 0.8, checkpoint: { worktreeId: "worktree", baseCommit: "a".repeat(40), candidateCommit: "b".repeat(40), checkIds: ["verified-check"] } };
+    const state = { harness: "pi", attempts: 0, spent: 0, reserved: 0, allowance: 3, pendingExternalOperation: false, writerActive: false, validated: true, enabled: true };
+    const input = { harness: "pi", taskId: "task", operationId: "op", cost: 1, nextQuality: 0.9, previousQuality: 0.8, checkpoint: { worktreeId: "worktree", baseCommit: "a".repeat(40), candidateCommit: "b".repeat(40), checkIds: ["verified-check"] } };
     const first = store.reserve("owner", input, state);
     const retry = new AllocationStore(db).reserve("owner", input, state);
     assert.equal(first.dispatch, true);
@@ -34,6 +34,7 @@ test("recovery reservations are durable, idempotent and scoped; interrupted atte
     assert.equal(first.state.writerActive, true);
     const finished = store.finish("owner", "op", 0.5);
     assert.equal(finished.spent, 0.5); assert.equal(finished.reserved, 0);
+    assert.throws(() => new AllocationStore(db).reserve("owner", { ...input, harness: "claude", operationId: "cross-harness" }, { ...state, harness: "claude" }), /same harness/i);
     assert.equal(store.reserve("owner", { ...input, operationId: "op2" }, state).dispatch, true);
     store.finish("owner", "op2", 1);
     assert.throws(() => store.reserve("owner", { ...input, operationId: "op3" }, state));
