@@ -19,6 +19,13 @@ test("allocation preview is authenticated, recommendation-only and cannot import
     const body = { assessment: { taskId: "task", domain: "software-repair", complexity: 4, risk: "low", capabilities: [], classifier: "fixture", confidence: 0.9 }, baseline: identity, pinned: true, candidates: [], evidence: [] };
     const preview = await api<any>(node, auth, "POST", "/routing-configs/allocation/preview", body);
     assert.equal(preview.status, 200); assert.equal(preview.body.recommended, null); assert.match(preview.body.reason, /Manual/);
+    const disabled = await api<any>(node, auth, "GET", "/routing-configs/allocation/policy");
+    assert.equal(disabled.status, 200);
+    assert.equal(disabled.body.policy.mode, "off");
+    const policy = { mode: "recommendation", candidates: [], evidence: [], recoveryAllowance: 0, acceptedValidation: false };
+    assert.equal((await api(node, auth, "PUT", "/routing-configs/allocation/policy", policy)).status, 200);
+    assert.equal((await api<any>(node, auth, "GET", "/routing-configs/allocation/policy")).body.policy.mode, "recommendation");
+    assert.equal((await api(node, auth, "PUT", "/routing-configs/allocation/policy", { ...policy, mode: "automatic", acceptedValidation: true })).status, 409);
     assert.equal((await api(node, auth, "POST", "/routing-configs/allocation/preview", { ...body, outcomes: [] })).status, 400);
     assert.equal((await api(node, auth, "POST", "/routing-configs/allocation/preview", { ...body, authorizedProjectIds: ["foreign"] })).status, 400);
   } finally { await stopDevNode(child); await rm(root, { recursive: true, force: true }); }

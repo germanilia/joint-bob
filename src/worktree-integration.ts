@@ -55,6 +55,12 @@ export function integrationStatus(projectId: string, operationId: string, ownerI
   return { worktreeId: receipt.worktreeId, phase: receipt.phase, result: receipt.result };
 }
 
+export function integrationCheckpoint(projectId: string, operationId: string, ownerId: string) {
+  const receipt = load(operationId);
+  if (!receipt || receipt.projectId !== projectId || receipt.ownerId !== ownerId || receipt.result?.status !== "verification-failed") return null;
+  return { worktreeId: receipt.worktreeId, baseCommit: receipt.candidate.targetCommit, candidateCommit: receipt.candidate.commit, checkIds: [operationId] };
+}
+
 export function hasVerifiedIntegration(projectId: string, worktreeId: string): boolean {
   return Boolean(verifiedReceipt(projectId, worktreeId));
 }

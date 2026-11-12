@@ -101,6 +101,11 @@ function fixture(selection: Selection, failure?: string) {
     teamQueuedTurn: async () => undefined, teamConversation: async () => undefined,
     getSettings: () => ({ digestAttachments: false, conversationDefaults: { claude: { provider: "claude", modelId: "opus", thinkingLevel: "high" } } }), markHarnessInput: () => {},
     activeRoutingConfig: () => null, routingConfigDatabase: () => ({}), readQueueSettings: () => null,
+    readRoutingState: () => ({ mode: "auto" }), assertAllocationRecovery: async () => {},
+    prepareConversationAllocation: async (_connection: unknown, _queued: unknown, ownerId: string) => {
+      assert.equal(ownerId, queued.automationProfile?.accountId ?? actingAccount()?.accountId, "allocation follows the paying actor, not the project owner");
+      return null;
+    },
     getProjectLock: async () => undefined, conversationBelongsToDoneTask: async () => false,
     requireLocalConversationOwner: async () => {}, listConversationSegments: async () => [],
     catchUpGitHead: async () => {}, genericSecretEnvironment: () => ({}),
@@ -127,6 +132,20 @@ function fixture(selection: Selection, failure?: string) {
   exports.harnessChatConnections.add(connection);
   return { exports, dependencies, connection, shared, queued, calls, events, lookups, restored: () => restored, completed: () => completed, blocked: () => blocked };
 }
+
+test("a manually pinned turn cannot queue an automatic stronger-model recovery", async () => {
+  const f = fixture("profile");
+  f.queued.settings = { harnessId: "claude", provider: "claude", modelId: "opus", reasoning: "high" };
+  f.dependencies.prepareConversationAllocation = async () => ({ notice: "Pinned", attempt: { identity: { harness: "claude", provider: "claude", modelId: "opus", reasoning: "high" }, assessment: { complexity: 4, confidence: 1 } } });
+  f.dependencies.getHarnessRuntime = async () => ({ validateSettings: async () => {}, readiness: async () => [] });
+  f.dependencies.completeAllocationAttempt = async () => 0.1;
+  f.dependencies.releaseAllocationAttempt = () => {};
+  f.dependencies.harnessSessionBusy = () => false;
+  let recoveries = 0;
+  f.dependencies.nextAllocationRecovery = async () => { recoveries++; return null; };
+  await runAsAccount(actor("writer"), () => f.exports.dispatch(f.connection, f.queued));
+  assert.equal(recoveries, 0, "manual per-turn settings also pin recovery");
+});
 
 for (const selection of ["profile", "pool", "relay-pool"] as const) {
   for (const origin of ["human", "bob-continuation", "remote-human", "automation-inherited", "automation-explicit", "internal-completion"] as const) {

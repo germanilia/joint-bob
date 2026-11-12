@@ -13,6 +13,10 @@ test("allocation preview stays in Settings and reports uncertainty without switc
   await page.getByTestId("settings-tab-classifiers").click();
   await page.getByTestId("allocation-preview").waitFor();
   assert.match(await page.getByTestId("allocation-status").innerText(), /recommendation|Recommendation/);
+  await page.getByTestId("allocation-mode").selectOption("recommendation");
+  await page.getByTestId("allocation-save").click();
+  await page.getByTestId("allocation-policy-status").filter({ hasText: "Saved" }).waitFor();
+  assert.equal(await page.getByTestId("allocation-mode").inputValue(), "recommendation");
   const assessment = { taskId: "task", domain: "software-repair", complexity: 4, risk: "low", capabilities: [], classifier: "fixture-v1", confidence: 0.9 };
   await page.route("**/api/routing-configs/allocation/assess", route => route.fulfill({ json: { assessment } }));
   await page.getByTestId("allocation-task").fill("Repair a parser");

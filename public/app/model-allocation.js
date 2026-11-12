@@ -1,71 +1,59 @@
 import { api } from "./api.js";
 
-/** One element with its text, test id and plain properties; the app never builds markup from strings. */
-function el(tag, { text, testid, role, ...properties } = {}) {
-  const node = Object.assign(document.createElement(tag), properties);
-  if (text !== undefined) node.textContent = text;
-  if (testid) node.dataset.testid = testid;
-  if (role) node.setAttribute("role", role);
-  return node;
+async function allocationPolicyControls(field) {
+  const display = result => {
+    field("mode").value = result.policy.mode;
+    field("allowance").value = result.policy.recoveryAllowance;
+    field("accepted").checked = result.policy.acceptedValidation;
+    field("candidates").value = JSON.stringify(result.policy.candidates, null, 2);
+    field("evidence").value = JSON.stringify(result.policy.evidence, null, 2);
+    return `${result.validation.matchedTasks} matched held-out tasks; validation ${result.validation.passed ? "passed" : "not passed"}. ${result.validation.limitation}`;
+  };
+  field("save").onclick = async () => {
+    field("save").disabled = true;
+    try {
+      const result = await api("/api/routing-configs/allocation/policy", { method: "PUT", body: JSON.stringify({ mode: field("mode").value, candidates: JSON.parse(field("candidates").value), evidence: JSON.parse(field("evidence").value), recoveryAllowance: Number(field("allowance").value), acceptedValidation: field("accepted").checked }) });
+      field("policy-status").textContent = `Saved. ${display(result)}`;
+    } catch (error) { field("policy-status").textContent = `Not saved: ${error.message}`; }
+    finally { field("save").disabled = false; }
+  };
+  try {
+    field("policy-status").textContent = display(await api("/api/routing-configs/allocation/policy"));
+    field("mode").disabled = false;
+    field("save").disabled = false;
+  } catch (error) { field("policy-status").textContent = `Could not load allocation policy: ${error.message}`; }
 }
 
-function labelled(text, control) {
-  const label = el("label", { text });
-  label.append(control);
-  return label;
-}
-
-function advancedDetails() {
-  const details = el("details");
-  details.append(
-    el("summary", { text: "Candidate estimates and benchmark snapshots" }),
-    el("p", { text: "Advanced preview: enter a JSON array of candidates with exact identity, capabilities and cost estimates. The first candidate is the baseline. Unknown costs must be null, not zero. Include no credentials. History is loaded only from your accessible projects on this machine." }),
-    labelled("Candidate estimates", el("textarea", { testid: "allocation-candidates", rows: 6, maxLength: 100000, spellcheck: false, value: "[]" })),
-    labelled("Verified benchmark snapshots (optional)", el("textarea", { testid: "allocation-evidence", rows: 3, maxLength: 200000, spellcheck: false, value: "[]" })),
-  );
-  return details;
-}
-
-function pinnedChoice() {
-  const label = el("label");
-  label.append(el("input", { type: "checkbox", testid: "allocation-pinned", checked: true }), " Keep manual baseline selection");
-  return label;
-}
-
-function resultLine() {
-  const result = el("p", { testid: "allocation-result", role: "status" });
-  result.style.whiteSpace = "pre-wrap";
-  result.style.overflowWrap = "anywhere";
-  return result;
-}
-
-function pagerButtons() {
-  const row = el("div");
-  row.append(el("button", { type: "button", testid: "allocation-previous", hidden: true, text: "Previous" }), " ", el("button", { type: "button", testid: "allocation-next", hidden: true, text: "Next" }));
-  return row;
-}
-
-/** An explicit, read-only preview. No polling, browser storage, or automatic model switch. */
+/** Explicit node-local policy controls and a non-mutating preview. No polling or browser storage. */
 export async function renderAllocationPreview() {
   if (document.querySelector('[data-testid="allocation-preview"]')) return;
   const section = document.createElement("section");
   section.dataset.testid = "allocation-preview";
   section.className = "routing-config-editor";
-  section.append(
-    el("h3", { text: "Evidence-based allocation preview" }),
-    el("p", { testid: "allocation-status", role: "status", text: "Loading evidence availability…" }),
-    el("p", { text: "Recommendation only. Existing routing and manual choices stay unchanged. Automatic recovery remains disabled until held-out acceptance and a finite approved allowance." }),
-    labelled("Task description", el("textarea", { testid: "allocation-task", rows: 3, maxLength: 12000 })),
-    el("button", { type: "button", testid: "allocation-assess", text: "Assess with configured decision model" }),
-    el("p", { testid: "allocation-assessment", role: "status" }),
-    advancedDetails(),
-    pinnedChoice(),
-    el("button", { type: "button", testid: "allocation-compare", text: "Preview recommendation" }),
-    resultLine(),
-    pagerButtons(),
-  );
+  section.innerHTML = `<h3>Evidence-based allocation preview</h3>
+    <p data-testid="allocation-status" role="status">Loading evidence availability…</p>
+    <p>Preview never changes a model. Saved policy stays within the current harness and preserves manual choices. Recording invokes the configured decision model and stores derived task evidence, not transcripts.</p>
+    <label>Evidence allocation mode<select data-testid="allocation-mode" disabled><option value="off">Off</option><option value="recommendation">Record recommendations</option><option value="automatic">Automatic after validation</option></select></label>
+    <label>Recovery allowance, USD<input data-testid="allocation-allowance" type="number" min="0" step="0.01" value="0" /></label>
+    <p>Zero disables paid recovery. Reservations use cost estimates; actual provider charges can exceed an estimate. Unknown costs block further recovery. At most two stronger attempts.</p>
+    <label><input type="checkbox" data-testid="allocation-accepted" /> I accept the held-out evidence limitations and authorize the selected policy and allowance.</label>
+    <button type="button" data-testid="allocation-save" disabled>Save allocation policy</button>
+    <p data-testid="allocation-policy-status" role="status"></p>
+    <label>Task description<textarea data-testid="allocation-task" rows="3" maxlength="12000"></textarea></label>
+    <button type="button" data-testid="allocation-assess">Assess with configured decision model</button>
+    <p data-testid="allocation-assessment" role="status"></p>
+    <details><summary>Candidate estimates and benchmark snapshots</summary>
+      <p>Advanced preview: enter a JSON array of candidates with exact identity, capabilities and cost estimates. The first candidate is the baseline. Unknown costs must be null, not zero. Include no credentials. History is loaded only from your accessible projects on this machine.</p>
+      <label>Candidate estimates<textarea data-testid="allocation-candidates" rows="6" maxlength="100000" spellcheck="false">[]</textarea></label>
+      <label>Verified benchmark snapshots (optional)<textarea data-testid="allocation-evidence" rows="3" maxlength="200000" spellcheck="false">[]</textarea></label>
+    </details>
+    <label><input type="checkbox" data-testid="allocation-pinned" checked /> Keep manual baseline selection</label>
+    <button type="button" data-testid="allocation-compare">Preview recommendation</button>
+    <p data-testid="allocation-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
+    <div><button type="button" data-testid="allocation-previous" hidden>Previous</button> <button type="button" data-testid="allocation-next" hidden>Next</button></div>`;
   document.querySelector("#settingsPanel-classifiers").append(section);
   const field = name => section.querySelector(`[data-testid="allocation-${name}"]`);
+  await allocationPolicyControls(field);
   let assessment = null;
   let lines = [], page = 0;
   const show = () => {

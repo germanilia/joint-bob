@@ -34,6 +34,7 @@ test("recovery reservations are durable, idempotent and scoped; interrupted atte
     assert.equal(first.state.writerActive, true);
     const finished = store.finish("owner", "op", 0.5);
     assert.equal(finished.spent, 0.5); assert.equal(finished.reserved, 0);
+    assert.throws(() => store.reserve("owner", { ...input, operationId: "revoked" }, { ...state, enabled: false }), /opt-in/);
     assert.throws(() => new AllocationStore(db).reserve("owner", { ...input, harness: "claude", operationId: "cross-harness" }, { ...state, harness: "claude" }), /same harness/i);
     assert.equal(store.reserve("owner", { ...input, operationId: "op2" }, state).dispatch, true);
     store.finish("owner", "op2", 1);

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { actingAccount } from "../../account-context.js";
 import { decisionModelTarget } from "../../classifiers/conversation-routing.js";
 import { allocationInputSchema, ALLOCATION_POLICY_VERSION, recommendModels } from "../../model-allocation.js";
-import { AllocationStore } from "../../model-allocation-store.js";
-import { routingPolicyDatabase } from "../../routing-policy.js";
+import { allocationPolicySchema, allocationValidation } from "../../model-allocation-policy.js";
+import { modelAllocationStore as store } from "../model-allocation.js";
 import { listProjects } from "../../store.js";
 import { systemDecisionKey } from "../../system-ai.js";
 import { systemAiSettings } from "../../system-ai-config.js";
@@ -12,8 +12,42 @@ import { sendError } from "../http-auth.js";
 import { app } from "../state.js";
 
 const previewSchema = allocationInputSchema.omit({ outcomes: true, authorizedProjectIds: true, now: true }).strict();
-let evidenceStore: AllocationStore | undefined;
-function store(): AllocationStore { return evidenceStore ??= new AllocationStore(routingPolicyDatabase()); }
+app.get("/api/routing-configs/allocation/policy", async (_request, response, next) => {
+  try {
+    const account = actingAccount();
+    if (!account) { sendError(response, 401, "An account is required"); return; }
+    const projectIds = (await listProjects()).map(project => project.id);
+    const policy = store().policy(account.accountId);
+    response.json({ policy, validation: allocationValidation(policy, store().outcomes(account.accountId, projectIds)) });
+  } catch (error) { next(error); }
+});
+
+app.put("/api/routing-configs/allocation/policy", async (request, response, next) => {
+  try {
+    const account = actingAccount();
+    if (!account) { sendError(response, 401, "An account is required"); return; }
+    const policy = allocationPolicySchema.parse(request.body);
+    const projectIds = (await listProjects()).map(project => project.id);
+    store().savePolicy(account.accountId, policy, projectIds);
+    response.json({ policy: store().policy(account.accountId), validation: allocationValidation(policy, store().outcomes(account.accountId, projectIds)) });
+  } catch (error) {
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid allocation policy"); return; }
+    if (error instanceof Error && error.message === "Automatic allocation requires accepted held-out validation") { sendError(response, 409, error.message); return; }
+    next(error);
+  }
+});
+
+app.get("/api/routing-configs/allocation/attempt", async (request, response, next) => {
+  try {
+    const account = actingAccount();
+    if (!account) { sendError(response, 401, "An account is required"); return; }
+    const scope = z.object({ projectId: z.string().min(1).max(200), conversationId: z.string().min(1).max(200) }).strict().parse(request.query);
+    if (!(await listProjects()).some(project => project.id === scope.projectId)) { sendError(response, 404, "Project not found"); return; }
+    const attempt = store().latestAttempt(account.accountId, scope.projectId, scope.conversationId);
+    const outcome = attempt ? store().outcomes(account.accountId, [scope.projectId]).find(row => row.attemptId === attempt.attemptId) : null;
+    response.json({ attempt, outcome: outcome ?? null });
+  } catch (error) { if (error instanceof z.ZodError) { sendError(response, 400, "Invalid allocation scope"); return; } next(error); }
+});
 
 app.get("/api/routing-configs/allocation", async (_request, response, next) => {
   try {

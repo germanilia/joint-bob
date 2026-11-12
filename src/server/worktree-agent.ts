@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { activeAllocationAttempt, modelAllocationStore } from "./model-allocation.js";
 import { withProjectRuntime } from "../project-runtime.js";
 import { z } from "zod";
 import { getClusterNode } from "../cluster.js";
@@ -155,8 +156,10 @@ export async function worktreeAgentRequest(identity: WorktreeAgentIdentity, requ
         const running = (await runningConversations(project.id, worktree)).filter(sessionId => ![identity.sessionId, identity.conversationId].includes(sessionId));
         if (running.length) throw new ProjectWorktreeError(409, `Worktree has other running conversations: ${running.join(", ")}`);
       }
+      const allocation = integrationStatus(project.id, request.operationId, identity.conversationId) ? undefined : activeAllocationAttempt(project.id, identity.conversationId);
       const result = await withProjectRuntime(project.id, () => integrateProjectWorktree(project, id, { ...request, ownerId: identity.conversationId, deferCleanup: id === current?.id }, undefined,
         genericSecretEnvironment(project.id, { engine: identity.engine, sessionId: identity.sessionId })));
+      if (allocation) modelAllocationStore().verifyAttempt(allocation.ownerId, project.id, identity.conversationId, request.operationId, result.status, allocation.attempt.attemptId);
       if (result.status === "committed" && id === current?.id) {
         await setSessionDone(identity.conversationId, true);
         scheduleWorktreeRetirement(project);

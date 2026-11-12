@@ -27,6 +27,8 @@ import { getConversationRecord, ensureConversationRecord, listConversationSegmen
 import type { UsageDifficulty } from "../usage-types.js";
 import { inheritedDifficulty, latestDifficultyForConversation, saveDifficulty } from "../usage-ledger.js";
 import { classifyForRouting } from "../routing-decision.js";
+import { AllocationEvidenceUnavailable } from "../model-allocation-runtime.js";
+import { prepareConversationAllocation, completeAllocationAttempt, modelAllocationStore, assertAllocationRecovery, nextAllocationRecovery, releaseAllocationAttempt } from "./model-allocation.js";
 import { systemAiSettings } from "../system-ai-config.js";
 import { automaticRoutingModelAllowed, routingCandidateListed, routingEvalDue, subscriptionFirst, type RoutingCandidate } from "../routing-policy.js";
 import { activeRoutingConfig, DEFAULT_ROUTING_CONFIG_ID, routingConfigDatabase, routingConfigWarning, type StoredRoutingConfig } from "../routing-configs.js";
@@ -742,8 +744,14 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
   markHarnessInput(shared);
   const preparationStartedAt = new Date().toISOString();
   let enteredPrompt = false;
+  let allocation: Awaited<ReturnType<typeof prepareConversationAllocation>> = null;
+  const allocationOwner = queued.automationProfile?.accountId ?? actingAccount()?.accountId;
+  const allocationMessageStart = shared.session.messages.length;
+  let allocationCompleted = false;
+  let allocationCost: number | null = null;
   let pool: TurnSubscriptionPool | undefined;
   try {
+    if (allocationOwner) await assertAllocationRecovery(connection, queued, allocationOwner, readRoutingState(queueKey(connection)).mode === "manual");
     const teamTurn = await teamQueuedTurn(connection.project.id, connection.conversationId, queued.requestId, queued.author?.accountId, queued.automationProfile?.accountId, queued.messageText);
     if (teamTurn && (queued.settings?.harnessId !== teamTurn.profile.executionSettings?.harnessId || queued.settings?.provider !== teamTurn.profile.executionSettings?.provider || queued.settings?.modelId !== teamTurn.profile.executionSettings?.modelId)) throw new Error('Team queue settings do not match the configured role');
     if (teamTurn && queued.scheduledAutoRespond) throw new Error('Team turns cannot enable automatic responses');
@@ -760,6 +768,19 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
     if (!pool && !queued.systemEventId) await announceTurnConnection(connection, queued);
     if (queued.settings) await applyQueuedSettings(connection, queued.settings, Boolean(pool));
     const difficulty = await routePromptByDifficulty(connection, queued, Boolean(pool));
+    if (allocationOwner && !pool && !teamTurn && !queued.systemEventId) {
+      try {
+        allocation = await prepareConversationAllocation(connection, queued, allocationOwner, Boolean(queued.settings) || readRoutingState(queueKey(connection)).mode === "manual", async identity => {
+          if (identity.harness !== connection.engine) throw new Error("Allocation cannot change harnesses");
+          if (readRoutingState(queueKey(connection)).mode === "manual") throw new AllocationEvidenceUnavailable("Manual selection wins; allocation skipped");
+          await applyRoutedSettings(connection, { provider: identity.provider, modelId: identity.modelId, reasoning: identity.reasoning }, false);
+        });
+        if (allocation) publish(connection, { type: "promptRouted", queueId: queued.id, skipped: allocation.notice, level: allocation.attempt.assessment.complexity, confidence: allocation.attempt.assessment.confidence });
+      } catch (error) {
+        if (!(error instanceof AllocationEvidenceUnavailable)) throw error;
+        publish(connection, { type: "promptRouted", queueId: queued.id, skipped: error.message });
+      }
+    }
     await writable(connection);
     await catchUpProjectGit(connection);
     if (!pool) await connection.shared.session.preflight();
@@ -809,7 +830,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
       const text = `${assistantContext ? `${assistantContext}${toolPolicy}\n\n` : ""}${connection.handoffContext ?? ""}${authored}`;
       const finishSilentReview = queued.requestId && (isScheduledPromptText(queued.promptText) || isSilentWebhookRequest(queued.requestId))
         ? await silentScheduledReview(connection.project, connection.engine, connection.shared.session.id, queued.requestId) : undefined;
-      const promptInput = { text: queued.systemEventId ? internalTaskPrompt(queued.systemEventId, text) : text, images: attachments.images, beforeStart: async () => { if (teamTurn) await teamQueuedTurn(connection.project.id, connection.conversationId, queued.requestId, queued.author?.accountId, queued.automationProfile?.accountId, queued.messageText); await beforeHarnessStart(connection); promptSent = true; }, onStarted: () => {
+      const promptInput = { text: queued.systemEventId ? internalTaskPrompt(queued.systemEventId, text) : text, images: attachments.images, beforeStart: async () => { if (allocationOwner) await assertAllocationRecovery(connection, queued, allocationOwner, readRoutingState(queueKey(connection)).mode === "manual", true); if (teamTurn) await teamQueuedTurn(connection.project.id, connection.conversationId, queued.requestId, queued.author?.accountId, queued.automationProfile?.accountId, queued.messageText); await beforeHarnessStart(connection); promptSent = true; }, onStarted: () => {
         armAutoCompactAfterPrompt(connection.shared.session);
         if (claimed) return;
         claimed = claimQueuedPrompt(queued.id, currentSettings(connection));
@@ -850,6 +871,16 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
     } finally {
       try {
         if (activeDifficulty && origin) saveDifficulty({ ...activeDifficulty, endedAt: new Date().toISOString(), outcome }, origin);
+        if (allocation && allocationOwner) {
+          try {
+            const answers = connection.shared.session.messages.slice(allocationMessageStart).filter(message => message.role === "assistant" && message.source !== "runtime");
+            const identity = allocation.attempt.identity;
+            const attributed = answers.length > 0 && answers.every(message => message.attribution && message.attribution.harnessId === identity.harness && message.attribution.provider === identity.provider && message.attribution.modelId === identity.modelId && message.attribution.reasoning === identity.reasoning);
+            allocationCost = await completeAllocationAttempt(allocationOwner, connection.project, connection.cwd, connection.engine, connection.shared.session.id, queued.id, allocation.attempt, outcome === "failed", attributed);
+            allocationCompleted = outcome === "completed";
+          }
+          catch { publish(connection, { type: "promptRouted", queueId: queued.id, skipped: "Allocation outcome could not be recorded; it will not be counted as success" }); }
+        }
       } finally {
         startingIds.delete(queued.id);
         refreshHarnessPromptQueue(connection);
@@ -875,6 +906,26 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
     shared.internalTurn = previousInternalTurn;
     connection.shared.scheduledTurn = false;
     sendHarnessStatus(connection.shared);
+    if (allocation && allocationOwner) {
+      releaseAllocationAttempt(allocation.attempt);
+      const unsafe = connection.shared.session.messages.slice(allocationMessageStart).some(message => message.isError);
+      const busy = harnessSessionBusy(connection.shared);
+      if (queued.requestId && allocationCost !== null && !busy && !unsafe && modelAllocationStore().recovery(allocationOwner, queued.requestId)) modelAllocationStore().finish(allocationOwner, queued.requestId, allocationCost);
+      const pinned = Boolean(queued.settings) && !(queued.requestId && modelAllocationStore().recovery(allocationOwner, queued.requestId));
+      if (allocationCompleted && !pinned && readRoutingState(queueKey(connection)).mode !== "manual" && !listQueuedPrompts(queueKey(connection)).length) {
+        try {
+          const recovery = await nextAllocationRecovery(allocationOwner, allocation.attempt, { writerActive: busy, pendingExternalOperation: unsafe });
+          if (recovery) {
+            if (readRoutingState(queueKey(connection)).mode === "manual" || listQueuedPrompts(queueKey(connection)).length || harnessSessionBusy(connection.shared)) modelAllocationStore().finish(allocationOwner, recovery.operationId, 0);
+            else {
+              enqueuePrompt(queueKey(connection), recovery.message, "Retry failed verification with a stronger model", { automationProfile: queued.automationProfile, author: queued.author, requestId: recovery.operationId, messageText: recovery.message, promptSuffix: "", displaySuffix: "", attachmentPaths: [], images: [],
+                settings: queuedSettingsSchema.parse({ ...currentSettings(connection), provider: recovery.identity.provider, modelId: recovery.identity.modelId, reasoning: recovery.identity.reasoning }) });
+              refreshHarnessPromptQueue(connection);
+            }
+          }
+        } catch { publish(connection, { type: "promptRouted", queueId: queued.id, skipped: "Recovery stopped: stronger evidence, available credentials, a stopped writer and remaining approved allowance are required. No uncertain attempt will be replayed." }); }
+      }
+    }
   }
 }
 
