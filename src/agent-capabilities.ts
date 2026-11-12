@@ -14,6 +14,7 @@ import { multiUserEnabled } from "./account-runtime.js";
 import { revokeWebhookTitleAgentTokens, webhookTitleAgentEnvironment, webhookTitleInstructions } from "./webhook-title.js";
 import { webhookMemoryAgentEnvironmentForConversation, webhookMemoryAgentInstructions } from "./webhook-agent.js";
 import { assistantMemoryAgentEnvironment, assistantMemoryAgentInstructions } from "./assistant-resources.js";
+import { assistantSetupAgentEnvironment, assistantSetupAgentInstructions } from "./assistant-setup.js";
 import { revokeGuardianAgentTokens } from "./guardian/agent-token.js";
 import { mcpAgentEnvironment, revokeMcpAgentTokens } from "./mcp/agent.js";
 import { assistantIdForConversation } from "./assistant-resources.js";
@@ -162,6 +163,11 @@ Attachments can change during a turn. New shell commands use current attached en
     id: "assistant-memory",
     instructions: { path: "/virtual/JOINT_BOB_ASSISTANT_MEMORY.md", content: assistantMemoryAgentInstructions },
     environment: ({ projectId, conversationId }) => assistantMemoryAgentEnvironment(projectId, conversationId),
+  },
+  {
+    id: "assistant-setup",
+    instructions: { path: "/virtual/JOINT_BOB_ASSISTANT_SETUP.md", content: assistantSetupAgentInstructions },
+    environment: ({ projectId, conversationId }) => assistantSetupAgentEnvironment(projectId, conversationId),
   },
   {
     id: "git-policy",

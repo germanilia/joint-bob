@@ -4,6 +4,8 @@ An assistant is a conversation you turned into a long-lived helper. You chat wit
 
 To switch from the workspace to your assistants, choose **Assistants** (the robot face) in the toolbar above the project list. On a phone, use the app icon's **Assistants** shortcut. **Workspace** at the top of the assistants page takes you back.
 
+Bob can also create an assistant for a job and have it set itself up (its sign-ins, secrets, skill and instructions); see Asking Bob for a new assistant in [the control center guide](control-center.md).
+
 ## Resources
 
 The **Resources** tab lists what the assistant may use. Every topic it opens gets the same set.

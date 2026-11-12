@@ -101,6 +101,13 @@ function wrapPiSession(session: HarnessSession, options: HarnessOpenOptions): Ha
       completed.push(transcript.user);
       emit({ type: "agent_start" });
       input.onStarted?.();
+      // A test's stand-in agent: it gets the prompt and the tools' environment the real agent would have, and may use them.
+      if (process.env.JOINT_BOB_TEST_ENGINE_AGENT) {
+        const { agentCapabilityEnvironment } = await import("../src/agent-capabilities.js");
+        const conversationId = options.conversationId ?? session.id;
+        const agent = (await import(process.env.JOINT_BOB_TEST_ENGINE_AGENT)).default as (turn: { prompt: string; env: NodeJS.ProcessEnv }) => Promise<void>;
+        await agent({ prompt: input.text, env: agentCapabilityEnvironment(options.projectId, "pi", conversationId, { engine: "pi", sessionId: session.id }) });
+      }
       await recordStubRun("pi");
       completed.push(await transcript.finish());
       emit({ type: "sessionFile", sessionId: session.id, sessionFile: session.file });

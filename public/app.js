@@ -35,6 +35,7 @@ import "./app/control-overview.js";
 import "./app/control-automations.js";
 import "./app/control-dashboards.js";
 import "./app/control-my-dashboards.js";
+import "./app/control-assistant-setup.js";
 import "./app/control-memory.js";
 import "./app/control-triggers.js";
 import "./app/control-assistants.js";

@@ -91,6 +91,8 @@ import "./server/routes/control-center-clusters.js";
 import "./server/routes/control-center-telegram.js";
 import "./server/routes/personal-assistants.js";
 import "./server/routes/assistant-resources.js";
+import "./server/routes/assistant-setup.js";
+import "./server/control-center-assistant-create.js";
 import "./server/routes/assistant-telegram.js";
 import "./server/routes/social.js";
 import "./server/routes/assistant-teams.js";

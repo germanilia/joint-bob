@@ -257,6 +257,16 @@ Nothing here changes the desktop: the extra parts are hidden at 1024 px and wide
 
 The **Assistants** tab shows your own assistants on every machine of your cluster as cards: where each runs, whether it is answering Bob right now, what it has attached (browser logins, skills and plugins, MCP servers, secrets), the last time Bob asked it, and a **Bob may ask** switch. There are no ask buttons: just ask Bob. When your message needs what an assistant has, Bob asks it as you, with its own logins and tools, and the line under Bob's reply says so ("Asked Work assistant · Google calendar · 3 s"). The decision model picks which assistants a message needs, in one request for all of them; below your confidence threshold, or without a decision model, Bob's agent picks. An assistant whose project is shared with other people cannot be asked, and its card says why. Webhook-started turns never ask. Click an assistant to open its own chat, where Bob's questions are marked as his. From 1700 px wide, the same list is also a column between the board and Bob's chat that you can fold away.
 
+### Asking Bob for a new assistant
+
+Tell Bob what you want an assistant for ("create an assistant that can post on my LinkedIn"). He says what he will do and waits for **Create and set up**; nothing is created before that.
+
+- **Where it lives.** On this machine, for you alone, in the **Assistants** project, which is made the first time you ask. A second assistant with a name you already use is refused.
+- **It sets itself up.** The assistant's first conversation is its setup, and Bob drives it as delegated work. The agent reads how the job is done today (the service's own documentation), chooses a route (an official API, a tool already on the machine, or the website in a signed-in browser) and says why, then writes the assistant's own skill and its standing instructions.
+- **What it asks you for.** A website sign-in appears as the usual sign-in card, and your password never reaches the agent. A key or token is asked for in Bob's chat: **Enter it** opens a box, and what you type goes to Secrets, attached to the assistant. The agent uses it by its variable name and never sees the value. **I don't have it** tells the agent so.
+- **Nothing public during setup.** The agent proves the route works up to the last step and does not post, send, publish, buy or delete anything.
+- **When it is ready.** Bob says so in the chat, with what he checked and the agent's report (the route, what you gave it, what the skill holds, what was and was not tested). From then on the assistant's agent can no longer change its own skill or instructions; you change them in its Resources. A setup left open for a day ends by itself.
+
 ## Clusters
 
 The **Clusters** tab shows what other people in your clusters are running, grouped by machine, and only through what they share with you: a project shared with a cluster, and its conversations. Your own machines are not listed (they are on the board). Click a card to read that conversation; nothing on this tab can act on another person's agent. Bob can answer questions about them ("what is the team doing?"): when a message is about other people's work, Bob is given a short summary of the shared agents that are running, and the line under the reply says so.

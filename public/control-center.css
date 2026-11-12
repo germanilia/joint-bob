@@ -285,3 +285,12 @@ button.control-entry-conversation::after { content: " ↗"; color: var(--muted);
 .control-project-group[data-color] .control-project-head b { color: var(--project-color); }
 .control-chip.project::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--project-hue); vertical-align: 1px; }
 .control-chip.project.active { border-color: var(--project-hue); }
+
+/* The box an assistant's setup opens for a secret. */
+.control-secret-dialog { border: 0; padding: 0; background: transparent; }
+.control-secret-card { display: grid; gap: 10px; width: min(460px, calc(100vw - 24px)); padding: 16px 18px; background: var(--panel); }
+.control-secret-card h2 { margin: 0; font-size: 16px; }
+.control-secret-card .control-hint { margin: 0; white-space: pre-wrap; }
+.control-secret-fields { display: grid; gap: 8px; }
+.control-secret-field { display: grid; gap: 4px; font-size: 12px; }
+.control-secret-field input { width: 100%; }

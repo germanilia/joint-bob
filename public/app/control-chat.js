@@ -456,6 +456,8 @@ async function runAction(message, action, note = "") {
   if (action.data?.open) { openFrom(message, action.data.open).catch((error) => toast.error(error.message)); return; }
   if (action.data?.appearance) { applyAppearance(action.data.appearance); toast("Display settings put back"); return; }
   if (action.data?.create) { newConversation(action.data.create.content).catch((error) => toast.error(error.message)); return; }
+  // A secret an assistant's setup asks for is entered in its own box, never through the chat.
+  if (action.data?.secretRequest) { window.dispatchEvent(new CustomEvent("control-secret-request", { detail: { messageId: message.id, request: action.data.secretRequest } })); return; }
   const words = action.id === PUSH ? (note ? "Telling it to go on, with your instructions" : "Telling it to go on") : `Working on “${action.label}”`;
   await whileBusy(message, words, async () => {
     const result = await api("/api/control-center/bob/action", { method: "POST", body: JSON.stringify({ messageId: message.id, actionId: action.id, ...note ? { note } : {} }) });
