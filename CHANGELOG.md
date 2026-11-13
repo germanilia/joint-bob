@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.5 — 2026-11-13
+
+- Preserve compressed model request headers through pool proxies, fixing Codex Bad Request responses while keeping decoded response streams readable.
+
 ## 2.299.4 — 2026-11-13
 
 - New conversations default to their own worktree. Each node enables the setting once on upgrade, and later opt-outs are preserved.

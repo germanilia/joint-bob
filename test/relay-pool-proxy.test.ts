@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
+import { gzipSync, zstdCompressSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
 import test, { after, before } from "node:test";
 import { getClusterNode } from "../src/cluster.js";
@@ -10,7 +11,7 @@ import { addSharingMember, createSharingCluster } from "../src/cluster-sharing-p
 import { clusterV2Database } from "../src/cluster-v2-store.js";
 import { createSessionModelRuntime } from "../src/provider-profiles/pi.js";
 import { PoolAttemptFailure } from "../src/provider-profiles/pool-execution.js";
-import { forwardToProvider, RelayRouteRefused, relayProxyCredential } from "../src/provider-profiles/relay-proxy.js";
+import { forwardToProvider, RelayRouteRefused, relayProxyCredential, streamAnswer } from "../src/provider-profiles/relay-proxy.js";
 import type { ProviderProfile } from "../src/provider-profiles/store.js";
 
 interface Seen { method: string; url: string; headers: http.IncomingHttpHeaders; body: Buffer }
@@ -49,12 +50,28 @@ test("the relay sends only model routes on, with its own sign-in in place of the
     assert.equal(upstream.seen.length, 1, "a refused route never reaches the provider");
 
     const codexAccess = jwt({ "https://api.openai.com/auth": { chatgpt_account_id: "real-account" } });
-    await forwardToProvider("openai-codex", codexAccess, { path: "/backend-api/codex/responses", body: "",
+    const encodedRequest = zstdCompressSync(JSON.stringify({ model: "fixture-model", input: [] }));
+    await forwardToProvider("openai-codex", codexAccess, { path: "/backend-api/codex/responses", body: encodedRequest.toString("base64"),
       headers: { authorization: "Bearer placeholder", "chatgpt-account-id": "joint-bob-relay", "content-encoding": "zstd" } }, AbortSignal.timeout(5_000), upstream.url);
     const codex = upstream.seen[1];
+    assert.equal(codex.headers["content-encoding"], "zstd", "the provider must know the unchanged request bytes are compressed");
+    assert.deepEqual(codex.body, encodedRequest);
     assert.equal(codex.headers.authorization, `Bearer ${codexAccess}`);
     assert.equal(codex.headers["chatgpt-account-id"], "real-account", "the account comes from the relay's sign-in, not the placeholder");
   } finally { await upstream.close(); }
+});
+
+test("streamed decoded answers do not retain their upstream compression header", async () => {
+  const text = "event: message_stop\n\n";
+  const upstream = await serve((_seen, response) => response.writeHead(200, { "content-encoding": "gzip", "content-type": "text/event-stream" }).end(gzipSync(text)));
+  const proxy = await serve((_seen, response) => {
+    void fetch(upstream.url).then(answer => streamAnswer(answer, response)).catch(error => response.destroy(error));
+  });
+  try {
+    const answer = await fetch(proxy.url);
+    assert.equal(answer.headers.get("content-encoding"), null, "fetch already decompressed the provider response");
+    assert.equal(await answer.text(), text);
+  } finally { await proxy.close(); await upstream.close(); }
 });
 
 describeMemberProxy();
@@ -100,16 +117,17 @@ function describeMemberProxy(): void {
     assert.equal(stranger.status, 401);
     assert.equal(relay.seen.length, before, "an unknown token never reaches the relay");
 
-    const body = JSON.stringify({ model: "claude-sonnet-4", stream: true, messages: [{ role: "user", content: "hi" }] });
+    const body = zstdCompressSync(JSON.stringify({ model: "claude-sonnet-4", stream: true, messages: [{ role: "user", content: "hi" }] }));
     const answer = await fetch(`${credential.proxyBaseUrl}/v1/messages?beta=true`, { method: "POST", body,
-      headers: { authorization: `Bearer ${credential.access}`, "content-type": "application/json", "anthropic-version": "2023-06-01" } });
+      headers: { authorization: `Bearer ${credential.access}`, "content-type": "application/json", "content-encoding": "zstd", "anthropic-version": "2023-06-01" } });
     assert.equal(answer.status, 200);
     assert.equal(answer.headers.get("content-type"), "text/event-stream");
     assert.equal(answer.headers.get("request-id"), "relay-request");
     assert.equal(await answer.text(), "event: message_start\n\nevent: message_stop\n\n");
     const forwarded = JSON.parse(relay.seen.at(-1)!.body.toString("utf8")) as { request: { path: string; headers: Record<string, string>; body: string } };
     assert.equal(forwarded.request.path, "/v1/messages?beta=true");
-    assert.equal(Buffer.from(forwarded.request.body, "base64").toString("utf8"), body);
+    assert.deepEqual(Buffer.from(forwarded.request.body, "base64"), body);
+    assert.equal(forwarded.request.headers["content-encoding"], "zstd", "the member-to-host hop preserves the encoded request header");
     assert.equal(forwarded.request.headers.authorization, undefined, "the placeholder stays on this machine");
     assert.equal(forwarded.request.headers.host, undefined);
     assert.equal(forwarded.request.headers["anthropic-version"], "2023-06-01");

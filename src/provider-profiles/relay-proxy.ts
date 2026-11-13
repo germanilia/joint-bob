@@ -27,7 +27,7 @@ const PROVIDER_ROUTES: Record<ProxiedProvider, { origin: string; paths: string[]
 const CODEX_CLAIM = "https://api.openai.com/auth";
 /** Headers that belong to one connection or carry credentials; neither crosses the proxy. */
 const HOP_HEADERS = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer", "host", "content-length",
-  "proxy-authorization", "proxy-connection", "authorization", "x-api-key", "cookie", "set-cookie", "accept-encoding", "content-encoding", "chatgpt-account-id"]);
+  "proxy-authorization", "proxy-connection", "authorization", "x-api-key", "cookie", "set-cookie", "accept-encoding", "chatgpt-account-id"]);
 
 const idSchema = z.string().uuid();
 export const relayProxyRequestSchema = z.object({
@@ -82,7 +82,10 @@ export class RelayRouteRefused extends Error {}
 /** Copies a streamed answer, status and headers included, onto a waiting HTTP response. */
 export async function streamAnswer(answer: Response, response: http.ServerResponse): Promise<void> {
   response.statusCode = answer.status;
-  for (const [name, value] of Object.entries(forwardedHeaders(answer.headers))) response.setHeader(name, value);
+  // fetch decompresses responses, but request bytes keep their original content encoding.
+  for (const [name, value] of Object.entries(forwardedHeaders(answer.headers))) {
+    if (name !== "content-encoding") response.setHeader(name, value);
+  }
   if (!answer.body) { response.end(); return; }
   try { await pipeline(Readable.fromWeb(answer.body as import("node:stream/web").ReadableStream), response); }
   catch { response.destroy(); }
