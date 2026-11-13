@@ -20,12 +20,13 @@ async function recoverChat(record: UpdateRecoveryRecord): Promise<void> {
   const conversationId = conversation?.conversationId ?? record.sessionId;
   const project = await getProject(record.projectId);
   if (!project) throw new Error("Recovery project not found");
-  const shared = await openHarnessSession(record.engine, { projectId: record.projectId, cwd: record.cwd, sessionId: record.sessionId, sessionPath: record.sessionPath, conversationId });
-  shared.turnInFlight += 1;
-  // The turn resumes as the account it ran as, on that account's subscription (a pool fails over
-  // as it would have). A record kept before accounts were recorded acts as the project's owner,
-  // like other background work for a project.
+  // Opening a saved Pi model already needs the turn's app subscription context, not just prompting it.
+  // Legacy records without an account resume as the project's owner.
   const actor = ownerAsActor(record.accountId ?? resourceOwner("project", record.projectId));
+  const shared = await runAsAccount(actor, () => openHarnessSession(record.engine, {
+    projectId: record.projectId, cwd: record.cwd, sessionId: record.sessionId, sessionPath: record.sessionPath, conversationId,
+  }));
+  shared.turnInFlight += 1;
   shared.turnAccountId = actor?.accountId ?? null;
   broadcastToProject(record.projectId, { type: "sessionsChanged" });
   try {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Interrupted conversations reopen under the account that started the turn so automatic update recovery can use its app subscription before loading the saved Pi model.
+
 - New conversations open at step 1 with Start conversation available on every step, keeping defaults for unchanged options. Rapid reopening no longer leaves Start stuck loading. Conversation menus offer Delete conversation directly with confirmation.
 
 ## 2.299.8 — 2026-11-13

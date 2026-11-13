@@ -41,10 +41,13 @@ test("update recovery resumes as the turn's account, on that account's pool, nam
   const exports = load("server/update-recovery-runs.ts", {
     getClusterNode: async () => ({ id: "local" }), claimConversationLocally: async () => {},
     getConversationRecord: async () => ({ conversationId: "conversation" }), getProject: async () => ({ id: "project", type: "personal" }),
-    openHarnessSession: async () => shared, broadcastToProject: () => {}, sendHarnessStatus: () => {},
+    openHarnessSession: async () => {
+      assert.equal(actor?.accountId, "member", "opening the saved Pi model must see the turn's app subscription before authentication");
+      return shared;
+    }, broadcastToProject: () => {}, sendHarnessStatus: () => {},
     harnessChatConnections: new Set(), drainHarnessPromptQueue: async () => {},
     resourceOwner: () => "project-owner", ownerAsActor: (accountId: string) => ({ accountId }),
-    runAsAccount: async (account: any, work: () => Promise<void>) => { actor = account; try { await work(); } finally { actor = undefined; } },
+    runAsAccount: async (account: any, work: () => Promise<unknown>) => { actor = account; try { return await work(); } finally { actor = undefined; } },
     getHarnessRuntime: async () => ({ validateSettings: async () => {} }),
     resolveRecoverySubscriptionPool: async (_shared: unknown, workspaceId: string) => { poolLookups.push({ account: actor?.accountId, workspaceId }); return pool; },
     resolvePoolModelSettings,
