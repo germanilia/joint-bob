@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.299.8 — 2026-11-13
 
 - Assistant team members have their team tools again (shared memory, delegation): opening a team conversation no longer skips switching to the assistant owner's account.
 
