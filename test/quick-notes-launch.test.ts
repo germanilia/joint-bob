@@ -7,6 +7,8 @@ import test from "node:test";
 import WebSocket from "ws";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { openNodeDatabase } from "../src/node-database.js";
+import { adminAccountId } from "../src/ownership.js";
+import { ensureMessageAuthorSchema } from "../src/message-authors.js";
 
 interface QuickNote {
   id: string;
@@ -53,6 +55,15 @@ async function noteStatus(node: SeededNode, session: SignedIn, id: string): Prom
   return response.body.note;
 }
 
+function assertLaunchAuthor(node: SeededNode, sessionId: string): void {
+  const database = openNodeDatabase(path.join(node.dataDir, "node.db"));
+  try {
+    ensureMessageAuthorSchema(database);
+    const authors = database.prepare("SELECT account_id FROM conversation_message_authors WHERE conversation_id = ?").all(sessionId);
+    assert.deepEqual(authors.map(row => row.account_id), [adminAccountId(database)], "a launch must carry its account before anyone opens the conversation");
+  } finally { database.close(); }
+}
+
 /** Holds every stubbed engine turn until a release file appears. */
 function holdEngineTurns(root: string): { release: () => Promise<void> } {
   return {
@@ -86,6 +97,7 @@ test("manual launch runs the saved note over the real /ws wire", { timeout: 90_0
     assert.equal(launch.body.note.status, "started");
     await until("manual engine turn started", async () => (await engineLogLines(log)).length > 0);
     assert.deepEqual((await engineLogLines(log)).length, 1, "the stubbed engine ran exactly one turn");
+    assertLaunchAuthor(node, launch.body.sessionId);
 
     let ready: { messages: Array<{ role: string; text: string }> } | undefined;
     socket = new WebSocket(`${node.url.replace("http:", "ws:")}/ws?projectId=${project.id}&sessionPath=${encodeURIComponent(launch.body.sessionPath)}&sessionId=${launch.body.sessionId}&nodeId=${node.nodeId}`, { headers: { Cookie: session.cookie, Origin: node.url } });
@@ -170,6 +182,7 @@ test("the queue enforces the parallel limit, FIFO order, and refill; schedules g
     const dueNow = await createNote(node, session, project.id, "Due now", { scheduledAt: new Date(Date.now() - 60_000).toISOString() });
     await until("due scheduled note completed", async () => (await noteStatus(node, session, dueNow.id)).status === "completed");
     assert.deepEqual((await engineLogLines(log)).length, 4, "the due note ran without the queue");
+    assertLaunchAuthor(node, (await noteStatus(node, session, dueNow.id)).sessionId!);
   } finally {
     if (server) await stopDevNode(server);
     await rm(root, { recursive: true, force: true });

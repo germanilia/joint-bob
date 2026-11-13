@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { actingAccount, runAsAccount } from "../account-context.js";
+import { listLocalUsers } from "../auth.js";
+import { encodeAuthor } from "../message-authors.js";
 import { memberOwnedIds, ownerAsActor, resourceOwner } from "../ownership.js";
 import WebSocket from "ws";
 import { getClusterNode } from "../cluster.js";
@@ -162,12 +164,17 @@ function queueSettingsFor(note: QuickNote, status: { model?: { provider?: string
 }
 
 async function launchPromptOverSocket(note: QuickNote, sessionId: string, target: LaunchTarget): Promise<LaunchSocket> {
+  const actor = actingAccount();
+  if (!actor) throw new QuickNoteLaunchError(403, "Quick note launch account is unavailable");
+  const author = actor.username ? actor : listLocalUsers().find(user => user.accountId === actor.accountId);
+  if (!author) throw new QuickNoteLaunchError(403, "Quick note launch account is unavailable");
   const url = new URL(target.url);
   for (const [key, value] of Object.entries({
     projectId: note.projectId,
     sessionId,
     sessionPath: `draft:${note.harnessId}:${sessionId}`,
     nodeSession: "1",
+    author: encodeAuthor({ accountId: actor.accountId, username: author.username, email: author.email ?? null, homeNodeId: actor.homeNodeId }),
     ...(note.secretAccountIds.length ? { secretAccountIds: note.secretAccountIds.join(",") } : {}),
   })) url.searchParams.set(key, value);
 
@@ -284,13 +291,13 @@ async function claimAndDispatch(existing: QuickNote, from: QuickNote["status"][]
   try {
     // A person's own project launches as that person, so only their own secrets can attach.
     const remote = Boolean(note.nodeId && note.nodeId !== (await getClusterNode()).id);
-    const owner = memberOwnedIds("project").has(note.projectId) ? ownerAsActor(resourceOwner("project", note.projectId)) : actingAccount();
+    const owner = memberOwnedIds("project").has(note.projectId) ? ownerAsActor(resourceOwner("project", note.projectId)) : actingAccount() ?? ownerAsActor(resourceOwner("project", note.projectId));
     await runAsAccount(owner, () => validateLaunchContext(note.projectId, note.secretAccountIds, remote));
     if (note.thinkingLevel && !REASONING_LEVELS.includes(note.thinkingLevel as (typeof REASONING_LEVELS)[number])) {
       throw new QuickNoteLaunchError(400, `Reasoning level is not supported: ${note.thinkingLevel}`);
     }
     const target = await resolveLaunchTarget(note, sessionId);
-    const socket = await launchPromptOverSocket(note, sessionId, target);
+    const socket = await runAsAccount(owner, () => launchPromptOverSocket(note, sessionId, target));
     await socket.accepted;
     markQuickNoteStarted(note.id);
     // The slot stays reserved until the prompt (and any background work it

@@ -7,6 +7,9 @@ import path from "node:path";
 import test from "node:test";
 import { WebSocketServer, type WebSocket } from "ws";
 import { getClusterNode } from "../src/cluster.js";
+import { createAdministrator } from "../src/auth.js";
+import { decodeAuthor } from "../src/message-authors.js";
+import { adminAccountId } from "../src/ownership.js";
 import { addProject } from "../src/store.js";
 import { saveSecretAccount } from "../src/secrets.js";
 import {
@@ -137,6 +140,8 @@ let projectRoot: string;
 
 test.before(async () => {
   projectRoot = await mkdtemp(path.join(os.tmpdir(), "joint-bob-quick-note-dispatch-"));
+  await getClusterNode();
+  createAdministrator("dispatch-admin", "synthetic-dispatch-password", false);
   setQuickNoteQueue({ enabled: false, maxParallel: 1 });
 });
 
@@ -175,6 +180,7 @@ test("a manual launch drives the /ws prompt-queue protocol with images, settings
     assert.equal(url.searchParams.get("sessionId"), started.sessionId);
     assert.equal(url.searchParams.get("sessionPath"), `draft:pi:${started.sessionId}`);
     assert.equal(url.searchParams.get("nodeSession"), "1");
+    assert.deepEqual(decodeAuthor(url.searchParams.get("author")), { accountId: adminAccountId(), username: "dispatch-admin", email: null, homeNodeId: null });
     assert.equal(url.searchParams.get("secretAccountIds"), account.id);
     queue.complete();
     await new Promise(resolve => setTimeout(resolve, 50));
