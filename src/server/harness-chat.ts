@@ -1545,7 +1545,9 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
   let record = await getConversationRecord(options.project.id, options.engine, options.sessionId);
   const conversationId = record?.conversationId ?? options.sessionId;
   const runtimeWasOpen = Boolean(options.sessionId && findHarnessSession(options.project.id, options.engine, options.sessionId));
-  const actor = options.author ? turnActor(options, options.author) : actingAccount();
+  // A team member's session switches to its assistant owner's full account itself (pi-service asTeamMember), which it
+  // only does while no account is set; a turn author's account here would skip that and leave the member without its tools.
+  const actor = options.author && !await teamConversation(options.project.id, conversationId) ? turnActor(options, options.author) : actingAccount();
   const shared = await measureOperation("chat.open.runtime", () => runAsAccount(actor, () => runWithAutomationProfile({ creatorAccountId: options.automationProfile?.accountId, providerProfileId: options.automationProfile?.profileId }, () => openHarnessSession(options.engine, { projectId: options.project.id, cwd: options.cwd, sessionId: options.sessionId, sessionPath: options.sessionPath, conversationId, accountIds: options.accountIds }))));
   const connection: HarnessChatConnection = { automationProfile: options.automationProfile, socket: options.socket, project: options.project, cwd: options.cwd, engine: options.engine, shared, handoffContext: null, accountIds: options.accountIds, readOnly: options.readOnly, peerReadOnly: options.peerReadOnly, conversationId, author: options.author };
   const local = await getClusterNode();

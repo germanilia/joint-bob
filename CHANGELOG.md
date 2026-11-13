@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Assistant team members have their team tools again (shared memory, delegation): opening a team conversation no longer skips switching to the assistant owner's account.
+
 ## 2.299.7 — 2026-11-13
 
 - Copy logs in Settings → Client logs now copies even when the browser blocks its clipboard API, and says so when copying is refused.
