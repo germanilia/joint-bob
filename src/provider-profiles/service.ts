@@ -2,7 +2,8 @@ import { chmod, mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { ModelRuntime, readStoredCredential, getAgentDir } from "../pi-sdk.js";
 import { actingAccount, asNode } from "../account-context.js";
-import { automationProfileContext, poolProfileContext } from "./context.js";
+import { authorizeClusterPoolUse } from "./pool-authorization.js";
+import { automationProfileContext, poolProfileContext, type PoolProfileContext } from "./context.js";
 import { resolveDataDirectory } from "../data-directory.js";
 import { adminAccountId } from "../ownership.js";
 import { getProject } from "../store.js";
@@ -52,6 +53,7 @@ export async function profileModelRuntime(profile: ProviderProfile): Promise<Mod
 export async function bootstrapPiProfile(projectId: string, conversationId: string | undefined): Promise<ProviderProfile | undefined> {
   const pool = poolProfileContext();
   if (pool) return pool.provider === "pi" ? projectProviderProfile(projectId, conversationId, "", "pi") : undefined;
+  if (await mandatoryClusterPool(projectId)) return undefined;
   const automation = automationProfileContext();
   if (automation?.profileId) {
     const profile = accessibleProviderProfile(automation.accountId, automation.profileId, "automation");
@@ -100,8 +102,9 @@ export async function projectProviderProfile(projectId: string, conversationId: 
       }
     }
     if (poolProfile.provider !== targetProvider && !(engine === "pi" && poolProfile.provider === "pi")) throw new Error("Selected pool profile does not match the turn's provider");
-    return poolProfile.profile ?? { id: poolProfile.profileId, owner: "", label: poolProfile.label, provider: poolProfile.provider, createdAt: "", shared: false };
+    return await authorizedLocalPoolProfile(poolProfile) ?? poolProfile.profile ?? { id: poolProfile.profileId, owner: "", label: poolProfile.label, provider: poolProfile.provider, createdAt: "", shared: false };
   }
+  if (await mandatoryClusterPool(projectId)) throw new Error("Selected cluster subscription pool requires pool-aware execution");
   const automation = automationProfileContext();
   const accountId = automation?.accountId ?? actingAccount()?.accountId;
   if (automation?.profileId) {
@@ -126,6 +129,10 @@ export async function projectProviderProfile(projectId: string, conversationId: 
   if (!subscription) return profile;
   if (!profile && owner !== adminAccountId()) throw new Error("Select your own subscription profile on this node. No other user's account was used.");
   return profile;
+}
+async function mandatoryClusterPool(projectId: string): Promise<boolean> {
+  const [{ clusterV2Database }, { getClusterNode }, { resolveClusterSubscriptionPools }] = await Promise.all([import("../cluster-v2-store.js"), import("../cluster.js"), import("./pool-sharing.js")]);
+  return resolveClusterSubscriptionPools(await clusterV2Database(), (await getClusterNode()).id, projectId).length > 0;
 }
 /** Where a turn runs, including the clusters its project is shared through for cluster choices. */
 async function projectScope(projectId: string, workspaceId: string, conversationId: string | undefined): Promise<ProfileScope> {
@@ -240,13 +247,28 @@ export async function startProfileLogin(owner: string, id: string) {
   });
 }
 
+async function authorizedLocalPoolProfile(pool: PoolProfileContext): Promise<ProviderProfile | undefined> {
+  if (!pool.clusterId) return pool.profile;
+  const [{ getClusterNode }, { clusterV2Database }, { clusterPoolGranted, clusterPoolProfileAuthorized }] = await Promise.all([import("../cluster.js"), import("../cluster-v2-store.js"), import("./pool-sharing.js")]);
+  const local = await getClusterNode();
+  if (pool.poolOwnerNodeId !== local.id) return undefined;
+  const own = localProviderProfile(pool.profileId), db = await clusterV2Database();
+  if (!own || !clusterPoolGranted(db, own.owner, pool.clusterId, pool.poolId) || !clusterPoolProfileAuthorized(db, pool.clusterId, local.id, local.id, pool.poolId, pool.profileId)) throw new Error("Cluster pool host has not authorized this profile");
+  const { getSubscriptionPool } = await import("./pools.js");
+  if (!getSubscriptionPool(own.owner, pool.poolId).members.some(member => member.profileId === pool.profileId)) throw new Error("Cluster pool host removed this profile from the pool");
+  await authorizeClusterPoolUse(db, local.id, local.id, { clusterId: pool.clusterId, poolId: pool.poolId, profileId: pool.profileId });
+  return own;
+}
+
 /** The SDK's file lock serializes renewal across sessions and processes. Never use ambient keys. */
 export async function profileAccessCredential(profile: ProviderProfile): Promise<ProfileOAuthCredential | BorrowedCredential> {
   const pool = poolProfileContext();
   if (pool?.clusterId) {
-    // A relay pool member this machine is signed in to as well runs here; otherwise the relay keeps the sign-in and sends the requests.
-    const own = localProviderProfile(profile.id);
-    return (own && await localProfileCredential(own)) || relayProxyCredential(profile, pool);
+    const own = await authorizedLocalPoolProfile(pool);
+    if (!own) return relayProxyCredential(profile, pool);
+    const credential = await localProfileCredential(own);
+    if (!credential) throw new Error("Cluster pool profile is not signed in on its host");
+    return credential;
   }
   return await localProfileCredential(profile) ?? borrowTwinCredential(profile);
 }

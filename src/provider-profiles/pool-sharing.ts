@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { ensureClusterSharingPolicySchema, getSharingCluster, listSharingClusterMembers, resourceClusterIds } from "../cluster-sharing-policy.js";
+import { ensureClusterSharingPolicySchema, getSharingCluster, listSharingClusterMembers } from "../cluster-sharing-policy.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from "../replication.js";
 import type { ProfileProvider } from "./store.js";
 
@@ -81,7 +81,23 @@ export function ensureClusterSubscriptionPoolSchema(db: DatabaseSync): void {
     updated_at TEXT NOT NULL,
     deleted INTEGER NOT NULL CHECK(deleted IN (0,1)),
     origin_node_id TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS cluster_subscription_pool_grants (
+    cluster_id TEXT NOT NULL, pool_id TEXT NOT NULL, account_id TEXT NOT NULL,
+    PRIMARY KEY(cluster_id,pool_id)
   );`);
+}
+
+/** Host-local consent. This table never replicates and managers cannot write remote grants. */
+export function setClusterPoolGrant(db: DatabaseSync, accountId: string, clusterId: string, poolId: string, enabled: boolean): void {
+  ensureClusterSubscriptionPoolSchema(db);
+  uuid.parse(clusterId); uuid.parse(poolId);
+  if (enabled) db.prepare("INSERT INTO cluster_subscription_pool_grants VALUES(?,?,?) ON CONFLICT(cluster_id,pool_id) DO UPDATE SET account_id=excluded.account_id").run(clusterId, poolId, accountId);
+  else db.prepare("DELETE FROM cluster_subscription_pool_grants WHERE cluster_id=? AND pool_id=? AND account_id=?").run(clusterId, poolId, accountId);
+}
+export function clusterPoolGranted(db: DatabaseSync, accountId: string, clusterId: string, poolId: string): boolean {
+  ensureClusterSubscriptionPoolSchema(db);
+  return Boolean(db.prepare("SELECT 1 FROM cluster_subscription_pool_grants WHERE cluster_id=? AND pool_id=? AND account_id=?").get(clusterId, poolId, accountId));
 }
 
 function rowAssignment(row: AssignmentRow): ClusterSubscriptionPoolAssignment {
@@ -108,14 +124,6 @@ export function relayOfGroup(db: DatabaseSync, clusterId: string): string | unde
   ensureClusterSharingPolicySchema(db);
   return (db.prepare("SELECT relay_node_id FROM relay_sharing_groups WHERE cluster_id=?").get(clusterId) as { relay_node_id: string } | undefined)?.relay_node_id;
 }
-/**
- * A pool for a whole group is a relay rule: only the relay sets it, and it wins over every member's own choices.
- * A cluster-wide row any other node made (before this rule) is ignored, so elsewhere choices stay personal.
- */
-function relayRule(db: DatabaseSync, assignment: ClusterSubscriptionPoolAssignment): boolean {
-  return relayOfGroup(db, assignment.clusterId) === assignment.originNodeId;
-}
-
 function validateManager(db: DatabaseSync, actorNodeId: string, clusterId: string, expectedEpoch: number): void {
   const state = getSharingCluster(db, clusterId);
   if (state.closed || state.managerNodeId !== actorNodeId || state.managerEpoch !== expectedEpoch) {
@@ -165,7 +173,6 @@ export function setClusterSubscriptionPool(
 ): ClusterSubscriptionPoolAssignment {
   ensureClusterSubscriptionPoolSchema(db);
   validateManager(db, managerNodeId, clusterId, expectedEpoch);
-  if (relayOfGroup(db, clusterId) !== managerNodeId) throw new Error("Only a relay assigns a pool to a whole group. Here, add a Cluster exception: it applies to you and your twins.");
   const manifest = manifestSchema.parse(manifestInput);
   if (!listSharingClusterMembers(db, clusterId).some(({ nodeId }) => nodeId === poolOwnerNodeId)) {
     throw new Error("Pool owner must be a current cluster member");
@@ -204,7 +211,7 @@ export function getClusterSubscriptionPool(db: DatabaseSync, clusterId: string):
   ensureClusterSubscriptionPoolSchema(db);
   const row = heldAssignment(db, clusterId);
   const assignment = row && row.deleted === 0 ? rowAssignment(row) : undefined;
-  return assignment && relayRule(db, assignment) ? assignment : undefined;
+  return assignment;
 }
 
 export function assignedClusterPoolsForOwner(db: DatabaseSync, poolOwnerNodeId: string, poolId: string): ClusterSubscriptionPoolAssignment[] {
@@ -212,23 +219,33 @@ export function assignedClusterPoolsForOwner(db: DatabaseSync, poolOwnerNodeId: 
   return (db.prepare(`SELECT cluster_id,pool_owner_node_id,pool_id,manifest,manager_epoch,revision,updated_at,deleted,origin_node_id
     FROM cluster_subscription_pool_assignments WHERE pool_owner_node_id=? AND pool_id=? AND deleted=0 ORDER BY cluster_id`)
     .all(poolOwnerNodeId, poolId) as unknown as AssignmentRow[]).map(rowAssignment)
-    .filter((assignment) => relayRule(db, assignment))
     .filter((assignment) => listSharingClusterMembers(db, assignment.clusterId).some(({ nodeId }) => nodeId === poolOwnerNodeId));
 }
 
-/** The clusters a project is shared through. A project this node never registered for sharing has none. */
+/** Policy follows saved project shares, not a relay's current connection or lease. */
 export function projectClusterIds(db: DatabaseSync, localNodeId: string, projectId: string): string[] {
   ensureClusterSharingPolicySchema(db);
-  if (!db.prepare("SELECT 1 FROM sharing_resource_owners WHERE kind='project' AND resource_id=?").get(projectId)) return [];
-  return resourceClusterIds(db, localNodeId, "project", projectId);
+  return (db.prepare(`SELECT DISTINCT s.cluster_id FROM sharing_resource_shares s
+    JOIN sharing_resource_owners o ON o.kind=s.kind AND o.resource_id=s.resource_id
+    JOIN sharing_memberships owner ON owner.cluster_id=s.cluster_id AND owner.node_id=o.owner_node_id
+    JOIN sharing_memberships member ON member.cluster_id=s.cluster_id AND member.node_id=?
+    JOIN sharing_clusters c ON c.id=s.cluster_id AND c.closed=0
+    WHERE s.kind='project' AND s.resource_id=? AND
+      (member.node_id=owner.node_id OR s.node_ids IS NULL OR EXISTS (SELECT 1 FROM json_each(s.node_ids) WHERE value=member.node_id))
+    ORDER BY s.cluster_id`).all(localNodeId, projectId) as Array<{ cluster_id: string }>).map((row) => row.cluster_id);
 }
 
 export function resolveClusterSubscriptionPools(db: DatabaseSync, localNodeId: string, projectId: string): ClusterSubscriptionPoolAssignment[] {
   ensureClusterSubscriptionPoolSchema(db);
-  const clusterIds = resourceClusterIds(db, localNodeId, "project", projectId);
+  const clusterIds = projectClusterIds(db, localNodeId, projectId).sort();
   return clusterIds.map((clusterId) => getClusterSubscriptionPool(db, clusterId))
     .filter((assignment): assignment is ClusterSubscriptionPoolAssignment => Boolean(assignment))
-    .filter((assignment) => listSharingClusterMembers(db, assignment.clusterId).some(({ nodeId }) => nodeId === assignment.poolOwnerNodeId));
+    .map(assignment => {
+      const state = getSharingCluster(db, assignment.clusterId);
+      if (state.managerEpoch !== assignment.managerEpoch || state.managerNodeId !== assignment.originNodeId) throw new Error("Cluster pool assignment requires a manager refresh");
+      if (!listSharingClusterMembers(db, assignment.clusterId).some(({ nodeId }) => nodeId === assignment.poolOwnerNodeId)) throw new Error("Mandatory cluster pool host is no longer a cluster member");
+      return assignment;
+    });
 }
 
 export function applyClusterSubscriptionPoolEvent(db: DatabaseSync, event: ReplicationEvent): boolean {
@@ -243,6 +260,7 @@ export function applyClusterSubscriptionPoolEvent(db: DatabaseSync, event: Repli
   if (!members.has(event.originNodeId) || !value.deleted && !members.has(value.poolOwnerNodeId)) return false;
   const held = heldAssignment(db, value.clusterId);
   if (held && (held.manager_epoch > value.managerEpoch || held.manager_epoch === value.managerEpoch && held.revision > value.revision)) return true;
+  if (held && held.manager_epoch === value.managerEpoch && held.revision === value.revision) return JSON.stringify(rowAssignment(held)) === JSON.stringify(value);
   persistAssignment(db, value);
   return true;
 }
@@ -251,6 +269,8 @@ export function clusterPoolProfileAuthorized(db: DatabaseSync, clusterId: string
   ensureClusterSubscriptionPoolSchema(db);
   const assignment = getClusterSubscriptionPool(db, clusterId);
   if (!assignment || assignment.poolOwnerNodeId !== poolOwnerNodeId || assignment.poolId !== poolId) return false;
+  const state = getSharingCluster(db, clusterId);
+  if (state.closed || state.managerEpoch !== assignment.managerEpoch || state.managerNodeId !== assignment.originNodeId) return false;
   const members = new Set(listSharingClusterMembers(db, clusterId).map(({ nodeId }) => nodeId));
   return members.has(poolOwnerNodeId) && members.has(requesterNodeId)
     && Boolean(assignment.manifest?.members.some((member) => member.profileId === profileId));

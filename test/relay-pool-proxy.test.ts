@@ -148,7 +148,7 @@ function describeMemberProxy(): void {
   });
 }
 
-test("a pool member signed in on this machine uses its own sign-in, not the relay proxy", async () => {
+test("a local sign-in cannot bypass the mandatory pool's credential host",  async () => {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const path = await import("node:path");
   const { createProviderProfile, providerProfile } = await import("../src/provider-profiles/store.js");
@@ -160,6 +160,5 @@ test("a pool member signed in on this machine uses its own sign-in, not the rela
   await mkdir(path.dirname(openAIAuthPath(profile)), { recursive: true, mode: 0o700 });
   await writeFile(openAIAuthPath(profile), JSON.stringify({ "openai-codex": { type: "oauth", access: "member-own-access", refresh: "member-own-refresh", expires: Date.now() + 3 * 60 * 60_000 } }), { mode: 0o600 });
   const context = { profileId: profile.id, provider: "openai-codex" as const, label: profile.label, poolId: randomUUID(), clusterId: randomUUID(), poolOwnerNodeId: randomUUID() };
-  const credential = await withPoolProfile(context, () => profileAccessCredential(profile));
-  assert.equal(credential.access, "member-own-access", "the member's own sign-in is used, so no relay request is made");
+  await assert.rejects(withPoolProfile(context, () => profileAccessCredential(profile)), /cannot be reached/, "an unavailable authorized host must never fall back to a local sign-in");
 });

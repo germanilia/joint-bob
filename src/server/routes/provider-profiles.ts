@@ -6,14 +6,15 @@ import { getProject, listWorkspaces } from "../../store.js";
 import { latestConversationSegment } from "../../conversation-records.js";
 import { getClusterNode } from "../../cluster.js";
 import { pinnedClusterPublicKey, verifyClusterMessage } from "../../cluster-identity.js";
-import { isTrustedTwin, listSharingMemberships } from "../../cluster-sharing-policy.js";
+import { getSharingCluster, isTrustedTwin, listSharingMemberships } from "../../cluster-sharing-policy.js";
 import { accountInCluster } from "../../cluster-accounts.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
 import { clusterManager, signedPost } from "../cluster-v2.js";
 import { ClusterV2HttpError } from "../../cluster-v2-errors.js";
 import { createProviderProfile, deleteProviderProfile, listProviderProfiles, listProviderProfileSelections, providerProfile, providerProfileById, poolChoiceSchema, profileSelectionSchema, setProviderProfileSelection, listSubscriptionSelections, listAccessibleProviderProfiles, setProviderProfileShared, twinProviderProfile } from "../../provider-profiles/store.js";
 import { createSubscriptionPool, deleteSubscriptionPool, getSubscriptionPool, listSubscriptionPools, setSubscriptionPoolChoice, updateSubscriptionPool, type SubscriptionPool } from "../../provider-profiles/pools.js";
-import { poolProfileProviderSchema, applyClusterSubscriptionPoolEvent, assignedClusterPoolsForOwner, clusterPoolProfileAuthorized, getClusterSubscriptionPool, parseClusterSubscriptionPoolAssignment, setClusterSubscriptionPool, type ClusterSubscriptionPoolManifest } from "../../provider-profiles/pool-sharing.js";
+import { clusterPoolGranted, setClusterPoolGrant, poolProfileProviderSchema, applyClusterSubscriptionPoolEvent, assignedClusterPoolsForOwner, clusterPoolProfileAuthorized, getClusterSubscriptionPool, parseClusterSubscriptionPoolAssignment, setClusterSubscriptionPool, type ClusterSubscriptionPoolManifest } from "../../provider-profiles/pool-sharing.js";
+import { authorizeClusterPoolUse } from "../../provider-profiles/pool-authorization.js";
 import { localProfileCredential, logoutProfile, profileAvailability, profileLoginState, startProfileLogin } from "../../provider-profiles/service.js";
 import { borrowTwinCredential, TWIN_PROFILE_TOKEN_PATH } from "../../provider-profiles/twin-login.js";
 import { forwardToProvider, isModelRoute, isProxiedProvider, RELAY_PROXY_PATH, RelayRouteRefused, relayProxyRequestSchema, streamAnswer } from "../../provider-profiles/relay-proxy.js";
@@ -24,14 +25,9 @@ import { piProfileProviders, startPiProfileLogin, removePiProfileProvider } from
 import { profileBusy } from "../../provider-profiles/execution.js";
 import { sendError } from "../http-auth.js";
 import { app } from "../state.js";
+import { assignPoolAtManager, clearPoolAtManager } from "./cluster-v2.js";
 
 const idSchema = z.string().uuid();
-const clusterTokenRequestSchema = z.object({ clusterId: idSchema, poolId: idSchema, profileId: idSchema }).strict();
-const clusterTokenAuthorizationSchema = z.object({
-  authorization: z.object({ clusterId: idSchema, poolOwnerNodeId: idSchema, poolId: idSchema, profileId: idSchema, requesterNodeId: idSchema, authorized: z.literal(true) }).strict(),
-  signerNodeId: idSchema,
-  signature: z.string().regex(/^[A-Za-z0-9_-]{86}$/),
-}).strict();
 const owner = (response: Response) => (response.locals.authSession as AuthSession).accountId;
 function profile(request: Request, response: Response) { return providerProfile(owner(response), idSchema.parse(request.params.id)); }
 function route(work: (request: Request, response: Response) => unknown) {
@@ -133,6 +129,7 @@ app.delete("/api/provider-profiles/pools/:id", route(async (request, response) =
   const pool = getSubscriptionPool(accountId, poolId), local = await getClusterNode(), db = await clusterV2Database();
   if (assignedClusterPoolsForOwner(db, local.id, pool.id).length) throw new Error("Remove this pool's cluster assignments before deleting it");
   deleteSubscriptionPool(accountId, poolId);
+  db.prepare("DELETE FROM cluster_subscription_pool_grants WHERE pool_id=? AND account_id=?").run(poolId, accountId);
   response.json({ ok: true });
 }));
 app.get("/api/provider-profiles/:id/providers", route(async (request, response) => {
@@ -245,21 +242,27 @@ app.put("/api/provider-profiles/selection", route(async (request, response) => {
 app.put("/api/provider-profiles/pool-selection", route(async (request, response) => {
   const choice = poolChoiceSchema.parse(request.body);
   if (!await scopeAllowed(owner(response), choice)) { sendError(response, 404, "Scope not found or not accessible to this account"); return; }
+  if (choice.scope === "cluster") {
+    const local = await getClusterNode(), db = await clusterV2Database(), accountId = owner(response);
+    if (clusterManager(db, choice.scopeId) !== local.id) throw new ClusterV2HttpError(403, "Only the cluster manager assigns its mandatory pool");
+    const epoch = getSharingCluster(db, choice.scopeId).managerEpoch;
+    if (choice.poolId) {
+      const pool = getSubscriptionPool(accountId, choice.poolId);
+      const manifest = poolManifest(accountId, pool);
+      setClusterPoolGrant(db, accountId, choice.scopeId, pool.id, true);
+      await assignPoolAtManager(db, local.id, choice.scopeId, local.id, manifest, epoch);
+    } else {
+      const active = getClusterSubscriptionPool(db, choice.scopeId);
+      if (active) {
+        getSubscriptionPool(accountId, active.poolId);
+        if (active.poolOwnerNodeId !== local.id) throw new ClusterV2HttpError(403, "Manage the hosted pool in the cluster's Policy & pools tab");
+        await clearPoolAtManager(db, local.id, choice.scopeId, local.id, active.poolId, epoch);
+      }
+    }
+  }
   setSubscriptionPoolChoice(owner(response), choice);
   response.json({ selections: listSubscriptionSelections(owner(response)) });
 }));
-
-async function authorizeClusterToken(db: Awaited<ReturnType<typeof clusterV2Database>>, localNodeId: string, requesterNodeId: string, input: z.infer<typeof clusterTokenRequestSchema>): Promise<void> {
-  const manager = clusterManager(db, input.clusterId);
-  if (manager === localNodeId) return;
-  const payload = { ...input, poolOwnerNodeId: localNodeId, requesterNodeId };
-  const reply = clusterTokenAuthorizationSchema.parse(await signedPost<unknown>(db, localNodeId, manager, input.clusterId, "/api/cluster/v2/subscription-pools/authorize-token", payload));
-  const expected = { clusterId: input.clusterId, poolOwnerNodeId: localNodeId, poolId: input.poolId, profileId: input.profileId, requesterNodeId, authorized: true }, key = pinnedClusterPublicKey(db, manager);
-  if (!key || reply.signerNodeId !== manager || JSON.stringify(reply.authorization) !== JSON.stringify(expected)
-    || !verifyClusterMessage(key, "provider-pool-token-authorization", JSON.stringify(reply.authorization), reply.signature)) {
-    throw new ClusterV2HttpError(403, "Cluster manager did not authorize this pool token");
-  }
-}
 
 /**
  * A member's turn on a pool profile held here: the request goes on to the provider with this
@@ -271,13 +274,14 @@ app.post(RELAY_PROXY_PATH, route(async (request, response) => {
   const { request: proxied, ...input } = relayProxyRequestSchema.parse(request.body), local = await getClusterNode(), db = await clusterV2Database();
   if (!clusterPoolProfileAuthorized(db, input.clusterId, local.id, sender, input.poolId, input.profileId)) { sendError(response, 403, "Forbidden"); return; }
   const selected = providerProfileById(input.profileId), pool = getSubscriptionPool(selected.owner, input.poolId);
-  if (selected.shared || !pool.members.some(({ profileId }) => profileId === input.profileId) || !accountInCluster(db, selected.owner, input.clusterId)) { sendError(response, 403, "Forbidden"); return; }
+  if (!clusterPoolGranted(db, selected.owner, input.clusterId, input.poolId)) { sendError(response, 403, "Pool host revoked this cluster's access"); return; }
+  if (!pool.members.some(({ profileId }) => profileId === input.profileId) || !accountInCluster(db, selected.owner, input.clusterId)) { sendError(response, 403, "Forbidden"); return; }
   if (!isProxiedProvider(selected.provider)) { sendError(response, 409, `${selected.label} cannot be used through the relay`); return; }
   // Refused before the manager is asked: a request that is not a model route costs nothing more.
   if (proxied && !isModelRoute(selected.provider, proxied.path)) { sendError(response, 403, `${proxied.path} is not a model route the relay sends on`); return; }
-  await authorizeClusterToken(db, local.id, sender, input);
+  await authorizeClusterPoolUse(db, local.id, sender, input);
   let credential: Awaited<ReturnType<typeof localProfileCredential>>;
-  try { credential = await localProfileCredential(selected) ?? await borrowTwinCredential(selected); }
+  try { credential = await localProfileCredential(selected); }
   catch (error) { sendError(response, 409, error instanceof Error ? error.message : "Sign-in unavailable on this node"); return; }
   if (!credential) { sendError(response, 409, `${selected.label} is not signed in on the relay`); return; }
   if (!proxied) { response.json({ ready: true }); return; }

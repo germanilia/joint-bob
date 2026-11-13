@@ -711,7 +711,7 @@ async function catchUpProjectGit(connection: HarnessChatConnection): Promise<voi
  * choice here and cannot make one, so in a project shared with them the turn runs in its owner's
  * environment: what this node agreed to when it let other nodes run here (Settings → Node).
  */
-function turnActor(connection: HarnessChatConnection, author: MessageAuthor | undefined): ActingAccount | undefined {
+function turnActor(connection: Pick<HarnessChatConnection, "project">, author: MessageAuthor | undefined): ActingAccount | undefined {
   if (!author) return undefined;
   return ownerAsActor(author.homeNodeId ? conversationOwner(connection) : author.accountId);
 }
@@ -1545,7 +1545,8 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
   let record = await getConversationRecord(options.project.id, options.engine, options.sessionId);
   const conversationId = record?.conversationId ?? options.sessionId;
   const runtimeWasOpen = Boolean(options.sessionId && findHarnessSession(options.project.id, options.engine, options.sessionId));
-  const shared = await measureOperation("chat.open.runtime", () => runWithAutomationProfile({ creatorAccountId: options.automationProfile?.accountId, providerProfileId: options.automationProfile?.profileId }, () => openHarnessSession(options.engine, { projectId: options.project.id, cwd: options.cwd, sessionId: options.sessionId, sessionPath: options.sessionPath, conversationId, accountIds: options.accountIds })));
+  const actor = options.author ? turnActor(options, options.author) : actingAccount();
+  const shared = await measureOperation("chat.open.runtime", () => runAsAccount(actor, () => runWithAutomationProfile({ creatorAccountId: options.automationProfile?.accountId, providerProfileId: options.automationProfile?.profileId }, () => openHarnessSession(options.engine, { projectId: options.project.id, cwd: options.cwd, sessionId: options.sessionId, sessionPath: options.sessionPath, conversationId, accountIds: options.accountIds }))));
   const connection: HarnessChatConnection = { automationProfile: options.automationProfile, socket: options.socket, project: options.project, cwd: options.cwd, engine: options.engine, shared, handoffContext: null, accountIds: options.accountIds, readOnly: options.readOnly, peerReadOnly: options.peerReadOnly, conversationId, author: options.author };
   const local = await getClusterNode();
   if (!record && !options.readOnly) record = await ensureConversationRecord(options.project.id, options.engine, options.sessionId, local.id, undefined, { conversationId, segmentIndex: 0 });

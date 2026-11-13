@@ -15,11 +15,13 @@ export function relayPeerRequestAllowed(db: DatabaseSync, local: string, peer: s
   const discovered = db.prepare("SELECT 1 FROM cluster_v2_peer_endpoints e JOIN relay_sharing_groups r ON r.cluster_id=e.context_id WHERE e.context_kind='cluster' AND e.node_id=? LIMIT 1").get(peer);
   if (!discovered) return true;
   if (!groups.length) return false;
+  // These handlers authorize saved cluster membership and each signed policy/grant themselves.
+  // A transport lease must not revoke the policy or block its catch-up traffic.
+  if (pathname.startsWith("/api/cluster/v2/subscription-pools/")
+    || pathname === "/api/cluster/v2/relay" || pathname === "/api/cluster/v2/relay/pull") return true;
   if (!groups.some(group => relaySharingGroupActive(db, group.cluster_id))) return false;
   // Social requests (directory, groups, direct requests) authorize their own operation and account.
   if (pathname.startsWith("/api/cluster/v2/social/")) return true;
-  // Pool routes check membership of the named group, the manager's signature, and the pool's members themselves.
-  if (pathname.startsWith("/api/cluster/v2/subscription-pools/")) return true;
   // The relay's decision route answers only its admitted machines, and only while it shares its decision model.
   if (pathname === "/api/cluster/v2/decision-model/classify") return true;
   if (["/api/cluster/v2/resources/policy", "/api/cluster/v2/membership/snapshot", "/api/cluster/v2/membership/descriptor", "/api/cluster/v2/workspaces/manifest", "/api/cluster/v2/workspaces/changed"].includes(pathname)) return true;
@@ -53,7 +55,7 @@ export function relaySharingInvitation(db: DatabaseSync, relayNodeId: string, no
   if (relayMachine(db, nodeId)?.status !== "admitted") throw new Error("Machine is not admitted to this relay");
   const clusterId = ensureRelaySharingGroup(db, relayNodeId, name);
   // While a pool is attached, a machine that cannot honour it must not join, as for a cluster invite.
-  return createMembershipInvitation(db, relayNodeId, relayNodeId, clusterId, 1, Date.now(), getClusterSubscriptionPool(db, clusterId) ? ["subscription-pools-v1"] : []);
+  return createMembershipInvitation(db, relayNodeId, relayNodeId, clusterId, 1, Date.now(), [...(getClusterSubscriptionPool(db, clusterId) ? ["subscription-pools-v1"] : [])]);
 }
 
 export function redeemRelaySharingInvitation(db: DatabaseSync, relayNodeId: string, nodeId: string, request: MembershipJoinRequest, secret: string): SignedMembershipSnapshot {

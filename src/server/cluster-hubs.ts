@@ -71,7 +71,7 @@ function hubClusters(db: DatabaseSync, local: string, event: ReplicationEvent): 
   if (["account", "twins", "twins-only"].includes(scope)) return [];
   if (scope === "cluster") {
     const clusterId = (event.payload as { clusterId?: unknown } | null)?.clusterId;
-    if (typeof clusterId !== "string" || !listSharingMemberships(db, local).some((membership) => membership.clusterId === clusterId)) return [];
+    if (typeof clusterId !== "string" || !listSharingMemberships(db, local, true).some((membership) => membership.clusterId === clusterId)) return [];
     return otherMembers(db, clusterId, local).some((member) => mayReplicateEvent(db, local, member, event)) ? [clusterId] : [];
   }
   if (!replicationEventProject(db, event)) return [];
@@ -261,7 +261,7 @@ export async function flushHubDeliveries(): Promise<void> {
     while (enqueueOwnEvents(db, local)) await new Promise((resolve) => setImmediate(resolve));
     await deliverToHubs(db, local);
     // Events set aside may fit now that other data arrived, by any path.
-    for (const { clusterId } of listSharingMemberships(db, local)) await applyDeferred(db, local, clusterId);
+    for (const { clusterId } of listSharingMemberships(db, local, true)) await applyDeferred(db, local, clusterId);
   } finally { flushing = false; }
 }
 
@@ -406,7 +406,7 @@ export async function pullFromHubs(): Promise<void> {
   try {
     const db = await clusterV2Database(), local = (await getClusterNode()).id;
     ensureHubSchema(db);
-    for (const { clusterId } of listSharingMemberships(db, local)) {
+    for (const { clusterId } of listSharingMemberships(db, local, true)) {
       const members = otherMembers(db, clusterId, local).filter((member) => !peerAway(member));
       let low: string | undefined;
       for (const candidate of members) {

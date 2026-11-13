@@ -137,7 +137,7 @@ test("clearing a pool writes a tombstone and removing a cluster member revokes i
   } finally { db.close(); }
 });
 
-test("different cluster assignments remain distinguishable for conflict rejection by callers", () => {
+test("different cluster assignments resolve in stable cluster order", () => {
   const db = setup();
   try {
     // A relay serves one group, so the second group has its own relay.
@@ -149,30 +149,51 @@ test("different cluster assignments remain distinguishable for conflict rejectio
     setResourceShares(db, OWNER, "project", PROJECT, [{ clusterId: CLUSTER, projectId: null }, { clusterId: OTHER_CLUSTER, projectId: null }]);
     setClusterSubscriptionPool(db, MANAGER, CLUSTER, OWNER, manifest(POOL_ONE), 1);
     setClusterSubscriptionPool(db, OTHER, OTHER_CLUSTER, OWNER, manifest(POOL_TWO), 1);
-    assert.deepEqual(resolveClusterSubscriptionPools(db, MEMBER, PROJECT).map(({ poolId }) => poolId).sort(), [POOL_ONE, POOL_TWO]);
+    assert.deepEqual(resolveClusterSubscriptionPools(db, MEMBER, PROJECT).map(({ poolId }) => poolId), [POOL_ONE, POOL_TWO]);
   } finally { db.close(); }
 });
 
-test("only a relay assigns a pool to a whole group; an ordinary cluster's manager cannot", () => {
+test("an ordinary cluster manager can assign a member-hosted pool", () => {
   const db = setup();
   try {
     createSharingCluster(db, { id: OTHER_CLUSTER, name: "Ordinary" }, MANAGER);
     addSharingMember(db, OTHER_CLUSTER, MANAGER, OWNER, 1);
-    assert.throws(() => setClusterSubscriptionPool(db, MANAGER, OTHER_CLUSTER, OWNER, manifest(POOL_ONE), 1), /Only a relay assigns a pool to a whole group/);
-    assert.equal(getClusterSubscriptionPool(db, OTHER_CLUSTER), undefined);
+    setClusterSubscriptionPool(db, MANAGER, OTHER_CLUSTER, OWNER, manifest(POOL_ONE), 1);
+    assert.equal(getClusterSubscriptionPool(db, OTHER_CLUSTER)?.poolId, POOL_ONE);
   } finally { db.close(); }
 });
 
-test("a whole-cluster pool not set by a relay is ignored, so choices there stay personal", () => {
+test("a removed pool host never silently restores personal subscription choices", () => {
+  const db = setup();
+  try {
+    setClusterSubscriptionPool(db, MANAGER, CLUSTER, OWNER, manifest(POOL_ONE), 1);
+    // Move project ownership first, so removing the host does not also delete its project shares.
+    addSharingMember(db, CLUSTER, MANAGER, OTHER, 1);
+    db.prepare("UPDATE sharing_resource_owners SET owner_node_id=? WHERE kind='project' AND resource_id=?").run(OTHER, PROJECT);
+    removeSharingMember(db, CLUSTER, MANAGER, OWNER);
+    assert.throws(() => resolveClusterSubscriptionPools(db, MEMBER, PROJECT), /host.*no longer.*member/i);
+  } finally { db.close(); }
+});
+
+test("cluster pool enforcement survives a disconnected transport relay", () => {
+  const db = setup();
+  try {
+    setClusterSubscriptionPool(db, MANAGER, CLUSTER, OWNER, manifest(POOL_ONE), 1);
+    saveServingSettings(db, { ...servingSettings(db), enabled: false });
+    assert.equal(resolveClusterSubscriptionPools(db, MEMBER, PROJECT)[0]?.poolId, POOL_ONE);
+  } finally { db.close(); }
+});
+
+test("cluster pool enforcement is independent of transport relay membership", () => {
   const db = setup();
   try {
     setClusterSubscriptionPool(db, MANAGER, CLUSTER, OWNER, manifest(POOL_ONE), 1);
     assert.equal(resolveClusterSubscriptionPools(db, MEMBER, PROJECT).length, 1, "the relay's rule applies");
     // As if the cluster were ordinary: the row an older release let its manager write.
     db.prepare("DELETE FROM relay_sharing_groups WHERE cluster_id=?").run(CLUSTER);
-    assert.equal(getClusterSubscriptionPool(db, CLUSTER), undefined);
-    assert.deepEqual(resolveClusterSubscriptionPools(db, MEMBER, PROJECT), []);
-    assert.equal(assignedClusterPoolsForOwner(db, OWNER, POOL_ONE).length, 0);
-    assert.equal(clusterPoolProfileAuthorized(db, CLUSTER, OWNER, MEMBER, POOL_ONE, manifest(POOL_ONE).members[0].profileId), false, "and no token is lent for it");
+    assert.equal(getClusterSubscriptionPool(db, CLUSTER)?.poolId, POOL_ONE);
+    assert.equal(resolveClusterSubscriptionPools(db, MEMBER, PROJECT).length, 1);
+    assert.equal(assignedClusterPoolsForOwner(db, OWNER, POOL_ONE).length, 1);
+    assert.equal(clusterPoolProfileAuthorized(db, CLUSTER, OWNER, MEMBER, POOL_ONE, manifest(POOL_ONE).members[0].profileId), true, "membership authorization is independent of the transport route");
   } finally { db.close(); }
 });

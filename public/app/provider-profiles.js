@@ -562,16 +562,20 @@ async function refreshLogin(profile, container, settled) {
 function assignmentsSection() {
   const section = el("section", { testid: "provider-assignments", className: "profile-section" });
   const tabs = providerTabs(assignmentProvider, (id) => { assignmentProvider = id; exceptionDraft = null; pages.exceptions = 0; rerender("assignments"); }, "provider-assignment-provider",
-    (id) => selections.filter((item) => item.provider === id && !item.poolId).length);
+    (id) => new Set([
+      ...selections.filter((item) => item.provider === id).map((item) => JSON.stringify([item.scope, item.scopeId])),
+      ...relayRules.filter((rule) => rule.providers.includes(id)).map((rule) => JSON.stringify(["cluster", rule.clusterId])),
+    ]).size);
   section.append(poolAssignmentsBlock(), tabs, ...relayRuleNote(assignmentProvider), defaultChoice(assignmentProvider), exceptionsBlock(assignmentProvider));
   return section;
 }
 /** A relay rule wins in its group's projects over every choice here; set on the relay, never on this page. */
 function relayRuleNote(provider) {
   if (["kiro", "antigravity"].includes(provider) || !relayRules.length) return [];
-  const uses = relayRules.map((rule) => `${rule.groupName} uses ${rule.poolName}`);
+  const uses = relayRules.filter((rule) => rule.providers.includes(provider)).map((rule) => `${rule.groupName} uses ${rule.poolName}`);
+  if (!uses.length) return [];
   return [el("p", { testid: "provider-assignment-cluster-note", className: "assignment-cluster-note",
-    text: `Set by relay: in projects shared through a relay group, its relay's pool is used whatever you choose here: ${uses.join("; ")}. Your choices apply everywhere else.` })];
+    text: `Shared with every cluster member: ${uses.join("; ")}. These pools apply to the cluster's shared projects, overriding personal choices. Sign-ins stay on the pool's host. Your other choices apply elsewhere.` })];
 }
 /** What a turn uses when nothing is chosen at any level, as the server resolves it. */
 function automaticDefault(provider) {
@@ -687,7 +691,9 @@ function exceptionForm(provider) {
   const save = actionButton(pool ? "Assign pool" : "Add exception", `${prefix}-add`, async () => {
     if ((exceptionDraft.scope !== "default" && !scopeId()) || (exceptionDraft.scope === "conversation" && !conversation.value)) throw new Error(`Choose a ${exceptionDraft.scope} first`);
     if (!account.value) throw new Error(pool ? "Choose a pool first" : `Choose a ${providerOf(provider).name} profile or a pool first`);
-    if (!await confirmAction({ title: pool ? "Assign pool?" : "Add exception?", message: HISTORY_WARNING, confirmLabel: pool ? "Assign pool" : "Add exception" })) return;
+    const clusterPool = exceptionDraft.scope === "cluster" && (pool || account.value.startsWith("pool:"));
+    const message = clusterPool ? `Every member of this cluster will use this pool for its shared projects. Sign-ins stay on this machine. ${HISTORY_WARNING}` : HISTORY_WARNING;
+    if (!await confirmAction({ title: pool ? "Assign pool?" : "Add exception?", message, confirmLabel: pool ? "Assign pool" : "Add exception" })) return;
     const { scope: chosen } = exceptionDraft, target = scopeId();
     exceptionDraft = null;
     if (pool) await putSelection({ scope: chosen, scopeId: target, poolId: account.value }, POOL_PATH);
@@ -719,9 +725,10 @@ const POOL_PATH = "/api/provider-profiles/pool-selection";
 async function putSelection(value, path = "/api/provider-profiles/selection") {
   const body = await api(path, { method: "PUT", body: JSON.stringify(value) });
   selections = body.selections;
+  relayRules = (await api("/api/provider-profiles/relay-rules")).rules;
   // Pool cards say where each pool is used, and a pool in use cannot be deleted; the tab counts change too.
   rerender("assignments"); rerender("pools"); showView();
-  toast("Choice saved. Your twins receive it automatically.");
+  toast(value.scope === "cluster" && path === POOL_PATH ? "Cluster pool assignment saved for every member." : "Choice saved. Your twins receive it automatically.");
 }
 /** Pool assignments: one row per pool at one scope, however many providers that pool covers. */
 function poolAssignmentsBlock() {
@@ -731,29 +738,34 @@ function poolAssignmentsBlock() {
   list.append(...entries.map(poolAssignmentRow));
   if (!entries.length) list.append(el("li", { className: "profile-empty", text: "No pool assigned. Each provider uses its own choices below." }));
   const add = exceptionDraft?.pool ? exceptionForm(null) : actionButton("Add pool assignment", "pool-assignment-new", () => { exceptionDraft = { scope: "default", pool: true }; rerender("assignments"); }, { icon: "plus" });
-  block.append(sectionHeader("Pool assignments", "A pool already holds the profiles to use, so no provider is chosen here: every provider those profiles cover follows the pool. Assign it to everything, a workspace, the projects shared through one cluster, one project, or one conversation. The most specific one wins, as with exceptions. These are your choices: they apply on this machine and your twins."), list, add);
+  block.append(sectionHeader("Pool assignments", "A pool already holds the profiles to use, so no provider is chosen here: every provider those profiles cover follows the pool. Assign it to everything, a workspace, the projects shared through one cluster, one project, or one conversation. Cluster pool assignments are shared with every cluster member and take priority in the cluster's shared projects. Other assignments apply to you and your twins; the most specific one wins."), list, add);
   void loadConversationTitles(entries).catch((error) => toast.error(error.message));
   return block;
 }
 /** One entry per pool assignment: a pool at one scope, however many providers it covers. */
 function poolAssignments() {
   const entries = new Map();
-  for (const { scope, scopeId, poolId } of selections) if (poolId) entries.set(JSON.stringify([scope, scopeId, poolId]), { scope, scopeId, poolId });
+  for (const { scope, scopeId, poolId } of selections) if (poolId) entries.set(JSON.stringify([scope, scopeId]), { scope, scopeId, poolId });
+  for (const rule of relayRules) entries.set(JSON.stringify(["cluster", rule.clusterId]), { scope: "cluster", scopeId: rule.clusterId, poolId: rule.poolId });
   return [...entries.values()].sort((left, right) => SCOPE_RANK[left.scope] - SCOPE_RANK[right.scope] || scopeName(left).localeCompare(scopeName(right)));
 }
 function poolAssignmentRow(entry) {
   const scope = POOL_SCOPES.find((item) => item.id === entry.scope);
   const row = el("li", { testid: "pool-assignment-row", className: "assignment-exception-row" }); row.dataset.scope = entry.scope; row.dataset.scopeId = entry.scopeId;
   const where = el("span", { className: "assignment-exception-where" }); where.append(menuIcon(scope.icon), scopeName(entry));
+  const rule = entry.scope === "cluster" ? relayRules.find((item) => item.clusterId === entry.scopeId) : undefined;
   const pool = poolNamed(entry.poolId);
-  const who = el("span", { className: `assignment-exception-choice${pool ? "" : " invalid"}`, testid: "pool-assignment-choice" });
-  who.append(pool ? pool.name : "Unavailable pool");
-  if (entry.scope === "cluster" && relayRules.some((rule) => rule.clusterId === entry.scopeId)) who.append(" — the relay's pool wins here");
+  const who = el("span", { className: `assignment-exception-choice${pool || rule ? "" : " invalid"}`, testid: "pool-assignment-choice" });
+  who.append(rule ? rule.poolName : pool ? pool.name : "Unavailable pool");
+  if (rule) who.append(" · shared with every member");
   const remove = actionButton("Remove", "pool-assignment-remove", async () => {
-    if (!await confirmAction({ title: "Remove pool assignment?", message: `${scopeName(entry)} goes back to the next matching choice. ${HISTORY_WARNING}`, confirmLabel: "Remove" })) return;
+    const effect = rule ? `Every member of ${scopeName(entry)} goes back to their next matching choice.` : `${scopeName(entry)} goes back to the next matching choice.`;
+    if (!await confirmAction({ title: "Remove pool assignment?", message: `${effect} ${HISTORY_WARNING}`, confirmLabel: "Remove" })) return;
     await putSelection({ scope: entry.scope, scopeId: entry.scopeId, poolId: null }, POOL_PATH);
   }, { icon: "close" });
-  row.append(el("span", { className: "assignment-scope-chip", text: scope.label }), where, el("span", { className: "assignment-uses", text: "uses" }), who, remove);
+  row.append(el("span", { className: "assignment-scope-chip", text: scope.label }), where, el("span", { className: "assignment-uses", text: "uses" }), who);
+  if (!rule || rule.ownedHere && pool) row.append(remove);
+  else row.append(el("span", { className: "settings-hint", text: "Managed by the cluster" }));
   return row;
 }
 function poolOptions() {

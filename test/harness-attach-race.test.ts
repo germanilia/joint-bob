@@ -183,6 +183,29 @@ for (const pooled of [true, false]) test(`opening saved model settings ${pooled 
   f.closeSocket();
 });
 
+for (const homeNodeId of [null, "phone-node"]) test(`opening through a peer restores the ${homeNodeId ? "project owner's" : "twin user's"} pool context`, async () => {
+  const { actingAccount, runAsAccount } = await import("../src/account-context.js");
+  const accountId = homeNodeId ? "project-owner" : "viewer";
+  let openedAs: string | undefined;
+  const f = fixture({
+    actingAccount, runAsAccount,
+    ownerAsActor: (id: string) => ({ accountId: id, username: id, role: "member", homeNodeId: null, isRemoteLogin: false }),
+    resourceOwner: () => "project-owner",
+    openHarnessSession: async () => {
+      openedAs = actingAccount()?.accountId;
+      assert.equal(openedAs, accountId, "startup must resolve the same pool account as a turn, before setting the saved model");
+      return f.shared;
+    },
+  });
+  f.options.author = { accountId: "viewer", username: "viewer", homeNodeId };
+  try {
+    await runAsAccount(undefined, () => f.exports.attachHarnessChat(f.options));
+    assert.equal(openedAs, accountId);
+    assert.ok(f.frames.some(frame => frame.type === "ready"));
+    assert.equal(f.executions(), 0, "opening a conversation must not replay its queued work");
+  } finally { f.closeSocket(); }
+});
+
 function visiblePromptCount(frames: any[]): number {
   // Same identity rules as socket.js: ready replaces history, queue snapshots retain IDs,
   // promptStarted clears the queued mark without removing the user bubble.

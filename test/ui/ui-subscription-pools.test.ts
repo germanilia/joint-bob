@@ -131,9 +131,9 @@ test("subscription pools are built in their own tab, editable, testable, and clu
   await page.getByTestId("provider-profiles-tab-pools").click();
   assert.match(await editedPool.innerText(), /Used for My default/);
   assert.equal(await editedPool.getByTestId("subscription-pool-delete").isDisabled(), true, "a pool in use cannot be deleted");
-  assert.equal(await page.locator('[data-testid="cluster-pool-row"]').count(), 0, "no cluster-wide assignment: a cluster choice is personal");
+  assert.equal(await page.locator('[data-testid="cluster-pool-row"]').count(), 0, "no cluster pool has been assigned yet");
 
-  // A cluster choice is one of the user's own exceptions; it never asks the cluster or its members.
+  // The Connections save publishes the cluster rule server-side, without a second UI mutation.
   const clusterRequests: string[] = [];
   page.on("request", (request) => { if (/\/api\/clusters?\/[^/]+\/subscription-pool|\/api\/cluster\/v2\//.test(new URL(request.url()).pathname)) clusterRequests.push(request.url()); });
   await page.getByTestId("provider-profiles-tab-assignments").click();
@@ -152,7 +152,10 @@ test("subscription pools are built in their own tab, editable, testable, and clu
   assert.deepEqual(covered, ["claude", "openai-codex"], "the pool covers every provider its profiles use");
   const clusterException = page.getByTestId("pool-assignment-row").filter({ hasText: "Pool test cluster" });
   assert.match(await clusterException.innerText(), /cluster[\s\S]*Pool test cluster[\s\S]*uses[\s\S]*Team pool edited/i);
-  assert.deepEqual(clusterRequests, [], "no cluster or member request is made");
+  assert.deepEqual(clusterRequests, [], "the browser saves through one authenticated Connections request");
+  const clusterRule = await (await page.request.get(`${node.url}/api/clusters/${cluster.id}/subscription-pool`)).json();
+  assert.equal(clusterRule.assignment.poolId, poolId, "a cluster pool assignment is shared, not merely a personal exception");
+  assert.match(await page.getByTestId("provider-assignment-provider-openai-codex").innerText(), /2$/, "both the default and cluster pool cover ChatGPT");
   await page.getByTestId("provider-profiles-tab-pools").click();
   assert.match(await editedPool.innerText(), /Pool test cluster/);
   await page.getByTestId("provider-profiles-tab-assignments").click();
