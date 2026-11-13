@@ -72,6 +72,7 @@ for (const scope of ["project", "workspace", "cluster", "none"] as const) {
       listHarnessModels: async () => [{ provider: "claude", id: "sonnet", thinkingLevels: ["medium"] }],
       nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
       getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}),
+      getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Host" }] } }), getSharingCluster: () => ({ name: "Team" }),
       projectClusterIds: () => ["cluster"],
       clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => scope === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
       resolveSubscriptionChoice: (_account: string, _provider: string, requestedScope: any) => {

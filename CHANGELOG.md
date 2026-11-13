@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.17 — 2026-11-13
+
+- Automated checks match the pool host label and the start page preference, so releases can publish again.
+
 ## 2.299.16 — 2026-11-13
 
 - Worktree merges safely reconcile already-synced main history and report blocking shared edits.

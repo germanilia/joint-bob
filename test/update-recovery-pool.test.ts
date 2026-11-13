@@ -67,7 +67,7 @@ test("update recovery resumes as the turn's account, on that account's pool, nam
 
   assert.deepEqual(poolLookups, [{ account: "member", workspaceId: "personal" }]);
   assert.deepEqual(prompts, ["A service update interrupted this turn.", "queued while it ran"]);
-  assert.deepEqual(announced[0], { pool: { name: "sela-pool" }, profile: { label: "claude - sela" } });
+  assert.deepEqual(announced[0], { pool: { name: "sela-pool", nodeName: undefined, clusterName: undefined }, profile: { label: "claude - sela" } });
   assert.deepEqual(completed, ["recovery"]);
   assert.equal(shared.turnInFlight, 0);
   assert.equal(shared.turnAccountId, null, "the account is forgotten once the recovery ends");
