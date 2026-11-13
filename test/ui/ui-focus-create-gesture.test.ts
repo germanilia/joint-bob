@@ -13,6 +13,8 @@ test("mobile creation works through visible controls and C/N gestures", { timeou
   await page.getByTestId("login-username-input").fill(fixture.environment.username);
   await page.getByTestId("login-password-input").fill(fixture.environment.password);
   await page.getByTestId("login-submit-button").click();
+  // The phone opens on Inbox; projects are on their own tab.
+  await page.getByTestId("phone-tab-projects").tap();
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.getByTestId("conversation-list-search-input").waitFor();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -23,6 +25,13 @@ test("mobile creation works through visible controls and C/N gestures", { timeou
   await page.getByTestId("conversation-search-create-button").tap();
   await page.getByTestId("new-session-name-dialog").waitFor();
   assert.equal(await page.getByTestId("new-session-project-select").textContent(), "Internal Assistant");
+  await page.getByTestId("new-session-name-cancel-button").tap();
+  // The floating New also shows over a project's conversations and starts one there.
+  await page.getByTestId("phone-new-button").waitFor({ state: "visible" });
+  await page.getByTestId("phone-new-button").tap();
+  await page.getByTestId("new-session-name-dialog").waitFor();
+  assert.equal(await page.getByTestId("new-session-project-select").textContent(), "Internal Assistant");
+  assert.equal(await page.locator("#workspaceNewMenu:popover-open").count(), 0, "it starts the conversation instead of opening the New menu");
   await page.getByTestId("new-session-name-cancel-button").tap();
 
   await page.locator("#sessionList .session-card").first().click();

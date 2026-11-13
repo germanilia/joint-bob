@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- On a phone the floating New button also shows over a project's conversation list and starts a conversation in that project.
+
 ## 2.299.5 — 2026-11-13
 
 - Preserve compressed model request headers through pool proxies, fixing Codex Bad Request responses while keeping decoded response streams readable.

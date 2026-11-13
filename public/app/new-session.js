@@ -339,6 +339,13 @@ async function chooseNewSessionHarness(references = null) {
   return startNewHarnessConversation(harnessId, references);
 }
 
+// On the phone, "New" over a project's conversation list starts a conversation in that project, as its "+" does;
+// on Home and Projects it keeps opening the New menu (its popovertarget).
+document.querySelector("#phoneNewButton").addEventListener("click", (event) => {
+  if (!document.body.classList.contains("view-sessions") || !state.activeProjectId) return;
+  event.preventDefault();
+  document.querySelector("#conversationSearchCreateButton").click();
+});
 window.addEventListener("harnesses-changed", renderNewSessionHarnesses);
 renderNewSessionHarnesses();
 elements.newSessionButton.addEventListener("click", () => chooseNewSessionHarness().catch((error) => toast.error(error.message)));

@@ -75,3 +75,9 @@
   body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule-evidence { font-size: 13px; }
   body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule-actions button { font-size: 13.5px; }
 }
+
+/* The phone: "New" also floats over a project's conversation list, where it starts a conversation in that project
+   (app/new-session.js). Elsewhere it opens the New menu as before. */
+@media (max-width: 700px) {
+  body.focus-ui.view-sessions .ph-fab { display: inline-flex; }
+}
