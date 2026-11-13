@@ -164,8 +164,9 @@ test("the conversation header: title, project and state on one line, Mark done a
   await page.locator("dialog[open]").first().waitFor();
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#chatMoreMenu[open]").count(), 0, "choosing an action closes the menu");
-  // The quick commands stay above the message box.
-  assert.equal(await visible("chat-help-button"), true);
+  // Above the message box: a hint that "/" lists the commands (help, skills, model…), and Resources.
+  assert.equal(await visible("chat-help-button"), false);
+  assert.match(await page.locator("#commandStrip").evaluate((strip) => getComputedStyle(strip, "::before").content), /Type \/ for commands/);
   assert.equal(await visible("chat-resources-button"), true);
 });
 

@@ -298,6 +298,12 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   await body.evaluate((box) => { box.scrollTop = box.scrollHeight; });
   await waitFrames();
   await stats.scrollIntoViewIfNeeded();
+  // The tools and skills fold under one line with their count, closed until the person opens it.
+  const usage = page.getByTestId("activity-usage-fold");
+  assert.equal(await usage.evaluate((fold: HTMLDetailsElement) => fold.open), false);
+  assert.equal(await usage.locator("summary").innerText(), "Tools and skills (4)");
+  await usage.locator("summary").click();
+  await waitFrames();
   const covered = await stats.evaluate((box) => [...box.querySelectorAll(".activity-stat, .activity-usage-row")].filter((item) => {
     const rect = item.getBoundingClientRect();
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);

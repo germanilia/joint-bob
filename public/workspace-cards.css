@@ -8,20 +8,30 @@
   body.ws-desktop:not(.focus-ui) .ws-place { font-size: 15px; min-height: 38px; }
   body.ws-desktop:not(.focus-ui) .ws-place .ws-place-label { font-size: 15px; }
   body.ws-desktop:not(.focus-ui) #projectList .project-card strong { font-size: 14.5px; }
-  body.ws-desktop:not(.focus-ui) #projectList .project-group-summary { font-size: 14.5px; }
   body.ws-desktop:not(.focus-ui) .ws-foot .ws-me-copy b { font-size: 14.5px; }
 
   /* ---------- the conversation list ---------- */
   body.ws-desktop:not(.focus-ui) #chatsPanel #projectName { font-size: 23px; }
   body.ws-desktop:not(.focus-ui) #chatsPanel .conversation-tabs button { font-size: 14px; }
   body.ws-desktop:not(.focus-ui) #chatsPanel #sessionSearchInput { font-size: 14.5px; }
-  body.ws-desktop:not(.focus-ui) #chatFilters > button > span:not(.sr-only) { font-size: 12.5px; min-width: 20px; }
-  body.ws-desktop:not(.focus-ui) #sessionList .session-card { padding-block: 10px; }
-  body.ws-desktop:not(.focus-ui) #sessionList .session-card > strong { font-size: 15px; line-height: 1.35; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  body.ws-desktop:not(.focus-ui) #chatFilters > button > [data-filter-count] { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: var(--muted); font: 600 12.5px/1 var(--sans); }
+  body.ws-desktop:not(.focus-ui) #sessionList .session-card > strong { font-size: 15px; line-height: 1.35; }
   body.ws-desktop:not(.focus-ui) #sessionList .session-card > span { font-size: 13px; }
   body.ws-desktop:not(.focus-ui) #sessionList .worktree-subsection-title > span { font-size: 15px; }
   body.ws-desktop:not(.focus-ui) #sessionList .worktree-subsection-title button { font-size: 13px; }
   body.ws-desktop:not(.focus-ui) #conversationListPane .done-filter { font-size: 13.5px; }
+  /* The status counters stay in view with words; labels, clusters, Show done and Show scheduled stay behind "Filter". */
+  body.ws-desktop:not(.focus-ui) #conversationListPane:not(.filters-open) > .chat-filters { display: flex; }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters { flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 12px; background: var(--field); }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button { display: inline-flex; flex: 1 1 auto; align-items: center; justify-content: center; gap: 4px; min-width: 0; padding: 0 5px; border: 0; border-radius: 9px; background: transparent; box-shadow: none; font: 600 12.5px/1 var(--sans); white-space: nowrap; }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button.active { background: var(--panel); box-shadow: 0 1px 3px rgb(0 0 0 / 18%); }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button:not([data-filter="cron"]) > svg { display: none; }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button[data-filter="all"]::before { content: "All"; }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button[data-filter="active"]::before { content: "Running"; }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button[data-filter="review"]::before { content: "Review"; }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button[data-filter="done"]::before { content: "Done"; }
+  body.ws-desktop:not(.focus-ui) .conversation-filters-toggle { display: inline-flex; width: auto; gap: 6px; padding: 0 11px; font: 600 13.5px/1 var(--sans); }
+  body.ws-desktop:not(.focus-ui) .conversation-filters-toggle::after { content: "Filter"; }
 
   /* ---------- the conversation ---------- */
   body.ws-desktop:not(.focus-ui) { --read: 16px; --read-leading: 1.65; }
@@ -48,6 +58,8 @@
   body.ws-desktop:not(.focus-ui) #activityPanel .activity-stat-value { font: 400 17px/1.2 var(--serif); color: var(--heading); }
   body.ws-desktop:not(.focus-ui) #activityPanel .activity-stat-value.failed { color: var(--danger); }
   body.ws-desktop:not(.focus-ui) #activityPanel .activity-stat-label { font-size: 12.5px; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-usage-fold > summary { cursor: pointer; color: var(--muted); font-size: 13.5px; font-weight: 600; }
+  body.ws-desktop:not(.focus-ui) #activityPanel .activity-usage-fold[open] > summary { margin-bottom: 8px; }
   /* Rule suggestions: a name, the rule as plain text, the evidence; the rule's box shows only while it is edited. */
   body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule { gap: 6px; padding: 12px 14px; border-radius: 14px; }
   body.ws-desktop:not(.focus-ui) #activityPanel .activity-rule-subject { font-size: 13.5px; font-weight: 600; }
