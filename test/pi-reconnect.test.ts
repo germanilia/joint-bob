@@ -6,7 +6,7 @@ import path from "node:path";
 import test, { after, before } from "node:test";
 import type WebSocket from "ws";
 import type { SharedHarnessSession } from "../src/server/harness-sessions.js";
-import { configure, environment, openChat, startServer, stopServer, temporaryRoot, waitFor, type Fixture } from "./queued-prompt-harness.js";
+import { configure, environment, openChat, startServer, stopServer, signInPiApp, temporaryRoot, waitFor, type Fixture } from "./queued-prompt-harness.js";
 
 let root: string, previous: NodeJS.ProcessEnv, server: Server, baseUrl: string, fixture: Fixture;
 const sockets: WebSocket[] = [];
@@ -21,6 +21,7 @@ before(async () => {
   updateSettings({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } });
   ({ server, baseUrl } = await startServer());
   fixture = await configure(baseUrl, root, "");
+  await signInPiApp({ anthropic: { type: "api_key", key: "test-only-not-a-real-key" } });
   watch = openChat(baseUrl, fixture.cookie, fixture.projectId, "watch");
   sockets.push(watch.socket);
   await waitFor(watch.messages, () => watch.messages.some(({ type }) => type === "watchReady"));

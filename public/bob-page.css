@@ -99,7 +99,7 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   /* The head of the page has Bob's switch and his settings. */
   body.bob-desk :is(#controlChatMonitor, #controlChatSettingsButton) { display: none; }
   body.bob-desk #controlChat .bob-fold { display: inline-flex; flex: none; min-width: 28px; justify-content: center; color: var(--muted); }
-  /* Background updates fold at the top of the chat instead of a column beside it. */
+  /* Background updates sit at the top of the chat, open and height-limited, instead of a column beside it. */
   body.bob-desk .control-chat-streams { flex-direction: column; }
   body.bob-desk .control-chat-updates { order: -1; flex: 0 0 auto; min-width: 0; max-height: 45%; margin: 10px 14px 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
   body.bob-desk .control-chat-updates > summary { padding: 9px 12px; }
@@ -136,4 +136,27 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk .bob-head-state { flex: none; }
   body.bob-desk .panel-bar .team-context-label select { width: 210px; max-width: 210px; text-overflow: ellipsis; }
   body.bob-desk .bob-head-settings { align-items: center; min-height: 0; height: 38px; padding: 0 12px; font: 600 14px/1 var(--sans); }
+}
+
+/* A conversation opened from the page: over the stage, beside Bob's chat (app/bob-page.js keeps --bob-pop-* on the
+   stage's box). No dimming, so the chat stays usable. One control line: the popup bar takes "Give back to Bob" from the
+   lease banner, which then has nothing left to say. */
+@media (min-width: 1024px) {
+  body.bob-desk.ws-desktop.view-control.control-popup .shell > #chatPanel {
+    inset: auto; left: var(--bob-pop-x); top: var(--bob-pop-y); width: var(--bob-pop-w); height: var(--bob-pop-h);
+    border-radius: var(--ws-card-radius, 24px); box-shadow: var(--shadow-soft), 0 18px 50px rgb(0 0 0 / 30%); overflow: hidden;
+  }
+  body.bob-desk.view-control.control-popup #controlCenterPanel::after { display: none; }
+  body.bob-desk.view-control.control-popup #controlLeaseBanner { display: none; }
+  body.bob-desk.view-control.control-popup .control-popup-bar { gap: 12px; padding: 10px 18px; font-size: 14px; }
+  body.bob-desk.view-control.control-popup.control-held .control-popup-bar { background: color-mix(in srgb, var(--amber) 13%, transparent); }
+  body.bob-desk .control-popup-bar .control-popup-project { color: var(--accent); }
+  body.bob-desk .control-popup-bar :is(button, .control-popup-keep-out) { font-size: 13.5px; }
+  body.bob-desk:not(.control-held) .control-popup-bar #controlLeaseGiveBack { display: none; }
+}
+
+/* The control line stays one line: the mode text shortens, the buttons keep their size. */
+@media (min-width: 1024px) {
+  body.bob-desk .control-popup-bar .control-popup-mode { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.bob-desk .control-popup-bar > :not(.control-popup-mode) { flex: none; }
 }

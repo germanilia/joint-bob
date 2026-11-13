@@ -29,8 +29,8 @@ async function showFor(card, button) {
   button.click();
 }
 
-registerCardAction({ id: "story", label: "Story", title: "Open this conversation's story: what changed, how it works and why", order: 40, run: (card) => showFor(card, elements.activityStoryButton) });
-registerCardAction({ id: "overview", label: "Overview", title: "Watch two hosts explain what this conversation did", order: 50, run: (card) => showFor(card, elements.activityOverviewButton) });
+registerCardAction({ id: "story", label: "Story", title: "Open this conversation's story: what changed, how it works and why", order: 40, more: true, icon: "canvas", run: (card) => showFor(card, elements.activityStoryButton) });
+registerCardAction({ id: "overview", label: "Overview", title: "Watch two hosts explain what this conversation did", order: 50, more: true, run: (card) => showFor(card, elements.activityOverviewButton) });
 
 // ── Moving ─────────────────────────────────────────────────────────────────────────────────────────────────
 

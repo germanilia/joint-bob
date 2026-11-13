@@ -65,8 +65,22 @@ const filters = testid(makeNode("div", "control-filters"), "control-automations-
 filters.setAttribute("aria-label", "Filter by project");
 bar.append(filters);
 
-const problems = testid(makeNode("p", "automations-problems"), "automations-problems");
+// What could not be read: one line naming the machines or projects, the full messages under Details.
+const problems = testid(makeNode("details", "automations-problems"), "automations-problems");
 problems.hidden = true;
+const problemsLine = testid(makeNode("summary", "automations-problems-line"), "automations-problems-line");
+const problemsList = makeNode("ul", "automations-problems-list");
+problems.append(problemsLine, problemsList);
+
+/** "Ido's MacBook: Not answering; …" → one line: who could not be read. */
+function renderProblems(errors) {
+  problems.hidden = !errors.length;
+  if (!errors.length) return;
+  const sources = [...new Set(errors.map((error) => error.split(": ")[0]))];
+  const who = sources.length > 2 ? `${sources.slice(0, 2).join(", ")} and ${sources.length - 2} more` : sources.join(" and ");
+  problemsLine.replaceChildren(makeNode("b", "", `${who} could not be read.`), " Some rows show what was last reported. ", makeNode("span", "automations-problems-more", "Details"));
+  problemsList.replaceChildren(...errors.map((error) => makeNode("li", "", error)));
+}
 
 const table = makeNode("div", "automations-table");
 table.setAttribute("role", "table");
@@ -195,8 +209,7 @@ function setFilter(next) {
 function paint(page = "first") {
   filterKey = JSON.stringify(state.controlCenter.filter);
   renderFilters();
-  problems.hidden = !data.errors.length;
-  problems.textContent = data.errors.length ? `Some machines could not be read: ${data.errors.join("; ")}` : "";
+  renderProblems(data.errors);
   handle.setBadge(visibleRows().length);
   return page === "first" ? fitted.first() : fitted.reload();
 }

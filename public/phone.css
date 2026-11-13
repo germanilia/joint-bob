@@ -26,7 +26,7 @@
   .ph-tabs button.on { color: var(--accent); }
   /* The chosen tab is the green one. A ring around it after a tap read as a second selection and was cut by the screen edge. */
   .ph-tabs button:focus-visible { outline: none; background: var(--field); }
-  .ph-tab-badge { position: absolute; top: 3px; left: calc(50% + 6px); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--ws-need-fill); color: #fff; font: 700 13px/20px var(--sans); text-align: center; }
+  .ph-tab-badge { position: absolute; top: 3px; left: calc(50% + 6px); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--ws-need-fill); color: #2a1700; font: 700 13px/20px var(--sans); text-align: center; }
   .ph-tab-badge[hidden] { display: none; }
   /* Room for the tabs under the screens that show them. */
   body.focus-ui:is(.view-projects, .view-sessions, .view-control) .shell { padding-bottom: var(--ph-tabs-h); }
@@ -45,7 +45,7 @@
   .ph-icon-button svg { width: 22px; height: 22px; }
   .ph-avatar {
     display: grid; place-items: center; width: 44px; height: 44px; padding: 4px; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--accent) 16%, transparent);
-    background-clip: content-box; box-shadow: none; color: var(--accent); font: 700 13px/1 var(--sans);
+    background-clip: content-box; box-shadow: none; color: var(--heading); font: 700 13px/1 var(--sans);
   }
   .ph-greeting { margin: 6px 20px 0; color: var(--heading); font: 400 clamp(28px, 9vw, 38px)/1.12 var(--serif); letter-spacing: -0.01em; overflow-wrap: anywhere; }
   .ph-counts { min-height: 22px; margin: 8px 20px 14px; color: var(--muted); font-size: 15.5px; }
@@ -60,9 +60,9 @@
      row clear of the New button; it is outside the box the rows are fitted into. */
   body.focus-ui.view-projects.ws-column-inbox .shell > .ws-groups {
     --ws-lab-height: 44px; --ws-empty-height: 30px;
-    display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; margin: 0 0 70px; padding: 0 8px;
+    display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; margin: 0 0 70px; padding: 0 8px;
   }
-  body.focus-ui .ws-groups .ws-group { display: block; }
+  body.focus-ui .ws-groups .ws-group { display: block; flex: none; }
   body.focus-ui .ws-lab { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 44px; padding: 8px 6px 0 12px; color: var(--muted); font: 400 16px/1.2 var(--serif); }
   body.focus-ui .ws-lab i { color: var(--muted); font: 600 13px/1 var(--sans); font-style: normal; opacity: 0.85; }
   body.focus-ui .ws-show-all { min-height: 40px; margin-left: auto; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; box-shadow: none; color: var(--accent); font: 600 14px var(--sans); }
@@ -231,7 +231,7 @@
   /* Each chip keeps its own words while they fit, and none takes more than its share. */
   /* The agent's name is short and always shown whole; the model and the machine share what is left. */
   .ph-chips .searchable-select { flex: 0 1 auto; min-width: 56px; }
-  .ph-chips .searchable-select:first-child { flex: none; }
+  .ph-chips .searchable-select:is(:first-child, :nth-child(3)) { flex: none; }
   .ph-chips .searchable-select-trigger {
     min-height: 44px; height: 44px; padding: 0 28px 0 14px; border: 0; border-radius: 22px; background-color: transparent; background-position: right 11px center;
     box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); font: 600 14px/44px var(--sans);
@@ -262,6 +262,9 @@
   /* The filters wrap: the project picker takes the first line, the chips follow, and nothing is cut at the edge. */
   body.focus-ui #controlChatFilters { flex-wrap: wrap; gap: 8px; overflow: visible; padding: 4px 16px 10px; border: 0; }
   body.focus-ui #controlChatFilters > * { flex: none; }
+  /* Five chips share the second line (a lone "Cleared" used to wrap onto a third at 360 px). */
+  body.focus-ui #controlChatFilters { gap: 6px; padding-inline: 12px; }
+  body.focus-ui #controlChatFilters > .control-chip { flex: 1 1 auto; min-width: 44px; min-height: 44px; padding: 0 8px; font-size: 13px; white-space: nowrap; }
   body.focus-ui #controlChatFilters > :is(label, .searchable-select, select):first-child { flex: 1 1 100%; max-width: none; }
   body.focus-ui #controlChatFilters select, body.focus-ui #controlChatFilters .searchable-select-trigger { width: 100%; max-width: none; border-radius: 22px; }
   body.focus-ui #controlChatFilters .control-chip-word { display: inline; }
@@ -357,7 +360,7 @@
   /* The message box is one line until something is typed: its hint never wraps. */
   body.focus-ui #messageInput::placeholder { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   dialog:not(#settingsDialog) > .dialog-card :is(label, .field-label) { font-size: 13px; }
-  dialog:not(#settingsDialog) > .dialog-card .color-swatch, dialog [data-testid$="color-swatch"] { width: 36px; height: 36px; min-height: 36px; }
+  dialog:not(#settingsDialog) > .dialog-card .color-swatch, dialog [data-testid$="color-swatch"] { width: 44px; height: 44px; min-height: 44px; padding: 4px; background-clip: content-box; }
   #usageDialog :is(#usageRefresh, [data-testid="usage-close"]) { min-width: 44px; }
   #usageDialog [data-testid="usage-filter-add"] { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 14px; }
   #dashboardClose { min-width: 44px; }
@@ -404,7 +407,7 @@
   /* No step that way: the button leaves the row (step 1 has no Back, the last step no Next). */
   #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > button:disabled { display: none; }
   .wizard-card > .dialog-actions > .ghost { background: var(--field); }
-  .wizard-card > .dialog-actions > #newSessionNextButton { background: color-mix(in srgb, var(--accent) 14%, var(--field)); color: var(--accent); }
+  .wizard-card > .dialog-actions > #newSessionNextButton { background: color-mix(in srgb, var(--accent) 14%, var(--field)); color: color-mix(in srgb, var(--accent) 75%, var(--heading)); }
   #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > .primary { flex: 1 0 100%; min-height: 50px; font-size: 16.5px; }
 }
 /* The keyboard is up (the page is as tall as what it leaves): the explanation goes and the sheet tightens, so the
@@ -434,4 +437,42 @@
   .choice-option input[type="radio"] { width: 18px; height: 18px; min-height: 0; margin: 0; }
   dialog .choice-option input[type="radio"]:focus-visible { outline: none; }
   .choice-option:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--accent); }
+}
+
+/* ---------- The phone's floor: text at least 13 px, controls at least 44 px, readable greys ---------- */
+/* Found by the phone sweep (test/ui/ui-phone-audit.test.ts): screens built for the desktop kept 10 to 12.5 px words and
+   28 to 40 px controls behind rules of their own, so the floor is !important. Keyboard hints (1-9 on a list) have no
+   keyboard to point at, so they go. */
+@media (max-width: 700px) {
+  body.focus-ui :is(.list-shortcut-index, .spotlight-option-index) { display: none; }
+  body.focus-ui :is(
+    .eyebrow, .spotlight-kind, .spotlight-subtitle, .command-autocomplete-name, .command-autocomplete-description,
+    #settingsForm .settings-scope, #settingsForm .settings-saved, #settingsForm .settings-saved-retry,
+    #settingsForm .settings-panel .engine-defaults:not(:empty), #settingsForm .settings-panel .updates-node-state, .client-log-output,
+    .quick-note-queue-toggle, .quick-note-queue-parallel, .quick-note-queue-hint, .quick-note-empty, #quickNotesQueue input,
+    #quickNotesHeading span, #terminalStatusText, #backgroundTasksSummary, #usageRowCount, #usageSortNote, #usageStatus, #projectFilesStatus, #gitReviewStatus,
+    .file-explorer-crumb, .git-review-tab, .git-review-status, .activity-section-status, .activity-placeholder,
+    .usage-trend-label, .usage-trend-value, .usage-source, .usage-stat span, .usage-stat small, .usage-breakdown th, .usage-sort,
+    .dashboard-example, .dashboard-eyebrow, #backgroundTasksDialog :is(p, span, .compact), #quickNoteImageButton, .install-banner-copy span, .install-banner-actions button, .usage-progress-count, .usage-progress-waiting,
+    :is(#browserPanel, #activityPanel, #usageDialog, #gitReviewDialog) :is(summary, summary > span, small, label, .compact, [class*="browser-"], [class*="activity-"])
+  ) { font-size: 13px !important; }
+  body.focus-ui { --muted-strong: color-mix(in srgb, var(--muted) 62%, var(--text)); }
+  body.focus-ui :is(.command-autocomplete-description, .quick-note-queue-parallel) { color: var(--muted-strong); }
+  body.focus-ui #settingsForm .settings-panel .engine-defaults:not(:empty) { color: var(--muted); }
+  body.focus-ui #settingsForm .settings-scope { min-height: 28px; color: color-mix(in srgb, var(--accent) 78%, var(--heading)); }
+  body.focus-ui #contextUsage:not(.warn):not(.danger) { color: color-mix(in srgb, var(--live) 65%, var(--text)); }
+  body.focus-ui #settingsForm .settings-panel .secret-type-toolbar > :is(input, .secret-account-search) { flex: 1 1 140px; min-width: 120px; }
+  :root[data-theme="dark"] .phone-chip.ok { color: #1a0d09; }
+  body.focus-ui #settingsForm .settings-panel .updates-node-state { color: var(--text); }
+  body.focus-ui #usageDialog small { color: color-mix(in srgb, var(--muted) 82%, var(--text)); }
+
+  body.focus-ui .ws-show-all { min-height: 44px; }
+  body.focus-ui :is(#quickNotesProjectFilter, #quickNoteButton, #quickNotesQueueParallel, .quick-note-queue-toggle, .usage-sort, #projectFilesUpButton, #secretAccountAddButton, #settingsForm input[type="range"]) { min-height: 44px !important; }
+  body.focus-ui :is(#quickNoteButton, .usage-sort, #projectFilesUpButton, #secretAccountAddButton) { min-width: 44px; }
+  body.focus-ui #quickNotesQueue { gap: 4px 14px; }
+  body.focus-ui :is(dialog, #browserPanel, #settingsForm) summary { box-sizing: border-box; min-height: 44px; padding-block: 12px; }
+  body.focus-ui .toast-close { min-width: 44px; min-height: 44px; margin: -11px -15px -11px -8px; font-size: 18px; }
+  /* Connections: the profile cards' status pills and detail lines. */
+  body.focus-ui .profile-card-meta span, body.focus-ui .profile-status-detail { font-size: 13px; }
+  body.focus-ui .profile-pill { height: 26px; font-size: 13px; color: color-mix(in srgb, var(--pill) 62%, var(--ink)); }
 }

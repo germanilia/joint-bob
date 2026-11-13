@@ -447,7 +447,7 @@ function installFabDrag() {
 // Delay gesture controls only; editors need native activation to open mobile keyboards.
 function installTapGestures() {
   let tap = null, sequence = null, timer = null, lastTouch = -Infinity;
-  const controls = "button,input,textarea,select,a,summary,label,[contenteditable],[role=button]";
+  const controls = "button,input,textarea,select,a,summary,label,[contenteditable],[role=button],[data-tap]";
   const nativeControls = "input,textarea,select,label,[contenteditable],#sendButton,#browserPanel,.browser-viewer,.xterm";
   const clear = () => { clearTimeout(timer); tap = sequence = null; };
   const finish = () => {

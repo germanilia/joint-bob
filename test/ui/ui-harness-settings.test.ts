@@ -84,6 +84,11 @@ test("new conversation controls follow registered harnesses and align toolbar ta
   ]);
   assert.deepEqual(await buttons.evaluateAll((items) => items.map((item) => item.querySelector("svg")?.classList.contains("new-chat-harness-icon"))), [true, true, true, true]);
   assert.equal(await buttons.evaluateAll((items) => items.every((item) => [...item.childNodes].every((node) => node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()))), true, "desktop harness controls use icons without chat labels");
+  // "▾" after the icons names the same agents, then a quick note and a new project.
+  await page.getByTestId("new-chat-menu-button").click();
+  const icons = await buttons.evaluateAll((items) => items.map((item) => item.getAttribute("aria-label")));
+  assert.deepEqual(await page.locator("#rowMenu button").allInnerTexts(), [...icons, "Quick note", "New project"]);
+  await page.keyboard.press("Escape");
 
   await page.locator("#sessionList .session-card").first().click();
   const geometry = await page.evaluate(() => {

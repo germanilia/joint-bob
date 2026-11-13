@@ -121,9 +121,9 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   await page.getByTestId("control-bob-harness").waitFor({ state: "visible" });
   await page.getByTestId("bob-head-settings").click();
   await page.getByTestId("control-chat-settings").waitFor({ state: "hidden" });
-  // Background updates fold at the top of the chat, not in a column beside it.
+  // Background updates sit at the top of the chat, not in a column beside it; they stay open, since some carry buttons.
   const updates = page.getByTestId("control-chat-updates");
-  assert.equal(await updates.evaluate((node) => node.open), false);
+  assert.equal(await updates.evaluate((node) => node.open), true);
   const [messagesBox, updatesBox] = [await page.getByTestId("control-chat-messages").boundingBox(), await updates.boundingBox()];
   assert.ok(messagesBox && updatesBox && updatesBox.y < messagesBox.y, "background updates sit above the messages");
 

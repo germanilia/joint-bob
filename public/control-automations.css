@@ -6,7 +6,13 @@
 .automations-head h2 { margin: 0 0 2px; font-size: 16px; }
 .automations-hint { margin: 0; color: var(--muted); font-size: 12px; }
 .automations-head-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
-.automations-problems { margin: 6px 14px 0; font-size: 12px; color: #f2b44b; }
+.automations-problems { margin: 8px 14px 0; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, var(--amber, #f2b44b) 12%, transparent); font-size: 13px; }
+.automations-problems-line { cursor: pointer; list-style: none; }
+.automations-problems-line::-webkit-details-marker { display: none; }
+.automations-problems-line b { color: var(--amber, #f2b44b); }
+.automations-problems-more { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.automations-problems[open] .automations-problems-more { display: none; }
+.automations-problems-list { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
 .automations-problems[hidden] { display: none; }
 
 .automations-table { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 14px 10px; container: automations / inline-size; }

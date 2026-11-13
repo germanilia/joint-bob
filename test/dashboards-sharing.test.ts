@@ -67,7 +67,7 @@ test("a twin receives a dashboard inactive, runs it only after approval, and fol
   const agent = await fakeAgent(root);
   const servers: Array<Awaited<ReturnType<typeof startDevNode>>> = [];
   try {
-    const environment = await seedDevEnvironment(root, 2);
+    const environment = await seedDevEnvironment(root, 2, { appCredentials: false });
     const [a, b] = environment.nodes;
     servers.push(await startDevNode(environment, a, { JOINT_BOB_DASHBOARD_AGENT: agent }), await startDevNode(environment, b, { JOINT_BOB_DASHBOARD_AGENT: agent }));
     await pairTwinNodes(environment);

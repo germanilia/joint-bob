@@ -38,7 +38,7 @@ document.addEventListener("conversation-chat-reconnected", () => {
 
 registerCardAction({
   id: "system-control", label: "Let Bob control", title: "Give Bob instructions and optional iteration and time limits",
-  order: 6, visible: (card) => card.controlledBy !== "someone-else",
+  order: 6, more: true, icon: "user", visible: (card) => card.controlledBy !== "someone-else",
   run: async (card) => {
     await giveBack(card);
     systemControlTarget = { projectId: card.projectId, conversationId: card.conversationId };

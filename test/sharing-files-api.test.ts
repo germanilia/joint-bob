@@ -35,7 +35,7 @@ test("twins exchange project locations, with or without an old machine's device 
   const root = await mkdtemp(path.join(os.tmpdir(), "sharing-files-api-"));
   const children: ChildProcess[] = [];
   try {
-    const environment = await seedDevEnvironment(root, 2);
+    const environment = await seedDevEnvironment(root, 2, { appCredentials: false });
     const [a, b] = environment.nodes;
     children.push(...await Promise.all([startDevNode(environment, a), startDevNode(environment, b)]));
     const relationshipId = await pairTwinNodes(environment);

@@ -16,6 +16,21 @@ updateSettings({ ...settings, conversationDefaults: { ...settings.conversationDe
 const { createPiSession, reloadPiSkills } = await import("../src/pi-service.js");
 const { browserAgentCredential, browserAgentIdentity } = await import("../src/browser-agent.js");
 const secrets = await import("../src/secrets.js");
+const actor = { accountId: "credential-refresh-owner", username: "fixture", role: "admin" as const, isRemoteLogin: false, homeNodeId: null };
+const { runAsAccount, asNode } = await import("../src/account-context.js");
+const { setResourceOwner } = await import("../src/ownership.js");
+// Pi authenticates only through an app profile, never the environment or the native auth file.
+{
+  const { createProviderProfile, setProviderProfileSelection } = await import("../src/provider-profiles/store.js");
+  const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
+  const { writeFile } = await import("node:fs/promises");
+  await (await import("../src/cluster.js")).getClusterNode();
+  const owner = actor.accountId;
+  const profile = createProviderProfile(owner, { provider: "pi", label: "Fixture account" });
+  await mkdir(path.dirname(openAIAuthPath(profile)), { recursive: true });
+  await writeFile(openAIAuthPath(profile), JSON.stringify({ anthropic: { type: "api_key", key: "test-model-key" } }), { mode: 0o600 });
+  setProviderProfileSelection(owner, { provider: "pi", scope: "default", scopeId: "", profileId: profile.id });
+}
 
 let supervisor: Awaited<ReturnType<typeof startSupervisor>> | undefined;
 let previousWarning: string | undefined;
@@ -61,6 +76,7 @@ async function fixture(t: test.TestContext, accountIds: string[] = []) {
   const cwd = path.join(os.homedir(), `credentials-${Date.now()}`);
   await mkdir(cwd, { recursive: true });
   const project = await addProject("Credential refresh", cwd, { writeInstructions: false });
+  setResourceOwner("project", project.id, actor.accountId);
   const handle = await createPiSession({ cwd, projectId: project.id, conversation: { engine: "pi", accountIds } });
   t.after(() => handle.dispose());
   let inspect = async (_context: Context) => {};
@@ -72,7 +88,7 @@ async function fixture(t: test.TestContext, accountIds: string[] = []) {
   });
   const prompt = async (text: string) => {
     const previous = inspected;
-    await handle.session.prompt(text);
+    await runAsAccount(actor, () => handle.withModelProfile!("anthropic", () => handle.session.prompt(text)));
     assert.ok(inspected > previous, "each prompt must reach the model inspection");
     const errors = handle.session.messages.filter((message) => message.role === "assistant" && message.stopReason === "error");
     assert.deepEqual(errors, [], "model inspection and shell assertions must succeed");
@@ -81,11 +97,11 @@ async function fixture(t: test.TestContext, accountIds: string[] = []) {
 }
 
 async function account(label: string, value: string, id?: string) {
-  return secrets.saveSecretAccount({ id, label, provider: "github", variables: [{ name: "GH_TOKEN", kind: "value", value }] });
+  return asNode(() => secrets.saveSecretAccount({ id, label, provider: "github", variables: [{ name: "GH_TOKEN", kind: "value", value }] }));
 }
 
 async function websiteAccount(label: string, value: string, id?: string) {
-  return secrets.saveSecretAccount({ id, label, provider: "custom", websiteOrigin: "https://login.fixture.test", variables: [{ name: "LOGIN_PASSWORD", kind: "value", value }] });
+  return asNode(() => secrets.saveSecretAccount({ id, label, provider: "custom", websiteOrigin: "https://login.fixture.test", variables: [{ name: "LOGIN_PASSWORD", kind: "value", value }] }));
 }
 
 async function browserCapture(handle: Awaited<ReturnType<typeof createPiSession>>) {

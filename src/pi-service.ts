@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isInternalSession } from "./internal-sessions.js";
 import { withResourcePass } from "./resource-pass.js";
 import { mapWithConcurrency } from "./concurrency.js";
-import { jsonlLineSlices, parseJsonlSkippingDamage } from "./jsonl.js";
+import { jsonlLineSlices, parseJsonlLineSkippingDamage, parseJsonlSkippingDamage } from "./jsonl.js";
 import { mkdtemp, open, readdir, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { basename } from "node:path";
@@ -448,7 +448,10 @@ export function simplifyTranscriptEntries(entries: unknown[]): ChatMessage[] {
 export async function loadPiMessages(sessionPath: string): Promise<ChatMessage[]> {
   const entries: unknown[] = [];
   // In slices: a large transcript is parsed with other work in between, not in one go.
-  for await (const lines of jsonlLineSlices(sessionPath)) for (const line of lines) entries.push(JSON.parse(line) as unknown);
+  for await (const lines of jsonlLineSlices(sessionPath)) for (const line of lines) {
+    const entry = parseJsonlLineSkippingDamage(line, sessionPath);
+    if (entry !== undefined) entries.push(entry);
+  }
   return simplifyTranscriptEntries(entries);
 }
 

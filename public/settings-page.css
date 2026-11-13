@@ -400,7 +400,7 @@ html.assistant-automation #settingsForm .settings-panel { --set-card-w: 100vw; w
 /* Rows outside a titled group (Harnesses, Git, Labels…) sit in one rounded card like the grouped ones. */
 #settingsForm {
   --set-row-bg: var(--field);
-  --set-faint: color-mix(in srgb, var(--muted) 78%, var(--panel));
+  --set-faint: var(--muted);
   --set-chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23978b7c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E");
   --set-chev-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23978b7c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }

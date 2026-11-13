@@ -1,9 +1,39 @@
 # Changelog
 
-## 2.293.5 — 2026-11-13
+## 2.299.2 — 2026-11-13
 
-- Share assigned cluster pools with every member, show inherited provider coverage, and authorize explicitly granted pool profiles without moving credentials.
-- Restore the correct account and pool context before opening a conversation through another node, preventing saved-model API-key errors.
+- Share cluster pool assignments with every member while keeping credentials on their host.
+- Restore account context when opening a pooled conversation through another node.
+
+## 2.299.1 — 2026-11-13
+
+- Fixed a conversation that would not open after a full disk cut a record short and the next one was written onto the same line: the damaged line is now skipped, with one warning per file, so the rest of the conversation loads.
+
+## 2.299.0 — 2026-11-13
+
+- Fixed a Pi conversation on an app profile starting without its cached model list, which made it re-read the catalog and report "No API key" for models it had just listed.
+
+## 2.298.0 — 2026-11-13
+
+- In the conversation list a "▾" after the agent icons names each agent, and offers a quick note in this project and a new project.
+
+## 2.297.0 — 2026-11-13
+
+- Board cards keep their main buttons in view and put Let Bob control, Story and Overview under "More ▾"; Automations says in one line which machines could not be read, with the full messages under Details; and on Bob's page background updates stay open again, so buttons like "Open dashboards" are never hidden.
+
+## 2.296.0 — 2026-11-13
+
+- In the conversation list the status counters show words (All, Running, Review, Done) and stay in view, while labels, clusters, Show done and Show scheduled sit behind a "Filter" button; under Statistics the tools and skills fold under one line with their count.
+
+## 2.295.0 — 2026-11-13
+
+- The workspace reads more easily on a computer: larger text in the project and conversation lists, the conversation and its details; the slash command chips give way to typing / in the message box, and rule suggestions read as text until you edit them. A conversation opened from Bob's page now opens beside his chat with one control line that holds Give back to Bob.
+
+## 2.294.0 — 2026-11-12
+
+- **Phone polish across every screen.** On Home, the Running and To review groups under the Needs you deck are reachable again (the list scrolls), tapping the words of a needs-you card opens its sheet, and the tab badge, the counts and the avatar letter have readable contrast. On Bob's page the filter chips fit without a lone chip on a third line. In a conversation the effort chip shows its name and the `/` and `@` suggestions are easier to read.
+- The worktree indicator's script is part of the offline app again, so an installed app no longer misses it.
+- Dialogs and panels on the phone (Terminal, Browser, Rename, Schedule, Files, Git review, Activity, Costs, Notes, Search) and the Settings sections use text of at least 13 px and controls at least 44 px tall.
 
 ## 2.293.4 — 2026-11-13
 

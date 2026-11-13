@@ -183,3 +183,30 @@ test("the Automations tab lists every scheduled task, webhook and Bob report, fi
   await page.waitForFunction(() => (document.querySelector("#cronDialog") as HTMLDialogElement | null)?.open === true);
   await page.waitForFunction(() => /Log check/.test(document.querySelector("#cronList")?.textContent ?? ""));
 });
+
+test("machines that could not be read are one line with their names, and the full messages under Details", { timeout: 120_000 }, async (t) => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  const errors = [
+    "Idos-MacBook-Pro-3.local: Not answering; showing what it reported 15 min ago",
+    "Idos-MacBook-Pro-3.local: Not answering; showing what it reported 30 h ago",
+    "Contigos EC2: Webhook owner did not respond",
+  ];
+  await page.route(`**${BASE}`, (route) => route.request().method() === "GET" ? route.fulfill({ json: { rows: [], projects: [], errors, timezone: "UTC" } }) : route.continue());
+  await page.goto(node.url);
+  await page.locator("#loginDialog[open]").waitFor();
+  await page.locator("#loginUsernameInput").fill(environment.username);
+  await page.locator("#loginPasswordInput").fill(environment.password);
+  await page.locator("#loginSubmitButton").click();
+  await page.waitForFunction(() => document.querySelectorAll("#projectList .list-row").length >= 2 && !document.body.classList.contains("booting"));
+  await page.waitForFunction(async () => (await import("/app/state.js")).state.preferencesLoaded);
+  await page.waitForTimeout(500);
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("control-tab-automations").waitFor();
+  await page.getByTestId("control-tab-automations").click();
+  const problems = page.getByTestId("automations-problems");
+  await problems.waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("automations-problems-line").innerText(), "Idos-MacBook-Pro-3.local and Contigos EC2 could not be read. Some rows show what was last reported. Details");
+  assert.equal(await problems.locator("li").first().isVisible(), false, "the messages wait under Details");
+  await page.getByTestId("automations-problems-line").click();
+  assert.deepEqual(await problems.locator("li").allInnerTexts(), errors);
+});

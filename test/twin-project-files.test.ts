@@ -13,7 +13,7 @@ test("twins move a new project's files with built-in file sync and stop when the
  const root=await mkdtemp(path.join(os.tmpdir(),"twin-project-files-"));
  const children:Awaited<ReturnType<typeof startDevNode>>[]=[];
  try{
-  const a=await seedDevEnvironment(path.join(root,"a"),1),b=await seedDevEnvironment(path.join(root,"b"),1);
+  const a=await seedDevEnvironment(path.join(root,"a"),1,{appCredentials:false}),b=await seedDevEnvironment(path.join(root,"b"),1,{appCredentials:false});
   const left=a.nodes[0],right=b.nodes[0];
   const sourceProject=left.projects.find(project=>project.name==='Internal Assistant')!;
   const claudeDirectory=sourceProject.path.replace(/^\//,'-').replace(/[\s_.\/]+/g,'-');

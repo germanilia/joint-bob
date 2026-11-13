@@ -25,6 +25,8 @@ const FOLLOW_THRESHOLD_PX = 32;
 const NAMES_SHOWN = 3;
 const PROMPT_SHOWN = 90;
 const USAGE_ROWS = 8;
+/** Whether the person opened the tools and skills under Statistics; it is drawn anew often, so the choice is kept here. */
+let usageOpen = false;
 
 let currentGroup = null;
 let groupCount = 0;
@@ -292,10 +294,20 @@ function renderStats() {
   const figures = document.createElement("div");
   figures.className = "activity-stats-figures";
   figures.append(stat(String(prompts), prompts === 1 ? "turn" : "turns"), stat(String(steps), steps === 1 ? "step" : "steps"), stat(String(failed), "failed", failed > 0), stat(working ? formatDuration(working) : "—", "agent time"));
-  const parts = [figures];
-  parts.push(tools.size ? usageList("Tools", "tools", tools.values()) : placeholder("No tools used yet."));
-  parts.push(skills.size ? usageList("Skills", "skills", [...skills].map(([name, count]) => ({ name, count, failed: 0 }))) : placeholder("No skills used yet."));
-  elements.activityStatsBody.replaceChildren(...parts);
+  // The four figures stay in view; the tools and skills fold under one line with their count.
+  const usage = document.createElement("details");
+  usage.className = "activity-usage-fold";
+  usage.dataset.testid = "activity-usage-fold";
+  usage.open = usageOpen;
+  usage.addEventListener("toggle", () => { usageOpen = usage.open; });
+  const fold = document.createElement("summary");
+  fold.textContent = `Tools and skills (${tools.size + skills.size})`;
+  usage.append(
+    fold,
+    tools.size ? usageList("Tools", "tools", tools.values()) : placeholder("No tools used yet."),
+    skills.size ? usageList("Skills", "skills", [...skills].map(([name, count]) => ({ name, count, failed: 0 }))) : placeholder("No skills used yet."),
+  );
+  elements.activityStatsBody.replaceChildren(figures, usage);
 }
 
 /** Recounts the statistics once per frame, however many steps changed in it. */
