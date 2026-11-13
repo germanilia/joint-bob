@@ -100,6 +100,11 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   await page.waitForFunction(() => /need you/.test(document.querySelector('[data-testid="home-counts"]')?.textContent ?? ""));
   await page.getByTestId("projects-open-control-center-button").click();
   await page.locator("body.view-control.bob-desk").waitFor();
+  // The page opens at its full width: the chat is folded into the "Ask Bob" button at the bottom left.
+  assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
+  const fab = (await page.getByTestId("bob-fab-chat").boundingBox())!;
+  assert.ok(fab.x < page.viewportSize()!.width / 2, `"Ask Bob" sits on the left (${fab.x})`);
+  await page.getByTestId("bob-fab-chat").click();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   assert.equal(await page.getByTestId("control-chat-input").getAttribute("placeholder"), "Ask Bob, or give him a task…");
   // The views are tabs on top of the stage, beside the chat; no third column.

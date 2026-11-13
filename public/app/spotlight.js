@@ -53,6 +53,7 @@ function askBob(query) {
     kind: "bob", title: "Ask Bob", subtitle: "Opens Bob's chat with what you typed",
     action: () => {
       setMobileView("control");
+      window.dispatchEvent(new CustomEvent("bob-chat-wanted"));
       const input = document.querySelector("#controlChatInput");
       input.value = text;
       input.dispatchEvent(new Event("input", { bubbles: true }));

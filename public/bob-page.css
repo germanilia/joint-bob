@@ -109,7 +109,7 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk.bob-chat-folded #controlChat { display: none; }
   body.bob-desk.view-control.bob-chat-folded .bob-fab { display: inline-flex; }
   .bob-fab {
-    position: absolute; z-index: 4; right: 24px; bottom: 24px; align-items: center; gap: 10px; height: 56px; min-height: 0; padding: 0 20px 0 16px; border: 0; border-radius: 999px;
+    position: absolute; z-index: 4; left: 24px; bottom: 24px; align-items: center; gap: 10px; height: 56px; min-height: 0; padding: 0 20px 0 16px; border: 0; border-radius: 999px;
     background: var(--accent); color: var(--btn-fg, #fff); font: 700 16px/1 var(--sans); cursor: pointer; transition: transform 0.15s;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
   }

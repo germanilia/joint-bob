@@ -3,8 +3,8 @@
 // everything he does on his own), "Bob's settings", Refresh and Exit; below it Bob's chat and the stage, whose tabs are
 // the control center's views (Live agents, Dashboard, Automations, Memory, Dashboards, Assistants) with their counts.
 // The view opened last opens again, on every browser (state.controlCenter.view). Bob's chat folds into the "Ask Bob"
-// button (state.controlCenter.collapsed). Nothing here leaves the control center: only the person does (Exit, Esc
-// twice, the toggle shortcut). The tab strip and the team context move into the page and back, by markers.
+// button (state.controlCenter.collapsed), and every opening starts folded. Nothing here leaves the control center: only
+// the person does (Exit, Esc twice, the toggle shortcut). The tab strip and the team context move into the page and back, by markers.
 // Styles: public/bob-page.css.
 
 import { saveControlCenter, toggleFolded } from "./control-center.js";
@@ -84,6 +84,8 @@ function fold(id) {
 }
 chatFold.addEventListener("click", () => fold("chat"));
 chatFab.addEventListener("click", () => fold("chat"));
+// Code that writes into Bob's chat (Spotlight's "Ask Bob", "Ask Bob for a dashboard", a trigger's triage) opens it first.
+window.addEventListener("bob-chat-wanted", () => { if (state.controlCenter.collapsed.includes("chat")) fold("chat"); });
 
 // On a phone Bob's settings are a screen of their own (phone.css): its head says so and goes back to the chat.
 const settingsHead = element("div", "bob-settings-head");
@@ -178,8 +180,10 @@ function apply() {
 // The view opened last opens again; a view asked for right as the control center opens (Automations in the left column,
 // a dashboard Bob opens) follows this and wins. Any wide window keeps it (the page's own classes may come later); a
 // phone always starts at the chat (control-phone.js), so it neither restores nor saves the view.
+// The page opens at its full width: Bob's chat starts folded into the "Ask Bob" button.
 window.addEventListener("control-center-activated", () => {
   apply();
+  if (wide.matches && !state.controlCenter.collapsed.includes("chat")) toggleFolded("chat");
   applyFolds();
   if (wide.matches && state.controlCenter.view !== currentControlView()) showControlView(state.controlCenter.view);
 });

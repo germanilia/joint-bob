@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Bob's page opens at full width with its chat folded into the Ask Bob button, now at the bottom left; asking Bob from Spotlight, a dashboard or a trigger opens the chat first.
+
 ## 2.299.13 — 2026-11-13
 
 - Bob auto now judges a message together with the exchange it continues, so short follow-ups in a debugging thread are no longer routed as simple questions.

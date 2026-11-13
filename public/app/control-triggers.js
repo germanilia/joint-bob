@@ -146,6 +146,7 @@ function openWebhook(trigger) {
  * shows as their message, Bob answers below it, and the same route and labels apply. What they had typed stays.
  */
 function sayToBob(message, projectId) {
+  window.dispatchEvent(new CustomEvent("bob-chat-wanted"));
   const input = elements.controlChatInput;
   const project = elements.controlChatProject;
   const draft = input.value;

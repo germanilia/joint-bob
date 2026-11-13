@@ -56,6 +56,7 @@ function ago(iso) {
 
 /** Puts a request into Bob's message box, with the project chosen, for the person to finish and send. */
 function askBob(text, projectId) {
+  window.dispatchEvent(new CustomEvent("bob-chat-wanted"));
   if (projectId) elements.controlChatProject.value = projectId;
   elements.controlChatInput.value = text;
   elements.controlChatInput.focus();
