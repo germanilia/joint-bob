@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.1 — 2026-11-13
+
+- Fixed a conversation that would not open after a full disk cut a record short and the next one was written onto the same line: the damaged line is now skipped, with one warning per file, so the rest of the conversation loads.
+
 ## 2.299.0 — 2026-11-13
 
 - Fixed a Pi conversation on an app profile starting without its cached model list, which made it re-read the catalog and report "No API key" for models it had just listed.
