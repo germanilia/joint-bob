@@ -126,6 +126,10 @@ test("merge commits a verified task through the CLI, scopes status and retries a
   const other = await capability(randomUUID(), project.id);
   const { worktree } = await cliRun(creator.environment, "create", "--name", "Verified task");
   await writeFile(path.join(worktree.path, "app.txt"), "task\n");
+  assert.equal((await post(other.token, { operation: "reconcile-main", worktreeId: worktree.id })).status, 403);
+  const reconciliation = await cliRun(creator.environment, "reconcile-main", "--worktree", worktree.id);
+  assert.equal(reconciliation.status, "blocked");
+  assert.match(reconciliation.reason, /upstream/);
   const operationId = randomUUID();
   const request = { operation: "merge", worktreeId: worktree.id, operationId, title: "feat: task", check: "node -e 'process.exit(0)'" };
   assert.equal((await post(other.token, request)).status, 403);

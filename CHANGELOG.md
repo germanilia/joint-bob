@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.16 — 2026-11-13
+
+- Worktree merges safely reconcile already-synced main history and report blocking shared edits.
+
 ## 2.299.15 — 2026-11-13
 
 - Conversations marked done leave the board even when background tasks remain.

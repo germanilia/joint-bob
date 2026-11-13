@@ -9,6 +9,7 @@ const timeoutSeconds = Number(process.env.JOINT_BOB_WORKTREE_TIMEOUT_SECONDS) ||
 const usage = `Usage:
   list
   status --operation ID
+  reconcile-main [--worktree ID]
   merge [--worktree ID] --title TITLE --check COMMAND [--operation ID]
   create --name NAME [--color COLOR] [--finish local|pr]
   start --worktree ID (--prompt TEXT | --prompt-stdin) [--title TITLE]
@@ -18,6 +19,7 @@ const text = { type: "string" };
 const flag = { type: "boolean" };
 const commands = {
   list: { options: {} },
+  "reconcile-main": { options: { worktree: text } },
   status: { options: { operation: text }, required: ["operation"] },
   merge: { options: { worktree: text, title: text, check: text, operation: text, "resolve-main": text }, required: ["title", "check"] },
   create: { options: { name: text, color: text, finish: text }, required: ["name"] },
@@ -42,6 +44,7 @@ async function requestBody(operation, values) {
   }
   switch (operation) {
     case "list": return { operation };
+    case "reconcile-main": return { operation, ...optional("worktreeId", values.worktree) };
     case "status": return { operation, operationId: values.operation };
     case "merge": return { operation, operationId: values.operation ?? randomUUID(), title: values.title, check: values.check, ...optional("resolutionTarget", values["resolve-main"]), ...optional("worktreeId", values.worktree) };
     case "create": return { operation, name: values.name, ...optional("color", values.color), ...optional("finish", values.finish) };

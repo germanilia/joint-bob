@@ -23,6 +23,83 @@ async function fixture(t: test.TestContext) {
   return { root, base, changes: { gitBase: base, writes: [{ path: "app.txt", content: Buffer.from("one\ntwo\nTHREE\n"), executable: false }], deletes: [] as string[], uncommittedPaths: [] as string[] } };
 }
 
+function upstreamFixture(root: string) {
+  const remote = path.join(root, ".git", "test-remote");
+  git(root, "init", "--bare", "-q", remote);
+  git(root, "remote", "add", "origin", remote);
+  git(root, "push", "-qu", "origin", "main");
+}
+
+test("reconcile-main advances synced history while preserving unrelated staged and unstaged edits", async t => {
+  const { root, base } = await fixture(t);
+  await writeFile(path.join(root, "app.txt"), "upstream\n");
+  git(root, "add", "app.txt"); git(root, "commit", "-qm", "upstream");
+  const upstream = git(root, "rev-parse", "HEAD");
+  upstreamFixture(root);
+  git(root, "reset", "--mixed", base);
+  await writeFile(path.join(root, "other.txt"), "staged\n"); git(root, "add", "other.txt");
+  await writeFile(path.join(root, "other.txt"), "unstaged\n");
+  const result = await worktreeGit.reconcileWorktreeMain(root, {}, upstream);
+  assert.equal(result.status, "reconciled");
+  assert.equal(git(root, "rev-parse", "HEAD"), upstream);
+  assert.equal(git(root, "show", ":other.txt"), "staged");
+  assert.equal(await readFile(path.join(root, "other.txt"), "utf8"), "unstaged\n");
+  assert.equal(await readFile(path.join(root, "app.txt"), "utf8"), "upstream\n");
+});
+
+test("reconcile-main reports overlapping unsynced paths without changing HEAD or index", async t => {
+  const { root, base } = await fixture(t);
+  await writeFile(path.join(root, "app.txt"), "upstream\n");
+  git(root, "add", "."); git(root, "commit", "-qm", "upstream");
+  const upstream = git(root, "rev-parse", "HEAD");
+  upstreamFixture(root);
+  git(root, "reset", "--mixed", base);
+  await writeFile(path.join(root, "app.txt"), "local work\n");
+  const index = await readFile(path.join(root, ".git/index"));
+  const result = await worktreeGit.reconcileWorktreeMain(root, {}, upstream);
+  assert.equal(result.status, "blocked");
+  assert.deepEqual(result.conflicts, ["app.txt"]);
+  assert.equal(git(root, "rev-parse", "HEAD"), base);
+  assert.deepEqual(await readFile(path.join(root, ".git/index")), index);
+});
+
+test("merge preparation automatically reconciles a synced main behind the task base", async t => {
+  const { root, base, changes } = await fixture(t);
+  await writeFile(path.join(root, "other.txt"), "upstream\n");
+  git(root, "add", "."); git(root, "commit", "-qm", "upstream");
+  changes.gitBase = git(root, "rev-parse", "HEAD");
+  upstreamFixture(root);
+  git(root, "reset", "--mixed", base);
+  const candidate = await prepare(root, changes);
+  assert.equal(candidate.status, "prepared");
+  assert.equal(git(root, "rev-parse", "HEAD"), changes.gitBase);
+  if (candidate.status !== "prepared") return;
+  await install(root, candidate);
+  assert.equal(git(root, "show", "HEAD:app.txt"), "one\ntwo\nTHREE");
+  assert.equal(git(root, "show", "HEAD:other.txt"), "upstream");
+});
+
+test("reconciliation retains overlapping staged edits and divergent local history", async t => {
+  const { root, base } = await fixture(t);
+  await writeFile(path.join(root, "app.txt"), "upstream\n");
+  git(root, "add", "."); git(root, "commit", "-qm", "upstream");
+  const upstream = git(root, "rev-parse", "HEAD");
+  upstreamFixture(root);
+  git(root, "reset", "--mixed", base);
+  git(root, "add", "app.txt");
+  const index = await readFile(path.join(root, ".git/index"));
+  const result = await worktreeGit.reconcileWorktreeMain(root, {}, upstream);
+  assert.equal(result.status, "blocked");
+  assert.deepEqual(result.conflicts, ["app.txt"]);
+  assert.deepEqual(await readFile(path.join(root, ".git/index")), index);
+  git(root, "commit", "-qm", "local commit retained");
+  const local = git(root, "rev-parse", "HEAD");
+  const divergent = await worktreeGit.reconcileWorktreeMain(root, {}, upstream);
+  assert.equal(divergent.status, "blocked");
+  assert.match(divergent.reason!, /diverged/);
+  assert.equal(git(root, "rev-parse", "HEAD"), local);
+});
+
 async function prepare(root: string, changes: worktreeGit.WorktreeChanges) {
   assert.equal(typeof worktreeGit.prepareLocalWorktreeCommit, "function", "local integration must prepare an isolated task commit");
   return worktreeGit.prepareLocalWorktreeCommit(root, {}, changes, "feat: task");

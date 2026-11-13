@@ -18,7 +18,7 @@ import { conversationScopeId, genericSecretEnvironment, getScopeSecretAccounts, 
 import { getProject } from "../store.js";
 import { isHarnessId, PROJECT_COLORS, type ProjectRecord } from "../types.js";
 import type { WorktreeAgentIdentity } from "../worktree-agent.js";
-import { rebaseWorktreeChanges } from "../worktree-git.js";
+import { rebaseWorktreeChanges, reconcileWorktreeMain } from "../worktree-git.js";
 import { queueConversationPrompt } from "./conversation-prompt.js";
 import { openWorktreePullRequest } from "./github-pull-request.js";
 import { findHarnessSession, harnessSessionBusy } from "./harness-sessions.js";
@@ -29,6 +29,7 @@ import { scheduleWorktreeRetirement } from "./worktree-retirement.js";
 const worktreeId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 export const worktreeAgentRequestSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("list") }).strict(),
+  z.object({ operation: z.literal("reconcile-main"), worktreeId: worktreeId.optional() }).strict(),
   z.object({ operation: z.literal("status"), operationId: worktreeId }).strict(),
   z.object({ operation: z.literal("merge"), worktreeId: worktreeId.optional(), operationId: worktreeId, title: z.string().trim().min(1).max(256), check: z.string().trim().min(1).max(10_000), resolutionTarget: z.string().regex(/^[a-f0-9]{40}$/).optional() }).strict(),
   z.object({ operation: z.literal("create"), name: z.string().max(200), color: z.enum(PROJECT_COLORS).optional(), finish: z.enum(["local", "pr"]).optional() }).strict(),
@@ -143,6 +144,18 @@ export async function worktreeAgentRequest(identity: WorktreeAgentIdentity, requ
       const status = integrationStatus(project.id, request.operationId, identity.conversationId);
       if (!status) throw new ProjectWorktreeError(404, "Integration operation not found for this conversation");
       return status;
+    }
+    case "reconcile-main": {
+      await assertProjectEditable(project);
+      const id = request.worktreeId ?? current?.id;
+      if (!id) throw new ProjectWorktreeError(400, "Pass --worktree ID or run in a worktree");
+      const worktree = await localWorktree(project.id, id);
+      if (worktree.id !== current?.id && !createdByCaller(worktree, identity)) throw new ProjectWorktreeError(403, "Only this worktree's conversation or creator may reconcile main");
+      if (worktree.createdByNodeId !== (await getClusterNode()).id) throw new ProjectWorktreeError(409, "Reconcile on the worktree's creating node");
+      const changes = await worktreeChanges(project.id, id);
+      if (!changes.gitBase) throw new ProjectWorktreeError(409, "Worktree has no Git base");
+      return withProjectRuntime(project.id, () => reconcileWorktreeMain(project.path,
+        genericSecretEnvironment(project.id, { engine: identity.engine, sessionId: identity.sessionId }), changes.gitBase!));
     }
     case "merge": {
       await assertProjectEditable(project);

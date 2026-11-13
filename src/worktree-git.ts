@@ -220,6 +220,7 @@ async function commitChanges(projectPath: string, git: Git, gitBase: string, cha
 
 export interface LocalWorktreeCandidate {
   status: "prepared";
+  reconciliation?: boolean;
   targetCommit: string;
   commit: string;
   tree: string;
@@ -273,7 +274,12 @@ function validateLocalChanges(changes: WorktreeChanges, title: string): void {
 export async function prepareLocalWorktreeCommit(projectPath: string, env: NodeJS.ProcessEnv, changes: WorktreeChanges, title: string, resolutionTarget?: string): Promise<LocalWorktreeCandidate | LocalWorktreeConflict> {
   validateLocalChanges(changes, title);
   const git = projectGit(projectPath, env);
-  const targetCommit = await localMain(git, projectPath);
+  let targetCommit = await localMain(git, projectPath);
+  if (changes.gitBase && (await git(["merge-base", "--is-ancestor", changes.gitBase, targetCommit])).code !== 0) {
+    const reconciliation = await reconcileWorktreeMain(projectPath, env, changes.gitBase);
+    if (reconciliation.status === "blocked") throw new Error(`Main reconciliation blocked: ${reconciliation.reason}. Paths: ${reconciliation.conflicts.join(", ")}. Run reconcile-main for diagnostics; do not reset shared files.`);
+    targetCommit = await localMain(git, projectPath);
+  }
   if (resolutionTarget !== undefined && resolutionTarget !== targetCommit) throw new Error("Main changed since conflict resolution; inspect the new revision before retrying");
   const digest = worktreeChangesDigest(changes);
   const base = changes.gitBase!;
@@ -369,15 +375,17 @@ async function prepareInstallation(git: Git, projectPath: string, candidate: Loc
   for (const file of candidate.paths) await assertOpContained(projectPath, file);
   if (candidate.paths.length) {
     const dirty = await output(git, ["status", "--porcelain", "--untracked-files=all", "--", ...candidate.paths]);
-    if (dirty) throw new Error(`Protected uncommitted edits overlap this task:\n${dirty}`);
+    if (candidate.reconciliation) {
+      if (!await candidateFilesMatch(git, candidate, candidate.commit)) throw new Error("Synced files changed before reconciliation; no history was advanced");
+      if ((await git(["diff", "--cached", "--quiet", candidate.targetCommit, "--", ...candidate.paths])).code !== 0) throw new Error("Staged edits overlap reconciliation; no history was advanced");
+    } else if (dirty) throw new Error(`Protected uncommitted edits overlap this task:\n${dirty}`);
   }
   const bytes = await fs.readFile(index);
   await writeIndexSnapshot(`${shadow}.before`, bytes);
   await writeIndexSnapshot(shadow, bytes);
   const env = { GIT_INDEX_FILE: shadow };
-  await output(git, ["read-tree", "-m", candidate.targetCommit, candidate.commit], { env });
+  await output(git, ["read-tree", "-i", "-m", candidate.targetCommit, candidate.commit], { env });
   const installedIndexTree = await output(git, ["write-tree"], { env });
-  await fs.writeFile(shadow, bytes, { mode: 0o600 });
   const journal: LocalIntegrationJournal = { candidate, phase: "prepared", beforeIndexHash: hashBytes(bytes), installedIndexTree };
   await durableJournal(journalFile, journal);
   return journal;
@@ -396,6 +404,7 @@ async function finishInstallation(git: Git, projectPath: string, journal: LocalI
   }
   if (indexHash !== journal.beforeIndexHash) throw new Error("Project index changed during integration; retained operation needs inspection");
   if (!after) {
+    if (candidate.reconciliation) throw new Error("Synced files changed during reconciliation; retained operation needs inspection");
     if (!before || head !== candidate.targetCommit) throw new Error("Project files changed during integration; retained operation needs inspection");
     await fs.copyFile(`${files.shadow}.before`, files.shadow);
     journal.phase = "installing"; await durableJournal(files.journal, journal);
@@ -430,7 +439,10 @@ export async function installLocalWorktreeCommit(projectPath: string, env: NodeJ
   const tree = await output(git, ["rev-parse", `${candidate.commit}^{tree}`]);
   const paths = rawChanges(await output(git, ["diff-tree", "-r", "-z", "--no-renames", "--no-abbrev", candidate.targetCommit, candidate.commit])).map(file => file.file).sort();
   const parents = (await output(git, ["rev-list", "--parents", "-n", "1", candidate.commit])).split(" ").slice(1);
-  if (tree !== candidate.tree || JSON.stringify(paths) !== JSON.stringify(candidate.paths) || (candidate.commit !== candidate.targetCommit && (parents.length !== 1 || parents[0] !== candidate.targetCommit))) throw new Error("Candidate metadata does not match its Git commit");
+  const validHistory = candidate.reconciliation
+    ? (await git(["merge-base", "--is-ancestor", candidate.targetCommit, candidate.commit])).code === 0
+    : candidate.commit === candidate.targetCommit || (parents.length === 1 && parents[0] === candidate.targetCommit);
+  if (tree !== candidate.tree || JSON.stringify(paths) !== JSON.stringify(candidate.paths) || !validHistory) throw new Error("Candidate metadata does not match its Git commit");
   const directory = await output(git, ["rev-parse", "--absolute-git-dir"]);
   if (activeIntegrations.has(directory)) throw new Error("Another integration is running for this project");
   activeIntegrations.add(directory);
@@ -456,6 +468,52 @@ export async function installLocalWorktreeCommit(projectPath: string, env: NodeJ
     try { if (locked && (!journal || journal.phase === "prepared" || journal.phase === "committed")) await fs.unlink(files.lock); }
     finally { activeIntegrations.delete(directory); }
   }
+}
+
+export interface MainReconciliationResult {
+  status: "current" | "reconciled" | "blocked";
+  targetCommit: string;
+  conflicts: string[];
+  reason?: string;
+}
+
+/** Advance only already-synced history; never rewrite shared working files or discard staged edits. */
+export async function reconcileWorktreeMain(projectPath: string, env: NodeJS.ProcessEnv, requiredBase?: string): Promise<MainReconciliationResult> {
+  const git = projectGit(projectPath, env);
+  const head = await localMain(git, projectPath);
+  const blocked = (reason: string, conflicts: string[] = []): MainReconciliationResult => ({ status: "blocked", targetCommit: head, reason, conflicts });
+  if (requiredBase !== undefined && !COMMIT.test(requiredBase)) throw new Error("Invalid worktree base commit");
+  const remote = await remoteBranch(git);
+  if (!remote) return blocked("No configured upstream; configure the project's Git remote");
+  const fetched = await fetchBranch(git, remote.remote, remote.branch);
+  if (!fetched.fetched || !fetched.commit) return blocked("Upstream fetch failed; restore remote access before retrying reconcile-main");
+  const upstream = fetched.commit;
+  if (requiredBase && (await git(["merge-base", "--is-ancestor", requiredBase, upstream])).code !== 0) return blocked("Upstream does not contain the worktree base; inspect the project's history");
+  // Stable across retries, including a crash between advancing the ref and installing the index.
+  const hash = createHash("sha256").update(`reconcile-main:${upstream}`).digest("hex");
+  const operationId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
+  const directory = await output(git, ["rev-parse", "--absolute-git-dir"]);
+  const previous = await integrationJournal(path.join(directory, "joint-bob-integrations", `${operationId}.json`));
+  if (previous && previous.phase !== "committed") {
+    await installLocalWorktreeCommit(projectPath, env, previous.candidate, operationId);
+    return { status: "reconciled", targetCommit: upstream, conflicts: [] };
+  }
+  if (head === upstream || (await git(["merge-base", "--is-ancestor", upstream, head])).code === 0) return { status: "current", targetCommit: head, conflicts: [] };
+  if ((await git(["merge-base", "--is-ancestor", head, upstream])).code !== 0) return blocked("Local main and upstream diverged; local commits were retained");
+  const paths = rawChanges(await output(git, ["diff-tree", "-r", "-z", "--no-renames", "--no-abbrev", head, upstream])).map(file => file.file).sort();
+  const conflicts: string[] = [];
+  for (const file of paths) {
+    await assertOpContained(projectPath, file);
+    const disk = await git(["diff", "--quiet", upstream, "--", file]);
+    const staged = await git(["diff", "--cached", "--quiet", head, "--", file]);
+    if (disk.code > 1 || staged.code > 1) throw new Error(`Cannot inspect reconciliation path: ${file}`);
+    if (disk.code !== 0 || staged.code !== 0) conflicts.push(file);
+  }
+  if (conflicts.length) return blocked("Upstream paths have unsynced files or staged edits; let file sync finish or resolve those edits with their owner", conflicts);
+  const candidate: LocalWorktreeCandidate = { status: "prepared", reconciliation: true, targetCommit: head, commit: upstream,
+    tree: await output(git, ["rev-parse", `${upstream}^{tree}`]), digest: hash, paths };
+  await installLocalWorktreeCommit(projectPath, env, candidate, operationId);
+  return { status: "reconciled", targetCommit: upstream, conflicts: [] };
 }
 
 export type RebasedWorktreeChanges =
