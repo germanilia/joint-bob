@@ -46,6 +46,7 @@ test("settings API persists runtime choices without returning secrets", async ()
     const headers = await authenticatedHeaders(node.baseUrl);
     const initialSettings = await (await fetch(`${node.baseUrl}/api/settings`, { headers })).json();
     assert.equal(initialSettings.strictResourceIsolation, true);
+    assert.equal(initialSettings.newConversationWorktree, true, "new conversations default to their own worktree");
     assert.equal(initialSettings.gitPullFileLimit, 1000);
     assert.equal(initialSettings.gitPullTimeoutSeconds, 360);
     const piRuntime = { configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") };
@@ -91,7 +92,7 @@ test("settings API persists runtime choices without returning secrets", async ()
         claude: { executable: "/usr/local/bin/claude", ...claudeRuntime },
         conversationDefaults,
         conversationCommands,
-        newConversationWorktree: true,
+        newConversationWorktree: false,
         gitPullFileLimit: 750,
         conversationHistoryDays: 45,
         conversationRetentionDays: 60,
@@ -124,7 +125,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       autoCompactThreshold: 70,
       digestAttachments: false,
       showProjectsOnOtherNodes: true,
-      newConversationWorktree: true,
+      newConversationWorktree: false,
       syncCheck: { enabled: true, harnessId: "pi", ...conversationDefaults.pi },
       dashboards: { harnessId: "pi", ...conversationDefaults.pi },
       backgroundAgent: { harnessId: "", provider: "", modelId: "", thinkingLevel: "" },
@@ -173,7 +174,7 @@ test("settings API persists runtime choices without returning secrets", async ()
       autoCompactThreshold: 70,
       digestAttachments: false,
       showProjectsOnOtherNodes: true,
-      newConversationWorktree: true,
+      newConversationWorktree: false,
       syncCheck: { enabled: true, harnessId: "pi", ...conversationDefaults.pi },
       dashboards: { harnessId: "pi", ...conversationDefaults.pi },
       backgroundAgent: { harnessId: "", provider: "", modelId: "", thinkingLevel: "" },
@@ -222,6 +223,7 @@ test("settings API persists runtime choices without returning secrets", async ()
     assert.equal(preservedResources.status, 200);
     const preserved = await preservedResources.json();
     assert.equal(preserved.conversationHistoryDays, 45);
+    assert.equal(preserved.newConversationWorktree, false, "unrelated saves preserve an explicit worktree opt-out");
     assert.equal(preserved.gitPullFileLimit, 750, "omitting PR file limit preserves it");
     assert.deepEqual(preserved.conversationCommands, conversationCommands, "omitting commands preserves them");
     assert.deepEqual(preserved.resources, { skills: [path.join(root, "skills")], prompts: [path.join(root, "prompts")], rules: [path.join(root, "rules")], plugins: [path.join(root, "plugins")] });

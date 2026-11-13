@@ -696,7 +696,7 @@ function readStoredSettings(): { settings: StoredSettings; unsaved: boolean } {
     conversationMemoryLimitGb: value("conversationMemoryLimitGb", "unlimited") === "unlimited" ? null : Number(value("conversationMemoryLimitGb", "unlimited")),
     digestAttachments: value("digestAttachments", "false") === "true",
     showProjectsOnOtherNodes: value("showProjectsOnOtherNodes", "true") === "true",
-    newConversationWorktree: value("newConversationWorktree", "false") === "true",
+    newConversationWorktree: value("newConversationWorktree", "true") === "true",
     strictResourceIsolation: value("strictResourceIsolation", "true") === "true",
     autoActivateSharedSkills: value("autoActivateSharedSkills", "true") === "true",
     gitPullFileLimit: Number(value("gitPullFileLimit", "1000")),

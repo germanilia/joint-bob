@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.4 — 2026-11-13
+
+- New conversations default to their own worktree. Each node enables the setting once on upgrade, and later opt-outs are preserved.
+
 ## 2.299.3 — 2026-11-13
 
 - Fixed Claude turns failing for hours with "Profile authority busy; retry or contact the node administrator" after the process that held a profile's sign-in lock died: the lock now records its holder, and the next turn clears a lock whose holder is gone.

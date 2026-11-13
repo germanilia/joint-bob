@@ -32,6 +32,19 @@ export function settingsDatabase(): DatabaseSync {
   const now = new Date().toISOString();
   seed.run("projects.homePath", defaultManagedHome(), now);
   ensureAuditSchema(database);
+  // Enable existing nodes once; later user choices survive restarts.
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const migration = "migration.newConversationWorktreeDefaultOn";
+    if (!database.prepare("SELECT 1 FROM node_settings WHERE key = ?").get(migration)) {
+      save(database, "newConversationWorktree", "true");
+      save(database, migration, "true");
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
   return database;
 }
 
