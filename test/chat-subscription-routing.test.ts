@@ -89,7 +89,9 @@ function fixture(selection: Selection, failure?: string) {
     nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
     ownerAsActor: actor, resourceOwner: () => "project-owner",
     runWithAutomationProfile: (input: any, work: () => any) => withAutomationProfile({ accountId: input.creatorAccountId, profileId: input.providerProfileId }, work),
-    getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
+    getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
+    getSharingCluster: () => ({ name: "Contigos" }),
+    getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Homeserver" }] } }),
     getProject: async () => connection.project,
     clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => selection === "relay-pool" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
     resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
@@ -132,6 +134,25 @@ function fixture(selection: Selection, failure?: string) {
   exports.harnessChatConnections.add(connection);
   return { exports, dependencies, connection, shared, queued, calls, events, lookups, restored: () => restored, completed: () => completed, blocked: () => blocked };
 }
+
+test("pool attribution names the host and sharing cluster through member failover", async () => {
+  const f = fixture("relay-pool");
+  await runAsAccount(actor("writer"), () => f.exports.dispatch(f.connection, f.queued));
+  const connections = f.events.filter(event => event.type === "turnConnection");
+  assert.equal(connections.length, 2);
+  for (const event of connections) {
+    assert.deepEqual(event.pool, { name: "configured-pool", nodeName: "Homeserver", clusterName: "Contigos" });
+  }
+  assert.deepEqual(connections.map(event => event.profile.label), ["first", "second"]);
+});
+
+test("personal pool attribution names the local host without claiming cluster sharing", async () => {
+  const f = fixture("pool");
+  await runAsAccount(actor("writer"), () => f.exports.dispatch(f.connection, f.queued));
+  const event = f.events.find(event => event.type === "turnConnection");
+  assert.equal(event.pool.nodeName, "Execution Mac");
+  assert.equal(event.pool.clusterName, undefined);
+});
 
 test("a manually pinned turn cannot queue an automatic stronger-model recovery", async () => {
   const f = fixture("profile");

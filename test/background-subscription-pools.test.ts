@@ -64,7 +64,9 @@ for (const runner of runners) for (const source of ["cluster", "conversation", "
       getSettings: () => ({ conversationDefaults: { claude: { provider: "claude", modelId: "sonnet", thinkingLevel: "medium" }, pi: { provider: "openai-codex", modelId: "gpt-fixture", thinkingLevel: "medium" } } }),
       // The fallback model has no "medium", like Claude Opus 5.5 has no "off".
       listHarnessModels: async (harness: string) => harness === "claude" ? [{ provider: "claude", id: "sonnet", thinkingLevels: ["medium"] }] : [{ provider: "openai-codex", id: "gpt-fixture", thinkingLevels: ["minimal", "low", "high"] }],
-      getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
+      getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
+    getSharingCluster: () => ({ name: "Contigos" }),
+    getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Homeserver" }] } }),
       clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => source !== "conversation" && source !== "none" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
       resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
         lookups.push({ account, provider, scope, usage });

@@ -67,7 +67,7 @@ async function resumeChat(record: UpdateRecoveryRecord, shared: SharedHarnessSes
     if (!pool) await shared.session.prompt(input);
     else await promptOnSubscriptionPool(shared.session, pool, initial,
       (candidate) => resolvePoolModelSettings(shared.engine, candidate.provider, initial, undefined, pool.fallbackModels[candidate.provider]), input,
-      (candidate) => announceSharedConnection(shared, { pool: { name: pool.name }, profile: { label: candidate.label } }));
+      (candidate) => announceSharedConnection(shared, { pool: { name: pool.name, nodeName: pool.nodeName, clusterName: pool.clusterName }, profile: { label: candidate.label } }));
   }
 }
 

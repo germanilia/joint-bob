@@ -12,7 +12,7 @@ import { broadcastToProject, scheduleReviewNotifications, send } from "./realtim
 import { idleSessionTimeoutMs, localWriteGraceMs } from "./state.js";
 
 /** A turn's connection as the page shows it: a pool and the profile in use, or a profile, or this machine's own sign-in. */
-export interface TurnConnectionView { pool?: { name: string }; profile: { label: string } }
+export interface TurnConnectionView { pool?: { name: string; nodeName?: string; clusterName?: string }; profile: { label: string } }
 
 export interface SharedHarnessSession {
   engine: HarnessId; projectId: string; conversationId: string; cwd: string; session: HarnessSession;
