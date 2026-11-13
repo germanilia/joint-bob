@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.299.13 — 2026-11-13
+
+- Bob auto now judges a message together with the exchange it continues, so short follow-ups in a debugging thread are no longer routed as simple questions.
+- Bob auto no longer sends general questions to GPT-6 Luna on Pi; they go to GPT-6.1 Terra, the cheapest model that answered them reliably.
+
 ## 2.299.12 — 2026-11-13
 
 - New conversations focus the title first; Enter skips secret accounts and moves to Start conversation.

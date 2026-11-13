@@ -316,7 +316,7 @@ export function defaultRoutingPolicy(): RoutingPolicy {
     }
     harnesses[adapter.id] = { levels: levelsMap };
   }
-  return { enabled: true, classifierId: listDifficultyClassifiers()[0]?.id ?? "typesafe", evalCadence: { mode: "every-n", n: 1 }, contextMessages: 1, confidenceThreshold: 0.3, harnesses };
+  return { enabled: true, classifierId: listDifficultyClassifiers()[0]?.id ?? "typesafe", evalCadence: { mode: "every-n", n: 1 }, contextMessages: 4, confidenceThreshold: 0.3, harnesses };
 }
 
 /** What Settings shows: each level's scored candidates per harness, in the order routing tries them. */

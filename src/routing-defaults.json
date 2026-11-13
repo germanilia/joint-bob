@@ -97,7 +97,7 @@
     {
       "level": "1",
       "description": "General questions about the app, the project, or how something works, answered by reading and explaining without changing code.",
-      "minimumScore": 60
+      "minimumScore": 70
     },
     {
       "level": "2",

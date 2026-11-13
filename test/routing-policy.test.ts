@@ -148,7 +148,7 @@ test("defaultRoutingPolicy shares task categories across harnesses and evaluates
   const descriptions = (harness: string) => Object.values(generated.harnesses[harness].levels).map((mapping) => mapping!.description);
   assert.deepEqual(descriptions("pi"), descriptions("claude"), "Pi and Claude share task categories");
   assert.deepEqual(descriptions("kiro"), descriptions("claude"), "Kiro shares them too");
-  assert.equal(generated.contextMessages, 1);
+  assert.equal(generated.contextMessages, 4, "short follow-ups are judged with the exchange they continue");
   assert.deepEqual(generated.evalCadence, { mode: "every-n", n: 1 });
   assert.doesNotThrow(() => validateRoutingPolicy(generated), "generated defaults must satisfy the policy schema");
 });

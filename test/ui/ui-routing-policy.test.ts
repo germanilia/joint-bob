@@ -181,7 +181,7 @@ test("routing configurations live under Classifiers, save mappings, and keep una
   const cloneRow = page.getByTestId("routing-config-row").filter({ hasText: "Joint Bob default copy" });
   await cloneRow.waitFor();
   const clonePolicy = JSON.parse((db.prepare("SELECT policy FROM routing_configs WHERE name = 'Joint Bob default copy'").get() as { policy: string }).policy);
-  assert.equal(clonePolicy.contextMessages, 1);
+  assert.equal(clonePolicy.contextMessages, 4);
   assert.deepEqual(clonePolicy.evalCadence, { mode: "every-n", n: 1 });
   await page.getByTestId("routing-config-delete-button").click();
   await page.getByTestId("confirm-accept-button").click();

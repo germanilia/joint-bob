@@ -74,7 +74,7 @@ test("the built-in default is selectable without becoming a stored editable conf
   setRoutingConfigSelection(db, DEFAULT_ROUTING_CONFIG_ID);
   const active = activeRoutingConfig(db);
   assert.equal(active?.id, DEFAULT_ROUTING_CONFIG_ID);
-  assert.equal(active?.policy.contextMessages, 1);
+  assert.equal(active?.policy.contextMessages, 4);
   assert.deepEqual(active?.policy.evalCadence, { mode: "every-n", n: 1 });
   assert.equal(listRoutingConfigs(db).length, storedCount, "the built-in preset is not written into the editable configuration table");
   setRoutingConfigSelection(db, "");
