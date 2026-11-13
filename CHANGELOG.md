@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.299.3 — 2026-11-13
+
+- Fixed Claude turns failing for hours with "Profile authority busy; retry or contact the node administrator" after the process that held a profile's sign-in lock died: the lock now records its holder, and the next turn clears a lock whose holder is gone.
+- On the phone, "Start conversation" no longer disappears once pressed; it stays and shows "Creating worktree…" while the worktree is made.
+
 ## 2.299.2 — 2026-11-13
 
 - Share cluster pool assignments with every member while keeping credentials on their host.
