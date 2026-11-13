@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- In the conversation list a "▾" after the agent icons names each agent, and offers a quick note in this project and a new project.
+
 ## 2.297.0 — 2026-11-13
 
 - Board cards keep their main buttons in view and put Let Bob control, Story and Overview under "More ▾"; Automations says in one line which machines could not be read, with the full messages under Details; and on Bob's page background updates stay open again, so buttons like "Open dashboards" are never hidden.

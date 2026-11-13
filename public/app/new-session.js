@@ -6,6 +6,7 @@ import { elements } from "./elements.js";
 import { rememberDraft, restoreDraft } from "./composer.js";
 import { selectProject } from "./project-selection.js";
 import { brandIcon } from "./icons.js";
+import { openRowMenu } from "./row-menu.js";
 import { loadSecretAccounts, openNewSecretAccount, providerBadge, secretAccounts } from "./secrets.js";
 import { rememberRecentSession } from "./recents.js";
 import { createSearchableSelect } from "./searchable-select.js";
@@ -277,7 +278,8 @@ export async function startConversationFromIssue({ projectId, title, draft, newW
 }
 
 export function renderNewSessionHarnesses() {
-  elements.newSessionHarnesses.replaceChildren(...state.harnesses.filter(({ runtimeConfigured }) => runtimeConfigured).map((harness) => {
+  const harnesses = state.harnesses.filter(({ runtimeConfigured }) => runtimeConfigured);
+  elements.newSessionHarnesses.replaceChildren(...harnesses.map((harness) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "primary new-chat-harness-button";
@@ -292,7 +294,29 @@ export function renderNewSessionHarnesses() {
     button.addEventListener("click", () => startNewHarnessConversation(harness.id).catch((error) => toast.error(error.message)));
     return button;
   }));
+  if (harnesses.length) elements.newSessionHarnesses.append(newMenuButton(harnesses));
   window.dispatchEvent(new CustomEvent("shortcut-targets-changed"));
+}
+
+/** "▾" after the agent icons: the same agents by name, then a quick note in this project and a new project. */
+function newMenuButton(harnesses) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "new-chat-menu-button";
+  button.textContent = "▾";
+  button.title = "New: choose an agent by name, or a quick note or a project";
+  button.setAttribute("aria-label", "More ways to start");
+  button.dataset.testid = "new-chat-menu-button";
+  button.addEventListener("click", () => openRowMenu(button, [
+    ...harnesses.map((harness) => ({
+      label: `New ${harness.label} conversation`, icon: "plus", testid: `new-chat-menu-${harness.id}`,
+      disabled: !state.activeProjectId || !state.sessionNodes.length || !harness.ready, title: harness.ready ? "" : harness.unavailableReason,
+      onSelect: () => startNewHarnessConversation(harness.id).catch((error) => toast.error(error.message)),
+    })),
+    { label: "Quick note", icon: "canvas", testid: "new-chat-menu-note", onSelect: () => import("./quick-notes.js").then(({ openQuickNote }) => openQuickNote()).catch((error) => toast.error(error.message)) },
+    { label: "New project", icon: "plus", testid: "new-chat-menu-project", onSelect: () => elements.newProjectButton.click() },
+  ]));
+  return button;
 }
 
 /** Opens the new-conversation dialog with a worktree already chosen as where it runs. */

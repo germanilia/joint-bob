@@ -3,6 +3,9 @@
    list shows them all); Resources stays. Rule suggestions read as text until clicked. Loaded just before paper.css,
    so every rule is scoped to the desktop workspace and is more specific than paper.css. */
 
+/* The New row's "▾" exists only on the desktop list. */
+.new-chat-menu-button { display: none; }
+
 @media (min-width: 1024px) {
   /* ---------- the left column ---------- */
   body.ws-desktop:not(.focus-ui) .ws-place { font-size: 15px; min-height: 38px; }
@@ -13,6 +16,8 @@
   /* ---------- the conversation list ---------- */
   body.ws-desktop:not(.focus-ui) #chatsPanel #projectName { font-size: 23px; }
   body.ws-desktop:not(.focus-ui) #chatsPanel .conversation-tabs button { font-size: 14px; }
+  body.ws-desktop:not(.focus-ui) #chatsPanel .new-chat-menu-button { display: inline-grid; place-items: center; flex: 0 0 28px; width: 28px; min-width: 28px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 10px; background: transparent; box-shadow: none; color: var(--muted); font-size: 13px; }
+  body.ws-desktop:not(.focus-ui) #chatsPanel .new-chat-menu-button:hover { background: var(--field); color: var(--text); }
   body.ws-desktop:not(.focus-ui) #chatsPanel #sessionSearchInput { font-size: 14.5px; }
   body.ws-desktop:not(.focus-ui) #chatFilters > button > [data-filter-count] { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: var(--muted); font: 600 12.5px/1 var(--sans); }
   body.ws-desktop:not(.focus-ui) #sessionList .session-card > strong { font-size: 15px; line-height: 1.35; }
