@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Copy logs in Settings → Client logs now copies even when the browser blocks its clipboard API, and says so when copying is refused.
+
 ## 2.299.6 — 2026-11-13
 
 - On a phone the floating New button also shows over a project's conversation list and starts a conversation in that project.

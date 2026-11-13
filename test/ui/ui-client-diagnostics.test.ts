@@ -89,3 +89,15 @@ test("agent switch waits for server confirmation before changing conversation id
   });
   assert.ok(result.id);
 });
+
+test("Copy logs puts the client logs on the clipboard and confirms it", { timeout: 120_000 }, async (t) => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: node.url });
+  await signIn(page, node.url, environment.username, environment.password);
+  await page.evaluate(() => console.warn("copy-logs-diagnostic"));
+  await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-logs").click();
+  await page.getByTestId("settings-client-logs-copy-button").click();
+  await page.locator(".toast").filter({ hasText: "Client logs copied" }).waitFor();
+  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /copy-logs-diagnostic/);
+});

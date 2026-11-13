@@ -1202,9 +1202,23 @@ elements.settingsDialog.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") { event.preventDefault(); settingsSearch.focus(); }
 });
 elements.cancelSettingsButton.addEventListener("click", closeSettings);
+// The async clipboard API is missing on a non-secure origin and rejected by some browsers; a selected textarea and
+// execCommand("copy") still copy on the same click.
+function copyTextWithSelection(text) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+  elements.settingsDialog.append(area);
+  area.select();
+  const copied = document.execCommand("copy");
+  area.remove();
+  if (!copied) throw new Error("The browser blocked copying. Select the logs above and copy them by hand.");
+}
 elements.settingsClientLogsCopyButton.addEventListener("click", async () => {
+  const text = window.jointBobClientLogs?.entries().join("\n") || "";
   try {
-    await navigator.clipboard.writeText(window.jointBobClientLogs?.entries().join("\n") || "");
+    try { await navigator.clipboard.writeText(text); } catch { copyTextWithSelection(text); }
     toast("Client logs copied");
   } catch (error) { toast.error(error.message || "Could not copy client logs"); }
 });
