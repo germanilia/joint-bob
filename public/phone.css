@@ -404,8 +404,9 @@
   .wizard-card .wizard-panel :is(input:not([type="checkbox"], [type="radio"]), select) { font-size: 16px; }
   #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding-top: 6px; }
   #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > button { flex: 1 1 0; min-width: 0; min-height: 46px; }
-  /* No step that way: the button leaves the row (step 1 has no Back, the last step no Next). */
-  #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > button:disabled { display: none; }
+  /* No step that way: the button leaves the row (step 1 has no Back, the last step no Next). Start stays: it is
+     disabled while it works, and its "Creating worktree…" is the only sign that it does. */
+  #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > :is(#newSessionBackButton, #newSessionNextButton):disabled { display: none; }
   .wizard-card > .dialog-actions > .ghost { background: var(--field); }
   .wizard-card > .dialog-actions > #newSessionNextButton { background: color-mix(in srgb, var(--accent) 14%, var(--field)); color: color-mix(in srgb, var(--accent) 75%, var(--heading)); }
   #newSessionNameDialog > .dialog-card.wizard-card > .dialog-actions > .primary { flex: 1 0 100%; min-height: 50px; font-size: 16.5px; }
