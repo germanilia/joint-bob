@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.10 — 2026-11-13
+
+- New conversations keep the starting account, so they can use its configured subscription without being opened first.
+
 ## 2.299.9 — 2026-11-13
 
 - Interrupted conversations reopen under the account that started the turn so automatic update recovery can use its app subscription before loading the saved Pi model.
