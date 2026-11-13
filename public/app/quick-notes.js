@@ -563,8 +563,7 @@ function stepFields(index) {
 }
 
 function focusStep() {
-  // The message is what the agent gets (the title can come from it), so typing starts there.
-  const target = wizardStep === 1 ? contentInput : stepFields(wizardStep)[0] ?? (wizardStep === LAST_STEP ? saveButton : nextButton);
+  const target = wizardStep === LAST_STEP ? saveButton : stepFields(wizardStep)[0] ?? nextButton;
   target.focus();
 }
 
@@ -609,6 +608,11 @@ function goToStep(index) {
 form.addEventListener("keydown", (event) => {
   if (wizardStep < 0 || event.key !== "Enter" || event.isComposing) return;
   if (event.metaKey || event.ctrlKey) { event.preventDefault(); form.requestSubmit(); return; }
+  if (wizardStep === LAST_STEP && secretList.contains(event.target)) {
+    event.preventDefault();
+    saveButton.focus();
+    return;
+  }
   const fields = stepFields(wizardStep);
   const position = fields.indexOf(event.target);
   if (position < 0) return;

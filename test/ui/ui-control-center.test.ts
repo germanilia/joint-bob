@@ -469,7 +469,9 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await page.getByTestId("quick-note-save-button").isVisible(), true, "Start is always offered");
   await page.getByTestId("quick-note-next-button").click();
   await page.getByTestId("quick-note-content-input").waitFor({ state: "visible" });
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "quick-note-content-input");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "quick-note-title-input");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.getByTestId("quick-note-content-input").evaluate(element => document.activeElement === element), true);
   await page.keyboard.press("Enter");
   await page.locator(".quick-note-error", { hasText: "Write what the agent should do." }).waitFor();
   await page.keyboard.type("check the login page copy");
