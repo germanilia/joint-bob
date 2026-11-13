@@ -28,6 +28,9 @@ export async function launchChrome(options: LaunchOptions = {}): Promise<Browser
 /** The desktop workspace's left column remembers Inbox or Projects in this key (public/app/workspace.js). */
 export const WORKSPACE_COLUMN_KEY = "joint-bob-workspace-column";
 
+/** The app opens on Bob; "last" reopens the view the person left (public/app/auth.js). The suite, written against that, starts there. */
+export const START_VIEW_KEY = "joint-bob-start-view";
+
 /**
  * A project's list folds its filters (state chips, labels, Show done, Show scheduled, Mark all reviewed) behind the
  * Filters button and remembers the choice in this key; the suite, written against the filters, starts with them open.
@@ -47,13 +50,14 @@ function startInProjectsColumn(browser: Browser): Browser {
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (...args: Parameters<Browser["newContext"]>) => {
     const context = await newContext(...args);
-    await context.addInitScript(([key, filtersKey, projectFiltersKey]) => {
+    await context.addInitScript(([key, filtersKey, projectFiltersKey, startViewKey]) => {
       try {
+        if (localStorage.getItem(startViewKey) === null) localStorage.setItem(startViewKey, "last");
         if (localStorage.getItem(key) === null) localStorage.setItem(key, "projects");
         if (localStorage.getItem(filtersKey) === null) localStorage.setItem(filtersKey, "1");
         if (localStorage.getItem(projectFiltersKey) === null) localStorage.setItem(projectFiltersKey, "1");
       } catch { /* opaque origins have no storage */ }
-    }, [WORKSPACE_COLUMN_KEY, CONVERSATION_FILTERS_KEY, PROJECT_FILTERS_KEY]);
+    }, [WORKSPACE_COLUMN_KEY, CONVERSATION_FILTERS_KEY, PROJECT_FILTERS_KEY, START_VIEW_KEY]);
     return context;
   };
   return browser;
