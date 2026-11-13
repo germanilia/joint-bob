@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.299.14 — 2026-11-13
 
 - Bob's page opens at full width with its chat folded into the Ask Bob button, now at the bottom left; asking Bob from Spotlight, a dashboard or a trigger opens the chat first.
 
