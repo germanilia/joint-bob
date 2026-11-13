@@ -376,7 +376,8 @@ test("background children keep both nodes running after parent completion for ev
           const row = response.body.sessions.find((row) => row.id === parent.id);
           if (row?.running === expected) {
             if (expected) {
-              assert.equal(row.reviewState, "running");
+              // Background work is its own state: the finished turn waits for review while it runs.
+              assert.notEqual(row.reviewState, "running");
               assert.equal(row.backgroundRunning, true);
               assert.equal(row.turnRunning, false);
             }

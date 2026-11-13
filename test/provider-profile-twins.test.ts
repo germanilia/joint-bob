@@ -42,7 +42,7 @@ function signed(environment: DevEnvironment, sender: SeededNode, recipient: Seed
 
 test("twins receive subscription profiles and choices, and borrow tokens from the node holding the sign-in", { timeout: 180_000 }, async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "provider-profile-twins-"));
-  const environment = await seedDevEnvironment(root, 2), [a, b] = environment.nodes;
+  const environment = await seedDevEnvironment(root, 2, { appCredentials: false }), [a, b] = environment.nodes;
   const children: Awaited<ReturnType<typeof startDevNode>>[] = [];
   try {
     for (const node of environment.nodes) children.push(await startDevNode(environment, node));

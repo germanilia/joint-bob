@@ -189,3 +189,15 @@ export function environment(root: string): Record<string, string> {
   };
 }
 
+
+/** Pi authenticates only through an app profile. Gives the node admin one holding these sign-ins, selected by default. */
+export async function signInPiApp(credentials: Record<string, { type: "api_key"; key: string }>): Promise<void> {
+  const { createProviderProfile, setProviderProfileSelection } = await import("../src/provider-profiles/store.js");
+  const { adminAccountId } = await import("../src/ownership.js");
+  const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
+  const owner = adminAccountId()!;
+  const profile = createProviderProfile(owner, { provider: "pi", label: "Fixture account" });
+  await mkdir(path.dirname(openAIAuthPath(profile)), { recursive: true });
+  await writeFile(openAIAuthPath(profile), JSON.stringify(credentials), { mode: 0o600 });
+  setProviderProfileSelection(owner, { provider: "pi", scope: "default", scopeId: "", profileId: profile.id });
+}

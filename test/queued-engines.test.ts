@@ -8,7 +8,7 @@ import test, { before, after } from "node:test";
 import type { Server } from "node:http";
 import type WebSocket from "ws";
 import type { HarnessSession } from "../src/harnesses/runtime.js";
-import { configure, environment, gatedClaude, openChat, startServer, stopServer, temporaryRoot, waitFor, type Fixture } from "./queued-prompt-harness.js";
+import { configure, environment, gatedClaude, openChat, signInPiApp, startServer, stopServer, temporaryRoot, waitFor, type Fixture } from "./queued-prompt-harness.js";
 import { waitForAssertion } from "./async-assertion.js";
 
 type TestPiSession = HarnessSession & { handle: { session: any } };
@@ -39,18 +39,23 @@ before(async () => {
   Object.assign(process.env, environment(root), { PI_CODING_AGENT_DIR: path.join(root, "pi"), JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log"), JOINT_BOB_TEST_ENGINE_HOLD_DIR: path.join(root, "hold") });
   await mkdir(path.join(root, "pi"));
   await mkdir(path.join(root, "hold"));
-  await writeFile(path.join(root, "pi", "models.json"), JSON.stringify({ providers: { zai: {
-    baseUrl: "http://127.0.0.1:1", apiKey: "test-key", api: "openai-completions",
-    models: [{ id: "queue-reasoner", name: "Queue reasoner", reasoning: true, input: ["text", "image"], contextWindow: 32000, maxTokens: 1024 }],
-  } } }));
+  // A provider package supplies the protocol; the credential comes from the app profile (signInPiApp).
+  const providerPackage = path.join(root, "queue-provider-package");
+  await mkdir(path.join(providerPackage, "extensions"), { recursive: true });
+  await writeFile(path.join(providerPackage, "extensions", "provider.ts"), `export default pi => pi.registerProvider("queue-provider", {
+    baseUrl: "http://127.0.0.1:1", api: "openai-completions",
+    models: [{ id: "queue-reasoner", name: "Queue reasoner", reasoning: true, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32000, maxTokens: 1024 }],
+  });`);
+  await writeFile(path.join(root, "pi", "settings.json"), JSON.stringify({ packages: [providerPackage] }));
   const settings = await import("../src/settings.js");
   settings.updateSettings({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } });
   const defaults = settings.getSettings();
-  settings.updateSettings({ ...defaults, conversationDefaults: { ...defaults.conversationDefaults, pi: { provider: "zai", modelId: "queue-reasoner", thinkingLevel: "medium" } } });
+  settings.updateSettings({ ...defaults, conversationDefaults: { ...defaults.conversationDefaults, pi: { provider: "queue-provider", modelId: "queue-reasoner", thinkingLevel: "medium" } } });
   const started = await startServer();
   server = started.server;
   baseUrl = started.baseUrl;
   fixture = await configure(baseUrl, root, await gatedClaude(root));
+  await signInPiApp({ "queue-provider": { type: "api_key", key: "test-key" } });
 });
 
 after(async () => {
@@ -94,7 +99,7 @@ test("Pi app queue dispatches Claude and Pi overrides FIFO, then inherits active
   await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "promptStarted"));
   const selections = [
     { message: "claude next", queueSettings: { provider: "claude", modelId: "haiku", reasoning: "high" } },
-    { message: "pi next", queueSettings: { provider: "zai", modelId: "queue-reasoner", reasoning: "low" } },
+    { message: "pi next", queueSettings: { provider: "queue-provider", modelId: "queue-reasoner", reasoning: "low" } },
     { message: "inherit last", queueSettings: null },
   ];
   for (const selection of selections) opened.socket.send(JSON.stringify({ type: "prompt", ...selection }));
@@ -679,7 +684,7 @@ test("Pi queued authenticated override replaces an unauthenticated current model
   const log = process.env.JOINT_BOB_TEST_ENGINE_LOG;
   delete process.env.JOINT_BOB_TEST_ENGINE_LOG;
   try {
-    opened.socket.send(JSON.stringify({ type: "prompt", message: "use authenticated replacement", queueSettings: { provider: "zai", modelId: "queue-reasoner", reasoning: "low" } }));
+    opened.socket.send(JSON.stringify({ type: "prompt", message: "use authenticated replacement", queueSettings: { provider: "queue-provider", modelId: "queue-reasoner", reasoning: "low" } }));
     await waitFor(opened.messages, () => opened.messages.some((frame) => ["promptStarted", "error"].includes(String(frame.type))));
     assert.deepEqual(opened.messages.filter((frame) => frame.type === "error"), [], "current model auth must not block override");
     assert.equal(prompt.mock.callCount(), 1);

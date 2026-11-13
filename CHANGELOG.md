@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.0 — 2026-11-13
+
+- Fixed a Pi conversation on an app profile starting without its cached model list, which made it re-read the catalog and report "No API key" for models it had just listed.
+
 ## 2.298.0 — 2026-11-13
 
 - In the conversation list a "▾" after the agent icons names each agent, and offers a quick note in this project and a new project.

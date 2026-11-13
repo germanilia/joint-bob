@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -53,21 +53,14 @@ async function decisionModel(): Promise<{ server: Server; url: string }> {
   return { server, url: `http://127.0.0.1:${(server.address() as { port: number }).port}/v1/systemone` };
 }
 
-/** A browser-less page open on a conversation of one node, signed by that node as a routed node session. */
-function openConversation(environment: DevEnvironment, node: SeededNode, projectId: string, sessionPath: string): Promise<WebSocket> {
+/** A browser-less page open on a conversation of one node, as the person signed in there (their app profile signs Pi in). */
+function openConversation(node: SeededNode, signedIn: SignedIn, projectId: string, sessionPath: string): Promise<WebSocket> {
   const url = new URL("/ws", node.url.replace(/^http/, "ws"));
   url.searchParams.set("projectId", projectId);
   url.searchParams.set("sessionPath", sessionPath);
-  url.searchParams.set("nodeSession", "1");
-  const authorization = execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
-    import { openNodeDatabase } from './src/node-database.ts';
-    import {signClusterRequest} from './src/cluster-protocol.ts';
-    const db=openNodeDatabase(process.env.JOINT_BOB_DATA_DIR+'/node.db');
-    process.stdout.write(signClusterRequest(db,${JSON.stringify(node.nodeId)},${JSON.stringify(node.nodeId)},'GET',${JSON.stringify(url.pathname + url.search)},Buffer.alloc(0)));db.close();
-  `], { env: { ...process.env, HOME: environment.home, JOINT_BOB_DATA_DIR: node.dataDir }, encoding: "utf8" });
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(url, { headers: { Authorization: authorization } });
-    const timeout = setTimeout(() => reject(new Error("WebSocket ready timed out")), 10_000);
+    const socket = new WebSocket(url, { origin: node.url, headers: { Cookie: signedIn.cookie } });
+    const timeout = setTimeout(() => reject(new Error("WebSocket ready timed out")), 30_000);
     socket.on("message", (raw) => {
       if ((JSON.parse(raw.toString()) as { type?: string }).type !== "ready") return;
       clearTimeout(timeout);
@@ -92,11 +85,16 @@ test("two real servers move a conversation: now, after its turn, and by stopping
     const holds = path.join(root, "holds");
     const stubs = path.join(root, "stubs");
     await Promise.all([mkdir(sessionRoot, { recursive: true }), mkdir(holds, { recursive: true }), mkdir(stubs, { recursive: true })]);
-    await writeFile(transcript, `${JSON.stringify({ type: "session", version: 3, id: "mesh-session", timestamp: "2026-01-01T00:00:00.000Z", cwd: project.path })}\n${JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "Continue this conversation" }] } })}\n`);
+    await writeFile(transcript, `${JSON.stringify({ type: "session", version: 3, id: "mesh-session", timestamp: "2026-01-01T00:00:00.000Z", cwd: project.path })}\n${JSON.stringify({ type: "model_change", id: "m0", parentId: null, timestamp: "2026-01-01T00:00:00.500Z", provider: "dev-environment", modelId: "dev-model" })}\n${JSON.stringify({ type: "message", id: "m1", parentId: "m0", timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "Continue this conversation" }] } })}\n`);
     for (const node of [a, b]) children.push(await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: log, JOINT_BOB_TEST_ENGINE_HOLD_DIR: holds, JOINT_BOB_TYPESAFE_ENDPOINT: classifier.url, JOINT_BOB_TEST_AUTOMATION_DIR: stubs }));
     await pairTwinNodes(environment);
     const signed = new Map<SeededNode, SignedIn>([[a, await signIn(environment, a)], [b, await signIn(environment, b)]]);
     const call = <T>(node: SeededNode, method: string, endpoint: string, body?: unknown) => api<T>(node, signed.get(node)!, method, endpoint, body);
+    // Pi offers only models its app profile signs in to: both machines default to the seeded provider's model.
+    for (const node of [a, b]) {
+      const settings = await call<{ conversationDefaults: Record<string, unknown> }>(node, "GET", "/settings");
+      assert.equal((await call(node, "PUT", "/settings", { conversationDefaults: { ...settings.body.conversationDefaults, pi: { provider: "dev-environment", modelId: "dev-model", thinkingLevel: "off" } } })).status, 200);
+    }
     const ref = { projectId: project.id, conversationId: "mesh-session" };
     const runs = async (node: SeededNode) => (await readFile(log, "utf8").catch(() => "")).split("\n").filter((line) => line === `pi:${node.nodeId}`).length;
     const owner = async () => {
@@ -127,7 +125,7 @@ test("two real servers move a conversation: now, after its turn, and by stopping
     assert.deepEqual(already.body.entries.map((entry) => entry.verdict), ["there"]);
 
     // 2. A turn is running on B; moving it back "after the current turn" waits, then moves, and sends nothing.
-    sockets.push(await openConversation(environment, b, project.id, transcript));
+    sockets.push(await openConversation(b, signed.get(b)!, project.id, transcript));
     sockets[0].send(JSON.stringify({ type: "prompt", message: "a long turn on B", requestId: randomUUID() }));
     await until("the turn to start on B", async () => (await runs(b)) === 1);
     const waiting = await start(a, a, "after-turn");
@@ -142,7 +140,7 @@ test("two real servers move a conversation: now, after its turn, and by stopping
 
     // 3. A turn is running on A; "stop and move now" stops it, moves it to B and tells it to continue there.
     await rm(path.join(holds, "pi.release"));
-    sockets.push(await openConversation(environment, a, project.id, transcript));
+    sockets.push(await openConversation(a, signed.get(a)!, project.id, transcript));
     sockets[1].send(JSON.stringify({ type: "prompt", message: "a long turn on A", requestId: randomUUID() }));
     await until("the turn to start on A", async () => (await runs(a)) === 1);
     const now = await start(a, b, "now");
@@ -161,7 +159,7 @@ test("two real servers move a conversation: now, after its turn, and by stopping
     const account = await call<{ account: { id: string } }>(a, "POST", "/secrets/accounts", { label: "decision", provider: "custom", variables: [{ name: "TYPESAFE_AI_API_KEY", kind: "value", value: "test-key" }] });
     assert.equal((await call(a, "PUT", `/secrets/scopes/project/${project.id}`, { accountIds: [account.body.account.id] })).status, 200);
     await rm(path.join(holds, "pi.release"));
-    sockets.push(await openConversation(environment, b, project.id, transcript));
+    sockets.push(await openConversation(b, signed.get(b)!, project.id, transcript));
     sockets[2].send(JSON.stringify({ type: "prompt", message: "a long turn on B again", requestId: randomUUID() }));
     await until("the turn to start on B again", async () => (await runs(b)) === 3);
     await until("A to see the turn running on B", async () => (await call<{ cards: Array<{ conversationId: string; column: string }> }>(a, "GET", "/control-center/board")).body.cards.some((card) => card.conversationId === "mesh-session" && card.column === "running"));

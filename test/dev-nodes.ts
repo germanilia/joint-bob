@@ -47,12 +47,12 @@ export function freePort(): Promise<number> {
   });
 }
 
-export async function seedDevEnvironment(root: string, nodeCount: 1 | 2, options: { username?: string } = {}): Promise<DevEnvironment> {
+export async function seedDevEnvironment(root: string, nodeCount: 1 | 2, options: { username?: string; appCredentials?: boolean } = {}): Promise<DevEnvironment> {
   const [portA, portB] = await Promise.all([freePort(), freePort()]);
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["--import", "tsx", "scripts/dev-seed.ts", "--root", root, "--nodes", String(nodeCount), "--json"], {
       cwd: process.cwd(),
-      env: fixtureEnvironment({ JOINT_BOB_DEV_PORT_A: String(portA), JOINT_BOB_DEV_PORT_B: String(portB), ...(options.username ? { JOINT_BOB_DEV_USERNAME: options.username } : {}) }),
+      env: fixtureEnvironment({ JOINT_BOB_DEV_PORT_A: String(portA), JOINT_BOB_DEV_PORT_B: String(portB), ...(options.username ? { JOINT_BOB_DEV_USERNAME: options.username } : {}), ...(options.appCredentials === undefined ? {} : { JOINT_BOB_DEV_APP_CREDENTIALS: options.appCredentials ? "1" : "0" }) }),
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
