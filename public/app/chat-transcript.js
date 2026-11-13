@@ -695,7 +695,12 @@ function appendMessageAttachments(bubble, attachments) {
 let pendingRoutingConfidence = null;
 
 function connectionLabel(connection) {
-  return connection.poolName ? `pool ${connection.poolName} · profile ${connection.profileLabel}` : `profile ${connection.profileLabel}`;
+  return [
+    connection.nodeName && `node ${connection.nodeName}`,
+    connection.clusterName && `cluster ${connection.clusterName}`,
+    connection.poolName && `pool ${connection.poolName}`,
+    `profile ${connection.profileLabel}`,
+  ].filter(Boolean).join(" · ");
 }
 
 function assistantAttribution(attribution) {

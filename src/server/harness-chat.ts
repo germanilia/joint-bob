@@ -14,6 +14,8 @@ import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import WebSocket from "ws";
 import { getClusterNode } from "../cluster.js";
+import { getMembershipSnapshot } from "../cluster-membership.js";
+import { getSharingCluster } from "../cluster-sharing-policy.js";
 import { clusterOfAssistantsProject } from "../cluster-assistants.js";
 import { clusterSubscriptionMissing } from "../provider-profiles/cluster-assistant-subscriptions.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
@@ -295,7 +297,7 @@ function currentSettings(connection: HarnessChatConnection): QueuedSettings {
 }
 function selectedHarness(settings: QueuedSettings): HarnessId { return settings.harnessId ?? harnessForProvider(settings.provider).id; }
 
-export interface TurnSubscriptionPool { id: string; name: string; harnessId: HarnessId; fallbackModels: Partial<Record<string, string>>; candidates: PoolProfileContext[]; sameProviderOnly: boolean }
+export interface TurnSubscriptionPool { id: string; name: string; nodeName?: string; clusterName?: string; harnessId: HarnessId; fallbackModels: Partial<Record<string, string>>; candidates: PoolProfileContext[]; sameProviderOnly: boolean }
 export function profileProviderForRuntime(provider: string): ProfileProvider | undefined {
   if (provider === "anthropic" || provider === "claude") return "claude";
   if (provider === "antigravity") return "antigravity";
@@ -323,7 +325,9 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
     if (signatures.size > 1) throw new Error("This project has conflicting cluster subscription pools");
     const assignment = assignments[0];
     if (!assignment.manifest) throw new Error("The cluster pool manifest is unavailable");
-    return { id: assignment.poolId, name: assignment.manifest.name, harnessId: engine, fallbackModels: assignment.manifest.fallbackModels, sameProviderOnly: engine === "claude",
+    const host = getMembershipSnapshot(db, assignment.clusterId).body.members.find(member => member.nodeId === assignment.poolOwnerNodeId);
+    if (!host) throw new Error(`Missing verified member descriptor for ${assignment.poolOwnerNodeId}`);
+    return { id: assignment.poolId, name: assignment.manifest.name, nodeName: host.name, clusterName: getSharingCluster(db, assignment.clusterId).name, harnessId: engine, fallbackModels: assignment.manifest.fallbackModels, sameProviderOnly: engine === "claude",
       candidates: assignment.manifest.members.map((member) => ({ profileId: member.profileId, provider: member.provider, label: member.label,
         poolId: assignment.poolId, clusterId: assignment.clusterId, poolOwnerNodeId: assignment.poolOwnerNodeId })) };
   }
@@ -338,7 +342,7 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
     : !choice && usage === "automation" ? automationFallbackPool(engine === "pi" ? ["pi", preferred] : [preferred], scope) : undefined;
   if (!pool) return undefined;
   const profiles = poolCandidates(pool, preferred);
-  return { id: pool.id, name: pool.name, harnessId: engine, fallbackModels: pool.fallbackModels, sameProviderOnly: engine === "claude",
+  return { id: pool.id, name: pool.name, nodeName: local.name, harnessId: engine, fallbackModels: pool.fallbackModels, sameProviderOnly: engine === "claude",
     candidates: profiles.map((profile) => ({ profileId: profile.id, provider: profile.provider, label: profile.label, poolId: pool.id, profile })) };
 }
 function resolveTurnSubscriptionPool(connection: HarnessChatConnection, queued: { settings?: QueuedSettings | null; automationProfile?: QueuedPrompt["automationProfile"]; author?: MessageAuthor }): Promise<TurnSubscriptionPool | undefined> {
@@ -834,7 +838,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
         const initialSettings = saved && selectedHarness(saved) === connection.engine ? runtimeSettings(saved) : connection.shared.session.settings();
         await promptOnSubscriptionPool(connection.shared.session, pool, initialSettings,
           (candidate) => poolCandidateSettings(connection, pool!, candidate, initialSettings, difficulty), promptInput,
-          (candidate) => { if (!queued.systemEventId) announceConnection(connection, queued.id, { pool: { name: pool!.name }, profile: { label: candidate.label } }); });
+          (candidate) => { if (!queued.systemEventId) announceConnection(connection, queued.id, { pool: { name: pool!.name, nodeName: pool!.nodeName, clusterName: pool!.clusterName }, profile: { label: candidate.label } }); });
         recordQueueSettings(queueKey(connection), currentSettings(connection));
       }
       if (!claimed) throw new Error("Harness did not start the queued prompt");
@@ -950,7 +954,7 @@ async function runGoalTurnWithProfile(connection: HarnessChatConnection): Promis
       const initial = session.settings();
       await promptOnSubscriptionPool(session, pool, initial,
         candidate => resolvePoolModelSettings(connection.engine, candidate.provider, initial, undefined, pool.fallbackModels[candidate.provider]), input,
-        candidate => announceSharedConnection(connection.shared, { pool: { name: pool.name }, profile: { label: candidate.label } }));
+        candidate => announceSharedConnection(connection.shared, { pool: { name: pool.name, nodeName: pool.nodeName, clusterName: pool.clusterName }, profile: { label: candidate.label } }));
     }
     const assistantText = latestAssistantText(connection.shared.session);
     if (assistantText === undefined) throw new Error("Goal turn ended without an assistant response");

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.11 — 2026-11-13
+
+- Conversation connection labels show the pool host and sharing cluster.
+
 ## 2.299.10 — 2026-11-13
 
 - New conversations keep the starting account, so they can use its configured subscription without being opened first.

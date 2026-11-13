@@ -277,7 +277,7 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
 }
 
 /** The pool and profile a turn runs on, as the reply label shows them. */
-const connectionState = ({ pool, profile }) => ({ poolName: pool?.name ?? "", profileLabel: profile.label });
+const connectionState = ({ pool, profile }) => ({ poolName: pool?.name ?? "", nodeName: pool?.nodeName ?? "", clusterName: pool?.clusterName ?? "", profileLabel: profile.label });
 
 export function handleSocketPayload(payload, scrollOnReady = false) {
   if (payload.type === "guardianReviews" || payload.type === "guardianBlocked") {
