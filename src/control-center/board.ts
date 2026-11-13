@@ -84,8 +84,8 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
       // check), close it, or tell Bob to leave it. Opening it to look is not answering it.
       const checkedForYou = !working && Boolean(reviewCheck?.needsYou) && !movedOnSince(session.updatedAt, reviewCheck!.checkedAt);
       if (!running && !needsReview && !pendingReviews.length && !checkedForYou && !waitingToStart) continue;
-      // Marked done, from its project or from the board: it has left the board, until it runs again.
-      if (session.doneAt && !running) continue;
+      // Marked done: leftover background tasks do not bring it back, only an agent working again does.
+      if (session.doneAt && !working) continue;
       const needsYou = Boolean(pendingReviews.length || autoRespondStop || checkedForYou || waitingToStart);
       const snooze = needsYou ? sources.snoozeOf(project.projectId, conversationId) : null;
       const snoozed = snooze !== null && snoozeHolds(snooze, { running, updatedAt: session.updatedAt, reviewIds: pendingReviews.map((review) => review.id) }, now);

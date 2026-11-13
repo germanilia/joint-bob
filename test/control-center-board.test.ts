@@ -30,6 +30,18 @@ test("a finished turn with background tasks left waits for review, not under Run
   assert.equal(byId.watched.column, "running", "once reviewed, its background tasks keep it in sight");
 });
 
+test("marking done removes a finished conversation even while background tasks remain", () => {
+  for (const reviewState of ["needs_review", "reviewed"] as const) {
+    const finished = session({ id: "finished", running: true, backgroundRunning: true, turnRunning: false, reviewState });
+    const project = { projectId: "p1", projectName: "Joint Bob", sessions: [finished] };
+    assert.equal(buildBoard([project], sources).length, 1, "background tasks keep it visible before marking done");
+    finished.doneAt = "2026-11-05T10:01:00Z";
+    assert.deepEqual(buildBoard([project], sources), [], "marking done must hide it despite leftover background tasks");
+    finished.turnRunning = true;
+    assert.equal(buildBoard([project], sources).length, 1, "an agent working again brings the conversation back");
+  }
+});
+
 test("the board lists running conversations and ones waiting for review, newest first", () => {
   const projects: BoardProject[] = [
     { projectId: "p1", projectName: "Joint Bob", sessions: [
