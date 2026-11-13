@@ -463,10 +463,12 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await page.getByTestId("quick-note-save-button").textContent(), "Start conversation");
   assert.equal(await page.getByTestId("quick-note-schedule-input").isVisible(), false, "nothing to schedule");
   // A wizard: project, title and content, agent, where it runs, secrets; Enter walks the fields and then the steps.
-  // The project is already known, so it opens on the message, ready to type.
+  // Even with a known project, step 1 lets the person confirm or change it.
+  assert.equal(await page.getByTestId("quick-note-step-1").getAttribute("aria-current"), "step");
+  assert.equal(await page.getByTestId("quick-note-project-select").isVisible(), true);
+  assert.equal(await page.getByTestId("quick-note-save-button").isVisible(), true, "Start is always offered");
+  await page.getByTestId("quick-note-next-button").click();
   await page.getByTestId("quick-note-content-input").waitFor({ state: "visible" });
-  assert.equal(await page.getByTestId("quick-note-step-2").getAttribute("aria-current"), "step");
-  assert.equal(await page.getByTestId("quick-note-project-select").isVisible(), false, "one step at a time");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "quick-note-content-input");
   await page.keyboard.press("Enter");
   await page.locator(".quick-note-error", { hasText: "Write what the agent should do." }).waitFor();
@@ -501,8 +503,8 @@ test("the control center shows the live board, filters by project, colors cards 
   // Its shortcut opens the same wizard from anywhere.
   await page.keyboard.press("Control+Alt+Shift+KeyN");
   await form.waitFor({ state: "visible" });
-  assert.equal(await page.getByTestId("quick-note-step-2").getAttribute("aria-current"), "step");
-  assert.match(await page.getByTestId("quick-note-step-1").textContent() ?? "", /^1 · (?!Project$)\S/, "the step it skipped names the project");
+  assert.equal(await page.getByTestId("quick-note-step-1").getAttribute("aria-current"), "step");
+  assert.match(await page.getByTestId("quick-note-step-1").textContent() ?? "", /^1 · (?!Project$)\S/, "the first step names the selected project");
   await page.keyboard.press("Escape");
   await form.waitFor({ state: "hidden" });
 

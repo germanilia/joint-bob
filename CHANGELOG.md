@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New conversations open at step 1 with Start conversation available on every step, keeping defaults for unchanged options. Rapid reopening no longer leaves Start stuck loading. Conversation menus offer Delete conversation directly with confirmation.
+
 ## 2.299.8 — 2026-11-13
 
 - Assistant team members have their team tools again (shared memory, delegation): opening a team conversation no longer skips switching to the assistant owner's account.

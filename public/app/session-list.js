@@ -485,7 +485,7 @@ function sessionMenuItems(session, sessionActive) {
         onSelect: () => openRenameDialog(session.conversationId || session.id, sessionEngine(session), name),
       },
       {
-        label: "Remove",
+        label: "Delete conversation",
         icon: "trash",
         testid: "session-remove-button",
         danger: true,
@@ -520,6 +520,13 @@ elements.chatDoneButton.addEventListener("click", () => {
   toggleSessionDone(session).catch((error) => toast.error(error.message));
 });
 
+elements.chatDeleteButton.addEventListener("click", () => {
+  const session = activeChatSession();
+  if (!session) { toast("Open a conversation first"); return; }
+  elements.chatMoreMenu.open = false;
+  removeSessionFromRow(session, true).catch((error) => toast.error(error.message));
+});
+
 /** The one label has to say what the click will do, on whichever conversation is open. */
 function syncChatDoneButton() {
   const session = activeChatSession();
@@ -530,6 +537,8 @@ function syncChatDoneButton() {
     ? `${label} — put it back in the active list`
     : `${label} — hide it from the list until you ask for done conversations`;
   elements.chatDoneButton.disabled = !session;
+  elements.chatDeleteButton.disabled = !session;
+  elements.chatDeleteButton.hidden = Boolean(session && (session.readOnly === true || runnerRefusesThisMachine(session, true)));
 }
 
 async function forkSessionFromRow(session) {
@@ -626,10 +635,10 @@ function clearActiveSession() {
 
 async function removeSessionFromRow(session, sessionActive) {
   const confirmed = await confirmAction({
-    eyebrow: "Remove conversation",
-    title: `Remove session "${shortSessionTitle(session)}"?`,
+    eyebrow: "Delete conversation",
+    title: `Delete conversation "${shortSessionTitle(session)}"?`,
     message: "The transcript is deleted from this node.",
-    confirmLabel: "Remove session",
+    confirmLabel: "Delete conversation",
     destructive: true,
   });
   if (!confirmed) return;

@@ -458,6 +458,7 @@ export const elements = {
   chatMoreMenu: document.querySelector("#chatMoreMenu"),
   chatSessionMenuButton: document.querySelector("#chatSessionMenuButton"),
   chatDoneButton: document.querySelector("#chatDoneButton"),
+  chatDeleteButton: document.querySelector("#chatDeleteButton"),
   chatNodeSelect: document.querySelector("#chatNodeSelect"),
   chatHarnessSelect: document.querySelector("#chatHarnessSelect"),
   chatsLiveDot: document.querySelector("#chatsLiveDot"),

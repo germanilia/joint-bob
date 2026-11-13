@@ -485,7 +485,12 @@ dialog.addEventListener("paste", (event) => {
   void addDialogImages(images);
 });
 
-dialog.addEventListener("close", () => { ++dialogGeneration; ++optionsRequestId; });
+dialog.addEventListener("close", () => {
+  // A queued close event can arrive after the next opening; it must not cancel that opening's loads.
+  if (dialog.open) return;
+  ++dialogGeneration;
+  ++optionsRequestId;
+});
 
 /* ---------- New conversation as a wizard: project, title and content, agent, where it runs, secrets ---------- */
 
@@ -532,7 +537,7 @@ const backButton = navButton("Back", "quick-note-back-button");
 const nextButton = navButton("Next", "quick-note-next-button");
 backButton.addEventListener("click", () => goToStep(wizardStep - 1));
 nextButton.addEventListener("click", () => goToStep(wizardStep + 1));
-/** Step 1 shows the chosen project, since the wizard can open past it. */
+/** Keep the chosen project visible in the first step's label. */
 function nameProjectStep() {
   const project = state.projects.find((candidate) => candidate.id === selectedProjectId());
   stepButtons[0].textContent = `1 · ${project?.name || WIZARD_STEPS[0].label}`;
@@ -573,7 +578,7 @@ function showStep(index, focus = true) {
   });
   backButton.disabled = index === 0;
   nextButton.hidden = index === LAST_STEP;
-  saveButton.hidden = index !== LAST_STEP;
+  saveButton.hidden = false;
   if (focus) focusStep();
 }
 
@@ -642,8 +647,7 @@ export async function openQuickNote(note = null, { chooseProject = false, startN
   contentInput.required = startingNow;
   scheduleInput.closest("label").hidden = startingNow;
   const selectedProjectId = note?.projectId || defaultProjectId;
-  // With a project chosen already, it opens on the message so the person can type at once; step 1 names the project.
-  setWizard(startingNow, selectedProjectId ? 1 : 0);
+  setWizard(startingNow);
   projectPicker.setOptions(state.projects.map((project) => ({ value: project.id, label: project.name })));
   projectPicker.setValue(selectedProjectId || "");
   nameProjectStep();

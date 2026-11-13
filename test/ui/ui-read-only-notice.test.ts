@@ -82,6 +82,7 @@ test("a conversation whose machine refuses this one says so, where to change it,
   assert.match(text, /Home server does not let other machines run work on it/);
   assert.match(text, /Settings → Node on Home server/, "the notice says where the setting is");
   assert.equal(await page.locator("#composer").isHidden(), true, "nothing can be sent from here");
+  assert.equal(await page.getByTestId("chat-delete-button").getAttribute("hidden"), "", "read-only chat cannot be deleted from its More menu");
   assert.deepEqual(await offeredWriteActions(page, REFUSED_TITLE), [], "the open conversation's menu offers nothing its machine would refuse");
 
   // A row that runs on the refusing machine, known from Runs on without opening it, and one that runs here.
@@ -94,6 +95,7 @@ test("a conversation whose machine refuses this one says so, where to change it,
   await page.locator(".session-card", { hasText: OTHER_TITLE }).first().click();
   await page.waitForFunction(() => !document.querySelector<HTMLTextAreaElement>("#messageInput")!.disabled);
   assert.equal(await notice.isHidden(), true);
+  assert.equal(await page.getByTestId("chat-delete-button").getAttribute("hidden"), null, "writable chat offers Delete again");
 });
 
 test("a sub-agent conversation says it can't be continued", { timeout: 180_000 }, async (t) => {
