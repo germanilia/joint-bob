@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.299.9 — 2026-11-13
 
 - Interrupted conversations reopen under the account that started the turn so automatic update recovery can use its app subscription before loading the saved Pi model.
 
