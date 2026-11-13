@@ -45,6 +45,23 @@ export function parseCompletedJsonl(contents: string): unknown[] {
 const reportedDamage = new Set<string>();
 
 /**
+ * One line of a transcript being opened: undefined when it does not parse, said once per file.
+ * fix: a full disk cut a record short and the next record was written onto the same line (homeserver, 2026-11-13);
+ * opening that conversation failed with "Expected ',' or '}' after property value" and never recovered.
+ */
+export function parseJsonlLineSkippingDamage(line: string, file: string): unknown {
+  try { return JSON.parse(line); }
+  catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    if (!reportedDamage.has(file)) {
+      reportedDamage.add(file);
+      console.warn(`Transcript ${file} has a damaged line; it is skipped`);
+    }
+    return undefined;
+  }
+}
+
+/**
  * For conversation lists and usage totals: a completed line that does not parse is skipped, and said once per file.
  * fix: a write cut short by a full disk, followed by a newline (homeserver, 2026-10-26), failed every list holding
  * that transcript, /api/running among them. Forks keep parseCompletedJsonl: they must not copy a damaged history.

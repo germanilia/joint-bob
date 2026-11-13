@@ -4,7 +4,7 @@ import { claudeSubscriptionEnvironment, currentRuntime, spawnInRuntime } from ".
 import { mapWithConcurrency } from "./concurrency.js";
 import { isInternalSession } from "./internal-sessions.js";
 import { createHash, randomUUID } from "node:crypto";
-import { jsonlLineSlices, parseJsonlSkippingDamage } from "./jsonl.js";
+import { jsonlLineSlices, parseJsonlLineSkippingDamage, parseJsonlSkippingDamage } from "./jsonl.js";
 import type { Stats } from "node:fs";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "./subprocess.js";
@@ -537,7 +537,8 @@ export async function loadClaudeMessages(sessionPath: string, options?: { contex
   // In slices: a large transcript is parsed with other work in between, not in one go.
   for await (const lines of jsonlLineSlices(filePath)) for (const line of lines) {
     const index = position++;
-    const record = JSON.parse(line) as UnknownRecord;
+    const record = parseJsonlLineSkippingDamage(line, filePath) as UnknownRecord | undefined;
+    if (!record) continue;
     // Only user and assistant records are the conversation. Newer Claude Code also writes
     // `api-request-blob` records that repeat each request's messages (system prompts
     // included) without a time; reading them showed every answer twice.

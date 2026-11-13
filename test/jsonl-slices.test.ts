@@ -1,6 +1,6 @@
 // Large transcripts are read a slice at a time so the process keeps answering while one is parsed.
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -54,4 +54,37 @@ test("other work gets a turn between slices, and a small file is one slice", asy
     assert.ok(turns >= sliced.slices - 1, `other work ran ${turns} times during ${sliced.slices} slices`);
     assert.equal((await linesOf(file)).slices, 1, "two megabytes fit the default slice");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a damaged line is skipped when a transcript is opened", async () => {
+  const { parseJsonlLineSkippingDamage } = await import("../src/jsonl.js");
+  assert.deepEqual(parseJsonlLineSkippingDamage('{"a":1}', "x.jsonl"), { a: 1 });
+  // A record cut short by a full disk, the next one written onto the same line.
+  assert.equal(parseJsonlLineSkippingDamage('{"a":"cut sh{"b":2}', "x.jsonl"), undefined);
+});
+
+test("opening a Claude conversation survives a damaged line", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-jsonl-"));
+  const previousDataDir = process.env.PI_WEB_DATA_DIR;
+  process.env.PI_WEB_DATA_DIR = root;
+  try {
+    const sessionRoot = path.join(root, "claude-sessions");
+    const settings = await import(`../src/settings.js?damaged=${Date.now()}`);
+    settings.updateSettings({
+      pi: { executable: "pi", configPath: path.join(root, "pi-config"), sessionPath: path.join(root, "pi-sessions") },
+      claude: { executable: "claude", configPath: path.join(root, "claude-config"), sessionPath: sessionRoot },
+    });
+    const sessionPaths = await import(`../src/session-paths.js?damaged=${Date.now()}`);
+    const claude = await import(`../src/claude-service.js?damaged=${Date.now()}`);
+    const projectDir = sessionPaths.claudeProjectDir(path.join(root, "project"), sessionRoot);
+    await mkdir(projectDir, { recursive: true });
+    const file = path.join(projectDir, "session.jsonl");
+    const user = (text: string): string => JSON.stringify({ type: "user", message: { role: "user", content: text } });
+    await writeFile(file, [user("one"), '{"type":"user","message":{"role":"user","content":"cut sh{"type":"user"}', user("three")].join("\n") + "\n");
+    const messages = await claude.loadClaudeMessages(file);
+    assert.deepEqual(messages.map((message: { text: string }) => message.text), ["one", "three"]);
+  } finally {
+    if (previousDataDir === undefined) delete process.env.PI_WEB_DATA_DIR; else process.env.PI_WEB_DATA_DIR = previousDataDir;
+    await rm(root, { recursive: true, force: true });
+  }
 });
