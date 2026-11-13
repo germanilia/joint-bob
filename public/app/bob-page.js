@@ -162,7 +162,6 @@ function onPage() {
   return wide.matches && body.classList.contains("ws-desktop") && !body.classList.contains("focus-ui");
 }
 
-let updatesFolded = false;
 function apply() {
   const page = onPage();
   body.classList.toggle("bob-desk", page);
@@ -172,11 +171,6 @@ function apply() {
     if (giveBack.parentElement !== popupBar) moveInto(giveBack, popupBar);
     popupBar.append(document.getElementById("controlPopupClose"));
     placePopup();
-    // Background updates start folded at the top of the chat, once; the person opens them from their count.
-    if (!updatesFolded) {
-      document.querySelector('[data-testid="control-chat-updates"]').open = false;
-      updatesFolded = true;
-    }
   } else restore();
   heading.textContent = page ? "Bob" : "Control center";
 }

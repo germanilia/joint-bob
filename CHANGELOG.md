@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Board cards keep their main buttons in view and put Let Bob control, Story and Overview under "More ▾"; Automations says in one line which machines could not be read, with the full messages under Details; and on Bob's page background updates stay open again, so buttons like "Open dashboards" are never hidden.
+
 ## 2.296.0 — 2026-11-13
 
 - In the conversation list the status counters show words (All, Running, Review, Done) and stay in view, while labels, clusters, Show done and Show scheduled sit behind a "Filter" button; under Statistics the tools and skills fold under one line with their count.

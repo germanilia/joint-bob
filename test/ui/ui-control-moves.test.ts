@@ -77,9 +77,12 @@ test("a card can be picked, moved after its turn or stopped and moved now, and t
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
 
-  // Every card has Story and Overview, and the machines show how many agents run on each.
-  assert.equal(await page.getByTestId("control-card-action-story").count(), 4);
-  assert.equal(await page.getByTestId("control-card-action-overview").count(), 4);
+  // Every card has Story and Overview under its "More ▾", and the machines show how many agents run on each.
+  assert.equal(await page.getByTestId("control-card-more").count(), 4);
+  await page.getByTestId("control-card-more").first().click();
+  const menu = await page.locator("#rowMenu button").allTextContents();
+  assert.ok(menu.includes("Story") && menu.includes("Overview"), `Story and Overview are under More: ${menu}`);
+  await page.keyboard.press("Escape");
   const nodes = page.getByTestId("control-moves-node");
   await nodes.first().waitFor();
   assert.deepEqual(await nodes.allTextContents(), ["Mac · 2 running Move all…", "Homeserver · 1 running Move all…"], "finished cards are not counted");
@@ -184,6 +187,7 @@ test("Story and Overview on a card open that conversation and use the app's own 
   await page.waitForSelector('[data-testid="control-center-card"]');
 
   // Overview opens the card's conversation, then runs the Activity overview for it.
+  await page.getByTestId("control-card-more").first().click();
   await page.getByTestId("control-card-action-overview").click();
   await page.waitForFunction(() => document.body.classList.contains("view-control") && document.body.classList.contains("control-popup"));
   for (let attempt = 0; attempt < 100 && !seen.some((request) => request.url.includes("/git/overview")); attempt += 1) await page.waitForTimeout(100);
@@ -195,6 +199,7 @@ test("Story and Overview on a card open that conversation and use the app's own 
   // Story opens the same conversation's story in the Git view.
   await page.evaluate(async () => (await import("/app/control-center.js")).closeConversationPopup());
   await page.waitForSelector('[data-testid="control-center-card"]');
+  await page.getByTestId("control-card-more").first().click();
   await page.getByTestId("control-card-action-story").click();
   await page.getByTestId("git-review-dialog").waitFor({ state: "visible" });
   await page.waitForFunction(() => document.querySelector("#gitReviewContext")?.textContent === "Conversation changes");

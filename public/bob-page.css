@@ -99,7 +99,7 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   /* The head of the page has Bob's switch and his settings. */
   body.bob-desk :is(#controlChatMonitor, #controlChatSettingsButton) { display: none; }
   body.bob-desk #controlChat .bob-fold { display: inline-flex; flex: none; min-width: 28px; justify-content: center; color: var(--muted); }
-  /* Background updates fold at the top of the chat instead of a column beside it. */
+  /* Background updates sit at the top of the chat, open and height-limited, instead of a column beside it. */
   body.bob-desk .control-chat-streams { flex-direction: column; }
   body.bob-desk .control-chat-updates { order: -1; flex: 0 0 auto; min-width: 0; max-height: 45%; margin: 10px 14px 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
   body.bob-desk .control-chat-updates > summary { padding: 9px 12px; }

@@ -10,6 +10,7 @@ import { boardTools, briefStatus, cardActionList, decorateCard, projectActionLis
 import { openQuickNote } from "./quick-notes.js";
 import { glide, positions, vanish } from "./control-vanish.js";
 import { PROJECT_COLORS } from "./session-rows.js";
+import { openRowMenu } from "./row-menu.js";
 
 const DEFAULT_COLOR = "#3a3f46";
 const COLUMNS = [
@@ -167,10 +168,13 @@ function renderCard(card) {
   const metaLine = element("div", "control-meta", meta);
   metaLine.title = meta;
   root.append(top, title, body, metaLine);
+  // The card's own actions are buttons in its row; the rest (Let Bob control, Story, Overview) wait under "More ▾".
   const buttons = cardActionList(card);
+  const inRow = buttons.filter((action) => !action.more);
+  const inMenu = buttons.filter((action) => action.more);
   if (buttons.length) {
     const row = element("div", "control-card-actions");
-    for (const action of buttons) {
+    for (const action of inRow) {
       const button = element("button", "control-card-action", action.label);
       // Not a class: the app's own `.primary` buttons are taller than a card's row.
       if (action.style) button.dataset.style = action.style;
@@ -183,6 +187,7 @@ function renderCard(card) {
       });
       row.append(button);
     }
+    if (inMenu.length) row.append(moreButton(card, inMenu));
     root.append(row);
   }
   decorateCard(root, card);
@@ -192,6 +197,25 @@ function renderCard(card) {
     Promise.resolve(take ? take.run(card) : openCard(card)).catch((error) => toast.error(error.message));
   });
   return root;
+}
+
+/** "More ▾" on a card: its less used actions in the shared row menu, under the button. */
+function moreButton(card, actions) {
+  const button = element("button", "control-card-action control-card-more", "More ▾");
+  button.type = "button";
+  button.title = actions.map((action) => action.label).join(", ");
+  button.dataset.testid = "control-card-more";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openRowMenu(button, actions.map((action) => ({
+      label: action.label,
+      icon: action.icon,
+      title: action.title,
+      testid: `control-card-action-${action.id}`,
+      onSelect: () => Promise.resolve(action.run(card, button)).catch((error) => toast.error(error.message)),
+    })));
+  });
+  return button;
 }
 
 /* ---------- the game on the board: avatars, energy, steps, the scoreboard, a cheer when one finishes ---------- */

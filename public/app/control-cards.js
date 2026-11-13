@@ -7,9 +7,9 @@ const projectActions = [];
 const decorators = [];
 const tools = [];
 
-/** `run(card, button)` is called when the button is pressed; `visible(card)` hides the button on cards it does not suit; `style` "primary" makes it the card's main button. */
-export function registerCardAction({ id, label, title = "", order = 100, style = "", visible = () => true, run }) {
-  actions.push({ id, label, title, order, style, visible, run });
+/** `run(card, button)` is called when the button is pressed; `visible(card)` hides the button on cards it does not suit; `style` "primary" makes it the card's main button; `more` puts it in the card's "More ▾" menu on the desktop board instead of its row, with `icon` (a row-menu icon name). */
+export function registerCardAction({ id, label, title = "", order = 100, style = "", more = false, icon = "sliders", visible = () => true, run }) {
+  actions.push({ id, label, title, order, style, more, icon, visible, run });
   actions.sort((a, b) => a.order - b.order);
 }
 
