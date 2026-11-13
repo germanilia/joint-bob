@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.298.0 — 2026-11-13
 
 - In the conversation list a "▾" after the agent icons names each agent, and offers a quick note in this project and a new project.
 
