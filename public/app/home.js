@@ -25,6 +25,7 @@ const byId = (id) => document.getElementById(id);
 const body = document.body;
 const desktop = matchMedia("(min-width: 701px)");
 const home = byId("homePage");
+const closeButton = byId("homeCloseButton");
 
 let cards = [];
 let loaded = false;
@@ -442,6 +443,7 @@ function sync() {
   const show = wanted();
   if (body.classList.contains("ws-home") !== show) body.classList.toggle("ws-home", show);
   if (home.hidden === show) home.hidden = !show;
+  closeButton.hidden = !(show && requested && (state.activeSessionId || state.activeSessionPath));
   if (show) {
     const drawing = JSON.stringify([cards.map((card) => [card.projectId, card.conversationId, card.column, card.title, card.updatedAt, card.activity, card.controlledBy, questionOf(card)]), loaded, spentToday, home.clientWidth, home.clientHeight, state.username]);
     if (drawing !== shownFor) {
@@ -506,6 +508,17 @@ byId("workspaceInboxButton").addEventListener("click", (event) => {
   // Pressed by the person (not by Home itself): Inbox is the open conversation again.
   if (event.isTrusted) requested = false;
   schedule();
+});
+// Home shown over a conversation closes back to it: the close button, or Esc outside fields and dialogs.
+function closeHome() {
+  requested = false;
+  schedule();
+}
+closeButton.addEventListener("click", closeHome);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || event.defaultPrevented || closeButton.hidden) return;
+  if (document.querySelector("dialog[open]") || event.target.closest?.("input, textarea, select")) return;
+  closeHome();
 });
 // A row of the left column (or the group page) opens its conversation, even the one Home was shown over.
 document.addEventListener("click", (event) => {

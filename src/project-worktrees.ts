@@ -22,6 +22,8 @@ const heavyDirectories = new Set<string>([...worktreeHeavyDirectories, WORKTREE_
 const heavyFiles = new Set<string>(worktreeHeavyFiles);
 
 const MAX_FILE_BYTES = 1024 * 1024;
+/** An ignored folder bigger than this is a build output, cache or tool workspace, not local configuration. */
+const MAX_IGNORED_DIRECTORY_BYTES = 8 * 1024 * 1024;
 export const WORKTREE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // Vivid hues first: a worktree must stand out in the list, and slate reads as no colour.
 const DEFAULT_COLOR_ORDER: ProjectColor[] = ["teal", "violet", "amber", "blue", "magenta", "green", "red", "slate"];
@@ -284,6 +286,24 @@ export async function ensureWorktreeLocalFiles(projectPath: string, worktree: st
   return { envFiles, links };
 }
 
+/** True when the folder holds more than `limit` bytes; stops reading as soon as it does. */
+async function exceedsSize(folder: string, limit: number): Promise<boolean> {
+  let total = 0;
+  const pending = [folder];
+  while (pending.length) {
+    const current = pending.pop()!;
+    for (const entry of await fs.readdir(current, { withFileTypes: true }).catch(() => [])) {
+      const child = path.join(current, entry.name);
+      if (entry.isDirectory()) pending.push(child);
+      else if (entry.isFile()) {
+        total += (await fs.lstat(child).catch(() => null))?.size ?? 0;
+        if (total > limit) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Starts the worktree as the remote default branch is now, plus the folder's git-ignored local files.
     Returns null, having written nothing, when the project has no such branch. */
 async function copyRemoteBase(source: string, staging: string, gitEnvironment: NodeJS.ProcessEnv, localMain = false): Promise<{ gitBase: string; gitBaseRef: string } | null> {
@@ -302,6 +322,10 @@ async function copyRemoteBase(source: string, staging: string, gitEnvironment: N
   for (const entry of await ignoredPaths(source, gitEnvironment)) {
     const target = path.join(staging, entry);
     if (await lstatOrNull(target)) continue;
+    if (await exceedsSize(path.join(source, entry), MAX_IGNORED_DIRECTORY_BYTES)) {
+      console.info(`Worktree leaves out the ignored folder ${entry}: over ${MAX_IGNORED_DIRECTORY_BYTES / 1024 / 1024} MiB`);
+      continue;
+    }
     await fs.cp(path.join(source, entry), target, { recursive: true, force: false, errorOnExist: false, filter: (file) => copyCandidate(source, file) });
   }
   return { gitBase: base.commit, gitBaseRef: base.ref };

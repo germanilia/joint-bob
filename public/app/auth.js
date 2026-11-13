@@ -111,6 +111,15 @@ export function revealApplication() {
   document.body.classList.remove("booting");
 }
 
+/** The app opens on Bob (the control center), on the phone and the desktop. A link to a conversation or project opens that
+    instead, and the key set to "last" reopens the view the person left. */
+const START_VIEW_KEY = "joint-bob-start-view";
+function startingView(preferences) {
+  const linked = state.initialSessionId || state.initialSessionPath || state.initialProjectId;
+  if (!linked && localStorage.getItem(START_VIEW_KEY) !== "last") return "control";
+  return preferences.mobileView === "board" ? (state.activeProjectId ? "sessions" : "projects") : preferences.mobileView;
+}
+
 function applyAuthStatus(status) {
   mfaChallenge = "";
   mfaSetup = false;
@@ -213,12 +222,12 @@ export async function initializeApplication() {
   state.controlCenter = preferences.controlCenter;
   syncShortcutHints();
   setShortcutKeymap(state.keymap);
-  setMobileView(preferences.mobileView === "board" ? (state.activeProjectId ? "sessions" : "projects") : preferences.mobileView);
+  setMobileView(startingView(preferences));
   revealApplication();
   void watchVisitorProfile();
   await loadWorkspaces();
   await loadProjects();
-  if (!state.initialSessionId && !state.initialSessionPath) setMobileView(preferences.mobileView === "board" ? (state.activeProjectId ? "sessions" : "projects") : preferences.mobileView);
+  if (!state.initialSessionId && !state.initialSessionPath) setMobileView(startingView(preferences));
   state.preferencesLoaded = true;
   void showWhatsNew(preferences.lastSeenVersion).catch((error) => console.warn("Could not load the changelog", error));
   if (state.initialProjectId || state.initialSessionPath) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -78,6 +78,20 @@ test("a worktree starts from the remote branch, not the folder's HEAD or its unc
   assert.equal(await readFile(path.join(worktree.path, "local.config"), "utf8"), "port=1\n", "ignored local files come along");
   assert.equal(await exists(path.join(worktree.path, WORKTREE_META_DIR, "base.patch")), false);
   assert.deepEqual(await worktreeChanges(project.id, worktree.id, worktrees), { gitBase: main, writes: [], deletes: [], uncommittedPaths: [] });
+});
+
+test("a large ignored folder is left out of a new worktree while small ignored files come along", async (t) => {
+  const { project, worktrees } = await repositories(t);
+  await writeFile(path.join(project.path, ".gitignore"), "local.config\nbig-output/\nsmall-local/\n");
+  git(project.path, "add", ".gitignore"); git(project.path, "commit", "-qm", "ignore folders"); git(project.path, "push", "-q", "origin", "main");
+  await mkdir(path.join(project.path, "big-output"));
+  for (let index = 0; index < 9; index += 1) await writeFile(path.join(project.path, "big-output", `part-${index}.txt`), "x".repeat(1_000_000));
+  await mkdir(path.join(project.path, "small-local"));
+  await writeFile(path.join(project.path, "small-local", "settings.txt"), "keep\n");
+
+  const worktree = await createProjectWorktree(project, { name: "Large ignored" }, worktrees);
+  assert.equal(await exists(path.join(worktree.path, "big-output")), false);
+  assert.equal(await readFile(path.join(worktree.path, "small-local", "settings.txt"), "utf8"), "keep\n");
 });
 
 test("pull request changes are replayed on the branch as it is now and carry only the worktree's edits", async (t) => {

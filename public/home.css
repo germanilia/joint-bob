@@ -79,7 +79,10 @@ body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
     zoom: var(--ui-zoom-conversation, 1);
   }
   #homePage.need-empty .ws-home-in { grid-template-rows: auto auto minmax(0, 1fr); }
-  .ws-home-head { min-width: 0; }
+  .ws-home-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+  .ws-home-head-copy { flex: 1; min-width: 0; }
+  .ws-home-close { flex: none; width: 44px; height: 44px; }
+  .ws-home-close[hidden] { display: none; }
   .ws-home-greet { margin: 0; overflow: hidden; color: var(--heading); font: 400 clamp(32px, 3.2vw, 46px)/1.05 var(--serif); letter-spacing: -0.01em; text-overflow: ellipsis; white-space: nowrap; }
   .ws-home-sub { min-height: 1.5em; margin: 8px 0 0; color: var(--muted); font-size: 16.5px; }
   .ws-home-sub b { color: var(--ws-need, #b86e00); font-weight: 650; }

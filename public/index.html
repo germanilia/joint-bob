@@ -674,8 +674,12 @@
       <section class="panel ws-home" id="homePage" aria-labelledby="homeGreeting" data-testid="home-page" hidden>
         <div class="ws-home-in">
           <header class="ws-home-head">
-            <h1 class="ws-home-greet" id="homeGreeting" data-testid="home-greeting">Hello</h1>
-            <p class="ws-home-sub" id="homeCounts" data-testid="home-counts"></p>
+            <div class="ws-home-head-copy">
+              <h1 class="ws-home-greet" id="homeGreeting" data-testid="home-greeting">Hello</h1>
+              <p class="ws-home-sub" id="homeCounts" data-testid="home-counts"></p>
+            </div>
+            <!-- Only while Home is shown over an open conversation: back to that conversation (also Esc). -->
+            <button class="ghost icon-button ws-home-close" id="homeCloseButton" type="button" aria-label="Back to the conversation" title="Back to the conversation (Esc)" data-testid="home-close-button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
           </header>
           <section class="ws-home-need" aria-labelledby="homeNeedTitle" data-testid="home-needs-you">
             <div class="ws-home-sechead">
