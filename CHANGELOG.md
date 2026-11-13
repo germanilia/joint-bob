@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.12 — 2026-11-13
+
+- New conversations focus the title first; Enter skips secret accounts and moves to Start conversation.
+
 ## 2.299.11 — 2026-11-13
 
 - Conversation connection labels show the pool host and sharing cluster.
