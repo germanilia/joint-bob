@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Page } from "playwright-core";
 import { nativeUiFixture } from "./native-ui-fixture.js";
-import { signIn } from "../dev-nodes.js";
+import { api, signIn } from "../dev-nodes.js";
 
 async function openProject(t: Parameters<typeof nativeUiFixture>[0]) {
   const fixture = await nativeUiFixture(t);
@@ -35,6 +35,62 @@ test("new conversations always open at project step, including after cancel", { 
     await page.getByTestId("quick-note-next-button").click();
     await page.getByTestId("quick-note-cancel-button").click();
   }
+});
+
+test("title receives focus before content and Enter moves to content", { timeout: 120_000 }, async t => {
+  const { page } = await openProject(t);
+  await newConversation(page);
+  await page.getByTestId("quick-note-next-button").click();
+  const title = page.getByTestId("quick-note-title-input");
+  const content = page.getByTestId("quick-note-content-input");
+  assert.equal(await title.evaluate(element => document.activeElement === element), true, "title must receive focus first");
+  await page.keyboard.type("Keyboard title");
+  await page.keyboard.press("Enter");
+  assert.equal(await content.evaluate(element => document.activeElement === element), true, "Enter on title moves to content");
+  await page.keyboard.type("First line");
+  await page.keyboard.press("Shift+Enter");
+  await page.keyboard.type("Second line");
+  assert.equal(await content.inputValue(), "First line\nSecond line");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.getByTestId("quick-note-step-3").getAttribute("aria-current"), "step");
+  await page.getByTestId("quick-note-back-button").click();
+  assert.equal(await title.evaluate(element => document.activeElement === element), true, "returning to the step also starts at title");
+  await page.getByTestId("quick-note-cancel-button").click();
+});
+
+test("Secrets focuses Start and Enter skips mouse-selected accounts", { timeout: 120_000 }, async t => {
+  const { page, environment, node } = await openProject(t);
+  const session = await signIn(environment, node);
+  for (const label of ["First keyboard fixture", "Second keyboard fixture"]) {
+    const response = await api<{ account: { id: string } }>(node, session, "POST", "/secrets/accounts", {
+      label, provider: "custom", variables: [{ name: "KEYBOARD_FIXTURE", kind: "value", value: "synthetic" }],
+    });
+    assert.equal(response.status, 201);
+  }
+  await newConversation(page);
+  await page.getByTestId("quick-note-next-button").click();
+  await page.getByTestId("quick-note-title-input").fill("Keyboard secrets");
+  await page.getByTestId("quick-note-content-input").fill("Verify keyboard navigation");
+  await page.getByTestId("quick-note-step-4").click();
+  await page.keyboard.press("Enter");
+  const start = page.getByTestId("quick-note-save-button");
+  const checkboxes = page.getByTestId("quick-note-secret-checkbox");
+  assert.equal(await checkboxes.count(), 2, "multiple accounts must be offered to reproduce the bug");
+  assert.equal(await start.evaluate(element => document.activeElement === element), true, "entering Secrets skips account focus and lands on Start");
+  await checkboxes.first().click();
+  const selectedId = await checkboxes.first().inputValue();
+  await page.keyboard.press("Enter");
+  assert.equal(await start.evaluate(element => document.activeElement === element), true, "Enter on an account focuses Start instead of the next account");
+  assert.equal(await checkboxes.first().isChecked(), true, "Enter preserves mouse selection");
+  assert.equal(await checkboxes.nth(1).isChecked(), false, "Enter does not select other accounts");
+  const saved = page.waitForResponse(response => response.url() === `${node.url}/api/quick-notes` && response.request().method() === "POST");
+  const launched = page.waitForResponse(response => /\/api\/quick-notes\/[^/]+\/start$/.test(response.url()) && response.request().method() === "POST");
+  await page.keyboard.press("Enter");
+  const noteResponse = await saved;
+  assert.equal(noteResponse.status(), 201);
+  assert.deepEqual((await noteResponse.json()).note.secretAccountIds, [selectedId]);
+  assert.equal((await launched).status(), 200);
+  await page.getByTestId("quick-note-dialog").waitFor({ state: "hidden" });
 });
 
 test("Start conversation stays visible on every step and starts from content using defaults", { timeout: 120_000 }, async t => {
