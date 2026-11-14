@@ -29,7 +29,7 @@ async function changelogRepository(version: string): Promise<string> {
 }
 
 function runGate(cwd: string, base: string, local: string): { status: number | null; output: string } {
-  const result = spawnSync("node", [gate, base, local, "--check"], { cwd, encoding: "utf8" });
+  const result = spawnSync("node", [gate, base, local], { cwd, encoding: "utf8" });
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
@@ -126,32 +126,18 @@ test("the gate ignores a push that ships no application code", async () => {
   }
 });
 
-test("a staged application commit gets an Unreleased changelog entry", async () => {
+test("a staged application commit is reminded to write its Unreleased changelog entry", async () => {
   const root = await changelogRepository("0.1.0");
-  const bin = path.join(root, "bin");
   try {
     await commit(root, "first");
     await writeFile(path.join(root, "src", "server.ts"), "export const port = 9000;\n");
     git(root, "add", "src/server.ts");
-    await mkdir(bin);
-    await writeFile(path.join(bin, "claude"), [
-      "#!/bin/sh",
-      "printf '%s\\n' \"$@\" > claude-args",
-      'if [ -n "${GIT_INDEX_FILE:-}" ]; then echo "inherited Git index" >&2; exit 17; fi;',
-      "awk 'BEGIN { added=0 } /^## / && !added { print \"## Unreleased\\n\\n- Changed the server port\\n\"; added=1 } { print }' CHANGELOG.md > CHANGELOG.tmp",
-      "mv CHANGELOG.tmp CHANGELOG.md",
-    ].join("\n"), { mode: 0o755 });
 
-    const result = spawnSync(process.execPath, [entryWriter], {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GIT_INDEX_FILE: path.join(root, ".git", "index") },
-    });
+    const result = spawnSync(process.execPath, [entryWriter], { cwd: root, encoding: "utf8" });
 
     assert.equal(result.status, 0, result.stderr);
-    assert.match(await readFile(path.join(root, "CHANGELOG.md"), "utf8"), /^## Unreleased$/m);
-    assert.match(git(root, "diff", "--cached", "--name-only"), /^CHANGELOG\.md$/m);
-    assert.match(await readFile(path.join(root, "claude-args"), "utf8"), /--no-session-persistence/);
+    assert.match(result.stderr, /add one short past-tense bullet under `## Unreleased`/);
+    assert.doesNotMatch(await readFile(path.join(root, "CHANGELOG.md"), "utf8"), /^## Unreleased$/m);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -191,11 +177,9 @@ test("the pre-push hook blocks on the gate before triggering a deploy", async ()
   assert.match(hook, /git diff --quiet "\$\{remote_sha\}" "\$\{local_sha\}" -- src public bin/);
   assert.match(commitHook, /scripts\/changelog-entry\.mjs/);
 
-  // Per-commit entries and final release notes are written by the cheap model.
-  assert.match(script, /"--model", "haiku"/);
-  assert.match(script, /"--no-session-persistence"/);
-  assert.match(script, /"--permission-mode", "acceptEdits"/);
-  assert.match(script, /spawnSync\("claude"/);
+  // The hooks never call an external Claude session; the agent writes the release notes itself.
+  assert.doesNotMatch(script, /claude/i);
+  assert.doesNotMatch(await readFile("scripts/changelog-entry.mjs", "utf8"), /spawnSync|claude/i);
   assert.match(script, /## Unreleased/);
   assert.match(script, /process\.exit\(1\);/);
 });

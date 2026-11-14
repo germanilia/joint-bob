@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 // Blocks a push to main until the commits being pushed are described in
-// CHANGELOG.md under a bumped package.json version. When they are not, Claude
-// (Haiku) writes both files here in the working tree and the push is refused,
-// so the release notes land in a commit rather than behind the release.
-import { execFileSync, spawnSync } from "node:child_process";
+// CHANGELOG.md under a bumped package.json version. The push is refused with
+// instructions for the agent to write both files and commit them first.
+import { execFileSync } from "node:child_process";
 
-const [baseSha, localSha] = process.argv.slice(2).filter((argument) => argument !== "--check");
-// --check reports without calling Claude, for tests and CI.
-const checkOnly = process.argv.includes("--check");
+const [baseSha, localSha] = process.argv.slice(2);
 const base = /^0+$/.test(baseSha) ? null : baseSha;
 const headingPattern = /^##[ \t]+(\d+\.\d+\.\d+)/m;
 const unreleasedPattern = /^##[ \t]+Unreleased[ \t]*$/m;
@@ -41,57 +38,12 @@ function latestRelease(changelog) {
 
 function blockThePush(reason) {
   console.error(`\nChangelog gate: ${reason}`);
-  if (checkOnly) {
-    console.error("Push blocked.\n");
-    process.exit(1);
-  }
-  const commits = base ? git("log", "--format=- %s%n%b", `${base}..${localSha}`) : git("log", "--format=- %s%n%b", "-1", localSha);
-  const changed = base ? git("diff", "--stat", base, localSha) : git("show", "--stat", "--format=", localSha);
-  const version = JSON.parse(fileAt(localSha, "package.json")).version;
-
-  console.error("Asking Claude (haiku) to write the release notes...\n");
-
-  const prompt = [
-    "You are writing the release notes for Joint Bob before a push to main.",
-    "",
-    `The version currently in package.json is ${version}.`,
-    "",
-    "Commits about to be pushed:",
-    commits.trim(),
-    "",
-    "Files changed:",
-    changed.trim(),
-    "",
-    "Do exactly two things:",
-    "1. Pick the next semantic version from those commits: a breaking change bumps major, any new feature bumps minor, otherwise bump patch. Write it into the `version` field of package.json.",
-    "2. Review every bullet under `## Unreleased` against the pushed commits and changed files. Replace that section with one coherent version section directly above the newest existing version section:",
-    "",
-    `## <the version you chose> — ${new Date().toISOString().slice(0, 10)}`,
-    "",
-    "- <one short past-tense sentence per user-visible change>",
-    "",
-    "Rules:",
-    "- Write for someone using the app, not for a developer reading commits. No commit prefixes like `feat(ui):`, no file names, no commit hashes.",
-    "- One bullet per user-visible change; merge related commit entries into a single bullet.",
-    "- Preserve user-visible changes represented by the full push range, not only the last commit.",
-    "- Leave out pure refactors, test-only changes, and dependency bumps.",
-    "- At most 12 bullets.",
-    "- Change nothing else in either file, and do not commit anything.",
-  ].join("\n");
-
-  const claude = spawnSync("claude", [
-    "-p", prompt,
-    "--no-session-persistence",
-    "--model", "haiku",
-    "--permission-mode", "acceptEdits",
-    "--allowedTools", "Read Edit Write",
-  ], { stdio: ["ignore", "inherit", "inherit"] });
-
-  if (claude.error || claude.status !== 0) {
-    console.error("\nClaude could not write the release notes. Update package.json and CHANGELOG.md by hand.");
-  } else {
-    console.error("\nClaude updated package.json and CHANGELOG.md. Review them, commit, and push again.");
-  }
+  console.error([
+    "Before this push, update the release for the pushed commits, commit it, and push again:",
+    "1. package.json: set `version` to the next semantic version. A breaking change bumps major, any new feature bumps minor, otherwise bump patch.",
+    "2. CHANGELOG.md: replace the `## Unreleased` bullets with one `## <that version> — <release date>` section directly above the newest version section. Cover every commit in the push range with one short past-tense bullet per user-visible change (at most 12), written for someone using the app: no commit prefixes, file names or hashes. Leave out pure refactors, test-only changes and dependency bumps.",
+    "Change nothing else.",
+  ].join("\n"));
   console.error("Push blocked.\n");
   process.exit(1);
 }

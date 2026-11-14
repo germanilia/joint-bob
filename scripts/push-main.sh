@@ -34,8 +34,7 @@ if ! node "${GATE}" "${BASE}" "${HEAD_SHA}"; then
   git -C "${ROOT}" add package.json CHANGELOG.md
   git -C "${ROOT}" commit -q -m "chore(release): ${VERSION}"
   HEAD_SHA="$(git -C "${ROOT}" rev-parse HEAD)"
-  # --check re-reads the committed files without asking Claude for a second draft.
-  node "${GATE}" "${BASE}" "${HEAD_SHA}" --check
+  node "${GATE}" "${BASE}" "${HEAD_SHA}"
 fi
 
 git -C "${ROOT}" push "${REMOTE}" main
