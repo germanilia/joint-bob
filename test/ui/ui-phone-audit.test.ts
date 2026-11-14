@@ -232,8 +232,6 @@ async function walkMain() {
   await page.evaluate(() => { document.querySelector<HTMLElement>(".install-banner")!.hidden = true; });
   await step("home-sheet", async () => { await page.getByTestId("needs-deck").getByTestId("home-card").first().locator(".ws-wait-title").tap(); await page.getByTestId("need-sheet").waitFor(); await settle(600); });
   await goHome();
-  await step("home-show-all", async () => { await page.getByTestId("workspace-show-all-review").tap(); await settle(600); });
-  await goHome();
   await step("search", async () => { await tap("phone-search-input"); await page.locator("#spotlightDialog[open]").waitFor(); await page.keyboard.type("conv"); await settle(600); });
   await goHome();
   await step("new-menu", async () => { await tap("phone-new-button"); await page.getByTestId("workspace-new-menu").waitFor(); });
