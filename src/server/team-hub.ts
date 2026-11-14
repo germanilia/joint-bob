@@ -1,5 +1,4 @@
 import type { AuthSession } from '../auth.js';
-import { accountInCluster } from '../cluster-accounts.js';
 import { getClusterNode } from '../cluster.js';
 import { getSharingCluster } from '../cluster-sharing-policy.js';
 import { requireClusterMember, type ClusterMember } from '../assistant-teams/access.js';
@@ -21,7 +20,7 @@ export interface HubTeam {
 const TARGET = (operation: Operation): string => `/api/cluster/v2/assistant-teams/${operation}`;
 const PEER_TIMEOUT_MS = 8_000;
 const CACHE_MS = 20_000;
-const held = new Map<string, { at: number; teams: HubTeam[] }>();
+const held = new Map<string, { at: number; teams: HubTeam[]; unreachable: string[] }>();
 
 /** Runs one team operation on the team's host: here, or on the machine that hosts it. */
 async function call<T>(member: ClusterMember, hostNodeId: string, operation: Operation, body: Record<string, unknown>): Promise<T> {
@@ -44,25 +43,38 @@ async function teamsOn(member: ClusterMember, hostNodeId: string, clusterName: s
   }));
 }
 
-/** Every team of the clusters the person joined, on whichever machine hosts it. A machine that cannot be reached offers nothing for now. */
-export async function hubTeams(session: AuthSession, fresh = false): Promise<HubTeam[]> {
+export const hubTeams = async (session: AuthSession, fresh = false): Promise<HubTeam[]> => (await hubOverview(session, fresh)).teams;
+
+/**
+ * Every team of the clusters the person joined, on whichever machine hosts it. A machine that cannot be reached offers nothing for
+ * now, and its clusters are named `unreachable`: a team there may exist, so no one should be offered a second.
+ */
+export async function hubOverview(session: AuthSession, fresh = false): Promise<{ teams: HubTeam[]; unreachable: string[] }> {
   const known = held.get(session.accountId);
-  if (!fresh && known && Date.now() - known.at < CACHE_MS) return known.teams;
+  if (!fresh && known && Date.now() - known.at < CACHE_MS) return known;
   const context = await peers(), here = await getClusterNode();
-  const mine = context.clusters.filter(cluster => accountInCluster(context.db, session.accountId, cluster.id));
-  const lookups = mine.flatMap(cluster => [here.id, ...context.nodes.filter(node => node.clusterIds.includes(cluster.id)).map(node => node.nodeId)].map(async hostNodeId => {
+  // A person signed in here with their account from another machine is a member through the cluster's signed membership, not a local row.
+  const members = new Map<string, ClusterMember>();
+  for (const cluster of context.clusters) {
+    try { members.set(cluster.id, await requireClusterMember(session, cluster.id)); } catch { /* not a member of this one */ }
+  }
+  const mine = context.clusters.filter(cluster => members.has(cluster.id)), unreachable = new Set<string>();
+  // Another machine takes a request as coming from the person's home machine only, so a visitor steers the teams of the machine they are on.
+  const lookups = mine.flatMap(cluster => [here.id, ...members.get(cluster.id)!.homeNodeId === here.id ? context.nodes.filter(node => node.clusterIds.includes(cluster.id)).map(node => node.nodeId) : []].map(async hostNodeId => {
     try {
-      const member = await requireClusterMember(session, cluster.id);
+      const member = members.get(cluster.id)!;
       const hostName = hostNodeId === here.id ? here.name : context.nodes.find(node => node.nodeId === hostNodeId)?.name ?? hostNodeId;
       return await teamsOn(member, hostNodeId, getSharingCluster(context.db, cluster.id).name, hostName);
     } catch (error) {
       console.warn(`Could not list the teams of "${cluster.name}" on ${hostNodeId}: ${error instanceof Error ? error.message : error}`);
+      unreachable.add(cluster.id);
       return [];
     }
   }));
   const teams = (await Promise.all(lookups)).flat().sort((a, b) => a.clusterName.localeCompare(b.clusterName) || a.hostName.localeCompare(b.hostName));
-  held.set(session.accountId, { at: Date.now(), teams });
-  return teams;
+  const overview = { at: Date.now(), teams, unreachable: [...unreachable] };
+  held.set(session.accountId, overview);
+  return overview;
 }
 
 /** The teams from the last look, never a wait for the network; a stale look is refreshed in the background for the next message. */

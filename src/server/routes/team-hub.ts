@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import type { AuthSession } from '../../auth.js';
 import { TeamError } from '../../assistant-teams/store.js';
-import { hubAssign, hubCancel, hubRequests, hubRetry, hubTeams } from '../team-hub.js';
+import { hubAssign, hubCancel, hubOverview, hubRequests, hubRetry } from '../team-hub.js';
 import { app } from '../state.js';
 
 // The app's view of the teams of the person's clusters, wherever they run: see ../team-hub.ts.
@@ -23,7 +23,10 @@ function route(handler: (request: Request, session: AuthSession) => Promise<unkn
   };
 }
 
-app.get('/api/team-hub', route(async (request, session) => ({ teams: await hubTeams(session, request.query.fresh === '1') })));
+app.get('/api/team-hub', route(async (request, session) => {
+  const { teams, unreachable } = await hubOverview(session, request.query.fresh === '1');
+  return { teams, unreachable };
+}));
 app.get('/api/team-hub/:teamId/requests', route(async (request, session) => ({ requests: await hubRequests(session, teamId.parse(request.params.teamId)) })));
 app.post('/api/team-hub/:teamId/assign', route(async (request, session) => {
   const body = z.object({ role: z.string().nullable(), message: z.string().trim().min(1).max(20000) }).strict().parse(request.body);

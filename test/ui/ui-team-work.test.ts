@@ -12,6 +12,7 @@ async function openTeams(page: any, environment: any, node: any) {
   await page.waitForFunction(() => !document.body.classList.contains('booting') && document.querySelectorAll('#projectList .list-row').length > 0);
   await page.getByTestId('projects-open-control-center-button').click();
   await page.getByTestId('control-tab-assistants').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="team-select"] option').length > 0);
 }
 
 test('a team on this machine takes work from the app: send it, stop a request, run it again', { timeout: 240_000 }, async t => {
@@ -56,7 +57,7 @@ test('a team hosted on another machine is in the picker and takes work from here
   const done = { id: 'a1b2c3'.padEnd(64, '0'), shortId: 'a1b2c3', text: 'Check the release notes', requestedBy: 'x', chatId: 'browser', createdAt: new Date().toISOString(), browser: true, state: 'done',
     assignments: [{ role: 'qa', state: 'completed', delegated: false, reason: null, conversationId: null, result: 'REMOTE_ANSWER' }] };
   const posts: any[] = [];
-  await page.route('**/api/team-hub', route => route.fulfill({ json: { teams: [remote] } }));
+  await page.route('**/api/team-hub', route => route.fulfill({ json: { teams: [remote], unreachable: [] } }));
   await page.route('**/api/team-hub/remote-team/requests', route => route.fulfill({ json: { requests: [done] } }));
   await page.route('**/api/team-hub/remote-team/assign', route => { posts.push(route.request().postDataJSON()); return route.fulfill({ json: { request: done } }); });
   await openTeams(page, environment, node);
@@ -78,4 +79,22 @@ test('a team hosted on another machine is in the picker and takes work from here
   await page.getByTestId('team-work-send').click();
   await page.waitForFunction(() => document.querySelector('[data-testid="team-work-message"]')?.value === '');
   assert.deepEqual(posts.at(-1), { role: 'qa', message: 'Check it' });
+});
+
+// A machine that could not be reached may host the cluster's team: no one is offered a second one on this machine meanwhile.
+test('no second team is offered for a cluster whose machines could not all be reached', { timeout: 240_000 }, async t => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  const auth = await signIn(environment, node);
+  const cluster = await api<any>(node, auth, 'POST', '/clusters', { name: 'Contigos' });
+  const clusterId = cluster.body.snapshot.body.clusterId;
+  let unreachable: string[] = [clusterId];
+  await page.route('**/api/team-hub', route => route.fulfill({ json: { teams: [], unreachable } }));
+  await openTeams(page, environment, node);
+  const options = await page.getByTestId('team-select').locator('option').allInnerTexts();
+  assert.ok(!options.some(option => /create team on this host/.test(option)), options.join(' | '));
+  unreachable = [];
+  await page.reload();
+  await page.waitForFunction(() => !document.body.classList.contains('booting'));
+  // The control center comes back by itself after a reload, and the team list fills again.
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="team-select"] option')].some(option => /create team on this host/.test(option.textContent ?? '')));
 });

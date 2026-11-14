@@ -64,12 +64,12 @@ async function loadTeams() {
   if (select.options.length) return;
   // Built aside and put in at once: a failed load leaves the list empty, so the next opening tries again.
   // The teams of every cluster the person joined, on whichever machine hosts each; a team on another machine is steered from here.
-  const [{ clusters }, { teams }] = await Promise.all([api('/api/clusters'), api('/api/team-hub')]);
+  const [{ clusters }, { teams, unreachable }] = await Promise.all([api('/api/clusters'), api('/api/team-hub')]);
   hubTeams = new Map(teams.map(item => [item.id, item]));
   const options = [new Option(teams.length || clusters.length ? 'Select a team' : 'No cluster yet: create one under Clusters', '')];
   for (const item of teams) options.push(new Option(item.local ? item.clusterName : `${item.clusterName} — on ${item.hostName}`, item.local ? item.id : `remote:${item.id}`));
-  // A team is made on this host only for a cluster that has none anywhere.
-  for (const cluster of clusters) if (!teams.some(item => item.clusterId === cluster.id)) options.push(new Option(`${cluster.name} — create team on this host`, `create:${cluster.id}`));
+  // A team is made on this host only for a cluster that has none anywhere; one whose machines could not all be reached may have one.
+  for (const cluster of clusters) if (!teams.some(item => item.clusterId === cluster.id) && !unreachable.includes(cluster.id)) options.push(new Option(`${cluster.name} — create team on this host`, `create:${cluster.id}`));
   if (select.options.length) return;
   select.replaceChildren(...options);
   syncMobile();
