@@ -433,8 +433,11 @@ export async function handleBobOrganize(turn: BobTurn, decision: BobDecision | n
   // Teams are looked up over the network, so a message that does not speak of one never waits for them.
   const known = teamWorldOf(knownTeams(turn.session));
   const teamTalk = mentionsTeam(turn.message, known) && (known.length > 0 || (await runAsAccount(actingAccountFromSession(turn.session), () => joinedClusters(turn.session.accountId))).length > 0);
-  if (!mayBeAboutOrganizing(turn.message, decision, turn.settings.threshold) && !teamTalk) return null;
+  const organizing = mayBeAboutOrganizing(turn.message, decision, turn.settings.threshold);
+  if (!organizing && !teamTalk) return null;
   const teams = teamTalk ? teamWorldOf(await hubTeams(turn.session)) : known;
+  // "The team" with no assistant team in any of the person's clusters means the people in them: Bob's other answers cover that.
+  if (!organizing && !teams.length) return null;
   const world = await worldFor(turn.session, turn.message, teams);
   const [cwd] = await runAsAccount(actingAccountFromSession(turn.session), () => projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }));
   if (!cwd) return say(turn, "I need one project to work from before I can arrange anything. Create your first project from the Projects list.", { via: "Organize · no project yet" });
