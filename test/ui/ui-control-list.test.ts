@@ -105,6 +105,9 @@ test("the list: system messages first, rows by project, the panel's tabs, search
   await page.getByTestId("control-list-thread").getByText("The deploy is ready.").waitFor();
   assert.match(await page.getByTestId("control-list-thread").textContent() ?? "", /You asked[\s\S]*Ship c1/);
   assert.equal(await page.getByTestId("control-list-message").count(), 1);
+  // The box around the message field is the only border: focusing the field adds no ring inside it.
+  await page.getByTestId("control-list-message").focus();
+  assert.equal(await page.getByTestId("control-list-message").evaluate((node) => getComputedStyle(node).boxShadow), "none", "the focused message field draws no second border");
   await page.getByTestId("control-list-tab-button-steps").click();
   assert.equal(await page.getByTestId("control-list-steps").locator("li.failed").count(), 1);
   await page.locator('[data-key="p1:c2"]').click();

@@ -327,6 +327,8 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
 .control-list-foot > * { width: min(100%, 820px); margin-inline: auto; }
 .control-list-composer { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--field); }
 .control-list-composer:focus-within { border-color: var(--accent); }
+/* The box is the only border. paper.css's focus ring out-ranks a plain `box-shadow: none` on the field, so this one must be forced. */
+.control-list-composer textarea:focus-visible { box-shadow: none !important; }
 .control-list-composer textarea { flex: 1; min-height: 0; padding: 6px 0; border: 0; outline: 0; background: none; box-shadow: none; color: var(--text); font: inherit; font-size: 14.5px; resize: none; }
 .control-list-hint { margin: 0; padding: 0 6px; color: var(--muted); font-size: 12px; }
 
