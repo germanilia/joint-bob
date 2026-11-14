@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { api, type SeededNode, type SignedIn } from './dev-nodes.js';
@@ -81,8 +81,10 @@ async function bobOnMember(options: { answer?: string; hold?: () => Promise<void
     }
     throw new Error(`Bob never said: ${what}: ${JSON.stringify((await messages(auth)).map(message => message.text.slice(0, 120)))}`);
   };
+  const notices = () => { const db = openNodeDatabase(path.join(fixture.host.dataDir, 'node.db')); try { return db.prepare('SELECT root_id, state FROM assistant_team_notices').all().map(row => ({ ...row }) as { root_id: string; state: string }); } finally { db.close(); } };
+  const markNoticesSent = () => { const db = openNodeDatabase(path.join(fixture.host.dataDir, 'node.db')); try { db.prepare("UPDATE assistant_team_notices SET state='sent'").run(); } finally { db.close(); } };
   const follows = (node: SeededNode) => { const db = openNodeDatabase(path.join(node.dataDir, 'node.db')); try { return db.prepare('SELECT request_id, state FROM bob_team_follows').all() as Array<{ request_id: string; state: string }>; } finally { db.close(); } };
-  return { ...fixture, say, messages, eventually, follows, model, stop };
+  return { ...fixture, directory, say, messages, eventually, follows, notices, markNoticesSent, model, stop };
 }
 
 // Bob runs on the member's machine; the team runs on the host.
@@ -118,10 +120,26 @@ test('Bob, on a cluster member\'s machine, is told by the decision model that a 
     assert.match(answered.text, /qa on the .* team answered:\n\nBOB_TEAM_ANSWER/);
     assert.match(JSON.stringify(requests), /Check the sign-in page/);
     assert.deepEqual(bob.follows(member).map(row => row.state), ['done']);
+    // It was the host's own notice that told this machine: the host's record of it is sent (this machine never restarted, so it asked no one).
+    assert.deepEqual(bob.notices().map(row => row.state), ['sent']);
 
     // And the same request is now in the team's status, done.
     const again = await bob.say(memberAuth, '[team] and now?', { intent: 'team-status', team: team.id, role: 'qa' });
     assert.match(again.text, /1 done/);
+  } finally { await bob.stop(); }
+});
+
+// The same gate with a team that really exists: Bob's agent for arranging work is never asked, whatever the words say.
+test('with a team in the person\'s cluster, a message the decision model did not take for it still never starts the team step', { timeout: 240_000 }, async () => {
+  const bob = await bobOnMember();
+  const { memberAuth } = bob;
+  try {
+    // What Bob's agent would answer is missing, so if the team step started it would say it could not work out what to do.
+    await rm(path.join(bob.directory, 'organize.json'), { force: true });
+    await api(bob.member, memberAuth, 'POST', '/control-center/bob/message', { message: 'tell the team to have qa and lead check the sign-in page' });
+    const said = (await bob.messages(memberAuth)).map(message => `${message.via ?? ''} ${message.text}`);
+    assert.ok(said.length >= 1, 'the message was heard');
+    assert.equal(said.some(line => /Organize ·|Team ·|could not work out what to change/.test(line)), false, said.join(' | '));
   } finally { await bob.stop(); }
 });
 
@@ -149,6 +167,34 @@ test('a restart of the machine Bob runs on does not lose the answer he promised'
   } finally { release(); await bob.stop(); }
 });
 
+// The other way a machine learns of the end: it asks. Here the host's own notice is made to look lost, so only the question can bring it.
+test('a machine that comes back asks its hosts, so an answer whose notice was lost still arrives', { timeout: 300_000 }, async () => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const bob = await bobOnMember({ answer: 'ANSWER_BY_ASKING', hold: () => held });
+  const { member, memberAuth, host, hostAuth, team, requests } = bob;
+  try {
+    const offer = await bob.say(memberAuth, '[team] have qa take its time', { intent: 'team-assign', team: team.id, role: 'qa', message: 'Take your time' });
+    await api(member, memberAuth, 'POST', '/control-center/bob/action', { messageId: offer.id, actionId: 'team.run' });
+    for (let i = 0; i < 300 && requests.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(requests.length, 1, 'the member is working');
+    await bob.down('member');
+    release();
+    // The host finishes with this machine away: the notice waits, then is made to look as if it had been sent and lost.
+    for (let i = 0; i < 300; i++) {
+      const state = (await api<any>(host, hostAuth, 'GET', `/team-hub/${team.id}/requests`)).body.requests?.[0]?.state;
+      if (state === 'done') break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.deepEqual(bob.notices().map(row => row.state), ['pending'], 'the host keeps what it owes an absent machine');
+    bob.markNoticesSent();
+    const auth = await bob.up('member');
+    const answered = await bob.eventually(auth, /answered:/, 'the answer, asked for on the way back');
+    assert.match(answered.text, /ANSWER_BY_ASKING/);
+    assert.deepEqual(bob.follows(member).map(row => row.state), ['done']);
+  } finally { release(); await bob.stop(); }
+});
+
 // The host restarting while it works does not leave the person waiting for ever either.
 test('a restart of the team\'s host does not leave Bob waiting for ever', { timeout: 300_000 }, async () => {
   let release!: () => void;
@@ -163,9 +209,10 @@ test('a restart of the team\'s host does not leave Bob waiting for ever', { time
     const hostAfter = bob.restart('host');
     release();
     await hostAfter;
-    // The turn the restart interrupted either finished on the host's return or is reported as stopped: Bob says which.
-    const end = await bob.eventually(memberAuth, /answered:|stopped without a result|is waiting for you/, 'how the request ended');
-    assert.match(end.text, /qa on the .* team/);
+    // The turn the restart interrupted is gone with it: the host says so when it is back, and Bob tells the person once, plainly.
+    const end = await bob.eventually(memberAuth, /stopped without a result/, 'that the request stopped');
+    assert.match(end.text, /^qa on the .* team stopped without a result: what it already did stays done\. Ask me to run it again/);
     assert.deepEqual(bob.follows(member).map(row => row.state), ['done']);
+    assert.equal((await bob.messages(memberAuth)).filter(message => /stopped without a result/.test(message.text)).length, 1, 'said once');
   } finally { release(); await bob.stop(); }
 });

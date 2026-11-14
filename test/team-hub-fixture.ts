@@ -63,15 +63,18 @@ export async function startTeamHubFixture(options: { answer?: string; memberEnv?
     const { addNodeMembers } = await import('./team-members-fixture.js');
     await addNodeMembers((method, route, body) => api<any>(host, hostAuth, method as any, route, body), host.projects.map((p: any) => p.id), team.id,
       [{ role: 'lead', instructions: 'The coordinator' }, { role: 'qa', instructions: 'Checks things' }], 'lead', { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' });
-    // A machine restarting: stopped and started again on the same data, as an update does. The person signs in again.
-    const restart = async (which: 'host' | 'member') => {
+    // A machine going away and coming back, as an update does: stopped, then started again on the same data. The person signs in again.
+    const down = async (which: 'host' | 'member') => {
       const old = which === 'host' ? hostNode : memberNode;
       await stopDevNode(old); children.splice(children.indexOf(old), 1);
+    };
+    const up = async (which: 'host' | 'member') => {
       const fresh = which === 'host' ? await startDevNode(hostEnv, host) : await startDevNode(memberEnv, member, options.memberEnv);
       children.push(fresh);
       if (which === 'host') { hostNode = fresh; listen(fresh); return signIn(hostEnv, host); }
       memberNode = fresh; return signIn(memberEnv, member);
     };
-    return { root, host, member, hostEnv, memberEnv, hostAuth, memberAuth, team, clusterId, requests, hostOutput: () => hostOutput, restart, stop };
+    const restart = async (which: 'host' | 'member') => { await down(which); return up(which); };
+    return { root, host, member, hostEnv, memberEnv, hostAuth, memberAuth, team, clusterId, requests, hostOutput: () => hostOutput, down, up, restart, stop };
   } catch (error) { await stop(); throw error; }
 }

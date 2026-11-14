@@ -45,7 +45,9 @@ export function endText(label: string, view: TeamRequestView): string | null {
   if (view.state === "cancelled") return null;
   const part = view.assignments.find((entry) => !entry.delegated);
   if (view.state === "done") return `${label} answered:\n\n${(part?.result ?? "").trim().slice(0, ANSWER_CHARS) || "(an empty answer)"}`;
-  return `${label} ${view.state === "needs_you" ? "is waiting for you" : "stopped without a result"}${part?.reason ? `: ${teamReasonText(part.reason)}` : ""}. Ask me to run it again if you want.\n\n${formatTeamRequest(view)}`;
+  // The reason may itself begin with "stopped without a result"; it is not said twice.
+  const why = part?.reason ? teamReasonText(part.reason).replace(/^stopped without a result;\s*/, "") : "";
+  return `${label} ${view.state === "needs_you" ? "is waiting for you" : "stopped without a result"}${why ? `: ${why}` : ""}. Ask me to run it again if you want.\n\n${formatTeamRequest(view)}`;
 }
 
 export async function followTeamRequest(accountId: string, ref: TeamRef, label: string, requestId: string): Promise<void> {
