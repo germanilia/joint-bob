@@ -279,6 +279,16 @@ Ask Bob for an assistant "for" one of the clusters you joined on this machine ("
 - **Who can change it.** Its creator and any admin of the host machine who is in the cluster, on the host; and any admin of the cluster's manager machine, from that machine. A cluster has a manager machine and no admin role for people, so the manager machine's admins are the cluster's admins. **Edit** changes its name and standing instructions and removes skills it should not have; **Delete** removes it for everyone. Other members see it listed without those buttons. New skills and sign-ins are added on the host, by its creator, in the assistant's own Resources: a sign-in needs a person at the host's browser.
 - **Audit log.** The host records under each cluster assistant who created it, every ask (who, from which machine, and for what, never the words of the ask or the answer), and every change and deletion. A change made from the manager machine names that machine. **Audit log** on its row shows it to those who may change it, on the host and on the manager machine.
 
+## Teams
+
+A team (see `docs/assistant-teams.md`) runs on one machine of a cluster, usually an always-on one. Bob can steer the teams of every cluster you joined, wherever they run, in his chat or in his Telegram bot:
+
+- **"What is the team doing?" / "what is qa working on?"** is answered at once: who is on the team, whether each member is ready, and the team's requests with their state.
+- **"Ask the team to …" / "have qa check …"** shows who it goes to and on which machine, and waits for **Send it**. The work runs on the team's machine as you, with the sign-ins and tools that member holds. Bob posts its answer in the chat when it is done (he follows it for half an hour; `/status` in the team's group, or the team in the app, shows it after that).
+- **"Stop the team's request" / "run it again"** each wait for a button; a retry starts a new request and retires the old one.
+
+Bob only knows the teams of a cluster he has looked at in the last minute, so the first message after a restart that names a role (rather than the word *team* or the cluster) may not find it; ask again.
+
 ## Clusters
 
 The **Clusters** tab shows what other people in your clusters are running, grouped by machine, and only through what they share with you: a project shared with a cluster, and its conversations. Your own machines are not listed (they are on the board). Click a card to read that conversation; nothing on this tab can act on another person's agent. Bob can answer questions about them ("what is the team doing?"): when a message is about other people's work, Bob is given a short summary of the shared agents that are running, and the line under the reply says so.

@@ -65,9 +65,15 @@ export async function hubTeams(session: AuthSession, fresh = false): Promise<Hub
   return teams;
 }
 
-/** What a message may name when it speaks of a team: team and role names from the last look, never a wait for the network. */
-export function knownTeamTerms(accountId: string): string[] {
-  return (held.get(accountId)?.teams ?? []).flatMap(team => [team.clusterName.toLowerCase(), ...team.members.map(member => member.role)]);
+/** The teams from the last look, never a wait for the network; a stale look is refreshed in the background for the next message. */
+const refreshing = new Set<string>();
+export function knownTeams(session: AuthSession): HubTeam[] {
+  const known = held.get(session.accountId);
+  if ((!known || Date.now() - known.at >= CACHE_MS) && !refreshing.has(session.accountId)) {
+    refreshing.add(session.accountId);
+    void hubTeams(session, true).catch(error => console.warn(`Could not refresh the teams: ${error instanceof Error ? error.message : error}`)).finally(() => refreshing.delete(session.accountId));
+  }
+  return known?.teams ?? [];
 }
 
 async function teamFor(session: AuthSession, teamId: string): Promise<{ team: HubTeam; member: ClusterMember }> {
