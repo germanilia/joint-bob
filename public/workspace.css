@@ -834,3 +834,22 @@
 
 /* The end of a long list that draws in chunks (app/long-scroll.js): a line the scroll box watches, whatever list it is in. */
 .long-scroll-sentinel { display: block !important; height: 1px; flex: none; margin: 0 !important; padding: 0 !important; pointer-events: none; }
+
+/* ---------- the Inbox's filters and Select (app/inbox-filters.js): the phone's Home and the Show all page ---------- */
+.inbox-tools { display: grid; gap: 8px; margin: 0 0 8px; }
+.inbox-tools.phone-only { display: none; }
+body.focus-ui.view-projects.ws-column-inbox .inbox-tools.phone-only { display: grid; padding: 0 12px 6px; }
+.inbox-tools-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.inbox-tools-filters .multi-select { flex: 1 1 140px; min-width: 0; }
+.inbox-tools-filters .multi-select-trigger, .inbox-range, .inbox-select-toggle, .inbox-bar-button { min-height: 44px; border-radius: 12px; font: 600 14px var(--sans); }
+.inbox-tools-filters .multi-select-trigger { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-range { flex: 1 1 150px; min-width: 0; padding: 0 10px; }
+.inbox-select-toggle[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+.inbox-tools-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 4px; }
+.inbox-tools-bar[hidden] { display: none; }
+.inbox-bar-count { flex: 1 1 auto; color: var(--muted); font: 600 14px var(--sans); }
+.inbox-bar-button.danger:not(:disabled) { color: var(--danger); }
+.inbox-bar-button:disabled { opacity: 0.45; }
+.ws-check { flex: none; width: 20px; height: 20px; margin-top: 4px; border: 2px solid var(--line-strong); border-radius: 6px; box-sizing: border-box; }
+.ws-row.picked { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.ws-row.picked .ws-check { border-color: var(--accent); background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 10.5 3.5 3.5L15 6.5'/%3E%3C/svg%3E") center / 100% no-repeat; }

@@ -19,6 +19,7 @@ import { isControlCenterOpen, openConversation } from "./control-center.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { startGlobalConversation } from "./new-session.js";
+import { createInboxToolbar, filterInbox, inboxFilterKey, inboxSignature, isSelected, isSelecting, onInboxView, toggleSelected } from "./inbox-filters.js";
 import { drawChunked } from "./long-scroll.js";
 import { openQuickNote } from "./quick-notes.js";
 import { openSpotlight } from "./spotlight.js";
@@ -374,6 +375,10 @@ function cardsIn(groupId) {
   return groupId === "earlier" ? earlierRows : cards.filter((card) => card.column === groupId);
 }
 
+/** What the phone's Home and the Show all page list: the group with the project and Show filters of inbox-filters.js applied. */
+const filteredIn = (groupId) => filterInbox(groupId, cardsIn(groupId));
+const allCards = () => [...cards, ...earlierRows];
+
 function isActiveCard(card) {
   const projectId = state.activeConversationProjectId || state.activeProjectId;
   if (!state.activeSessionId && !state.activeSessionPath) return false;
@@ -397,7 +402,8 @@ function cardLine(card) {
   return [card.projectName, what].filter(Boolean).join(" · ");
 }
 
-function cardRow(card, group, testid) {
+/** `selectable`: the row is part of a checklist while Select is on (inbox-filters.js): pressing it chooses it instead of opening it. */
+function cardRow(card, group, testid, selectable = false) {
   const row = document.createElement("button");
   row.type = "button";
   row.className = "ws-row";
@@ -423,6 +429,20 @@ function cardRow(card, group, testid) {
   line.textContent = cardLine(card);
   copy.append(top, line);
   row.append(dot, copy);
+  if (selectable && isSelecting()) {
+    const box = document.createElement("i");
+    box.className = "ws-check";
+    box.setAttribute("aria-hidden", "true");
+    row.prepend(box);
+    row.setAttribute("aria-pressed", String(isSelected(card)));
+    row.classList.toggle("picked", isSelected(card));
+    row.addEventListener("click", () => {
+      toggleSelected(card);
+      row.setAttribute("aria-pressed", String(isSelected(card)));
+      row.classList.toggle("picked", isSelected(card));
+    });
+    return row;
+  }
   row.addEventListener("click", () => {
     closeGroupPage();
     openConversation(card).catch((error) => toast.error(error.message));
@@ -431,6 +451,18 @@ function cardRow(card, group, testid) {
 }
 
 const groupsHost = byId("workspaceGroups");
+/** After Mark read or Delete the board and the Earlier list are read again at once. */
+function refreshAfterChange() {
+  earlierReadAt = 0;
+  scheduleGroupsRefresh(0);
+}
+// The phone's Home filters and selects above its groups (the desktop's column keeps every row; its Show all page has its own bar).
+const phoneToolbar = createInboxToolbar({
+  id: "inboxHome", allCards, afterChange: refreshAfterChange,
+  visibleCards: () => GROUPS.filter((group) => group.id !== "needs-you").flatMap((group) => filteredIn(group.id)),
+});
+phoneToolbar.root.classList.add("phone-only");
+groupsHost.before(phoneToolbar.root);
 // A group's label and its "nothing here" line; the phone sets taller ones (phone.css: --ws-lab-height, --ws-empty-height).
 const LABEL_HEIGHT = 43;
 const EMPTY_HEIGHT = 26;
@@ -452,7 +484,10 @@ function renderGroups(refit = true) {
   if (!groupsShown()) return;
   // Words being written for Push it on on a card are not drawn away; the card draws the groups again when it closes.
   if (groupsHost.querySelector(".ws-wait.pushing")) return;
-  const counts = GROUPS.map((group) => cardsIn(group.id).length);
+  // The phone's Home applies the project and Show filters (inbox-filters.js); the desktop column lists everything.
+  phoneToolbar.update();
+  const listIn = (groupId) => (phoneHomeShown() ? filteredIn(groupId) : cardsIn(groupId));
+  const counts = GROUPS.map((group) => listIn(group.id).length);
   const sample = groupsHost.querySelector(".ws-row");
   const rowHeight = sample ? sample.getBoundingClientRect().height + 2 : 52;
   // The phone's Home shows what needs you as cards with their actions (home.js), as the desktop's Home does.
@@ -484,7 +519,7 @@ function renderGroups(refit = true) {
     }
   }
   // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
-  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, GROUPS.map((group, index) => cardsIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)]))]);
+  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)]))]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
   groupsHost.dataset.signature = signature;
   const scroll = groupsHost.scrollTop;
@@ -500,7 +535,8 @@ function renderGroups(refit = true) {
     name.textContent = group.title;
     const count = document.createElement("i");
     count.dataset.testid = `workspace-group-count-${group.id}`;
-    count.textContent = loaded ? String(counts[index]) : "…";
+    const total = cardsIn(group.id).length;
+    count.textContent = !loaded ? "…" : total === counts[index] ? String(counts[index]) : `${counts[index]} of ${total}`;
     label.append(name, count);
     if (counts[index] > shown[index] || (counts[index] && room && shown[index] === 0)) {
       const all = document.createElement("button");
@@ -516,13 +552,13 @@ function renderGroups(refit = true) {
     if (loaded && !counts[index]) {
       const empty = document.createElement("p");
       empty.className = "ws-empty";
-      empty.textContent = group.empty;
+      empty.textContent = total ? "Nothing matches the filters." : group.empty;
       section.append(empty);
     }
     if (cardsHere && group.id === "needs-you") {
-      if (counts[index]) section.append(needCard(cardsIn(group.id)));
-    } else if (phoneHomeShown()) for (const card of cardsIn(group.id)) chunked.push({ make: () => cardRow(card, group, "workspace-group-row"), into: section });
-    else for (const card of cardsIn(group.id).slice(0, shown[index])) section.append(cardRow(card, group, "workspace-group-row"));
+      if (counts[index]) section.append(needCard(listIn(group.id)));
+    } else if (phoneHomeShown()) for (const card of listIn(group.id)) chunked.push({ make: () => cardRow(card, group, "workspace-group-row", true), into: section });
+    else for (const card of listIn(group.id).slice(0, shown[index])) section.append(cardRow(card, group, "workspace-group-row"));
     return section;
   }));
   if (phoneHomeShown()) {
@@ -621,6 +657,12 @@ setInterval(() => {
 const page = byId("workspaceGroupPage");
 const pageList = byId("workspaceGroupList");
 let pageGroup = "needs-you";
+const pageToolbar = createInboxToolbar({ id: "inboxPage", allCards, visibleCards: () => filteredIn(pageGroup), afterChange: refreshAfterChange });
+pageList.before(pageToolbar.root);
+onInboxView(() => {
+  renderGroups();
+  if (!page.hidden) renderGroupPage();
+});
 
 export function openGroupPage(groupId) {
   pageGroup = groupId;
@@ -646,25 +688,26 @@ function renderGroupPage() {
     tab.setAttribute("role", "tab");
     tab.setAttribute("aria-selected", String(item.id === group.id));
     tab.dataset.testid = `workspace-group-tab-${item.id}`;
-    tab.append(item.title, Object.assign(document.createElement("b"), { textContent: String(cardsIn(item.id).length) }));
+    tab.append(item.title, Object.assign(document.createElement("b"), { textContent: String(filteredIn(item.id).length) }));
     tab.addEventListener("click", () => { pageGroup = item.id; renderGroupPage(); });
     return tab;
   }));
-  const items = cardsIn(group.id);
+  const items = filteredIn(group.id);
+  pageToolbar.update();
   const scroll = pageList.scrollTop;
   pageList.replaceChildren();
   const entries = items.map((card) => () => {
-    const row = cardRow(card, group, "workspace-group-page-row");
+    const row = cardRow(card, group, "workspace-group-page-row", true);
     row.classList.add("wide");
     return row;
   });
   if (!items.length) {
     const empty = document.createElement("p");
     empty.className = "ws-empty";
-    empty.textContent = loaded ? group.empty : "Loading…";
+    empty.textContent = !loaded ? "Loading…" : cardsIn(group.id).length ? "Nothing matches the filters." : group.empty;
     entries.push(empty);
   }
-  drawChunked(pageList, entries, { key: group.id });
+  drawChunked(pageList, entries, { key: `${group.id}|${inboxFilterKey()}` });
   // Emptying a scroll box sends it to its top; a refresh of the same group puts it back (a new group's key resets it after this).
   pageList.scrollTop = scroll;
 }
