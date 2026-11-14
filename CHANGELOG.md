@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.301.3 — 2026-11-14
+
+- A worktree whose pull request was merged can open another: the next pull request from it starts on a new branch, where it was refused with "already merged".
+
 ## 2.301.2 — 2026-11-14
 
 - On the phone, the screens after the Inbox look like the desktop's inbox: conversation and project lists are rows with a serif title and one quiet line, the conversation reads as a page (your messages in a soft bubble, queued messages in one soft box with quiet buttons), and its details use the same cards as the desktop's right column.
