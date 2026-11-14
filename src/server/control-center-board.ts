@@ -1,5 +1,5 @@
 import type { AuthSession } from "../auth.js";
-import { buildBoard, type BoardCard } from "../control-center/board.js";
+import { buildBoard, type BoardCard, type BoardProject } from "../control-center/board.js";
 import { otherPersonsMachine } from "../control-center/clusters-data.js";
 import { bobStartedKeys } from "../control-center/started.js";
 import { listAutoResponders } from "../conversation-auto-respond.js";
@@ -16,7 +16,14 @@ import type { ProjectRecord } from "../types.js";
 import { projectsWithSharedNames } from "./projects.js";
 import { noteUnannouncedRunChanges, sharedProjectSessions } from "./sessions-helpers.js";
 
-export interface LoadedBoard { cards: BoardCard[]; projects: ProjectRecord[] }
+export interface LoadedBoard { cards: BoardCard[]; projects: ProjectRecord[]; earlier?: EarlierConversation[] }
+
+/** A conversation that is not on the board (nothing runs, nothing waits): the workspace's Earlier group lists them so nothing is left out of the Inbox. */
+export interface EarlierConversation {
+  projectId: string; projectName: string; conversationId: string; sessionId: string; path: string; harnessId: string;
+  agentLabel: string; agentModel: string | null; title: string; updatedAt: string | null; done: boolean;
+}
+const EARLIER_LIMIT = 2000;
 
 /**
  * A conversation another of the person's machines runs has its summary and its turn's activity there: each such machine is asked
@@ -42,7 +49,7 @@ async function fillFromOtherMachines(cards: BoardCard[]): Promise<void> {
 }
 
 /** The board for one signed-in person: running and review-ready conversations across every project they can see. */
-export async function loadBoard(session: AuthSession): Promise<LoadedBoard> {
+export async function loadBoard(session: AuthSession, options: { earlier?: boolean } = {}): Promise<LoadedBoard> {
   const [projects, autoResponders, bobStarted] = await Promise.all([
     projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }),
     listAutoResponders(),
@@ -75,5 +82,44 @@ export async function loadBoard(session: AuthSession): Promise<LoadedBoard> {
     snoozeOf: (projectId, conversationId) => snoozes.get(`${projectId}:${conversationId}`) ?? null,
   });
   await fillFromOtherMachines(cards);
-  return { cards, projects };
+  return { cards, projects, earlier: options.earlier ? earlierConversations(groups, cards) : undefined };
+}
+
+/** Every other conversation of the projects read for the board, newest first; scheduled runs, drafts and read-only copies are not conversations of the person's. */
+export function earlierConversations(groups: BoardProject[], cards: BoardCard[]): EarlierConversation[] {
+  const onBoard = new Set(cards.map((card) => `${card.projectId}:${card.conversationId}`));
+  return groups.flatMap((group) => group.sessions
+    .filter((entry) => !entry.readOnly && !entry.cronTaskId && !entry.draft && !onBoard.has(`${group.projectId}:${entry.conversationId ?? entry.id}`))
+    .map((entry): EarlierConversation => ({
+      projectId: group.projectId, projectName: group.projectName, conversationId: entry.conversationId ?? entry.id, sessionId: entry.id, path: entry.path,
+      harnessId: entry.harnessId, agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, updatedAt: entry.updatedAt ?? null, done: Boolean(entry.doneAt),
+    })))
+    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+    .slice(0, EARLIER_LIMIT);
+}
+
+/** A conversation marked done, as the list's Past view shows it. */
+export interface PastConversation {
+  projectId: string; projectName: string; conversationId: string; sessionId: string; path: string; harnessId: string;
+  agentLabel: string; agentModel: string | null; title: string; doneAt: string; updatedAt: string | null;
+  /** The running summary, cut: the list searches it, the panel shows it. */
+  summary: string | null;
+}
+const PAST_LIMIT = 300;
+const PAST_SUMMARY_CHARACTERS = 800;
+
+/** The newest conversations the person marked done, across every project they can see, for the Past view and its search. */
+export async function loadPast(session: AuthSession): Promise<PastConversation[]> {
+  const [projects, theirs] = await Promise.all([projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }), otherPersonsMachine()]);
+  const found = await Promise.all(projects.map(async (project) => (await sharedProjectSessions(project, session.userId, session.accountId))
+    .filter((entry) => entry.doneAt && !entry.readOnly && !entry.cronTaskId && !entry.draft && !theirs(entry.executionNodeId))
+    .map((entry): PastConversation => {
+      const conversationId = entry.conversationId ?? entry.id;
+      return {
+        projectId: project.id, projectName: project.name, conversationId, sessionId: entry.id, path: entry.path, harnessId: entry.harnessId,
+        agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, doneAt: entry.doneAt!, updatedAt: entry.updatedAt ?? null,
+        summary: storedDigest(project.id, conversationId)?.summary?.slice(0, PAST_SUMMARY_CHARACTERS) ?? null,
+      };
+    })));
+  return found.flat().sort((a, b) => b.doneAt.localeCompare(a.doneAt)).slice(0, PAST_LIMIT);
 }

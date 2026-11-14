@@ -67,7 +67,7 @@ for (const previous of ["", "Unsent previous conversation"]) {
       await openProject(page);
       await page.evaluate(async () => (await import("/app/new-session.js")).startNewHarnessConversation("pi"));
       await submitConversation(page);
-      assert.equal(await page.evaluate(async () => (await import("/app/state.js")).state.activeSessionPath), "new");
+      const previousPath = await page.evaluate(async () => (await import("/app/state.js")).state.activeSessionPath);
       await page.evaluate(async (text) => {
         (await import("/app/composer.js")).setInputValue(text);
       }, previous);
@@ -77,7 +77,7 @@ for (const previous of ["", "Unsent previous conversation"]) {
       assert.deepEqual(await page.evaluate(async () => {
         const { state } = await import("/app/state.js");
         return { path: state.activeSessionPath, next: state.newSessionDraft.sessionPath, text: document.querySelector<HTMLTextAreaElement>("#messageInput")!.value };
-      }), { path: "new", next: "new", text: previous }, "same-harness unsent composer is still active before opening references");
+      }), { path: previousPath, next: "new", text: previous }, "same-harness unsent composer is still active before opening references");
       await submitConversation(page);
       assert.equal(await page.locator("#messageInput").inputValue(), references, "selected references replace the previous unsent composer");
     } finally {

@@ -1,9 +1,7 @@
 import { harnessIdFromPath, harnessOption } from "../harness-metadata.js";
 import { api, savePreferencesInBackground } from "./api.js";
 import { classificationPicker } from "./classification.js";
-import { loadHarnesses, setComposerEnabled } from "./chat-controls.js";
-import { clearChat, showChatEmptyState } from "./chat-transcript.js";
-import { setMobileView } from "./layout.js";
+import { loadHarnesses } from "./chat-controls.js";
 import { elements } from "./elements.js";
 import { rememberDraft, restoreDraft } from "./composer.js";
 import { selectProject } from "./project-selection.js";
@@ -14,7 +12,7 @@ import { rememberRecentSession } from "./recents.js";
 import { createSearchableSelect } from "./searchable-select.js";
 import { renderSessionColorSwatches, selectedSessionColor } from "./session-identity.js";
 import { chooseOption, toast } from "./shell.js";
-import { closeSocket, openSession } from "./socket.js";
+import { openSession } from "./socket.js";
 import { state } from "./state.js";
 import { createConversationWorktree } from "./worktrees.js";
 
@@ -168,6 +166,8 @@ export function addOptimisticSession(sessionId, sessionPath, title, color, class
     draft: true,
   };
   state.sessions = [session, ...state.sessions.filter((candidate) => candidate.id !== sessionId)];
+  const pending = state.pendingWorktreeSessions.get(sessionId);
+  if (pending) pending.session = session;
   rememberRecentSession(session);
 }
 
@@ -403,27 +403,18 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
       await selectProject(projectId);
       if (!elements.newSessionNameDialog.open || state.newSessionDraft !== draft || draft.projectId !== projectId) return;
     }
-    let worktree = state.worktrees.find((candidate) => candidate.id === worktreeId);
+    const worktree = state.worktrees.find((candidate) => candidate.id === worktreeId);
     if (worktreeId === NEW_WORKTREE) {
-      // Copying the project takes a while: show the conversation at once and start it when the worktree is ready.
-      elements.newSessionNameDialog.close();
-      state.newSessionDraft = null;
-      closeSocket();
-      state.activeSessionId = sessionId;
-      state.activeSessionPath = draft.sessionPath || "new";
-      clearChat();
-      elements.sessionTitle.textContent = title || draft.defaultTitle;
-      setComposerEnabled(false);
-      setMobileView("chat");
-      showChatEmptyState("Creating worktree…", "Copying the project. The conversation starts here when it is ready.");
-      try { worktree = await createConversationWorktree(projectId, title || draft.defaultTitle); }
-      catch (error) {
-        if (state.activeSessionId === sessionId) showChatEmptyState("The worktree could not be created", error.message);
-        throw error;
-      }
-      // Someone opened another conversation while it was copying: leave them there.
-      if (state.activeSessionId !== sessionId) return;
-      worktreeId = worktree.id;
+      const pending = {
+        projectId, sessionPath: draft.sessionPath, title: title || draft.defaultTitle, color,
+        nodeId: node.id, secretIds, prompts: [], worktree: null, error: null,
+      };
+      state.pendingWorktreeSessions.set(sessionId, pending);
+      pending.ready = createConversationWorktree(projectId, pending.title).then(
+        (created) => { pending.worktree = created; },
+        (error) => { pending.error = error; },
+      );
+      worktreeId = null;
     }
     state.newSessionSecretAccountIds = secretIds;
     state.newSessionWorktreeId = worktreeId;
@@ -436,7 +427,7 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
     openSession(draft.sessionPath, title || draft.defaultTitle);
     // openSession first remembers the old composer, which may share the "new" path.
     if (draft.referenceDraft) {
-      state.drafts.set(draft.sessionPath, draft.referenceDraft);
+      state.drafts.set(state.activeSessionPath, draft.referenceDraft);
       restoreDraft();
     }
     state.pendingSessionTitle = title || null;

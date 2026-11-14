@@ -351,12 +351,27 @@ export const GROUPS = [
   { id: "needs-you", title: "Needs you", dot: "need", empty: "Nothing waits for you." },
   { id: "running", title: "Running", dot: "run", empty: "Nothing is running." },
   { id: "review", title: "To review", dot: "rev", empty: "Nothing to review." },
+  // Every other conversation of every project, so the Inbox leaves nothing out (the server lists them with the board).
+  { id: "earlier", title: "Earlier", dot: "old", empty: "No earlier conversations." },
 ];
 let cards = [];
 let loaded = false;
+/** The conversations that are not on the board, read at most once a minute (they change slowly and there can be thousands). */
+let earlierRead = [];
+let earlierRows = [];
+let earlierReadAt = 0;
+const EARLIER_EVERY_MS = 60_000;
+
+const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
+
+/** A refresh of the board can be newer than the last read of the rest: what is on the board is not listed twice. */
+function syncEarlier() {
+  const onBoard = new Set(cards.map(cardKey));
+  earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row)));
+}
 
 function cardsIn(groupId) {
-  return cards.filter((card) => card.column === groupId);
+  return groupId === "earlier" ? earlierRows : cards.filter((card) => card.column === groupId);
 }
 
 function isActiveCard(card) {
@@ -419,8 +434,7 @@ const groupsHost = byId("workspaceGroups");
 // A group's label and its "nothing here" line; the phone sets taller ones (phone.css: --ws-lab-height, --ws-empty-height).
 const LABEL_HEIGHT = 43;
 const EMPTY_HEIGHT = 26;
-/** The phone's Home shows this many rows of Running and To review before Show all; the deck's bar is this tall. */
-const PHONE_ROWS = 5;
+/** The deck's bar is this tall. */
 const DECK_BAR = 48;
 function cssHeight(name, fallback) {
   return parseFloat(getComputedStyle(groupsHost).getPropertyValue(name)) || fallback;
@@ -450,9 +464,9 @@ function renderGroups(refit = true) {
   let budget = room - GROUPS.length * cssHeight("--ws-lab-height", LABEL_HEIGHT) - counts.filter((count) => !count).length * cssHeight("--ws-empty-height", EMPTY_HEIGHT);
   const shown = GROUPS.map(() => 0);
   if (phoneHomeShown()) {
-    // The phone's Home scrolls with the page: Needs you is one deck of every card, the other groups show their first few
-    // rows and Show all opens the whole list.
-    GROUPS.forEach((group, index) => { shown[index] = group.id === "needs-you" && cardsHere ? counts[index] : Math.min(counts[index], PHONE_ROWS); });
+    // The phone's Home scrolls: Needs you is one deck of every card and the other groups list every conversation, one
+    // long scroll drawn in chunks (long-scroll.js), with no Show all.
+    GROUPS.forEach((group, index) => { shown[index] = counts[index]; });
     budget = 0;
   } else if (cardsHere && counts[GROUPS.findIndex((group) => group.id === "needs-you")]) {
     const index = GROUPS.findIndex((group) => group.id === "needs-you");
@@ -473,6 +487,8 @@ function renderGroups(refit = true) {
   const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, GROUPS.map((group, index) => cardsIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)]))]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
   groupsHost.dataset.signature = signature;
+  const scroll = groupsHost.scrollTop;
+  const chunked = [];
   groupsHost.replaceChildren(...GROUPS.map((group, index) => {
     const section = document.createElement("section");
     section.className = "ws-group";
@@ -505,9 +521,15 @@ function renderGroups(refit = true) {
     }
     if (cardsHere && group.id === "needs-you") {
       if (counts[index]) section.append(needCard(cardsIn(group.id)));
-    } else for (const card of cardsIn(group.id).slice(0, shown[index])) section.append(cardRow(card, group, "workspace-group-row"));
+    } else if (phoneHomeShown()) for (const card of cardsIn(group.id)) chunked.push({ make: () => cardRow(card, group, "workspace-group-row"), into: section });
+    else for (const card of cardsIn(group.id).slice(0, shown[index])) section.append(cardRow(card, group, "workspace-group-row"));
     return section;
   }));
+  if (phoneHomeShown()) {
+    drawChunked(groupsHost, chunked, { key: "phone-home" });
+    // A refresh draws the same rows again where the person was.
+    groupsHost.scrollTop = scroll;
+  }
   // The first render measures a row; a different height deals again once.
   const measured = groupsHost.querySelector(".ws-row");
   const measuredCard = groupsHost.querySelector(".ws-wait");
@@ -539,7 +561,9 @@ async function readBoard() {
   refreshing = (async () => {
     do {
       again = false;
-      const board = await api("/api/control-center/board?look=1");
+      const wantEarlier = Date.now() - earlierReadAt > EARLIER_EVERY_MS;
+      const board = await api(`/api/control-center/board?look=1${wantEarlier ? "&earlier=1" : ""}`);
+      if (board.earlier) { earlierRead = board.earlier; earlierReadAt = Date.now(); }
       acceptCards(board.cards || []);
     } while (again);
   })().catch((error) => console.warn("Could not read the workspace groups", error)).finally(() => { refreshing = null; });
@@ -547,8 +571,13 @@ async function readBoard() {
 }
 
 function acceptCards(next) {
+  const nextKeys = new Set(next.map(cardKey));
+  // A conversation left the board (finished, marked done): it now belongs to Earlier, which is read again at once.
+  const left = cards.some((card) => !nextKeys.has(cardKey(card)));
   cards = next;
   loaded = true;
+  syncEarlier();
+  if (left && started) { earlierReadAt = 0; scheduleGroupsRefresh(0); }
   // The phone's greeting and its Inbox tab count them (phone-ui.js).
   window.dispatchEvent(new CustomEvent("workspace-groups-counted", { detail: Object.fromEntries(GROUPS.map((group) => [group.id, cardsIn(group.id).length])) }));
   // Home (home.js) draws the same cards in the middle.

@@ -37,6 +37,15 @@ export async function nativeUiFixture(t: TestContext, extraEnv: (root: string) =
 }
 
 /** Bob's page opens with his chat folded into the "Ask Bob" button; tests that write to the chat open it first. */
+/** Bob's chat floats over the page: a test that uses the board and the chat together parks it at the bottom right, off the board's buttons. */
+export async function parkBobChat(page: Page) {
+  await page.getByTestId("control-chat").evaluate((chat) => {
+    const box = chat.getBoundingClientRect();
+    chat.style.left = `${innerWidth - box.width - 8}px`;
+    chat.style.top = `${innerHeight - box.height - 8}px`;
+  });
+}
+
 export async function openBobChat(page: Page) {
   const fab = page.getByTestId("bob-fab-chat");
   await fab.waitFor({ state: "visible" });

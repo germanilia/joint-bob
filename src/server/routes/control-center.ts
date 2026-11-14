@@ -23,7 +23,8 @@ import { knowledgeDirectory, readSubjects } from "../../project-knowledge.js";
 import { projectsWithSharedNames } from "../projects.js";
 import { sharedProjectSessions } from "../sessions-helpers.js";
 import { startMemorySync } from "../../control-center/memory-sync.js";
-import { loadBoard } from "../control-center-board.js";
+import { loadBoard, loadPast } from "../control-center-board.js";
+import { loadSystemMessages } from "../control-center-system.js";
 import { startControlCenterWatch } from "../control-center-watch.js";
 import { closeFromBoard, pushFromBoard, replyFromBoard, startReviewChecks } from "../control-center-review-check.js";
 import { BobActionError } from "../../control-center/bob-actions.js";
@@ -64,12 +65,23 @@ app.get("/api/control-center/board", async (request, response, next) => {
     // Opening the control center is how Bob learns who to tell about things that happen later. The workspace's left column
     // reads the same board for its three groups (`?look=1`); a glance at those is not opening the control center.
     if (request.query.look !== "1") rememberBobAccount(await bobDatabase(), actingAccountFromSession(session));
-    const { cards, projects } = await loadBoard(session);
+    // `?earlier=1` also lists every conversation that is not on the board, for the workspace's Earlier group.
+    const { cards, projects, earlier } = await loadBoard(session, { earlier: request.query.earlier === "1" });
     // The project's own color goes along: the board and Bob's chat draw each project in it.
-    response.json({ cards, projects: projects.map((project) => ({ id: project.id, name: project.name, color: project.color ?? null })) });
+    response.json({ cards, earlier, projects: projects.map((project) => ({ id: project.id, name: project.name, color: project.color ?? null })) });
   } catch (error) {
     next(error);
   }
+});
+
+/** Conversations marked done, for the list's Past view and its search. They are read when the person asks for them, not with the board. */
+app.get("/api/control-center/past", async (_request, response, next) => {
+  try { response.json({ conversations: await loadPast(response.locals.authSession as AuthSession) }); } catch (error) { next(error); }
+});
+
+/** What is wrong with this installation right now (a missing key, a harness nobody signed in, a machine that does not answer). */
+app.get("/api/control-center/system", async (_request, response, next) => {
+  try { response.json({ messages: await loadSystemMessages(response.locals.authSession as AuthSession) }); } catch (error) { next(error); }
 });
 
 const snoozeSchema = z.object({

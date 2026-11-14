@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
+import { nativeUiFixture, openBobChat, parkBobChat } from "./native-ui-fixture.js";
 
 const card = (overrides: Record<string, unknown>) => ({
   projectId: "p1", projectName: "Contigos · Julian", conversationId: "c1", sessionId: "c1", path: "/c1", title: "Prod 5xx", column: "needs-you", agentId: "claude", agentLabel: "Claude", agentModel: null,
@@ -50,6 +50,7 @@ test("a step waiting for your OK shows under Needs you with answer buttons, and 
 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
+  await parkBobChat(page);
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');

@@ -5,6 +5,35 @@
 - Whether a message is about an assistant team is now a property of Bob's decision (the decision model is told the teams of your clusters and their roles), instead of matching the word "team" or a role name: "have qa check the login" is recognised, "the team lunch" is not.
 - What Bob promised to bring back from a team is kept on disk and survives a restart of your machine or of the team's host: the host tells your machine when a request ends, a machine that was away is told on return, and nothing polls.
 
+## 2.301.5 — 2026-11-14
+
+- The message box in the conversation list has a single border: focusing it no longer draws a second green one inside the box.
+
+## 2.301.4 — 2026-11-14
+
+- The Inbox lists every conversation: a fourth group, Earlier, holds all the conversations that are not running or waiting, from every project, on the desktop and the phone. It is read with the board at most once a minute.
+
+## 2.301.3 — 2026-11-14
+
+- A worktree whose pull request was merged can open another: the next pull request from it starts on a new branch, where it was refused with "already merged".
+
+## 2.301.2 — 2026-11-14
+
+- On the phone, the screens after the Inbox look like the desktop's inbox: conversation and project lists are rows with a serif title and one quiet line, the conversation reads as a page (your messages in a soft bubble, queued messages in one soft box with quiet buttons), and its details use the same cards as the desktop's right column.
+- The phone's Inbox lists every conversation of Running and To review in one scroll, with no Show all. It showed only the first five of each.
+
+## 2.301.1 — 2026-11-14
+
+- The inbox, search, system messages and floating Ask Bob of 2.301.0 are released with this version: 2.301.0 was not published, because two checks of the page's source (no markup built from strings, a short list of browser-stored settings) failed on it. The inbox now draws its icons and marked words from nodes, and its width, grouping and the places of Ask Bob and Bob's window are on the list of settings the browser keeps.
+
+## 2.301.0 — 2026-11-14
+
+- Live agents are an inbox: a narrower list on the left and a wider panel beside it with Summary, Chat and Steps as tabs. What waits for you is part of the summary, and the tool and shell calls have their own tab. Open ↗ and + New conversation sit in one row and look different.
+- Search finds conversations by words, typos and the start of a word (*makr* finds *mark*), over titles, projects, agents, folders and what was said, past conversations too. Inbox, Past, All, starred and folders narrow the list, and it groups by project or by date.
+- Pin, star, put in a folder or delete a conversation from its row or the panel. Pinned and starred conversations are kept: no automatic cleanup deletes them. Delete is immediate with an Undo, and a kept conversation asks twice.
+- System messages come first in the list, in colour, each saying what it means and how to fix it: Claude Code not signed in, no key for the decision model, Guardian off, a machine of yours offline. They go away by themselves once fixed and cannot be dismissed.
+- Ask Bob can be dragged anywhere, and Bob's chat opens as a window that floats over the page; move it by its head and resize it by its corner.
+
 ## 2.300.1 — 2026-11-14
 
 - Cancelling a team request with `/cancel` or Bob's Stop it now stops the turn that is running; it kept going before.
