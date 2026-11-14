@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.301.5 — 2026-11-14
+
+- The message box in the conversation list has a single border: focusing it no longer draws a second green one inside the box.
+
 ## 2.301.4 — 2026-11-14
 
 - The Inbox lists every conversation: a fourth group, Earlier, holds all the conversations that are not running or waiting, from every project, on the desktop and the phone. It is read with the board at most once a minute.
