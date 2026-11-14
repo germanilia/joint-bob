@@ -433,6 +433,10 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
     handleSocketPayload({ type: "toolStart", toolName: "Bash", toolCallId: "live-1", toolTarget: { target: "npm run migrate" } });
   });
   assert.match(await working.innerText(), /Running Bash · npm run migrate/);
+  // The running step is named once: the working row shows it, so its marker stays hidden.
+  const runningMarkers = page.locator("#messages [data-testid='activity-marker'][data-status='running']");
+  assert.ok(await runningMarkers.count() >= 1, "the turn's marker is running");
+  assert.equal(await runningMarkers.evaluateAll((nodes) => nodes.filter((node) => getComputedStyle(node).display !== "none").length), 0, "a running marker is hidden while the working row shows");
   await page.evaluate(async () => {
     const { handleSocketPayload } = await import("/app/socket.js");
     handleSocketPayload({ type: "toolEnd", toolName: "Bash", toolCallId: "live-1", text: "migrated" });
@@ -449,6 +453,9 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   await page.waitForFunction(() => document.querySelector("#activityList .activity-group.highlighted"));
   await page.evaluate(async () => (await import("/app/socket.js")).handleSocketPayload({ type: "agent_end" }));
   await working.waitFor({ state: "detached" });
+  // Once the turn ends the markers come back with their final labels.
+  assert.equal(await page.locator("#messages [data-testid='activity-marker']").evaluateAll((nodes) => nodes.filter((node) => getComputedStyle(node).display === "none").length), 0, "no marker stays hidden after the turn");
+  assert.match(await page.locator("#messages [data-testid='activity-marker']").last().innerText(), /\d+ steps? · /);
 
   // While auto respond decides what to answer, the thread says so and names what it checks,
   // and Stop can end it: the agent itself is idle, so nothing else would show the work.

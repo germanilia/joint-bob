@@ -1872,6 +1872,8 @@ textarea.activity-rule-text { min-height: 54px; }
 .activity-marker[data-status="running"] .activity-marker-dot { background: var(--amber); animation: dot-breathe 1.2s ease-in-out infinite; }
 .activity-marker[data-status="error"] .activity-marker-dot { background: var(--danger); }
 .activity-marker-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The live row below already names what runs now; the running marker would say it twice. */
+.activity-marker[data-status="running"]:has(~ .live-activity) { display: none; }
 .activity-marker-chevron { flex: none; font-size: 14px; line-height: 1; }
 /* The working row: the last line of the thread while a turn runs, naming the step in progress. */
 .live-activity { display: flex; align-items: center; align-self: flex-start; gap: 8px; max-width: 100%; min-height: 28px; margin-left: 9px; padding: 3px 10px; border: 1px dashed var(--line-strong); border-radius: 999px; color: var(--muted); background: transparent; font-family: var(--mono); font-size: 11px; cursor: pointer; }
