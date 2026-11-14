@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.19 — 2026-11-14
+
+- The dashboard request box is capped at a readable width, with its buttons under it instead of stretched across the screen.
+
 ## 2.299.18 — 2026-11-14
 
 - Answers and push instructions from the control center reach the machine that owns the conversation.
