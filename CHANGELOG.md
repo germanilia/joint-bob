@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.299.21 — 2026-11-14
 
 - Live agents on Bob's page is a list grouped by project, with a preview of the chosen conversation: what it needs, its summary, its chat (what you asked, its last message, a box to write to it), its last steps and its actions. A List | Cards switch brings the card board back. The page also opens with Bob's chat folded into the Ask Bob button at the bottom left, and keeps it open when the control center is activated again.
 
