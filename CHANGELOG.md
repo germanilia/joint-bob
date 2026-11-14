@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.304.0 — 2026-11-14
+
+- A team pool's Claude member whose model is rate-limited ("would exceed your account's rate limit") answers on its next Claude model before the pool moves to another member; a subscription's usage limit still hands over at once.
+- An assistant team's conversations have their own folder: in the Inbox column (Team folders, each opening to every conversation of that team) and in Bob's inbox list, where they leave the Inbox scope for the team's folder. Which team a conversation belongs to is a property of its card.
+- Done conversations stay out of the attention cards when the board redraws.
+- The Inbox filters module ships in the offline app shell, and its date range is an allowed per-browser preference.
+
 ## 2.303.0 — 2026-11-14
 
 - A relay's Guardian rules that use Jev are now checked through the relay: its machines send the check to the relay, which asks Jev with its own TypeSafe key, so members need no key of their own and the key never leaves the relay.
