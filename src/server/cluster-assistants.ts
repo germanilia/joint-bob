@@ -11,12 +11,11 @@ import { accountInCluster } from "../cluster-accounts.js";
 import { clusterAssistant, forgetClusterAssistant, hostedClusterAssistants, type ClusterAssistantRecord } from "../cluster-assistants.js";
 import { getClusterNode } from "../cluster.js";
 import { ensureMembershipSchema } from "../cluster-membership.js";
-import { signClusterRequest } from "../cluster-protocol.js";
 import { getSharingCluster, listSharingClusterMembers, listSharingMemberships } from "../cluster-sharing-policy.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { deletePersonalAssistant, getPersonalAssistantById, personalAssistantDatabase, savePersonalAssistant } from "../personal-assistants.js";
 import { listWebhookSkills, removeWebhookSkill } from "../webhook-skills.js";
-import { peerFetch } from "../relay/transport.js";
+import { signedMachinePost as signedPost } from "./machine-post.js";
 import { sendError } from "./http-auth.js";
 import { peers } from "./saved-commands.js";
 import { app } from "./state.js";
@@ -65,17 +64,6 @@ export async function hostedViews(clusterIds?: string[]): Promise<ClusterAssista
     views.push({ id: assistant.id, name: assistant.name, about: summary.about, has: summary.has, clusterId: record.clusterId, clusterName: getSharingCluster(db, record.clusterId).name, nodeId: local.id, machineName: local.name });
   }
   return views;
-}
-
-/** A signed request to another machine of one of the person's clusters; the machine proves itself by its signature, not by an address. */
-export async function signedPost(nodeId: string, target: string, body: unknown, timeoutMs: number): Promise<globalThis.Response> {
-  const context = await peers(), peer = context.nodes.find((candidate) => candidate.nodeId === nodeId);
-  if (!peer) throw new Error("That machine is no longer in one of your clusters");
-  const bytes = Buffer.from(JSON.stringify(body));
-  return peerFetch(new URL(target, peer.url), {
-    method: "POST", redirect: "error", signal: AbortSignal.timeout(timeoutMs), body: bytes,
-    headers: { "Content-Type": "application/json", Authorization: signClusterRequest(context.db, context.local, peer.nodeId, "POST", target, bytes) },
-  }, peer.nodeId);
 }
 
 const directory = new Map<string, { at: number; views: ClusterAssistantView[] }>();

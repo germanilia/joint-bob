@@ -4,7 +4,7 @@ import { getSharingCluster } from '../cluster-sharing-policy.js';
 import { requireClusterMember, type ClusterMember } from '../assistant-teams/access.js';
 import { TeamError } from '../assistant-teams/store.js';
 import type { TeamRequestView } from '../assistant-teams/assignments.js';
-import { signedPost } from './cluster-assistants.js';
+import { signedMachinePost } from './machine-post.js';
 import { operate, type Operation } from './routes/assistant-teams.js';
 import { peers } from './saved-commands.js';
 
@@ -26,7 +26,7 @@ const held = new Map<string, { at: number; teams: HubTeam[]; unreachable: string
 async function call<T>(member: ClusterMember, hostNodeId: string, operation: Operation, body: Record<string, unknown>): Promise<T> {
   if (hostNodeId === (await getClusterNode()).id) return await operate(member, operation, body) as T;
   const claim = { clusterId: member.clusterId, accountId: member.accountId, homeNodeId: member.homeNodeId, username: member.username };
-  const response = await signedPost(hostNodeId, TARGET(operation), { member: claim, ...body }, PEER_TIMEOUT_MS).catch((error: unknown) => {
+  const response = await signedMachinePost(hostNodeId, TARGET(operation), { member: claim, ...body }, PEER_TIMEOUT_MS).catch((error: unknown) => {
     throw new TeamError(`The machine that hosts the team did not answer: ${error instanceof Error ? error.message : String(error)}`, 503);
   });
   const text = await response.text();

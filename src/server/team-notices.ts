@@ -5,7 +5,7 @@ import type { ClusterMember } from "../assistant-teams/access.js";
 import { getTeamRequestView, type TeamRequestView } from "../assistant-teams/assignments.js";
 import { onTeamChange } from "../assistant-teams/invalidation.js";
 import { teamDatabase } from "../assistant-teams/store.js";
-import { signedPost } from "./cluster-assistants.js";
+import { signedMachinePost } from "./machine-post.js";
 
 // A member's machine that sent work to a team on this machine is told when the request ends, once, over the signed machine
 // channel: no one polls. A machine that is away is not tried; what it is owed waits here, on disk, until it returns (or until
@@ -44,7 +44,7 @@ export async function flushTeamNotices(only: { teamId?: string; home?: string } 
       // Gone (its team was removed): nothing is owed any more.
       if (!view) { db.prepare("UPDATE assistant_team_notices SET state='sent' WHERE root_id=?").run(row.root_id); continue; }
       if (!ended(view) || peerAway(row.home_node_id)) continue;
-      const answer = await signedPost(row.home_node_id, NOTICE, { teamId: row.team_id, request: view }, SEND_TIMEOUT_MS).catch(() => undefined);
+      const answer = await signedMachinePost(row.home_node_id, NOTICE, { teamId: row.team_id, request: view }, SEND_TIMEOUT_MS).catch(() => undefined);
       if (answer?.ok) { await answer.body?.cancel(); db.prepare("UPDATE assistant_team_notices SET state='sent' WHERE root_id=?").run(row.root_id); }
       else await answer?.body?.cancel();
     } finally { sending.delete(row.root_id); }
