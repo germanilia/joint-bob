@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.299.18 — 2026-11-14
+
+- Answers and push instructions from the control center reach the machine that owns the conversation.
+
 ## 2.299.17 — 2026-11-13
 
 - Automated checks match the pool host label and the start page preference, so releases can publish again.
