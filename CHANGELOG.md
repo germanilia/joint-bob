@@ -6,6 +6,7 @@
 - A team member that stops without a result is reported to the Telegram group instead of staying silent, with the way on: `/retry` runs it again as a new request, `/cancel` drops it.
 - The team's Telegram group answers `/status`, `/cancel`, `/retry` and `/help`. Those four can no longer be role names.
 - Everyone in a cluster can see its teams on any machine, send them work, read the answers, and cancel or retry a request from their own machine; the work runs on the team's host as that person.
+- The team picker in Bob's control center lists the teams of all your clusters, including ones hosted on another machine, and offers a new team only for a cluster that has none. Every team has a Send work box (to a member, or to the coordinator) and its requests with their answers, Stop and Run again; this also works for a person signed in on the team's machine with their own account.
 - Bob reports on the teams of your clusters, sends a member work after you press Send it, and brings the answer back to his chat, wherever the team runs.
 - `/qa …` and the other role calls start even while the decision model is down; the group is told once an hour that unaddressed messages are not being read.
 

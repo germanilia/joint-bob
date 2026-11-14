@@ -4,6 +4,7 @@ const api = (path, options = {}) => request(path, { ...options, ...(options.body
 import { makeNode, makeButton } from './relay-ui.js';
 import { registerContextView, setControlContext, showControlView } from './control-views.js';
 import { renderTeamTelegram } from './control-team-telegram.js';
+import { createTeamWork } from './control-team-work.js';
 import { openConversation } from './control-center.js';
 
 const panels = Object.fromEntries(['assistants', 'live', 'memory'].map(id => {
@@ -40,7 +41,7 @@ const syncMobile = () => { mobileSelect.replaceChildren(...[...select.options].m
 const settings = makeNode('section', 'team-control team-settings-area');
 settings.append(makeNode('h2', '', 'Shared team settings · personal Bob is separate'), error, saved);
 settingsPanel.append(settings);
-let team, stream, generation = 0, refreshGeneration = 0, editingSettings = false;
+let team, stream, work, hubTeams = new Map(), generation = 0, refreshGeneration = 0, editingSettings = false;
 const current = (mine, url) => mine === generation && select.value && base() === url;
 const updateRevision = async (url, mine) => {
   const record = await api(url);
@@ -62,13 +63,13 @@ function input(parent, label, id, value, type = 'text') {
 async function loadTeams() {
   if (select.options.length) return;
   // Built aside and put in at once: a failed load leaves the list empty, so the next opening tries again.
-  const { clusters } = await api('/api/clusters');
-  const options = [new Option(clusters.length ? 'Select a team' : 'No cluster yet: create one under Clusters', '')];
-  for (const cluster of clusters) {
-    const { teams } = await api(`/api/assistant-teams?clusterId=${encodeURIComponent(cluster.id)}`);
-    for (const item of teams) options.push(new Option(cluster.name, item.id));
-    if (!teams.length) options.push(new Option(`${cluster.name} — create team on this host`, `create:${cluster.id}`));
-  }
+  // The teams of every cluster the person joined, on whichever machine hosts each; a team on another machine is steered from here.
+  const [{ clusters }, { teams }] = await Promise.all([api('/api/clusters'), api('/api/team-hub')]);
+  hubTeams = new Map(teams.map(item => [item.id, item]));
+  const options = [new Option(teams.length || clusters.length ? 'Select a team' : 'No cluster yet: create one under Clusters', '')];
+  for (const item of teams) options.push(new Option(item.local ? item.clusterName : `${item.clusterName} — on ${item.hostName}`, item.local ? item.id : `remote:${item.id}`));
+  // A team is made on this host only for a cluster that has none anywhere.
+  for (const cluster of clusters) if (!teams.some(item => item.clusterId === cluster.id)) options.push(new Option(`${cluster.name} — create team on this host`, `create:${cluster.id}`));
   if (select.options.length) return;
   select.replaceChildren(...options);
   syncMobile();
@@ -86,6 +87,7 @@ async function refresh(force = false) {
   team = record.team;
   const openSections = [...document.querySelectorAll('.team-control details[open]')].map(node => node.firstChild.textContent);
   for (const panel of Object.values(panels)) panel.replaceChildren();
+  if (work) { work.setMembers(agents.agents.map(agent => ({ role: agent.role, name: agent.profile?.name ?? null, coordinator: agent.coordinator, ready: !agent.readiness.length }))); panels.live.append(work.node); }
   settings.replaceChildren(makeNode('h2', '', 'Shared team settings · personal Bob is separate'), error, saved);
   panels.assistants.append(makeNode('h2', '', 'Shared team assistants'), makeNode('p', '', `Host: ${readiness.host.name}`), tagged(makeNode('p', '', 'Pick your assistants on this machine and give each a role. A member brings everything it has: instructions, skills, MCP servers, browser logins and tools. Its role is its Telegram command.'), 'team-runtime'));
   const decision = makeNode('p', '', `Central AI decision: ${readiness.decision.model ?? 'not selected'} · ${readiness.decision.ready ? 'ready' : 'unavailable'}. Configure in Settings → System AI.`);
@@ -266,6 +268,7 @@ async function editMemory(url, parent, topic, revision) {
 }
 select.addEventListener('change', () => {
   ++generation; stream?.close(); stream = undefined; team = undefined; editingSettings = false; error.textContent = '';
+  work?.stop(); work = undefined;
   syncMobile();
   document.body.classList.toggle('team-context-active', Boolean(select.value));
   for (const panel of Object.values(panels)) panel.replaceChildren();
@@ -280,6 +283,20 @@ select.addEventListener('change', () => {
       select.replaceChildren(); await loadTeams(); if (mine !== generation) return; select.value = result.team.id; select.dispatchEvent(new Event('change')); showControlView('assistants');
     }).catch(fail); return;
   }
+  if (select.value.startsWith('remote:')) {
+    // A team on another machine: its work is steered from here; its members, Telegram and memory are managed on its host.
+    const remote = hubTeams.get(select.value.slice(7)), mine = generation;
+    const intro = makeNode('section', 'team-card');
+    intro.append(makeNode('h2', '', `${remote.clusterName} team`), makeNode('p', '', `Hosted on ${remote.hostName}. Send it work and read its answers here; its members, Telegram and memory are managed on that machine.`),
+      makeNode('ul', '', undefined));
+    for (const member of remote.members) intro.lastChild.append(makeNode('li', '', `${member.coordinator ? 'coordinator' : member.role}${member.coordinator ? ` (${member.role})` : ''}${member.name ? ` — ${member.name}` : ''}${member.ready ? '' : ' · not ready on its machine'}${member.uses.length ? ` · uses ${member.uses.join(', ')}` : ''}`));
+    panels.assistants.append(intro);
+    work = createTeamWork(remote.id, remote.members, { isCurrent: () => mine === generation, fail });
+    panels.live.append(work.node);
+    return;
+  }
+  const here = generation;
+  work = createTeamWork(select.value, hubTeams.get(select.value)?.members ?? [], { isCurrent: () => here === generation, fail });
   const connection = new EventSource(`${base()}/events`);
   stream = connection;
   connection.onmessage = () => { if (stream === connection) refresh(Boolean(!settings.querySelector('details') || (settings.querySelector('details[open]') && !editingSettings && !document.querySelector('.team-editor')))).catch(fail); };

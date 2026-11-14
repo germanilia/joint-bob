@@ -35,3 +35,9 @@
   .team-control { overflow: auto; }
 }
 @media (max-width: 760px) { .team-cards { grid-template-columns: minmax(0, 1fr); } }
+.team-work { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.team-work-form { display: flex; flex-direction: column; gap: 4px; max-width: 640px; }
+.team-work-form select, .team-work-form textarea { width: 100%; min-width: 0; }
+.team-work-list { display: flex; flex-direction: column; gap: 8px; }
+.team-work-row { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.team-work-row[data-state="stopped"] { border-color: var(--danger, currentColor); }
