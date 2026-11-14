@@ -24,6 +24,7 @@ import { saveBobAttachments, startBobConversation, titleOf, type BobAttachments 
 import { promptTextWithAttachments } from "./chat.js";
 import { handleBobAutomation } from "./control-center-automation-chat.js";
 import { handleBobOrganize } from "./control-center-organize.js";
+import { bobTeamHints } from "./team-follows.js";
 import { askDisplayAgent, type AppearanceContext, type AppearanceSettings } from "./control-center-display.js";
 import { bobDashboardRequest } from "./control-center-dashboard-request.js";
 import { GitReviewRunError, runGitReview } from "./git-review-run.js";
@@ -200,7 +201,7 @@ const startChosenTask: Parameters<typeof registerBobAction>[1] = async ({ db, se
   if (!project) throw new BobActionError(404, "That project is not here anymore");
   const options = await projectOptions(projects, session);
   const turn: BobTurn = { session, message, recentChat: [], project: { id: project.id, name: project.name }, options, settings };
-  const decision: BobDecision = { kind: "task", size: "long", projectId, autoRespond, confidence: 1, kindConfidence: 1 };
+  const decision: BobDecision = { kind: "task", size: "long", projectId, autoRespond, confidence: 1, kindConfidence: 1, team: false, teamConfidence: 1 };
   const done = await runTask({ session, settings, project, message, attachments: { images: [], files: [] }, recentChat: [], model: await bobDecisionModel(projects, settings), decision, via: `You chose ${project.name}`, turn });
   if (done.started) notifyBobExchange(turn, done.text);
   return [bobSays(db, session, done.text, { importance: done.started ? "done" : "fyi", projectId: project.id, projectName: project.name, via: done.via })];
@@ -234,7 +235,7 @@ export async function handleBobMessage(session: AuthSession, input: { message: s
   let decision: BobDecision | null = null;
   if (model) {
     decision = await decideForBob({
-      message: input.message, recentChat: recent, projects: options, fixedProjectId: chosen?.id,
+      message: input.message, recentChat: recent, projects: options, fixedProjectId: chosen?.id, teams: await bobTeamHints(session),
       stateCharacters: model.target.stateCharacters, ask: (state, questions) => askSystemOneChoices(model.target, state, questions, model.apiKey),
     });
   }

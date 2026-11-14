@@ -49,6 +49,9 @@ export function resumeDeliveriesOnReturn(): void {
     void resumeDeliveriesTo(peerId).catch((error) => console.warn(`Resuming deliveries to ${peerId} failed`, error));
     void quickNotesAfterReturn(peerId).catch((error) => console.warn(`Fetching quick notes from ${peerId} failed`, error));
     void pullTwinAssistants(peerId).catch((error) => console.warn(`Fetching assistants from ${peerId} failed`, error));
+    // What this machine owes it about a team's request, and what it owes this machine.
+    void import("./team-notices.js").then(({ flushTeamNotices }) => flushTeamNotices({ home: peerId })).catch((error) => console.warn(`Telling ${peerId} its team requests ended failed`, error));
+    void import("./team-follows.js").then(({ resumeTeamFollows }) => resumeTeamFollows({ hostNodeId: peerId })).catch((error) => console.warn(`Asking ${peerId} about team requests failed`, error));
   });
 }
 
@@ -83,6 +86,7 @@ export function announceReturn(slept: boolean): Promise<void> {
     await syncSharedQuickNotes().catch((error) => console.warn("Fetching peers' quick notes failed", error));
     await pullFromHubs().catch((error) => console.warn("Hub pull failed", error));
     await pullTwinAssistants().catch((error) => console.warn("Fetching twins' assistants failed", error));
+    await import("./team-follows.js").then(({ resumeTeamFollows }) => resumeTeamFollows()).catch((error) => console.warn("Asking hosts about team requests failed", error));
   })().finally(() => { announcing = undefined; });
   return announcing;
 }

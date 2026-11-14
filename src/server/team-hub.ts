@@ -77,17 +77,6 @@ export async function hubOverview(session: AuthSession, fresh = false): Promise<
   return overview;
 }
 
-/** The teams from the last look, never a wait for the network; a stale look is refreshed in the background for the next message. */
-const refreshing = new Set<string>();
-export function knownTeams(session: AuthSession): HubTeam[] {
-  const known = held.get(session.accountId);
-  if ((!known || Date.now() - known.at >= CACHE_MS) && !refreshing.has(session.accountId)) {
-    refreshing.add(session.accountId);
-    void hubTeams(session, true).catch(error => console.warn(`Could not refresh the teams: ${error instanceof Error ? error.message : error}`)).finally(() => refreshing.delete(session.accountId));
-  }
-  return known?.teams ?? [];
-}
-
 async function teamFor(session: AuthSession, teamId: string): Promise<{ team: HubTeam; member: ClusterMember }> {
   const team = (await hubTeams(session)).find(candidate => candidate.id === teamId) ?? (await hubTeams(session, true)).find(candidate => candidate.id === teamId);
   if (!team) throw new TeamError('No such team among your clusters', 404);
@@ -97,6 +86,17 @@ async function teamFor(session: AuthSession, teamId: string): Promise<{ team: Hu
 export async function hubRequests(session: AuthSession, teamId: string, limit?: number): Promise<TeamRequestView[]> {
   const { team, member } = await teamFor(session, teamId);
   return (await call<{ requests: TeamRequestView[] }>(member, team.hostNodeId, 'requests', { teamId, ...(limit ? { limit } : {}) })).requests;
+}
+/** A team's place, for work that must find it again after a restart. */
+export interface TeamRef { clusterId: string; hostNodeId: string; teamId: string }
+export async function hubTeamRef(session: AuthSession, teamId: string): Promise<TeamRef> {
+  const { team } = await teamFor(session, teamId);
+  return { clusterId: team.clusterId, hostNodeId: team.hostNodeId, teamId };
+}
+/** Reads a team's requests on its host without looking the team up first: for a person whose machine has just started. */
+export async function hubRequestsOn(session: AuthSession, ref: TeamRef): Promise<TeamRequestView[]> {
+  const member = await requireClusterMember(session, ref.clusterId);
+  return (await call<{ requests: TeamRequestView[] }>(member, ref.hostNodeId, 'requests', { teamId: ref.teamId })).requests;
 }
 export async function hubAssign(session: AuthSession, teamId: string, role: string | null, message: string, requestId: string): Promise<TeamRequestView> {
   const { team, member } = await teamFor(session, teamId);

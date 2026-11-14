@@ -11,6 +11,8 @@ import { listWebhookSkills } from '../../webhook-skills.js';
 import { asNode } from '../../account-context.js';
 import { saveTeamMembers, teamCoordinator, TEAM_ROLE_PATTERN } from '../../assistant-teams/store.js';
 import { WebhookResourceError } from '../../webhook-resources.js';
+import { watchTeamRequest } from '../team-notices.js';
+import { applyTeamNotice, requestViewSchema } from '../team-follows.js';
 
 const id = z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/);
 const clusterId = z.string().uuid();
@@ -58,9 +60,17 @@ export async function operate(member: ClusterMember, operation: Operation, body:
   }
   if (operation === 'roster') return { ...await teamRoster(target.teamId), snapshotRevision };
   if (operation === 'requests') return { requests: await listTeamRequests(actor, operations.requests.parse(input).limit), snapshotRevision };
-  if (operation === 'assign') { const work = operations.assign.parse(input); return { request: await startTeamRequest(actor, work.role, work.message, work.requestId), snapshotRevision }; }
+  if (operation === 'assign') {
+    const work = operations.assign.parse(input), request = await startTeamRequest(actor, work.role, work.message, work.requestId);
+    await watchTeamRequest(actor, work.teamId, request.id);
+    return { request, snapshotRevision };
+  }
   if (operation === 'cancel') return { ...await cancelTeamRequest(actor, operations.cancel.parse(input).ref), snapshotRevision };
-  if (operation === 'retry') return { ...await retryTeamRequest(actor, operations.retry.parse(input).ref), snapshotRevision };
+  if (operation === 'retry') {
+    const retried = await retryTeamRequest(actor, operations.retry.parse(input).ref);
+    await watchTeamRequest(actor, target.teamId, retried.request.id);
+    return { ...retried, snapshotRevision };
+  }
   const update = operations.settings.parse(input);
   return { team: await saveTeamSettings(actor, update.settings, update.expectedRevision), snapshotRevision };
 }
@@ -266,6 +276,13 @@ app.get('/api/assistant-teams/:id/events', async (request, response, next) => {
     await send();
   } catch (error) { if (error instanceof TeamError) response.status(error.status).json({ error: error.message }); else next(error); }
 });
+
+// The host says a request this machine's Bob follows has ended. It is not a member's claim: the sender must be the follow's host.
+app.post('/api/cluster/v2/assistant-teams/notice', route(async (request, response) => {
+  if (response.locals.machineProtocol !== 2) throw new TeamError('Signed machine request required', 403);
+  const body = z.object({ teamId: id, request: requestViewSchema }).strict().parse(request.body);
+  return { applied: await applyTeamNotice(String(response.locals.machineNodeId), body.request) };
+}));
 
 // Not a generic account proxy: the signed home asserts exactly one account's selected
 // cluster membership. Middleware verifies signature, nonce, recipient and relay sender.

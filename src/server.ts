@@ -184,6 +184,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       restart: async () => { await prepareForUpdate(); process.exit(0); },
     });
     void import('./assistant-teams/assignments.js').then(({ startTeamWork }) => startTeamWork()).catch(error => console.error('Team work recovery failed', error));
+    void import('./server/team-notices.js').then(({ startTeamNotices }) => startTeamNotices()).catch(error => console.error('Team notices failed to start', error));
+    void import('./server/team-follows.js').then(({ watchLocalTeamFollows }) => watchLocalTeamFollows()).catch(error => console.error('Team follows failed to start', error));
     void recoverAutoResponders().catch(error => console.error("Auto reply recovery failed", error));
     void startCronScheduler().catch(error => console.error("Scheduled task recovery failed; scheduler not started", error));
     startConversationDigests();

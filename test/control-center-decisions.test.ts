@@ -10,7 +10,7 @@ const projects: BobProjectOption[] = [
 ];
 
 /** A stand-in decision model: picks the project whose name or headlines share a word with the message. */
-function fakeModel(options: { confidence?: number; kind?: string; size?: string; autoRespond?: string; fail?: (state: string) => boolean } = {}) {
+function fakeModel(options: { confidence?: number; kind?: string; size?: string; autoRespond?: string; team?: string; fail?: (state: string) => boolean } = {}) {
   const requests: Array<{ state: string; questions: string[] }> = [];
   const ask = async (state: string, questions: Record<string, SystemOneQuestion>): Promise<Record<string, SystemOneChoice> | null> => {
     requests.push({ state, questions: Object.keys(questions) });
@@ -21,6 +21,7 @@ function fakeModel(options: { confidence?: number; kind?: string; size?: string;
     if (questions.kind) answers.kind = { choice: options.kind ?? "task", confidence };
     if (questions.size) answers.size = { choice: options.size ?? "long", confidence };
     if (questions.autorespond) answers.autorespond = { choice: options.autoRespond ?? "yes", confidence };
+    if (questions.team) answers.team = { choice: options.team ?? "no", confidence };
     if (questions.project) {
       const entry = Object.entries(questions.project.criteria).find(([key, text]) => key !== "none" && text.toLowerCase().split(/\W+/).some((word) => word.length > 3 && message.includes(word)));
       answers.project = { choice: entry?.[0] ?? "none", confidence };
@@ -33,9 +34,9 @@ function fakeModel(options: { confidence?: number; kind?: string; size?: string;
 test("one batched request decides the kind, the size and the project", async () => {
   const model = fakeModel();
   const decision = await decideForBob({ message: "fix the mobile menu", recentChat: [], projects, ask: model.ask, stateCharacters: 120_000 });
-  assert.deepEqual(decision, { kind: "task", size: "long", projectId: "jb", autoRespond: true, confidence: 0.95, kindConfidence: 0.95 });
+  assert.deepEqual(decision, { kind: "task", size: "long", projectId: "jb", autoRespond: true, confidence: 0.95, kindConfidence: 0.95, team: false, teamConfidence: 0.95 });
   assert.equal(model.requests.length, 1, "everything fits one request");
-  assert.deepEqual(model.requests[0].questions.sort(), ["autorespond", "kind", "project", "size"]);
+  assert.deepEqual(model.requests[0].questions.sort(), ["autorespond", "kind", "project", "size", "team"]);
 });
 
 test("a message about no listed project has no project", async () => {
@@ -49,7 +50,7 @@ test("the person's own project choice is not asked and the confidence comes from
   const decision = await decideForBob({ message: "anything", recentChat: [], projects, ask: model.ask, stateCharacters: 120_000, fixedProjectId: "dak" });
   assert.equal(decision?.projectId, "dak");
   assert.equal(decision?.confidence, 0.8);
-  assert.deepEqual(model.requests[0].questions.sort(), ["autorespond", "kind", "size"]);
+  assert.deepEqual(model.requests[0].questions.sort(), ["autorespond", "kind", "size", "team"]);
 });
 
 test("many projects split into groups that are asked in parallel, then one final request picks among the winners", async () => {
@@ -93,4 +94,20 @@ test("a task continues the conversation it belongs to, or starts a new one", asy
   assert.deepEqual(await chooseConversation({ message: "first task", recentChat: [], options: [], ask: ask("none"), stateCharacters: 100_000 }), { conversationId: null, confidence: 1 }, "nothing to continue, no question asked");
   assert.equal(await chooseConversation({ message: "x", recentChat: [], options, ask: async () => null, stateCharacters: 100_000 }), null);
   assert.equal(await chooseConversation({ message: "x", recentChat: [], options, ask: ask("none"), stateCharacters: 10 }), null, "a state that does not fit is never truncated");
+});
+
+test("whether a message is about an assistant team is a property of the decision, with the teams and their roles in what the model reads", async () => {
+  const model = fakeModel({ team: "yes", kind: "other", size: "short" });
+  const teams = [{ name: "Contigos", roles: ["lead", "qa"] }];
+  const decision = await decideForBob({ message: "have qa check the sign-in page", recentChat: [], projects, ask: model.ask, stateCharacters: 120_000, teams });
+  assert.equal(decision?.team, true);
+  assert.equal(decision?.teamConfidence, 0.95);
+  const read = JSON.parse(model.requests[0].state) as { assistant_teams?: unknown };
+  assert.deepEqual(read.assistant_teams, teams, "the model is told what the teams and their members are");
+  // With no team known, nothing is said of one, and the model is still asked: it is not our words that decide.
+  const unknown = fakeModel({ team: "no" });
+  const plain = await decideForBob({ message: "fix the mobile menu", recentChat: [], projects, ask: unknown.ask, stateCharacters: 120_000 });
+  assert.equal(plain?.team, false);
+  assert.equal("assistant_teams" in (JSON.parse(unknown.requests[0].state) as object), false);
+  assert.ok(unknown.requests[0].questions.includes("team"));
 });

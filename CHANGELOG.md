@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Whether a message is about an assistant team is now a property of Bob's decision (the decision model is told the teams of your clusters and their roles), instead of matching the word "team" or a role name: "have qa check the login" is recognised, "the team lunch" is not.
+- What Bob promised to bring back from a team is kept on disk and survives a restart of your machine or of the team's host: the host tells your machine when a request ends, a machine that was away is told on return, and nothing polls.
+
 ## 2.300.1 — 2026-11-14
 
 - Cancelling a team request with `/cancel` or Bob's Stop it now stops the turn that is running; it kept going before.

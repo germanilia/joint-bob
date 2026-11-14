@@ -32,8 +32,8 @@ import { getRuntimePeer, runtimeFetch } from "./runtime-peers.js";
 import { app } from "./state.js";
 import { writeSummaries } from "./control-center-summaries.js";
 import { offerOperation, OPERATE_INSTRUCTIONS, OPERATE_INTENTS, operateIntentShapes, type OperateIntent } from "./control-center-operate.js";
-import { mentionsTeam, offerTeam, teamIntentShapes, teamWorldOf, TEAM_INSTRUCTIONS, TEAM_INTENTS, type TeamIntent, type TeamWorld } from "./control-center-team.js";
-import { hubTeams, knownTeams } from "./team-hub.js";
+import { offerTeam, teamIntentShapes, teamWorldOf, TEAM_INSTRUCTIONS, TEAM_INTENTS, type TeamIntent, type TeamWorld } from "./control-center-team.js";
+import { hubTeams } from "./team-hub.js";
 import { listDiscoveredHarnesses } from "../harnesses/registry.js";
 import { listSecretAccounts } from "../secrets.js";
 import { runGitReview } from "./git-review-run.js";
@@ -430,13 +430,12 @@ async function say(turn: BobTurn, text: string, extra: { importance?: BobMessage
  * message is not about that, so Bob answers it in the usual way. Every change waits for the person's button.
  */
 export async function handleBobOrganize(turn: BobTurn, decision: BobDecision | null, attachments: BobAttachments): Promise<BobMessage | null> {
-  // Teams are looked up over the network, so a message that does not speak of one never waits for them.
-  const known = teamWorldOf(knownTeams(turn.session));
-  const teamTalk = mentionsTeam(turn.message, known) && (known.length > 0 || (await runAsAccount(actingAccountFromSession(turn.session), () => joinedClusters(turn.session.accountId))).length > 0);
+  // Whether the message is about a team is the decision model's answer (decision.team), not a word in it. Teams are looked up over
+  // the network, so only a message the model took for one waits for them; with none in the person's clusters it is about people.
   const organizing = mayBeAboutOrganizing(turn.message, decision, turn.settings.threshold);
-  if (!organizing && !teamTalk) return null;
-  const teams = teamTalk ? teamWorldOf(await hubTeams(turn.session)) : known;
-  // "The team" with no assistant team in any of the person's clusters means the people in them: Bob's other answers cover that.
+  const aboutTeam = decision?.team === true;
+  if (!organizing && !aboutTeam) return null;
+  const teams = aboutTeam ? teamWorldOf(await hubTeams(turn.session)) : [];
   if (!organizing && !teams.length) return null;
   const world = await worldFor(turn.session, turn.message, teams);
   const [cwd] = await runAsAccount(actingAccountFromSession(turn.session), () => projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }));

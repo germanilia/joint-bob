@@ -284,10 +284,12 @@ Ask Bob for an assistant "for" one of the clusters you joined on this machine ("
 A team (see `docs/assistant-teams.md`) runs on one machine of a cluster, usually an always-on one. Bob can steer the teams of every cluster you joined, wherever they run, in his chat or in his Telegram bot:
 
 - **"What is the team doing?" / "what is qa working on?"** is answered at once: who is on the team, whether each member is ready, and the team's requests with their state.
-- **"Ask the team to …" / "have qa check …"** shows who it goes to and on which machine, and waits for **Send it**. The work runs on the team's machine as you, with the sign-ins and tools that member holds. Bob posts its answer in the chat when it is done (he follows it for half an hour; `/status` in the team's group, or the team in the app, shows it after that).
+- **"Ask the team to …" / "have qa check …"** shows who it goes to and on which machine, and waits for **Send it**. The work runs on the team's machine as you, with the sign-ins and tools that member holds.
 - **"Stop the team's request" / "run it again"** each wait for a button; a retry starts a new request and retires the old one.
 
-Bob only knows the teams of a cluster he has looked at in the last minute, so the first message after a restart that names a role (rather than the word *team* or the cluster) may not find it; ask again.
+Whether a message is about a team is the decision model's call, not a word in it: it is asked "is this about one of your assistant teams?" with the teams of your clusters and their members' roles (kept on disk, refreshed in the background), so "have qa check the login" is recognised without the word *team*, and "the team lunch" is not. With no assistant team in your clusters, such a message is about people and Bob answers it as he answers anything else. Without a decision model, Bob does not take messages for team work.
+
+Bob keeps what he promised to bring back on disk. When a team's request ends, its host tells your machine over the signed machine channel; a machine that was away (asleep, restarted) is told when it returns, and asks its hosts when it starts. So a restart of your machine, or of the team's host, does not lose the answer, and nothing polls on a timer. If the host restarts mid-request, Bob says it stopped without a result and offers to run it again.
 
 ## Clusters
 

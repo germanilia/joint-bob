@@ -38,8 +38,10 @@ export async function startTeamHubFixture(options: { answer?: string; memberEnv?
     const hostEnv = await seedDevEnvironment(path.join(root, 'host'), 1), host = hostEnv.nodes[0];
     const memberEnv = await seedDevEnvironment(path.join(root, 'member'), 1, { username: 'secondhuman' }), member = memberEnv.nodes[0];
     await writeFile(path.join(hostEnv.home, '.pi', 'models.json'), JSON.stringify({ providers: { 'dev-environment': { baseUrl: `${url}/v1`, api: 'openai-completions', apiKey: 'synthetic', models: [{ id: 'dev-model' }] } } }));
-    const hostNode = await startDevNode(hostEnv, host); children.push(hostNode); children.push(await startDevNode(memberEnv, member, options.memberEnv));
-    let hostOutput = ''; for (const stream of [hostNode.stdout!, hostNode.stderr!]) stream.on('data', chunk => { hostOutput += chunk; });
+    let hostNode = await startDevNode(hostEnv, host), memberNode = await startDevNode(memberEnv, member, options.memberEnv);
+    children.push(hostNode, memberNode);
+    let hostOutput = ''; const listen = (node: typeof hostNode) => { for (const stream of [node.stdout!, node.stderr!]) stream.on('data', chunk => { hostOutput += chunk; }); };
+    listen(hostNode);
     const hostAuth = await signIn(hostEnv, host), memberAuth = await signIn(memberEnv, member);
     // The host serves a relay the member machine uses, then the member joins the host's cluster.
     assert.equal((await fetch(`${host.url}/api/relay/serving`, { method: 'PUT', headers: { Cookie: hostAuth.cookie, 'x-csrf-token': hostAuth.csrfToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, origin: `http://localhost:${host.port}`, environment: 'test', requestsEnabled: true, maxMachines: 10, monthlyCapGb: 0, alertTopic: '' }) })).status, 204);
@@ -61,6 +63,15 @@ export async function startTeamHubFixture(options: { answer?: string; memberEnv?
     const { addNodeMembers } = await import('./team-members-fixture.js');
     await addNodeMembers((method, route, body) => api<any>(host, hostAuth, method as any, route, body), host.projects.map((p: any) => p.id), team.id,
       [{ role: 'lead', instructions: 'The coordinator' }, { role: 'qa', instructions: 'Checks things' }], 'lead', { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' });
-    return { root, host, member, hostEnv, memberEnv, hostAuth, memberAuth, team, clusterId, requests, hostOutput: () => hostOutput, stop };
+    // A machine restarting: stopped and started again on the same data, as an update does. The person signs in again.
+    const restart = async (which: 'host' | 'member') => {
+      const old = which === 'host' ? hostNode : memberNode;
+      await stopDevNode(old); children.splice(children.indexOf(old), 1);
+      const fresh = which === 'host' ? await startDevNode(hostEnv, host) : await startDevNode(memberEnv, member, options.memberEnv);
+      children.push(fresh);
+      if (which === 'host') { hostNode = fresh; listen(fresh); return signIn(hostEnv, host); }
+      memberNode = fresh; return signIn(memberEnv, member);
+    };
+    return { root, host, member, hostEnv, memberEnv, hostAuth, memberAuth, team, clusterId, requests, hostOutput: () => hostOutput, restart, stop };
   } catch (error) { await stop(); throw error; }
 }

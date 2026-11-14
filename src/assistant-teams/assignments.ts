@@ -496,6 +496,10 @@ function requestViews(db:DatabaseSync,teamId:string):TeamRequestView[] {
     result:!a.parentId&&w?.phase==='done'?(w.result??'').slice(0,6000):null};})}];
  });
 }
+/** One request as people see it, or undefined when it is not (or no longer) the team's. */
+export async function getTeamRequestView(teamId:string,rootId:string):Promise<TeamRequestView|undefined> {
+ return requestViews(await assignmentDatabase(),teamId).find(view=>view.id===rootId);
+}
 export async function listTeamRequests(member:TeamMember,limit=50):Promise<TeamRequestView[]> {
  await recheckTeamActor(member);if((await getTeam(member.teamId)).clusterId!==member.clusterId)throw new TeamError('Wrong team',403);
  return requestViews(await assignmentDatabase(),member.teamId).slice(0,limit);

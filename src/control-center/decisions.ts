@@ -17,6 +17,9 @@ export interface BobDecision {
   confidence: number;
   /** How sure the model is of `kind` alone: a task it is sure of can still need the person to say which project. */
   kindConfidence: number;
+  /** Whether the message is about one of the person's assistant teams: what it is doing, work for a member, stopping or repeating a request. */
+  team: boolean;
+  teamConfidence: number;
 }
 
 /** Sends one batch of Choice questions to the decision model. Null means it could not answer. */
@@ -32,7 +35,12 @@ export interface DecideInput {
   stateCharacters: number;
   /** When set, the person chose the project, so it is not asked. */
   fixedProjectId?: string;
+  /** The assistant teams the person's clusters run, with their members' roles, as far as this machine knows. */
+  teams?: BobTeamHint[];
 }
+
+/** What the decision model is told of a team, so a message naming only a member (a role) can be recognised as about the team. */
+export interface BobTeamHint { name: string; roles: string[] }
 
 const KIND: SystemOneQuestion = {
   instructions: "What does the user want from their assistant?",
@@ -43,6 +51,14 @@ const KIND: SystemOneQuestion = {
     organize: "The user asks to create, rename, move, close or delete a workspace, a project or a conversation itself, to ask or tell one of their existing conversations something or have one of them do some work, to hand work over to the assistant to drive to the end and bring back for review, to stop one, turn its auto respond on or off, change its agent, model or effort, or attach a secret account to it, to see a project's git or act on its pull requests, or to add a task or a quick note to a project, rather than for new work inside a project.",
     display: "The user asks to change how the Joint Bob app itself looks on their screen: its theme, light or dark mode, or how big its text and panels are.",
     other: "Chatting, thanks, or anything that is none of the above.",
+  },
+};
+
+const TEAM: SystemOneQuestion = {
+  instructions: "Is the user's message about one of their assistant teams?",
+  criteria: {
+    yes: "It asks what an assistant team is doing or where its work stands, asks one of its members (a role listed in assistant_teams) or the team itself to do some work, or asks to stop or repeat a team's request.",
+    no: "Anything else. The people in a team or the members of a cluster are not an assistant team, and neither are the person's own conversations, projects or assistants.",
   },
 };
 
@@ -83,17 +99,18 @@ function projectQuestion(group: BobProjectOption[]): { question: SystemOneQuesti
   return { question: { instructions: "Which project is the user's message about?", criteria }, byKey };
 }
 
-function stateFor(input: DecideInput, group: BobProjectOption[]): string {
+function stateFor(input: DecideInput, group: BobProjectOption[], withTeams = false): string {
   return JSON.stringify({
     user_message: input.message,
     recent_chat: input.recentChat.slice(-RECENT_CHAT_LINES),
     projects: group.map((project) => ({ name: project.name, recent_work: project.headlines.slice(0, HEADLINES_PER_PROJECT) })),
+    ...withTeams && input.teams?.length ? { assistant_teams: input.teams } : {},
   });
 }
 
 /** Splits the projects so each request's state and criteria fit what the decision model can read. */
-export function groupProjects(projects: BobProjectOption[], input: Pick<DecideInput, "message" | "recentChat" | "stateCharacters">): BobProjectOption[][] {
-  const overhead = JSON.stringify({ user_message: input.message, recent_chat: input.recentChat.slice(-RECENT_CHAT_LINES) }).length + 400;
+export function groupProjects(projects: BobProjectOption[], input: Pick<DecideInput, "message" | "recentChat" | "stateCharacters" | "teams">): BobProjectOption[][] {
+  const overhead = JSON.stringify({ user_message: input.message, recent_chat: input.recentChat.slice(-RECENT_CHAT_LINES), assistant_teams: input.teams ?? [] }).length + 400;
   // Each project appears twice in a request: in the state and in its criterion.
   const budget = Math.max(200, input.stateCharacters - overhead);
   const groups: BobProjectOption[][] = [];
@@ -121,10 +138,10 @@ export async function decideForBob(input: DecideInput): Promise<BobDecision | nu
   const groups = input.fixedProjectId || !candidates.length ? [[]] : groupProjects(candidates, input);
   const requests = groups.map((group, index) => {
     const asked: Record<string, SystemOneQuestion> = {};
-    if (index === 0) { asked.kind = KIND; asked.size = SIZE; asked.autorespond = AUTO_RESPOND; }
+    if (index === 0) { asked.kind = KIND; asked.size = SIZE; asked.autorespond = AUTO_RESPOND; asked.team = TEAM; }
     const project = group.length ? projectQuestion(group) : null;
     if (project) asked.project = project.question;
-    return { asked, state: stateFor(input, group), byKey: project?.byKey ?? new Map<string, string>() };
+    return { asked, state: stateFor(input, group, index === 0), byKey: project?.byKey ?? new Map<string, string>() };
   });
   const answers = await Promise.all(requests.map((request) => input.ask(request.state, request.asked)));
   if (answers.some((answer) => answer === null)) return null;
@@ -156,7 +173,7 @@ export async function decideForBob(input: DecideInput): Promise<BobDecision | nu
       confidence = Math.min(confidence, noneConfidence);
     }
   }
-  return { kind: first.kind.choice as BobKind, size: first.size.choice as BobSize, projectId, autoRespond, confidence, kindConfidence: first.kind.confidence };
+  return { kind: first.kind.choice as BobKind, size: first.size.choice as BobSize, projectId, autoRespond, confidence, kindConfidence: first.kind.confidence, team: first.team.choice === "yes", teamConfidence: first.team.confidence };
 }
 
 /** Bob's own agent decides when the decision model is missing, could not answer, or was not sure enough. */

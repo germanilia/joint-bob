@@ -3,10 +3,9 @@ import { z } from "zod";
 import { actingAccountFromSession, runAsAccount } from "../account-context.js";
 import type { AuthSession } from "../auth.js";
 import { bobSays, registerBobAction } from "../control-center/bob-actions.js";
-import { appendBobMessage, bobDatabase } from "../control-center/bob-store.js";
-import { formatTeamRequest, formatTeamStatus, teamReasonText } from "../assistant-teams/control-text.js";
-import { hubAssign, hubCancel, hubRequests, hubRetry, hubTeams, knownTeams, type HubTeam } from "./team-hub.js";
-import { broadcastToAllClients } from "./realtime.js";
+import { formatTeamStatus } from "../assistant-teams/control-text.js";
+import { hubAssign, hubCancel, hubRequests, hubRetry, hubTeamRef, hubTeams, type HubTeam } from "./team-hub.js";
+import { closeTeamFollow, followTeamRequest } from "./team-follows.js";
 
 // Bob steers the teams of the person's clusters, on whichever machine hosts them: what a team is doing, work for one of its
 // members, and stopping or repeating a request. Asking is answered at once; sending work or changing a request waits for the
@@ -33,13 +32,6 @@ export const TEAM_INSTRUCTIONS = [
 /** The teams Bob may name, as the agent that reads the message sees them. */
 export interface TeamWorld { id: string; name: string; host: string; roles: string[]; coordinator: string | null }
 export const teamWorldOf = (teams: HubTeam[]): TeamWorld[] => teams.map((team) => ({ id: team.id, name: team.clusterName, host: team.hostName, roles: team.members.map((member) => member.role), coordinator: team.coordinatorRole }));
-
-const RESERVED = /[.*+?^${}()|[\]\\]/g;
-/** Whether the message speaks of a team: the word, or a team's cluster or a member's role, as the person types it. */
-export function mentionsTeam(message: string, teams: TeamWorld[]): boolean {
-  if (/\b(team|teammates?)\b/i.test(message)) return true;
-  return teams.some((team) => [team.name, ...team.roles].some((term) => new RegExp(`(^|[^a-z0-9_])${term.replace(RESERVED, "\\$&")}($|[^a-z0-9_])`, "i").test(message)));
-}
 
 export const teamOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("team-assign"), teamId: id, teamName: z.string(), role: z.string().max(40).nullable(), roleLabel: z.string(), message: z.string().min(1).max(20_000) }),
@@ -86,44 +78,22 @@ export async function offerTeam(session: AuthSession, intent: TeamIntent): Promi
     button: retrying ? "Run it again" : "Stop it", operation: { op: retrying ? "team-retry" : "team-cancel", teamId: team.id, teamName: team.clusterName, request: ref } };
 }
 
-const POLL_MS = 5_000;
-const FOLLOW_MS = 30 * 60_000;
-const ANSWER_CHARS = 4_000;
-const changed = (accountId: string): void => broadcastToAllClients({ type: "controlCenterChanged" }, accountId);
-
-/** The request's end, posted in Bob's chat: its answer, or why it stopped. Follows for half an hour, then leaves it to /status. */
-function follow(session: AuthSession, teamId: string, label: string, requestId: string): void {
-  void (async () => {
-    const deadline = Date.now() + FOLLOW_MS;
-    while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-      const view = (await hubRequests(session, teamId)).find((candidate) => candidate.id === requestId);
-      if (!view || view.state === "running" || view.state === "queued") continue;
-      if (view.state === "cancelled") return;
-      const part = view.assignments.find((entry) => !entry.delegated);
-      const text = view.state === "done"
-        ? `${label} answered:\n\n${(part?.result ?? "").trim().slice(0, ANSWER_CHARS) || "(an empty answer)"}`
-        : `${label} ${view.state === "needs_you" ? "is waiting for you" : "stopped without a result"}${part?.reason ? `: ${teamReasonText(part.reason)}` : ""}. Ask me to run it again if you want.\n\n${formatTeamRequest(view)}`;
-      appendBobMessage(await bobDatabase(), session.accountId, { role: "bob", text, importance: view.state === "done" ? "report" : "needs-you", via: "Team · its answer" });
-      changed(session.accountId);
-      return;
-    }
-  })().catch((error) => console.warn(`Could not follow the team request ${requestId}: ${problem(error)}`));
-}
-
 export async function runTeamOperation(session: AuthSession, operation: TeamOperation): Promise<string> {
   if (operation.op === "team-assign") {
     const view = await hubAssign(session, operation.teamId, operation.role, operation.message, randomUUID());
-    follow(session, operation.teamId, `${operation.roleLabel} on the ${operation.teamName} team`, view.id);
-    return `Sent to ${operation.roleLabel} on the ${operation.teamName} team (request ${view.shortId}). I'll bring its answer here when it is done.`;
+    // Kept on disk: the answer is brought back even if this machine or the team's host restarts meanwhile.
+    await followTeamRequest(session.accountId, await hubTeamRef(session, operation.teamId), `${operation.roleLabel} on the ${operation.teamName} team`, view.id);
+    return `Sent to ${operation.roleLabel} on the ${operation.teamName} team (request ${view.shortId}). I'll bring its answer here when it is done, even if a machine restarts meanwhile.`;
   }
   if (operation.op === "team-cancel") {
     const { request, stopFailures } = await hubCancel(session, operation.teamId, operation.request);
+    await closeTeamFollow(session.accountId, request.id);
     return `Stopped request ${request.shortId} of the ${operation.teamName} team.${stopFailures ? " A running turn could not be stopped; it may still finish, but its result is dropped." : ""}`;
   }
   const { previous, request } = await hubRetry(session, operation.teamId, operation.request);
-  follow(session, operation.teamId, `Request ${request.shortId} of the ${operation.teamName} team`, request.id);
-  return `Running ${previous.shortId} again as ${request.shortId}. I'll bring its answer here when it is done.`;
+  await closeTeamFollow(session.accountId, previous.id);
+  await followTeamRequest(session.accountId, await hubTeamRef(session, operation.teamId), `Request ${request.shortId} of the ${operation.teamName} team`, request.id);
+  return `Running ${previous.shortId} again as ${request.shortId}. I'll bring its answer here when it is done, even if a machine restarts meanwhile.`;
 }
 
 registerBobAction("team.run", async ({ db, session, action }) => {

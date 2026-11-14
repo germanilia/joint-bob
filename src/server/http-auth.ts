@@ -149,7 +149,7 @@ async function requireClusterV2Auth(request: Request, response: Response, next: 
     assertRelayChannelSender(request, sender);
     // Team facade has its own selected-cluster and account/home admission. This
     // exception grants no personal account, project, runtime or generic proxy access.
-    const teamFacade = request.method === "POST" && /^\/api\/cluster\/v2\/assistant-teams\/(list|create|get|settings|roster|requests|assign|cancel|retry)$/.test(request.originalUrl.split("?")[0]);
+    const teamFacade = request.method === "POST" && /^\/api\/cluster\/v2\/assistant-teams\/(list|create|get|settings|roster|requests|assign|cancel|retry|notice)$/.test(request.originalUrl.split("?")[0]);
     if (!teamFacade && !relayPeerRequestAllowed(database, node.id, sender, request.originalUrl.split("?")[0])) throw new ClusterProtocolError("No shared resource grant");
     response.locals.machineAuth = true;
     response.locals.machineNodeId = sender;
