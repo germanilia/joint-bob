@@ -12,7 +12,7 @@ const MAIN = "b".repeat(40);
 
 interface Call { method: string; route: string; body?: any; authorization?: string }
 
-function fakeGitHub(options: { knownCommits?: string[]; pull?: { state: string; merged: boolean }; existingBranch?: boolean; openPulls?: Array<{ number: number; html_url: string }> } = {}) {
+function fakeGitHub(options: { knownCommits?: string[]; pull?: { state: string; merged: boolean }; existingBranch?: boolean; openPulls?: Array<{ number: number; html_url: string }>; merges?: Array<[number, object]> } = {}) {
   const calls: Call[] = [];
   const known = new Set([MAIN, ...(options.knownCommits ?? [])]);
   const request = (async (url: string, init: RequestInit = {}) => {
@@ -35,6 +35,7 @@ function fakeGitHub(options: { knownCommits?: string[]; pull?: { state: string; 
     if (method === "POST" && route === "/git/refs") return json({ ref: body.ref }, 201);
     if (method === "PATCH" && route.startsWith("/git/refs/heads/")) return json({}, 200);
     if (method === "POST" && route === "/pulls") return json({ number: 12, html_url: "https://github.com/o/r/pull/12" }, 201);
+    if (method === "PUT" && route === "/pulls/12/merge" && options.merges?.length) return json(...options.merges.shift()!.reverse() as [object, number]);
     return json({ message: "unexpected" }, 500);
   }) as typeof fetch;
   return { calls, request };
@@ -237,5 +238,48 @@ test("a pull request needs changes and a GitHub token", async () => {
     await assert.rejects(openWorktreePullRequest({ projectPath, branchName: "joint-bob/x-1", title: "Fix", body: "", changes: { gitBase: null, writes: [], deletes: [] }, previous: null }, credentials, github.request), /no changes/);
     await assert.rejects(openWorktreePullRequest({ projectPath, branchName: "joint-bob/x-1", title: "Fix", body: "", changes: changes(null), previous: null }, { tokenFor: () => undefined }, github.request), /Attach a GitHub account/);
     await assert.rejects(openWorktreePullRequest({ projectPath, branchName: "joint-bob/x-1", title: "Fix", body: "", base: "../main", changes: changes(null), previous: null }, credentials, github.request), /not a valid branch/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+const MERGED = "c".repeat(40);
+const replayed = async () => ({ baseCommit: MAIN, writes: [{ path: "src/fix.ts", content: Buffer.from("export const fixed = true;\n"), executable: false }], deletes: [] });
+
+test("pr --merge merges exactly the commit it published on the current base", async () => {
+  const { root, projectPath } = await repository();
+  try {
+    const github = fakeGitHub({ merges: [[200, { merged: true, sha: MERGED }]] });
+    const result = await openWorktreePullRequest({ projectPath, branchName: "joint-bob/fix-12345678", title: "Fix", body: "", changes: changes(BASE), previous: null, rebase: replayed, merge: true }, credentials, github.request);
+    assert.deepEqual(result.merged, { commit: MERGED, method: "merge" });
+    assert.equal(result.mergeError, undefined);
+    assert.deepEqual(github.calls.find((call) => call.route === "/git/commits" && call.method === "POST")!.body.parents, [MAIN]);
+    const merge = github.calls.filter((call) => call.method === "PUT");
+    assert.deepEqual(merge.map((call) => [call.route, call.body, call.authorization]), [["/pulls/12/merge", { sha: "new-commit", merge_method: "merge" }, "Bearer gh-token"]]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("pr --merge uses the next method a repository allows, and reports a refused merge", async () => {
+  const { root, projectPath } = await repository();
+  try {
+    const input = { projectPath, branchName: "joint-bob/fix-12345678", title: "Fix", body: "", changes: changes(BASE), previous: null, rebase: replayed, merge: true };
+    const squash = fakeGitHub({ merges: [[405, { message: "Merge commits are not allowed on this repository." }], [200, { merged: true, sha: MERGED }]] });
+    assert.deepEqual((await openWorktreePullRequest(input, credentials, squash.request)).merged, { commit: MERGED, method: "squash" });
+    assert.deepEqual(squash.calls.filter((call) => call.method === "PUT").map((call) => call.body.merge_method), ["merge", "squash"]);
+    const refused = fakeGitHub({ merges: [[405, { message: "Required status check \"test\" is expected." }]] });
+    const result = await openWorktreePullRequest(input, credentials, refused.request);
+    assert.equal(result.merged, undefined);
+    assert.equal(result.mergeError, "Required status check \"test\" is expected.");
+    assert.equal(result.pullRequest.url, "https://github.com/o/r/pull/12");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("pr --merge publishes nothing when the changes conflict with the base as it is now", async () => {
+  const { root, projectPath } = await repository();
+  try {
+    const github = fakeGitHub({ knownCommits: [BASE] });
+    const input = { projectPath, branchName: "joint-bob/fix-12345678", title: "Fix", body: "", changes: changes(BASE), previous: null, merge: true };
+    await assert.rejects(openWorktreePullRequest({ ...input, rebase: async () => ({ baseCommit: MAIN, conflicts: ["src/fix.ts"] }) }, credentials, github.request), /conflict with main as it is now in src\/fix\.ts.*Nothing was published/);
+    await assert.rejects(openWorktreePullRequest({ ...input, rebase: async () => null }, credentials, github.request), /could not be replayed/);
+    await assert.rejects(openWorktreePullRequest(input, credentials, github.request), /could not be replayed/);
+    assert.equal(github.calls.some((call) => call.method !== "GET"), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

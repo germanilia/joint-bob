@@ -14,6 +14,10 @@ type GithubCall = (route: string, method?: string, body?: object) => Promise<unk
 const exec = promisify(execFile);
 const BRANCH = /^(?!\/)(?!.*\/\/)(?!.*\.\.)(?!.*\.lock$)[A-Za-z0-9._/-]{1,200}(?<!\/)$/;
 const COMMIT = /^[0-9a-f]{40}$/;
+const API = "https://api.github.com";
+const MERGE_METHODS = ["merge", "squash", "rebase"] as const;
+const MERGE_ATTEMPTS = 3;
+const MERGE_RETRY_MS = 3_000;
 
 export interface WorktreePullRequestInput {
   projectPath: string;
@@ -25,6 +29,8 @@ export interface WorktreePullRequestInput {
   previous: WorktreePullRequest | null;
   /** Replays the changes on the base branch as it is now; without it they are committed on the worktree's own base. */
   rebase?: (base: string) => Promise<RebasedWorktreeChanges | null>;
+  /** Merge the pull request on GitHub once it is published. Only replayed changes are merged. */
+  merge?: boolean;
 }
 
 export interface WorktreePullRequestResult {
@@ -33,6 +39,10 @@ export interface WorktreePullRequestResult {
   files: number;
   deleted: number;
   warning?: string;
+  /** The merge commit GitHub made, when a merge was asked for and went through. */
+  merged?: { commit: string; method: string };
+  /** Why GitHub did not merge it; the pull request stays open. */
+  mergeError?: string;
 }
 
 function assertBranch(branch: string, label: string): void {
@@ -183,6 +193,10 @@ export async function openWorktreePullRequest(input: WorktreePullRequestInput, c
       console.warn("Worktree pull request could not start from the current base branch", error instanceof Error ? error.message.slice(0, 200) : error);
     }
   }
+  // Merging is only for what was replayed on the base as it is now: anything else could undo what landed since.
+  if (input.merge && !rebased) throw new GitReviewError(409, conflicts.length
+    ? `The worktree's changes conflict with ${base} as it is now in ${conflicts.join(", ")}: combine ${base}'s versions of those files into the worktree, run the checks again and retry. Nothing was published.`
+    : `The worktree's changes could not be replayed on ${base} as it is now, so nothing was published or merged. Try again.`);
   // The files are whole copies relative to the worktree's base. Written on any other commit, they would undo what the branch gained since.
   if (!rebased && previous && input.changes.gitBase && previous.baseCommit !== input.changes.gitBase) {
     throw new GitReviewError(409, conflicts.length
@@ -222,21 +236,49 @@ export async function openWorktreePullRequest(input: WorktreePullRequestInput, c
   }
   const commit = await call("/git/commits", "POST", { message: input.body ? `${input.title}\n\n${input.body}` : input.title, tree, parents }) as { sha: string };
 
+  let result: WorktreePullRequestResult | undefined;
   if (previous) {
     await call(`/git/refs/heads/${refRoute(branch)}`, "PATCH", { sha: commit.sha, force: false });
-    return { pullRequest: rebased ? { ...previous, baseCommit } : previous, updated: true, files: writes.length, deleted: deletes.length, ...(warning ? { warning } : {}) };
-  }
-  if (existingHead) {
+    result = { pullRequest: rebased ? { ...previous, baseCommit } : previous, updated: true, files: writes.length, deleted: deletes.length, ...(warning ? { warning } : {}) };
+  } else if (existingHead) {
     await call(`/git/refs/heads/${refRoute(branch)}`, "PATCH", { sha: commit.sha, force: false });
     const open = await call(`/pulls?head=${encodeURIComponent(`${owner}:${branch}`)}&state=open`) as Array<{ number: number; html_url: string }>;
-    if (open[0]) return { pullRequest: { number: open[0].number, url: open[0].html_url, branch, base, baseCommit }, updated: true, files: writes.length, deleted: deletes.length, ...(warning ? { warning } : {}) };
+    if (open[0]) result = { pullRequest: { number: open[0].number, url: open[0].html_url, branch, base, baseCommit }, updated: true, files: writes.length, deleted: deletes.length, ...(warning ? { warning } : {}) };
   } else {
     await call("/git/refs", "POST", { ref: `refs/heads/${branch}`, sha: commit.sha });
   }
-  const body = warning ? `${input.body}\n\n> ${warning}`.trim() : input.body;
-  const pull = await call("/pulls", "POST", { title: input.title, head: branch, base, body }) as { number: number; html_url: string };
-  return {
-    pullRequest: { number: pull.number, url: pull.html_url, branch, base, baseCommit },
-    updated: false, files: writes.length, deleted: deletes.length, ...(warning ? { warning } : {}),
-  };
+  if (!result) {
+    const body = warning ? `${input.body}\n\n> ${warning}`.trim() : input.body;
+    const pull = await call("/pulls", "POST", { title: input.title, head: branch, base, body }) as { number: number; html_url: string };
+    result = {
+      pullRequest: { number: pull.number, url: pull.html_url, branch, base, baseCommit },
+      updated: false, files: writes.length, deleted: deletes.length, ...(warning ? { warning } : {}),
+    };
+  }
+  if (input.merge) Object.assign(result, await mergePullRequest(request, `/repos/${owner}/${repo}`, token, result.pullRequest.number, commit.sha));
+  return result;
+}
+
+/** Merges exactly the commit just published, with the first method the repository allows. A new pull
+    request can answer "not mergeable" while GitHub is still working that out, so that is retried briefly. */
+async function mergePullRequest(request: typeof fetch, repository: string, token: string, number: number, sha: string): Promise<Pick<WorktreePullRequestResult, "merged" | "mergeError">> {
+  for (const method of MERGE_METHODS) {
+    for (let attempt = 1; ; attempt += 1) {
+      let response: Response;
+      try {
+        response = await request(`${API}${repository}/pulls/${number}/merge`, {
+          method: "PUT", redirect: "manual", signal: AbortSignal.timeout(30_000),
+          headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ sha, merge_method: method }),
+        });
+      } catch { return { mergeError: "GitHub could not be reached" }; }
+      const detail = await response.json().catch(() => ({})) as { merged?: boolean; sha?: string; message?: unknown };
+      if (response.ok && detail.merged === true && COMMIT.test(detail.sha ?? "")) return { merged: { commit: detail.sha!, method } };
+      const message = typeof detail.message === "string" && detail.message ? detail.message.slice(0, 300) : `HTTP ${response.status}`;
+      if (response.status === 405 && /not allowed/i.test(message)) break;
+      if (response.status === 405 && attempt < MERGE_ATTEMPTS && /not mergeable|base branch was modified/i.test(message)) { await sleep(MERGE_RETRY_MS * attempt); continue; }
+      return { mergeError: message };
+    }
+  }
+  return { mergeError: "The repository allows none of the merge, squash or rebase methods" };
 }

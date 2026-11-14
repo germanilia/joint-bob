@@ -13,7 +13,7 @@ const usage = `Usage:
   merge [--worktree ID] --title TITLE --check COMMAND [--operation ID]
   create --name NAME [--color COLOR] [--finish local|pr]
   start --worktree ID (--prompt TEXT | --prompt-stdin) [--title TITLE]
-  pr [--worktree ID] --title TITLE [--body TEXT | --body-stdin] [--base BRANCH]
+  pr [--worktree ID] --title TITLE [--body TEXT | --body-stdin] [--base BRANCH] [--merge]
   delete --worktree ID`;
 const text = { type: "string" };
 const flag = { type: "boolean" };
@@ -24,7 +24,7 @@ const commands = {
   merge: { options: { worktree: text, title: text, check: text, operation: text, "resolve-main": text }, required: ["title", "check"] },
   create: { options: { name: text, color: text, finish: text }, required: ["name"] },
   start: { options: { worktree: text, prompt: text, "prompt-stdin": flag, title: text }, required: ["worktree"], stdin: "prompt" },
-  pr: { options: { worktree: text, title: text, body: text, "body-stdin": flag, base: text }, required: ["title"], stdin: "body" },
+  pr: { options: { worktree: text, title: text, body: text, "body-stdin": flag, base: text, merge: flag }, required: ["title"], stdin: "body" },
   delete: { options: { worktree: text }, required: ["worktree"] },
 };
 
@@ -51,7 +51,7 @@ async function requestBody(operation, values) {
     case "start":
       if (!values.prompt) throw new Error("start needs --prompt TEXT or --prompt-stdin");
       return { operation, worktreeId: values.worktree, prompt: values.prompt, ...optional("title", values.title) };
-    case "pr": return { operation, title: values.title, ...optional("worktreeId", values.worktree), ...optional("body", values.body), ...optional("base", values.base) };
+    case "pr": return { operation, title: values.title, ...optional("worktreeId", values.worktree), ...optional("body", values.body), ...optional("base", values.base), ...optional("merge", values.merge) };
     case "delete": return { operation, worktreeId: values.worktree };
   }
 }

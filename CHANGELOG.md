@@ -9,6 +9,8 @@
 - The team picker in Bob's control center lists the teams of all your clusters, including ones hosted on another machine, and offers a new team only for a cluster that has none. Every team has a Send work box (to a member, or to the coordinator) and its requests with their answers, Stop and Run again; this also works for a person signed in on the team's machine with their own account.
 - Bob reports on the teams of your clusters, sends a member work after you press Send it, and brings the answer back to his chat, wherever the team runs.
 - `/qa …` and the other role calls start even while the decision model is down; the group is told once an hour that unaddressed messages are not being read.
+- A worktree merge no longer stops when the machine's local main has commits upstream lacks. Commits upstream already has, for example ones pushed from another machine, are dropped; the others are replayed on top of upstream, and the old main stays in the reflog.
+- When local main still cannot take the commit, the agent lands the task through GitHub with `pr --merge`, which opens the pull request on the current main and merges it, instead of asking you how to reconcile Git.
 
 ## 2.299.21 — 2026-11-14
 

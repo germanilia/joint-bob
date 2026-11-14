@@ -34,7 +34,7 @@ export const worktreeAgentRequestSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("merge"), worktreeId: worktreeId.optional(), operationId: worktreeId, title: z.string().trim().min(1).max(256), check: z.string().trim().min(1).max(10_000), resolutionTarget: z.string().regex(/^[a-f0-9]{40}$/).optional() }).strict(),
   z.object({ operation: z.literal("create"), name: z.string().max(200), color: z.enum(PROJECT_COLORS).optional(), finish: z.enum(["local", "pr"]).optional() }).strict(),
   z.object({ operation: z.literal("start"), worktreeId, prompt: z.string().trim().min(1).max(100_000), title: z.string().trim().min(1).max(120).optional() }).strict(),
-  z.object({ operation: z.literal("pr"), worktreeId: worktreeId.optional(), title: z.string().trim().min(1).max(256), body: z.string().max(60_000).default(""), base: z.string().trim().min(1).max(200).optional() }).strict(),
+  z.object({ operation: z.literal("pr"), worktreeId: worktreeId.optional(), title: z.string().trim().min(1).max(256), body: z.string().max(60_000).default(""), base: z.string().trim().min(1).max(200).optional(), merge: z.boolean().optional() }).strict(),
   z.object({ operation: z.literal("delete"), worktreeId }).strict(),
 ]);
 export type WorktreeAgentRequest = z.infer<typeof worktreeAgentRequestSchema>;
@@ -95,14 +95,14 @@ async function startConversation(identity: WorktreeAgentIdentity, project: Proje
   return { conversationId: sessionId, engine: identity.engine, worktreeId: worktree.id, secretAccounts: accountIds.length };
 }
 
-async function openPullRequest(identity: WorktreeAgentIdentity, project: ProjectRecord, worktree: ProjectWorktree, input: { title: string; body: string; base?: string }) {
+async function openPullRequest(identity: WorktreeAgentIdentity, project: ProjectRecord, worktree: ProjectWorktree, input: { title: string; body: string; base?: string; merge?: boolean }) {
   const conversation = { engine: identity.engine, sessionId: identity.sessionId };
   const accounts = githubAccountsForProject(project.id, conversation);
   const gitEnvironment = genericSecretEnvironment(project.id, conversation);
   const fallback = gitEnvironment.GH_TOKEN ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
   const changes = await withoutGitIgnored(project.path, await worktreeChanges(project.id, worktree.id));
   const result = await openWorktreePullRequest({
-    projectPath: project.path, branchName: pullRequestBranch(worktree), title: input.title, body: input.body, base: input.base,
+    projectPath: project.path, branchName: pullRequestBranch(worktree), title: input.title, body: input.body, base: input.base, merge: input.merge,
     changes, previous: worktree.pullRequest, rebase: (base) => rebaseWorktreeChanges(project.path, gitEnvironment, changes, base),
   }, {
     tokenFor: (repository) => githubAccountFor(accounts, repository)?.token ?? fallback,
@@ -110,6 +110,7 @@ async function openPullRequest(identity: WorktreeAgentIdentity, project: Project
   });
   await recordWorktreePullRequest(project.id, worktree.id, result.pullRequest);
   broadcastToProject(project.id, { type: "worktreesChanged" });
+  if (result.mergeError) throw new ProjectWorktreeError(409, `Pull request ${result.pullRequest.url} is open, but GitHub did not merge it: ${result.mergeError}. Tell the user, with the pull request link.`);
   return { worktreeId: worktree.id, ...result };
 }
 

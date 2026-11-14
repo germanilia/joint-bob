@@ -221,6 +221,8 @@ async function commitChanges(projectPath: string, git: Git, gitBase: string, cha
 export interface LocalWorktreeCandidate {
   status: "prepared";
   reconciliation?: boolean;
+  /** A reconciliation that replayed local-only commits: the upstream commit they were replayed on. */
+  upstream?: string;
   targetCommit: string;
   commit: string;
   tree: string;
@@ -277,7 +279,7 @@ export async function prepareLocalWorktreeCommit(projectPath: string, env: NodeJ
   let targetCommit = await localMain(git, projectPath);
   if (changes.gitBase && (await git(["merge-base", "--is-ancestor", changes.gitBase, targetCommit])).code !== 0) {
     const reconciliation = await reconcileWorktreeMain(projectPath, env, changes.gitBase);
-    if (reconciliation.status === "blocked") throw new Error(`Main reconciliation blocked: ${reconciliation.reason}. Paths: ${reconciliation.conflicts.join(", ")}. Run reconcile-main for diagnostics; do not reset shared files.`);
+    if (reconciliation.status === "blocked") throw new Error(`Main reconciliation blocked: ${reconciliation.reason}.${reconciliation.conflicts.length ? ` Paths: ${reconciliation.conflicts.join(", ")}.` : ""} ${reconciliation.next ?? BLOCKED_MAIN_NEXT_STEP}`);
     targetCommit = await localMain(git, projectPath);
   }
   if (resolutionTarget !== undefined && resolutionTarget !== targetCommit) throw new Error("Main changed since conflict resolution; inspect the new revision before retrying");
@@ -440,7 +442,7 @@ export async function installLocalWorktreeCommit(projectPath: string, env: NodeJ
   const paths = rawChanges(await output(git, ["diff-tree", "-r", "-z", "--no-renames", "--no-abbrev", candidate.targetCommit, candidate.commit])).map(file => file.file).sort();
   const parents = (await output(git, ["rev-list", "--parents", "-n", "1", candidate.commit])).split(" ").slice(1);
   const validHistory = candidate.reconciliation
-    ? (await git(["merge-base", "--is-ancestor", candidate.targetCommit, candidate.commit])).code === 0
+    ? (await git(["merge-base", "--is-ancestor", candidate.targetCommit, candidate.commit])).code === 0 || await replayedOnUpstream(git, candidate)
     : candidate.commit === candidate.targetCommit || (parents.length === 1 && parents[0] === candidate.targetCommit);
   if (tree !== candidate.tree || JSON.stringify(paths) !== JSON.stringify(candidate.paths) || !validHistory) throw new Error("Candidate metadata does not match its Git commit");
   const directory = await output(git, ["rev-parse", "--absolute-git-dir"]);
@@ -475,13 +477,69 @@ export interface MainReconciliationResult {
   targetCommit: string;
   conflicts: string[];
   reason?: string;
+  /** With a blocked result: what to do instead. */
+  next?: string;
+  /** Local-only commits that were replayed on upstream, as they were before replaying. */
+  replayed?: string[];
+  /** Local-only commits left out because upstream already has their changes. */
+  alreadyUpstream?: string[];
 }
 
-/** Advance only already-synced history; never rewrite shared working files or discard staged edits. */
+/** What an agent does when local main cannot take a worktree's commit: land it on GitHub, never ask about Git state. */
+export const BLOCKED_MAIN_NEXT_STEP = "Do not reset shared files or ask the user about Git state: finish with pr --merge, which lands the task on GitHub without touching this checkout.";
+const MAX_REPLAYED_COMMITS = 100;
+
+/**
+ * Local main's own commits put back on top of upstream, as `git rebase` would: a commit whose change
+ * upstream already has (by patch ID, or because replaying it changes nothing) is left out, so a commit
+ * that reached upstream another way, such as through file sync and a push from another machine, stops
+ * blocking. Nothing moves; the replayed commits are only written to the object store.
+ */
+async function replayLocalCommits(git: Git, head: string, upstream: string): Promise<{ commit: string; replayed: string[]; alreadyUpstream: string[] } | { reason: string; conflicts: string[] }> {
+  const local = (await output(git, ["rev-list", "--reverse", "--topo-order", "--parents", `${upstream}..${head}`])).split("\n").filter(Boolean).map(line => line.split(" "));
+  if (local.length > MAX_REPLAYED_COMMITS) return { reason: `Local main has ${local.length} commits upstream lacks; too many to replay automatically`, conflicts: [] };
+  if (local.some(entry => entry.length !== 2)) return { reason: "Local main has merge commits upstream lacks; they cannot be replayed automatically", conflicts: [] };
+  const published = new Set((await output(git, ["cherry", upstream, head])).split("\n").filter(line => line.startsWith("- ")).map(line => line.slice(2).trim()));
+  let onto = upstream;
+  const replayed: string[] = [];
+  const alreadyUpstream: string[] = [];
+  for (const [commit, parent] of local) {
+    if (published.has(commit)) { alreadyUpstream.push(commit); continue; }
+    const merged = await git(["merge-tree", "--write-tree", "-z", "--name-only", "--no-messages", `--merge-base=${parent}`, onto, commit]);
+    const [tree, ...conflicted] = merged.stdout.toString().split("\0");
+    if (merged.code === 1) return { reason: `Local commit ${commit.slice(0, 8)} conflicts with upstream; it was kept on local main`, conflicts: [...new Set(conflicted.filter(Boolean))].sort() };
+    if (merged.code !== 0 || !COMMIT.test(tree)) throw new Error(`git merge-tree failed: ${merged.stderr.trim() || `exit status ${merged.code}`}`);
+    if (tree === await output(git, ["rev-parse", `${onto}^{tree}`])) { alreadyUpstream.push(commit); continue; }
+    const [name, email, authored, committed] = (await output(git, ["log", "-1", "--date=raw", "--format=%an%x00%ae%x00%ad%x00%cd", commit])).split("\0");
+    const raw = (await git(["cat-file", "commit", commit])).stdout;
+    const message = raw.subarray(raw.indexOf("\n\n") + 2);
+    // The original dates keep a retry's replay byte-identical, so its journaled candidate still matches.
+    onto = await output(git, ["commit-tree", tree, "-p", onto, "-F", "-"], { input: message, env: {
+      ...IDENTITY, GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_AUTHOR_DATE: authored, GIT_COMMITTER_DATE: committed,
+    } });
+    replayed.push(commit);
+  }
+  return { commit: onto, replayed, alreadyUpstream };
+}
+
+/** A reconciliation candidate that replaces local main with its own commits replayed on upstream. */
+async function replayedOnUpstream(git: Git, candidate: LocalWorktreeCandidate): Promise<boolean> {
+  const upstream = candidate.upstream;
+  if (!upstream || !COMMIT.test(upstream) || (await git(["merge-base", "--is-ancestor", upstream, candidate.commit])).code !== 0) return false;
+  const replayed = (await output(git, ["rev-list", "--parents", `${upstream}..${candidate.commit}`])).split("\n").filter(Boolean);
+  const local = Number(await output(git, ["rev-list", "--count", `${upstream}..${candidate.targetCommit}`]));
+  return replayed.every(line => line.split(" ").length === 2) && replayed.length <= local;
+}
+
+/**
+ * Advance only already-synced history; never rewrite shared working files or discard staged edits.
+ * Local commits upstream lacks are replayed on it; the ones it already has are dropped. The old main
+ * stays in main's reflog.
+ */
 export async function reconcileWorktreeMain(projectPath: string, env: NodeJS.ProcessEnv, requiredBase?: string): Promise<MainReconciliationResult> {
   const git = projectGit(projectPath, env);
   const head = await localMain(git, projectPath);
-  const blocked = (reason: string, conflicts: string[] = []): MainReconciliationResult => ({ status: "blocked", targetCommit: head, reason, conflicts });
+  const blocked = (reason: string, conflicts: string[] = []): MainReconciliationResult => ({ status: "blocked", targetCommit: head, reason, conflicts, next: BLOCKED_MAIN_NEXT_STEP });
   if (requiredBase !== undefined && !COMMIT.test(requiredBase)) throw new Error("Invalid worktree base commit");
   const remote = await remoteBranch(git);
   if (!remote) return blocked("No configured upstream; configure the project's Git remote");
@@ -496,24 +554,32 @@ export async function reconcileWorktreeMain(projectPath: string, env: NodeJS.Pro
   const previous = await integrationJournal(path.join(directory, "joint-bob-integrations", `${operationId}.json`));
   if (previous && previous.phase !== "committed") {
     await installLocalWorktreeCommit(projectPath, env, previous.candidate, operationId);
-    return { status: "reconciled", targetCommit: upstream, conflicts: [] };
+    return { status: "reconciled", targetCommit: previous.candidate.commit, conflicts: [] };
   }
   if (head === upstream || (await git(["merge-base", "--is-ancestor", upstream, head])).code === 0) return { status: "current", targetCommit: head, conflicts: [] };
-  if ((await git(["merge-base", "--is-ancestor", head, upstream])).code !== 0) return blocked("Local main and upstream diverged; local commits were retained");
-  const paths = rawChanges(await output(git, ["diff-tree", "-r", "-z", "--no-renames", "--no-abbrev", head, upstream])).map(file => file.file).sort();
+  let target = upstream;
+  let history: Pick<MainReconciliationResult, "replayed" | "alreadyUpstream"> = {};
+  const diverged = (await git(["merge-base", "--is-ancestor", head, upstream])).code !== 0;
+  if (diverged) {
+    const replay = await replayLocalCommits(git, head, upstream);
+    if ("reason" in replay) return blocked(replay.reason, replay.conflicts);
+    target = replay.commit;
+    history = { replayed: replay.replayed, alreadyUpstream: replay.alreadyUpstream };
+  }
+  const paths = rawChanges(await output(git, ["diff-tree", "-r", "-z", "--no-renames", "--no-abbrev", head, target])).map(file => file.file).sort();
   const conflicts: string[] = [];
   for (const file of paths) {
     await assertOpContained(projectPath, file);
-    const disk = await git(["diff", "--quiet", upstream, "--", file]);
+    const disk = await git(["diff", "--quiet", target, "--", file]);
     const staged = await git(["diff", "--cached", "--quiet", head, "--", file]);
     if (disk.code > 1 || staged.code > 1) throw new Error(`Cannot inspect reconciliation path: ${file}`);
     if (disk.code !== 0 || staged.code !== 0) conflicts.push(file);
   }
-  if (conflicts.length) return blocked("Upstream paths have unsynced files or staged edits; let file sync finish or resolve those edits with their owner", conflicts);
-  const candidate: LocalWorktreeCandidate = { status: "prepared", reconciliation: true, targetCommit: head, commit: upstream,
-    tree: await output(git, ["rev-parse", `${upstream}^{tree}`]), digest: hash, paths };
+  if (conflicts.length) return { ...blocked("Files upstream changed differ from upstream in the project checkout (not synced yet, or edited or staged there)", conflicts), ...history };
+  const candidate: LocalWorktreeCandidate = { status: "prepared", reconciliation: true, ...(diverged ? { upstream } : {}), targetCommit: head, commit: target,
+    tree: await output(git, ["rev-parse", `${target}^{tree}`]), digest: hash, paths };
   await installLocalWorktreeCommit(projectPath, env, candidate, operationId);
-  return { status: "reconciled", targetCommit: upstream, conflicts: [] };
+  return { status: "reconciled", targetCommit: target, conflicts: [], ...history };
 }
 
 export type RebasedWorktreeChanges =
