@@ -141,10 +141,10 @@ function head(card, context) {
 
 /** Terminal, Git, Folders and Story: each opens the conversation first, then the tool, as the card's actions do. */
 function toolsRow(card) {
-  const row = element("div", "control-list-tools");
+  const row = element("div", "control-list-pv-tools");
   row.dataset.testid = "control-list-tools";
   for (const action of cardActionList(card).filter((candidate) => CONVERSATION_TOOLS.includes(candidate.id))) {
-    const tool = button("control-list-tool", `control-list-tool-${action.id}`, "", (event) => {
+    const tool = button("control-list-pv-tool", `control-list-tool-${action.id}`, "", (event) => {
       Promise.resolve(action.run(card, event.currentTarget)).catch((error) => toast.error(error.message));
     });
     tool.title = action.title;

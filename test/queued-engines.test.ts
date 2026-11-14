@@ -386,6 +386,38 @@ test("Stop terminates Claude and holds the next message until force start", asyn
   } finally { await writeFile(nextGate, ""); process.env.JOINT_BOB_TEST_ENGINE_LOG = engineLog; }
 });
 
+test("a message waits for a Claude answer but not for the background tasks that outlive it", async () => {
+  const opened = openChat(baseUrl, fixture.cookie, fixture.projectId, "claude:new");
+  sockets.push(opened.socket);
+  await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "ready"));
+  const gate = process.env.JOINT_BOB_FAKE_GATE;
+  // The real Claude runtime runs against the fake CLI, not the stub.
+  const engineLog = process.env.JOINT_BOB_TEST_ENGINE_LOG;
+  delete process.env.JOINT_BOB_TEST_ENGINE_LOG;
+  try {
+    const started = () => opened.messages.filter((frame) => frame.type === "promptStarted").length;
+    const answered = () => opened.messages.filter((frame) => frame.type === "status" && (frame.status as { backgroundRunning?: boolean }).backgroundRunning).length;
+    // Queued before the answer: it starts once the answer is out, though the process lingers.
+    await writeFile(`${gate}.after one`, "");
+    opened.socket.send(JSON.stringify({ type: "prompt", message: "linger one" }));
+    await waitFor(opened.messages, () => started() === 1);
+    opened.socket.send(JSON.stringify({ type: "prompt", message: "after one" }));
+    await waitFor(opened.messages, () => opened.messages.some((frame) => frame.type === "userMessage" && frame.queued && frame.text === "after one"));
+    await writeFile(`${gate}.linger one`, "");
+    await waitFor(opened.messages, () => started() === 2, 5_000);
+    // Queued after the answer, while only the background task runs.
+    await writeFile(`${gate}.after two`, "");
+    opened.socket.send(JSON.stringify({ type: "prompt", message: "linger two" }));
+    await waitFor(opened.messages, () => started() === 3);
+    const before = answered();
+    await writeFile(`${gate}.linger two`, "");
+    await waitFor(opened.messages, () => answered() > before, 5_000);
+    opened.socket.send(JSON.stringify({ type: "prompt", message: "after two" }));
+    await waitFor(opened.messages, () => started() === 4, 5_000);
+    assert.deepEqual(opened.messages.filter((frame) => ["error", "promptFailed"].includes(String(frame.type))), []);
+  } finally { process.env.JOINT_BOB_TEST_ENGINE_LOG = engineLog; }
+});
+
 test("queue transfer fence includes an enqueue awaiting attachment persistence", async (context) => {
   const opened = openChat(baseUrl, fixture.cookie, fixture.projectId, "new");
   sockets.push(opened.socket);

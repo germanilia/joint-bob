@@ -577,6 +577,7 @@ async function enqueue(connection: HarnessChatConnection, message: string, image
   publish(connection, { type: "userMessage", text: displayText, timestamp: queued.createdAt, ...(queued.author ? { author: queued.author } : {}), scheduled: isScheduledPromptText(message), queued: true, requestId: queued.requestId, queueId: queued.id, revision: queued.revision, editableText: queued.messageText, settings: queued.settings, attachments: absolute.map(({ kind, name, path: attachmentPath }) => ({ kind, name, path: attachmentPath })) });
   refreshHarnessPromptQueue(connection);
   void drainHarnessPromptQueue(connection).catch(promptQueueFailed(connection));
+  await startQueuedPastBackgroundTasks(connection);
 }
 
 async function applyQueuedSettings(connection: HarnessChatConnection, settings: QueuedSettings, poolActive = false): Promise<void> {
@@ -827,6 +828,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
     let outcome: "completed" | "failed" = "failed";
     let claimed = false;
     let promptSent = false;
+    let stopWatchingAnswer: (() => void) | undefined;
     try {
       origin = (await getClusterNode()).id;
       const startedAt = new Date().toISOString();
@@ -871,6 +873,10 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
         if (!queued.systemEventId) publish(connection, { type: "promptStarted", queueId: queued.id, scheduled: connection.shared.scheduledTurn });
         refreshHarnessPromptQueue(connection);
       } };
+      // The answer can come out while a message waits behind it; only background tasks hold the process then.
+      stopWatchingAnswer = connection.shared.session.subscribe((event) => {
+        if (event.type === "status") void startQueuedPastBackgroundTasks(connection).catch(promptQueueFailed(connection));
+      });
       if (!pool) await connection.shared.session.prompt(promptInput);
       else {
         const saved = queued.settings ?? readQueueSettings(queueKey(connection));
@@ -899,6 +905,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
         throw error;
       }
     } finally {
+      stopWatchingAnswer?.();
       try {
         if (activeDifficulty && origin) saveDifficulty({ ...activeDifficulty, endedAt: new Date().toISOString(), outcome }, origin);
         if (allocation && allocationOwner) {
@@ -1434,6 +1441,42 @@ async function standBobDown(connection: HarnessChatConnection, automation: boole
   if (connection.author) await (await import("./control-center-review-check.js")).leaveToPerson(connection.project.id, connection.conversationId, connection.author.accountId);
 }
 
+/** Stops the running turn and lets the drain start the next queued prompt. */
+async function interruptTurnForQueue(connection: HarnessChatConnection, reason: string): Promise<void> {
+  const key = queueKey(connection);
+  const draining = drains.get(key);
+  pausedDrains.add(key);
+  refreshHarnessPromptQueue(connection);
+  try {
+    // Kiro and Claude throw from cancel() when no turn is running (for
+    // example between a dispatch claiming the queue and the harness process
+    // starting during preflight). That is benign here: the paused drain plus
+    // re-drain still starts the queued prompt, so a cancel that reports no
+    // running turn must not surface an error or abort the start.
+    try { await connection.shared.session.cancel(reason); }
+    catch (error) { if (!/not running/i.test(chatErrorMessage(error))) throw error; }
+    if (draining) try { await draining; }
+    catch (error) {
+      if (!pausedDrains.has(key)) publish(connection, { type: "error", error: chatErrorMessage(error) });
+    }
+    sendHarnessStatus(connection.shared);
+  } finally {
+    pausedDrains.delete(key);
+    void drainHarnessPromptQueue(connection).catch(promptQueueFailed(connection));
+  }
+}
+
+/**
+ * A finished answer whose process only lives on for background tasks must not hold a person's next message:
+ * the message starts now and the tasks end with the process. Automatic prompts keep waiting.
+ */
+async function startQueuedPastBackgroundTasks(connection: HarnessChatConnection): Promise<void> {
+  const key = queueKey(connection);
+  if (pausedDrains.has(key) || promptQueuePaused(key) || !connection.shared.session.status().backgroundRunning) return;
+  if (!listQueuedPrompts(key).some((prompt) => !prompt.systemEventId && prompt.dispatchState === "pending")) return;
+  await interruptTurnForQueue(connection, "Stopped its background tasks to run your next message");
+}
+
 async function applyQueueCommand(connection: HarnessChatConnection, message: ReturnType<typeof socketMessageSchema.parse>): Promise<void> {
   if (message.type === "forceStartQueuedPrompt") {
     if (!message.queueId || !message.queueRevision) throw new Error("Queued prompt force start is incomplete");
@@ -1449,27 +1492,7 @@ async function applyQueueCommand(connection: HarnessChatConnection, message: Ret
       throw new Error("Queued message changed. Its status has been updated; try again if it is still queued.");
     }
     await resumePromptQueue(connection);
-    const draining = drains.get(key);
-    pausedDrains.add(key);
-    refreshHarnessPromptQueue(connection);
-    try {
-      // Force start interrupts the running turn so the prioritized prompt runs
-      // next. Kiro and Claude throw from cancel() when no turn is running (for
-      // example between a dispatch claiming the queue and the harness process
-      // starting during preflight). That is benign here: the paused drain plus
-      // re-drain still starts the forced prompt, so a cancel that reports no
-      // running turn must not surface an error or abort the force start.
-      try { await connection.shared.session.cancel("Stopped to run the queued prompt you started now"); }
-      catch (error) { if (!/not running/i.test(chatErrorMessage(error))) throw error; }
-      if (draining) try { await draining; }
-      catch (error) {
-        if (!pausedDrains.has(key)) publish(connection, { type: "error", error: chatErrorMessage(error) });
-      }
-      sendHarnessStatus(connection.shared);
-    } finally {
-      pausedDrains.delete(key);
-      void drainHarnessPromptQueue(connection).catch(promptQueueFailed(connection));
-    }
+    await interruptTurnForQueue(connection, "Stopped to run the queued prompt you started now");
     return;
   }
   if (message.type === "editQueuedPrompt") {

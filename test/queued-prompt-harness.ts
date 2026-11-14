@@ -88,6 +88,8 @@ await appendFile(transcript, record('assistant', { role: 'assistant', content: [
 console.log(JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } }));
 console.log(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text }] } }));
 console.log(JSON.stringify({ type: 'result', is_error: false }));
+// A prompt that starts with "linger" leaves the process alive after its answer, like a background task would.
+if (text.startsWith('linger')) await waitFor(process.env.JOINT_BOB_FAKE_GATE + '.exit.' + text);
 `);
   await chmod(executable, 0o755);
   return executable;
