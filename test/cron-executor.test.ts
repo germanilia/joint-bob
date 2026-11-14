@@ -8,6 +8,7 @@ import { ensureConversationRecord } from "../src/conversation-records.js";
 import { cronStore } from "../src/cron.js";
 import { queuedCronPrompt } from "../src/server/cron.js";
 import { server } from "../src/server/state.js";
+import { sessionTitleOverrides, setSessionTitle } from "../src/names.js";
 import { webhookConversationTitle } from "../src/webhook-title.js";
 import { cronInputSchema } from "../src/cron.js";
 
@@ -107,13 +108,13 @@ test("scheduled executor queues its model and reasoning with the prompt so a bus
   }
 });
 
-test("new scheduled conversations bind name placeholders before sending the prompt", async (context) => {
+test("new scheduled conversations resolve dates before binding remaining placeholders", async (context) => {
   const endpoint = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(endpoint, "listening");
   context.mock.method(server, "address", () => endpoint.address());
   const node = await getClusterNode(), sessionId = randomUUID();
   await ensureConversationRecord("project", "pi", sessionId, node.id);
-  const task = cronStore().create({ projectId: "project", name: "Report - [SUMMARY]", prompt: "Summarize failures", engine: "pi", sessionId: null, ownerNodeId: node.id, enabled: true, schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" } });
+  const task = cronStore().create({ projectId: "project", name: "Report [date] - [SUMMARY]", prompt: "Summarize failures", engine: "pi", sessionId: null, ownerNodeId: node.id, enabled: true, schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" } });
   const run = cronStore().claim(task.id, node.id, task.nextRun)!;
   let message = "", template: string | undefined;
   endpoint.on("connection", socket => {
@@ -128,10 +129,51 @@ test("new scheduled conversations bind name placeholders before sending the prom
     });
   });
   try {
-    await queuedCronPrompt(task, run, sessionId);
-    assert.equal(template, task.name);
+    await queuedCronPrompt(task, { ...run, dueAt: Date.parse("2026-11-14T03:00:00Z") }, sessionId);
+    assert.equal(template, "Report 2026-11-14 - [SUMMARY]");
+    assert.equal((await sessionTitleOverrides())[sessionId], "Report 2026-11-14 - [SUMMARY]");
+    assert.doesNotMatch(message, /\[date\]/);
     assert.match(message, /JOINT_BOB_WEBHOOK_TITLE_CLI/);
     assert.match(message, /\[Joint Bob scheduled task\]\nSummarize failures/);
+  } finally {
+    for (const socket of endpoint.clients) socket.terminate();
+    await new Promise<void>(resolve => endpoint.close(() => resolve()));
+  }
+});
+
+test("scheduled date titles use the due date and timezone without agent work or overwriting renames", async context => {
+  const endpoint = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(endpoint, "listening");
+  context.mock.method(server, "address", () => endpoint.address());
+  const node = await getClusterNode();
+  const cases = [
+    { timezone: "UTC", dueAt: "2026-11-14T23:30:00Z", expected: "deploy to prod - 2026-11-14 / 2026-11-14", pinned: false, renamed: false },
+    { timezone: "Asia/Jerusalem", dueAt: "2026-11-14T23:30:00Z", expected: "deploy to prod - 2026-11-15 / 2026-11-15", pinned: false, renamed: false },
+    { timezone: "America/Los_Angeles", dueAt: "2027-01-01T00:30:00Z", expected: "deploy to prod - 2026-12-31 / 2026-12-31", pinned: false, renamed: false },
+    { timezone: "UTC", dueAt: "2026-11-14T23:30:00Z", expected: "My conversation", pinned: true, renamed: true },
+    { timezone: "UTC", dueAt: "2026-11-14T23:30:00Z", expected: "My conversation", pinned: false, renamed: true },
+  ];
+  endpoint.on("connection", socket => {
+    socket.send(JSON.stringify({ type: "ready", status: { model: { provider: "test", id: "test" }, thinkingLevel: "low" } }));
+    socket.on("message", raw => {
+      const request = JSON.parse(raw.toString());
+      assert.equal(request.message, "[Joint Bob scheduled task]\nDeploy");
+      socket.send(JSON.stringify({ type: "userMessage", queued: true, requestId: request.requestId, queueId: "q" }));
+      socket.send(JSON.stringify({ type: "promptStarted", queueId: "q" }));
+      socket.send(JSON.stringify({ type: "promptCompleted", queueId: "q" }));
+    });
+  });
+  try {
+    for (const fixture of cases) {
+      const sessionId = randomUUID();
+      await ensureConversationRecord("project", "pi", sessionId, node.id);
+      if (fixture.renamed) await setSessionTitle(sessionId, "My conversation");
+      const task = cronStore().create({ projectId: "project", name: "deploy to prod - [date] / [date]", prompt: "Deploy", engine: "pi", sessionId: fixture.pinned ? sessionId : null, ownerNodeId: node.id, enabled: true, schedule: { frequency: "daily", hour: 5, minute: 0, weekday: 0, timezone: fixture.timezone } });
+      const run = cronStore().claim(task.id, node.id, task.nextRun)!;
+      await queuedCronPrompt(task, { ...run, dueAt: Date.parse(fixture.dueAt) }, sessionId);
+      assert.equal((await sessionTitleOverrides())[sessionId], fixture.expected);
+      assert.equal(webhookConversationTitle("project", sessionId), undefined, "date-only titles need no agent completion");
+    }
   } finally {
     for (const socket of endpoint.clients) socket.terminate();
     await new Promise<void>(resolve => endpoint.close(() => resolve()));

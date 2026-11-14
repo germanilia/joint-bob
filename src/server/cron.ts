@@ -42,7 +42,6 @@ async function prepareConversation(task: CronTask): Promise<string> {
   if (!task.sessionId) {
     const id = randomUUID();
     await ensureConversationRecord(project.id, task.engine, id, local.id);
-    await ensureSessionTitle(id, task.name);
     return id;
   }
   for (;;) {
@@ -65,8 +64,14 @@ async function prepareConversation(task: CronTask): Promise<string> {
 
 export async function queuedCronPrompt(task: CronTask, run: CronRun, sessionId: string): Promise<void> {
   const reasoning = task.reasoning ?? task.model?.reasoning;
-  const titleInstruction = task.sessionId ? "" : automationTitleInstruction(task.name);
-  if (titleInstruction) bindWebhookTitle(task.projectId, sessionId, task.name);
+  let titleInstruction = "";
+  if (!task.sessionId) {
+    const date = new Intl.DateTimeFormat("en-CA", { timeZone: task.schedule.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(run.dueAt);
+    const titleTemplate = task.name.replaceAll("[date]", date);
+    await ensureSessionTitle(sessionId, titleTemplate);
+    titleInstruction = automationTitleInstruction(titleTemplate);
+    if (titleInstruction) bindWebhookTitle(task.projectId, sessionId, titleTemplate);
+  }
   await queueConversationPrompt({
     automationProfile: automationProfileContext(task),
     scheduledAutoRespond: task.autoRespond ?? undefined,
