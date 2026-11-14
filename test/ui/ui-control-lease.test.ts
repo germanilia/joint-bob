@@ -48,6 +48,8 @@ test("opening a conversation over the board takes control, Esc or Close gives it
 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
+  // Bob's chat floats over the page as a window; the board is used with it folded into the button.
+  await page.getByTestId("control-chat-fold").click();
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   const card = page.getByTestId("control-center-card");
@@ -67,10 +69,9 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   assert.equal(await page.locator("body.view-control.control-popup").count(), 1, "the board stays under the conversation");
   await giveBack.waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("control-lease-banner").isVisible(), false);
-  // It opens over the stage, beside Bob's chat, which stays visible.
-  const sides = await page.evaluate(() => ({ chat: document.querySelector("#controlChat")!.getBoundingClientRect(), popup: document.querySelector("#chatPanel")!.getBoundingClientRect() }));
-  assert.ok(sides.popup.left >= sides.chat.right - 1 || sides.popup.right <= sides.chat.left + 1, `the conversation sits beside Bob's chat: ${JSON.stringify(sides)}`);
-  assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
+  // It opens over the stage; Bob's chat is a window that floats over the page, folded away here.
+  const stage = await page.evaluate(() => ({ stage: document.querySelector("#controlViews")!.getBoundingClientRect(), popup: document.querySelector("#chatPanel")!.getBoundingClientRect() }));
+  assert.ok(Math.abs(stage.popup.left - stage.stage.left) < 2 && Math.abs(stage.popup.right - stage.stage.right) < 2, `the conversation fills the stage: ${JSON.stringify(stage)}`);
   await composer.waitFor({ state: "visible" });
   assert.match(await mode.innerText(), /You're in it/);
   assert.equal(await page.getByTestId("control-popup-take").isVisible(), false);

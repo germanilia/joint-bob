@@ -9,6 +9,7 @@
 
 import { saveControlCenter, toggleFolded } from "./control-center.js";
 import { currentControlView, showControlView } from "./control-views.js";
+import { initFloatingChat } from "./bob-float.js";
 import { elements } from "./elements.js";
 import { state } from "./state.js";
 
@@ -77,13 +78,15 @@ panel.append(chatFab);
 
 function applyFolds() {
   body.classList.toggle("bob-chat-folded", state.controlCenter.collapsed.includes("chat"));
+  float.sync();
 }
 function fold(id) {
   toggleFolded(id);
   applyFolds();
 }
 chatFold.addEventListener("click", () => fold("chat"));
-chatFab.addEventListener("click", () => fold("chat"));
+// The button can be dragged; a click that is not the end of a drag opens the chat as a window that floats over the page.
+const float = initFloatingChat({ panel, chat: elements.controlChat, fab: chatFab, fold });
 // Code that writes into Bob's chat (Spotlight's "Ask Bob", "Ask Bob for a dashboard", a trigger's triage) opens it first.
 window.addEventListener("bob-chat-wanted", () => { if (state.controlCenter.collapsed.includes("chat")) fold("chat"); });
 
@@ -103,6 +106,9 @@ function openSettings() {
   elements.controlChatSettingsButton.click();
   if (!elements.controlChatSettings.hidden) elements.controlChatSettings.scrollIntoView?.({ block: "nearest" });
 }
+
+// A system message's button to Bob's settings.
+window.addEventListener("bob-settings-wanted", () => openSettings());
 
 window.addEventListener("control-bob-settings", (event) => {
   const on = event.detail?.monitoring !== false;
@@ -176,6 +182,7 @@ function apply() {
     popupBar.append(document.getElementById("controlPopupClose"));
     placePopup();
   } else restore();
+  float.sync();
   heading.textContent = page ? "Bob" : "Control center";
 }
 

@@ -74,6 +74,10 @@ test("a card can be picked, moved after its turn or stopped and moved now, and t
 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
+  // Bob's chat floats over the page as a window; the board is used with it folded into the button.
+  await page.getByTestId("control-chat-fold").click();
+  // The "Ask Bob" button is not what this test is about, and sits over the panels it uses.
+  await page.getByTestId("bob-fab-chat").evaluate((fab) => { fab.style.display = "none"; });
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
@@ -184,6 +188,10 @@ test("Story and Overview on a card open that conversation and use the app's own 
 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
+  // Bob's chat floats over the page as a window; the board is used with it folded into the button.
+  await page.getByTestId("control-chat-fold").click();
+  // The "Ask Bob" button is not what this test is about, and sits over the panels it uses.
+  await page.getByTestId("bob-fab-chat").evaluate((fab) => { fab.style.display = "none"; });
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');

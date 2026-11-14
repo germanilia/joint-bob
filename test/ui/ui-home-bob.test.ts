@@ -158,18 +158,20 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   await stage.getByTestId("control-tab-live").click();
   await page.getByTestId("control-center-board").waitFor({ state: "visible" });
 
-  // A lane folds into its scoreboard tile and opens from it again.
-  await page.getByTestId("control-lane-fold-running").click();
-  assert.equal(await page.getByTestId("control-score-running").getAttribute("aria-pressed"), "false");
-  await page.getByTestId("control-score-running").click();
-  assert.equal(await page.getByTestId("control-lane-fold-running").getAttribute("aria-expanded"), "true");
-
-  // The chat folds into the "Ask Bob" button and comes back from it.
+  // The chat folds into the "Ask Bob" button and comes back from it, as a window that floats over the page.
   await page.getByTestId("control-chat-fold").click();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
   assert.match(await page.getByTestId("bob-fab-chat").innerText(), /Ask Bob/);
   await page.getByTestId("bob-fab-chat").click();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
+  assert.equal(await page.getByTestId("control-chat").evaluate((node) => getComputedStyle(node).position), "fixed");
+
+  // A lane folds into its scoreboard tile and opens from it again (with the chat folded away, nothing floats over the board).
+  await page.getByTestId("control-chat-fold").click();
+  await page.getByTestId("control-lane-fold-running").click();
+  assert.equal(await page.getByTestId("control-score-running").getAttribute("aria-pressed"), "false");
+  await page.getByTestId("control-score-running").click();
+  assert.equal(await page.getByTestId("control-lane-fold-running").getAttribute("aria-expanded"), "true");
 
   // The view opened last opens again after a reload.
   await stage.getByTestId("control-tab-my-dashboard").click();

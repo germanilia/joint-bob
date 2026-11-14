@@ -28,9 +28,36 @@ The board is the first tab, **Live agents**. **Project overview** shows one proj
 - **Project filter.** The chips above the board show only the projects that have cards. Select one or several; **All** clears the filter.
 - **Color.** The circle in a card's corner is a color picker. The whole card takes the color.
 - **Reset** clears the colors and the filter.
-- **Bob's chat** sits on the left of the board. **⇄** in its header moves it to the right and back; drag its edge to make it wider.
+- **Bob's chat** sits on the left of the board. **⇄** in its header moves it to the right and back; drag its edge to make it wider. (On Bob's page on a wide screen it is a floating window instead; see **Ask Bob** under **The inbox**.)
 
 Colors, the filter, and the chat's side and width are kept with your account. The chat's side as kept before 2.235.0 is not used: the chat starts on the left once, and **⇄** moves it back. Bob's answers are formatted (lists, bold, code), not shown as raw Markdown.
+
+## The inbox
+
+On Bob's page the board is drawn as an inbox by default: a narrow list on the left and, on the right, the conversation you chose, in a wide panel. **List | Cards** in the toolbar switches to the card board and back (kept in this browser). Drag the edge between the list and the panel to change their widths (also kept in this browser).
+
+- **The list** is one scrolling list, never pages. Each conversation takes two lines: its title and time, then what it waits for or does now. Group it **by project** or **by date** (Today, Yesterday, Earlier this week, then months). Opening a row only reads it; double-click it, or press **Open ↗** in the toolbar, to open the conversation itself.
+- **System messages come first**, above everything, in red (something does not work) or orange (it works, but not as it should), in every scope, grouping and search. See below.
+- **Pinned conversations** sit under them, in a **Pinned** group at the top.
+- **Scopes.** **Inbox** is what runs, waits for you or waits for review; **Past** is what you marked done; **All** is both; **★** is the starred ones; the folder button opens a folder. Each shows how many conversations it holds. Past conversations are read from the server when a scope or a search needs them (the newest 300).
+- **Search** looks at titles, projects, agents, folders and what the conversations say (their summaries). Every word must match somewhere, in any order. A typo still matches (*makr* finds *mark*), so does the start of a word (*depl*) or letters in order (*dpl lock*). Typing searches every conversation, even from the inbox; results come best match first, with the matched words marked and, when the match is in the text, a line around it. **Esc** clears the box and goes back to where you were. With a row selected, **/** focuses the box, the arrow keys move through the rows, and **P**, **S** and **Delete** pin, star and delete.
+- **Pin, star, folder, delete** are four small buttons on a row's hover and at the top right of the panel. **Pin** is the pin of the project list (it follows your account to every machine). **Star** and the **folder** (one name per conversation; a folder exists while a conversation is in it, and the folder button's menu makes a new one) are kept with your account too. **Pinned and starred conversations are *kept*: no automatic cleanup deletes them** (the retention sweep skips them like pinned ones), and the panel says **Kept**.
+- **Delete** removes the row at once, with an **Undo** for eight seconds; the conversation is deleted when the Undo runs out (closing the page before that leaves it where it was). A kept conversation asks first: press delete again within five seconds. Deleting is the same complete delete as in the project's list.
+- **The panel** has the conversation's head (project, state, **Kept**, the four buttons, its title, who drives it, its actions and **✓ Done**) and three tabs, one at a time with the whole height: **Summary** (what waits for you, with its buttons, then the summary), **Chat** (what you asked, its last message, and the box that writes to it, pinned at the bottom; on a past conversation the box brings it back) and **Steps** (its last tool and shell calls). The tab you chose stays when you open another row.
+- **Open ↗ and + New conversation** sit side by side in the toolbar: Open is an outline button for the conversation chosen in the list, New is the filled one.
+
+### System messages
+
+When the system finds something wrong with itself it says so in the inbox, so a broken setup is never silent, including on a fresh install. Each message says **what it means**, **how to fix it** (numbered steps with the exact setting or command), a button to the screen that holds the fix, and **Check again**. It leaves by itself once its cause is gone (they are read again every minute, when you open the list, and on Check again); nobody can dismiss one. They are found from the same facts the rest of the app acts on:
+
+- **Claude Code is not signed in on this machine** (error): Claude is installed, but its own status says nobody is signed in.
+- **The decision model has no key** (warning): no project has the `TYPESAFE_AI_API_KEY` (or `LAYA_API_KEY`) secret the chosen decision model needs, so Bob answers with his own agent.
+- **Guardian is off**, or its production rule is off or missing (warning): production and destructive steps are not checked.
+- **A machine of yours is offline** (warning): a machine in your cluster does not answer; the message says how many of your conversations run there.
+
+### Ask Bob
+
+The **Ask Bob** button can be dragged anywhere on the page; where you leave it is kept in this browser. A click opens Bob's chat as a window that floats over the page: drag its head to move it, its corner to resize it (also kept). **–** in its head folds it back into the button. The window opens beside the button the first time.
 
 ## Bob
 

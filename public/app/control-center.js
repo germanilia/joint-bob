@@ -11,7 +11,7 @@ import { openQuickNote } from "./quick-notes.js";
 import { glide, positions, vanish } from "./control-vanish.js";
 import { PROJECT_COLORS } from "./session-rows.js";
 import { openRowMenu } from "./row-menu.js";
-import { renderList } from "./control-list.js";
+import { listOpenButton, renderList } from "./control-list.js";
 
 const DEFAULT_COLOR = "#3a3f46";
 const COLUMNS = [
@@ -299,6 +299,7 @@ const listHelpers = {
   openConversation: (card) => openConversation(card),
   refresh: () => refreshControlCenter(),
   finished: () => finishedWhileWatching,
+  saveControlCenter: () => save(),
 };
 
 const isFolded = (id) => state.controlCenter.collapsed.includes(id);
@@ -499,9 +500,10 @@ function render() {
   liveView.setBadge(cards.filter((card) => card.column === "needs-you" || card.column === "running").length);
   const asList = listLayout();
   document.body.classList.toggle("control-list-layout", asList);
-  if (asList && cards.length) { renderList(container, cards, listHelpers); return; }
+  // The list is drawn even with no conversation: it also holds the system messages and the past ones.
+  if (asList) { renderList(container, cards, listHelpers); return; }
   container.replaceChildren();
-  if (!asList) container.append(renderScoreboard(cards));
+  container.append(renderScoreboard(cards));
   if (!cards.length) {
     container.append(element("p", "control-empty", board.cards.length ? "Nothing matches the project filter." : "No conversations are running and nothing is waiting for review."));
     return;
@@ -698,7 +700,7 @@ function layoutSwitch() {
 
 function renderBoardTools() {
   for (const old of elements.controlViewLive.querySelectorAll("[data-board-tool]")) old.remove();
-  elements.controlCenterReset.before(layoutSwitch());
+  elements.controlCenterReset.before(layoutSwitch(), listOpenButton(listHelpers));
   for (const tool of boardTools()) {
     const button = element("button", "ghost compact", tool.label);
     button.type = "button";

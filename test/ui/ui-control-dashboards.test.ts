@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import type { Page } from "playwright-core";
-import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
+import { nativeUiFixture, openBobChat, parkBobChat } from "./native-ui-fixture.js";
 import { waitInPage } from "./wait-in-page.js";
 
 /** A stand-in dashboard agent: the request's "Title: ..." line names the dashboard, "refresh with AI" makes it an AI one. */
@@ -114,6 +114,7 @@ test("the Dashboards tab lists dashboards, shows one over the board, and every b
 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
+  await parkBobChat(page);
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
@@ -266,6 +267,8 @@ test("the Dashboards tab pages instead of scrolling, labels what Bob made, and B
   assert.equal((await fits()).scrolls, false);
   await page.setViewportSize({ width: 1440, height: 900 });
 
+  // Bob's chat floats over the page as a window; the board is used with it folded into the button.
+  await page.getByTestId("control-chat-fold").click();
   // A project filter that matches nothing says so.
   await page.getByTestId("control-tab-live").click();
   await page.getByTestId("control-center-filters").getByText("Infra Scripts").click();
@@ -295,6 +298,7 @@ test("the Dashboards tab pages instead of scrolling, labels what Bob made, and B
     (window as any).__bobMessages = [{ id: "m1", role: "bob", text: 'Done. "Dashboard 1" is ready for "Internal Assistant".', via: "Dashboards · script refresh, no AI", projectId: null, projectName: null, importance: "done", actions: [{ id: "dashboards.open", label: "Open dashboards", style: "primary", data: { dashboardId: "x" } }], createdAt: new Date().toISOString() }];
     window.dispatchEvent(new CustomEvent("control-center-changed"));
   });
+  await openBobChat(page);
   await page.getByRole("button", { name: "Open dashboards" }).click();
   await page.waitForFunction(() => document.querySelector('[data-testid="control-tab-dashboards"]')?.classList.contains("active"));
   assert.equal(await page.getByTestId("control-dashboard-card").first().isVisible(), true);

@@ -26,7 +26,7 @@ export const state = {
   viewBeforeControl: null,
   // True while a conversation opens over the control center: choosing its project and the conversation do not leave the board.
   keepControlView: false,
-  controlCenter: { colors: {}, filter: [], chatRight: false, chatWidth: 400, view: "live", collapsed: [] },
+  controlCenter: { colors: {}, filter: [], chatRight: false, chatWidth: 400, view: "live", collapsed: [], stars: [], folders: {} },
   projects: [],
   sessions: [],
   // The project whose list `sessions` holds; null while none has loaded.
