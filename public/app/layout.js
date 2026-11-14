@@ -66,10 +66,18 @@ export function toggleControlView() {
   setMobileView("control");
 }
 
+const phoneWidth = matchMedia("(max-width: 700px)");
+
+/** Moves to `parent` from the conversation; the phone's way home is the Inbox, not whichever list was last shown. */
+function leaveChatTo(parent) {
+  setMobileView(parent);
+  if (parent === "projects" && phoneWidth.matches) window.dispatchEvent(new CustomEvent("workspace-place", { detail: { place: "inbox" } }));
+}
+
 /** The view one level up: a conversation returns to its project's list, and the list and the control center to the projects. */
 export function parentView(view) {
-  // A conversation opened from the phone's Home goes back there (phone-ui.js sets the mark).
-  if (view === "chat" && state.chatFromHome) return "projects";
+  // On the phone the Inbox is home: a conversation closes back to it, unless it was opened from a project's own list.
+  if (view === "chat" && phoneWidth.matches && !state.chatFromProject) return "projects";
   if (view === "chat") return state.activeProjectId ? "sessions" : "projects";
   if (view === "sessions" || view === "control") return "projects";
   return null;
@@ -126,8 +134,11 @@ function closeTopLayer() {
 
 function climbOneLevel() {
   if (closeTopLayer()) return;
-  const parent = parentView(currentMobileView());
-  if (parent) setMobileView(parent);
+  const view = currentMobileView();
+  const parent = parentView(view);
+  if (!parent) return;
+  if (view === "chat") leaveChatTo(parent);
+  else setMobileView(parent);
 }
 
 /** The few frames above setMobileView, so a log line names the code that changed the view. */
@@ -249,7 +260,7 @@ elements.navProjectsButton.addEventListener("click", () => setMobileView("projec
 elements.navSessionsButton.addEventListener("click", () => setMobileView("sessions"));
 elements.navChatButton.addEventListener("click", () => setMobileView("chat"));
 elements.backToProjectsButton.addEventListener("click", () => setMobileView("projects"));
-elements.backToSessionsButton.addEventListener("click", () => setMobileView(parentView("chat")));
+elements.backToSessionsButton.addEventListener("click", () => leaveChatTo(parentView("chat")));
 elements.openControlCenterButton.addEventListener("click", () => setMobileView("control"));
 const EXIT_PROMPT_MS = 3000;
 let exitPromptTimer = null;

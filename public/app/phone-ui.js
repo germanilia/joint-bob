@@ -121,17 +121,12 @@ function syncSettingsTabs() {
 }
 new MutationObserver(syncSettingsTabs).observe(settingsDialog, { attributes: true, attributeFilter: ["open"] });
 
-/* ---------- Back from a conversation opened on Home goes Home ---------- */
+/* ---------- Back from a conversation goes to the Inbox, unless it was opened from a project's own list ---------- */
 
-function markFromHome(event) {
-  if (event.target.closest?.(".ws-row")) state.chatFromHome = mobileFocusViewport.matches;
-}
-byId("workspaceGroups").addEventListener("click", markFromHome, true);
-byId("workspaceGroupPage").addEventListener("click", markFromHome, true);
-byId("sessionList").addEventListener("click", () => { state.chatFromHome = false; }, true);
+byId("sessionList").addEventListener("click", () => { state.chatFromProject = mobileFocusViewport.matches; }, true);
 
 window.addEventListener("app-view-changed", () => {
-  if (["projects", "control"].includes(currentMobileView())) state.chatFromHome = false;
+  if (["projects", "control"].includes(currentMobileView())) state.chatFromProject = false;
   syncTabs();
 });
 window.addEventListener("workspace-column-changed", syncTabs);

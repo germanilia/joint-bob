@@ -13,6 +13,7 @@ import { getRuntimePeer, runtimeFetch } from "../runtime-peers.js";
 import { ConversationOwnershipError } from "../../conversation-ownership.js";
 import { listHarnessSessions } from "../../harnesses.js";
 import { getProject } from "../../store.js";
+import { projectWorktreeRoot } from "../../project-worktrees.js";
 import { TICKET_BASELINE_DIR, TICKET_MERGE_DIR } from "../../task-workspaces.js";
 import type { ProjectRecord } from "../../types.js";
 import { sendError } from "../http-auth.js";
@@ -92,6 +93,19 @@ async function searchProjectFile(projectRoot: string, requestedPath: string): Pr
   return best[0];
 }
 
+/** The project's worktree folder that holds `file`, or null when it is in none of them. */
+async function worktreeContaining(projectId: string, file: string): Promise<string | null> {
+  let root: string;
+  try { root = await realpath(projectWorktreeRoot(projectId)); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  const relative = path.relative(root, file);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return path.join(root, relative.split(path.sep)[0]);
+}
+
 async function resolveProjectFile(projectId: string, requestedPath: string): Promise<{ project: ProjectRecord; resolved: string; relativePath: string; info: Awaited<ReturnType<typeof stat>> }> {
   const project = await getProject(projectId);
   if (!project) throw new ProjectFileError(404, "Project not found");
@@ -116,6 +130,14 @@ async function resolveProjectFile(projectId: string, requestedPath: string): Pro
       if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
     }
     if (resolvedAbsolute && projectPathInside(projectRoot, resolvedAbsolute)) direct = await verifiedProjectFile(projectRoot, absolute);
+    else if (resolvedAbsolute) {
+      // A conversation that runs in a worktree keeps its attachments there, outside the project folder.
+      const worktree = await worktreeContaining(projectId, resolvedAbsolute);
+      if (worktree) {
+        const verified = await verifiedProjectFile(worktree, absolute);
+        if (verified) return { project, resolved: verified.resolved, relativePath: verified.resolved, info: verified.info };
+      }
+    }
   } else {
     direct = await verifiedProjectFile(projectRoot, path.resolve(projectRoot, directPath));
   }

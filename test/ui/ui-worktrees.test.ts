@@ -530,3 +530,30 @@ test("a conversation whose worktree has not synced to this machine is grouped un
   assert.equal(await page.getByTestId("other-worktrees").count(), 0, "no empty group for a worktree that cannot be used here");
   assert.equal(consoleErrors.filter((message) => !/favicon|ERR_ABORTED|WebSocket|instructions\/content\?.*worktreeId/i.test(message)).length, 0, consoleErrors.join("\n"));
 });
+
+test("a new worktree is created in the background: the conversation is on screen while the project is copied", async () => {
+  const NAME = "Background copy";
+  await page.getByTestId("session-create-button").click();
+  await page.locator("#newSessionNameDialog[open]").waitFor({ timeout: 10_000 });
+  await page.getByTestId("new-session-name-input").fill(NAME);
+  await page.getByTestId("new-session-next-button").click();
+  await page.getByTestId("new-session-next-button").click();
+  await page.getByTestId("new-session-worktree-select").selectOption("new");
+  // The copy is held back here: the chat must already be open under its own name while it runs.
+  let releaseCopy!: () => void;
+  const copyHeld = new Promise<void>((resolve) => { releaseCopy = resolve; });
+  await page.route("**/api/projects/*/worktrees", async (route) => {
+    if (route.request().method() !== "POST") { await route.fallback(); return; }
+    await copyHeld;
+    await route.fallback();
+  });
+  await page.getByTestId("new-session-name-start-button").click();
+  await page.locator("#newSessionNameDialog[open]").waitFor({ state: "hidden", timeout: 10_000 });
+  await page.locator("#messages").getByText("Creating worktree…").waitFor({ timeout: 10_000 });
+  assert.equal(await page.locator("#sessionTitle").innerText(), NAME, "the chat opens at once under the new name");
+  releaseCopy();
+  await page.unroute("**/api/projects/*/worktrees");
+  const row = page.locator("#sessionList .list-row.active");
+  await row.waitFor({ timeout: 60_000 });
+  assert.match(await row.getAttribute("class") ?? "", /\bhas-worktree\b/, "the conversation then starts in the new worktree");
+});

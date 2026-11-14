@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.299.20 — 2026-11-14
+
+- On the phone the app opens on the Inbox, and closing a conversation returns to it unless it was opened from a project's own list.
+- A conversation started in a new worktree opens at once while the project is copied in the background.
+- The "what it needs" sheet reads as plain scrolling text without the attachment list, and the card outlines on the phone are no longer cut off.
+- Screenshots attached in a conversation that runs in a worktree show instead of appearing broken.
+
 ## 2.299.19 — 2026-11-14
 
 - The dashboard request box is capped at a readable width, with its buttons under it instead of stretched across the screen.

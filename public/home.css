@@ -134,7 +134,7 @@ body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
 /* ---------- the phone's Needs you deck: every card in one swipeable row ---------- */
 .ws-deck { display: grid; gap: 0; min-width: 0; margin: 0 -8px 4px; }
 .ws-deck-track {
-  display: flex; gap: 10px; min-width: 0; padding: 0 28px 2px 8px; overflow-x: auto; overscroll-behavior-x: contain;
+  display: flex; gap: 10px; min-width: 0; padding: 2px 28px 4px 8px; overflow-x: auto; overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory; scroll-padding-inline: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
 }
 .ws-deck-track::-webkit-scrollbar { display: none; }
@@ -145,7 +145,7 @@ body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
 .ws-deck-bar { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 .ws-deck-step { width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; box-shadow: none; color: var(--text); font-size: 22px; line-height: 1; }
 .ws-deck-step:disabled { opacity: 0.3; }
-.ws-wait:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ws-wait:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- what a card needs, in a sheet over Home (bottom sheet on the phone) ---------- */
 .need-sheet {
@@ -162,15 +162,17 @@ body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
 .need-sheet-close { flex: none; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--field); box-shadow: none; color: var(--text); }
 .need-sheet-close svg { width: 18px; height: 18px; }
 .need-sheet-body { flex: 1; min-height: 0; padding: 4px 18px 12px; overflow-y: auto; overscroll-behavior: contain; }
-.need-sheet-section { display: grid; gap: 6px; margin: 12px 0 0; }
+.need-sheet-section { display: grid; gap: 6px; margin: 18px 0 0; }
 .need-sheet-section[hidden] { display: none; }
 .need-sheet-section h3 { margin: 0; color: var(--muted); font: 600 13px/1.2 var(--sans); letter-spacing: 0.02em; }
 .need-sheet-ask-text { margin: 0; font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; }
-.need-sheet-note, .need-sheet-request-text { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
-.need-sheet-request-text { color: var(--text); max-height: 7.5em; overflow-y: auto; }
+.need-sheet-note { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+/* The ask and the last message read as plain text in the sheet's own scroll: no boxes with scrollbars of their own. */
+.need-sheet-request-text { color: var(--text); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.need-sheet-request-text > :first-child, .need-sheet-markdown > :first-child { margin-top: 0; }
+.need-sheet-request-text > :last-child, .need-sheet-markdown > :last-child { margin-bottom: 0; }
 .need-sheet-code { margin: 0; padding: 10px 12px; overflow-x: auto; border-radius: 10px; background: var(--field); font: 13.5px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.need-sheet-markdown { max-height: 42dvh; padding: 12px 14px; overflow-y: auto; overscroll-behavior: contain; border-radius: 12px; background: var(--field); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
-.need-sheet-markdown:focus-visible { outline: 2px solid var(--accent); }
+.need-sheet-markdown { padding: 12px 14px; border-radius: 12px; background: var(--field); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .need-sheet-steplist { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .need-sheet-steplist li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .need-sheet-steplist li.failed { color: var(--danger, #c0392b); }

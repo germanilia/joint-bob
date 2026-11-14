@@ -1,4 +1,4 @@
-// The app opens on Bob (phone and desktop) unless the person came by a link; a phone conversation's header is two lines
+// The app opens on the Inbox on a phone and on Bob on the desktop unless the person came by a link; a phone conversation's header is two lines
 // with chips that scroll instead of cutting their words; and Home shown over an open conversation closes back to it.
 import assert from "node:assert/strict";
 import { type ChildProcess } from "node:child_process";
@@ -64,16 +64,17 @@ after(async () => {
   if (root) await rm(root, { recursive: true, force: true });
 });
 
-test("a phone opens on Bob, and the Bob tab is the one marked", async () => {
+test("a phone opens on the Inbox, and the Inbox tab is the one marked", async () => {
   const page = await openApp({ width: 390, height: 844 }, null, true);
-  await page.locator("body.view-control").waitFor();
-  assert.equal(await page.getByTestId("phone-tab-bob").getAttribute("aria-current"), "page");
-  await page.getByTestId("phone-tab-inbox").tap();
   await page.getByTestId("phone-home").waitFor();
   assert.equal(await view(page), "projects");
-  // Choosing another view is kept for this visit only: the next open is Bob again.
-  await page.reload({ waitUntil: "domcontentloaded" });
+  assert.equal(await page.getByTestId("phone-tab-inbox").getAttribute("aria-current"), "page");
+  // Choosing another view is kept for this visit only: the next open is the Inbox again.
+  await page.getByTestId("phone-tab-bob").tap();
   await page.locator("body.view-control").waitFor();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId("phone-home").waitFor();
+  assert.equal(await view(page), "projects");
 });
 
 test("the desktop opens on Bob, and Exit leaves for the workspace", async () => {

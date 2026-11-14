@@ -27,3 +27,8 @@ test("a very long answer keeps its end and says it was cut; an empty transcript 
   assert.ok(detail.answer.endsWith("THE END"));
   assert.deepEqual(cardDetail([]), { request: "", answer: "", answerAt: null, answerCut: false, steps: [] });
 });
+
+test("the attachment index the app adds to a message is not shown as what was asked", () => {
+  const detail = cardDetail([{ id: "1", role: "user", text: "look at this\n\nImage attachments:\n- shot.png: /tmp/shot.png" }]);
+  assert.equal(detail.request, "look at this");
+});

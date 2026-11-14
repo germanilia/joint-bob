@@ -111,12 +111,17 @@ export function revealApplication() {
   document.body.classList.remove("booting");
 }
 
-/** The app opens on Bob (the control center), on the phone and the desktop. A link to a conversation or project opens that
+/** The app opens on Bob (the control center) on a wide screen and on the Inbox on the phone. A link to a conversation or project opens that
     instead, and the key set to "last" reopens the view the person left. */
 const START_VIEW_KEY = "joint-bob-start-view";
 function startingView(preferences) {
   const linked = state.initialSessionId || state.initialSessionPath || state.initialProjectId;
-  if (!linked && localStorage.getItem(START_VIEW_KEY) !== "last") return "control";
+  if (!linked && localStorage.getItem(START_VIEW_KEY) !== "last") {
+    // The phone opens on the Inbox, which is its home; wider screens open on Bob.
+    if (!matchMedia("(max-width: 700px)").matches) return "control";
+    window.dispatchEvent(new CustomEvent("workspace-place", { detail: { place: "inbox" } }));
+    return "projects";
+  }
   return preferences.mobileView === "board" ? (state.activeProjectId ? "sessions" : "projects") : preferences.mobileView;
 }
 

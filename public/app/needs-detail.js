@@ -166,11 +166,13 @@ export function openNeedDetail(card, { ask, open, onChange = () => {} }) {
     .then((detail) => {
       if (!dialog.isConnected) return;
       loading.remove();
-      if (detail.request) { request.append(element("p", "need-sheet-request-text", detail.request)); request.hidden = false; }
+      if (detail.request) {
+        const ask = element("div", "need-sheet-request-text markdown");
+        renderMarkdown(ask, detail.request);
+        request.append(ask); request.hidden = false;
+      }
       if (detail.answer) {
         const body = element("div", "need-sheet-markdown markdown");
-        body.tabIndex = 0;
-        body.setAttribute("aria-label", "The agent's last message");
         renderMarkdown(body, detail.answer);
         if (detail.answerCut) last.append(element("p", "need-sheet-note", "Long message: the start is cut."));
         last.append(body);

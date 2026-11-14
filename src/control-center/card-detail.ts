@@ -20,6 +20,12 @@ export const ANSWER_LIMIT = 24_000;
 const REQUEST_LIMIT = 4_000;
 const STEPS = 5;
 
+/** The attachment index the app appends to a message ("Image attachments:" and the paths) is plumbing, not what was asked. */
+function withoutAttachmentIndex(text: string): string {
+  const starts = ["Image attachments:", "File attachments:"].map((marker) => text.indexOf(marker)).filter((index) => index >= 0);
+  return starts.length ? text.slice(0, Math.min(...starts)).trim() : text;
+}
+
 /** Reads the detail out of a transcript. The end of a long answer matters most, so its start is cut first. */
 export function cardDetail(messages: ReadonlyArray<ChatMessage>): CardDetail {
   const asked = messages.filter((message) => message.role === "user" && message.text?.trim());
@@ -32,7 +38,7 @@ export function cardDetail(messages: ReadonlyArray<ChatMessage>): CardDetail {
     .slice(-STEPS)
     .map((message) => ({ name: message.toolName!, target: message.toolTarget?.target ?? message.toolTarget?.skill ?? "", failed: Boolean(message.isError) }));
   return {
-    request: request.slice(0, REQUEST_LIMIT),
+    request: withoutAttachmentIndex(request).slice(0, REQUEST_LIMIT),
     answer: text.length > ANSWER_LIMIT ? text.slice(-ANSWER_LIMIT) : text,
     answerAt: answered?.timestamp ?? null,
     answerCut: text.length > ANSWER_LIMIT,

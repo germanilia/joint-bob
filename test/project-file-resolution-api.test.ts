@@ -15,7 +15,9 @@ test("project file references resolve only within their project", async () => {
   const previousDataDir = process.env.PI_WEB_DATA_DIR;
   const previousUsername = process.env.MASTER_BOB_ADMIN_USERNAME;
   const previousPassword = process.env.MASTER_BOB_INITIAL_PASSWORD;
+  const previousWorktreeRoot = process.env.JOINT_BOB_WORKTREE_ROOT;
   process.env.PI_WEB_DATA_DIR = root;
+  process.env.JOINT_BOB_WORKTREE_ROOT = path.join(root, "worktrees");
   process.env.MASTER_BOB_ADMIN_USERNAME = "admin";
   process.env.MASTER_BOB_INITIAL_PASSWORD = "initial-password";
   let appServer: import("node:http").Server | undefined;
@@ -80,7 +82,23 @@ test("project file references resolve only within their project", async () => {
     const escape = await fetch(`${baseUrl}/api/projects/${project.id}/file-resolution?path=escape.txt`, { headers });
     assert.equal(escape.status, 403);
     assert.equal((await escape.json() as { error: string }).error, "File is outside the project directory");
+
+    // A conversation in a worktree keeps its attachments there, outside the project folder: they open by absolute path,
+    // but only inside this project's own worktrees.
+    const worktreeFolder = path.join(root, "worktrees", project.id, "c2ebc82a-29a7-49e3-824b-1e7a8d964c9e", ".joint-bob-attachments");
+    await mkdir(worktreeFolder, { recursive: true });
+    const attachment = path.join(worktreeFolder, "shot.txt");
+    await writeFile(attachment, "shot\n");
+    const inWorktree = await fetch(`${baseUrl}/api/projects/${project.id}/file?path=${encodeURIComponent(attachment)}`, { headers });
+    assert.equal(inWorktree.status, 200);
+    assert.match(await inWorktree.text(), /shot/);
+    const otherProject = path.join(root, "worktrees", "someone-else", "c2ebc82a-29a7-49e3-824b-1e7a8d964c9e");
+    await mkdir(otherProject, { recursive: true });
+    await writeFile(path.join(otherProject, "secret.txt"), "secret\n");
+    const foreign = await fetch(`${baseUrl}/api/projects/${project.id}/file?path=${encodeURIComponent(path.join(otherProject, "secret.txt"))}`, { headers });
+    assert.equal(foreign.status, 404);
   } finally {
+    if (previousWorktreeRoot === undefined) delete process.env.JOINT_BOB_WORKTREE_ROOT; else process.env.JOINT_BOB_WORKTREE_ROOT = previousWorktreeRoot;
     if (appServer?.listening) await new Promise<void>((resolve) => appServer?.close(() => resolve()));
     if (previousDataDir === undefined) delete process.env.PI_WEB_DATA_DIR; else process.env.PI_WEB_DATA_DIR = previousDataDir;
     if (previousUsername === undefined) delete process.env.MASTER_BOB_ADMIN_USERNAME; else process.env.MASTER_BOB_ADMIN_USERNAME = previousUsername;
