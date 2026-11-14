@@ -12,10 +12,13 @@ import { addProject, saveWorkspace } from '../store.js';
 import { setWorkspaceSharing } from '../workspace-sharing.js';
 import { resolveDataDirectory } from '../data-directory.js';
 import { recheckTeamActor, requireTeamExecution, type ClusterMember, type TeamMember } from './access.js';
+import { TEAM_COMMANDS } from './control-text.js';
 
 /** A free role name chosen when an assistant is picked into a team; it is also its Telegram command. */
 export type TeamRole = string;
 export const TEAM_ROLE_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
+/** The group's own commands (/status, /cancel …) are not available as role names. */
+export const isReservedTeamRole = (role: string): boolean => (TEAM_COMMANDS as readonly string[]).includes(role);
 export interface TeamSettings { askThreshold: number; actThreshold: number }
 export interface AssistantTeam { id: string; clusterId: string; hostNodeId: string; projectId: string; executorAccountId: string; settings: TeamSettings; revision: number; coordinatorRole: string | null }
 export interface TeamAgent { teamId: string; role: TeamRole; assistantId: string }
@@ -121,6 +124,7 @@ export async function teamCoordinator(team: AssistantTeam): Promise<TeamRole | n
 /** Replaces the member list in one revisioned write. Callers check who may add which assistant. */
 export async function saveTeamMembers(teamId: string, members: { role: TeamRole; assistantId: string }[], coordinatorRole: TeamRole | null, expectedRevision: number): Promise<number> {
   const roles = members.map(member => member.role);
+  if (roles.some(isReservedTeamRole)) throw new TeamError(`${TEAM_COMMANDS.join(', ')} are commands of the group itself and cannot be role names`, 400);
   if (roles.some(role => !TEAM_ROLE_PATTERN.test(role)) || new Set(roles).size !== roles.length || new Set(members.map(member => member.assistantId)).size !== members.length) throw new TeamError('Each member needs a unique role name (a-z, 0-9, _) and a different assistant', 400);
   if (coordinatorRole !== null && !roles.includes(coordinatorRole)) throw new TeamError('The coordinator must be a member', 400);
   const db = await teamDatabase(); db.exec('BEGIN IMMEDIATE');

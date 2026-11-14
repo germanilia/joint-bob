@@ -50,7 +50,7 @@ test('a Telegram agent assigned to a team lends it its bot, coordinates it, and 
     assert.match(hook.body.url, new RegExp(`/teamtelegram-${team.id}$`), 'the bot now delivers to the team');
     assert.ok(hook.body.allowed_updates.includes('callback_query'), 'inquiry buttons reach the team');
     const menu = calls.find(entry => entry.method === 'setMyCommands')!;
-    assert.deepEqual(menu.body.commands.map((item: any) => item.command), ['qa', 'designer', 'lead_bob'], 'one command per role');
+    assert.deepEqual(menu.body.commands.map((item: any) => item.command), ['qa', 'designer', 'lead_bob', 'status', 'cancel', 'retry', 'help'], 'one command per role, then the group\'s own');
 
     const members = await call('GET', `/assistant-teams/${team.id}/agents`);
     assert.deepEqual(members.body.agents.map((item: any) => item.role), ['qa', 'designer', 'lead_bob']);

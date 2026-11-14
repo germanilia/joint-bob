@@ -63,9 +63,16 @@ test('loose confirmation clarifies, accepted classifier outage is explicit, repl
   assert.equal(sends.length,1);assert.match(sends[0].text,/reply.*exact|specific.*question/i);
   assert.equal(sends[0].message_thread_id,17);assert.equal((await readTeamWork(f.team.id)).length,0);
   await f.message('/qa inspect outage',{message_thread_id:18});await recoverTeamWork(f.team.id);
-  assert.match(sends[1].text,/accepted/);assert.match(sends[2].text,/routing.*unavailable|routing.*failed/i);
-  assert.equal((await readTeamWork(f.team.id))[0].reason,'decision_failed');
+  // A call that names its member starts without the decision model; here the fixture host runtime is the next thing to fail.
+  for(let i=0;i<100&&sends.length<3;i++)await new Promise(resolve=>setTimeout(resolve,20)); // dispatch runs beside the ledger pass
+  assert.match(sends[1].text,/accepted/);assert.match(sends[2].text,/runtime is unavailable/i);
+  assert.equal((await readTeamWork(f.team.id))[0].reason,'runtime_unavailable');
   const count=sends.length;await recoverTeamWork(f.team.id);assert.equal(sends.length,count);
+  // An unaddressed message needs the model: the group is told once, not once per message.
+  await f.message('does anyone know when the release is?',{message_thread_id:19});await recoverTeamWork(f.team.id);
+  assert.equal(sends.length,count+1);assert.match(sends[count].text,/cannot read the group.*decision model/i);
+  await f.message('and the one after that?',{message_thread_id:19});await recoverTeamWork(f.team.id);
+  assert.equal(sends.length,count+1,'the outage notice is throttled');
  } finally {globalThis.fetch=original;}
 });
 

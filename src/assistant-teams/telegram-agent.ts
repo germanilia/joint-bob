@@ -12,7 +12,7 @@ import { TEAM_TELEGRAM_UPDATES, telegramSetWebhook, TELEGRAM_TOKEN_VARIABLE } fr
 import { WebhookResourceError } from '../webhook-resources.js';
 import { urlBases } from '../server/routes/webhooks.js';
 import { requireTeamMember } from './access.js';
-import { getTeam, listTeamAgents, saveTeamMembers, TEAM_ROLE_PATTERN, TeamError, announceTeamChange } from './store.js';
+import { getTeam, isReservedTeamRole, listTeamAgents, saveTeamMembers, TEAM_ROLE_PATTERN, TeamError, announceTeamChange } from './store.js';
 import { teamTelegramConnection, telegramDatabase, tokenHash } from './telegram-store.js';
 import { refreshTeamCommands } from './telegram-commands.js';
 
@@ -50,7 +50,7 @@ async function firstBase(): Promise<string> {
 /** A role name made from the assistant's name, unique within the team. */
 function roleFor(name: string, taken: string[]): string {
   const stem = name.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^[^a-z]+/, '').replace(/_+$/, '').slice(0, 28) || 'lead';
-  let role = stem;
+  let role = isReservedTeamRole(stem) ? `${stem}_agent` : stem;
   for (let n = 2; taken.includes(role); n++) role = `${stem}_${n}`;
   if (!TEAM_ROLE_PATTERN.test(role)) throw new TeamError('Could not make a role name for this assistant', 400);
   return role;

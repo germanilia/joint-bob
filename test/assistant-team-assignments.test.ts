@@ -136,7 +136,7 @@ test('crash claims, album consolidation, clarification, send uncertainty and rem
   db.prepare('INSERT INTO assistant_team_inbox_claims VALUES(?,?,?)').run(event.id,f.team.id,'claimed');
   await recoverTeamWork(f.team.id);
   assert.equal((await readTeamWork(f.team.id)).length,1,'crash between inbox claim and accept is recovered');
-  const recovered=(await readTeamWork(f.team.id))[0];assert.equal((await getTeamAssignment(recovered.assignmentId))!.state,'waiting_for_human','missing classifier cannot dispatch');
+  const recovered=(await readTeamWork(f.team.id))[0];assert.notEqual((await getTeamAssignment(recovered.assignmentId))!.state,'waiting_for_human','a call that names its member does not wait for the classifier');
   await recoverTeamWork(f.team.id);assert.equal((await readTeamWork(f.team.id)).length,1);
   await f.message('/qa album work',{media_group_id:'album-1'});await f.message('',{media_group_id:'album-1'});
   await recoverTeamWork(f.team.id);assert.equal((await readTeamWork(f.team.id)).length,2);

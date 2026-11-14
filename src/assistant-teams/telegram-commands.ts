@@ -15,5 +15,6 @@ export async function refreshTeamCommands(teamId: string): Promise<void> {
     const name = (await getPersonalAssistantById(member.assistantId))?.name ?? member.role;
     return { command: member.role, description: `${name}${member.role === coordinator ? ' (coordinator)' : ''}`.slice(0, 256) };
   }));
-  await telegramSetCommands(token, commands);
+  const own = [{ command: 'status', description: 'What the team is doing' }, { command: 'cancel', description: 'Stop a request' }, { command: 'retry', description: 'Run a stopped request again' }, { command: 'help', description: 'What the team can do' }];
+  await telegramSetCommands(token, [...commands, ...own]);
 }
