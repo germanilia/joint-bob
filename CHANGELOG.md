@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.300.1 — 2026-11-14
+
+- Cancelling a team request with `/cancel` or Bob's Stop it now stops the turn that is running; it kept going before.
+- Sending a team member work no longer fails with "no such table" on a machine that had not yet opened its team conversations.
+- Asking Bob what the team is doing answers with what your cluster's members have running when none of your clusters has an assistant team, instead of "I could not work out what to change".
+
 ## 2.300.0 — 2026-11-14
 
 - A team's conversations are named for who does what ("qa: check the sign-in page") instead of the assistant's instructions, and they show in every cluster member's project list.
