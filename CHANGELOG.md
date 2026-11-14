@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.301.2 — 2026-11-14
+
+- On the phone, the screens after the Inbox look like the desktop's inbox: conversation and project lists are rows with a serif title and one quiet line, the conversation reads as a page (your messages in a soft bubble, queued messages in one soft box with quiet buttons), and its details use the same cards as the desktop's right column.
+- The phone's Inbox lists every conversation of Running and To review in one scroll, with no Show all. It showed only the first five of each.
+
 ## 2.301.1 — 2026-11-14
 
 - The inbox, search, system messages and floating Ask Bob of 2.301.0 are released with this version: 2.301.0 was not published, because two checks of the page's source (no markup built from strings, a short list of browser-stored settings) failed on it. The inbox now draws its icons and marked words from nodes, and its width, grouping and the places of Ask Bob and Bob's window are on the list of settings the browser keeps.
