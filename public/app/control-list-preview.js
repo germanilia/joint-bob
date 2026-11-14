@@ -10,13 +10,17 @@
 
 import { api } from "./api.js";
 import { renderMarkdown } from "../markdown.js";
+import { cardActionList } from "./control-cards.js";
 import { folderOf, isKept } from "./control-marks.js";
+import { menuIcon } from "./icons.js";
 import { systemPanel } from "./control-system.js";
 import { formatDate, toast } from "./shell.js";
 
 const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
 const STATES = { "needs-you": "Needs you", running: "Running", review: "To review", snoozed: "Snoozed", done: "Done" };
 const TABS = [["summary", "Summary"], ["chat", "Chat"], ["steps", "Steps"]];
+// Card actions (control-moves.js) shown as a row of buttons under the title, not in the "More ▾" menu.
+const CONVERSATION_TOOLS = ["terminal", "git", "files", "story"];
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -85,11 +89,26 @@ function head(card, context) {
   const line = element("div", "control-list-pv-line");
   line.append(element("p", "control-list-meta", meta));
   if (card.column !== "done") {
-    const actions = helpers.actionRow(card);
+    const actions = helpers.actionRow(card, CONVERSATION_TOOLS);
     if (actions) line.append(actions);
     line.append(helpers.doneButton(card));
   }
-  return [top, element("h2", "control-list-heading", card.title), line];
+  return [top, element("h2", "control-list-heading", card.title), line, toolsRow(card)];
+}
+
+/** Terminal, Git, Folders and Story: each opens the conversation first, then the tool, as the card's actions do. */
+function toolsRow(card) {
+  const row = element("div", "control-list-tools");
+  row.dataset.testid = "control-list-tools";
+  for (const action of cardActionList(card).filter((candidate) => CONVERSATION_TOOLS.includes(candidate.id))) {
+    const tool = button("control-list-tool", `control-list-tool-${action.id}`, "", (event) => {
+      Promise.resolve(action.run(card, event.currentTarget)).catch((error) => toast.error(error.message));
+    });
+    tool.title = action.title;
+    tool.append(menuIcon(action.icon), action.label);
+    row.append(tool);
+  }
+  return row;
 }
 
 function projectTag(card) {

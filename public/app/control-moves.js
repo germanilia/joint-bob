@@ -12,6 +12,7 @@ import { activeChatSession } from "./terminal.js";
 // card opens its conversation first, the way clicking the card does, and then presses the same button the toolbar has.
 
 const OPEN_WAIT_MS = 10_000;
+const ENABLE_WAIT_MS = 3_000;
 
 async function untilActive(card) {
   const deadline = Date.now() + OPEN_WAIT_MS;
@@ -23,12 +24,25 @@ async function untilActive(card) {
   throw new Error("The conversation did not open, so there is nothing to explain yet");
 }
 
+// The toolbar's buttons are enabled a moment after the conversation is active (the terminal waits for its machine).
+async function untilEnabled(button) {
+  const deadline = Date.now() + ENABLE_WAIT_MS;
+  while (button.disabled && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+  if (button.disabled) throw new Error(`${button.title || "That"} is not available for this conversation`);
+}
+
 async function showFor(card, button) {
   await openConversation(card);
   await untilActive(card);
+  await untilEnabled(button);
   button.click();
 }
 
+// Terminal, Git, Files and Story are the conversation's tools: the Bob page draws them as a row of buttons in the preview
+// (control-list.js, CONVERSATION_TOOLS) and the card board keeps them in "More ▾".
+registerCardAction({ id: "terminal", label: "Terminal", title: "Open a terminal in this conversation's project", order: 37, more: true, icon: "terminal", run: (card) => showFor(card, elements.openTerminalButton) });
+registerCardAction({ id: "git", label: "Git", title: "Branch, changes and review", order: 38, more: true, icon: "git", run: (card) => showFor(card, elements.chatGitButton) });
+registerCardAction({ id: "files", label: "Folders", title: "The files and folders of this conversation's project", order: 39, more: true, icon: "folder", run: (card) => showFor(card, elements.chatFilesButton) });
 registerCardAction({ id: "story", label: "Story", title: "Open this conversation's story: what changed, how it works and why", order: 40, more: true, icon: "canvas", run: (card) => showFor(card, elements.activityStoryButton) });
 registerCardAction({ id: "overview", label: "Overview", title: "Watch two hosts explain what this conversation did", order: 50, more: true, run: (card) => showFor(card, elements.activityOverviewButton) });
 

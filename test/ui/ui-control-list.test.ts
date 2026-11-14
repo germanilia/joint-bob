@@ -114,6 +114,9 @@ test("the list: system messages first, rows by project, the panel's tabs, search
   assert.equal(await page.getByTestId("control-list-tab-button-steps").getAttribute("aria-selected"), "true");
   await page.getByTestId("control-list-tab-button-summary").click();
 
+  // Terminal, Git, Folders and Story are one press away, under the title.
+  assert.deepEqual(await page.getByTestId("control-list-tools").locator("button").evaluateAll((nodes) => nodes.map((node) => node.textContent)), ["Terminal", "Git", "Folders", "Story"]);
+
   // Open and New conversation sit in the same row and look different.
   const [openBox, newBox] = await Promise.all([page.getByTestId("control-list-open").boundingBox(), page.getByTestId("control-board-tool-new-conversation").boundingBox()]);
   assert.ok(openBox && newBox && Math.abs(openBox.y - newBox.y) < 4, "Open ↗ and + New conversation are in one row");

@@ -161,7 +161,11 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   // The chat folds into the "Ask Bob" button and comes back from it, as a window that floats over the page.
   await page.getByTestId("control-chat-fold").click();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
-  assert.match(await page.getByTestId("bob-fab-chat").innerText(), /Ask Bob/);
+  // The button is a round icon with no text; its name is for readers and the hover.
+  assert.doesNotMatch(await page.getByTestId("bob-fab-chat").innerText(), /Ask Bob/, "no words on the button");
+  assert.equal(await page.getByTestId("bob-fab-chat").getAttribute("aria-label"), "Ask Bob");
+  const round = (await page.getByTestId("bob-fab-chat").boundingBox())!;
+  assert.equal(round.width, round.height, "the button is round");
   await page.getByTestId("bob-fab-chat").click();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   assert.equal(await page.getByTestId("control-chat").evaluate((node) => getComputedStyle(node).position), "fixed");

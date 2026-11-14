@@ -181,8 +181,8 @@ function renderCard(card) {
 }
 
 /** The card's own actions are buttons in its row; the rest (Let Bob control, Story, Overview) wait under "More ▾". Null when it has none. */
-function renderActionRow(card) {
-  const buttons = cardActionList(card);
+function renderActionRow(card, skip = []) {
+  const buttons = cardActionList(card).filter((action) => !skip.includes(action.id));
   if (!buttons.length) return null;
   const row = element("div", "control-card-actions");
   for (const action of buttons.filter((candidate) => !candidate.more)) {

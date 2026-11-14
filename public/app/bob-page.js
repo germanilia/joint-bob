@@ -70,10 +70,11 @@ const chatFold = button("ghost compact bob-fold", "control-chat-fold", "–");
 chatFold.title = "Fold Bob's chat into a button";
 elements.controlChatSide.after(chatFold);
 const chatFab = button("bob-fab bob-fab-chat", "bob-fab-chat");
-chatFab.title = "Open Bob's chat";
+chatFab.title = "Ask Bob";
+chatFab.setAttribute("aria-label", "Ask Bob");
 const fabCount = element("span", "bob-fab-count");
 fabCount.dataset.testid = "bob-fab-count";
-chatFab.append(element("i", "bob-fab-hat"), element("span", "", "Ask Bob"), fabCount);
+chatFab.append(element("i", "bob-fab-hat"), fabCount);
 panel.append(chatFab);
 
 function applyFolds() {
