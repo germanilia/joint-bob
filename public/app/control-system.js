@@ -42,7 +42,7 @@ function element(tag, className, text) {
   return node;
 }
 
-/** Text with `code` spans, built without innerHTML. */
+/** Text with `code` spans, built from nodes. */
 function withCode(node, text) {
   text.split("`").forEach((part, index) => node.append(index % 2 ? element("code", "", part) : part));
   return node;

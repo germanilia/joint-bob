@@ -67,23 +67,25 @@ export function searchFields(fields, query) {
   return { score, hits };
 }
 
-const escapeHtml = (text) => text.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]);
-
-/** The text as HTML with the matched ranges in <mark>. */
-export function marked(text, ranges = []) {
-  let html = "", at = 0;
+/** The text cut into parts in order, each saying whether it is a match: [{text, match}]. */
+export function segments(text, ranges = []) {
+  const parts = [];
+  let at = 0;
   for (const [start, end] of [...ranges].sort((a, b) => a[0] - b[0])) {
     if (end <= at) continue;
-    html += escapeHtml(text.slice(at, start)) + "<mark>" + escapeHtml(text.slice(Math.max(start, at), end)) + "</mark>";
+    const from = Math.max(start, at);
+    if (from > at) parts.push({ text: text.slice(at, from), match: false });
+    parts.push({ text: text.slice(from, end), match: true });
     at = end;
   }
-  return html + escapeHtml(text.slice(at));
+  if (at < text.length) parts.push({ text: text.slice(at), match: false });
+  return parts;
 }
 
-/** A line of the text around its first match, like a mail client's snippet. */
+/** A line of the text around its first match, like a mail client's snippet: its parts, and whether the start was cut. */
 export function snippet(text, ranges, width = 120) {
   const [start] = [...ranges].sort((a, b) => a[0] - b[0])[0];
   const from = Math.max(0, start - 28);
   const inside = ranges.filter(([a, b]) => a >= from && b <= from + width).map(([a, b]) => [a - from, b - from]);
-  return (from ? "…" : "") + marked(text.slice(from, from + width), inside);
+  return { parts: segments(text.slice(from, from + width), inside), cut: from > 0 };
 }

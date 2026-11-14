@@ -14,7 +14,7 @@ import { briefStatus, projectActionList } from "./control-cards.js";
 import { drawPreview } from "./control-list-preview.js";
 import { deleteConversation, folderMenu, folderNames, folderOf, isDeleting, isKept, isPinned, isStarred, popMenu, togglePin, toggleStar } from "./control-marks.js";
 import { loadSystem, systemList } from "./control-system.js";
-import { marked, searchFields, snippet } from "./inbox-search.js";
+import { searchFields, segments, snippet } from "./inbox-search.js";
 import { toast } from "./shell.js";
 import { state } from "./state.js";
 
@@ -22,20 +22,21 @@ const STATES = { "needs-you": "Needs you", running: "Running", review: "To revie
 const ORDER = Object.keys(STATES);
 const INBOX = ["needs-you", "running", "review", "snoozed"];
 const SCOPES = [["inbox", "Inbox", (card) => card.column !== "done"], ["past", "Past", (card) => card.column === "done"], ["all", "All", () => true], ["starred", "★", isStarred]];
-const GROUP_KEY = "jointBobListGroup";
-const WIDTH_KEY = "jointBobListWidth";
+const LIST_GROUP_KEY = "jointBobListGroup";
+const LIST_WIDTH_KEY = "jointBobListWidth";
 const MIN_WIDTH = 280;
 const MAX_WIDTH = 640;
 const PAST_FRESH_MS = 60_000;
 const SYSTEM_EVERY_MS = 60_000;
 
-const ICONS = {
-  pin: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h6l-1 5 3 3H5l3-3zM10 11v6"/></svg>`,
-  star: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2L2.5 8l5.2-.7z"/></svg>`,
-  folder: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M2.5 6a1 1 0 011-1h4l2 2h7a1 1 0 011 1v7a1 1 0 01-1 1h-13a1 1 0 01-1-1z"/></svg>`,
-  delete: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6h13M8 6V4h4v2M5.5 6l.8 11h7.4l.8-11"/></svg>`,
-  search: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>`,
-  warn: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l8 14H2zM10 8.5v3.5M10 14.6v.01"/></svg>`,
+const SVG_NS = "http://www.w3.org/2000/svg";
+const ICON_PATHS = {
+  pin: ["M7 3h6l-1 5 3 3H5l3-3z", "M10 11v6"],
+  star: ["M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2L2.5 8l5.2-.7z"],
+  folder: ["M2.5 6a1 1 0 011-1h4l2 2h7a1 1 0 011 1v7a1 1 0 01-1 1h-13a1 1 0 01-1-1z"],
+  delete: ["M3.5 6h13", "M8 6V4h4v2", "M5.5 6l.8 11h7.4l.8-11"],
+  search: ["M14 8.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z", "m13 13 4 4"],
+  warn: ["M10 3l8 14H2z", "M10 8.5v3.5", "M10 14.6v.01"],
 };
 
 const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
@@ -54,10 +55,31 @@ function button(className, testid, text, run) {
   node.addEventListener("click", run);
   return node;
 }
+/** A small drawn icon, made as SVG nodes. */
+function svgIcon(name) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 20 20");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.7");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of ICON_PATHS[name]) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
 function icon(name) {
   const node = element("span", `control-list-ic ${name}`);
-  node.innerHTML = ICONS[name];
+  node.append(svgIcon(name));
   return node;
+}
+/** Text with its matched words in <mark>. */
+function appendParts(node, parts) {
+  for (const part of parts) node.append(part.match ? Object.assign(document.createElement("mark"), { textContent: part.text }) : part.text);
 }
 
 let ui = null;
@@ -66,7 +88,7 @@ let selectedKey = null;
 let past = [];
 let pastReadAt = 0;
 let pastLoading = false;
-const view = { tab: "summary", query: "", scope: "inbox", rememberScope: null, group: localStorage.getItem(GROUP_KEY) === "date" ? "date" : "project" };
+const view = { tab: "summary", query: "", scope: "inbox", rememberScope: null, group: localStorage.getItem(LIST_GROUP_KEY) === "date" ? "date" : "project" };
 
 /* ---------- what there is: board cards, past conversations, system messages ---------- */
 
@@ -138,7 +160,7 @@ function dayLabel(iso) {
 function buildFrame(container, helpers) {
   const root = element("div", "control-list");
   root.dataset.testid = "control-list";
-  root.style.setProperty("--list-w", `${Number(localStorage.getItem(WIDTH_KEY)) || 360}px`);
+  root.style.setProperty("--list-w", `${Number(localStorage.getItem(LIST_WIDTH_KEY)) || 360}px`);
   const search = element("label", "control-list-search");
   search.append(icon("search"));
   const input = element("input");
@@ -199,7 +221,7 @@ function buildFrame(container, helpers) {
       grip.classList.remove("drag");
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", done);
-      localStorage.setItem(WIDTH_KEY, String(parseInt(root.style.getPropertyValue("--list-w"), 10)));
+      localStorage.setItem(LIST_WIDTH_KEY, String(parseInt(root.style.getPropertyValue("--list-w"), 10)));
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", done);
@@ -277,7 +299,7 @@ function tools(card) {
   for (const [id, on, title, run] of items) {
     const tool = element("button", `control-list-tool ${id}${on ? " on" : ""}`);
     tool.type = "button";
-    tool.innerHTML = ICONS[id];
+    tool.append(svgIcon(id));
     tool.title = title;
     tool.dataset.testid = `control-list-${id}`;
     tool.setAttribute("aria-label", title);
@@ -340,7 +362,7 @@ function drawChips(all) {
     chip.type = "button";
     chip.dataset.testid = `control-list-scope-${id}`;
     chip.setAttribute("aria-pressed", String(view.scope === id));
-    if (id === "starred") { chip.innerHTML = ICONS.star; chip.title = "Starred"; } else chip.append(label);
+    if (id === "starred") { chip.append(svgIcon("star")); chip.title = "Starred"; } else chip.append(label);
     chip.append(element("em", "", String(count(inScope))));
     chip.addEventListener("click", () => { view.scope = id; view.rememberScope = null; redraw(); });
     ui.chips.append(chip);
@@ -351,7 +373,7 @@ function drawChips(all) {
   folder.dataset.testid = "control-list-scope-folder";
   folder.setAttribute("aria-pressed", String(inFolder));
   folder.title = "Folders";
-  folder.innerHTML = ICONS.folder;
+  folder.append(svgIcon("folder"));
   if (inFolder) folder.append(` ${view.scope.slice(7)}`, element("em", "", String(count(scopeFilter(view.scope)))));
   folder.append(" ▾");
   folder.addEventListener("click", () => openFolders(folder, all));
@@ -359,7 +381,7 @@ function drawChips(all) {
   if (!query) {
     const group = element("span", "control-list-group");
     for (const [id, label] of [["project", "Project"], ["date", "Date"]]) {
-      const choice = button("", `control-list-group-${id}`, label, () => { view.group = id; localStorage.setItem(GROUP_KEY, id); redraw(); });
+      const choice = button("", `control-list-group-${id}`, label, () => { view.group = id; localStorage.setItem(LIST_GROUP_KEY, id); redraw(); });
       choice.setAttribute("aria-pressed", String(view.group === id));
       group.append(choice);
     }
@@ -465,7 +487,7 @@ function systemRow(message) {
   status.append(element("span", "control-list-flag system", message.severity === "error" ? "Not working" : "Check"), message.short);
   status.title = message.short;
   const badge = element("span", "control-sys-icon");
-  badge.innerHTML = ICONS.warn;
+  badge.append(svgIcon("warn"));
   node.append(element("i", "control-list-dot"), badge, title, element("span", "control-list-time", ""), status);
   node.addEventListener("click", () => select(node.dataset.key));
   node.addEventListener("keydown", (event) => { if (event.key === "Enter") select(node.dataset.key); });
@@ -514,7 +536,7 @@ function row({ card, match }, helpers) {
   node.dataset.column = card.column;
   node.dataset.color = card.projectColor;
   const title = element("span", "control-list-title");
-  title.innerHTML = marked(card.title, match?.hits.title);
+  appendParts(title, segments(card.title, match?.hits.title));
   title.title = card.title;
   const time = element("span", "control-list-time");
   if (isPinned(card)) time.append(Object.assign(icon("pin"), { title: "Pinned" }));
@@ -525,9 +547,13 @@ function row({ card, match }, helpers) {
   if (card.column === "needs-you") status.append(element("span", "control-list-flag needs-you", "Needs you"));
   if (card.column === "done") status.append(element("span", "control-list-flag done", "Done"));
   const folder = folderOf(card);
-  if (folder && !view.scope.startsWith("folder:")) { const place = element("span", "control-list-folder"); place.innerHTML = ICONS.folder; place.append(folder); status.append(place); }
+  if (folder && !view.scope.startsWith("folder:")) { const place = element("span", "control-list-folder"); place.append(svgIcon("folder"), folder); status.append(place); }
   const line = element("span", "control-list-snippet");
-  line.innerHTML = match?.hits.body && !match.hits.status ? snippet(card.summary, match.hits.body) : marked(text, match?.hits.status);
+  if (match?.hits.body && !match.hits.status) {
+    const found = snippet(card.summary, match.hits.body);
+    if (found.cut) line.append("…");
+    appendParts(line, found.parts);
+  } else appendParts(line, segments(text, match?.hits.status));
   status.append(line);
   status.title = text;
   node.append(element("i", "control-list-dot"), helpers.avatarOf(card), title, time, status, tools(card));

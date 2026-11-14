@@ -9,8 +9,8 @@ const DEFAULT_BOX = { w: 440, h: 640 };
 const MIN_BOX = { w: 340, h: 380 };
 const DRAG_PX = 5;
 
-const read = (key) => {
-  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+const parse = (text) => {
+  try { return JSON.parse(text); } catch { return null; }
 };
 const clamp = (value, low, high) => Math.min(Math.max(value, low), Math.max(low, high));
 
@@ -25,7 +25,7 @@ export function initFloatingChat({ panel, chat, fab, fold }) {
   /* ---------- the button ---------- */
 
   function placeFab() {
-    const pos = read(FAB_KEY);
+    const pos = parse(localStorage.getItem(FAB_KEY));
     if (!pos || !body.classList.contains("bob-desk")) return;
     const box = panel.getBoundingClientRect();
     fab.style.left = `${clamp(pos.x, MARGIN, box.width - (fab.offsetWidth || 150) - MARGIN)}px`;
@@ -89,7 +89,7 @@ export function initFloatingChat({ panel, chat, fab, fold }) {
     }
     if (placed) return;
     placed = true;
-    const saved = read(BOX_KEY);
+    const saved = parse(localStorage.getItem(BOX_KEY));
     const anchor = lastFab ?? fab.getBoundingClientRect();
     const h = saved?.h ?? DEFAULT_BOX.h;
     setBox({ x: saved?.x ?? anchor.left, y: saved?.y ?? anchor.bottom - h, w: saved?.w ?? DEFAULT_BOX.w, h });

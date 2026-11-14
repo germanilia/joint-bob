@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { distance, marked, matchWord, searchFields, snippet } from "../public/app/inbox-search.js";
+import { distance, matchWord, searchFields, segments, snippet } from "../public/app/inbox-search.js";
 
 test("a swapped pair of letters is one edit", () => {
   assert.equal(distance("makr", "mark"), 1);
@@ -27,10 +27,12 @@ test("every word of the query must match somewhere", () => {
   assert.ok(strong.score > weak.score, "a hit in the title counts more than one in the text");
 });
 
-test("matched words are marked and escaped, and a snippet keeps the match in view", () => {
-  assert.equal(marked("a <b> & done", [[8, 12]]), "a &lt;b&gt; &amp; <mark>done</mark>");
+test("matched words are cut out of the text in order, and a snippet keeps the match in view", () => {
+  assert.deepEqual(segments("a <b> & done", [[8, 12]]), [{ text: "a <b> & ", match: false }, { text: "done", match: true }]);
+  assert.deepEqual(segments("done", [[0, 4], [2, 4]]), [{ text: "done", match: true }], "overlapping ranges are one match");
   const text = `${"x ".repeat(60)}the lock is stale`;
   const at = text.indexOf("lock");
-  const html = snippet(text, [[at, at + 4]]);
-  assert.ok(html.startsWith("…") && html.includes("<mark>lock</mark>"));
+  const found = snippet(text, [[at, at + 4]]);
+  assert.equal(found.cut, true);
+  assert.ok(found.parts.some((part) => part.match && part.text === "lock"));
 });
