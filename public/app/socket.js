@@ -8,7 +8,7 @@ import { loadHiddenCronTasks } from "./cron.js";
 import { syncBackgroundTasks } from "./background-tasks.js";
 import { loadHarnesses, renderChatSessionControls, renderConversationLock, sendSocket, setComposerEnabled, setModels, syncEngineUI, syncTurnBusy, updateRoutingMode, updateStatus } from "./chat-controls.js";
 import { activityConversationChanged, activityDigestEvent, activityProgressed, activityReady } from "./activity-panel.js";
-import { appendMessage, appendToolMessage, clearChat, clearQueuedMark, clearThinkingBubble, finalizeAssistantBubble, finishTurnTimer, markMessageQueued, markPromptRouted, markPromptConnection, appendErrorMessage, markQueuedMessageFailed, markUserMessagesRead, removeQueuedMessage, renderBubbleContent, requestPinChat, rerenderChatTranscript, resetQueuedForceStart, restoreChatScrollTop, restoreConversationTimer, showChatEmptyState, startDurationTicker, startHarnessSegment, startTurnTimer, syncLiveActivity, syncQueuedMessageOrder, updateQueuedMessage, updateToolMessage } from "./chat-transcript.js";
+import { appendMessage, appendToolMessage, clearChat, clearQueuedMark, clearThinkingBubble, finalizeAssistantBubble, finishTurnTimer, markMessageQueued, markPromptRouted, markPromptConnection, appendErrorMessage, appendWorktreeWaitingMessage, markQueuedMessageFailed, markUserMessagesRead, removeQueuedMessage, renderBubbleContent, requestPinChat, rerenderChatTranscript, resetQueuedForceStart, restoreChatScrollTop, restoreConversationTimer, showChatEmptyState, startDurationTicker, startHarnessSegment, startTurnTimer, syncLiveActivity, syncQueuedMessageOrder, updateQueuedMessage, updateToolMessage } from "./chat-transcript.js";
 import { refreshBudgetNotice } from "./budget-dialog.js";
 import { rememberDraft, restoreDraft, seedPromptHistory, setActiveSessionPath } from "./composer.js";
 import { renderToolsDialog } from "./composer-dialogs.js";
@@ -52,7 +52,10 @@ function sendPendingQuickNotePrompt() {
   Promise.resolve(conversion.onStarted?.()).catch((error) => toast.error(error.message));
 }
 
+let connectionGeneration = 0;
+
 export function closeSocket() {
+  connectionGeneration += 1;
   if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
   state.reconnectTimer = null;
   stopHeartbeat();
@@ -139,6 +142,7 @@ function probeConnection(reason) {
 // called on visibilitychange / pageshow / online / focus and from the heartbeat.
 function resumeConnection(force = false, reason = "resume") {
   if (!state.activeProjectId || !state.activeSessionPath) return;
+  if (state.pendingWorktreeSessions.has(state.activeSessionId) && !state.socket) return;
   if (!force && socketOpen()) {
     probeConnection(reason);
     return;
@@ -178,6 +182,8 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
     loadHarnesses().then(() => openSession(sessionPath, title, preserveChat, reviewHighlightAfter, keepView)).catch((error) => toast.error(error.message));
     return;
   }
+  const pending = state.pendingWorktreeSessions.get(state.activeSessionId);
+  if (pending) sessionPath = pending.sessionPath;
   rememberDraft();
   // Opening a conversation that already exists drops the picks made for a new one.
   if (sessionPath && !state.harnesses.some(({ newSessionPath }) => newSessionPath === sessionPath)) {
@@ -216,7 +222,9 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
     const node = state.sessionNodes.find((candidate) => candidate.id === state.activeNodeId);
     showChatEmptyState("Connecting…", `Opening this conversation on ${node?.name || "the selected node"}.`);
   }
-  state.activeSessionPath = sessionPath || "new";
+  const nextPath = pending ? `draft:${harnessIdFromPath(state.harnesses, sessionPath)}:${state.activeSessionId}` : sessionPath || "new";
+  if (preserveChat) setActiveSessionPath(nextPath);
+  else state.activeSessionPath = nextPath;
   restoreDraft();
   state.conversationLock = null;
   renderConversationLock();
@@ -230,6 +238,35 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
   if (!preserveChat && !keepView) setMobileView("chat");
   setStatus("Connecting…", false, true);
   setComposerEnabled(false);
+
+  if (pending) {
+    state.pendingSessionTitle = pending.title;
+    state.pendingSessionColor = pending.color;
+    state.activeNodeId = pending.nodeId;
+    state.newSessionSecretAccountIds = pending.secretIds;
+    if (!pending.worktree) {
+      setStatus("Creating worktree…", false, true);
+      if (!preserveChat) {
+        showChatEmptyState("Creating worktree…", "You can send messages now. They will wait until the worktree is ready.");
+        pending.prompts.forEach(appendWorktreeWaitingMessage);
+      }
+      setComposerEnabled(!pending.error);
+      if (pending.error) {
+        setStatus("Worktree creation failed");
+        appendErrorMessage(`The worktree could not be created: ${pending.error.message}. Your waiting messages have not been sent.`);
+        elements.messageInput.disabled = false;
+        return;
+      }
+      const generation = connectionGeneration;
+      pending.ready.then(() => {
+        if (generation !== connectionGeneration || state.activeProjectId !== pending.projectId) return;
+        openSession(sessionPath, pending.title, true, null, true);
+      });
+      return;
+    }
+    state.newSessionWorktreeId = pending.worktree.id;
+    setComposerEnabled(true);
+  }
 
   const socket = new WebSocket(websocketUrl(sessionPath));
   state.socket = socket;
@@ -303,7 +340,9 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
     return;
   }
   if (payload.type === "ready") {
-    const openingDraft = state.harnesses.some(({ newSessionPath }) => newSessionPath === state.activeSessionPath);
+    const pendingWorktreeSessionId = state.activeSessionId;
+    const pendingWorktree = state.pendingWorktreeSessions.get(pendingWorktreeSessionId);
+    const openingDraft = Boolean(pendingWorktree) || state.harnesses.some(({ newSessionPath }) => newSessionPath === state.activeSessionPath);
     state.conversationLock = payload.ownership ?? null;
     state.conversationReadOnly = payload.readOnly === true;
     state.conversationReadOnlyReason = payload.readOnly === true ? payload.readOnlyReason ?? null : null;
@@ -412,6 +451,10 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
       }
     } else {
       sendPendingQuickNotePrompt();
+    }
+    if (pendingWorktree && !state.conversationLock && !state.conversationReadOnly) {
+      state.pendingWorktreeSessions.delete(pendingWorktreeSessionId);
+      for (const prompt of pendingWorktree.prompts) sendSocket(prompt);
     }
     subscribeToPush().catch((error) => console.warn("Push subscription failed", error));
     refreshSessionsQuietly();

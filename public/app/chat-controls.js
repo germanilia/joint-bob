@@ -3,7 +3,7 @@ import { harnessLabel } from "../harness-metadata.js";
 import { isNodeAdmin } from "./node-admin.js";
 import { syncBackgroundTasks } from "./background-tasks.js";
 import { syncBrowserButton } from "./browser.js";
-import { clearThinkingBubble, syncLiveActivity } from "./chat-transcript.js";
+import { appendWorktreeWaitingMessage, clearThinkingBubble, syncLiveActivity } from "./chat-transcript.js";
 import { changeReasoningLevel, hideCommandAutocomplete, renderReasoningOptions, renderToolsDialog, syncModelButton } from "./composer-dialogs.js";
 import { elements } from "./elements.js";
 import { renderWorktreeIndicator } from "./worktree-indicator.js";
@@ -81,6 +81,13 @@ export function renderConversationLock() {
 }
 
 export function sendSocket(payload) {
+  const pending = state.pendingWorktreeSessions.get(state.activeSessionId);
+  if (pending && payload.type === "prompt") {
+    if (pending.error || state.conversationLock || state.conversationReadOnly) return false;
+    pending.prompts.push(payload);
+    appendWorktreeWaitingMessage(payload);
+    return true;
+  }
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return false;
   state.socket.send(JSON.stringify(payload));
   return true;

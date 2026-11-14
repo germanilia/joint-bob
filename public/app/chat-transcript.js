@@ -782,6 +782,17 @@ export function appendMessage(role, text, timestamp = true, attachments = [], re
   return bubble;
 }
 
+/** These prompts have not reached the server yet; its queue takes over after the worktree is ready. */
+export function appendWorktreeWaitingMessage(prompt) {
+  const names = [...prompt.images, ...prompt.files].map(({ name }) => name);
+  const text = prompt.message + (names.length ? `\n\nAttached: ${names.join(", ")}` : "");
+  const bubble = appendMessage("user", text);
+  bubble.dataset.testid = "worktree-waiting-message";
+  const status = document.createElement("span");
+  status.textContent = "Waiting for worktree";
+  bubble.querySelector(".message-meta").append(status);
+}
+
 /** A failed harness turn stays in the conversation as its own bubble, live and on reload. */
 export function appendErrorMessage(text, timestamp = true) {
   elements.messages.querySelector(".empty-state")?.remove();
