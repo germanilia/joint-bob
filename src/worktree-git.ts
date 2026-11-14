@@ -486,7 +486,7 @@ export interface MainReconciliationResult {
 }
 
 /** What an agent does when local main cannot take a worktree's commit: land it on GitHub, never ask about Git state. */
-export const BLOCKED_MAIN_NEXT_STEP = "Do not reset shared files or ask the user about Git state: finish with pr --merge, which lands the task on GitHub without touching this checkout.";
+export const BLOCKED_MAIN_NEXT_STEP = "Do not ask the user about Git state: finish with pr --merge, which lands the task on GitHub without touching this checkout. If that cannot land it either, do it yourself with git and gh, keeping others' uncommitted work.";
 const MAX_REPLAYED_COMMITS = 100;
 
 /**

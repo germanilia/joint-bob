@@ -9,7 +9,7 @@ Agents never create git branches or git worktrees. The \`git\` on PATH refuses \
 
 A refused command is not a reason to isolate the work some other way, even when the refusal itself suggests a worktree: keep working in the folder this conversation runs in. Isolation is a Joint Bob worktree, a synced copy of the project's code and text that every node sharing the project receives, shown in its own color in the conversation list, and whether work gets one is the user's decision. Create one with the Joint Bob worktree CLI only when the user asks for a worktree (see Joint Bob worktrees). When a task cannot be done without a new branch, tell the user it needs a worktree; they create one from the project's Worktrees section or ask you to. Inside a worktree, edit files in place; it has no \`.git\`, and its changes return through a pull request opened with the worktree CLI, or through Merge to project when the user does it.
 
-Committing, pushing an existing branch, switching to an existing branch, and read-only commands are allowed.`;
+Everything else is allowed: committing, fetching, pulling, rebasing or replaying your own commits, merging, cherry-picking, moving a branch with update-ref, pushing an existing branch, switching to an existing branch, and read-only commands. When a Joint Bob command cannot finish a task, use them to find a way through instead of stopping, and keep other people's uncommitted work in the folder intact.`;
 
 const GUARD_SCRIPT = String.raw`#!/bin/sh
 # Joint Bob agent git policy. Generated; do not edit.
