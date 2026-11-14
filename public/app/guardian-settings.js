@@ -284,7 +284,7 @@ function renderModels() {
   const rows = el("div", "cluster-inventory");
   const jev = el("div", "cluster-node");
   const jevIdentity = el("div", "cluster-node-identity");
-  jevIdentity.append(el("strong", "", "Jev"), el("span", "cluster-node-url", "TypeSafe · uses TYPESAFE_AI_API_KEY from a secret account attached to the project or its workspace · content leaves this machine"));
+  jevIdentity.append(el("strong", "", "Jev"), el("span", "cluster-node-url", "TypeSafe · uses the TypeSafe key chosen in System AI · content leaves this machine"));
   jev.append(jevIdentity);
   const laya = el("div", "cluster-node"); laya.dataset.testid = "guardian-laya-row";
   const identity = el("div", "cluster-node-identity");

@@ -23,7 +23,7 @@ Blocks that need no review show as a notice in the conversation, and the agent i
 
 Choose the model in **Settings → Classifiers → Decision models**:
 
-- **Jev** (TypeSafe), hosted. It uses `TYPESAFE_AI_API_KEY` from a secret account attached to the project or its workspace. The content being checked leaves the machine.
+- **Jev** (TypeSafe), hosted. It uses the TypeSafe key chosen in **Settings → System AI**. The content being checked leaves the machine. A machine checks its own rules with its own key; rules a relay imposes are asked through the machine that wrote them, using that machine's key, so a member needs no key of its own.
 - **Laya**, free, on your own machines. **Install here** sets it up in its own Python environment (`laya[serve]` 0.4.20 under the data directory) on machines with at least 8 GB of memory, 4 cores, 10 GB of free disk and Python 3.10; elsewhere the button is not offered and the row says why. It starts on first use, listens only on this machine, and downloads its checkpoint then. Or enter the address of a Laya server on another machine; a key, if it needs one, comes from `LAYA_API_KEY`.
 
 Routing configurations can choose Laya as their difficulty classifier too, using the same server.
@@ -32,7 +32,9 @@ When the model cannot be reached, cannot answer, or the content is too long for 
 
 ## Relays
 
-On a machine that serves a relay, **Enforce these rules on every machine of the relay this machine serves** publishes its rules in the relay's signed policy. Members cannot turn them off or change them, apply them even with their own Guardian off, and keep the last policy while the relay is offline; leaving the relay removes them. A relay rule set to ask lets the member review; one set to block blocks. Relay rules use Jev or a Laya server address every member can reach, and fix only with the built-in secret removal: a relay never runs its own scripts or agents on a member's machine. Every relay a machine has joined is a policy author, and a block from any of them wins.
+On a machine that serves a relay, **Enforce these rules on every machine of the relay this machine serves** publishes its rules in the relay's signed policy. Members cannot turn them off or change them, apply them even with their own Guardian off, and keep the last policy while the relay is offline; leaving the relay removes them. A relay rule set to ask lets the member review; one set to block blocks. Relay rules use Jev or a Laya server address every member can reach, and fix only with the built-in secret removal: a relay never runs its own scripts or agents on a member's machine. Every relay a machine has joined is a policy author, and a block from any of them wins. A Jev check for a relay's rule is sent to the relay over the signed machine channel; the relay adds its own System AI key and the key never leaves it. If the relay cannot be reached, the action is blocked.
+
+A production rule imposed this way counts as protection: a machine whose own Guardian is off shows no "Guardian is off" warning, and its team assistants may run production-capable work, while any relay it uses imposes the rule.
 
 ## What each agent can enforce
 

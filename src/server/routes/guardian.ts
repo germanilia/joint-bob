@@ -5,6 +5,7 @@ import { clusterV2Database } from "../../cluster-v2-store.js";
 import type { GuardianAgentIdentity } from "../../guardian/agent-token.js";
 import { checkGuardian } from "../../guardian/check.js";
 import { layaStatus, startLayaInstall } from "../../guardian/laya.js";
+import { answerRelayGuardian, GUARDIAN_ASK_PATH, guardianAskSchema, RelayGuardianRefused } from "../../guardian/relay-model.js";
 import { guardianRelayPolicySchema, toolCategory, type GuardianRelayPolicy, type GuardianSettings } from "../../guardian/rules.js";
 import { getGuardianSettings, guardianGroups, updateGuardianSettings } from "../../guardian/settings.js";
 import { relayServerInstance } from "../../relay/index.js";
@@ -88,6 +89,21 @@ app.post("/api/guardian/laya/install", requireAdmin, async (_request, response, 
 
 app.get("/api/guardian/laya", requireAdmin, async (_request, response, next) => {
   try { response.json(await layaStatus()); } catch (error) { failed(response, next, error); }
+});
+
+/** An admitted machine's Jev check for this relay's rules, asked here with this relay's own key. */
+app.post(GUARDIAN_ASK_PATH, async (request, response, next) => {
+  try {
+    if (response.locals.machineProtocol !== 2 || typeof response.locals.machineNodeId !== "string") { sendError(response, 401, "Unauthorized"); return; }
+    const { body } = guardianAskSchema.parse(request.body);
+    const abort = new AbortController();
+    response.on("close", () => abort.abort());
+    const answer = await answerRelayGuardian(await clusterV2Database(), response.locals.machineNodeId, body, abort.signal);
+    response.status(answer.status).type("json").send(await answer.text());
+  } catch (error) {
+    if (error instanceof RelayGuardianRefused) { sendError(response, error.statusCode, error.message); return; }
+    failed(response, next, error);
+  }
 });
 
 const hookRequest = z.object({ tool: z.string().min(1).max(200), input: z.record(z.unknown()) }).strict();

@@ -2,8 +2,7 @@ import type { AuthSession } from "../auth.js";
 import { bobDatabase, readBobSettings } from "../control-center/bob-store.js";
 import { otherPersonsMachine } from "../control-center/clusters-data.js";
 import { systemMessages, type SystemMessage } from "../control-center/system-messages.js";
-import { getGuardianSettings } from "../guardian/settings.js";
-import { productionGuardStatus } from "../guardian/production-rule.js";
+import { productionGuard } from "../guardian/settings.js";
 import { peerAway } from "../peer-presence.js";
 import { collectSubscriptionDetections } from "../subscription-detection.js";
 import { projectsWithSharedNames } from "./projects.js";
@@ -30,7 +29,7 @@ export async function loadSystemMessages(session: AuthSession): Promise<SystemMe
   return systemMessages({
     classifier: settings.classifier,
     decisionModelReady: Boolean(await bobDecisionModel(projects, settings)),
-    guardian: productionGuardStatus(getGuardianSettings()),
+    guardian: await productionGuard(),
     claudeSignedOut: claude?.status === "unavailable" && claude.message.startsWith("Claude is not signed in"),
     machinesAway: peers.filter((peer) => !theirs(peer.id) && peerAway(peer.id))
       .map((peer) => ({ id: peer.id, name: peer.name, conversations: cards.filter((card) => card.executionNodeId === peer.id).length })),

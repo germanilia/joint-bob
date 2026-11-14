@@ -1,17 +1,18 @@
 import { createHash } from 'node:crypto';
 import { teamAssistantForConversation } from '../assistant-resources.js';
-import { productionGuardStatus, PRODUCTION_RULE_ID } from './production-rule.js';
-import { getGuardianSettings } from './settings.js';
+import { PRODUCTION_RULE_ID } from './production-rule.js';
 import { recordAuditEvent } from "../audit.js";
 import { getHarness } from "../harnesses.js";
 import { genericSecretEnvironment } from "../secrets.js";
+import { systemDecisionKey } from "../system-ai.js";
 import type { HarnessId } from "../types.js";
 import { isGuardianExempt, runGuardianFix } from "./fix.js";
 import { localLayaUrl } from "./laya.js";
 import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } from "./model.js";
 import { announceGuardianBlock, requestGuardianReview } from "./reviews.js";
 import { ruleApplies, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
-import { guardianGroups, type GuardianGroup } from "./settings.js";
+import { fetchThroughRelay } from "./relay-model.js";
+import { guardianGroups, productionGuard, type GuardianGroup } from "./settings.js";
 
 export interface GuardianIdentity {
   projectId: string;
@@ -39,13 +40,15 @@ function knownSecrets(projectId: string): string[] {
   return Object.values(genericSecretEnvironment(projectId)).filter((value): value is string => typeof value === "string" && !value.startsWith("/"));
 }
 
+/** A relay's Jev rules are asked through that relay, which holds the key. */
+function modelRoute(group: GuardianGroup, projectId: string): Promise<{ target: GuardianModelTarget; fetchImpl?: typeof fetch }> {
+  if (group.model === "jev" && group.relay) return Promise.resolve({ target: jevTarget(""), fetchImpl: fetchThroughRelay(group.relayNodeId!) });
+  return modelTarget(group, projectId).then((target) => ({ target }));
+}
+
 async function modelTarget(group: GuardianGroup, projectId: string): Promise<GuardianModelTarget> {
   const environment = genericSecretEnvironment(projectId);
-  if (group.model === "jev") {
-    const key = environment.TYPESAFE_AI_API_KEY;
-    if (!key) throw new Error("Jev needs a TYPESAFE_AI_API_KEY secret account attached to this project or its workspace");
-    return jevTarget(key);
-  }
+  if (group.model === "jev") return jevTarget(systemDecisionKey("typesafe"));
   if (group.model === "laya-local") return layaTarget(await localLayaUrl(), undefined, true);
   return layaTarget(group.layaUrl, environment.LAYA_API_KEY, false);
 }
@@ -65,8 +68,8 @@ async function evaluate(identity: GuardianIdentity, groups: GuardianGroup[], req
     const rules = group.rules.filter((rule) => ruleApplies(rule, request));
     if (!rules.length) return { findings: [] as Finding[] };
     try {
-      const target = await modelTarget(group, identity.projectId);
-      const answers = await askGuardianModel(target, state, Object.fromEntries(rules.map((rule) => [rule.id, rule.question])));
+      const { target, fetchImpl } = await modelRoute(group, identity.projectId);
+      const answers = await askGuardianModel(target, state, Object.fromEntries(rules.map((rule) => [rule.id, rule.question])), fetchImpl);
       return { findings: rules.map((rule) => ({ group, rule, probability: answers[rule.id], outcome: ruleOutcome(rule, answers[rule.id]), model: target.label })) };
     } catch (error) {
       return { findings: [] as Finding[], failure: `${group.relay ? `${group.source}: ` : ""}${(error as Error).message}` };
@@ -126,7 +129,7 @@ async function applyFixes(identity: GuardianIdentity, request: GuardianRequest, 
 export async function checkGuardian(identity: GuardianIdentity, original: GuardianRequest): Promise<GuardianVerdict> {
   const team = !!teamAssistantForConversation(identity.projectId, identity.conversationId);
   const effectCapable = original.kind === 'tool' && (original.category === 'commands' || original.category === 'file-changes');
-  if (team && effectCapable && productionGuardStatus(getGuardianSettings()) !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
+  if (team && effectCapable && await productionGuard() !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
   if (!team && isGuardianExempt(identity.projectId, identity.conversationId)) return { action: "continue" };
   const groups = await guardianGroups();
   // Team Pi retains write/edit without a shell. The mandatory production rule checks those effects too.

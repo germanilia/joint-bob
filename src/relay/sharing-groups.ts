@@ -23,7 +23,7 @@ export function relayPeerRequestAllowed(db: DatabaseSync, local: string, peer: s
   // Social requests (directory, groups, direct requests) authorize their own operation and account.
   if (pathname.startsWith("/api/cluster/v2/social/")) return true;
   // The relay's decision route answers only its admitted machines, and only while it shares its decision model.
-  if (pathname === "/api/cluster/v2/decision-model/classify") return true;
+  if (pathname === "/api/cluster/v2/decision-model/classify" || pathname === "/api/cluster/v2/guardian/ask") return true;
   if (["/api/cluster/v2/resources/policy", "/api/cluster/v2/membership/snapshot", "/api/cluster/v2/membership/descriptor", "/api/cluster/v2/workspaces/manifest", "/api/cluster/v2/workspaces/changed"].includes(pathname)) return true;
   const projects = db.prepare("SELECT resource_id FROM sharing_resource_owners WHERE kind='project'").all() as Array<{resource_id: string}>;
   return projects.some(project => mayReceiveResource(db, local, "project", project.resource_id) && mayReceiveResource(db, peer, "project", project.resource_id));

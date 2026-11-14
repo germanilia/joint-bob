@@ -59,7 +59,7 @@ const REFUSAL_MEMORY_MS = 10 * 60_000;
 const refusedUntil = new Map<string, number>();
 
 /** Admitted relays, in a stable order, reachable through a cluster (relay groups included) both machines belong to. */
-async function relayTargets(): Promise<RelayTarget[]> {
+export async function relayTargets(): Promise<RelayTarget[]> {
   const db = await clusterV2Database(), local = await getClusterNode();
   const clusters = listSharingMemberships(db, local.id, true).map(({ clusterId }) => clusterId);
   return listMemberships(db)

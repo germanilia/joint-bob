@@ -19,6 +19,12 @@ export const PRODUCTION_RULE: GuardianRule = {
 
 export type ProductionGuardStatus = "on" | "guardian-off" | "rule-off" | "rule-missing";
 
+/** Whether a rule is the production rule, on, checking commands, and acting when the answer is yes. */
+export function actsOnProduction(rule: GuardianRule): boolean {
+  return rule.id === PRODUCTION_RULE_ID && rule.enabled && (rule.ifYes === "ask" || rule.ifYes === "block")
+    && (rule.check === "commands" || rule.check === "all") && rule.question === PRODUCTION_RULE.question;
+}
+
 /** Whether production and destructive steps ask first on this machine. */
 export function productionGuardStatus(settings: GuardianSettings): ProductionGuardStatus {
   if (!settings.enabled) return "guardian-off";
