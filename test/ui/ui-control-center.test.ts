@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeUiFixture } from "./native-ui-fixture.js";
+import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 
 const BOARD = {
   projects: [{ id: "p1", name: "Joint Bob", color: "violet" }, { id: "p2", name: "DAK Live" }],
@@ -100,6 +100,7 @@ test("the control center shows the live board, filters by project, colors cards 
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  await openBobChat(page);
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');

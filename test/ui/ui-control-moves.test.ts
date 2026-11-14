@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Page } from "playwright-core";
-import { nativeUiFixture } from "./native-ui-fixture.js";
+import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 
 const MAC = "11111111-1111-4111-8111-111111111111";
 const HOME = "22222222-2222-4222-8222-222222222222";
@@ -73,6 +73,7 @@ test("a card can be picked, moved after its turn or stopped and moved now, and t
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  await openBobChat(page);
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
@@ -182,6 +183,7 @@ test("Story and Overview on a card open that conversation and use the app's own 
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  await openBobChat(page);
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');

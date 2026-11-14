@@ -3,7 +3,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
-import type { Browser } from "playwright-core";
+import type { Browser, Page } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 
@@ -29,6 +29,17 @@ export async function nativeUiFixture(t: TestContext, extraEnv: (root: string) =
   browser = await launchChrome({ headless: true, env: { ...process.env, HOME: environment.home } });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
   context.setDefaultTimeout(20_000);
+  // Bob's page draws the Live agents board as a list by default; these tests were written for the cards, so they start there.
+  // The list has its own test (ui-control-list.test.ts), which asks for it.
+  await context.addInitScript(() => { if (!localStorage.getItem("jointBobLiveLayout")) localStorage.setItem("jointBobLiveLayout", "cards"); });
   const page = await context.newPage();
   return { page, environment, node, server };
+}
+
+/** Bob's page opens with his chat folded into the "Ask Bob" button; tests that write to the chat open it first. */
+export async function openBobChat(page: Page) {
+  const fab = page.getByTestId("bob-fab-chat");
+  await fab.waitFor({ state: "visible" });
+  await fab.click();
+  await page.getByTestId("control-chat-input").waitFor({ state: "visible" });
 }

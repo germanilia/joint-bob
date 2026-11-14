@@ -166,7 +166,9 @@ function onPage() {
 
 function apply() {
   const page = onPage();
+  const changed = body.classList.contains("bob-desk") !== page;
   body.classList.toggle("bob-desk", page);
+  if (changed) window.dispatchEvent(new CustomEvent("bob-desk-changed"));
   if (page) {
     moveInto(tabs, stage, { first: true });
     moveInto(document.querySelector(".team-context-label"), contextHere);
@@ -180,10 +182,14 @@ function apply() {
 // The view opened last opens again; a view asked for right as the control center opens (Automations in the left column,
 // a dashboard Bob opens) follows this and wins. Any wide window keeps it (the page's own classes may come later); a
 // phone always starts at the chat (control-phone.js), so it neither restores nor saves the view.
-// The page opens at its full width: Bob's chat starts folded into the "Ask Bob" button.
+// The page opens at its full width: Bob's chat starts folded into the "Ask Bob" button. Only entering folds it: the control
+// center is activated again while it is open (a conversation closing, a search), and that must not close a chat the person opened.
+let entered = false;
+window.addEventListener("app-view-changed", () => { if (!body.classList.contains("view-control")) entered = false; });
 window.addEventListener("control-center-activated", () => {
   apply();
-  if (wide.matches && !state.controlCenter.collapsed.includes("chat")) toggleFolded("chat");
+  if (wide.matches && !entered && !state.controlCenter.collapsed.includes("chat")) toggleFolded("chat");
+  entered = true;
   applyFolds();
   if (wide.matches && state.controlCenter.view !== currentControlView()) showControlView(state.controlCenter.view);
 });

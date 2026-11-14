@@ -41,6 +41,8 @@ before(async () => {
   browser = await launchChrome({ headless: process.env.HEADED !== "1" });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block", reducedMotion: "reduce" });
   page.setDefaultTimeout(20_000);
+  // Bob's page draws the Live agents board as a list by default; this file checks the cards (the list: ui-control-list.test.ts).
+  await page.addInitScript(() => localStorage.setItem("jointBobLiveLayout", "cards"));
   await page.route("**/api/control-center/board*", (route) => route.fulfill({ json: { cards, projects: [{ id: "p1", name: "Joint Bob", color: null }] } }));
   await page.route("**/api/control-center/cards/push", async (route) => { pushes.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true } }); });
   await page.goto(node.url, { waitUntil: "domcontentloaded" });

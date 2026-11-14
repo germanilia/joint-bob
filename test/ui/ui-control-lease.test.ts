@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeUiFixture } from "./native-ui-fixture.js";
+import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 
 test("opening a conversation over the board takes control, Esc or Close gives it back, and Keep Bob out keeps it after closing", async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
@@ -47,6 +47,7 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  await openBobChat(page);
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   const card = page.getByTestId("control-center-card");

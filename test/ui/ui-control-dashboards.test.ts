@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import type { Page } from "playwright-core";
-import { nativeUiFixture } from "./native-ui-fixture.js";
+import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 import { waitInPage } from "./wait-in-page.js";
 
 /** A stand-in dashboard agent: the request's "Title: ..." line names the dashboard, "refresh with AI" makes it an AI one. */
@@ -113,6 +113,7 @@ test("the Dashboards tab lists dashboards, shows one over the board, and every b
   await mockBoard(page, boardBody);
 
   await page.getByTestId("projects-open-control-center-button").click();
+  await openBobChat(page);
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
@@ -231,6 +232,7 @@ test("the Dashboards tab pages instead of scrolling, labels what Bob made, and B
   ];
   await page.evaluate((cards) => { (window as any).__dashboards = cards; }, many);
   await page.getByTestId("projects-open-control-center-button").click();
+  await openBobChat(page);
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');

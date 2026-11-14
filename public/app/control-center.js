@@ -11,6 +11,7 @@ import { openQuickNote } from "./quick-notes.js";
 import { glide, positions, vanish } from "./control-vanish.js";
 import { PROJECT_COLORS } from "./session-rows.js";
 import { openRowMenu } from "./row-menu.js";
+import { renderList } from "./control-list.js";
 
 const DEFAULT_COLOR = "#3a3f46";
 const COLUMNS = [
@@ -168,28 +169,8 @@ function renderCard(card) {
   const metaLine = element("div", "control-meta", meta);
   metaLine.title = meta;
   root.append(top, title, body, metaLine);
-  // The card's own actions are buttons in its row; the rest (Let Bob control, Story, Overview) wait under "More ▾".
-  const buttons = cardActionList(card);
-  const inRow = buttons.filter((action) => !action.more);
-  const inMenu = buttons.filter((action) => action.more);
-  if (buttons.length) {
-    const row = element("div", "control-card-actions");
-    for (const action of inRow) {
-      const button = element("button", "control-card-action", action.label);
-      // Not a class: the app's own `.primary` buttons are taller than a card's row.
-      if (action.style) button.dataset.style = action.style;
-      button.type = "button";
-      button.title = action.title;
-      button.dataset.testid = `control-card-action-${action.id}`;
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        Promise.resolve(action.run(card, button)).catch((error) => toast.error(error.message));
-      });
-      row.append(button);
-    }
-    if (inMenu.length) row.append(moreButton(card, inMenu));
-    root.append(row);
-  }
+  const actions = renderActionRow(card);
+  if (actions) root.append(actions);
   decorateCard(root, card);
   // A card that waits for the person opens with them in control, ready to answer; any other opens to watch.
   root.addEventListener("click", () => {
@@ -197,6 +178,29 @@ function renderCard(card) {
     Promise.resolve(take ? take.run(card) : openCard(card)).catch((error) => toast.error(error.message));
   });
   return root;
+}
+
+/** The card's own actions are buttons in its row; the rest (Let Bob control, Story, Overview) wait under "More ▾". Null when it has none. */
+function renderActionRow(card) {
+  const buttons = cardActionList(card);
+  if (!buttons.length) return null;
+  const row = element("div", "control-card-actions");
+  for (const action of buttons.filter((candidate) => !candidate.more)) {
+    const button = element("button", "control-card-action", action.label);
+    // Not a class: the app's own `.primary` buttons are taller than a card's row.
+    if (action.style) button.dataset.style = action.style;
+    button.type = "button";
+    button.title = action.title;
+    button.dataset.testid = `control-card-action-${action.id}`;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      Promise.resolve(action.run(card, button)).catch((error) => toast.error(error.message));
+    });
+    row.append(button);
+  }
+  const inMenu = buttons.filter((action) => action.more);
+  if (inMenu.length) row.append(moreButton(card, inMenu));
+  return row;
 }
 
 /** "More ▾" on a card: its less used actions in the shared row menu, under the button. */
@@ -282,6 +286,20 @@ function cheer(container) {
   }
   cheering.clear();
 }
+
+/**
+ * Bob's page draws the board as a list with a preview (control-list.js) unless the person chose the cards; the choice is kept
+ * in this browser. Narrower windows always draw the cards.
+ */
+const LAYOUT_KEY = "jointBobLiveLayout";
+const listLayout = () => document.body.classList.contains("bob-desk") && localStorage.getItem(LAYOUT_KEY) !== "cards";
+const listHelpers = {
+  projectColor, avatarOf, runningBadge, driverOf, doneButton, decideReview,
+  actionRow: renderActionRow,
+  openConversation: (card) => openConversation(card),
+  refresh: () => refreshControlCenter(),
+  finished: () => finishedWhileWatching,
+};
 
 const isFolded = (id) => state.controlCenter.collapsed.includes(id);
 /** Folds a section into its button, or opens it again; remembered with the account. Bob's page folds the chat and the column. */
@@ -470,7 +488,6 @@ function render() {
   window.dispatchEvent(new CustomEvent("control-center-rendered", { detail: { projects: board.projects, cards: board.cards, focus: [...state.controlCenter.filter] } }));
   renderFilters();
   const container = elements.controlCenterBoard;
-  container.replaceChildren();
   const cards = visibleCards();
   const waiting = cards.filter((card) => card.column === "needs-you").length;
   const driven = cards.filter((card) => driverOf(card)?.id === "system").length;
@@ -480,7 +497,11 @@ function render() {
     driven ? `${driven} driven by the system` : "", watched ? `${watched} watched by Bob` : "",
   ].filter(Boolean).join(" · ");
   liveView.setBadge(cards.filter((card) => card.column === "needs-you" || card.column === "running").length);
-  container.append(renderScoreboard(cards));
+  const asList = listLayout();
+  document.body.classList.toggle("control-list-layout", asList);
+  if (asList && cards.length) { renderList(container, cards, listHelpers); return; }
+  container.replaceChildren();
+  if (!asList) container.append(renderScoreboard(cards));
   if (!cards.length) {
     container.append(element("p", "control-empty", board.cards.length ? "Nothing matches the project filter." : "No conversations are running and nothing is waiting for review."));
     return;
@@ -653,8 +674,31 @@ export function activateControlCenter() {
 const liveView = registerControlView({ id: "live", title: "Live agents", order: 0, element: elements.controlViewLive });
 
 elements.controlCenterReset.addEventListener("click", resetBoard);
+/** "List | Cards": which way Bob's page draws the board. Only shown where the list can be drawn. */
+function layoutSwitch() {
+  const group = element("div", "control-layout-switch");
+  group.dataset.boardTool = "layout";
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", "Board layout");
+  const cards = localStorage.getItem(LAYOUT_KEY) === "cards";
+  for (const [id, label] of [["list", "List"], ["cards", "Cards"]]) {
+    const choice = element("button", "ghost compact", label);
+    choice.type = "button";
+    choice.dataset.testid = `control-layout-${id}`;
+    choice.setAttribute("aria-pressed", String((id === "cards") === cards));
+    choice.addEventListener("click", () => {
+      localStorage.setItem(LAYOUT_KEY, id);
+      renderBoardTools();
+      render();
+    });
+    group.append(choice);
+  }
+  return group;
+}
+
 function renderBoardTools() {
   for (const old of elements.controlViewLive.querySelectorAll("[data-board-tool]")) old.remove();
+  elements.controlCenterReset.before(layoutSwitch());
   for (const tool of boardTools()) {
     const button = element("button", "ghost compact", tool.label);
     button.type = "button";
@@ -666,6 +710,8 @@ function renderBoardTools() {
   }
 }
 window.addEventListener("control-board-tools-changed", renderBoardTools);
+// Bob's page appears or goes away as the window changes width: the board is drawn the way that width allows.
+window.addEventListener("bob-desk-changed", () => { if (board.cards.length) render(); });
 renderBoardTools();
 elements.controlCenterRefresh.addEventListener("click", () => refreshControlCenter().catch((error) => toast.error(error.message)));
 // What waits for the person shows on the toolbar icon, so they know without opening the control center.
