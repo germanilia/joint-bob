@@ -39,7 +39,10 @@ export function withPendingSessionChanges(projectId, sessions, askedAt) {
     if (change.remove && present.has(change.key) && askedAt - change.confirmedAt < REMOVAL_LINGER_MS) continue;
     changes.splice(index, 1);
   }
-  return applyChanges(sessions, projectId);
+  const drafts = [...state.pendingWorktreeSessions.values()]
+    .filter((pending) => pending.projectId === projectId && !present.has(pending.session.id))
+    .map((pending) => ({ ...pending.session, ...(pending.worktree ? { worktree: pending.worktree } : {}) }));
+  return applyChanges([...drafts, ...sessions], projectId);
 }
 
 /**

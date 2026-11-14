@@ -62,6 +62,8 @@ export const state = {
   newSessionDraft: null,
   // The Joint Bob worktree a new conversation should run in; null runs it in the project folder.
   newSessionWorktreeId: null,
+  // Conversations can accept messages before their worktree has finished copying.
+  pendingWorktreeSessions: new Map(),
   worktrees: [],
   worktreeCleanupReasons: {},
   // Worktree sub-sections the user folded in the conversation list.
