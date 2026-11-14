@@ -97,6 +97,8 @@ test("Home greets by the time of day, counts what waits and shows the three grou
   const review = await page.getByTestId("workspace-group-count-review").innerText();
   assert.match(await page.getByTestId("phone-counts").innerText(), new RegExp(`^\\d+ needs? you · \\d+ running · ${review} to review$`));
   assert.ok(await page.locator('[data-testid="workspace-group-review"] [data-testid="workspace-group-row"]').count() >= 1);
+  // Earlier lists every other conversation too.
+  await page.getByTestId("workspace-group-count-earlier").filter({ hasText: /^[1-9]\d*$/ }).waitFor();
   assert.equal(await page.locator("#projectsPanel").isVisible(), false, "the project list waits behind Projects");
   assert.equal(await page.getByTestId("phone-tab-inbox").getAttribute("aria-current"), "page");
   for (const id of ["phone-tab-inbox", "phone-tab-bob", "phone-tab-projects", "phone-tab-settings", "phone-new-button", "phone-search-input", "focus-controls-button"]) {
