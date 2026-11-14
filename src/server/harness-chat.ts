@@ -755,7 +755,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
         publishAutoRespond(connection, await enableAutoRespond(connection.project.id, connection.conversationId, queued.scheduledAutoRespond, queued.author ?? null, accountId, queued.id, queued.requestId ?? null));
       }
     }
-    pool = teamTurn ? undefined : await resolveTurnSubscriptionPool(connection, queued);
+    pool = await resolveTurnSubscriptionPool(connection, queued);
     if (!pool && !queued.systemEventId) await announceTurnConnection(connection, queued);
     if (queued.settings) await applyQueuedSettings(connection, queued.settings, Boolean(pool));
     const difficulty = await routePromptByDifficulty(connection, queued, Boolean(pool));
