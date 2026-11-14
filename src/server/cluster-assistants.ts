@@ -67,7 +67,8 @@ export async function hostedViews(clusterIds?: string[]): Promise<ClusterAssista
   return views;
 }
 
-async function signedPost(nodeId: string, target: string, body: unknown, timeoutMs: number): Promise<globalThis.Response> {
+/** A signed request to another machine of one of the person's clusters; the machine proves itself by its signature, not by an address. */
+export async function signedPost(nodeId: string, target: string, body: unknown, timeoutMs: number): Promise<globalThis.Response> {
   const context = await peers(), peer = context.nodes.find((candidate) => candidate.nodeId === nodeId);
   if (!peer) throw new Error("That machine is no longer in one of your clusters");
   const bytes = Buffer.from(JSON.stringify(body));

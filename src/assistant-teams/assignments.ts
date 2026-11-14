@@ -476,7 +476,7 @@ export async function runBrowserTeamAssignment(member:TeamMember,role:TeamRole,s
 /* ---- Steering the team: status, cancel and retry. Telegram's /status /cancel /retry and the app's Bob share these. ---- */
 export type TeamRequestState='running'|'queued'|'needs_you'|'stopped'|'done'|'cancelled';
 /** What a person sees of one request: its members' parts, including anything delegated. */
-export interface TeamRequestView { id:string; shortId:string; text:string; requestedBy:string; chatId:string; createdAt:string; browser:boolean; state:TeamRequestState; assignments:{ role:TeamRole; state:AssignmentState; delegated:boolean; reason:string|null; conversationId:string|null }[] }
+export interface TeamRequestView { id:string; shortId:string; text:string; requestedBy:string; chatId:string; createdAt:string; browser:boolean; state:TeamRequestState; assignments:{ role:TeamRole; state:AssignmentState; delegated:boolean; reason:string|null; conversationId:string|null; result:string|null }[] }
 function requestStateOf(states:AssignmentState[]):TeamRequestState {
  if(states.includes('running'))return 'running';
  if(states.some(state=>state==='queued'||state==='accepted'))return 'queued';
@@ -491,7 +491,9 @@ function requestViews(db:DatabaseSync,teamId:string):TeamRequestView[] {
   const mine=all.filter(a=>a.rootId===r.id);
   if(!mine.length)return [];
   return [{id:r.id,shortId:r.id.slice(0,6),text:r.source.text,requestedBy:r.source.accountId,chatId:r.source.chatId,createdAt:r.source.createdAt,browser:r.browser,state:requestStateOf(mine.map(a=>a.state)),
-   assignments:mine.map(a=>{const w=work(db,a.id);return {role:a.role,state:a.state,delegated:Boolean(a.parentId),reason:w?.reason??null,conversationId:w?.conversationId??null};})}];
+   assignments:mine.map(a=>{const w=work(db,a.id);return {role:a.role,state:a.state,delegated:Boolean(a.parentId),reason:w?.reason??null,conversationId:w?.conversationId??null,
+    // What a member answered is read; delegated parts stay internal to the coordinator, who writes the answer.
+    result:!a.parentId&&w?.phase==='done'?(w.result??'').slice(0,6000):null};})}];
  });
 }
 export async function listTeamRequests(member:TeamMember,limit=50):Promise<TeamRequestView[]> {
@@ -578,4 +580,22 @@ async function runTeamCommand(db:DatabaseSync,member:TeamMember,message:StoredTe
   else{const {previous,request}=await retryTeamRequest(member,ref,message.chatId);reply(`running ${previous.shortId} again as ${request.shortId}.`);}
  }catch(error){reply(error instanceof TeamError?error.message:'That did not work; try again in a moment.');}
  await deliverTeamOutbox(message.teamId);
+}
+
+/** Work for someone who is not in the Telegram group (the app, a member's Bob): the same ledger and dispatcher, no group messages. Returns at once; progress is read with listTeamRequests. */
+export async function startTeamRequest(member:TeamMember,role:TeamRole|null,message:string,requestId:string):Promise<TeamRequestView> {
+ await recheckTeamActor(member);await requireTeamExecution(member.teamId,member.accountId);
+ if(!message.trim()||message.length>20000)throw new TeamError('Invalid team message',400);
+ const db=await assignmentDatabase(),{roles,coordinator}=teamRolesSync(db,member.teamId),target=role??coordinator;
+ if(!target||!roles.includes(target))throw new TeamError(role?'Unknown team role':'This team has no members yet',role?404:409);
+ const id=key(member.teamId,'browser',requestId);
+ const existing=assignments(db,member.teamId).find(a=>a.rootId===id);
+ if(existing){const r=root(db,id);if(existing.requestedBy!==member.accountId||existing.role!==target||r.source.text!==message)throw new TeamError('Request ID belongs to another assignment',409);}
+ else transaction(db,()=>{
+  const subjectId=randomUUID(),source:TeamMessage={id:requestId,teamId:member.teamId,accountId:member.accountId,chatId:'browser',telegramMessageId:0,threadId:null,replyToMessageId:null,text:message,revision:1,createdAt:new Date().toISOString()};
+  db.prepare('INSERT OR IGNORE INTO assistant_team_subjects VALUES(?,?,?,?,?)').run(subjectId,member.teamId,'browser',null,JSON.stringify({id:subjectId,teamId:member.teamId,title:message.slice(0,160),summary:''}));
+  const accepted=accept(db,{id,teamId:member.teamId,source,browser:true,subjectId},[target],member.accountId)[0];accepted.requestId=requestId;saveAssignment(db,accepted);
+ });
+ wakeTeamWork(member.teamId);
+ return requestViews(db,member.teamId).find(view=>view.id===id)!;
 }

@@ -5,6 +5,7 @@
 - Assistant team work runs in a cluster that has a shared subscription pool; it was refused with "requires pool-aware execution" and the group heard nothing.
 - A team member that stops without a result is reported to the Telegram group instead of staying silent, with the way on: `/retry` runs it again as a new request, `/cancel` drops it.
 - The team's Telegram group answers `/status`, `/cancel`, `/retry` and `/help`. Those four can no longer be role names.
+- Everyone in a cluster can see its teams on any machine, send them work, read the answers, and cancel or retry a request from their own machine; the work runs on the team's host as that person.
 - `/qa …` and the other role calls start even while the decision model is down; the group is told once an hour that unaddressed messages are not being read.
 
 ## 2.299.21 — 2026-11-14

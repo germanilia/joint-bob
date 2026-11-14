@@ -4,7 +4,7 @@ import type { AuthSession } from '../../auth.js';
 import { app } from '../state.js';
 import { requireClusterMember, requirePeerClusterMember, requireTeamMember, teamMemberFromCluster, teamMembershipRevision, type ClusterMember } from '../../assistant-teams/access.js';
 import { createTeam, getTeam, getTeamAssignment, listTeamAgents, listTeams, prepareTeamProject, resolveTeamExecutor, saveTeamSettings, announceTeamChange, onTeamChange, teamDatabase, TeamError } from '../../assistant-teams/store.js';
-import { runBrowserTeamAssignment, confirmTeamInquiry, wakeTeamWork, resolveTeamApproval, teamWorkStatus, routeTeamAssignment } from '../../assistant-teams/assignments.js';
+import { runBrowserTeamAssignment, confirmTeamInquiry, wakeTeamWork, resolveTeamApproval, teamWorkStatus, routeTeamAssignment, listTeamRequests, startTeamRequest, cancelTeamRequest, retryTeamRequest } from '../../assistant-teams/assignments.js';
 import { teamAgentReadiness } from '../../assistant-teams/runtime.js';
 import { assistantLoginProfileIds, getPersonalAssistantById, listPersonalAssistants, personalAssistantDatabase, type PersonalAssistant } from '../../personal-assistants.js';
 import { listWebhookSkills } from '../../webhook-skills.js';
@@ -21,8 +21,14 @@ const operations = {
   create: z.object({}).strict(),
   get: z.object({ teamId: id }).strict(),
   settings: z.object({ teamId: id, settings, expectedRevision: revision }).strict(),
+  // Steering a team from another machine (a member's Bob or app): its members, its requests, and work for it.
+  roster: z.object({ teamId: id }).strict(),
+  requests: z.object({ teamId: id, limit: z.number().int().min(1).max(100).optional() }).strict(),
+  assign: z.object({ teamId: id, role: z.string().regex(TEAM_ROLE_PATTERN).nullable(), message: z.string().trim().min(1).max(20000), requestId: z.string().uuid() }).strict(),
+  cancel: z.object({ teamId: id, ref: z.string().max(64).nullable() }).strict(),
+  retry: z.object({ teamId: id, ref: z.string().max(64).nullable() }).strict(),
 };
-type Operation = keyof typeof operations;
+export type Operation = keyof typeof operations;
 function route(handler: (request: Request, response: Response) => Promise<unknown>) {
   return (request: Request, response: Response, next: NextFunction): void => {
     handler(request, response).then(result => response.json(result)).catch(error => {
@@ -33,7 +39,7 @@ function route(handler: (request: Request, response: Response) => Promise<unknow
     });
   };
 }
-async function operate(member: ClusterMember, operation: Operation, body: unknown): Promise<unknown> {
+export async function operate(member: ClusterMember, operation: Operation, body: unknown): Promise<unknown> {
   const input = operations[operation].parse(body);
   const snapshotRevision = await teamMembershipRevision(member.clusterId);
   if (operation === 'list') return { teams: await listTeams(member), snapshotRevision };
@@ -50,6 +56,11 @@ async function operate(member: ClusterMember, operation: Operation, body: unknow
   if (operation === 'get') {
     return { team: await getTeam(target.teamId), snapshotRevision };
   }
+  if (operation === 'roster') return { ...await teamRoster(target.teamId), snapshotRevision };
+  if (operation === 'requests') return { requests: await listTeamRequests(actor, operations.requests.parse(input).limit), snapshotRevision };
+  if (operation === 'assign') { const work = operations.assign.parse(input); return { request: await startTeamRequest(actor, work.role, work.message, work.requestId), snapshotRevision }; }
+  if (operation === 'cancel') return { ...await cancelTeamRequest(actor, operations.cancel.parse(input).ref), snapshotRevision };
+  if (operation === 'retry') return { ...await retryTeamRequest(actor, operations.retry.parse(input).ref), snapshotRevision };
   const update = operations.settings.parse(input);
   return { team: await saveTeamSettings(actor, update.settings, update.expectedRevision), snapshotRevision };
 }
@@ -88,6 +99,14 @@ async function assistantUses(profile: PersonalAssistant): Promise<string[]> {
     profile.allowTerminal ? 'terminal' : '',
     skills ? `${skills} skill${skills === 1 ? '' : 's'}` : '',
   ].filter(Boolean);
+}
+/** Who is on the team and whether each member can start work now: what a member's Bob or app shows before sending it anything. */
+async function teamRoster(teamId: string) {
+  const team = await getTeam(teamId), coordinator = await teamCoordinator(team), host = await (await import('../../cluster.js')).getClusterNode();
+  return { host: { id: host.id, name: host.name }, coordinatorRole: coordinator, members: await Promise.all((await listTeamAgents(teamId)).map(async item => {
+    const profile = await getPersonalAssistantById(item.assistantId);
+    return { role: item.role, name: profile?.name ?? null, coordinator: item.role === coordinator, ready: profile ? !(await asNode(() => teamAgentReadiness(profile))).length : false, uses: profile ? await assistantUses(profile) : [] };
+  })) };
 }
 const memberSummary = async (profile: PersonalAssistant) => ({ id: profile.id, name: profile.name, ownerAccountId: profile.accountId, uses: await assistantUses(profile) });
 app.get('/api/assistant-teams/:id/agents', route(async (request, response) => {
