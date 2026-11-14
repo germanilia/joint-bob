@@ -112,7 +112,7 @@ export async function teamAssignmentDestination(assignment: TeamAssignment) {
     db.prepare('INSERT OR IGNORE INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(team.id, assignment.subjectId!, profile.id, team.projectId, engine, randomUUID());
     row = db.prepare('SELECT project_id projectId,engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { projectId: string; engine: string; sessionId: string };
     // What people see in the conversation list: who works on what, not the assistant's instructions its first message starts with.
-    const subject = db.prepare('SELECT record FROM assistant_team_subjects WHERE team_id=? AND id=?').get(team.id, assignment.subjectId!) as { record: string } | undefined;
+    const subject = (await (await import('./conversations.js')).conversationDatabase()).prepare('SELECT record FROM assistant_team_subjects WHERE team_id=? AND id=?').get(team.id, assignment.subjectId!) as { record: string } | undefined;
     const title = subject ? (JSON.parse(subject.record) as { title?: string }).title : undefined;
     await ensureSessionTitle(row.sessionId, `${assignment.role}: ${(title ?? 'team work').replace(/\s+/g, ' ').trim()}`.slice(0, 120));
   }
