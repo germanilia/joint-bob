@@ -351,12 +351,27 @@ export const GROUPS = [
   { id: "needs-you", title: "Needs you", dot: "need", empty: "Nothing waits for you." },
   { id: "running", title: "Running", dot: "run", empty: "Nothing is running." },
   { id: "review", title: "To review", dot: "rev", empty: "Nothing to review." },
+  // Every other conversation of every project, so the Inbox leaves nothing out (the server lists them with the board).
+  { id: "earlier", title: "Earlier", dot: "old", empty: "No earlier conversations." },
 ];
 let cards = [];
 let loaded = false;
+/** The conversations that are not on the board, read at most once a minute (they change slowly and there can be thousands). */
+let earlierRead = [];
+let earlierRows = [];
+let earlierReadAt = 0;
+const EARLIER_EVERY_MS = 60_000;
+
+const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
+
+/** A refresh of the board can be newer than the last read of the rest: what is on the board is not listed twice. */
+function syncEarlier() {
+  const onBoard = new Set(cards.map(cardKey));
+  earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row)));
+}
 
 function cardsIn(groupId) {
-  return cards.filter((card) => card.column === groupId);
+  return groupId === "earlier" ? earlierRows : cards.filter((card) => card.column === groupId);
 }
 
 function isActiveCard(card) {
@@ -546,7 +561,9 @@ async function readBoard() {
   refreshing = (async () => {
     do {
       again = false;
-      const board = await api("/api/control-center/board?look=1");
+      const wantEarlier = Date.now() - earlierReadAt > EARLIER_EVERY_MS;
+      const board = await api(`/api/control-center/board?look=1${wantEarlier ? "&earlier=1" : ""}`);
+      if (board.earlier) { earlierRead = board.earlier; earlierReadAt = Date.now(); }
       acceptCards(board.cards || []);
     } while (again);
   })().catch((error) => console.warn("Could not read the workspace groups", error)).finally(() => { refreshing = null; });
@@ -554,8 +571,13 @@ async function readBoard() {
 }
 
 function acceptCards(next) {
+  const nextKeys = new Set(next.map(cardKey));
+  // A conversation left the board (finished, marked done): it now belongs to Earlier, which is read again at once.
+  const left = cards.some((card) => !nextKeys.has(cardKey(card)));
   cards = next;
   loaded = true;
+  syncEarlier();
+  if (left && started) { earlierReadAt = 0; scheduleGroupsRefresh(0); }
   // The phone's greeting and its Inbox tab count them (phone-ui.js).
   window.dispatchEvent(new CustomEvent("workspace-groups-counted", { detail: Object.fromEntries(GROUPS.map((group) => [group.id, cardsIn(group.id).length])) }));
   // Home (home.js) draws the same cards in the middle.
