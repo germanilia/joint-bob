@@ -364,9 +364,13 @@ export interface ControlCenterPreference {
   view: string;
   /** Sections folded into a button: board lanes ("lane:running"), Bob's chat ("chat"), the right column ("side"). */
   collapsed: string[];
+  /** Starred conversations, as `engine:sessionId` (the form a pin has). A starred conversation is never deleted by an automatic cleanup. */
+  stars: string[];
+  /** The inbox folder of a conversation, by the same key; a folder exists while a conversation is in it. */
+  folders: Record<string, string>;
 }
 
-const emptyControlCenter = (): ControlCenterPreference => ({ colors: {}, filter: [], chatRight: false, chatWidth: 400, view: "live", collapsed: [] });
+const emptyControlCenter = (): ControlCenterPreference => ({ colors: {}, filter: [], chatRight: false, chatWidth: 400, view: "live", collapsed: [], stars: [], folders: {} });
 
 function parseControlCenter(value: string): ControlCenterPreference {
   try {
@@ -379,6 +383,10 @@ function parseControlCenter(value: string): ControlCenterPreference {
       chatWidth: typeof stored.chatWidth === "number" && stored.chatWidth >= 300 && stored.chatWidth <= 820 ? stored.chatWidth : 400,
       view: typeof stored.view === "string" && stored.view.length <= 40 ? stored.view : "live",
       collapsed: Array.isArray(stored.collapsed) ? stored.collapsed.filter((id): id is string => typeof id === "string" && id.length <= 60).slice(0, 30) : [],
+      stars: parseStars(stored.stars),
+      folders: stored.folders && typeof stored.folders === "object" && !Array.isArray(stored.folders)
+        ? Object.fromEntries(Object.entries(stored.folders).filter(([key, name]) => key.length <= 300 && typeof name === "string" && name.trim().length > 0 && name.length <= 40).slice(0, 500))
+        : {},
     };
   } catch { return emptyControlCenter(); }
 }
@@ -447,6 +455,14 @@ export function readLegacyRecentSessions(userId: string): RecentSession[] {
   ensurePreferences(userId);
   const row = preferencesDatabase().prepare("SELECT recent_sessions FROM user_preferences WHERE user_id = ?").get(userId) as { recent_sessions: string };
   return parseRecentSessions(row.recent_sessions);
+}
+
+const parseStars = (value: unknown): string[] => (Array.isArray(value) ? value.filter((key): key is string => typeof key === "string" && key.length > 0 && key.length <= 300).slice(0, 500) : []);
+
+/** Every conversation any account starred here, as `engine:sessionId`: no automatic cleanup may delete them. */
+export function starredConversationKeys(): string[] {
+  const rows = preferencesDatabase().prepare("SELECT control_center FROM user_preferences").all() as Array<{ control_center: string }>;
+  return [...new Set(rows.flatMap((row) => parseControlCenter(row.control_center).stars))];
 }
 
 export function allPinnedSessionPaths(): string[] {

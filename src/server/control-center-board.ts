@@ -77,3 +77,29 @@ export async function loadBoard(session: AuthSession): Promise<LoadedBoard> {
   await fillFromOtherMachines(cards);
   return { cards, projects };
 }
+
+/** A conversation marked done, as the list's Past view shows it. */
+export interface PastConversation {
+  projectId: string; projectName: string; conversationId: string; sessionId: string; path: string; harnessId: string;
+  agentLabel: string; agentModel: string | null; title: string; doneAt: string; updatedAt: string | null;
+  /** The running summary, cut: the list searches it, the panel shows it. */
+  summary: string | null;
+}
+const PAST_LIMIT = 300;
+const PAST_SUMMARY_CHARACTERS = 800;
+
+/** The newest conversations the person marked done, across every project they can see, for the Past view and its search. */
+export async function loadPast(session: AuthSession): Promise<PastConversation[]> {
+  const [projects, theirs] = await Promise.all([projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }), otherPersonsMachine()]);
+  const found = await Promise.all(projects.map(async (project) => (await sharedProjectSessions(project, session.userId, session.accountId))
+    .filter((entry) => entry.doneAt && !entry.readOnly && !entry.cronTaskId && !entry.draft && !theirs(entry.executionNodeId))
+    .map((entry): PastConversation => {
+      const conversationId = entry.conversationId ?? entry.id;
+      return {
+        projectId: project.id, projectName: project.name, conversationId, sessionId: entry.id, path: entry.path, harnessId: entry.harnessId,
+        agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, doneAt: entry.doneAt!, updatedAt: entry.updatedAt ?? null,
+        summary: storedDigest(project.id, conversationId)?.summary?.slice(0, PAST_SUMMARY_CHARACTERS) ?? null,
+      };
+    })));
+  return found.flat().sort((a, b) => b.doneAt.localeCompare(a.doneAt)).slice(0, PAST_LIMIT);
+}

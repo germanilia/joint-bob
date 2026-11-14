@@ -452,6 +452,8 @@ export const userPreferencesSchema = z.object({
     chatWidth: z.number().min(300).max(820),
     view: z.string().min(1).max(40).default("live"),
     collapsed: z.array(z.string().min(1).max(60)).max(30).default([]),
+    stars: z.array(z.string().min(1).max(300)).max(500).default([]),
+    folders: z.record(z.string().min(1).max(300), z.string().trim().min(1).max(40)).refine((folders) => Object.keys(folders).length <= 500, "Too many folders").default({}),
   }).strict().optional(),
   gitReviewer: z.object({
     harnessId: registeredHarnessIdSchema,

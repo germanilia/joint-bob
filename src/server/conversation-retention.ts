@@ -42,7 +42,7 @@ import { resolveDataDirectory } from "../data-directory.js";
 import { listHarnesses, listHarnessSessions } from "../harnesses.js";
 import { sessionCwds, type SessionProjectPaths } from "../harnesses/shared-paths.js";
 import { isInternalSession } from "../internal-sessions.js";
-import { allPinnedSessionPaths } from "../preferences.js";
+import { allPinnedSessionPaths, starredConversationKeys } from "../preferences.js";
 import { withProjectRuntime } from "../project-runtime.js";
 import { listQueuedPrompts } from "../prompt-queue.js";
 import { getSettings } from "../settings.js";
@@ -381,7 +381,7 @@ async function buildPlan(now: number, given: RetentionSwitches): Promise<Plan> {
   const local = await getClusterNode();
   const { conversationRetentionDays } = getSettings();
   const plan: Plan = { now, cutoff: now - conversationRetentionDays * DAY_MS, retentionDays: conversationRetentionDays, localId: local.id, switches, readings: new Readings(), candidates: [], kept: {} };
-  const pinned = new Set([...pinnedConversationKeys(), ...allPinnedSessionPaths()]);
+  const pinned = new Set([...pinnedConversationKeys(), ...starredConversationKeys(), ...allPinnedSessionPaths()]);
   const assistants = switches.full ? assistantConversations() : new Set<string>();
   const targets = switches.full ? automationTargets() : new Set<string>();
   const editable: ProjectRecord[] = [];
@@ -412,7 +412,7 @@ function filesOf(candidate: Candidate, files: FilesByHarness): SessionFiles[] {
  */
 async function mayDeleteNow(candidate: Candidate, plan: Plan, files: FilesByHarness, active: Set<string>): Promise<boolean> {
   const project = candidate.project!;
-  const pinned = new Set([...pinnedConversationKeys(), ...allPinnedSessionPaths()]);
+  const pinned = new Set([...pinnedConversationKeys(), ...starredConversationKeys(), ...allPinnedSessionPaths()]);
   if (candidate.pinKeys.some((key) => pinned.has(key))) return false;
   const names = [candidate.conversationId, ...candidate.segments.map((segment) => segment.sessionId)];
   for (const segment of candidate.segments) {
