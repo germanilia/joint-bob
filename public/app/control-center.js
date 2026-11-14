@@ -531,6 +531,8 @@ async function drawBoard(next) {
   noteFinished(board.cards, next.cards);
   countSteps(next.cards);
   board = next;
+  // Only a newly read board may update Home; a visual redraw can still hold an older snapshot.
+  window.dispatchEvent(new CustomEvent("control-center-board-refreshed", { detail: { cards: board.cards } }));
   render();
   glide(container, ".control-card", before);
 }

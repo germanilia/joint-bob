@@ -632,8 +632,8 @@ export function scheduleGroupsRefresh(delay = 800) {
 for (const name of ["running-refreshed", "control-center-changed", "conversation-started", "pending-reviews-refreshed"]) {
   window.addEventListener(name, () => scheduleGroupsRefresh());
 }
-// The control center reads the same board; its answer is used as it arrives.
-window.addEventListener("control-center-rendered", (event) => { if (event.detail?.cards) acceptCards(event.detail.cards); });
+// Share newly read boards, never a visual redraw of the control center's older cached cards.
+window.addEventListener("control-center-board-refreshed", (event) => { if (event.detail?.cards) acceptCards(event.detail.cards); });
 // "activeConversationChanged" is announced on every redraw of the chat controls (about once a second while an agent
 // works). The groups mark the open conversation, so they are drawn again only when another conversation is open;
 // drawing them on every announcement rebuilt every row of the column each second.
