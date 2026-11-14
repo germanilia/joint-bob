@@ -13,6 +13,7 @@
 - `/qa …` and the other role calls start even while the decision model is down; the group is told once an hour that unaddressed messages are not being read.
 - A worktree merge no longer stops when the machine's local main has commits upstream lacks. Commits upstream already has, for example ones pushed from another machine, are dropped; the others are replayed on top of upstream, and the old main stays in the reflog.
 - When local main still cannot take the commit, the agent lands the task through GitHub with `pr --merge`, which opens the pull request on the current main and merges it, instead of asking you how to reconcile Git.
+- When the worktree commands cannot land a task either, for example because there is no GitHub token or GitHub refuses the merge, agents work it out themselves with git and gh: they commit, replay commits, move and push main, or merge the pull request. Other people's uncommitted work stays untouched, and creating branches and worktrees is still refused.
 
 ## 2.299.22 — 2026-11-14
 
