@@ -94,24 +94,25 @@ async function decide(actor: ActingAccount, settings: BobSettings, conversation:
   });
 }
 
-async function push(actor: ActingAccount, conversation: Conversation, reason: string, instructions = "", onQueued?: () => void, verbatim?: string): Promise<void> {
+async function push(actor: ActingAccount, conversation: Conversation, reason: string): Promise<void> {
   if (!await personalContinuationAllowed(conversation.projectId, conversation.conversationId)) throw new Error('Team continuation requires an explicit assignment');
   await runAsAccount(actor, () => queueConversationPrompt({
-    projectId: conversation.projectId, engine: conversation.engine, sessionId: conversation.sessionId, message: verbatim ?? personPushText(reason, instructions),
-    requestId: randomUUID(), label: "Bob", until: "started", onQueued,
+    projectId: conversation.projectId, engine: conversation.engine, sessionId: conversation.sessionId, message: pushText(reason),
+    requestId: randomUUID(), label: "Bob", until: "started",
   }));
 }
 
-/**
- * The person's push answers the press as soon as the conversation has it in its queue, as a quick reply does, so the chat
- * says so at once; the turn starts right after (or after the one running). A turn that then fails to start shows there.
- */
-async function pushForPerson(actor: ActingAccount, conversation: Conversation, reason: string, instructions: string, verbatim?: string): Promise<void> {
-  let accepted!: () => void;
-  const queued = new Promise<void>((resolve) => { accepted = resolve; });
-  const started = push(actor, conversation, reason, instructions, accepted, verbatim);
-  started.catch((error) => console.warn(`Bob's push to "${conversation.title}" did not start`, error instanceof Error ? error.message : error));
-  await Promise.race([queued, started]);
+/** The person's reply goes to the current owner, without moving it, and answers once that machine queues it. */
+async function pushForPerson(session: AuthSession, conversation: Conversation, reason: string, instructions: string, verbatim?: string): Promise<void> {
+  await runAsAccount(actingAccountFromSession(session), async () => {
+    if (!await personalContinuationAllowed(conversation.projectId, conversation.conversationId)) throw new Error('Team continuation requires an explicit assignment');
+    const env = createMoveEnvironment(session);
+    const found = await env.resolve(conversation);
+    if (!found) throw new NotFoundError("Conversation not found");
+    const owner = (await env.nodes()).find((node) => node.id === found.ownerNodeId);
+    if (!owner || !owner.online) throw new BobActionError(409, "The machine that owns this conversation is offline. Bring it online to send your answer.");
+    await env.sendMessage(found, owner, verbatim ?? personPushText(reason, instructions));
+  });
 }
 
 // The open button names the conversation, so Bob's chat can say which one a message is about.
@@ -274,7 +275,7 @@ registerBobAction("review.push", async ({ db, session, action, note }) => {
   const conversation = conversationData.parse(action.data);
   if (isLeased(conversation.projectId, conversation.conversationId)) return [bobSays(db, session, `You are in "${conversation.title}" now, so I left it to you.`, { projectId: conversation.projectId, projectName: conversation.projectName })];
   const previous = readReviewCheck(db, conversation.projectId, conversation.conversationId);
-  await pushForPerson(actingAccountFromSession(session), conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
+  await pushForPerson(session, conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
   // Instructions are a message from the person: Bob's count of pushes in a row starts again.
   if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
   return [bobSays(db, session, note ? `Told "${conversation.title}" to go on, with your instructions.` : `Told "${conversation.title}" to go on.`, { importance: "done", projectId: conversation.projectId, projectName: conversation.projectName, via: "Review check · you pressed the button" })];
@@ -327,7 +328,7 @@ export async function pushFromBoard(session: AuthSession, ref: { projectId: stri
   const conversation: Conversation = { projectId: ref.projectId, projectName: found.projectName, conversationId: ref.conversationId, engine: found.harnessId, sessionId: found.sessionId, title: found.title };
   const db = await bobDatabase();
   const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
-  await pushForPerson(actingAccountFromSession(session), conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
+  await pushForPerson(session, conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
   if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
   broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
   askBobRecheck(session.accountId);
@@ -344,7 +345,7 @@ export async function replyFromBoard(session: AuthSession, ref: { projectId: str
   const conversation: Conversation = { projectId: ref.projectId, projectName: found.projectName, conversationId: ref.conversationId, engine: found.harnessId, sessionId: found.sessionId, title: found.title };
   const db = await bobDatabase();
   const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
-  await pushForPerson(actingAccountFromSession(session), conversation, "", "", message);
+  await pushForPerson(session, conversation, "", "", message);
   if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), verdict: "done", reason: "You answered it.", pushes: 0, pushPending: false, needsYou: false });
   broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
   askBobRecheck(session.accountId);
