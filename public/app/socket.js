@@ -540,7 +540,7 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
     for (const prompt of prompts) {
       let bubble = elements.messages.querySelector(`[data-queue-id="${prompt.id}"]`);
       if (bubble) {
-        if (Number(bubble.dataset.queueRevision) !== prompt.revision) updateQueuedMessage(prompt.id, prompt.text, prompt.editableText, prompt.settings, prompt.revision);
+        if (Number(bubble.dataset.queueRevision) !== prompt.revision) updateQueuedMessage(prompt.id, prompt.text, prompt.editableText, prompt.settings, prompt.revision, prompt.attachments);
       } else {
         const sentAt = prompt.timestamp ? new Date(prompt.timestamp) : true;
         bubble = markMessageQueued(appendMessage("user", prompt.text, sentAt, prompt.attachments, false, undefined, prompt.author), prompt.id, prompt.editableText, prompt.settings, prompt.revision);
@@ -593,7 +593,7 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
     return;
   }
   if (payload.type === "queuedPromptEdited") {
-    updateQueuedMessage(payload.queueId, payload.text, payload.editableText, payload.settings, payload.revision);
+    updateQueuedMessage(payload.queueId, payload.text, payload.editableText, payload.settings, payload.revision, payload.attachments);
     return;
   }
   if (payload.type === "queuedPromptCancelled") {

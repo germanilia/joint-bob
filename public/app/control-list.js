@@ -11,7 +11,7 @@
 
 import { api } from "./api.js";
 import { briefStatus, projectActionList } from "./control-cards.js";
-import { drawPreview } from "./control-list-preview.js";
+import { drawPreview, hideChat } from "./control-list-preview.js";
 import { deleteConversation, folderMenu, folderNames, folderOf, isDeleting, isKept, isPinned, isStarred, popMenu, togglePin, toggleStar } from "./control-marks.js";
 import { loadSystem, systemList } from "./control-system.js";
 import { searchFields, segments, snippet } from "./inbox-search.js";
@@ -347,6 +347,7 @@ export function renderList(container, cards, helpers) {
   syncOpenButton();
   const chosen = selectedEntry();
   if (!chosen) {
+    hideChat();
     ui.preview.dataset.kind = "empty";
     ui.preview.replaceChildren(element("p", "control-list-note", "Choose a conversation to read it here."));
     return;

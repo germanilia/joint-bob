@@ -102,13 +102,15 @@ test("the list: system messages first, rows by project, the panel's tabs, search
 
   // Chat and Steps are tabs of their own, and the chosen tab stays when another row is opened.
   await page.getByTestId("control-list-tab-button-chat").click();
-  await page.getByTestId("control-list-thread").getByText("The deploy is ready.").waitFor();
-  assert.match(await page.getByTestId("control-list-thread").textContent() ?? "", /You asked[\s\S]*Ship c1/);
-  assert.equal(await page.getByTestId("control-list-message").count(), 1);
-  // The box around the message field is the only border: focusing the field adds no ring inside it.
-  await page.getByTestId("control-list-message").focus();
-  assert.equal(await page.getByTestId("control-list-message").evaluate((node) => getComputedStyle(node).boxShadow), "none", "the focused message field draws no second border");
+  // On Bob's page the tab is the conversation's own chat (its queued messages, controls and image paste come with it), laid over the tab's body; the plain thread and box are for narrow screens.
+  await page.locator("body.control-inline").waitFor();
+  assert.equal(await page.getByTestId("control-list-thread").count(), 0);
+  assert.equal(await page.getByTestId("control-list-message").count(), 0);
+  const anchor = await page.getByTestId("control-list-tab-chat").boundingBox();
+  const frame = await page.evaluate(() => ["x", "y", "w", "h"].map((name) => document.body.style.getPropertyValue(`--bob-pop-${name}`)));
+  assert.ok(anchor && frame.join() === [anchor.x, anchor.y, anchor.width, anchor.height].map((value) => `${Math.round(value)}px`).join(), "the chat is placed on the tab's body");
   await page.getByTestId("control-list-tab-button-steps").click();
+  assert.equal(await page.evaluate(() => document.body.classList.contains("control-inline")), false, "other tabs leave the chat");
   assert.equal(await page.getByTestId("control-list-steps").locator("li.failed").count(), 1);
   await page.locator('[data-key="p1:c2"]').click();
   assert.equal(await page.getByTestId("control-list-tab-button-steps").getAttribute("aria-selected"), "true");

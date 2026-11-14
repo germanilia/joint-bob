@@ -1,4 +1,5 @@
 import { harnessLabel } from "../harness-metadata.js";
+import { attachmentsFromFiles, renderAttachmentChips } from "./attachments.js";
 import { savePreferencesInBackground } from "./api.js";
 import { completedConversationDuration, formatDateTime, formatDuration } from "./chat-time.js";
 import { openQueuedModelPicker, queuedReasoningLevels } from "./composer-dialogs.js";
@@ -968,9 +969,24 @@ function queuedEditor(bubble, queueId, footer, edit) {
   discard.className = "queued-editor-cancel";
   const settings = queuedSettingsEditor(bubble);
   const note = Object.assign(document.createElement("p"), { className: "queued-editor-note", textContent: "Sends after the current turn finishes." });
-  editor.append(queuedEditorHeader(discard), note, input, settings.container, hints, save, discard);
+  // Images and files pasted while editing join the ones the message already has.
+  let added = [];
+  const chips = document.createElement("div");
+  chips.className = "attachment-list queued-editor-attachments";
+  chips.dataset.testid = "queued-message-edit-attachments";
+  const showAdded = () => renderAttachmentChips(chips, added, (id) => { added = added.filter((item) => item.id !== id); showAdded(); });
+  input.addEventListener("paste", async (event) => {
+    const pasted = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
+    if (!pasted.length) return;
+    if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+    try { added = await attachmentsFromFiles(pasted, added); showAdded(); }
+    catch (error) { toast.error(error.message); }
+  });
+  editor.append(queuedEditorHeader(discard), note, input, chips, settings.container, hints, save, discard);
 
   edit.addEventListener("click", () => {
+    added = [];
+    showAdded();
     settings.reset();
     input.value = bubble.dataset.queuedEditableText ?? queuedEditableText(bubble._raw);
     footer.hidden = true;
@@ -994,7 +1010,8 @@ function queuedEditor(bubble, queueId, footer, edit) {
   save.addEventListener("click", () => {
     const message = input.value.trim();
     if (!message) { toast.error("Queued message cannot be empty"); return; }
-    sendQueuedPromptAction({ type: "editQueuedPrompt", queueId, message, queueSettings: settings.value(), queueRevision: Number(bubble.dataset.queueRevision) });
+    const attached = (kind) => added.filter((attachment) => attachment.kind === kind).map(({ name, mimeType, data }) => ({ name, mimeType, data }));
+    sendQueuedPromptAction({ type: "editQueuedPrompt", queueId, message, queueSettings: settings.value(), queueRevision: Number(bubble.dataset.queueRevision), images: attached("image"), files: attached("file") });
   });
   return editor;
 }
@@ -1049,10 +1066,14 @@ export function markMessageQueued(bubble, queueId, editableText = null, settings
   return bubble;
 }
 
-export function updateQueuedMessage(queueId, text, editableText, settings = null, revision = 1) {
+export function updateQueuedMessage(queueId, text, editableText, settings = null, revision = 1, attachments = []) {
   const bubble = elements.messages.querySelector(`[data-queue-id="${queueId}"]`);
   if (!bubble) return;
   renderBubbleContent(bubble, text);
+  bubble.querySelector(".message-image-gallery")?.remove();
+  appendMessageAttachments(bubble, attachments);
+  const gallery = bubble.querySelector(".message-image-gallery");
+  if (gallery) bubble.querySelector(".queued-controls").before(gallery);
   bubble.dataset.queueSettings = JSON.stringify(settings);
   bubble.dataset.queueRevision = String(revision);
   bubble.dataset.queuedEditableText = editableText;

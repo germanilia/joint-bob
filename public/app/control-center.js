@@ -749,7 +749,7 @@ window.addEventListener("app-view-changed", () => { if (!isControlCenterOpen()) 
 // Esc closes the conversation over the board before it can leave the control center, from its message box too (the draft
 // stays); an open command list closes first.
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape" || event.defaultPrevented || !document.body.classList.contains("control-popup")) return;
+  if (event.key !== "Escape" || event.defaultPrevented || !document.body.classList.contains("control-popup") || document.body.classList.contains("control-inline")) return;
   if (document.querySelector("dialog[open]")) return;
   if (event.target === elements.messageInput ? !elements.commandAutocomplete.hidden : event.target.closest?.("input, textarea, select")) return;
   event.preventDefault();

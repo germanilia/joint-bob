@@ -284,7 +284,7 @@ export function cancelQueuedPrompt(queueKey: string, id: string, expectedRevisio
 }
 
 /** `adopt` makes the edited prompt the editor's own: someone else's words they rewrite run as them, never on its automation. */
-export function editQueuedPrompt(queueKey: string, id: string, promptText: string, displayText: string, messageText: string, settings?: QueuedSettings | null, expectedRevision?: number, adopt?: MessageAuthor): boolean {
+export function editQueuedPrompt(queueKey: string, id: string, promptText: string, displayText: string, messageText: string, settings?: QueuedSettings | null, expectedRevision?: number, adopt?: MessageAuthor, attachments?: Pick<QueuedPrompt, "promptSuffix" | "displaySuffix" | "attachmentPaths" | "images">): boolean {
   const db = queueDatabase();
   const key = logicalQueueKey(queueKey);
   return transaction(db, () => {
@@ -292,7 +292,7 @@ export function editQueuedPrompt(queueKey: string, id: string, promptText: strin
     if (!row || expectedRevision !== undefined && row.revision !== expectedRevision) return false;
     const existing = promptSchema.parse(JSON.parse(row.prompt));
     const owner = adopt ? { author: adopt, automationProfile: undefined } : {};
-    const prompt = promptSchema.parse({ ...existing, ...owner, dispatchState: "pending", promptText, displayText, messageText, settings: settings === undefined ? existing.settings : settings, revision: row.revision + 1 });
+    const prompt = promptSchema.parse({ ...existing, ...owner, ...attachments, dispatchState: "pending", promptText, displayText, messageText, settings: settings === undefined ? existing.settings : settings, revision: row.revision + 1 });
     const updated = { ...row, prompt: JSON.stringify(prompt), revision: prompt.revision, origin_node_id: origin(db) };
     insert(db, updated);
     publish(db, updated, prompt);

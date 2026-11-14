@@ -103,7 +103,7 @@ if (process.argv.includes('--input-format')) {
 }, { timeout: 120_000 });
 
 after(async () => {
-  await Promise.all(["hold the line", "and this one waits", "edited while waiting", "second queued", "third queued", "edited while waiting\n\nthird queued"].map((prompt) => releaseTurn(prompt).catch(() => undefined)));
+  await Promise.all(["hold the line", "and this one waits", "edited while waiting", "second queued", "third queued", "edited while waiting\n\nthird queued", "hold the second line", "with a picture", "hold the third line", "typed on Bob's page"].map((prompt) => releaseTurn(prompt).catch(() => undefined)));
   if (browser) await browser.close();
   if (server) await stopDevNode(server);
   if (root) await rm(root, { recursive: true, force: true });
@@ -183,4 +183,62 @@ test("queued prompts can be edited, reordered, merged, reloaded, and deleted", a
     && document.querySelectorAll(".message.user.queued").length === 0,
   );
   assert.deepEqual(await invocationLines(), ["hold the line", "second queued"]);
+}, { timeout: 120_000 });
+
+test("a picture pasted while editing a queued message joins it, and deleting the message takes it away again", async () => {
+  await page.getByTestId("chat-message-input").fill("hold the second line");
+  await page.keyboard.press("Enter");
+  await page.locator(".message.user:not(.queued)", { hasText: "hold the second line" }).first().waitFor({ timeout: 20_000 });
+  await page.getByTestId("chat-message-input").fill("with a picture");
+  await page.keyboard.press("Enter");
+  const picture = page.locator(".message.user.queued", { hasText: "with a picture" });
+  await picture.waitFor();
+  await picture.getByTestId("queued-message-edit-button").click();
+  await picture.getByTestId("queued-message-edit-input").evaluate((input) => {
+    const data = new DataTransfer();
+    data.items.add(new File([Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (character) => character.charCodeAt(0))], "pasted.png", { type: "image/png" }));
+    input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await picture.getByTestId("queued-message-edit-attachments").getByTestId("attachment-thumbnail").waitFor();
+  await picture.getByTestId("queued-message-save-button").click();
+  await picture.getByTestId("message-image-thumbnail").waitFor();
+  assert.match(await picture.innerText(), /Attached: pasted\.png/);
+  await picture.getByTestId("queued-message-cancel-button").click();
+  await picture.waitFor({ state: "detached" });
+  await releaseTurn("hold the second line");
+}, { timeout: 120_000 });
+
+test("on Bob's page the Chat tab is the conversation's own chat, with its queued messages and their controls", async () => {
+  await page.getByTestId("chat-message-input").fill("hold the third line");
+  await page.keyboard.press("Enter");
+  await page.locator(".message.user:not(.queued)", { hasText: "hold the third line" }).first().waitFor({ timeout: 20_000 });
+  await page.evaluate(() => localStorage.setItem("jointBobLiveLayout", "list"));
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("control-tab-live").click();
+  await page.locator('[data-testid="control-list-rows"] [data-key]', { hasText: CONVERSATION }).first().click();
+  await page.getByTestId("control-list-tab-button-chat").click();
+  await page.locator("body.control-inline.control-popup").waitFor();
+  const box = async (selector: string) => (await page.locator(selector).boundingBox())!;
+  const tab = await box('[data-testid="control-list-tab-chat"]');
+  const chat = await box("#chatPanel");
+  assert.ok(Math.abs(chat.x - tab.x) < 2 && Math.abs(chat.y - tab.y) < 2 && Math.abs(chat.width - tab.width) < 2 && Math.abs(chat.height - tab.height) < 2, "the chat fills the tab's body");
+  await page.getByTestId("chat-message-input").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#controlPopupBar").isVisible(), false, "no popup bar over the tab");
+
+  // Typed here, a message waits its turn like in the conversation: with its controls and the editor that takes pictures.
+  await page.getByTestId("chat-message-input").fill("typed on Bob's page");
+  await page.keyboard.press("Enter");
+  const queued = page.locator(".message.user.queued", { hasText: "typed on Bob's page" });
+  await queued.waitFor();
+  for (const control of ["force-start", "move-earlier", "move-later", "edit", "cancel"]) await queued.getByTestId(`queued-message-${control}-button`).waitFor({ state: "visible" });
+  await queued.getByTestId("queued-message-edit-button").click();
+  await queued.getByTestId("queued-message-edit-input").waitFor({ state: "visible" });
+  await queued.getByTestId("queued-message-edit-cancel-button").click();
+  await queued.getByTestId("queued-message-cancel-button").click();
+  await queued.waitFor({ state: "detached" });
+
+  // Leaving the tab takes the chat away; Esc once does not close it (twice leaves Bob's page).
+  await page.getByTestId("control-list-tab-button-steps").click();
+  assert.equal(await page.evaluate(() => document.body.classList.contains("control-inline") || document.body.classList.contains("control-popup")), false);
+  await releaseTurn("hold the third line");
 }, { timeout: 120_000 });

@@ -217,7 +217,8 @@ new MutationObserver(() => { if (body.classList.contains("bob-desk") !== onPage(
 const popupBar = document.getElementById("controlPopupBar");
 const giveBack = document.getElementById("controlLeaseGiveBack");
 function placePopup() {
-  if (!body.classList.contains("bob-desk")) return;
+  // The Chat tab of the list keeps the frame on its own body (control-list-preview.js).
+  if (!body.classList.contains("bob-desk") || body.classList.contains("control-inline")) return;
   const box = stage.getBoundingClientRect();
   for (const [name, value] of [["x", box.left], ["y", box.top], ["w", box.width], ["h", box.height]]) body.style.setProperty(`--bob-pop-${name}`, `${Math.round(value)}px`);
 }

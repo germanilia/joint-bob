@@ -5,12 +5,17 @@
 //   Steps   : its last tool and shell calls.
 // A system message has a panel of its own (control-system.js). Nothing here takes control of a conversation.
 //
+// On Bob's page the Chat tab is the conversation's real chat (the one Take control opens): the chat panel is placed over the
+// tab's body, so every message, the queued ones with Force start / Earlier / Later / Edit / Delete, and pasting images work as
+// they do in the conversation itself. Narrower screens keep the plain thread and box below.
+//
 // The panel is drawn into an element that stays in the page, so a redraw keeps the half-typed message and the scroll.
 // Data: the board card, plus `GET /api/control-center/cards/detail` and `POST /api/control-center/cards/reply`.
 
 import { api } from "./api.js";
 import { renderMarkdown } from "../markdown.js";
 import { cardActionList } from "./control-cards.js";
+import { closeConversationPopup, openConversation } from "./control-center.js";
 import { folderOf, isKept } from "./control-marks.js";
 import { menuIcon } from "./icons.js";
 import { systemPanel } from "./control-system.js";
@@ -47,6 +52,7 @@ let detailToken = 0;
  */
 export function drawPreview(preview, card, context) {
   if (card.system) {
+    hideChat();
     drawn = { key: `system:${card.id}`, stamp: "", tab: "" };
     preview.dataset.kind = "system";
     preview.replaceChildren(...systemPanel(card, { checkAgain: context.checkAgain }));
@@ -54,6 +60,8 @@ export function drawPreview(preview, card, context) {
   }
   const { helpers, tab } = context;
   const key = cardKey(card);
+  const inline = tab === "chat" && document.body.classList.contains("bob-desk");
+  if (!inline) hideChat();
   const stamp = JSON.stringify([card.column, card.updatedAt, card.summary, card.activity, (card.pendingReviews ?? []).map((review) => review.id), card.reviewCheck, card.autoRespondStop, card.controlledBy, card.snooze, isKept(card), folderOf(card)]);
   if (key === drawn.key && stamp === drawn.stamp && tab === drawn.tab) return;
   const same = key === drawn.key && tab === drawn.tab;
@@ -65,12 +73,47 @@ export function drawPreview(preview, card, context) {
   const content = element("div", "control-list-body");
   content.dataset.testid = `control-list-tab-${tab}`;
   const pieces = [...head(card, context), tabBar(card, context), content];
-  if (tab === "chat") pieces.push(composer(card, helpers));
+  if (tab === "chat" && !inline) pieces.push(composer(card, helpers));
   preview.replaceChildren(...pieces);
-  fillBody(content, card, context);
+  if (inline) showChat(card, content);
+  else fillBody(content, card, context);
   content.scrollTop = scroll;
   if (typing) preview.querySelector("textarea").focus();
-  loadDetail(card, () => { if (drawn.key === key && drawn.tab === tab && content.isConnected) { fillBody(content, card, context); tabBar(card, context, preview.querySelector(".control-list-tabs")); } });
+  loadDetail(card, () => { if (drawn.key === key && drawn.tab === tab && content.isConnected) { if (!inline) fillBody(content, card, context); tabBar(card, context, preview.querySelector(".control-list-tabs")); } });
+}
+
+const inlineChat = { key: null, observer: null };
+
+/** Opens the conversation behind the Chat tab and keeps its panel on the tab's body. Watching: nobody takes control of it. */
+function showChat(card, anchor) {
+  const key = cardKey(card);
+  document.body.classList.add("control-inline");
+  inlineChat.observer?.disconnect();
+  inlineChat.observer = new ResizeObserver(() => placeChat(anchor));
+  inlineChat.observer.observe(anchor);
+  placeChat(anchor);
+  if (inlineChat.key === key && document.body.classList.contains("control-popup")) return;
+  inlineChat.key = key;
+  openConversation({ ...card, inline: true }).catch((error) => toast.error(error.message));
+}
+
+/** Follows the anchor; once it is hidden (another tab of Bob's page) or gone, the chat goes with it. */
+function placeChat(anchor) {
+  if (!anchor.isConnected || anchor.offsetParent === null) {
+    drawn = { key: null, stamp: "", tab: "" };
+    hideChat();
+    return;
+  }
+  const box = anchor.getBoundingClientRect();
+  for (const [name, value] of [["x", box.left], ["y", box.top], ["w", box.width], ["h", box.height]]) document.body.style.setProperty(`--bob-pop-${name}`, `${Math.round(value)}px`);
+}
+
+export function hideChat() {
+  if (!inlineChat.key) return;
+  inlineChat.observer?.disconnect();
+  inlineChat.key = null;
+  document.body.classList.remove("control-inline");
+  closeConversationPopup();
 }
 
 function head(card, context) {

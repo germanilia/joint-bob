@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -135,7 +135,7 @@ test("websocket chat routes Kiro prompts through the generic harness runtime", a
     first.socket.send(JSON.stringify({ type: "editQueuedPrompt", queueId: editable.id, queueRevision: editable.revision, message: "revised" }));
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "queuedPromptEdited" && message.queueId === editable.id));
     const edited = first.messages.find((message) => message.type === "queuedPromptEdited" && message.queueId === editable.id)!;
-    assert.deepEqual(edited, { type: "queuedPromptEdited", queueId: editable.id, text: "revised", editableText: "revised", settings: null, revision: editable.revision + 1 });
+    assert.deepEqual(edited, { type: "queuedPromptEdited", queueId: editable.id, text: "revised", editableText: "revised", settings: null, revision: editable.revision + 1, attachments: [] });
     const editedAcknowledgements = first.messages.filter((message) => message.type === "queuedPromptEdited").length;
     first.socket.send(JSON.stringify({ type: "editQueuedPrompt", queueId: editable.id, queueRevision: editable.revision, message: "stale" }));
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "error" && /changed/i.test(String(message.error))));
@@ -148,8 +148,18 @@ test("websocket chat routes Kiro prompts through the generic harness runtime", a
     const refreshedPrompt = (refreshedQueue.prompts as Array<{ id: string; revision: number }>).find((prompt) => prompt.id === editable.id);
     assert.equal(refreshedPrompt?.revision, editable.revision + 1);
     assert.ok(!first.messages.slice(beforeStaleForce).some((message) => message.type === "error" && /refresh and try again/.test(String(message.error))));
-    first.socket.send(JSON.stringify({ type: "cancelQueuedPrompt", queueId: cancelled.id, queueRevision: cancelled.revision }));
+    // An image pasted while editing joins the queued message; cancelling the message deletes its file.
+    first.socket.send(JSON.stringify({ type: "editQueuedPrompt", queueId: cancelled.id, queueRevision: cancelled.revision, message: "cancelled with a picture", images: [{ name: "pasted.png", mimeType: "image/png", data: Buffer.from("png").toString("base64") }] }));
+    await waitFor(first.messages, () => first.messages.some((message) => message.type === "queuedPromptEdited" && message.queueId === cancelled.id));
+    const withImage = first.messages.find((message) => message.type === "queuedPromptEdited" && message.queueId === cancelled.id)!;
+    const [picture] = withImage.attachments as Array<{ kind: string; name: string; path: string }>;
+    assert.match(String(withImage.text), /^cancelled with a picture\n\nAttached: pasted\.png$/);
+    assert.equal(picture.kind, "image");
+    assert.match(picture.path, /\.joint-bob-attachments\/\d+-[0-9a-f-]{36}-pasted\.png$/);
+    assert.equal((await readFile(picture.path)).toString(), "png");
+    first.socket.send(JSON.stringify({ type: "cancelQueuedPrompt", queueId: cancelled.id, queueRevision: cancelled.revision + 1 }));
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "queuedPromptCancelled" && message.queueId === cancelled.id));
+    await assert.rejects(readFile(picture.path), { code: "ENOENT" });
     first.socket.send(JSON.stringify({ type: "forceStartQueuedPrompt", queueId: editable.id, queueRevision: editable.revision + 1 }));
     await waitFor(first.messages, () => first.messages.some((message) => message.type === "textDelta" && message.text === "revised"));
     await writeFile(releasePath, "release");

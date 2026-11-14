@@ -495,8 +495,7 @@ export function refreshHarnessPromptQueue(connection: HarnessChatConnection): vo
   // until onStarted transfers the queued bubble into history.
   const prompts = listQueuedPrompts(queueKey(connection)).filter((prompt) => !prompt.systemEventId);
   publish(connection, { type: "queuedPrompts", prompts: prompts.map((prompt) => {
-    const images = new Set(prompt.images.map(({ path: imagePath }) => imagePath));
-    return { id: prompt.id, text: prompt.displayText, displayText: prompt.displayText, timestamp: prompt.createdAt, ...(prompt.author ? { author: prompt.author } : {}), scheduled: isScheduledPromptText(prompt.promptText), starting: startingIds.has(prompt.id), revision: prompt.revision, editableText: prompt.messageText ?? prompt.displayText, settings: prompt.settings, attachments: prompt.attachmentPaths.map((attachmentPath) => ({ kind: images.has(attachmentPath) ? "image" : "file", name: path.basename(attachmentPath), path: attachmentPath })) };
+    return { id: prompt.id, text: prompt.displayText, displayText: prompt.displayText, timestamp: prompt.createdAt, ...(prompt.author ? { author: prompt.author } : {}), scheduled: isScheduledPromptText(prompt.promptText), starting: startingIds.has(prompt.id), revision: prompt.revision, editableText: prompt.messageText ?? prompt.displayText, settings: prompt.settings, attachments: attachmentList(prompt) };
   }) });
   publish(connection, { type: "queueUpdate", pending: prompts.length });
 }
@@ -517,9 +516,33 @@ function editedPrompt(queued: QueuedPrompt, message: string): { promptText: stri
   return { promptText: [message, promptSuffix].filter(Boolean).join("\n\n"), displayText: [message, displayIndex >= 0 ? queued.displayText.slice(displayIndex) : ""].filter(Boolean).join("\n\n") };
 }
 
-async function removeAttachments(connection: HarnessChatConnection, queued: QueuedPrompt): Promise<void> {
+/** The queued prompt with the images and files pasted while editing it added to the ones it already had. */
+async function editedPromptWithNewAttachments(connection: HarnessChatConnection, queued: QueuedPrompt, message: string, images: Array<{ name: string; mimeType: string; data: string }>, files: Array<{ name: string; mimeType: string; data: string }>) {
+  const saved = (await persistTaskAttachments(connection.cwd, images, files)).map((attachment) => ({ ...attachment, path: path.resolve(connection.cwd, attachment.path) }));
+  const imageMimeTypes = new Map(queued.images.map(({ path: imagePath, mimeType }) => [imagePath, mimeType]));
+  // A stored attachment is named `<time>-<uuid>-<name>`; the prompt shows the name it was attached with.
+  const kept = queued.attachmentPaths.map((attachmentPath) => ({ kind: imageMimeTypes.has(attachmentPath) ? "image" : "file", mimeType: imageMimeTypes.get(attachmentPath), name: path.basename(attachmentPath).replace(/^\d+-[0-9a-f-]{36}-/, ""), path: attachmentPath }));
+  const all = [...kept, ...saved];
+  const imageAttachments = all.filter((attachment) => attachment.kind === "image");
+  const fileAttachments = all.filter((attachment) => attachment.kind === "file");
+  if (imageAttachments.length > 4) throw new Error("Attach no more than 4 images.");
+  if (fileAttachments.length > 6) throw new Error("Attach no more than 6 files.");
+  const promptText = promptTextWithAttachments(message, imageAttachments, fileAttachments);
+  const displaySuffix = `Attached: ${all.map(({ name }) => name).join(", ")}`;
+  return {
+    promptText, displayText: [message.trim(), displaySuffix].filter(Boolean).join("\n\n"), newPaths: saved.map(({ path: file }) => file),
+    attachments: { promptSuffix: promptText.slice(message.trim().length).trim(), displaySuffix, attachmentPaths: all.map(({ path: file }) => file), images: imageAttachments.map(({ path: file, mimeType }) => ({ path: file, mimeType: mimeType! })) },
+  };
+}
+
+function attachmentList(prompt: Pick<QueuedPrompt, "attachmentPaths" | "images">): Array<{ kind: "image" | "file"; name: string; path: string }> {
+  const images = new Set(prompt.images.map(({ path: imagePath }) => imagePath));
+  return prompt.attachmentPaths.map((attachmentPath) => ({ kind: images.has(attachmentPath) ? "image" : "file", name: path.basename(attachmentPath), path: attachmentPath }));
+}
+
+async function removeAttachments(connection: HarnessChatConnection, attachmentPaths: string[]): Promise<void> {
   const root = path.resolve(connection.cwd, ".joint-bob-attachments");
-  for (const stored of queued.attachmentPaths) {
+  for (const stored of attachmentPaths) {
     const candidate = path.resolve(stored);
     if (path.dirname(candidate) !== root) throw new Error("Queued attachment path is invalid");
     try { await unlink(candidate); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
@@ -1455,15 +1478,19 @@ async function applyQueueCommand(connection: HarnessChatConnection, message: Ret
     if (!queued || queued.dispatchState !== "pending" || startingIds.has(queued.id)) throw new Error("Queued prompt changed; refresh and try again");
     if (!message.message.trim()) throw new Error("Queued prompt cannot be empty");
     if (message.queueSettings) await (await getHarnessRuntime(selectedHarness(message.queueSettings))).validateSettings(runtimeSettings(message.queueSettings));
-    const edited = editedPrompt(queued, message.message);
+    const added = message.images?.length || message.files?.length ? await editedPromptWithNewAttachments(connection, queued, message.message, message.images ?? [], message.files ?? []) : null;
+    const edited = added ?? editedPrompt(queued, message.message);
     const adopt = takesOverQueuedPrompt(queued, connection.author?.accountId) ? connection.author : undefined;
-    if (!editQueuedPrompt(queueKey(connection), queued.id, edited.promptText, edited.displayText, message.message, message.queueSettings, message.queueRevision, adopt)) throw new Error("Queued prompt changed; refresh and try again");
-    publish(connection, { type: "queuedPromptEdited", queueId: queued.id, text: edited.displayText, editableText: message.message, settings: message.queueSettings === undefined ? queued.settings : message.queueSettings, revision: queued.revision + 1, ...(adopt ? { author: adopt } : {}) });
+    if (!editQueuedPrompt(queueKey(connection), queued.id, edited.promptText, edited.displayText, message.message, message.queueSettings, message.queueRevision, adopt, added?.attachments)) {
+      if (added) await removeAttachments(connection, added.newPaths);
+      throw new Error("Queued prompt changed; refresh and try again");
+    }
+    publish(connection, { type: "queuedPromptEdited", queueId: queued.id, text: edited.displayText, editableText: message.message, settings: message.queueSettings === undefined ? queued.settings : message.queueSettings, revision: queued.revision + 1, attachments: attachmentList(added?.attachments ?? queued), ...(adopt ? { author: adopt } : {}) });
   } else if (message.type === "cancelQueuedPrompt") {
     if (!message.queueId || !message.queueRevision || startingIds.has(message.queueId)) throw new Error("Queued prompt cancellation is incomplete");
     const queued = cancelQueuedPrompt(queueKey(connection), message.queueId, message.queueRevision);
     if (!queued) throw new Error("Queued prompt changed; refresh and try again");
-    await removeAttachments(connection, queued);
+    await removeAttachments(connection, queued.attachmentPaths);
     publish(connection, { type: "queuedPromptCancelled", queueId: queued.id });
   } else if (message.type === "swapQueuedPrompts") {
     if (!message.queueItems || message.queueItems.some(({ id }) => startingIds.has(id)) || !swapQueuedPrompts(queueKey(connection), message.queueItems)) throw new Error("Queued prompts changed; refresh and try again");

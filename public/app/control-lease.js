@@ -122,7 +122,8 @@ popupKeepOutBox.addEventListener("change", () => {
 window.addEventListener("control-popup-opened", (event) => {
   popupCard = event.detail;
   renderPopup();
-  if (popupCard.controlledBy === "someone-else" || sameConversation(systemControlTarget, popupCard)) return;
+  // The Chat tab of Bob's list only shows the conversation (`inline`); the person takes control with its button.
+  if (popupCard.controlledBy === "someone-else" || popupCard.inline || sameConversation(systemControlTarget, popupCard)) return;
   void takeControl(popupCard).catch((error) => toast.error(error.message));
 });
 // Closing the conversation hands it back to Bob, unless the person keeps him out of it.
