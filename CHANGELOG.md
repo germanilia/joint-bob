@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.305.1 — 2026-11-15
+
+- A message you send while only a background task (such as a CI watcher) is still running now starts right away instead of waiting for Force start.
+- The pin, star, folder and delete icons in the conversation list and preview header show again.
+
 ## 2.305.0 — 2026-11-15
 
 - On Bob's page the Chat tab of Live agents is now the conversation's own chat: the whole history, the queued messages with Force start, Earlier, Later, Edit and Delete, and the full message box.
