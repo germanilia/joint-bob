@@ -100,7 +100,7 @@ test("a retry after an unfinished attempt reuses its branch and open pull reques
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("an open pull request gets a new commit on its branch; a merged one refuses", async () => {
+test("an open pull request gets a new commit on its branch; a merged one opens a new pull request", async () => {
   const { root, projectPath } = await repository();
   const previous = { number: 12, url: "https://github.com/o/r/pull/12", branch: "joint-bob/fix-1", base: "main", baseCommit: BASE };
   try {
@@ -113,7 +113,10 @@ test("an open pull request gets a new commit on its branch; a merged one refuses
     assert.equal(github.calls.some((call) => call.route === "/pulls" && call.method === "POST"), false);
 
     const merged = fakeGitHub({ pull: { state: "closed", merged: true } });
-    await assert.rejects(openWorktreePullRequest({ projectPath, branchName: "joint-bob/fix-1", title: "Fix", body: "", changes: changes(BASE), previous }, credentials, merged.request), /already merged/);
+    const next = await openWorktreePullRequest({ projectPath, branchName: "joint-bob/fix-1", title: "Fix", body: "", changes: changes(BASE), previous }, credentials, merged.request);
+    assert.equal(next.updated, false);
+    assert.notEqual(next.pullRequest.branch, previous.branch, "the new pull request has a branch of its own");
+    assert.equal(merged.calls.some((call) => call.route === "/pulls" && call.method === "POST"), true);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
