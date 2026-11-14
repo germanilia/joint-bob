@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.305.0 — 2026-11-15
+
+- On Bob's page the Chat tab of Live agents is now the conversation's own chat: the whole history, the queued messages with Force start, Earlier, Later, Edit and Delete, and the full message box.
+- Images can be pasted into a queued message while editing it; they join the message, and deleting the message removes them.
+
 ## 2.304.0 — 2026-11-14
 
 - A team pool's Claude member whose model is rate-limited ("would exceed your account's rate limit") answers on its next Claude model before the pool moves to another member; a subscription's usage limit still hands over at once.
