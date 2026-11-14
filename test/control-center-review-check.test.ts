@@ -42,6 +42,7 @@ test("Bob's agent's verdict is used only in the asked-for shape, and a reason is
   assert.equal(parseAgentVerdict("done"), null);
   assert.equal(reasonFromAnswer("I added the page.\n**Next:** wire the API.\nShould I also add tests?"), "Should I also add tests?");
   assert.equal(reasonFromAnswer("All done; tests pass."), "All done; tests pass.");
+  assert.equal(reasonFromAnswer('Let me try again.\nbash: {\n  "command": "pwd"\n}'), '"command": "pwd"');
 });
 
 test("a check is kept per conversation and replaced by the next one", () => {

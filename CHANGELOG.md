@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.299.22 — 2026-11-14
+
+- A Pi conversation on a subscription pool keeps its tools when one sign-in is out of quota and the next takes over. The takeover ran without the system prompt and the tools, so the agent wrote its commands as text (`bash: { "command": … }`), ran nothing, and Bob kept telling it to go on.
+- When Bob tells a conversation to go on, the reason he quotes is a line of words, no longer a lone `}`.
+- `[date]` in the title of a scheduled conversation is filled from the run's date and timezone.
+- A running step is named once in the conversation: Thinking… and Running <tool> no longer show twice.
+
 ## 2.299.21 — 2026-11-14
 
 - Live agents on Bob's page is a list grouped by project, with a preview of the chosen conversation: what it needs, its summary, its chat (what you asked, its last message, a box to write to it), its last steps and its actions. A List | Cards switch brings the card board back. The page also opens with Bob's chat folded into the Ask Bob button at the bottom left, and keeps it open when the control center is activated again.

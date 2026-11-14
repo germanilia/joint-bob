@@ -172,7 +172,8 @@ export function parseAgentVerdict(answer: string): { verdict: ReviewVerdict; rea
 
 /** A line the person can read when the decision model gave no reason: the agent's last question, or its last sentence. */
 export function reasonFromAnswer(answer: string): string {
-  const lines = answer.split("\n").map((line) => line.replace(/[*_`#>]/g, "").trim()).filter(Boolean);
+  // A line of punctuation alone (the closing brace of a code block) says nothing.
+  const lines = answer.split("\n").map((line) => line.replace(/[*_`#>]/g, "").trim()).filter((line) => /[\p{L}\p{N}]/u.test(line));
   const question = [...lines].reverse().find((line) => line.endsWith("?"));
   const text = question ?? lines.at(-1) ?? "";
   return text.length > 200 ? `${text.slice(0, 197)}…` : text;

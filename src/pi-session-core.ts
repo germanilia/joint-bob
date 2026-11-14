@@ -257,6 +257,18 @@ export async function createCoreSession(modelRuntime: ModelRuntime, inputs: PiCo
   };
 }
 
+/**
+ * Moves the transcript's leaf back and makes the agent's own message list match it. Pi builds each request from
+ * the transcript but decides what to declare (the system prompt and the tools) from that list: left as it was,
+ * the list still held the system message the rewind dropped, so the next request went out without tools and
+ * the model wrote its tool calls as text.
+ */
+export function rewindPiTranscript(session: AgentSession, leafId: string | null): void {
+  const manager = session.sessionManager;
+  if (leafId) manager.branch(leafId); else manager.resetLeaf();
+  session.agent.state.messages = manager.buildSessionProjection().messages;
+}
+
 export function piAgentDirFrom(configPath: string | undefined, home: string): string {
   return configPath || path.join(home, ".pi", "agent");
 }
