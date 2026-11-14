@@ -23,9 +23,10 @@
 }
 .control-dash-viewer-body { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .control-dash-viewer-body .dashboard-view-stage { flex: 1; min-height: 0; overflow: hidden; }
-.control-dash-ask { display: grid; gap: 6px; }
+/* The ask box: a readable field capped at prose width with its buttons right under it, not a page-wide bare strip. */
+.control-dash-ask { display: grid; gap: 8px; width: 100%; max-width: 860px; }
 .control-dash-ask[hidden] { display: none; }
-.control-dash-ask textarea { width: 100%; resize: vertical; }
+.control-dash-ask textarea { flex: none; width: 100%; min-height: 96px; max-height: 280px; resize: vertical; padding: 10px 12px; border-radius: 10px; background-color: var(--panel); font-size: 14px; line-height: 1.55; }
 .control-dash-ask-actions { display: flex; justify-content: flex-end; gap: 6px; }
 
 /* The Dashboard view: one of the person's dashboards over everything, beside the board. */
