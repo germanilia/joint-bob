@@ -32,9 +32,10 @@ test("browser storage is limited to legacy migration and request-scoped sign-in 
     const inMigration = match.index! >= migrationStart && match.index! < migrationEnd;
     const inDismissal = match.index! >= dismissalStart && match.index! < dismissalEnd;
     // Per-browser display preferences: the activity pane's width, the appearance (theme and text sizes), and in the
-    // workspace's left column which list is shown and whether its filters are open, and which page the app opens on.
+    // workspace's left column which list is shown and whether its filters are open, which page the app opens on, and
+    // whether Bob's Live agents show as a list or as cards.
     const nearby = app.slice(Math.max(0, match.index! - 120), match.index! + 120);
-    const displayPreference = ["WIDTH_STORAGE_KEY", "APPEARANCE_STORAGE_KEY", "COLUMN_KEY", "FILTERS_OPEN_KEY", "START_VIEW_KEY"].some((key) => nearby.includes(key));
+    const displayPreference = ["WIDTH_STORAGE_KEY", "APPEARANCE_STORAGE_KEY", "COLUMN_KEY", "FILTERS_OPEN_KEY", "START_VIEW_KEY", "LAYOUT_KEY"].some((key) => nearby.includes(key));
     assert.ok(inMigration || inDismissal || displayPreference, "Web Storage access must be limited to migration, sign-in notice state, activity width, appearance, the left column's view or the start page");
   }
   assert.doesNotMatch(migration, /(?:credential|password|token)/i);

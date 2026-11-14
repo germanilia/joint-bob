@@ -7,7 +7,7 @@ import type { AgentSession, AgentSessionEvent, readStoredCredential } from "@ear
 import { ModelRuntime } from "./pi-sdk.js";
 import { createSessionModelRuntime } from "./provider-profiles/pi.js";
 import { createPiProviderCatalog, type PiProviderCatalog } from "./harnesses/pi/provider-catalog.js";
-import { createCoreSession, type PiCoreHooks, type PiCoreInputs, type PiCredentials, type PiSessionHandle } from "./pi-session-core.js";
+import { createCoreSession, rewindPiTranscript, type PiCoreHooks, type PiCoreInputs, type PiCredentials, type PiSessionHandle } from "./pi-session-core.js";
 
 const sessions = new Map<string, PiSessionHandle>();
 const hookReplies = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -146,8 +146,8 @@ async function call(key: string, op: string, args: unknown[]): Promise<unknown> 
     case "setActiveToolsByName": session.setActiveToolsByName(args[0] as string[]); break;
     case "setSessionName": session.setSessionName(args[0] as string); break;
     case "appendCustomEntry": session.sessionManager.appendCustomEntry(args[0] as string, args[1]); break;
-    case "branch": session.sessionManager.branch(args[0] as string); break;
-    case "resetLeaf": session.sessionManager.resetLeaf(); break;
+    case "branch": rewindPiTranscript(session, args[0] as string); break;
+    case "resetLeaf": rewindPiTranscript(session, null); break;
     case "compact": await session.compact(args[0] as string | undefined); break;
     case "refreshResources": await handle.refreshResources?.(); break;
     case "reload": await handle.refreshResources?.(); await session.reload(); break;

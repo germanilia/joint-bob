@@ -6,6 +6,7 @@ import { teamAssistantForConversation } from '../../assistant-resources.js';
 import { UpdateRefusalError } from "../../updater.js";
 import { listRunningPiSessions } from "../../pi-runtime.js";
 import * as service from "../../pi-service.js";
+import { rewindPiTranscript } from "../../pi-session-core.js";
 import type { ChatMessage } from "../../types.js";
 import type {
   HarnessEvent,
@@ -156,8 +157,10 @@ export class PiSession implements HarnessSession {
   async restorePoolAttempt(checkpoint: unknown): Promise<void> {
     if (this.isBusy()) throw new Error("Cannot restore a busy Pi session");
     const { leafId } = checkpoint as { leafId: string | null };
-    const manager = this.handle.session.sessionManager;
-    if (leafId) await manager.branch(leafId); else await manager.resetLeaf();
+    const session = this.handle.session;
+    // A session in a worker rewinds there, on these same calls; one in this process is rewound here.
+    if ((session as { agent?: unknown }).agent) rewindPiTranscript(session, leafId);
+    else if (leafId) await session.sessionManager.branch(leafId); else await session.sessionManager.resetLeaf();
   }
 
   async configure(settings: HarnessModelSettings): Promise<void> {
