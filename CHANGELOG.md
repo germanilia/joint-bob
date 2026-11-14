@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.300.0 — 2026-11-14
 
 - A team's conversations are named for who does what ("qa: check the sign-in page") instead of the assistant's instructions, and they show in every cluster member's project list.
 - A person signed in on a team's machine with their own account sees and steers its teams, and no second team is offered for a cluster whose machines could not all be reached.
