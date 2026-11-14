@@ -1,0 +1,84 @@
+/* Paper · Editorial — the phone's screens after the Inbox, drawn like the desktop's inbox (14 Nov). The Inbox itself
+   (Home: greeting, Needs you, Running, Ready to review) is phone.css and stays as it is. These rules give the screens you
+   open from it the desktop's look: conversation lists as email rows (serif title, one quiet line, a hairline between),
+   the conversation as a reading page (serif title, the agent's answer as plain text, your words in a soft bubble,
+   queued words with quiet buttons) and its details (Summary first) as the same cards the desktop's right column has.
+   ≤ 700 px, body.focus-ui only. Text stays at 13 px or more outside the thread and controls at 44 px. Loaded after
+   workspace-cards.css, before paper.css. */
+
+@media (max-width: 700px) {
+  body.focus-ui { --read: 16px; --read-leading: 1.62; }
+
+  /* ---------- a project's conversations, and the projects: email rows ---------- */
+  body.focus-ui :is(#projectList, #sessionList) .list-row { border-bottom: 1px solid var(--line); }
+  body.focus-ui :is(#projectList, #sessionList) .list-row:last-child { border-bottom: 0; }
+  body.focus-ui :is(#projectList .project-card, #sessionList .session-card) { border: 0; border-radius: 0; padding-block: 12px; background: transparent; box-shadow: none; }
+  body.focus-ui #sessionList .list-row.active > .list-row-main, body.focus-ui #projectList .list-row.active { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: none; border-radius: 12px; }
+  body.focus-ui :is(#projectList .project-card strong, #sessionList .session-card > strong) {
+    display: -webkit-box; margin-bottom: 4px; overflow: hidden; color: var(--heading); font: 400 18px/1.3 var(--serif); white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  }
+  /* One quiet line: when, the agent, and a status that needs saying. The price and the "Reviewed" resting state say nothing here. */
+  body.focus-ui #sessionList .session-card > span { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; overflow: visible; color: var(--muted); font: 400 13.5px/1.4 var(--sans); white-space: normal; }
+  body.focus-ui #sessionList .session-card .usage-cost, body.focus-ui #projectList .project-card .usage-cost, body.focus-ui .session-card .chat-badge-done { display: none; }
+  body.focus-ui #sessionList .session-card .chat-badge { padding: 2px 9px; border-radius: 999px; font: 600 12.5px/1.4 var(--sans); }
+  body.focus-ui #sessionList .session-card .chat-badge .chat-status-dot { margin-right: 5px; }
+  body.focus-ui #projectList .project-card > span { color: var(--muted); font: 400 13.5px/1.4 var(--sans); }
+  body.focus-ui .project-group-summary { color: var(--muted); font: 400 16px/1.2 var(--serif); letter-spacing: 0; }
+  body.focus-ui .project-group + .project-group { border-top: 0; }
+  body.focus-ui .worktree-subsection-title, body.focus-ui .worktree-subsection-title > span { font: 400 15px/1.2 var(--serif); color: var(--muted); }
+
+  /* ---------- the conversation's top: title in the serif, the state beneath ---------- */
+  body.focus-ui .chat-topbar .chat-title-block > h2 { color: var(--heading); font: 400 20px/1.2 var(--serif); }
+  body.focus-ui .chat-title-meta > .chat-project-name { font: 500 13px/1.3 var(--sans); }
+  body.focus-ui .chat-topbar { border-bottom: 1px solid var(--line); }
+  body.focus-ui.view-chat .ph-chips { padding: 8px 14px 10px; border-bottom: 1px solid var(--line); }
+  .ph-chips .searchable-select-trigger { box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-weight: 600; }
+
+  /* ---------- the thread: the answer as a page, your words as a bubble ---------- */
+  body.focus-ui.view-chat #chatPanel .messages { gap: 18px; padding: 12px 16px 20px; }
+  body.focus-ui.view-chat #chatPanel .message { border-bottom: 0; }
+  body.focus-ui.view-chat #chatPanel .message.assistant { padding: 0 2px; border: 0; border-radius: 0; background: transparent; }
+  body.focus-ui.view-chat #chatPanel .message.user:not(.queued) { max-width: 88%; padding: 10px 14px; border: 0; border-radius: 20px 20px 6px 20px; }
+  body.focus-ui .message-content.md p, body.focus-ui .message-content.md :is(ul, ol) { margin-bottom: 12px; }
+  body.focus-ui .message-content.md :is(h1, h2, h3) { margin-top: 18px; font-size: 1.15em; border-bottom: 0; padding-bottom: 0; }
+  body.focus-ui .message-content.md .code-block { margin-inline: -2px; }
+  body.focus-ui .message-time, body.focus-ui .message-receipt, body.focus-ui .conversation-start { font: 400 12.5px/1.4 var(--sans); }
+  body.focus-ui .message-attribution { height: 28px; padding: 0 10px; border: 0; background: var(--field); font: 500 12px/1 var(--sans); }
+  body.focus-ui .message.assistant + .message-actions { margin-left: 2px; }
+
+  /* Queued words: one soft box, the buttons as a quiet row under it. */
+  body.focus-ui #chatPanel .message.user.queued { align-self: stretch; max-width: 100%; padding: 14px 16px 12px; border: 1px dashed var(--line-strong); border-radius: 18px; background: var(--field); }
+  body.focus-ui #chatPanel .message.user.queued .message-content { opacity: 0.85; }
+  body.focus-ui .queued-controls { justify-content: flex-start; gap: 8px; margin-top: 12px; }
+  body.focus-ui .queued-badge { flex: 1 0 100%; margin: 0; color: var(--muted); font: 600 12.5px/1.2 var(--sans); }
+  body.focus-ui .queued-controls button, body.focus-ui .queued-batch-controls button { min-height: 40px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--paper-raised); box-shadow: none; color: var(--text); font: 600 14px/1 var(--sans); }
+  body.focus-ui .queued-controls .queued-force-start { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+  body.focus-ui .queued-select { min-height: 40px; color: var(--muted); font-size: 14px; }
+  body.focus-ui .queued-batch-controls { border-radius: 14px; font: 500 13px/1.3 var(--sans); }
+
+  /* ---------- the details (Activity): the desktop column's cards ---------- */
+  body.focus-ui #activityPanel .activity-section { border: 0; border-radius: 18px; background: var(--field); box-shadow: none; }
+  body.focus-ui #activityPanel .activity-section > summary { padding: 14px 16px; background: transparent; color: var(--heading); font: 400 18px/1.2 var(--serif); }
+  /* phone.css sets every Activity summary word to 13 px with !important; the card's name is the exception. */
+  body.focus-ui #activityPanel .activity-section > summary > span:nth-child(2) { font-size: 18px !important; }
+  body.focus-ui #activityPanel .activity-section-chevron { color: var(--muted); }
+  body.focus-ui #activityPanel .activity-section > summary > .activity-section-status { color: var(--muted); font-family: var(--sans); font-weight: 400; }
+  body.focus-ui #activityPanel .activity-section-body { gap: 12px; padding: 0 16px 16px; }
+  body.focus-ui #activityPanel #activitySummaryText { font-size: 16px; line-height: 1.6; }
+  body.focus-ui #activityPanel .activity-summary-actions { gap: 8px; }
+  body.focus-ui #activityPanel .activity-summary-actions > button {
+    min-height: 44px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--paper-raised); box-shadow: none; color: var(--text); font: 600 14px/1 var(--sans);
+  }
+  body.focus-ui #activityPanel .activity-summary-refresh { color: var(--accent); }
+  body.focus-ui #activityPanel .activity-stat { padding: 10px 12px; border: 0; border-radius: 14px; background: var(--paper-raised); }
+  body.focus-ui #activityPanel .activity-stat-value { color: var(--heading); font: 400 20px/1.2 var(--serif); }
+  body.focus-ui #activityPanel .activity-stat-value.failed { color: var(--danger); }
+  body.focus-ui #activityPanel .activity-stat-label { color: var(--muted); font: 400 13px/1.3 var(--sans); }
+  body.focus-ui #activityPanel :is(.activity-instructions-row, .activity-rule) { padding: 12px 14px; border: 0; border-radius: 14px; background: var(--paper-raised); font-family: var(--sans); }
+  body.focus-ui #activityPanel :is(.activity-instructions-name, .activity-instructions-preview, .activity-rule-subject, .activity-rule-evidence) { font-family: var(--sans); font-size: 14px; }
+  body.focus-ui #activityPanel .activity-instructions-name { color: var(--heading); font-weight: 600; }
+  body.focus-ui #activityPanel .activity-instructions-actions > button, body.focus-ui #activityPanel .activity-rule-actions > button {
+    min-height: 44px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--btn-bg); box-shadow: none; color: var(--btn-fg); font: 600 14px/1 var(--sans);
+  }
+  body.focus-ui #activityPanel .activity-rule-actions > button.ghost { background: var(--paper-raised); color: var(--text); }
+}
