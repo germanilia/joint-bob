@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import test from "node:test";
 import ts from "typescript";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, memberModelLadder, resolvePoolModelSettings, resolvePoolSwitchModel, runOnModels, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { withPoolProfile } from "../src/provider-profiles/context.js";
 
 const require = createRequire(import.meta.url);
@@ -86,10 +86,10 @@ for (const harness of ["claude", "pi"]) for (const choice of ["default", "select
         if (current === "picked" && choice === "rejected") throw new Error("Model not found: picked");
         if (current === "picked" && choice === "auth") throw new Error("unauthorized");
       },
-      prompt: async () => { prompted.push(current); if (current === "initial") throw new Error("rate_limit"); },
+      prompt: async () => { prompted.push(current); if (current === "initial") throw new Error("You've hit your 5-hour limit"); },
     };
     const mocks = new Proxy({
-      runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel,
+      runPoolAttempts, runOnModels, memberModelLadder, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel,
       getSettings: () => ({ conversationDefaults: { [harness]: { provider, modelId: "default", thinkingLevel: "medium" } } }),
       listHarnessModels: async () => ["default", "picked"].map(id => ({ provider, id, thinkingLevels: ["medium", "high"] })),
       nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
@@ -133,7 +133,7 @@ test("a pool member that hits its limit mid-turn hands the turn to the next, whi
       throw Object.assign(new Error("You've hit your 5-hour limit · resets 3:10am (Asia/Jerusalem)"), { status: 429, code: "rate_limit" });
     },
   };
-  const mocks = new Proxy({ runPoolAttempts, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel,
+  const mocks = new Proxy({ runPoolAttempts, runOnModels, memberModelLadder, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel,
     getSettings: () => ({ conversationDefaults: { claude: { provider: "claude", modelId: "sonnet", thinkingLevel: "medium" } } }),
     listHarnessModels: async () => [{ provider: "claude", id: "sonnet", thinkingLevels: ["medium"] }],
     nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
@@ -155,4 +155,36 @@ test("a pool member that hits its limit mid-turn hands the turn to the next, whi
   assert.deepEqual(announced, ["claude - sela", "claude - illiag2"]);
   assert.equal(restores, 0, "the first member's work is kept");
   assert.equal(checkpoints, 2);
+});
+
+test("a Claude member whose model is rate-limited answers on its next model before the pool moves on", async () => {
+  const prompts: Array<{ model: string; profile: string | undefined }> = [];
+  const configured: string[] = [];
+  let current = "claude-fable-5", checkpoints = 0, restores = 0;
+  const session: any = {
+    subscribe: () => () => {},
+    configure: async (settings: { modelId: string }) => { current = settings.modelId; configured.push(current); },
+    preflight: async () => {},
+    checkpointPoolAttempt: async () => { checkpoints += 1; return {}; },
+    restorePoolAttempt: async () => { restores += 1; },
+    prompt: async () => {
+      const { poolProfileContext } = await import("../src/provider-profiles/context.js");
+      prompts.push({ model: current, profile: poolProfileContext()?.profileId });
+      if (current === "claude-fable-5") throw Object.assign(new Error(`429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your account's rate limit. Please try again later."}}`), { status: 429 });
+    },
+  };
+  const mocks = new Proxy({ runPoolAttempts, runOnModels, memberModelLadder, classifyPoolAttemptFailure, withPoolProfile, resolvePoolModelSettings, resolvePoolSwitchModel,
+    getSettings: () => ({ conversationDefaults: { claude: { provider: "claude", modelId: "claude-fable-5", thinkingLevel: "medium" } } }),
+    listHarnessModels: async () => ["claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5"].map(id => ({ provider: "claude", id, thinkingLevels: ["medium"] })),
+    nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
+  } as Record<string, any>, {
+    get: (target, key: string) => key in target ? target[key] : (key === "flags" ? {} : () => () => {}),
+    has: () => true,
+  });
+  const exports = load("server/harness-chat.ts", mocks);
+  const initial = { provider: "claude", modelId: "claude-fable-5", reasoning: "medium" };
+  await exports.promptOnSubscriptionPool(session, pool, initial, () => initial, { text: "check it" }, () => {});
+  assert.deepEqual(prompts, [{ model: "claude-fable-5", profile: "first" }, { model: "claude-opus-5-5", profile: "first" }], "the same member, on its next model");
+  assert.deepEqual(configured, ["claude-fable-5", "claude-opus-5-5"]);
+  assert.equal(restores, 1, "rolled back to before the refused request");
 });

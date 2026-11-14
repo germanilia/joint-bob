@@ -21,7 +21,8 @@ import { state } from "./state.js";
 const STATES = { "needs-you": "Needs you", running: "Running", review: "To review", snoozed: "Snoozed", done: "Done" };
 const ORDER = Object.keys(STATES);
 const INBOX = ["needs-you", "running", "review", "snoozed"];
-const SCOPES = [["inbox", "Inbox", (card) => card.column !== "done"], ["past", "Past", (card) => card.column === "done"], ["all", "All", () => true], ["starred", "★", isStarred]];
+// A team's conversations are in its folder, not in the Inbox (All and the folder show them).
+const SCOPES = [["inbox", "Inbox", (card) => card.column !== "done" && !card.team], ["past", "Past", (card) => card.column === "done"], ["all", "All", () => true], ["starred", "★", isStarred]];
 const LIST_GROUP_KEY = "jointBobListGroup";
 const LIST_WIDTH_KEY = "jointBobListWidth";
 const MIN_WIDTH = 280;
@@ -392,7 +393,7 @@ function drawChips(all) {
 /** The folders: each with how many conversations it holds, and a box for a new name (made when a conversation is put in it). */
 function openFolders(anchor, all) {
   const choose = (scope) => { view.scope = scope; view.rememberScope = null; redraw(); };
-  const names = folderNames();
+  const names = folderNames(all);
   popMenu(anchor, [
     ...names.map((name) => ({ label: `${name}  ·  ${all.filter((card) => folderOf(card) === name).length}`, checked: view.scope === `folder:${name}`, run: () => choose(`folder:${name}`) })),
     ...(names.length ? [] : [{ label: "No folders yet: use a conversation's folder button", run: () => undefined }]),

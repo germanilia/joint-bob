@@ -114,28 +114,44 @@ export async function watchLocalTeamFollows(): Promise<void> {
   await resumeTeamFollows();
 }
 
-// ── What the decision model is told of the person's teams ───────────────────────────────────────────────
+// ── The person's teams as last seen: what the decision model is told, and the Inbox's team folders ────────────
+
+/** A team as this machine last saw it. Kept on disk, so a restarted machine still knows it before it looks again. */
+export interface KnownTeam { id: string; name: string; host: string; projectId: string; roles: string[] }
+const knownTeamSchema = z.array(z.object({ id: z.string(), name: z.string(), host: z.string(), projectId: z.string(), roles: z.array(z.string()) }));
 
 const HINTS_FRESH_MS = 5 * 60_000;
 const refreshing = new Set<string>();
 
-async function refreshHints(session: AuthSession): Promise<BobTeamHint[]> {
+async function refreshKnownTeams(session: AuthSession): Promise<KnownTeam[]> {
   const { teams } = await hubOverview(session, true);
-  const hints = teams.map((team) => ({ name: team.clusterName, roles: team.members.map((member) => member.role) }));
-  (await database()).prepare("INSERT INTO bob_team_hints VALUES (?,?,?) ON CONFLICT(account_id) DO UPDATE SET teams=excluded.teams, updated_at=excluded.updated_at").run(session.accountId, JSON.stringify(hints), new Date().toISOString());
-  return hints;
+  const known = teams.map((team) => ({ id: team.id, name: team.clusterName, host: team.hostName, projectId: team.projectId, roles: team.members.map((member) => member.role) }));
+  (await database()).prepare("INSERT INTO bob_team_hints VALUES (?,?,?) ON CONFLICT(account_id) DO UPDATE SET teams=excluded.teams, updated_at=excluded.updated_at").run(session.accountId, JSON.stringify(known), new Date().toISOString());
+  return known;
 }
 
 /**
- * The teams of the person's clusters and their members' roles, as last seen: kept on disk, so a restarted machine still knows
- * them. The first time ever it looks (waiting for the network once); after that it is refreshed in the background.
+ * The teams of the person's clusters as last seen. The first time ever it looks (waiting for the network once); after that the
+ * stored list is answered at once and refreshed in the background when it is older than five minutes. A list stored before
+ * teams carried their project is looked at again.
  */
-export async function bobTeamHints(session: AuthSession): Promise<BobTeamHint[]> {
+export async function knownTeams(session: AuthSession): Promise<KnownTeam[]> {
   const row = (await database()).prepare("SELECT teams, updated_at FROM bob_team_hints WHERE account_id=?").get(session.accountId) as { teams: string; updated_at: string } | undefined;
-  if (!row) return refreshHints(session).catch((error) => { console.warn(`Could not look for the teams of the person's clusters: ${error instanceof Error ? error.message : error}`); return []; });
-  if (Date.now() - Date.parse(row.updated_at) > HINTS_FRESH_MS && !refreshing.has(session.accountId)) {
+  const stored = row ? knownTeamSchema.safeParse(JSON.parse(row.teams)) : undefined;
+  if (!stored?.success) return refreshKnownTeams(session).catch((error) => { console.warn(`Could not look for the teams of the person's clusters: ${error instanceof Error ? error.message : error}`); return []; });
+  if (Date.now() - Date.parse(row!.updated_at) > HINTS_FRESH_MS && !refreshing.has(session.accountId)) {
     refreshing.add(session.accountId);
-    void refreshHints(session).catch((error) => console.warn(`Could not refresh the teams: ${error instanceof Error ? error.message : error}`)).finally(() => refreshing.delete(session.accountId));
+    void refreshKnownTeams(session).catch((error) => console.warn(`Could not refresh the teams: ${error instanceof Error ? error.message : error}`)).finally(() => refreshing.delete(session.accountId));
   }
-  return z.array(z.object({ name: z.string(), roles: z.array(z.string()) })).parse(JSON.parse(row.teams));
+  return stored.data;
+}
+
+/** What the decision model is told: each team's name and its members' roles. */
+export async function bobTeamHints(session: AuthSession): Promise<BobTeamHint[]> {
+  return (await knownTeams(session)).map((team) => ({ name: team.name, roles: team.roles }));
+}
+
+/** Which team a conversation's project belongs to, for the Inbox's folders: a property of the card, never a name to match. */
+export async function teamOfProjects(session: AuthSession): Promise<Map<string, { id: string; name: string; host: string }>> {
+  return new Map((await knownTeams(session)).map((team) => [team.projectId, { id: team.id, name: team.name, host: team.host }]));
 }

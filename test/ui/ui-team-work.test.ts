@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { nativeUiFixture } from './native-ui-fixture.js';
 import { api, signIn } from '../dev-nodes.js';
+import { DEFAULT_GUARDIAN_SETTINGS } from '../../src/guardian/rules.js';
+import { PRODUCTION_RULE } from '../../src/guardian/production-rule.js';
 
 async function openTeams(page: any, environment: any, node: any) {
   await page.goto(node.url);
@@ -97,4 +99,52 @@ test('no second team is offered for a cluster whose machines could not all be re
   await page.waitForFunction(() => !document.body.classList.contains('booting'));
   // The control center comes back by itself after a reload, and the team list fills again.
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="team-select"] option')].some(option => /create team on this host/.test(option.textContent ?? '')));
+});
+
+// A team's conversations live in the team's own folder in the Inbox, not mixed into Needs you, Running and To review.
+test('a team\'s conversations are in its own Inbox folder, which opens to all of them', { timeout: 240_000 }, async t => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  const auth = await signIn(environment, node);
+  const cluster = await api<any>(node, auth, 'POST', '/clusters', { name: 'Folder team' });
+  const created = await api<any>(node, auth, 'POST', '/assistant-teams', { clusterId: cluster.body.snapshot.body.clusterId });
+  const { addNodeMembers } = await import('../team-members-fixture.js');
+  await addNodeMembers((method, route, body) => api<any>(node, auth, method as any, route, body), node.projects.map((p: any) => p.id), created.body.team.id,
+    [{ role: 'lead' }, { role: 'qa' }], 'lead', { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' });
+  // The production guard lets the member start, so its conversation is made (the fixture has no model to answer it).
+  assert.equal((await api(node, auth, 'PUT', '/guardian', { settings: { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, rules: [PRODUCTION_RULE] } })).status, 200);
+  const sent = await api<any>(node, auth, 'POST', `/team-hub/${created.body.team.id}/assign`, { role: 'qa', message: 'Folder check' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  // The board says which team a card belongs to: a property, not a name to match.
+  let teamCards: any[] = [];
+  for (let i = 0; i < 100 && !teamCards.length; i++) {
+    const board = (await api<any>(node, auth, 'GET', '/control-center/board?look=1&earlier=1')).body;
+    teamCards = [...board.cards, ...(board.earlier ?? [])].filter((card: any) => card.team);
+    if (!teamCards.length) await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  assert.ok(teamCards.length >= 1, 'the team conversation is on the board, marked with its team');
+  assert.equal(teamCards[0].team.id, created.body.team.id);
+  assert.equal(teamCards[0].team.name, 'Folder team');
+
+  await page.goto(node.url);
+  await page.locator('#loginDialog[open]').waitFor();
+  await page.locator('#loginUsernameInput').fill(environment.username);
+  await page.locator('#loginPasswordInput').fill(environment.password);
+  await page.locator('#loginSubmitButton').click();
+  await page.waitForFunction(() => !document.body.classList.contains('booting'));
+  await page.locator('#workspaceInboxButton').click();
+  const folder = page.locator('[data-testid="workspace-team-folder"]');
+  await folder.waitFor();
+  assert.match(await folder.innerText(), /Folder team/);
+  const inGroups = await page.locator('[data-testid="workspace-group-row"]').allInnerTexts();
+  assert.ok(!inGroups.some(text => /Folder check/.test(text)), 'not mixed into the groups');
+  await folder.click();
+  await page.locator('[data-testid="workspace-team-page-row"]').first().waitFor();
+  assert.match(await page.locator('#workspaceGroupTitle').innerText(), /Folder team team/);
+  assert.match(await page.locator('[data-testid="workspace-team-page-row"]').first().innerText(), /qa: Folder check/);
+  // Bob's inbox list keeps the same conversations in the team's folder: out of its Inbox scope, listed under the folder.
+  const marks = await page.evaluate(async (card) => {
+    const m = await import('/app/control-marks.js');
+    return { folder: m.folderOf(card), names: m.folderNames([card]) };
+  }, teamCards[0]);
+  assert.deepEqual(marks, { folder: 'Folder team team', names: ['Folder team team'] });
 });

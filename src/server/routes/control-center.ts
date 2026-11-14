@@ -67,8 +67,11 @@ app.get("/api/control-center/board", async (request, response, next) => {
     if (request.query.look !== "1") rememberBobAccount(await bobDatabase(), actingAccountFromSession(session));
     // `?earlier=1` also lists every conversation that is not on the board, for the workspace's Earlier group.
     const { cards, projects, earlier } = await loadBoard(session, { earlier: request.query.earlier === "1" });
+    // A conversation of an assistant team says so: the Inbox keeps those in the team's own folder.
+    const teamOf = await (await import("../team-follows.js")).teamOfProjects(session);
+    const withTeam = <T extends { projectId: string }>(row: T) => ({ ...row, team: teamOf.get(row.projectId) ?? null });
     // The project's own color goes along: the board and Bob's chat draw each project in it.
-    response.json({ cards, earlier, projects: projects.map((project) => ({ id: project.id, name: project.name, color: project.color ?? null })) });
+    response.json({ cards: cards.map(withTeam), earlier: earlier?.map(withTeam), projects: projects.map((project) => ({ id: project.id, name: project.name, color: project.color ?? null })) });
   } catch (error) {
     next(error);
   }

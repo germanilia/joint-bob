@@ -371,9 +371,25 @@ function syncEarlier() {
   earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row)));
 }
 
+/** A team's conversations live in the team's folder (each card says which team, `card.team`), not in the four groups. */
 function cardsIn(groupId) {
-  return groupId === "earlier" ? earlierRows : cards.filter((card) => card.column === groupId);
+  return (groupId === "earlier" ? earlierRows : cards.filter((card) => card.column === groupId)).filter((card) => !card.team);
 }
+const TEAM_PAGE = "team:";
+/** The team folders: one per team that has conversations, with everything of it, newest first. */
+function teamFolders() {
+  const folders = new Map();
+  for (const card of [...cards, ...earlierRows]) {
+    if (!card.team) continue;
+    const folder = folders.get(card.team.id) ?? { id: card.team.id, name: card.team.name, host: card.team.host, cards: [] };
+    folder.cards.push(card);
+    folders.set(card.team.id, folder);
+  }
+  for (const folder of folders.values()) folder.cards.sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")));
+  return [...folders.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+/** The group a team conversation would be in: its dot in the folder says where it stands. */
+const groupOfCard = (card) => GROUPS.find((group) => group.id === (card.column ?? "earlier")) ?? GROUPS[GROUPS.length - 1];
 
 /** What the phone's Home and the Show all page list: the group with the project and Show filters of inbox-filters.js applied. */
 const filteredIn = (groupId) => filterInbox(groupId, cardsIn(groupId));
@@ -496,7 +512,9 @@ function renderGroups(refit = true) {
   const cardHeight = cardSample ? cardSample.getBoundingClientRect().height + 8 : 160;
   const heightOf = (index) => (cardsHere && GROUPS[index].id === "needs-you" ? cardHeight : rowHeight);
   const room = groupsHost.clientHeight;
-  let budget = room - GROUPS.length * cssHeight("--ws-lab-height", LABEL_HEIGHT) - counts.filter((count) => !count).length * cssHeight("--ws-empty-height", EMPTY_HEIGHT);
+  const folderCount = teamFolders().length;
+  let budget = room - GROUPS.length * cssHeight("--ws-lab-height", LABEL_HEIGHT) - counts.filter((count) => !count).length * cssHeight("--ws-empty-height", EMPTY_HEIGHT)
+    - (folderCount ? cssHeight("--ws-lab-height", LABEL_HEIGHT) + folderCount * rowHeight : 0);
   const shown = GROUPS.map(() => 0);
   if (phoneHomeShown()) {
     // The phone's Home scrolls: Needs you is one deck of every card and the other groups list every conversation, one
@@ -519,7 +537,7 @@ function renderGroups(refit = true) {
     }
   }
   // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
-  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)]))]);
+  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)])), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
   groupsHost.dataset.signature = signature;
   const scroll = groupsHost.scrollTop;
@@ -561,6 +579,41 @@ function renderGroups(refit = true) {
     else for (const card of listIn(group.id).slice(0, shown[index])) section.append(cardRow(card, group, "workspace-group-row"));
     return section;
   }));
+  const folders = teamFolders();
+  if (folders.length) {
+    const section = document.createElement("section");
+    section.className = "ws-group ws-folders";
+    section.dataset.testid = "workspace-team-folders";
+    const label = document.createElement("div");
+    label.className = "ws-lab";
+    label.append(Object.assign(document.createElement("span"), { textContent: "Team folders" }));
+    section.append(label);
+    for (const folder of folders) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "ws-row ws-folder";
+      row.dataset.testid = "workspace-team-folder";
+      row.dataset.team = folder.id;
+      const needs = folder.cards.filter((card) => card.column === "needs-you").length;
+      const dot = document.createElement("i");
+      dot.className = `ws-dot ${needs ? "need" : folder.cards.some((card) => card.column === "running") ? "run" : "old"}`;
+      dot.setAttribute("aria-hidden", "true");
+      const copy = document.createElement("span");
+      copy.className = "ws-row-copy";
+      const top = document.createElement("span");
+      top.className = "ws-row-top";
+      top.append(Object.assign(document.createElement("b"), { textContent: `${folder.name} team` }), Object.assign(document.createElement("time"), { textContent: String(folder.cards.length) }));
+      const line = document.createElement("span");
+      line.className = "ws-row-line";
+      line.textContent = [folder.host && `on ${folder.host}`, needs && `${needs} need${needs === 1 ? "s" : ""} you`].filter(Boolean).join(" · ");
+      copy.append(top, line);
+      row.append(dot, copy);
+      row.title = `${folder.name} team: ${folder.cards.length} conversation${folder.cards.length === 1 ? "" : "s"}`;
+      row.addEventListener("click", () => openGroupPage(`${TEAM_PAGE}${folder.id}`));
+      section.append(row);
+    }
+    groupsHost.append(section);
+  }
   if (phoneHomeShown()) {
     drawChunked(groupsHost, chunked, { key: "phone-home" });
     // A refresh draws the same rows again where the person was.
@@ -664,6 +717,23 @@ onInboxView(() => {
   if (!page.hidden) renderGroupPage();
 });
 
+/** A team's folder: every conversation of the team in one scrolling list, newest first, each with the dot of where it stands. */
+function renderTeamPage(teamId) {
+  const folder = teamFolders().find((item) => item.id === teamId);
+  byId("workspaceGroupTitle").textContent = folder ? `${folder.name} team` : "Team";
+  byId("workspaceGroupTabs").replaceChildren();
+  const scroll = pageList.scrollTop;
+  pageList.replaceChildren();
+  const entries = (folder?.cards ?? []).map((card) => () => {
+    const row = cardRow(card, groupOfCard(card), "workspace-team-page-row");
+    row.classList.add("wide");
+    return row;
+  });
+  if (!entries.length) entries.push(() => Object.assign(document.createElement("p"), { className: "ws-empty", textContent: loaded ? "This team has no conversations yet." : "Loading…" }));
+  drawChunked(pageList, entries, { key: `team-page-${teamId}` });
+  pageList.scrollTop = scroll;
+}
+
 export function openGroupPage(groupId) {
   pageGroup = groupId;
   page.hidden = false;
@@ -680,6 +750,7 @@ export function closeGroupPage() {
 
 /** Every card of the group is one continuous list that scrolls (long-scroll.js); a refresh draws it again where it was, another group starts at the top. */
 function renderGroupPage() {
+  if (pageGroup.startsWith(TEAM_PAGE)) { renderTeamPage(pageGroup.slice(TEAM_PAGE.length)); return; }
   const group = GROUPS.find((item) => item.id === pageGroup) ?? GROUPS[0];
   byId("workspaceGroupTitle").textContent = group.title;
   byId("workspaceGroupTabs").replaceChildren(...GROUPS.map((item) => {

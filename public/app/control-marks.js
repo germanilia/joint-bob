@@ -18,10 +18,13 @@ const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
 
 export const isPinned = (card) => state.pinnedConversations.some((pin) => pin.projectId === card.projectId && pin.engine === card.harnessId && pin.sessionId === card.sessionId);
 export const isStarred = (card) => state.controlCenter.stars.includes(markKey(card));
-export const folderOf = (card) => state.controlCenter.folders[markKey(card)] ?? null;
+/** An assistant team's conversation is in the team's own folder (the card says which team), unless the person moved it. */
+export const teamFolderName = (team) => `${team.name} team`;
+export const folderOf = (card) => state.controlCenter.folders[markKey(card)] ?? (card.team ? teamFolderName(card.team) : null);
 /** Pinned or starred: nothing automatic may delete it. */
 export const isKept = (card) => isPinned(card) || isStarred(card);
-export const folderNames = () => [...new Set(Object.values(state.controlCenter.folders))].sort((a, b) => a.localeCompare(b));
+/** The person's folders, and a folder for each team that has conversations among `cards`. */
+export const folderNames = (cards = []) => [...new Set([...Object.values(state.controlCenter.folders), ...cards.flatMap((card) => (card.team ? [teamFolderName(card.team)] : []))])].sort((a, b) => a.localeCompare(b));
 
 export function togglePin(card) {
   return savePin({ kind: "conversation", projectId: card.projectId, engine: card.harnessId, sessionId: card.sessionId }, !isPinned(card));

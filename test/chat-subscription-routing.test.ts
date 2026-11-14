@@ -9,7 +9,7 @@ import test from "node:test";
 import ts from "typescript";
 import { actingAccount, asNode, runAsAccount } from "../src/account-context.js";
 import { automationProfileContext, poolProfileContext, withAutomationProfile, withPoolProfile, withoutAutomationProfile } from "../src/provider-profiles/context.js";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, memberModelLadder, resolvePoolModelSettings, resolvePoolSwitchModel, runOnModels, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { ConversationOwnershipError } from "../src/conversation-ownership.js";
 
 const require = createRequire(import.meta.url);
@@ -75,7 +75,7 @@ function fixture(selection: Selection, failure?: string) {
       const profile = selectedProfile();
       calls.push({ account: automationProfileContext()?.accountId ?? actingAccount()?.accountId, profile, text: input.text });
       if (failure) throw new Error(failure);
-      if (profile === "first") throw new Error("rate_limit");
+      if (profile === "first") throw new Error("You've hit your 5-hour limit");
       input.onStarted?.();
       session.messages.push({ role: "assistant", text: "Finished.\nBOB_GOAL_COMPLETE" });
     },
@@ -84,7 +84,7 @@ function fixture(selection: Selection, failure?: string) {
   const connection: any = { engine: "claude", project: { id: "project", type: "workspace" }, conversationId: "conversation", cwd: "/synthetic", shared, author: author("viewer"), socket: {}, readOnly: false };
   const dependencies: Record<string, any> = {
     flags: {}, onGuardianEvent: () => {}, actingAccount, asNode, runAsAccount, withPoolProfile, withoutAutomationProfile, automationProfileContext,
-    runPoolAttempts, classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, ConversationOwnershipError,
+    runPoolAttempts, runOnModels, memberModelLadder, classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, ConversationOwnershipError,
     listHarnessModels: async () => [{ provider: "claude", id: "opus", thinkingLevels: ["high"] }],
     nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
     ownerAsActor: actor, resourceOwner: () => "project-owner",

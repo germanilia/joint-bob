@@ -156,3 +156,45 @@ test("provider error classification recognizes quota and auth responses only bef
   assert.equal(classifyPoolAttemptFailure(Object.assign(new Error("Credit balance is too low"), { code: "billing_error" }), false)?.reason, "quota");
   assert.equal(classifyPoolAttemptFailure(Object.assign(new Error("Invalid API key"), { code: "authentication_failed" }), false)?.reason, "auth");
 });
+
+test("a Claude member tries its other models when one is rate-limited; other providers have one model", async () => {
+  const { memberModelLadder, runOnModels } = await import("../src/provider-profiles/pool-execution.js");
+  const models = [
+    { provider: "anthropic", id: "claude-fable-5", label: "Fable", thinkingLevels: ["low"] },
+    { provider: "anthropic", id: "claude-opus-5-5", label: "Opus", thinkingLevels: ["low"] },
+    { provider: "anthropic", id: "claude-sonnet-5-5", label: "Sonnet", thinkingLevels: ["low"] },
+    { provider: "openai-codex", id: "gpt-6-sol", label: "Sol", thinkingLevels: ["low"] },
+  ] as any;
+  assert.deepEqual(memberModelLadder("claude", { provider: "anthropic", modelId: "claude-fable-5" }, models), ["claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5"]);
+  assert.deepEqual(memberModelLadder("claude", { provider: "anthropic", modelId: "claude-opus-5-5" }, models, 2), ["claude-opus-5-5", "claude-fable-5"]);
+  assert.deepEqual(memberModelLadder("openai-codex", { provider: "openai-codex", modelId: "gpt-6-sol" }, models), ["gpt-6-sol"], "an account-wide limit: the next member is the way on");
+
+  const rateLimited = Object.assign(new Error("429 rate_limit_error: This request would exceed your account's rate limit"), { status: 429 });
+  const tried: string[] = []; let restores = 0;
+  const answer = await runOnModels(["claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5"], async (model) => {
+    tried.push(model);
+    if (model === "claude-fable-5") throw rateLimited;
+    return `answered on ${model}`;
+  }, async () => { restores += 1; });
+  assert.equal(answer, "answered on claude-opus-5-5");
+  assert.deepEqual(tried, ["claude-fable-5", "claude-opus-5-5"]);
+  assert.equal(restores, 1, "the state is rolled back before the next model");
+
+  // Once something was said, another model would repeat it: the limit goes on as the member's failure.
+  const said = new PoolAttemptFailure("quota", true, "rate limit after output");
+  const afterOutput: string[] = [];
+  await assert.rejects(runOnModels(["claude-fable-5", "claude-opus-5-5"], async (model) => { afterOutput.push(model); throw said; }, async () => assert.fail("no rollback")), (error) => error === said);
+  assert.deepEqual(afterOutput, ["claude-fable-5"]);
+  // A usage limit is the whole subscription's: no other model is tried, the next member takes over.
+  const usage: string[] = [];
+  await assert.rejects(runOnModels(["claude-fable-5", "claude-opus-5-5"], async (model) => { usage.push(model); throw new Error("You've hit your 5-hour limit"); }, async () => assert.fail("no rollback")));
+  assert.deepEqual(usage, ["claude-fable-5"]);
+  // Not a rate limit: no other model is tried.
+  const broken: string[] = [];
+  await assert.rejects(runOnModels(["claude-fable-5", "claude-opus-5-5"], async (model) => { broken.push(model); throw new Error("provider connection reset"); }, async () => assert.fail("no rollback")));
+  assert.deepEqual(broken, ["claude-fable-5"]);
+  // Every model limited: the last one's failure goes on, so the pool's next member takes over.
+  const all: string[] = [];
+  await assert.rejects(runOnModels(["claude-fable-5", "claude-opus-5-5"], async (model) => { all.push(model); throw rateLimited; }, async () => {}), (error) => error === rateLimited);
+  assert.deepEqual(all, ["claude-fable-5", "claude-opus-5-5"]);
+});

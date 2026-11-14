@@ -109,3 +109,40 @@ export async function runPoolAttempts<T, C extends { provider: ProfileProvider }
   }
   throw new Error("Subscription pool attempts ended unexpectedly");
 }
+
+/**
+ * The models one pool member may answer with, in the order they are tried when one is rate-limited before it answers: the
+ * chosen one first, then the member's other models. Only Claude limits each model on its own, so only a Claude member has more
+ * than one; another provider's limit is the account's, and the next member is the way on.
+ */
+export function memberModelLadder(candidate: ProfileProvider, first: { provider: string; modelId: string }, models: HarnessModel[], limit = 4): string[] {
+  if (candidate !== "claude") return [first.modelId];
+  const others = models.filter((model) => (model.provider === "anthropic" || model.provider === "claude") && model.id !== first.modelId).map((model) => model.id);
+  return [first.modelId, ...others].slice(0, limit);
+}
+
+/**
+ * A limit on how fast one model may be called ("would exceed your account's rate limit"), which another model does not share.
+ * A usage limit ("You've hit your 5-hour limit", an exhausted quota) is the whole subscription's: the next member takes over.
+ */
+function modelRateLimited(failure: PoolAttemptFailure): boolean {
+  const message = failure.message.toLowerCase();
+  return failure.reason === "quota" && /rate[_ -]?limit|too many requests|429/.test(message) && !/hit your [\w -]*limit|usage limit|quota|insufficient_quota|billing/.test(message);
+}
+
+/**
+ * Runs one member's attempt on each model of its ladder until one answers. Only a model's rate limit before anything was said moves to
+ * the next model (the state is rolled back first); anything else, or a limit on the last model, goes on as the member's failure.
+ */
+export async function runOnModels<T>(models: readonly string[], attempt: (modelId: string) => Promise<T>, restore: () => Promise<void>): Promise<T> {
+  for (const [index, modelId] of models.entries()) {
+    try { return await attempt(modelId); }
+    catch (error) {
+      const failure = classifyPoolAttemptFailure(error, false);
+      if (!failure || !modelRateLimited(failure) || failure.started || index === models.length - 1) throw error;
+      console.warn(`Pool model ${modelId} is rate-limited; trying ${models[index + 1]}`);
+      await restore();
+    }
+  }
+  throw new Error("A pool member has no model to try");
+}

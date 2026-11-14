@@ -853,3 +853,6 @@ body.focus-ui.view-projects.ws-column-inbox .inbox-tools.phone-only { display: g
 .ws-check { flex: none; width: 20px; height: 20px; margin-top: 4px; border: 2px solid var(--line-strong); border-radius: 6px; box-sizing: border-box; }
 .ws-row.picked { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .ws-row.picked .ws-check { border-color: var(--accent); background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 10.5 3.5 3.5L15 6.5'/%3E%3C/svg%3E") center / 100% no-repeat; }
+
+/* An assistant team's folder in the Inbox: its conversations are opened from here, not mixed into the groups. */
+.ws-folder b::before { content: "▸ "; color: var(--muted, currentColor); }

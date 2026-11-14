@@ -23,7 +23,7 @@ import { projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscri
 import { automationFallbackPool, poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
 import { projectProviderProfile } from "../provider-profiles/service.js";
 import { withPoolProfile, type PoolProfileContext } from "../provider-profiles/context.js";
-import { classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, runPoolAttempts } from "../provider-profiles/pool-execution.js";
+import { classifyPoolAttemptFailure, memberModelLadder, resolvePoolModelSettings, resolvePoolSwitchModel, runOnModels, runPoolAttempts } from "../provider-profiles/pool-execution.js";
 import type { ProfileProvider } from "../provider-profiles/store.js";
 import { getConversationRecord, ensureConversationRecord, listConversationSegments } from "../conversation-records.js";
 import type { UsageDifficulty } from "../usage-types.js";
@@ -373,7 +373,7 @@ async function offeredReasoning(settings: HarnessModelSettings, initial: Harness
 
 /** Resolve the optional harness model in the destination profile's context, before any work starts. */
 async function preparePoolSwitch(session: HarnessSession, pool: TurnSubscriptionPool, candidate: PoolProfileContext,
-  initial: HarnessModelSettings): Promise<void> {
+  initial: HarnessModelSettings): Promise<HarnessModelSettings> {
   const engine = pool.harnessId;
   const models = await listHarnessModels(engine);
   const defaults = getSettings().conversationDefaults[engine];
@@ -386,6 +386,7 @@ async function preparePoolSwitch(session: HarnessSession, pool: TurnSubscription
   try {
     await session.configure(settings);
     await session.preflight();
+    return settings;
   } catch (error) {
     // A model rejection may use the default, but auth/quota failures must still advance the pool.
     if (!(error instanceof Error) || !/model.*(?:not found|not available|unavailable|not supported|unsupported|invalid)|(?:unknown|invalid|unsupported) model/i.test(error.message)) throw error;
@@ -394,6 +395,7 @@ async function preparePoolSwitch(session: HarnessSession, pool: TurnSubscription
     console.warn(`Pool model ${settings.provider}/${settings.modelId} rejected; using ${fallback.provider}/${fallback.modelId}`);
     await session.configure(fallback);
     await session.preflight();
+    return fallback;
   }
 }
 
@@ -414,12 +416,26 @@ export async function promptOnSubscriptionPool(session: HarnessSession, pool: Tu
     try {
       announce(candidate);
       await withPoolProfile(candidate, async () => {
-        if (switching) await preparePoolSwitch(session, pool, candidate, initial);
+        let chosen: HarnessModelSettings;
+        if (switching) chosen = await preparePoolSwitch(session, pool, candidate, initial);
         else {
-          await session.configure(await offeredReasoning(settingsFor(candidate), initial));
+          chosen = await offeredReasoning(settingsFor(candidate), initial);
+          await session.configure(chosen);
           await session.preflight();
         }
-        await session.prompt(continuing ? { text: POOL_CONTINUATION_PROMPT, beforeStart: input.beforeStart, onStarted: input.onStarted } : input);
+        // A Claude member limits each model on its own: one that is rate-limited before answering tries the member's next model.
+        const ladder = candidate.provider === "claude" ? memberModelLadder(candidate.provider, chosen, await listHarnessModels(pool.harnessId)) : [chosen.modelId];
+        // Only a member with another model to try needs a point to roll back to before its first answer.
+        const checkpoint = ladder.length > 1 ? await session.checkpointPoolAttempt!() : undefined;
+        await runOnModels(ladder, async (modelId) => {
+          if (modelId !== chosen.modelId) {
+            const model = (await listHarnessModels(pool.harnessId)).find((entry) => entry.id === modelId && (entry.provider === "anthropic" || entry.provider === "claude"))!;
+            await session.configure({ ...chosen, provider: model.provider, modelId, reasoning: nearestReasoning(model.thinkingLevels, chosen.reasoning) });
+            await session.preflight();
+          }
+          try { await session.prompt(continuing ? { text: POOL_CONTINUATION_PROMPT, beforeStart: input.beforeStart, onStarted: input.onStarted } : input); }
+          catch (error) { throw classifyPoolAttemptFailure(error, started) ?? error; }
+        }, () => session.restorePoolAttempt!(checkpoint!));
       });
     } catch (error) {
       const failure = classifyPoolAttemptFailure(error, started);

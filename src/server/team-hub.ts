@@ -15,6 +15,8 @@ import { peers } from './saved-commands.js';
 export interface HubMember { role: string; name: string | null; coordinator: boolean; ready: boolean; uses: string[] }
 export interface HubTeam {
   id: string; clusterId: string; clusterName: string; hostNodeId: string; hostName: string; local: boolean;
+  /** The team's shared project, where its conversations are: the same project on every machine of the cluster. */
+  projectId: string;
   coordinatorRole: string | null; members: HubMember[];
 }
 const TARGET = (operation: Operation): string => `/api/cluster/v2/assistant-teams/${operation}`;
@@ -36,10 +38,10 @@ async function call<T>(member: ClusterMember, hostNodeId: string, operation: Ope
 }
 
 async function teamsOn(member: ClusterMember, hostNodeId: string, clusterName: string, hostName: string): Promise<HubTeam[]> {
-  const { teams } = await call<{ teams: Array<{ id: string; hostNodeId: string }> }>(member, hostNodeId, 'list', {});
+  const { teams } = await call<{ teams: Array<{ id: string; hostNodeId: string; projectId: string }> }>(member, hostNodeId, 'list', {});
   return Promise.all(teams.filter(team => team.hostNodeId === hostNodeId).map(async team => {
     const roster = await call<{ host: { name: string }; coordinatorRole: string | null; members: HubMember[] }>(member, hostNodeId, 'roster', { teamId: team.id });
-    return { id: team.id, clusterId: member.clusterId, clusterName, hostNodeId, hostName: roster.host.name || hostName, local: hostNodeId === (await getClusterNode()).id, coordinatorRole: roster.coordinatorRole, members: roster.members };
+    return { id: team.id, projectId: team.projectId, clusterId: member.clusterId, clusterName, hostNodeId, hostName: roster.host.name || hostName, local: hostNodeId === (await getClusterNode()).id, coordinatorRole: roster.coordinatorRole, members: roster.members };
   }));
 }
 
