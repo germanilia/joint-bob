@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.303.0 — 2026-11-14
+
+- A relay's Guardian rules that use Jev are now checked through the relay: its machines send the check to the relay, which asks Jev with its own TypeSafe key, so members need no key of their own and the key never leaves the relay.
+- Guardian's own Jev checks now use the TypeSafe key chosen in Settings → System AI instead of a project secret.
+- A machine no longer warns that Guardian is off while a relay it uses imposes the production rule, and its team assistants may run production-capable work then.
+
 ## 2.302.0 — 2026-11-14
 
 - Ask Bob on Bob's page is now a round icon button, with the number of things waiting on its corner.
