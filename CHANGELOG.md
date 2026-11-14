@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.301.0 — 2026-11-14
+
+- Live agents are an inbox: a narrower list on the left and a wider panel beside it with Summary, Chat and Steps as tabs. What waits for you is part of the summary, and the tool and shell calls have their own tab. Open ↗ and + New conversation sit in one row and look different.
+- Search finds conversations by words, typos and the start of a word (*makr* finds *mark*), over titles, projects, agents, folders and what was said, past conversations too. Inbox, Past, All, starred and folders narrow the list, and it groups by project or by date.
+- Pin, star, put in a folder or delete a conversation from its row or the panel. Pinned and starred conversations are kept: no automatic cleanup deletes them. Delete is immediate with an Undo, and a kept conversation asks twice.
+- System messages come first in the list, in colour, each saying what it means and how to fix it: Claude Code not signed in, no key for the decision model, Guardian off, a machine of yours offline. They go away by themselves once fixed and cannot be dismissed.
+- Ask Bob can be dragged anywhere, and Bob's chat opens as a window that floats over the page; move it by its head and resize it by its corner.
+
 ## 2.300.1 — 2026-11-14
 
 - Cancelling a team request with `/cancel` or Bob's Stop it now stops the turn that is running; it kept going before.
