@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.301.1 — 2026-11-14
+
+- The inbox, search, system messages and floating Ask Bob of 2.301.0 are released with this version: 2.301.0 was not published, because two checks of the page's source (no markup built from strings, a short list of browser-stored settings) failed on it. The inbox now draws its icons and marked words from nodes, and its width, grouping and the places of Ask Bob and Bob's window are on the list of settings the browser keeps.
+
 ## 2.301.0 — 2026-11-14
 
 - Live agents are an inbox: a narrower list on the left and a wider panel beside it with Summary, Chat and Steps as tabs. What waits for you is part of the summary, and the tool and shell calls have their own tab. Open ↗ and + New conversation sit in one row and look different.
