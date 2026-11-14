@@ -63,3 +63,27 @@ test('a cluster member steers a team hosted on another machine: sees it, sends i
     assert.equal(own.body.teams.find((entry: any) => entry.id === team.id)?.local, true);
   } finally { await stop(); }
 });
+
+// A request that is running on the host is stopped from the member's machine: the turn is told to stop and nothing comes back.
+test('a running team request is stopped from another machine, and its late answer is dropped', { timeout: 180_000 }, async () => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const { member, memberAuth, team, requests, hostOutput, stop } = await startTeamHubFixture({ answer: 'LATE_ANSWER', hold: () => held });
+  try {
+    const sent = await api<any>(member, memberAuth, 'POST', `/team-hub/${team.id}/assign`, { role: 'qa', message: 'Take your time' });
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    for (let i = 0; i < 300 && requests.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(requests.length, 1, 'the member is working: its model call is open');
+    const running = (await api<any>(member, memberAuth, 'GET', `/team-hub/${team.id}/requests`)).body.requests[0];
+    assert.equal(running.state, 'running');
+    const cancelled = await api<any>(member, memberAuth, 'POST', `/team-hub/${team.id}/cancel`, { ref: null });
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+    assert.equal(cancelled.body.request.state, 'cancelled');
+    assert.equal(cancelled.body.stopFailures, 0, `the running turn was told to stop: ${hostOutput().split('\n').filter(line => /Could not stop/.test(line)).join(' | ')}`);
+    release();
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const after = (await api<any>(member, memberAuth, 'GET', `/team-hub/${team.id}/requests`)).body.requests[0];
+    assert.equal(after.state, 'cancelled', 'a late answer does not bring a cancelled request back');
+    assert.equal(after.assignments[0].result, null);
+  } finally { release(); await stop(); }
+});

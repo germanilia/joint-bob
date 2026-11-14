@@ -518,20 +518,25 @@ function pickRequest(db:DatabaseSync,teamId:string,views:TeamRequestView[],ref:s
 export async function cancelTeamRequest(member:TeamMember,ref:string|null,chatId?:string):Promise<{request:TeamRequestView;stopFailures:number}> {
  await recheckTeamActor(member);await requireTeamExecution(member.teamId,member.accountId);
  const db=await assignmentDatabase(),request=pickRequest(db,member.teamId,requestViews(db,member.teamId),ref,['running','queued','needs_you','stopped'],chatId);
- const running:TeamAssignment[]=[];
+ // Where a running turn is must be read while it is still a live assignment: a cancelled one no longer resolves.
+ const running:{role:TeamRole;turn:{projectId:string;engine:string;sessionId:string}|null}[]=[];
+ for(const a of assignments(db,member.teamId).filter(a=>a.rootId===request.id&&a.state==='running')){
+  try{const {team,destination}=await teamAssignmentDestination(a);running.push({role:a.role,turn:{projectId:team.projectId,engine:destination.engine,sessionId:destination.sessionId}});}
+  catch{running.push({role:a.role,turn:null});}
+ }
  transaction(db,()=>{
   for(const a of assignments(db,member.teamId).filter(a=>a.rootId===request.id&&!['completed','cancelled'].includes(a.state))){
-   if(a.state==='running')running.push({...a});
    a.state='cancelled';saveAssignment(db,a);
    const w=work(db,a.id);if(w&&w.phase!=='done'){w.phase='held';w.reason='cancelled_by_human';saveWork(db,w);}
   }
  });
  let stopFailures=0;
- for(const a of running){
+ for(const {role,turn} of running){
   try{
-   const {team,destination}=await teamAssignmentDestination(a),{stopConversationTurn}=await import('../server/conversation-prompt.js');
-   await stopConversationTurn({projectId:team.projectId,engine:destination.engine,sessionId:destination.sessionId,label:'Team cancel'});
-  }catch{stopFailures++;}
+   if(!turn)throw new Error('its conversation could not be found');
+   const {stopConversationTurn}=await import('../server/conversation-prompt.js');
+   await stopConversationTurn({...turn,label:'Team cancel'});
+  }catch(error){stopFailures++;console.warn(`Could not stop the running turn of ${role}: ${error instanceof Error?error.message:error}`);}
  }
  wakeTeamWork(member.teamId);
  return {request:requestViews(db,member.teamId).find(view=>view.id===request.id)!,stopFailures};

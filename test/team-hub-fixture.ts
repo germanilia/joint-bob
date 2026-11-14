@@ -15,12 +15,13 @@ import { PRODUCTION_RULE } from '../src/guardian/production-rule.js';
  * Two real nodes in one cluster: a host that runs a team of two members (lead and qa, answering through a synthetic provider)
  * and a member's own machine, which reaches the host through the host's relay. The team's answer is `answer`.
  */
-export async function startTeamHubFixture(options: { answer?: string; memberEnv?: Record<string, string> } = {}) {
+export async function startTeamHubFixture(options: { answer?: string; memberEnv?: Record<string, string>; hold?: () => Promise<void> } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'team-hub-'));
   const requests: any[] = [];
   const provider: Server = createServer(async (req, res) => {
     let raw = ''; for await (const part of req) raw += part;
     requests.push(JSON.parse(raw || '{}'));
+    await options.hold?.();
     const chunk = (delta: unknown, finish: string | null) => `data: ${JSON.stringify({ id: 'hub', object: 'chat.completion.chunk', created: 0, model: 'dev-model', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     res.end(chunk({ role: 'assistant', content: options.answer ?? 'HUB_TEAM_ANSWER' }, null) + chunk({}, 'stop') + 'data: [DONE]\n\n');
@@ -37,7 +38,8 @@ export async function startTeamHubFixture(options: { answer?: string; memberEnv?
     const hostEnv = await seedDevEnvironment(path.join(root, 'host'), 1), host = hostEnv.nodes[0];
     const memberEnv = await seedDevEnvironment(path.join(root, 'member'), 1, { username: 'secondhuman' }), member = memberEnv.nodes[0];
     await writeFile(path.join(hostEnv.home, '.pi', 'models.json'), JSON.stringify({ providers: { 'dev-environment': { baseUrl: `${url}/v1`, api: 'openai-completions', apiKey: 'synthetic', models: [{ id: 'dev-model' }] } } }));
-    children.push(await startDevNode(hostEnv, host)); children.push(await startDevNode(memberEnv, member, options.memberEnv));
+    const hostNode = await startDevNode(hostEnv, host); children.push(hostNode); children.push(await startDevNode(memberEnv, member, options.memberEnv));
+    let hostOutput = ''; for (const stream of [hostNode.stdout!, hostNode.stderr!]) stream.on('data', chunk => { hostOutput += chunk; });
     const hostAuth = await signIn(hostEnv, host), memberAuth = await signIn(memberEnv, member);
     // The host serves a relay the member machine uses, then the member joins the host's cluster.
     assert.equal((await fetch(`${host.url}/api/relay/serving`, { method: 'PUT', headers: { Cookie: hostAuth.cookie, 'x-csrf-token': hostAuth.csrfToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, origin: `http://localhost:${host.port}`, environment: 'test', requestsEnabled: true, maxMachines: 10, monthlyCapGb: 0, alertTopic: '' }) })).status, 204);
@@ -59,6 +61,6 @@ export async function startTeamHubFixture(options: { answer?: string; memberEnv?
     const { addNodeMembers } = await import('./team-members-fixture.js');
     await addNodeMembers((method, route, body) => api<any>(host, hostAuth, method as any, route, body), host.projects.map((p: any) => p.id), team.id,
       [{ role: 'lead', instructions: 'The coordinator' }, { role: 'qa', instructions: 'Checks things' }], 'lead', { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' });
-    return { root, host, member, hostEnv, memberEnv, hostAuth, memberAuth, team, clusterId, requests, stop };
+    return { root, host, member, hostEnv, memberEnv, hostAuth, memberAuth, team, clusterId, requests, hostOutput: () => hostOutput, stop };
   } catch (error) { await stop(); throw error; }
 }
