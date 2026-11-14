@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 2.302.0 — 2026-11-14
 
+- Ask Bob on Bob's page is now a round icon button, with the number of things waiting on its corner.
+- Under a conversation's title in Bob's list you can open its Terminal, Git, Folders and Story with one click.
 - Whether a message is about an assistant team is now a property of Bob's decision (the decision model is told the teams of your clusters and their roles), instead of matching the word "team" or a role name: "have qa check the login" is recognised, "the team lunch" is not.
 - What Bob promised to bring back from a team is kept on disk and survives a restart of your machine or of the team's host: the host tells your machine when a request ends, a machine that was away is told on return, and nothing polls.
 
