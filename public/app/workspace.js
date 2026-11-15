@@ -77,27 +77,30 @@ function applyPlacements() {
   }
 }
 
-/* ---------- large text: the details float when the conversation would get too narrow ---------- */
+/* ---------- large text: the details are put away when the conversation would get too narrow ---------- */
 
-/** Below this many of the conversation's own (zoomed) pixels beside the details, the details float over the thread. */
+/** Below this many of the conversation's own (zoomed) pixels beside the details, the details are put away. */
 const READABLE_MIDDLE = 420;
 const chatPanel = byId("chatPanel");
-function syncDetailsFloat(resized = false) {
+let lastPreferredWidth = 0;
+function syncDetailsFloat() {
   const zoom = parseFloat(getComputedStyle(chatPanel).zoom) || 1;
   const activityZoom = parseFloat(getComputedStyle(elements.activityPanel).zoom) || 1;
   const preferred = parseFloat(getComputedStyle(elements.activityPanel).getPropertyValue("--activity-preferred-width")) || 360;
+  // A person dragging the details wider changes this width; they keep the details in sight, so those float.
+  const dragged = lastPreferredWidth !== 0 && preferred !== lastPreferredWidth;
+  lastPreferredWidth = preferred;
   // The docked column's width on screen (styles cap it at 36% of the window).
   const details = Math.min(innerWidth * 0.36, preferred * zoom * activityZoom);
   const middle = (chatPanel.getBoundingClientRect().width - details) / zoom;
-  const two = body.classList.contains("ws-column-projects") && !body.classList.contains("ws-picker");
   const float = desktop.matches && innerWidth > 1023 && chatPanel.getBoundingClientRect().width > 0 && middle < READABLE_MIDDLE;
   const floated = body.classList.contains("ws-details-float");
   body.classList.toggle("ws-details-float", float);
-  // Beside the two columns of Projects the details give way first: when they stop fitting they are put away, not laid
-  // over the conversation. Their button in the header brings them back, floating, until they fit again.
+  // When they stop fitting they are put away, not laid over the conversation. Their button in the header brings
+  // them back, floating, until they fit again.
   if (!float) body.classList.remove("ws-details-tucked");
-  // (A person dragging the details wider, or choosing larger text, keeps them in sight: they float, as before.)
-  else if (!floated && two && resized !== true) body.classList.add("ws-details-tucked");
+  // Larger text puts them away too, in Inbox as well: laid over the thread they would cover half the conversation.
+  else if (!floated && !dragged) body.classList.add("ws-details-tucked");
 }
 elements.activityToggleButton.addEventListener("click", (event) => {
   if (!body.classList.contains("ws-details-tucked")) return;
@@ -106,7 +109,7 @@ elements.activityToggleButton.addEventListener("click", (event) => {
   if (!elements.activityPanel.hidden) { event.stopImmediatePropagation(); event.preventDefault(); }
 }, true);
 new ResizeObserver(() => syncDetailsFloat()).observe(chatPanel);
-new MutationObserver(() => syncDetailsFloat(true)).observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+new MutationObserver(() => { syncDetailsFloat(); syncRail(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
 
 /* ---------- the column's mode: Inbox or Projects ---------- */
 
@@ -181,8 +184,11 @@ let railOpened = false;
 function syncRail() {
   const two = desktop.matches && column === "projects" && Boolean(state.activeProjectId);
   // The two columns' widths, as the styles set them (--ws-side-width, --ws-list-width).
-  const side = innerWidth < 1024 ? 232 : Math.min(288, Math.max(244, innerWidth * 0.19));
-  const list = body.classList.contains("chats-collapsed") ? 44 : Math.min(336, Math.max(288, innerWidth * 0.2));
+  // Larger text widens them (styles: --ws-col-side, --ws-col-list), up to a quarter of the window.
+  const zoomOf = (name) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 1;
+  const wide = (width, zoom) => innerWidth < 1024 ? width : Math.max(width, Math.min(width * zoom, innerWidth * 0.25));
+  const side = innerWidth < 1024 ? 232 : wide(Math.min(288, Math.max(244, innerWidth * 0.19)), zoomOf("--ui-zoom-projects"));
+  const list = body.classList.contains("chats-collapsed") ? 44 : wide(Math.min(336, Math.max(288, innerWidth * 0.2)), zoomOf("--ui-zoom-conversations"));
   const narrow = two && innerWidth - side - list - 3 * 14 < READABLE_WITH_LISTS;
   if (!narrow) railOpened = false;
   const auto = narrow && !railOpened && !body.classList.contains("projects-collapsed");

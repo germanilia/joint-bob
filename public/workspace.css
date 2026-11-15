@@ -27,7 +27,11 @@
   /* Columns: the left column (places, then the groups or the projects), in Projects the chosen project's
      conversations, the middle, and the Browser beside it on a wide window. */
   body:not(.focus-ui) .shell {
-    --ws-col-side: var(--ws-side-width); --ws-col-list: var(--ws-list-width);
+    /* Larger text widens the columns with it (a column's contents lay out in its width divided by the zoom, so a fixed
+       column would truncate every label), but never past a quarter of the window and never below the normal width,
+       so the conversation keeps its room. */
+    --ws-col-side: max(var(--ws-side-width), min(calc(var(--ws-side-width) * var(--ui-zoom-projects, 1)), 25vw));
+    --ws-col-list: max(var(--ws-list-width), min(calc(var(--ws-list-width) * var(--ui-zoom-conversations, 1)), 25vw));
     display: grid;
     grid-template-columns: var(--ws-col-side) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) auto;
