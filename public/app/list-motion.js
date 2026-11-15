@@ -131,13 +131,27 @@ function leave(rows, old, kind) {
   animate(ghost, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateX(-24px)" }], 220, { easing: EASE_IN, fill: "forwards" }).finished.then(remove, remove);
 }
 
-const STAMP = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m7.5 12.5 3 3 6-7"/></svg>';
+const SVG = "http://www.w3.org/2000/svg";
+
+/** The check drawn in a circle, built as SVG nodes. */
+function stampIcon() {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  const circle = document.createElementNS(SVG, "circle");
+  for (const [name, value] of [["cx", "12"], ["cy", "12"], ["r", "10"]]) circle.setAttribute(name, value);
+  const tick = document.createElementNS(SVG, "path");
+  tick.setAttribute("d", "m7.5 12.5 3 3 6-7");
+  svg.append(circle, tick);
+  return svg;
+}
 
 /** A check draws itself over the row, then the row slides away; the Past count gets the "+1". */
 async function done(ghost) {
   const stamp = document.createElement("div");
   stamp.className = "control-list-stamp";
-  stamp.innerHTML = `${STAMP}<span>Marked done</span>`;
+  const label = document.createElement("span");
+  label.textContent = "Marked done";
+  stamp.append(stampIcon(), label);
   ghost.append(stamp);
   animate(stamp, [{ opacity: 0 }, { opacity: 1 }], 180);
   animate(stamp.querySelector("circle"), [{ strokeDashoffset: 63 }, { strokeDashoffset: 0 }], 340, { fill: "forwards" });
