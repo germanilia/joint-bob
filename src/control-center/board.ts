@@ -43,6 +43,8 @@ export interface BoardCard {
   reviewCheck: BoardReviewCheck | null;
   /** Set while it is put aside: when it comes back on its own (null: once something new happens) and since when. */
   snooze: { until: string | null; snoozedAt: string } | null;
+  /** It runs on another person's machine: the Inbox lists it so nothing is missing, read-only (nothing here can act on it). */
+  othersMachine?: boolean;
 }
 
 export interface BoardProject {

@@ -90,15 +90,17 @@ after(async () => {
 const textOf = (testid: string, text: string) => page.waitForFunction(([id, expected]) => document.querySelector(`[data-testid="${id}"]`)?.textContent === expected, [testid, text]);
 const rows = (group: string) => page.locator(`[data-testid="workspace-group-${group}"] [data-testid="workspace-group-row"]`);
 
-test("Home shows the filters, with the latest 10 conversations of each project by default", async () => {
+test("Home shows the filters, with the latest 10 Earlier conversations of each project by default", async () => {
   await page.getByTestId("workspace-group-count-review").filter({ hasText: /^[1-9]\d*( of \d+)?$/ }).waitFor();
   await page.getByTestId("inboxHome-tools").waitFor();
   assert.equal(await page.getByTestId("inboxHome-range").inputValue(), "latest-10");
   assert.equal(await page.getByTestId("inboxHome-projects-trigger").innerText(), "All projects");
-  // No project has more than 10 rows on the board and in Earlier together under the default.
+  assert.equal(await page.getByTestId("inboxHome-sources-trigger").innerText(), "All sources");
+  assert.equal(await page.getByTestId("inboxHome-statuses-trigger").innerText(), "All statuses");
+  // Running and To review list every conversation; Earlier has at most 10 of each project under the default.
   const perProject = await page.evaluate(() => {
     const counts = new Map<string, number>();
-    for (const group of ["running", "review", "earlier"]) {
+    for (const group of ["earlier"]) {
       const names = [...document.querySelectorAll(`[data-testid="workspace-group-${group}"] [data-testid="workspace-group-row"]`)].map((row) => (row as HTMLElement).title.split(" · ").at(-1)!);
       const own = new Map<string, number>();
       for (const name of names) own.set(name, (own.get(name) ?? 0) + 1);
@@ -129,6 +131,32 @@ test("the project multi-select narrows every group to the chosen projects", asyn
   await page.getByTestId("inboxHome-projects-trigger").tap();
   await page.getByTestId("inboxHome-projects-clear").tap();
   await page.waitForFunction(() => document.querySelector('[data-testid="inboxHome-projects-trigger"]')!.textContent === "All projects");
+});
+
+test("the status and source filters narrow the groups", async () => {
+  await page.getByTestId("inboxHome-statuses-trigger").tap();
+  const statuses = page.getByTestId("inboxHome-statuses-options").locator("[role=option]");
+  await statuses.filter({ hasText: "To review" }).tap();
+  await textOf("inboxHome-statuses-trigger", "To review");
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="workspace-group-review"] [data-testid="workspace-group-row"]').length > 0
+    && document.querySelectorAll('[data-testid="workspace-group-earlier"] [data-testid="workspace-group-row"]').length === 0);
+  await page.getByTestId("inboxHome-statuses-trigger").tap();
+  await page.getByTestId("inboxHome-statuses-clear").tap();
+  await page.keyboard.press("Escape");
+  // Every conversation of this one-machine node runs here.
+  await page.getByTestId("inboxHome-sources-trigger").tap();
+  const sources = page.getByTestId("inboxHome-sources-options").locator("[role=option]");
+  await sources.first().waitFor();
+  assert.deepEqual((await sources.allInnerTexts()).map((text) => text.split("\n")[0].trim()), ["This machine"]);
+  await sources.first().tap();
+  await textOf("inboxHome-sources-trigger", "This machine");
+  await page.keyboard.press("Escape");
+  assert.ok(await rows("review").count() > 0, "this machine's conversations stay listed");
+  await page.getByTestId("inboxHome-sources-trigger").tap();
+  await page.getByTestId("inboxHome-sources-clear").tap();
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector('[data-testid="inboxHome-sources-trigger"]')!.textContent === "All sources");
 });
 
 test("Select turns the rows into a checklist that does not open them, and Cancel puts them back", async () => {

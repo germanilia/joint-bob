@@ -1,26 +1,30 @@
 // The Inbox's filters and multi-select, for the phone's Home and the "Show all" page (workspace.js draws the rows).
 //   Projects : a multi-select of the projects that have conversations; nothing chosen means every project.
-//   Show     : by default the latest 10 conversations of each project; the person can widen it (25 per project, the last day,
-//              week or month, everything). Needs you is never cut by date: what waits for the person must stay in sight.
+//   Sources  : the machines the conversations run on (this machine, a twin, another person's machine); nothing chosen means all.
+//   Status   : Needs you, Running, To review, Earlier; nothing chosen means all.
+//   Show     : how many Earlier conversations: by default the latest 10 of each project; the person can widen it (25 per project,
+//              the last day, week or month, everything). Needs you, Running and To review are never cut: they are live and every
+//              one of them stays in sight.
 //   Select   : turns the rows into a checklist (workspace.js `cardRow`); the bar then marks the chosen ones as read or deletes them.
 //              Mark read applies to the ones To review. Delete skips pinned and starred conversations (nothing may remove them
-//              by accident) and running ones, and says so.
+//              by accident), running ones and other people's, and says so.
 // One state, any number of toolbars: a change in one is shown in the others.
 
 import { api } from "./api.js";
 import { isKept } from "./control-marks.js";
 import { createMultiSelect } from "./multi-select.js";
 import { confirmAction, toast } from "./shell.js";
+import { state } from "./state.js";
 
 const RANGE_KEY = "joint-bob-inbox-range";
 const DAY = 86_400_000;
 const RANGES = [
-  { id: "latest-10", label: "Latest 10 per project", latest: 10 },
-  { id: "latest-25", label: "Latest 25 per project", latest: 25 },
-  { id: "day", label: "Last 24 hours", within: DAY },
-  { id: "week", label: "Last 7 days", within: 7 * DAY },
-  { id: "month", label: "Last 30 days", within: 30 * DAY },
-  { id: "all", label: "Everything" },
+  { id: "latest-10", label: "Earlier: latest 10 per project", latest: 10 },
+  { id: "latest-25", label: "Earlier: latest 25 per project", latest: 25 },
+  { id: "day", label: "Earlier: last 24 hours", within: DAY },
+  { id: "week", label: "Earlier: last 7 days", within: 7 * DAY },
+  { id: "month", label: "Earlier: last 30 days", within: 30 * DAY },
+  { id: "all", label: "Earlier: everything" },
 ];
 
 const keyOf = (card) => `${card.projectId}:${card.conversationId}`;
@@ -30,7 +34,25 @@ function storedRange() {
   try { return RANGES.find((range) => range.id === localStorage.getItem(RANGE_KEY)) ?? RANGES[0]; } catch { return RANGES[0]; }
 }
 
+const STATUSES = [
+  { value: "needs-you", label: "Needs you" },
+  { value: "running", label: "Running" },
+  { value: "review", label: "To review" },
+  { value: "earlier", label: "Earlier" },
+];
+
+/** The machine a conversation runs on: "local" for this one, else its node id. */
+const sourceOf = (card) => (card.executionNodeId && card.executionNodeId !== state.localNodeId ? card.executionNodeId : "local");
+/** A machine's name, as the clusters it is a member of name it. */
+export function sourceName(card) {
+  const source = sourceOf(card);
+  if (source === "local") return "This machine";
+  return state.clusters.flatMap((cluster) => cluster.members).find((member) => member.nodeId === source)?.name || source.slice(0, 8);
+}
+
 let projects = new Set();
+let sources = new Set();
+let statuses = new Set();
 let range = storedRange();
 let selecting = false;
 const selected = new Set();
@@ -43,9 +65,9 @@ const emitView = () => { for (const listener of viewListeners) listener(); selec
 const selectionChanged = () => { for (const listener of selectionListeners) listener(); };
 
 /** What the drawn rows depend on, to tell whether they must be drawn again. */
-export const inboxSignature = () => JSON.stringify([[...projects], range.id, selecting, [...selected]]);
+export const inboxSignature = () => JSON.stringify([[...projects], [...sources], [...statuses], range.id, selecting, [...selected]]);
 /** The same without the chosen rows: a list keeps its place while rows are chosen, and starts at the top for other filters. */
-export const inboxFilterKey = () => JSON.stringify([[...projects], range.id, selecting]);
+export const inboxFilterKey = () => JSON.stringify([[...projects], [...sources], [...statuses], range.id, selecting]);
 export const isSelecting = () => selecting;
 export const isSelected = (card) => selected.has(keyOf(card));
 
@@ -55,10 +77,11 @@ export function toggleSelected(card) {
   selectionChanged();
 }
 
-/** Applies the project choice, and the Show choice except to Needs you. */
+/** Applies the status, project and source choices, and the Show choice to Earlier. */
 export function filterInbox(groupId, cards) {
-  const inProjects = projects.size ? cards.filter((card) => projects.has(card.projectId)) : cards;
-  if (groupId === "needs-you") return inProjects;
+  if (statuses.size && !statuses.has(groupId)) return [];
+  const inProjects = cards.filter((card) => (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card))));
+  if (groupId !== "earlier") return inProjects;
   if (range.within) {
     const since = Date.now() - range.within;
     return inProjects.filter((card) => Date.parse(card.updatedAt) >= since);
@@ -92,12 +115,12 @@ async function markRead(cards, afterChange) {
 }
 
 async function deleteChosen(cards, afterChange) {
-  const targets = cards.filter((card) => !isKept(card) && card.column !== "running");
+  const targets = cards.filter((card) => !isKept(card) && card.column !== "running" && !card.othersMachine);
   const skipped = cards.length - targets.length;
-  if (!targets.length) { toast("Pinned, starred and running conversations are not deleted here."); return; }
+  if (!targets.length) { toast("Pinned, starred, running and other people's conversations are not deleted here."); return; }
   const confirmed = await confirmAction({
     title: `Delete ${plural(targets.length, "conversation")}?`,
-    message: `This cannot be undone.${skipped ? ` ${plural(skipped, "pinned, starred or running conversation")} will be left alone.` : ""}`,
+    message: `This cannot be undone.${skipped ? ` ${plural(skipped, "pinned, starred, running or other person's conversation")} will be left alone.` : ""}`,
     confirmLabel: "Delete", destructive: true,
   });
   if (!confirmed) return;
@@ -131,6 +154,11 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) 
 
   const projectSelect = createMultiSelect({ id: `${id}Projects`, testid: `${id}-projects`, label: "Projects", prompt: "All projects", placeholder: "Search projects" });
   projectSelect.onChange((values) => { projects = values; emitView(); });
+  const sourceSelect = createMultiSelect({ id: `${id}Sources`, testid: `${id}-sources`, label: "Sources", prompt: "All sources", placeholder: "Search machines" });
+  sourceSelect.onChange((values) => { sources = values; emitView(); });
+  const statusSelect = createMultiSelect({ id: `${id}Statuses`, testid: `${id}-statuses`, label: "Status", prompt: "All statuses", placeholder: "Search statuses" });
+  statusSelect.setOptions(STATUSES);
+  statusSelect.onChange((values) => { statuses = values; emitView(); });
 
   const rangeSelect = document.createElement("select");
   rangeSelect.className = "inbox-range";
@@ -151,7 +179,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) 
 
   const filters = document.createElement("div");
   filters.className = "inbox-tools-filters";
-  filters.append(projectSelect.root, rangeSelect, selectButton);
+  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, rangeSelect, selectButton);
 
   const count = document.createElement("span");
   count.className = "inbox-bar-count";
@@ -179,12 +207,19 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) 
   root.append(filters, bar);
 
   let projectsDrawn = "";
+  let sourcesDrawn = "";
   function update() {
     const names = new Map(allCards().map((card) => [card.projectId, card.projectName]));
     const options = [...names].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
     const drawing = JSON.stringify(options);
     if (drawing !== projectsDrawn) { projectsDrawn = drawing; projectSelect.setOptions(options); }
     projectSelect.setValues(projects);
+    const machines = new Map(allCards().map((card) => [sourceOf(card), sourceName(card)]));
+    const sourceOptions = [...machines].map(([value, label]) => ({ value, label })).sort((a, b) => (a.value === "local" ? -1 : b.value === "local" ? 1 : a.label.localeCompare(b.label)));
+    const sourceDrawing = JSON.stringify(sourceOptions);
+    if (sourceDrawing !== sourcesDrawn) { sourcesDrawn = sourceDrawing; sourceSelect.setOptions(sourceOptions); }
+    sourceSelect.setValues(sources);
+    statusSelect.setValues(statuses);
     rangeSelect.value = range.id;
     selectButton.textContent = selecting ? "Cancel" : "Select";
     selectButton.setAttribute("aria-pressed", String(selecting));
