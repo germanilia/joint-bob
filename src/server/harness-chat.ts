@@ -424,7 +424,9 @@ export async function promptOnSubscriptionPool(session: HarnessSession, pool: Tu
           await session.preflight();
         }
         // A Claude member limits each model on its own: one that is rate-limited before answering tries the member's next model.
-        const ladder = candidate.provider === "claude" ? memberModelLadder(candidate.provider, chosen, await listHarnessModels(pool.harnessId)) : [chosen.modelId];
+        const ladder = candidate.provider === "claude"
+          ? memberModelLadder(candidate.provider, chosen, await listHarnessModels(pool.harnessId), pool.fallbackModels[candidate.provider])
+          : [chosen.modelId];
         // Only a member with another model to try needs a point to roll back to before its first answer.
         const checkpoint = ladder.length > 1 ? await session.checkpointPoolAttempt!() : undefined;
         await runOnModels(ladder, async (modelId) => {

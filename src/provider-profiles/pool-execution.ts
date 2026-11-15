@@ -110,15 +110,37 @@ export async function runPoolAttempts<T, C extends { provider: ProfileProvider }
   throw new Error("Subscription pool attempts ended unexpectedly");
 }
 
+/** Claude families, strongest first. Haiku is left out: a turn reaches it only when someone picks it. */
+const CLAUDE_LADDER_FAMILIES = ["fable", "opus", "sonnet"];
+
+/** Strongest first: by family, then the newer version ("claude-fable-5-2" before "claude-fable-5"; a date suffix is no version). */
+function claudeLadderOrder(left: string, right: string): number {
+  const rank = (id: string) => {
+    const name = id.replace(/\[.*\]$/, "");
+    const family = CLAUDE_LADDER_FAMILIES.findIndex((entry) => name.includes(entry));
+    const version = /(\d+)(?:-(\d{1,2}))?(?=\D|$)/.exec(name);
+    return { family: family < 0 ? CLAUDE_LADDER_FAMILIES.length : family, version: version ? Number(version[1]) + Number(version[2] ?? 0) / 100 : 0 };
+  };
+  const a = rank(left);
+  const b = rank(right);
+  return a.family - b.family || b.version - a.version;
+}
+
 /**
  * The models one pool member may answer with, in the order they are tried when one is rate-limited before it answers: the
- * chosen one first, then the member's other models. Only Claude limits each model on its own, so only a Claude member has more
- * than one; another provider's limit is the account's, and the next member is the way on.
+ * chosen one, the pool's fallback model for the member, then the member's other models strongest first. Haiku is never added:
+ * a turn that has run out of stronger models goes on to the next member instead. Only Claude limits each model on its own, so
+ * only a Claude member has more than one; another provider's limit is the account's, and the next member is the way on.
+ * fix: a Fable turn went Fable 5 → 5.1 → 5.2 → Haiku 4.5 in list order, past Opus, Sonnet and the pool's fallback Opus 5.5
+ * (homeserver, 2026-11-15).
  */
-export function memberModelLadder(candidate: ProfileProvider, first: { provider: string; modelId: string }, models: HarnessModel[], limit = 4): string[] {
+export function memberModelLadder(candidate: ProfileProvider, first: { provider: string; modelId: string }, models: HarnessModel[],
+  fallbackModel?: string, limit = 4): string[] {
   if (candidate !== "claude") return [first.modelId];
-  const others = models.filter((model) => (model.provider === "anthropic" || model.provider === "claude") && model.id !== first.modelId).map((model) => model.id);
-  return [first.modelId, ...others].slice(0, limit);
+  const claude = models.filter((model) => (model.provider === "anthropic" || model.provider === "claude") && model.id !== first.modelId);
+  const fallback = fallbackModel ? claude.find((model) => model.id === fallbackModel || `${model.provider}/${model.id}` === fallbackModel)?.id : undefined;
+  const others = claude.map((model) => model.id).filter((id) => id !== fallback && !/haiku/i.test(id)).sort(claudeLadderOrder);
+  return [first.modelId, ...(fallback ? [fallback] : []), ...others].slice(0, limit);
 }
 
 /**

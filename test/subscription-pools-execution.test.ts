@@ -166,8 +166,22 @@ test("a Claude member tries its other models when one is rate-limited; other pro
     { provider: "openai-codex", id: "gpt-6-sol", label: "Sol", thinkingLevels: ["low"] },
   ] as any;
   assert.deepEqual(memberModelLadder("claude", { provider: "anthropic", modelId: "claude-fable-5" }, models), ["claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5"]);
-  assert.deepEqual(memberModelLadder("claude", { provider: "anthropic", modelId: "claude-opus-5-5" }, models, 2), ["claude-opus-5-5", "claude-fable-5"]);
+  assert.deepEqual(memberModelLadder("claude", { provider: "anthropic", modelId: "claude-opus-5-5" }, models, undefined, 2), ["claude-opus-5-5", "claude-fable-5"]);
   assert.deepEqual(memberModelLadder("openai-codex", { provider: "openai-codex", modelId: "gpt-6-sol" }, models), ["gpt-6-sol"], "an account-wide limit: the next member is the way on");
+
+  // The homeserver's catalog in list order once went Fable 5 → 5.1 → 5.2 → Haiku 4.5, past Opus and the pool's fallback.
+  const catalog = ["claude-fable-5", "claude-fable-5-1", "claude-fable-5-2", "claude-haiku-4-5", "claude-opus-4-1", "claude-opus-5-5", "claude-sonnet-4-20250514", "claude-sonnet-5-5"]
+    .map((id) => ({ provider: "anthropic", id, label: id, thinkingLevels: ["low"] })) as any;
+  const fable = { provider: "anthropic", modelId: "claude-fable-5" };
+  assert.deepEqual(memberModelLadder("claude", fable, catalog, "claude-opus-5-5"), ["claude-fable-5", "claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1"],
+    "the pool's fallback first, then the strongest of the rest");
+  assert.deepEqual(memberModelLadder("claude", fable, catalog, undefined, 10),
+    ["claude-fable-5", "claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-4-1", "claude-sonnet-5-5", "claude-sonnet-4-20250514"], "never Haiku on its own");
+  assert.deepEqual(memberModelLadder("claude", fable, catalog, "claude-haiku-4-5", 10).slice(0, 2), ["claude-fable-5", "claude-haiku-4-5"], "Haiku when the pool names it");
+  assert.deepEqual(memberModelLadder("claude", { provider: "anthropic", modelId: "claude-haiku-4-5" }, catalog, undefined, 2), ["claude-haiku-4-5", "claude-fable-5-2"], "a picked Haiku stays first");
+  assert.deepEqual(memberModelLadder("claude", fable, catalog, "claude-gone-9", 2), ["claude-fable-5", "claude-fable-5-2"], "a fallback the catalog lacks is skipped");
+  const aliases = ["default", "opus", "fable", "sonnet", "haiku"].map((id) => ({ provider: "claude", id, label: id, thinkingLevels: ["low"] })) as any;
+  assert.deepEqual(memberModelLadder("claude", { provider: "claude", modelId: "fable" }, aliases, "sonnet"), ["fable", "sonnet", "opus", "default"], "the Claude harness's aliases");
 
   const rateLimited = Object.assign(new Error("429 rate_limit_error: This request would exceed your account's rate limit"), { status: 429 });
   const tried: string[] = []; let restores = 0;
