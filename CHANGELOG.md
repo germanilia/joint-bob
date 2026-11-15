@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.308.0 — 2026-11-15
+
+- In the control center, the head of the panel on the right of the list now has one group at the end of its line: Review, Done and a ⋯ menu. The row of small pin, star, folder and delete icons is gone; they are labelled items in the ⋯ menu, with Delete last.
+
 ## 2.307.0 — 2026-11-15
 
 - A cluster manager can set one policy for a cluster in Settings → Cluster → Policy & pools: block skills by name, set per-agent resource settings, and set Guardian and conversation-summary rules. Members see it read-only and cannot override it.
