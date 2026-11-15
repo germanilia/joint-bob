@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.310.2 — 2026-11-15
+
+- Only the coordinator listens to ordinary team messages. A greeting or request to Bob or the team is picked up from context, while a message to another agent by name ("qa, test the checkout") is left alone: those agents are reached with `/role` or `@bot`.
+
 ## 2.310.1 — 2026-11-15
 
 - The team bot now decides from context whether a Telegram message is meant for the team. The decision model is told the coordinator, the member roles and the bot name, so "hi bob" is answered while talk between people stays silent, with no need for `@bot` or a `/role` command.
