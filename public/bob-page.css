@@ -124,12 +124,14 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
 /* On Bob's page the app's left column goes: the page has the whole width. Exit (or Esc twice) brings the column back. */
 @media (min-width: 1024px) {
   /* !important: the column's own layouts (workspace.css) are many and more specific, and this one must win them all. */
-  body.bob-desk.view-control .shell { grid-template-columns: minmax(0, 1fr) !important; grid-template-areas: "main" "main" "main" !important; padding-left: var(--ws-gap, 14px); }
-  body.bob-desk.view-control.browser-visible .shell { grid-template-columns: minmax(320px, 1fr) minmax(320px, 1.1fr) !important; grid-template-areas: "main browser" "main browser" "main browser" !important; }
+  body.bob-desk.view-control .shell { grid-template-columns: minmax(0, 1fr) !important; grid-template-areas: "main" "main" "main" "foot" !important; padding-left: var(--ws-gap, 14px); }
+  body.bob-desk.view-control.browser-visible .shell { grid-template-columns: minmax(320px, 1fr) minmax(320px, 1.1fr) !important; grid-template-areas: "main browser" "main browser" "main browser" "foot foot" !important; }
+  /* The footer keeps the theme button and global Settings; the side list stays hidden. */
+  body.bob-desk.view-control .shell > .ws-foot { display: flex; grid-area: foot; }
   /* Half a page: the head keeps Bob, what waits, his switch, settings, Refresh and Exit. */
   body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar :is(.bob-head-tag, kbd, .bob-state-pill:not(.waiting), .team-context-label) { display: none; }
   body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar { gap: 8px; padding-inline: 16px; }
-  body.bob-desk.view-control .shell :is(.ws-side, .ws-groups, .ws-foot),
+  body.bob-desk.view-control .shell :is(.ws-side, .ws-groups),
   body.bob-desk.view-control .shell > :is(#projectsPanel, #chatsPanel) { display: none !important; }
 }
 
