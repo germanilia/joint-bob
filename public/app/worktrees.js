@@ -69,7 +69,10 @@ export function worktreeBadge(worktree) {
   badge.dataset.testid = "session-worktree-badge";
   badge.dataset.worktreeColor = worktree.color;
   badge.title = `Runs in worktree: ${worktree.name}`;
-  badge.append(worktreeGlyph(), document.createTextNode(worktree.name));
+  const name = document.createElement("span");
+  name.className = "worktree-badge-name";
+  name.textContent = worktree.name;
+  badge.append(worktreeGlyph(), name);
   return badge;
 }
 
@@ -80,13 +83,13 @@ function worktreeGlyph() {
   return svg;
 }
 
-/** The heading that opens the worktrees sub-section of the conversation list. */
+/** Worktree tools above the flat conversation list. */
 export function worktreesHeading() {
   const heading = document.createElement("div");
   heading.className = "worktree-subsection-title";
   heading.dataset.testid = "worktree-subsection";
   const label = document.createElement("span");
-  label.textContent = "Worktrees";
+  label.textContent = "Conversations";
   const review = document.createElement("button");
   review.type = "button";
   review.className = "ghost worktree-reference-button";
@@ -112,7 +115,7 @@ export function worktreesHeading() {
   return heading;
 }
 
-/** Keep zero-visible groups accessible without crowding the conversation list. */
+/** Worktree management stays folded away, separate from the flat conversation rows. */
 export function otherWorktreesSection(worktrees, expanded) {
   const section = document.createElement("details");
   section.className = "other-worktrees";
@@ -121,31 +124,24 @@ export function otherWorktreesSection(worktrees, expanded) {
   section.open = expanded;
   const summary = document.createElement("summary");
   summary.dataset.testid = "other-worktrees-toggle";
-  summary.textContent = `Other worktrees (${worktrees.length})`;
-  const note = document.createElement("p");
-  note.textContent = "No conversations shown in these groups. Check Show done and Show scheduled for hidden conversations.";
-  section.append(summary, note, ...worktrees.map((worktree) => worktreeSectionHeader(worktree, 0)));
+  summary.textContent = `Manage worktrees (${worktrees.length})`;
+  const counts = new Map();
+  for (const session of state.sessions) {
+    if (session.worktree) counts.set(session.worktree.id, (counts.get(session.worktree.id) || 0) + 1);
+  }
+  section.append(summary, ...worktrees.map((worktree) => worktreeSectionHeader(worktree, counts.get(worktree.id) || 0)));
   return section;
 }
 
-/** One worktree's fold header; its conversations are listed beneath it. */
-export function worktreeSectionHeader(worktree, count) {
-  const collapsed = state.collapsedWorktreeIds.has(worktree.id);
+/** One management row. It never hides or reorders conversations. */
+function worktreeSectionHeader(worktree, count) {
   const header = document.createElement("div");
   header.className = "worktree-section-header";
   header.dataset.worktreeColor = worktree.color;
   header.dataset.testid = "worktree-section";
   header.dataset.worktreeId = worktree.id;
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "worktree-section-toggle";
-  toggle.dataset.testid = "worktree-section-toggle";
-  toggle.setAttribute("aria-expanded", String(!collapsed));
-  toggle.title = `${collapsed ? "Show" : "Hide"} conversations in ${worktree.name}`;
-  const caret = document.createElement("span");
-  caret.className = "worktree-section-caret";
-  caret.setAttribute("aria-hidden", "true");
-  caret.textContent = collapsed ? "▸" : "▾";
+  const label = document.createElement("span");
+  label.className = "worktree-section-label";
   const name = document.createElement("span");
   name.className = "worktree-section-name";
   name.textContent = worktree.name;
@@ -153,13 +149,8 @@ export function worktreeSectionHeader(worktree, count) {
   total.className = "worktree-section-count";
   total.dataset.testid = "worktree-section-count";
   total.textContent = String(count);
-  total.title = `${count} visible conversations`;
-  toggle.append(caret, worktreeGlyph(), name, total);
-  toggle.addEventListener("click", () => {
-    if (collapsed) state.collapsedWorktreeIds.delete(worktree.id);
-    else state.collapsedWorktreeIds.add(worktree.id);
-    renderSessions();
-  });
+  total.title = `${count} conversations`;
+  label.append(worktreeGlyph(), name, total);
   const menu = document.createElement("button");
   menu.type = "button";
   menu.className = "ghost icon-button worktree-section-menu";
@@ -177,10 +168,10 @@ export function worktreeSectionHeader(worktree, count) {
     note.className = "worktree-cleanup-note";
     note.dataset.testid = "worktree-syncing-note";
     note.textContent = "Its files are still syncing to this machine. Until they arrive, manage it from the machine that created it.";
-    header.append(toggle, note);
+    header.append(label, note);
     return header;
   }
-  header.append(toggle, menu);
+  header.append(label, menu);
   const reason = state.worktreeCleanupReasons[worktree.id];
   if (reason) {
     const note = document.createElement("span");
@@ -246,7 +237,6 @@ async function deleteWorktree(worktree) {
     void loadWorktrees().catch((loadError) => console.warn(loadError));
     throw new Error(`Could not delete ${worktree.name}: ${error.message}`);
   }
-  state.collapsedWorktreeIds.delete(worktree.id);
   try { await loadWorktrees(); }
   finally { deletingWorktreeIds.delete(worktree.id); }
 }

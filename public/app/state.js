@@ -66,8 +66,8 @@ export const state = {
   pendingWorktreeSessions: new Map(),
   worktrees: [],
   worktreeCleanupReasons: {},
-  // Worktree sub-sections the user folded in the conversation list.
-  collapsedWorktreeIds: new Set(),
+  // Chosen worktree IDs, or "project" for conversations in the project folder.
+  worktreeFilters: new Set(),
   // Accounts picked in the new-conversation dialog; the server persists them once the engine reports an id.
   newSessionSecretAccountIds: [],
   pendingSessionTitle: null,

@@ -272,7 +272,7 @@
           <button type="button" data-filter="review" data-testid="chats-filter-review-button" title="Needs review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg><span class="sr-only">Needs review</span><span data-filter-count="review">0</span></button>
           <button type="button" data-filter="done" data-testid="chats-filter-done-button" title="Reviewed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.7 2.7L16.5 9"/></svg><span class="sr-only">Reviewed</span><span data-filter-count="done">0</span></button>
         </div>
-        <div class="classification-filter list-filter-row" id="conversationFilterRow" role="group" aria-label="Filter conversations by label and cluster"></div>
+        <div class="classification-filter list-filter-row" id="conversationFilterRow" role="group" aria-label="Filter conversations by label, worktree and cluster"></div>
         <label class="done-filter" for="showDoneConversations">
           <input type="checkbox" id="showDoneConversations" data-testid="show-done-conversations-toggle" />
           Show done
@@ -2778,6 +2778,10 @@
             <span class="field-label">Colour</span>
             <div class="color-swatches" id="newSessionColorSwatches" role="radiogroup" aria-label="Conversation colour" data-testid="new-session-color-swatches"></div>
           </div>
+          <label class="checkbox-row" id="newSessionNewWorktreeLabel" hidden>
+            <input id="newSessionNewWorktree" type="checkbox" data-testid="new-session-new-worktree-checkbox" />
+            Create in a new worktree
+          </label>
         </section>
         <section class="wizard-panel" data-step="2" data-testid="new-session-panel-2" hidden>
           <div id="newSessionClassification" class="field-group"></div>

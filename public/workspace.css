@@ -444,8 +444,8 @@
   /* Notes: the queue's explanation is one line until the pointer or the focus is on the queue, so the notes keep the column. */
   body:not(.focus-ui) #quickNotesQueue .quick-note-queue-hint { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   body:not(.focus-ui) #quickNotesQueue:is(:hover, :focus-within) .quick-note-queue-hint { white-space: normal; }
-  /* Worktrees and its two actions share one line. */
-  body:not(.focus-ui) #chatsPanel .worktree-subsection-title { flex-wrap: nowrap; gap: 4px; margin: 2px 0 2px 10px; }
+  /* Worktree actions wrap in a narrow conversation column. */
+  body:not(.focus-ui) #chatsPanel .worktree-subsection-title { flex-wrap: wrap; gap: 4px; margin: 2px 0 2px 10px; }
   body:not(.focus-ui) #chatsPanel .worktree-subsection-title::after { display: none; }
   body:not(.focus-ui) #chatsPanel .worktree-subsection-title > span { flex: 0 0 auto; margin-right: auto; font-size: 13px; }
   body:not(.focus-ui) #chatsPanel .worktree-subsection-title > button { min-width: 0; min-height: 24px; padding: 0 5px; font: 600 11.5px/1 var(--sans); white-space: nowrap; }
