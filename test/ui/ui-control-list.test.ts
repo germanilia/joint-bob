@@ -109,6 +109,23 @@ test("the list: system messages first, rows by project, the panel's tabs, search
   const anchor = await page.getByTestId("control-list-tab-chat").boundingBox();
   const frame = await page.evaluate(() => ["x", "y", "w", "h"].map((name) => document.body.style.getPropertyValue(`--bob-pop-${name}`)));
   assert.ok(anchor && frame.join() === [anchor.x, anchor.y, anchor.width, anchor.height].map((value) => `${Math.round(value)}px`).join(), "the chat is placed on the tab's body");
+  // The chat's side panel keeps its buttons; the summary and the steps are the list's own tabs, so they are not shown twice.
+  assert.equal(await page.evaluate(() => ["activitySummary", "activityStepsToggle"].some((id) => getComputedStyle(document.getElementById(id)!).display !== "none")), false);
+  // A browser opened from the chat takes the right half of the page: one column, not a window floating over a halved page.
+  await page.evaluate(async () => { (await import("/app/browser-panel.js" as string)).claimBrowserPanel(() => {}); });
+  const halves = await page.evaluate(() => {
+    const browser = document.getElementById("browserPanel")!;
+    const [browserBox, pageBox] = [browser, document.getElementById("controlCenterPanel")!].map((node) => node.getBoundingClientRect().toJSON());
+    return { position: getComputedStyle(browser).position, browser: browserBox, page: pageBox, width: innerWidth };
+  });
+  assert.equal(halves.position, "static");
+  assert.ok(halves.browser.left >= halves.page.right && halves.width - halves.browser.right < 40, `the browser fills the column right of the page: ${JSON.stringify(halves)}`);
+  assert.ok(Math.abs(halves.browser.top - halves.page.top) < 2 && Math.abs(halves.browser.bottom - halves.page.bottom) < 2, "and has the page's height");
+  // The head keeps its way out on half a page.
+  assert.ok(await page.locator("#controlCenterPanel > .panel-bar button", { hasText: "Exit" }).isVisible());
+  await page.waitForFunction(() => { const chat = document.getElementById("chatPanel")!.getBoundingClientRect(); return chat.right <= document.getElementById("browserPanel")!.getBoundingClientRect().left; });
+  assert.equal(await page.getByTestId("activity-panel").isVisible(), false, "the side panel folds while the browser shares the row");
+  await page.evaluate(async () => { (await import("/app/browser-panel.js" as string)).releaseBrowserPanel(); });
   await page.getByTestId("control-list-tab-button-steps").click();
   assert.equal(await page.evaluate(() => document.body.classList.contains("control-inline")), false, "other tabs leave the chat");
   assert.equal(await page.getByTestId("control-list-steps").locator("li.failed").count(), 1);
@@ -235,6 +252,8 @@ test("reading a conversation in the Chat tab does not mark it reviewed; opening 
   await page.getByTestId("control-list-open").click();
   for (let waited = 0; !marked.length && waited < 50; waited += 1) await page.waitForTimeout(100);
   assert.equal(marked.length, 1, "opened for real, it is reviewed as before");
+  // Opening reloads the project's conversations: a routed request still in flight must not fail the test when the page closes.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("a system message says how to fix it and leaves when its cause is gone", { timeout: 90_000 }, async (t) => {

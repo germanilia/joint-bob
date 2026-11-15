@@ -126,8 +126,19 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   /* !important: the column's own layouts (workspace.css) are many and more specific, and this one must win them all. */
   body.bob-desk.view-control .shell { grid-template-columns: minmax(0, 1fr) !important; grid-template-areas: "main" "main" "main" !important; padding-left: var(--ws-gap, 14px); }
   body.bob-desk.view-control.browser-visible .shell { grid-template-columns: minmax(320px, 1fr) minmax(320px, 1.1fr) !important; grid-template-areas: "main browser" "main browser" "main browser" !important; }
+  /* Half a page: the head keeps Bob, what waits, his switch, settings, Refresh and Exit. */
+  body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar :is(.bob-head-tag, kbd, .bob-state-pill:not(.waiting), .team-context-label) { display: none; }
+  body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar { gap: 8px; padding-inline: 16px; }
   body.bob-desk.view-control .shell :is(.ws-side, .ws-groups, .ws-foot),
   body.bob-desk.view-control .shell > :is(#projectsPanel, #chatsPanel) { display: none !important; }
+}
+
+/* Below a wide screen, half a page has no room for the conversation list and its chat: while a browser is open from the Chat tab
+   the list folds and the chat takes the page's half. Closing the browser brings the list back. */
+@media (min-width: 1024px) and (max-width: 1799px) {
+  body.bob-desk.control-inline.browser-visible .control-list { grid-template-columns: minmax(0, 1fr); }
+  body.bob-desk.control-inline.browser-visible .control-list > :is(.control-list-left, .control-list-grip) { display: none; }
+  body.bob-desk.control-inline.browser-visible .control-list-preview { border-left: 0; }
 }
 
 /* The head gives way from the left: the tag line shortens first, the context list has a fixed width, the pills never shrink. */
@@ -150,6 +161,13 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk.ws-desktop.view-control.control-popup.control-inline .shell > #chatPanel { border-radius: 0; box-shadow: none; }
   body.bob-desk.view-control.control-popup.control-inline .control-popup-bar { display: none; }
   body.bob-desk.view-control.control-popup.control-inline :is(#sessionTitle, #chatProjectName) { display: none; }
+  /* The Summary and Steps tabs of the list already show these: the chat's side panel keeps its buttons and the rest. */
+  body.bob-desk.control-inline #activityPanel :is(#activitySummary, #activityStepsToggle, #activityList) { display: none; }
+  /* The browser fills the right half of the page (the columns above), not a second floating window over it. */
+  body.bob-desk.view-control.control-popup.browser-visible .shell > #browserPanel {
+    grid-area: browser; position: static; inset: auto; width: auto; height: 100%; z-index: auto;
+    border-radius: var(--ws-card-radius, 24px); box-shadow: var(--shadow-soft);
+  }
   body.bob-desk.view-control.control-popup #controlCenterPanel::after { display: none; }
   body.bob-desk.view-control.control-popup #controlLeaseBanner { display: none; }
   body.bob-desk.view-control.control-popup .control-popup-bar { gap: 12px; padding: 10px 18px; font-size: 14px; }
