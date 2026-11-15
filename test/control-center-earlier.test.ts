@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { earlierConversations } from "../src/server/control-center-board.js";
+import { earlierConversations, pastConversations } from "../src/server/control-center-board.js";
 import type { BoardCard } from "../src/control-center/board.js";
 import type { SessionSummary } from "../src/types.js";
 
@@ -17,4 +17,20 @@ test("Earlier lists what is not on the board, newest first, without scheduled ru
   assert.deepEqual(earlier.map((row) => `${row.projectName}/${row.conversationId}`), ["Contigos/conv-7", "Contigos/6", "Dak/1"]);
   assert.equal(earlier.find((row) => row.conversationId === "6")!.done, true);
   assert.equal(earlier.find((row) => row.conversationId === "1")!.done, false);
+});
+
+// The list's Inbox and search: a conversation that was reviewed and never marked done is on no lane of the board and not in Past.
+test("the list reads the done conversations and the open ones, each newest first, with where they run", () => {
+  const groups = [
+    { projectId: "contigos", projectName: "Contigos", sessions: [
+      session("1", { doneAt: "2026-11-12T00:00:00Z" }), session("2", { doneAt: "2026-11-13T00:00:00Z" }),
+      session("3", { conversationId: "tenant-16", executionNodeId: "homeserver" }), session("4"), session("5", { cronTaskId: "c" }), session("6", { draft: true }), session("7", { readOnly: true }),
+    ] },
+  ];
+  const past = pastConversations(groups, (_projectId, conversationId) => (conversationId === "tenant-16" ? "x".repeat(900) : null));
+  assert.deepEqual(past.map((row) => [row.conversationId, row.doneAt]), [["2", "2026-11-13T00:00:00Z"], ["1", "2026-11-12T00:00:00Z"], ["4", null], ["tenant-16", null]]);
+  const open = past.find((row) => row.conversationId === "tenant-16")!;
+  assert.equal(open.executionNodeId, "homeserver");
+  assert.equal(open.sessionId, "3");
+  assert.equal(open.summary!.length, 800);
 });

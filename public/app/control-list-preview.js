@@ -22,7 +22,7 @@ import { systemPanel } from "./control-system.js";
 import { formatDate, toast } from "./shell.js";
 
 const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
-const STATES = { "needs-you": "Needs you", running: "Running", review: "To review", snoozed: "Snoozed", done: "Done" };
+const STATES = { "needs-you": "Needs you", running: "Running", review: "To review", snoozed: "Snoozed", reviewed: "Reviewed", done: "Done" };
 const TABS = [["summary", "Summary"], ["chat", "Chat"], ["steps", "Steps"]];
 // Card actions (control-moves.js) shown as a row of buttons under the title, not in the "More ▾" menu.
 const CONVERSATION_TOOLS = ["terminal", "git", "files", "story"];

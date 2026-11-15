@@ -29,7 +29,7 @@ const SYSTEM = [{
 type Mocked = typeof window & { __board: typeof BOARD; __system: unknown[]; __sent: unknown[]; __deleted: string[]; __pins: unknown[]; __decided?: unknown };
 
 /** Signs in and puts a scripted board, past list, system messages and pin/delete routes in front of the node. */
-async function openList(t: Parameters<typeof nativeUiFixture>[0]) {
+async function openList(t: Parameters<typeof nativeUiFixture>[0], past: unknown[] = PAST) {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.addInitScript(() => localStorage.setItem("jointBobLiveLayout", "list"));
   await page.goto(node.url);
@@ -50,7 +50,7 @@ async function openList(t: Parameters<typeof nativeUiFixture>[0]) {
       const method = (args[1] && args[1].method) || 'GET';
       const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
       if (url.pathname === '/api/control-center/board') return json(window.__board);
-      if (url.pathname === '/api/control-center/past') return json({ conversations: ${JSON.stringify(PAST)} });
+      if (url.pathname === '/api/control-center/past') return json({ conversations: ${JSON.stringify(past)} });
       if (url.pathname === '/api/control-center/system') return json({ messages: window.__system });
       if (url.pathname === '/api/control-center/cards/detail') {
         return json({ request: 'Ship ' + url.searchParams.get('conversationId'), answer: 'The **deploy** is ready.', answerCut: false, steps: [{ name: 'Bash', target: 'npm run build', failed: false }, { name: 'Edit', target: 'package.json', failed: true }] });
@@ -159,6 +159,26 @@ test("the list: system messages first, rows by project, the panel's tabs, search
   assert.equal(await page.getByTestId("control-list").count(), 0);
   await page.getByTestId("control-layout-list").click();
   await page.getByTestId("control-list").waitFor();
+});
+
+// A conversation that was reviewed and not marked done is on no lane of the board: the Inbox still lists it, and the search finds it.
+test("an open conversation that was reviewed stays in the Inbox and is found by the search", { timeout: 90_000 }, async (t) => {
+  const reviewed = { ...PAST[0], conversationId: "c7", sessionId: "c7", path: "/c7", title: "Tenant 16", doneAt: null, updatedAt: "2026-11-04T10:00:00Z", executionNodeId: null, summary: "Summary verification fixed." };
+  const { page } = await openList(t, [...PAST, reviewed]);
+  await page.locator('[data-key="p1:c7"]').waitFor();
+  assert.deepEqual(await keys(page), ["system:decision-model", "p2:c3", "p1:c1", "p1:c2", "p1:c7"], "after what runs or waits in its project, and without the done one");
+  assert.equal(await page.locator('[data-key="p1:c7"]').getAttribute("data-column"), "reviewed");
+  assert.match(await page.locator('[data-key="p1:c7"]').textContent() ?? "", /Reviewed/);
+  await page.getByTestId("control-list-search").fill("tenant16");
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-list-rows"] [data-key]').length === 1);
+  assert.deepEqual(await keys(page), ["p1:c7"]);
+  await page.getByTestId("control-list-search").press("Escape");
+  await page.getByTestId("control-list-scope-past").click();
+  assert.deepEqual(await keys(page), ["system:decision-model", "p1:c9"], "Past holds only what was marked done");
+  // Its panel is an open conversation's: the state, and Done to close it.
+  await page.getByTestId("control-list-scope-inbox").click();
+  await page.locator('[data-key="p1:c7"]').click();
+  assert.equal(await page.getByTestId("control-list-preview").getByTestId("control-list-state").textContent(), "Reviewed");
 });
 
 test("a system message says how to fix it and leaves when its cause is gone", { timeout: 90_000 }, async (t) => {

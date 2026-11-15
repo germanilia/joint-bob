@@ -77,7 +77,7 @@ app.get("/api/control-center/board", async (request, response, next) => {
   }
 });
 
-/** Conversations marked done, for the list's Past view and its search. They are read when the person asks for them, not with the board. */
+/** Conversations that are not on the board (marked done, or open and reviewed), for the list's Past view, its Inbox and its search. */
 app.get("/api/control-center/past", async (_request, response, next) => {
   try { response.json({ conversations: await loadPast(response.locals.authSession as AuthSession) }); } catch (error) { next(error); }
 });

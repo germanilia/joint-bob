@@ -18,7 +18,7 @@ import { searchFields, segments, snippet } from "./inbox-search.js";
 import { toast } from "./shell.js";
 import { state } from "./state.js";
 
-const STATES = { "needs-you": "Needs you", running: "Running", review: "To review", snoozed: "Snoozed", done: "Done" };
+const STATES = { "needs-you": "Needs you", running: "Running", review: "To review", snoozed: "Snoozed", reviewed: "Reviewed", done: "Done" };
 const ORDER = Object.keys(STATES);
 const INBOX = ["needs-you", "running", "review", "snoozed"];
 // A team's conversations are in its folder, not in the Inbox (All and the folder show them).
@@ -89,15 +89,17 @@ let selectedKey = null;
 let past = [];
 let pastReadAt = 0;
 let pastLoading = false;
+// A conversation left the board while the list was being read: that answer may not have it, so it is read once more.
+let pastStale = false;
 const view = { tab: "summary", query: "", scope: "inbox", rememberScope: null, group: localStorage.getItem(LIST_GROUP_KEY) === "date" ? "date" : "project" };
 
 /* ---------- what there is: board cards, past conversations, system messages ---------- */
 
-/** A conversation marked done looks like a board card, in the column "done". */
+/** A conversation that is not on the board looks like a board card: in the column "done" when it was marked done, else "reviewed" (open, waiting for nothing). */
 function pastCard(item, helpers) {
   return {
-    ...item, column: "done", updatedAt: item.doneAt, pendingReviews: [], autoRespondStop: null, controlledBy: null, reviewCheck: null, snooze: null,
-    activity: null, turnRunning: false, backgroundRunning: false, startedBy: "you", executionNodeId: null, projectColor: helpers.projectColor(item.projectId),
+    ...item, column: item.doneAt ? "done" : "reviewed", updatedAt: item.doneAt ?? item.updatedAt, pendingReviews: [], autoRespondStop: null, controlledBy: null, reviewCheck: null, snooze: null,
+    activity: null, turnRunning: false, backgroundRunning: false, startedBy: "you", executionNodeId: item.executionNodeId ?? null, projectColor: helpers.projectColor(item.projectId),
   };
 }
 
@@ -117,6 +119,7 @@ function statusText(card) {
   if (card.autoRespondStop) return `Auto respond stopped: ${card.autoRespondStop.reason || card.autoRespondStop.kind}`;
   if (card.column === "needs-you" && card.reviewCheck?.reason) return card.reviewCheck.reason;
   if (card.column === "done") return briefStatus(card.summary) ?? "Done.";
+  if (card.column === "reviewed") return briefStatus(card.summary) ?? "Reviewed. Nothing is waiting.";
   return card.activity ?? briefStatus(card.summary) ?? (card.column === "running" ? "Working…" : "Finished. Open it to review.");
 }
 
@@ -312,15 +315,22 @@ function tools(card) {
 
 /* ---------- reading what is not on the board ---------- */
 
-function refreshPast() {
-  // Read once when the list first opens (the Past count needs it), then again when a scope or a search wants it.
-  const wanted = pastReadAt === 0 || view.scope !== "inbox" || view.query.trim();
-  if (!wanted || pastLoading || Date.now() - pastReadAt < PAST_FRESH_MS) return;
+let boardKeys = new Set();
+
+/** Every scope needs them: the Inbox lists the reviewed ones. Read again each minute, and at once when a conversation leaves the board (it was reviewed or marked done). */
+function refreshPast(cards) {
+  const keys = new Set(cards.map(cardKey));
+  const left = [...boardKeys].some((key) => !keys.has(key));
+  boardKeys = keys;
+  if (left) pastReadAt = 0;
+  if (pastLoading) { pastStale ||= left; return; }
+  if (Date.now() - pastReadAt < PAST_FRESH_MS) return;
   pastLoading = true;
+  pastStale = false;
   api("/api/control-center/past")
     .then(({ conversations }) => { past = conversations; })
     .catch((error) => console.warn("Could not read the past conversations", error))
-    .finally(() => { pastLoading = false; pastReadAt = Date.now(); redraw(); });
+    .finally(() => { pastLoading = false; pastReadAt = pastStale ? 0 : Date.now(); redraw(); });
 }
 
 function refreshSystem(force = false) {
@@ -333,7 +343,7 @@ function refreshSystem(force = false) {
 export function renderList(container, cards, helpers) {
   last = [container, cards, helpers];
   if (!ui || !container.contains(ui.root)) ui = buildFrame(container, helpers);
-  refreshPast();
+  refreshPast(cards);
   refreshSystem();
   const all = everything(cards, helpers);
   const query = view.query.trim();
@@ -462,7 +472,7 @@ function emptyNote(all, query) {
     : inFolder ? "Nothing is in this folder yet. Put a conversation in it with the folder button."
       : view.scope === "past" ? "No conversation has been marked done yet."
         : view.scope === "starred" ? "Star a conversation to keep it here, safe from automatic deletion."
-          : "No conversations are running and nothing is waiting for review. Past holds the finished ones.";
+          : "No conversations are open. Past holds the ones marked done.";
   node.append(element("b", "", query ? "Nothing found." : "Nothing here."), element("p", "", text));
   return node;
 }
@@ -548,6 +558,7 @@ function row({ card, match }, helpers) {
   const status = element("span", "control-list-status");
   if (card.column === "needs-you") status.append(element("span", "control-list-flag needs-you", "Needs you"));
   if (card.column === "done") status.append(element("span", "control-list-flag done", "Done"));
+  if (card.column === "reviewed") status.append(element("span", "control-list-flag done", "Reviewed"));
   const folder = folderOf(card);
   if (folder && !view.scope.startsWith("folder:")) { const place = element("span", "control-list-folder"); place.append(svgIcon("folder"), folder); status.append(place); }
   const line = element("span", "control-list-snippet");

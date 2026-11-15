@@ -98,28 +98,48 @@ export function earlierConversations(groups: BoardProject[], cards: BoardCard[])
     .slice(0, EARLIER_LIMIT);
 }
 
-/** A conversation marked done, as the list's Past view shows it. */
+/**
+ * A conversation that is not on the board, as the list shows it: one marked done (Past), or an open one that was reviewed and
+ * waits for nothing (`doneAt` null), which stays in the Inbox until it is marked done.
+ */
 export interface PastConversation {
   projectId: string; projectName: string; conversationId: string; sessionId: string; path: string; harnessId: string;
-  agentLabel: string; agentModel: string | null; title: string; doneAt: string; updatedAt: string | null;
+  agentLabel: string; agentModel: string | null; title: string; doneAt: string | null; updatedAt: string | null; executionNodeId: string | null;
   /** The running summary, cut: the list searches it, the panel shows it. */
   summary: string | null;
 }
 const PAST_LIMIT = 300;
 const PAST_SUMMARY_CHARACTERS = 800;
 
-/** The newest conversations the person marked done, across every project they can see, for the Past view and its search. */
+/**
+ * The newest conversations marked done and the newest open ones, of the projects given; scheduled runs, drafts and read-only
+ * copies are not conversations of the person's. The open ones include what the board shows: the list drops those.
+ */
+export function pastConversations(groups: BoardProject[], summaryOf: (projectId: string, conversationId: string) => string | null): PastConversation[] {
+  const found = groups.flatMap((group) => group.sessions
+    .filter((entry) => !entry.readOnly && !entry.cronTaskId && !entry.draft)
+    .map((entry) => ({ group, entry })));
+  const newest = (key: "doneAt" | "updatedAt") => (a: typeof found[number], b: typeof found[number]) => (b.entry[key] ?? "").localeCompare(a.entry[key] ?? "");
+  const done = found.filter(({ entry }) => entry.doneAt).sort(newest("doneAt")).slice(0, PAST_LIMIT);
+  const open = found.filter(({ entry }) => !entry.doneAt).sort(newest("updatedAt")).slice(0, PAST_LIMIT);
+  return [...done, ...open].map(({ group, entry }): PastConversation => {
+    const conversationId = entry.conversationId ?? entry.id;
+    return {
+      projectId: group.projectId, projectName: group.projectName, conversationId, sessionId: entry.id, path: entry.path, harnessId: entry.harnessId,
+      agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, doneAt: entry.doneAt ?? null, updatedAt: entry.updatedAt ?? null,
+      executionNodeId: entry.executionNodeId ?? null,
+      summary: summaryOf(group.projectId, conversationId)?.slice(0, PAST_SUMMARY_CHARACTERS) ?? null,
+    };
+  });
+}
+
+/** What the list shows besides the board, across every project the person can see: the Past view, the reviewed ones of the Inbox, and the search over both. */
 export async function loadPast(session: AuthSession): Promise<PastConversation[]> {
   const [projects, theirs] = await Promise.all([projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }), otherPersonsMachine()]);
-  const found = await Promise.all(projects.map(async (project) => (await sharedProjectSessions(project, session.userId, session.accountId))
-    .filter((entry) => entry.doneAt && !entry.readOnly && !entry.cronTaskId && !entry.draft && !theirs(entry.executionNodeId))
-    .map((entry): PastConversation => {
-      const conversationId = entry.conversationId ?? entry.id;
-      return {
-        projectId: project.id, projectName: project.name, conversationId, sessionId: entry.id, path: entry.path, harnessId: entry.harnessId,
-        agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, doneAt: entry.doneAt!, updatedAt: entry.updatedAt ?? null,
-        summary: storedDigest(project.id, conversationId)?.summary?.slice(0, PAST_SUMMARY_CHARACTERS) ?? null,
-      };
-    })));
-  return found.flat().sort((a, b) => b.doneAt.localeCompare(a.doneAt)).slice(0, PAST_LIMIT);
+  const groups = await Promise.all(projects.map(async (project) => ({
+    projectId: project.id,
+    projectName: project.name,
+    sessions: (await sharedProjectSessions(project, session.userId, session.accountId)).filter((entry) => !theirs(entry.executionNodeId)),
+  })));
+  return pastConversations(groups, (projectId, conversationId) => storedDigest(projectId, conversationId)?.summary ?? null);
 }
