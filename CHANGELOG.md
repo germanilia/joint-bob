@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.305.4 — 2026-11-15
+
+- On Bob's page, choosing a conversation in the list no longer jumps to another one a moment later. Reading a conversation that waits for review in the Chat tab marked it reviewed, so it left the list and the first conversation that needs you opened in its place.
+- The Chat tab of the list only shows a conversation: it stays To review until you open it (Open ↗ or a double click) or mark it done.
+
 ## 2.305.3 — 2026-11-15
 
 - Picking another model for a Pi conversation in a project whose cluster requires a subscription pool works again. It failed with "Selected cluster subscription pool requires pool-aware execution". The picker now shows the new model, and your next message runs on it through the pool.
