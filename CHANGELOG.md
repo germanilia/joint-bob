@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.315.2 — 2026-11-15
+
+- The Motion setting is now kept in this browser, and the offline app includes the story voice preparation.
+
 ## 2.315.1 — 2026-11-15
 
 - Webhooks can run with a subscription pool while preserving Guardian and worktree settings.
