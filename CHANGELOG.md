@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.305.5 — 2026-11-15
+
+- When a Claude model in a subscription pool is rate-limited, the turn now tries the pool's fallback model first, then the strongest of the other Claude models. It no longer drops to Haiku on its own: Haiku runs only when you pick it or set it as the pool's fallback, and otherwise the pool's next member takes over.
+
 ## 2.305.4 — 2026-11-15
 
 - On Bob's page, choosing a conversation in the list no longer jumps to another one a moment later. Reading a conversation that waits for review in the Chat tab marked it reviewed, so it left the list and the first conversation that needs you opened in its place.
