@@ -4,6 +4,7 @@ import { elements } from "./elements.js";
 import { topmostOpenDialog } from "./focus-input.js";
 import { openSettings } from "./settings.js";
 import { state } from "./state.js";
+import "./motion.js";
 
 // The app's own replacements for window.confirm / window.prompt. Both resolve
 // once the dialog closes: Escape, the backdrop and Cancel all mean "no".
@@ -99,6 +100,14 @@ document.addEventListener("close", placeToasts, true);
 // A dialog's close event is a queued task and focus may not move when it closes, so the open attribute is watched too.
 new MutationObserver(placeToasts).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["open"] });
 
+/** A toast slides away (styles.css, .toast-leaving) before it is removed; with motion off it goes at once. */
+function dismissToast(node) {
+  if (getComputedStyle(node).animationName === "none" || node.classList.contains("toast-leaving")) { node.remove(); return; }
+  node.classList.add("toast-leaving");
+  node.addEventListener("animationend", () => node.remove(), { once: true });
+  setTimeout(() => node.remove(), 400);
+}
+
 export function toast(message, duration = 3200, severity = "info") {
   const existing = [...toastStack.children].find((node) => node.dataset.severity === severity && node.querySelector(".toast-message")?.textContent === message);
   if (existing) return existing;
@@ -116,10 +125,10 @@ export function toast(message, duration = 3200, severity = "info") {
   close.textContent = "×";
   close.setAttribute("aria-label", "Dismiss");
   close.setAttribute("data-testid", "toast-close-button");
-  const timer = setTimeout(() => node.remove(), duration);
+  const timer = setTimeout(() => dismissToast(node), duration);
   close.addEventListener("click", () => {
     clearTimeout(timer);
-    node.remove();
+    dismissToast(node);
   });
   node.append(text, close);
   toastStack.append(node);

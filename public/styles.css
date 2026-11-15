@@ -2075,6 +2075,23 @@ dialog:focus-visible { outline: none; }
    whole row and pushes the label text outside the dialog. Size it like .checkbox-row. */
 .ntfy-share-dialog input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; min-width: auto; padding: 0; accent-color: var(--ink); }
 dialog::backdrop { background: rgba(10, 11, 13, 0.5); backdrop-filter: blur(6px); }
+/* Motion: every <dialog> grows in with its background fading up, and shrinks away on close, with no code in the dialog's own file.
+   Entry uses @starting-style; the exit needs `overlay` (the dialog stays on top while it fades), so a browser without it just closes at once. */
+html[data-motion="playful"] { --m-in: 300ms; --m-out: 170ms; --m-ease: cubic-bezier(.34, 1.45, .64, 1); --m-from: translateY(14px) scale(.93); }
+html[data-motion="calm"] { --m-in: 200ms; --m-out: 140ms; --m-ease: cubic-bezier(.2, .7, .2, 1); --m-from: translateY(8px) scale(.98); }
+html:is([data-motion="playful"], [data-motion="calm"]) dialog[open] { opacity: 1; transform: none; transition: opacity var(--m-in) ease-out, transform var(--m-in) var(--m-ease); }
+html:is([data-motion="playful"], [data-motion="calm"]) dialog[open]::backdrop { opacity: 1; transition: opacity var(--m-in) ease-out; }
+@starting-style {
+  html:is([data-motion="playful"], [data-motion="calm"]) dialog[open] { opacity: 0; transform: var(--m-from); }
+  html:is([data-motion="playful"], [data-motion="calm"]) dialog[open]::backdrop { opacity: 0; }
+}
+@supports (overlay: auto) {
+  html:is([data-motion="playful"], [data-motion="calm"]) dialog { opacity: 0; transform: var(--m-from); transition: opacity var(--m-out) ease-in, transform var(--m-out) ease-in, overlay var(--m-out) allow-discrete, display var(--m-out) allow-discrete; }
+  html:is([data-motion="playful"], [data-motion="calm"]) dialog::backdrop { opacity: 0; transition: opacity var(--m-out) ease-in, overlay var(--m-out) allow-discrete, display var(--m-out) allow-discrete; }
+  html:is([data-motion="playful"], [data-motion="calm"]) dialog[open] { transition: opacity var(--m-in) ease-out, transform var(--m-in) var(--m-ease), overlay var(--m-in) allow-discrete, display var(--m-in) allow-discrete; }
+}
+/* A full-page dialog (Settings, the phone's sheets) fades; it does not shrink. */
+html:is([data-motion="playful"], [data-motion="calm"]) :is(#settingsDialog, .by-the-way-dialog) { --m-from: none; }
 .dialog-card {
   width: min(480px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
@@ -2938,6 +2955,12 @@ body > .searchable-select-popover { z-index: 1200; }
   z-index: 100;
 }
 .toast-stack:empty { display: none; }
+/* Motion (app/motion.js sets <html data-motion="playful|calm|off">): a toast rises in and slides away. */
+html[data-motion="playful"] .toast { animation: toast-in 340ms cubic-bezier(.34, 1.56, .64, 1) both; }
+html[data-motion="calm"] .toast { animation: toast-in 220ms cubic-bezier(.2, .7, .2, 1) both; }
+html:is([data-motion="playful"], [data-motion="calm"]) .toast.toast-leaving { animation: toast-out 200ms cubic-bezier(.4, 0, 1, 1) forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-14px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(32px) scale(.97); } }
 .toast {
   flex: none;
   width: 100%;

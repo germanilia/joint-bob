@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.312.0 — 2026-11-15
+
+- Conversation tiles now move: tiles glide to their new place, a pinned tile lifts and flies into Pinned, a new status line slides up, a starred tile pops, a conversation marked done shows a drawn check and floats a +1 to Past, a deleted one tips away, and changed counts pop.
+- Every window and dialog now opens and closes with a short animation, and notifications rise in and slide away.
+- A new Motion setting under Settings › Account › Appearance chooses Playful, Calm or Off; Off is the default when the device asks for reduced motion.
+- The "Running" and "finished while watching" counts on the Inbox now line up on their text.
+
 ## 2.311.2 — 2026-11-15
 
 - Larger text sizes widen the left columns so their labels are no longer cut off, and the details column is put away instead of covering the conversation when the conversation gets too narrow.

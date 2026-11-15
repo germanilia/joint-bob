@@ -401,3 +401,17 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
   body.bob-desk.view-control:not(.bob-chat-folded) .control-chat-head { cursor: grab; touch-action: none; user-select: none; }
   body.bob-desk .control-chat-head.dragging { cursor: grabbing; }
 }
+
+/* ---------- motion (app/list-motion.js, app/motion.js) ---------- */
+.control-list-rows { position: relative; }
+.control-list-row { position: relative; }
+.control-list-row.on-air { z-index: 5; border-radius: 12px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28); background: var(--panel); }
+.control-list-row.leaving { background: var(--panel); border-bottom-color: transparent; }
+.motion-flash { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.control-list-stamp { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; gap: 9px; background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(2px); color: var(--live); font-size: 14.5px; font-weight: 650; }
+.control-list-stamp svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.control-list-stamp circle { stroke-dasharray: 63; stroke-dashoffset: 63; }
+.control-list-stamp path { stroke-dasharray: 16; stroke-dashoffset: 16; }
+.motion-spark { position: fixed; z-index: 1000; pointer-events: none; }
+.motion-plus { position: fixed; z-index: 1000; pointer-events: none; color: var(--amber); font: 700 14px var(--sans); }
+.control-list-count { display: inline-block; }

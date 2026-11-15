@@ -13,6 +13,7 @@ import { api } from "./api.js";
 import { briefStatus, projectActionList } from "./control-cards.js";
 import { drawPreview, hideChat } from "./control-list-preview.js";
 import { deleteConversation, deleteConversations, folderMenu, folderNames, folderOf, isDeleting, isKept, isPinned, isStarred, popMenu, togglePin, toggleStar } from "./control-marks.js";
+import { capture, play } from "./list-motion.js";
 import { loadSystem, systemList } from "./control-system.js";
 import { searchFields, segments, snippet } from "./inbox-search.js";
 import { toast } from "./shell.js";
@@ -446,8 +447,15 @@ export function renderList(container, cards, helpers) {
   // The first conversation opened is the first that needs the person, else the first of the board; with nothing on the board, the first system message, else the first past one.
   if (!selectedEntry()) selectedKey = entries.length ? entryKey(entries.find((entry) => entry.column === "needs-you") ?? entries.find((entry) => !entry.system && entry.column !== "done") ?? entries[0]) : null;
   const items = visible(all);
+  // How the list moved is read from what it looked like before this draw (list-motion.js); a switch of view is not a move.
+  const signature = [view.scope, view.group, query, view.selecting].join("|");
+  const before = capture(ui, signature);
   drawChips(all);
   drawRows(items, messages, helpers, all);
+  play(ui, before, signature, (key) => {
+    const card = all.find((other) => cardKey(other) === key);
+    return !card ? null : isDeleting(card) ? "delete" : card.column === "done" ? "done" : null;
+  });
   syncOpenButton();
   const chosen = selectedEntry();
   chosenCard = chosen && !chosen.system ? chosen : null;

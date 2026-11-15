@@ -185,6 +185,6 @@ body.focus-ui .ws-wait.compact .ws-wait-push textarea { font-size: 16px; }
 .need-sheet-actions > .ghost { border: 0; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
 .need-sheet-box { display: grid; gap: 8px; }
 .need-sheet-box textarea { min-height: 84px; resize: none; border-radius: 12px; font-size: 16px; }
-body.focus-ui .need-sheet { width: 100%; max-height: 90dvh; margin: auto 0 0; border-radius: 20px 20px 0 0; }
+body.focus-ui .need-sheet { width: 100%; max-height: 90dvh; margin: auto 0 0; border-radius: 20px 20px 0 0; --m-from: translateY(100%); }
 body.focus-ui .need-sheet-grab { display: block; }
 body.focus-ui .need-sheet-head { padding-top: 10px; }
