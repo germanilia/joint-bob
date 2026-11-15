@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.313.0 — 2026-11-15
+
+- Guardian gained Allow always for an exact action in the same project and working directory. Changed rules still require fresh approval, and enforced relay and team protections remain in place.
+- Webhooks and scheduled tasks gained a Bypass Guardian checkbox for their automated turns, without disabling checks on later manual messages.
+
 ## 2.312.3 — 2026-11-15
 
 - Activity overview prepares narration as soon as its script is ready, reducing the wait before playback.
