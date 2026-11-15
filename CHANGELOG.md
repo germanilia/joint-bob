@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.310.0 — 2026-11-15
+
+- Bob's page shows the release number under the Bob logo, top left, so you can tell which build is running.
+
+
 ## 2.309.1 — 2026-11-15
 
 - The conversation search box shows a single focus ring instead of a second one inside it.
