@@ -29,7 +29,7 @@ test("the ⋯ menu groups its actions and the details column holds tabs, content
   assert.equal(lines[0], "# Open", JSON.stringify(lines));
   assert.ok(index("Terminal") === 1 && index("Browser") === 2, JSON.stringify(lines));
   assert.ok(index("# This conversation") > index("Browser"), JSON.stringify(lines));
-  for (const label of ["Rename", "Share conversation", "Scheduled tasks", "Dashboard"]) assert.ok(index(label) > index("# This conversation"), `${label}: ${JSON.stringify(lines)}`);
+  for (const label of ["Rename", "Share conversation", "Add secret", "Scheduled tasks", "Dashboard"]) assert.ok(index(label) > index("# This conversation"), `${label}: ${JSON.stringify(lines)}`);
   assert.equal(lines.at(-1), "Delete conversation", "Delete stands alone at the end");
   assert.equal(lines.at(-2), "---", "a rule sets Delete apart");
   for (const label of ["Notify", "Auto respond"]) assert.equal(index(label), -1, `${label} is a switch in the details column, not a menu item`);
@@ -56,4 +56,12 @@ test("the ⋯ menu groups its actions and the details column holds tabs, content
   await page.getByTestId("chat-more-button").click();
   await page.getByTestId("chat-cron-button").click();
   await page.locator("#cronDialog[open]").waitFor();
+  // Attaching a secret is an option of the conversation: the menu's Add secret opens the picker.
+  await page.keyboard.press("Escape");
+  await page.locator("#cronDialog[open]").waitFor({ state: "detached" });
+  await page.getByTestId("chat-more-button").click();
+  await page.getByTestId("chat-attach-secret-button").click();
+  await page.getByTestId("conversation-secret-dialog").waitFor();
+  await page.getByTestId("conversation-secret-cancel").click();
+  await page.getByTestId("conversation-secret-dialog").waitFor({ state: "detached" });
 });

@@ -610,12 +610,13 @@
   body:not(.focus-ui) .ws-head-actions .chat-more-group[data-group="conversation"] { order: 10; }
   body:not(.focus-ui) .ws-head-actions #renameSessionButton { order: 11; }
   body:not(.focus-ui) .ws-head-actions #shareConversationButton { order: 12; }
-  body:not(.focus-ui) .ws-head-actions #chatCronButton { order: 13; }
-  body:not(.focus-ui) .ws-head-actions #chatMoreDashboardButton { order: 14; }
-  body:not(.focus-ui) .ws-head-actions #chatSessionMenuButton { order: 15; }
-  body:not(.focus-ui) .ws-head-actions #pinConversationButton { order: 16; }
-  body:not(.focus-ui) .ws-head-actions [data-testid="chat-personal-assistant-button"] { order: 17; }
-  body:not(.focus-ui) .ws-head-actions #installAppButton { order: 18; }
+  body:not(.focus-ui) .ws-head-actions #attachSecretButton { order: 13; }
+  body:not(.focus-ui) .ws-head-actions #chatCronButton { order: 14; }
+  body:not(.focus-ui) .ws-head-actions #chatMoreDashboardButton { order: 15; }
+  body:not(.focus-ui) .ws-head-actions #chatSessionMenuButton { order: 16; }
+  body:not(.focus-ui) .ws-head-actions #pinConversationButton { order: 17; }
+  body:not(.focus-ui) .ws-head-actions [data-testid="chat-personal-assistant-button"] { order: 18; }
+  body:not(.focus-ui) .ws-head-actions #installAppButton { order: 19; }
   body:not(.focus-ui) .ws-head-actions .chat-more-rule { order: 90; }
   body:not(.focus-ui) .ws-head-actions #chatDeleteButton { order: 91; }
 

@@ -3,6 +3,7 @@ import { menuIcon } from "./icons.js";
 import { state } from "./state.js";
 import { api } from "./api.js";
 import { toast } from "./shell.js";
+import { openConversationSecretPicker } from "./focus-secrets.js";
 
 /** Links identify a conversation without including its transcript or local file path. */
 export function getCurrentConversationLink() {
@@ -57,6 +58,21 @@ shareLabel.className = "chat-action-label";
 shareLabel.textContent = "Share";
 shareButton.append(menuIcon("share"), shareLabel);
 shareButton.addEventListener("click", () => void shareConversation());
+const secretButton = document.createElement("button");
+secretButton.id = "attachSecretButton";
+secretButton.className = "ghost compact chat-action";
+secretButton.type = "button";
+secretButton.dataset.testid = "chat-attach-secret-button";
+secretButton.title = "Attach an existing secret to this conversation";
+secretButton.setAttribute("aria-label", "Add secret");
+const secretLabel = document.createElement("span");
+secretLabel.className = "chat-action-label";
+secretLabel.textContent = "Add secret";
+secretButton.append(menuIcon("key"), secretLabel);
+secretButton.addEventListener("click", () => {
+  if (!state.activeSessionId) { toast.error("Open a conversation first"); return; }
+  openConversationSecretPicker().catch(error => toast.error(error.message));
+});
 const pinButton = document.createElement("button");
 pinButton.id = "pinConversationButton";
 pinButton.className = "ghost compact chat-action";
@@ -128,4 +144,4 @@ personalForm.addEventListener("submit", async event => {
     location.href = `/assistant.html?id=${encodeURIComponent(assistant.id)}`;
   } catch (error) { toast.error(error.message); } finally { button.disabled = false; }
 });
-elements.chatMoreMenu.querySelector(".chat-more-actions").append(shareButton, pinButton, personalButton);
+elements.chatMoreMenu.querySelector(".chat-more-actions").append(shareButton, secretButton, pinButton, personalButton);
