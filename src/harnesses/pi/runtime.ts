@@ -7,7 +7,8 @@ import { UpdateRefusalError } from "../../updater.js";
 import { listRunningPiSessions } from "../../pi-runtime.js";
 import * as service from "../../pi-service.js";
 import { rewindPiTranscript } from "../../pi-session-core.js";
-import type { ChatMessage } from "../../types.js";
+import { poolProfileContext } from "../../provider-profiles/context.js";
+import type { ChatMessage, ModelSummary } from "../../types.js";
 import type {
   HarnessEvent,
   HarnessModelSettings,
@@ -34,6 +35,13 @@ export class PiSession implements HarnessSession {
   private readonly listeners = new Set<Listener>();
   private unsubscribeNative: () => void = () => {};
   private stoppingForUpdate = false;
+  /**
+   * A model picked while the conversation runs on a subscription pool. Outside a member's attempt no profile is
+   * signed in to switch with, so the session keeps its model and reports this one; the next attempt switches.
+   * fix: picking a model on a pool failed with "Selected cluster subscription pool requires pool-aware execution"
+   * (homeserver, 2026-11-15).
+   */
+  private poolPick: { model: ModelSummary; reasoning: string; levels: string[] } | undefined;
 
   constructor(private readonly options: HarnessOpenOptions, handle: PiHandle) {
     this.handle = handle;
@@ -73,7 +81,9 @@ export class PiSession implements HarnessSession {
   }
 
   status() {
-    return service.getSessionStatus(this.handle.session, this.handle.safeguardsEnabled);
+    const status = service.getSessionStatus(this.handle.session, this.handle.safeguardsEnabled);
+    if (!this.poolPick) return status;
+    return { ...status, model: this.poolPick.model, thinkingLevel: this.poolPick.reasoning, availableThinkingLevels: this.poolPick.levels };
   }
 
   isBusy(): boolean {
@@ -85,14 +95,16 @@ export class PiSession implements HarnessSession {
   }
 
   settings(): HarnessModelSettings {
+    const enabledTools = this.handle.session.getActiveToolNames();
+    if (this.poolPick) return { provider: this.poolPick.model.provider, modelId: this.poolPick.model.id, reasoning: this.poolPick.reasoning, enabledTools };
     const model = this.handle.session.model;
     if (!model) throw new Error("Pi session has no selected model");
-    return {
-      provider: model.provider,
-      modelId: model.id,
-      reasoning: this.handle.session.thinkingLevel,
-      enabledTools: this.handle.session.getActiveToolNames(),
-    };
+    return { provider: model.provider, modelId: model.id, reasoning: this.handle.session.thinkingLevel, enabledTools };
+  }
+
+  /** Puts a model picked on a pool in place before work that needs it; inside a member's attempt the profile is signed in. */
+  private async applyPoolPick(): Promise<void> {
+    if (this.poolPick) await this.configure(this.settings());
   }
 
   subscribe(listener: Listener): () => void {
@@ -101,6 +113,7 @@ export class PiSession implements HarnessSession {
   }
 
   async preflight(): Promise<void> {
+    await this.applyPoolPick();
     const model = this.handle.session.model;
     if (!model) throw new Error("Pi session has no selected model");
     const check = async () => {
@@ -112,6 +125,7 @@ export class PiSession implements HarnessSession {
 
   async prompt(input: HarnessPrompt): Promise<void> {
     if (this.handle.reloadingSkills) throw new Error("Pi session is reloading skills");
+    await this.applyPoolPick();
     let started = false;
     await service.promptIdlePiSession(this.handle, async () => {
       if (teamAssistantForConversation(this.options.projectId, this.options.conversationId ?? this.id)) await service.reloadPiSkills(this.handle);
@@ -166,7 +180,22 @@ export class PiSession implements HarnessSession {
   async configure(settings: HarnessModelSettings): Promise<void> {
     if (service.sessionIsBusy(this.handle)) throw new Error("Pi session is busy");
     const currentModel = this.handle.session.model;
-    if (!currentModel || currentModel.provider !== settings.provider || currentModel.id !== settings.modelId) {
+    const switching = !currentModel || currentModel.provider !== settings.provider || currentModel.id !== settings.modelId;
+    if (switching && !poolProfileContext() && await this.handle.modelFromPool?.()) {
+      // The catalog a switch reads (setSessionModel); a pool member's sign-in, not this node's, decides whether it runs.
+      const model = service.catalogModelSummary(settings.provider, settings.modelId);
+      if (!model) throw new Error(`Model not found: ${settings.provider}/${settings.modelId}`);
+      const levels = service.modelThinkingLevels(settings.provider, settings.modelId);
+      if (!levels.includes(settings.reasoning)) throw new Error("Pi reasoning level is not supported");
+      this.poolPick = { model, reasoning: settings.reasoning, levels };
+      if (settings.enabledTools !== undefined) {
+        const available = new Set(this.handle.session.getAllTools().map((tool) => tool.name));
+        await this.setTools(settings.enabledTools.filter((name) => available.has(name)));
+      }
+      return;
+    }
+    this.poolPick = undefined;
+    if (switching) {
       const changeModel = () => service.setSessionModel(this.handle.session, settings.provider, settings.modelId);
       if (this.handle.withModelProfile) await this.handle.withModelProfile(settings.provider, changeModel);
       else await changeModel();
@@ -203,6 +232,7 @@ export class PiSession implements HarnessSession {
 
   async compact(instructions?: string, beforeStart?: () => Promise<void>): Promise<void> {
     if (service.sessionIsBusy(this.handle)) throw new Error("Pi session is busy");
+    await this.applyPoolPick();
     await beforeStart?.();
     const provider = this.handle.session.model?.provider;
     if (this.handle.withModelProfile && provider) await this.handle.withModelProfile(provider, () => this.handle.session.compact(instructions));

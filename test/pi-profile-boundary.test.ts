@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { createAgentSession, getAgentDir, SessionManager, SettingsManager } from "../src/pi-sdk.js";
 import { createSessionModelRuntime } from "../src/provider-profiles/pi.js";
 import { PiSession } from "../src/harnesses/pi/runtime.js";
+import { withPoolProfile } from "../src/provider-profiles/context.js";
 
 const credential = async (provider: string) => provider === "zai" || provider === "openai" ? { type: "api_key" as const, key: `fixture-profile-${provider}` } : undefined;
 const list = async () => [{ providerId: "zai", type: "api_key" as const }, { providerId: "openai", type: "api_key" as const }];
@@ -85,5 +86,36 @@ test("a pool restore between attempts rewinds the transcript without a profile",
     const original = runtime.getModels("zai")[0];
     await attempt(() => harness.configure({ provider: original.provider, modelId: original.id, reasoning: "off" }));
     assert.equal(session.model?.provider, "zai");
+  } finally { harness.dispose(); }
+});
+
+test("a model picked on a pool waits for the member's attempt instead of failing outside it", async () => {
+  let pinned = false;
+  const runtime = await createSessionModelRuntime(async (provider) => pinned ? credential(provider) : undefined, async () => pinned ? list() : [], () => pinned);
+  const { session } = await createAgentSession({ modelRuntime: runtime, model: runtime.getModels("zai")[0],
+    sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory(), noTools: "all" });
+  // As on a cluster's mandatory pool: switching outside a member's attempt has no profile and is refused.
+  const handle = { session, safeguardsEnabled: true, dispose: () => session.dispose(), modelFromPool: async () => true,
+    withModelProfile: async <T>(_provider: string, work: () => Promise<T>) => {
+      if (!pinned) throw new Error("Selected cluster subscription pool requires pool-aware execution");
+      return work();
+    } };
+  const harness = new PiSession({ projectId: "fixture", cwd: process.cwd(), sessionId: session.sessionId }, handle as never);
+  const member = { profileId: "member", provider: "openai-codex" as const, label: "codex", poolId: "pool" };
+  try {
+    const picked = runtime.getModels("openai")[0];
+    await harness.configure({ provider: picked.provider, modelId: picked.id, reasoning: "off" });
+    assert.equal(session.model?.provider, "zai", "the session keeps its model until a member is signed in");
+    assert.deepEqual([harness.settings().provider, harness.settings().modelId], [picked.provider, picked.id], "the next turn starts from the pick");
+    assert.deepEqual([harness.status().model?.provider, harness.status().model?.id, harness.status().thinkingLevel], [picked.provider, picked.id, "off"], "the picker shows the pick");
+
+    // The pool turn configures the saved settings inside the member's attempt.
+    await withPoolProfile(member, async () => { pinned = true; try { await harness.configure(harness.settings()); } finally { pinned = false; } });
+    assert.equal(session.model?.provider, "openai");
+    assert.equal(harness.status().model?.id, picked.id);
+
+    // Picking the model the session already runs on needs no sign-in either.
+    await harness.configure({ provider: picked.provider, modelId: picked.id, reasoning: "off" });
+    await assert.rejects(harness.configure({ provider: "openai", modelId: "no-such-model", reasoning: "off" }), /Model not found/);
   } finally { harness.dispose(); }
 });

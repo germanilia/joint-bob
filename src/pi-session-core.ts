@@ -27,6 +27,8 @@ export interface PiSessionHandle {
   /** Credentials the next model call uses, sent with each prompt by a remote server. */
   setCredentials?: (credentials: PiCredentials) => void;
   withModelProfile?: <T>(provider: string, work: () => Promise<T>) => Promise<T>;
+  /** Whether turns run on a subscription pool, which switches models only inside a member's attempt. */
+  modelFromPool?: () => Promise<boolean>;
 }
 
 export interface PiCredentials {

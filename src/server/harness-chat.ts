@@ -1624,9 +1624,12 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
   if (!record && !options.readOnly) record = await ensureConversationRecord(options.project.id, options.engine, options.sessionId, local.id, undefined, { conversationId, segmentIndex: 0 });
   const saved = readQueueSettings(queueKey(connection));
   if (saved && selectedHarness(saved) === options.engine && !harnessSessionBusy(shared)) {
-    // Pool settings authenticate only inside a member attempt, never while opening history.
+    // Pool settings authenticate only inside a member attempt, never while opening history. Pi keeps a model
+    // picked on a pool for the next attempt without signing in, so its picker shows the model the next turn uses.
     const pool = await resolveTurnSubscriptionPool(connection, { ...connection, settings: saved });
     if (!pool) await measureOperation("chat.open.configure", () => shared.session.configure(runtimeSettings(saved)));
+    else if (options.engine === "pi") await measureOperation("chat.open.configure", () => shared.session.configure(runtimeSettings(saved)))
+      .catch((error) => console.warn(`Could not show the saved model of pi:${options.sessionId} on its pool; the next turn still starts from it`, error instanceof Error ? error.message : error));
   }
   attachHarnessClient(shared, options.socket); harnessChatConnections.add(connection);
   options.socket.on("close", () => { harnessChatConnections.delete(connection); detachHarnessClient(connection.shared, options.socket); });

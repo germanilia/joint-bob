@@ -27,6 +27,8 @@ function fixture(overrides: Record<string, any> = {}) {
     clients: new Set(), liveEvents: [], turnInFlight: 0, scheduledTurn: false,
     session: {
       id: "conversation", messages, status: () => ({}), settings: () => ({}), isBusy: () => shared.turnInFlight > 0,
+      // A dispatch watches the session for the answer while a message waits behind it.
+      subscribe: () => () => {},
       preflight: async () => { preflightEntered.release(); if (holdPreflight) await preflightRelease.promise; },
       prompt: async ({ beforeStart, onStarted }: any) => {
         executions++;
@@ -162,7 +164,8 @@ for (const peerReadOnly of [true, false]) test(`read-only attach ${peerReadOnly 
   f.closeSocket();
 });
 
-for (const pooled of [true, false]) test(`opening saved model settings ${pooled ? "defers pool authentication until a turn" : "configures an individual profile"}`, async () => {
+// A Pi session keeps a model picked on a pool for the next attempt without signing in; even if that fails, the conversation opens.
+for (const pooled of [true, false]) test(`opening saved model settings ${pooled ? "shows a pooled Pi pick without blocking the open" : "configures an individual profile"}`, async () => {
   const saved = { harnessId: "pi", provider: "anthropic", modelId: "saved-model", reasoning: "high" };
   let configured = 0;
   const f = fixture({
@@ -178,7 +181,7 @@ for (const pooled of [true, false]) test(`opening saved model settings ${pooled 
     if (pooled) throw new Error("Selected subscription pool requires pool-aware execution");
   };
   await f.exports.attachHarnessChat(f.options);
-  assert.equal(configured, pooled ? 0 : 1);
+  assert.equal(configured, 1);
   assert.ok(f.frames.some(frame => frame.type === "ready"));
   f.closeSocket();
 });

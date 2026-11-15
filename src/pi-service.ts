@@ -354,6 +354,11 @@ export function modelThinkingLevels(provider: string, modelId: string): string[]
   });
 }
 
+/** A model from the catalog a switch reads, signed in or not. */
+export function catalogModelSummary(provider: string, modelId: string): ModelSummary | undefined {
+  return summarizeModel(modelRuntime.getModel(provider, modelId));
+}
+
 export async function setSessionModel(session: AgentSession, provider: string, modelId: string): Promise<ModelSummary> {
   await ensurePiProviderCatalog();
   const model = modelRuntime.getModel(provider, modelId);
@@ -802,6 +807,7 @@ export async function createPiSession(options: PiSessionOptions): Promise<PiSess
       sessionId: options.sessionId, safeguardsEnabled: options.safeguardsEnabled, defaults: piSessionDefaults(),
     }, hooks);
   selected = undefined;
+  handle.modelFromPool = hooks.modelFromPool;
   handle.withModelProfile = async (provider, work) => {
     const previous = selected;
     selected = await profiles.projectProviderProfile(options.projectId, conversationId, provider, "pi");
