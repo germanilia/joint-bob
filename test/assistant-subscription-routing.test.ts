@@ -88,6 +88,17 @@ for (const resume of [false, true]) {
   }
 }
 
+for (const origin of ["scheduled", "webhook"] as const) {
+  test(`${origin} assistant worktree runs start a fresh topic instead of moving the chosen existing one`, async () => {
+    const f = fixture(true);
+    const result = await f.exports.runPersonalAssistantAutomationTurn(f.accountId, "assistant", f.requestId, f.message, { origin, label: origin, worktreeId: "temporary-worktree" });
+    assert.equal(result.status, "completed");
+    assert.notEqual(f.queued[0].sessionId, "existing");
+    assert.equal(f.queued[0].worktreeId, "temporary-worktree");
+    assert.deepEqual(f.queued[0].queueSettings(), f.executionSettings);
+  });
+}
+
 for (const source of ["scheduled", "webhook", "telegram-owner", "telegram-group"] as const) for (const pinned of [false, true]) {
   test(`${source} executor carries its ${pinned ? "pinned" : "inherited"} subscription through assistant routing`, async () => {
     const f = fixture(false), completed: string[] = [];
@@ -95,6 +106,7 @@ for (const source of ["scheduled", "webhook", "telegram-owner", "telegram-group"
     const providerProfileId = pinned ? createProviderProfile(f.accountId, { label: "Automation", provider: "claude" }).id : null;
     Object.assign(f.dependency, {
       runWithAutomationProfile, automationProfileContext,
+      withAutomationWorktree: async (_source: unknown, _requestId: string, run: () => Promise<unknown>) => run(),
       runPersonalAssistantAutomationTurn: f.exports.runPersonalAssistantAutomationTurn,
       clusterV2Database: async () => ({}), getProjectLock: async () => undefined,
       cronStore: () => ({ target: () => {}, started: () => {}, finish: (_id: string, status: string) => completed.push(status) }),

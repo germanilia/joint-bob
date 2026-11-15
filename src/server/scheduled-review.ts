@@ -3,6 +3,7 @@ import { cronStore } from "../cron.js";
 import { markSilentScheduledRun } from "../conversation-records.js";
 import { listHarnessSessions } from "../harnesses.js";
 import type { ProjectRecord } from "../types.js";
+import { projectAdditionalPaths } from "./session-scope.js";
 
 /** Webhook prompts that must not count toward review. Node-local: the call and its turn run on this node. */
 const silentWebhookRequests = new Set<string>();
@@ -22,7 +23,7 @@ export async function silentScheduledReview(project: ProjectRecord, engine: stri
   if (task ? task.markForReview || task.projectId !== project.id || task.engine !== engine : !silentWebhook) return;
   const ownerNodeId = task ? task.ownerNodeId : (await getClusterNode()).id;
   const activity = async () => {
-    const session = (await listHarnessSessions(project, [], [`${engine}:${sessionId}`])).find(candidate => candidate.id === sessionId);
+    const session = (await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id) }, [], [`${engine}:${sessionId}`])).find(candidate => candidate.id === sessionId);
     if (!session?.updatedAt) throw new Error("Scheduled conversation activity not found");
     return session;
   };

@@ -34,6 +34,7 @@ test("project and conversation schedules, edit, pause, history, delete and Cron 
     f.engine.value = "claude"; f.engine.dispatchEvent(new Event("change", { bubbles: true }));
     f.model.value = "claude|sonnet"; f.model.dispatchEvent(new Event("change", { bubbles: true }));
     f.reasoning.value = "high"; f.timezone.value = "UTC"; f.enabled.checked = false;
+    if (!f.runInWorktree.checked) throw Error("Temporary worktrees must default on");
     if (f.pauseOnFailure.checked) throw Error("Pause on failure must default off");
     if (f.markForReview.checked) throw Error("Review must default off");
     f.pauseOnFailure.checked = true;
@@ -56,6 +57,8 @@ test("project and conversation schedules, edit, pause, history, delete and Cron 
     if (f.frequency.value !== "weekly" || f.timezone.value !== "UTC" || f.enabled.checked || !f.pauseOnFailure.checked || f.markForReview.checked) throw Error("Saved schedule not restored");
     if (f.engine.value !== "claude" || f.model.value !== "claude|sonnet" || f.reasoning.value !== "high") throw Error("Saved execution settings not restored");
     if (!f.autoReplyEnabled.checked || f.autoReplyHarness.value !== "claude" || f.autoReplyInstructions.value !== "Drive the task and verify the result" || f.autoReplyStopInstructions.value !== "The requested checks pass" || f.autoReplyLimit.value !== "12") throw Error("Saved auto reply settings not restored");
+    if (!f.runInWorktree.checked) throw Error("Worktree default must survive saving");
+    f.runInWorktree.checked = false; f.runInWorktree.dispatchEvent(new Event("change", { bubbles: true }));
     f.name.value = "Edited project cron"; f.frequency.value = "daily";
     f.frequency.dispatchEvent(new Event("change", { bubbles: true }));
     if (!document.querySelector("#cronWeekdayLabel").hidden) throw Error("Daily schedule shows weekday");
@@ -66,6 +69,9 @@ test("project and conversation schedules, edit, pause, history, delete and Cron 
   await page.waitForFunction(() => document.querySelector("#cronList").textContent.includes("Next run"));
   await page.locator('[data-testid="cron-toggle"]').click();
   await page.waitForFunction(() => document.querySelector("#cronList").textContent.includes("Paused"));
+  await page.getByTestId("cron-edit").click();
+  assert.equal(await page.getByTestId("cron-run-in-worktree").isChecked(), false, "the worktree opt-out survives saving and pause/resume");
+  await page.getByTestId("cron-cancel").click();
   const historyButton = page.getByTestId("cron-history");
   await historyButton.click();
   await page.waitForFunction(() => document.querySelector("#cronList .cron-task-history")?.textContent === "Not run yet");
@@ -84,6 +90,8 @@ test("project and conversation schedules, edit, pause, history, delete and Cron 
   assert.equal(await page.evaluate(`(() => {
     const form = document.querySelector("#cronForm"), f = form.elements;
     if (f.engine.disabled || f.engine.value !== "pi") throw Error("Conversation harness should be selectable");
+    if (!f.runInWorktree.checked || !document.querySelector("#cronContext").textContent.includes("fresh worktree")) throw Error("Even pinned tasks must default to fresh worktrees");
+    f.runInWorktree.checked = false; f.runInWorktree.dispatchEvent(new Event("change", { bubbles: true }));
     f.engine.value = "claude"; f.engine.dispatchEvent(new Event("change", { bubbles: true }));
     if (!document.querySelector("#cronContext").textContent.includes("Each run starts a new conversation")) throw Error("Changing harness should start a new conversation");
     f.engine.value = "pi"; f.engine.dispatchEvent(new Event("change", { bubbles: true }));

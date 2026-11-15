@@ -306,12 +306,12 @@ async function exceedsSize(folder: string, limit: number): Promise<boolean> {
 
 /** Starts the worktree as the remote default branch is now, plus the folder's git-ignored local files.
     Returns null, having written nothing, when the project has no such branch. */
-async function copyRemoteBase(source: string, staging: string, gitEnvironment: NodeJS.ProcessEnv, localMain = false): Promise<{ gitBase: string; gitBaseRef: string } | null> {
+async function copyRemoteBase(source: string, staging: string, gitEnvironment: NodeJS.ProcessEnv, localMain = false, originMain = false): Promise<{ gitBase: string; gitBaseRef: string } | null> {
   let base;
   try {
-    base = await exportWorktreeBase(source, gitEnvironment, staging, (relative, size) => size <= MAX_FILE_BYTES && worktreePathAllowed(staging, path.join(staging, ...relative.split("/"))), localMain);
+    base = await exportWorktreeBase(source, gitEnvironment, staging, (relative, size) => size <= MAX_FILE_BYTES && worktreePathAllowed(staging, path.join(staging, ...relative.split("/"))), localMain, originMain);
   } catch (error) {
-    if (localMain) throw error;
+    if (localMain || originMain) throw error;
     console.warn("Worktree could not start from the remote branch; copying the project folder", error instanceof Error ? error.message.slice(0, 200) : error);
     await fs.rm(staging, { recursive: true, force: true });
     return null;
@@ -331,7 +331,7 @@ async function copyRemoteBase(source: string, staging: string, gitEnvironment: N
   return { gitBase: base.commit, gitBaseRef: base.ref };
 }
 
-export async function createProjectWorktree(project: ProjectRecord, input: { name: unknown; color?: unknown; createdBy?: WorktreeCreator; gitEnvironment?: NodeJS.ProcessEnv; localMain?: boolean }, root = worktreeRoot()): Promise<ProjectWorktree> {
+export async function createProjectWorktree(project: ProjectRecord, input: { name: unknown; color?: unknown; createdBy?: WorktreeCreator; gitEnvironment?: NodeJS.ProcessEnv; localMain?: boolean; originMain?: boolean }, root = worktreeRoot()): Promise<ProjectWorktree> {
   const name = normalizeName(input.name);
   const existing = await listProjectWorktrees(project.id, root);
   if (existing.some((worktree) => worktree.name.toLowerCase() === name.toLowerCase())) throw new ProjectWorktreeError(409, "A worktree with this name already exists");
@@ -346,7 +346,7 @@ export async function createProjectWorktree(project: ProjectRecord, input: { nam
   // Copied privately, then renamed in: the synced folder never sees a half-made worktree.
   const staging = path.join(path.dirname(worktree), `.creating-${id}`);
   try {
-    const remote = await copyRemoteBase(source, staging, input.gitEnvironment ?? {}, input.localMain);
+    const remote = await copyRemoteBase(source, staging, input.gitEnvironment ?? {}, input.localMain, input.originMain);
     let gitBase = remote?.gitBase ?? null;
     let uncommittedDiff: string | null = null;
     if (!remote) {

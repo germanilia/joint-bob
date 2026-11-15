@@ -119,7 +119,7 @@ test("different schedules run concurrently in isolated conversations that join p
     });
     const sessions = await api<{ sessions: Array<{ cronTaskId?: string; reviewState?: string; silentReviewUntil?: string }> }>(node, auth, "GET", `/projects/${base.projectId}/sessions`);
     for (const task of tasks) assert.ok(sessions.body.sessions.some(session => session.cronTaskId === task.id), `${task.name} result missing from project history`);
-    assert.equal(sessions.body.sessions.find(session => session.cronTaskId === tasks[0].id)?.reviewState, "reviewed", "silent run should not enter review");
+    assert.equal(sessions.body.sessions.find(session => session.cronTaskId === tasks[0].id)?.reviewState, "reviewed", `silent run should not enter review: ${JSON.stringify(sessions.body.sessions.find(session => session.cronTaskId === tasks[0].id))}`);
     assert.ok(sessions.body.sessions.find(session => session.cronTaskId === tasks[0].id)?.silentReviewUntil, "silent boundary should persist on conversation");
     assert.equal(sessions.body.sessions.find(session => session.cronTaskId === tasks[1].id)?.reviewState, "needs_review", "ordinary run still needs review");
     const pending = await api<Snapshot>(node, auth, "GET", "/reviews/pending");
@@ -196,7 +196,7 @@ test("cron API routes to execution owner, persists, runs fresh project conversat
     const busy = { engine: "claude", sessionId: existing.id, summary: { runId: "cron-busy-child", status: "running", tasks: [] } };
     ownerDb.prepare("INSERT INTO conversation_work VALUES (?, ?, ?, ?)").run("claude", existing.id, busy.summary.runId, JSON.stringify(busy));
     ownerDb.close();
-    const conversation = await api<{ task: CronTask }>(a, auth, "POST", "/cron", { nodeId: b.nodeId, command: { action: "create", input: { ...input, sessionId: existing.id } } });
+    const conversation = await api<{ task: CronTask }>(a, auth, "POST", "/cron", { nodeId: b.nodeId, command: { action: "create", input: { ...input, sessionId: existing.id, runInWorktree: false } } });
     assert.equal(conversation.status, 200, JSON.stringify(conversation.body));
     makeDue(b.dataDir, conversation.body.task.id);
     const executionDb = openNodeDb(b.dataDir);
