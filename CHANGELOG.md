@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.315.1 — 2026-11-15
+
+- Webhooks can run with a subscription pool while preserving Guardian and worktree settings.
+- Webhook headers, inbox search focus, and conversation harness icons now display correctly.
+
 ## 2.315.0 — 2026-11-15
 
 - Existing and new webhooks and scheduled tasks now run in a fresh temporary worktree by default, with an option to opt out for each automation. Git projects fetch origin/main rather than using local or unpublished changes.

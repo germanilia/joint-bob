@@ -4,7 +4,7 @@
 // given instead of scrolling. A webhook opens as a detail view with tabs: Setup and Access share
 // one save bar, Files, Skills and Memory apply at once, and Calls shows recent deliveries.
 import { api } from "./api.js";
-import { createAutomationProfilePicker } from "./provider-profile-picker.js";
+import { createAutomationPoolPicker } from "./provider-profile-picker.js";
 import { createAutomationTagPicker } from "./automation-tag-picker.js";
 import { copyText, createFittedList, formatWhen, makeBadge, makeButton, makeNode, makeTwoStepButton, showStatus } from "./relay-ui.js";
 import { createWebhookFiles } from "./webhook-files.js";
@@ -58,7 +58,7 @@ function hookUrl(suffix = "") {
 }
 const say = (message, kind = "info") => showStatus(status, message, kind);
 
-const profilePicker = createAutomationProfilePicker(field.model.closest("label"), "webhooks-provider-profile", () => api(endpoint("/profiles")));
+const profilePicker = createAutomationPoolPicker(field.model.closest("label"), "webhooks-provider-pool", () => api(endpoint("/profiles")));
 const tagPicker = createAutomationTagPicker(byId("webhooksAutomationTags"), "webhooks-tags");
 const machineLabel = makeNode("label", "", "Machine");
 const machineSelect = document.createElement("select");
@@ -114,7 +114,7 @@ machineSelect.addEventListener("change", () => {
       renderSecrets();
       syncKind();
       ownerReady = true;
-      say("Machine changed. Check the model, profile and secret accounts before creating.");
+      say("Machine changed. Check the model, pool and secret accounts before creating.");
     } finally {
       machineSelect.disabled = false;
       field.save.disabled = !ownerReady;
@@ -138,6 +138,7 @@ const memory = createWebhookMemory({ url: hookUrl, run, say, onEnabled: (on) => 
 /** The body a PUT or POST sends: everything about the webhook, so saving one setting keeps the others. */
 const hookBody = (hook, changes = {}) => JSON.stringify({
   providerProfileId: hook.providerProfileId ?? null,
+  providerPoolId: hook.providerPoolId ?? null,
   name: hook.name, target: hook.target, context: hook.context, enabled: hook.enabled, bypassGuardian: hook.bypassGuardian, attachments: hook.attachments, preserveFiles: hook.preserveFiles, runInWorktree: hook.runInWorktree, markForReview: hook.markForReview, hideFromHistory: hook.hideFromHistory, senders: hook.senders, model: hook.model, reasoning: hook.reasoning, secretAccountIds: hook.secretAccountIds, titleTemplate: hook.titleTemplate, ...changes,
 });
 
@@ -427,7 +428,7 @@ async function fillFields(hook) {
     ? `Every call routes through ${assistantTarget.name}; its decision model chooses the conversation.`
     : `This webhook routes through personal assistant ${target?.kind === "assistant" ? target.assistantId : ""}.`;
   fillHarnesses(target?.kind === "assistant" ? "" : target?.engine ?? "");
-  void profilePicker.refresh(hook?.providerProfileId ?? null);
+  void profilePicker.refresh(hook);
   renderExecution(hook?.model ? `${hook.model.provider}|${hook.model.modelId}` : "", hook?.reasoning ?? "");
   field.context.value = hook?.context ?? "";
   field.titleTemplate.value = hook?.titleTemplate ?? "";
@@ -620,7 +621,7 @@ function buildBody() {
   const senders = field.sendersEnabled.checked
     ? { fields: field.senderFields.value.split(/[\s,]+/).filter(Boolean), allowed: parseAllowed(field.allowedSenders.value) }
     : null;
-  return JSON.stringify({ providerProfileId: profilePicker.value(), tags: tagPicker.getValue(), name: field.name.value, target, context: field.context.value, enabled: field.enabled.checked, bypassGuardian: field.bypassGuardian.checked, attachments: field.attachments.checked, preserveFiles: field.preserveFiles.checked, runInWorktree: field.runInWorktree.checked, markForReview: field.markForReview.checked, hideFromHistory: field.hideFromHistory.checked, senders, model, reasoning: field.kind.value === "assistant" ? null : field.effort.value || null, secretAccountIds: [...selectedSecretIds], titleTemplate: field.kind.value === "project" ? field.titleTemplate.value : "" });
+  return JSON.stringify({ ...profilePicker.value(), tags: tagPicker.getValue(), name: field.name.value, target, context: field.context.value, enabled: field.enabled.checked, bypassGuardian: field.bypassGuardian.checked, attachments: field.attachments.checked, preserveFiles: field.preserveFiles.checked, runInWorktree: field.runInWorktree.checked, markForReview: field.markForReview.checked, hideFromHistory: field.hideFromHistory.checked, senders, model, reasoning: field.kind.value === "assistant" ? null : field.effort.value || null, secretAccountIds: [...selectedSecretIds], titleTemplate: field.kind.value === "project" ? field.titleTemplate.value : "" });
 }
 
 async function submit() {

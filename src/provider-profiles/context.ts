@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ProfileProvider, ProviderProfile } from "./store.js";
 
-export interface AutomationProfileContext { accountId: string; profileId: string | null }
+export interface AutomationProfileContext { accountId: string; profileId: string | null; poolId?: string | null }
 export interface PoolProfileContext {
   profileId: string;
   provider: ProfileProvider;

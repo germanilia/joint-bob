@@ -12,6 +12,7 @@ import { glide, positions, vanish } from "./control-vanish.js";
 import { PROJECT_COLORS } from "./session-rows.js";
 import { openRowMenu } from "./row-menu.js";
 import { listOpenButton, renderList } from "./control-list.js";
+import { brandIcon } from "./icons.js";
 
 const DEFAULT_COLOR = "#3a3f46";
 const COLUMNS = [
@@ -234,7 +235,9 @@ function moreButton(card, actions, extras = null) {
 
 /** Each card's agent as a character: its first letter in its project's color; it bobs while it works and waves when it waits. */
 function avatarOf(card) {
-  const avatar = element("span", `control-avatar ${card.column}`, (card.agentLabel || card.harnessId || "?").trim()[0].toUpperCase());
+  const avatar = element("span", `control-avatar ${card.column}`);
+  const harness = card.harnessId;
+  avatar.append(brandIcon(harness, `control-avatar-logo ${harness}`));
   avatar.dataset.testid = "control-card-avatar";
   avatar.title = [card.agentLabel, card.agentModel].filter(Boolean).join(" · ");
   if (card.column === "needs-you") avatar.append(element("i", "control-avatar-call", "!"));

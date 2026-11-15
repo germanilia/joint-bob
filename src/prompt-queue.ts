@@ -19,7 +19,7 @@ export const queuedSettingsSchema = z.object({
   claudeTools: z.object({ available: z.array(z.string()), enabled: z.array(z.string()).nullable() }).strict().optional(),
 }).strict();
 export type QueuedSettings = z.infer<typeof queuedSettingsSchema>;
-export const queuedAutomationProfileSchema = z.object({ accountId: z.string().min(1), profileId: z.string().min(1).nullable(), nodeId: z.string().min(1) }).strict();
+export const queuedAutomationProfileSchema = z.object({ accountId: z.string().min(1), profileId: z.string().min(1).nullable(), poolId: z.string().uuid().nullable().optional(), nodeId: z.string().min(1) }).strict();
 const promptSchema = z.object({
   bypassGuardian: z.boolean().optional(),
   automationProfile: queuedAutomationProfileSchema.optional(),

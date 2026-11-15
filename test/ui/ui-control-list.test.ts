@@ -191,6 +191,35 @@ test("the list: system messages first, rows by project, the panel's tabs, search
   await page.getByTestId("control-list").waitFor();
 });
 
+test("inbox search keeps its focus ring on the outer shell only", { timeout: 90_000 }, async (t) => {
+  const { page } = await openList(t);
+  const search = page.getByTestId("control-list-search");
+  await search.focus();
+  const style = await search.evaluate((input) => {
+    const inner = getComputedStyle(input);
+    const outer = getComputedStyle(input.parentElement!);
+    return { shadow: inner.boxShadow, border: inner.borderTopWidth, outline: inner.outlineStyle, outerShadow: outer.boxShadow };
+  });
+  assert.equal(style.shadow, "none", "the input must not draw a second focus ring");
+  assert.equal(style.border, "0px");
+  assert.equal(style.outline, "none");
+  assert.notEqual(style.outerShadow, "none", "keyboard focus remains visible on the shell");
+});
+
+test("conversation avatars show harness logos in the list, preview and cards", { timeout: 90_000 }, async (t) => {
+  const { page } = await openList(t);
+  for (const [key, harness] of [["p1:c1", "claude"], ["p2:c3", "pi"]]) {
+    const avatar = page.locator(`[data-key="${key}"] [data-testid="control-card-avatar"]`);
+    assert.equal(await avatar.locator(`svg.${harness} path`).count() > 0, true, `${harness} has its actual mark, not an initial`);
+    const size = await avatar.locator("svg").boundingBox();
+    assert.ok(size && size.width >= 14 && size.width <= 24 && size.height >= 14 && size.height <= 24, "logos fit inside their badges");
+  }
+  assert.equal(await page.getByTestId("control-list-preview").locator(".control-avatar svg.claude").count(), 1);
+  await page.getByTestId("control-layout-cards").click();
+  await page.getByTestId("control-center-card").first().waitFor();
+  assert.equal(await page.locator('[data-key="p2:c3"] .control-avatar svg.pi').count(), 1);
+});
+
 // A conversation that was reviewed and not marked done is on no lane of the board: the Inbox still lists it, and the search finds it.
 test("an open conversation that was reviewed stays in the Inbox and is found by the search", { timeout: 90_000 }, async (t) => {
   const reviewed = { ...PAST[0], conversationId: "c7", sessionId: "c7", path: "/c7", title: "Tenant 16", doneAt: null, updatedAt: "2026-11-04T10:00:00Z", executionNodeId: null, summary: "Summary verification fixed." };
