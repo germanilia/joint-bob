@@ -505,8 +505,9 @@
   body:not(.focus-ui) #chatPanel {
     position: relative;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto auto auto auto auto;
-    grid-template-areas: "popup" "head" "lease" "chips" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto auto auto auto auto;
+    grid-template-areas: "popup" "head" "lease" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
+    container: chatpanel / inline-size;
     column-gap: var(--ws-gap);
     border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible;
   }
@@ -516,13 +517,12 @@
   }
   body:not(.focus-ui) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])):not(:has(> .messages-wrap.activity-floating)) {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "popup details" "head details" "lease details" "chips details" "msgs details" "reconnect details" "routing details" "strip details" "lock details" "done details" "login details" "composer details";
+    grid-template-areas: "popup details" "head details" "lease details" "msgs details" "reconnect details" "routing details" "strip details" "lock details" "done details" "login details" "composer details";
   }
   body:not(.focus-ui) #chatPanel > .messages-wrap { display: contents; }
   body:not(.focus-ui) #chatPanel > .control-popup-bar { grid-area: popup; }
   body:not(.focus-ui) #chatPanel > .chat-topbar { grid-area: head; }
   body:not(.focus-ui) #chatPanel > .control-lease-banner { grid-area: lease; margin: 10px 28px 0; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar { grid-area: chips; }
   body:not(.focus-ui) #chatPanel > .messages-wrap > :is(.messages, .jump-to-bottom, .story-return) { grid-area: msgs; }
   body:not(.focus-ui) #chatPanel > .reconnect-banner { grid-area: reconnect; }
   body:not(.focus-ui) #chatPanel > .routing-warning { grid-area: routing; }
@@ -626,33 +626,50 @@
 
   /* The second line: agent, model, effort and machine as chips; context, time and cost as quiet meta. It is always one
      line: model and machine names change while an agent works, and a row that re-wrapped on them moved the whole
-     conversation up and down, so chips and meta shrink (and cut their text) instead. */
-  body:not(.focus-ui) #chatPanel > .chat-toolbar {
-    display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 12px 24px 14px 30px; border: 0; background: transparent; overflow: visible;
+     conversation up and down, so chips and meta shrink (and cut their text) instead. Its place in the header is set
+     further down. */
+  body:not(.focus-ui) #chatPanel .chat-toolbar {
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; overflow: visible;
   }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar :is(.chat-session-controls, .chat-toolbar-actions) { display: contents; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-control { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; max-width: none; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-control > span:not(.shortcut-hint) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-control[for="chatHarnessSelect"] { order: 1; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-model-control { order: 2; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-mode-control { order: 3; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-control[for="chatNodeSelect"] { order: 4; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-mode-control[hidden] { display: none !important; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar :is(.chat-session-controls, .chat-toolbar-actions) { display: contents; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-control { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; max-width: none; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-control > span:not(.shortcut-hint) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-control[for="chatHarnessSelect"] { order: 1; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-model-control { order: 2; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-mode-control { order: 3; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-control[for="chatNodeSelect"] { order: 4; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-mode-control[hidden] { display: none !important; }
   /* When the row is short, the quiet meta gives way first, then the model and the machine; the agent and the effort
      are short words and keep them whole. */
-  body:not(.focus-ui) #chatPanel > .chat-toolbar :is(.chat-control[for="chatHarnessSelect"], .chat-mode-control) { flex-shrink: 0; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar :is(.chat-model-control, .chat-control[for="chatNodeSelect"]) { min-width: 72px; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-toolbar-control {
+  body:not(.focus-ui) #chatPanel .chat-toolbar :is(.chat-control[for="chatHarnessSelect"], .chat-mode-control) { flex-shrink: 0; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar :is(.chat-model-control, .chat-control[for="chatNodeSelect"]) { min-width: 72px; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-toolbar-control {
     width: auto; min-width: 0; max-width: min(240px, 100%); height: 30px; min-height: 30px; padding: 0 28px 0 12px; border: 0; border-radius: 999px;
     background-color: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 600 12.5px/30px var(--sans);
     background-position: right 11px center; text-overflow: ellipsis; white-space: nowrap; field-sizing: content;
   }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .chat-toolbar-control:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar #chatNodeSelect { color: var(--muted); max-width: min(200px, 100%); }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar #modelButton { display: inline-flex; max-width: min(260px, 100%); }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar #modelButton.claude { color: var(--claude); }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar .auto-respond-pill { order: 5; }
-  body:not(.focus-ui) #chatPanel > .chat-toolbar :is(#chatRecentSessionsButton, #chatRunningConversationsButton) { display: none !important; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .chat-toolbar-control:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
+  body:not(.focus-ui) #chatPanel .chat-toolbar #chatNodeSelect { color: var(--muted); max-width: min(200px, 100%); }
+  body:not(.focus-ui) #chatPanel .chat-toolbar #modelButton { display: inline-flex; max-width: min(260px, 100%); }
+  body:not(.focus-ui) #chatPanel .chat-toolbar #modelButton.claude { color: var(--claude); }
+  body:not(.focus-ui) #chatPanel .chat-toolbar .auto-respond-pill { order: 5; }
+  body:not(.focus-ui) #chatPanel .chat-toolbar :is(#chatRecentSessionsButton, #chatRunningConversationsButton) { display: none !important; }
+  /* Wide panel: one line in the title row, title, chips, quiet meta, then the actions. A narrower panel gives the chips
+     a line of their own under the title. That row needs about 1500 px for itself: 1550 px of panel, or 1900 px while the
+     details column is docked beside the conversation (it takes about 360 px of the panel). The panel's width decides,
+     never the header's own content, so a model name that changes while an agent works cannot re-flow the header. */
+  body:not(.focus-ui) #chatPanel .chat-topbar > .chat-title-block { flex: 0 1 auto; }
+  body:not(.focus-ui) #chatPanel .chat-topbar > .chat-toolbar { order: 0; flex: 1 3 auto; min-width: 0; padding: 0 0 0 16px; }
+  @container chatpanel (max-width: 1549px) {
+    body:not(.focus-ui) #chatPanel .chat-topbar { flex-wrap: wrap; row-gap: 0; }
+    body:not(.focus-ui) #chatPanel .chat-topbar > .chat-title-block { flex: 1 1 0; }
+    body:not(.focus-ui) #chatPanel .chat-topbar > .chat-toolbar { order: 1; flex: 0 0 100%; padding: 12px 0 14px; }
+  }
+  @container chatpanel (max-width: 1899px) {
+    body:not(.focus-ui):not(.ws-details-tucked) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])) .chat-topbar { flex-wrap: wrap; row-gap: 0; }
+    body:not(.focus-ui):not(.ws-details-tucked) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])) .chat-topbar > .chat-title-block { flex: 1 1 0; }
+    body:not(.focus-ui):not(.ws-details-tucked) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])) .chat-topbar > .chat-toolbar { order: 1; flex: 0 0 100%; padding: 12px 0 14px; }
+  }
   body:not(.focus-ui) .ws-chat-meta { order: 9; display: flex; flex: 0 1000 auto; align-items: center; gap: 12px; margin-left: auto; min-width: 0; overflow: hidden; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
   body:not(.focus-ui) .ws-chat-meta > * { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   body:not(.focus-ui) .ws-chat-meta :is(.turn-timer, .context-usage) { font: 500 12.5px/1 var(--sans); }
@@ -796,7 +813,7 @@
      the conversation keeps a readable width (app/workspace.js sets the class). */
   body:not(.focus-ui).ws-details-float #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])):not(:has(> .messages-wrap.activity-floating)) {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "popup" "head" "lease" "chips" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
+    grid-template-areas: "popup" "head" "lease" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
   }
   body:not(.focus-ui).ws-details-tucked #chatPanel > .messages-wrap > #activityPanel { display: none; }
   body:not(.focus-ui).ws-details-tucked .ws-head-actions #activityToggleButton.active { background: transparent; color: var(--muted); }
@@ -818,7 +835,6 @@
   @media (max-width: 1023px) {
     :root { --ws-side-width: 232px; --ws-gap: 10px; }
     body:not(.focus-ui) #chatPanel > .chat-topbar { padding: 18px 16px 0 20px; }
-    body:not(.focus-ui) #chatPanel > .chat-toolbar { padding: 10px 16px 12px 20px; }
     body:not(.focus-ui) #chatPanel .chat-project-name { display: none; }
     body:not(.focus-ui) .ws-head-actions #chatDoneButton .chat-action-label { display: none; }
     body:not(.focus-ui) .ws-head-actions #chatDoneButton { width: 34px; padding: 0; justify-content: center; }
@@ -830,7 +846,7 @@
        stay in reach. */
     body:not(.focus-ui) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])):not(:has(> .messages-wrap.activity-floating)) {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-areas: "popup" "head" "lease" "chips" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
+      grid-template-areas: "popup" "head" "lease" "msgs" "reconnect" "routing" "strip" "lock" "done" "login" "composer";
     }
     body:not(.focus-ui) #chatPanel > .messages-wrap > #activityPanel {
       grid-area: msgs; position: absolute; z-index: 6; inset: 0 8px 0 auto; width: min(92%, var(--activity-preferred-width, 360px)); max-width: none; box-shadow: var(--shadow);

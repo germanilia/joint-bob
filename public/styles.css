@@ -3087,20 +3087,20 @@ html:is([data-motion="playful"], [data-motion="calm"]) .toast.toast-leaving { an
      whole conversation up and down. Each control gets a width from this list, so
      where the actions sit depends on the panel's width alone. Focus mode moves the
      toolbar out of the panel and lays it out itself. */
-  #chatPanel > .chat-toolbar .chat-session-controls { display: contents; }
-  #chatPanel > .chat-toolbar .chat-control { grid-template-columns: minmax(0, 1fr); flex: var(--control-grow, 1) 1 var(--control-basis); min-width: 0; max-width: var(--control-max); }
-  #chatPanel > .chat-toolbar .chat-control > span { white-space: nowrap; }
-  #chatPanel > .chat-toolbar .chat-toolbar-control { width: 100%; min-width: 0; max-width: none; }
+  #chatPanel .chat-toolbar .chat-session-controls { display: contents; }
+  #chatPanel .chat-toolbar .chat-control { grid-template-columns: minmax(0, 1fr); flex: var(--control-grow, 1) 1 var(--control-basis); min-width: 0; max-width: var(--control-max); }
+  #chatPanel .chat-toolbar .chat-control > span { white-space: nowrap; }
+  #chatPanel .chat-toolbar .chat-toolbar-control { width: 100%; min-width: 0; max-width: none; }
   /* Node and model names are the long ones, so spare room goes to them first. */
-  #chatPanel > .chat-toolbar .chat-control[for="chatNodeSelect"] { --control-basis: 116px; --control-max: 170px; --control-grow: 3; }
-  #chatPanel > .chat-toolbar .chat-control[for="chatHarnessSelect"] { --control-basis: 80px; --control-max: 120px; }
-  #chatPanel > .chat-toolbar .chat-model-control { --control-basis: 140px; --control-max: 220px; --control-grow: 3; }
-  #chatPanel > .chat-toolbar .chat-mode-control { --control-basis: 92px; --control-max: 132px; }
+  #chatPanel .chat-toolbar .chat-control[for="chatNodeSelect"] { --control-basis: 116px; --control-max: 170px; --control-grow: 3; }
+  #chatPanel .chat-toolbar .chat-control[for="chatHarnessSelect"] { --control-basis: 80px; --control-max: 120px; }
+  #chatPanel .chat-toolbar .chat-model-control { --control-basis: 140px; --control-max: 220px; --control-grow: 3; }
+  #chatPanel .chat-toolbar .chat-mode-control { --control-basis: 92px; --control-max: 132px; }
   /* A model without reasoning levels leaves the picker's place empty rather than closing
      the gap; `!important` because the global `[hidden]` rule carries one. */
-  #chatPanel > .chat-toolbar .chat-mode-control[hidden] { display: grid !important; visibility: hidden; }
+  #chatPanel .chat-toolbar .chat-mode-control[hidden] { display: grid !important; visibility: hidden; }
   /* The count sits on the button's corner, as the running count does, and takes no room. */
-  #chatPanel > .chat-toolbar .background-tasks-badge { position: absolute; top: -3px; right: -3px; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; font-weight: 650; line-height: 1; }
+  #chatPanel .chat-toolbar .background-tasks-badge { position: absolute; top: -3px; right: -3px; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; font-weight: 650; line-height: 1; }
   .mobile-nav { display: none; }
   .back-button { display: none; }
   /* `.shell` declares these custom properties, so the override has to land on

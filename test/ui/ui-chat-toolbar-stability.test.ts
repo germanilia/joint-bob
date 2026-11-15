@@ -15,8 +15,8 @@ const MEASURE_LABEL_CHANGES = `(async () => {
   const { renderReasoningOptions, syncModelButton } = await import('/app/composer-dialogs.js');
   const { renderChatSessionControls } = await import('/app/chat-controls.js');
   const { setStatus } = await import('/app/shell.js');
-  // The desktop workspace: the chips are #chatToolbar, one line under the title; the actions are the title line's
-  // Mark done, details toggle and ⋯ (#chatHeadActions).
+  // The desktop workspace: the chips are #chatToolbar, in the title line on a wide panel and one line under it on a
+  // narrower one; the actions are the title line's Mark done, details toggle and ⋯ (#chatHeadActions).
   const toolbar = document.querySelector('#chatToolbar');
   const actions = document.querySelector('#chatHeadActions');
   const badge = document.querySelector('#backgroundTasksBadge');
@@ -81,15 +81,18 @@ test("the chat toolbar holds still while its labels change", { timeout: 180_000 
   await page.locator("#loginPasswordInput").fill(environment.password);
   await page.locator("#loginSubmitButton").click();
   await page.waitForFunction(() => document.querySelectorAll("#projectList .list-row").length === 3);
-  await page.locator("#projectList .list-row", { hasText: "Internal Assistant" }).locator("button").first().click();
-  await page.locator('[data-filter="all"]').click();
+  // The app opens on Bob's page; only the person leaves it (Esc twice).
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card", { hasText: "Thread-Based Agent Builder" }).click();
   await page.locator("#modelButton:enabled").waitFor();
   await page.locator("#messages .message").first().waitFor();
 
-  // Every desktop width, in steps small enough that no wrap point falls between two of them.
+  // Every desktop width up to a wide monitor, in steps small enough that no wrap point falls between two of them. The
+  // header is one row only on a wide panel (workspace.css), so the range crosses that switch and each side is checked.
   const reports: WidthReport[] = [];
-  for (let width = 1024; width <= 2000; width += 8) {
+  for (let width = 1024; width <= 3000; width += 8) {
     await page.setViewportSize({ width, height: 900 });
     reports.push({ width, ...await page.evaluate(MEASURE_LABEL_CHANGES) as Omit<WidthReport, "width"> });
   }

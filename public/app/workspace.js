@@ -74,6 +74,18 @@ function applyPlacements() {
   for (const [id, targetId] of PLACEMENTS) {
     const target = byId(targetId);
     place(byId(id), target, targetId === "chatMeta" ? byId("chatCostMeta") : null);
+  placeChipRow();
+}
+
+/**
+ * The chip row (agent, model, effort, machine and the quiet meta) joins the header, between the title and its actions:
+ * on the title's line on a wide panel, on a line of its own under it on a narrower one (styles in workspace.css). It is
+ * not one of the PLACEMENTS: on the phone focus-ui.js moves it and puts it back by its own marker, so this only ever
+ * moves it on the desktop. focus-ui.js may put it back at its marker after this ran (the two listen to different
+ * media queries), so applyLayout places it again a frame later.
+ */
+function placeChipRow() {
+  byId("chatTopbar").insertBefore(byId("chatToolbar"), byId("chatHeadActions"));
   }
 }
 
@@ -756,6 +768,7 @@ export function closeGroupPage() {
   body.classList.remove("ws-page-open");
 }
 
+  else requestAnimationFrame(() => { if (desktop.matches) placeChipRow(); });
 /** Every card of the group is one continuous list that scrolls (long-scroll.js); a refresh draws it again where it was, another group starts at the top. */
 function renderGroupPage() {
   if (pageGroup.startsWith(TEAM_PAGE)) { renderTeamPage(pageGroup.slice(TEAM_PAGE.length)); return; }

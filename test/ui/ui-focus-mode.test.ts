@@ -47,7 +47,7 @@ test("focus UI is the only mobile interface, uses real conversations, and deskto
   await page.waitForFunction(() => !document.body.classList.contains("focus-ui"));
   assert.equal(await page.locator("#projectsPanel").isVisible(), true);
   assert.equal(await page.locator("#chatsPanel").isVisible(), true);
-  assert.equal(await page.locator("#chatPanel > #chatToolbar").isVisible(), true, "real toolbar returns to original parent");
+  assert.equal(await page.locator("#chatTopbar > #chatToolbar").isVisible(), true, "the real toolbar returns to the desktop header");
   assert.equal(await page.locator("#messageInput").inputValue(), "Keep my real conversation draft");
   await page.reload();
   await page.locator(".project-card").first().waitFor();

@@ -105,7 +105,7 @@ for (const theme of ["light", "dark"]) test(`focus mobile headers and shared FAB
   }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.waitForFunction(() => !document.body.classList.contains("focus-ui"));
-  await page.locator("#chatPanel > #chatToolbar").waitFor({ state: "attached" });
-  assert.equal(await page.locator("#chatPanel > #chatToolbar").count(), 1);
+  await page.locator("#chatTopbar > #chatToolbar").waitFor({ state: "attached" });
+  assert.equal(await page.locator("#chatTopbar > #chatToolbar").count(), 1);
   assert.deepEqual(errors, [], "focus navigation has no page errors");
 });
