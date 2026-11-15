@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.312.3 — 2026-11-15
+
+- Activity overview prepares narration as soon as its script is ready, reducing the wait before playback.
+
 ## 2.312.2 — 2026-11-15
 
 - The phone's Inbox no longer flashes a project's conversation list when the page loads or a conversation opens or closes.
