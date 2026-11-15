@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.316.0 — 2026-11-16
+
+- On Bob's page, the team context list and Bob's settings now sit in Bob's chat header instead of the top bar.
+- Refresh, Theme, Settings and Exit in the top bar are icon buttons.
+
 ## 2.315.4 — 2026-11-15
 
 - The check shown when a conversation is marked done is drawn without injected markup, which a test that guards the whole app requires.
