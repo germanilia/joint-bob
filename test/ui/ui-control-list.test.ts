@@ -26,7 +26,7 @@ const SYSTEM = [{
   steps: ["Attach a secret named `TYPESAFE_AI_API_KEY` to a project.", "Open Bob's settings.", "Press Check again."], action: { label: "Open Bob's settings", open: "bob-settings" },
 }];
 
-type Mocked = typeof window & { __board: typeof BOARD; __system: unknown[]; __sent: unknown[]; __deleted: string[]; __pins: unknown[]; __decided?: unknown };
+type Mocked = typeof window & { __board: typeof BOARD; __system: unknown[]; __sent: unknown[]; __deleted: string[]; __pins: unknown[]; __decided?: unknown; __past?: unknown[] };
 
 /** Signs in and puts a scripted board, past list, system messages and pin/delete routes in front of the node. */
 async function openList(t: Parameters<typeof nativeUiFixture>[0], past: unknown[] = PAST) {
@@ -50,7 +50,7 @@ async function openList(t: Parameters<typeof nativeUiFixture>[0], past: unknown[
       const method = (args[1] && args[1].method) || 'GET';
       const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
       if (url.pathname === '/api/control-center/board') return json(window.__board);
-      if (url.pathname === '/api/control-center/past') return json({ conversations: ${JSON.stringify(past)} });
+      if (url.pathname === '/api/control-center/past') return json({ conversations: window.__past ?? ${JSON.stringify(past)} });
       if (url.pathname === '/api/control-center/system') return json({ messages: window.__system });
       if (url.pathname === '/api/control-center/cards/detail') {
         return json({ request: 'Ship ' + url.searchParams.get('conversationId'), answer: 'The **deploy** is ready.', answerCut: false, steps: [{ name: 'Bash', target: 'npm run build', failed: false }, { name: 'Edit', target: 'package.json', failed: true }] });
@@ -179,6 +179,62 @@ test("an open conversation that was reviewed stays in the Inbox and is found by 
   await page.getByTestId("control-list-scope-inbox").click();
   await page.locator('[data-key="p1:c7"]').click();
   assert.equal(await page.getByTestId("control-list-preview").getByTestId("control-list-state").textContent(), "Reviewed");
+});
+
+// Reviewed while it is chosen, a conversation leaves the board and comes back as Reviewed a moment later: the panel stays on it.
+test("the chosen conversation stays chosen when it is reviewed and leaves the board", { timeout: 90_000 }, async (t) => {
+  const { page } = await openList(t);
+  await page.locator('[data-key="p2:c3"]').click();
+  assert.match(await page.getByTestId("control-list-preview").locator("h2").textContent() ?? "", /Review counter/);
+  await page.evaluate(async (pastNow) => {
+    const mocked = window as Mocked;
+    const [left] = mocked.__board.cards.splice(2, 1);
+    mocked.__past = [...pastNow, { ...left, doneAt: null }];
+    await (await import("/app/control-center.js" as string)).refreshControlCenter();
+  }, PAST);
+  await page.locator('[data-key="p2:c3"][data-column="reviewed"]').waitFor();
+  assert.match(await page.locator('[data-key="p2:c3"]').getAttribute("class") ?? "", /selected/);
+  assert.match(await page.getByTestId("control-list-preview").locator("h2").textContent() ?? "", /Review counter/, "the panel did not jump to the conversation that needs you");
+});
+
+// The Chat tab only shows the conversation: one that waits for review stays "To review" (reviewed, it would leave the board under the reader).
+test("reading a conversation in the Chat tab does not mark it reviewed; opening it does", { timeout: 90_000 }, async (t) => {
+  const { page } = await openList(t);
+  // A real conversation of a project that is not open yet: the Chat tab opens its project, then it.
+  const waiting = await page.evaluate(async () => {
+    const { state } = await import("/app/state.js" as string);
+    const { api } = await import("/app/api.js" as string);
+    for (const project of state.projects) {
+      const session = (await api(`/api/projects/${encodeURIComponent(project.id)}/sessions`)).sessions.find((candidate: { running?: boolean; updatedAt?: string }) => !candidate.running && candidate.updatedAt);
+      if (session) return { projectId: project.id as string, id: session.id as string, conversationId: (session.conversationId ?? session.id) as string, path: session.path as string, harnessId: session.harnessId as string };
+    }
+    throw new Error("the fixture has no conversation");
+  });
+  const marked: string[] = [];
+  await page.route(`**/api/projects/${waiting.projectId}/sessions`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const session of body.sessions) if (session.path === waiting.path) session.reviewState = "needs_review";
+    await route.fulfill({ response, json: body });
+  });
+  await page.route(`**/api/projects/${waiting.projectId}/sessions/reviewed`, async (route) => { marked.push(route.request().postData() ?? ""); await route.fulfill({ json: { ok: true } }); });
+  await page.evaluate(async (target) => {
+    const mocked = window as Mocked;
+    mocked.__board.cards.push({ ...mocked.__board.cards[2], projectId: target.projectId, conversationId: target.conversationId, sessionId: target.id, path: target.path, harnessId: target.harnessId, title: "Waits for review" });
+    await (await import("/app/control-center.js" as string)).refreshControlCenter();
+  }, waiting);
+  const row = page.locator(`[data-key="${waiting.projectId}:${waiting.conversationId}"]`);
+  await row.click();
+  await page.getByTestId("control-list-tab-button-chat").click();
+  await page.locator("body.control-inline.control-popup").waitFor();
+  await page.waitForFunction(async (id) => (await import("/app/state.js" as string)).state.activeSessionId === id, waiting.id);
+  await page.waitForTimeout(1_000);
+  assert.deepEqual(marked, [], "looking at it in the list does not mark it reviewed");
+  assert.match(await row.getAttribute("class") ?? "", /selected/);
+
+  await page.getByTestId("control-list-open").click();
+  for (let waited = 0; !marked.length && waited < 50; waited += 1) await page.waitForTimeout(100);
+  assert.equal(marked.length, 1, "opened for real, it is reviewed as before");
 });
 
 test("a system message says how to fix it and leaves when its cause is gone", { timeout: 90_000 }, async (t) => {

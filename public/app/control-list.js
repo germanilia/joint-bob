@@ -86,6 +86,8 @@ function appendParts(node, parts) {
 let ui = null;
 let last = null;
 let selectedKey = null;
+// The chosen conversation as it was last drawn: it stays chosen while it moves from the board to the conversations off it.
+let chosenCard = null;
 let past = [];
 let pastReadAt = 0;
 let pastLoading = false;
@@ -349,6 +351,9 @@ export function renderList(container, cards, helpers) {
   const query = view.query.trim();
   const messages = systemList().filter((message) => !query || searchMessage(message, query));
   entries = [...messages.map((message) => ({ ...message, system: true })), ...all];
+  // The chosen conversation left the board (it was reviewed or marked done) and the ones off the board are being read again:
+  // it stays chosen until that answer says where it is, so the panel does not jump to another conversation.
+  if (!selectedEntry() && pastLoading && chosenCard && entryKey(chosenCard) === selectedKey && !isDeleting(chosenCard)) entries.push(chosenCard);
   // The first conversation opened is the first that needs the person, else the first of the board; with nothing on the board, the first system message, else the first past one.
   if (!selectedEntry()) selectedKey = entries.length ? entryKey(entries.find((entry) => entry.column === "needs-you") ?? entries.find((entry) => !entry.system && entry.column !== "done") ?? entries[0]) : null;
   const items = visible(all);
@@ -356,6 +361,7 @@ export function renderList(container, cards, helpers) {
   drawRows(items, messages, helpers, all);
   syncOpenButton();
   const chosen = selectedEntry();
+  chosenCard = chosen && !chosen.system ? chosen : null;
   if (!chosen) {
     hideChat();
     ui.preview.dataset.kind = "empty";

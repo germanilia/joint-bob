@@ -567,7 +567,8 @@ export async function openConversation(card) {
       document.body.classList.add("control-popup");
       window.dispatchEvent(new CustomEvent("control-popup-opened", { detail: card }));
     }
-    await openListedSession(session);
+    // Shown in the list's Chat tab (`inline`), it stays "To review": marked reviewed it leaves the board, and the list would jump to another row.
+    await openListedSession(session, { keepReview: Boolean(card.inline) });
   } finally {
     state.keepControlView = false;
   }

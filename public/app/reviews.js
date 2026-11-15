@@ -274,8 +274,11 @@ function openPendingReviewsDialog() {
 
 const listedSessionTransfers = new Set();
 
-/** `keepView` opens it without showing it: the startup restore leaves the person in the view they were in, the control center too. */
-export async function openListedSession(session, { keepView = false } = {}) {
+/**
+ * `keepView` opens it without showing it: the startup restore leaves the person in the view they were in, the control center too.
+ * `keepReview` leaves it waiting for review: the Chat tab of Bob's list only shows it, and a reviewed one would leave that list.
+ */
+export async function openListedSession(session, { keepView = false, keepReview = false } = {}) {
   // Lists render before harness metadata arrives, and the steps below resolve the engine from
   // it. A row tapped in that window threw here, so the tap did nothing at all.
   if (!state.harnesses.length) {
@@ -283,7 +286,7 @@ export async function openListedSession(session, { keepView = false } = {}) {
     catch (error) { toast.error(error.message); return; }
   }
   const reviewHighlightAfter = session.reviewState === "needs_review" ? session.reviewedAt : null;
-  markSessionReviewed(session);
+  if (!keepReview) markSessionReviewed(session);
   rememberRecentSession(session);
   const projectId = state.activeProjectId;
   state.activeSessionId = session.id;
