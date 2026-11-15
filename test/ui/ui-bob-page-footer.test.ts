@@ -10,7 +10,6 @@ test("Bob's page puts the theme and Settings buttons in its top bar, next to Exi
   await page.locator("#loginPasswordInput").fill(environment.password);
   await page.locator("#loginSubmitButton").click();
   await page.waitForFunction(() => !document.body.classList.contains("booting"));
-  await page.getByTestId("projects-open-control-center-button").click();
   await page.locator("body.bob-desk.view-control").waitFor();
 
   const theme = page.locator(".bob-head-theme");
@@ -26,6 +25,13 @@ test("Bob's page puts the theme and Settings buttons in its top bar, next to Exi
     assert.ok(box.x + box.width <= exitBox.x, "the button sits to the left of Exit");
   }
   assert.equal(await page.locator("#workspaceFoot").isVisible(), false, "the footer stays hidden on this page");
+  for (const button of [theme, settings, exit, page.getByTestId("control-center-refresh")]) {
+    assert.ok((await button.boundingBox())!.width <= 40, "the top-bar button is an icon, not a text button");
+  }
+  // The team context and Bob's settings are in Bob's chat header, not in the top bar.
+  assert.equal(await page.locator("#controlCenterPanel > .panel-bar .team-context-label").count(), 0);
+  assert.equal(await page.locator(".control-chat-head .team-context-label").count(), 1);
+  assert.equal(await page.getByTestId("control-chat-settings-button").evaluate((node) => node.closest(".control-chat-head") !== null), true);
 
   await theme.click();
   await page.locator("dialog[open]").first().waitFor();

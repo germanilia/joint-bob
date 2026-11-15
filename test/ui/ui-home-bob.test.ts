@@ -43,6 +43,8 @@ before(async () => {
   page.setDefaultTimeout(20_000);
   // Bob's page draws the Live agents board as a list by default; this file checks the cards (the list: ui-control-list.test.ts).
   await page.addInitScript(() => localStorage.setItem("jointBobLiveLayout", "cards"));
+  // The app opens on Bob; the tests below start from Home, so reopen the view that was left (the workspace column key below).
+  await page.addInitScript(() => localStorage.setItem("joint-bob-start-view", "last"));
   await page.route("**/api/control-center/board*", (route) => route.fulfill({ json: { cards, projects: [{ id: "p1", name: "Joint Bob", color: null }] } }));
   await page.route("**/api/control-center/cards/push", async (route) => { pushes.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true } }); });
   await page.goto(node.url, { waitUntil: "domcontentloaded" });
@@ -124,9 +126,9 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   assert.equal(await pauseSwitch.getAttribute("aria-checked"), "false");
   await pauseSwitch.click();
   await page.getByTestId("control-chat-paused").waitFor({ state: "hidden" });
-  await page.getByTestId("bob-head-settings").click();
+  await page.getByTestId("control-chat-settings-button").click();
   await page.getByTestId("control-bob-harness").waitFor({ state: "visible" });
-  await page.getByTestId("bob-head-settings").click();
+  await page.getByTestId("control-chat-settings-button").click();
   await page.getByTestId("control-chat-settings").waitFor({ state: "hidden" });
   // Bob's window is the conversation only: no background updates and no item filters in it (the board shows the items).
   assert.equal(await page.getByTestId("control-chat-updates").isVisible(), false, "no background updates in Bob's window");

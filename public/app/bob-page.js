@@ -47,7 +47,6 @@ hat.height = 26;
 avatar.append(hat);
 const tag = element("span", "bob-head-tag", "Acts as you in every project");
 tag.dataset.testid = "bob-head-tag";
-const contextHere = element("span", "bob-head-context");
 const watching = element("span", "bob-head-state");
 watching.dataset.testid = "bob-head-state";
 
@@ -58,17 +57,46 @@ pause.title = "Bob acts on his own: he answers agents for you and keeps work goi
 pause.append(element("span", "", "Bob is on"), element("i", "bob-switch-knob"));
 pause.addEventListener("click", () => elements.controlChatMonitor.click());
 
-const settingsButton = button("ghost compact bob-head-settings", "bob-head-settings", "Bob's settings");
-settingsButton.title = "Bob's agent, model, decision model, auto respond, unfinished work, system control, memory, Guardian and Telegram";
-settingsButton.addEventListener("click", () => openSettings());
+// The top bar's icon buttons. Each keeps its text for narrow screens; on this page only the icon shows (bob-page.css).
+const HEAD_ICONS = {
+  refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
+  theme: "M12 3a9 9 0 1 0 0 18z",
+  settings: "M4 7h9M17 7h3M4 17h3M11 17h9M13 4v6M9 14v6",
+  exit: "M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h10",
+};
+function headIcon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", "bob-head-icon");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", HEAD_ICONS[name]);
+  svg.append(path);
+  return svg;
+}
+function headButton(className, testid, name, text) {
+  const node = button(className, testid);
+  node.title = text;
+  node.setAttribute("aria-label", text);
+  node.replaceChildren(headIcon(name), element("span", "bob-head-label", text));
+  return node;
+}
 
 // The workspace footer (theme, global Settings) is hidden on this page, so the top bar carries both and clicks the footer's buttons.
-const themeButton = button("ghost compact bob-head-theme", "bob-head-theme", "Theme");
+const themeButton = headButton("ghost compact bob-head-theme", "bob-head-theme", "theme", "Theme");
 themeButton.title = "Theme and text size";
 themeButton.addEventListener("click", () => elements.workspacePersonButton.click());
-const appSettingsButton = button("ghost compact bob-head-app-settings", "bob-head-app-settings", "Settings");
+const appSettingsButton = headButton("ghost compact bob-head-app-settings", "bob-head-app-settings", "settings", "Settings");
 appSettingsButton.title = "Joint Bob settings";
 appSettingsButton.addEventListener("click", () => elements.settingsButton.click());
+elements.controlCenterRefresh.prepend(headIcon("refresh"));
+elements.controlCenterRefresh.title = "Refresh";
+elements.controlCenterRefresh.setAttribute("aria-label", "Refresh");
+elements.controlCenterCloseButton.prepend(headIcon("exit"));
+elements.controlCenterCloseButton.setAttribute("aria-label", "Exit the control center");
+
+// Bob's settings live in Bob's chat header (#controlChatSettingsButton); the team context selector moves there too.
+const chatHead = elements.controlChat.querySelector(".control-chat-head");
 
 // The release number sits under the logo, so the person can tell which build the page runs.
 const version = element("span", "bob-head-version");
@@ -77,7 +105,7 @@ const brand = element("span", "bob-head-brand");
 brand.append(avatar, version);
 header.prepend(brand);
 api("/api/health").then(({ version: release }) => { version.textContent = `v${release}`; });
-heading.after(tag, contextHere, watching, pause, settingsButton);
+heading.after(tag, watching, pause);
 elements.controlCenterCloseButton.before(themeButton, appSettingsButton);
 
 /* ---------- folding: Bob's chat folds into the "Ask Bob" button ---------- */
@@ -168,14 +196,15 @@ decorateTabs();
 
 /** Where a moved element lives otherwise, so it goes back exactly there. */
 const homes = new Map();
-function moveInto(node, target, { first = false } = {}) {
+function moveInto(node, target, { first = false, before = null } = {}) {
   if (!node || node.parentElement === target) return;
   if (!homes.has(node)) {
     const marker = document.createComment(`${node.id || node.className} lives here outside Bob's page`);
     node.before(marker);
     homes.set(node, marker);
   }
-  if (first) target.prepend(node);
+  if (before) before.before(node);
+  else if (first) target.prepend(node);
   else target.append(node);
 }
 function restore() {
@@ -194,7 +223,7 @@ function apply() {
   if (changed) window.dispatchEvent(new CustomEvent("bob-desk-changed"));
   if (page) {
     moveInto(tabs, stage, { first: true });
-    moveInto(document.querySelector(".team-context-label"), contextHere);
+    moveInto(document.querySelector(".team-context-label"), chatHead, { before: elements.controlChatSettingsButton });
     if (giveBack.parentElement !== popupBar) moveInto(giveBack, popupBar);
     popupBar.append(document.getElementById("controlPopupClose"));
     placePopup();

@@ -3,9 +3,16 @@
    tabs on top. The chat folds into the "Ask Bob" button (.bob-fab). Text is larger than the control center's elsewhere.
    Loaded before paper.css. */
 
-.bob-head-brand, .bob-head-avatar, .bob-head-tag, .bob-head-state, .bob-head-pause, .bob-head-settings, .bob-fab, #controlChat .bob-fold { display: none; }
+.bob-head-brand, .bob-head-avatar, .bob-head-tag, .bob-head-state, .bob-head-pause, .bob-fab, #controlChat .bob-fold { display: none; }
 body:not(.focus-ui) .bob-settings-head { display: none; }
 .control-tab .bob-tab-icon { display: none; }
+
+/* Refresh, theme, Joint Bob settings and Exit are icon buttons in the top bar at every width; the text is their tooltip and label. */
+#controlCenterPanel > .panel-bar > button:is(.bob-head-theme, .bob-head-app-settings, #controlCenterRefresh, #controlCenterCloseButton) {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0;
+}
+#controlCenterPanel > .panel-bar .bob-head-label, #controlCenterPanel > .panel-bar kbd { display: none; }
+.bob-head-icon { display: block; flex: none; width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 @media (min-width: 1024px) {
   /* ---------- the frame: a head card, then the chat and the stage as two cards ---------- */
@@ -38,8 +45,6 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
     display: grid; flex: none; place-items: center; order: -1; width: 42px; height: 42px; border-radius: 50%; background: var(--paper-raised);
   }
   body.bob-desk .bob-head-tag { display: inline-block; flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--muted); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-  body.bob-desk .panel-bar .team-context-label { display: flex; flex: none; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 14px; }
-  body.bob-desk .panel-bar .team-context-label select { min-height: 34px; height: 34px; padding-block: 0; font-size: 14px; }
   body.bob-desk .bob-head-state { display: inline-flex; flex: 0 1 auto; gap: 8px; min-width: 0; margin-left: auto; }
   body.bob-desk .bob-head-state:empty { display: none; }
   body.bob-desk .bob-head-state:empty + .bob-head-pause { margin-left: auto; }
@@ -54,7 +59,6 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
     display: inline-flex; flex: none; align-items: center; gap: 10px; min-height: 0; height: 38px; padding: 0 8px 0 14px; border: 0; border-radius: 999px;
     background: var(--field); box-shadow: none; color: var(--text); font: 600 14px/1 var(--sans); cursor: pointer;
   }
-  body.bob-desk .bob-head-settings { display: inline-flex; flex: none; }
   body.bob-desk #controlCenterPanel > .panel-bar > button { flex: none; padding-inline: 12px; font-size: 14px; }
   .bob-switch-knob { position: relative; flex: none; width: 40px; height: 24px; border-radius: 999px; background: var(--line-strong); transition: background 0.15s; }
   .bob-switch-knob::after {
@@ -99,8 +103,10 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk .control-chat-head { padding: 12px 16px; }
   body.bob-desk .control-chat-head > div > b { font: 400 19px/1.2 var(--serif); color: var(--heading); }
   body.bob-desk .control-chat-head small { display: none; }
-  /* The head of the page has Bob's switch and his settings. */
-  body.bob-desk :is(#controlChatMonitor, #controlChatSettingsButton) { display: none; }
+  /* The head of the page has Bob's switch; Bob's settings and the team context are in this header. */
+  body.bob-desk #controlChatMonitor { display: none; }
+  body.bob-desk .control-chat-head .team-context-label { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 0; color: var(--muted); font-size: 13px; }
+  body.bob-desk .control-chat-head .team-context-label select { width: 150px; max-width: 150px; min-height: 30px; height: 30px; padding-block: 0; font-size: 13px; text-overflow: ellipsis; }
   body.bob-desk #controlChat .bob-fold { display: inline-flex; flex: none; min-width: 28px; justify-content: center; color: var(--muted); }
   /* Bob's window is the conversation only: the items (background updates, their filters) live on the board in the stage. */
   body.bob-desk :is(.control-chat-updates, .control-chat-filters) { display: none; }
@@ -127,7 +133,7 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk.view-control .shell { grid-template-columns: minmax(0, 1fr) !important; grid-template-areas: "main" "main" "main" !important; padding-left: var(--ws-gap, 14px); }
   body.bob-desk.view-control.browser-visible .shell { grid-template-columns: minmax(320px, 1fr) minmax(320px, 1.1fr) !important; grid-template-areas: "main browser" "main browser" "main browser" !important; }
   /* Half a page: the head keeps Bob, what waits, his switch, settings, Refresh and Exit. */
-  body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar :is(.bob-head-tag, kbd, .bob-state-pill:not(.waiting), .team-context-label) { display: none; }
+  body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar :is(.bob-head-tag, kbd, .bob-state-pill:not(.waiting)) { display: none; }
   body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar { gap: 8px; padding-inline: 16px; }
   body.bob-desk.view-control .shell :is(.ws-side, .ws-groups, .ws-foot),
   body.bob-desk.view-control .shell > :is(#projectsPanel, #chatsPanel) { display: none !important; }
@@ -145,8 +151,6 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
 @media (min-width: 1024px) {
   body.bob-desk .bob-head-tag { flex: 1 1 auto; }
   body.bob-desk .bob-head-state { flex: none; }
-  body.bob-desk .panel-bar .team-context-label select { width: 210px; max-width: 210px; text-overflow: ellipsis; }
-  body.bob-desk .bob-head-settings { align-items: center; min-height: 0; height: 38px; padding: 0 12px; font: 600 14px/1 var(--sans); }
 }
 
 /* A conversation opened from the page: over the stage, beside Bob's chat (app/bob-page.js keeps --bob-pop-* on the
