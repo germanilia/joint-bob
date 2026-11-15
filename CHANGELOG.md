@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.311.1 — 2026-11-15
+
+- Settings sections now use the whole window width instead of a centred column.
+
 ## 2.311.0 — 2026-11-15
 
 - Live agents can be sorted by Status, now the default: conversations that need you come first, then finished ones to review, then the ones still running, with each row naming its project.
