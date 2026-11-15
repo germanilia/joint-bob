@@ -135,7 +135,9 @@ function head(card, context) {
   const marks = context.markItems(card);
   if (card.column !== "done") line.append(helpers.actionRow(card, CONVERSATION_TOOLS, { after: helpers.doneButton(card), extras: marks }));
   else line.append(helpers.moreMenu(card, [], marks));
-  return [top, element("h2", "control-list-heading", card.title), line, toolsRow(card)];
+  // The conversation's tools (Terminal, Git, Folders, Story) follow its actions on the same line, so the buttons are one group.
+  line.append(toolsRow(card));
+  return [top, element("h2", "control-list-heading", card.title), line];
 }
 
 /** Terminal, Git, Folders and Story: each opens the conversation first, then the tool, as the card's actions do. */

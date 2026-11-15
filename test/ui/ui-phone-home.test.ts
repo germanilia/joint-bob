@@ -125,6 +125,15 @@ test("New offers the desktop's New menu, and search opens the workspace search",
 });
 
 test("a conversation opened on Home goes back to Home, and its details sheet holds every action", async () => {
+  // Every view the page passes through is recorded: a project's own list must never flash by on the way.
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    (window as unknown as { seenViews: string[] }).seenViews = seen;
+    new MutationObserver(() => {
+      const current = ["projects", "sessions", "chat", "control"].find((name) => document.body.classList.contains(`view-${name}`)) ?? "";
+      if (seen.at(-1) !== current) seen.push(current);
+    }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  });
   await page.locator('[data-testid="workspace-group-review"] [data-testid="workspace-group-row"]').first().tap();
   await page.locator("body.view-chat").waitFor();
   await page.waitForFunction(() => !document.querySelector<HTMLTextAreaElement>("#messageInput")!.disabled);
@@ -150,6 +159,7 @@ test("a conversation opened on Home goes back to Home, and its details sheet hol
   await page.getByTestId("chat-back-button").tap();
   await page.getByTestId("phone-home").waitFor();
   assert.equal(await view(), "projects");
+  assert.ok(!(await page.evaluate(() => (window as unknown as { seenViews: string[] }).seenViews)).includes("sessions"), "the project's conversation list never showed");
 });
 
 test("the tabs reach Bob, Projects and Settings, and Settings keeps them on its list", async () => {

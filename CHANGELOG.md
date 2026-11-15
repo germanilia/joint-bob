@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The phone's Inbox no longer flashes a project's conversation list when the page loads or a conversation opens or closes.
+- Bob's toolbar buttons sit next to the project chips, and a conversation's actions and tools share one line, instead of being spread across the window.
+
 ## 2.312.1 — 2026-11-15
 
 - The cluster agent policy page now works offline like the rest of the app.

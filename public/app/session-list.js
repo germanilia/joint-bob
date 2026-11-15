@@ -7,7 +7,7 @@ import { clearChat } from "./chat-transcript.js";
 import { createMultiSelect } from "./multi-select.js";
 import { elements } from "./elements.js";
 import { agentIcon, sessionAgentId } from "./icons.js";
-import { filteredSessions, normalizedQuery, selectedProject, sessionDisplayState, sessionDisplayTitle, setMobileView, shortSessionTitle, updateChatFilterCounts } from "./layout.js";
+import { conversationListView, filteredSessions, normalizedQuery, selectedProject, sessionDisplayState, sessionDisplayTitle, setMobileView, shortSessionTitle, updateChatFilterCounts } from "./layout.js";
 import { toggleSessionNtfy } from "./ntfy.js";
 import { changeSessionOptimistically } from "./optimistic-sessions.js";
 import { keepListScroll } from "./list-scroll.js";
@@ -607,7 +607,7 @@ function clearActiveSession() {
   if (state.preferencesLoaded) savePreferencesInBackground({ activeSessionPath: null, activeSessionId: null });
   elements.sessionTitle.textContent = "Select a conversation";
   setComposerEnabled(false);
-  if (!document.body.classList.contains("view-control")) setMobileView("sessions");
+  if (!document.body.classList.contains("view-control")) setMobileView(conversationListView());
 }
 
 async function removeSessionFromRow(session, sessionActive) {

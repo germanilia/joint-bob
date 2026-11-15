@@ -7,7 +7,7 @@ import { clearChat, showChatEmptyState } from "./chat-transcript.js";
 import { loadClusterDirectory } from "./cluster-filters.js";
 import { hideCommandAutocomplete } from "./composer-dialogs.js";
 import { elements } from "./elements.js";
-import { setMobileView } from "./layout.js";
+import { conversationListView, setMobileView } from "./layout.js";
 import { addOptimisticSession } from "./new-session.js";
 import { withPendingSessionChanges } from "./optimistic-sessions.js";
 import { renderProjects } from "./project-list.js";
@@ -111,7 +111,7 @@ export async function loadProjects() {
     if (state.preferencesLoaded) savePreferencesInBackground({ activeSessionPath: null, activeSessionId: null });
   }
 
-  setMobileView("sessions");
+  setMobileView(conversationListView());
 }
 
 export async function selectProject(projectId, shouldRender = true, preserveSession = false) {
@@ -162,7 +162,7 @@ export async function selectProject(projectId, shouldRender = true, preserveSess
   elements.sessionsLoading.hidden = false;
   renderSessions();
   renderQuickNotes();
-  setMobileView("sessions");
+  setMobileView(conversationListView());
   // The desktop workspace's left column turns from the project picker to this project's conversations.
   window.dispatchEvent(new CustomEvent("project-selected", { detail: { projectId } }));
   void loadSessionNodes(projectId).catch((error) => toast.error(error.message));

@@ -14,7 +14,7 @@ import { rememberDraft, restoreDraft, seedPromptHistory, setActiveSessionPath } 
 import { renderToolsDialog } from "./composer-dialogs.js";
 import { elements } from "./elements.js";
 import { syncQuickActionLabels } from "./focus-ui.js";
-import { currentMobileView, sessionDisplayTitle, setMobileView, syncChatTitleFromSessions } from "./layout.js";
+import { conversationListView, currentMobileView, sessionDisplayTitle, setMobileView, syncChatTitleFromSessions } from "./layout.js";
 import { withPendingSessionChanges } from "./optimistic-sessions.js";
 import { refreshProjectsQuietly } from "./project-selection.js";
 import { loadRecentSessions } from "./recents.js";
@@ -852,7 +852,7 @@ async function refreshSessionSnapshot(projectId) {
       elements.sessionTitle.textContent = "Select a conversation";
       setComposerEnabled(false);
       // Only the person leaves the control center (Esc twice, or its close button); a list refresh does not.
-      if (currentMobileView() !== "control") setMobileView("sessions");
+      if (currentMobileView() !== "control") setMobileView(conversationListView());
     }
     renderSessions();
   } catch (error) {

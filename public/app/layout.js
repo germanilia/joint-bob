@@ -74,6 +74,14 @@ function leaveChatTo(parent) {
   if (parent === "projects" && phoneWidth.matches) window.dispatchEvent(new CustomEvent("workspace-place", { detail: { place: "inbox" } }));
 }
 
+/**
+ * The view that lists conversations. On the phone with Inbox open it is Home: a project's own list is a screen the person
+ * did not ask for there, and it showed for a moment whenever a conversation opened, closed or loaded.
+ */
+export function conversationListView() {
+  return phoneWidth.matches && document.body.classList.contains("ws-column-inbox") ? "projects" : "sessions";
+}
+
 /** The view one level up: a conversation returns to its project's list, and the list and the control center to the projects. */
 export function parentView(view) {
   // On the phone the Inbox is home: a conversation closes back to it, unless it was opened from a project's own list.
@@ -83,7 +91,7 @@ export function parentView(view) {
   return null;
 }
 function controlExitView() {
-  return state.viewBeforeControl || (state.activeProjectId ? "sessions" : "projects");
+  return state.viewBeforeControl || (state.activeProjectId ? conversationListView() : "projects");
 }
 
 // Back climbs one level and never leaves the app; it does not replay the places visited. History holds a stack of
