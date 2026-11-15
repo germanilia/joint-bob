@@ -3,6 +3,7 @@
 import { api, apiBlob, apiLines } from "./api.js";
 import { elements } from "./elements.js";
 import { playStoryPodcast } from "./git-story-podcast.js";
+import { prepareMovieVoice, requestMovie as streamMovie } from "./story-voice-preparation.js";
 import { projectGitUrl } from "./project-git-url.js";
 import { toast } from "./shell.js";
 import { voiceForThisNode } from "./voice-choice.js";
@@ -12,16 +13,7 @@ import { activeChatSession } from "./terminal.js";
 const buttons = [elements.activityOverviewButton, elements.navOverviewButton];
 
 // Streams the writer's progress and returns the final line, which carries the movie's script.
-async function requestMovie(url, body, onStage) {
-  let done = null;
-  await apiLines(url, { method: "POST", body: JSON.stringify(body) }, (line) => {
-    if (line.type === "error") throw Object.assign(new Error(line.error), { details: line.details });
-    if (line.type === "progress") onStage(line.stage);
-    if (line.type === "done") done = line;
-  });
-  if (!done) throw new Error("The connection closed before the Activity overview finished. If the writer completed it, it is saved; try again.");
-  return done;
-}
+const requestMovie = (url, body, onStage, onScript) => streamMovie(apiLines, url, body, onStage, onScript);
 
 // While the open-source voice installs or updates itself, the movie waits for it instead of playing silently.
 const VOICE_WAIT_MS = 180_000;
@@ -80,25 +72,38 @@ async function openActivityOverview(conversationId, audio) {
   const progress = showProgress();
   let thread;
   let script;
-  let voice;
+  let voiceError = null;
+  let prepared = Promise.resolve();
+  // Check/install on the viewer's node while the writer runs on the conversation's node.
+  const voiceReady = settings.narrate
+    ? readyVoice(() => api(url("story-voice", { voiceProvider: settings.voiceProvider })), progress.stage)
+      .then((voice) => { if (!voice.available) throw new Error(voice.reason); })
+      .catch((error) => { voiceError = error; })
+    : Promise.resolve();
+  const voice = prepareMovieVoice(async (text, who) => {
+    await voiceReady;
+    if (voiceError) throw voiceError;
+    return apiBlob(url("story-voice"), { method: "POST", body: JSON.stringify({ text, who, settings }) });
+  });
   try {
-    ({ thread, script } = await requestMovie(url("overview"), { conversationId, settings }, progress.stage));
-    progress.stage("Checking the voice");
-    voice = await readyVoice(() => api(url("story-voice", { voiceProvider: settings.voiceProvider })), progress.stage);
+    ({ thread, script } = await requestMovie(url("overview"), { conversationId, settings }, progress.stage, (written) => {
+      if (settings.narrate) prepared = voice.prepare(written, progress.stage).catch((error) => { voiceError = error; });
+    }));
+    await prepared;
   } catch (error) {
     toast.error(`Could not write the Activity overview. ${error.message}`);
     return;
   } finally {
     progress.done();
   }
-  const narrates = settings.narrate && voice.available;
+  const narrates = settings.narrate && !voiceError;
   // The movie is written for sound, so a silent one says why instead of playing as if nothing was wrong.
-  if (settings.narrate && !voice.available) toast.error(`The Activity overview plays without sound. ${voice.reason}`);
+  if (settings.narrate && voiceError) toast.error(`The Activity overview plays without sound. ${voiceError.message}`);
   const write = (extra, onProgress) => requestMovie(url("story-podcast"), { threadId: thread.id, settings, ...extra }, onProgress).then((line) => line.script);
   const movie = playStoryPodcast({
     script, settings, host: document.body, notify: toast.error, audio,
     onEnd: () => { if (live?.movie === movie) live = null; },
-    narrate: narrates ? (text, who) => apiBlob(url("story-voice"), { method: "POST", body: JSON.stringify({ text, who, settings }) }) : null,
+    narrate: narrates ? voice.narrate : null,
     ask: settings.ask ? (question, onProgress) => write({ question }, onProgress) : null,
     // Writing it again reads the conversation again, so the movie gets a new record; questions follow it there.
     rewrite: (onProgress) => requestMovie(url("overview"), { conversationId, settings, regenerate: true }, onProgress).then((line) => { thread = line.thread; return line.script; }),

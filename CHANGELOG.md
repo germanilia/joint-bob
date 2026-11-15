@@ -1,11 +1,34 @@
 # Changelog
 
-## 2.312.0 — 2026-11-15
+## 2.314.0 — 2026-11-15
 
 - Conversation tiles now move: tiles glide to their new place, a pinned tile lifts and flies into Pinned, a new status line slides up, a starred tile pops, a conversation marked done shows a drawn check and floats a +1 to Past, a deleted one tips away, and changed counts pop.
 - Every window and dialog now opens and closes with a short animation, and notifications rise in and slide away.
 - A new Motion setting under Settings › Account › Appearance chooses Playful, Calm or Off; Off is the default when the device asks for reduced motion.
 - The "Running" and "finished while watching" counts on the Inbox now line up on their text.
+
+## 2.313.0 — 2026-11-15
+
+- Guardian gained Allow always for an exact action in the same project and working directory. Changed rules still require fresh approval, and enforced relay and team protections remain in place.
+- Webhooks and scheduled tasks gained a Bypass Guardian checkbox for their automated turns, without disabling checks on later manual messages.
+
+## 2.312.3 — 2026-11-15
+
+- Activity overview prepares narration as soon as its script is ready, reducing the wait before playback.
+
+## 2.312.2 — 2026-11-15
+
+- The phone's Inbox no longer flashes a project's conversation list when the page loads or a conversation opens or closes.
+- Bob's toolbar buttons sit next to the project chips, and a conversation's actions and tools share one line, instead of being spread across the window.
+
+## 2.312.1 — 2026-11-15
+
+- The cluster agent policy page now works offline like the rest of the app.
+
+## 2.312.0 — 2026-11-15
+
+- The Inbox now lists every running conversation and every one to review, including those running on a teammate's machine in a shared project (marked with the machine's name, read-only), so its counts match the project badges.
+- Added Source and Status filters beside the Project filter; the Show choice now limits only Earlier conversations, so Needs you, Running and To review always list all of them.
 
 ## 2.311.2 — 2026-11-15
 

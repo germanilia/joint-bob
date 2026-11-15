@@ -50,6 +50,16 @@ test("a delayed Stop snapshot cannot undo a later explicit resume", async () => 
   assert.equal(promptQueuePaused(key), false);
 });
 
+test("taking over an automation's queued prompt removes its Guardian bypass", async () => {
+  await getClusterNode();
+  const key = `project:${randomUUID()}`;
+  const queued = enqueuePrompt(key, "scheduled", "scheduled", { bypassGuardian: true, messageText: "scheduled", promptSuffix: "", displaySuffix: "", attachmentPaths: [] });
+  assert.equal(listQueuedPrompts(key)[0].bypassGuardian, true);
+  assert.equal(editQueuedPrompt(key, queued.id, "manual", "manual", "manual", null, queued.revision,
+    { accountId: randomUUID().replaceAll("-", ""), username: "Editor", email: null, homeNodeId: null }), true);
+  assert.equal(listQueuedPrompts(key)[0].bypassGuardian, undefined);
+});
+
 test("same-millisecond prompts retain insertion order", async (context) => {
   await getClusterNode();
   context.mock.timers.enable({ apis: ["Date"], now: 1_800_000_000_000 });

@@ -73,11 +73,12 @@ test("Guardian rules are switched, edited with searchable dropdowns and reviewed
 
     // A paused action as the conversation's socket delivers it.
     await page.evaluate(() => document.dispatchEvent(new CustomEvent("guardian-event", { detail: { type: "guardianReviews", reviews: [
-      { id: "11111111-1111-4111-8111-111111111111", projectId: "p", conversationId: "c", title: "Pi wants to run a command", subject: "rm -rf ./customer-exports", detail: "Dangerous commands rule · 94% sure · Jev", createdAt: "", expiresAt: "" },
+      { id: "11111111-1111-4111-8111-111111111111", alwaysKey: "action-hash", projectId: "p", conversationId: "c", title: "Pi wants to run a command", subject: "rm -rf ./customer-exports", detail: "Dangerous commands rule · 94% sure · Jev", createdAt: "", expiresAt: "" },
     ] } })));
     const card = page.getByTestId("guardian-review");
     await card.waitFor();
     assert.equal(await card.locator("strong").textContent(), "Pi wants to run a command");
+    assert.equal(await page.getByTestId("guardian-review-allow-always").isVisible(), true);
     assert.equal(await page.getByTestId("guardian-review-subject").textContent(), "rm -rf ./customer-exports");
     assert.equal(await page.evaluate(() => document.querySelector('[data-testid="guardian-review"]')?.nextElementSibling?.id), "composer", "the card sits directly above the composer");
     await page.screenshot({ path: path.join(root, "guardian-review.png") });

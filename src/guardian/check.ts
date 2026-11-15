@@ -9,7 +9,8 @@ import type { HarnessId } from "../types.js";
 import { isGuardianExempt, runGuardianFix } from "./fix.js";
 import { localLayaUrl } from "./laya.js";
 import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } from "./model.js";
-import { announceGuardianBlock, requestGuardianReview } from "./reviews.js";
+import { announceGuardianBlock, guardianActionAllowed, requestGuardianReview } from "./reviews.js";
+import { guardianBypassed } from "./bypass.js";
 import { ruleApplies, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
 import { fetchThroughRelay } from "./relay-model.js";
 import { guardianGroups, productionGuard, type GuardianGroup } from "./settings.js";
@@ -130,7 +131,7 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
   const team = !!teamAssistantForConversation(identity.projectId, identity.conversationId);
   const effectCapable = original.kind === 'tool' && (original.category === 'commands' || original.category === 'file-changes');
   if (team && effectCapable && await productionGuard(identity.projectId) !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
-  const exempt = !team && isGuardianExempt(identity.projectId, identity.conversationId);
+  const exempt = !team && (isGuardianExempt(identity.projectId, identity.conversationId) || guardianBypassed(identity.projectId, identity.conversationId));
   const groups = (await guardianGroups(identity.projectId)).filter(group => group.relay || !exempt);
   // Team Pi retains write/edit without a shell. The mandatory production rule checks those effects too.
   if (team && effectCapable) for (const group of groups) group.rules = group.rules.map(rule => rule.id === PRODUCTION_RULE_ID ? { ...rule, check: 'all' } : rule);
@@ -155,12 +156,17 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
     }
     // "ask", or a fix that could not be made or did not satisfy the rules.
     const reviewed = acting.length ? acting : findings;
+    // Relay and team approvals remain one-time. A changed rule or working directory needs fresh consent.
+    const alwaysKey = !team && !reviewed.some(finding => finding.group.relay)
+      ? createHash('sha256').update(JSON.stringify([identity.projectId, identity.harness, identity.cwd, request, groups])).digest('hex') : undefined;
+    if (alwaysKey && guardianActionAllowed(alwaysKey)) return request === original ? { action: "continue" } : replaced(request);
     const decision = await requestGuardianReview({
+      alwaysKey,
       projectId: identity.projectId, conversationId: identity.conversationId, title: reviewTitle(identity, request), subject: reviewSubject(request),
       operationKey: createHash('sha256').update(JSON.stringify(request)).digest('hex'),
       detail: reviewed.map((finding) => `${finding.rule.name} rule · ${percent(finding.probability)} sure · ${finding.model}${finding.group.relay ? ` · ${finding.group.source}` : ""}`).join("\n"),
     }, identity.signal);
-    audit(identity, request, decision === "allow" ? "allowed" : "denied", reviewed);
+    audit(identity, request, decision === "block" ? "denied" : decision === "allow-always" ? "allowed-always" : "allowed", reviewed);
     if (decision === "block") return { action: "block", reason: `The user blocked this ${what(request)} after Guardian flagged it. Rule ${reviewed.map(describe).join("; ")}.` };
     return request === original ? { action: "continue" } : replaced(request);
   }

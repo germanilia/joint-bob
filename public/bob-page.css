@@ -189,6 +189,9 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
 .control-layout-switch button[aria-pressed="true"] { background: var(--panel); color: var(--heading); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
 body:not(.bob-desk) .control-layout-switch, body.control-list-layout [data-board-tool="select"] { display: none; }
 
+/* The toolbar's buttons sit together, next to the project chips, instead of at the far edge of a wide window. */
+body.control-list-layout .control-bar { gap: 6px; }
+body.control-list-layout .control-bar .control-filters { flex: 0 1 auto; margin-right: 6px; }
 /* In the board's toolbar the two buttons differ: Open is an outline for the conversation chosen in the list, New is a filled pill. */
 .control-list-open-button { display: none; min-height: 0; max-width: 150px; height: 30px; padding: 0 14px; border: 1px solid var(--accent); border-radius: 9px; background: transparent; color: var(--accent); font: 700 13px/1 var(--sans); cursor: pointer; white-space: nowrap; }
 .control-list-open-button:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -333,7 +336,7 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
 .control-list-ptag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--project-hue, var(--muted)); }
 .control-list-kept { padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12.5px; font-weight: 700; }
 .control-list-heading { margin-top: 8px; margin-bottom: 0; color: var(--heading); font: 400 26px/1.2 var(--serif); }
-.control-list-pv-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.control-list-pv-tools { display: flex; flex: none; flex-wrap: wrap; gap: 8px; }
 .control-list-pv-tool {
   display: inline-flex; align-items: center; gap: 7px; min-height: 0; height: 32px; padding: 0 13px; border: 1px solid var(--line); border-radius: 999px;
   background: var(--panel); color: var(--text); font: 600 13px/1 var(--sans); cursor: pointer;
@@ -342,7 +345,7 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
 .control-list-pv-tool .row-menu-icon { flex: none; width: 16px; height: 16px; }
 .control-list-meta { margin: 0; color: var(--muted); font-size: 12.5px; }
 .control-list-pv-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; margin-bottom: 12px; }
-.control-list-pv-line .control-list-meta { flex: 1 1 auto; }
+.control-list-pv-line .control-list-meta { flex: 0 1 auto; margin-right: 6px; }
 .control-list-pv-line .control-card-actions { flex: none; border-top: 0; padding: 0; }
 .control-list-pv-line .control-card-action { padding: 4px 10px; font-size: 13px; border-radius: 8px; }
 .control-list-pv-line .control-card-dots { padding: 4px 9px; font-weight: 700; letter-spacing: 0.1em; line-height: 1; }

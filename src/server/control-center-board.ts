@@ -21,7 +21,7 @@ export interface LoadedBoard { cards: BoardCard[]; projects: ProjectRecord[]; ea
 /** A conversation that is not on the board (nothing runs, nothing waits): the workspace's Earlier group lists them so nothing is left out of the Inbox. */
 export interface EarlierConversation {
   projectId: string; projectName: string; conversationId: string; sessionId: string; path: string; harnessId: string;
-  agentLabel: string; agentModel: string | null; title: string; updatedAt: string | null; done: boolean;
+  agentLabel: string; agentModel: string | null; title: string; updatedAt: string | null; done: boolean; executionNodeId: string | null;
 }
 const EARLIER_LIMIT = 2000;
 
@@ -49,7 +49,11 @@ async function fillFromOtherMachines(cards: BoardCard[]): Promise<void> {
 }
 
 /** The board for one signed-in person: running and review-ready conversations across every project they can see. */
-export async function loadBoard(session: AuthSession, options: { earlier?: boolean } = {}): Promise<LoadedBoard> {
+/**
+ * `othersMachines`: the Inbox also lists conversations other people's machines run, read-only and never under Needs you (nothing
+ * here can answer them). Bob, reports and the control center leave them to the Clusters tab.
+ */
+export async function loadBoard(session: AuthSession, options: { earlier?: boolean; othersMachines?: boolean } = {}): Promise<LoadedBoard> {
   const [projects, autoResponders, bobStarted] = await Promise.all([
     projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }),
     listAutoResponders(),
@@ -68,7 +72,7 @@ export async function loadBoard(session: AuthSession, options: { earlier?: boole
   const groups = await Promise.all(projects.map(async (project) => ({
     projectId: project.id,
     projectName: project.name,
-    sessions: (await sharedProjectSessions(project, session.userId, session.accountId)).filter((entry) => !theirs(entry.executionNodeId)),
+    sessions: (await sharedProjectSessions(project, session.userId, session.accountId)).filter((entry) => options.othersMachines || !theirs(entry.executionNodeId)),
   })));
   const cards = buildBoard(groups, {
     summaryOf: (projectId, conversationId) => storedDigest(projectId, conversationId)?.summary ?? null,
@@ -81,7 +85,12 @@ export async function loadBoard(session: AuthSession, options: { earlier?: boole
     activityOf: liveActivity,
     snoozeOf: (projectId, conversationId) => snoozes.get(`${projectId}:${conversationId}`) ?? null,
   });
-  await fillFromOtherMachines(cards);
+  for (const card of cards) {
+    if (!theirs(card.executionNodeId)) continue;
+    card.othersMachine = true;
+    if (card.column === "needs-you" || card.column === "snoozed") card.column = card.turnRunning ? "running" : "review";
+  }
+  await fillFromOtherMachines(cards.filter((card) => !card.othersMachine));
   return { cards, projects, earlier: options.earlier ? earlierConversations(groups, cards) : undefined };
 }
 
@@ -93,6 +102,7 @@ export function earlierConversations(groups: BoardProject[], cards: BoardCard[])
     .map((entry): EarlierConversation => ({
       projectId: group.projectId, projectName: group.projectName, conversationId: entry.conversationId ?? entry.id, sessionId: entry.id, path: entry.path,
       harnessId: entry.harnessId, agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, updatedAt: entry.updatedAt ?? null, done: Boolean(entry.doneAt),
+      executionNodeId: entry.executionNodeId ?? null,
     })))
     .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
     .slice(0, EARLIER_LIMIT);

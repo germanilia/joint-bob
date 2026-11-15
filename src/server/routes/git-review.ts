@@ -595,7 +595,8 @@ const wantsStream = (request: Request) => Boolean(request.get("accept")?.include
 
 // Streams progress lines and a final "done" (or "error") line when the client asks for
 // NDJSON. Once the stream has started, failures travel as a line, not an HTTP status.
-type JobProgress = StoryProgress | { type: "progress"; stage: string };
+type JobProgress = StoryProgress | { type: "progress"; stage: string }
+  | { type: "script"; script: NonNullable<ReturnType<typeof loadStoryScript>> };
 
 async function sendStory(request: Request, response: Response, run: (onProgress?: (event: JobProgress) => void) => Promise<unknown>): Promise<void> {
   const streaming = wantsStream(request);
@@ -755,6 +756,8 @@ async function performOverview(projectId: string, cwd: string, input: z.infer<ty
     onProgress?.({ type: "progress", stage: `Writing the movie with ${getHarness(thread.harnessId).label} (${thread.modelId})` });
     script = await generateStoryScript(thread, cwd, JSON.parse(thread.messages[1].text) as OverviewSource, settings);
   }
+  // Let the viewer synthesize on its own node while saving/syncing the finished movie.
+  onProgress?.({ type: "script", script });
   if (!existing || script !== previous) await publishStory(thread, script, (await getClusterNode()).id);
   return { thread: storyThreadInfo(thread), script };
 }
@@ -773,6 +776,7 @@ async function performPodcast(projectId: string, cwd: string, input: z.infer<typ
     onProgress?.({ type: "progress", stage: "Writing the podcast" });
     script = await generateStoryScript(thread, cwd, saved, settings);
   }
+  onProgress?.({ type: "script", script });
   if (script !== previous) await publishStory(thread, script, (await getClusterNode()).id);
   return { script };
 }

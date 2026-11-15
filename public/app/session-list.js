@@ -7,7 +7,7 @@ import { clearChat } from "./chat-transcript.js";
 import { createMultiSelect } from "./multi-select.js";
 import { elements } from "./elements.js";
 import { agentIcon, sessionAgentId } from "./icons.js";
-import { filteredSessions, normalizedQuery, selectedProject, sessionDisplayState, sessionDisplayTitle, setMobileView, shortSessionTitle, updateChatFilterCounts } from "./layout.js";
+import { conversationListView, filteredSessions, normalizedQuery, selectedProject, sessionDisplayState, sessionDisplayTitle, setMobileView, shortSessionTitle, updateChatFilterCounts } from "./layout.js";
 import { toggleSessionNtfy } from "./ntfy.js";
 import { changeSessionOptimistically } from "./optimistic-sessions.js";
 import { keepListScroll } from "./list-scroll.js";
@@ -21,7 +21,7 @@ import { openSecretScope } from "./secrets.js";
 import { labelIcon, labelOptionText } from "./classification.js";
 import { openConversationClassificationDialog, openConversationColorDialog, openRenameDialog, sessionEngine } from "./session-identity.js";
 import { autoRespondBadge, isSessionPinned, nestedSessionRows, togglePinnedSession } from "./session-rows.js";
-import { otherWorktreesSection, worktreeBadge, worktreeDeleting, worktreeSectionHeader, worktreesHeading } from "./worktrees.js";
+import { otherWorktreesSection, worktreeBadge, worktreeDeleting, worktreesHeading } from "./worktrees.js";
 import { confirmAction, enableNotifications, formatDate, toast } from "./shell.js";
 import { closeSocket, refreshSessionsQuietly } from "./socket.js";
 import { chooseTransferDestination } from "./session-transfer.js";
@@ -30,7 +30,20 @@ import { activeChatSession } from "./terminal.js";
 import { usageBadge } from "./usage-format.js";
 
 const classificationFilter = createMultiSelect({ id: "conversationClassificationFilter", testid: "conversation-classification-filter", label: "Labels", prompt: "All labels", placeholder: "Search labels" });
-document.querySelector("#conversationFilterRow").prepend(classificationFilter.root);
+const worktreeFilter = createMultiSelect({ id: "conversationWorktreeFilter", testid: "conversation-worktree-filter", label: "Worktrees", prompt: "All worktrees", placeholder: "Search worktrees" });
+document.querySelector("#conversationFilterRow").prepend(classificationFilter.root, worktreeFilter.root);
+
+function renderWorktreeFilter() {
+  const worktrees = new Map(state.worktrees.map((worktree) => [worktree.id, worktree]));
+  for (const session of state.sessions) {
+    if (session.worktree && !worktrees.has(session.worktree.id) && !worktreeDeleting(session.worktree.id)) worktrees.set(session.worktree.id, session.worktree);
+  }
+  worktreeFilter.setOptions([
+    { value: "project", label: "Project folder" },
+    ...[...worktrees.values()].map((worktree) => ({ value: worktree.id, label: worktree.name })),
+  ]);
+  worktreeFilter.setValues(state.worktreeFilters);
+}
 
 function renderClassificationFilter() {
   const selected = state.classificationFilters;
@@ -92,6 +105,7 @@ export function renderSessions() {
     button.disabled = newSessionDisabled || !state.harnesses.find(({ id }) => id === button.dataset.harnessId).ready;
   }
   renderClassificationFilter();
+  renderWorktreeFilter();
   elements.showDoneConversations.checked = state.showDoneConversations;
   elements.showScheduledConversations.checked = state.showScheduledConversations;
   updateChatFilterCounts();
@@ -107,26 +121,9 @@ export function renderSessions() {
     return;
   }
   const sessions = filteredSessions();
-  const narrowed = Boolean(state.classificationFilters.size || state.sessionClusterFilters.size || normalizedQuery(elements.sessionSearchInput.value || ""));
+  const narrowed = Boolean(state.classificationFilters.size || state.worktreeFilters.size || state.sessionClusterFilters.size || normalizedQuery(elements.sessionSearchInput.value || ""));
   const sessionIsActive = (candidate) => state.activeSessionId ? candidate.id === state.activeSessionId : candidate.path === state.activeSessionPath;
   const rows = nestedSessionRows(sessions, (parent, childSessions) => state.expandedSessionParents.has(parent.path) || childSessions.some(sessionIsActive));
-  // Sessions can arrive before the worktree listing. Their badges already carry
-  // enough metadata to group them instead of misfiling them in the project folder.
-  const worktrees = new Map(state.worktrees.map((worktree) => [worktree.id, worktree]));
-  for (const session of state.sessions) {
-    if (session.worktree && !worktrees.has(session.worktree.id) && !worktreeDeleting(session.worktree.id)) worktrees.set(session.worktree.id, session.worktree);
-  }
-  // A sub-agent conversation stays with its root's group, whatever folder it ran in.
-  const worktreeRows = new Map();
-  const projectRows = [];
-  let owner = null;
-  for (const row of rows) {
-    if (row.depth === 0) owner = worktrees.has(row.session.worktree?.id) ? row.session.worktree.id : null;
-    if (!owner) projectRows.push(row);
-    else if (worktreeRows.has(owner)) worktreeRows.get(owner).push(row);
-    else worktreeRows.set(owner, [row]);
-  }
-
   const list = elements.sessionList;
   // The rows are made as the person scrolls to them (long-scroll.js): what is listed here are the entries, in order.
   const entries = [worktreesHeading()];
@@ -136,19 +133,7 @@ export function renderSessions() {
     if (active && activeAt < 0) activeAt = entries.length;
     entries.push(() => sessionRow(row, active));
   };
-  const emptyWorktrees = [];
-  for (const worktree of worktrees.values()) {
-    const group = worktreeRows.get(worktree.id) || [];
-    if (!group.length) {
-      // The fold exists to reach an empty worktree's actions; one whose files are not here has none.
-      if (!narrowed && !state.chatFilters.size && !worktree.syncing) emptyWorktrees.push(worktree);
-      continue;
-    }
-    entries.push(worktreeSectionHeader(worktree, group.filter((row) => row.depth === 0).length));
-    if (state.collapsedWorktreeIds.has(worktree.id)) continue;
-    for (const row of group) addRow(row);
-  }
-  if (emptyWorktrees.length) entries.push(otherWorktreesSection(emptyWorktrees, otherWorktreesOpen));
+  if (state.worktrees.length) entries.push(otherWorktreesSection(state.worktrees, otherWorktreesOpen));
   // One continuous list that scrolls; another project, search or filter is another list and starts at the top.
   const draw = () => drawChunked(list, entries, { key: listKey(project, narrowed), ensure: activeAt });
   if (state.sessions.length === 0 || sessions.length === 0) {
@@ -163,21 +148,14 @@ export function renderSessions() {
     draw();
     return;
   }
-  if (worktrees.size && projectRows.length) {
-    const heading = document.createElement("div");
-    heading.className = "worktree-subsection-title";
-    heading.dataset.testid = "project-folder-subsection";
-    heading.textContent = "Project folder";
-    entries.push(heading);
-  }
-  for (const row of projectRows) addRow(row);
+  for (const row of rows) addRow(row);
   draw();
   showOpenConversation(list);
 }
 
 /** What makes the list another list: the project, the search and the filters. A refresh keeps all of them. */
 function listKey(project, narrowed) {
-  return JSON.stringify([project?.id, normalizedQuery(elements.sessionSearchInput.value || ""), narrowed, [...state.chatFilters], [...state.classificationFilters], [...state.sessionClusterFilters], state.showDoneConversations, state.showScheduledConversations]);
+  return JSON.stringify([project?.id, normalizedQuery(elements.sessionSearchInput.value || ""), narrowed, [...state.chatFilters], [...state.classificationFilters], [...state.worktreeFilters], [...state.sessionClusterFilters], state.showDoneConversations, state.showScheduledConversations]);
 }
 
 /** Another conversation opened (from Home, a shortcut): its row is brought into view once, not on every refresh. */
@@ -196,7 +174,6 @@ function sessionCard(session, sessionActive, sessionPinned) {
   button.className = `session-card${sessionActive ? " active" : ""}${sessionPinned ? " pinned" : ""}`;
   if (sessionActive) button.setAttribute("aria-current", "true");
   if (session.color) button.dataset.color = session.color;
-  if (session.worktree) button.dataset.worktreeColor = session.worktree.color;
   const sessionName = document.createElement("strong");
   const title = sessionDisplayTitle(session);
   sessionName.textContent = title;
@@ -630,7 +607,7 @@ function clearActiveSession() {
   if (state.preferencesLoaded) savePreferencesInBackground({ activeSessionPath: null, activeSessionId: null });
   elements.sessionTitle.textContent = "Select a conversation";
   setComposerEnabled(false);
-  if (!document.body.classList.contains("view-control")) setMobileView("sessions");
+  if (!document.body.classList.contains("view-control")) setMobileView(conversationListView());
 }
 
 async function removeSessionFromRow(session, sessionActive) {
@@ -685,6 +662,10 @@ elements.showScheduledConversations.addEventListener("change", () => {
 });
 classificationFilter.onChange((values) => {
   state.classificationFilters = values;
+  renderSessions();
+});
+worktreeFilter.onChange((values) => {
+  state.worktreeFilters = values;
   renderSessions();
 });
 window.addEventListener("cluster-filters-changed", (event) => {

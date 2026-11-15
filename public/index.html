@@ -40,7 +40,7 @@
     <link rel="stylesheet" href="/phone-inbox.css" />
     <link rel="stylesheet" href="/paper.css" />
   </head>
-  <body class="view-projects booting">
+  <body class="view-projects ws-column-inbox booting">
     <div class="app-boot" id="appBoot" role="status" aria-label="Loading Joint Bob">
       <div class="app-boot-inner">
         <svg class="app-boot-mark" viewBox="0 0 512 512" aria-hidden="true">
@@ -272,7 +272,7 @@
           <button type="button" data-filter="review" data-testid="chats-filter-review-button" title="Needs review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg><span class="sr-only">Needs review</span><span data-filter-count="review">0</span></button>
           <button type="button" data-filter="done" data-testid="chats-filter-done-button" title="Reviewed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.7 2.7L16.5 9"/></svg><span class="sr-only">Reviewed</span><span data-filter-count="done">0</span></button>
         </div>
-        <div class="classification-filter list-filter-row" id="conversationFilterRow" role="group" aria-label="Filter conversations by label and cluster"></div>
+        <div class="classification-filter list-filter-row" id="conversationFilterRow" role="group" aria-label="Filter conversations by label, worktree and cluster"></div>
         <label class="done-filter" for="showDoneConversations">
           <input type="checkbox" id="showDoneConversations" data-testid="show-done-conversations-toggle" />
           Show done
@@ -1673,6 +1673,7 @@
                   <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksEnabled" checked data-testid="webhooks-enabled-toggle" /><span><strong>Accept calls</strong><span class="settings-hint">Off rejects every call without starting anything.</span></span></label>
                   <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksAttachments" data-testid="webhooks-attachments-toggle" /><span><strong>Accept attachments</strong><span class="settings-hint">Files sent with a call are saved and passed to the agent: multipart file parts, or a JSON <code>attachments</code> list of <code>{"name", "mimeType", "data"}</code> with base64 data.</span></span></label>
                   <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksPreserveFiles" data-testid="webhooks-preserve-files-toggle" /><span><strong>Preserve files between runs</strong><span class="settings-hint">Off gives every run a new temporary workspace. On reuses this webhook's own workspace and its files.</span></span></label>
+                  <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksBypassGuardian" data-testid="webhooks-bypass-guardian-toggle" /><span><strong>Bypass Guardian</strong><span class="settings-hint">Skip local Guardian checks during this webhook's turns. Relay rules and team safeguards still apply.</span></span></label>
                   <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksMarkForReview" data-testid="webhooks-mark-for-review-toggle" /><span><strong>Count toward Needs review</strong><span class="settings-hint">Off keeps these conversations out of the review badge and inbox until you reply.</span></span></label>
                   <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksSendersEnabled" data-testid="webhooks-senders-toggle" /><span><strong>Only listed senders</strong><span class="settings-hint">Refuse calls whose sender is not on the list. Refused calls show under Calls with an Allow button.</span></span></label>
                   <div class="webhooks-senders" id="webhooksSenders" data-testid="webhooks-senders" hidden>
@@ -2782,6 +2783,10 @@
             <span class="field-label">Colour</span>
             <div class="color-swatches" id="newSessionColorSwatches" role="radiogroup" aria-label="Conversation colour" data-testid="new-session-color-swatches"></div>
           </div>
+          <label class="checkbox-row" id="newSessionNewWorktreeLabel" hidden>
+            <input id="newSessionNewWorktree" type="checkbox" data-testid="new-session-new-worktree-checkbox" />
+            Create in a new worktree
+          </label>
         </section>
         <section class="wizard-panel" data-step="2" data-testid="new-session-panel-2" hidden>
           <div id="newSessionClassification" class="field-group"></div>
@@ -3289,6 +3294,7 @@
           </fieldset>
           <label class="checkbox-row"><input name="enabled" type="checkbox" checked data-testid="cron-enabled">Enabled</label>
           <label class="checkbox-row"><input name="pauseOnFailure" type="checkbox" data-testid="cron-pause-on-failure">Pause schedule after a failed run</label>
+          <label class="checkbox-row"><input name="bypassGuardian" type="checkbox" data-testid="cron-bypass-guardian">Bypass Guardian for this task's turns. Relay rules and team safeguards still apply.</label>
           <label class="checkbox-row"><input name="markForReview" type="checkbox" data-testid="cron-mark-for-review">Count completed runs toward Needs review</label>
           <label class="checkbox-row"><input name="hideFromHistory" type="checkbox" data-testid="cron-hide-from-history">Hide this task's conversations from history, even when Show scheduled is on</label>
           <p class="cron-help">Missed offline runs are skipped. Runs never overlap. Failed runs retry at the next scheduled time unless pause on failure is selected.</p>

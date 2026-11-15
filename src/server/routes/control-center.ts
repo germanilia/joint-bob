@@ -66,7 +66,8 @@ app.get("/api/control-center/board", async (request, response, next) => {
     // reads the same board for its three groups (`?look=1`); a glance at those is not opening the control center.
     if (request.query.look !== "1") rememberBobAccount(await bobDatabase(), actingAccountFromSession(session));
     // `?earlier=1` also lists every conversation that is not on the board, for the workspace's Earlier group.
-    const { cards, projects, earlier } = await loadBoard(session, { earlier: request.query.earlier === "1" });
+    // The Inbox (`?look=1`) lists everything, other people's machines included; the control center leaves those to Clusters.
+    const { cards, projects, earlier } = await loadBoard(session, { earlier: request.query.earlier === "1", othersMachines: request.query.look === "1" });
     // A conversation of an assistant team says so: the Inbox keeps those in the team's own folder.
     const teamOf = await (await import("../team-follows.js")).teamOfProjects(session);
     const withTeam = <T extends { projectId: string }>(row: T) => ({ ...row, team: teamOf.get(row.projectId) ?? null });
@@ -128,7 +129,7 @@ const decisionSchema = z.object({
   projectId: z.string().min(1).max(200),
   conversationId: z.string().min(1).max(200),
   reviewId: z.string().min(1).max(100),
-  decision: z.enum(["allow", "block"]),
+  decision: z.enum(["allow", "allow-always", "block"]),
 }).strict();
 
 /** The person's answer to a Guardian review, from the board. Only a project they can see can be answered. */

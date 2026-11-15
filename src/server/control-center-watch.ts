@@ -69,6 +69,7 @@ async function announceReview(review: GuardianReview): Promise<void> {
       via: "Guardian · production or destructive steps always ask you. Bob never answers these for you.",
       actions: [
         { id: "guardian.allow", label: "Allow once", style: "warn", data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } },
+        ...(review.alwaysKey ? [{ id: "guardian.allow-always", label: "Allow always", style: "warn" as const, data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } }] : []),
         { id: "guardian.block", label: "Block", data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } },
         { id: "open", label: "Open", data: { open: { projectId: review.projectId, conversationId: review.conversationId, ...(title ? { title } : {}) } } },
       ],
@@ -76,7 +77,7 @@ async function announceReview(review: GuardianReview): Promise<void> {
   }
 }
 
-function answerReview(decision: "allow" | "block"): Parameters<typeof registerBobAction>[1] {
+function answerReview(decision: "allow" | "allow-always" | "block"): Parameters<typeof registerBobAction>[1] {
   return async ({ db, session, message, action }) => {
     const data = action.data as { projectId: string; conversationId: string; reviewId: string };
     // The person pressed the button, so the answer is theirs; Bob only carries it.
@@ -84,7 +85,7 @@ function answerReview(decision: "allow" | "block"): Parameters<typeof registerBo
       (await projectVisible(data.projectId)) && decideGuardianReview(data.projectId, data.conversationId, data.reviewId, decision));
     // The question leaves the chat once answered, so the answer names the step.
     const step = message.text.split("\n")[0];
-    return [bobSays(db, session, done ? `${decision === "allow" ? "Allowed once" : "Blocked"}: ${step}` : `That review was already answered, or it timed out and was blocked: ${step}`, { importance: "fyi", projectId: data.projectId })];
+    return [bobSays(db, session, done ? `${decision === "allow" ? "Allowed once" : decision === "allow-always" ? "Allowed always" : "Blocked"}: ${step}` : `That review was already answered, or it timed out and was blocked: ${step}`, { importance: "fyi", projectId: data.projectId })];
   };
 }
 
@@ -176,6 +177,7 @@ export function startControlCenterWatch(): void {
     void announceAutoRespondStopped(state).catch((error) => console.warn("Bob could not announce an auto respond stop", error instanceof Error ? error.message : error));
   });
   registerBobAction("guardian.allow", answerReview("allow"));
+  registerBobAction("guardian.allow-always", answerReview("allow-always"));
   registerBobAction("guardian.block", answerReview("block"));
   registerBobAction("autorespond.resume", async ({ db, session, action }) => {
     const data = action.data as { projectId: string; conversationId: string };

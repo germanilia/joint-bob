@@ -392,7 +392,7 @@ function renderNeed(card) {
     need.title = [review.title, review.subject, review.detail].filter(Boolean).join("\n");
     need.append(element("div", "control-need-title", more ? `${review.title} · ${more} more` : review.title), element("div", "control-need-subject", review.subject));
     const buttons = element("div", "control-need-actions");
-    for (const [decision, label, className] of [["allow", "Allow once", "control-action warn"], ["block", "Block", "control-action"]]) {
+    for (const [decision, label, className] of [["allow", "Allow once", "control-action warn"], ...(review.alwaysKey ? [["allow-always", "Allow always", "control-action warn"]] : []), ["block", "Block", "control-action"]]) {
       const button = element("button", className, label);
       button.type = "button";
       button.dataset.testid = `control-review-${decision}`;

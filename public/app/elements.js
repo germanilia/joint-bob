@@ -353,6 +353,8 @@ export const elements = {
   newSessionNameForm: document.querySelector("#newSessionNameForm"),
   newSessionNameInput: document.querySelector("#newSessionNameInput"),
   newSessionNodeSelect: document.querySelector("#newSessionNodeSelect"),
+  newSessionNewWorktree: document.querySelector("#newSessionNewWorktree"),
+  newSessionNewWorktreeLabel: document.querySelector("#newSessionNewWorktreeLabel"),
   newSessionWorktreeLabel: document.querySelector("#newSessionWorktreeLabel"),
   newSessionWorktreeSelect: document.querySelector("#newSessionWorktreeSelect"),
   contextReferencesDialog: document.querySelector("#contextReferencesDialog"),

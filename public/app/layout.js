@@ -74,6 +74,14 @@ function leaveChatTo(parent) {
   if (parent === "projects" && phoneWidth.matches) window.dispatchEvent(new CustomEvent("workspace-place", { detail: { place: "inbox" } }));
 }
 
+/**
+ * The view that lists conversations. On the phone with Inbox open it is Home: a project's own list is a screen the person
+ * did not ask for there, and it showed for a moment whenever a conversation opened, closed or loaded.
+ */
+export function conversationListView() {
+  return phoneWidth.matches && document.body.classList.contains("ws-column-inbox") ? "projects" : "sessions";
+}
+
 /** The view one level up: a conversation returns to its project's list, and the list and the control center to the projects. */
 export function parentView(view) {
   // On the phone the Inbox is home: a conversation closes back to it, unless it was opened from a project's own list.
@@ -83,7 +91,7 @@ export function parentView(view) {
   return null;
 }
 function controlExitView() {
-  return state.viewBeforeControl || (state.activeProjectId ? "sessions" : "projects");
+  return state.viewBeforeControl || (state.activeProjectId ? conversationListView() : "projects");
 }
 
 // Back climbs one level and never leaves the app; it does not replay the places visited. History holds a stack of
@@ -220,6 +228,10 @@ export function sessionIsVisible(session, projectId = state.activeProjectId) {
       && (!active || (state.knownCronTaskIds.has(session.cronTaskId) && !state.hiddenCronTaskIds.has(session.cronTaskId)))));
 }
 
+function matchesWorktree(session) {
+  return !state.worktreeFilters.size || state.worktreeFilters.has(session.worktree?.id || "project");
+}
+
 function matchesClassification(session) {
   const value = session.classification ? `label:${session.classification}` : "unclassified";
   return !state.classificationFilters.size || state.classificationFilters.has(value);
@@ -232,7 +244,7 @@ function matchesChatFilters(session) {
 }
 
 export function updateChatFilterCounts() {
-  const sessions = state.sessions.filter((session) => matchesClassification(session) && sessionMatchesClusters(session) && sessionIsVisible(session));
+  const sessions = state.sessions.filter((session) => matchesClassification(session) && matchesWorktree(session) && sessionMatchesClusters(session) && sessionIsVisible(session));
   const counts = { all: sessions.length, active: 0, review: 0, done: 0, cron: sessions.filter(session => session.cronTaskId).length };
   for (const session of sessions) counts[sessionChatState(session)] += 1;
   for (const count of elements.chatFilters.querySelectorAll("[data-filter-count]")) {
@@ -243,7 +255,7 @@ export function updateChatFilterCounts() {
 export function filteredSessions() {
   const query = normalizedQuery(elements.sessionSearchInput.value || "");
   return state.sessions.filter((session) => {
-    if (!matchesClassification(session) || !sessionMatchesClusters(session) || !sessionIsVisible(session)) return false;
+    if (!matchesClassification(session) || !matchesWorktree(session) || !sessionMatchesClusters(session) || !sessionIsVisible(session)) return false;
     const searchableText = `${shortSessionTitle(session)}\n${session.firstMessage || ""}\n${session.path || ""}`.toLowerCase();
     if (query && !searchableText.includes(query)) return false;
     return matchesChatFilters(session);
