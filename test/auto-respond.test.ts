@@ -444,7 +444,7 @@ test("scheduled auto-reply runs sharing a conversation do not replace each other
     const taskIds: string[] = [];
     for (const name of ["First driver", "Second driver"]) {
       const created = await api<{ task: { id: string } }>(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "create", input: {
-        projectId: project.id, name, prompt: name, engine: "kiro", ownerNodeId: node.nodeId, sessionId, enabled: false,
+        projectId: project.id, name, prompt: name, engine: "kiro", ownerNodeId: node.nodeId, sessionId, runInWorktree: false, enabled: false,
         autoRespond: { ...config, maxResponses: 1 }, schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" },
       } } });
       assert.equal(created.status, 200, JSON.stringify(created.body));

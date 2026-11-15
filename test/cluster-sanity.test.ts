@@ -150,7 +150,7 @@ test("scheduled conversation keeps its active run isolated while edits apply to 
   const runtimeDb = openPiRuntimeDatabase(nodeA.dataDir);
   const db = openNodeDatabase(path.join(nodeB.dataDir, "node.db"));
   const runtime = { sessionId: source.id, transcriptPath: source.path, runId: randomUUID() };
-  const input = { projectId: project.id, name: "Wait for active run", prompt: "Continue", ownerNodeId: nodeB.nodeId, engine: "pi", sessionId: source.id, enabled: true, schedule: { frequency: "hourly", minute: 0, hour: 9, weekday: 1, timezone: "UTC" } };
+  const input = { projectId: project.id, name: "Wait for active run", prompt: "Continue", ownerNodeId: nodeB.nodeId, engine: "pi", sessionId: source.id, runInWorktree: false, enabled: true, schedule: { frequency: "hourly", minute: 0, hour: 9, weekday: 1, timezone: "UTC" } };
   try {
     db.exec("PRAGMA busy_timeout=5000");
     publishPiRuntime(runtimeDb, runtime, true);

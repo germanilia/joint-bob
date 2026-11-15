@@ -53,7 +53,7 @@ for (const source of ["schedule-new", "schedule-existing", "webhook-new", "webho
           await runWithAutomationProfile(task, () => queuedCronPrompt(task, run, sessionId));
         } else {
           const target = existing ? { kind: "conversation", projectId: project.id, engine: "claude", sessionId } : { kind: "project", projectId: project.id, engine: "claude" };
-          const { webhook } = createWebhook(await clusterV2Database(), webhookInputSchema.parse({ name: "Routing", target, creatorAccountId, providerProfileId, preserveFiles: true }));
+          const { webhook } = createWebhook(await clusterV2Database(), webhookInputSchema.parse({ name: "Routing", target, creatorAccountId, providerProfileId, preserveFiles: true, runInWorktree: false }));
           acceptWebhookCall(webhook, { method: "POST", headers: {}, query: "", body: "Fixture" });
         }
         await closed;
