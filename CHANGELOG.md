@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.305.2 — 2026-11-15
+
+- On Bob's page, a conversation you reviewed and did not mark done now stays in the Inbox, marked Reviewed, and the list's search finds it. Before, it was missing from the Inbox, from All and from the search.
+
 ## 2.305.1 — 2026-11-15
 
 - A message you send while only a background task (such as a CI watcher) is still running now starts right away instead of waiting for Force start.
