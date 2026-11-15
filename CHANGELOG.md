@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.315.4 — 2026-11-15
+
+- The check shown when a conversation is marked done is drawn without injected markup, which a test that guards the whole app requires.
+
 ## 2.315.3 — 2026-11-15
 
 - On the Chat tab of Bob's page, Take control and Snooze now sit in the chat's own button row beside Mark done, and the duplicate Done button is gone.
