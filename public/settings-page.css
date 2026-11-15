@@ -15,14 +15,10 @@
   display: flex; flex-direction: column; gap: 0; width: 100%; max-width: none; height: 100%; max-height: none;
   margin: 0; padding: 12px 12px 12px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: hidden;
 }
-/* The list and the section's card are one block in the middle of the window. `--set-left` is the room left of
-   the list: half of what a normal card (a form, 1000 px) leaves over, less when a wide card (tabs, a long list,
-   1320 px) would not fit beside the list — so the list stands still whichever section opens, a form's card is
-   centred with it, and a wide section grows to the right. Up to ~1600 px the block is the whole window. */
+/* The list sits left and the section's card takes the rest of the window, on every screen size. */
 #settingsForm {
-  --set-nav: 272px; --set-card: 1000px; --set-card-wide: 1320px;
-  --set-left: max(0px, min(100vw - var(--set-nav) - var(--set-card-wide) - 12px, (100vw - var(--set-nav) - var(--set-card)) / 2));
-  --set-card-w: calc(100vw - var(--set-nav) - var(--set-left) - max(12px, var(--set-left)));
+  --set-nav: 272px; --set-left: 0px;
+  --set-card-w: calc(100vw - var(--set-nav) - 12px);
 }
 #settingsForm .settings-body {
   display: grid; flex: 1; min-height: 0; gap: 0; padding-left: var(--set-left);
@@ -92,22 +88,15 @@
 
 /* ---------- the section page ---------- */
 #settingsForm .settings-panel {
-  --set-col: 860px;
   grid-area: main; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 14px;
-  height: auto; min-height: 0; padding: 40px max(clamp(24px, 5vw, 64px), (var(--set-card-w) - var(--set-col)) / 2) 56px; border: 0; border-radius: 24px;
+  height: auto; min-height: 0; padding: 40px clamp(24px, 5vw, 64px) 56px; border: 0; border-radius: 24px;
   background: var(--panel); box-shadow: var(--shadow-soft); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
   font-size: 14.5px;
 }
 #settingsForm .settings-panel[hidden] { display: none; }
 :root[data-theme="dark"] #settingsForm .settings-panel { box-shadow: 0 0 0 1px var(--line); }
-/* Forms read best at a line length; lists and maps take the width: their card is wider, and so is their column.
-   The column is centred in its card by the card's own padding, so everything in a section shares its edges. */
+/* Every section's card takes the window's width; its content spans the card between the same side padding. */
 @media (min-width: 701px) { #settingsForm .settings-panel { justify-self: start; width: var(--set-card-w); max-width: 100%; } }
-#settingsForm .settings-panel:is([data-settings-kind="tabs"], [data-settings-kind="list"]) {
-  --set-col: 1180px; --set-card-w: min(var(--set-card-wide), 100vw - var(--set-nav) - var(--set-left) - 12px);
-}
-#settingsForm .settings-panel[data-settings-kind="form"] > * { width: 100%; max-width: 860px; }
-#settingsForm .settings-panel:is([data-settings-kind="tabs"], [data-settings-kind="list"]) > * { max-width: 1180px; }
 #settingsForm .settings-panel.relay-panel, #settingsForm .settings-panel.resources-panel { display: flex; flex-direction: column; }
 
 /* The same head on every section. */
