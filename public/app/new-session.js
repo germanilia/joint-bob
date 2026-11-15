@@ -39,13 +39,17 @@ function renderNewSessionWorktrees(selected = null) {
   const offered = Boolean(draft);
   const worktrees = offered && draft.projectId === state.activeProjectId ? state.worktrees : [];
   const select = elements.newSessionWorktreeSelect;
-  elements.newSessionWorktreeLabel.hidden = !offered;
+  elements.newSessionNewWorktreeLabel.hidden = !offered;
+  elements.newSessionNewWorktree.disabled = !runsOnThisNode();
+  elements.newSessionNewWorktree.title = runsOnThisNode() ? "" : "A new worktree can start only on this node";
   const fresh = new Option("New worktree", NEW_WORKTREE);
   fresh.disabled = !runsOnThisNode();
   fresh.dataset.testid = "new-session-new-worktree-option";
   select.replaceChildren(new Option("Project folder", ""), fresh, ...worktrees.map((worktree) => new Option(`Worktree: ${worktree.name}`, worktree.id)));
   const wanted = selected ?? (newWorktreeByDefault ? NEW_WORKTREE : "");
   select.value = [...select.options].some((option) => option.value === wanted && !option.disabled) ? wanted : "";
+  elements.newSessionNewWorktree.checked = select.value === NEW_WORKTREE;
+  elements.newSessionWorktreeLabel.hidden = !offered || elements.newSessionNewWorktree.checked;
 }
 
 function checkedNewSessionSecretIds() {
@@ -380,7 +384,7 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
   const node = newSessionNodes.find((candidate) => candidate.id === elements.newSessionNodeSelect.value);
   if (!node || !node.online || !node.mapped) { showWizardStep(3); toast("Choose an online node with this project mapped"); return; }
   const secretIds = [...elements.newSessionSecretList.querySelectorAll("input:checked:not(:disabled)")].map(input => input.value);
-  let worktreeId = elements.newSessionWorktreeLabel.hidden ? null : elements.newSessionWorktreeSelect.value || null;
+  let worktreeId = elements.newSessionWorktreeSelect.value || null;
   if (worktreeId === NEW_WORKTREE && !node.local) { showWizardStep(3); toast("A new worktree can start only on this node; choose this node or the project folder"); return; }
   const submit = elements.newSessionNameForm.querySelector('[type="submit"]');
   if (submit.disabled) return;
@@ -445,4 +449,11 @@ elements.newSessionNodeSelect.addEventListener("change", () => {
   renderNewSessionSecrets();
   renderNewSessionWorktrees(worktreeChosen ? elements.newSessionWorktreeSelect.value : null);
 });
-elements.newSessionWorktreeSelect.addEventListener("change", () => { worktreeChosen = true; });
+elements.newSessionNewWorktree.addEventListener("change", () => {
+  worktreeChosen = true;
+  renderNewSessionWorktrees(elements.newSessionNewWorktree.checked ? NEW_WORKTREE : "");
+});
+elements.newSessionWorktreeSelect.addEventListener("change", () => {
+  worktreeChosen = true;
+  renderNewSessionWorktrees(elements.newSessionWorktreeSelect.value);
+});

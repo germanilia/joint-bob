@@ -124,6 +124,7 @@ export async function selectProject(projectId, shouldRender = true, preserveSess
   const kept = state.keptSessionLists.get(projectId);
   if (state.activeProjectId !== projectId) {
     state.classificationFilters.clear();
+    state.worktreeFilters.clear();
     state.worktrees = [];
     state.worktreeCleanupReasons = {};
   }
