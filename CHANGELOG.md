@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.305.9 — 2026-11-15
+
+- On Bob's page, the theme button and the Settings button are back in the top bar, next to Exit. The bottom row that held them is gone.
+
 ## 2.305.8 — 2026-11-15
 
 - On Bob's page, the theme button and the Settings button are back. They live in the bottom row that Bob's page had hidden; the row now stays at the bottom of the page, under the chat and the browser.
