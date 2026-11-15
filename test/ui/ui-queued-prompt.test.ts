@@ -202,7 +202,8 @@ test("a picture pasted while editing a queued message joins it, and deleting the
   await picture.getByTestId("queued-message-edit-attachments").getByTestId("attachment-thumbnail").waitFor();
   await picture.getByTestId("queued-message-save-button").click();
   await picture.getByTestId("message-image-thumbnail").waitFor();
-  assert.match(await picture.innerText(), /Attached: pasted\.png/);
+  // The picture is drawn at once and the text on the next frame, so the text is waited for, not read.
+  await picture.getByText("Attached: pasted.png").waitFor();
   await picture.getByTestId("queued-message-cancel-button").click();
   await picture.waitFor({ state: "detached" });
   await releaseTurn("hold the second line");
