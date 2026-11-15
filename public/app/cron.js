@@ -133,7 +133,7 @@ async function refreshTasks() {
       ["Quiet hours", task.schedule.quietStart ? `${task.schedule.quietStart}–${task.schedule.quietEnd}` : "Off"]];
     const machine = [...field("ownerNodeId").options].find(option => option.value === task.ownerNodeId);
     const execution = [["Machine", machine ? machine.textContent : task.ownerNodeId], ["Repeat", repeat], ["Start time", task.schedule.frequency === "hourly" && task.schedule.startHour === undefined ? `At minute ${task.schedule.minute} (legacy UTC interval)` : `${String(task.schedule.startHour ?? task.schedule.hour).padStart(2, "0")}:${String(task.schedule.minute).padStart(2, "0")}`],
-      ...calendar, ...rhythm, ["Harness", harness?.label || task.engine], ["Model", task.model ? task.model.modelId : "Harness default"], ["Reasoning", reasoning || "Harness default"], ["Auto reply", task.autoRespond ? `${task.autoRespond.modelId} · ${task.autoRespond.maxResponses ?? "Unlimited"} replies` : "Off"], ["On failure", task.pauseOnFailure ? "Pause schedule" : "Retry next run"], ["Review", task.markForReview ? "Counts toward review" : "Silent"], ["Conversation history", task.hideFromHistory ? "Hidden" : "Visible when Show scheduled is on"]];
+      ...calendar, ...rhythm, ["Harness", harness?.label || task.engine], ["Model", task.model ? task.model.modelId : "Harness default"], ["Reasoning", reasoning || "Harness default"], ["Auto reply", task.autoRespond ? `${task.autoRespond.modelId} · ${task.autoRespond.maxResponses ?? "Unlimited"} replies` : "Off"], ["On failure", task.pauseOnFailure ? "Pause schedule" : "Retry next run"], ["Review", task.markForReview ? "Counts toward review" : "Silent"], ["Guardian", task.bypassGuardian ? "Bypassed for task turns, except enforced rules" : "Monitored"], ["Conversation history", task.hideFromHistory ? "Hidden" : "Visible when Show scheduled is on"]];
     const entries = task.enabled
       ? [["Next run", nextRunText(task)], ["Timezone", task.schedule.timezone], ...execution, ["Last run", last]]
       : [["Status", "Paused"], ["Timezone", task.schedule.timezone], ...execution, ["Last run", last]];
@@ -342,6 +342,7 @@ function editTask(task) {
     field("enabled").checked = task.enabled;
     field("pauseOnFailure").checked = task.pauseOnFailure;
     field("markForReview").checked = task.markForReview === true;
+    field("bypassGuardian").checked = task.bypassGuardian === true;
     field("hideFromHistory").checked = task.hideFromHistory === true;
     field("frequency").value = task.schedule.frequency;
     field("weekday").value = task.schedule.weekday;
@@ -408,6 +409,7 @@ form.addEventListener("submit", async event => {
       model: context.assistant ? null : modelId ? { provider, modelId } : null, reasoning: context.assistant ? undefined : field("reasoning").value || undefined,
       sessionId: context.assistant ? null : session?.engine === field("engine").value ? session.id : null, enabled: field("enabled").checked,
       pauseOnFailure: field("pauseOnFailure").checked, markForReview: field("markForReview").checked,
+      bypassGuardian: field("bypassGuardian").checked,
       hideFromHistory: field("hideFromHistory").checked,
       schedule: { frequency: field("frequency").value, intervalMinutes: field("frequency").value === "minutely" ? Number(field("intervalMinutes").value) : undefined,
         intervalHours: field("frequency").value === "hourly" ? Number(field("intervalHours").value) : undefined,

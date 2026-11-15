@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { teamAssistantForConversation } from '../assistant-resources.js';
 import type { TeamMember } from '../assistant-teams/access.js';
+import { save, settingsDatabase, value } from '../settings-store.js';
 
 /** A review nobody answers blocks the action: scheduled runs and webhooks never wait forever. */
 export const REVIEW_TIMEOUT_MS = 10 * 60_000;
@@ -19,10 +20,16 @@ export interface GuardianReview {
   createdAt: string;
   expiresAt: string;
   operationKey?: string;
+  /** Hash of the exact action, project, working directory and rules. Never the action's content. */
+  alwaysKey?: string;
   team?: { teamId: string; assignmentId: string; requestId: string; requestedBy: string; operationKey: string };
 }
 
-export type ReviewDecision = "allow" | "block";
+export type ReviewDecision = "allow" | "allow-always" | "block";
+
+export function guardianActionAllowed(key: string): boolean {
+  return value(`guardian.allowed.${key}`) === 'true';
+}
 
 /** What the chat server pushes to a conversation's viewers: its open reviews changed, or Guardian blocked something on its own. */
 export type GuardianEvent =
@@ -94,6 +101,10 @@ function openReview(review: GuardianReview, signal: AbortSignal | undefined, tim
 export function decideGuardianReview(projectId: string, conversationId: string, id: string, decision: ReviewDecision): boolean {
   const entry = pending.get(id);
   if (!entry || entry.review.team || entry.review.projectId !== projectId || entry.review.conversationId !== conversationId) return false;
+  if (decision === 'allow-always') {
+    if (!entry.review.alwaysKey) return false;
+    save(settingsDatabase(), `guardian.allowed.${entry.review.alwaysKey}`, 'true');
+  }
   entry.settle(decision);
   return true;
 }
@@ -103,7 +114,7 @@ export async function decideTeamGuardianReview(member: TeamMember, assignmentId:
   const { recheckTeamActor, requireTeamExecution } = await import('../assistant-teams/access.js');
   await recheckTeamActor(member); await requireTeamExecution(member.teamId, member.accountId);
   const entry = pending.get(id), binding = entry?.review.team;
-  if (!entry || !binding || binding.teamId !== member.teamId || binding.assignmentId !== assignmentId) return false;
+  if (!entry || !binding || decision === 'allow-always' || binding.teamId !== member.teamId || binding.assignmentId !== assignmentId) return false;
   const { bindTeamGuardianReview, assignmentDatabase } = await import('../assistant-teams/assignments.js');
   const current = await bindTeamGuardianReview(entry.review.projectId, entry.review.conversationId, binding.operationKey);
   if (JSON.stringify(current) !== JSON.stringify(binding) || pending.get(id) !== entry) return false;

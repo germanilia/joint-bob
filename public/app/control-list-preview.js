@@ -201,7 +201,7 @@ function needBlock(card, helpers) {
     if (review.subject) box.append(element("pre", "", review.subject));
     if (review.detail) box.append(element("p", "", review.detail));
     const buttons = element("div", "control-list-need-actions");
-    for (const [decision, label, className] of [["allow", "Allow once", "control-action warn"], ["block", "Block", "control-action"]]) {
+    for (const [decision, label, className] of [["allow", "Allow once", "control-action warn"], ...(review.alwaysKey ? [["allow-always", "Allow always", "control-action warn"]] : []), ["block", "Block", "control-action"]]) {
       buttons.append(button(className, `control-review-${decision}`, label, (event) => {
         event.currentTarget.disabled = true;
         helpers.decideReview(card, review, decision).catch((error) => { toast.error(error.message); event.target.disabled = false; });

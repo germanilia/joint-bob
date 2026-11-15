@@ -32,6 +32,18 @@ test("regenerating replaces the secret, and deleting removes the webhook and its
   assert.deepEqual(webhookDeliveries(db, webhook.id), []);
 });
 
+test("Guardian bypass defaults off and survives creating and editing a webhook", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    assert.equal(input().bypassGuardian, false);
+    const { webhook } = createWebhook(db, input({ bypassGuardian: true }));
+    assert.equal(webhook.bypassGuardian, true);
+    assert.equal(listWebhooks(db)[0].bypassGuardian, true);
+    assert.equal(updateWebhook(db, webhook.id, input({ bypassGuardian: false })).bypassGuardian, false);
+    assert.equal(webhookInputSchema.safeParse({ ...input(), bypassGuardian: "true" }).success, false);
+  } finally { db.close(); }
+});
+
 test("an update changes the target and keeps the address", () => {
   const db = new DatabaseSync(":memory:");
   const { webhook, secret } = createWebhook(db, input());

@@ -213,7 +213,7 @@ export async function createScheduledTask(session: AuthSession, raw: ScheduledTa
     if (!await getProject(input.projectId)) throw new AutomationError(409, "This project is not on this machine, so a scheduled task cannot be created here");
     const cron: CronInput = {
       assistantId: null, tags: { managedTagIds: [], manualTags: [] }, projectId: input.projectId, name: input.name, prompt: input.prompt, ownerNodeId: local.id,
-      engine: defaultEngine(), model: null, sessionId: null, enabled: input.enabled, pauseOnFailure: false, markForReview: false, hideFromHistory: false,
+      engine: defaultEngine(), model: null, sessionId: null, enabled: input.enabled, pauseOnFailure: false, markForReview: false, hideFromHistory: false, bypassGuardian: false,
       schedule: cronSchedule(input.schedule),
     };
     const { task } = await runCronCommand(local.id, { action: "create", input: cron }) as { task: CronTask };

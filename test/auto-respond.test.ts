@@ -57,10 +57,12 @@ test("custom stop rules are the only model-selected stopping conditions", () => 
 });
 
 test("editing a running scheduled responder preserves its schedule identity", async () => {
-  const initial = await enableAutoRespond("schedule-project", "schedule-conversation", config, null, "creator", "queued-id", "run-id");
+  const initial = await enableAutoRespond("schedule-project", "schedule-conversation", config, null, "creator", "queued-id", "run-id", true);
   await retryAutoRespond(initial.projectId, initial.conversationId, "Provider is temporarily unavailable");
   const saved = await enableAutoRespond(initial.projectId, initial.conversationId, { ...config, instructions: "Updated instructions" }, null, "creator");
   assert.equal(saved.sourcePromptId, "queued-id");
+  assert.equal(initial.bypassGuardian, true);
+  assert.equal(saved.bypassGuardian, true, "scheduled follow-up turns retain the trusted exemption");
   assert.equal(saved.sourceRequestId, "run-id");
   assert.equal(saved.retry, null);
   await disableAutoRespond(initial.projectId, initial.conversationId);

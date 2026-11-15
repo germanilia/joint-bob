@@ -73,6 +73,7 @@ export async function queuedCronPrompt(task: CronTask, run: CronRun, sessionId: 
     if (titleInstruction) bindWebhookTitle(task.projectId, sessionId, titleTemplate);
   }
   await queueConversationPrompt({
+    bypassGuardian: task.bypassGuardian,
     automationProfile: automationProfileContext(task),
     scheduledAutoRespond: task.autoRespond ?? undefined,
     projectId: task.projectId, engine: task.engine, sessionId, message: [titleInstruction, scheduledPromptText(task.prompt)].filter(Boolean).join("\n\n"), requestId: run.id, label: "Scheduled", until: "completed",
@@ -96,6 +97,7 @@ async function executeCronRun(task: CronTask, run: CronRun): Promise<void> {
       if (task.assistantId) {
         if (!task.creatorAccountId) throw new Error("Assistant scheduled task has no creator account");
         const turn = await runPersonalAssistantAutomationTurn(task.creatorAccountId, task.assistantId, run.id, scheduledPromptText(task.prompt), {
+          bypassGuardian: task.bypassGuardian,
           label: "Scheduled", origin: "scheduled", automationProfile: automationProfileContext(task), scheduledAutoRespond: task.autoRespond ?? undefined,
           prepare: async destination => {
             cronStore().target(run.id, destination.sessionId);

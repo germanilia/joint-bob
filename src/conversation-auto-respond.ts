@@ -49,6 +49,8 @@ export const autoRespondConfigSchema = z.object({
 export type AutoRespondConfig = z.input<typeof autoRespondConfigSchema>;
 
 export interface AutoRespondState extends AutoRespondConfig {
+  /** Inherited only from the trusted scheduled prompt, not from responder settings. */
+  bypassGuardian?: boolean;
   creatorAccountId: string | null;
   retry: { attempts: number; nextAt: string; error: string } | null;
   sourcePromptId: string | null;
@@ -101,10 +103,10 @@ async function database(): Promise<DatabaseSync> {
 }
 
 function fromRow(row: Row): AutoRespondState {
-  const { creatorAccountId = null, retry = null, sourcePromptId = null, sourceRequestId = null, ...config } = JSON.parse(row.config);
+  const { creatorAccountId = null, retry = null, sourcePromptId = null, sourceRequestId = null, bypassGuardian = false, ...config } = JSON.parse(row.config);
   return {
     ...autoRespondConfigSchema.parse(config),
-    creatorAccountId, retry, sourcePromptId, sourceRequestId,
+    creatorAccountId, retry, sourcePromptId, sourceRequestId, bypassGuardian,
     projectId: row.project_id, conversationId: row.conversation_id, status: row.status,
     stopKind: row.stop_kind, stopReason: row.stop_reason, responses: row.responses, answeredKey: row.answered_key,
     enabledBy: row.enabled_by ? messageAuthorSchema.parse(JSON.parse(row.enabled_by)) : null,
@@ -157,7 +159,7 @@ export function validateAutoRespondProfile(accountId: string | null, config: Aut
 }
 
 /** Turns auto respond on (resuming a stopped one and zeroing its count) with this configuration. */
-export async function enableAutoRespond(projectId: string, conversationId: string, config: AutoRespondConfig, enabledBy: MessageAuthor | null, creatorAccountId: string | null = enabledBy?.accountId ?? null, sourcePromptId: string | null = null, sourceRequestId: string | null = null): Promise<AutoRespondState> {
+export async function enableAutoRespond(projectId: string, conversationId: string, config: AutoRespondConfig, enabledBy: MessageAuthor | null, creatorAccountId: string | null = enabledBy?.accountId ?? null, sourcePromptId: string | null = null, sourceRequestId: string | null = null, bypassGuardian = false): Promise<AutoRespondState> {
   if (!await (await import('./control-center/auto-respond.js')).personalContinuationAllowed(projectId, conversationId)) throw new Error('Team conversations require explicit assignments, not Auto respond');
   const parsed = autoRespondConfigSchema.parse(config);
   validateAutoRespondProfile(creatorAccountId, parsed);
@@ -166,6 +168,7 @@ export async function enableAutoRespond(projectId: string, conversationId: strin
     responses: 0, answeredKey: null, enabledBy, creatorAccountId, retry: null,
     sourcePromptId: sourcePromptId ?? (current?.status === "active" ? current.sourcePromptId : null),
     sourceRequestId: sourceRequestId ?? (current?.status === "active" ? current.sourceRequestId : null),
+    bypassGuardian: sourcePromptId ? bypassGuardian : current?.status === "active" && current.bypassGuardian === true,
   })))!;
 }
 

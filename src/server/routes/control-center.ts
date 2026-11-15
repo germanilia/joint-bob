@@ -129,7 +129,7 @@ const decisionSchema = z.object({
   projectId: z.string().min(1).max(200),
   conversationId: z.string().min(1).max(200),
   reviewId: z.string().min(1).max(100),
-  decision: z.enum(["allow", "block"]),
+  decision: z.enum(["allow", "allow-always", "block"]),
 }).strict();
 
 /** The person's answer to a Guardian review, from the board. Only a project they can see can be answered. */

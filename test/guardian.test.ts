@@ -171,6 +171,65 @@ test("checkGuardian blocks, asks, fixes and continues by the rules", async (t) =
   assert.match((ruleBlock as { reason: string }).reason, /Guardian blocked this command\. Rule "Dangerous commands"/);
 });
 
+test("allow always remembers only the exact action and scope, without overriding blocks", async (t) => {
+  clearGuardianModelCache();
+  const model = await fakeModel(() => 0.95);
+  t.after(() => model.server.close());
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: model.url });
+  t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
+  const project = await addProject("Remember action", mkdtempSync(path.join(os.tmpdir(), "guardian-remember-")), { writeInstructions: false });
+  const identity: GuardianIdentity = { projectId: project.id, conversationId: "one", harness: "pi", cwd: "/tmp/one", canReplaceTool: true };
+  const action = { kind: "tool" as const, tool: "bash", category: "commands" as const, input: { command: "rm -rf /tmp/remember-action" } };
+  let questions = 0;
+  const stop = onGuardianEvent(event => {
+    if (event.type !== "reviews" || event.projectId !== identity.projectId) return;
+    const review = pendingGuardianReviews(event.projectId, event.conversationId).find(item => item.id === event.review.id);
+    if (!review) return;
+    questions++;
+    decideGuardianReview(event.projectId, event.conversationId, review.id, questions === 1 ? "allow-always" : "block");
+  });
+  t.after(stop);
+  assert.deepEqual(await checkGuardian(identity, action), { action: "continue" });
+  assert.deepEqual(await checkGuardian({ ...identity, conversationId: "two" }, action), { action: "continue" });
+  assert.equal(questions, 1, "the saved approval survives a new conversation");
+  assert.equal((await checkGuardian(identity, { ...action, input: { command: "rm -rf /tmp/different" } })).action, "block");
+  assert.equal((await checkGuardian({ ...identity, cwd: "/tmp/two" }, action)).action, "block");
+  updateGuardianSettings({ ...getGuardianSettings(), rules: getGuardianSettings().rules.map(item => ({ ...item, ifYes: "block" })) });
+  assert.equal((await checkGuardian(identity, action)).action, "block");
+});
+
+test("automation bypass lasts only for its turn and conversation, including on errors", async () => {
+  const { withGuardianBypass } = await import("../src/guardian/bypass.js");
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: "http://127.0.0.1:9" });
+  const identity: GuardianIdentity = { projectId: "bypass-test", conversationId: "c", harness: "pi", cwd: process.cwd(), canReplaceTool: true };
+  const action = { kind: "tool" as const, tool: "bash", category: "commands" as const, input: { command: "ls" } };
+  try {
+    await assert.rejects(withGuardianBypass(identity.projectId, identity.conversationId, true, async () => {
+      assert.equal((await checkGuardian(identity, action)).action, "continue");
+      assert.equal((await checkGuardian({ ...identity, conversationId: "other" }, action)).action, "block");
+      throw new Error("turn failed");
+    }), /turn failed/);
+    assert.equal((await checkGuardian(identity, action)).action, "block", "manual turns remain monitored");
+  } finally { updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS); }
+});
+
+test("a later manual turn never inherits an automation still draining background work", async () => {
+  const { withGuardianBypass, guardianBypassed } = await import("../src/guardian/bypass.js");
+  let finishBackground!: () => void;
+  const background = new Promise<void>(resolve => { finishBackground = resolve; });
+  const automation = withGuardianBypass("overlap", "c", true, () => background);
+  assert.equal(guardianBypassed("overlap", "c"), true);
+  try {
+    await withGuardianBypass("overlap", "c", false, async () => {
+      assert.equal(guardianBypassed("overlap", "c"), false);
+      finishBackground();
+      await automation;
+      assert.equal(guardianBypassed("overlap", "c"), false);
+    });
+  } finally { finishBackground(); await automation; }
+  assert.equal(guardianBypassed("overlap", "c"), false);
+});
+
 test("a check that cannot reach its model blocks the action", async () => {
   clearGuardianModelCache();
   updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: "http://127.0.0.1:9" });

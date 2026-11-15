@@ -472,10 +472,13 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
   const readOnlyReason: ReadOnlyReason | null = sessionReadOnly ? "transcript" : peerReadOnly ? "runnerAccess" : null;
   try {
     const startCommand = getSettings().conversationCommands.start;
+    const bypassGuardian = url.searchParams.get("bypassGuardian") === "1";
+    if (bypassGuardian && signedPeer !== local.id) throw new Error("Guardian bypass requires a signed local request");
     const rawAutomationProfile = url.searchParams.get("automationProfile");
     if (rawAutomationProfile && signedPeer !== local.id) throw new Error("Automation profile context requires a signed local request");
     const automationProfile = rawAutomationProfile ? queuedAutomationProfileSchema.parse({ ...JSON.parse(rawAutomationProfile), nodeId: local.id }) : undefined;
     await attachHarnessChat({
+      bypassGuardian,
       automationProfile,
       controlOnly: signedPeer === local.id && url.searchParams.get("nodeSession") === "1",
       socket, project, cwd, engine: sessionRequest.engine,
