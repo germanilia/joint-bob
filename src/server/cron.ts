@@ -22,6 +22,7 @@ import { takeLocalSessionOwnership } from "./routes/sessions.js";
 import { listProjectSessionsWithReviewState } from "./sessions-helpers.js";
 import { flags } from "./state.js";
 import { runPersonalAssistantAutomationTurn } from "./routes/personal-assistants.js";
+import { automationWorktreeInstruction, withAutomationWorktree } from "./automation-worktree.js";
 
 export async function cronConversationReady(projectId: string, sessionId: string, engine: string): Promise<boolean> {
   const project = await getProject(projectId);
@@ -62,7 +63,7 @@ async function prepareConversation(task: CronTask): Promise<string> {
   return task.sessionId;
 }
 
-export async function queuedCronPrompt(task: CronTask, run: CronRun, sessionId: string): Promise<void> {
+export async function queuedCronPrompt(task: CronTask, run: CronRun, sessionId: string, worktreeId?: string): Promise<void> {
   const reasoning = task.reasoning ?? task.model?.reasoning;
   let titleInstruction = "";
   if (!task.sessionId) {
@@ -76,7 +77,7 @@ export async function queuedCronPrompt(task: CronTask, run: CronRun, sessionId: 
     bypassGuardian: task.bypassGuardian,
     automationProfile: automationProfileContext(task),
     scheduledAutoRespond: task.autoRespond ?? undefined,
-    projectId: task.projectId, engine: task.engine, sessionId, message: [titleInstruction, scheduledPromptText(task.prompt)].filter(Boolean).join("\n\n"), requestId: run.id, label: "Scheduled", until: "completed",
+    projectId: task.projectId, engine: task.engine, sessionId, worktreeId, message: [scheduledPromptText(task.prompt), worktreeId ? automationWorktreeInstruction : "", titleInstruction].filter(Boolean).join("\n\n"), requestId: run.id, label: "Scheduled", until: "completed",
     // Model and reasoning ride along with the queued prompt instead of
     // configuring the live session here: unrelated scheduled tasks share a
     // conversation, and configuring one mid-turn throws "session is busy".
@@ -93,12 +94,14 @@ export async function queuedCronPrompt(task: CronTask, run: CronRun, sessionId: 
 
 async function executeCronRun(task: CronTask, run: CronRun): Promise<void> {
   try {
-    await runWithAutomationProfile(task, async () => {
+    await runWithAutomationProfile(task, () => withAutomationWorktree(task, run.id, async worktree => {
+      // Isolation never moves or reuses a pinned conversation in the shared project.
+      if (worktree) task = { ...task, sessionId: null };
       if (task.assistantId) {
         if (!task.creatorAccountId) throw new Error("Assistant scheduled task has no creator account");
-        const turn = await runPersonalAssistantAutomationTurn(task.creatorAccountId, task.assistantId, run.id, scheduledPromptText(task.prompt), {
+        const turn = await runPersonalAssistantAutomationTurn(task.creatorAccountId, task.assistantId, run.id, [scheduledPromptText(task.prompt), worktree ? automationWorktreeInstruction : ""].filter(Boolean).join("\n\n"), {
           bypassGuardian: task.bypassGuardian,
-          label: "Scheduled", origin: "scheduled", automationProfile: automationProfileContext(task), scheduledAutoRespond: task.autoRespond ?? undefined,
+          worktreeId: worktree?.id, label: "Scheduled", origin: "scheduled", automationProfile: automationProfileContext(task), scheduledAutoRespond: task.autoRespond ?? undefined,
           prepare: async destination => {
             cronStore().target(run.id, destination.sessionId);
             if (destination.isNew) await markCronConversation(task.projectId, destination.engine, destination.sessionId, task.id, task.ownerNodeId);
@@ -112,18 +115,16 @@ async function executeCronRun(task: CronTask, run: CronRun): Promise<void> {
         const sessionId = sessionParts.join(":");
         if (!engine || !sessionId) throw new Error("Assistant scheduled turn has no conversation target");
         cronStore().target(run.id, sessionId);
-        transitionAutomationExecution(await clusterV2Database(), run.id, "succeeded", null, sessionId, engine);
-        cronStore().finish(run.id, "succeeded", null);
         return;
       }
       const sessionId = await prepareConversation(task);
       await ensureConversationRecord(task.projectId, task.engine, sessionId, task.ownerNodeId);
       await markCronConversation(task.projectId, task.engine, sessionId, task.id, task.ownerNodeId);
       cronStore().target(run.id, sessionId);
-      await queuedCronPrompt(task, run, sessionId);
-      transitionAutomationExecution(await clusterV2Database(), run.id, "succeeded", null, sessionId);
-      cronStore().finish(run.id, "succeeded", null);
-    });
+      await queuedCronPrompt(task, run, sessionId, worktree?.id);
+    }));
+    transitionAutomationExecution(await clusterV2Database(), run.id, "succeeded");
+    cronStore().finish(run.id, "succeeded", null);
   } catch (error) {
     // A used-up budget is not the task's fault: the run is recorded, the task stays enabled.
     if (error instanceof Error && /Budget reached:/.test(error.message)) { transitionAutomationExecution(await clusterV2Database(), run.id, "failed", error.message); cronStore().finish(run.id, "failed", error.message); return; }

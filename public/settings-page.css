@@ -605,6 +605,10 @@ body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help=
 #settingsForm .terminal-policy-limits > label:not(:has(.settings-unit)) { grid-template-columns: minmax(0, 1fr) auto; }
 /* A section's lone Refresh sits at the end of its line, small. */
 #settingsForm .settings-panel .relay-head { align-items: center; justify-content: flex-end; }
+#settingsForm .settings-panel .relay-head:has(> .webhooks-crumb) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+@media (max-width: 720px) {
+  #settingsForm .settings-panel .relay-head:has(> .webhooks-crumb) { grid-template-columns: minmax(0, 1fr); }
+}
 #settingsForm .settings-panel .relay-head > button { flex: none; width: auto; }
 /* Relay: the phone sign-in switch is a row like the others. */
 #settingsForm .settings-panel .relay-switch { display: grid; gap: 0; padding: 4px 16px 10px; border-radius: 16px; background: var(--set-row-bg); }

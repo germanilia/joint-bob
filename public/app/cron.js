@@ -115,7 +115,7 @@ async function refreshTasks() {
     const heading = document.createElement("div");
     heading.className = "cron-task-heading";
     const title = document.createElement("strong"); title.textContent = task.name;
-    const kind = document.createElement("span"); kind.className = "cron-task-kind"; kind.textContent = task.assistantId ? "Personal assistant" : task.sessionId ? "Existing conversation" : "New conversation";
+    const kind = document.createElement("span"); kind.className = "cron-task-kind"; kind.textContent = task.assistantId ? "Personal assistant" : task.sessionId && !task.runInWorktree ? "Existing conversation" : "New conversation";
     heading.append(title, kind);
 
     const last = task.lastRun ? `${task.lastRun.status}${task.lastRun.error ? `: ${task.lastRun.error}` : ""}` : "Not run yet";
@@ -133,7 +133,7 @@ async function refreshTasks() {
       ["Quiet hours", task.schedule.quietStart ? `${task.schedule.quietStart}–${task.schedule.quietEnd}` : "Off"]];
     const machine = [...field("ownerNodeId").options].find(option => option.value === task.ownerNodeId);
     const execution = [["Machine", machine ? machine.textContent : task.ownerNodeId], ["Repeat", repeat], ["Start time", task.schedule.frequency === "hourly" && task.schedule.startHour === undefined ? `At minute ${task.schedule.minute} (legacy UTC interval)` : `${String(task.schedule.startHour ?? task.schedule.hour).padStart(2, "0")}:${String(task.schedule.minute).padStart(2, "0")}`],
-      ...calendar, ...rhythm, ["Harness", harness?.label || task.engine], ["Model", task.model ? task.model.modelId : "Harness default"], ["Reasoning", reasoning || "Harness default"], ["Auto reply", task.autoRespond ? `${task.autoRespond.modelId} · ${task.autoRespond.maxResponses ?? "Unlimited"} replies` : "Off"], ["On failure", task.pauseOnFailure ? "Pause schedule" : "Retry next run"], ["Review", task.markForReview ? "Counts toward review" : "Silent"], ["Guardian", task.bypassGuardian ? "Bypassed for task turns, except enforced rules" : "Monitored"], ["Conversation history", task.hideFromHistory ? "Hidden" : "Visible when Show scheduled is on"]];
+      ...calendar, ...rhythm, ["Harness", harness?.label || task.engine], ["Model", task.model ? task.model.modelId : "Harness default"], ["Reasoning", reasoning || "Harness default"], ["Auto reply", task.autoRespond ? `${task.autoRespond.modelId} · ${task.autoRespond.maxResponses ?? "Unlimited"} replies` : "Off"], ["Worktree", task.runInWorktree ? "Fresh from origin/main, removed after run" : "Off"], ["On failure", task.pauseOnFailure ? "Pause schedule" : "Retry next run"], ["Review", task.markForReview ? "Counts toward review" : "Silent"], ["Guardian", task.bypassGuardian ? "Bypassed for task turns, except enforced rules" : "Monitored"], ["Conversation history", task.hideFromHistory ? "Hidden" : "Visible when Show scheduled is on"]];
     const entries = task.enabled
       ? [["Next run", nextRunText(task)], ["Timezone", task.schedule.timezone], ...execution, ["Last run", last]]
       : [["Status", "Paused"], ["Timezone", task.schedule.timezone], ...execution, ["Last run", last]];
@@ -248,6 +248,10 @@ function boundSession() {
   return session ? { id: session.id, engine: session.harnessId || session.engine || harnessIdFromPath(state.harnesses, session.path) } : null;
 }
 function updateCronContext() {
+  if (field("runInWorktree").checked) {
+    document.querySelector("#cronContext").textContent = "Each run starts a new conversation in a fresh worktree from origin/main. The worktree is removed when the run ends. Existing conversations are left untouched.";
+    return;
+  }
   if (context.assistant) {
     document.querySelector("#cronContext").textContent = `Routes each run through ${context.assistant.name}'s decision model and adds its response to this assistant chat.`;
     return;
@@ -321,6 +325,7 @@ function editTask(task) {
   field("engine").replaceChildren(...state.harnesses.filter((harness) => harness.runtimeConfigured).map(harnessOption));
   if (selectedEngine && !state.harnesses.some(({ id }) => id === selectedEngine)) field("engine").add(new Option(selectedEngine, selectedEngine));
   form.reset();
+  field("runInWorktree").checked = task?.runInWorktree ?? true;
   form.hidden = false;
   listView.hidden = true;
   footer.hidden = true;
@@ -410,7 +415,7 @@ form.addEventListener("submit", async event => {
       sessionId: context.assistant ? null : session?.engine === field("engine").value ? session.id : null, enabled: field("enabled").checked,
       pauseOnFailure: field("pauseOnFailure").checked, markForReview: field("markForReview").checked,
       bypassGuardian: field("bypassGuardian").checked,
-      hideFromHistory: field("hideFromHistory").checked,
+      hideFromHistory: field("hideFromHistory").checked, runInWorktree: field("runInWorktree").checked,
       schedule: { frequency: field("frequency").value, intervalMinutes: field("frequency").value === "minutely" ? Number(field("intervalMinutes").value) : undefined,
         intervalHours: field("frequency").value === "hourly" ? Number(field("intervalHours").value) : undefined,
         hour, minute, startHour: field("frequency").value === "hourly" ? hour : undefined,
@@ -432,6 +437,7 @@ field("autoReplyModel").addEventListener("change", () => {
   const harness = availableHarnesses.find(candidate => candidate.id === field("autoReplyHarness").value);
   if (harness) fillThinkingOptions(harness, availableModels, field("autoReplyModel"), field("autoReplyThinking"), field("autoReplyThinking").value);
 });
+field("runInWorktree").addEventListener("change", updateCronContext);
 field("frequency").addEventListener("change", showScheduleFields);
 field("quietEnabled").addEventListener("change", showScheduleFields);
 field("engine").addEventListener("change", () => { renderExecutionFields(); updateCronContext(); });

@@ -9,6 +9,21 @@ import {
 
 const input = (overrides = {}) => webhookInputSchema.parse({ name: "Issues", target: { kind: "project", projectId: "p1" }, context: "Triage.", ...overrides });
 
+test("existing and new webhooks default to worktrees and retain an explicit opt-out", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const { webhook } = createWebhook(db, input());
+    assert.equal(webhook.runInWorktree, true);
+    // Reproduce the persisted schema before the worktree option existed.
+    db.exec("ALTER TABLE webhooks DROP COLUMN run_in_worktree");
+    assert.equal(listWebhooks(db)[0].runInWorktree, true);
+    assert.equal(createWebhook(db, input()).webhook.runInWorktree, true);
+    assert.equal(updateWebhook(db, webhook.id, input({ runInWorktree: false })).runInWorktree, false);
+    assert.equal(regenerateWebhookSecret(db, webhook.id).webhook.runInWorktree, false);
+    assert.equal(listWebhooks(db).find(hook => hook.id === webhook.id)!.runInWorktree, false);
+  } finally { db.close(); }
+});
+
 test("a webhook's secret is long, random, and stored only as a hash", () => {
   const db = new DatabaseSync(":memory:");
   const a = createWebhook(db, input()), b = createWebhook(db, input({ name: "Other" }));

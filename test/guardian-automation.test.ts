@@ -31,7 +31,7 @@ test("webhooks and schedules bypass Guardian only for their own trusted turns", 
 
     const hook = await api<{ secret: string }>(node, session, "POST", "/webhooks", {
       name: "Trusted webhook", target: { kind: "conversation", projectId: project.id, sessionId, engine: "claude" },
-      preserveFiles: true, bypassGuardian: true, context: "Please delete the 2023 exports",
+      preserveFiles: true, runInWorktree: false, bypassGuardian: true, context: "Please delete the 2023 exports",
     });
     assert.equal(hook.status, 201, JSON.stringify(hook.body));
     assert.equal((await fetch(`${node.url}/hooks/${hook.body.secret}`, { method: "POST", body: "trigger" })).status, 202);
@@ -41,7 +41,7 @@ test("webhooks and schedules bypass Guardian only for their own trusted turns", 
 
     const scheduled = await api<{ task: { id: string } }>(node, session, "POST", "/cron", { nodeId: node.nodeId, command: { action: "create", input: {
       name: "Trusted schedule", projectId: project.id, prompt: "Please delete the 2023 exports", engine: "claude", sessionId,
-      ownerNodeId: node.nodeId, enabled: false, bypassGuardian: true,
+      ownerNodeId: node.nodeId, enabled: false, runInWorktree: false, bypassGuardian: true,
       schedule: { frequency: "daily", hour: 0, minute: 0, weekday: 0, timezone: "UTC" },
     } } });
     assert.equal(scheduled.status, 200, JSON.stringify(scheduled.body));

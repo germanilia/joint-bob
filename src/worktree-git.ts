@@ -160,7 +160,7 @@ export interface WorktreeBase { commit: string; ref: string; fetched: boolean }
  * with none of the project folder's uncommitted work. Null when the project is not the root of a
  * repository with a remote branch, so the caller copies the folder instead.
  */
-export async function exportWorktreeBase(projectPath: string, env: NodeJS.ProcessEnv, target: string, allowed: (relative: string, size: number) => boolean, useLocalMain = false): Promise<WorktreeBase | null> {
+export async function exportWorktreeBase(projectPath: string, env: NodeJS.ProcessEnv, target: string, allowed: (relative: string, size: number) => boolean, useLocalMain = false, originMain = false): Promise<WorktreeBase | null> {
   const git = projectGit(projectPath, env);
   const top = await git(["rev-parse", "--show-toplevel"]);
   if (top.code !== 0) return null;
@@ -171,9 +171,10 @@ export async function exportWorktreeBase(projectPath: string, env: NodeJS.Proces
     await exportCommit(projectPath, env, git, commit, target, allowed);
     return { commit, ref: "main", fetched: true };
   }
-  const branch = await remoteBranch(git);
+  const branch = originMain ? { remote: "origin", branch: "main" } : await remoteBranch(git);
   if (!branch) return null;
   const { commit, fetched } = await fetchBranch(git, branch.remote, branch.branch);
+  if (originMain && (!fetched || !commit)) throw new Error("Could not fetch origin/main for this automation worktree");
   if (!commit) return null;
   await exportCommit(projectPath, env, git, commit, target, allowed);
   return { commit, ref: `${branch.remote}/${branch.branch}`, fetched };

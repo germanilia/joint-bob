@@ -102,7 +102,7 @@ function cronInputOf(task: CronTask): CronInput {
 function webhookInputOf(hook: Webhook, changes: { name?: string; context?: string; enabled?: boolean } = {}) {
   return webhookInputSchema.parse({
     providerProfileId: hook.providerProfileId ?? null, tags: hook.tags, name: hook.name, target: hook.target, context: hook.context, enabled: hook.enabled,
-    attachments: hook.attachments, preserveFiles: hook.preserveFiles, markForReview: hook.markForReview, hideFromHistory: hook.hideFromHistory,
+    attachments: hook.attachments, preserveFiles: hook.preserveFiles, runInWorktree: hook.runInWorktree, markForReview: hook.markForReview, hideFromHistory: hook.hideFromHistory,
     senders: hook.senders, model: hook.model, reasoning: hook.reasoning, secretAccountIds: hook.secretAccountIds, titleTemplate: hook.titleTemplate, ...changes,
   });
 }
@@ -213,7 +213,7 @@ export async function createScheduledTask(session: AuthSession, raw: ScheduledTa
     if (!await getProject(input.projectId)) throw new AutomationError(409, "This project is not on this machine, so a scheduled task cannot be created here");
     const cron: CronInput = {
       assistantId: null, tags: { managedTagIds: [], manualTags: [] }, projectId: input.projectId, name: input.name, prompt: input.prompt, ownerNodeId: local.id,
-      engine: defaultEngine(), model: null, sessionId: null, enabled: input.enabled, pauseOnFailure: false, markForReview: false, hideFromHistory: false, bypassGuardian: false,
+      engine: defaultEngine(), model: null, sessionId: null, enabled: input.enabled, runInWorktree: true, pauseOnFailure: false, markForReview: false, hideFromHistory: false, bypassGuardian: false,
       schedule: cronSchedule(input.schedule),
     };
     const { task } = await runCronCommand(local.id, { action: "create", input: cron }) as { task: CronTask };

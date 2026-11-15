@@ -21,7 +21,7 @@ export async function prepareBackgroundTurn(input: {
     // Node-level helpers such as label icons have no workspace or source conversation.
     projectId: input.projectId, workspaceId: project?.type ?? "", conversationId: input.conversationId ?? session.id,
     accountId: automation?.accountId ?? actingAccount()?.accountId,
-    usage: automation ? "automation" : "interactive", fixedProfile: Boolean(automation?.profileId) });
+    usage: automation ? "automation" : "interactive", fixedProfile: Boolean(automation?.profileId), poolId: automation?.poolId });
   if (!pool) {
     if (input.configure !== false) {
       await runtime.validateSettings(settings);

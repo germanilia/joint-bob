@@ -80,6 +80,27 @@ test("a worktree starts from the remote branch, not the folder's HEAD or its unc
   assert.deepEqual(await worktreeChanges(project.id, worktree.id, worktrees), { gitBase: main, writes: [], deletes: [], uncommittedPaths: [] });
 });
 
+test("automation worktrees fetch origin main even when the remote default points elsewhere", async t => {
+  const { other, project, worktrees } = await repositories(t);
+  const old = git(project.path, "rev-parse", "HEAD");
+  git(project.path, "update-ref", "refs/remotes/origin/other", old);
+  git(project.path, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/other");
+  const main = await push(other, "app.txt", "remote main\n", "advance main");
+  await writeFile(path.join(project.path, "app.txt"), "dirty local\n");
+  const worktree = await createProjectWorktree(project, { name: "Automation", originMain: true }, worktrees);
+  assert.equal(await readFile(path.join(worktree.path, "app.txt"), "utf8"), "remote main\n");
+  const metadata = JSON.parse(await readFile(path.join(worktree.path, WORKTREE_META_DIR, "worktree.json"), "utf8"));
+  assert.equal(metadata.gitBase, main);
+  assert.equal(metadata.gitBaseRef, "origin/main");
+  assert.equal(await readFile(path.join(project.path, "app.txt"), "utf8"), "dirty local\n");
+});
+
+test("automation worktrees refuse a failed origin main fetch instead of copying stale or dirty files", async t => {
+  const { root, project, worktrees } = await repositories(t);
+  git(project.path, "remote", "set-url", "origin", path.join(root, "missing.git"));
+  await assert.rejects(createProjectWorktree(project, { name: "Offline automation", originMain: true }, worktrees), /fetch origin\/main/);
+});
+
 test("a large ignored folder is left out of a new worktree while small ignored files come along", async (t) => {
   const { project, worktrees } = await repositories(t);
   await writeFile(path.join(project.path, ".gitignore"), "local.config\nbig-output/\nsmall-local/\n");

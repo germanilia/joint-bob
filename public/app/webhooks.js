@@ -4,7 +4,7 @@
 // given instead of scrolling. A webhook opens as a detail view with tabs: Setup and Access share
 // one save bar, Files, Skills and Memory apply at once, and Calls shows recent deliveries.
 import { api } from "./api.js";
-import { createAutomationProfilePicker } from "./provider-profile-picker.js";
+import { createAutomationPoolPicker } from "./provider-profile-picker.js";
 import { createAutomationTagPicker } from "./automation-tag-picker.js";
 import { copyText, createFittedList, formatWhen, makeBadge, makeButton, makeNode, makeTwoStepButton, showStatus } from "./relay-ui.js";
 import { createWebhookFiles } from "./webhook-files.js";
@@ -24,7 +24,7 @@ const field = {
   conversationLabel: byId("webhooksConversationLabel"), context: byId("webhooksContext"), enabled: byId("webhooksEnabled"),
   bypassGuardian: byId("webhooksBypassGuardian"),
   hideFromHistory: byId("webhooksHideFromHistory"),
-  attachments: byId("webhooksAttachments"), preserveFiles: byId("webhooksPreserveFiles"), markForReview: byId("webhooksMarkForReview"), sendersEnabled: byId("webhooksSendersEnabled"), senders: byId("webhooksSenders"),
+  runInWorktree: byId("webhooksRunInWorktree"), attachments: byId("webhooksAttachments"), preserveFiles: byId("webhooksPreserveFiles"), markForReview: byId("webhooksMarkForReview"), sendersEnabled: byId("webhooksSendersEnabled"), senders: byId("webhooksSenders"),
   senderFields: byId("webhooksSenderFields"), allowedSenders: byId("webhooksAllowedSenders"), save: byId("webhooksSave"), secretSearch: byId("webhooksSecretSearch"),
 };
 
@@ -58,7 +58,7 @@ function hookUrl(suffix = "") {
 }
 const say = (message, kind = "info") => showStatus(status, message, kind);
 
-const profilePicker = createAutomationProfilePicker(field.model.closest("label"), "webhooks-provider-profile", () => api(endpoint("/profiles")));
+const profilePicker = createAutomationPoolPicker(field.model.closest("label"), "webhooks-provider-pool", () => api(endpoint("/profiles")));
 const tagPicker = createAutomationTagPicker(byId("webhooksAutomationTags"), "webhooks-tags");
 const machineLabel = makeNode("label", "", "Machine");
 const machineSelect = document.createElement("select");
@@ -114,7 +114,7 @@ machineSelect.addEventListener("change", () => {
       renderSecrets();
       syncKind();
       ownerReady = true;
-      say("Machine changed. Check the model, profile and secret accounts before creating.");
+      say("Machine changed. Check the model, pool and secret accounts before creating.");
     } finally {
       machineSelect.disabled = false;
       field.save.disabled = !ownerReady;
@@ -138,7 +138,8 @@ const memory = createWebhookMemory({ url: hookUrl, run, say, onEnabled: (on) => 
 /** The body a PUT or POST sends: everything about the webhook, so saving one setting keeps the others. */
 const hookBody = (hook, changes = {}) => JSON.stringify({
   providerProfileId: hook.providerProfileId ?? null,
-  name: hook.name, target: hook.target, context: hook.context, enabled: hook.enabled, bypassGuardian: hook.bypassGuardian, attachments: hook.attachments, preserveFiles: hook.preserveFiles, markForReview: hook.markForReview, hideFromHistory: hook.hideFromHistory, senders: hook.senders, model: hook.model, reasoning: hook.reasoning, secretAccountIds: hook.secretAccountIds, titleTemplate: hook.titleTemplate, ...changes,
+  providerPoolId: hook.providerPoolId ?? null,
+  name: hook.name, target: hook.target, context: hook.context, enabled: hook.enabled, bypassGuardian: hook.bypassGuardian, attachments: hook.attachments, preserveFiles: hook.preserveFiles, runInWorktree: hook.runInWorktree, markForReview: hook.markForReview, hideFromHistory: hook.hideFromHistory, senders: hook.senders, model: hook.model, reasoning: hook.reasoning, secretAccountIds: hook.secretAccountIds, titleTemplate: hook.titleTemplate, ...changes,
 });
 
 /** "123 Ilia" lines to `{ value, label }`; the first word is the value, the rest is the name. */
@@ -154,7 +155,7 @@ const senderCount = (hook) => `${hook.senders.allowed.length} allowed sender${ho
 function targetLabel(hook) {
   const project = projectNames.get(hook.target.projectId) || hook.target.projectId;
   if (hook.target.kind === "assistant") return `Personal assistant${assistantTarget?.id === hook.target.assistantId ? ` · ${assistantTarget.name}` : ""}`;
-  return hook.target.kind === "project" ? `New conversation in ${project}` : `Conversation in ${project}`;
+  return hook.runInWorktree || hook.target.kind === "project" ? `New conversation in ${project}` : `Conversation in ${project}`;
 }
 
 // ---- address reveal ----
@@ -399,6 +400,7 @@ function syncKind() {
   field.harness.disabled = conversation || assistant;
   field.harness.closest("label").hidden = assistant;
   field.preserveFiles.closest("label").hidden = assistant;
+  field.preserveFiles.disabled = field.runInWorktree.checked;
   field.model.closest("label").hidden = assistant;
   field.effort.closest("label").hidden = assistant;
   if (assistant) byId("webhooksAssistantTargetLabel").textContent = assistantTarget?.name
@@ -426,7 +428,7 @@ async function fillFields(hook) {
     ? `Every call routes through ${assistantTarget.name}; its decision model chooses the conversation.`
     : `This webhook routes through personal assistant ${target?.kind === "assistant" ? target.assistantId : ""}.`;
   fillHarnesses(target?.kind === "assistant" ? "" : target?.engine ?? "");
-  void profilePicker.refresh(hook?.providerProfileId ?? null);
+  void profilePicker.refresh(hook);
   renderExecution(hook?.model ? `${hook.model.provider}|${hook.model.modelId}` : "", hook?.reasoning ?? "");
   field.context.value = hook?.context ?? "";
   field.titleTemplate.value = hook?.titleTemplate ?? "";
@@ -434,6 +436,7 @@ async function fillFields(hook) {
   field.bypassGuardian.checked = hook?.bypassGuardian === true;
   field.attachments.checked = hook?.attachments ?? false;
   field.preserveFiles.checked = hook?.preserveFiles ?? false;
+  field.runInWorktree.checked = hook?.runInWorktree ?? true;
   field.markForReview.checked = hook?.markForReview ?? false;
   field.hideFromHistory.checked = hook?.hideFromHistory ?? false;
   field.sendersEnabled.checked = Boolean(hook?.senders);
@@ -618,7 +621,7 @@ function buildBody() {
   const senders = field.sendersEnabled.checked
     ? { fields: field.senderFields.value.split(/[\s,]+/).filter(Boolean), allowed: parseAllowed(field.allowedSenders.value) }
     : null;
-  return JSON.stringify({ providerProfileId: profilePicker.value(), tags: tagPicker.getValue(), name: field.name.value, target, context: field.context.value, enabled: field.enabled.checked, bypassGuardian: field.bypassGuardian.checked, attachments: field.attachments.checked, preserveFiles: field.preserveFiles.checked, markForReview: field.markForReview.checked, hideFromHistory: field.hideFromHistory.checked, senders, model, reasoning: field.kind.value === "assistant" ? null : field.effort.value || null, secretAccountIds: [...selectedSecretIds], titleTemplate: field.kind.value === "project" ? field.titleTemplate.value : "" });
+  return JSON.stringify({ ...profilePicker.value(), tags: tagPicker.getValue(), name: field.name.value, target, context: field.context.value, enabled: field.enabled.checked, bypassGuardian: field.bypassGuardian.checked, attachments: field.attachments.checked, preserveFiles: field.preserveFiles.checked, runInWorktree: field.runInWorktree.checked, markForReview: field.markForReview.checked, hideFromHistory: field.hideFromHistory.checked, senders, model, reasoning: field.kind.value === "assistant" ? null : field.effort.value || null, secretAccountIds: [...selectedSecretIds], titleTemplate: field.kind.value === "project" ? field.titleTemplate.value : "" });
 }
 
 async function submit() {
@@ -680,6 +683,7 @@ function wire() {
   }
   byId("webhooksAutomationTags").addEventListener("click", markDirty);
   field.kind.addEventListener("change", syncKind);
+  field.runInWorktree.addEventListener("change", syncKind);
   field.harness.addEventListener("change", () => renderExecution());
   field.model.addEventListener("change", () => renderExecution(field.model.value));
   field.conversation.addEventListener("change", syncConversationHarness);

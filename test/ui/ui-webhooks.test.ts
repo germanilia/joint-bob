@@ -16,7 +16,7 @@ import { type Browser, type Page } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "../dev-nodes.js";
 
-interface Hook { id: string; name: string; titleTemplate: string; model: { provider: string; modelId: string } | null; reasoning: string | null; secretAccountIds: string[]; tags: { managedTagIds: string[]; manualTags: string[] }; target: { engine?: string }; enabled: boolean; attachments: boolean; preserveFiles: boolean; hideFromHistory: boolean; senders: { fields: string[]; allowed: Array<{ value: string; label: string }> } | null }
+interface Hook { id: string; name: string; titleTemplate: string; model: { provider: string; modelId: string } | null; reasoning: string | null; secretAccountIds: string[]; tags: { managedTagIds: string[]; manualTags: string[] }; target: { engine?: string }; enabled: boolean; attachments: boolean; preserveFiles: boolean; runInWorktree: boolean; hideFromHistory: boolean; senders: { fields: string[]; allowed: Array<{ value: string; label: string }> } | null }
 
 let root: string;
 let environment: DevEnvironment;
@@ -156,6 +156,9 @@ test("a webhook made with Accept attachments keeps the option through turning of
   await openTab("access");
   await page.getByTestId("webhooks-secret-account-checkbox").filter({ visible: true }).first().check();
   await page.getByTestId("webhooks-attachments-toggle").check();
+  assert.equal(await page.getByTestId("webhooks-run-in-worktree-toggle").isChecked(), true, "new webhooks default to temporary worktrees");
+  assert.equal(await page.getByTestId("webhooks-preserve-files-toggle").isDisabled(), true);
+  await page.getByTestId("webhooks-run-in-worktree-toggle").uncheck();
   await page.getByTestId("webhooks-preserve-files-toggle").check();
   await page.getByTestId("webhooks-save-button").click();
   await page.getByTestId("webhooks-reveal").waitFor({ state: "visible" });
@@ -168,6 +171,7 @@ test("a webhook made with Accept attachments keeps the option through turning of
   await until(async () => (await hooks())[0].enabled === false, "the webhook is off");
   assert.equal((await hooks())[0].attachments, true, "turning a webhook off leaves its attachments option alone");
   assert.equal((await hooks())[0].preserveFiles, true, "turning a webhook off leaves its workspace option alone");
+  assert.equal((await hooks())[0].runInWorktree, false, "toggling a webhook preserves its worktree opt-out");
   await page.getByTestId("webhooks-toggle-button").filter({ hasText: "Turn on" }).click();
   await until(async () => (await hooks())[0].enabled, "the webhook is on again");
 
@@ -205,6 +209,7 @@ test("a webhook made with Accept attachments keeps the option through turning of
   assert.equal(await page.getByTestId("webhooks-secret-account-checkbox").first().isChecked(), true);
   assert.equal(await page.getByTestId("webhooks-attachments-toggle").isChecked(), true, "the editor shows the stored option");
   assert.equal(await page.getByTestId("webhooks-preserve-files-toggle").isChecked(), true, "the editor shows the stored workspace option");
+  assert.equal(await page.getByTestId("webhooks-run-in-worktree-toggle").isChecked(), false, "the editor restores the opt-out");
   assert.equal(await page.getByTestId("webhooks-savebar").isVisible(), false, "nothing to save until something changes");
   await page.getByTestId("webhooks-attachments-toggle").uncheck();
   await page.getByTestId("webhooks-save-button").click();

@@ -18,7 +18,7 @@ export interface ConversationPromptOptions {
   /** Trusted local automation only; never accepted in a browser prompt message. */
   bypassGuardian?: boolean;
   /** Trusted automation assignment, forwarded only over the signed local socket. */
-  automationProfile?: { accountId: string; profileId: string | null };
+  automationProfile?: { accountId: string; profileId: string | null; poolId?: string | null };
   projectId: string;
   scheduledAutoRespond?: AutoRespondConfig;
   author?: MessageAuthor;

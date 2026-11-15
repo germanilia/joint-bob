@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.315.1 — 2026-11-15
+
+- Webhooks can run with a subscription pool while preserving Guardian and worktree settings.
+- Webhook headers, inbox search focus, and conversation harness icons now display correctly.
+
+## 2.315.0 — 2026-11-15
+
+- Existing and new webhooks and scheduled tasks now run in a fresh temporary worktree by default, with an option to opt out for each automation. Git projects fetch origin/main rather than using local or unpublished changes.
+- Each isolated run starts its own conversation and removes its worktree after completion or failure. Active background work is retained, and conversation history, review settings and Guardian choices stay intact.
+
 ## 2.314.0 — 2026-11-15
 
 - Conversation tiles now move: tiles glide to their new place, a pinned tile lifts and flies into Pinned, a new status line slides up, a starred tile pops, a conversation marked done shows a drawn check and floats a +1 to Past, a deleted one tips away, and changed counts pop.

@@ -184,6 +184,7 @@ export interface AssistantAutomationTurnOptions {
   /** Internal only; validated against the live assignment, never parsed from personal HTTP input. */
   team?: { assignment: TeamAssignment };
   scheduledAutoRespond?: AutoRespondConfig;
+  worktreeId?: string;
   label: string;
   origin: TurnOrigin;
   automationProfile?: { accountId: string; profileId: string | null };
@@ -212,7 +213,7 @@ async function executeAssistantTurn(accountId: string, entry: AssistantEntry, se
   if (!created) return (await getPersonalAssistantTurn(accountId, entry.id, input.requestId))!;
   try {
     await options?.prepare?.(destination);
-    await queueConversationPrompt({ projectId: project.id, engine: destination.engine, sessionId: destination.sessionId, author: { accountId: session.accountId, email: session.email, username: session.username, homeNodeId: session.homeNodeId }, message: destination.message, requestId: input.requestId, label: options?.label ?? "Assistant", until: "completed", bypassGuardian: options?.bypassGuardian, scheduledAutoRespond: options?.scheduledAutoRespond, automationProfile: options?.automationProfile, images: options?.images, files: options?.files, onStarted: () => options?.onStarted?.(destination), ...(entry.executionSettings ? { queueSettings: () => entry.executionSettings! } : {}) });
+    await queueConversationPrompt({ projectId: project.id, engine: destination.engine, sessionId: destination.sessionId, worktreeId: options?.worktreeId, author: { accountId: session.accountId, email: session.email, username: session.username, homeNodeId: session.homeNodeId }, message: destination.message, requestId: input.requestId, label: options?.label ?? "Assistant", until: "completed", bypassGuardian: options?.bypassGuardian, scheduledAutoRespond: options?.scheduledAutoRespond, automationProfile: options?.automationProfile, images: options?.images, files: options?.files, onStarted: () => options?.onStarted?.(destination), ...(entry.executionSettings ? { queueSettings: () => entry.executionSettings! } : {}) });
     const record = await getConversationRecord(project.id, destination.engine, destination.sessionId);
     const segments = await listConversationSegments(project.id, record?.conversationId ?? destination.sessionId);
     const active = segments.at(-1) ?? { engine: destination.engine, sessionId: destination.sessionId };
@@ -268,7 +269,8 @@ async function processAssistantTurn(accountId: string, entry: AssistantEntry, se
       ? await routeOutsideCaller(accountId, entry, context, { scope, message: options.routing.message }, options.classifierFetch)
       : await classifyAssistantMessage(entry, options?.routing ? { ...routingInput, message: options.routing.message } : routingInput, context, options?.classifierFetch);
     if (!route) throw new Error("Assistant could not classify this message. Retry without losing the conversation.");
-    const destination = await assistantDestination(accountId, entry, context, route, routingInput, local.id, options?.routing?.message ?? routingInput.message);
+    const isolatedRoute = options?.worktreeId && route.kind === "continue" ? { kind: "new" as const } : route;
+    const destination = await assistantDestination(accountId, entry, context, isolatedRoute, routingInput, local.id, options?.routing?.message ?? routingInput.message);
     if (scope) await addRoutingScopeTopic(entry.id, scope, destination.engine, destination.sessionId);
     return executeAssistantTurn(accountId, entry, session, input, destination, context.project, origin, options);
   });

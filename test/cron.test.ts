@@ -5,6 +5,23 @@ import { randomUUID } from "node:crypto";
 
 const input = () => ({ name: "Report", prompt: "Report progress", projectId: "project", ownerNodeId: randomUUID(), engine: "claude" as const, sessionId: null, enabled: true, schedule: { frequency: "daily" as const, hour: 9, minute: 15, weekday: 1, timezone: "America/New_York" } });
 
+test("existing and new schedules default to worktrees and retain an explicit opt-out", async () => {
+  const { CronStore } = await import("../src/cron.js");
+  const db = new DatabaseSync(":memory:");
+  try {
+    const store = new CronStore(db);
+    const task = store.create(input());
+    db.prepare("UPDATE cron_tasks SET input=? WHERE id=?").run(JSON.stringify(input()), task.id);
+    assert.equal(store.get(task.id)!.runInWorktree, true);
+    const created = store.create(input());
+    assert.equal(created.runInWorktree, true);
+    const { id, nextRun, lastRun, ...saved } = created;
+    const optedOut = store.update(id, { ...saved, runInWorktree: false });
+    assert.equal(optedOut.runInWorktree, false);
+    assert.equal(store.runNow(created.id).runInWorktree, false);
+  } finally { db.close(); }
+});
+
 test("easy schedules use timezone, skip DST gaps and do not repeat a daily fall-back time", async () => {
   const { nextCronRun } = await import("../src/cron.js");
   const schedule = input().schedule;

@@ -32,6 +32,8 @@ import { broadcastToProject } from "./realtime.js";
 import { runPersonalAssistantAutomationTurn } from "./routes/personal-assistants.js";
 import { telegramChatId, telegramText } from "../webhook-telegram.js";
 import { announceWebhookCall } from "../control-center/triggers-observe.js";
+import type { ProjectWorktree } from "../project-worktrees.js";
+import { automationWorktreeInstruction, withAutomationWorktree } from "./automation-worktree.js";
 
 /** What one chat-socket prompt may carry, as for a browser message (src/server/schemas.ts). */
 const SOCKET_IMAGES = 4;
@@ -89,12 +91,12 @@ function assistantRouting(webhook: Webhook, call: WebhookCall): { scope: string 
 
 /** Checks the target and queues the message. Throws when the target cannot take it. */
 async function deliver(webhook: Webhook, call: WebhookCall): Promise<string> {
-  return runWithAutomationProfile(webhook, () => deliverWithProfile(webhook, call));
+  return runWithAutomationProfile(webhook, () => withAutomationWorktree({ ...webhook, projectId: webhook.target.projectId }, call.requestId!, worktree => deliverWithProfile(webhook, call, worktree)));
 }
 
-async function deliverWithProfile(webhook: Webhook, call: WebhookCall): Promise<string> {
-  if (!webhook.preserveFiles && webhook.target.kind === "conversation") {
-    return deliverWithProfile({ ...webhook, target: { kind: "project", projectId: webhook.target.projectId, engine: webhook.target.kind === "conversation" ? webhook.target.engine : defaultEngine() } }, call);
+async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?: ProjectWorktree): Promise<string> {
+  if ((worktree || !webhook.preserveFiles) && webhook.target.kind === "conversation") {
+    return deliverWithProfile({ ...webhook, target: { kind: "project", projectId: webhook.target.projectId, engine: webhook.target.engine } }, call, worktree);
   }
   const local = await getClusterNode();
   const project = await getProject(webhook.target.projectId);
@@ -113,18 +115,19 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall): Promise<
   });
   const attachments = [...(call.attachments ?? [])];
   if (call.body.trim().length > MAX_PAYLOAD_CHARS) attachments.push({ name: PAYLOAD_FILE_NAME, mimeType: "text/plain", data: Buffer.from(call.body) });
-  // An assistant's topics all run in its project, however they started, so any of them can be resumed.
-  const workspacePath = webhook.target.kind === "assistant" || webhook.target.kind === "conversation" && webhook.preserveFiles ? project.path : await createWebhookWorkspace(webhook.id, webhook.preserveFiles);
+  // Without isolation, assistant turns keep using the assistant's project.
+  const workspacePath = worktree?.path ?? (webhook.target.kind === "assistant" || webhook.target.kind === "conversation" && webhook.preserveFiles ? project.path : await createWebhookWorkspace(webhook.id, webhook.preserveFiles));
   const placed = await placeAttachments(workspacePath, attachments);
   const titleTemplate = webhook.target.kind === "project" ? webhook.titleTemplate || webhook.name : "";
   const titleInstruction = automationTitleInstruction(titleTemplate);
-  const message = (call.telegram ? [call.telegram.message, placed.listed] : [titleInstruction, webhookMessage(webhook, call), resourceContext, placed.listed]).filter(Boolean).join("\n\n");
+  const message = [worktree ? automationWorktreeInstruction : "", ...(call.telegram ? [call.telegram.message, placed.listed] : [titleInstruction, webhookMessage(webhook, call), resourceContext, placed.listed])].filter(Boolean).join("\n\n");
   if (webhook.target.kind === "assistant") {
     if (!webhook.creatorAccountId) throw new WebhookError(409, "Assistant webhook has no creator account");
     const assistantId = webhook.target.assistantId;
     let activeSessionId: string | null = null;
     const turn = await runPersonalAssistantAutomationTurn(webhook.creatorAccountId, assistantId, call.requestId!, message, {
       bypassGuardian: webhook.bypassGuardian,
+      worktreeId: worktree?.id,
       label: "Webhook", origin: call.telegram && call.telegram.routing.scope === null ? "chat" : "webhook", automationProfile: automationProfileContext(webhook), images: placed.images, files: placed.files, routing: assistantRouting(webhook, call),
       prepare: async destination => {
         await attachSecrets(webhook, destination.engine, destination.sessionId);
@@ -147,7 +150,6 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall): Promise<
     const [engine, ...sessionParts] = turn.topicId.split(":");
     activeSessionId = sessionParts.join(":");
     if (!engine || !activeSessionId) throw new WebhookError(500, "Assistant webhook turn has no conversation target");
-    transitionAutomationExecution(await clusterV2Database(), call.requestId!, "succeeded", null, activeSessionId, engine);
     await call.telegram?.answer(turn.response ?? "");
     return activeSessionId;
   }
@@ -155,7 +157,7 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall): Promise<
   let activeSessionId = webhook.target.kind === "conversation" ? webhook.target.sessionId : null;
   const prompt = {
     bypassGuardian: webhook.bypassGuardian,
-    automationProfile: automationProfileContext(webhook),
+    automationProfile: automationProfileContext(webhook), worktreeId: worktree?.id,
     message, images: placed.images, files: placed.files, requestId: call.requestId!, label: "Webhook", until: "completed" as const,
     onStarted: () => {
       call.started = true;
@@ -166,7 +168,6 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall): Promise<
         recordWebhookDelivery(db, webhook.id, "delivered", detail);
       });
     },
-    onCompleted: () => { void clusterV2Database().then(db => transitionAutomationExecution(db, call.requestId!, "succeeded")); },
     // Apply settings when this turn starts, not while an existing conversation is busy.
     queueSettings: (status: { model: { provider: string; id: string }; thinkingLevel: string }): PromptQueueSettings | undefined => webhook.model || webhook.reasoning ? {
       harnessId: engine,
@@ -190,7 +191,7 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall): Promise<
   const sessionId = randomUUID();
   activeSessionId = sessionId;
   await ensureConversationRecord(project.id, engine, sessionId, local.id);
-  setWebhookConversationWorkspace(db, project.id, engine, sessionId, webhook.id, workspacePath);
+  if (!worktree) setWebhookConversationWorkspace(db, project.id, engine, sessionId, webhook.id, workspacePath);
   const current = getWebhook(db, webhook.id);
   if (!current) throw new WebhookError(404, "Webhook was deleted before this conversation started");
   bindWebhookConversation(db, webhook.id, project.id, sessionId, local.id, true);
@@ -229,6 +230,7 @@ export function acceptWebhookCall(webhook: Webhook, call: WebhookCall): void {
     createAutomationExecution(db, { id: requestId, sourceKind: "webhook", sourceId: webhook.id, sourceName: webhook.name, workspaceId: workspace ? automationWorkspaceKey(workspace) : null, projectId: webhook.target.projectId, ownerNodeId: local.id, engine: targetEngine, requestId, sessionId: webhook.target.kind === "conversation" ? webhook.target.sessionId : null, tags, status: "queued", error: null, acceptedAt: new Date().toISOString(), startedAt: null, finishedAt: null });
     try {
       const sessionId = await deliver(webhook, call);
+      transitionAutomationExecution(db, requestId, "succeeded", null, sessionId);
       const files = call.attachments?.length ? ` with ${call.attachments.length} file${call.attachments.length === 1 ? "" : "s"}` : "";
       if (!call.started) recordWebhookDelivery(await clusterV2Database(), webhook.id, "delivered", webhook.target.kind === "project" ? `Started conversation ${sessionId}${files}` : `Added to the conversation${files}`);
     } catch (error) {

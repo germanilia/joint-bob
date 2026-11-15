@@ -33,7 +33,7 @@ test("a webhook call whose agent cannot start leaves the reason in the new conve
   try {
     const project = await addProject("Webhook delivery", path.join(root, "project"), { writeInstructions: false });
     const db = await clusterV2Database();
-    const { webhook } = createWebhook(db, webhookInputSchema.parse({ name: "Issues", target: { kind: "project", projectId: project.id, engine: "pi" } }));
+    const { webhook } = createWebhook(db, webhookInputSchema.parse({ runInWorktree: false, name: "Issues", target: { kind: "project", projectId: project.id, engine: "pi" } }));
     updateWebhook(db, webhook.id, webhookInputSchema.parse({ name: webhook.name, target: webhook.target, hideFromHistory: true }));
     acceptWebhookCall(webhook, { method: "POST", headers: {}, query: "", body: '{"action":"opened"}' });
     for (let attempt = 0; attempt < 200 && !webhookDeliveries(db, webhook.id).length; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 25));
@@ -72,7 +72,7 @@ test("a webhook call's files reach its fresh conversation workspace", async (con
   try {
     const project = await addProject("Webhook attachments", path.join(root, "project"), { writeInstructions: false });
     const db = await clusterV2Database();
-    const { webhook } = createWebhook(db, webhookInputSchema.parse({ name: "Deals", target: { kind: "project", projectId: project.id, engine: "pi" }, attachments: true }));
+    const { webhook } = createWebhook(db, webhookInputSchema.parse({ runInWorktree: false, name: "Deals", target: { kind: "project", projectId: project.id, engine: "pi" }, attachments: true }));
     const resource = await saveWebhookResource(db, webhook.id, { kind: "file", name: "rates.csv", description: "Current price source", bytes: Buffer.from("static-only-data") });
     const shots = Array.from({ length: 5 }, (_, index) => ({ name: `shot-${index}.png`, mimeType: "image/png", data: Buffer.from(`png ${index}`) }));
     acceptWebhookCall(webhook, {
@@ -136,7 +136,7 @@ test("webhook model and effort travel with the queued turn for new and existing 
         { reasoning: "medium" },
         {},
       ]) {
-        const { webhook } = createWebhook(db, webhookInputSchema.parse({ name: "Configured [EROR TITLE]", titleTemplate: Object.keys(settings).length ? "pr-[PR_REVIEW]" : "", secretAccountIds: [selected.id], target: { kind, projectId: project.id, engine: "pi", ...(kind === "conversation" ? { sessionId: "existing" } : {}) }, preserveFiles: kind === "conversation", ...settings }));
+        const { webhook } = createWebhook(db, webhookInputSchema.parse({ runInWorktree: false, name: "Configured [EROR TITLE]", titleTemplate: Object.keys(settings).length ? "pr-[PR_REVIEW]" : "", secretAccountIds: [selected.id], target: { kind, projectId: project.id, engine: "pi", ...(kind === "conversation" ? { sessionId: "existing" } : {}) }, preserveFiles: kind === "conversation", ...settings }));
         acceptWebhookCall(webhook, { method: "POST", headers: {}, query: "", body: "{}" });
         for (let attempt = 0; attempt < 200 && !webhookDeliveries(db, webhook.id).length; attempt++) await new Promise(resolve => setTimeout(resolve, 25));
         assert.equal(webhookDeliveries(db, webhook.id)[0]?.status, "delivered");

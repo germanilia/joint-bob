@@ -20,7 +20,7 @@ import { clusterOfAssistantsProject } from "../cluster-assistants.js";
 import { clusterSubscriptionMissing } from "../provider-profiles/cluster-assistant-subscriptions.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscriptionPoolAssignment } from "../provider-profiles/pool-sharing.js";
-import { automationFallbackPool, poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
+import { automationFallbackPool, getSubscriptionPool, poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
 import { projectProviderProfile } from "../provider-profiles/service.js";
 import { withPoolProfile, type PoolProfileContext } from "../provider-profiles/context.js";
 import { classifyPoolAttemptFailure, memberModelLadder, resolvePoolModelSettings, resolvePoolSwitchModel, runOnModels, runPoolAttempts } from "../provider-profiles/pool-execution.js";
@@ -192,7 +192,7 @@ export async function autoCompactBetweenTurns(shared: SharedHarnessSession, thre
 async function withPromptProfile<T>(connection: HarnessChatConnection, prompt: Pick<QueuedPrompt, "author" | "automationProfile">, work: () => Promise<T>): Promise<T> {
   if (prompt.automationProfile) {
     if (prompt.automationProfile.nodeId !== (await getClusterNode()).id) throw new Error("Automation profile belongs to another execution node");
-    return runWithAutomationProfile({ creatorAccountId: prompt.automationProfile.accountId, providerProfileId: prompt.automationProfile.profileId }, work);
+    return runWithAutomationProfile({ creatorAccountId: prompt.automationProfile.accountId, providerProfileId: prompt.automationProfile.profileId, providerPoolId: prompt.automationProfile.poolId }, work);
   }
   return withoutAutomationProfile(() => runAsAccount(turnActor(connection, prompt.author ?? connection.author), work));
 }
@@ -313,6 +313,7 @@ interface SubscriptionPoolRequest {
   usage: "automation" | "interactive";
   /** An automation that names its own profile never runs on a pool. */
   fixedProfile: boolean;
+  poolId?: string | null;
 }
 export async function resolveSubscriptionPool(request: SubscriptionPoolRequest): Promise<TurnSubscriptionPool | undefined> {
   const { engine, accountId, usage } = request;
@@ -337,8 +338,9 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
   if (assistantCluster && (request.fixedProfile || !preferred || !accountId)) throw new Error(clusterSubscriptionMissing(db, assistantCluster));
   if (request.fixedProfile || !preferred || !accountId) return undefined;
   const scope = { projectId: request.projectId, workspaceId: request.workspaceId, conversationId: request.conversationId, clusterIds: projectClusterIds(db, local.id, request.projectId) };
-  const choice = (engine === "pi" ? resolveSubscriptionChoice(accountId, "pi", scope, usage) : undefined)
-    ?? resolveSubscriptionChoice(accountId, preferred, scope, usage);
+  const choice = request.poolId ? { kind: "pool" as const, pool: getSubscriptionPool(accountId, request.poolId), source: "default" as const }
+    : (engine === "pi" ? resolveSubscriptionChoice(accountId, "pi", scope, usage) : undefined)
+      ?? resolveSubscriptionChoice(accountId, preferred, scope, usage);
   // No relay pool: only the owner's choice for the cluster itself counts, never their general choice or the machine's sign-in.
   if (assistantCluster && (choice?.source !== "cluster" || choice.kind === "machine")) throw new Error(clusterSubscriptionMissing(db, assistantCluster));
   const pool = choice?.kind === "pool" ? choice.pool
@@ -353,7 +355,7 @@ function resolveTurnSubscriptionPool(connection: HarnessChatConnection, queued: 
     engine: queued.settings?.harnessId ?? connection.engine, provider: queued.settings?.provider ?? connection.shared.session.settings().provider,
     projectId: connection.project.id, workspaceId: connection.project.type!, conversationId: connection.conversationId,
     accountId: queued.automationProfile?.accountId ?? actingAccount()?.accountId ?? queued.author?.accountId ?? connection.author?.accountId,
-    usage: queued.automationProfile ? "automation" : "interactive", fixedProfile: Boolean(queued.automationProfile?.profileId),
+    usage: queued.automationProfile ? "automation" : "interactive", fixedProfile: Boolean(queued.automationProfile?.profileId), poolId: queued.automationProfile?.poolId,
   });
 }
 /** The pool a turn an update interrupted resumes on: the choice of the account it runs as (see recoverChat). */
@@ -1624,7 +1626,7 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
   // A team member's session switches to its assistant owner's full account itself (pi-service asTeamMember), which it
   // only does while no account is set; a turn author's account here would skip that and leave the member without its tools.
   const actor = options.author && !await teamConversation(options.project.id, conversationId) ? turnActor(options, options.author) : actingAccount();
-  const shared = await measureOperation("chat.open.runtime", () => runAsAccount(actor, () => runWithAutomationProfile({ creatorAccountId: options.automationProfile?.accountId, providerProfileId: options.automationProfile?.profileId }, () => openHarnessSession(options.engine, { projectId: options.project.id, cwd: options.cwd, sessionId: options.sessionId, sessionPath: options.sessionPath, conversationId, accountIds: options.accountIds }))));
+  const shared = await measureOperation("chat.open.runtime", () => runAsAccount(actor, () => runWithAutomationProfile({ creatorAccountId: options.automationProfile?.accountId, providerProfileId: options.automationProfile?.profileId, providerPoolId: options.automationProfile?.poolId }, () => openHarnessSession(options.engine, { projectId: options.project.id, cwd: options.cwd, sessionId: options.sessionId, sessionPath: options.sessionPath, conversationId, accountIds: options.accountIds }))));
   const connection: HarnessChatConnection = { bypassGuardian: options.bypassGuardian, automationProfile: options.automationProfile, socket: options.socket, project: options.project, cwd: options.cwd, engine: options.engine, shared, handoffContext: null, accountIds: options.accountIds, readOnly: options.readOnly, peerReadOnly: options.peerReadOnly, conversationId, author: options.author };
   const local = await getClusterNode();
   if (!record && !options.readOnly) record = await ensureConversationRecord(options.project.id, options.engine, options.sessionId, local.id, undefined, { conversationId, segmentIndex: 0 });

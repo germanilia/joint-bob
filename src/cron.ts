@@ -52,6 +52,7 @@ export const cronInputSchema = z.object({
     .refine(id => listDiscoveredHarnesses().some(adapter => adapter.id === id && adapter.runtime), "Harness is not registered on this node"),
   model: cronModelSchema.nullable().optional(), reasoning: reasoningSchema.optional(),
   autoRespond: autoRespondConfigSchema.nullable().optional(),
+  runInWorktree: z.boolean().default(true),
   bypassGuardian: z.boolean().default(false),
   sessionId: z.string().min(1).max(240).nullable(), enabled: z.boolean(), pauseOnFailure: z.boolean().default(false), markForReview: z.boolean().default(false), hideFromHistory: z.boolean().default(false),
   schedule: scheduleSchema,

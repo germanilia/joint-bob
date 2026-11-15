@@ -1,18 +1,27 @@
+import { getSubscriptionPool } from "../provider-profiles/pools.js";
 import { NotFoundError } from "../not-found.js";
 import { accessibleProviderProfile } from "../provider-profiles/store.js";
 import { withAutomationProfile, withoutAutomationProfile } from "../provider-profiles/context.js";
 
-export interface AutomationAssignment { creatorAccountId?: string | null; providerProfileId?: string | null }
+export interface AutomationAssignment { creatorAccountId?: string | null; providerProfileId?: string | null; providerPoolId?: string | null }
+
+export function validateAutomationAssignment(input: AutomationAssignment): void {
+  if (input.providerProfileId && input.providerPoolId) throw new Error("Select either a pool or a profile, not both");
+  if (!input.providerProfileId && !input.providerPoolId) return;
+  if (!input.creatorAccountId) throw new Error("Automation assignment requires a creator account");
+  if (input.providerPoolId) getSubscriptionPool(input.creatorAccountId, input.providerPoolId);
+  if (input.providerProfileId) accessibleProviderProfile(input.creatorAccountId, input.providerProfileId, "automation");
+}
 
 export function assertAutomationCreator(creatorAccountId: string | null | undefined, editorAccountId: string | null | undefined): void {
   if (creatorAccountId && creatorAccountId !== editorAccountId) throw new NotFoundError("Automation not found or not owned by this creator");
 }
 export function automationProfileContext(input: AutomationAssignment) {
+  validateAutomationAssignment(input);
   if (!input.creatorAccountId) {
-    if (input.providerProfileId) throw new Error("Automation profile requires a creator account");
     return undefined;
   }
-  return { accountId: input.creatorAccountId, profileId: input.providerProfileId ?? null };
+  return { accountId: input.creatorAccountId, profileId: input.providerProfileId ?? null, ...(input.providerPoolId ? { poolId: input.providerPoolId } : {}) };
 }
 /** Legacy unassigned jobs retain node defaults. Explicit assignments fail closed. */
 export function runWithAutomationProfile<T>(input: AutomationAssignment, work: () => T): T {

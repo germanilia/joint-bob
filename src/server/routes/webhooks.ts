@@ -8,7 +8,8 @@ import type { Duplex } from "node:stream";
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { actingAccount } from "../../account-context.js";
-import { assertAutomationCreator } from "../automation-profile.js";
+import { listSubscriptionPools, poolCandidates, getSubscriptionPool } from "../../provider-profiles/pools.js";
+import { assertAutomationCreator, validateAutomationAssignment } from "../automation-profile.js";
 import { accessibleProviderProfile, listAccessibleProviderProfiles } from "../../provider-profiles/store.js";
 import { getClusterNode } from "../../cluster.js";
 import { signClusterRequest } from "../../cluster-protocol.js";
@@ -321,13 +322,21 @@ function assertWebhookPeerScope(db: Awaited<ReturnType<typeof clusterV2Database>
   if (input?.target.kind === "assistant") throw new WebhookError(403, "Assistant webhooks stay on their assistant's machine");
   if (input?.secretAccountIds.some(id => !scope.secrets.has(id))) throw new WebhookError(403, "Selected secrets are not attached to a shared project");
   if (input?.providerProfileId && (!input.creatorAccountId || !listAccessibleProviderProfiles(input.creatorAccountId, "automation").some(profile => profile.id === input.providerProfileId && profile.shared))) throw new WebhookError(403, "Select a shared automation profile on this machine");
+  if (input?.providerPoolId) {
+    validateAutomationAssignment(input);
+    const pool = getSubscriptionPool(input.creatorAccountId!, input.providerPoolId);
+    if (!poolCandidates(pool, "claude").every(profile => profile.shared)) throw new WebhookError(403, "Select a pool of shared automation profiles on this machine");
+  }
   if (command.action === "skill-inventory" || command.action === "skill-import-existing") throw new WebhookError(403, "Machine-local skill imports require a trusted twin; upload a skill or import it from Git instead");
 }
 
 async function manage(command: Command, scope?: WebhookPeerScope): Promise<unknown> {
   const db = await clusterV2Database();
   if (scope) assertWebhookPeerScope(db, command, scope);
-  if (command.action === "profiles") return { profiles: command.accountId ? listAccessibleProviderProfiles(command.accountId, "automation").filter(profile => !scope || profile.shared) : [] };
+  if (command.action === "profiles") return {
+    profiles: command.accountId ? listAccessibleProviderProfiles(command.accountId, "automation").filter(profile => !scope || profile.shared) : [],
+    pools: command.accountId ? listSubscriptionPools(command.accountId).filter(pool => !scope || poolCandidates(pool, "claude").every(profile => profile.shared)) : [],
+  };
   if ("id" in command && transferring.has(command.id)) throw new WebhookError(409, "Webhook transfer is in progress; wait before changing it");
   // The webhook behind a connected Telegram bot is managed from the assistant, not here.
   if ("id" in command && typeof command.id === "string" && command.action !== "deliveries" && getWebhook(db, command.id)?.reply) throw new WebhookError(409, "Manage this webhook from the assistant's Telegram settings");
@@ -397,6 +406,7 @@ async function manage(command: Command, scope?: WebhookPeerScope): Promise<unkno
   if (command.action === "transfer") return transferWebhook(command);
   if (command.action === "install-transfer") {
     const input = command.bundle.input;
+    validateAutomationAssignment(input);
     await checkTarget(input);
     if (input.providerProfileId) {
       if (!input.creatorAccountId) throw new WebhookError(400, "Sign in to select a profile");
@@ -419,6 +429,7 @@ async function manage(command: Command, scope?: WebhookPeerScope): Promise<unkno
       accessibleProviderProfile(command.input.creatorAccountId, command.input.providerProfileId, "automation");
     }
     command.input.creatorAccountId = existing?.creatorAccountId ?? command.input.creatorAccountId ?? null;
+    validateAutomationAssignment(command.input);
     command.input.providerProfileId ??= null;
     if (command.input.providerProfileId) accessibleProviderProfile(command.input.creatorAccountId!, command.input.providerProfileId, "automation");
     await checkTarget(command.input);
