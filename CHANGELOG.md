@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.0 — 2026-11-16
+
+- On a wide conversation panel, the agent, model, effort and machine chips now sit on the title line beside Mark done instead of on a second line; laptop-width panels keep the two lines.
+
 ## 2.316.0 — 2026-11-16
 
 - On Bob's page, the team context list and Bob's settings now sit in Bob's chat header instead of the top bar.
