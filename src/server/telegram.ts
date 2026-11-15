@@ -324,7 +324,7 @@ export async function connectTelegram(entry: PersonalAssistant, token: string, b
   // One bot, one assistant: Telegram sends a bot's messages to a single address.
   if (telegramBotInUse(db, bot.id)) throw new WebhookResourceError(`@${bot.username} is already connected to an assistant. Disconnect it there first, or create another bot.`, 409);
   const account = await saveSecretAccount({ label: `Telegram bot @${bot.username}`, provider: "custom", replicate: false, variables: [{ name: TELEGRAM_TOKEN_VARIABLE, kind: "value", value: token }] });
-  const { webhook, secret } = createWebhook(db, webhookInputSchema.parse({ name: `Telegram @${bot.username}`, target: { kind: "assistant", projectId: entry.projectId, assistantId: entry.id }, reply: "telegram", creatorAccountId: entry.accountId }));
+  const { webhook, secret } = createWebhook(db, webhookInputSchema.parse({ name: `Telegram @${bot.username}`, target: { kind: "assistant", projectId: entry.projectId, assistantId: entry.id }, reply: "telegram", runInWorktree: false, creatorAccountId: entry.accountId }));
   const headerSecret = randomBytes(32).toString("hex");
   try {
     await telegramSetWebhook(token, `${base.base}/${secret}`, headerSecret);
