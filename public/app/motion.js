@@ -5,11 +5,11 @@
 // The choice is per browser (like the theme). It is written to <html data-motion>, which the dialog and toast styles read (styles.css).
 // Dialogs need no code: their open and close motion is CSS (`@starting-style`), so every <dialog> in the app has it.
 
-const STORAGE_KEY = "jointBobMotion";
+const MOTION_KEY = "jointBobMotion";
 export const FEELS = [["playful", "Playful"], ["calm", "Calm"], ["off", "Off"]];
 
 const system = matchMedia("(prefers-reduced-motion: reduce)");
-let chosen = FEELS.some(([id]) => id === localStorage.getItem(STORAGE_KEY)) ? localStorage.getItem(STORAGE_KEY) : "";
+let chosen = FEELS.some(([id]) => id === localStorage.getItem(MOTION_KEY)) ? localStorage.getItem(MOTION_KEY) : "";
 
 /** The feel in use: the person's choice, else Off when the device asks for less motion, else Playful. */
 export const feel = () => chosen || (system.matches ? "off" : "playful");
@@ -97,7 +97,7 @@ export function plusOne(from, to, text = "+1") {
 
 function choose(id) {
   chosen = id;
-  localStorage.setItem(STORAGE_KEY, id);
+  localStorage.setItem(MOTION_KEY, id);
   apply();
   drawChoices();
 }
