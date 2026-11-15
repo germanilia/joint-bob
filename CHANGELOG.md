@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.306.0 — 2026-11-15
+
+- The ⋯ menu above a conversation is now grouped: Open (Terminal, Browser), This conversation (Rename, Share, Scheduled tasks, Dashboard and the rest), and Delete alone at the bottom. Notify and Auto respond are no longer repeated in it.
+- The right-hand column has no row of Browser, Terminal, Share and Schedule buttons and no footer any more. It is the tabs and their content, and the two switches, Answer for me and Notify me, are the first section of Activity under "When it stops".
+
 ## 2.305.9 — 2026-11-15
 
 - On Bob's page, the theme button and the Settings button are back in the top bar, next to Exit. The bottom row that held them is gone.
