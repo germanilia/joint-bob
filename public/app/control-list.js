@@ -315,6 +315,16 @@ function tools(card) {
   return group;
 }
 
+/** The same four marks as labelled menu items, for the ⋯ menu in the panel's head. Read when the menu opens. */
+function markItems(card) {
+  return (anchor) => [
+    { label: isPinned(card) ? "Unpin" : "Pin to the top", icon: "pin", testid: "control-list-pin", onSelect: () => markPin(card) },
+    { label: isStarred(card) ? "Remove the star" : "Star", icon: "star", title: "A starred conversation is never deleted by an automatic cleanup", testid: "control-list-star", onSelect: () => markStar(card) },
+    { label: folderOf(card) ? `In “${folderOf(card)}”: move or remove` : "Move to a folder", icon: "folder", testid: "control-list-folder", onSelect: () => folderMenu(anchor, card, last[2].saveControlCenter, redraw) },
+    { label: "Delete conversation", icon: "trash", danger: true, title: isKept(card) ? "It is kept: asks twice" : "Undo for a few seconds", testid: "control-list-delete", onSelect: () => markDelete(card) },
+  ];
+}
+
 /* ---------- reading what is not on the board ---------- */
 
 let boardKeys = new Set();
@@ -368,7 +378,7 @@ export function renderList(container, cards, helpers) {
     ui.preview.replaceChildren(element("p", "control-list-note", "Choose a conversation to read it here."));
     return;
   }
-  drawPreview(ui.preview, chosen, { helpers, tab: view.tab, setTab: (tab) => { view.tab = tab; redraw(); }, tools, checkAgain: () => loadSystem({ force: true }).then(redraw) });
+  drawPreview(ui.preview, chosen, { helpers, tab: view.tab, setTab: (tab) => { view.tab = tab; redraw(); }, markItems, checkAgain: () => loadSystem({ force: true }).then(redraw) });
 }
 
 function drawChips(all) {

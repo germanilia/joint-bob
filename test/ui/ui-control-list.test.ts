@@ -136,6 +136,17 @@ test("the list: system messages first, rows by project, the panel's tabs, search
   // Terminal, Git, Folders and Story are one press away, under the title.
   assert.deepEqual(await page.getByTestId("control-list-tools").locator("button").evaluateAll((nodes) => nodes.map((node) => node.textContent)), ["Terminal", "Git", "Folders", "Story"]);
 
+  // The head has one group at its end, Review · Done · ⋯, and no row of icons: pin, star, folder and delete are in the ⋯ menu.
+  assert.equal(await page.locator(".control-list-pv-top .control-list-tools").count(), 0, "no icon row in the head");
+  const group = await page.locator(".control-list-pv-line .control-card-actions button").evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()));
+  assert.equal(group.at(-1), "⋯", `the ⋯ ends the group: ${JSON.stringify(group)}`);
+  if (group.includes("✓ Done")) assert.equal(group.at(-2), "✓ Done", "Done sits just before the ⋯");
+  await page.locator(".control-list-pv-line").getByTestId("control-card-more").click();
+  const menu = await page.locator("#rowMenu button").evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()));
+  for (const label of ["Pin to the top", "Star", "Move to a folder", "Delete conversation"]) assert.ok(menu.includes(label), `${label} is in the ⋯ menu: ${JSON.stringify(menu)}`);
+  assert.equal(menu.at(-1), "Delete conversation", "Delete is last");
+  await page.keyboard.press("Escape");
+
   // Open and New conversation sit in the same row and look different.
   const [openBox, newBox] = await Promise.all([page.getByTestId("control-list-open").boundingBox(), page.getByTestId("control-board-tool-new-conversation").boundingBox()]);
   assert.ok(openBox && newBox && Math.abs(openBox.y - newBox.y) < 4, "Open ↗ and + New conversation are in one row");
@@ -277,21 +288,25 @@ test("a system message says how to fix it and leaves when its cause is gone", { 
 
 test("pin, star, folders and delete: kept conversations are marked, deleting is undoable, and a kept one asks twice", { timeout: 120_000 }, async (t) => {
   const { page } = await openList(t);
-  const tool = (name: string) => page.getByTestId("control-list-preview").getByTestId(`control-list-${name}`);
+  // Pin, star, folder and delete are items of the ⋯ menu in the panel's head.
+  const tool = async (name: string) => {
+    await page.getByTestId("control-list-preview").getByTestId("control-card-more").click();
+    await page.locator("#rowMenu").getByTestId(`control-list-${name}`).click();
+  };
 
   await page.locator('[data-key="p1:c2"]').click();
   // Star: kept with the account, marked "Kept", counted by the star scope.
-  await tool("star").click();
+  await tool("star");
   await page.getByTestId("control-list-kept").waitFor();
   assert.deepEqual(await page.evaluate(async () => (await import("/app/state.js")).state.controlCenter.stars), ["claude:c2"]);
   assert.match(await page.getByTestId("control-list-scope-starred").textContent() ?? "", /1/);
   // Pin: it moves to a Pinned group at the top, with the pin saved through the account's pin route.
-  await tool("pin").click();
+  await tool("pin");
   await page.getByTestId("control-list-pinned-head").waitFor();
   assert.deepEqual(await keys(page), ["system:decision-model", "p1:c2", "p2:c3", "p1:c1"]);
   assert.deepEqual(await page.evaluate(() => (window as unknown as Mocked).__pins), [{ projectId: "p1", engine: "claude", sessionId: "c2" }]);
   // Folder: a new name puts it in a folder, which then filters the list.
-  await tool("folder").click();
+  await tool("folder");
   await page.getByTestId("control-pop-input").fill("Releases");
   await page.getByTestId("control-pop-input").press("Enter");
   assert.match(await page.locator('[data-key="p1:c2"] .control-list-folder').textContent() ?? "", /Releases/);
@@ -302,19 +317,19 @@ test("pin, star, folders and delete: kept conversations are marked, deleting is 
 
   // Delete: the row goes at once; Undo brings it back; otherwise the conversation is deleted when the Undo runs out.
   await page.locator('[data-key="p2:c3"]').click();
-  await tool("delete").click();
+  await tool("delete");
   assert.deepEqual(await keys(page), ["system:decision-model", "p1:c2", "p1:c1"]);
   await page.getByTestId("control-list-undo").click();
   assert.deepEqual(await keys(page), ["system:decision-model", "p1:c2", "p2:c3", "p1:c1"]);
   assert.deepEqual(await page.evaluate(() => (window as unknown as Mocked).__deleted), []);
   await page.locator('[data-key="p1:c1"]').click();
-  await tool("delete").click();
+  await tool("delete");
   await page.waitForFunction(() => (window as unknown as Mocked).__deleted.length === 1, undefined, { timeout: 15_000 });
   assert.match((await page.evaluate(() => (window as unknown as Mocked).__deleted))[0]!, /sessionId=c1&engine=claude/);
 
   // A kept conversation is not deleted by one press: it says so and waits for a second.
   await page.locator('[data-key="p1:c2"]').click();
-  await tool("delete").click();
+  await tool("delete");
   assert.match(await page.locator(".toast-message").last().textContent() ?? "", /“Mobile menu” is pinned\. Press delete again/);
   assert.equal(await page.getByTestId("control-list-undo").count(), 0);
   assert.ok((await keys(page)).includes("p1:c2"));

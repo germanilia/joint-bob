@@ -328,6 +328,7 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
 .control-list-pv-line .control-list-meta { flex: 1 1 auto; }
 .control-list-pv-line .control-card-actions { flex: none; border-top: 0; padding: 0; }
 .control-list-pv-line .control-card-action { padding: 4px 10px; font-size: 13px; border-radius: 8px; }
+.control-list-pv-line .control-card-dots { padding: 4px 9px; font-weight: 700; letter-spacing: 0.1em; line-height: 1; }
 .control-list-tabs { display: flex; flex: none; gap: 4px; margin-inline: 28px; border-bottom: 1px solid var(--line); }
 .control-list-tab { display: inline-flex; align-items: center; gap: 6px; min-height: 0; height: auto; margin-bottom: -1px; padding: 9px 14px 10px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; box-shadow: none; color: var(--muted); font: 600 14.5px/1.2 var(--sans); cursor: pointer; }
 .control-list-tab[aria-selected="true"] { border-color: var(--accent); color: var(--heading); }

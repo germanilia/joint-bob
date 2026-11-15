@@ -181,9 +181,9 @@ function renderCard(card) {
 }
 
 /** The card's own actions are buttons in its row; the rest (Let Bob control, Story, Overview) wait under "More ▾". Null when it has none. */
-function renderActionRow(card, skip = []) {
+function renderActionRow(card, skip = [], { after = null, extras = null } = {}) {
   const buttons = cardActionList(card).filter((action) => !skip.includes(action.id));
-  if (!buttons.length) return null;
+  if (!buttons.length && !after && !extras) return null;
   const row = element("div", "control-card-actions");
   for (const action of buttons.filter((candidate) => !candidate.more)) {
     const button = element("button", "control-card-action", action.label);
@@ -198,26 +198,34 @@ function renderActionRow(card, skip = []) {
     });
     row.append(button);
   }
+  // The button that closes the card comes before the menu, so the row reads: its actions, Done, ⋯.
+  if (after) row.append(after);
   const inMenu = buttons.filter((action) => action.more);
-  if (inMenu.length) row.append(moreButton(card, inMenu));
+  if (inMenu.length || extras) row.append(moreButton(card, inMenu, extras));
   return row;
 }
 
-/** "More ▾" on a card: its less used actions in the shared row menu, under the button. */
-function moreButton(card, actions) {
-  const button = element("button", "control-card-action control-card-more", "More ▾");
+/**
+ * "More ▾" on a card: its less used actions in the shared row menu, under the button. The conversation panel passes `extras`
+ * (a function giving the pin, star, folder and delete items, read when the menu opens so they show the current state); its
+ * button is then the quiet "⋯" that holds everything the row does not show.
+ */
+function moreButton(card, actions, extras = null) {
+  const button = element("button", extras ? "control-card-action control-card-more control-card-dots" : "control-card-action control-card-more", extras ? "⋯" : "More ▾");
   button.type = "button";
-  button.title = actions.map((action) => action.label).join(", ");
+  button.title = extras ? "More actions" : actions.map((action) => action.label).join(", ");
+  button.setAttribute("aria-label", extras ? "More actions" : "More");
   button.dataset.testid = "control-card-more";
   button.addEventListener("click", (event) => {
     event.stopPropagation();
-    openRowMenu(button, actions.map((action) => ({
+    const items = actions.map((action) => ({
       label: action.label,
       icon: action.icon,
       title: action.title,
       testid: `control-card-action-${action.id}`,
       onSelect: () => Promise.resolve(action.run(card, button)).catch((error) => toast.error(error.message)),
-    })));
+    }));
+    openRowMenu(button, extras ? [...items, ...extras(button)] : items);
   });
   return button;
 }
@@ -296,6 +304,7 @@ const listLayout = () => document.body.classList.contains("bob-desk") && localSt
 const listHelpers = {
   projectColor, avatarOf, runningBadge, driverOf, doneButton, decideReview,
   actionRow: renderActionRow,
+  moreMenu: moreButton,
   openConversation: (card) => openConversation(card),
   refresh: () => refreshControlCenter(),
   finished: () => finishedWhileWatching,

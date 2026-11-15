@@ -1,5 +1,5 @@
 // The panel on the right of the control center's list (version B of the 14 Nov mocks): the chosen conversation's head (what it
-// is, pin / star / folder / delete), then three tabs, one at a time with the whole height:
+// is, Review · Done · ⋯ with pin / star / folder / delete), then three tabs, one at a time with the whole height:
 //   Summary : what waits for you (Guardian's held step, a stopped auto respond, a check that found it waits), then its summary.
 //   Chat    : what you asked, its last message, and a box that writes to it (pinned at the bottom).
 //   Steps   : its last tool and shell calls.
@@ -47,8 +47,8 @@ let drawn = { key: null, stamp: "", tab: "" };
 let detailToken = 0;
 
 /**
- * Draws the panel for `card` (or for a system message) into `preview`. `context`: helpers (the board's), tab, setTab, tools
- * (the pin / star / folder / delete buttons of a conversation), checkAgain (reads the system messages again).
+ * Draws the panel for `card` (or for a system message) into `preview`. `context`: helpers (the board's), tab, setTab, markItems
+ * (the pin / star / folder / delete items of its ⋯ menu), checkAgain (reads the system messages again).
  */
 export function drawPreview(preview, card, context) {
   if (card.system) {
@@ -127,15 +127,14 @@ function head(card, context) {
     kept.dataset.testid = "control-list-kept";
     top.append(kept);
   }
-  top.append(element("span", "control-spacer"), context.tools(card));
+  top.append(element("span", "control-spacer"));
   const meta = [card.agentLabel, card.agentModel, helpers.driverOf(card)?.label, card.updatedAt ? `${card.column === "done" ? "Done " : ""}${formatDate(card.updatedAt)}` : null].filter(Boolean).join(" · ");
   const line = element("div", "control-list-pv-line");
   line.append(element("p", "control-list-meta", meta));
-  if (card.column !== "done") {
-    const actions = helpers.actionRow(card, CONVERSATION_TOOLS);
-    if (actions) line.append(actions);
-    line.append(helpers.doneButton(card));
-  }
+  // One group at the end of the line: Review, Done and ⋯ (pin, star, folder, delete and the card's other actions).
+  const marks = context.markItems(card);
+  if (card.column !== "done") line.append(helpers.actionRow(card, CONVERSATION_TOOLS, { after: helpers.doneButton(card), extras: marks }));
+  else line.append(helpers.moreMenu(card, [], marks));
   return [top, element("h2", "control-list-heading", card.title), line, toolsRow(card)];
 }
 
