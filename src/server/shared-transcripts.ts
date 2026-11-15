@@ -413,7 +413,8 @@ async function catchUpSharedTranscriptNow(peerId:string,engine:string,sessionId:
  const db=await clusterV2Database(),local=await getClusterNode();ensureSchema(db);ensureConversationRecordSchema(db);
  const peer=replicationPeers(db,local.id).find(peer=>peer.nodeId===peerId);
  if(!peer)return;
- const projects=db.prepare('SELECT DISTINCT project_id FROM conversation_records WHERE engine=? AND session_id=?').all(engine,sessionId) as unknown as Array<{project_id:string}>;
+ // A transcript can arrive before its conversation metadata. Its receipt already names the shared project.
+ const projects=db.prepare('SELECT project_id FROM conversation_records WHERE engine=? AND session_id=? UNION SELECT project_id FROM cluster_v2_transcript_receipts WHERE peer_id=? AND engine=? AND session_id=?').all(engine,sessionId,peerId,engine,sessionId) as unknown as Array<{project_id:string}>;
  for(const {project_id:projectId} of projects){
   if(!mayShareProject(db,local.id,peer.nodeId,projectId)||!await getProject(projectId))continue;
   const target='/api/cluster/v2/transcripts?'+new URLSearchParams({projectId,engine,sessionId});

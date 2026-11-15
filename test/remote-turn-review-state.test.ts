@@ -103,6 +103,10 @@ test("a twin shows a remote turn's end as needing review, never as reviewed, and
       await appendFile(transcript, message("user", prompt, "Second question"));
       publishPiRuntime(runtimeDb, run, true);
       await eventually(async () => assert.equal((await row(twin, twinAuth)).running, true), 15_000);
+      // Transcript delivery and metadata replication are independent. Catch-up must also work before the record arrives.
+      const metadata = openNodeDatabase(path.join(twin.dataDir, "node.db"));
+      metadata.prepare("DELETE FROM conversation_records WHERE engine='pi' AND session_id=?").run(sessionId);
+      metadata.close();
       await appendFile(transcript, message("assistant", prompt + 2_000, "Second answer"));
       const answerAt = new Date(prompt + 2_000).toISOString();
       publishPiRuntime(runtimeDb, run, false);
