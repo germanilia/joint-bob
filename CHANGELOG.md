@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.305.7 — 2026-11-15
+
+- On Bob's page, opening the browser from a conversation's Chat tab now shows it as one panel filling the right half of the page. Before, the page was cut in half and the browser also floated as a small separate window at the far right.
+- While that browser is open, the chat's side panel folds so the messages keep their width, and on screens narrower than 1800 px the conversation list folds too. Closing the browser brings both back. Bob's settings, Refresh and Exit stay in the top bar.
+- In the Chat tab, the chat's side panel no longer repeats the Summary and the Steps: they are the tabs next to Chat. Its Browser, Terminal, Share and Schedule buttons stay.
+
 ## 2.305.6 — 2026-11-15
 
 - A message on a machine whose own Claude sign-in has ended no longer shows "Command failed: …claude auth status --json". The error now names the machine that is signed out, says when its sign-in reached Claude's time limit, and tells you how to get going again: run `claude auth login` on that machine, or choose a signed-in Claude subscription profile in Settings → Profiles, then press Force start.
