@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.309.1 — 2026-11-15
+
+- The conversation search box shows a single focus ring instead of a second one inside it.
+
 ## 2.309.0 — 2026-11-15
 
 - The ⋯ menu above a conversation has an Add secret item, under This conversation. It opens the picker that attaches an existing secret to that conversation.
