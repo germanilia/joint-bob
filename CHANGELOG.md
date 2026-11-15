@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.312.1 — 2026-11-15
+
+- The cluster agent policy page now works offline like the rest of the app.
+
 ## 2.312.0 — 2026-11-15
 
 - The Inbox now lists every running conversation and every one to review, including those running on a teammate's machine in a shared project (marked with the machine's name, read-only), so its counts match the project badges.
