@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.305.6 — 2026-11-15
+
+- A message on a machine whose own Claude sign-in has ended no longer shows "Command failed: …claude auth status --json". The error now names the machine that is signed out, says when its sign-in reached Claude's time limit, and tells you how to get going again: run `claude auth login` on that machine, or choose a signed-in Claude subscription profile in Settings → Profiles, then press Force start.
+
 ## 2.305.5 — 2026-11-15
 
 - When a Claude model in a subscription pool is rate-limited, the turn now tries the pool's fallback model first, then the strongest of the other Claude models. It no longer drops to Haiku on its own: Haiku runs only when you pick it or set it as the pool's fallback, and otherwise the pool's next member takes over.
