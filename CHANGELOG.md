@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.306.1 — 2026-11-15
+
+- Bob's floating chat window stays above a conversation that is open over Bob's page, instead of disappearing behind it.
+
 ## 2.306.0 — 2026-11-15
 
 - The ⋯ menu above a conversation is now grouped: Open (Terminal, Browser), This conversation (Rename, Share, Scheduled tasks, Dashboard and the rest), and Delete alone at the bottom. Notify and Auto respond are no longer repeated in it.
