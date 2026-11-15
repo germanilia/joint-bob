@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.310.1 — 2026-11-15
+
+- The team bot now decides from context whether a Telegram message is meant for the team. The decision model is told the coordinator, the member roles and the bot name, so "hi bob" is answered while talk between people stays silent, with no need for `@bot` or a `/role` command.
+
 ## 2.310.0 — 2026-11-15
 
 - Bob's page shows the release number under the Bob logo, top left, so you can tell which build is running.

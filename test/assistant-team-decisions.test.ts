@@ -51,7 +51,7 @@ test('central batched decisions, deterministic replies, scoped evidence and dura
  return Response.json({answers:malformed===undefined?answers:malformed});};
  try {
  assert.equal(await decideTeamMessage(team,outsider.message),null);assert.equal(calls,0);assert.equal((await listTeamDecisions(team.id))[0].failure?.code,'access_denied');
- const m=await message('Please investigate');assert.deepEqual(await decideTeamMessage(team,m),{attention:'act',targets:['bob'],route:{kind:'new'},learn:true});assert.equal(calls,1);assert.deepEqual(Object.keys(last.questions).sort(),['attention','memory','subject']);
+ const m=await message('Please investigate');assert.deepEqual(await decideTeamMessage(team,m),{attention:'act',targets:['bob'],route:{kind:'new'},learn:true});assert.equal(calls,1);assert.deepEqual(Object.keys(last.questions).sort(),['attention','memory','subject']);const told=JSON.parse(last.state).team;assert.equal(told.coordinator,'bob');assert.ok(told.roles.includes('bob'),'the model is told who the team is');
  for(const [value,expected] of [[.95,'ask'],[.81,'ask'],[.80,'silent']] as const){confidence=value;assert.equal((await decideTeamMessage(team,await message('monitor boundary')))!.attention,expected);}
  attention='none';confidence=.99;assert.equal((await decideTeamMessage(team,await message('durable fact')))!.attention,'silent');
  attention='act';confidence=.01;const direct=await message('/qa check this');assert.deepEqual(await decideTeamMessage(team,direct),{attention:'direct',targets:['qa'],route:{kind:'new'},learn:true});assert.ok(!last.questions.attention);

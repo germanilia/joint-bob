@@ -3,9 +3,10 @@ import { systemAiSettings } from '../system-ai-config.js';
 import { systemDecisionKey } from '../system-ai.js';
 import { decisionModelTarget } from '../classifiers/conversation-routing.js';
 import { askSystemOneChoices, type SystemOneChoice, type SystemOneTarget, type SystemOneQuestion } from '../classifiers/typesafe.js';
-import { getTeam, teamCoordinator, announceTeamChange, type AssistantTeam, type TeamMessage, type TeamRole, type TeamRoute, type TeamSettings, type TeamSubject } from './store.js';
+import { getTeam, teamCoordinator, teamRolesSync, announceTeamChange, type AssistantTeam, type TeamMessage, type TeamRole, type TeamRoute, type TeamSettings, type TeamSubject } from './store.js';
 import { conversationDatabase, getTeamMessage, listTeamHistory, directTeamTargets, teamReplyRoute, teamSubjectCandidates, type StoredTeamMessage } from './conversations.js';
 import { authorizeTeamTelegram } from './telegram.js';
+import { teamTelegramConnection } from './telegram-store.js';
 import { validTeamThresholds, TEAM_ATTENTION_QUESTION, TEAM_MEMORY_QUESTION, teamSubjectQuestion } from './questions.js';
 
 export interface TeamDecision { requestId?: string; attention: 'act' | 'ask' | 'silent' | 'direct'; targets: TeamRole[]; route: TeamRoute; learn: boolean }
@@ -44,9 +45,11 @@ async function authorized(message: StoredTeamMessage): Promise<boolean> {
   catch { return false; }
 }
 // Projection only: the full source and edit versions remain in the conversation ledger.
-function evidence(message: StoredTeamMessage, history: StoredTeamMessage[], candidates: TeamSubject[], budget: number, redact: (text: string) => string) {
+/** Who the team is, so the model can tell a message meant for the team from talk between people. */
+interface TeamIdentity { coordinator: TeamRole | null; roles: TeamRole[]; botName: string | null }
+function evidence(message: StoredTeamMessage, history: StoredTeamMessage[], candidates: TeamSubject[], budget: number, redact: (text: string) => string, team: TeamIdentity) {
   const project = (m: StoredTeamMessage) => ({ id: m.id, revision: m.revision, accountId: m.accountId, text: redact(m.text).slice(0, 6000), attachments: m.attachments.slice(0, 10).map(a => ({ text: redact(a.extractedText ?? '').slice(0, 2000), problem: a.problem ? redact(a.problem) : undefined })) });
-  const state = { message: project(message), history: history.map(project), subjects: candidates.map(s => ({ ...s, title: redact(s.title).slice(0, 160), summary: redact(s.summary).slice(0, 600) })) };
+  const state = { team, message: project(message), history: history.map(project), subjects: candidates.map(s => ({ ...s, title: redact(s.title).slice(0, 160), summary: redact(s.summary).slice(0, 600) })) };
   while (JSON.stringify(state).length > budget && state.history.length) state.history.shift();
   while (JSON.stringify(state).length > budget && state.subjects.length) state.subjects.pop();
   while (JSON.stringify(state).length > budget && state.message.attachments.length) state.message.attachments.pop();
@@ -85,7 +88,8 @@ export async function decideTeamMessage(team: AssistantTeam, input: TeamMessage)
     }
     const candidates = reply ? [] : await teamSubjectCandidates(team.id, message);
     const redact = await (await import('./memory.js')).teamMemoryRedactor();
-    const bounded = evidence(message, history, candidates, Math.min(selected.target.stateCharacters, 24000), redact);
+    const identity = teamRolesSync(await conversationDatabase(), team.id);
+    const bounded = evidence(message, history, candidates, Math.min(selected.target.stateCharacters, 24000), redact, { ...identity, botName: (await teamTelegramConnection(team.id))?.bot_username ?? null });
     if (bounded.state.length > selected.target.stateCharacters) throw new Error();
     record.evidenceMessageIds = bounded.messages.map(m => m.id);
     record.evidenceRevisions = Object.fromEntries(bounded.messages.map(m => [m.id, m.revision]));
