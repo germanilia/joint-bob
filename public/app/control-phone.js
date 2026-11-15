@@ -178,9 +178,11 @@ function buildRow(entry) {
   text.append(element("b", "", card.title), subject);
   const actions = element("div", "phone-row-actions");
   if (group === "ok") {
-    const allow = button("Allow once", "phone-action warn", "control-phone-allow", () => decide(entry, "allow", [allow, block]));
-    const block = button("Block", "phone-action", "control-phone-block", () => decide(entry, "block", [allow, block]));
+    const allow = button("Allow once", "phone-action warn", "control-phone-allow", () => decide(entry, "allow", [allow, block, always]));
+    const block = button("Block", "phone-action", "control-phone-block", () => decide(entry, "block", [allow, block, always]));
+    const always = button("Allow always", "phone-action warn", "control-phone-allow-always", () => decide(entry, "allow-always", [allow, block, always]));
     actions.append(allow, block);
+    if (card.pendingReviews[0].alwaysKey) actions.append(always);
   } else {
     const label = { you: "Answer", running: "Open", review: "Review" }[group];
     actions.append(button(label, "phone-action", `control-phone-${label.toLowerCase()}`, () => open(card)));

@@ -62,6 +62,10 @@ test("a selected source's Guardian rules apply only to its cluster projects, eve
   const verdict = await checkGuardian({ projectId: project.id, conversationId: "c", harness: "pi", cwd: process.cwd(), canReplaceTool: true },
     { kind: "tool", tool: "bash", category: "commands", input: { command: "psql -c 'drop table users'" } });
   assert.equal(verdict.action, "block");
+  const { withGuardianBypass } = await import("../src/guardian/bypass.js");
+  const bypassed = await withGuardianBypass(project.id, "c", true, () => checkGuardian({ projectId: project.id, conversationId: "c", harness: "pi", cwd: process.cwd(), canReplaceTool: true },
+    { kind: "tool", tool: "bash", category: "commands", input: { command: "psql -c 'drop table users'" } }));
+  assert.equal(bypassed.action, "block", "an automation checkbox cannot bypass imposed rules");
   assert.match((verdict as { reason: string }).reason, /\(Guardian cluster · source\)/);
   assert.equal(await guardianStartProblem("claude", project.id), null, "a command rule is something Claude can enforce");
 

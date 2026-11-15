@@ -11,6 +11,7 @@ import { actingAccount, asNode, runAsAccount } from "../src/account-context.js";
 import { automationProfileContext, poolProfileContext, withAutomationProfile, withPoolProfile, withoutAutomationProfile } from "../src/provider-profiles/context.js";
 import { classifyPoolAttemptFailure, memberModelLadder, resolvePoolModelSettings, resolvePoolSwitchModel, runOnModels, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { ConversationOwnershipError } from "../src/conversation-ownership.js";
+import { withGuardianBypass } from "../src/guardian/bypass.js";
 
 const require = createRequire(import.meta.url);
 function load(file: string, dependencies: Record<string, any>, extra = ""): any {
@@ -83,7 +84,7 @@ function fixture(selection: Selection, failure?: string) {
   const shared: any = { engine: "claude", projectId: "project", conversationId: "conversation", session, turnInFlight: 0, clients: new Set() };
   const connection: any = { engine: "claude", project: { id: "project", type: "workspace" }, conversationId: "conversation", cwd: "/synthetic", shared, author: author("viewer"), socket: {}, readOnly: false };
   const dependencies: Record<string, any> = {
-    flags: {}, onGuardianEvent: () => {}, actingAccount, asNode, runAsAccount, withPoolProfile, withoutAutomationProfile, automationProfileContext,
+    withGuardianBypass, flags: {}, onGuardianEvent: () => {}, actingAccount, asNode, runAsAccount, withPoolProfile, withoutAutomationProfile, automationProfileContext,
     runPoolAttempts, runOnModels, memberModelLadder, classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, ConversationOwnershipError,
     listHarnessModels: async () => [{ provider: "claude", id: "opus", thinkingLevels: ["high"] }],
     nearestReasoning: (_levels: string[], reasoning: string) => reasoning,

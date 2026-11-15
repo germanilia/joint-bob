@@ -70,6 +70,20 @@ test("weekly schedules skip a DST gap even when the next valid week is more than
   assert.equal(nextCronRun(schedule, Date.parse("2026-03-02T12:00:00Z")), Date.parse("2026-03-15T06:30:00Z"));
 });
 
+test("scheduled Guardian bypass defaults off and persists across edits", async () => {
+  const { cronInputSchema, CronStore } = await import("../src/cron.js");
+  const db = new DatabaseSync(":memory:");
+  try {
+    assert.equal(cronInputSchema.parse(input()).bypassGuardian, false);
+    const store = new CronStore(db);
+    const task = store.create(cronInputSchema.parse({ ...input(), bypassGuardian: true }));
+    assert.equal(store.get(task.id)?.bypassGuardian, true);
+    const { id, nextRun, lastRun, ...saved } = task;
+    assert.equal(store.update(id, { ...saved, bypassGuardian: false }).bypassGuardian, false);
+    assert.equal(cronInputSchema.safeParse({ ...input(), bypassGuardian: "true" }).success, false);
+  } finally { db.close(); }
+});
+
 test("cron validates schedule and required user input", async () => {
   const { cronInputSchema, CronStore } = await import("../src/cron.js");
   for (const invalid of [{ name: " " }, { prompt: "" }, { ownerNodeId: "bad" }, { schedule: { ...input().schedule, timezone: "Mars" } }, { schedule: { ...input().schedule, hour: 24 } }]) {

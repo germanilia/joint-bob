@@ -22,6 +22,7 @@ const field = {
   owner: byId("webhooksOwner"), name: byId("webhooksName"), kind: byId("webhooksTargetKind"), project: byId("webhooksProject"), conversation: byId("webhooksConversation"),
   harness: byId("webhooksHarness"), model: byId("webhooksModel"), effort: byId("webhooksEffort"), titleTemplate: byId("webhooksTitleTemplate"),
   conversationLabel: byId("webhooksConversationLabel"), context: byId("webhooksContext"), enabled: byId("webhooksEnabled"),
+  bypassGuardian: byId("webhooksBypassGuardian"),
   hideFromHistory: byId("webhooksHideFromHistory"),
   attachments: byId("webhooksAttachments"), preserveFiles: byId("webhooksPreserveFiles"), markForReview: byId("webhooksMarkForReview"), sendersEnabled: byId("webhooksSendersEnabled"), senders: byId("webhooksSenders"),
   senderFields: byId("webhooksSenderFields"), allowedSenders: byId("webhooksAllowedSenders"), save: byId("webhooksSave"), secretSearch: byId("webhooksSecretSearch"),
@@ -137,7 +138,7 @@ const memory = createWebhookMemory({ url: hookUrl, run, say, onEnabled: (on) => 
 /** The body a PUT or POST sends: everything about the webhook, so saving one setting keeps the others. */
 const hookBody = (hook, changes = {}) => JSON.stringify({
   providerProfileId: hook.providerProfileId ?? null,
-  name: hook.name, target: hook.target, context: hook.context, enabled: hook.enabled, attachments: hook.attachments, preserveFiles: hook.preserveFiles, markForReview: hook.markForReview, hideFromHistory: hook.hideFromHistory, senders: hook.senders, model: hook.model, reasoning: hook.reasoning, secretAccountIds: hook.secretAccountIds, titleTemplate: hook.titleTemplate, ...changes,
+  name: hook.name, target: hook.target, context: hook.context, enabled: hook.enabled, bypassGuardian: hook.bypassGuardian, attachments: hook.attachments, preserveFiles: hook.preserveFiles, markForReview: hook.markForReview, hideFromHistory: hook.hideFromHistory, senders: hook.senders, model: hook.model, reasoning: hook.reasoning, secretAccountIds: hook.secretAccountIds, titleTemplate: hook.titleTemplate, ...changes,
 });
 
 /** "123 Ilia" lines to `{ value, label }`; the first word is the value, the rest is the name. */
@@ -430,6 +431,7 @@ async function fillFields(hook) {
   field.context.value = hook?.context ?? "";
   field.titleTemplate.value = hook?.titleTemplate ?? "";
   field.enabled.checked = hook?.enabled ?? true;
+  field.bypassGuardian.checked = hook?.bypassGuardian === true;
   field.attachments.checked = hook?.attachments ?? false;
   field.preserveFiles.checked = hook?.preserveFiles ?? false;
   field.markForReview.checked = hook?.markForReview ?? false;
@@ -616,7 +618,7 @@ function buildBody() {
   const senders = field.sendersEnabled.checked
     ? { fields: field.senderFields.value.split(/[\s,]+/).filter(Boolean), allowed: parseAllowed(field.allowedSenders.value) }
     : null;
-  return JSON.stringify({ providerProfileId: profilePicker.value(), tags: tagPicker.getValue(), name: field.name.value, target, context: field.context.value, enabled: field.enabled.checked, attachments: field.attachments.checked, preserveFiles: field.preserveFiles.checked, markForReview: field.markForReview.checked, hideFromHistory: field.hideFromHistory.checked, senders, model, reasoning: field.kind.value === "assistant" ? null : field.effort.value || null, secretAccountIds: [...selectedSecretIds], titleTemplate: field.kind.value === "project" ? field.titleTemplate.value : "" });
+  return JSON.stringify({ providerProfileId: profilePicker.value(), tags: tagPicker.getValue(), name: field.name.value, target, context: field.context.value, enabled: field.enabled.checked, bypassGuardian: field.bypassGuardian.checked, attachments: field.attachments.checked, preserveFiles: field.preserveFiles.checked, markForReview: field.markForReview.checked, hideFromHistory: field.hideFromHistory.checked, senders, model, reasoning: field.kind.value === "assistant" ? null : field.effort.value || null, secretAccountIds: [...selectedSecretIds], titleTemplate: field.kind.value === "project" ? field.titleTemplate.value : "" });
 }
 
 async function submit() {

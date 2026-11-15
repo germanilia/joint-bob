@@ -63,12 +63,14 @@ import { flags } from "./state.js";
 import { measureOperation } from "./performance-diagnostics.js";
 import { broadcastToProject, chatErrorMessage, send } from "./realtime.js";
 import { autoRespondHeldBack } from "./control-center-watch.js";
+import { withGuardianBypass } from "../guardian/bypass.js";
 import { cancelGuardianReviews, decideGuardianReview, onGuardianEvent, pendingGuardianReviews } from "../guardian/reviews.js";
 import { conversationLiveModel, requestDigestQuietly, summaryPolicyNow, summaryPolicyView } from "./conversation-digest-runner.js";
 import { storedDigest } from "../conversation-digest.js";
 import { attachHarnessClient, compactHarnessSession, detachHarnessClient, disposeHarnessSession, findHarnessSession, harnessSessionBusy, harnessTurnBusy, historyBeforeLiveTurn, markHarnessInput, openHarnessSession, sendHarnessStatus, type SharedHarnessSession, type TurnConnectionView } from "./harness-sessions.js";
 
 export interface HarnessChatConnection {
+  bypassGuardian?: boolean;
   automationProfile?: QueuedPrompt["automationProfile"];
   /** Run-denied peers may read stored summaries but cannot start a summary agent. */
   peerReadOnly?: boolean;
@@ -83,6 +85,7 @@ export interface HarnessChatConnection {
 export type ReadOnlyReason = "transcript" | "runnerAccess";
 
 export interface AttachOptions {
+  bypassGuardian?: boolean;
   /** Signed local automation/controller socket: no browser history or display metadata. */
   controlOnly?: boolean;
   automationProfile?: QueuedPrompt["automationProfile"];
@@ -569,7 +572,7 @@ async function enqueue(connection: HarnessChatConnection, message: string, image
   const promptText = promptTextWithAttachments(message, imageAttachments, fileAttachments);
   const suffix = absolute.length ? `Attached: ${absolute.map(({ name }) => name).join(", ")}` : "";
   const displayText = [message.trim(), suffix].filter(Boolean).join("\n\n");
-  const queued = enqueuePrompt(queueKey(connection), promptText, displayText, { automationProfile: connection.automationProfile, scheduledAutoRespond, requestId, author: connection.author, messageText: message, promptSuffix: promptText.slice(message.trim().length).trim(), displaySuffix: suffix, attachmentPaths: absolute.map(({ path: file }) => file), images: imageAttachments.map(({ path: file, mimeType }) => ({ path: file, mimeType })), settings: settings === undefined ? null : settings });
+  const queued = enqueuePrompt(queueKey(connection), promptText, displayText, { bypassGuardian: connection.bypassGuardian, automationProfile: connection.automationProfile, scheduledAutoRespond, requestId, author: connection.author, messageText: message, promptSuffix: promptText.slice(message.trim().length).trim(), displaySuffix: suffix, attachmentPaths: absolute.map(({ path: file }) => file), images: imageAttachments.map(({ path: file, mimeType }) => ({ path: file, mimeType })), settings: settings === undefined ? null : settings });
   markHarnessInput(connection.shared);
   // A person's first message in a new conversation puts it under system control when their default in Bob's settings says so.
   if (connection.author && !connection.automationProfile && !scheduledAutoRespond && !connection.shared.session.messages.length) {
@@ -763,7 +766,8 @@ function turnActor(connection: Pick<HarnessChatConnection, "project">, author: M
 }
 
 async function dispatch(connection: HarnessChatConnection, queued: QueuedPrompt & { createdAt?: string }): Promise<void> {
-  return withPromptProfile(connection, queued, () => dispatchWithProfile(connection, queued));
+  return withPromptProfile(connection, queued, () => withGuardianBypass(connection.project.id, connection.conversationId,
+    queued.bypassGuardian === true, () => dispatchWithProfile(connection, queued)));
 }
 
 async function dispatchWithProfile(connection: HarnessChatConnection, queued: QueuedPrompt & { createdAt?: string }): Promise<void> {
@@ -794,7 +798,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
       if (current?.sourcePromptId !== queued.id) {
         const accountId = queued.automationProfile?.accountId;
         if (!accountId) throw new Error("Scheduled auto responder creator is missing");
-        publishAutoRespond(connection, await enableAutoRespond(connection.project.id, connection.conversationId, queued.scheduledAutoRespond, queued.author ?? null, accountId, queued.id, queued.requestId ?? null));
+        publishAutoRespond(connection, await enableAutoRespond(connection.project.id, connection.conversationId, queued.scheduledAutoRespond, queued.author ?? null, accountId, queued.id, queued.requestId ?? null, queued.bypassGuardian === true));
       }
     }
     pool = await resolveTurnSubscriptionPool(connection, queued);
@@ -957,7 +961,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
           if (recovery) {
             if (readRoutingState(queueKey(connection)).mode === "manual" || listQueuedPrompts(queueKey(connection)).length || harnessSessionBusy(connection.shared)) modelAllocationStore().finish(allocationOwner, recovery.operationId, 0);
             else {
-              enqueuePrompt(queueKey(connection), recovery.message, "Retry failed verification with a stronger model", { automationProfile: queued.automationProfile, author: queued.author, requestId: recovery.operationId, messageText: recovery.message, promptSuffix: "", displaySuffix: "", attachmentPaths: [], images: [],
+              enqueuePrompt(queueKey(connection), recovery.message, "Retry failed verification with a stronger model", { bypassGuardian: queued.bypassGuardian, automationProfile: queued.automationProfile, author: queued.author, requestId: recovery.operationId, messageText: recovery.message, promptSuffix: "", displaySuffix: "", attachmentPaths: [], images: [],
                 settings: queuedSettingsSchema.parse({ ...currentSettings(connection), provider: recovery.identity.provider, modelId: recovery.identity.modelId, reasoning: recovery.identity.reasoning }) });
               refreshHarnessPromptQueue(connection);
             }
@@ -1089,7 +1093,7 @@ async function runAutoResponse(connection: HarnessChatConnection): Promise<boole
       return false;
     }
     if (listQueuedPrompts(queueKey(connection)).some(prompt => !deferredAutoPrompt(prompt, state))) return true;
-    const queued = enqueuePrompt(queueKey(connection), decision.reply, decision.reply, { automationProfile, ...(state.enabledBy ? { author: state.enabledBy } : {}), messageText: decision.reply, promptSuffix: "", displaySuffix: "", attachmentPaths: [], images: [], settings: null });
+    const queued = enqueuePrompt(queueKey(connection), decision.reply, decision.reply, { bypassGuardian: state.bypassGuardian, automationProfile, ...(state.enabledBy ? { author: state.enabledBy } : {}), messageText: decision.reply, promptSuffix: "", displaySuffix: "", attachmentPaths: [], images: [], settings: null });
     markHarnessInput(shared);
     await recordAutoReply(projectId, connection.conversationId, decision.reply, state.modelId, decision.reason);
     publish(connection, { type: "userMessage", text: decision.reply, timestamp: queued.createdAt, ...(queued.author ? { author: queued.author } : {}), queued: true, queueId: queued.id, revision: queued.revision, editableText: queued.messageText, settings: queued.settings, auto: { modelId: state.modelId, reason: decision.reason } });
@@ -1621,7 +1625,7 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
   // only does while no account is set; a turn author's account here would skip that and leave the member without its tools.
   const actor = options.author && !await teamConversation(options.project.id, conversationId) ? turnActor(options, options.author) : actingAccount();
   const shared = await measureOperation("chat.open.runtime", () => runAsAccount(actor, () => runWithAutomationProfile({ creatorAccountId: options.automationProfile?.accountId, providerProfileId: options.automationProfile?.profileId }, () => openHarnessSession(options.engine, { projectId: options.project.id, cwd: options.cwd, sessionId: options.sessionId, sessionPath: options.sessionPath, conversationId, accountIds: options.accountIds }))));
-  const connection: HarnessChatConnection = { automationProfile: options.automationProfile, socket: options.socket, project: options.project, cwd: options.cwd, engine: options.engine, shared, handoffContext: null, accountIds: options.accountIds, readOnly: options.readOnly, peerReadOnly: options.peerReadOnly, conversationId, author: options.author };
+  const connection: HarnessChatConnection = { bypassGuardian: options.bypassGuardian, automationProfile: options.automationProfile, socket: options.socket, project: options.project, cwd: options.cwd, engine: options.engine, shared, handoffContext: null, accountIds: options.accountIds, readOnly: options.readOnly, peerReadOnly: options.peerReadOnly, conversationId, author: options.author };
   const local = await getClusterNode();
   if (!record && !options.readOnly) record = await ensureConversationRecord(options.project.id, options.engine, options.sessionId, local.id, undefined, { conversationId, segmentIndex: 0 });
   const saved = readQueueSettings(queueKey(connection));

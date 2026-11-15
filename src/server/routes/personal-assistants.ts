@@ -180,6 +180,7 @@ async function assistantDestination(accountId: string, entry: AssistantEntry, co
     : startAssistantTopic(accountId, entry, route, input, localId, context.history, words);
 }
 export interface AssistantAutomationTurnOptions {
+  bypassGuardian?: boolean;
   /** Internal only; validated against the live assignment, never parsed from personal HTTP input. */
   team?: { assignment: TeamAssignment };
   scheduledAutoRespond?: AutoRespondConfig;
@@ -211,7 +212,7 @@ async function executeAssistantTurn(accountId: string, entry: AssistantEntry, se
   if (!created) return (await getPersonalAssistantTurn(accountId, entry.id, input.requestId))!;
   try {
     await options?.prepare?.(destination);
-    await queueConversationPrompt({ projectId: project.id, engine: destination.engine, sessionId: destination.sessionId, author: { accountId: session.accountId, email: session.email, username: session.username, homeNodeId: session.homeNodeId }, message: destination.message, requestId: input.requestId, label: options?.label ?? "Assistant", until: "completed", scheduledAutoRespond: options?.scheduledAutoRespond, automationProfile: options?.automationProfile, images: options?.images, files: options?.files, onStarted: () => options?.onStarted?.(destination), ...(entry.executionSettings ? { queueSettings: () => entry.executionSettings! } : {}) });
+    await queueConversationPrompt({ projectId: project.id, engine: destination.engine, sessionId: destination.sessionId, author: { accountId: session.accountId, email: session.email, username: session.username, homeNodeId: session.homeNodeId }, message: destination.message, requestId: input.requestId, label: options?.label ?? "Assistant", until: "completed", bypassGuardian: options?.bypassGuardian, scheduledAutoRespond: options?.scheduledAutoRespond, automationProfile: options?.automationProfile, images: options?.images, files: options?.files, onStarted: () => options?.onStarted?.(destination), ...(entry.executionSettings ? { queueSettings: () => entry.executionSettings! } : {}) });
     const record = await getConversationRecord(project.id, destination.engine, destination.sessionId);
     const segments = await listConversationSegments(project.id, record?.conversationId ?? destination.sessionId);
     const active = segments.at(-1) ?? { engine: destination.engine, sessionId: destination.sessionId };

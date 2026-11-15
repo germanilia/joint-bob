@@ -495,5 +495,5 @@ export const socketMessageSchema = z.object({
   }).strict().optional(),
   /** guardianDecision: the person's answer to a paused action. */
   reviewId: z.string().uuid().optional(),
-  decision: z.enum(["allow", "block"]).optional(),
+  decision: z.enum(["allow", "allow-always", "block"]).optional(),
 });

@@ -21,6 +21,7 @@ export const queuedSettingsSchema = z.object({
 export type QueuedSettings = z.infer<typeof queuedSettingsSchema>;
 export const queuedAutomationProfileSchema = z.object({ accountId: z.string().min(1), profileId: z.string().min(1).nullable(), nodeId: z.string().min(1) }).strict();
 const promptSchema = z.object({
+  bypassGuardian: z.boolean().optional(),
   automationProfile: queuedAutomationProfileSchema.optional(),
   scheduledAutoRespond: z.lazy(() => autoRespondConfigSchema).optional(),
   id: z.string().uuid(), requestId: z.string().uuid().optional(), systemEventId: z.string().uuid().optional(), dispatchState: z.enum(["pending", "starting"]).default("pending"), promptText: z.string(), displayText: z.string(),
@@ -29,7 +30,7 @@ const promptSchema = z.object({
   author: messageAuthorSchema.optional(),
 });
 export type QueuedPrompt = z.infer<typeof promptSchema>;
-interface Metadata { scheduledAutoRespond?: AutoRespondConfig; automationProfile?: z.infer<typeof queuedAutomationProfileSchema>; requestId?: string; systemEventId?: string; author?: MessageAuthor; messageText: string; promptSuffix: string; displaySuffix: string; attachmentPaths: string[]; images?: Array<{ path: string; mimeType: string }>; settings?: QueuedSettings | null }
+interface Metadata { bypassGuardian?: boolean; scheduledAutoRespond?: AutoRespondConfig; automationProfile?: z.infer<typeof queuedAutomationProfileSchema>; requestId?: string; systemEventId?: string; author?: MessageAuthor; messageText: string; promptSuffix: string; displaySuffix: string; attachmentPaths: string[]; images?: Array<{ path: string; mimeType: string }>; settings?: QueuedSettings | null }
 export type SystemPromptState = "pending" | "starting" | "consumed" | "missing";
 interface Row { id: string; queue_key: string; prompt: string; created_at: string; sequence: number; revision: number; origin_node_id: string }
 export interface QueuedPromptRef { id: string; revision: number }
@@ -291,7 +292,7 @@ export function editQueuedPrompt(queueKey: string, id: string, promptText: strin
     const row = db.prepare("SELECT * FROM queued_prompts WHERE queue_key = ? AND id = ?").get(key, id) as unknown as Row | undefined;
     if (!row || expectedRevision !== undefined && row.revision !== expectedRevision) return false;
     const existing = promptSchema.parse(JSON.parse(row.prompt));
-    const owner = adopt ? { author: adopt, automationProfile: undefined } : {};
+    const owner = adopt ? { author: adopt, automationProfile: undefined, bypassGuardian: undefined } : {};
     const prompt = promptSchema.parse({ ...existing, ...owner, ...attachments, dispatchState: "pending", promptText, displayText, messageText, settings: settings === undefined ? existing.settings : settings, revision: row.revision + 1 });
     const updated = { ...row, prompt: JSON.stringify(prompt), revision: prompt.revision, origin_node_id: origin(db) };
     insert(db, updated);

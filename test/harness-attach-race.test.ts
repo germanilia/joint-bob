@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import test from "node:test";
 import ts from "typescript";
+import { withGuardianBypass } from "../src/guardian/bypass.js";
 
 const require = createRequire(import.meta.url);
 const source = readFileSync(new URL("../src/server/harness-chat.ts", import.meta.url), "utf8");
@@ -99,7 +100,7 @@ function fixture(overrides: Record<string, any> = {}) {
     saveDifficulty: () => {}, authoredPromptText: (_p: any, _c: any, text: string) => text,
     sendHarnessStatus: () => {},
     // No Guardian review is open on the conversation.
-    onGuardianEvent: () => () => {}, pendingGuardianReviews: () => [], decideGuardianReview: () => false, cancelGuardianReviews: () => {},
+    withGuardianBypass, onGuardianEvent: () => () => {}, pendingGuardianReviews: () => [], decideGuardianReview: () => false, cancelGuardianReviews: () => {},
     DEFAULT_AUTO_RESPOND_INSTRUCTIONS: "", DEFAULT_AUTO_RESPOND_STOP_INSTRUCTIONS: "",
     // This attachment fixture is an ordinary personal conversation, not a team assignment.
     teamQueuedTurn: async () => undefined, teamConversation: async () => undefined,

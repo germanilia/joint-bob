@@ -15,6 +15,8 @@ export interface PromptAttachment { name: string; mimeType: string; data: string
 export interface PromptQueueSettings { harnessId: string; provider: string; modelId: string; reasoning: string }
 
 export interface ConversationPromptOptions {
+  /** Trusted local automation only; never accepted in a browser prompt message. */
+  bypassGuardian?: boolean;
   /** Trusted automation assignment, forwarded only over the signed local socket. */
   automationProfile?: { accountId: string; profileId: string | null };
   projectId: string;
@@ -42,7 +44,7 @@ export interface ConversationPromptOptions {
 
 /** Queues a prompt in a local conversation through this node's own chat socket, as a browser would. */
 /** This node's own chat socket for a local conversation, signed as the node, as a browser's would be. */
-async function localChatSocket(options: Pick<ConversationPromptOptions, "projectId" | "engine" | "sessionId" | "label" | "worktreeId" | "author" | "automationProfile">): Promise<{ url: URL; headers: Record<string, string> }> {
+async function localChatSocket(options: Pick<ConversationPromptOptions, "projectId" | "engine" | "sessionId" | "label" | "worktreeId" | "author" | "automationProfile" | "bypassGuardian">): Promise<{ url: URL; headers: Record<string, string> }> {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error(`${options.label} executor server is not listening`);
   const url = new URL(`ws://127.0.0.1:${address.port}/ws`);
@@ -53,6 +55,7 @@ async function localChatSocket(options: Pick<ConversationPromptOptions, "project
     ? { accountId: actor.accountId, username: actor.username, email: actor.email ?? null, homeNodeId: actor.homeNodeId }
     : undefined);
   const parameters: Record<string, string> = { projectId: options.projectId, sessionId: options.sessionId, sessionPath: `draft:${options.engine}:${options.sessionId}`, nodeSession: "1", ...(options.worktreeId ? { worktreeId: options.worktreeId } : {}), ...(author ? { author: encodeAuthor(author) } : {}) };
+  if (options.bypassGuardian) parameters.bypassGuardian = "1";
   if (options.automationProfile) parameters.automationProfile = JSON.stringify(options.automationProfile);
   for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, value);
   return { url, headers: await runtimeSocketHeaders((await getClusterNode()).id, url) };
