@@ -128,11 +128,9 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   await page.getByTestId("control-bob-harness").waitFor({ state: "visible" });
   await page.getByTestId("bob-head-settings").click();
   await page.getByTestId("control-chat-settings").waitFor({ state: "hidden" });
-  // Background updates sit at the top of the chat, not in a column beside it; they stay open, since some carry buttons.
-  const updates = page.getByTestId("control-chat-updates");
-  assert.equal(await updates.evaluate((node) => node.open), true);
-  const [messagesBox, updatesBox] = [await page.getByTestId("control-chat-messages").boundingBox(), await updates.boundingBox()];
-  assert.ok(messagesBox && updatesBox && updatesBox.y < messagesBox.y, "background updates sit above the messages");
+  // Bob's window is the conversation only: no background updates and no item filters in it (the board shows the items).
+  assert.equal(await page.getByTestId("control-chat-updates").isVisible(), false, "no background updates in Bob's window");
+  assert.equal(await page.getByTestId("control-chat-filters").isVisible(), false, "no item filters in Bob's window");
 
   // The board, its characters and scoreboard; the stage toggle shows the Dashboard and the column stays.
   await stage.getByTestId("control-tab-live").click();

@@ -60,6 +60,11 @@
 :root img[src^="/icon"], :root[data-palette] img[src^="/icon"] { filter: hue-rotate(-14deg) saturate(0.72); }
 :root[data-theme="dark"] img[src^="/icon"] { filter: hue-rotate(-23deg) saturate(0.8) brightness(1.08); }
 
+/* ---------- scrollbars ---------- */
+/* Every scroll box gets the thin, quiet bar the lists already had (Bob's chat, the composer and the cards did not). The same
+   variables as everywhere else, so Safari keeps its WebKit fallback in styles.css; a box that hides its bar says so itself. */
+* { scrollbar-width: var(--sb-width, thin); scrollbar-color: var(--sb-color, var(--line-strong) transparent); }
+
 /* ---------- type ---------- */
 body { font-family: var(--sans); }
 /* Young Serif has one weight; a bolder setting would be faked by the browser. */

@@ -3,7 +3,7 @@ import type { AuthSession } from "../../auth.js";
 import { BobActionError, runBobAction } from "../../control-center/bob-actions.js";
 import { actingAccountFromSession } from "../../account-context.js";
 import { bobDatabase, countBobMessages, getBobMessage, listBobMessages, readBobSettings, rememberBobAccount, writeBobSettings, type BobImportanceFilter } from "../../control-center/bob-store.js";
-import { GitReviewRunError, handleBobMessage } from "../bob.js";
+import { GitReviewRunError, bobWorking, handleBobMessage } from "../bob.js";
 import { sendError } from "../http-auth.js";
 import { QuickNoteLaunchError } from "../quick-note-dispatch.js";
 import { fileAttachmentSchema, imageAttachmentSchema } from "../schemas.js";
@@ -97,6 +97,7 @@ app.get("/api/control-center/bob/messages", async (request, response, next) => {
     response.json({
       messages: listBobMessages(db, session.accountId, { project: query.project, importance: query.importance, cleared: query.cleared === "1" }),
       waiting: countBobMessages(db, session.accountId, "important" as BobImportanceFilter),
+      working: bobWorking(session.accountId),
     });
   } catch (error) {
     if (error instanceof z.ZodError) { sendError(response, 400, "Invalid filter"); return; }

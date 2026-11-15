@@ -39,12 +39,22 @@ function applyLayout() {
 
 const DECIDED_BY_BOB = /^(Decision model|No decision model|The decision model)/;
 
+/** The parts of Joint Bob that answer what the person typed (or pressed): their lines belong to the chat, not to the background updates. */
+const ANSWERING_SOURCES = new Set(["Organize", "Display", "Automations", "Dashboards", "Team", "Move jobs"]);
+
 /** Who wrote a message: you, Bob answering you, or the part of Joint Bob its line names first (Review check, Guardian, Auto respond…). */
 function sourceOf(message) {
   if (message.role === "user") return { label: "You", detail: null };
   if (!message.via || DECIDED_BY_BOB.test(message.via)) return { label: "Bob", detail: message.via };
   const [label, ...rest] = message.via.split(" · ");
   return { label, detail: rest.join(" · ") || null };
+}
+
+/** Whether a message is part of the conversation with Bob: what the person wrote and every answer to it. The rest are background updates. */
+function inChat(message) {
+  if (message.role === "user") return true;
+  const { label } = sourceOf(message);
+  return label === "Bob" || ANSWERING_SOURCES.has(label) || label.startsWith("You chose ");
 }
 
 /** The conversation a message is about: its Open button names it; once the buttons are used, the title it starts with. */
@@ -300,6 +310,10 @@ function renderMessage(message) {
  * timeline again (which happens as soon as the server saves the message) does not take them away.
  */
 const pending = new Map();
+/** What the server says Bob is answering: after a reload this page's own `pending` is empty, but he still works. */
+let working = [];
+let workingTimer = null;
+const WORKING_POLL_MS = 3000;
 let sendError = null;
 let pendingTicker = null;
 
@@ -368,24 +382,26 @@ let drawnPending = 0;
 
 function renderMessages() {
   const visible = messages.filter(matchesFilter);
-  const drawing = JSON.stringify([visible, [...pending.keys()], [...busy.keys()], sendError, replying?.id ?? null, replying?.push?.id ?? null, filter.importance]);
+  const drawing = JSON.stringify([visible, [...pending.keys()], working.map((work) => work.id), [...busy.keys()], sendError, replying?.id ?? null, replying?.push?.id ?? null, filter.importance]);
   if (drawing === drawnMessages) return;
   drawnMessages = drawing;
   const list = elements.controlChatMessages;
   const view = JSON.stringify(filter);
-  const follow = view !== drawnView || pending.size > drawnPending || list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  const follow = view !== drawnView || pending.size + working.length > drawnPending || list.scrollHeight - list.scrollTop - list.clientHeight < 40;
   const top = list.scrollTop;
   drawnView = view;
-  drawnPending = pending.size;
+  drawnPending = pending.size + working.length;
   const writing = Boolean(document.activeElement?.closest?.(".control-reply"));
-  const extra = [...[...pending.values()].map(renderPending), ...(sendError ? [element("div", "control-msg error", sendError)] : [])];
+  // A message sent from this page shows its own working line; the server's list covers the ones this page did not send (after a reload, or from another window).
+  const waitingOn = pending.size ? [...pending.values()] : working;
+  const extra = [...waitingOn.map(renderPending), ...(sendError ? [element("div", "control-msg error", sendError)] : [])];
   const updates = document.getElementById("controlChatUpdates");
   const updateTop = updates.scrollTop;
-  const background = visible.filter((message) => sourceOf(message).label !== "Bob" && message.role !== "user");
+  const background = visible.filter((message) => !inChat(message));
   updates.replaceChildren(...background.map(renderMessage));
   updates.scrollTop = updateTop;
   document.getElementById("controlChatUpdateCount").textContent = `(${background.length})`;
-  const shown = visible.filter((message) => message.role === "user" || sourceOf(message).label === "Bob").map(renderMessage);
+  const shown = visible.filter(inChat).map(renderMessage);
   const empty = !visible.length && filter.importance === "cleared" ? [element("p", "control-empty", "Nothing was cleared yet.")] : [];
   list.replaceChildren(...shown, ...empty, ...extra);
   list.scrollTop = follow ? list.scrollHeight : top;
@@ -395,7 +411,7 @@ function renderMessages() {
     box.closest(".control-entry").scrollIntoView({ block: "nearest" });
   }
   clearInterval(pendingTicker);
-  pendingTicker = pending.size || busy.size ? setInterval(tickPending, 1000) : null;
+  pendingTicker = waitingOn.length || busy.size ? setInterval(tickPending, 1000) : null;
 }
 
 /** Whether the chat shows a message: a cleared item only in the cleared view, which shows nothing else. */
@@ -434,7 +450,12 @@ async function readMessages() {
   if (filter.project) query.set("project", filter.project);
   if (filter.importance === "cleared") query.set("cleared", "1");
   else if (filter.importance) query.set("importance", filter.importance);
-  const next = (await api(`/api/control-center/bob/messages?${query}`)).messages;
+  const read = await api(`/api/control-center/bob/messages?${query}`);
+  const next = read.messages;
+  working = read.working ?? [];
+  // While Bob works on a message this page did not send, the page asks again until he is done (an error leaves no message to announce it).
+  clearTimeout(workingTimer);
+  if (working.length && !pending.size) workingTimer = setTimeout(() => void loadMessages().catch(() => undefined), WORKING_POLL_MS);
   const leaving = filter.importance === "cleared" ? [] : next.filter((message) => message.resolvedAt && entryOf(message.id));
   await Promise.all(leaving.map((message) => vanish(entryOf(message.id), settledWord(message), { collapse: true })));
   messages = next;

@@ -283,15 +283,15 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.waitForFunction((palette) => (document.documentElement.dataset.palette ?? null) === palette, before.palette);
   assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--ui-zoom-chat")), before.zoom);
 
-  // The filters narrow the timeline by importance and by project.
-  await page.getByTestId("control-chat-importance-important").click();
+  // The filters narrow the timeline by importance and by project (Bob's window hides their row on a wide screen, so they are pressed in place).
+  await page.getByTestId("control-chat-importance-important").dispatchEvent("click");
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-chat-entry"]').length === 1);
   assert.match(await page.getByTestId("control-chat-entry").innerText(), /Prod 5xx at 14%/);
-  await page.getByTestId("control-chat-importance-reports").click();
+  await page.getByTestId("control-chat-importance-reports").dispatchEvent("click");
   await page.waitForFunction(() => document.querySelector('[data-testid="control-chat-entry"]')?.textContent?.includes("Morning report"));
-  await page.getByTestId("control-chat-importance-all").click();
+  await page.getByTestId("control-chat-importance-all").dispatchEvent("click");
   // Choosing a project focuses the whole control center on it: the chat, the board's cards, and where a new message goes.
-  await page.getByTestId("control-chat-filter-project").selectOption({ label: "DAK Live" });
+  await page.getByTestId("control-chat-filter-project").selectOption({ label: "DAK Live" }, { force: true });
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-chat-entry"]').length === 2);
   assert.deepEqual(await page.getByTestId("control-center-card").evaluateAll((cards) => cards.map((card) => card.getAttribute("data-key"))), ["p2:c2"]);
   assert.equal(await page.getByTestId("control-chat-project").inputValue(), "p2");
@@ -300,7 +300,7 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await page.getByTestId("control-center-card").count(), 3, "the board's own chips focus the chat too");
   await page.getByTestId("control-center-filters").getByText("Joint Bob", { exact: true }).click();
   await page.waitForFunction(() => (document.querySelector('[data-testid="control-chat-filter-project"]') as HTMLSelectElement).value === "p1");
-  await page.getByTestId("control-chat-filter-project").selectOption("");
+  await page.getByTestId("control-chat-filter-project").selectOption("", { force: true });
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-center-card"]').length === 3);
 
   // Each message says where it comes from and which conversation it is about, and one that waits offers every way forward.
@@ -359,10 +359,10 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.locator('[data-key="p1:c3"]').waitFor({ state: "detached" });
   assert.equal(await page.getByTestId("control-center-card").count(), 2, "the other cards stay");
   // The cleared view lists it, with when and why.
-  await page.getByTestId("control-chat-importance-cleared").click();
+  await page.getByTestId("control-chat-importance-cleared").dispatchEvent("click");
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-chat-entry"]').length === 1);
   assert.match(await page.getByTestId("control-chat-cleared").innerText(), /^✓ Cleared .+ · You chose “Done”\.$/);
-  await page.getByTestId("control-chat-importance-all").click();
+  await page.getByTestId("control-chat-importance-all").dispatchEvent("click");
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-chat-entry"]').length > 1);
 
   // Any message of Bob's can be answered or cleared besides its own buttons; a reply goes into the conversation it is about.

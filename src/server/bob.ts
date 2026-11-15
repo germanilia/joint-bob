@@ -216,7 +216,29 @@ export interface BobReply { action: "started" | "answer"; user: BobMessage; repl
  * how much it matters. The decision model decides what the message is, which project it is about and how big the job is,
  * in one batched request; a confident task starts as a conversation in that project, anything else is answered by Bob's agent.
  */
-export async function handleBobMessage(session: AuthSession, input: { message: string; projectId?: string; answerOnly?: boolean; images?: BobAttachments["images"]; files?: BobAttachments["files"]; appearance?: AppearanceContext }): Promise<BobReply> {
+export async function handleBobMessage(session: AuthSession, input: BobMessageInput): Promise<BobReply> {
+  const work = { id: randomUUID(), text: input.message, startedAt: Date.now() };
+  const mine = workingByAccount.get(session.accountId) ?? new Map<string, BobWork>();
+  mine.set(work.id, work);
+  workingByAccount.set(session.accountId, mine);
+  try {
+    return await answerBobMessage(session, input);
+  } finally {
+    mine.delete(work.id);
+    if (!mine.size) workingByAccount.delete(session.accountId);
+  }
+}
+
+type BobMessageInput = { message: string; projectId?: string; answerOnly?: boolean; images?: BobAttachments["images"]; files?: BobAttachments["files"]; appearance?: AppearanceContext };
+
+/** Messages Bob is answering right now, so a page opened or reloaded meanwhile can still say he is working on them. */
+interface BobWork { id: string; text: string; startedAt: number }
+const workingByAccount = new Map<string, Map<string, BobWork>>();
+export function bobWorking(accountId: string): BobWork[] {
+  return [...(workingByAccount.get(accountId)?.values() ?? [])];
+}
+
+async function answerBobMessage(session: AuthSession, input: BobMessageInput): Promise<BobReply> {
   const db = await bobDatabase();
   // Attachments reach the agent that reads the message: Bob's when he answers, or the conversation he starts or continues.
   const attachments: BobAttachments = { images: input.images ?? [], files: input.files ?? [] };
