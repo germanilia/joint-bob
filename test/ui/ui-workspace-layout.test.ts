@@ -201,10 +201,13 @@ test("the details column: Activity, Files, Git and Tasks, More, the two switches
   await page.locator("#autoRespondDialog[open]").waitFor();
   await page.keyboard.press("Escape");
   await page.locator("#autoRespondDialog[open]").waitFor({ state: "detached" });
-  await page.getByTestId("details-link-schedule").click();
+  // Browser, Terminal, Share and Schedule live once, in the ⋯ menu: the column has no row of buttons for them.
+  assert.equal(await page.locator("#detailsLinks, #detailsFoot").count(), 0);
+  await page.getByTestId("chat-more-button").click();
+  await page.getByTestId("chat-cron-button").click();
   await page.locator("#cronDialog[open]").waitFor();
   await page.keyboard.press("Escape");
-  for (const id of ["details-link-browser", "details-link-terminal", "details-link-share", "details-link-schedule"]) assert.equal(await page.getByTestId(id).count(), 1);
+  await page.locator("#cronDialog[open]").waitFor({ state: "detached" });
   // It collapses like the activity pane did, and the header brings it back.
   await page.getByTestId("activity-panel-close").click();
   await page.locator("#activityPanel").waitFor({ state: "hidden" });
@@ -212,29 +215,23 @@ test("the details column: Activity, Files, Git and Tasks, More, the two switches
   await page.locator("#activityPanel").waitFor();
 });
 
-test("the details column keeps its controls together at the top, More shows its three rows at any text size, and every theme draws them readably", async () => {
+test("the details column is tabs and content only, More shows its three rows at any text size, and every theme draws them readably", async () => {
   if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
   await page.getByTestId("activity-activity-tab").click();
   // The test runner wraps named functions in a helper the page does not have.
   await page.evaluate("window.__name = (value) => value");
-  // Browser, Terminal, Share and Schedule sit directly under the segments, above the column's content, each with an icon.
+  // Under the segments comes the content: no row of buttons, no footer. The two switches are the first section of Activity.
   const rows = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-    const links = [...document.querySelectorAll<HTMLElement>("#detailsLinks .ws-link")];
     return {
-      segments: rect("#activityPanel .activity-tabs"), links: rect("#detailsLinks"), body: rect("#activityBody"), foot: rect("#detailsFoot"),
-      icons: links.every((link) => link.querySelector("svg") !== null && link.textContent!.trim().length > 0),
-      cut: links.filter((link) => link.scrollWidth > link.clientWidth + 1 || link.querySelector("span")!.scrollWidth > link.querySelector("span")!.clientWidth + 1).map((link) => link.dataset.testid),
-      inFoot: document.querySelectorAll("#detailsFoot button:not([role=switch])").length,
+      segments: rect("#activityPanel .activity-tabs"), body: rect("#activityBody"), when: rect("#activityWhenStops"), summary: rect("#activitySummary"),
+      buttons: document.querySelectorAll("#activityPanel .activity-panel-header button:not([role=tab]):not(.activity-panel-close):not(.activity-mode)").length,
     };
   });
-  assert.ok(rows.links.top >= rows.segments.bottom && rows.links.top - rows.segments.bottom <= 16, `the actions are right under the segments (${rows.segments.bottom} → ${rows.links.top})`);
-  assert.ok(rows.links.bottom <= rows.body.top, "and above the column's content");
-  assert.ok(rows.foot.top >= rows.body.bottom - 1, "the switches stay at the foot");
-  assert.equal(rows.inFoot, 0, "nothing but the two switches is at the foot");
-  assert.equal(rows.icons, true, "each action has an icon and a label");
-  assert.deepEqual(rows.cut, [], "no label is cut");
-  assert.equal(await page.locator("#detailsFoot [role=switch]").count(), 2);
+  assert.ok(rows.body.top >= rows.segments.bottom && rows.body.top - rows.segments.bottom <= 16, `the content is right under the segments (${rows.segments.bottom} → ${rows.body.top})`);
+  assert.equal(rows.buttons, 0, "no row of buttons sits between the segments and the content");
+  assert.ok(rows.when.top < rows.summary.top, "the switches come before the summary");
+  assert.equal(await page.locator("#activityWhenStops [role=switch]").count(), 2);
 
   // More is a segment with a pane of its own: a click shows the side chat, Story and the Activity overview, each with
   // a line about it and its button. With larger Details text too: the old popover menu opened outside the window.
@@ -308,16 +305,14 @@ test("the details column keeps its controls together at the top, More shows its 
         }
       };
       text("#activityPanel .activity-tabs > button");
-      text("#detailsLinks .ws-link");
       text("#activityPanelCloseButton");
       text("#activityPanel .ws-pane-actions > button");
-      text("#detailsFoot .ws-switch-row");
+      text("#activityWhenStops .ws-switch-row");
       edge("#activityPanel .activity-tabs");
       edge("#activityPanel .activity-tabs > button[aria-selected=true]");
-      edge("#detailsLinks .ws-link");
       edge("#activityPanelCloseButton");
       edge("#activityPanel .ws-pane-actions > button");
-      edge("#detailsFoot .ws-switch-row[aria-checked=false] .ws-switch");
+      edge("#activityWhenStops .ws-switch-row[aria-checked=false] .ws-switch");
       return found;
     });
     assert.deepEqual(weak, [], `${palette || theme}: the column's controls are readable`);

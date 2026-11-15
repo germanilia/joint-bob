@@ -16,16 +16,14 @@ test("activity header uses accessible icons in narrow panels and labels in wide 
     for (const width of [280, 320, 380, 460, 380]) {
       await page.locator(".activity-panel").evaluate((panel, width) => { panel.style.width = `${width}px`; }, width);
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      // The desktop workspace's Files, Git, Tasks and More segments (.ws-seg-tab) and its Browser, Terminal, Share and
-      // Schedule buttons (.ws-links) belong to workspace.css, which this page does not load; the panel's own controls
-      // are measured.
-      await page.locator(".ws-links").evaluateAll((rows) => { for (const row of rows) (row as HTMLElement).hidden = true; });
+      // The desktop workspace's Files, Git, Tasks and More segments (.ws-seg-tab) belong to workspace.css, which this
+      // page does not load; the panel's own controls are measured.
       const labels = page.locator(".activity-tabs button:not(.ws-seg-tab) > span, .activity-mode > span");
       assert.equal(await labels.count(), 4);
       for (const label of await labels.all()) {
         assert.equal(await label.isVisible(), width > 400, `${width}px panel: label visibility must follow panel width, not viewport width`);
       }
-      const buttons = page.locator(".activity-panel-header button:not(.ws-seg-tab):not(.ws-link)");
+      const buttons = page.locator(".activity-panel-header button:not(.ws-seg-tab)");
       await page.locator(".ws-seg-tab").evaluateAll((tabs) => { for (const tab of tabs) (tab as HTMLElement).hidden = true; });
       const boxes = await buttons.evaluateAll(buttons => buttons.map(button => {
         const box = button.getBoundingClientRect();

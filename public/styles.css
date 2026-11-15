@@ -1402,6 +1402,7 @@ select.chat-toolbar-control {
 .model-button.auto { border-color: color-mix(in srgb, var(--live) 45%, var(--line)); background-color: color-mix(in srgb, var(--live) 8%, var(--field)); }
 .model-button.claude { color: var(--claude); border-color: color-mix(in srgb, var(--claude) 30%, transparent); background-color: transparent; }
 .chat-more, .chat-more-actions { display: contents; }
+.chat-more-group, .chat-more-rule { display: none; }
 /* A closed <details> hides its content in current browsers, so flattening it
    into the toolbar needs the content box flattened too. */
 .chat-more::details-content { display: contents; content-visibility: visible; }

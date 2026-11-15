@@ -9,7 +9,6 @@
 import { api } from "./api.js";
 import { elements } from "./elements.js";
 import { openGitReview } from "./git-review.js";
-import { menuIcon } from "./icons.js";
 import { projectGitUrl } from "./project-git-url.js";
 import { openFileAction } from "./project-files.js";
 import { toast } from "./shell.js";
@@ -165,29 +164,20 @@ function syncTasks() {
 }
 if (tasksBadge) new MutationObserver(syncTasks).observe(tasksBadge, { attributes: true, childList: true, characterData: true, subtree: true });
 
-/* ---------- the two switches and the links ---------- */
+/* ---------- the two switches ---------- */
 
 const autoSwitch = byId("detailsAutoRespondSwitch");
 const notifySwitch = byId("detailsNotifySwitch");
-// Browser, Terminal, Share and Schedule, under the segments: each wears its icon and presses the conversation's own button.
-const links = [...document.querySelectorAll("#detailsLinks [data-proxy]")];
-for (const link of links) link.prepend(menuIcon(link.dataset.icon));
 function syncSwitches() {
   autoSwitch.setAttribute("aria-checked", String(elements.autoRespondButton.classList.contains("active")));
   autoSwitch.disabled = elements.autoRespondButton.disabled;
   notifySwitch.setAttribute("aria-checked", String(elements.notifyButton.getAttribute("aria-pressed") === "true"));
-  for (const link of links) {
-    const source = byId(link.dataset.proxy);
-    link.disabled = !source || source.disabled;
-    link.hidden = !source || source.hidden;
-  }
 }
 // Auto respond needs instructions, so its switch opens the same dialog its menu item does.
 autoSwitch.addEventListener("click", () => elements.autoRespondButton.click());
 notifySwitch.addEventListener("click", () => elements.notifyButton.click());
-for (const link of links) link.addEventListener("click", () => byId(link.dataset.proxy)?.click());
 const watch = new MutationObserver(syncSwitches);
-for (const id of ["autoRespondButton", "notifyButton", "openBrowserButton", "openTerminalButton", "shareConversationButton", "chatCronButton"]) {
+for (const id of ["autoRespondButton", "notifyButton"]) {
   const source = byId(id);
   if (source) watch.observe(source, { attributes: true, attributeFilter: ["class", "aria-pressed", "disabled", "hidden"] });
 }
