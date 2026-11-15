@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.317.2 — 2026-11-16
+
+- Showed conversation steps first and expanded, made step markers reveal tucked panels, and moved the side chat out of More into a direct btw tab.
+- Kept the workspace toolbar placement in its own function so the conversation controls initialize correctly.
+
 ## 2.317.1 — 2026-11-16
 
 - Restored app startup after the chat toolbar layout change.

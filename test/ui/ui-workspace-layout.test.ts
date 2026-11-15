@@ -40,9 +40,11 @@ before(async () => {
   environment = await seedDevEnvironment(root, 1);
   node = environment.nodes[0];
   server = await startDevNode(environment, node);
-  browser = await launchChrome({ headless: process.env.HEADED !== "1" });
+  browser = await launchChrome({ headless: process.env.HEADED !== "1", env: { ...process.env, HOME: environment.home } });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block", reducedMotion: "reduce" });
   page.setDefaultTimeout(20_000);
+  // This suite exercises the workspace, not Bob's default landing page.
+  await page.addInitScript(() => localStorage.setItem("joint-bob-start-view", "last"));
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(node.url, { waitUntil: "domcontentloaded" });
   await page.locator("#loginDialog[open]").waitFor({ timeout: 30_000 });
@@ -170,9 +172,18 @@ test("the conversation header: title, project and state on one line, Mark done a
   assert.equal(await visible("chat-resources-button"), true);
 });
 
-test("the details column: Activity, Files, Git and Tasks, More, the two switches and the links", async () => {
+async function openDetailsConversation() {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("workspace-projects-button").click();
+  await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
+  await page.locator(".session-card").first().click();
+  await page.locator("#messages .message.assistant").first().waitFor();
+}
+
+test("the details column: Activity, btw, Files, Git and Tasks, More, the two switches and the links", async () => {
+  await openDetailsConversation();
   if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
-  for (const id of ["activity-activity-tab", "details-files-tab", "details-git-tab", "details-tasks-tab", "details-more-button"]) assert.equal(await visible(id), true, `${id} is a segment`);
+  for (const id of ["activity-activity-tab", "activity-chat-tab", "details-files-tab", "details-git-tab", "details-tasks-tab", "details-more-button"]) assert.equal(await visible(id), true, `${id} is a segment`);
   assert.equal(await visible("activity-summary"), true, "Activity shows the summary");
   await page.getByTestId("details-files-tab").click();
   assert.equal(await visible("details-files"), true);
@@ -187,7 +198,7 @@ test("the details column: Activity, Files, Git and Tasks, More, the two switches
   await page.getByTestId("details-tasks-tab").click();
   assert.equal(await page.getByTestId("details-tasks").getByTestId("background-tasks-open").isVisible(), true, "Tasks opens today's tasks dialog");
   await page.getByTestId("details-more-button").click();
-  for (const id of ["activity-chat-tab", "activity-story-button", "activity-overview-button"]) assert.equal(await visible(id), true, `${id} is under More`);
+  for (const id of ["activity-story-button", "activity-overview-button"]) assert.equal(await visible(id), true, `${id} is under More`);
   await page.getByTestId("activity-chat-tab").click();
   assert.equal(await visible("conversation-chat"), true, "the side chat opens in the column");
   assert.equal(await visible("details-tasks"), false);
@@ -215,7 +226,8 @@ test("the details column: Activity, Files, Git and Tasks, More, the two switches
   await page.locator("#activityPanel").waitFor();
 });
 
-test("the details column is tabs and content only, More shows its three rows at any text size, and every theme draws them readably", async () => {
+test("the details column is tabs and content only, More shows its two rows at any text size, and every theme draws them readably", async () => {
+  await openDetailsConversation();
   if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
   await page.getByTestId("activity-activity-tab").click();
   // The test runner wraps named functions in a helper the page does not have.
@@ -233,15 +245,17 @@ test("the details column is tabs and content only, More shows its three rows at 
   assert.ok(rows.when.top < rows.summary.top, "the switches come before the summary");
   assert.equal(await page.locator("#activityWhenStops [role=switch]").count(), 2);
 
-  // More is a segment with a pane of its own: a click shows the side chat, Story and the Activity overview, each with
+  // More is a segment with a pane of its own: a click shows Story and the Activity overview, each with
   // a line about it and its button. With larger Details text too: the old popover menu opened outside the window.
   for (const zoom of ["1", "1.3"]) {
     await page.evaluate((value) => document.documentElement.style.setProperty("--ui-zoom-activity", value), zoom);
+    await frames();
+    if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
     await page.getByTestId("activity-activity-tab").click();
     await page.getByTestId("details-more-button").click();
     assert.equal(await page.getByTestId("details-more-button").getAttribute("aria-selected"), "true");
     assert.equal(await visible("activity-body"), false);
-    for (const [row, button] of [["details-more-chat", "activity-chat-tab"], ["details-more-story", "activity-story-button"], ["details-more-overview", "activity-overview-button"]]) {
+    for (const [row, button] of [["details-more-story", "activity-story-button"], ["details-more-overview", "activity-overview-button"]]) {
       const seen = await page.getByTestId(row).evaluate((element, id) => {
         const inside = (rect: DOMRect) => rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
         element.scrollIntoView({ block: "nearest" });
@@ -251,7 +265,7 @@ test("the details column is tabs and content only, More shows its three rows at 
     }
   }
   await page.evaluate(() => document.documentElement.style.removeProperty("--ui-zoom-activity"));
-  // The side chat opens from its row; More stays the way back to the three rows.
+  // btw opens directly; More stays the way back to Story and Overview.
   await page.getByTestId("activity-chat-tab").click();
   assert.equal(await visible("conversation-chat"), true);
   await page.getByTestId("details-more-button").click();

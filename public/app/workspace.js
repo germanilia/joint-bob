@@ -63,8 +63,7 @@ const PLACEMENTS = [
   ["chatFilesButton", "detailsFilesActions"],
   ["chatGitButton", "detailsGitActions"],
   ["backgroundTasksButton", "detailsTasksActions"],
-  // The panel's side chat, Story and Activity overview are the three rows of the details column's More segment.
-  ["activityChatTab", "detailsMoreChat"],
+  // Story and Activity overview live in More; btw stays in the tab strip.
   ["activityStoryButton", "detailsMoreStory"],
   ["activityOverviewButton", "detailsMoreOverview"],
 ];
@@ -74,6 +73,7 @@ function applyPlacements() {
   for (const [id, targetId] of PLACEMENTS) {
     const target = byId(targetId);
     place(byId(id), target, targetId === "chatMeta" ? byId("chatCostMeta") : null);
+  }
   placeChipRow();
 }
 
@@ -86,7 +86,6 @@ function applyPlacements() {
  */
 function placeChipRow() {
   byId("chatTopbar").insertBefore(byId("chatToolbar"), byId("chatHeadActions"));
-  }
 }
 
 /* ---------- large text: the details are put away when the conversation would get too narrow ---------- */
@@ -120,6 +119,7 @@ elements.activityToggleButton.addEventListener("click", (event) => {
   // The panel is open already (only put away): the press shows it and must not close it.
   if (!elements.activityPanel.hidden) { event.stopImmediatePropagation(); event.preventDefault(); }
 }, true);
+document.addEventListener("activity-show-steps", () => body.classList.remove("ws-details-tucked"));
 new ResizeObserver(() => syncDetailsFloat()).observe(chatPanel);
 new MutationObserver(() => { syncDetailsFloat(); syncRail(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
 

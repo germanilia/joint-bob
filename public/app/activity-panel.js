@@ -10,9 +10,7 @@ import { state } from "./state.js";
 // thinking — so the main thread reads as what the agent actually said. Each turn's
 // steps are one group here, headed by the prompt that started the turn, and one
 // line under that prompt in the main thread that opens the panel on the group.
-// Above the steps sit the running summary, the AGENTS.md files the agent reads, statistics
-// counted from the steps the page holds, and the skills the summary writer suggests. The
-// steps start collapsed.
+// Steps open first, before the summary, instructions, statistics and rule suggestions.
 
 // Below this width the panel floats over the transcript instead of sharing the row (workspace.css floats the details
 // column there; styles.css's own float starts at 900px, for the layouts the workspace does not cover).
@@ -39,8 +37,8 @@ let chosenOpen = null;
 // The panel was collapsed for the Browser panel rather than by the person, so it comes back with the row.
 let collapsedForBrowser = false;
 let browserShown = false;
-// The steps list stays collapsed until asked for, and stays as last set while the page is open.
-let stepsOpen = false;
+// Steps start visible and stay as last set while the page is open.
+let stepsOpen = true;
 let statsFrame = 0;
 
 const resizeHandle = document.getElementById("activityPanelResize");

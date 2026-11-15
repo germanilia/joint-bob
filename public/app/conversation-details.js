@@ -1,7 +1,7 @@
-// The conversation's details column on the desktop workspace: Activity / Files / Git / Tasks / More as
+// The conversation's details column on the desktop workspace: Activity / btw / Files / Git / Tasks / More as
 // one segmented control, directly under it the buttons for Browser, Terminal, Share and Schedule, and
 // at the foot the two "when it stops" switches. Files, Git and Tasks are summaries; their buttons open
-// today's full screens. More is a pane too (the side chat, Story and the Activity overview, each with
+// today's full screens. More is a pane too (Story and the Activity overview, each with
 // a line saying what it is): it was a popover menu once, placed with window coordinates inside a
 // column that is zoomed by the text size, so with larger text it opened outside the window. The column is the activity panel: it opens,
 // closes and resizes as that panel always did (activity-panel.js). The phone keeps the panel as it was.
@@ -42,11 +42,12 @@ function showPane(name) {
 for (const [name, tab] of Object.entries(TABS)) tab.addEventListener("click", () => showPane(name));
 // The panel's own tabs take the column back; their handlers show their pane.
 for (const tab of [activityTab, chatTab]) tab.addEventListener("click", () => showPane(null), true);
+document.addEventListener("activity-show-steps", () => showPane(null));
 // The phone has no summaries (its sheet holds these actions): a window that narrows into it shows the activity again.
 const desktop = matchMedia("(min-width: 701px)");
 desktop.addEventListener("change", () => { if (!desktop.matches && shown) activityTab.click(); });
 // Left and Right walk the segments, as they do between the panel's own two tabs.
-const segments = [activityTab, TABS.files, TABS.git, TABS.tasks, TABS.more];
+const segments = [activityTab, chatTab, TABS.files, TABS.git, TABS.tasks, TABS.more];
 for (const tab of segments) tab.addEventListener("keydown", (event) => {
   if ((event.key !== "ArrowLeft" && event.key !== "ArrowRight") || !desktop.matches) return;
   event.preventDefault();

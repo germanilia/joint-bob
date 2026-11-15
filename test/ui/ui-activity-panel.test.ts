@@ -127,8 +127,10 @@ export default async (input) => {
   });
   assert.equal(configured.status, 200, JSON.stringify(configured.body));
 
-  browser = await launchChrome({ headless: process.env.HEADED !== "1" });
+  browser = await launchChrome({ headless: process.env.HEADED !== "1", env: { ...process.env, HOME: environment.home } });
   context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce", serviceWorkers: "block" });
+  // This suite exercises the workspace, not Bob's default landing page.
+  await context.addInitScript(() => localStorage.setItem("joint-bob-start-view", "last"));
   page = await context.newPage();
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   page.on("pageerror", (error) => consoleErrors.push(error.stack || error.message));
@@ -173,6 +175,7 @@ test("activity panel width is draggable and survives browser reopen", async () =
   assert.ok(savedWidth < wider, "right arrow narrows the right-hand panel");
   const storage = await context.storageState();
   const reopened = await browser.newContext({ storageState: storage, viewport: page.viewportSize()! });
+  await reopened.addInitScript(() => localStorage.setItem("joint-bob-start-view", "last"));
   try {
     const fresh = await reopened.newPage();
     await fresh.goto(node.url, { waitUntil: "domcontentloaded" });
@@ -230,9 +233,9 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   assert.equal(await page.getByTestId("chat-activity-toggle").getAttribute("aria-expanded"), "true");
   assert.equal(await panel.locator(".tool-output").count(), 3);
   assert.equal(await panel.locator(".activity-group-prompt").textContent(), "Rotate the staging certificates", "a group is headed by its turn's prompt");
-  // The steps start collapsed under their count; the summary, statistics and rule suggestions start open.
-  assert.equal(await page.getByTestId("activity-list").isVisible(), false, "steps are collapsed by default");
-  assert.equal(await page.getByTestId("activity-steps-toggle").getAttribute("aria-expanded"), "false");
+  // Steps are visible first; the summary, statistics and rule suggestions also start open.
+  assert.equal(await page.getByTestId("activity-list").isVisible(), true, "steps are expanded by default");
+  assert.equal(await page.getByTestId("activity-steps-toggle").getAttribute("aria-expanded"), "true");
   assert.equal(await page.getByTestId("activity-steps-count").innerText(), "3");
   for (const section of ["activity-summary", "activity-stats", "activity-rules"]) assert.equal(await page.getByTestId(section).evaluate((details: HTMLDetailsElement) => details.open), true, `${section} is open`);
   // Statistics count the steps, their tools and the skills loaded.
@@ -242,7 +245,9 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   assert.deepEqual(await page.getByTestId("activity-stats-tools").getByTestId("activity-usage-row").evaluateAll((rows) => rows.map((row) => row.querySelector(".activity-usage-name")?.textContent + " " + row.querySelector(".activity-usage-count")?.textContent)), ["Bash 1", "Read 1", "Skill 1"]);
   assert.deepEqual(await page.getByTestId("activity-stats-skills").getByTestId("activity-usage-row").evaluateAll((rows) => rows.map((row) => row.querySelector(".activity-usage-name")?.textContent)), ["cert-tools"]);
   assert.equal(await page.getByTestId("activity-rules-body").innerText(), "No rule suggestions for this project.");
-  // The steps open under their header and collapse again.
+  // Steps can still collapse and reopen.
+  await page.getByTestId("activity-steps-toggle").click();
+  assert.equal(await page.getByTestId("activity-list").isVisible(), false);
   await page.getByTestId("activity-steps-toggle").click();
   await page.getByTestId("activity-list").waitFor();
   assert.equal(await page.getByTestId("activity-steps-toggle").getAttribute("aria-expanded"), "true");
@@ -303,6 +308,7 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   assert.equal(await usage.evaluate((fold: HTMLDetailsElement) => fold.open), false);
   assert.equal(await usage.locator("summary").innerText(), "Tools and skills (4)");
   await usage.locator("summary").click();
+  await stats.scrollIntoViewIfNeeded();
   await waitFrames();
   const covered = await stats.evaluate((box) => [...box.querySelectorAll(".activity-stat, .activity-usage-row")].filter((item) => {
     const rect = item.getBoundingClientRect();
@@ -314,7 +320,7 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   const widths = await page.getByTestId("activity-summary").evaluate((box) => ({ box: [box.scrollWidth, box.clientWidth], text: [box.querySelector(".activity-summary-text").scrollWidth, box.querySelector(".activity-summary-text").clientWidth] }));
   assert.ok(widths.box[0] <= widths.box[1] && widths.text[0] <= widths.text[1] + 1, `the summary does not scroll sideways (${JSON.stringify(widths)})`);
 
-  // A long turn's steps fill the panel, and the summary keeps its room above them.
+  // A long turn's steps fill the top of the panel without squeezing the overview below.
   await page.evaluate(async () => {
     const transcript = await import("/app/chat-transcript.js");
     for (let index = 0; index < 300; index += 1) {
@@ -327,8 +333,8 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   assert.ok(summaryBox && summaryBox.height >= 120, `the summary is not squeezed by a long steps list (${summaryBox?.height}px)`);
   assert.equal(await page.getByTestId("activity-summary-text").locator("strong", { hasText: "Goal" }).isVisible(), true);
   const stepsBox = await page.getByTestId("activity-list").boundingBox();
-  assert.ok(stepsBox && summaryBox && stepsBox.y >= summaryBox.y + summaryBox.height, "the steps list scrolls below the summary");
-  // The summary stays at the top while the steps scroll.
+  assert.ok(stepsBox && summaryBox && stepsBox.y + stepsBox.height <= summaryBox.y, "the steps list scrolls above the summary");
+  // Scrolling within the steps does not shift the overview.
   await page.getByTestId("activity-list").evaluate((list) => { list.scrollTop = list.scrollHeight; });
   await waitFrames();
   assert.deepEqual(await page.getByTestId("activity-summary").boundingBox(), summaryBox, "scrolling the steps leaves the summary where it is");
@@ -447,7 +453,12 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   // The turn's skills move to its newest answer, and the statistics count the new ones.
   assert.equal(await skillsChip.count(), 1);
   assert.match(await skillsChip.innerText(), /skills\s*cert-tools, db-tools/);
-  assert.equal(await skillsChip.evaluate((chip) => chip.closest(".message-actions")?.previousElementSibling?.textContent?.includes("Migration 42 finished")), true);
+  await page.locator("#messages .message.assistant", { hasText: "Migration 42 finished" }).waitFor();
+  assert.equal(await skillsChip.evaluate((chip) => {
+    const actions = chip.closest(".message-actions");
+    const answer = actions.closest(".message") || actions.previousElementSibling;
+    return answer.textContent.includes("Migration 42 finished");
+  }), true);
   await page.waitForFunction(() => document.querySelector("[data-testid='activity-stats-status']")?.textContent === "305 steps · 2 skills");
   await working.click();
   await page.waitForFunction(() => document.querySelector("#activityList .activity-group.highlighted"));
@@ -518,10 +529,10 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
       panelScrolls: element.scrollHeight > element.clientHeight + 1,
       overviewClipped: overview.scrollHeight > overview.clientHeight + 1,
       listClipped: list.scrollHeight > list.clientHeight + 1,
-      headingBelowOverview: heading.top >= overview.getBoundingClientRect().bottom - 0.5,
+      headingAboveOverview: heading.bottom <= overview.getBoundingClientRect().top + 0.5,
     };
   });
-  assert.deepEqual(phoneLayout, { panelScrolls: true, overviewClipped: false, listClipped: false, headingBelowOverview: true });
+  assert.deepEqual(phoneLayout, { panelScrolls: true, overviewClipped: false, listClipped: false, headingAboveOverview: true });
   // The header and its close button stay in reach at the end of a long list.
   await panel.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await waitFrames();
@@ -535,6 +546,7 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
 test("the instructions section shows both AGENTS.md files and creates and edits them in the file editor", async () => {
   // A page of its own: the first test leaves its page mid-conversation on a phone-sized window.
   const own = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce", serviceWorkers: "block" });
+  await own.addInitScript(() => localStorage.setItem("joint-bob-start-view", "last"));
   const page = await own.newPage();
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   page.on("pageerror", (error) => consoleErrors.push(error.stack || error.message));

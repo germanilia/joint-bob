@@ -494,12 +494,12 @@
             <header class="activity-panel-header">
               <div class="activity-tabs" role="tablist" aria-label="Conversation panel">
                 <button type="button" role="tab" id="activityActivityTab" aria-label="Activity" title="Activity" aria-selected="true" aria-controls="activityBody" data-testid="activity-activity-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/><path d="M17 8.5h1M17 11.5h1M17 14.5h1"/></svg><span>Activity</span></button>
-                <button type="button" role="tab" id="activityChatTab" aria-label="Chat" title="Chat" aria-selected="false" aria-controls="conversationChat" data-testid="activity-chat-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5a2 2 0 0 1-2 2H8l-4.5 4v-14a2 2 0 0 1 2-2H18a2 2 0 0 1 2 2z"/></svg><span>Chat</span></button>
+                <button type="button" role="tab" id="activityChatTab" aria-label="btw" title="btw: ask about this conversation" aria-selected="false" aria-controls="conversationChat" data-testid="activity-chat-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5a2 2 0 0 1-2 2H8l-4.5 4v-14a2 2 0 0 1 2-2H18a2 2 0 0 1 2 2z"/></svg><span>btw</span></button>
                 <!-- Desktop details column: summaries of the files, Git and tasks; the full screens open from them. -->
                 <button type="button" role="tab" class="ws-seg-tab" id="detailsFilesTab" aria-selected="false" aria-controls="detailsFiles" data-details-pane="files" data-testid="details-files-tab"><span>Files</span></button>
                 <button type="button" role="tab" class="ws-seg-tab" id="detailsGitTab" aria-selected="false" aria-controls="detailsGit" data-details-pane="git" data-testid="details-git-tab"><span>Git</span><b class="ws-seg-count" id="detailsGitCount" data-testid="details-git-count" hidden></b></button>
                 <button type="button" role="tab" class="ws-seg-tab" id="detailsTasksTab" aria-selected="false" aria-controls="detailsTasks" data-details-pane="tasks" data-testid="details-tasks-tab"><span>Tasks</span><b class="ws-seg-count" id="detailsTasksCount" data-testid="details-tasks-count" hidden></b></button>
-                <button type="button" class="ws-seg-tab ws-seg-more" id="detailsMoreButton" role="tab" aria-selected="false" aria-controls="detailsMore" data-details-pane="more" title="Side chat, Story and the Activity overview" data-testid="details-more-button"><span>More</span></button>
+                <button type="button" class="ws-seg-tab ws-seg-more" id="detailsMoreButton" role="tab" aria-selected="false" aria-controls="detailsMore" data-details-pane="more" title="Story and the Activity overview" data-testid="details-more-button"><span>More</span></button>
               </div>
               <div class="activity-modes" data-testid="activity-modes">
                 <button class="ghost compact activity-mode" id="activityStoryButton" data-shortcut-hint="explainConversation" type="button" data-testid="activity-story-button" title="Open this conversation's story: what changed, how it works and why" aria-label="Story"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg><span>Story</span></button>
@@ -507,8 +507,7 @@
               </div>
               <button class="ghost icon-button activity-panel-close" id="activityPanelCloseButton" type="button" aria-label="Collapse activity" title="Collapse activity" data-testid="activity-panel-close"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg></button>
             </header>
-            <!-- One scrolling column: the overview (summary, statistics, rule suggestions), then the
-                 steps, which open on demand and scroll inside their own list. -->
+            <!-- Steps come first, followed by the overview, in one scrolling column. -->
             <section id="conversationChat" class="conversation-chat" role="tabpanel" aria-labelledby="activityChatTab" data-testid="conversation-chat" hidden>
               <details class="conversation-chat-settings" data-testid="conversation-chat-settings">
                 <summary data-testid="conversation-chat-settings-toggle">Chat settings</summary>
@@ -533,6 +532,10 @@
               </form>
             </section>
             <div class="activity-body" id="activityBody" role="tabpanel" aria-labelledby="activityActivityTab" data-testid="activity-body">
+            <button class="activity-steps-heading" id="activityStepsToggle" type="button" aria-expanded="true" aria-controls="activityList" title="Show or collapse the steps" data-testid="activity-steps-toggle"><span class="activity-section-chevron" aria-hidden="true">›</span><span>Steps</span><span class="activity-steps-count" id="activityStepsCount" data-testid="activity-steps-count"></span></button>
+            <div class="activity-list" id="activityList" data-testid="activity-list">
+              <p class="activity-empty">Tool calls and thinking from this conversation appear here.</p>
+            </div>
             <div class="activity-overview" id="activityOverview" data-testid="activity-overview">
               <!-- Desktop details column: the two "when it stops" switches (app/conversation-details.js), the first thing in Activity. -->
               <details class="activity-section activity-when-stops" id="activityWhenStops" open data-testid="activity-when-stops">
@@ -567,10 +570,6 @@
                 <div class="activity-section-body activity-rules-body" id="activityRulesBody" data-testid="activity-rules-body"></div>
               </details>
             </div>
-            <button class="activity-steps-heading" id="activityStepsToggle" type="button" aria-expanded="false" aria-controls="activityList" title="Show or collapse the steps" data-testid="activity-steps-toggle"><span class="activity-section-chevron" aria-hidden="true">›</span><span>Steps</span><span class="activity-steps-count" id="activityStepsCount" data-testid="activity-steps-count"></span></button>
-            <div class="activity-list" id="activityList" data-testid="activity-list" hidden>
-              <p class="activity-empty">Tool calls and thinking from this conversation appear here.</p>
-            </div>
             </div>
             <!-- Desktop details column (app/conversation-details.js). Summaries only: each opens today's full screen. -->
             <section class="ws-pane" id="detailsFiles" role="tabpanel" aria-labelledby="detailsFilesTab" data-testid="details-files" hidden>
@@ -589,15 +588,10 @@
               <p class="ws-pane-note" id="detailsTasksNote">Commands the agent left running: servers, watchers, long builds.</p>
               <div class="ws-pane-actions" id="detailsTasksActions"></div>
             </section>
-            <!-- More: what did not fit the four segments. Always three rows; app/workspace.js places the panel's own
-                 Chat, Story and Overview buttons into them on the desktop. -->
+            <!-- More holds Story and Overview; btw stays in the tab strip. -->
             <section class="ws-pane" id="detailsMore" role="tabpanel" aria-labelledby="detailsMoreButton" data-testid="details-more" hidden>
               <div class="ws-pane-head"><h3>More</h3><small>About this conversation</small></div>
               <div class="ws-more-list" id="detailsMoreMenu" data-testid="details-more-menu">
-                <div class="ws-more-item" data-testid="details-more-chat">
-                  <div class="ws-more-text"><b>Side chat</b><p>Ask about this conversation without adding to it. Questions and answers stay here.</p></div>
-                  <div class="ws-pane-actions" id="detailsMoreChat"></div>
-                </div>
                 <div class="ws-more-item" data-testid="details-more-story">
                   <div class="ws-more-text"><b>Story</b><p>What changed, how it works and why, written and read aloud. It is written the first time you open it.</p></div>
                   <div class="ws-pane-actions" id="detailsMoreStory"></div>
