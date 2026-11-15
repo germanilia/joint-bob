@@ -61,8 +61,17 @@ const settingsButton = button("ghost compact bob-head-settings", "bob-head-setti
 settingsButton.title = "Bob's agent, model, decision model, auto respond, unfinished work, system control, memory, Guardian and Telegram";
 settingsButton.addEventListener("click", () => openSettings());
 
+// The workspace footer (theme, global Settings) is hidden on this page, so the top bar carries both and clicks the footer's buttons.
+const themeButton = button("ghost compact bob-head-theme", "bob-head-theme", "Theme");
+themeButton.title = "Theme and text size";
+themeButton.addEventListener("click", () => elements.workspacePersonButton.click());
+const appSettingsButton = button("ghost compact bob-head-app-settings", "bob-head-app-settings", "Settings");
+appSettingsButton.title = "Joint Bob settings";
+appSettingsButton.addEventListener("click", () => elements.settingsButton.click());
+
 header.prepend(avatar);
 heading.after(tag, contextHere, watching, pause, settingsButton);
+elements.controlCenterCloseButton.before(themeButton, appSettingsButton);
 
 /* ---------- folding: Bob's chat folds into the "Ask Bob" button ---------- */
 

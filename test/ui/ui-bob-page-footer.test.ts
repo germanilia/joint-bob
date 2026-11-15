@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 
-test("Bob's page keeps the theme and Settings buttons in a footer row that does not cover the page", { timeout: 120_000 }, async (t) => {
+test("Bob's page puts the theme and Settings buttons in its top bar, next to Exit", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
@@ -13,18 +13,19 @@ test("Bob's page keeps the theme and Settings buttons in a footer row that does 
   await page.getByTestId("projects-open-control-center-button").click();
   await page.locator("body.bob-desk.view-control").waitFor();
 
-  const theme = page.getByTestId("workspace-person-button");
-  const settings = page.getByTestId("settings-open-button");
+  const theme = page.locator(".bob-head-theme");
+  const settings = page.locator(".bob-head-app-settings");
+  const exit = page.getByTestId("control-center-close-button");
   await theme.waitFor({ state: "visible" });
   await settings.waitFor({ state: "visible" });
-  const viewport = page.viewportSize()!;
-  const panel = (await page.locator("#controlCenterPanel").boundingBox())!;
+  const bar = (await page.locator("#controlCenterPanel > .panel-bar").boundingBox())!;
+  const exitBox = (await exit.boundingBox())!;
   for (const button of [theme, settings]) {
     const box = (await button.boundingBox())!;
-    assert.ok(box.y >= panel.y + panel.height - 1, "the button sits below the control center, not over it");
-    assert.ok(box.y + box.height <= viewport.height && box.x + box.width <= viewport.width, "the button is inside the window");
+    assert.ok(box.y >= bar.y && box.y + box.height <= bar.y + bar.height, "the button is in the top bar");
+    assert.ok(box.x + box.width <= exitBox.x, "the button sits to the left of Exit");
   }
-  assert.equal(await page.locator("#workspaceSide").isVisible(), false, "the side list stays hidden");
+  assert.equal(await page.locator("#workspaceFoot").isVisible(), false, "the footer stays hidden on this page");
 
   await theme.click();
   await page.locator("dialog[open]").first().waitFor();

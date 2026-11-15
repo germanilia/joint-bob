@@ -200,6 +200,7 @@ export const elements = {
   markAllPendingReviewedButton: document.querySelector("#markAllPendingReviewedButton"),
   closePendingReviewsButton: document.querySelector("#closePendingReviewsButton"),
   settingsButton: document.querySelector("#settingsButton"),
+  workspacePersonButton: document.querySelector("#workspacePersonButton"),
   settingsDialog: document.querySelector("#settingsDialog"),
   settingsForm: document.querySelector("#settingsForm"),
   cancelSettingsButton: document.querySelector("#cancelSettingsButton"),
