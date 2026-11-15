@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.317.1 — 2026-11-16
+
+- Restored app startup after the chat toolbar layout change.
+- Kept Telegram assistant replies in their existing conversation instead of a temporary worktree.
+- Updated twin conversations immediately after a remote turn, even when conversation metadata has not arrived yet.
+
 ## 2.317.0 — 2026-11-16
 
 - On a wide conversation panel, the agent, model, effort and machine chips now sit on the title line beside Mark done instead of on a second line; laptop-width panels keep the two lines.
