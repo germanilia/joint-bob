@@ -768,7 +768,6 @@ export function closeGroupPage() {
   body.classList.remove("ws-page-open");
 }
 
-  else requestAnimationFrame(() => { if (desktop.matches) placeChipRow(); });
 /** Every card of the group is one continuous list that scrolls (long-scroll.js); a refresh draws it again where it was, another group starts at the top. */
 function renderGroupPage() {
   if (pageGroup.startsWith(TEAM_PAGE)) { renderTeamPage(pageGroup.slice(TEAM_PAGE.length)); return; }
@@ -887,6 +886,7 @@ function applyLayout() {
   applyPlacements();
   body.classList.toggle("ws-desktop", desktop.matches);
   if (!desktop.matches) closeGroupPage();
+  else requestAnimationFrame(() => { if (desktop.matches) placeChipRow(); });
   syncColumn();
   if (started && !loaded) scheduleGroupsRefresh(0);
 }
