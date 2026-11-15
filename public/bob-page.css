@@ -375,7 +375,8 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
   .bob-fab { cursor: grab; touch-action: none; user-select: none; }
   .bob-fab.dragging { cursor: grabbing; transition: none; box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), 0 0 0 6px color-mix(in srgb, var(--accent) 24%, transparent); }
   body.bob-desk.view-control:not(.bob-chat-folded) .control-main > .control-chat {
-    position: fixed; z-index: 40; flex: none; width: 440px; height: 640px; min-width: 340px; min-height: 380px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
+    /* Above the conversation popup (z-index 40, later in the DOM): the floating chat must never sit behind it. */
+    position: fixed; z-index: 41; flex: none; width: 440px; height: 640px; min-width: 340px; min-height: 380px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
     resize: both; overflow: hidden; border: 0; border-radius: 22px; box-shadow: 0 0 0 1px var(--line-strong), 0 24px 60px rgb(0 0 0 / 45%);
   }
   body.bob-desk.view-control:not(.bob-chat-folded) :is(.control-chat-resize, #controlChatSide) { display: none; }
