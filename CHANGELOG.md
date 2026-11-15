@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.305.3 — 2026-11-15
+
+- Picking another model for a Pi conversation in a project whose cluster requires a subscription pool works again. It failed with "Selected cluster subscription pool requires pool-aware execution". The picker now shows the new model, and your next message runs on it through the pool.
+- Reopening such a conversation shows the model its next message will use, not the one its last reply ran on.
+
 ## 2.305.2 — 2026-11-15
 
 - On Bob's page, a conversation you reviewed and did not mark done now stays in the Inbox, marked Reviewed, and the list's search finds it. Before, it was missing from the Inbox, from All and from the search.
