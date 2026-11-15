@@ -241,7 +241,8 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
 
 /* the rows */
 .control-list-rows { flex: 1; min-height: 0; overflow: auto; padding-bottom: 90px; }
-.control-list-summary { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 12px 16px 2px; font-size: 13px; color: var(--muted); }
+/* baseline: the serif number is larger than its label, so items line up on their text, not their tops. */
+.control-list-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 12px 16px 6px; font-size: 13px; line-height: 1.2; color: var(--muted); }
 .control-list-count b { font: 400 17px var(--serif); color: var(--heading); }
 .control-list-count.needs-you b { color: var(--amber); }
 .control-list-count.running b { color: var(--accent); }
