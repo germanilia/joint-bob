@@ -10,6 +10,7 @@ import { defaultSkillRoots, parseResourceFrontmatter, readConfiguredSkillPath, r
 import { getSettings } from "../../settings.js";
 import { resolveDataDirectory } from "../../data-directory.js";
 import { agentResourcePaths, managedMarkdownFiles } from "../../agent-resources.js";
+import { assertClusterResourcesPresent } from "../../cluster-agent-resources.js";
 import { activeMcpServers, assertNoBlockedNativeResources } from "../../resource-activation.js";
 import { projectFolderResources } from "../../project-folder-resources.js";
 import type { HarnessResources } from "../resource-contract.js";
@@ -198,10 +199,11 @@ export function claudeIsolationEnvironment(): NodeJS.ProcessEnv {
 }
 
 /** `hooks` are the app's own Claude hooks for this run, added to whatever the project defines. */
-export function claudeResourceIsolationArgs(cwd: string, resources: string[], memoryDirectory?: string, hooks: Record<string, unknown[]> = {}): string[] {
+export function claudeResourceIsolationArgs(cwd: string, resources: string[], memoryDirectory?: string, hooks: Record<string, unknown[]> = {}, projectId?: string): string[] {
   if (!getSettings().strictResourceIsolation) {
-    assertNoBlockedNativeResources("claude", "mcp");
-    const managed = activeMcpServers("claude", managedMcpBridgeConfigs());
+    assertNoBlockedNativeResources("claude", "mcp", projectId);
+    const managed = activeMcpServers("claude", managedMcpBridgeConfigs(), projectId);
+    assertClusterResourcesPresent(projectId, "claude", "mcp", Object.keys(managed));
     const combined = Object.keys(managed).length ? [...resources, "--mcp-config", isolatedMcpConfig(managed)] : resources;
     return Object.keys(hooks).length ? [...combined, "--settings", settingsFile(JSON.stringify({ hooks }))] : combined;
   }
@@ -217,7 +219,8 @@ export function claudeResourceIsolationArgs(cwd: string, resources: string[], me
     if (!stat.isFile() || stat.size > 2097152) throw new Error("Strict isolation refuses an unreadable or oversized enterprise MCP config");
     const map = json(claudeEnterpriseMcpPath()).mcpServers;
     if (!map || typeof map !== "object" || Array.isArray(map)) throw new Error("Strict isolation refuses an invalid enterprise MCP config");
-    if (Object.keys(activeMcpServers("claude", object(map))).length !== Object.keys(map).length) throw new Error("Cannot safely suppress a blocked enterprise MCP server");
+    assertClusterResourcesPresent(projectId, "claude", "mcp", Object.keys(map));
+    if (Object.keys(activeMcpServers("claude", object(map), projectId)).length !== Object.keys(map).length) throw new Error("Cannot safely suppress a blocked enterprise MCP server");
   } else args.push("--strict-mcp-config");
   const servers: Record<string, unknown> = {};
   for (let i = 0; i < resources.length; i++) {
@@ -244,7 +247,8 @@ export function claudeResourceIsolationArgs(cwd: string, resources: string[], me
     const reserved = Object.keys(servers).find(reservedMcpServerName);
     if (reserved !== undefined) throw new Error(reservedMcpServerMessage(reserved));
     for (const name of Object.keys(managed)) if (Object.hasOwn(servers, name)) throw new Error(`MCP server ${name} is configured both natively and in Joint Bob. Remove one copy.`);
-    const active = activeMcpServers("claude", { ...servers, ...managed });
+    const active = activeMcpServers("claude", { ...servers, ...managed }, projectId);
+    assertClusterResourcesPresent(projectId, "claude", "mcp", Object.keys(active));
     if (Object.keys(active).length) args.push("--mcp-config", isolatedMcpConfig(active));
   }
   return args;

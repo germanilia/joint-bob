@@ -16,6 +16,8 @@ import { accountInCluster, addClusterLocalMember, clusterLocalMembers, forgetClu
 import { unshareOwnedProjects } from "../../selected-sharing.js";
 import { sendError } from "../http-auth.js";
 import { app } from "../state.js";
+import { getClusterAgentPolicy } from "../../cluster-agent-policy.js";
+import { pullClusterAgentPolicy } from "./cluster-agent-policy.js";
 
 const uuid = z.string().uuid();
 const epochSchema = z.object({ expectedEpoch: z.number().int().positive() }).strict();
@@ -151,7 +153,7 @@ app.post("/api/cluster/v2/subscription-pools/granted", handler(async (request, r
 }));
 
 function requiredClusterFeatures(db: Awaited<ReturnType<typeof clusterV2Database>>, clusterId: string): string[] {
-  return [...(getClusterSubscriptionPool(db, clusterId) ? ["subscription-pools-v1"] : [])];
+  return [...(getClusterSubscriptionPool(db, clusterId) ? ["subscription-pools-v1"] : []), ...(getClusterAgentPolicy(db, clusterId) ? ["cluster-agent-policy-v1"] : [])];
 }
 function poolManifest(owner: string, poolId: string): ClusterSubscriptionPoolManifest {
   const pool = getSubscriptionPool(owner, poolId);
@@ -341,6 +343,7 @@ app.post("/api/clusters/join", handler(async (request, response) => {
   const result = await joinV2Membership(payload.link, payload.requestId);
   addClusterLocalMember(db, result.snapshot.body.clusterId, person.accountId);
   await pullPoolAssignmentAfterJoin(db, local.id, result.snapshot.body.clusterId);
+  await pullClusterAgentPolicy(db, local.id, result.snapshot.body.clusterId);
   void import("../cluster-hubs.js").then(({ pullFromHubs }) => pullFromHubs()).catch((error) => console.warn("Cluster event catch-up after join failed", error));
   // The new members missed earlier shares; ask them once rather than polling.
   // Loaded lazily: a static import closes a module cycle that deadlocks startup.
@@ -413,7 +416,7 @@ app.post("/api/cluster/v2/subscription-pools/capability", handler(async (request
   const sender = machineOnly(response), payload = z.object({ clusterId: uuid }).strict().parse(request.body);
   const db = await clusterV2Database();
   if (!listSharingClusterMembers(db, payload.clusterId).some(({ nodeId }) => nodeId === sender)) throw new ClusterV2HttpError(403, "Forbidden");
-  response.json({ features: ["subscription-pools-v1"] });
+  response.json({ features: ["subscription-pools-v1", "cluster-agent-policy-v1"] });
 }));
 app.post("/api/cluster/v2/subscription-pools/snapshot", handler(async (request, response) => {
   const sender = machineOnly(response), payload = z.object({ clusterId: uuid }).strict().parse(request.body);

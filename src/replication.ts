@@ -24,6 +24,7 @@ import { isTwinOrigin, translateLegacyAccountEvent } from "./account-keys.js";
 import { applyMessageAuthorEvent } from "./message-authors.js";
 import { applyProviderProfileEvent, applyProviderPoolSelectionEvent, applyProviderSelectionEvent } from "./provider-profiles/store.js";
 import { applySubscriptionPoolEvent } from "./provider-profiles/pools.js";
+import { applyClusterAgentPolicyEvent, applyClusterAgentPolicySourceEvent } from "./cluster-agent-policy.js";
 import { applyClusterSubscriptionPoolEvent } from "./provider-profiles/pool-sharing.js";
 import { applyStoryEvent } from "./story-replication.js";
 import { applySystemAiEvent } from "./system-ai-replication.js";
@@ -407,6 +408,8 @@ const REPLICATION_APPLIERS: Record<string, ReplicationApplier> = {
   "provider.pool": applySubscriptionPoolEvent,
   "provider.poolSelection": applyProviderPoolSelectionEvent,
   "provider.poolAssignment": applyClusterSubscriptionPoolEvent,
+  "cluster.agentPolicy": applyClusterAgentPolicyEvent,
+  "cluster.agentPolicySource": applyClusterAgentPolicySourceEvent,
   story: applyStoryEvent,
   "system.ai": applySystemAiEvent,
 };

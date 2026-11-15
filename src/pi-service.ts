@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isInternalSession } from "./internal-sessions.js";
+import { assertClusterResourcesPresent, clusterPolicySkillPaths, prepareClusterPolicySkills } from "./cluster-agent-resources.js";
 import { withResourcePass } from "./resource-pass.js";
 import { mapWithConcurrency } from "./concurrency.js";
 import { jsonlLineSlices, parseJsonlLineSkippingDamage, parseJsonlSkippingDamage } from "./jsonl.js";
@@ -736,6 +737,7 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
     credentialsNow: credentials,
     resources: (conversationId) => asTeamMember(options.projectId, conversationId, async () => {
       if (isTeamMemorySession(options.projectId, conversationId)) return { isolatedTeam: true, strictResourceIsolation: true, managedMcpServers: [], packagesFile: '', extensions: [], prompts: [], themes: [], agentsFiles: [], skillRoots: [], managedSkillRoot: '', blockedSkillNames: [] };
+      await prepareClusterPolicySkills(options.projectId, "pi");
       const strict = getSettings().strictResourceIsolation;
       const configured = withProjectFolderResources(getScopedResourcePaths(options.projectId, conversationId, "pi"), options.cwd);
       const memory = strict ? await prepareProjectMemory(options.projectId, conversationId) : undefined;
@@ -747,11 +749,14 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
       const policy = account ? await (await import("./personal-assistants.js")).personalAssistantSettings(account.accountId, options.projectId, "pi", conversationId) : undefined;
       // Everything below is synchronous: one pass reads the shared resource state once.
       return withResourcePass(() => {
-      const native = Object.fromEntries(Object.entries(activeMcpServers("pi", nativeMcpServerConfigs()))
+      const native = Object.fromEntries(Object.entries(activeMcpServers("pi", nativeMcpServerConfigs(), options.projectId))
         .filter(([name]) => !policy || policy.mcpServerNames === null || policy.mcpServerNames.includes(name))) as Record<string, ManagedMcpServer>;
+      const managed = activeMcpServers("pi", managedMcpBridgeConfigs(), options.projectId);
+      assertClusterResourcesPresent(options.projectId, "pi", "mcp", [...Object.keys(native), ...Object.keys(managed)]);
+      assertClusterResourcesPresent(options.projectId, "pi", "plugins", []);
       return {
         strictResourceIsolation: strict,
-        managedMcpServers: Object.keys(activeMcpServers("pi", managedMcpBridgeConfigs())),
+        managedMcpServers: Object.keys(managed),
         ...(account ? { nativeMcp: { accountId: account.accountId, servers: native } } : {}),
         packagesFile: agentResourcePaths().piPackages,
         extensions: resources.extensions,
@@ -759,7 +764,7 @@ export function piSessionHooks(options: PiSessionOptions): PiCoreHooks {
         themes: resources.themes,
         agentsFiles: [...instructions.map((file) => ({ path: file.path, content: file.content })), ...agentCapabilityInstructionFiles(options.projectId, conversationId)],
         // Strict isolation already brings `.pi/skills` in with the rest of the project folder.
-        skillRoots: [activeSkillRoot("pi", undefined, scope), ...configured.global.skills.map((root) => activeSkillRoot("pi", root, scope)), ...(strict ? [] : [activeSkillRoot("pi", path.join(options.cwd, ".pi", "skills"), scope)]), ...configured.project.skills.map((root) => activeSkillRoot("pi", root, scope))],
+        skillRoots: [...clusterPolicySkillPaths(options.projectId, "pi").map(root => activeSkillRoot("pi", root, scope)), activeSkillRoot("pi", undefined, scope), ...configured.global.skills.map((root) => activeSkillRoot("pi", root, scope)), ...(strict ? [] : [activeSkillRoot("pi", path.join(options.cwd, ".pi", "skills"), scope)]), ...configured.project.skills.map((root) => activeSkillRoot("pi", root, scope))],
         managedSkillRoot: agentResourcePaths().sharedSkills,
         blockedSkillNames: blocked,
       };

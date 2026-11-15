@@ -36,4 +36,8 @@ test("ordinary clusters require host consent and manager selection; revocation r
   assert.equal((await api(nodeB, sessionB, "PUT", grantPath, { enabled: false })).status, 200);
   const proxy = await signedNodeRequest(environment, nodeA, nodeB, "POST", "/api/cluster/v2/subscription-pools/proxy", { clusterId, poolId: pool.body.pool.id, profileId: profile.body.profile.id }); assert.equal(proxy.status, 403); await proxy.arrayBuffer();
   const retained = await api<{ assignment: { poolId: string } }>(nodeA, sessionA, "GET", `/clusters/${clusterId}/subscription-pool`); assert.equal(retained.body.assignment.poolId, pool.body.pool.id, "revocation never silently restores personal credentials");
+  const policy = { rules: [{ name: "blocked-fixture", action: "block", harness: "all" }] };
+  assert.equal((await api(nodeB, sessionB, "PUT", `/clusters/${clusterId}/agent-policy`, { expectedEpoch: 1, sourceRelayNodeId: null, policy })).status, 403);
+  const saved = await api(nodeA, sessionA, "PUT", `/clusters/${clusterId}/agent-policy`, { expectedEpoch: 1, sourceRelayNodeId: null, policy }); assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const stale = await api(nodeA, sessionA, "PUT", `/clusters/${clusterId}/agent-policy`, { expectedEpoch: 2, sourceRelayNodeId: null, policy }); assert.equal(stale.status, 409, JSON.stringify(stale.body));
 });

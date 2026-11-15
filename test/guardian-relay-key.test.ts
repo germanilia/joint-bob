@@ -6,7 +6,10 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { getClusterNode } from "../src/cluster.js";
-import { getOrCreateClusterIdentity } from "../src/cluster-identity.js";
+import { ensureMembershipSchema } from "../src/cluster-membership.js";
+import { agentPolicyBodySchema, setClusterAgentPolicy } from "../src/cluster-agent-policy.js";
+import { addSharingMember, createSharingCluster, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
+import { getOrCreateClusterIdentity, pinClusterPublicKey } from "../src/cluster-identity.js";
 import { clusterV2Database } from "../src/cluster-v2-store.js";
 import { checkGuardian } from "../src/guardian/check.js";
 import { PRODUCTION_RULE } from "../src/guardian/production-rule.js";
@@ -19,7 +22,7 @@ import { addProject } from "../src/store.js";
 
 const jevPolicy = guardianRelayPolicySchema.parse({ model: "jev", layaUrl: "", rules: [PRODUCTION_RULE] });
 
-test("a relay's Jev rules apply to every member, are asked through the relay, and count as protection", async (t) => {
+test("a relay's Jev rules reach a cluster's projects, are asked through the relay, and count as protection", async (t) => {
   const relay = new DatabaseSync(":memory:");
   const relayId = randomUUID();
   const identity = getOrCreateClusterIdentity(relay, relayId);
@@ -29,18 +32,34 @@ test("a relay's Jev rules apply to every member, are asked through the relay, an
   const admitted = { ...member, status: "admitted" as const, relayNodeId: relayId, fingerprint: identity.fingerprint };
   t.after(() => { local.prepare("DELETE FROM relay_skill_subscriptions WHERE membership_id=?").run(member.id); local.prepare("DELETE FROM relay_memberships WHERE id=?").run(member.id); relay.close(); });
 
+  ensureMembershipSchema(local);
   updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: false });
-  assert.equal(await productionGuard(), "guardian-off", "nothing is imposed yet");
-  receiveRelayPolicy(local, admitted, identity.publicKey, publishRelayPolicy(relay, relayId, [], undefined, undefined, jevPolicy));
-  assert.equal(await productionGuard(), "on", "no warning below a relay that imposes the production rule");
-  assert.equal((await guardianGroups())[0].relayNodeId, relayId);
-
+  const statement = publishRelayPolicy(relay, relayId, [], undefined, undefined, jevPolicy);
+  receiveRelayPolicy(local, admitted, identity.publicKey, statement);
   const project = await addProject("Guardian key", mkdtempSync(path.join(os.tmpdir(), "guardian-key-")), { writeInstructions: false });
+  const manager = (await getClusterNode()).id, clusterId = randomUUID();
+  createSharingCluster(local, { id: clusterId, name: "Key cluster" }, manager);
+  addSharingMember(local, clusterId, manager, relayId, 1);
+  pinClusterPublicKey(local, relayId, identity.publicKey);
+  registerOwnedResource(local, { kind: "project", id: project.id, ownerNodeId: manager }, manager);
+  setResourceShares(local, manager, "project", project.id, [{ clusterId, projectId: null }]);
+  setClusterAgentPolicy(local, manager, clusterId, { policy: agentPolicyBodySchema.parse({}), sourceRelayNodeId: relayId, sourceStatement: statement }, 1);
+
+  assert.equal(await productionGuard(project.id), "on", "no warning below a relay that imposes the production rule");
+  assert.equal(await productionGuard(), "on", "every cluster policy of this machine imposes it");
+  assert.equal((await guardianGroups(project.id))[0].relayNodeId, relayId);
   const verdict = await checkGuardian({ projectId: project.id, conversationId: "c", harness: "pi", cwd: process.cwd(), canReplaceTool: true },
     { kind: "tool", tool: "bash", category: "commands", input: { command: "ls" } });
   assert.equal(verdict.action, "block", "the relay cannot be reached here, so the check fails closed");
-  assert.match((verdict as { reason: string }).reason, /No route to the relay/);
+  assert.match((verdict as { reason: string }).reason, /Jev did not answer/, "the check went to the relay, which cannot be reached here");
   assert.doesNotMatch((verdict as { reason: string }).reason, /System AI|TypeSafe key/, "the member never looks for a key of its own");
+
+  // A second cluster that imposes nothing leaves the machine as a whole uncovered.
+  const bare = randomUUID();
+  createSharingCluster(local, { id: bare, name: "Bare" }, manager);
+  setClusterAgentPolicy(local, manager, bare, { policy: agentPolicyBodySchema.parse({}), sourceRelayNodeId: null }, 1);
+  assert.equal(await productionGuard(), "guardian-off");
+  assert.equal(await productionGuard(project.id), "on", "the project's own cluster still imposes it");
 });
 
 test("a relay answers only its admitted machines, only while it imposes Jev rules, and with its own key", async () => {

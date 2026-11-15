@@ -6,7 +6,7 @@ import { type ConversationModel, routedSummaryModel, type SummaryRun } from "../
 import { getHarness } from "../harnesses.js";
 import { listDiscoveredHarnesses } from "../harnesses/registry.js";
 import { resourceOwner } from "../ownership.js";
-import { relaySummaryPolicies } from "../relay/resource-policy.js";
+import { projectAgentPolicies } from "../cluster-agent-policy.js";
 import { activeRoutingConfig, routingConfigDatabase } from "../routing-configs.js";
 import { type RoutingMapping } from "../routing-policy.js";
 import { type ConversationNote, type KnowledgeProblem, listProposals, normalizedRuleText, proposalHistory, readNotes, readSubjects, writeNote, writeProposal } from "../project-knowledge.js";
@@ -33,8 +33,8 @@ export class DigestError extends Error {
 const AUTO_DELAY_MS = 2_500;
 const CLASSIFIER_INPUT_LIMIT = 8_000;
 
-export async function summaryPolicyNow(): Promise<EffectiveSummaryPolicy> {
-  return effectiveSummaryPolicy(relaySummaryPolicies(await clusterV2Database()));
+export async function summaryPolicyNow(projectId?: string): Promise<EffectiveSummaryPolicy> {
+  return effectiveSummaryPolicy(projectAgentPolicies(await clusterV2Database(), projectId).map(layer => ({ relay: layer.source, summary: layer.policy.summary })));
 }
 
 /** What the page shows about the policy: when summaries update and who writes them. */
@@ -164,7 +164,7 @@ async function writeDigest(project: ProjectRecord, conversationId: string, live:
   const unimportant = (await sessionFeedbackOverrides())[conversationId]?.feedback?.rating === "unimportant";
   const knowledge = unimportant ? undefined : digestKnowledge(project, conversationId);
   const instructions = digestPrompt(previous?.summary, knowledge, nodeSummaryInstructions());
-  const run = await summaryRun(await summaryPolicyNow(), project, live, messages, lastHarness, material);
+  const run = await summaryRun(await summaryPolicyNow(project.id), project, live, messages, lastHarness, material);
   const model: DigestModel = { harnessId: run.harnessId, provider: run.provider, modelId: run.modelId, source: run.source };
   const override = process.env.JOINT_BOB_DIGEST_GENERATOR;
   let answer: string;
@@ -276,7 +276,7 @@ export function startConversationDigests(): void {
     pendingAuto.set(key, setTimeout(() => {
       pendingAuto.delete(key);
       void (async () => {
-        if ((await summaryPolicyNow()).updates !== "each-message") return;
+        if ((await summaryPolicyNow(shared.projectId)).updates !== "each-message") return;
         const project = await getProject(shared.projectId);
         if (project) requestDigestQuietly(project, shared.conversationId, conversationLiveModel(shared));
       })().catch((error) => console.warn("Conversation summary scheduling failed", error));

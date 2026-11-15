@@ -1,3 +1,4 @@
+import { getClusterAgentPolicy } from "../cluster-agent-policy.js";
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { createMembershipCluster, createMembershipInvitation, getMembershipSnapshot, redeemMembershipInvitation, removeMembershipMember, type MembershipJoinRequest, type SignedMembershipSnapshot } from "../cluster-membership.js";
@@ -17,7 +18,7 @@ export function relayPeerRequestAllowed(db: DatabaseSync, local: string, peer: s
   if (!groups.length) return false;
   // These handlers authorize saved cluster membership and each signed policy/grant themselves.
   // A transport lease must not revoke the policy or block its catch-up traffic.
-  if (pathname.startsWith("/api/cluster/v2/subscription-pools/")
+  if (pathname.startsWith("/api/cluster/v2/subscription-pools/") || pathname.startsWith("/api/cluster/v2/agent-policy/")
     || pathname === "/api/cluster/v2/relay" || pathname === "/api/cluster/v2/relay/pull") return true;
   if (!groups.some(group => relaySharingGroupActive(db, group.cluster_id))) return false;
   // Social requests (directory, groups, direct requests) authorize their own operation and account.
@@ -55,7 +56,7 @@ export function relaySharingInvitation(db: DatabaseSync, relayNodeId: string, no
   if (relayMachine(db, nodeId)?.status !== "admitted") throw new Error("Machine is not admitted to this relay");
   const clusterId = ensureRelaySharingGroup(db, relayNodeId, name);
   // While a pool is attached, a machine that cannot honour it must not join, as for a cluster invite.
-  return createMembershipInvitation(db, relayNodeId, relayNodeId, clusterId, 1, Date.now(), [...(getClusterSubscriptionPool(db, clusterId) ? ["subscription-pools-v1"] : [])]);
+  return createMembershipInvitation(db, relayNodeId, relayNodeId, clusterId, 1, Date.now(), [...(getClusterSubscriptionPool(db, clusterId) ? ["subscription-pools-v1"] : []), ...(getClusterAgentPolicy(db, clusterId) ? ["cluster-agent-policy-v1"] : [])]);
 }
 
 export function redeemRelaySharingInvitation(db: DatabaseSync, relayNodeId: string, nodeId: string, request: MembershipJoinRequest, secret: string): SignedMembershipSnapshot {
@@ -63,6 +64,7 @@ export function redeemRelaySharingInvitation(db: DatabaseSync, relayNodeId: stri
   if (machine?.status !== "admitted" || request.member.nodeId !== nodeId || request.member.publicKey !== machine.publicKey || request.clusterId !== relaySharingGroupId(relayNodeId)) throw new Error("Machine is not admitted to this relay");
   // An invitation issued before a pool was attached does not carry the requirement.
   if (getClusterSubscriptionPool(db, request.clusterId) && !request.features?.includes("subscription-pools-v1")) throw new Error("Pool protocol support is required to join this relay group");
+  if (getClusterAgentPolicy(db, request.clusterId) && !request.features?.includes("cluster-agent-policy-v1")) throw new Error("Cluster policy protocol support is required to join this relay group");
   const snapshot = redeemMembershipInvitation(db, relayNodeId, request, secret);
   recordMembershipEndpoints(db, snapshot);
   return snapshot;

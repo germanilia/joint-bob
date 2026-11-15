@@ -12,7 +12,7 @@ const uuid = z.string().uuid().regex(/^[0-9a-f-]+$/);
 const name = z.string().trim().min(1).max(80);
 const positive = z.number().int().safe().positive();
 const featureIds = z.array(z.string().trim().min(1).max(80)).max(20).refine((values) => new Set(values).size === values.length);
-const supportedFeatures = new Set(["subscription-pools-v1"]);
+const supportedFeatures = new Set(["subscription-pools-v1", "cluster-agent-policy-v1"]);
 const signature = z.string().regex(/^[A-Za-z0-9_-]{86}$/);
 const invitationSecret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const key = z.string().max(4096).superRefine((value, context) => { try { clusterPublicKeyFingerprint(value); } catch { context.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid Ed25519 public key" }); } });

@@ -7,13 +7,26 @@ import type { AddressInfo } from "node:net";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { agentResourcePaths } from "../src/agent-resources.js";
-import { getOrCreateClusterIdentity } from "../src/cluster-identity.js";
-import { defaultRelayResourceSettings, emptyRelayEnabledResources, publishRelayPolicy } from "../src/relay/resource-policy.js";
+import { agentPolicyBodySchema, setClusterAgentPolicy } from "../src/cluster-agent-policy.js";
+import { getClusterNode } from "../src/cluster.js";
+import { addSharingMember, createSharingCluster, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
+import { getOrCreateClusterIdentity, pinClusterPublicKey } from "../src/cluster-identity.js";
+import { defaultRelayResourceSettings, emptyRelayEnabledResources, publishRelayPolicy, type SignedRelaySkillPolicy } from "../src/relay/resource-policy.js";
 import { fetchRelaySkillBundle, serveSkillBundle } from "../src/relay/skill-bundle.js";
 import { admitMachine, createMembership, updateMembership } from "../src/relay/store.js";
 import { buildSkillBundle } from "../src/skill-sharing.js";
 
 const NAME = "relay-delivery-fixture";
+async function scopedPolicy(db: DatabaseSync, publicKey: string, statement: SignedRelaySkillPolicy) {
+  const manager = (await getClusterNode()).id, clusterId = randomUUID(), projectId = randomUUID();
+  createSharingCluster(db, { id: clusterId, name: "Skill policy cluster" }, manager);
+  addSharingMember(db, clusterId, manager, statement.body.relayNodeId, 1);
+  pinClusterPublicKey(db, statement.body.relayNodeId, publicKey);
+  registerOwnedResource(db, { kind: "project", id: projectId, ownerNodeId: manager }, manager);
+  setResourceShares(db, manager, "project", projectId, [{ clusterId, projectId: null }]);
+  setClusterAgentPolicy(db, manager, clusterId, { policy: agentPolicyBodySchema.parse({}), sourceRelayNodeId: statement.body.relayNodeId, sourceStatement: statement }, 1);
+  return { manager, clusterId, projectId };
+}
 
 test("an admitted machine downloads only the skills the relay enforces, verified against the signed digest", async () => {
   const relayDb = new DatabaseSync(":memory:"), followerDb = new DatabaseSync(":memory:");
@@ -203,14 +216,18 @@ test("an enforced skill replaces every other copy with its name for the agents i
     receiveRelayPolicy(db, { ...membership, status: "admitted", relayNodeId: relayId, fingerprint: relayIdentity.fingerprint }, relayIdentity.publicKey, statement);
     assert.equal(await syncRelaySkills(), true);
     assert.equal(relayDeliveredSkill(NAME), true);
-    assert.equal(activationDecision("skill", NAME, "pi", true, true).enabled, true, "the relay's copy loads");
-    assert.match(activationDecision("skill", NAME, "pi", false).reason, /^Replaced by relay: /, "a native copy is replaced");
-    assert.equal(activationDecision("skill", NAME, "pi", false).enabled, false);
-    assert.equal(activationDecision("skill", NAME, "pi", true).enabled, false, "a cluster or scoped copy is replaced too");
-    assert.equal(activationDecision("skill", NAME, "kiro", false).enabled, true, "kiro is not enforced, so the local decision stands");
+    const { manager, clusterId, projectId } = await scopedPolicy(db, relayIdentity.publicKey, statement);
+    assert.equal(activationDecision("skill", NAME, "pi", true, true, projectId).enabled, true, "the verified policy copy loads");
+    assert.match(activationDecision("skill", NAME, "pi", false, false, projectId).reason, /^Replaced by relay: /, "a native copy is replaced");
+    assert.equal(activationDecision("skill", NAME, "pi", false, false, projectId).enabled, false);
+    assert.equal(activationDecision("skill", NAME, "pi", true, false, projectId).enabled, false, "another scoped copy is replaced too");
+    assert.equal(activationDecision("skill", NAME, "kiro", false, false, projectId).enabled, true, "kiro is not enforced, so the local decision stands");
+    assert.equal(activationDecision("skill", NAME, "pi", false).enabled, true, "unrelated projects keep their choices");
     updateMembership(db, membership.id, { status: "revoked" });
     assert.equal(await syncRelaySkills(), true);
-    assert.equal(activationDecision("skill", NAME, "pi", false).enabled, true, "leaving the relay returns the local decision");
+    assert.equal(activationDecision("skill", NAME, "pi", false, false, projectId).enabled, false, "leaving a transport relay does not revoke the cluster's policy");
+    setClusterAgentPolicy(db, manager, clusterId, { policy: agentPolicyBodySchema.parse({}), sourceRelayNodeId: null }, 1);
+    assert.equal(activationDecision("skill", NAME, "pi", false, false, projectId).enabled, true, "the manager explicitly removes the source");
     assert.equal(await readFile(path.join(managed, "SKILL.md"), "utf8").then(() => true, () => false), false, "syncRelaySkills removes the delivered copy");
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -277,7 +294,7 @@ test("local copies keep working until the relay's copy arrives, and an edited re
 
     reachable = true;
     assert.equal(await syncRelaySkills(), true);
-    assert.equal(activationDecision("skill", NAME, "pi", false).enabled, false, "once delivered, the relay's copy replaces it");
+    assert.equal(activationDecision("skill", NAME, "pi", false).enabled, true, "transport delivery alone never imposes policy on unrelated work");
 
     await writeFile(path.join(managed, "SKILL.md"), `---\nname: ${NAME}\ndescription: Edited here\n---\nEdited\n`);
     updateMembership(db, membership.id, { status: "revoked" });

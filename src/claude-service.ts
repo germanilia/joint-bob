@@ -613,6 +613,8 @@ export async function runClaudeConversationPrompt(options: ClaudeRunOptions & { 
   await prepareProjectMemory(options.projectId, sessionId);
   const defaults = getSettings().conversationDefaults.claude;
   const conversationId = record?.conversationId ?? sessionId;
+  const { prepareClusterPolicySkills } = await import("./cluster-agent-resources.js");
+  await prepareClusterPolicySkills(options.projectId, "claude");
   const { prepareClaudeGuardian } = await import("./guardian/claude.js");
   const guardian = await prepareClaudeGuardian(options.projectId, conversationId, options.cwd, options.prompt);
   await options.beforeStart?.();
@@ -635,7 +637,7 @@ export async function runClaudeConversationPrompt(options: ClaudeRunOptions & { 
  */
 export function spawnClaudeControl(cwd: string, projectId?: string): ChildProcessWithoutNullStreams {
   const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-    ...claudeResourceIsolationArgs(cwd, claudeAgentResourceArgs(undefined, getScopedResourcePaths(projectId, undefined, "claude"), undefined, cwd))];
+    ...claudeResourceIsolationArgs(cwd, claudeAgentResourceArgs(undefined, getScopedResourcePaths(projectId, undefined, "claude"), undefined, cwd), undefined, {}, projectId)];
   const configPath = claudeConfigPath();
   trustWorkspace(cwd);
   return spawnInRuntime(currentRuntime(), getSettings().claude.executable || "claude", args, {
@@ -679,7 +681,7 @@ export function runClaudePrompt(options: ClaudeRunOptions): ClaudeRunHandle {
   if (options.tools) args.push("--tools", options.tools.join(","));
   args.push(...claudeResourceIsolationArgs(options.cwd,
     claudeAgentResourceArgs(undefined, getScopedResourcePaths(options.projectId, options.conversationId, "claude"), options.systemInstructions, options.cwd),
-    conversationMemoryDirectory(options.projectId, options.resumeSessionId ?? options.sessionId), options.hooks));
+    conversationMemoryDirectory(options.projectId, options.resumeSessionId ?? options.sessionId), options.hooks, options.projectId));
 
   const settings = getSettings().claude;
   const configPath = claudeConfigPath();

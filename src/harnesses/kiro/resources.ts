@@ -7,6 +7,7 @@ import { agentResourcePaths } from "../../agent-resources.js";
 import { agentInstructionFiles, renderInstructions } from "../../agent-instructions.js";
 import { prepareProjectMemory } from "../../agent-memory.js";
 import { projectFolderResources, withProjectFolderResources } from "../../project-folder-resources.js";
+import { assertClusterResourcesPresent, prepareClusterPolicySkills, clusterPolicySkillPaths } from "../../cluster-agent-resources.js";
 import { activeSkillRoot, activeMcpConfig, activeMcpServers, assertNoBlockedNativeResources } from "../../resource-activation.js";
 import { agentCapabilityInstructionFiles } from "../../agent-capabilities.js";
 import { agentCredentialContext } from "../../secrets.js";
@@ -210,6 +211,8 @@ export async function kiroAgentProfile(options: HarnessOpenOptions, credentialCo
     // Under strict isolation the project folder's skills are already among the project's.
     ...(strict ? [] : [path.join(options.cwd, ".agents/skills"), path.join(options.cwd, ".kiro/skills")]),
   ];
+  await prepareClusterPolicySkills(options.projectId, "kiro");
+  skillRoots.push(...clusterPolicySkillPaths(options.projectId, "kiro"));
   const skills = [...new Set((await Promise.all(skillRoots.map((root) => skillResource(activeSkillRoot("kiro", root, { projectId: options.projectId, conversationId: options.conversationId ?? options.sessionId }))))).flat())];
   const agentsFile = path.join(options.cwd, "AGENTS.md");
   if (!strict) try {
@@ -222,12 +225,14 @@ export async function kiroAgentProfile(options: HarnessOpenOptions, credentialCo
     ...agentCapabilityInstructionFiles(options.projectId, options.sessionId).map((file) => file.content),
     credentialContext ?? agentCredentialContext(options.projectId, { engine: "kiro", sessionId: options.sessionId }),
   ].filter(Boolean).join("\n\n");
-  if (!strict) assertNoBlockedNativeResources("kiro", "mcp");
+  if (!strict) assertNoBlockedNativeResources("kiro", "mcp", options.projectId);
   const mcpServers = activeMcpServers("kiro", {
-    ...(nodeMcpServersApply(adminAccountId()) ? await readMcpConfig(activeMcpConfig("kiro", resources.mcpConfig)) : {}),
+    ...(nodeMcpServersApply(adminAccountId()) ? await readMcpConfig(activeMcpConfig("kiro", resources.mcpConfig, options.projectId)) : {}),
     ...(strict ? withoutReservedMcpServers(await readMcpConfig(path.join(options.cwd, ".kiro/settings/mcp.json"))) : {}),
     ...managedMcpBridgeConfigs(),
-  });
+  }, options.projectId);
+  assertClusterResourcesPresent(options.projectId, "kiro", "mcp", Object.keys(mcpServers));
+  assertClusterResourcesPresent(options.projectId, "kiro", "plugins", []);
   // Restricted tools are category names, which leave out every MCP tool; Joint Bob's own stay in.
   const offered = Object.hasOwn(mcpServers, JOINT_BOB_TOOL_SERVER);
   offeredBuiltIns.set(name, offered ? jointBobTools().map((tool) => `@${JOINT_BOB_TOOL_SERVER}/${tool.name}`) : []);

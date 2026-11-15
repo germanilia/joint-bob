@@ -1,3 +1,4 @@
+import { getClusterAgentPolicy } from "../cluster-agent-policy.js";
 import { createHash } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import type { DatabaseSync } from "node:sqlite";
@@ -203,6 +204,7 @@ export async function redeemV2Membership(request: Request, response: Response, n
       assertRelayChannelSender(request, sender);
       const activePool = getClusterSubscriptionPool(db, payload.request.clusterId);
       if (activePool && !payload.request.features?.includes("subscription-pools-v1")) throw new ClusterV2HttpError(403, "Pool protocol support is required to join this cluster");
+      if (getClusterAgentPolicy(db, payload.request.clusterId) && !payload.request.features?.includes("cluster-agent-policy-v1")) throw new ClusterV2HttpError(403, "Cluster policy protocol support is required to join this cluster");
       const snapshot = redeemMembershipInvitation(db, local.id, payload.request as MembershipJoinRequest, payload.secret);
       db.exec("RELEASE cluster_v2_bootstrap");
       // Routing configurations are shared explicitly and are never part of the join:

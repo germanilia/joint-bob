@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { loadClusterDirectory } from "./cluster-filters.js";
 import { MAP_PAGE_SIZE, clusterProjectCounts, nodeAvatar, renderClusterMap, renderNodeStrip, searchClusters, visibleClusters } from "./cluster-canvas.js";
+import { installPolicyTab, renderClusterPolicy } from "./cluster-policy.js";
 import { installBudgetTab, renderClusterBudget } from "./cluster-budget.js";
 import { renderClusterSharing } from "./cluster-sharing.js";
 import { activeTwin, badge, declareLost, memberTwinControls, refreshTwinInventory, refreshTwins, renderTwinLink, renderTwinRequests, renderTwinSection, syncLabel, twinName, twinNodeIds, twinSyncProblem, twins, unpair } from "./cluster-twins.js";
@@ -40,6 +41,7 @@ const machineView = document.getElementById("clusterMachineView");
 const machineHead = document.getElementById("clusterMachineHead");
 const clusterTabs = document.getElementById("clusterTabs");
 installBudgetTab(clusterTabs, document.getElementById("clusterDetailPane"));
+installPolicyTab(clusterTabs, document.getElementById("clusterDetailPane"));
 const machineTabs = document.getElementById("clusterMachineTabs");
 
 let data = { clusters: [], projects: [], localNodeId: null, localNode: { name: "", url: "" } };
@@ -295,6 +297,7 @@ function renderDetail(cluster, { sharing, found }) {
   renderReceived(cluster);
   if (sharing) void renderClusterSharing(cluster, { localNodeId: data.localNodeId, onSaved: afterMembershipChange });
   void renderClusterBudget(cluster, nodeName);
+  void renderClusterPolicy(cluster, data.localNodeId, nodeName);
   showClusterTab(clusterTab);
 }
 

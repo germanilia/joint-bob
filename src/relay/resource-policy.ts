@@ -1,3 +1,4 @@
+import { publishClusterPolicySource, cacheClusterPolicySource } from "../cluster-agent-policy.js";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { clusterPublicKeyFingerprint, signClusterMessage, verifyClusterMessage } from "../cluster-identity.js";
@@ -35,6 +36,7 @@ const bodySchema = z.object({
   // Guardian rules every member must apply. Omitted when the relay imposes none.
   guardian: guardianRelayPolicySchema.optional(),
 }).strict();
+export const agentPolicyBodySchema = bodySchema.omit({ relayNodeId: true, version: true }).extend({ rules: relaySkillRulesSchema.default([]) });
 export const signedRelaySkillPolicySchema = z.object({ body: bodySchema, signature: z.string().max(200) }).strict();
 export type RelaySkillRule = z.infer<typeof rule>;
 export type SignedRelaySkillPolicy = z.infer<typeof signedRelaySkillPolicySchema>;
@@ -76,6 +78,7 @@ export function publishRelayPolicy(db: DatabaseSync, nodeId: string, rules: Rela
   if (encodeControl({ t: "skill-policy", statement }).byteLength > MAX_FRAME) throw new Error(`Relay skill policy exceeds the ${MAX_FRAME}-byte frame limit`);
   db.prepare("INSERT INTO relay_skill_policy(singleton,version,rules,extra) VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version,rules=excluded.rules,extra=excluded.extra")
     .run(body.version, JSON.stringify(rules), JSON.stringify({ settings: body.settings, enabled: body.enabled, skillDigests: body.skillDigests, summary: body.summary ?? null, guardian: body.guardian ?? null }));
+  publishClusterPolicySource(db, statement);
   return statement;
 }
 
@@ -93,6 +96,7 @@ export function receiveRelayPolicy(db: DatabaseSync, relay: RelayMembership, pub
   }
   db.prepare("INSERT INTO relay_skill_subscriptions(membership_id,version,statement,updated_at) VALUES(?,?,?,?) ON CONFLICT(membership_id) DO UPDATE SET version=excluded.version,statement=excluded.statement,updated_at=excluded.updated_at")
     .run(relay.id, statement.body.version, JSON.stringify(statement), new Date().toISOString());
+  cacheClusterPolicySource(db, statement);
   return true;
 }
 

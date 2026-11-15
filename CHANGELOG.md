@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.307.0 — 2026-11-15
+
+- A cluster manager can set one policy for a cluster in Settings → Cluster → Policy & pools: block skills by name, set per-agent resource settings, and set Guardian and conversation-summary rules. Members see it read-only and cannot override it.
+- A cluster can take its policy from one of its machines, such as a relay, that publishes it; the policy follows the cluster's shared projects, not the relay that happens to carry a request.
+- A relay's Guardian rules reach a cluster's projects through that policy, and the production-guard warning clears when the cluster imposes the production rule.
+- Joining a relay no longer blocks skills on projects that are not shared into a cluster that chose it as policy source.
+
 ## 2.306.2 — 2026-11-15
 
 - A Telegram message from someone the team does not know yet, such as a `/bind` sent before enrolling, no longer blocks the team bot. The team answers it and drops it, so Telegram stops retrying it and later messages, including enrollment, get through.

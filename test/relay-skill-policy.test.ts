@@ -5,8 +5,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { clusterPublicKeyFingerprint, getOrCreateClusterIdentity } from "../src/cluster-identity.js";
-import { activationDecision, setActivationPreference } from "../src/resource-activation.js";
+import { getClusterNode } from "../src/cluster.js";
+import { agentPolicyBodySchema, setClusterAgentPolicy } from "../src/cluster-agent-policy.js";
+import { addSharingMember, createSharingCluster, ensureClusterSharingPolicySchema, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
+import { clusterPublicKeyFingerprint, getOrCreateClusterIdentity, pinClusterPublicKey } from "../src/cluster-identity.js";
+import { activationDecision as resourceDecision, setActivationPreference } from "../src/resource-activation.js";
 import { relaySkillDirective } from "../src/relay/resource-policy.js";
 import { publishRelayPolicy, publishedRelayPolicy, receiveRelayPolicy, relayPolicySubscriptions } from "../src/relay/resource-policy.js";
 import { createMembership, updateMembership } from "../src/relay/store.js";
@@ -19,6 +22,14 @@ const identity = getOrCreateClusterIdentity(relay, relayId);
 const member = createMembership(local, "https://policy-fixture.example", identity.fingerprint);
 updateMembership(local, member.id, { status: "admitted", relayNodeId: relayId, fingerprint: identity.fingerprint });
 const admitted = { ...member, status: "admitted" as const, relayNodeId: relayId, fingerprint: identity.fingerprint };
+const localId = (await getClusterNode()).id, clusterId = randomUUID(), projectId = "policy-project";
+ensureClusterSharingPolicySchema(local);
+createSharingCluster(local, { id: clusterId, name: "Policy fixture" }, localId);
+addSharingMember(local, clusterId, localId, relayId, 1);
+pinClusterPublicKey(local, relayId, identity.publicKey);
+registerOwnedResource(local, { kind: "project", id: projectId, ownerNodeId: localId }, localId);
+setResourceShares(local, localId, "project", projectId, [{ clusterId, projectId: null }]);
+const activationDecision = (...args: Parameters<typeof resourceDecision>) => resourceDecision(args[0], args[1], args[2], args[3], args[4], projectId);
 
 test.after(() => { local.prepare("DELETE FROM relay_skill_subscriptions WHERE membership_id=?").run(member.id); local.prepare("DELETE FROM relay_memberships WHERE id=?").run(member.id); relay.close(); });
 
@@ -51,6 +62,8 @@ test("relay skill rules are signed, versioned, cached and enforced without an op
   ]);
   assert.equal(first.body.version, 1);
   assert.equal(receiveRelayPolicy(local, admitted, identity.publicKey, first), true);
+  setClusterAgentPolicy(local, localId, clusterId, { policy: agentPolicyBodySchema.parse({}), sourceRelayNodeId: relayId, sourceStatement: first }, 1);
+  assert.equal(resourceDecision("skill", "policy-fixture", "pi", false).enabled, true, "unscoped inventory is not governed by an unrelated relay");
   assert.equal(activationDecision("skill", "policy-fixture", "claude", true).enabled, true);
   assert.equal(activationDecision("skill", "policy-fixture", "pi", false).enabled, false);
   assert.equal(activationDecision("skill", "policy-fixture", "kiro", false).enabled, true);
@@ -84,7 +97,7 @@ test("a relay can restrict connected nodes to its enabled resources and enforce 
   assert.equal(receiveRelayPolicy(local, admitted, identity.publicKey, statement), true);
   try {
     assert.equal(activationDecision("skill", "relay-off", "claude", false).enabled, false, "skills the relay has not enabled are blocked when others are not allowed");
-    assert.match(activationDecision("skill", "relay-off", "claude", false).reason, /^Blocked by relay/);
+    assert.match(activationDecision("skill", "relay-off", "claude", false).reason, /^Blocked by cluster/);
     setActivationPreference("skill", "relay-on", "claude", false);
     assert.equal(activationDecision("skill", "relay-on", "claude", false).enabled, true, "enforce wins over a local disable");
     assert.equal(activationDecision("skill", "relay-on", "kiro", false).enabled, false, "enforcement follows the relay's per-agent state");

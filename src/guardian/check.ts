@@ -129,9 +129,9 @@ async function applyFixes(identity: GuardianIdentity, request: GuardianRequest, 
 export async function checkGuardian(identity: GuardianIdentity, original: GuardianRequest): Promise<GuardianVerdict> {
   const team = !!teamAssistantForConversation(identity.projectId, identity.conversationId);
   const effectCapable = original.kind === 'tool' && (original.category === 'commands' || original.category === 'file-changes');
-  if (team && effectCapable && await productionGuard() !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
-  if (!team && isGuardianExempt(identity.projectId, identity.conversationId)) return { action: "continue" };
-  const groups = await guardianGroups();
+  if (team && effectCapable && await productionGuard(identity.projectId) !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
+  const exempt = !team && isGuardianExempt(identity.projectId, identity.conversationId);
+  const groups = (await guardianGroups(identity.projectId)).filter(group => group.relay || !exempt);
   // Team Pi retains write/edit without a shell. The mandatory production rule checks those effects too.
   if (team && effectCapable) for (const group of groups) group.rules = group.rules.map(rule => rule.id === PRODUCTION_RULE_ID ? { ...rule, check: 'all' } : rule);
   if (!groups.some((group) => group.rules.some((rule) => ruleApplies(rule, original)))) return { action: "continue" };
@@ -179,11 +179,11 @@ function replaced(request: GuardianRequest): GuardianVerdict {
  * A relay rule an agent cannot enforce stops the agent before it starts, so a machine never looks
  * protected when it is not. Claude and Kiro read tool output before anything can check it.
  */
-export async function guardianStartProblem(harness: HarnessId): Promise<string | null> {
+export async function guardianStartProblem(harness: HarnessId, projectId?: string): Promise<string | null> {
   if (harness === "pi") return null;
-  for (const group of await guardianGroups()) {
+  for (const group of await guardianGroups(projectId)) {
     if (!group.relay) continue;
-    const rule = group.rules.find((item) => item.check === "outgoing" || item.check === "all");
+    const rule = group.rules.find((item) => item.enabled && (item.check === "outgoing" || item.check === "all"));
     if (rule) return `${group.source} requires the Guardian rule "${rule.name}", which checks what is sent to the AI. ${getHarness(harness).label} reads tool output before Guardian can check it, so it cannot run here. Use Pi for this conversation.`;
   }
   return null;

@@ -6,7 +6,8 @@ import { agentResourcePaths } from "./agent-resources.js";
 import { parse as parseYaml } from "yaml";
 import { resolveDataDirectory } from "./data-directory.js";
 import { settingsDatabase, value } from "./settings-store.js";
-import { relaySkillDirective, relayResourceDirective, relayPolicyLabel, relayPolicySubscriptions } from "./relay/resource-policy.js";
+import { clusterPolicySkillPaths } from "./cluster-agent-resources.js";
+import { projectAgentPolicies } from "./cluster-agent-policy.js";
 import { receivedOwnerSync } from "./skill-sharing-files.js";
 import { unavailableSkillNames, type SkillScopeContext } from "./scoped-skills.js";
 import type { HarnessId } from "./types.js";
@@ -98,11 +99,11 @@ export function receivedSkillPath(directory: string, root: string, first: string
 }
 
 /** The label of an admitted relay that enforces this skill for this agent, if any. Only skills published with a digest count: their files are delivered. */
-export function relayEnforcedSkill(name: string, harness: HarnessId): string | null {
-  for (const { relay, statement } of relayPolicySubscriptions(settingsDatabase())) {
-    if (!statement || !statement.body.settings.skills.enforce) continue;
-    if (!((statement.body.enabled.skills as Record<string, string[]>)[harness] ?? []).includes(name) || statement.body.skillDigests?.[name] === undefined) continue;
-    return relayPolicyLabel(relay);
+export function relayEnforcedSkill(name: string, harness: HarnessId, projectId?: string): string | null {
+  for (const { source, policy } of projectAgentPolicies(settingsDatabase(), projectId)) {
+    if (!policy.settings.skills.enforce) continue;
+    if (!((policy.enabled.skills as Record<string, string[]>)[harness] ?? []).includes(name) || policy.skillDigests?.[name] === undefined) continue;
+    return source;
   }
   return null;
 }
@@ -116,20 +117,24 @@ export function relayDeliveredSkill(name: string, root = agentResourcePaths().sh
  * `fromRelay` marks the managed copy a relay delivered. When a relay enforces a skill for an
  * agent, that copy is the only one the agent loads; every other copy with the same name is replaced.
  */
-export function activationDecision(kind: ActivatableResource, name: string, harness: HarnessId, shared: boolean, fromRelay = false): ActivationDecision {
+export function activationDecision(kind: ActivatableResource, name: string, harness: HarnessId, shared: boolean, fromRelay = false, projectId?: string): ActivationDecision {
   const preference = activationPreference(kind, name, harness);
-  const directive = kind === "skill" ? relaySkillDirective(settingsDatabase(), name, harness) : null;
-  if (directive?.action === "block") return { enabled: false, reason: `Blocked by relay: ${directive.relays.join(", ")}`, preference, shared };
-  const enforced = kind === "skill" ? relayEnforcedSkill(name, harness) : null;
-  if (enforced && (fromRelay || relayDeliveredSkill(name))) return fromRelay
+  const policies = projectAgentPolicies(settingsDatabase(), projectId);
+  const key = kind === "skill" ? "skills" : kind === "plugin" ? "plugins" : "mcp";
+  const listed = (policy: typeof policies[number]["policy"]) => (policy.enabled[key] as Record<string, string[]>)[harness] ?? [];
+  const blocked = policies.filter(({ policy }) => !policy.settings[key].allowOthers && !listed(policy).includes(name)
+    || kind === "skill" && policy.rules.some(rule => rule.name === name && (rule.harness === "all" || rule.harness === harness) && rule.action === "block"));
+  if (blocked.length) return { enabled: false, reason: `Blocked by cluster: ${blocked.map(layer => layer.source).join(", ")}`, preference, shared };
+  const enforced = kind === "skill" ? relayEnforcedSkill(name, harness, projectId) : null;
+  if (enforced) return fromRelay
     ? { enabled: true, reason: `Enforced by relay: ${enforced}`, preference, shared }
     : { enabled: false, reason: `Replaced by relay: ${enforced}`, preference, shared };
-  const resource = relayResourceDirective(settingsDatabase(), kind, name, harness);
-  if (resource?.action === "block") return { enabled: false, reason: `Blocked by relay: ${resource.relays.join(", ")} (not enabled there)`, preference, shared };
-  if (resource?.action === "enable") return { enabled: true, reason: `Enforced by relay: ${resource.relays.join(", ")}`, preference, shared };
+  const enforcing = policies.filter(({ policy }) => policy.settings[key].enforce && listed(policy).includes(name));
+  if (enforcing.length) return { enabled: true, reason: `Enforced by cluster: ${enforcing.map(layer => layer.source).join(", ")}`, preference, shared };
   if (preference === false) return { enabled: false, reason: "Disabled on this node", preference, shared };
   if (preference === true) return { enabled: true, reason: "Enabled on this node", preference, shared };
-  if (directive?.action === "enable") return { enabled: true, reason: `Enabled by relay: ${directive.relays.join(", ")}`, preference, shared };
+  const enabling = policies.filter(({ policy }) => kind === "skill" && policy.rules.some(rule => rule.name === name && (rule.harness === "all" || rule.harness === harness) && rule.action === "enable"));
+  if (enabling.length) return { enabled: true, reason: `Enabled by cluster: ${enabling.map(layer => layer.source).join(", ")}`, preference, shared };
   const enabled = !shared || autoActivateSharedSkills();
   return { enabled, reason: shared ? enabled ? "Auto-activate shared skills" : "Shared resource awaits activation" : "Local resource", preference, shared };
 }
@@ -159,14 +164,15 @@ export function blockedSkillNames(harness: HarnessId, context: SkillScopeContext
   schema();
   const local = settingsDatabase().prepare("SELECT name FROM resource_activation WHERE kind='skill' AND harness=? AND enabled=0")
     .all(harness) as Array<{ name: string }>;
-  const relay = relayPolicySubscriptions(settingsDatabase())
-    .flatMap(({ statement }) => (statement?.body.rules ?? []).filter((rule) => rule.action === "block" && (rule.harness === "all" || rule.harness === harness)).map((rule) => rule.name));
+  const relay = projectAgentPolicies(settingsDatabase(), context.projectId)
+    .flatMap(({ policy }) => policy.rules.filter((rule) => rule.action === "block" && (rule.harness === "all" || rule.harness === harness)).map((rule) => rule.name));
   return [...new Set([...local.map((item) => item.name), ...relay, ...unavailableSkillNames(context)])];
 }
 
 export function activeSkillRoot(harness: HarnessId, root = agentResourcePaths().sharedSkills, context: SkillScopeContext = {}): string {
   if (!existsSync(root)) return root;
   const unavailable = new Set(unavailableSkillNames(context));
+  const policyCopy = clusterPolicySkillPaths(context.projectId, harness).includes(path.resolve(root));
   const empty = path.join(resolveDataDirectory(), "runtime", "active-skills", harness, "empty");
   if (statSync(root).isFile()) {
     const name = loadSkillName(root, path.basename(path.dirname(root)));
@@ -177,7 +183,7 @@ export function activeSkillRoot(harness: HarnessId, root = agentResourcePaths().
     const canonical = realpathSync(root);
     const received = receivedSkillPath(path.dirname(root), path.dirname(path.dirname(root)), path.basename(path.dirname(root)), root)
       || receivedSkillPath(path.dirname(canonical), path.dirname(path.dirname(canonical)), path.basename(path.dirname(canonical)), canonical);
-    if (!unavailable.has(name) && activationDecision("skill", name, harness, received, received && relayDeliveredSkill(name)).enabled) return root;
+    if (!unavailable.has(name) && activationDecision("skill", name, harness, received, policyCopy, context.projectId).enabled) return root;
     mkdirSync(empty, { recursive: true });
     return empty;
   }
@@ -203,7 +209,7 @@ export function activeSkillRoot(harness: HarnessId, root = agentResourcePaths().
       }
       const first = relative.split(path.sep)[0] || fallback;
       const received = receivedSkillPath(directory, relative ? root : path.dirname(root), first, manifest);
-      if (unavailable.has(name) || !activationDecision("skill", name, harness, received, received && relayDeliveredSkill(name)).enabled) {
+      if (unavailable.has(name) || !activationDecision("skill", name, harness, received, policyCopy, context.projectId).enabled) {
         excluded = true;
         visiting.delete(real);
         return;
@@ -260,13 +266,13 @@ export function assertNoBlockedNativeSkills(harness: HarnessId, cwd: string, add
   }
 }
 
-export function activeMcpServers(harness: HarnessId, servers: Record<string, unknown>): Record<string, unknown> {
+export function activeMcpServers(harness: HarnessId, servers: Record<string, unknown>, projectId?: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(servers).filter(([name]) =>
-    activationDecision("mcp", name, harness, receivedResource("mcp", name)).enabled));
+    activationDecision("mcp", name, harness, receivedResource("mcp", name), false, projectId).enabled));
 }
 
 /** Native discovery cannot reliably remove a separately installed copy. Refuse rather than promise a disable. */
-export function assertNoBlockedNativeResources(harness: HarnessId, kind: "plugin" | "mcp"): void {
+export function assertNoBlockedNativeResources(harness: HarnessId, kind: "plugin" | "mcp", projectId?: string): void {
   schema();
   const names = new Set((settingsDatabase().prepare("SELECT name FROM resource_activation WHERE kind=? AND harness=? UNION SELECT name FROM received_resource_activation WHERE kind=?")
     .all(kind, harness, kind) as Array<{ name: string }>).map(({ name }) => name));
@@ -276,16 +282,16 @@ export function assertNoBlockedNativeResources(harness: HarnessId, kind: "plugin
       if (item.kind === kind) names.add(kind === "plugin" ? item.name.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^\.+/, "_") : item.name);
     }
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  if ([...names].some((name) => !activationDecision(kind, name, harness, receivedResource(kind, name)).enabled)) {
+  if ([...names].some((name) => !activationDecision(kind, name, harness, receivedResource(kind, name), false, projectId).enabled)) {
     throw new Error(`Cannot safely enforce blocked ${harness} ${kind} resources while native discovery is enabled. Turn on strict resource isolation or remove the block.`);
   }
 }
 
-export function activeMcpConfig(harness: HarnessId, file = agentResourcePaths().mcpConfig): string {
+export function activeMcpConfig(harness: HarnessId, file = agentResourcePaths().mcpConfig, projectId?: string): string {
   if (!existsSync(file)) return file;
   const content = JSON.parse(readFileSync(file, "utf8")) as { mcpServers?: Record<string, unknown> };
   // A shared server can't take the name of Joint Bob's own tools, however it got into the file.
-  const mcpServers = activeMcpServers(harness, withoutReservedMcpServers(content.mcpServers ?? {}));
+  const mcpServers = activeMcpServers(harness, withoutReservedMcpServers(content.mcpServers ?? {}), projectId);
   const json = JSON.stringify({ ...content, mcpServers });
   const destination = path.join(resolveDataDirectory(), "runtime", "active-mcp", harness,
     `${createHash("sha256").update(json).digest("hex")}.json`);

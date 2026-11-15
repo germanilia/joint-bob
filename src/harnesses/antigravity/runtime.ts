@@ -159,6 +159,8 @@ class AntigravitySession implements HarnessSession {
   async preflight(): Promise<void> { return this.withProfile(() => this.checkReady()); }
 
   private async checkReady(): Promise<void> {
+    const { assertClusterResourceSupport } = await import("../../cluster-agent-resources.js");
+    assertClusterResourceSupport(this.options.projectId, "antigravity");
     const environment = await this.environment(), home = this.profile ? environment.HOME : undefined;
     await checkAntigravityExecutable(this.options.cwd, environment, home);
     try { await probeAntigravity(this.options.cwd, environment, home); }

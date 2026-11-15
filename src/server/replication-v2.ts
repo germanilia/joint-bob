@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { accountOfSomeoneElse, resourceOwner } from "../ownership.js";
+import { getClusterAgentPolicy } from "../cluster-agent-policy.js";
 import { getClusterNode } from "../cluster.js";
 import { ensurePeerEndpointSchema, type PeerEndpoint } from "../cluster-peer-endpoints.js";
 import { signClusterRequest } from "../cluster-protocol.js";
@@ -106,6 +107,8 @@ export const EVENT_SCOPES: Readonly<Record<string, "project" | "account" | "twin
   "provider.pool": "twins-only",
   "provider.poolSelection": "twins-only",
   "provider.poolAssignment": "cluster",
+  "cluster.agentPolicy": "cluster",
+  "cluster.agentPolicySource": "cluster",
   // Routing configurations have their own distribution (routing-configs.ts).
   "cluster.routing": "separate",
 };
@@ -235,7 +238,11 @@ function eventMayPass(db: DatabaseSync, local: string, peer: string, event: Repl
     const clusterId = (event.payload as { clusterId?: unknown } | null)?.clusterId;
     if (typeof clusterId !== "string") return false;
     const state = db.prepare("SELECT manager_node_id,closed FROM sharing_clusters WHERE id=?").get(clusterId) as { manager_node_id: string | null; closed: number } | undefined;
-    if (!state || state.closed || state.manager_node_id !== event.originNodeId) return false;
+    if (!state || state.closed) return false;
+    if (event.entityType === "cluster.agentPolicySource") {
+      if (getClusterAgentPolicy(db, clusterId)?.sourceRelayNodeId !== event.originNodeId) return false;
+    }
+    if (state.manager_node_id !== event.originNodeId && event.entityType !== "cluster.agentPolicySource") return false;
     const member = (nodeId: string) => Boolean(db.prepare("SELECT 1 FROM sharing_memberships WHERE cluster_id=? AND node_id=?").get(clusterId, nodeId));
     return member(local) && member(peer);
   }

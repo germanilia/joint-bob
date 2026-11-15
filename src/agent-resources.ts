@@ -16,6 +16,7 @@ import { allowSkillImport, receivedOwner, skillSuppressed, withSkillMutation } f
 import { emptyResourcePaths, getSettings, type ScopedResourcePaths } from "./settings.js";
 import { agentInstructionFiles, renderInstructions } from "./agent-instructions.js";
 import { projectFolderResources, withProjectFolderResources } from "./project-folder-resources.js";
+import { assertClusterResourceSupport, assertClusterResourcesPresent, clusterPolicySkillPaths } from "./cluster-agent-resources.js";
 import { withResourcePass } from "./resource-pass.js";
 
 export const AGENT_RESOURCES_FOLDER_ID = "joint-bob-agent-resources";
@@ -711,10 +712,10 @@ export function pluginActivationNames(plugin: string, managedRoot = agentResourc
 }
 
 /** All aliases share effective status while keeping each alias's preference separate. */
-export function pluginActivationDecisions(plugin: string, managedRoot = agentResourcePaths().claudePlugins, configuredPlugins: string[] = []): Array<{ name: string; decision: ActivationDecision }> {
+export function pluginActivationDecisions(plugin: string, managedRoot = agentResourcePaths().claudePlugins, configuredPlugins: string[] = [], projectId?: string): Array<{ name: string; decision: ActivationDecision }> {
   const decisions = pluginActivationNames(plugin, managedRoot, configuredPlugins).map((name) => ({
     name,
-    decision: activationDecision("plugin", name, "claude", receivedResource("plugin", name)),
+    decision: activationDecision("plugin", name, "claude", receivedResource("plugin", name), false, projectId),
   }));
   const blocked = decisions.find(({ decision }) => !decision.enabled);
   return blocked ? decisions.map(({ name, decision }) => ({
@@ -820,7 +821,7 @@ export function blockedPluginSkill(plugin: string, context: SkillScopeContext = 
     if (statSync(candidate).isFile()) {
       if (path.basename(candidate) !== "SKILL.md") return null;
       const name = skillNameFromFile(candidate, path.basename(path.dirname(candidate)));
-      return !unavailable.has(name) && activationDecision("skill", name, "claude", false).enabled ? null : name;
+      return !unavailable.has(name) && activationDecision("skill", name, "claude", false, false, context.projectId).enabled ? null : name;
     }
     if (!statSync(candidate).isDirectory()) return null;
     for (const entry of readdirSync(candidate).sort()) {
@@ -839,11 +840,13 @@ export function claudeAgentResourceArgs(root?: string, scoped?: ScopedResourcePa
 
 function claudeAgentResourceArgsNow(root?: string, scoped?: ScopedResourcePaths, extraInstructions?: string, cwd?: string): string[] {
   const strict = getSettings().strictResourceIsolation;
+  assertClusterResourceSupport(skillScopeContext(scoped).projectId, "claude");
   // Strict launches load no setting source, so the CLI discovers no skill by itself and the app's copy is the only one.
   if (cwd && !strict) assertNoBlockedNativeSkills("claude", cwd, [path.join(getSettings().claude.configPath, "skills"), path.join(os.homedir(), ".agents/skills")], skillScopeContext(scoped));
   if (!strict && blockedSkillNames("claude", skillScopeContext(scoped)).length) throw new Error("Cannot safely enforce blocked Claude skills while native resource discovery is enabled. Turn on strict resource isolation or remove the skill block.");
-  if (!strict) assertNoBlockedNativeResources("claude", "plugin");
+  if (!strict) assertNoBlockedNativeResources("claude", "plugin", skillScopeContext(scoped).projectId);
   const configured = scoped || strict && cwd ? withProjectFolderResources(scoped ?? { global: emptyResourcePaths(), project: emptyResourcePaths() }, cwd) : undefined;
+  if (configured) configured.project.skills = [...configured.project.skills, ...clusterPolicySkillPaths(skillScopeContext(scoped).projectId, "claude")];
   const projectAgents = strict && cwd ? projectFolderResources(cwd).agents : [];
   const paths = agentResourcePaths(root);
   const configuredPlugins = claudePluginSources(configuredPaths(configured, "plugins"));
@@ -854,19 +857,21 @@ function claudeAgentResourceArgsNow(root?: string, scoped?: ScopedResourcePaths,
   const args: string[] = [];
   if (existsSync(paths.claudePlugins)) for (const entry of readdirSync(paths.claudePlugins).sort()) {
     const plugin = path.join(paths.claudePlugins, entry);
-    const decisions = pluginActivationDecisions(plugin, paths.claudePlugins, configuredPlugins);
+    const decisions = pluginActivationDecisions(plugin, paths.claudePlugins, configuredPlugins, scope.projectId);
     if (!decisions.some(({ name }) => installed.has(name)) && existsSync(path.join(plugin, ".claude-plugin/plugin.json"))
       && decisions.every(({ decision }) => decision.enabled) && assistantAllows(plugin) && pluginContentsSafe(plugin, scope)) args.push("--plugin-dir", plugin);
   }
   for (const plugin of configuredPlugins) {
-    const decisions = pluginActivationDecisions(plugin, paths.claudePlugins, configuredPlugins);
+    const decisions = pluginActivationDecisions(plugin, paths.claudePlugins, configuredPlugins, scope.projectId);
     if (decisions.every(({ decision }) => decision.enabled) && assistantAllows(plugin) && pluginContentsSafe(plugin, scope)) args.push("--plugin-dir", plugin);
   }
   const generated = generatedResourcePlugin(paths, configured, projectAgents);
   if (generated) args.push("--plugin-dir", generated);
-  if (nodeMcpServersApply(adminAccountId()) && existsSync(paths.mcpConfig)) args.push("--mcp-config", activeMcpConfig("claude", paths.mcpConfig));
+  if (nodeMcpServersApply(adminAccountId()) && existsSync(paths.mcpConfig)) args.push("--mcp-config", activeMcpConfig("claude", paths.mcpConfig, scope.projectId));
   const instructions = generatedInstructionFile(paths, configured, extraInstructions, cwd);
   if (instructions) args.push("--append-system-prompt-file", instructions);
+  const plugins = args.flatMap((arg, index) => arg === "--plugin-dir" ? pluginActivationNames(args[index + 1], paths.claudePlugins, configuredPlugins) : []);
+  assertClusterResourcesPresent(scope.projectId, "claude", "plugins", plugins);
   return args;
 }
 

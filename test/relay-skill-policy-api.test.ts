@@ -30,16 +30,16 @@ test("joined relay blocks and per-harness choices survive receiver and publisher
       const inventory = await api<{ nodes: Array<{ inventory: { skills: Array<{ name: string; activation: Record<string, { enabled: boolean; preference: boolean | null }> }> } }> }>(n, sn, "GET", "/resources/inventory");
       return inventory.body.nodes[0].inventory.skills.find((item) => item.name === "policy-restart")!.activation[harness];
     };
-    assert.equal((await enabled("pi")).enabled, false, "joining a relay enforces its rules without an opt-in");
+    assert.equal((await enabled("pi")).enabled, true, "a relay's rules govern only the clusters that choose it, never unscoped inventory");
     assert.equal((await api(n, sn, "PUT", "/resources/activation/item", { kind: "skill", name: "policy-restart", harness: "pi", enabled: true })).status, 200);
     assert.equal((await api(n, sn, "PUT", "/resources/activation/item", { kind: "skill", name: "policy-restart", harness: "claude", enabled: false })).status, 200);
-    assert.equal((await enabled("pi")).enabled, false, "the relay block wins over a local enable");
+    assert.equal((await enabled("pi")).enabled, true, "a local enable stands, since the relay's rules do not reach unscoped inventory");
     assert.equal((await api(n, sn, "PUT", `/relays/${(await subscription(sn)).id}/skill-policy-subscription`, { optedIn: false })).status, 404, "there is no way to opt out");
     await stopDevNode(children[1]);
     await stopDevNode(children[0]);
     children[1] = await startDevNode(receiver, n);
     sn = await signIn(receiver, n);
-    assert.equal((await enabled("pi")).enabled, false, "cached block remains while publisher is offline");
+    assert.equal((await enabled("pi")).enabled, true, "the local choice survives restarts while the publisher is offline");
     assert.equal((await enabled("pi")).preference, true);
     assert.equal((await enabled("claude")).enabled, false);
     children[0] = await startDevNode(publisher, r);
@@ -49,10 +49,10 @@ test("joined relay blocks and per-harness choices survive receiver and publisher
     assert.deepEqual(published.body.rules, rules);
     assert.equal((await api(r, sr, "PUT", "/relay/serving/skill-policy", { rules: [] })).status, 200);
     await waitForAssertion(async () => assert.equal((await subscription(sn)).version, 2), 20_000);
-    assert.equal((await enabled("pi")).enabled, true, "reconnect receives new policy without losing explicit enable");
+    assert.equal((await enabled("pi")).enabled, true, "reconnect receives the new policy without losing the explicit enable");
     assert.equal((await enabled("claude")).enabled, false, "other harness keeps explicit disable");
     assert.equal((await api(r, sr, "PUT", "/relay/serving/skill-policy", { rules })).status, 200);
-    await waitForAssertion(async () => assert.equal((await enabled("pi")).enabled, false), 10_000);
+    await waitForAssertion(async () => assert.equal((await subscription(sn)).version, 3), 10_000);
   } finally {
     await Promise.all(children.map(stopDevNode));
     await rm(root, { recursive: true, force: true });
