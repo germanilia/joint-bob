@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.309.0 — 2026-11-15
+
+- The ⋯ menu above a conversation has an Add secret item, under This conversation. It opens the picker that attaches an existing secret to that conversation.
+
 ## 2.308.0 — 2026-11-15
 
 - In the control center, the head of the panel on the right of the list now has one group at the end of its line: Review, Done and a ⋯ menu. The row of small pin, star, folder and delete icons is gone; they are labelled items in the ⋯ menu, with Delete last.
