@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.305.8 — 2026-11-15
+
+- On Bob's page, the theme button and the Settings button are back. They live in the bottom row that Bob's page had hidden; the row now stays at the bottom of the page, under the chat and the browser.
+
 ## 2.305.7 — 2026-11-15
 
 - On Bob's page, opening the browser from a conversation's Chat tab now shows it as one panel filling the right half of the page. Before, the page was cut in half and the browser also floated as a small separate window at the far right.
