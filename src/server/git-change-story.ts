@@ -379,28 +379,48 @@ function sectionScanner(report: (section: StorySection, data: unknown) => void) 
   });
 }
 
+/**
+ * Leaves out more of the largest diffs until the whole prompt fits: the diff budget alone misses the
+ * paths, commit messages, digest and per-patch headers, which a long conversation can grow past the limit.
+ */
+export function fitStoryPrompt(facts: StoryFacts, patches: StoryPatch[], build: (facts: StoryFacts, patches: StoryPatch[]) => string, limit = STORY_INPUT_LIMIT) {
+  let prompt = build(facts, patches);
+  for (let tries = 0; prompt.length > limit && tries < 4; tries += 1) {
+    const diffSize = sum(patches.map((patch) => patch.patch.length));
+    // The slack absorbs the paths this pass adds to the omitted list.
+    const fitted = fitPatches(patches, Math.max(0, diffSize - (prompt.length - limit) - 2_000));
+    patches = fitted.patches;
+    facts = { ...facts, omitted: [...new Set([...facts.omitted ?? [], ...fitted.omitted])] };
+    prompt = build(facts, patches);
+  }
+  if (prompt.length > limit) throw new GitReviewError(413, "These changes are too large for one story. Pick fewer commits or files.");
+  return { facts, patches, prompt };
+}
+
 export async function generateChangeStory(input: GenerateChangeStoryInput): Promise<SavedChangeStory & { diff: string }> {
   const { project, cwd, conversationId, sources } = input;
   const collected = input.pull ? sourcesFromPull(input.pull) : await collectStorySources(project, cwd, conversationId, sources);
-  const { facts, patches } = collected;
+  const renderDiff = (patches: StoryPatch[]) => patches.map((patch) => `# ${patch.source === "pending" ? "Pending, not committed" : `Commit ${patch.source}`}\n${patch.patch}`).join("\n");
+  const build = (facts: StoryFacts, patches: StoryPatch[]) => {
+    const commits = facts.commits.map((commit) => `${commit.shortHash}${commit.turn ? ` (turn ${commit.turn})` : ""}${commit.date ? ` ${commit.date}` : ""}: ${commit.subject}${commit.body ? `\n  ${commit.body.replace(/\n/g, "\n  ")}` : ""}`).join("\n");
+    return [
+      `Allowed paths: ${JSON.stringify(facts.files.map((file) => file.path))}`,
+      `Turns: ${facts.turns.length}`,
+      commits ? `Commits, oldest first:\n${commits}` : "Commits: none included",
+      facts.omitted ? `Diffs left out for size: ${JSON.stringify(facts.omitted)}. Describe these files only from the conversation, commit messages and line counts; never guess their contents.` : "",
+      !patches.length ? "No code changes: explain what the conversation worked out, from its digest alone. Allowed paths are empty, so diagram files, implementation and tests stay empty." : "",
+      sources.kind === "pull" && input.pull ? `Pull request #${input.pull.pull.number}: ${input.pull.pull.title}\nBase: ${input.pull.pull.base.ref}\nDescription: ${(input.pull.pull.body ?? "").slice(0, 8000)}\nNo conversation: explain the PR changes. The timeline must be empty.` :
+      facts.conversation ? `Conversation digest:\n${turnDigest(collected.turns, facts)}`
+        : sources.kind === "commits" ? "No conversation: explain the picked commits from their messages and diff. The timeline must be empty."
+          : "No conversation: explain the pending changes from the diff alone.",
+      `Diff:\n${renderDiff(patches)}`,
+    ].filter(Boolean).join("\n\n");
+  };
+  const { facts, patches, prompt } = fitStoryPrompt(collected.facts, collected.patches, build);
+  const diff = renderDiff(patches);
   const report = (event: StoryProgress) => { try { input.onProgress?.(event); } catch { /* a closed client must not stop the story */ } };
   report({ type: "facts", facts, patches, sources });
   const scan = input.onProgress ? sectionScanner((section, data) => report({ type: "section", section, data })) : undefined;
-  const diff = patches.map((patch) => `# ${patch.source === "pending" ? "Pending, not committed" : `Commit ${patch.source}`}\n${patch.patch}`).join("\n");
-  const commits = facts.commits.map((commit) => `${commit.shortHash}${commit.turn ? ` (turn ${commit.turn})` : ""}${commit.date ? ` ${commit.date}` : ""}: ${commit.subject}${commit.body ? `\n  ${commit.body.replace(/\n/g, "\n  ")}` : ""}`).join("\n");
-  const prompt = [
-    `Allowed paths: ${JSON.stringify(facts.files.map((file) => file.path))}`,
-    `Turns: ${facts.turns.length}`,
-    commits ? `Commits, oldest first:\n${commits}` : "Commits: none included",
-    facts.omitted ? `Diffs left out for size: ${JSON.stringify(facts.omitted)}. Describe these files only from the conversation, commit messages and line counts; never guess their contents.` : "",
-    !patches.length ? "No code changes: explain what the conversation worked out, from its digest alone. Allowed paths are empty, so diagram files, implementation and tests stay empty." : "",
-    sources.kind === "pull" && input.pull ? `Pull request #${input.pull.pull.number}: ${input.pull.pull.title}\nBase: ${input.pull.pull.base.ref}\nDescription: ${(input.pull.pull.body ?? "").slice(0, 8000)}\nNo conversation: explain the PR changes. The timeline must be empty.` :
-    facts.conversation ? `Conversation digest:\n${turnDigest(collected.turns, facts)}`
-      : sources.kind === "commits" ? "No conversation: explain the picked commits from their messages and diff. The timeline must be empty."
-        : "No conversation: explain the pending changes from the diff alone.",
-    `Diff:\n${diff}`,
-  ].filter(Boolean).join("\n\n");
-  if (prompt.length > STORY_INPUT_LIMIT) throw new GitReviewError(413, "These changes are too large for one story. Pick fewer commits or files.");
   const result = await runGitReview({
     projectId: project.id, conversationId: conversationId ?? undefined, cwd, harnessId: input.harnessId, provider: input.provider, modelId: input.modelId, thinkingLevel: input.thinkingLevel,
     selection: { scope: "worktree" }, question: "", diff: prompt, instructions: STORY_INSTRUCTIONS,

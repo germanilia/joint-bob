@@ -7,7 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import { gitPushHistory } from "../src/git-review.js";
 import { buildTurns, commitHashesIn } from "../src/server/conversation-turns.js";
-import { checkStory, fileArea, fitPatches, lineCounts, sourcesFromPull, sourcesFromTurns, turnCommits, turnDigest, type ChangeStory } from "../src/server/git-change-story.js";
+import { checkStory, fileArea, fitPatches, fitStoryPrompt, lineCounts, sourcesFromPull, sourcesFromTurns, turnCommits, turnDigest, type ChangeStory } from "../src/server/git-change-story.js";
 import { createTopLevelFieldScanner } from "../src/server/story-json-scanner.js";
 
 const git = promisify(execFile);
@@ -245,6 +245,17 @@ test("fitting leaves small changes untouched and refuses only when even line cou
   const patches = [{ path: "a.ts", source: "pending", patch: "+a\n" }, { path: "b.ts", source: "pending", patch: "+b\n" }];
   assert.deepEqual(fitPatches(patches, 1000), { patches, omitted: [] });
   assert.throws(() => fitPatches(patches, 4), /too many files for one story/);
+});
+
+test("the whole prompt fits: diffs the paths, digest and headers crowd out are left out too", () => {
+  const patches = ["a.ts", "b.ts", "c.ts"].map((path) => ({ path, source: "pending", patch: `+${"x".repeat(3000)}\n` }));
+  const facts = { conversation: true, turns: [], commits: [], files: [] };
+  const build = (current: { omitted?: string[] }, fitted: typeof patches) => `${"d".repeat(5000)} ${JSON.stringify(current.omitted ?? [])} ${fitted.map((patch) => patch.patch).join("")}`;
+  const result = fitStoryPrompt(facts, patches, build, 10_000);
+  assert.ok(result.prompt.length <= 10_000);
+  assert.ok(result.facts.omitted!.length >= 1);
+  assert.equal(result.patches.length, 3);
+  assert.throws(() => fitStoryPrompt(facts, patches, build, 5_000), /413|too (large|many)/);
 });
 
 test("picked commits are explained oldest first without the conversation, and bad picks are refused", async () => {
