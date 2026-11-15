@@ -72,9 +72,10 @@ export function drawPreview(preview, card, context) {
   preview.dataset.kind = "conversation";
   const content = element("div", "control-list-body");
   content.dataset.testid = `control-list-tab-${tab}`;
-  const pieces = [...head(card, context), tabBar(card, context), content];
+  const pieces = [...head(card, context, inline), tabBar(card, context), content];
   if (tab === "chat" && !inline) pieces.push(composer(card, helpers));
   preview.replaceChildren(...pieces);
+  if (inline) headButtons(card, helpers);
   if (inline) showChat(card, content);
   else fillBody(content, card, context);
   content.scrollTop = scroll;
@@ -108,7 +109,20 @@ function placeChat(anchor) {
   for (const [name, value] of [["x", box.left], ["y", box.top], ["w", box.width], ["h", box.height]]) document.body.style.setProperty(`--bob-pop-${name}`, `${Math.round(value)}px`);
 }
 
+/** The card's buttons that are not tools (Take control, Snooze, ...) join the chat's head row, before its Mark done. */
+function headButtons(card, helpers) {
+  removeHeadButtons();
+  const skip = cardActionList(card).filter((action) => action.more || CONVERSATION_TOOLS.includes(action.id)).map((action) => action.id);
+  const row = helpers.actionRow(card, skip);
+  if (!row) return;
+  row.classList.add("control-head-buttons");
+  row.dataset.testid = "control-head-buttons";
+  document.querySelector("#chatHeadActions").prepend(row);
+}
+const removeHeadButtons = () => document.querySelector("#chatHeadActions .control-head-buttons")?.remove();
+
 export function hideChat() {
+  removeHeadButtons();
   if (!inlineChat.key) return;
   inlineChat.observer?.disconnect();
   inlineChat.key = null;
@@ -116,7 +130,7 @@ export function hideChat() {
   closeConversationPopup();
 }
 
-function head(card, context) {
+function head(card, context, inline) {
   const { helpers } = context;
   const top = element("div", "control-list-pv-top");
   top.append(helpers.avatarOf(card), projectTag(card));
@@ -133,7 +147,10 @@ function head(card, context) {
   line.append(element("p", "control-list-meta", meta));
   // One group at the end of the line: Review, Done and ⋯ (pin, star, folder, delete and the card's other actions).
   const marks = context.markItems(card);
-  if (card.column !== "done") line.append(helpers.actionRow(card, CONVERSATION_TOOLS, { after: helpers.doneButton(card), extras: marks }));
+  // On the Chat tab the chat's own head already has Mark done, so Take control, Snooze and the other buttons live there (headButtons)
+  // and the panel keeps only ⋯.
+  if (inline) line.append(helpers.moreMenu(card, [], marks));
+  else if (card.column !== "done") line.append(helpers.actionRow(card, CONVERSATION_TOOLS, { after: helpers.doneButton(card), extras: marks }));
   else line.append(helpers.moreMenu(card, [], marks));
   // The conversation's tools (Terminal, Git, Folders, Story) follow its actions on the same line, so the buttons are one group.
   line.append(toolsRow(card));

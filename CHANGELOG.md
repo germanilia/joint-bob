@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.315.3 — 2026-11-15
+
+- On the Chat tab of Bob's page, Take control and Snooze now sit in the chat's own button row beside Mark done, and the duplicate Done button is gone.
+
 ## 2.315.2 — 2026-11-15
 
 - The Motion setting is now kept in this browser, and the offline app includes the story voice preparation.

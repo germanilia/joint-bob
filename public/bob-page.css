@@ -418,3 +418,6 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
 .motion-spark { position: fixed; z-index: 1000; pointer-events: none; }
 .motion-plus { position: fixed; z-index: 1000; pointer-events: none; color: var(--amber); font: 700 14px var(--sans); }
 .control-list-count { display: inline-block; }
+
+/* Take control, Snooze and the card's other buttons sit in the chat's own head row (control-list-preview.js headButtons). */
+#chatHeadActions .control-head-buttons { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; border-top: 0; padding: 0; }

@@ -111,6 +111,15 @@ test("the list: system messages first, rows by project, the panel's tabs, search
   const anchor = await page.getByTestId("control-list-tab-chat").boundingBox();
   const frame = await page.evaluate(() => ["x", "y", "w", "h"].map((name) => document.body.style.getPropertyValue(`--bob-pop-${name}`)));
   assert.ok(anchor && frame.join() === [anchor.x, anchor.y, anchor.width, anchor.height].map((value) => `${Math.round(value)}px`).join(), "the chat is placed on the tab's body");
+  // One row of buttons: the chat's head carries Take control and Snooze before its Mark done, and the panel's own head keeps only ⋯ (no second Done).
+  const headRow = await page.evaluate(() => ({
+    inChatHead: [...document.querySelectorAll("#chatHeadActions [data-testid^=control-card-action-]")].map((node) => (node as HTMLElement).dataset.testid),
+    done: document.querySelectorAll("[data-testid=control-card-action-done], #chatDoneButton").length,
+    panelButtons: [...document.querySelectorAll(".control-list-pv-line [data-testid^=control-card-]")].map((node) => (node as HTMLElement).dataset.testid),
+  }));
+  assert.ok(headRow.inChatHead.includes("control-card-action-take-control"), `Take control is in the chat's head: ${JSON.stringify(headRow)}`);
+  assert.equal(headRow.done, 1, `one Done button: ${JSON.stringify(headRow)}`);
+  assert.deepEqual(headRow.panelButtons, ["control-card-more"]);
   // The chat's side panel keeps its buttons; the summary and the steps are the list's own tabs, so they are not shown twice.
   assert.equal(await page.evaluate(() => ["activitySummary", "activityStepsToggle"].some((id) => getComputedStyle(document.getElementById(id)!).display !== "none")), false);
   // A browser opened from the chat takes the right half of the page: one column, not a window floating over a halved page.
