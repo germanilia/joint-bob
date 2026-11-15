@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.311.2 — 2026-11-15
+
+- Larger text sizes widen the left columns so their labels are no longer cut off, and the details column is put away instead of covering the conversation when the conversation gets too narrow.
+
 ## 2.311.1 — 2026-11-15
 
 - Settings sections now use the whole window width instead of a centred column.
