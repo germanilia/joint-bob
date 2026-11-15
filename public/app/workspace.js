@@ -19,7 +19,7 @@ import { isControlCenterOpen, openConversation } from "./control-center.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { startGlobalConversation } from "./new-session.js";
-import { createInboxToolbar, filterInbox, inboxFilterKey, inboxSignature, isSelected, isSelecting, onInboxView, toggleSelected } from "./inbox-filters.js";
+import { createInboxToolbar, filterInbox, inboxFilterKey, inboxSignature, isSelected, isSelecting, onInboxView, sourceName, toggleSelected } from "./inbox-filters.js";
 import { drawChunked } from "./long-scroll.js";
 import { openQuickNote } from "./quick-notes.js";
 import { openSpotlight } from "./spotlight.js";
@@ -421,7 +421,8 @@ function timeLabel(value) {
 function cardLine(card) {
   const what = card.activity || (card.summary ? card.summary.replace(/[#*_`>]/g, "").split("\n").map((line) => line.trim()).find(Boolean) : "")
     || [card.agentLabel, card.agentModel].filter(Boolean).join(" · ");
-  return [card.projectName, what].filter(Boolean).join(" · ");
+  // Another person's machine runs it: the row says whose, since nothing here can act on it.
+  return [card.projectName, card.othersMachine ? `on ${sourceName(card)}` : "", what].filter(Boolean).join(" · ");
 }
 
 /** `selectable`: the row is part of a checklist while Select is on (inbox-filters.js): pressing it chooses it instead of opening it. */
@@ -691,8 +692,9 @@ export function scheduleGroupsRefresh(delay = 800) {
 for (const name of ["running-refreshed", "control-center-changed", "conversation-started", "pending-reviews-refreshed"]) {
   window.addEventListener(name, () => scheduleGroupsRefresh());
 }
-// Share newly read boards, never a visual redraw of the control center's older cached cards.
-window.addEventListener("control-center-board-refreshed", (event) => { if (event.detail?.cards) acceptCards(event.detail.cards); });
+// The control center read its board: something changed. Its board leaves out other people's machines, which the Inbox lists,
+// so the Inbox reads its own instead of taking those cards.
+window.addEventListener("control-center-board-refreshed", () => scheduleGroupsRefresh());
 // "activeConversationChanged" is announced on every redraw of the chat controls (about once a second while an agent
 // works). The groups mark the open conversation, so they are drawn again only when another conversation is open;
 // drawing them on every announcement rebuilt every row of the column each second.

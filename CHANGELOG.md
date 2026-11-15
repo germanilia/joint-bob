@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The Inbox now lists every running conversation and every one to review, including those running on a teammate's machine in a shared project (marked with the machine's name, read-only), so its counts match the project badges.
+- Added Source and Status filters beside the Project filter; the Show choice now limits only Earlier conversations, so Needs you, Running and To review always list all of them.
+
 ## 2.311.2 — 2026-11-15
 
 - Larger text sizes widen the left columns so their labels are no longer cut off, and the details column is put away instead of covering the conversation when the conversation gets too narrow.

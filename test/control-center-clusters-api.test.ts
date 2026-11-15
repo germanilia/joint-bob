@@ -131,6 +131,13 @@ test("Clusters lists a teammate's running agents only through what is shared, ne
     // Maya's live board is hers: Alex's agents are read-only and have their own tab, so the board has nothing to act on.
     const mayaBoard = (await api<{ cards: Array<{ sessionId: string }> }>(maya, onMaya, "GET", "/control-center/board")).body;
     assert.deepEqual(mayaBoard.cards.filter((card) => [onMac, onTwin, hidden].includes(card.sessionId)), []);
+    // Her Inbox (`look=1`) lists everything she can see: Alex's shared agents as read-only rows, never the project he kept.
+    const mayaInbox = await eventually("Maya's Inbox to list Alex's two agents", async () => {
+      const board = (await api<{ cards: Array<{ sessionId: string; column: string; othersMachine?: boolean; executionNodeId: string | null }> }>(maya, onMaya, "GET", "/control-center/board?look=1")).body;
+      const theirs = board.cards.filter((card) => [onMac, onTwin, hidden].includes(card.sessionId));
+      return theirs.length === 2 ? theirs : undefined;
+    });
+    assert.deepEqual(mayaInbox.map((card) => [card.sessionId, card.column, card.othersMachine, card.executionNodeId]).sort(), [[onMac, "running", true, laptop.nodeId], [onTwin, "running", true, server.nodeId]].sort());
     // The same conversations are still in her ordinary conversation list, where the existing rules for opening them hold.
     const listed = (await api<{ sessions: Array<{ id: string; executionNodeId?: string; running?: boolean }> }>(maya, onMaya, "GET", `/projects/${shared.id}/sessions`)).body.sessions;
     assert.equal(listed.find((session) => session.id === onTwin)?.executionNodeId, server.nodeId);
