@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.311.0 — 2026-11-15
+
+- Live agents can be sorted by Status, now the default: conversations that need you come first, then finished ones to review, then the ones still running, with each row naming its project.
+- A new Select button lets you tick several conversations (shift-click for a range) and mark them done or delete them together. Deleting several shows one Undo and leaves pinned and starred conversations alone.
+
 ## 2.310.2 — 2026-11-15
 
 - Only the coordinator listens to ordinary team messages. A greeting or request to Bob or the team is picked up from context, while a message to another agent by name ("qa, test the checkout") is left alone: those agents are reached with `/role` or `@bot`.

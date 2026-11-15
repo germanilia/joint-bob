@@ -26,12 +26,13 @@ const SYSTEM = [{
   steps: ["Attach a secret named `TYPESAFE_AI_API_KEY` to a project.", "Open Bob's settings.", "Press Check again."], action: { label: "Open Bob's settings", open: "bob-settings" },
 }];
 
-type Mocked = typeof window & { __board: typeof BOARD; __system: unknown[]; __sent: unknown[]; __deleted: string[]; __pins: unknown[]; __decided?: unknown; __past?: unknown[] };
+type Mocked = typeof window & { __board: typeof BOARD; __system: unknown[]; __sent: unknown[]; __deleted: string[]; __done: { conversationId: string; feedback: { rating: string } }[]; __pins: unknown[]; __decided?: unknown; __past?: unknown[] };
 
 /** Signs in and puts a scripted board, past list, system messages and pin/delete routes in front of the node. */
-async function openList(t: Parameters<typeof nativeUiFixture>[0], past: unknown[] = PAST) {
+async function openList(t: Parameters<typeof nativeUiFixture>[0], past: unknown[] = PAST, group: string | null = "project") {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.addInitScript(() => localStorage.setItem("jointBobLiveLayout", "list"));
+  if (group) await page.addInitScript((value) => localStorage.setItem("jointBobListGroup", value), group);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
   await page.locator("#loginUsernameInput").fill(environment.username);
@@ -44,7 +45,7 @@ async function openList(t: Parameters<typeof nativeUiFixture>[0], past: unknown[
     const originalFetch = window.fetch;
     window.__board = ${JSON.stringify(BOARD)};
     window.__system = ${JSON.stringify(SYSTEM)};
-    window.__sent = []; window.__deleted = []; window.__pins = [];
+    window.__sent = []; window.__deleted = []; window.__pins = []; window.__done = [];
     window.fetch = async (...args) => {
       const url = new URL(String(args[0]), location.href);
       const method = (args[1] && args[1].method) || 'GET';
@@ -56,6 +57,7 @@ async function openList(t: Parameters<typeof nativeUiFixture>[0], past: unknown[
         return json({ request: 'Ship ' + url.searchParams.get('conversationId'), answer: 'The **deploy** is ready.', answerCut: false, steps: [{ name: 'Bash', target: 'npm run build', failed: false }, { name: 'Edit', target: 'package.json', failed: true }] });
       }
       if (url.pathname === '/api/control-center/cards/reply') { window.__sent.push(JSON.parse(args[1].body)); return json({ ok: true }); }
+      if (url.pathname === '/api/control-center/cards/done') { window.__done.push(JSON.parse(args[1].body)); return json({ ok: true }); }
       if (url.pathname === '/api/control-center/guardian/decide') { window.__decided = JSON.parse(args[1].body); return json({ ok: true }); }
       if (url.pathname === '/api/pins' && method === 'GET') return json({ projectIds: [], conversations: window.__pins });
       if (url.pathname === '/api/pins' && method === 'PUT') {
@@ -362,4 +364,41 @@ test("Ask Bob can be dragged, and Bob's chat opens as a window of its own", { ti
   const dragged = await chat.boundingBox();
   assert.ok(dragged && dragged.x < opened.x - 50 && dragged.y > opened.y + 40);
   assert.ok(await page.evaluate(() => localStorage.getItem("jointBobChatBox")), "its place is kept");
+});
+
+test("the list: by status the ones that need a review come first, and several can be ticked and closed or deleted together", { timeout: 120_000 }, async (t) => {
+  const { page } = await openList(t, PAST, null);
+
+  // Status is the default order: needs you, then finished ones to read, then what is still working, whatever the project.
+  assert.equal(await page.getByTestId("control-list-group-status").getAttribute("aria-pressed"), "true");
+  assert.deepEqual(await keys(page), ["system:decision-model", "p1:c1", "p2:c3", "p1:c2"]);
+  assert.deepEqual(await page.getByTestId("control-list-status-head").evaluateAll((heads) => heads.map((head) => head.getAttribute("data-column"))), ["needs-you", "review", "running"]);
+  assert.match(await page.locator('[data-key="p2:c3"] .control-list-project-tag').textContent() ?? "", /DAK Live/, "without project headings a row names its project");
+
+  // Select mode: a click ticks instead of opening; the bar counts and acts on what is ticked.
+  await page.getByTestId("control-list-select").click();
+  assert.equal(await page.getByTestId("control-list-bar-done").isDisabled(), true, "nothing ticked, nothing to do");
+  const opened = await page.getByTestId("control-list-preview").locator("h2").textContent();
+  await page.locator('[data-key="p1:c2"]').click();
+  await page.locator('[data-key="p2:c3"]').click({ modifiers: ["Shift"] });
+  assert.match(await page.getByTestId("control-list-bar-count").textContent() ?? "", /^2 selected$/, "shift ticks the rows between the last tick and this one");
+  assert.equal(await page.getByTestId("control-list-preview").locator("h2").textContent(), opened, "ticking does not open a conversation");
+
+  // Delete: both go at once with one Undo, which brings them back.
+  await page.getByTestId("control-list-bar-delete").click();
+  assert.deepEqual(await keys(page), ["system:decision-model", "p1:c1"]);
+  assert.equal(await page.getByTestId("control-list-bar").isVisible(), false, "select mode ends");
+  await page.getByTestId("control-list-undo").click();
+  assert.deepEqual(await keys(page), ["system:decision-model", "p1:c1", "p2:c3", "p1:c2"]);
+
+  // Done: no question per conversation; each is closed as "not important".
+  await page.getByTestId("control-list-select").click();
+  await page.locator('[data-key="p1:c1"]').click();
+  await page.locator('[data-key="p2:c3"]').click();
+  await page.getByTestId("control-list-bar-done").click();
+  await page.waitForFunction(() => (window as unknown as Mocked).__done.length === 2);
+  const done = await page.evaluate(() => (window as unknown as Mocked).__done);
+  assert.deepEqual(done.map((item) => item.conversationId).sort(), ["c1", "c3"]);
+  assert.ok(done.every((item) => item.feedback.rating === "unimportant"));
+  assert.equal(await page.getByTestId("control-list-bar").isVisible(), false);
 });

@@ -12,7 +12,7 @@
 import { api } from "./api.js";
 import { briefStatus, projectActionList } from "./control-cards.js";
 import { drawPreview, hideChat } from "./control-list-preview.js";
-import { deleteConversation, folderMenu, folderNames, folderOf, isDeleting, isKept, isPinned, isStarred, popMenu, togglePin, toggleStar } from "./control-marks.js";
+import { deleteConversation, deleteConversations, folderMenu, folderNames, folderOf, isDeleting, isKept, isPinned, isStarred, popMenu, togglePin, toggleStar } from "./control-marks.js";
 import { loadSystem, systemList } from "./control-system.js";
 import { searchFields, segments, snippet } from "./inbox-search.js";
 import { toast } from "./shell.js";
@@ -20,6 +20,8 @@ import { state } from "./state.js";
 
 const STATES = { "needs-you": "Needs you", running: "Running", review: "To review", snoozed: "Snoozed", reviewed: "Reviewed", done: "Done" };
 const ORDER = Object.keys(STATES);
+// By status, what waits for the person comes first: the ones that need them, then the finished ones to read, then what is still working.
+const STATUS_ORDER = ["needs-you", "review", "running", "snoozed", "reviewed", "done"];
 const INBOX = ["needs-you", "running", "review", "snoozed"];
 // A team's conversations are in its folder, not in the Inbox (All and the folder show them).
 const SCOPES = [["inbox", "Inbox", (card) => card.column !== "done" && !card.team], ["past", "Past", (card) => card.column === "done"], ["all", "All", () => true], ["starred", "★", isStarred]];
@@ -37,6 +39,7 @@ const ICON_PATHS = {
   folder: ["M2.5 6a1 1 0 011-1h4l2 2h7a1 1 0 011 1v7a1 1 0 01-1 1h-13a1 1 0 01-1-1z"],
   delete: ["M3.5 6h13", "M8 6V4h4v2", "M5.5 6l.8 11h7.4l.8-11"],
   search: ["M14 8.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z", "m13 13 4 4"],
+  check: ["M3.5 4.5h13v11h-13z", "M6.5 10l2.5 2.5 4.5-5"],
   warn: ["M10 3l8 14H2z", "M10 8.5v3.5", "M10 14.6v.01"],
 };
 
@@ -93,7 +96,11 @@ let pastReadAt = 0;
 let pastLoading = false;
 // A conversation left the board while the list was being read: that answer may not have it, so it is read once more.
 let pastStale = false;
-const view = { tab: "summary", query: "", scope: "inbox", rememberScope: null, group: localStorage.getItem(LIST_GROUP_KEY) === "date" ? "date" : "project" };
+const GROUPS = ["status", "project", "date"];
+const view = { tab: "summary", query: "", scope: "inbox", rememberScope: null, group: GROUPS.includes(localStorage.getItem(LIST_GROUP_KEY)) ? localStorage.getItem(LIST_GROUP_KEY) : "status", selecting: false };
+// The conversations ticked in select mode, by card key. Only the ones in the list as drawn are acted on.
+const picked = new Set();
+let lastPicked = null;
 
 /* ---------- what there is: board cards, past conversations, system messages ---------- */
 
@@ -140,6 +147,7 @@ function visible(all) {
   const newest = (a, b) => (b.card.updatedAt ?? "").localeCompare(a.card.updatedAt ?? "");
   if (query) return found.sort((a, b) => b.match.score - a.match.score || newest(a, b));
   if (view.group === "date") return found.sort(newest);
+  if (view.group === "status") return found.sort((a, b) => STATUS_ORDER.indexOf(a.card.column) - STATUS_ORDER.indexOf(b.card.column) || newest(a, b));
   return found.sort((a, b) => a.card.projectName.localeCompare(b.card.projectName) || ORDER.indexOf(a.card.column) - ORDER.indexOf(b.card.column) || newest(a, b));
 }
 
@@ -179,8 +187,11 @@ function buildFrame(container, helpers) {
   search.append(input, clear);
   const chips = element("div", "control-list-chips");
   chips.dataset.testid = "control-list-chips";
+  const bar = element("div", "control-list-bar");
+  bar.dataset.testid = "control-list-bar";
+  bar.hidden = true;
   const head = element("div", "control-list-head");
-  head.append(search, chips);
+  head.append(search, chips, bar);
   const rows = element("div", "control-list-rows");
   rows.dataset.testid = "control-list-rows";
   const left = element("div", "control-list-left");
@@ -208,6 +219,7 @@ function buildFrame(container, helpers) {
     if (/^(INPUT|TEXTAREA)$/.test(event.target.tagName) || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); move(event.key === "ArrowDown" ? 1 : -1, true); return; }
     if (event.key === "/") { event.preventDefault(); input.focus(); return; }
+    if (event.key === "Escape" && view.selecting) { event.stopPropagation(); stopSelecting(); return; }
     const entry = selectedEntry();
     if (!entry || entry.system) return;
     if (event.key === "p") { event.preventDefault(); void markPin(entry); }
@@ -234,7 +246,7 @@ function buildFrame(container, helpers) {
   });
   container.replaceChildren(root);
   setInterval(() => { if (root.isConnected) refreshSystem(true); }, SYSTEM_EVERY_MS);
-  return { root, input, clear, chips, rows, preview, helpers };
+  return { root, input, clear, chips, bar, rows, preview, helpers };
 }
 
 const redraw = () => last && renderList(...last);
@@ -325,6 +337,73 @@ function markItems(card) {
   ];
 }
 
+/* ---------- select several: tick rows, then mark them done or delete them together ---------- */
+
+let shownCards = [];
+const pickedCards = () => shownCards.filter((card) => picked.has(cardKey(card)));
+
+function startSelecting() {
+  view.selecting = true;
+  redraw();
+}
+function stopSelecting() {
+  view.selecting = false;
+  picked.clear();
+  lastPicked = null;
+  redraw();
+}
+/** Ticks or unticks a row; with shift, every row from the last one touched to this one. */
+function pick(card, range) {
+  const key = cardKey(card);
+  const keys = shownCards.map(cardKey);
+  if (range && keys.includes(lastPicked)) {
+    const [from, to] = [keys.indexOf(lastPicked), keys.indexOf(key)].sort((a, b) => a - b);
+    for (const inRange of keys.slice(from, to + 1)) picked.add(inRange);
+  } else if (picked.has(key)) picked.delete(key);
+  else picked.add(key);
+  lastPicked = key;
+  redraw();
+}
+function tickBox(card) {
+  const box = element("input", "control-list-check");
+  box.type = "checkbox";
+  box.tabIndex = -1;
+  box.checked = picked.has(cardKey(card));
+  box.dataset.testid = "control-list-check";
+  box.setAttribute("aria-label", `Select “${card.title}”`);
+  return box;
+}
+
+async function doneMany(cards, helpers) {
+  const open = cards.filter((card) => card.column !== "done");
+  if (!open.length) { toast("They are all done already."); return; }
+  if (await helpers.doneMany(open).catch((error) => { toast.error(error.message); return false; })) stopSelecting();
+}
+function deleteMany(cards, helpers) {
+  deleteConversations(cards, { redraw, refresh: helpers.refresh });
+  stopSelecting();
+}
+
+/** The bar under the chips: how many are ticked and what to do with them. Hidden outside select mode. */
+function drawBar(helpers) {
+  ui.bar.hidden = !view.selecting;
+  ui.bar.replaceChildren();
+  if (!view.selecting) return;
+  const cards = pickedCards();
+  const act = (id, label, run, className = "") => {
+    const node = button(`control-list-bar-button ${className}`, `control-list-bar-${id}`, label, run);
+    node.disabled = id !== "all" && id !== "cancel" && !cards.length;
+    return node;
+  };
+  const count = element("b", "", cards.length ? `${cards.length} selected` : "Tick conversations");
+  count.dataset.testid = "control-list-bar-count";
+  ui.bar.append(count, element("span", "control-spacer"),
+    act("all", cards.length === shownCards.length ? "None" : "All", () => { if (cards.length === shownCards.length) picked.clear(); else for (const card of shownCards) picked.add(cardKey(card)); redraw(); }),
+    act("done", "✓ Done", () => void doneMany(cards, helpers)),
+    act("delete", "Delete", () => deleteMany(cards, helpers), "danger"),
+    act("cancel", "Cancel", stopSelecting));
+}
+
 /* ---------- reading what is not on the board ---------- */
 
 let boardKeys = new Set();
@@ -408,13 +487,18 @@ function drawChips(all) {
   ui.chips.append(folder, element("span", "control-spacer"));
   if (!query) {
     const group = element("span", "control-list-group");
-    for (const [id, label] of [["project", "Project"], ["date", "Date"]]) {
+    for (const [id, label] of [["status", "Status"], ["project", "Project"], ["date", "Date"]]) {
       const choice = button("", `control-list-group-${id}`, label, () => { view.group = id; localStorage.setItem(LIST_GROUP_KEY, id); redraw(); });
       choice.setAttribute("aria-pressed", String(view.group === id));
       group.append(choice);
     }
     ui.chips.append(group);
   }
+  const select = button("control-list-chip select", "control-list-select", "", () => (view.selecting ? stopSelecting() : startSelecting()));
+  select.setAttribute("aria-pressed", String(view.selecting));
+  select.title = "Select several conversations to mark them done or delete them";
+  select.append(svgIcon("check"), "Select");
+  ui.chips.append(select);
 }
 
 /** The folders: each with how many conversations it holds, and a box for a new name (made when a conversation is put in it). */
@@ -440,16 +524,20 @@ function drawRows(items, messages, helpers, all) {
   const rest = query ? items : items.filter((item) => !isPinned(item.card));
   if (!items.length) ui.rows.append(emptyNote(all, query));
   if (pinned.length) ui.rows.append(pinnedHead(pinned.length), ...pinned.map((item) => row(item, helpers)));
+  shownCards = [...pinned, ...rest].map((item) => item.card);
+  for (const key of [...picked]) if (!entries.some((entry) => !entry.system && cardKey(entry) === key)) picked.delete(key);
   let section = null;
   for (const item of rest) {
-    const key = query ? null : view.group === "date" ? dayLabel(item.card.updatedAt) : item.card.projectId;
+    const key = query ? null : view.group === "date" ? dayLabel(item.card.updatedAt) : view.group === "status" ? item.card.column : item.card.projectId;
     if (key !== section) {
       section = key;
       if (key && view.group === "date") ui.rows.append(dayHead(key, rest.filter((other) => dayLabel(other.card.updatedAt) === key).length));
+      else if (key && view.group === "status") ui.rows.append(statusHead(key, rest.filter((other) => other.card.column === key).length));
       else if (key) ui.rows.append(projectHead(rest.filter((other) => other.card.projectId === key).map((other) => other.card)));
     }
     ui.rows.append(row(item, helpers));
   }
+  drawBar(helpers);
   ui.rows.scrollTop = scroll;
   ui.clear.hidden = !ui.input.value;
   if (focused) ui.rows.querySelector(`.control-list-row[data-key="${CSS.escape(focused)}"]`)?.focus();
@@ -539,6 +627,14 @@ function dayHead(label, count) {
   return head;
 }
 
+function statusHead(column, count) {
+  const head = element("div", `control-list-section-head status ${column}`);
+  head.dataset.testid = "control-list-status-head";
+  head.dataset.column = column;
+  head.append(element("b", "", STATES[column]), element("span", "control-project-count", String(count)));
+  return head;
+}
+
 function projectHead(group) {
   const [first] = group;
   const head = element("div", "control-list-section-head project");
@@ -556,7 +652,8 @@ function projectHead(group) {
 }
 
 function row({ card, match }, helpers) {
-  const node = element("div", `control-list-row${cardKey(card) === selectedKey ? " selected" : ""}`);
+  const query = view.query.trim();
+  const node = element("div", `control-list-row${cardKey(card) === selectedKey ? " selected" : ""}${view.selecting ? " selecting" : ""}`);
   node.tabIndex = 0;
   node.setAttribute("role", "button");
   node.dataset.testid = "control-list-row";
@@ -577,6 +674,7 @@ function row({ card, match }, helpers) {
   if (card.column === "reviewed") status.append(element("span", "control-list-flag done", "Reviewed"));
   const folder = folderOf(card);
   if (folder && !view.scope.startsWith("folder:")) { const place = element("span", "control-list-folder"); place.append(svgIcon("folder"), folder); status.append(place); }
+  if (view.group !== "project" || query) status.prepend(element("span", "control-list-project-tag", card.projectName));
   const line = element("span", "control-list-snippet");
   if (match?.hits.body && !match.hits.status) {
     const found = snippet(card.summary, match.hits.body);
@@ -585,9 +683,13 @@ function row({ card, match }, helpers) {
   } else appendParts(line, segments(text, match?.hits.status));
   status.append(line);
   status.title = text;
-  node.append(element("i", "control-list-dot"), helpers.avatarOf(card), title, time, status, tools(card));
-  node.addEventListener("click", () => select(cardKey(card)));
-  node.addEventListener("keydown", (event) => { if (event.key === "Enter" && event.target === node) select(cardKey(card)); });
-  node.addEventListener("dblclick", () => helpers.openConversation(card).catch((error) => toast.error(error.message)));
+  node.append(view.selecting ? tickBox(card) : element("i", "control-list-dot"), helpers.avatarOf(card), title, time, status, tools(card));
+  node.addEventListener("click", (event) => (view.selecting ? pick(card, event.shiftKey) : select(cardKey(card))));
+  node.addEventListener("keydown", (event) => {
+    if (event.target !== node) return;
+    if (event.key === "Enter") view.selecting ? pick(card, event.shiftKey) : select(cardKey(card));
+    else if (event.key === " " && view.selecting) { event.preventDefault(); pick(card, event.shiftKey); }
+  });
+  node.addEventListener("dblclick", () => { if (!view.selecting) helpers.openConversation(card).catch((error) => toast.error(error.message)); });
   return node;
 }

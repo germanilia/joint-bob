@@ -2,7 +2,7 @@ import { api, savePreferencesInBackground } from "./api.js";
 import { elements } from "./elements.js";
 import { selectProject } from "./project-selection.js";
 import { openListedSession } from "./reviews.js";
-import { formatDate, toast } from "./shell.js";
+import { confirmAction, formatDate, toast } from "./shell.js";
 import { state } from "./state.js";
 import { registerControlView } from "./control-views.js";
 import { chooseConversationFeedback } from "./conversation-feedback.js";
@@ -302,7 +302,7 @@ function cheer(container) {
 const LAYOUT_KEY = "jointBobLiveLayout";
 const listLayout = () => document.body.classList.contains("bob-desk") && localStorage.getItem(LAYOUT_KEY) !== "cards";
 const listHelpers = {
-  projectColor, avatarOf, runningBadge, driverOf, doneButton, decideReview,
+  projectColor, avatarOf, runningBadge, driverOf, doneButton, doneMany: markManyDone, decideReview,
   actionRow: renderActionRow,
   moreMenu: moreButton,
   openConversation: (card) => openConversation(card),
@@ -609,6 +609,23 @@ export async function markDone(card) {
     method: "POST", body: JSON.stringify({ projectId: card.projectId, conversationId: card.conversationId, feedback }),
   });
   settledHere.set(cardKey(card), "Done");
+  await refreshControlCenter();
+  return true;
+}
+
+/**
+ * Closes several conversations from the list's multi-select. One question for the stop, none for the feedback: they are all
+ * closed as "Nothing — not important", the dialog's own default. Resolves true when they were closed.
+ */
+export async function markManyDone(cards) {
+  const running = cards.filter((card) => card.turnRunning).length;
+  if (running && !await confirmAction({ title: `Stop ${running} working and mark ${cards.length} done?`, message: "Working conversations are stopped first. You can open them again from their project.", confirmLabel: "Mark done" })) return false;
+  const results = await Promise.allSettled(cards.map((card) => api("/api/control-center/cards/done", {
+    method: "POST", body: JSON.stringify({ projectId: card.projectId, conversationId: card.conversationId, feedback: { rating: "unimportant", description: "" } }),
+  })));
+  for (const [index, result] of results.entries()) if (result.status === "fulfilled") settledHere.set(cardKey(cards[index]), "Done");
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length) toast.error(`Could not mark ${failed.length} of ${cards.length} done: ${failed[0].reason.message}`);
   await refreshControlCenter();
   return true;
 }

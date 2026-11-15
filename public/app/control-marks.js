@@ -130,8 +130,30 @@ async function reallyDelete(card, refresh) {
   }
 }
 
+/** Hides the conversations and deletes them when the Undo runs out; one notice and one Undo cover all of them. */
+function scheduleDelete(cards, { redraw, refresh }) {
+  const timers = cards.map((card) => {
+    const timer = setTimeout(() => void reallyDelete(card, refresh), UNDO_MS);
+    pending.set(cardKey(card), timer);
+    return [card, timer];
+  });
+  redraw();
+  const notice = toast(cards.length === 1 ? `Deleted “${cards[0].title}”` : `Deleted ${cards.length} conversations`, UNDO_MS);
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.className = "toast-undo";
+  undo.textContent = "Undo";
+  undo.dataset.testid = "control-list-undo";
+  undo.addEventListener("click", () => {
+    for (const [card, timer] of timers) { clearTimeout(timer); pending.delete(cardKey(card)); }
+    notice.remove();
+    redraw();
+  });
+  notice.insertBefore(undo, notice.querySelector(".toast-close"));
+}
+
 /** Deletes now. Pinned or starred, it asks first: a second press within five seconds goes through. */
-export function deleteConversation(card, { redraw, refresh }) {
+export function deleteConversation(card, actions) {
   const key = cardKey(card);
   if (isKept(card) && armed !== key) {
     armed = key;
@@ -140,15 +162,14 @@ export function deleteConversation(card, { redraw, refresh }) {
     return;
   }
   armed = null;
-  const timer = setTimeout(() => void reallyDelete(card, refresh), UNDO_MS);
-  pending.set(key, timer);
-  redraw();
-  const notice = toast(`Deleted “${card.title}”`, UNDO_MS);
-  const undo = document.createElement("button");
-  undo.type = "button";
-  undo.className = "toast-undo";
-  undo.textContent = "Undo";
-  undo.dataset.testid = "control-list-undo";
-  undo.addEventListener("click", () => { clearTimeout(timer); pending.delete(key); notice.remove(); redraw(); });
-  notice.insertBefore(undo, notice.querySelector(".toast-close"));
+  scheduleDelete([card], actions);
+}
+
+/** Deletes several at once with one Undo. Pinned and starred ones are left alone: only a single, twice-asked delete removes those. Returns how many were deleted. */
+export function deleteConversations(cards, actions) {
+  const kept = cards.filter(isKept);
+  const doomed = cards.filter((card) => !isKept(card));
+  if (kept.length) toast(`${kept.length} pinned or starred conversation${kept.length === 1 ? " was" : "s were"} kept. Delete those one at a time.`, 5_000);
+  if (doomed.length) scheduleDelete(doomed, actions);
+  return doomed.length;
 }
