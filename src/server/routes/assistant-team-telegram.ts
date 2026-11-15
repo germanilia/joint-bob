@@ -71,7 +71,9 @@ requestInterceptors.unshift((req,res)=>{
   const chunks:Buffer[]=[];let size=0;
   for await(const chunk of req){size+=chunk.length;if(size>256*1024)throw new TeamError('Update too large',413);chunks.push(chunk);}
   let update:unknown;try{update=JSON.parse(Buffer.concat(chunks).toString());}catch{throw new TeamError('Invalid JSON',400);}
-  await handleTeamTelegramWebhook(match[1],req.headers['x-telegram-bot-api-secret-token'],update);
+  // A refused sender must not be retried: Telegram holds every later update behind a failing one.
+  try {await handleTeamTelegramWebhook(match[1],req.headers['x-telegram-bot-api-secret-token'],update);}
+  catch(error){if(!(error instanceof TeamError&&(error.status===403||error.status===409)))throw error;console.warn(`Team Telegram update refused: ${error.message}`);}
   res.writeHead(200,{'Content-Type':'application/json'}).end('{}');
  })().catch(error=>{req.resume();if(!res.headersSent)res.writeHead(error instanceof TeamError ? error.status : 500).end('Telegram update not accepted');});
  return true;

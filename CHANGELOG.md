@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.306.2 — 2026-11-15
+
+- A Telegram message from someone the team does not know yet, such as a `/bind` sent before enrolling, no longer blocks the team bot. The team answers it and drops it, so Telegram stops retrying it and later messages, including enrollment, get through.
+
 ## 2.306.1 — 2026-11-15
 
 - Bob's floating chat window stays above a conversation that is open over Bob's page, instead of disappearing behind it.

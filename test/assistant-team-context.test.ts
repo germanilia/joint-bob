@@ -83,6 +83,7 @@ test('real HTTP enrollment and webhook persist before acknowledgment; startup co
  assert.equal((await fetch(`${node.url}/api${base}/enrollment`,{method:'POST',headers:{Cookie:login.cookie,'Content-Type':'application/json'},body:'{}'})).status,403);
  const enrollment=await api<any>(node,login,'POST',`${base}/enrollment`,{});assert.equal(enrollment.status,200);
  const msg=(id:number,text:string,type='supergroup')=>({update_id:id,message:{message_id:id,chat:{id:type==='private'?7:-1,type},from:{id:7,first_name:'Human'},date:1,text}});
+ assert.equal((await hook(msg(100,'/bind notacode'))).status,200,'a sender the team refuses is answered 200 so Telegram does not hold later updates behind it');
  assert.equal((await hook(msg(1,`/start ${new URL(enrollment.body.link).searchParams.get('start')}`,'private'))).status,200);
  assert.equal((await api(node,login,'POST',`${base}/enrollment/${enrollment.body.id}/confirm`,{})).status,200);
  const challenge=await api<any>(node,login,'POST',`${base}/group`,{});assert.equal((await hook(msg(2,`/bind ${challenge.body.code}`))).status,200);
