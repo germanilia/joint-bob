@@ -3,7 +3,7 @@
    tabs on top. The chat folds into the "Ask Bob" button (.bob-fab). Text is larger than the control center's elsewhere.
    Loaded before paper.css. */
 
-.bob-head-avatar, .bob-head-tag, .bob-head-state, .bob-head-pause, .bob-head-settings, .bob-fab, #controlChat .bob-fold { display: none; }
+.bob-head-brand, .bob-head-avatar, .bob-head-tag, .bob-head-state, .bob-head-pause, .bob-head-settings, .bob-fab, #controlChat .bob-fold { display: none; }
 body:not(.focus-ui) .bob-settings-head { display: none; }
 .control-tab .bob-tab-icon { display: none; }
 
@@ -31,6 +31,9 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk #controlCenterPanel > .panel-bar > .panel-title { display: contents; }
   body.bob-desk #controlCenterPanel > .panel-bar h1 { flex: none; margin: 0; color: var(--heading); font: 400 30px/1.1 var(--serif); }
   body.bob-desk #controlCenterPanel > .panel-bar .control-count { display: none; }
+  body.bob-desk .bob-head-brand { display: flex; flex: none; flex-direction: column; align-items: center; gap: 3px; order: -1; }
+  body.bob-desk .bob-head-brand .bob-head-avatar { order: 0; }
+  body.bob-desk .bob-head-version { display: block; color: var(--muted); font: 500 11px/1 var(--mono); }
   body.bob-desk .bob-head-avatar {
     display: grid; flex: none; place-items: center; order: -1; width: 42px; height: 42px; border-radius: 50%; background: var(--paper-raised);
   }

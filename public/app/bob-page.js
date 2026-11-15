@@ -1,3 +1,4 @@
+import { api } from "./api.js";
 // Bob's page on the desktop (1024 px and wider; below that the control center is Bob's chat, control-phone.js).
 // Version A of 12 Nov: a head with Bob's hat, what he does, the team context, what he watches, "Bob is on" (pause
 // everything he does on his own), "Bob's settings", Refresh and Exit; below it Bob's chat and the stage, whose tabs are
@@ -69,7 +70,13 @@ const appSettingsButton = button("ghost compact bob-head-app-settings", "bob-hea
 appSettingsButton.title = "Joint Bob settings";
 appSettingsButton.addEventListener("click", () => elements.settingsButton.click());
 
-header.prepend(avatar);
+// The release number sits under the logo, so the person can tell which build the page runs.
+const version = element("span", "bob-head-version");
+version.dataset.testid = "bob-head-version";
+const brand = element("span", "bob-head-brand");
+brand.append(avatar, version);
+header.prepend(brand);
+api("/api/health").then(({ version: release }) => { version.textContent = `v${release}`; });
 heading.after(tag, contextHere, watching, pause, settingsButton);
 elements.controlCenterCloseButton.before(themeButton, appSettingsButton);
 
