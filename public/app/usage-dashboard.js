@@ -1004,6 +1004,40 @@ refreshButton.addEventListener("click", async () => {
   }
 });
 
+/*
+ * Wherever the app has its left column (not the phone), Costs is a page beside it, like Bob's pages and a conversation: the
+ * column stays usable, its place is lit, and choosing anything in the column (or Esc) closes it. The phone keeps a full screen.
+ */
+const side = document.querySelector("#workspaceSide");
+const openAsPage = () => !document.body.classList.contains("focus-ui") && matchMedia("(min-width: 701px)").matches;
+function placeAsPage() {
+  if (!document.body.classList.contains("costs-page")) return;
+  document.body.style.setProperty("--costs-left", `${Math.round(side.getBoundingClientRect().right)}px`);
+}
+function showAsPage() {
+  document.body.classList.add("costs-page");
+  placeAsPage();
+  dialog.show();
+  window.dispatchEvent(new CustomEvent("workspace-places-changed"));
+}
+dialog.addEventListener("close", () => {
+  document.body.classList.remove("costs-page");
+  window.dispatchEvent(new CustomEvent("workspace-places-changed"));
+});
+new ResizeObserver(placeAsPage).observe(side);
+// Another place, a conversation or Bob, chosen in the column, takes the middle.
+for (const column of document.querySelectorAll(".shell > :is(.ws-side, .ws-groups, .ws-foot)")) {
+  column.addEventListener("click", (event) => {
+    if (document.body.classList.contains("costs-page") && event.target.closest("button") && !event.target.closest("[data-usage-open]")) dialog.close();
+  });
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || event.defaultPrevented || !document.body.classList.contains("costs-page") || document.querySelector("dialog[open]:modal")) return;
+  if (event.target.closest?.(".usage-filter-menu[open]")) return;
+  event.preventDefault();
+  dialog.close();
+});
+
 /** Opens on this month: the period resets on every open, other filters persist. */
 export function openUsageDashboard(initialFilters = {}) {
   filters.elements.period.value = "month";
@@ -1012,7 +1046,7 @@ export function openUsageDashboard(initialFilters = {}) {
     if (filters.elements[key]) filters.elements[key].value = value;
   }
   renderChips();
-  if (!dialog.open) dialog.showModal();
+  if (!dialog.open) openAsPage() ? showAsPage() : dialog.showModal();
   showTab("overview");
   syncClusterOptions();
   editor.open = false;

@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { appearanceContext, applyAppearance } from "./appearance.js";
 import { attachmentsFromFiles, renderAttachmentChips } from "./attachments.js";
 import { elements } from "./elements.js";
-import { focusProject, newConversation, openConversation, projectColor, refreshControlCenter, saveControlCenter, seeCardOff } from "./control-center.js";
+import { focusProject, newConversation, openConversation, projectColor, refreshControlCenter, saveControlCenter } from "./control-center.js";
 import { takeControl } from "./control-lease.js";
 import { vanish } from "./control-vanish.js";
 import { fillModelOptions, fillThinkingOptions, selectedModel } from "./git-reviewer-options.js";
@@ -40,7 +40,7 @@ function applyLayout() {
 const DECIDED_BY_BOB = /^(Decision model|No decision model|The decision model)/;
 
 /** The parts of Joint Bob that answer what the person typed (or pressed): their lines belong to the chat, not to the background updates. */
-const ANSWERING_SOURCES = new Set(["Organize", "Display", "Automations", "Dashboards", "Team", "Move jobs"]);
+const ANSWERING_SOURCES = new Set(["Organize", "Display", "Display agent", "Automations", "Dashboards", "Team", "Move jobs"]);
 
 /** Who wrote a message: you, Bob answering you, or the part of Joint Bob its line names first (Review check, Guardian, Auto respond…). */
 function sourceOf(message) {
@@ -499,13 +499,12 @@ async function runAction(message, action, note = "") {
   });
 }
 
-/** Dismiss clears a message; Done also closes the conversation it is about, whose card leaves the board with the same check. */
+/** Dismiss clears a message; Done also closes the conversation it is about. */
 async function settle(message, conversation, how) {
   await whileBusy(message, how === "done" ? "Closing it" : "Dismissing it", async () => {
     const result = await api("/api/control-center/bob/item", { method: "POST", body: JSON.stringify({ messageId: message.id, how }) });
     Object.assign(message, result.pressed);
     if (how === "done") {
-      seeCardOff(conversation.open.projectId, conversation.open.conversationId, "Done");
       void refreshControlCenter().catch(() => undefined);
     }
     if (entryOf(message.id)) await vanish(entryOf(message.id), how === "done" ? "Done" : "Dismissed", { collapse: true });

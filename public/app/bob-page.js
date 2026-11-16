@@ -2,14 +2,15 @@ import { api } from "./api.js";
 // Bob's page on the desktop (1024 px and wider; below that the control center is Bob's chat, control-phone.js).
 // Version A of 12 Nov: a head with Bob's hat, what he does, the team context, what he watches, "Bob is on" (pause
 // everything he does on his own), "Bob's settings", Refresh and Exit; below it Bob's chat and the stage, whose tabs are
-// the control center's views (Live agents, Dashboard, Automations, Memory, Dashboards, Assistants) with their counts.
+// the control center's views (Bob himself, Dashboard, Automations, Memory, Dashboards, Assistants) with their counts; the views
+// are Bob's sub-menu in the left column, which stays beside the page.
 // The view opened last opens again, on every browser (state.controlCenter.view). Bob's chat folds into the "Ask Bob"
 // button (state.controlCenter.collapsed), and every opening starts folded. Nothing here leaves the control center: only
 // the person does (Exit, Esc twice, the toggle shortcut). The tab strip and the team context move into the page and back, by markers.
 // Styles: public/bob-page.css.
 
 import { saveControlCenter, toggleFolded } from "./control-center.js";
-import { createControlViewElement, currentControlView, registerControlView, showControlView } from "./control-views.js";
+import { currentControlView, showControlView } from "./control-views.js";
 import { initFloatingChat } from "./bob-float.js";
 import { elements } from "./elements.js";
 import { state } from "./state.js";
@@ -165,7 +166,7 @@ window.addEventListener("control-bob-settings", (event) => {
 /* ---------- the views as tabs ---------- */
 
 const ICONS = {
-  live: "M3 12h4l3-8 4 16 3-8h4",
+  live: "M4 5h16v11H9l-5 4z",
   "my-dashboard": "M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 7h6V4h-6z",
   automations: "M13 3 5 14h6l-1 7 8-11h-6z",
   memory: "M5 4.5h10.5a3 3 0 0 1 3 3v12H8a3 3 0 0 1-3-3zM5 16.5a3 3 0 0 1 3-3h10.5",
@@ -229,7 +230,7 @@ function apply() {
     placePopup();
   } else restore();
   float.sync();
-  heading.textContent = page ? "Bob" : "Control center";
+  nameHead();
 }
 
 // The view opened last opens again; a view asked for right as the control center opens (Automations in the left column,
@@ -238,9 +239,22 @@ function apply() {
 // The page opens at its full width: Bob's chat starts folded into the "Ask Bob" button. Only entering folds it: the control
 // center is activated again while it is open (a conversation closing, a search), and that must not close a chat the person opened.
 let entered = false;
-window.addEventListener("app-view-changed", () => { if (!body.classList.contains("view-control")) entered = false; });
+/** The column's list before Bob's page showed the Inbox in it: leaving puts it back. */
+let columnBefore = null;
+window.addEventListener("app-view-changed", () => {
+  if (body.classList.contains("view-control")) return;
+  entered = false;
+  if (columnBefore === "projects") window.dispatchEvent(new CustomEvent("workspace-place", { detail: { place: "projects" } }));
+  columnBefore = null;
+});
 window.addEventListener("control-center-activated", () => {
   apply();
+  // Bob and the Inbox are one place: entering his page shows the Inbox (what he watches) as the column's list, and leaving it
+  // gives the column back as it was.
+  if (wide.matches && !entered) {
+    columnBefore = body.classList.contains("ws-column-projects") ? "projects" : null;
+    window.dispatchEvent(new CustomEvent("workspace-place", { detail: { place: "inbox" } }));
+  }
   if (wide.matches && !entered && !state.controlCenter.collapsed.includes("chat")) toggleFolded("chat");
   entered = true;
   applyFolds();
@@ -261,13 +275,14 @@ new MutationObserver(() => { if (body.classList.contains("bob-desk") !== onPage(
 // lease banner's "Give back to Bob" joins the popup bar, so the bar is the one line that says who is in control.
 const popupBar = document.getElementById("controlPopupBar");
 const giveBack = document.getElementById("controlLeaseGiveBack");
+// It covers the page's whole working area (the stage, or Bob's chat when his own view is open), never the left column.
+const workArea = stage.parentElement;
 function placePopup() {
-  // The Chat tab of the list keeps the frame on its own body (control-list-preview.js).
-  if (!body.classList.contains("bob-desk") || body.classList.contains("control-inline")) return;
-  const box = stage.getBoundingClientRect();
+  if (!body.classList.contains("bob-desk")) return;
+  const box = workArea.getBoundingClientRect();
   for (const [name, value] of [["x", box.left], ["y", box.top], ["w", box.width], ["h", box.height]]) body.style.setProperty(`--bob-pop-${name}`, `${Math.round(value)}px`);
 }
-new ResizeObserver(placePopup).observe(stage);
+new ResizeObserver(placePopup).observe(workArea);
 window.addEventListener("resize", placePopup);
 window.addEventListener("control-popup-opened", placePopup);
 
@@ -292,14 +307,33 @@ window.addEventListener("control-center-rendered", (event) => {
 apply();
 applyFolds();
 
+/* ---------- the head names the page ---------- */
+
+// His own view is "Bob" with what he does; his other pages are named in the head, as a conversation or Costs names itself.
+function nameHead() {
+  // Read when called: apply() runs while this module is still loading.
+  const PAGE_NAMES = { "my-dashboard": "Dashboard", automations: "Automations", memory: "Bob's memory", dashboards: "Dashboards", assistants: "Assistants" };
+  if (!body.classList.contains("bob-desk")) { heading.textContent = "Control center"; return; }
+  const view = currentControlView();
+  heading.textContent = PAGE_NAMES[view] ?? "Bob";
+  tag.hidden = view !== "live";
+}
+window.addEventListener("control-view-changed", nameHead);
+
 /* ---------- Bob's own view: his chat alone, in the middle, like a conversation ---------- */
 
-// The first place in Bob's sub-menu. The stage steps aside and the chat takes the page (bob-calm.css, body.bob-chat-page);
-// it opens unfolded, and goes back to the folded "Ask Bob" button when another view is opened.
-registerControlView({ id: "bob-chat", title: "Bob", order: -1, element: createControlViewElement("bob-chat") });
+// "Bob" in the left column always opens his chat. It runs before the button's own handler (layout.js opens the control
+// center), so the view the opening restores is his.
+elements.openControlCenterButton.addEventListener("click", () => {
+  state.controlCenter.view = "live";
+  if (body.classList.contains("view-control")) showControlView("live");
+}, { capture: true });
+
+// The "live" view is Bob himself (control-center.js registers it as "Bob"): the stage steps aside and the chat takes the page
+// (bob-page.css, body.bob-chat-page). It opens unfolded, and goes back to the folded "Ask Bob" button when another view is opened.
 let unfoldedByView = false;
 function syncBobChatPage() {
-  const on = wide.matches && body.classList.contains("view-control") && currentControlView() === "bob-chat";
+  const on = !body.classList.contains("focus-ui") && body.classList.contains("view-control") && currentControlView() === "live";
   body.classList.toggle("bob-chat-page", on);
   const folded = state.controlCenter.collapsed.includes("chat");
   if (on && folded) { unfoldedByView = true; toggleFolded("chat"); applyFolds(); }
@@ -307,3 +341,4 @@ function syncBobChatPage() {
 }
 window.addEventListener("control-view-changed", syncBobChatPage);
 window.addEventListener("control-center-activated", syncBobChatPage);
+window.addEventListener("app-view-changed", syncBobChatPage);

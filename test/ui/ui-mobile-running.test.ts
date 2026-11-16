@@ -43,7 +43,9 @@ test("a narrow window exposes running work and keeps the current conversation re
   await conversation.click();
   await page.locator("#sessionTitle").getByText(title!, { exact: true }).waitFor();
   // Inbox shows the Running group; the conversation stays open beside it.
-  await page.getByTestId("workspace-inbox-button").click();
+  // The Inbox column beside the open conversation: Home switches the column to it, and Esc closes Home back to the conversation.
+  await page.getByTestId("workspace-home-button").click();
+  await page.keyboard.press("Escape");
   await page.getByTestId("workspace-group-running").waitFor();
   // The count reads "…" until the board has answered.
   await page.getByTestId("workspace-group-count-running").getByText("0", { exact: true }).waitFor();

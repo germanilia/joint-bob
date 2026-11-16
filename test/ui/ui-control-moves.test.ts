@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Page } from "playwright-core";
-import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
+import { nativeUiFixture } from "./native-ui-fixture.js";
 
 const MAC = "11111111-1111-4111-8111-111111111111";
 const HOME = "22222222-2222-4222-8222-222222222222";
@@ -27,7 +27,7 @@ async function signIn(page: Page, url: string, environment: { username: string; 
   await page.waitForTimeout(500);
 }
 
-test("a card can be picked, moved after its turn or stopped and moved now, and the batch is followed to its end", { timeout: 120_000 }, async (t) => {
+test("conversations chosen in the Inbox move after their turn or are stopped and moved now, and the batch is followed to its end", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment);
   const board = {
@@ -72,41 +72,24 @@ test("a card can be picked, moved after its turn or stopped and moved now, and t
     };
   })()`);
 
+  // The Inbox's full list (Show all) is where several conversations are chosen at once; Move… sends them to another machine.
   await page.getByTestId("projects-open-control-center-button").click();
-  await openBobChat(page);
-  // Bob's chat floats over the page as a window; the board is used with it folded into the button.
-  await page.getByTestId("control-chat-fold").click();
-  // The "Ask Bob" button is not what this test is about, and sits over the panels it uses.
-  await page.getByTestId("bob-fab-chat").evaluate((fab) => { fab.style.display = "none"; });
-  // Bob's page opens on his chat; the board is his Live agents tab.
-  await page.getByTestId("control-tab-live").click();
-  await page.waitForSelector('[data-testid="control-center-card"]');
-
-  // Every card has Story and Overview under its "More ▾", and the machines show how many agents run on each.
-  assert.equal(await page.getByTestId("control-card-more").count(), 4);
-  await page.getByTestId("control-card-more").first().click();
-  const menu = await page.locator("#rowMenu button").allTextContents();
-  assert.ok(menu.includes("Story") && menu.includes("Overview"), `Story and Overview are under More: ${menu}`);
-  await page.keyboard.press("Escape");
-  const nodes = page.getByTestId("control-moves-node");
-  await nodes.first().waitFor();
-  assert.deepEqual(await nodes.allTextContents(), ["Mac · 2 running Move all…", "Homeserver · 1 running Move all…"], "finished cards are not counted");
+  await page.getByTestId("workspace-show-all-running").click();
+  await page.getByTestId("workspace-group-page").waitFor();
   assert.equal(await page.getByTestId("control-moves-bar").isHidden(), true);
-
-  // Select puts a box on every card; picking by clicking the card does not open it.
-  await page.getByTestId("control-board-tool-select").click();
-  assert.equal(await page.getByTestId("control-moves-bar").isVisible(), true);
-  assert.equal(await page.getByTestId("control-moves-pick").first().isVisible(), true);
-  assert.equal(await page.getByTestId("control-moves-count").textContent(), "0 selected");
-  assert.equal(await page.getByTestId("control-moves-later").isDisabled(), true);
-  await page.locator('[data-key="p1:c1"] .control-title').click();
-  await page.getByTestId("control-moves-preview").getByText("Every one of them can move.").waitFor();
-  await page.locator('[data-key="p2:c2"] .control-title').click();
+  await page.getByTestId("inboxPage-select").click();
+  assert.equal(await page.getByTestId("inboxPage-move").isDisabled(), true, "nothing chosen yet");
+  // Choosing a row does not open it; the other groups are tabs of the same page.
+  await page.getByTestId("workspace-group-page-row").filter({ hasText: "Mobile menu" }).click();
+  await page.getByTestId("workspace-group-tab-needs-you").click();
+  await page.getByTestId("workspace-group-page-row").filter({ hasText: "Slice 7" }).click();
+  assert.equal(await page.getByTestId("inboxPage-selected-count").textContent(), "2 selected");
+  await page.getByTestId("inboxPage-move").click();
+  await page.getByTestId("control-moves-bar").waitFor();
+  assert.equal(await page.getByTestId("control-moves-count").textContent(), "2 selected");
   // What cannot move is said before anything is pressed, with the reason from the machine it would move to.
   await page.waitForFunction(() => document.querySelector('[data-testid="control-moves-preview"]')?.textContent === "Can't move: Slice 7 (Pi on Bedrock isn't set up on Homeserver).");
-  assert.equal(await page.locator("body.view-control").count(), 1, "picking did not open a conversation");
-  assert.equal(await page.getByTestId("control-moves-count").textContent(), "2 selected");
-  assert.equal(await page.locator('[data-key="p1:c1"]').evaluate((element) => element.classList.contains("control-picked")), true);
+  assert.equal(await page.locator("body.control-popup").count(), 0, "choosing did not open a conversation");
   assert.deepEqual(await page.getByTestId("control-moves-target").locator("option").allTextContents(), ["Mac", "Homeserver", "Contigos EC2 (offline)"]);
   assert.equal(await page.getByTestId("control-moves-target").inputValue(), HOME, "the first other machine that answers is the default");
   assert.match(await page.getByTestId("control-moves-now").getAttribute("title") ?? "", /tells it: "Continue where you stopped: you were moved from Mac to Homeserver\. Check what was half done before repeating anything\."/);
@@ -128,11 +111,14 @@ test("a card can be picked, moved after its turn or stopped and moved now, and t
   await page.getByTestId("control-moves-job-close").click();
   assert.equal(await job.isHidden(), true);
 
-  // "Move all…" on a machine picks every unfinished agent there, and Stop and move now asks first.
-  await page.getByTestId("control-moves-node").first().getByTestId("control-moves-all").click();
+  // Stop and move now asks first.
+  await page.getByTestId("inboxPage-select").click();
+  await page.getByTestId("workspace-group-tab-running").click();
+  await page.getByTestId("workspace-group-page-row").filter({ hasText: "Mobile menu" }).click();
+  await page.getByTestId("workspace-group-page-row").filter({ hasText: "Billing" }).click();
+  await page.getByTestId("inboxPage-move").click();
+  await page.getByTestId("control-moves-bar").waitFor();
   assert.equal(await page.getByTestId("control-moves-count").textContent(), "2 selected");
-  assert.equal(await page.locator('[data-key="p1:c3"]').evaluate((element) => element.classList.contains("control-picked")), false, "a finished conversation is not picked");
-  assert.equal(await page.getByTestId("control-moves-target").inputValue(), HOME);
   await page.getByTestId("control-moves-now").click();
   await page.getByTestId("confirm-cancel-button").click();
   assert.equal((await page.evaluate("window.__moves.requests") as unknown[]).length, 1, "declining the confirmation sends nothing");
@@ -150,14 +136,17 @@ test("a card can be picked, moved after its turn or stopped and moved now, and t
   assert.equal(await page.getByTestId("control-moves-job-next").isDisabled(), true);
   await page.getByTestId("control-moves-job-close").click();
 
-  // Leaving Select clears the boxes; the board is back to normal.
-  await page.getByTestId("control-board-tool-select").click();
+  // Cancel closes the bar and leaves Select.
+  await page.getByTestId("inboxPage-select").click();
+  await page.getByTestId("workspace-group-page-row").first().click();
+  await page.getByTestId("inboxPage-move").click();
+  await page.getByTestId("control-moves-bar").waitFor();
   await page.getByTestId("control-moves-cancel").click();
   assert.equal(await page.getByTestId("control-moves-bar").isHidden(), true);
-  assert.equal(await page.locator(".control-board.selecting").count(), 0);
+  assert.equal(await page.getByTestId("inboxPage-select").textContent(), "Select");
 });
 
-test("Story and Overview on a card open that conversation and use the app's own Story and Overview", { timeout: 120_000 }, async (t) => {
+test("Story and Overview in an Inbox row's menu open that conversation and use the app's own Story and Overview", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment);
   const target = await page.evaluate(async () => {
@@ -187,18 +176,12 @@ test("Story and Overview on a card open that conversation and use the app's own 
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
-  await openBobChat(page);
-  // Bob's chat floats over the page as a window; the board is used with it folded into the button.
-  await page.getByTestId("control-chat-fold").click();
-  // The "Ask Bob" button is not what this test is about, and sits over the panels it uses.
-  await page.getByTestId("bob-fab-chat").evaluate((fab) => { fab.style.display = "none"; });
-  // Bob's page opens on his chat; the board is his Live agents tab.
-  await page.getByTestId("control-tab-live").click();
-  await page.waitForSelector('[data-testid="control-center-card"]');
+  const row = page.getByTestId("workspace-group-review").getByTestId("workspace-group-row").filter({ hasText: target.title });
+  await row.waitFor();
 
-  // Overview opens the card's conversation, then runs the Activity overview for it.
-  await page.getByTestId("control-card-more").first().click();
-  await page.getByTestId("control-card-action-overview").click();
+  // Overview, in the row's own menu, opens its conversation, then runs the Activity overview for it.
+  await row.click({ button: "right" });
+  await page.getByTestId("inbox-row-overview").click();
   await page.waitForFunction(() => document.body.classList.contains("view-control") && document.body.classList.contains("control-popup"));
   for (let attempt = 0; attempt < 100 && !seen.some((request) => request.url.includes("/git/overview")); attempt += 1) await page.waitForTimeout(100);
   const overview = seen.find((request) => request.url.includes("/git/overview"));
@@ -208,9 +191,8 @@ test("Story and Overview on a card open that conversation and use the app's own 
 
   // Story opens the same conversation's story in the Git view.
   await page.evaluate(async () => (await import("/app/control-center.js")).closeConversationPopup());
-  await page.waitForSelector('[data-testid="control-center-card"]');
-  await page.getByTestId("control-card-more").first().click();
-  await page.getByTestId("control-card-action-story").click();
+  await row.click({ button: "right" });
+  await page.getByTestId("inbox-row-story").click();
   await page.getByTestId("git-review-dialog").waitFor({ state: "visible" });
   await page.waitForFunction(() => document.querySelector("#gitReviewContext")?.textContent === "Conversation changes");
   assert.ok(seen.some((request) => request.url.includes("/git/story-latest") && request.url.includes(`conversationId=${encodeURIComponent(target.conversationId)}`)), `the saved story of that conversation was looked up: ${JSON.stringify(seen.map((request) => request.url))}`);

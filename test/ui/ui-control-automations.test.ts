@@ -54,10 +54,10 @@ test("the Automations tab lists every scheduled task, webhook and Bob report, fi
   const TOTAL = 19;
 
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-automations").waitFor();
+  await page.getByTestId("control-tab-automations").waitFor({ state: "attached" });
   // The count shows on the tab as soon as the control center opens.
   await page.waitForFunction((expected) => document.querySelector('[data-testid="control-tab-automations"] .control-tab-badge')?.textContent === String(expected), TOTAL);
-  await page.getByTestId("control-tab-automations").click();
+  await page.getByTestId("workspace-automations-button").click();
   await page.getByTestId("automation-row").first().waitFor();
 
   // It pages to the height it has and never scrolls.
@@ -73,7 +73,7 @@ test("the Automations tab lists every scheduled task, webhook and Bob report, fi
   await page.getByTestId("automations-page-previous").click();
   await page.waitForFunction((id) => document.querySelector('[data-testid="automation-row"]')?.getAttribute("data-id") === id, firstPage);
 
-  // The project filter is the board's: choosing a project here narrows this table and stays chosen on the board.
+  // The project filter is the project focus: choosing a project here narrows this table and Bob's other pages.
   await page.getByTestId(`automations-filter-${beta.id}`).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation-row"]').length === 1);
   assert.equal(await page.getByTestId("automation-name").first().textContent(), "DB slow query report");
@@ -81,9 +81,9 @@ test("the Automations tab lists every scheduled task, webhook and Bob report, fi
   assert.equal(await page.getByTestId("automation-last").first().textContent(), "paused");
   assert.equal(await page.getByTestId("automation-toggle").first().getAttribute("aria-checked"), "false");
   assert.equal(await page.locator('.control-tab-badge').first().textContent(), "1", "the badge follows the filter");
-  await page.getByTestId("control-tab-live").click();
-  await page.waitForFunction((name) => document.querySelector('[data-testid="control-center-filters"] .control-chip.active')?.textContent === name, beta.name);
-  await page.getByTestId("control-tab-automations").click();
+  // The project chosen here focuses Bob's other pages too (the memory, the dashboards).
+  assert.deepEqual(await page.evaluate(async () => (await import("/app/state.js")).state.controlCenter.filter), [beta.id]);
+  await page.getByTestId("workspace-automations-button").click();
   await page.getByTestId("automations-filter-all").click();
   await page.waitForFunction((total) => document.querySelector('[data-testid="control-tab-automations"] .control-tab-badge')?.textContent === String(total), TOTAL);
   await page.getByTestId(`automations-filter-${alpha.id}`).click();
@@ -201,8 +201,8 @@ test("machines that could not be read are one line with their names, and the ful
   await page.waitForFunction(async () => (await import("/app/state.js")).state.preferencesLoaded);
   await page.waitForTimeout(500);
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-automations").waitFor();
-  await page.getByTestId("control-tab-automations").click();
+  await page.getByTestId("control-tab-automations").waitFor({ state: "attached" });
+  await page.getByTestId("workspace-automations-button").click();
   const problems = page.getByTestId("automations-problems");
   await problems.waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("automations-problems-line").innerText(), "Idos-MacBook-Pro-3.local and Contigos EC2 could not be read. Some rows show what was last reported. Details");

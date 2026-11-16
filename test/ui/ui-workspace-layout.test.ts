@@ -73,8 +73,10 @@ after(async () => {
 test("the left column starts in Inbox: places, then Needs you, Running and To review with their counts", async () => {
   await page.getByTestId("workspace-side").waitFor();
   assert.equal(await page.evaluate((key) => localStorage.getItem(key), WORKSPACE_COLUMN_KEY), "unset", "nothing was chosen yet");
+  // The Inbox is the column's list of every start (its own place is Bob's, and Home's): no place of its own in the column.
   assert.equal(await page.getByTestId("workspace-inbox-button").getAttribute("aria-pressed"), "true");
-  for (const id of ["projects-open-control-center-button", "workspace-inbox-button", "workspace-projects-button", "workspace-automations-button", "usage-open", "settings-open-button", "workspace-person-button", "workspace-new-button", "workspace-search-input"]) {
+  assert.equal(await visible("workspace-inbox-button"), false);
+  for (const id of ["projects-open-control-center-button", "workspace-projects-button", "workspace-automations-button", "usage-open", "settings-open-button", "workspace-person-button", "workspace-new-button", "workspace-search-input"]) {
     assert.equal(await visible(id), true, `${id} is in the column`);
   }
   assert.deepEqual(
@@ -468,8 +470,8 @@ test("Projects shows two columns: the projects under the places, and the chosen 
   await page.locator("body:not(.ws-auto-rail):not(.ws-details-float)").waitFor();
   assert.equal(await visible("project-list-search-input"), true);
 
-  // Inbox brings the groups back, in one column.
-  await page.getByTestId("workspace-inbox-button").click();
+  // Home brings the Inbox's groups back, in one column.
+  await page.getByTestId("workspace-home-button").click();
   await page.getByTestId("workspace-groups").waitFor();
   assert.equal(await page.locator("#chatsPanel").isVisible(), false, "Inbox has no second column");
 });
@@ -579,8 +581,8 @@ test("the workspace search opens with what was typed, and can hand it to Bob", a
 });
 
 test("[ folds the column to a rail of icons and back", async () => {
-  // The groups are Inbox's: the places before this test may have left Projects open.
-  await page.getByTestId("workspace-inbox-button").click();
+  // The groups are Inbox's (Home brings them back): the places before this test may have left Projects open.
+  await page.getByTestId("workspace-home-button").click();
   await page.getByTestId("workspace-groups").waitFor();
   await page.keyboard.press("Control+Alt+BracketLeft");
   await page.getByTestId("projects-panel-expand-button").waitFor();
@@ -592,8 +594,8 @@ test("[ folds the column to a rail of icons and back", async () => {
 });
 
 test("between 701 and 1023 px the column stays and the details float; the phone keeps its own layout", async () => {
-  // Inbox brings the open conversation back to the middle.
-  await page.getByTestId("workspace-inbox-button").click();
+  // Home brings the Inbox column back.
+  await page.getByTestId("workspace-home-button").click();
   // Choosing another project closed the conversation, so the middle is Home: a row of the column opens one again.
   await page.waitForTimeout(200);
   if (await page.getByTestId("home-page").isVisible()) await page.getByTestId("workspace-group-row").first().click();
@@ -786,7 +788,7 @@ test("the left columns hold their width at every window width and in every theme
 
   // Contrast, measured, in every theme: every piece of text in the three columns reads at least 4.5:1.
   for (const place of ["projects", "inbox"]) {
-    if (place === "inbox") { await page.getByTestId("workspace-inbox-button").click(); await page.getByTestId("workspace-groups").waitFor(); }
+    if (place === "inbox") { await page.getByTestId("workspace-home-button").click(); await page.getByTestId("workspace-groups").waitFor(); }
     for (const [name, theme, palette] of THEMES) {
       await setTheme(page, theme, palette);
       assert.deepEqual(await auditContrast(page), [], `${name} (${place}): the left columns' text is readable`);

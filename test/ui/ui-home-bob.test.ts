@@ -99,25 +99,26 @@ async function savedView(view: string) {
   assert.fail(`the saved view never became ${view}`);
 }
 
-test("Bob's page: the head carries Bob's switch and settings, the stage's tabs are the views, and the choice and the fold are kept", async () => {
+test("Bob's page: his chat is his own place, the head carries his switch and settings, his pages are a sub-menu, and the choice and the fold are kept", async () => {
   // Wait for the page to finish opening, or its restore of the saved view takes it away from Bob again.
   await page.waitForFunction(() => /need you/.test(document.querySelector('[data-testid="home-counts"]')?.textContent ?? ""));
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.locator("body.view-control.bob-desk").waitFor();
-  // The page opens at its full width: the chat is folded into the "Ask Bob" button at the bottom left.
-  assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
-  const fab = (await page.getByTestId("bob-fab-chat").boundingBox())!;
-  assert.ok(fab.x < page.viewportSize()!.width / 2, `"Ask Bob" sits on the left of the page (${fab.x})`);
-  await page.getByTestId("bob-fab-chat").click();
+  await page.locator("body.view-control.bob-desk.bob-chat-page").waitFor();
+  // "Bob" opens his chat, which fills the page beside the left column: no "Ask Bob" button over it.
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   assert.equal(await page.getByTestId("control-chat-input").getAttribute("placeholder"), "Ask Bob, or give him a task…");
-  // The views are Bob's sub-menu in the left column, which stays beside the page; no third column.
+  assert.equal(await page.getByTestId("bob-fab-chat").isVisible(), false);
+  // The column stays, with the Inbox (what he watches) as its list.
+  assert.equal(await page.getByTestId("workspace-side").isVisible(), true);
+  assert.equal(await page.getByTestId("workspace-groups").isVisible(), true);
+  // His other pages are his sub-menu in the left column; he himself is "Bob" above it and Automations is a place of its own.
   const stage = page.locator(".ws-places");
-  for (const testid of ["control-tab-live", "control-tab-my-dashboard", "control-tab-automations", "control-tab-memory", "control-tab-dashboards", "control-tab-assistants"]) {
+  for (const testid of ["control-tab-my-dashboard", "control-tab-memory", "control-tab-dashboards", "control-tab-assistants"]) {
     assert.equal(await stage.getByTestId(testid).isVisible(), true, testid);
   }
-  for (const gone of ["control-tab-clusters", "control-tab-overview", "bob-side"]) assert.equal(await page.getByTestId(gone).count(), 0, `${gone} is gone`);
-  // Bob's switch and his settings are in the head; the chat's own Monitoring and Settings buttons give way to them.
+  for (const testid of ["control-tab-live", "control-tab-automations"]) assert.equal(await stage.getByTestId(testid).isVisible(), false, `${testid} is a place above`);
+  for (const gone of ["control-tab-clusters", "control-tab-overview", "bob-side", "control-center-board"]) assert.equal(await page.getByTestId(gone).count(), 0, `${gone} is gone`);
+  // Bob's switch and his settings are in the head; the chat's own Monitoring button gives way to them.
   const pauseSwitch = page.getByTestId("bob-head-pause");
   assert.equal(await pauseSwitch.getAttribute("aria-checked"), "true");
   assert.equal(await page.getByTestId("control-chat-monitor").isVisible(), false);
@@ -130,53 +131,35 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   await page.getByTestId("control-bob-harness").waitFor({ state: "visible" });
   await page.getByTestId("control-chat-settings-button").click();
   await page.getByTestId("control-chat-settings").waitFor({ state: "hidden" });
-  // Bob's window is the conversation only: no background updates and no item filters in it (the board shows the items).
-  assert.equal(await page.getByTestId("control-chat-updates").isVisible(), false, "no background updates in Bob's window");
-  assert.equal(await page.getByTestId("control-chat-filters").isVisible(), false, "no item filters in Bob's window");
-
-  // The board, its characters and scoreboard; the stage toggle shows the Dashboard and the column stays.
-  await stage.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-card").first().waitFor();
-  assert.equal(await page.getByTestId("control-score").isVisible(), true);
-  assert.ok(await page.getByTestId("control-card-avatar").count() > 0);
-  // The app's left column stays beside Bob's page; its list steps aside while the board is the list.
-  assert.equal(await page.getByTestId("workspace-side").isVisible(), true, "the left column stays beside Bob's page");
-  assert.equal(await page.getByTestId("workspace-groups").isVisible(), false, "the column's list steps aside for the board");
-  // Nothing on a card is cut: its top row and its buttons fit inside it.
-  const clipped = await page.getByTestId("control-center-card").evaluateAll((cards) => cards.flatMap((card) => {
-    const box = card.getBoundingClientRect();
-    return [...card.querySelectorAll(".control-card-top > *, .control-card-actions > *")]
-      .filter((part) => getComputedStyle(part).position !== "absolute")
-      .filter((part) => { const own = part.getBoundingClientRect(); return own.right > box.right + 0.5 || own.bottom > box.bottom + 0.5; })
-      .map((part) => `${card.getAttribute("data-key")}: ${part.textContent}`);
-  }));
-  assert.deepEqual(clipped, [], "every part of a card is inside it");
+  // On his own page what he and the system raise sits beside the chat; the item filters stay out of the way.
+  assert.equal(await page.evaluate(() => { const updates = document.querySelector("#controlChatUpdates")!; return updates.childElementCount === 0 ? updates.closest("details")!.getClientRects().length === 0 : updates.closest("details")!.getClientRects().length > 0; }), true, "his updates beside his chat when there are any");
+  assert.equal(await page.getByTestId("control-chat-filters").isVisible(), false, "no item filters");
   if (process.env.BOB_PAGE_SHOT) await page.screenshot({ path: process.env.BOB_PAGE_SHOT });
+
+  // Another of his pages folds the chat into the "Ask Bob" button; the column and the place stay.
   await stage.getByTestId("control-tab-my-dashboard").click();
   await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
   assert.equal(await stage.getByTestId("control-tab-my-dashboard").getAttribute("aria-selected"), "true");
-  await stage.getByTestId("control-tab-automations").click();
-  await stage.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-board").waitFor({ state: "visible" });
-
-  // The chat folds into the "Ask Bob" button and comes back from it, as a window that floats over the page.
-  await page.getByTestId("control-chat-fold").click();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
-  // The button is a round icon with no text; its name is for readers and the hover.
-  assert.doesNotMatch(await page.getByTestId("bob-fab-chat").innerText(), /Ask Bob/, "no words on the button");
-  assert.equal(await page.getByTestId("bob-fab-chat").getAttribute("aria-label"), "Ask Bob");
-  const round = (await page.getByTestId("bob-fab-chat").boundingBox())!;
+  // The button is a round icon with no text at the page's bottom left; its name is for readers and the hover.
+  const fab = page.getByTestId("bob-fab-chat");
+  await fab.waitFor();
+  assert.doesNotMatch(await fab.innerText(), /Ask Bob/, "no words on the button");
+  assert.equal(await fab.getAttribute("aria-label"), "Ask Bob");
+  const round = (await fab.boundingBox())!;
   assert.equal(round.width, round.height, "the button is round");
-  await page.getByTestId("bob-fab-chat").click();
+  assert.ok(round.x < page.viewportSize()!.width / 2, `"Ask Bob" sits on the left of the page (${round.x})`);
+  // It opens the chat as a window that floats over the page, and folds it back.
+  await fab.click();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   assert.equal(await page.getByTestId("control-chat").evaluate((node) => getComputedStyle(node).position), "fixed");
-
-  // A lane folds into its scoreboard tile and opens from it again (with the chat folded away, nothing floats over the board).
   await page.getByTestId("control-chat-fold").click();
-  await page.getByTestId("control-lane-fold-running").click();
-  assert.equal(await page.getByTestId("control-score-running").getAttribute("aria-pressed"), "false");
-  await page.getByTestId("control-score-running").click();
-  assert.equal(await page.getByTestId("control-lane-fold-running").getAttribute("aria-expanded"), "true");
+  assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
+  // Automations is a place of its own; "Bob" brings back his chat.
+  await page.getByTestId("workspace-automations-button").click();
+  await page.locator("#controlView-automations, [data-view='automations'].control-view").first().waitFor({ state: "visible" });
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.locator("body.bob-chat-page").waitFor();
 
   // The view opened last opens again after a reload.
   await stage.getByTestId("control-tab-my-dashboard").click();
@@ -184,10 +167,11 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   await page.reload();
   await page.locator("body.view-control.bob-desk").waitFor();
   await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
-  await stage.getByTestId("control-tab-live").click();
+  await page.getByTestId("projects-open-control-center-button").click();
   await savedView("live");
 
   // Nothing here leaves Bob's page by itself; Esc twice does.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("Escape");
   await page.getByTestId("control-exit-prompt").waitFor({ state: "visible" });
   await page.keyboard.press("Escape");

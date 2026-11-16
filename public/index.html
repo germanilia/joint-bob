@@ -333,13 +333,8 @@
         <nav class="control-tabs" id="controlTabs" role="tablist" aria-label="Control center views" data-testid="control-center-tabs"></nav>
         <div class="control-main" id="controlCenterMain">
           <div class="control-stage" id="controlViews">
-            <section class="control-view" id="controlViewLive" data-view="live" role="tabpanel">
-              <div class="control-bar">
-                <div class="control-filters" id="controlCenterFilters" aria-label="Filter by project" data-testid="control-center-filters"></div>
-                <button class="ghost compact" id="controlCenterReset" type="button" title="Clear the card colors and the project filter" data-testid="control-center-reset">Reset</button>
-              </div>
-              <div class="control-board" id="controlCenterBoard" data-testid="control-center-board"></div>
-            </section>
+            <!-- Bob himself: his chat fills the page while this view is open (app/bob-page.js), so the view has nothing of its own. -->
+            <section class="control-view" id="controlViewLive" data-view="live" role="tabpanel"></section>
           </div>
           <aside class="control-chat" id="controlChat" aria-label="Bob" data-testid="control-chat">
             <div class="control-chat-resize" id="controlChatResize" title="Drag to resize" data-testid="control-chat-resize"></div>

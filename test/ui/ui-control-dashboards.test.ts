@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import type { Page } from "playwright-core";
-import { nativeUiFixture, openBobChat, parkBobChat } from "./native-ui-fixture.js";
+import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 import { waitInPage } from "./wait-in-page.js";
 
 /** A stand-in dashboard agent: the request's "Title: ..." line names the dashboard, "refresh with AI" makes it an AI one. */
@@ -102,7 +102,7 @@ async function mockBoard(page: Page, boardBody: unknown): Promise<void> {
   })()`);
 }
 
-test("the Dashboards tab lists dashboards, shows one over the board, and every board card has its project's dashboard button", { timeout: 240_000 }, async (t) => {
+test("the Dashboards tab lists dashboards, shows one over the page, and every Inbox row's menu has its project's dashboard", { timeout: 240_000 }, async (t) => {
   const fixture = await signedIn(t);
   const { page } = fixture;
   const boardBody = board(fixture);
@@ -114,20 +114,21 @@ test("the Dashboards tab lists dashboards, shows one over the board, and every b
 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
-  await parkBobChat(page);
-  // Bob's page opens on his chat; the board is his Live agents tab.
-  await page.getByTestId("control-tab-live").click();
-  await page.waitForSelector('[data-testid="control-center-card"]');
 
-  // Every project's group on the board has a dashboard button: the project's dashboard, or a way to ask Bob for one.
-  const group = (id: string) => page.locator(`[data-testid="control-project-group"][data-project="${id}"]`);
-  await page.getByTestId("control-project-action-dashboard").first().waitFor();
-  assert.equal(await group(assistant.id).getByTestId("control-project-action-dashboard").count(), 1);
-  assert.equal(await group(bob.id).getByTestId("control-project-action-dashboard").count(), 1);
-  assert.equal(await group(infra.id).getByTestId("control-project-action-dashboard").count(), 0, "a project without a dashboard has no button for one");
-  const create = group(infra.id).getByTestId("control-project-action-dashboard-create");
-  assert.equal(await page.getByTestId("control-project-action-dashboard-create").count(), 1);
-  assert.equal(await page.getByTestId("control-card-action-dashboard").count(), 0, "the button is on the project, not on each conversation");
+  // Every Inbox row's menu has its project's dashboard, or a way to ask Bob for one.
+  // The rows are in the running group's full list (Show all), where every one of them fits.
+  const menu = async (title: string) => {
+    if (await page.getByTestId("workspace-group-page").isHidden()) await page.getByTestId("workspace-show-all-running").click();
+    await page.getByTestId("workspace-group-page-row").filter({ hasText: title }).click({ button: "right" });
+    return page.locator("#rowMenu");
+  };
+  const assistantMenu = await menu("Assistant task");
+  await assistantMenu.getByTestId("inbox-row-project-dashboard").waitFor();
+  assert.equal(await assistantMenu.getByTestId("inbox-row-project-dashboard-create").count(), 0);
+  await page.keyboard.press("Escape");
+  const infraMenu = await menu("Infra task");
+  assert.equal(await infraMenu.getByTestId("inbox-row-project-dashboard").count(), 0, "a project without a dashboard has none to show");
+  const create = infraMenu.getByTestId("inbox-row-project-dashboard-create");
 
   // The create button puts the request in Bob's message box with the project chosen; the person finishes and sends it.
   await create.click();
@@ -136,8 +137,8 @@ test("the Dashboards tab lists dashboards, shows one over the board, and every b
   assert.equal(await page.getByTestId("control-chat-input").evaluate((input) => document.activeElement === input), true);
   await page.getByTestId("control-chat-input").fill("");
 
-  // One click on the project's dashboard button shows it over the board, with its data.
-  await group(assistant.id).getByTestId("control-project-action-dashboard").click();
+  // The project's dashboard shows over the page, with its data.
+  await (await menu("Assistant task")).getByTestId("inbox-row-project-dashboard").click();
   const dialog = page.getByTestId("control-dashboard-dialog");
   await page.locator("dialog.control-dash-dialog[open]").waitFor();
   assert.equal(await page.getByTestId("control-dashboard-title").textContent(), "Bugs per day");
@@ -195,20 +196,6 @@ test("the Dashboards tab lists dashboards, shows one over the board, and every b
   assert.match(await page.getByTestId("dashboard-status").textContent() ?? "", /AI refresh/, "the full view is the existing dashboard view of the same dashboard");
   await page.getByTestId("dashboard-close").click();
 
-  // The board's project filter applies: a project's dashboards, and the personal ones whose workspace holds the project.
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-filters").getByText("Infra Scripts").click();
-  await page.getByTestId("control-tab-dashboards").click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-dashboard-card"]').length === 1);
-  assert.match(await page.getByTestId("control-dashboard-card").textContent() ?? "", /My day/, "Infra Scripts has no dashboard of its own; the personal one covers it");
-  assert.match(await page.getByTestId("control-tab-dashboards").textContent() ?? "", /Dashboards\s*1/);
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-filters").getByText("Joint Bob").click();
-  await page.getByTestId("control-tab-dashboards").click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-dashboard-card"]').length === 2);
-  assert.equal(await page.getByTestId("control-dashboard-card").filter({ hasText: "Bugs per week" }).count(), 0, "Internal Assistant's dashboard is not in the filter");
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-filters").getByText("All", { exact: true }).click();
 });
 
 test("the Dashboards tab pages instead of scrolling, labels what Bob made, and Bob's Open dashboards button opens it", { timeout: 120_000 }, async (t) => {
@@ -234,9 +221,6 @@ test("the Dashboards tab pages instead of scrolling, labels what Bob made, and B
   await page.evaluate((cards) => { (window as any).__dashboards = cards; }, many);
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
-  // Bob's page opens on his chat; the board is his Live agents tab.
-  await page.getByTestId("control-tab-live").click();
-  await page.waitForSelector('[data-testid="control-center-card"]');
   await page.getByTestId("control-tab-dashboards").click();
   await page.waitForSelector('[data-testid="control-dashboard-card"]');
   assert.match(await page.getByTestId("control-tab-dashboards").textContent() ?? "", /Dashboards\s*31/);
@@ -267,18 +251,6 @@ test("the Dashboards tab pages instead of scrolling, labels what Bob made, and B
   assert.equal((await fits()).scrolls, false);
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  // Bob's chat floats over the page as a window; the board is used with it folded into the button.
-  await page.getByTestId("control-chat-fold").click();
-  // A project filter that matches nothing says so.
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-filters").getByText("Infra Scripts").click();
-  await page.getByTestId("control-tab-dashboards").click();
-  await page.getByTestId("control-dashboards-empty").waitFor();
-  assert.match(await page.getByTestId("control-dashboards-empty").textContent() ?? "", /Nothing matches the project filter\./);
-  assert.match(await page.getByTestId("control-tab-dashboards").textContent() ?? "", /Dashboards$/, "no count when nothing shows");
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-filters").getByText("All", { exact: true }).click();
-
   // What Bob made says so, and what is unfinished or needs approval says that.
   await page.evaluate(() => { (window as any).__dashboards = (window as any).__dashboards.filter((card: { id: string }) => /0(01|02|70|71|72|73)$/.test(card.id)); });
   await page.setViewportSize({ width: 1440, height: 1700 });
@@ -293,7 +265,7 @@ test("the Dashboards tab pages instead of scrolling, labels what Bob made, and B
   assert.match(await byTitle("Failing one").textContent() ?? "", /The last refresh failed/);
 
   // Bob's message that a dashboard is ready has a button that moves to this tab.
-  await page.getByTestId("control-tab-live").click();
+  await page.getByTestId("projects-open-control-center-button").click();
   await page.evaluate(() => {
     (window as any).__bobMessages = [{ id: "m1", role: "bob", text: 'Done. "Dashboard 1" is ready for "Internal Assistant".', via: "Dashboards · script refresh, no AI", projectId: null, projectName: null, importance: "done", actions: [{ id: "dashboards.open", label: "Open dashboards", style: "primary", data: { dashboardId: "x" } }], createdAt: new Date().toISOString() }];
     window.dispatchEvent(new CustomEvent("control-center-changed"));

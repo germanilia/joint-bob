@@ -24,7 +24,9 @@ test("every text size keeps the desktop columns inside the window and beside eac
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator(".session-card", { hasText: "Thread-Based Agent Builder" }).first().click();
   await page.locator("#activityPanel").waitFor();
-  await page.getByTestId("workspace-inbox-button").click();
+  // The Inbox column beside the open conversation: Home switches the column to it, and Esc closes Home back to the conversation.
+  await page.getByTestId("workspace-home-button").click();
+  await page.keyboard.press("Escape");
   await page.locator("body.ws-column-inbox.view-chat").waitFor();
 
   const problems: string[] = [];

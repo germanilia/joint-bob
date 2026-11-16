@@ -9,7 +9,7 @@ import { state } from "./state.js";
 
 /*
  * The control center's Dashboards tab: the project and personal dashboards as cards, one click to look at one over the
- * board, a Dashboard button on every board card, and the "Open dashboards" button of Bob's messages. The dashboards
+ * page, a project's Dashboard in the menu of each of its Inbox rows, and the "Open dashboards" button of Bob's messages. The dashboards
  * themselves are the existing dashboards feature: the page is its sandboxed frame, refresh is its refresh, and anything
  * beyond looking (editing, sharing, approving) opens its own full view.
  */
@@ -198,6 +198,8 @@ function openCard(card) {
 new ResizeObserver(() => render()).observe(list);
 window.addEventListener("control-center-rendered", render);
 window.addEventListener("control-center-activated", () => { void load().catch((error) => console.warn("Could not list the dashboards", error)); });
+// The Inbox's row menus offer a project's dashboard (workspace.js) without Bob's page open: the list is read once the app runs.
+window.addEventListener("running-refreshed", () => { void load().catch((error) => console.warn("Could not list the dashboards", error)); }, { once: true });
 // Bob's message that a dashboard is ready arrives the same way as any message from him.
 window.addEventListener("control-center-changed", () => {
   if (document.body.classList.contains("view-control")) void load().catch((error) => console.warn("Could not list the dashboards", error));
@@ -386,6 +388,8 @@ parts.ask.addEventListener("submit", (event) => {
     .then(() => {
       dialog.close();
       toast("Bob is changing the dashboard. He will say so in the chat when it is done.");
+      // His chat comes into view (a list over his page gives way), where the answer will be.
+      window.dispatchEvent(new CustomEvent("bob-chat-wanted"));
       // The request and Bob's answer are already in his timeline: the chat reloads it.
       window.dispatchEvent(new CustomEvent("control-center-changed"));
       return load();

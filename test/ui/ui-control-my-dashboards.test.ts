@@ -49,7 +49,7 @@ async function signedIn(t: test.TestContext) {
 test("the Dashboard view sits beside the board: ask for dashboards in words, switch between them, and choose the default", { timeout: 240_000 }, async (t) => {
   const { page } = await signedIn(t);
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-live").waitFor();
+  await page.getByTestId("control-tab-live").waitFor({ state: "attached" });
 
   // The view is the tab next to the board; with nothing yet it says how to ask for one.
   await page.getByTestId("control-tab-my-dashboard").click();
@@ -81,9 +81,9 @@ test("the Dashboard view sits beside the board: ask for dashboards in words, swi
   await chip("★ Spend").waitFor();
   assert.equal(await chip("★ Attention").count(), 0);
 
-  // Back to the conversations and to the dashboard again: it opens with the default.
-  await page.getByTestId("control-tab-live").click();
-  assert.equal(await page.locator("#controlViewLive").isVisible(), true);
+  // Back to Bob's chat and to the dashboard again: it opens with the default.
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.locator("body.bob-chat-page").waitFor();
   await page.getByTestId("control-tab-my-dashboard").click();
   await page.locator('[data-testid="control-mydash-chip"].active', { hasText: "★ Spend" }).waitFor();
   await page.getByTestId("control-mydash-frame").waitFor();

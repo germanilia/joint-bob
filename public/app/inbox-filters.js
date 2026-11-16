@@ -7,11 +7,13 @@
 //              one of them stays in sight.
 //   Select   : turns the rows into a checklist (workspace.js `cardRow`); the bar then marks the chosen ones as read or deletes them.
 //              Mark read applies to the ones To review. Delete skips pinned and starred conversations (nothing may remove them
-//              by accident), running ones and other people's, and says so.
+//              by accident), running ones and other people's, and says so. Move… sends the chosen ones to another machine
+//              together (control-moves.js).
 // One state, any number of toolbars: a change in one is shown in the others.
 
 import { api } from "./api.js";
 import { isKept } from "./control-marks.js";
+import { startMoving } from "./control-moves.js";
 import { createMultiSelect } from "./multi-select.js";
 import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
@@ -203,7 +205,13 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) 
   const bar = document.createElement("div");
   bar.className = "inbox-tools-bar";
   bar.dataset.testid = `${id}-bar`;
-  bar.append(count, allShown, markReadButton, deleteButton);
+  const moveButton = button("inbox-bar-button", `${id}-move`, "Move…", () => {
+    const cards = chosen().filter((card) => !card.othersMachine);
+    if (!cards.length) { toast("Only your own conversations can be moved to another machine."); return; }
+    startMoving(cards, bar, () => { selected.clear(); selecting = false; emitView(); afterChange(); }).catch((error) => toast.error(error.message));
+  });
+  moveButton.title = "Move the chosen conversations to another machine together";
+  bar.append(count, allShown, markReadButton, moveButton, deleteButton);
   root.append(filters, bar);
 
   let projectsDrawn = "";
@@ -226,6 +234,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) 
     bar.hidden = !selecting;
     count.textContent = `${selected.size} selected`;
     markReadButton.disabled = !selected.size;
+    moveButton.disabled = !selected.size;
     deleteButton.disabled = !selected.size;
   }
   selectionListeners.add(update);

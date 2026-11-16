@@ -877,3 +877,49 @@ body.focus-ui.view-projects.ws-column-inbox .inbox-tools.phone-only { display: g
 
 /* An assistant team's folder in the Inbox: its conversations are opened from here, not mixed into the groups. */
 .ws-folder b::before { content: "▸ "; color: var(--muted, currentColor); }
+
+/* ---------- what the control center's board did, now in the column (app/inbox-system.js, workspace.js) ---------- */
+/* System messages: one coloured line under the places; it opens each message with what it means and how to fix it. */
+.inbox-system { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.inbox-system[hidden] { display: none; }
+.inbox-system-line {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 0; padding: 7px 10px; border: 0; border-radius: 10px;
+  background: var(--sys-soft); box-shadow: inset 3px 0 0 var(--sys); color: var(--text); font: 600 13px/1.25 var(--sans); text-align: left; cursor: pointer;
+}
+.inbox-system-line.warn { --sys: var(--warn); }
+.inbox-system-line:hover { background: color-mix(in srgb, var(--sys) 24%, transparent); }
+.inbox-system-line b { flex: 1; min-width: 0; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-system-line .control-sys-icon { width: 20px; height: 20px; font-size: 12px; }
+.inbox-system-fix { flex: none; color: var(--sys); font-size: 12px; font-weight: 700; }
+.inbox-system-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 64px); padding: 22px 26px 24px; border: 0; border-radius: 22px; background: var(--panel); color: var(--text); box-shadow: var(--shadow); overflow: auto; }
+.inbox-system-dialog::backdrop { background: rgb(0 0 0 / 40%); }
+.inbox-system-close { float: right; }
+.inbox-system-body { display: flex; flex-direction: column; gap: 22px; }
+.inbox-system-message { display: flex; flex-direction: column; gap: 14px; }
+.inbox-system-message + .inbox-system-message { padding-top: 22px; border-top: 1px solid var(--line-strong); }
+.inbox-system-body .control-list-pv-top { display: flex; align-items: center; gap: 10px; }
+.inbox-system-body .control-list-heading { margin: 0; color: var(--heading); font: 400 24px/1.2 var(--serif); }
+.inbox-system-body .control-list-meta { margin: 0; color: var(--muted); font-size: 13px; }
+.inbox-system-body .control-list-section h4 { margin: 0 0 8px; color: var(--heading); font: 400 17px var(--serif); }
+.inbox-system-body .control-sys-pill.system { display: none; }
+/* The rail of icons has no room for words. */
+body:is(.projects-collapsed, .ws-auto-rail) :is(.inbox-system, .ws-side > .control-moves-job) { display: none; }
+
+/* Needs you's label counts what was snoozed; the "Show all" page puts Snooze and Wake beside the rows. */
+.ws-snoozed-link { color: var(--muted); }
+.ws-snoozed-link + .ws-show-all { margin-left: 10px; }
+.ws-page-item { display: flex; align-items: center; gap: 8px; }
+.ws-page-item > .ws-row { flex: 1; min-width: 0; }
+.ws-page-action { flex: none; }
+
+/* Costs as a page beside the left column (app/usage-dashboard.js): the dialog opens without blocking the page and fills the middle. */
+@media (min-width: 701px) {
+  body.costs-page:not(.focus-ui) #usageDialog[open] {
+    position: fixed; inset: var(--ws-gap, 14px) var(--ws-gap, 14px) var(--ws-gap, 14px) calc(var(--costs-left, 300px) + var(--ws-gap, 14px));
+    z-index: 30; width: auto; height: auto; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; overflow: hidden;
+    border-radius: var(--ws-card-radius, 24px); box-shadow: var(--shadow-soft);
+  }
+  body.costs-page:not(.focus-ui) #usageDialog[open] > .usage-card { width: 100%; height: 100%; max-height: none; }
+  /* The page is Costs: the column lights it, not the control center's view under it. */
+  body.costs-page:not(.focus-ui) .ws-places > #controlTabs .control-tab.active { background: transparent; color: var(--muted); }
+}

@@ -128,7 +128,7 @@ test("on a phone the control center is Bob's chat, with chips, an agents sheet a
   // Only the chat shows: no board, no tabs, no desktop header, and the chat takes the whole screen.
   await page.getByTestId("control-phone-chip-ok").waitFor();
   assert.equal(await page.getByTestId("control-chat").isVisible(), true);
-  for (const hidden of ["control-center-board", "control-center-tabs", "control-center-close-button", "control-chat-resize", "control-chat-side"]) {
+  for (const hidden of ["control-center-tabs", "control-center-close-button", "control-chat-resize", "control-chat-side"]) {
     assert.equal(await page.getByTestId(hidden).isVisible(), false, `${hidden} is not shown on a phone`);
   }
   const chat = (await page.getByTestId("control-chat").boundingBox())!;
@@ -328,10 +328,9 @@ test("a screen between a phone and a desktop reaches the control center from the
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node, environment);
 
-  // On a desktop the board and Bob sit side by side, as before.
+  // On a desktop Bob's page is his chat, beside the left column.
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-board").waitFor({ state: "visible" });
+  await page.locator("body.bob-chat-page").waitFor();
   assert.equal(await page.getByTestId("control-phone-strip").isVisible(), false, "the phone strip is not shown on a desktop");
   assert.equal(await page.getByTestId("control-phone-back").isVisible(), false);
   assert.equal(await page.getByTestId("control-center-tabs").isVisible(), true);
@@ -340,7 +339,6 @@ test("a screen between a phone and a desktop reaches the control center from the
   await page.setViewportSize({ width: 820, height: 900 });
   await page.getByTestId("control-phone-strip").waitFor({ state: "visible" });
   assert.equal(await page.locator("body.view-control").count(), 1);
-  assert.equal(await page.getByTestId("control-center-board").isVisible(), false);
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   // 701–1023 px is the desktop workspace: the left column stays and the control center keeps its narrow layout in the
   // middle (no app menu or bottom navigation there).
@@ -357,10 +355,10 @@ test("a screen between a phone and a desktop reaches the control center from the
   await page.getByTestId("projects-open-control-center-button").click();
   await page.locator("body.view-control").waitFor();
 
-  // Back to a desktop: Bob's page, his chat beside the stage and its tabs; the board is one press away.
+  // Back to a desktop: Bob's page, with his pages as a sub-menu in the column; "Bob" is his chat.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.locator(".ws-places").getByTestId("control-tab-live").waitFor({ state: "visible" });
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-board").waitFor({ state: "visible" });
+  await page.locator(".ws-places").getByTestId("control-tab-my-dashboard").waitFor({ state: "visible" });
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.locator("body.bob-chat-page").waitFor();
   assert.equal(await page.getByTestId("control-phone-strip").isVisible(), false);
 });

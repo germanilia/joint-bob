@@ -30,9 +30,6 @@ export async function nativeUiFixture(t: TestContext, extraEnv: (root: string) =
   // Bob's page shares the shell with the left column (about 300 px), so the window is that much wider: the page keeps its old room.
   const context = await browser.newContext({ viewport: { width: 1740, height: 900 }, serviceWorkers: "block" });
   context.setDefaultTimeout(20_000);
-  // Bob's page draws the Live agents board as a list by default; these tests were written for the cards, so they start there.
-  // The list has its own test (ui-control-list.test.ts), which asks for it.
-  await context.addInitScript(() => { if (!localStorage.getItem("jointBobLiveLayout")) localStorage.setItem("jointBobLiveLayout", "cards"); });
   const page = await context.newPage();
   return { page, environment, node, server };
 }
@@ -47,9 +44,10 @@ export async function parkBobChat(page: Page) {
   });
 }
 
+/** Bob's own page (the "live" view) shows his chat; his other pages fold it into the "Ask Bob" button, which opens it. */
 export async function openBobChat(page: Page) {
-  const fab = page.getByTestId("bob-fab-chat");
-  await fab.waitFor({ state: "visible" });
-  await fab.click();
+  const visible = (testid: string) => `(() => { const node = document.querySelector('[data-testid="${testid}"]'); return Boolean(node && node.getClientRects().length && getComputedStyle(node).visibility !== "hidden"); })()`;
+  await page.waitForFunction(`${visible("control-chat-input")} || ${visible("bob-fab-chat")}`);
+  if (!await page.getByTestId("control-chat-input").isVisible()) await page.getByTestId("bob-fab-chat").click();
   await page.getByTestId("control-chat-input").waitFor({ state: "visible" });
 }

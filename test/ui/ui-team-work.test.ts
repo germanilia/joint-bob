@@ -29,7 +29,7 @@ test('a team on this machine takes work from the app: send it, stop a request, r
   await openTeams(page, environment, node);
   await page.getByTestId('team-select').selectOption(created.body.team.id);
   await page.getByTestId('team-agent-card').first().waitFor();
-  await page.getByTestId('control-tab-live').click();
+  await page.getByTestId('projects-open-control-center-button').click();
   await page.getByTestId('team-work').waitFor({ state: 'visible' });
   assert.deepEqual(await page.getByTestId('team-work-role').locator('option').allInnerTexts(), ['Coordinator — lead (not ready)', 'qa — qa (not ready)'], 'the coordinator and each member, and that this host cannot start them yet');
   await page.getByTestId('team-work-role').selectOption('qa');
@@ -69,7 +69,7 @@ test('a team hosted on another machine is in the picker and takes work from here
   await page.getByTestId('team-select').selectOption('remote:remote-team');
   await page.getByTestId('team-assistants-view').getByText(/Hosted on Contigos EC2/).waitFor();
   assert.match(await page.getByTestId('team-assistants-view').innerText(), /coordinator \(lead\) — Bob/);
-  await page.getByTestId('control-tab-live').click();
+  await page.getByTestId('projects-open-control-center-button').click();
   await page.getByTestId('team-work').waitFor({ state: 'visible' });
   await page.getByText('REMOTE_ANSWER').waitFor();
   await page.getByTestId('team-work-message').fill('Draft the launch post');

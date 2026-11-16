@@ -1,7 +1,7 @@
-// Control center: moving conversations to another machine, and Story and Overview from a card.
+// The Inbox's actions on a conversation without opening it first: its tools from its row's menu, and moving several to another machine.
 import { api } from "./api.js";
 import { openConversation, refreshControlCenter } from "./control-center.js";
-import { registerBoardTool, registerCardAction, registerCardDecorator } from "./control-cards.js";
+import { registerCardAction } from "./control-cards.js";
 import { elements } from "./elements.js";
 import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
@@ -38,15 +38,16 @@ async function showFor(card, button) {
   button.click();
 }
 
-// Terminal, Git, Files and Story are the conversation's tools: the Bob page draws them as a row of buttons in the preview
-// (control-list.js, CONVERSATION_TOOLS) and the card board keeps them in "More ▾".
+// Terminal, Git, Files, Story and Overview are the conversation's tools: the Inbox row's own menu (workspace.js) offers them.
 registerCardAction({ id: "terminal", label: "Terminal", title: "Open a terminal in this conversation's project", order: 37, more: true, icon: "terminal", run: (card) => showFor(card, elements.openTerminalButton) });
 registerCardAction({ id: "git", label: "Git", title: "Branch, changes and review", order: 38, more: true, icon: "git", run: (card) => showFor(card, elements.chatGitButton) });
 registerCardAction({ id: "files", label: "Folders", title: "The files and folders of this conversation's project", order: 39, more: true, icon: "folder", run: (card) => showFor(card, elements.chatFilesButton) });
 registerCardAction({ id: "story", label: "Story", title: "Open this conversation's story: what changed, how it works and why", order: 40, more: true, icon: "canvas", run: (card) => showFor(card, elements.activityStoryButton) });
 registerCardAction({ id: "overview", label: "Overview", title: "Watch two hosts explain what this conversation did", order: 50, more: true, run: (card) => showFor(card, elements.activityOverviewButton) });
 
-// ── Moving ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ── Moving ───────────────────────────────────────────────────
+// Conversations chosen in the Inbox (Select, then "Move…", inbox-filters.js) go to another machine together. The bar opens
+// under the Inbox's own bar; a batch that runs is followed in a panel at the top of the left column (workspace.js places it).
 
 const PAGE = 5;
 const POLL_MS = 1_500;
@@ -54,17 +55,12 @@ const STATUS = {
   waiting: "Waiting for its turn to end", stopping: "Stopping its turn", moving: "Moving", continuing: "Telling it to continue",
   moved: "Moved", there: "Already there", cannot: "Can't move", failed: "Failed", cancelled: "Not moved",
 };
-const FINISHED = new Set(["moved", "there", "cannot", "failed", "cancelled"]);
-
-const board = elements.controlCenterBoard;
 const key = (card) => `${card.projectId}:${card.conversationId}`;
-const unfinished = (card) => card.column !== "review";
 
 let nodes = [];
-let selecting = false;
-const picked = new Set();
-/** The cards drawn by the latest render, with their elements. */
-let drawn = [];
+/** The conversations the bar would move, and what to call when the bar closes (the Inbox leaves Select). */
+let picked = [];
+let onDone = () => {};
 let job = null;
 let jobPage = 0;
 let pollTimer = null;
@@ -83,10 +79,6 @@ function button(label, testid, className = "ghost compact") {
   return created;
 }
 
-const strip = node("div", "control-moves-strip");
-strip.dataset.testid = "control-moves-strip";
-strip.hidden = true;
-
 const bar = node("div", "control-moves-bar");
 bar.dataset.testid = "control-moves-bar";
 bar.hidden = true;
@@ -98,23 +90,21 @@ target.dataset.testid = "control-moves-target";
 targetLabel.append(target);
 const stopAndMove = button("Stop and move now", "control-moves-now", "ghost compact control-moves-warn");
 const moveLater = button("Move after current turn", "control-moves-later");
-const cancelSelect = button("Cancel", "control-moves-cancel");
+const cancelMove = button("Cancel", "control-moves-cancel");
 const preview = node("span", "control-moves-preview");
 preview.dataset.testid = "control-moves-preview";
 const hint = node("span", "control-moves-hint");
 hint.dataset.testid = "control-moves-hint";
-bar.append(count, targetLabel, stopAndMove, moveLater, cancelSelect, preview, hint);
+bar.append(count, targetLabel, stopAndMove, moveLater, cancelMove, preview, hint);
 
-const panel = node("section", "control-moves-job");
-panel.dataset.testid = "control-moves-job";
-panel.hidden = true;
-
-elements.controlViewLive.append(strip, bar, panel);
+/** The panel that follows a running batch; the left column shows it above the Inbox. */
+export const movesJobPanel = node("section", "control-moves-job");
+movesJobPanel.dataset.testid = "control-moves-job";
+movesJobPanel.hidden = true;
 
 const localId = () => nodes.find((candidate) => candidate.local)?.id ?? null;
 const nodeOf = (card) => card.executionNodeId ?? localId();
 const nodeName = (id) => nodes.find((candidate) => candidate.id === id)?.name ?? "another machine";
-const pickedCards = () => drawn.filter(({ card }) => picked.has(key(card))).map(({ card }) => card);
 
 async function loadNodes() {
   nodes = (await api("/api/control-center/moves/nodes")).nodes;
@@ -132,30 +122,30 @@ function fillTargets(preferNotId) {
 }
 
 function renderHint() {
-  const sources = [...new Set(pickedCards().map((card) => nodeName(nodeOf(card))))];
+  const sources = [...new Set(picked.map((card) => nodeName(nodeOf(card))))];
   const to = nodes.find((candidate) => candidate.id === target.value)?.name ?? "the other machine";
   const message = `Continue where you stopped: you were moved from ${sources.join(" or ") || "its old machine"} to ${to}. Check what was half done before repeating anything.`;
   stopAndMove.title = `Stops each running turn, moves the conversation, then tells it: "${message}"`;
-  hint.textContent = "Stop and move now stops each running turn, moves it, then tells it to continue and check what was half done. Move after current turn waits for each turn to end.";
+  hint.textContent = "Stop and move now stops each running turn, moves it, then tells it to continue and check what was half done. Move after current turn waits for each turn to end first.";
 }
 
 let previewTimer = null;
 let previewKey = "";
 let previewRequest = 0;
 
-/** Asks the server what would happen to the picked conversations, so what cannot move is known before a button is pressed. */
-function showPreview(chosen) {
-  const wanted = `${target.value}|${chosen.map(key).sort().join(",")}`;
+/** Asks the server what would happen to the chosen conversations, so what cannot move is known before a button is pressed. */
+function showPreview() {
+  const wanted = `${target.value}|${picked.map(key).sort().join(",")}`;
   if (wanted === previewKey) return;
   previewKey = wanted;
   clearTimeout(previewTimer);
   preview.textContent = "";
   preview.classList.remove("blocked");
-  if (!chosen.length || !target.value) return;
+  if (!picked.length || !target.value) return;
   previewTimer = setTimeout(async () => {
     const request = ++previewRequest;
     try {
-      const plan = await api("/api/control-center/moves/plan", { method: "POST", body: JSON.stringify({ target: target.value, conversations: chosen.map((card) => ({ projectId: card.projectId, conversationId: card.conversationId })) }) });
+      const plan = await api("/api/control-center/moves/plan", { method: "POST", body: JSON.stringify({ target: target.value, conversations: picked.map((card) => ({ projectId: card.projectId, conversationId: card.conversationId })) }) });
       if (request !== previewRequest) return;
       const stuck = plan.entries.filter((entry) => entry.verdict === "cannot");
       preview.classList.toggle("blocked", stuck.length > 0);
@@ -168,106 +158,48 @@ function showPreview(chosen) {
   }, 300);
 }
 
-/** Brings the checkboxes, the count and the bars in line with the selection and the cards on screen. */
 function sync() {
-  board.classList.toggle("selecting", selecting);
-  for (const { card, root, box } of drawn) {
-    const on = picked.has(key(card));
-    box.checked = on;
-    root.classList.toggle("control-picked", on);
-  }
-  const chosen = pickedCards();
-  count.textContent = `${chosen.length} selected`;
-  stopAndMove.disabled = moveLater.disabled = !chosen.length || !target.value;
-  bar.hidden = !selecting;
-  showPreview(selecting ? chosen : []);
-  const select = document.querySelector('[data-board-tool="select"]');
-  select?.classList.toggle("active", selecting);
-  select?.setAttribute("aria-pressed", String(selecting));
+  count.textContent = `${picked.length} selected`;
+  stopAndMove.disabled = moveLater.disabled = !picked.length || !target.value;
+  showPreview();
   renderHint();
 }
 
-function renderStrip() {
-  strip.replaceChildren();
-  const counts = new Map();
-  for (const { card } of drawn) if (unfinished(card)) counts.set(nodeOf(card), (counts.get(nodeOf(card)) ?? 0) + 1);
-  strip.hidden = nodes.length < 2 || !counts.size;
-  for (const candidate of nodes) {
-    const running = counts.get(candidate.id);
-    if (!running) continue;
-    const item = node("span", "control-moves-node");
-    item.dataset.testid = "control-moves-node";
-    item.dataset.node = candidate.id;
-    const all = button("Move all…", "control-moves-all", "control-moves-link");
-    all.title = `Select every unfinished agent on ${candidate.name} and choose where to move them`;
-    all.addEventListener("click", () => startSelecting(candidate.id).catch((error) => toast.error(error.message)));
-    item.append(node("i", `control-moves-dot${candidate.online ? "" : " offline"}`), document.createTextNode(`${candidate.name} · ${running} running `), all);
-    strip.append(item);
-  }
-}
-
-let scheduled = false;
-/** Cards are drawn one by one; the bars follow once, after the last one. */
-function afterRender() {
-  if (scheduled) return;
-  scheduled = true;
-  queueMicrotask(() => { scheduled = false; renderStrip(); sync(); });
-}
-
-registerCardDecorator((root, card) => {
-  const box = node("input", "control-pick");
-  box.type = "checkbox";
-  box.title = "Select to move";
-  box.dataset.testid = "control-moves-pick";
-  box.checked = picked.has(key(card));
-  box.addEventListener("click", (event) => event.stopPropagation());
-  box.addEventListener("change", () => {
-    if (box.checked) picked.add(key(card)); else picked.delete(key(card));
-    sync();
-  });
-  root.querySelector(".control-card-top")?.prepend(box);
-  root.classList.toggle("control-picked", box.checked);
-  // While picking, a click on the card picks it instead of opening it.
-  root.addEventListener("click", (event) => {
-    if (!selecting || event.target.closest("button, input, select, textarea, a, label")) return;
-    event.stopImmediatePropagation();
-    box.click();
-  }, true);
-  drawn.push({ card, root, box });
-  afterRender();
-});
-
-window.addEventListener("control-center-rendered", () => { drawn = []; afterRender(); });
-
-async function startSelecting(fromNodeId) {
-  if (!nodes.length) await loadNodes();
-  if (nodes.length < 2) { toast("This machine is the only one, so there is nowhere to move to"); return; }
-  selecting = true;
-  picked.clear();
-  if (fromNodeId) for (const { card } of drawn) if (unfinished(card) && nodeOf(card) === fromNodeId) picked.add(key(card));
-  fillTargets(fromNodeId ?? (pickedCards()[0] ? nodeOf(pickedCards()[0]) : localId()));
+/**
+ * Opens the move bar for `cards` right after `anchor` (the Inbox's bar). `done` runs when the bar closes, after a move starts
+ * or on Cancel. Resolves false when there is nowhere to move to.
+ */
+export async function startMoving(cards, anchor, done = () => {}) {
+  await loadNodes();
+  if (nodes.length < 2) { toast("This machine is the only one, so there is nowhere to move to"); return false; }
+  picked = cards;
+  onDone = done;
+  anchor.after(bar);
+  bar.hidden = false;
+  fillTargets(cards[0] ? nodeOf(cards[0]) : localId());
   sync();
+  target.focus({ preventScroll: true });
+  return true;
 }
 
-function stopSelecting() {
-  selecting = false;
-  picked.clear();
-  sync();
+function closeBar() {
+  bar.hidden = true;
+  picked = [];
+  previewKey = "";
+  const done = onDone;
+  onDone = () => {};
+  done();
 }
 
-registerBoardTool({
-  id: "select", label: "Select", title: "Pick agents to move to another machine together", order: 20,
-  run: () => (selecting ? stopSelecting() : startSelecting()),
-});
-cancelSelect.addEventListener("click", stopSelecting);
+cancelMove.addEventListener("click", closeBar);
 target.addEventListener("change", sync);
 
-// ── Running a batch and following it ───────────────────────────────────────────────────────────────────────
+// ── Running a batch and following it ───────────────────────────────────────────
 
 function renderJob() {
-  panel.hidden = !job;
+  movesJobPanel.hidden = !job;
   if (!job) return;
-  panel.replaceChildren();
+  movesJobPanel.replaceChildren();
   const finished = Boolean(job.finishedAt);
   const heading = node("div", "control-moves-job-head");
   const moved = job.entries.filter((entry) => entry.status === "moved").length;
@@ -292,7 +224,7 @@ function renderJob() {
     item.append(node("b", "", entry.title), node("span", "control-moves-status", ` ${STATUS[entry.status]}${entry.detail ? `: ${entry.detail}` : ""}`));
     list.append(item);
   }
-  panel.append(heading, list);
+  movesJobPanel.append(heading, list);
   if (pages > 1) {
     const nav = node("div", "control-moves-pages");
     const previous = button("Previous", "control-moves-job-previous");
@@ -302,7 +234,7 @@ function renderJob() {
     previous.addEventListener("click", () => { jobPage -= 1; renderJob(); });
     next.addEventListener("click", () => { jobPage += 1; renderJob(); });
     nav.append(previous, node("span", "", `${jobPage + 1} of ${pages}`), next);
-    panel.append(nav);
+    movesJobPanel.append(nav);
   }
 }
 
@@ -330,12 +262,12 @@ async function poll(id) {
 }
 
 async function start(mode) {
-  const cards = pickedCards();
+  const cards = picked;
   if (!cards.length || !target.value) return;
   const to = nodeName(target.value);
   if (mode === "now" && !await confirmAction({
     title: "Stop and move now?", eyebrow: "Move to another machine", confirmLabel: "Stop and move", destructive: true,
-    message: `Stops the running turns of ${cards.length} conversation${cards.length === 1 ? "" : "s"}, moves ${cards.length === 1 ? "it" : "them"} to ${to}, then tells each one to continue and check what was half done before repeating anything.`,
+    message: `Stops the running turns of ${cards.length} conversation${cards.length === 1 ? "" : "s"}, moves ${cards.length === 1 ? "it" : "them"} to ${to}, then tells each one to continue and check what was half done.`,
   })) return;
   const started = await api("/api/control-center/moves", {
     method: "POST",
@@ -343,7 +275,7 @@ async function start(mode) {
   });
   job = started.job;
   jobPage = 0;
-  stopSelecting();
+  closeBar();
   renderJob();
   void poll(job.id);
 }
@@ -354,21 +286,12 @@ moveLater.addEventListener("click", () => start("after-turn").catch((error) => t
 // A batch that is already going (started from Bob's chat, or before the page was reloaded) is followed too.
 let lastLookedAt = 0;
 async function followRunningBatch() {
+  if (job || Date.now() - lastLookedAt < 10_000) return;
   lastLookedAt = Date.now();
-  if (job) return;
   const running = (await api("/api/control-center/moves")).jobs.find((candidate) => !candidate.finishedAt);
   if (running && !job) { job = running; jobPage = 0; renderJob(); void poll(running.id); }
 }
-
-window.addEventListener("control-center-rendered", () => {
-  if (!job && Date.now() - lastLookedAt > 10_000) void followRunningBatch().catch((error) => console.warn("Could not look for a running move", error));
-});
-
-// Opening the control center shows which machines there are.
-window.addEventListener("control-center-activated", () => {
-  void (async () => {
-    await loadNodes();
-    renderStrip();
-    await followRunningBatch();
-  })().catch((error) => console.warn("Could not load the machines to move to", error));
-});
+// Bob's chat can start a batch: the page looks again (at most every ten seconds) when the running list or the board changes.
+const follow = () => { void followRunningBatch().catch((error) => console.warn("Could not look for a running move", error)); };
+window.addEventListener("running-refreshed", follow);
+window.addEventListener("control-center-changed", follow);

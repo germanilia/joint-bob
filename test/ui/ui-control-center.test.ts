@@ -11,7 +11,7 @@ const BOARD = {
   ],
 };
 
-test("the control center shows the live board, filters by project, colors cards and resets", { timeout: 120_000 }, async (t) => {
+test("Bob's page: his chat, the board's counts and colours, and what he can do from his chat", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
@@ -102,36 +102,20 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
   await parkBobChat(page);
-  // Bob's page opens on his chat; the board is his Live agents tab.
-  await page.getByTestId("control-tab-live").click();
-  await page.waitForSelector('[data-testid="control-center-card"]');
+  // Bob's page opens on his chat: his own view, the first of his places. The conversations are the left column's Inbox.
+  await page.waitForFunction(() => document.body.classList.contains("bob-chat-page"));
   assert.equal(await page.locator("body.view-control").count(), 1);
-  assert.equal(await page.getByTestId("control-center-card").count(), 3);
-  assert.match(await page.getByTestId("control-center-count").textContent() ?? "", /^2 running/);
-  assert.match(await page.locator('[data-key="p1:c1"]').textContent() ?? "", /Running the UI tests/);
-  assert.match(await page.locator('[data-key="p1:c1"]').textContent() ?? "", /System drives/, "auto respond drives it");
-  assert.match(await page.locator('[data-key="p2:c2"]').textContent() ?? "", /Working…/);
-  // Every running card says so on top, with a ring that turns; finished work does not.
-  assert.deepEqual(await page.getByTestId("control-card-running").evaluateAll((badges) => badges.map((badge) => [badge.closest("[data-key]")!.getAttribute("data-key"), badge.textContent]).sort()), [["p1:c1", "Running"], ["p2:c2", "Running"]]);
-  assert.notEqual(await page.locator('[data-key="p1:c1"] .control-running-ring').evaluate((ring) => getComputedStyle(ring).animationName), "none");
-  assert.equal(await page.locator('[data-key="p1:c3"]').getAttribute("data-column"), "review");
-  // A card says briefly where the conversation stands: the first sentence of the summary's current state, without Markdown.
-  const review = page.locator('[data-key="p1:c3"]');
-  assert.equal(await review.locator(".control-live-text").textContent(), "Fixed and tested; it waits for your review.");
-  assert.match(await review.textContent() ?? "", /To review/, "finished work waiting for the person is marked");
-  assert.equal(await review.getByTestId("control-card-check").textContent(), "✓ Bob checked: done", "Bob checked that it is really done");
-  assert.equal(await page.locator('.control-lane[data-column="review"] .control-lane-count').textContent(), "1");
-  // Each project's group is in the project's color: the one chosen in its settings, or a steady one from the palette.
-  const colorOf = (id: string) => page.locator(`[data-testid="control-project-group"][data-project="${id}"]`).first().getAttribute("data-color");
-  assert.equal(await colorOf("p1"), "violet", "the color chosen for the project");
-  const p2Color = (await colorOf("p2")) ?? "";
-  assert.ok(p2Color && !["slate", "violet"].includes(p2Color), `a project without one gets one from the palette that no other project has, got ${p2Color}`);
-  // Projects without a color of their own never share one while the palette has colors left, whatever their ids hash to.
-  const assigned = await page.evaluate(async () => {
+  assert.equal(await page.getByTestId("control-center-board").count(), 0, "the board is not drawn");
+  await page.waitForFunction(() => /^2 running/.test(document.querySelector('[data-testid="control-center-count"]')?.textContent ?? ""));
+  assert.match(await page.getByTestId("control-center-count").textContent() ?? "", /1 driven by the system · 1 watched by Bob/);
+  // Each project has a colour, used by Bob's chat for its messages: the one chosen in its settings, or a steady one from the palette.
+  const [p1Color, p2Color] = await page.evaluate(async () => {
     const { projectColor } = await import("/app/control-center.js");
     return ["p1", "p2"].map((id) => projectColor(id));
   });
-  assert.deepEqual(assigned, ["violet", p2Color]);
+  assert.equal(p1Color, "violet", "the color chosen for the project");
+  assert.ok(p2Color && !["slate", "violet"].includes(p2Color), `a project without one gets one from the palette that no other project has, got ${p2Color}`);
+  // Projects without a color of their own never share one while the palette has colors left, whatever their ids hash to.
   const many = await page.evaluate(async () => {
     const fixture = (window as unknown as { __board: { projects: Array<{ id: string; name: string; color?: string }> } }).__board;
     const kept = fixture.projects;
@@ -144,79 +128,10 @@ test("the control center shows the live board, filters by project, colors cards 
     return colors;
   });
   assert.equal(new Set(many).size, 14, `14 projects, 14 colors: ${many.join(", ")}`);
-  const tops = await page.getByTestId("control-project-group").evaluateAll((groups) => groups.map((group) => getComputedStyle(group).borderTopColor));
-  assert.ok(new Set(tops).size >= 2, `the projects' groups have different colors: ${tops.join(", ")}`);
-  assert.equal(await page.getByTestId("control-center-filters").locator('.control-chip.project[data-color="violet"]').textContent(), "Joint Bob", "its filter chip too");
-
-  // Every card is the same size, whatever its title, status, ribbon or check line; a long title is cut, and whole on hover.
-  const heights = await page.getByTestId("control-center-card").evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
-  assert.equal(new Set(heights).size, 1, `card heights: ${heights.join(", ")}`);
-  // A running card says what the turn is doing now, over the summary's line; a finished one has a Review button instead of Take control.
-  assert.equal(await page.locator('[data-key="p1:c1"]').getByTestId("control-card-activity").textContent(), "Bash · npm run test:ui -- test/ui/menu.test.ts");
-  assert.equal(await page.locator('[data-key="p1:c1"] .control-live-text').textContent(), "Running the UI tests");
-  assert.equal(await page.locator('[data-key="p2:c2"]').getByTestId("control-card-activity").count(), 0, "no activity known, so the summary line stays");
-  assert.equal(await review.getByTestId("control-card-action-review").isVisible(), true);
-  assert.equal(await review.getByTestId("control-card-action-take-control").count(), 0);
-  assert.equal(await page.locator('[data-key="p1:c1"]').getByTestId("control-card-action-review").count(), 0, "only finished work is reviewed");
-
-  // Hovering a card opens its brief beside it, in readable type: the whole title, what it does now, and the summary laid out.
-  const brief = page.getByTestId("control-card-brief");
-  await review.hover();
-  await brief.waitFor({ state: "visible" });
-  assert.match(await brief.innerText(), /^Review counter\s+Goal — Fix the review counter\.\s+Done so far — The counter counts reviews again\./);
-  assert.equal(await brief.locator("strong").first().textContent(), "Goal", "laid out from the summary's Markdown");
-  assert.ok(parseFloat(await brief.evaluate((element) => getComputedStyle(element).fontSize)) >= 14, "large enough to read");
-  const [cardBox, briefBox] = [await review.boundingBox(), await brief.boundingBox()];
-  assert.ok(briefBox!.x >= cardBox!.x + cardBox!.width, "beside the card, not over it");
-  await page.locator('[data-key="p1:c1"]').hover();
-  await page.waitForFunction(() => document.querySelector('[data-testid="control-card-brief"]')?.textContent?.startsWith("Mobile menu"));
-  assert.match(await brief.innerText(), /^Mobile menu\s+Now: Bash · npm run test:ui -- test\/ui\/menu\.test\.ts\s+Running the UI tests$/);
-  // Beside the left column the middle is narrower and the open brief can lie over the next card: leave it first.
-  await page.mouse.move(1, 1);
-  await brief.waitFor({ state: "hidden" });
-  await page.locator('[data-key="p2:c2"]').hover();
-  await page.waitForFunction(() => document.querySelector('[data-testid="control-card-brief"] h3')?.textContent?.endsWith("then map it"));
-  assert.match(await brief.innerText(), /No summary yet/);
-  // It stays while the board is drawn again, and closes when the pointer leaves.
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent("control-center-changed")));
-  await page.waitForTimeout(600);
-  assert.equal(await brief.isVisible(), true);
-  const redrawn = (await page.locator('[data-key="p2:c2"]').boundingBox())!;
-  assert.ok((await brief.boundingBox())!.x >= redrawn.x + redrawn.width, "and stays beside its card");
-  await page.mouse.move(2, 2);
-  await brief.waitFor({ state: "hidden" });
-
-  // Filter to one project.
-  await page.getByTestId("control-center-filters").getByText("DAK Live").click();
-  assert.equal(await page.getByTestId("control-center-card").count(), 1);
-  await page.getByTestId("control-center-filters").getByText("All", { exact: true }).click();
-  assert.equal(await page.getByTestId("control-center-card").count(), 3);
-
-  // The whole card takes the picked color.
-  await page.locator('[data-key="p1:c1"] [data-testid="control-center-color"]').evaluate((input: HTMLInputElement) => {
-    input.value = "#ff6b9a";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  assert.equal(await page.locator('[data-key="p1:c1"]').evaluate((card) => card.style.getPropertyValue("--card-color")), "#ff6b9a");
-  assert.equal(await page.locator('[data-key="p1:c1"]').evaluate((card) => card.classList.contains("colored")), true);
-
-  // One layout: each lane groups its conversations by project, projects in name order. Reset clears colors and the filter.
-  assert.equal(await page.getByTestId("control-center-layout-free").count(), 0, "there is no free layout");
-  const running = page.locator('.control-lane[data-column="running"] + .control-lane-groups [data-testid="control-project-group"]');
-  assert.deepEqual(await running.locator(".control-project-head b").allTextContents(), ["DAK Live", "Joint Bob"]);
-  assert.deepEqual(await page.locator('[data-project="p1"] [data-testid="control-center-card"]').evaluateAll((cards) => cards.map((card) => card.getAttribute("data-key"))), ["p1:c1", "p1:c3"]);
-  // Who drives a conversation shows on its card: auto respond is the system, a conversation Bob started is watched by him.
-  assert.equal(await page.locator('[data-key="p1:c1"] [data-testid="control-card-driver"]').textContent(), "⚙ System drives");
-  assert.equal(await page.locator('[data-key="p2:c2"] [data-testid="control-card-driver"]').textContent(), "👁 Bob watches");
-  assert.equal(await page.locator('[data-key="p1:c3"] [data-testid="control-card-driver"]').count(), 0, "the person's own conversation has no driver");
-  assert.match(await page.getByTestId("control-center-count").textContent() ?? "", /1 driven by the system · 1 watched by Bob/);
-  await page.getByTestId("control-center-reset").click();
-  assert.equal(await page.locator('[data-key="p1:c1"]').evaluate((card) => card.classList.contains("colored")), false);
-
   // Bob's chat keeps its timeline and labels every entry by project and by how much it matters.
-  assert.match((await page.getByTestId("control-center-tabs").locator("button").allTextContents())[0], /^Live agents/, "the live board is the first tab");
+  assert.match((await page.getByTestId("control-center-tabs").locator("button").allTextContents())[0], /^Bob/, "Bob himself is the first of his places");
   const entries = page.getByTestId("control-chat-entry");
-  assert.equal(await entries.count(), 2);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-chat-entry"]').length === 2);
   assert.match(await entries.first().innerText(), /Joint Bob[\s\S]*Urgent[\s\S]*Prod 5xx at 14%/);
   assert.match(await entries.nth(1).innerText(), /General[\s\S]*Report[\s\S]*Morning report/);
 
@@ -290,18 +205,12 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.getByTestId("control-chat-importance-reports").dispatchEvent("click");
   await page.waitForFunction(() => document.querySelector('[data-testid="control-chat-entry"]')?.textContent?.includes("Morning report"));
   await page.getByTestId("control-chat-importance-all").dispatchEvent("click");
-  // Choosing a project focuses the whole control center on it: the chat, the board's cards, and where a new message goes.
+  // Choosing a project focuses Bob's chat on it: its timeline and where a new message goes.
   await page.getByTestId("control-chat-filter-project").selectOption({ label: "DAK Live" }, { force: true });
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-chat-entry"]').length === 2);
-  assert.deepEqual(await page.getByTestId("control-center-card").evaluateAll((cards) => cards.map((card) => card.getAttribute("data-key"))), ["p2:c2"]);
   assert.equal(await page.getByTestId("control-chat-project").inputValue(), "p2");
-  await page.getByTestId("control-center-filters").getByText("All", { exact: true }).click();
-  await page.waitForFunction(() => (document.querySelector('[data-testid="control-chat-filter-project"]') as HTMLSelectElement).value === "");
-  assert.equal(await page.getByTestId("control-center-card").count(), 3, "the board's own chips focus the chat too");
-  await page.getByTestId("control-center-filters").getByText("Joint Bob", { exact: true }).click();
-  await page.waitForFunction(() => (document.querySelector('[data-testid="control-chat-filter-project"]') as HTMLSelectElement).value === "p1");
   await page.getByTestId("control-chat-filter-project").selectOption("", { force: true });
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-center-card"]').length === 3);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-chat-entry"]').length > 2);
 
   // Each message says where it comes from and which conversation it is about, and one that waits offers every way forward.
   await page.evaluate(() => {
@@ -319,12 +228,10 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.match(await check.locator(".control-entry-event").innerText(), /^Needs you\s+Bob checked it when it stopped\s+\S/);
   assert.equal(await check.locator(".control-msg").innerText(), "Waits for you.\nIt asks which plan to use.", "the name is not repeated");
   assert.notEqual(await check.evaluate((card) => getComputedStyle(card).borderLeftColor), await page.getByTestId("control-chat-entry").filter({ hasText: "Morning report" }).evaluate((entry) => getComputedStyle(entry).borderLeftColor), "drawn in its project's color");
-  assert.equal(await check.getAttribute("data-color"), "violet", "the same color as the project's group on the board");
+  assert.equal(await check.getAttribute("data-color"), "violet", "the project's own colour");
   assert.equal(await check.getByTestId("control-chat-about").evaluate((link) => link.tagName), "BUTTON", "the conversation opens from its name");
   assert.equal(await check.locator(".control-via").textContent(), "Decision model 96%");
   assert.deepEqual(await check.locator(".control-action").allTextContents(), ["Answer", "Push it on", "Done", "Abandon", "Open", "Dismiss"], "Answer first, its own buttons, then dismiss; it has its own Done");
-  // A finished card can be closed from the board too.
-  assert.equal(await page.locator('[data-key="p1:c3"]').getByTestId("control-card-action-done").isVisible(), true);
   // It shows where its conversation stands now, as the board does, and follows the board as that changes: the board is read
   // again and the chat is not.
   assert.equal(await check.getByTestId("control-chat-now").textContent(), "Done · ready for review");
@@ -334,30 +241,15 @@ test("the control center shows the live board, filters by project, colors cards 
   }, column);
   await moveCard("running");
   await page.waitForFunction(() => document.querySelector('[data-id="check"] [data-testid="control-chat-now"]')?.textContent === "Running now");
-  assert.equal(await page.locator('[data-key="p1:c3"]').getByTestId("control-card-action-done").count(), 1, "a running card can be closed too");
-  // A card that waits for the person can be closed from the board too, in its top row; every button stays whole on the card.
-  await moveCard("needs-you");
-  await page.locator('[data-key="p1:c3"][data-column="needs-you"]').waitFor();
-  const waiting = page.locator('[data-key="p1:c3"]');
-  assert.equal(await waiting.locator(".control-card-top").getByTestId("control-card-action-done").isVisible(), true);
-  const clipped = await waiting.evaluate((card) => [...card.querySelectorAll("button")]
-    .filter((button) => button.getBoundingClientRect().right > button.parentElement!.getBoundingClientRect().right + 0.5)
-    .map((button) => button.textContent));
-  assert.deepEqual(clipped, [], "no button is cut off at the card's edge");
   await moveCard("review");
   await page.waitForFunction(() => document.querySelector('[data-id="check"] [data-testid="control-chat-now"]')?.textContent === "Done · ready for review");
 
-  // Done in the chat: the item shows a check with what was pressed and leaves, and the card leaves the board with the same check.
+  // Done in the chat: the item shows a check with what was pressed and leaves.
   await check.getByRole("button", { name: "Done", exact: true }).click();
   const stamp = check.getByTestId("control-vanish-stamp");
   await stamp.waitFor();
   assert.equal(await stamp.innerText(), "Done");
-  const cardStamp = page.locator('[data-key="p1:c3"]').getByTestId("control-vanish-stamp");
-  await cardStamp.waitFor();
-  assert.equal(await cardStamp.innerText(), "Done");
   await check.waitFor({ state: "detached" });
-  await page.locator('[data-key="p1:c3"]').waitFor({ state: "detached" });
-  assert.equal(await page.getByTestId("control-center-card").count(), 2, "the other cards stay");
   // The cleared view lists it, with when and why.
   await page.getByTestId("control-chat-importance-cleared").dispatchEvent("click");
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-chat-entry"]').length === 1);
@@ -427,38 +319,15 @@ test("the control center shows the live board, filters by project, colors cards 
     return saved.threshold === 0.75 && saved.askBeforeSaving === true;
   });
   await page.getByTestId("control-chat-settings-button").click();
-  await page.getByTestId("control-chat-monitor").click();
+  // On Bob's page his switch is in the head ("Bob is on"), in place of the chat's own Monitoring button.
+  await page.getByTestId("bob-head-pause").click();
   await page.getByTestId("control-chat-paused").waitFor({ state: "visible" });
-  assert.equal(await page.getByTestId("control-chat-monitor").textContent(), "Paused");
+  assert.equal(await page.getByTestId("bob-head-pause").getAttribute("aria-checked"), "false");
   await page.getByRole("button", { name: "Restore" }).click();
   await page.getByTestId("control-chat-paused").waitFor({ state: "hidden" });
 
-  // The chat starts on the left; it moves to the other side and is resized by its edge, and both stay with the account.
-  assert.equal(await page.locator(".control-main.chat-left").count(), 1, "the chat starts on the left");
-  await page.getByTestId("control-chat-side").click();
-  assert.equal(await page.locator(".control-main.chat-left").count(), 0);
-  const handle = (await page.getByTestId("control-chat-resize").boundingBox())!;
-  await page.mouse.move(handle.x + 3, handle.y + 100);
-  await page.mouse.down();
-  await page.mouse.move(handle.x - 197, handle.y + 100);
-  await page.mouse.up();
-  const width = await page.getByTestId("control-chat").evaluate((chat) => chat.getBoundingClientRect().width);
-  assert.ok(width > 450, `dragging the edge widened the chat, got ${width}`);
-  await page.waitForFunction(async () => {
-    const saved = await (await fetch("/api/preferences")).json();
-    return saved.controlCenter.chatRight === true && saved.controlCenter.chatWidth > 450;
-  });
-
-  // A running card is closed from the board too: the same question as the project's list, then it is stopped and closed.
-  const runningCard = page.locator('[data-key="p1:c1"]');
-  assert.match(await runningCard.getByTestId("control-card-action-done").getAttribute("title") ?? "", /^Stop it and close it/);
-  await runningCard.getByTestId("control-card-action-done").click();
-  await page.getByTestId("conversation-feedback-submit").click();
-  await runningCard.waitFor({ state: "detached" });
-  assert.deepEqual(await page.evaluate(() => (window as unknown as { __closed: unknown[] }).__closed), [{ projectId: "p1", conversationId: "c1", feedback: { rating: "unimportant", description: "" } }]);
-
-  // + New conversation opens the quick note form to start one at once, in any project, without leaving the board.
-  await page.getByTestId("control-board-tool-new-conversation").click();
+  // Its shortcut opens the quick note form to start one at once, in any project, without leaving Bob's page.
+  await page.keyboard.press("Control+Alt+Shift+KeyN");
   const form = page.getByTestId("quick-note-dialog");
   await form.waitFor({ state: "visible" });
   assert.equal(await page.locator("#quickNoteDialogTitle").textContent(), "New conversation");
@@ -492,7 +361,7 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.keyboard.press("Control+Enter");
   await form.waitFor({ state: "hidden" });
   await page.locator(".toast", { hasText: /^Started “check the login page copy” in / }).waitFor();
-  assert.equal(await page.locator("body.view-control").count(), 1, "the board stays");
+  assert.equal(await page.locator("body.view-control").count(), 1, "Bob's page stays");
   // Bob's "Another project…" opens the same form with the request in it.
   await page.evaluate(() => {
     (window as unknown as { __timeline: unknown[] }).__timeline.push({ id: "where", role: "bob", text: "Which project should I start this in?\n“fix the sidebar spacing”", via: null, projectId: null, projectName: null, importance: "needs-you", createdAt: new Date().toISOString(),
@@ -504,7 +373,7 @@ test("the control center shows the live board, filters by project, colors cards 
   assert.equal(await page.getByTestId("quick-note-content-input").inputValue(), "fix the sidebar spacing");
   await page.keyboard.press("Escape");
   await form.waitFor({ state: "hidden" });
-  // Its shortcut opens the same wizard from anywhere.
+  // The shortcut opens the same wizard from anywhere, and its first step names the selected project.
   await page.keyboard.press("Control+Alt+Shift+KeyN");
   await form.waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("quick-note-step-1").getAttribute("aria-current"), "step");
@@ -558,9 +427,7 @@ test("the control center shows the live board, filters by project, colors cards 
   await page.getByTestId("control-center-close-button").click();
   assert.equal(await page.locator("body.view-control").count(), 0);
   await page.getByTestId("projects-open-control-center-button").click();
-  // Bob's page opens on his chat; the board is his Live agents tab.
-  await page.getByTestId("control-tab-live").click();
-  await page.waitForSelector('[data-testid="control-center-card"]');
+  await page.waitForFunction(() => document.body.classList.contains("bob-chat-page"));
   // Bob's page shares the shell: the workspace's left column stays; Esc once asks, and Esc again leaves.
   assert.equal(await page.getByTestId("workspace-side").isVisible(), true);
   assert.equal(await page.locator("#chatPanel").isVisible(), false);

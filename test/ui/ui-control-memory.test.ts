@@ -102,7 +102,7 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
     const { api } = await import("/app/api.js");
     for (const name of list) await api("/api/control-center/memory/topics", { method: "POST", body: JSON.stringify({ name, description: `About ${name}`, body: `Text of ${name}.` }) });
   }, names);
-  await page.getByTestId("control-tab-live").click();
+  await page.getByTestId("projects-open-control-center-button").click();
   await page.getByTestId("control-tab-memory").click();
   await page.waitForFunction(() => {
     const list = document.querySelector('[data-testid="memory-topic-list"]');
@@ -196,21 +196,20 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
   assert.equal(await page.getByTestId("memory-ask-before").isChecked(), false);
   await page.getByTestId("memory-ask-before").check();
   await page.waitForFunction(async () => (await (await fetch("/api/control-center/bob/settings")).json()).askBeforeSaving === true);
-  await page.getByTestId("control-tab-live").click();
+  await page.getByTestId("projects-open-control-center-button").click();
   await page.getByTestId("control-tab-memory").click();
   await page.waitForFunction(() => (document.querySelector('[data-testid="memory-ask-before"]') as HTMLInputElement).checked);
   await page.getByTestId("memory-ask-before").uncheck();
   await page.waitForFunction(async () => (await (await fetch("/api/control-center/bob/settings")).json()).askBeforeSaving === false);
 
-  // Topics about a project follow the board's project filter; topics about no project always show.
+  // Topics about a project follow the project focus (set by the Automations filter, or the chat's filter on a narrower window); topics about no project always show.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId("memory-sub-topics").click();
   await page.evaluate(async (project) => {
     const { api } = await import("/app/api.js");
     await api("/api/control-center/memory/topics", { method: "POST", body: JSON.stringify({ name: "elsewhere-only", description: "About the other project", body: "Only there.", project }) });
   }, elsewhere.id);
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-filters").getByText(here.name, { exact: true }).click();
+  await page.evaluate(async (id) => (await import("/app/control-center.js")).focusProject(id), here.id);
   await page.getByTestId("control-tab-memory").click();
   await page.getByTestId("memory-search").fill("elsewhere");
   await page.waitForFunction(() => document.querySelector('[data-testid="memory-topic-list"]')?.textContent?.includes("No topic matches"));
@@ -221,8 +220,7 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="memory-topic"]').length > 1);
   assert.ok((await rowNames(page)).every((name) => name?.startsWith("topic-")), "topics about no project show");
   assert.match(await page.getByTestId("memory-filter-note").innerText(), new RegExp(here.name));
-  await page.getByTestId("control-tab-live").click();
-  await page.getByTestId("control-center-filters").getByText("All", { exact: true }).click();
+  await page.evaluate(async () => (await import("/app/control-center.js")).focusProject(null));
   await page.getByTestId("control-tab-memory").click();
   await page.getByTestId("memory-search").fill("elsewhere");
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="memory-topic"]').length === 1);

@@ -16,7 +16,9 @@ test("the composer fits empty and wrapped text when appearance size changes", { 
   await page.waitForFunction(() => !document.querySelector<HTMLTextAreaElement>("#messageInput")!.disabled);
   // In Inbox the conversation has one column beside it at every text size. (Beside the two columns of Projects larger
   // text puts the details away, which widens the message box and unwraps the draft this test wraps.)
-  await page.getByTestId("workspace-inbox-button").click();
+  // The Inbox column beside the open conversation: Home switches the column to it, and Esc closes Home back to the conversation.
+  await page.getByTestId("workspace-home-button").click();
+  await page.keyboard.press("Escape");
   await page.locator("body.ws-column-inbox.view-chat").waitFor();
 
   const overflows: string[] = [];

@@ -209,22 +209,21 @@ test("a picture pasted while editing a queued message joins it, and deleting the
   await releaseTurn("hold the second line");
 }, { timeout: 120_000 });
 
-test("on Bob's page the Chat tab is the conversation's own chat, with its queued messages and their controls", async () => {
+test("on Bob's page a conversation opened from the Inbox is its own chat, with its queued messages and their controls", async () => {
   await page.getByTestId("chat-message-input").fill("hold the third line");
   await page.keyboard.press("Enter");
   await page.locator(".message.user:not(.queued)", { hasText: "hold the third line" }).first().waitFor({ timeout: 20_000 });
-  await page.evaluate(() => localStorage.setItem("jointBobLiveLayout", "list"));
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-live").click();
-  await page.locator('[data-testid="control-list-rows"] [data-key]', { hasText: CONVERSATION }).first().click();
-  await page.getByTestId("control-list-tab-button-chat").click();
-  await page.locator("body.control-inline.control-popup").waitFor();
+  await page.locator("body.view-control.bob-chat-page").waitFor();
+  await page.getByTestId("workspace-group-row").filter({ hasText: CONVERSATION }).first().click();
+  await page.locator("body.control-popup").waitFor();
+  // It covers Bob's page, beside the left column, with the person in it.
   const box = async (selector: string) => (await page.locator(selector).boundingBox())!;
-  const tab = await box('[data-testid="control-list-tab-chat"]');
+  const area = await box("#controlCenterMain");
   const chat = await box("#chatPanel");
-  assert.ok(Math.abs(chat.x - tab.x) < 2 && Math.abs(chat.y - tab.y) < 2 && Math.abs(chat.width - tab.width) < 2 && Math.abs(chat.height - tab.height) < 2, "the chat fills the tab's body");
+  assert.ok(Math.abs(chat.x - area.x) < 2 && Math.abs(chat.width - area.width) < 2, "the chat covers Bob's page");
   await page.getByTestId("chat-message-input").waitFor({ state: "visible" });
-  assert.equal(await page.locator("#controlPopupBar").isVisible(), false, "no popup bar over the tab");
+  assert.match(await page.getByTestId("control-popup-mode").innerText(), /You're in it/);
 
   // Typed here, a message waits its turn like in the conversation: with its controls and the editor that takes pictures.
   await page.getByTestId("chat-message-input").fill("typed on Bob's page");
@@ -238,8 +237,9 @@ test("on Bob's page the Chat tab is the conversation's own chat, with its queued
   await queued.getByTestId("queued-message-cancel-button").click();
   await queued.waitFor({ state: "detached" });
 
-  // Leaving the tab takes the chat away; Esc once does not close it (twice leaves Bob's page).
-  await page.getByTestId("control-list-tab-button-steps").click();
-  assert.equal(await page.evaluate(() => document.body.classList.contains("control-inline") || document.body.classList.contains("control-popup")), false);
+  // Close takes the chat away and leaves Bob's page as it was.
+  await page.getByTestId("control-popup-close").click();
+  assert.equal(await page.evaluate(() => document.body.classList.contains("control-popup")), false);
+  assert.equal(await page.evaluate(() => document.body.classList.contains("view-control")), true);
   await releaseTurn("hold the third line");
 }, { timeout: 120_000 });

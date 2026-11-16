@@ -15,7 +15,13 @@ import { api } from "./api.js";
 import { chordLabel, normalizeKeymap } from "../keymap.js";
 import { openAppearance, themeLabel } from "./appearance.js";
 import { currentControlView, showControlView } from "./control-views.js";
-import { isControlCenterOpen, openConversation } from "./control-center.js";
+import { cardActionList, projectActionList } from "./control-cards.js";
+import { isControlCenterOpen, openConversation, saveControlCenter } from "./control-center.js";
+import { isPinned, isStarred, togglePin, toggleStar } from "./control-marks.js";
+import { movesJobPanel } from "./control-moves.js";
+import { chooseSnooze, snoozedWords, wakeCard } from "./control-snooze.js";
+import { refreshSystemStrip, systemStrip } from "./inbox-system.js";
+import { openRowMenu } from "./row-menu.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { startGlobalConversation } from "./new-session.js";
@@ -163,8 +169,9 @@ function syncColumn() {
 function syncPlaces() {
   const view = currentMobileView();
   const control = view === "control";
-  const active = control ? (currentControlView() === "automations" ? "automations" : "bob")
-    : column;
+  // On Bob's page "Bob" is lit for his own chat; his other pages light their place in his sub-menu instead.
+  const shown = currentControlView();
+  const active = body.classList.contains("costs-page") ? "costs" : control ? (shown === "automations" ? "automations" : shown === "live" ? "bob" : "") : column;
   for (const placeButton of document.querySelectorAll(".ws-places [data-place]")) {
     const on = placeButton.dataset.place === active;
     placeButton.classList.toggle("on", on);
@@ -258,6 +265,8 @@ window.addEventListener("app-view-changed", () => {
   closeGroupPage();
 });
 window.addEventListener("control-view-changed", syncPlaces);
+// Costs opened or closed as a page (usage-dashboard.js).
+window.addEventListener("workspace-places-changed", syncPlaces);
 // The workspace search names places too ("Inbox", "Projects window", a project).
 window.addEventListener("workspace-place", (event) => {
   const name = event.detail?.place;
@@ -373,6 +382,9 @@ export const GROUPS = [
   // Every other conversation of every project, so the Inbox leaves nothing out (the server lists them with the board).
   { id: "earlier", title: "Earlier", dot: "old", empty: "No earlier conversations." },
 ];
+/** Put aside from Needs you (control-snooze.js): not a group of the column, which counts them on Needs you's label; the "Show all"
+ * page lists them on a tab of their own while there are any. */
+const SNOOZED = { id: "snoozed", title: "Snoozed", dot: "old", empty: "Nothing is snoozed." };
 let cards = [];
 let loaded = false;
 /** The conversations that are not on the board, read at most once a minute (they change slowly and there can be thousands). */
@@ -434,6 +446,7 @@ function cardLine(card) {
   const what = card.activity || (card.summary ? card.summary.replace(/[#*_`>]/g, "").split("\n").map((line) => line.trim()).find(Boolean) : "")
     || [card.agentLabel, card.agentModel].filter(Boolean).join(" · ");
   // Another person's machine runs it: the row says whose, since nothing here can act on it.
+  if (card.column === "snoozed" && card.snooze) return [card.projectName, snoozedWords(card.snooze)].join(" · ");
   return [card.projectName, card.othersMachine ? `on ${sourceName(card)}` : "", what].filter(Boolean).join(" · ");
 }
 
@@ -482,10 +495,47 @@ function cardRow(card, group, testid, selectable = false) {
     closeGroupPage();
     openConversation(card).catch((error) => toast.error(error.message));
   });
+  row.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    // Linux and macOS send this on the press: the menu opens once the button is let go, or that release would close it at once.
+    if (event.buttons) row.addEventListener("pointerup", () => openCardMenu(card, row), { once: true });
+    else openCardMenu(card, row);
+  });
   return row;
 }
 
+/** A row's own menu (right click, or the context-menu key): put it aside or bring it back, star it, pin it, or open one of its tools. */
+function openCardMenu(card, anchor) {
+  const items = [];
+  if (card.column === "needs-you") items.push({ label: "Snooze…", icon: "clock", testid: "inbox-row-snooze", title: "Put it aside for now: it leaves Needs you until the time you choose or something new happens", onSelect: () => chooseSnooze(card, anchor) });
+  if (card.column === "snoozed") items.push({ label: "Wake", icon: "clock", testid: "inbox-row-wake", title: "Bring it back to Needs you now", onSelect: () => wakeCard(card).catch((error) => toast.error(error.message)) });
+  if (!card.othersMachine) {
+    items.push({ label: isStarred(card) ? "Unstar" : "Star", icon: "star", testid: "inbox-row-star", title: "A starred conversation is never removed by any automatic cleanup", onSelect: () => { toggleStar(card, saveControlCenter); renderGroups(); } });
+    items.push({ label: isPinned(card) ? "Unpin" : "Pin", icon: "pin", testid: "inbox-row-pin", title: "A pinned conversation is never removed by any automatic cleanup", onSelect: () => togglePin(card).then(() => renderGroups()).catch((error) => toast.error(error.message)) });
+  }
+  // Let Bob control (control-lease.js), then the conversation's own tools (control-moves.js): each opens it first.
+  if (!card.othersMachine) {
+    for (const action of cardActionList(card).filter((candidate) => ROW_TOOLS.includes(candidate.id))) {
+      items.push({ label: action.label, icon: action.icon, testid: `inbox-row-${action.id}`, title: action.title, onSelect: () => Promise.resolve(action.run(card, anchor)).catch((error) => toast.error(error.message)) });
+    }
+  }
+  // Its project's dashboard, or asking Bob for one (control-dashboards.js); asking happens in Bob's chat, so his page opens first.
+  for (const action of projectActionList({ projectId: card.projectId, projectName: card.projectName })) {
+    items.push({ label: action.id === "dashboard" ? "Project dashboard" : "Ask Bob for a dashboard", icon: "dashboard", testid: `inbox-row-project-${action.id}`, title: action.title, onSelect: () => {
+      if (action.id !== "dashboard") {
+        closeGroupPage();
+        if (!isControlCenterOpen()) byId("openControlCenterButton").click();
+      }
+      Promise.resolve(action.run({ projectId: card.projectId, projectName: card.projectName })).catch((error) => toast.error(error.message));
+    } });
+  }
+  if (items.length) openRowMenu(anchor, items);
+}
+const ROW_TOOLS = ["system-control", "terminal", "git", "files", "story", "overview"];
+
 const groupsHost = byId("workspaceGroups");
+// The system messages and a batch of conversations being moved sit under the places, above the groups.
+byId("workspaceSide").append(systemStrip, movesJobPanel);
 /** After Mark read or Delete the board and the Earlier list are read again at once. */
 function refreshAfterChange() {
   earlierReadAt = 0;
@@ -556,7 +606,7 @@ function renderGroups(refit = true) {
     }
   }
   // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
-  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)])), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
+  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, cardsIn(SNOOZED.id).length, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)])), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
   groupsHost.dataset.signature = signature;
   const scroll = groupsHost.scrollTop;
@@ -575,7 +625,19 @@ function renderGroups(refit = true) {
     const total = cardsIn(group.id).length;
     count.textContent = !loaded ? "…" : total === counts[index] ? String(counts[index]) : `${counts[index]} of ${total}`;
     label.append(name, count);
-    if (counts[index] > shown[index] || (counts[index] && room && shown[index] === 0)) {
+    const snoozed = group.id === "needs-you" ? cardsIn(SNOOZED.id).length : 0;
+    if (snoozed) {
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = "ws-show-all ws-snoozed-link";
+      link.dataset.testid = "workspace-snoozed-link";
+      link.textContent = `${snoozed} snoozed`;
+      link.title = "Conversations put aside from Needs you; each comes back when its time comes or something new happens";
+      link.addEventListener("click", () => openGroupPage(SNOOZED.id));
+      label.append(link);
+    }
+    // Every group with conversations opens its full list, which is also where several are chosen at once (Select).
+    if (!phoneHomeShown() && counts[index]) {
       const all = document.createElement("button");
       all.type = "button";
       all.className = "ws-show-all";
@@ -674,6 +736,7 @@ async function readBoard() {
       if (board.earlier) { earlierRead = board.earlier; earlierReadAt = Date.now(); }
       acceptCards(board.cards || []);
     } while (again);
+    void refreshSystemStrip();
   })().catch((error) => console.warn("Could not read the workspace groups", error)).finally(() => { refreshing = null; });
   return refreshing;
 }
@@ -771,9 +834,11 @@ export function closeGroupPage() {
 /** Every card of the group is one continuous list that scrolls (long-scroll.js); a refresh draws it again where it was, another group starts at the top. */
 function renderGroupPage() {
   if (pageGroup.startsWith(TEAM_PAGE)) { renderTeamPage(pageGroup.slice(TEAM_PAGE.length)); return; }
-  const group = GROUPS.find((item) => item.id === pageGroup) ?? GROUPS[0];
+  // Snoozed is a tab of its own while there are any, or while it is the one open.
+  const tabs = cardsIn(SNOOZED.id).length || pageGroup === SNOOZED.id ? [...GROUPS, SNOOZED] : GROUPS;
+  const group = tabs.find((item) => item.id === pageGroup) ?? GROUPS[0];
   byId("workspaceGroupTitle").textContent = group.title;
-  byId("workspaceGroupTabs").replaceChildren(...GROUPS.map((item) => {
+  byId("workspaceGroupTabs").replaceChildren(...tabs.map((item) => {
     const tab = document.createElement("button");
     tab.type = "button";
     tab.setAttribute("role", "tab");
@@ -790,7 +855,7 @@ function renderGroupPage() {
   const entries = items.map((card) => () => {
     const row = cardRow(card, group, "workspace-group-page-row", true);
     row.classList.add("wide");
-    return row;
+    return withPageAction(card, row);
   });
   if (!items.length) {
     const empty = document.createElement("p");
@@ -803,7 +868,29 @@ function renderGroupPage() {
   pageList.scrollTop = scroll;
 }
 
+/** On the page, a Needs you row has Snooze beside it and a snoozed one Wake (the column's rows keep them in their menu). */
+function withPageAction(card, row) {
+  const snooze = card.column === "needs-you";
+  if (isSelecting() || (!snooze && card.column !== "snoozed")) return row;
+  const item = document.createElement("div");
+  item.className = "ws-page-item";
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "ghost compact ws-page-action";
+  action.dataset.testid = snooze ? "workspace-page-snooze" : "workspace-page-wake";
+  action.textContent = snooze ? "Snooze" : "Wake";
+  action.title = snooze ? "Put it aside for now: it leaves Needs you until the time you choose or something new happens" : "Bring it back to Needs you now";
+  action.addEventListener("click", () => {
+    if (snooze) chooseSnooze(card, action);
+    else wakeCard(card).catch((error) => toast.error(error.message));
+  });
+  item.append(row, action);
+  return item;
+}
+
 byId("workspaceGroupClose").addEventListener("click", closeGroupPage);
+// Whatever asks for Bob's chat (a dashboard's "Ask Bob", Spotlight's "Ask Bob") shows it: a group's full list gives way.
+window.addEventListener("bob-chat-wanted", closeGroupPage);
 page.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); closeGroupPage(); }
 });

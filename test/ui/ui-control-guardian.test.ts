@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeUiFixture, openBobChat, parkBobChat } from "./native-ui-fixture.js";
+import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 
 const card = (overrides: Record<string, unknown>) => ({
   projectId: "p1", projectName: "Contigos · Julian", conversationId: "c1", sessionId: "c1", path: "/c1", title: "Prod 5xx", column: "needs-you", agentId: "claude", agentLabel: "Claude", agentModel: null,
@@ -16,7 +16,7 @@ const BOARD = {
   ],
 };
 
-test("a step waiting for your OK shows under Needs you with answer buttons, and the icon says how many things wait", async (t) => {
+test("a step waiting for your OK is listed under Needs you and answered from its Home card, and Bob's place says how many things wait", async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
@@ -48,27 +48,29 @@ test("a step waiting for your OK shows under Needs you with answer buttons, and 
   await page.getByTestId("control-center-waiting-badge").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("control-center-waiting-badge").textContent(), "2");
 
+  // Bob's page counts them, and his place in the column says how many wait for you.
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
-  await parkBobChat(page);
-  // Bob's page opens on his chat; the board is his Live agents tab.
-  await page.getByTestId("control-tab-live").click();
-  await page.waitForSelector('[data-testid="control-center-card"]');
-  assert.equal(await page.getByTestId("control-center-count").textContent(), "1 running · 2 need you · 1 watched by Bob");
-  const review = page.locator('[data-key="p1:c1"]');
-  assert.equal(await review.getAttribute("data-column"), "needs-you");
-  assert.match(await review.innerText(), /aws ecs update-service --force-new-deployment/);
-  assert.match(await page.locator('[data-key="p1:c2"]').innerText(), /Auto respond stopped[\s\S]*A plan waits for approval/);
-  assert.equal(await page.getByTestId("control-tab-live").textContent(), "Live agents3");
-  // A step waiting for you takes the status's place, so these cards are the same size as the others.
-  const heights = await page.getByTestId("control-center-card").evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
-  assert.equal(new Set(heights).size, 1, `card heights: ${heights.join(", ")}`);
-  assert.equal(await review.getByTestId("control-review-allow").isVisible(), true, "the answer buttons are not cut off");
+  await page.waitForFunction(() => document.querySelector('[data-testid="control-center-count"]')?.textContent === "1 running · 2 need you · 1 watched by Bob");
+  assert.equal(await page.getByTestId("control-tab-live").textContent(), "Bob2");
+  // The Inbox lists both under Needs you.
+  const needs = page.getByTestId("workspace-group-needs-you");
+  await needs.getByTestId("workspace-group-row").filter({ hasText: "Prod 5xx" }).waitFor();
+  assert.equal(await page.getByTestId("workspace-group-count-needs-you").textContent(), "2");
 
-  await review.getByTestId("control-review-allow").click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="control-center-card"]').length === 2);
+  // Home shows each one as a card with its answer: the held step's command and Allow once / Block.
+  await page.getByTestId("control-center-close-button").click();
+  await page.getByTestId("workspace-home-button").click();
+  const review = page.getByTestId("home-card").filter({ hasText: "Prod 5xx" });
+  await review.waitFor();
+  assert.match(await review.innerText(), /aws ecs update-service --force-new-deployment/);
+  assert.match(await page.getByTestId("home-card").filter({ hasText: "Replace the build script" }).innerText(), /A plan waits for approval/);
+  await review.getByTestId("home-card-allow").click();
+  await review.waitFor({ state: "detached" });
   assert.deepEqual(await page.evaluate("window.__decisions"), [{ projectId: "p1", conversationId: "c1", reviewId: "r1", decision: "allow" }]);
 
+  await page.getByTestId("projects-open-control-center-button").click();
+  await openBobChat(page);
   // Bob's settings say whether production steps ask first, and an administrator can turn it on.
   await page.getByTestId("control-chat-settings-button").click();
   await page.getByTestId("control-bob-guard-button").waitFor({ state: "visible" });

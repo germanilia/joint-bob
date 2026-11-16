@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 
-test("opening a conversation over the board takes control, Esc or Close gives it back, and Keep Bob out keeps it after closing", async (t) => {
+test("opening a conversation from the Inbox on Bob's page takes control, Esc or Close gives it back, and Keep Bob out keeps it after closing", async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
@@ -48,13 +48,9 @@ test("opening a conversation over the board takes control, Esc or Close gives it
 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
-  // Bob's chat floats over the page as a window; the board is used with it folded into the button.
-  await page.getByTestId("control-chat-fold").click();
-  // Bob's page opens on his chat; the board is his Live agents tab.
-  await page.getByTestId("control-tab-live").click();
-  const card = page.getByTestId("control-center-card");
+  // The conversations are the left column's Inbox, beside Bob's page.
+  const card = page.getByTestId("workspace-group-row").filter({ hasText: real.title });
   await card.waitFor();
-  assert.equal(await card.getByTestId("control-card-action-give-back").count(), 0);
   const composer = page.locator("#composer");
   const mode = page.getByTestId("control-popup-mode");
 
@@ -64,14 +60,15 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   // Opening a card puts the person in control at once: the message box and "Give back to Bob", without pressing Take control.
   // On Bob's page the popup bar is the one control line: it carries Give back, and the lease banner stays hidden.
   const giveBack = page.getByTestId("control-popup-bar").getByTestId("control-lease-give-back");
-  await card.locator(".control-title").click();
+  await card.click();
   await page.getByTestId("control-popup-bar").waitFor({ state: "visible" });
-  assert.equal(await page.locator("body.view-control.control-popup").count(), 1, "the board stays under the conversation");
+  assert.equal(await page.locator("body.view-control.control-popup").count(), 1, "Bob's page stays under the conversation");
   await giveBack.waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("control-lease-banner").isVisible(), false);
-  // It opens over the stage; Bob's chat is a window that floats over the page, folded away here.
-  const stage = await page.evaluate(() => ({ stage: document.querySelector("#controlViews")!.getBoundingClientRect(), popup: document.querySelector("#chatPanel")!.getBoundingClientRect() }));
-  assert.ok(Math.abs(stage.popup.left - stage.stage.left) < 2 && Math.abs(stage.popup.right - stage.stage.right) < 2, `the conversation fills the stage: ${JSON.stringify(stage)}`);
+  // It opens over Bob's page, beside the left column, which stays.
+  const stage = await page.evaluate(() => ({ stage: document.querySelector("#controlCenterMain")!.getBoundingClientRect(), popup: document.querySelector("#chatPanel")!.getBoundingClientRect(), column: document.querySelector('[data-testid="workspace-side"]')!.getBoundingClientRect() }));
+  assert.ok(Math.abs(stage.popup.left - stage.stage.left) < 2 && Math.abs(stage.popup.right - stage.stage.right) < 2, `the conversation fills Bob's page: ${JSON.stringify(stage)}`);
+  assert.ok(stage.popup.left >= stage.column.right, "and leaves the column in view");
   await composer.waitFor({ state: "visible" });
   assert.match(await mode.innerText(), /You're in it/);
   assert.equal(await page.getByTestId("control-popup-take").isVisible(), false);
@@ -99,7 +96,7 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   assert.deepEqual(await lease(), ["take", "release", "take", "release"]);
 
   // Keep Bob out: closing no longer gives it back, and reopening shows it still kept out.
-  await page.getByTestId("control-center-card").locator(".control-title").click();
+  await card.click();
   await composer.waitFor({ state: "visible" });
   await keepOut.check();
   await page.waitForFunction(() => /even after you close/.test(document.querySelector("#controlPopupMode")!.textContent!));
@@ -108,8 +105,7 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   await page.waitForTimeout(300);
   assert.deepEqual(await lease(), ["take", "release", "take", "release", "take", "keep-out"]);
   await page.evaluate("window.dispatchEvent(new CustomEvent('control-center-changed'))");
-  await page.getByTestId("control-center-card").getByTestId("control-card-action-give-back").waitFor();
-  await page.getByTestId("control-center-card").locator(".control-title").click();
+  await card.click();
   await composer.waitFor({ state: "visible" });
   await page.waitForFunction(() => (document.querySelector('[data-testid="control-popup-keep-out-toggle"]') as HTMLInputElement).checked);
   // Turning it off lets Bob back in once the conversation closes.
@@ -119,19 +115,11 @@ test("opening a conversation over the board takes control, Esc or Close gives it
   await page.waitForFunction(() => (window as unknown as { __lease: string[] }).__lease.at(-1) === "release");
   assert.deepEqual(await lease(), ["take", "release", "take", "release", "take", "keep-out", "take", "let-in", "release"]);
 
-  // A conversation held elsewhere says so on its card, which offers the way back.
-  await page.evaluate("window.__held = 'you'; window.dispatchEvent(new CustomEvent('control-center-changed'))");
-  const held = page.getByTestId("control-center-card");
-  await held.getByTestId("control-card-action-give-back").waitFor();
-  assert.match(await held.innerText(), /You're in it/);
-  await held.getByTestId("control-card-action-give-back").click();
-  await page.getByTestId("control-card-action-take-control").waitFor();
-  assert.deepEqual((await lease()).slice(-1), ["release"]);
-
-  // A card that waits for the person opens with them in control, ready to answer, without pressing Take control.
+  // One that waits for the person opens with them in control, ready to answer, without pressing Take control.
   await page.evaluate("window.__column = 'needs-you'; window.dispatchEvent(new CustomEvent('control-center-changed'))");
-  await page.locator('[data-testid="control-center-card"][data-column="needs-you"]').waitFor();
-  await page.getByTestId("control-center-card").locator(".control-title").click();
+  const waiting = page.getByTestId("workspace-group-needs-you").getByTestId("workspace-group-row").filter({ hasText: real.title });
+  await waiting.waitFor();
+  await waiting.click();
   await giveBack.waitFor({ state: "visible" });
   await composer.waitFor({ state: "visible" });
   assert.match(await mode.innerText(), /You're in it/);

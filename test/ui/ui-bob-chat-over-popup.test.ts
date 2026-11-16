@@ -8,14 +8,20 @@ test("Bob's floating chat stays above a conversation popup it overlaps", { timeo
   const login = await signIn(environment, node);
   await page.context().addCookies(login.cookie.split("; ").map(cookie => ({ name: cookie.slice(0, cookie.indexOf("=")), value: cookie.slice(cookie.indexOf("=") + 1), url: node.url })));
   await page.goto(node.url);
+  await page.waitForFunction(() => !document.body.classList.contains("booting"));
+  await page.getByTestId("workspace-projects-button").click();
   await page.locator("#projectList").getByText("Internal Assistant", { exact: true }).click();
   await page.locator("#sessionList .list-row").filter({ has: page.locator("strong", { hasText: "Thread-Based Agent Builder" }) }).first().click();
   await page.locator("#messages .message.assistant").first().waitFor();
+  // On one of Bob's other pages his chat is a window that floats over the page (on his own page it is the page).
   await page.evaluate(async () => {
     const { setMobileView } = await import("/app/layout.js");
     setMobileView("control");
+    const { showControlView } = await import("/app/control-views.js");
+    showControlView("my-dashboard");
   });
   await openBobChat(page);
+  assert.equal(await page.getByTestId("control-chat").evaluate((node) => getComputedStyle(node).position), "fixed");
   await page.evaluate(async () => {
     const { state } = await import("/app/state.js");
     const { openConversation } = await import("/app/control-center.js");

@@ -9,7 +9,7 @@ const CARD = {
   controlledBy: null, reviewCheck: null, snooze: null,
 };
 
-test("a Needs you card can be snoozed from the board, moves to Snoozed with its end time, and wakes", { timeout: 120_000 }, async (t) => {
+test("a Needs you conversation is snoozed from its Inbox row, is listed under Snoozed with its end time, and wakes", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
@@ -38,32 +38,42 @@ test("a Needs you card can be snoozed from the board, moves to Snoozed with its 
     };
   })()`);
 
+  // The Inbox in the left column lists the conversation under Needs you (opening Bob reads the board again; Home keeps the
+  // Inbox in the column whatever the page's start restores afterwards).
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-live").click();
-  const card = page.locator('[data-key="p1:c1"]');
-  await card.waitFor();
-  assert.equal(await card.getAttribute("data-column"), "needs-you");
-  assert.match(await page.getByTestId("control-center-count").textContent() ?? "", /1 need you/);
+  await page.waitForTimeout(500);
+  await page.getByTestId("workspace-home-button").click();
+  const row = page.getByTestId("workspace-group-needs-you").getByTestId("workspace-group-row").filter({ hasText: "Bucket question" });
+  await row.waitFor();
+  assert.equal(await page.getByTestId("workspace-group-count-needs-you").textContent(), "1");
 
-  await card.getByTestId("control-card-action-snooze").click();
-  // Under the button pressed, not the page corner (Safari leaves a clicked button unfocused).
-  const pressed = await card.getByTestId("control-card-action-snooze").boundingBox();
+  // Its own menu (right click) puts it aside, under the row pressed.
+  await row.click({ button: "right" });
+  await page.getByTestId("inbox-row-snooze").click();
+  const pressed = await row.boundingBox();
   const choice = await page.getByTestId("snooze-hour").boundingBox();
-  assert.ok(pressed && choice && Math.abs(choice.y - pressed.y) < 200 && Math.abs(choice.x - pressed.x) < 300, `menu at ${JSON.stringify(choice)}, button at ${JSON.stringify(pressed)}`);
+  assert.ok(pressed && choice && Math.abs(choice.y - pressed.y) < 200 && Math.abs(choice.x - pressed.x) < 300, `menu at ${JSON.stringify(choice)}, row at ${JSON.stringify(pressed)}`);
   await page.getByTestId("snooze-hour").click();
-  await page.waitForFunction(() => document.querySelector('[data-key="p1:c1"]')?.getAttribute("data-column") === "snoozed");
+  await row.waitFor({ state: "detached" });
   const [sent] = await page.evaluate(() => (window as unknown as { __snoozes: Array<{ action: string; until: string | null; conversationId: string }> }).__snoozes);
   assert.equal(sent.action, "snooze");
   assert.equal(sent.conversationId, "c1");
   const ahead = Date.parse(sent.until!) - Date.now();
   assert.ok(ahead > 55 * 60_000 && ahead <= 60 * 60_000, `an hour from now, got ${ahead} ms`);
-  assert.doesNotMatch(await page.getByTestId("control-center-count").textContent() ?? "", /need you/, "a snoozed card no longer counts as waiting");
-  assert.equal(await page.locator('.control-lane[data-column="snoozed"] .control-lane-count').textContent(), "1");
-  assert.match(await card.getByTestId("control-card-snoozed").textContent() ?? "", /^Snoozed until /);
-  assert.equal(await card.getByTestId("control-card-action-snooze").count(), 0);
+  await page.waitForFunction(() => document.querySelector('[data-testid="workspace-group-count-needs-you"]')?.textContent === "0");
 
-  await card.getByTestId("control-card-action-wake").click();
-  await page.waitForFunction(() => document.querySelector('[data-key="p1:c1"]')?.getAttribute("data-column") === "needs-you");
-  assert.equal(await page.evaluate(() => (window as unknown as { __snoozes: Array<{ action: string }> }).__snoozes.at(-1)!.action), "wake");
-  assert.equal(await page.locator('.control-lane[data-column="snoozed"]').count(), 0, "nothing put aside, no Snoozed lane");
+  // Needs you's label counts what is snoozed; it opens the Snoozed list, where each says until when and can be woken.
+  const link = page.getByTestId("workspace-snoozed-link");
+  await link.waitFor();
+  assert.equal(await link.textContent(), "1 snoozed");
+  await link.click();
+  await page.getByTestId("workspace-group-tab-snoozed").waitFor();
+  assert.equal(await page.getByTestId("workspace-group-tab-snoozed").getAttribute("aria-selected"), "true");
+  const snoozed = page.getByTestId("workspace-group-page-row").filter({ hasText: "Bucket question" });
+  assert.match(await snoozed.textContent() ?? "", /Snoozed until /);
+  await page.getByTestId("workspace-page-wake").click();
+  await page.waitForFunction(() => (window as unknown as { __snoozes: Array<{ action: string }> }).__snoozes.at(-1)?.action === "wake");
+  await page.getByTestId("workspace-group-close").click();
+  await row.waitFor();
+  await link.waitFor({ state: "detached" });
 });

@@ -97,7 +97,7 @@ test('team control center shows picked members with free roles and persists orde
   assert.equal(await page.getByTestId('control-tab-assistants').isVisible(), true, 'member roster reachable on wide screens');
   assert.match(await page.getByTestId('control-tab-assistants').innerText(), /Team members/);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByTestId('control-tab-live').click();
+  await page.getByTestId('projects-open-control-center-button').click();
   await page.getByTestId('team-live-view').waitFor({ state: 'visible' });
   assert.equal(await page.getByTestId('team-assistants-view').isVisible(), false);
   await page.getByTestId('control-tab-memory').click();

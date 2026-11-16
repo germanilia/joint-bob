@@ -4,7 +4,7 @@ import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 import { api, signIn } from "../dev-nodes.js";
 
-test("a Bob card opens system control with unlimited defaults and saves instructions and limits", { timeout: 120_000 }, async (t) => {
+test("an Inbox row's menu opens system control with unlimited defaults and saves instructions and limits", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t, root => ({ JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log") }));
   const auth = await signIn(environment, node);
   const project = node.projects.find(project => project.name === "Internal Assistant")!;
@@ -13,9 +13,9 @@ test("a Bob card opens system control with unlimited defaults and saves instruct
   const session = listed.body.sessions.find(session => session.harnessId === "pi")!;
   assert.ok(session, JSON.stringify(listed.body));
   const conversationId = session.conversationId ?? session.id;
-  // Seed a board card for a real listed conversation. Board eligibility is tested separately;
-  // this journey exercises the card action, real conversation connection and persisted settings.
-  await page.route("**/api/control-center/board", route => route.fulfill({ json: {
+  // Seed the Inbox with a real listed conversation. Which conversations are listed is tested separately;
+  // this journey exercises the row's action, real conversation connection and persisted settings.
+  await page.route(/\/api\/control-center\/board(\?|$)/, route => route.fulfill({ json: {
     projects: [{ id: project.id, name: project.name, color: null }],
     cards: [{ projectId: project.id, projectName: project.name, conversationId, sessionId: session.id,
       path: session.path, title: "System control fixture", column: "review", harnessId: "pi", agentId: "pi", agentLabel: "Pi",
@@ -29,10 +29,13 @@ test("a Bob card opens system control with unlimited defaults and saves instruct
   await page.getByTestId("login-password-input").fill(environment.password);
   await page.getByTestId("login-submit-button").click();
   await page.waitForFunction(async () => (await import("/app/state.js")).state.preferencesLoaded && !document.body.classList.contains("booting"));
+  // Boot resets the view to the project list as its last step; open Bob's page only after that.
+  await page.waitForTimeout(500);
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-live").click();
-  const card = page.getByTestId("control-center-card").and(page.locator(`[data-key="${project.id}:${conversationId}"]`));
-  await card.getByRole("button", { name: "Let Bob control", exact: true }).click();
+  await page.locator("body.view-control.bob-chat-page").waitFor();
+  const row = page.getByTestId("workspace-group-review").getByTestId("workspace-group-row").filter({ hasText: "System control fixture" });
+  await row.click({ button: "right" });
+  await page.getByTestId("inbox-row-system-control").click();
   await page.getByTestId("auto-respond-dialog").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("auto-respond-system-control").isChecked(), true);
   assert.equal(await page.getByTestId("auto-respond-limit").inputValue(), "");

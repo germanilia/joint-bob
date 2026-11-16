@@ -126,8 +126,7 @@ function crowdsThread() {
 // floats over the thread as it does on a narrow window.
 function fitBesideBrowser() {
   const shown = document.body.classList.contains("browser-visible");
-  // On Bob's page the browser halves a page that already holds the conversation list, so the chat is always too narrow for both.
-  const crowded = shown && !OVERLAY_QUERY.matches && (crowdsThread() || document.body.classList.contains("control-inline"));
+  const crowded = shown && !OVERLAY_QUERY.matches && crowdsThread();
   if (shown && !browserShown && crowded && activityPanelOpen()) {
     setActivityPanelOpen(false, false);
     collapsedForBrowser = true;
