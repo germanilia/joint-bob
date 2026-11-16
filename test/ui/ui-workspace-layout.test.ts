@@ -521,9 +521,8 @@ test("New, ⋯ and the places reach every action the old panels had", async () =
   await page.locator("#controlCenterPanel").waitFor();
   assert.equal(await page.locator('[data-testid="control-center-tabs"] [aria-selected="true"]').innerText(), "Automations");
   assert.equal(await page.getByTestId("workspace-automations-button").getAttribute("class").then((value) => value?.includes("on")), true);
-  // Bob's page has the whole width (the left column goes while it is open, from 1024 px) and keeps its exit rule: Esc
-  // twice leaves, and the column is back with Bob one click away.
-  assert.equal(await visible("workspace-side"), false, "Bob's page takes the left column's place");
+  // Bob's page shares the shell (the left column stays beside it) and keeps its exit rule: Esc twice leaves.
+  assert.equal(await visible("workspace-side"), true, "the column stays beside Bob's page");
   await page.locator("body").press("Escape");
   await page.getByTestId("control-exit-prompt").waitFor();
   await page.locator("body").press("Escape");
@@ -531,7 +530,7 @@ test("New, ⋯ and the places reach every action the old panels had", async () =
   assert.equal(await visible("workspace-side"), true, "leaving Bob's page brings the column back");
   await page.getByTestId("projects-open-control-center-button").click();
   await page.waitForFunction(() => document.body.classList.contains("view-control"));
-  assert.equal(await visible("workspace-side"), false, "Bob's button opens his page");
+  assert.equal(await visible("workspace-side"), true, "the column stays when Bob's button opens his page");
   await page.locator("body").press("Escape");
   await page.getByTestId("control-exit-prompt").waitFor();
   await page.locator("body").press("Escape");

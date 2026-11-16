@@ -222,7 +222,7 @@ function apply() {
   body.classList.toggle("bob-desk", page);
   if (changed) window.dispatchEvent(new CustomEvent("bob-desk-changed"));
   if (page) {
-    moveInto(tabs, stage, { first: true });
+    moveInto(tabs, document.querySelector(".ws-places"), { before: document.getElementById("workspaceInboxButton") });
     moveInto(document.querySelector(".team-context-label"), chatHead, { before: elements.controlChatSettingsButton });
     if (giveBack.parentElement !== popupBar) moveInto(giveBack, popupBar);
     popupBar.append(document.getElementById("controlPopupClose"));

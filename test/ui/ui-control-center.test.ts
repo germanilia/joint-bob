@@ -561,8 +561,8 @@ test("the control center shows the live board, filters by project, colors cards 
   // Bob's page opens on his chat; the board is his Live agents tab.
   await page.getByTestId("control-tab-live").click();
   await page.waitForSelector('[data-testid="control-center-card"]');
-  // Bob's page has the whole width: the workspace's left column goes; Esc once asks, and Esc again leaves.
-  assert.equal(await page.getByTestId("workspace-side").isVisible(), false);
+  // Bob's page shares the shell: the workspace's left column stays; Esc once asks, and Esc again leaves.
+  assert.equal(await page.getByTestId("workspace-side").isVisible(), true);
   assert.equal(await page.locator("#chatPanel").isVisible(), false);
   await page.keyboard.press("Escape");
   await page.getByTestId("control-exit-prompt").waitFor({ state: "visible" });

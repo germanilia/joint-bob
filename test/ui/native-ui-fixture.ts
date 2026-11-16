@@ -27,7 +27,8 @@ export async function nativeUiFixture(t: TestContext, extraEnv: (root: string) =
   const node = environment.nodes[0];
   server = await startDevNode(environment, node, extraEnv(root));
   browser = await launchChrome({ headless: true, env: { ...process.env, HOME: environment.home } });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+  // Bob's page shares the shell with the left column (about 300 px), so the window is that much wider: the page keeps its old room.
+  const context = await browser.newContext({ viewport: { width: 1740, height: 900 }, serviceWorkers: "block" });
   context.setDefaultTimeout(20_000);
   // Bob's page draws the Live agents board as a list by default; these tests were written for the cards, so they start there.
   // The list has its own test (ui-control-list.test.ts), which asks for it.

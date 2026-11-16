@@ -107,12 +107,12 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   // The page opens at its full width: the chat is folded into the "Ask Bob" button at the bottom left.
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
   const fab = (await page.getByTestId("bob-fab-chat").boundingBox())!;
-  assert.ok(fab.x < page.viewportSize()!.width / 2, `"Ask Bob" sits on the left (${fab.x})`);
+  assert.ok(fab.x < page.viewportSize()!.width / 2, `"Ask Bob" sits on the left of the page (${fab.x})`);
   await page.getByTestId("bob-fab-chat").click();
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   assert.equal(await page.getByTestId("control-chat-input").getAttribute("placeholder"), "Ask Bob, or give him a task…");
-  // The views are tabs on top of the stage, beside the chat; no third column.
-  const stage = page.locator("#controlViews");
+  // The views are Bob's sub-menu in the left column, which stays beside the page; no third column.
+  const stage = page.locator(".ws-places");
   for (const testid of ["control-tab-live", "control-tab-my-dashboard", "control-tab-automations", "control-tab-memory", "control-tab-dashboards", "control-tab-assistants"]) {
     assert.equal(await stage.getByTestId(testid).isVisible(), true, testid);
   }
@@ -139,8 +139,9 @@ test("Bob's page: the head carries Bob's switch and settings, the stage's tabs a
   await page.getByTestId("control-center-card").first().waitFor();
   assert.equal(await page.getByTestId("control-score").isVisible(), true);
   assert.ok(await page.getByTestId("control-card-avatar").count() > 0);
-  // The app's left column goes on Bob's page; it has the whole width.
-  assert.equal(await page.getByTestId("workspace-side").isVisible(), false, "no left column on Bob's page");
+  // The app's left column stays beside Bob's page; its list steps aside while the board is the list.
+  assert.equal(await page.getByTestId("workspace-side").isVisible(), true, "the left column stays beside Bob's page");
+  assert.equal(await page.getByTestId("workspace-groups").isVisible(), false, "the column's list steps aside for the board");
   // Nothing on a card is cut: its top row and its buttons fit inside it.
   const clipped = await page.getByTestId("control-center-card").evaluateAll((cards) => cards.flatMap((card) => {
     const box = card.getBoundingClientRect();

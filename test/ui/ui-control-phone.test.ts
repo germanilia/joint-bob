@@ -359,7 +359,7 @@ test("a screen between a phone and a desktop reaches the control center from the
 
   // Back to a desktop: Bob's page, his chat beside the stage and its tabs; the board is one press away.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.locator("#controlViews").getByTestId("control-tab-live").waitFor({ state: "visible" });
+  await page.locator(".ws-places").getByTestId("control-tab-live").waitFor({ state: "visible" });
   await page.getByTestId("control-tab-live").click();
   await page.getByTestId("control-center-board").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("control-phone-strip").isVisible(), false);
