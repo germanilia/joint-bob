@@ -37,6 +37,20 @@ test('long delivery preserves the final character and every actual chat/thread r
  }finally{globalThis.fetch=original;}
 });
 
+test('team answers are sent as Telegram HTML and fall back to plain text when Telegram refuses the formatting',async()=>{
+ const f=await fixture(),original=globalThis.fetch,sends:any[]=[];let refuse=false;
+ globalThis.fetch=async(_url,init)=>{const body=JSON.parse(String(init?.body));sends.push(body);if(refuse&&body.parse_mode)return Response.json({ok:false,error_code:400,description:"Bad Request: can't parse entities"});return Response.json({ok:true,result:{message_id:9100+sends.length}});};
+ try{
+  const out=(id:string)=>enqueueTeamOutput(await0,{id,teamId:f.team.id,rootId:id,assignmentId:null,kind:'clarify',text:'bob: **FastAPI** in `app/auth.py`',chatId:'-1',threadId:null,replyTo:12,requestedBy:f.member.accountId,role:'bob',subjectId:null});
+  const await0=await deliveryDatabase();
+  out('fmt-ok');await deliverTeamOutbox(f.team.id);
+  assert.equal(sends[0].parse_mode,'HTML');assert.equal(sends[0].text,'bob: <b>FastAPI</b> in <code>app/auth.py</code>');
+  refuse=true;out('fmt-refused');await deliverTeamOutbox(f.team.id);
+  const last=sends.at(-1);assert.equal(last.parse_mode,undefined);assert.equal(last.text,'bob: **FastAPI** in `app/auth.py`','the answer still arrives, as plain text');
+  assert.ok((await listTeamOutbox(f.team.id)).filter(row=>row.rootId.startsWith('fmt')).every(row=>row.state==='sent'));
+ }finally{globalThis.fetch=original;}
+});
+
 test('recovery wake errors have durable sanitized member-visible diagnostics',async()=>{
  const f=await fixture(),db=await assignmentDatabase();
  db.prepare('INSERT INTO assistant_team_outbox VALUES(?,?,?,?,?)').run('broken',f.team.id,'broken','pending','invalid synthetic secret');

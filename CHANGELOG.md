@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.4 — 2026-11-16
+
+- Team answers in Telegram are formatted: bold, code, lists and headings show as formatting instead of raw `**` and backticks. If Telegram refuses the formatting, the answer is sent as plain text.
+
 ## 2.317.3 — 2026-11-16
 
 - When the team acts on a Telegram message, Bob now starts on it instead of replying "which subject and what work should the team handle?". That question is kept for messages the team leaves alone and for replies to a message it cannot find.

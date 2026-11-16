@@ -2,7 +2,7 @@ import { conversationDatabase, recordTeamOutput } from './conversations.js';
 import { requireTeamExecution } from './access.js';
 import { teamTelegramConnection } from './telegram-store.js';
 import { secretAccountVariable } from '../secrets.js';
-import { TELEGRAM_TOKEN_VARIABLE, telegramParts } from '../webhook-telegram.js';
+import { TELEGRAM_TOKEN_VARIABLE, telegramParts, telegramHtml } from '../webhook-telegram.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { scheduleTeamChange, type TeamRole } from './store.js';
 
@@ -59,8 +59,11 @@ export async function deliverTeamOutbox(teamId:string):Promise<void> {
    if(!claimed.changes)continue;
    row.state='sending';save(db,row);
    try {
-    const response=await fetch(`${process.env.JOINT_BOB_TELEGRAM_API||'https://api.telegram.org'}/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(15000),body:JSON.stringify({chat_id:row.chatId,text:row.text,...(row.kind==='inquiry'?{reply_markup:{inline_keyboard:[[{text:'Confirm',callback_data:`tc:${Buffer.from(row.id.split(':')[0],'hex').toString('base64url')}`},{text:'Dismiss',callback_data:`td:${Buffer.from(row.id.split(':')[0],'hex').toString('base64url')}`}]]}}:{}),...(row.threadId===null?{}:{message_thread_id:row.threadId}),reply_parameters:{message_id:row.replyTo}})});
-    const answer=await response.json() as {ok?:boolean;result?:{message_id?:number};parameters?:{retry_after?:number}};
+    // Answers are Markdown; Telegram shows it raw unless sent as HTML. Formatting it refuses must not cost the answer, so it is sent once more as plain text.
+    const post=(text:string,html:boolean)=>fetch(`${process.env.JOINT_BOB_TELEGRAM_API||'https://api.telegram.org'}/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(15000),body:JSON.stringify({chat_id:row.chatId,text,...(html?{parse_mode:'HTML'}:{}),...(row.kind==='inquiry'?{reply_markup:{inline_keyboard:[[{text:'Confirm',callback_data:`tc:${Buffer.from(row.id.split(':')[0],'hex').toString('base64url')}`},{text:'Dismiss',callback_data:`td:${Buffer.from(row.id.split(':')[0],'hex').toString('base64url')}`}]]}}:{}),...(row.threadId===null?{}:{message_thread_id:row.threadId}),reply_parameters:{message_id:row.replyTo}})});
+    let response=await post(row.kind==='inquiry'?row.text:telegramHtml(row.text),row.kind!=='inquiry');
+    let answer=await response.json() as {ok?:boolean;description?:string;result?:{message_id?:number};parameters?:{retry_after?:number}};
+    if(answer.ok===false&&/parse entities/i.test(answer.description??'')){response=await post(row.text,false);answer=await response.json() as typeof answer;}
     if(answer.ok===false){row.state='rejected';const delay=answer.parameters?.retry_after;row.retryAt=Number.isFinite(delay)&&delay!>0?Date.now()+delay!*1000:null;}
     else if(response.ok&&answer.ok===true&&Number.isSafeInteger(answer.result?.message_id)&&answer.result!.message_id!>0){row.state='sent';row.receiptId=answer.result!.message_id!;}
     else row.state='uncertain';
