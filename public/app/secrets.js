@@ -26,7 +26,7 @@ let secretScopeTarget = null;
 let secretTypeFilter = "all";
 
 // Brand marks, drawn inline so the offline shell never reaches for a network icon.
-const providerLabels = { aws: "AWS", azure: "Azure service principal", google: "Google", github: "GitHub", stripe: "Stripe", cloudflare: "Cloudflare", openai: "OpenAI", typesafe: "TypeSafe AI · Jev", tavily: "Tavily", elevenlabs: "ElevenLabs", zai: "Z.AI", grafana: "Grafana", datadog: "Datadog", jira: "Jira", gitlab: "GitLab", postgres: "PostgreSQL", mssql: "MS SQL", mongodb: "MongoDB", website: "Website", ssh: "SSH", certificate: "Certificate", custom: "Custom" };
+export const providerLabels = { aws: "AWS", azure: "Azure service principal", google: "Google", github: "GitHub", stripe: "Stripe", cloudflare: "Cloudflare", openai: "OpenAI", typesafe: "TypeSafe AI · Jev", tavily: "Tavily", elevenlabs: "ElevenLabs", zai: "Z.AI", grafana: "Grafana", datadog: "Datadog", jira: "Jira", gitlab: "GitLab", postgres: "PostgreSQL", mssql: "MS SQL", mongodb: "MongoDB", website: "Website", ssh: "SSH", certificate: "Certificate", custom: "Custom" };
 /** Shown under the provider picker so the choice explains itself before anything is typed. */
 const providerHints = {
   aws: "An access key pair. The AWS CLI and the AWS SDKs pick these up with no extra setup.",

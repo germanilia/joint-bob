@@ -63,7 +63,7 @@ app.get("/api/clusters/:clusterId/secrets", async (request, response, next) => {
     ensureSecretSharingSchema(db);
     if(!db.prepare('SELECT 1 FROM sharing_memberships WHERE cluster_id=? AND node_id=?').get(clusterId,local)) {response.status(403).json({error:'Not a member of this cluster'});return;}
     const accounts=await listSecretAccounts();
-    const available=accounts.filter(account=>!account.readOnly).map(account=>({id:account.id,label:account.label}));
+    const available=accounts.filter(account=>!account.readOnly).map(account=>({id:account.id,label:account.label,provider:account.provider}));
     const shared=accounts.filter(account=>!account.readOnly && (db.prepare('SELECT 1 FROM cluster_v2_secret_grants WHERE account_id=? AND cluster_id=?').get(account.id,clusterId) || db.prepare(`SELECT 1 FROM secret_assignments s JOIN cluster_v2_share_selections sh ON sh.resource_id=s.scope_id AND sh.kind='workspace' WHERE s.account_id=? AND s.scope_type='workspace' AND sh.cluster_id=?`).get(account.id,clusterId) || account.replicate && db.prepare(`SELECT 1 FROM secret_assignments s JOIN sharing_resource_shares sh ON sh.resource_id=s.scope_id AND sh.kind='project' WHERE s.account_id=? AND s.scope_type='project' AND sh.cluster_id=?`).get(account.id,clusterId))).map(account=>({id:account.id,label:account.label}));
     const received=accounts.filter(account=>{
       if(!account.readOnly)return false;

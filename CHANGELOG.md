@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 2.317.6 — 2026-11-16
+
+- Completed the secret picker fix so provider names show when sharing accounts with a cluster.
+
 ## 2.317.5 — 2026-11-16
 
 - Found secret accounts by provider when sharing with a cluster: the picker now shows "DAK-Dev · Stripe" like the Secrets page, so searching "stripe" works.
