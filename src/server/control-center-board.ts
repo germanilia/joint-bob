@@ -94,11 +94,11 @@ export async function loadBoard(session: AuthSession, options: { earlier?: boole
   return { cards, projects, earlier: options.earlier ? earlierConversations(groups, cards) : undefined };
 }
 
-/** Every other conversation of the projects read for the board, newest first; scheduled runs, drafts and read-only copies are not conversations of the person's. */
+/** Every other conversation, newest first; skip scheduled runs, entirely empty drafts and read-only copies, not an existing conversation's empty newest segment. */
 export function earlierConversations(groups: BoardProject[], cards: BoardCard[]): EarlierConversation[] {
   const onBoard = new Set(cards.map((card) => `${card.projectId}:${card.conversationId}`));
   return groups.flatMap((group) => group.sessions
-    .filter((entry) => !entry.readOnly && !entry.cronTaskId && !entry.draft && !onBoard.has(`${group.projectId}:${entry.conversationId ?? entry.id}`))
+    .filter((entry) => !entry.readOnly && !entry.cronTaskId && (!entry.draft || entry.segments?.some((segment) => !segment.draft)) && !onBoard.has(`${group.projectId}:${entry.conversationId ?? entry.id}`))
     .map((entry): EarlierConversation => ({
       projectId: group.projectId, projectName: group.projectName, conversationId: entry.conversationId ?? entry.id, sessionId: entry.id, path: entry.path,
       harnessId: entry.harnessId, agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, updatedAt: entry.updatedAt ?? null, done: Boolean(entry.doneAt),
@@ -122,12 +122,12 @@ const PAST_LIMIT = 300;
 const PAST_SUMMARY_CHARACTERS = 800;
 
 /**
- * The newest conversations marked done and the newest open ones, of the projects given; scheduled runs, drafts and read-only
- * copies are not conversations of the person's. The open ones include what the board shows: the list drops those.
+ * The newest done and open conversations; omit scheduled runs, entirely empty drafts and read-only copies.
+ * An empty newest segment after a harness switch does not erase earlier history. The open ones include the board: the list drops those.
  */
 export function pastConversations(groups: BoardProject[], summaryOf: (projectId: string, conversationId: string) => string | null): PastConversation[] {
   const found = groups.flatMap((group) => group.sessions
-    .filter((entry) => !entry.readOnly && !entry.cronTaskId && !entry.draft)
+    .filter((entry) => !entry.readOnly && !entry.cronTaskId && (!entry.draft || entry.segments?.some((segment) => !segment.draft)))
     .map((entry) => ({ group, entry })));
   const newest = (key: "doneAt" | "updatedAt") => (a: typeof found[number], b: typeof found[number]) => (b.entry[key] ?? "").localeCompare(a.entry[key] ?? "");
   const done = found.filter(({ entry }) => entry.doneAt).sort(newest("doneAt")).slice(0, PAST_LIMIT);

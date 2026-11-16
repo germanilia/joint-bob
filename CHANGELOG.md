@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.9 — 2026-11-16
+
+- Kept existing conversations visible in Bob's Inbox and Earlier list after switching agents, without needing another message to bring them back.
+
 ## 2.317.8 — 2026-11-16
 
 - Team memory can belong to the whole team or to one member. A member's own notes are read only by that member, the team's playbook by everyone, so each member starts a request with just what applies to it. Members choose the scope when they record a lesson (`scope` on the memory tools), and most lessons stay with the member who learned them.
