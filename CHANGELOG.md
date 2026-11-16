@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.11 — 2026-11-16
+
+- Removed the collapse arrow at the top of the Activity panel on the desktop. The panel icon in the conversation header opens and closes it, as before; the phone keeps its own button.
+
 ## 2.317.10 — 2026-11-16
 
 - Applied the default worktree setting to every new conversation, including Bob, quick notes, schedules, webhooks and remote starts. Kept explicit folder choices across restarts and stopped failed copies from starting in the project folder.
