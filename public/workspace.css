@@ -719,7 +719,7 @@
   }
   /* Light ink on a dark panel reaches the same contrast with less of it. */
   :root[data-theme="dark"] body:not(.focus-ui) #activityPanel { --ctl-edge: color-mix(in srgb, var(--text) 42%, var(--panel)); }
-  /* First line: the segments and the collapse button. Second line: Browser, Terminal, Share, Schedule. */
+  /* First line: the segments. Second line: Browser, Terminal, Share, Schedule. */
   body:not(.focus-ui) #activityPanel > .activity-panel-header { flex-wrap: wrap; gap: 8px 6px; padding: 16px 14px 10px 16px; border-bottom: 1px solid var(--line); }
   body:not(.focus-ui) #activityPanel .activity-tabs { flex: 1; display: flex; gap: 2px; min-width: 0; padding: 3px; border-radius: 12px; background: var(--ctl-fill); box-shadow: inset 0 0 0 1px var(--ctl-edge); }
   body:not(.focus-ui) #activityPanel .activity-tabs > button {
@@ -736,10 +736,8 @@
   body:not(.focus-ui) #activityPanel .ws-seg-count { color: inherit; font-size: 11px; font-weight: 700; }
   body:not(.focus-ui) #activityPanel .ws-seg-count[hidden] { display: none; }
   body:not(.focus-ui) #activityPanel .activity-modes { display: none; }
-  body:not(.focus-ui) #activityPanel .activity-panel-close {
-    width: 32px; min-width: 32px; min-height: 32px; border-radius: 10px; background: var(--ctl-fill); box-shadow: inset 0 0 0 1px var(--ctl-edge); color: var(--text);
-  }
-  body:not(.focus-ui) #activityPanel .activity-panel-close:hover { background: var(--ctl-fill-hover); }
+  /* No collapse arrow: the conversation's header toggle (#activityToggleButton) opens and closes the panel. The phone's focus UI keeps it. */
+  body:not(.focus-ui) #activityPanel .activity-panel-close { display: none; }
   body:not(.focus-ui) #activityPanel > .activity-panel-header { container: details-head / inline-size; }
   /* The quiet buttons inside the cards (View, Edit, Update summary, the summary's model, Add to knowledge, Dismiss). */
   body:not(.focus-ui) #activityPanel :is(.activity-summary-actions, .activity-instructions-actions, .activity-rule-actions) > button {

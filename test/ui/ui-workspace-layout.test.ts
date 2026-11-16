@@ -220,7 +220,7 @@ test("the details column: Activity, btw, Files, Git and Tasks, More, the two swi
   await page.keyboard.press("Escape");
   await page.locator("#cronDialog[open]").waitFor({ state: "detached" });
   // It collapses like the activity pane did, and the header brings it back.
-  await page.getByTestId("activity-panel-close").click();
+  await page.getByTestId("chat-activity-toggle").click();
   await page.locator("#activityPanel").waitFor({ state: "hidden" });
   await page.getByTestId("chat-activity-toggle").click();
   await page.locator("#activityPanel").waitFor();
@@ -319,12 +319,10 @@ test("the details column is tabs and content only, More shows its two rows at an
         }
       };
       text("#activityPanel .activity-tabs > button");
-      text("#activityPanelCloseButton");
       text("#activityPanel .ws-pane-actions > button");
       text("#activityWhenStops .ws-switch-row");
       edge("#activityPanel .activity-tabs");
       edge("#activityPanel .activity-tabs > button[aria-selected=true]");
-      edge("#activityPanelCloseButton");
       edge("#activityPanel .ws-pane-actions > button");
       edge("#activityWhenStops .ws-switch-row[aria-checked=false] .ws-switch");
       return found;

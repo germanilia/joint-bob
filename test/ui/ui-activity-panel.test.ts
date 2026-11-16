@@ -261,7 +261,7 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   assert.equal(await page.getByTestId("activity-summary-model").innerText(), "Writer: automatic");
   await page.getByTestId("activity-summary-refresh").filter({ hasText: "Write summary" }).waitFor();
   // Opening the panel yourself is asking to see the summary, so it is written.
-  await page.getByTestId("activity-panel-close").click();
+  await page.getByTestId("chat-activity-toggle").click();
   await page.getByTestId("chat-activity-toggle").click();
   await page.getByTestId("activity-summary-text").locator("strong", { hasText: "Goal" }).waitFor({ timeout: 15_000 });
   const [firstCall] = await summaryCalls();
@@ -406,7 +406,7 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   // Collapsing hands the width back and is remembered.
   await page.getByTestId("activity-steps-toggle").click();
   await page.getByTestId("activity-list").waitFor({ state: "hidden" });
-  await page.getByTestId("activity-panel-close").click();
+  await page.getByTestId("chat-activity-toggle").click();
   await panel.waitFor({ state: "hidden" });
   assert.equal(await page.getByTestId("chat-activity-toggle").getAttribute("aria-expanded"), "false");
   const widened = await page.locator("#messages").boundingBox();
@@ -488,7 +488,7 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   // A real answer: the conversation's node writes the summary after it, with the panel closed.
   await page.locator(".session-card", { hasText: LIVE_TITLE }).first().click();
   await page.locator("#messages").getByText("Migration 42 is running.").waitFor({ timeout: 20_000 });
-  await page.getByTestId("activity-panel-close").click();
+  await page.getByTestId("chat-activity-toggle").click();
   await panel.waitFor({ state: "hidden" });
   const before = (await summaryCalls()).length;
   await page.getByTestId("chat-message-input").fill("Check the row counts");
