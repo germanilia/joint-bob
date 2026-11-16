@@ -71,6 +71,17 @@ test("cleanup handles old done marks, keeps new empty worktrees, and is idempote
   assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
 });
 
+test("a peer removes what a retired worktree left behind without waiting out the grace period", async (context) => {
+  const { project, worktree, sessionId } = await fixture(context);
+  await setSessionDone(sessionId, true);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
+  // The delete reached this node file by file; its own provisioned files (an .env copy, a link) are what remain.
+  await mkdir(worktree.path, { recursive: true });
+  await writeFile(path.join(worktree.path, ".env"), "KEY=value\n");
+  await cleanupDoneWorktrees(project);
+  await assert.rejects(access(worktree.path), { code: "ENOENT" });
+});
+
 test("cleanup waits for running work, then retries after it ends", async (context) => {
   const { project, worktree, sessionId } = await fixture(context);
   await setSessionDone(sessionId, true);

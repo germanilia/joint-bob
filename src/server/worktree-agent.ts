@@ -152,7 +152,6 @@ export async function worktreeAgentRequest(identity: WorktreeAgentIdentity, requ
       if (!id) throw new ProjectWorktreeError(400, "Pass --worktree ID or run in a worktree");
       const worktree = await localWorktree(project.id, id);
       if (worktree.id !== current?.id && !createdByCaller(worktree, identity)) throw new ProjectWorktreeError(403, "Only this worktree's conversation or creator may reconcile main");
-      if (worktree.createdByNodeId !== (await getClusterNode()).id) throw new ProjectWorktreeError(409, "Reconcile on the worktree's creating node");
       const changes = await worktreeChanges(project.id, id);
       if (!changes.gitBase) throw new ProjectWorktreeError(409, "Worktree has no Git base");
       return withProjectRuntime(project.id, () => reconcileWorktreeMain(project.path,

@@ -573,7 +573,11 @@ export async function worktreeChanges(projectId: string, worktreeId: string, roo
   if (!metadata) throw new ProjectWorktreeError(404, "Worktree not found");
   const baseline = await readBaseline(worktree);
   // The digest recorded at creation pins the manifest an agent could otherwise rewrite.
-  if (!baseline || baseline.digest !== metadata.baselineDigest) throw new ProjectWorktreeError(409, "Worktree baseline changed; its changes cannot be determined");
+  if (!baseline || baseline.digest !== metadata.baselineDigest) {
+    // On another node than the creator the baseline is the last thing file sync brings, so it is often missing or older than worktree.json.
+    if (await worktreeHasPendingFiles(projectId, worktreeId)) throw new ProjectWorktreeError(409, "Files of this worktree are still arriving from another machine; try again in a moment");
+    throw new ProjectWorktreeError(409, "Worktree baseline changed; its changes cannot be determined");
+  }
   const skipped = new Set([TICKET_BASELINE_DIR, TICKET_MERGE_DIR, WORKTREE_META_DIR]);
   const writes: WorktreeFileChange[] = [];
   const present = new Set<string>();

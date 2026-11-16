@@ -8,7 +8,7 @@ node "$JOINT_BOB_WORKTREE_CLI" merge --worktree WORKTREE_ID --operation UUID --t
 node "$JOINT_BOB_WORKTREE_CLI" status --operation UUID
 ```
 
-The capability already scopes the project and conversation. Only the creating conversation on the creator node can finish a worktree. The operation ID binds its worktree, title, check and resolution target. Reusing it cannot repeat an uncertain check or silently target another operation.
+The capability already scopes the project and conversation. Only the creating conversation (or the worktree's own conversation) can finish a worktree, on any node that has its files: the commit lands on the main of the node that runs the merge. If that node's main lacks the worktree's base commit (for example an unpublished commit made on the creating node), integration stops with that reason, and `pr --merge` is the way through. A command that finds the worktree's baseline still arriving from another machine reports that files are arriving; run it again in a moment. The operation ID binds its worktree, title, check and resolution target. Reusing it cannot repeat an uncertain check or silently target another operation.
 
 The integration engine replays only the worktree's changes onto committed local main, verifies an isolated candidate, then installs it with compare-and-swap and a durable journal. It preserves unrelated working files and staged changes. Main movement, overlapping local edits, pending file sync, other active writers, verification failures and uncertain installations retain the worktree.
 
@@ -24,7 +24,7 @@ Verified integration can retire a worktree immediately when its writers stop. Th
 
 Expiration protects running conversations, background tasks, open harness working directories and unresolved integrations. It waits for file sync and checks eligible peers even when this machine created the worktree. Unknown activity or an unavailable peer retains the worktree rather than guessing.
 
-The active agent's cwd is not deleted during its merge tool call. Completion schedules a turn-aware grace period; cleanup rechecks writers, pending sync and the task digest. Later edits invalidate retirement eligibility. Existing housekeeping provides restart recovery. Archived cwd metadata keeps local native transcript discovery available after deletion.
+The active agent's cwd is not deleted during its merge tool call. Completion schedules a turn-aware grace period; cleanup rechecks writers, pending sync and the task digest. Later edits invalidate retirement eligibility. Existing housekeeping provides restart recovery. A deletion leaves a synced retirement marker; every other node removes what it still holds of that worktree (its own `.env` copies, dependency links, path file) at its next sweep, without the usual 30-minute grace period, unless a session is open in the folder. Archived cwd metadata keeps local native transcript discovery available after deletion.
 
 The legacy UI **Merge to project** action remains a file-only merge, not a verified commit. An unchanged file-only merge qualifies for five-day inactivity cleanup. Later edits require a new merge or the ten-day expiry. Explicit user deletion remains separate from automatic cleanup.
 
