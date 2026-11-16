@@ -100,7 +100,8 @@ console.log(JSON.stringify(process.argv[2] === "auth"
 });
 
 test("runtime paths under OS temp are rejected when Joint Bob data is not temporary", async () => {
-  const dataDir = await mkdtemp(path.join(process.cwd(), "joint-bob-runtime-settings-"));
+  // Keep this fixture outside the OS temp root even when the checkout itself is a temporary verification snapshot.
+  const dataDir = await mkdtemp(path.join("/var/tmp", "joint-bob-runtime-settings-"));
   const temporaryRuntimePath = await mkdtemp(path.join(os.tmpdir(), "joint-bob-runtime-config-"));
   const previousDataDir = process.env.PI_WEB_DATA_DIR;
   process.env.PI_WEB_DATA_DIR = dataDir;
