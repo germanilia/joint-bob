@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.7 — 2026-11-16
+
+- Team members now start every request with what the team has learned: the shared memory's playbook in full and the other topics by name. Each member is also asked to record a better method or missing source in the playbook, and the coordinator reviews how its members did the work, not only their answer, so the team gets smarter with use.
+
 
 ## 2.317.6 — 2026-11-16
 

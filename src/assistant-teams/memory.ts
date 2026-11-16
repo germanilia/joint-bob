@@ -81,6 +81,15 @@ export async function readTeamMemory(teamId:string,subjectId:string):Promise<str
  await getTeam(teamId);if(!TOPIC_NAME.test(subjectId))throw new TeamError('Invalid topic',400);
  return (await current(teamId,subjectId))?.after_text??'';
 }
+/** What a member is shown at the start of every request: the playbook in full and the other topics by name, so lessons learned earlier are applied without anyone having to ask for them. */
+export async function teamMemoryDigest(teamId:string):Promise<string>{
+ const rows=(await database()).prepare(`SELECT c.topic,c.after_text FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic) AND after_text IS NOT NULL ORDER BY topic LIMIT 60`).all(teamId) as unknown as {topic:string;after_text:string}[];
+ const playbook=rows.find(r=>r.topic==='playbook'),others=rows.filter(r=>r.topic!=='playbook');
+ const parts:string[]=[];
+ if(playbook)parts.push(`Playbook (lessons from earlier requests; apply them before you start):\n${playbook.after_text.slice(0,6000)}`);
+ if(others.length)parts.push(`Other team memory topics (read one with team_memory_read):\n${others.map(r=>`- ${r.topic}: ${parseTopic(r.topic,r.after_text).description}`).join('\n')}`);
+ return parts.join('\n\n');
+}
 export async function readTeamMemoryTopic(member:TeamMember,topic:string){
  await memberCheck(member);if(!TOPIC_NAME.test(topic))throw new TeamError('Invalid topic',400);
  const row=await current(member.teamId,topic);return {text:row?.after_text??'',revision:row?.revision??0};
