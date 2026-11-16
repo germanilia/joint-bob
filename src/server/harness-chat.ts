@@ -1194,7 +1194,8 @@ async function drainLoop(connection: HarnessChatConnection): Promise<void> {
     }
     if (await runGoalTurn(connection)) continue;
     if (!await runAutoResponse(connection)) {
-      if (listQueuedPrompts(queueKey(connection)).length && (await getAutoRespond(connection.project.id, connection.conversationId))?.status !== "active") continue;
+      const responder = await getAutoRespond(connection.project.id, connection.conversationId);
+      if (listQueuedPrompts(queueKey(connection)).some(prompt => !responder || !deferredAutoPrompt(prompt, responder))) continue;
       return;
     }
   }

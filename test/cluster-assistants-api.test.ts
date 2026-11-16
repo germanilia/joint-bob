@@ -49,6 +49,7 @@ test("a cluster assistant: made only on its cluster's subscriptions, asked by a 
   const root = await mkdtemp(path.join(os.tmpdir(), "cluster-assistants-"));
   const children: Awaited<ReturnType<typeof startDevNode>>[] = [];
   const classifier = await decisionModel();
+  const nodeErrors: string[] = [];
   try {
     // Three people, each on their own machine: alex's machine manages the cluster, maya's hosts the assistant, noa is a member.
     const alex = await seedDevEnvironment(path.join(root, "alex"), 1);
@@ -66,6 +67,7 @@ test("a cluster assistant: made only on its cluster's subscriptions, asked by a 
     children.push(await startDevNode(alex, manager, { JOINT_BOB_TEST_ENGINE_LOG: engineLog }));
     children.push(await startDevNode(mayas, host, { JOINT_BOB_TEST_ENGINE_LOG: engineLog, JOINT_BOB_TEST_AUTOMATION_DIR: stubs, JOINT_BOB_AUTO_RESPONDER: responder, JOINT_BOB_TEST_ASK_LOG: askLog, JOINT_BOB_TEST_ASK_ANSWER: "The draft is ready: Hello team." }));
     children.push(await startDevNode(noas, member, { JOINT_BOB_TEST_ENGINE_LOG: engineLog, JOINT_BOB_TYPESAFE_ENDPOINT: classifier.url }));
+    for (const child of children) child.stderr!.on("data", chunk => nodeErrors.push(String(chunk)));
     const [onManager, onHost, onMember] = await Promise.all([signIn(alex, manager), signIn(mayas, host), signIn(noas, member)]);
 
     const created = await api<{ snapshot: { body: { clusterId: string } } }>(manager, onManager, "POST", "/clusters", { name: "Team" });
@@ -99,7 +101,7 @@ test("a cluster assistant: made only on its cluster's subscriptions, asked by a 
     await writeFile(path.join(credentials, "auth.json"), JSON.stringify({ anthropic: { type: "oauth", access: "synthetic-access", refresh: "synthetic-refresh", expires: Date.now() + 86_400_000 } }));
     const chosen = await api(host, onHost, "PUT", "/provider-profiles/selection", { provider: "claude", scope: "cluster", scopeId: clusterId, profileId: profile.body.profile.id });
     assert.equal(chosen.status, 200, JSON.stringify(chosen.body));
-    const pressed = await press(await ask());
+    const pressed = await press(await ask()).catch(error => { throw new Error(`${error.message}\n${nodeErrors.join("")}`, { cause: error }); });
     assert.equal(pressed.status, 200, JSON.stringify(pressed.body));
     assert.match(pressed.body.messages![0].text, /^Created "Poster" for the cluster "Team" and started its setup in Assistants · Team\./);
 
