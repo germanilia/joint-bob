@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.321.3 — 2026-11-17
+
+- Brought back the Inbox entry in the left column. Choosing it from any of Bob's pages (Automations, Dashboards, Assistants and the rest) leaves that page and returns to the Inbox.
+
 ## 2.321.2 — 2026-11-16
 
 - Choosing a place in the left column (Automations, Dashboard, Costs, Bob…) now closes a conversation that is open over Bob's page.
