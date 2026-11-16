@@ -234,6 +234,16 @@ async function removeDeadWorktreeFolders(project: ProjectRecord): Promise<void> 
       continue;
     }
     if (!WORKTREE_ID.test(entry.name) || listed.has(entry.name)) { withoutMetadataSince.delete(folder); continue; }
+    // A retirement marker is the explicit, synced record that a merge or deletion removed this worktree on some node:
+    // what is left here (copied .env files, links, this node's path file) goes without waiting out the grace period,
+    // and file changes inside it are the delete arriving, not work.
+    if (await lstat(path.join(root, ".retired", `${entry.name}.json`)).then(() => true, () => false)) {
+      if (sessionOpenIn(folder)) continue;
+      await rm(folder, { recursive: true, force: true });
+      withoutMetadataSince.delete(folder);
+      worktreeFilesChanged(project.id, folder);
+      continue;
+    }
     const since = withoutMetadataSince.get(folder);
     if (since === undefined) { withoutMetadataSince.set(folder, now); continue; }
     if (now - since < DEAD_FOLDER_GRACE_MS || await worktreeInUse(folder)) continue;
@@ -246,9 +256,13 @@ async function removeDeadWorktreeFolders(project: ProjectRecord): Promise<void> 
 
 /** A harness session open in the folder, or any change inside it within the grace period, means someone is still working there. */
 async function worktreeInUse(worktreePath: string): Promise<boolean> {
-  const prefix = `${worktreePath}${path.sep}`;
-  if ([...harnessSessions.values()].some(({ cwd }) => cwd === worktreePath || cwd.startsWith(prefix))) return true;
+  if (sessionOpenIn(worktreePath)) return true;
   return changedSince(worktreePath, Date.now() - EMPTY_WORKTREE_GRACE_MS);
+}
+
+function sessionOpenIn(worktreePath: string): boolean {
+  const prefix = `${worktreePath}${path.sep}`;
+  return [...harnessSessions.values()].some(({ cwd }) => cwd === worktreePath || cwd.startsWith(prefix));
 }
 
 async function changedSince(dir: string, since: number, strict = false): Promise<boolean> {

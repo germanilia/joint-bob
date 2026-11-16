@@ -4,7 +4,6 @@ import path from "node:path";
 import os from "node:os";
 import type { DatabaseSync } from "node:sqlite";
 import { runtimeExec } from "./account-runtime.js";
-import { getClusterNode } from "./cluster.js";
 import { resolveDataDirectory } from "./data-directory.js";
 import { worktreeHasPendingFiles } from "./file-sync/facade.js";
 import { openNodeDatabase } from "./node-database.js";
@@ -142,7 +141,6 @@ async function integrate(project: ProjectRecord, worktreeId: string, input: Work
   if (receipt?.phase === "verifying") throw new ProjectWorktreeError(409, "Verification is running or was interrupted; its command will not be replayed automatically");
   const worktree = await getProjectWorktree(project.id, worktreeId, root);
   if (!worktree) throw new ProjectWorktreeError(404, "Worktree not found");
-  if (worktree.createdByNodeId !== (await getClusterNode()).id) throw new ProjectWorktreeError(409, `Integrate on the worktree's creating node ${worktree.createdByNodeId}; no other main was selected`);
   if (!receipt) {
     const changes = await withoutGitIgnored(project.path, await worktreeChanges(project.id, worktreeId, root));
     await unchangedWorktree(project, worktreeId, root, worktreeChangesDigest(changes));
