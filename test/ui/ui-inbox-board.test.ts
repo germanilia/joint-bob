@@ -126,6 +126,11 @@ test("Bob's own page is his chat with his updates beside it; his other pages kee
   assert.equal(await page.getByTestId("bob-fab-chat").isVisible(), false);
   // What Bob and the system raise is read here, beside the chat; with nothing raised there is no empty column.
   assert.equal(await page.evaluate(() => { const updates = document.querySelector("#controlChatUpdates")!; return updates.childElementCount === 0 ? updates.closest("details")!.getClientRects().length === 0 : updates.closest("details")!.getClientRects().length > 0; }), true, "the updates show beside the chat when there are any");
+  // Projects fills the column on his page; pressing Bob again brings the Inbox back (its own place is not in the column).
+  await page.getByTestId("workspace-projects-button").click();
+  await page.locator("body.ws-column-projects").waitFor();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.locator("body.ws-column-inbox.bob-chat-page").waitFor();
   const chat = (await page.getByTestId("control-chat").boundingBox())!;
   const column = (await page.getByTestId("workspace-side").boundingBox())!;
   assert.ok(chat.x >= column.x + column.width - 1, "the chat sits beside the column");

@@ -326,7 +326,10 @@ window.addEventListener("control-view-changed", nameHead);
 // center), so the view the opening restores is his.
 elements.openControlCenterButton.addEventListener("click", () => {
   state.controlCenter.view = "live";
-  if (body.classList.contains("view-control")) showControlView("live");
+  if (!body.classList.contains("view-control")) return;
+  showControlView("live");
+  // Pressed on his page after Projects filled the column: Bob is the Inbox again (its own place is hidden in the column).
+  if (wide.matches) window.dispatchEvent(new CustomEvent("workspace-place", { detail: { place: "inbox" } }));
 }, { capture: true });
 
 // The "live" view is Bob himself (control-center.js registers it as "Bob"): the stage steps aside and the chat takes the page
