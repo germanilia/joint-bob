@@ -426,3 +426,10 @@ body.control-list-layout .control-board { padding: 0; gap: 0; overflow: hidden; 
 
 /* Take control, Snooze and the card's other buttons sit in the chat's own head row (control-list-preview.js headButtons). */
 #chatHeadActions .control-head-buttons { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; border-top: 0; padding: 0; }
+
+/* Bob's own view (app/bob-page.js): his chat alone fills the page beside the left column; no stage, button or fold. */
+@media (min-width: 1024px) {
+  body.bob-desk.bob-chat-page .control-main > .control-stage { display: none; }
+  body.bob-desk.bob-chat-page .control-main > .control-chat { display: flex !important; flex: 1 1 0 !important; position: static !important; inset: auto !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important; max-width: none !important; resize: none; box-shadow: none; }
+  body.bob-desk.bob-chat-page :is(.control-chat-resize, .bob-fab, #controlChat .bob-fold) { display: none !important; }
+}

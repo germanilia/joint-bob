@@ -9,7 +9,7 @@ import { api } from "./api.js";
 // Styles: public/bob-page.css.
 
 import { saveControlCenter, toggleFolded } from "./control-center.js";
-import { currentControlView, showControlView } from "./control-views.js";
+import { createControlViewElement, currentControlView, registerControlView, showControlView } from "./control-views.js";
 import { initFloatingChat } from "./bob-float.js";
 import { elements } from "./elements.js";
 import { state } from "./state.js";
@@ -291,3 +291,19 @@ window.addEventListener("control-center-rendered", (event) => {
 
 apply();
 applyFolds();
+
+/* ---------- Bob's own view: his chat alone, in the middle, like a conversation ---------- */
+
+// The first place in Bob's sub-menu. The stage steps aside and the chat takes the page (bob-calm.css, body.bob-chat-page);
+// it opens unfolded, and goes back to the folded "Ask Bob" button when another view is opened.
+registerControlView({ id: "bob-chat", title: "Bob", order: -1, element: createControlViewElement("bob-chat") });
+let unfoldedByView = false;
+function syncBobChatPage() {
+  const on = wide.matches && body.classList.contains("view-control") && currentControlView() === "bob-chat";
+  body.classList.toggle("bob-chat-page", on);
+  const folded = state.controlCenter.collapsed.includes("chat");
+  if (on && folded) { unfoldedByView = true; toggleFolded("chat"); applyFolds(); }
+  else if (!on && unfoldedByView && !folded) { unfoldedByView = false; toggleFolded("chat"); applyFolds(); }
+}
+window.addEventListener("control-view-changed", syncBobChatPage);
+window.addEventListener("control-center-activated", syncBobChatPage);
