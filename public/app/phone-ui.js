@@ -27,14 +27,9 @@ function greetingWord(hour = new Date().getHours()) {
   return "Good evening";
 }
 
-// The name is kept from the last visit, so the greeting and the avatar are whole at once and do not change as the page loads.
-const NAME_KEY = "joint-bob-greeting-name";
 function displayName() {
   const name = (state.username || "").trim();
-  if (!name) { try { return localStorage.getItem(NAME_KEY) ?? ""; } catch { return ""; } }
-  const shown = name[0].toUpperCase() + name.slice(1);
-  try { localStorage.setItem(NAME_KEY, shown); } catch { /* private mode: the name shows once it is read */ }
-  return shown;
+  return name ? name[0].toUpperCase() + name.slice(1) : "";
 }
 
 function syncGreeting() {

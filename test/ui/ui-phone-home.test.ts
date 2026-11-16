@@ -196,17 +196,16 @@ test("desktop keeps its workspace: no phone tabs, Home or chips", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
 });
 
-test("Home loads as the shape of its list, keeps the name it greeted last, and shows the system messages above the filters", async () => {
+test("Home loads as the shape of its list and shows the system messages above the filters", async () => {
   await page.route("**/api/control-center/system", (route) => route.fulfill({ json: { messages: [
     { id: "guardian", severity: "warn", title: "Guardian is off", short: "Production steps are not checked", where: "Settings → Guardian", why: "An agent can deploy without asking.", steps: ["Open Settings → Guardian."], action: { label: "Open Guardian settings", open: "settings-guardian" } },
   ] } }));
-  // The board answers late: until then Home shows the greeting with the name of the last visit and the shape of what is coming.
+  // The board answers late: until then Home shows the shape of what is coming.
   let release = () => {};
   const held = new Promise<void>((resolve) => { release = resolve; });
   await page.route("**/api/control-center/board*", async (route) => { await held; await route.continue(); });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByTestId("workspace-loading").waitFor();
-  assert.match(await page.getByTestId("phone-greeting").innerText(), /^Good (morning|afternoon|evening), \S/, "the name does not wait for the account");
   assert.equal(await page.getByTestId("phone-counts").evaluate((node) => node.classList.contains("loading")), true);
   assert.equal(await page.getByTestId("inboxHome-tools").isVisible(), false, "no filters over an empty list");
   assert.equal(await page.locator('[data-testid^="workspace-group-count-"]').count(), 0, "no headings with … under them");

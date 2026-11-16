@@ -327,4 +327,4 @@ Your chat with Bob is yours, not the machine's: it follows you to each of your m
 
 ## On the phone
 
-Home (the Inbox tab) starts with its conversations. **Filter** opens the four choices (projects, machines, status, how much of Earlier) under it and counts the ones that narrow the list (*Filter · 2*); **Select** is beside it. The system messages are one line between the search and the filters. While the list is being read, Home shows the shape of what is coming (a card, then rows) instead of empty headings, and greets with the name of your last visit. Bob's chat does not show an empty **Background updates** block.
+Home (the Inbox tab) starts with its conversations. **Filter** opens the four choices (projects, machines, status, how much of Earlier) under it and counts the ones that narrow the list (*Filter · 2*); **Select** is beside it. The system messages are one line between the search and the filters. While the list is being read, Home shows the shape of what is coming (a card, then rows) instead of empty headings. Bob's chat does not show an empty **Background updates** block.
