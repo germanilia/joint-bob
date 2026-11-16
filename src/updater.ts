@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { supervisorRequest } from "../scripts/supervisor-client.mjs";
-import { fetchReleaseResource, isGithubReleaseApi, releaseApiBase } from "../scripts/release-auth.mjs";
+import { PUBLIC_RELEASE_API, PUBLIC_RELEASE_WEB, fetchReleaseResource, isGithubReleaseApi, releaseApiBase } from "../scripts/release-auth.mjs";
 import { resolveDataDirectory } from "./data-directory.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,9 +105,37 @@ function isReleaseAssetUrl(url: string, base: string): boolean {
   return url.startsWith(`${base}/releases/assets/`) && /^\d+$/.test(url.slice(`${base}/releases/assets/`.length));
 }
 
+/** True for an asset this node may install from the configured feed: an API asset, or the public repository's github.com download. */
+function isFeedAssetUrl(url: string, base: string): boolean {
+  return isReleaseAssetUrl(url, base) || (base === PUBLIC_RELEASE_API && url.startsWith(`${PUBLIC_RELEASE_WEB}/releases/download/v`));
+}
+
+/** Builds a release from github.com alone: the latest tag comes from the /releases/latest redirect, the assets from fixed download URLs. */
+async function fetchPublicWebRelease(version: string | null): Promise<ReleaseInfo> {
+  let tag = version ? `v${version}` : "";
+  if (!version) {
+    const redirect = await fetch(`${PUBLIC_RELEASE_WEB}/releases/latest`, { redirect: "manual", signal: AbortSignal.timeout(15_000), headers: { "User-Agent": "joint-bob-updater" } });
+    const location = redirect.headers.get("location") ?? "";
+    tag = location.split("/releases/tag/")[1] ?? "";
+    if (redirect.status < 300 || redirect.status >= 400 || !tag) throw new ReleaseFeedError(`Release feed fallback returned ${redirect.status} without a latest release`);
+  }
+  const downloadBase = `${PUBLIC_RELEASE_WEB}/releases/download/${tag}`;
+  const checksum = await fetch(`${downloadBase}/${ARCHIVE_ASSET}.sha256`, { method: "HEAD", signal: AbortSignal.timeout(15_000), headers: { "User-Agent": "joint-bob-updater" } });
+  if (!checksum.ok) throw new ReleaseFeedError(`Release ${tag} checksum returned ${checksum.status}`);
+  return validateReleasePayload({
+    tag_name: tag,
+    html_url: `${PUBLIC_RELEASE_WEB}/releases/tag/${tag}`,
+    assets: [ARCHIVE_ASSET, `${ARCHIVE_ASSET}.sha256`].map((name) => ({ name, browser_download_url: `${downloadBase}/${name}` })),
+  });
+}
+
 async function fetchRelease(feedPath: string): Promise<ReleaseInfo> {
   const base = releaseApiBase();
   const response = await fetchReleaseResource(`${base}/${feedPath}`, dataDir, "application/vnd.github+json", 15_000);
+  if (base === PUBLIC_RELEASE_API && (response.status === 403 || response.status === 429)) {
+    // Anonymous API calls are limited per IP address (shared offices hit it); github.com itself is not.
+    return fetchPublicWebRelease(feedPath.startsWith("releases/tags/v") ? feedPath.slice("releases/tags/v".length) : null);
+  }
   if (!response.ok) throw new ReleaseFeedError(`Release feed returned ${response.status}. Check network access and the configured release repository.`);
   return validateReleasePayload(await response.json(), base);
 }
@@ -163,7 +191,7 @@ function cachedLatestRelease(): ReleaseInfo | null {
   // The stored JSON is the ReleaseInfo this node already validated, not the raw feed payload.
   const release = JSON.parse(row.latest_json) as ReleaseInfo;
   const base = releaseApiBase();
-  if (isGithubReleaseApi(base) && (!isReleaseAssetUrl(release.archiveUrl, base) || !isReleaseAssetUrl(release.checksumUrl, base))) return null;
+  if (isGithubReleaseApi(base) && (!isFeedAssetUrl(release.archiveUrl, base) || !isFeedAssetUrl(release.checksumUrl, base))) return null;
   return release;
 }
 
@@ -257,7 +285,7 @@ export function installLocalRelease(release: ReleaseInfo, options: { fromFleetRu
   const current = appVersion();
   if (compareVersions(release.version, current) <= 0) throw new UpdateRefusalError(`Version ${release.version} is not newer than ${current}`);
   const base = releaseApiBase();
-  if (isGithubReleaseApi(base) && (!isReleaseAssetUrl(release.archiveUrl, base) || !isReleaseAssetUrl(release.checksumUrl, base))) {
+  if (isGithubReleaseApi(base) && (!isFeedAssetUrl(release.archiveUrl, base) || !isFeedAssetUrl(release.checksumUrl, base))) {
     throw new UpdateRefusalError("Release assets do not belong to the configured GitHub repository; check for updates again");
   }
   const active = activeUpdateJob();

@@ -60,6 +60,33 @@ test("the default feed checks and downloads anonymously, ignoring old tokens and
   ]);
 });
 
+test("a rate-limited public API (403) falls back to github.com downloads instead of failing the update check", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "public-updates-403-"));
+  const saved = { JOINT_BOB_DATA_DIR: process.env.JOINT_BOB_DATA_DIR, JOINT_BOB_RELEASE_API: process.env.JOINT_BOB_RELEASE_API };
+  process.env.JOINT_BOB_DATA_DIR = directory;
+  delete process.env.JOINT_BOB_RELEASE_API;
+  t.after(async () => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await rm(directory, { recursive: true, force: true });
+  });
+  const web = "https://github.com/germanilia/joint-bob-releases";
+  t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    assert.equal(new Headers(options.headers).has("Authorization"), false);
+    if (url.startsWith(`${publicApi}/`)) return new Response("rate limit exceeded", { status: 403 });
+    if (url === `${web}/releases/latest`) return new Response(null, { status: 302, headers: { location: `${web}/releases/tag/v99.0.0` } });
+    if (url === `${web}/releases/download/v99.0.0/joint-bob.tar.gz.sha256`) return new Response(null, { status: 200 });
+    throw new Error(`Unexpected release request: ${url}`);
+  });
+  const updater = await import(`../src/updater.ts?public403=${Date.now()}`);
+  const check = await updater.checkForLatestRelease(true);
+  assert.equal(check.error, null);
+  assert.equal(check.release?.version, "99.0.0");
+  assert.equal(check.release?.archiveUrl, `${web}/releases/download/v99.0.0/joint-bob.tar.gz`);
+  assert.equal(updater.updateStatusView().latest.release?.version, "99.0.0", "the fallback release stays offered after caching");
+});
+
 test("the standalone installer downloads the public feed and verifies its package without GitHub credentials", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "public-installer-"));
   t.after(() => rm(root, { recursive: true, force: true }));

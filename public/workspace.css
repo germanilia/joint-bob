@@ -59,6 +59,8 @@
   body:not(.focus-ui) :is(.mobile-nav, .app-menu, .back-button) { display: none !important; }
   /* styles.css hides these below 1024 px, where the phone menu once held them; the column holds them now. */
   body:not(.focus-ui) :is(#settingsButton, #openControlCenterButton) { display: flex; }
+  /* The sidebar lists Projects and the other places; the Inbox is reached through Bob and search. */
+  body:not(.focus-ui) #workspaceInboxButton { display: none; }
   body:not(.focus-ui) .ws-menu #projectNotesButton { display: flex; }
   body:not(.focus-ui) .ws-side { grid-area: side-top; display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 4px 0 6px var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }
   body:not(.focus-ui) .ws-groups { grid-area: side-body; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; padding: 0 0 0 var(--ws-gap); zoom: var(--ui-zoom-projects, 1); }

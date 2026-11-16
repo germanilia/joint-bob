@@ -1,7 +1,9 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const PUBLIC_RELEASE_API = "https://api.github.com/repos/germanilia/joint-bob-releases";
+export const PUBLIC_RELEASE_API = "https://api.github.com/repos/germanilia/joint-bob-releases";
+/** The same public repository on github.com, which is not subject to the anonymous API rate limit (403). */
+export const PUBLIC_RELEASE_WEB = "https://github.com/germanilia/joint-bob-releases";
 
 export function releaseApiBase() {
   const configured = (process.env.JOINT_BOB_RELEASE_API ?? PUBLIC_RELEASE_API).replace(/\/+$/, "");
