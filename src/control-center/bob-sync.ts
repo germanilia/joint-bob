@@ -55,7 +55,9 @@ export function applyReviewCheckEvent(db: DatabaseSync, event: ReplicationEvent)
   const value = event.payload as Partial<ReviewCheck> | null;
   if (!value || !text(value.projectId, MAX_ID) || !text(value.conversationId, MAX_ID) || !text(value.accountId, MAX_ID)
     || !["done", "continue", "needs-user"].includes(String(value.verdict)) || typeof value.reason !== "string" || value.reason.length > 1_000
-    || typeof value.by !== "string" || value.by.length > 200 || !text(value.answerHash, 128) || !Number.isInteger(value.pushes)
+    // A check written when the person stepped into a conversation Bob had not read yet has no answer to hash (releases before
+    // 2.320.2 sent it empty); refusing it would refuse every event sent with it.
+    || typeof value.by !== "string" || value.by.length > 200 || typeof value.answerHash !== "string" || value.answerHash.length > 128 || !Number.isInteger(value.pushes)
     || typeof value.pushPending !== "boolean" || typeof value.needsYou !== "boolean" || !time(value.checkedAt)
     || event.entityKey !== `${value.projectId}:${value.conversationId}`) {
     throw new Error("Malformed Bob review check replication payload");

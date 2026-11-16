@@ -203,12 +203,15 @@ async function check(shared: SharedHarnessSession, actor: ActingAccount, turnEnd
  */
 export const TAKEN_OVER_BY = "you stepped in";
 
+/** What stands for the answer's hash when the person stepped in before Bob had read any answer of the conversation. */
+const NO_ANSWER_READ = "none";
+
 export async function leaveToPerson(projectId: string, conversationId: string, accountId: string): Promise<void> {
   const db = await bobDatabase();
   const previous = readReviewCheck(db, projectId, conversationId);
   writeReviewCheck(db, {
     projectId, conversationId, accountId: previous?.accountId ?? accountId, verdict: "done", reason: "You stepped in, so Bob left it to you.", by: TAKEN_OVER_BY,
-    answerHash: previous?.answerHash ?? "", pushes: 0, pushPending: false, needsYou: false, checkedAt: new Date().toISOString(),
+    answerHash: previous?.answerHash || NO_ANSWER_READ, pushes: 0, pushPending: false, needsYou: false, checkedAt: new Date().toISOString(),
   });
   broadcastToAllClients({ type: "controlCenterChanged" }, accountId);
   askBobRecheck(accountId);

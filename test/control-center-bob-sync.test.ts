@@ -58,6 +58,12 @@ test("what a check found reaches the person's other machine under that machine's
   for (const event of sent(mac)) applyReviewCheckEvent(server, event);
   assert.equal(readReviewCheck(server, "server-project", "c1")?.verdict, "needs-user", "the newer check stays");
   assert.throws(() => applyReviewCheckEvent(server, { ...sent(mac)[0], payload: { ...check(), verdict: "maybe" } }), /Malformed/);
+
+  // A check with no answer hash (written when the person stepped in before Bob read anything) is taken, not refused: refusing
+  // it refused every event sent in the same batch, and stopped the two machines syncing.
+  publishReviewCheck(mac, "mac", check({ conversationId: "c2", answerHash: "", by: "you stepped in", checkedAt: "2026-11-07T09:00:00.000Z" }));
+  applyReviewCheckEvent(server, sent(mac).at(-1)!);
+  assert.equal(readReviewCheck(server, "server-project", "c2")?.by, "you stepped in");
 });
 
 test("the person's chat with Bob reaches their other machine, buttons included, and a press there takes the buttons off everywhere", () => {
