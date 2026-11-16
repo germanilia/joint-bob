@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.320.2 — 2026-11-16
+
+- Fixed your machines failing to sync with each other after you stepped into a conversation Bob had not checked yet. The record of that was sent incomplete, the other machine refused it, and everything sent with it was refused too. Such records are now accepted, so what was held back is delivered, and new ones are sent complete.
+
 ## 2.320.1 — 2026-11-16
 
 - Fixed pressing **Bob** after **Projects** on Bob's page: the left column shows the Inbox again instead of keeping the project list.
