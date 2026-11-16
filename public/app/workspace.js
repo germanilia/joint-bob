@@ -576,8 +576,8 @@ function loadingGroups() {
 }
 // A group's label and its "nothing here" line; the phone sets taller ones (phone.css: --ws-lab-height, --ws-empty-height).
 const LABEL_HEIGHT = 43;
-/** Every group shows at least this many of its conversations, however short the window. */
-const MIN_ROWS = 3;
+/** The column shows up to this many conversations of each group and scrolls; Show all has the rest. */
+const COLUMN_ROWS = 10;
 const EMPTY_HEIGHT = 26;
 /** The deck's bar is this tall. */
 const DECK_BAR = 48;
@@ -639,8 +639,8 @@ function renderGroups(refit = true) {
       dealt = true;
     }
   }
-  // A short window still shows the first conversations of every group: the column scrolls instead of hiding them behind Show all.
-  if (!phoneHomeShown()) GROUPS.forEach((group, index) => { shown[index] = Math.max(shown[index], Math.min(counts[index], MIN_ROWS)); });
+  // The column is one scroll with the first ten of every group, whatever the window's height.
+  if (!phoneHomeShown()) GROUPS.forEach((group, index) => { shown[index] = Math.min(counts[index], COLUMN_ROWS); });
   // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
   const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, cardsIn(SNOOZED.id).length, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)])), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }

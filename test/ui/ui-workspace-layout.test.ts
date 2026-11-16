@@ -108,8 +108,8 @@ test("a group shows the rows that fit and Show all lists every row, one long scr
   await page.setViewportSize({ width: 1440, height: 560 });
   await frames();
   const shown = await page.locator('[data-testid="workspace-group-review"] [data-testid="workspace-group-row"]').count();
-  // A short window shows the first three of a group (the column scrolls for them) and Show all has the rest.
-  assert.ok(shown === Math.min(3, reviewCount), `a short window shows the first rows (${shown} of ${reviewCount})`);
+  // The column shows the first ten of a group, scrolling for them on a short window; Show all has the rest.
+  assert.ok(shown === Math.min(10, reviewCount), `the column shows the first ten (${shown} of ${reviewCount})`);
   await page.getByTestId("workspace-show-all-review").click();
   await page.getByTestId("workspace-group-page").waitFor();
   assert.equal(await page.getByTestId("workspace-group-title").innerText(), "To review");

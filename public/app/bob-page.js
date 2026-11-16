@@ -9,7 +9,7 @@ import { api } from "./api.js";
 // the person does (Exit, Esc twice, the toggle shortcut). The tab strip and the team context move into the page and back, by markers.
 // Styles: public/bob-page.css.
 
-import { saveControlCenter, toggleFolded } from "./control-center.js";
+import { closeConversationPopup, saveControlCenter, toggleFolded } from "./control-center.js";
 import { currentControlView, showControlView } from "./control-views.js";
 import { initFloatingChat } from "./bob-float.js";
 import { elements } from "./elements.js";
@@ -227,6 +227,12 @@ tabs.addEventListener("click", (event) => {
   if (!tab || body.classList.contains("view-control") || !body.classList.contains("bob-desk")) return;
   state.controlCenter.view = tab.dataset.view;
   setMobileView("control");
+}, { capture: true });
+
+// A place chosen in the column while a conversation is open over his page closes it: the place is what was asked for.
+document.getElementById("workspaceSide").addEventListener("click", (event) => {
+  if (!body.classList.contains("control-popup") || !event.target.closest(".ws-place, .control-tab")) return;
+  closeConversationPopup();
 }, { capture: true });
 
 function onPage() {

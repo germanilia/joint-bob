@@ -40,3 +40,27 @@ test("Bob's floating chat stays above a conversation popup it overlaps", { timeo
   });
   assert.equal(covered, false, "the conversation popup must not paint over Bob's chat window");
 });
+
+test("a place chosen while a conversation is open over Bob's page closes the conversation", { timeout: 120_000 }, async (t) => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  const login = await signIn(environment, node);
+  await page.context().addCookies(login.cookie.split("; ").map(cookie => ({ name: cookie.slice(0, cookie.indexOf("=")), value: cookie.slice(cookie.indexOf("=") + 1), url: node.url })));
+  await page.goto(node.url);
+  await page.waitForFunction(() => !document.body.classList.contains("booting"));
+  await page.getByTestId("workspace-projects-button").click();
+  await page.locator("#projectList").getByText("Internal Assistant", { exact: true }).click();
+  await page.locator("#sessionList .list-row").filter({ has: page.locator("strong", { hasText: "Thread-Based Agent Builder" }) }).first().click();
+  await page.locator("#messages .message.assistant").first().waitFor();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.locator("body.view-control.bob-chat-page").waitFor();
+  await page.evaluate(async () => {
+    const { state } = await import("/app/state.js");
+    const { openConversation } = await import("/app/control-center.js");
+    await openConversation({ projectId: state.activeProjectId, conversationId: state.activeConversationId || state.activeSessionId });
+  });
+  await page.locator("body.view-control.control-popup").waitFor();
+  await page.getByTestId("workspace-automations-button").click();
+  await page.locator("body.view-control:not(.control-popup)").waitFor();
+  assert.equal(await page.locator("#controlView-automations").isVisible(), true, "Automations shows, with nothing over it");
+  assert.equal(await page.locator("#chatPanel").isVisible(), false);
+});

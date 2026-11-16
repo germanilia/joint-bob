@@ -544,6 +544,9 @@
     display: flex; align-items: center; gap: 10px; height: auto; min-height: 0; padding: 24px 24px 0 30px; border: 0; background: transparent; zoom: var(--ui-zoom-headers, 1);
   }
   body:not(.focus-ui) #chatPanel .chat-title-block { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+  /* The worktree's name is cut inside its chip: a long one ran over the project, the state and the agent beside it. */
+  #chatPanel #conversationWorktreeIndicator { display: inline-block; flex: 0 1 auto; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  #chatPanel #conversationWorktreeIndicator[hidden] { display: none; }
   /* A narrow conversation keeps its title: the project tag goes and Mark done keeps only its icon. */
   body:not(.focus-ui) #chatPanel > .chat-topbar { container: chathead / inline-size; }
   @container chathead (max-width: 620px) {
