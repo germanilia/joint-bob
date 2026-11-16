@@ -50,6 +50,47 @@
   .ph-greeting { margin: 6px 20px 0; color: var(--heading); font: 400 clamp(28px, 9vw, 38px)/1.12 var(--serif); letter-spacing: -0.01em; overflow-wrap: anywhere; }
   .ph-counts { min-height: 22px; margin: 8px 20px 14px; color: var(--muted); font-size: 15.5px; }
   .ph-counts b { color: var(--ws-need); font-weight: 650; }
+  /* Before the board has answered: a quiet bar where the counts will be, and the shape of the list under the search. */
+  .ph-counts.loading::before, .ws-loading i {
+    display: block; border-radius: 8px;
+    background: linear-gradient(90deg, var(--field) 0, color-mix(in srgb, var(--text) 10%, var(--field)) 50%, var(--field) 100%) 0 0 / 640px 100%;
+    animation: usage-shimmer 1.3s linear infinite;
+  }
+  .ph-counts.loading::before { content: ""; width: 62%; height: 14px; margin-top: 4px; }
+  .ws-loading { display: grid; gap: 10px; padding: 14px 8px 0; }
+  .ws-loading .ws-loading-label { width: 34%; height: 14px; margin: 6px 4px 2px; }
+  .ws-loading .ws-loading-card { height: 132px; border-radius: 18px; }
+  .ws-loading .ws-loading-row { height: 46px; border-radius: 12px; }
+  @media (prefers-reduced-motion: reduce) { .ph-counts.loading::before, .ws-loading i { animation: none; } }
+
+  /* The system messages and a running move, on Home above the filters (workspace.js places them here on the phone). */
+  body.focus-ui .shell > :is(.inbox-system, .control-moves-job) { display: none; }
+  body.focus-ui.view-projects.ws-column-inbox .shell > .inbox-system:not([hidden]) { display: flex; flex: none; margin: 6px 16px 2px; }
+  body.focus-ui.view-projects.ws-column-inbox .shell > .control-moves-job:not([hidden]) { display: block; flex: none; margin: 6px 16px 2px; }
+  .inbox-system-dialog { box-sizing: border-box; padding: 18px 18px 20px; }
+  /* Thumb-sized: 44 px targets and text of at least 13 px, as everywhere on the phone. */
+  body.focus-ui .inbox-system-line { min-height: 44px; font-size: 14px; }
+  /* The words stay in the text colour (readable on the tint in every theme); the edge and the tint carry the red. */
+  body.focus-ui :is(.inbox-system-fix, .inbox-system-line .control-sys-icon) { color: var(--heading); font-size: 13px; }
+  body.focus-ui .inbox-system-dialog :is(.inbox-system-close, .control-sys-actions button) { box-sizing: border-box; height: 46px; min-height: 46px; font-size: 14px; }
+  body.focus-ui .inbox-system-dialog :is(.control-sys-pill, .control-sys-hint, .control-list-meta) { font-size: 13px; }
+
+  /* Home's filters: one row (Filter, Select); Filter opens the four choices as a grid under it (inbox-filters.js). */
+  body.focus-ui.view-projects.ws-column-inbox .inbox-tools.phone-only[hidden] { display: none; }
+  .inbox-tools.folded { gap: 6px; }
+  .inbox-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 0; }
+  .inbox-tools-head :is(.inbox-filter-toggle, .inbox-select-toggle) {
+    min-height: 44px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; box-shadow: none; color: var(--muted); font: 600 14px var(--sans);
+  }
+  .inbox-tools-head .inbox-filter-toggle::before { content: ""; display: inline-block; width: 14px; height: 10px; margin-right: 8px; background: linear-gradient(currentColor 0 0) 0 0 / 14px 1.8px, linear-gradient(currentColor 0 0) 50% 50% / 9px 1.8px, linear-gradient(currentColor 0 0) 50% 100% / 4px 1.8px; background-repeat: no-repeat; }
+  .inbox-tools-head .inbox-filter-toggle:is(.narrowing, [aria-expanded="true"]) { background: var(--field); color: var(--heading); }
+  .inbox-tools-head .inbox-filter-toggle.narrowing { color: var(--accent); }
+  .inbox-tools-head .inbox-select-toggle[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+  .inbox-tools.folded .inbox-tools-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .inbox-tools.folded .inbox-tools-filters[hidden] { display: none; }
+  .inbox-tools.folded .inbox-range { grid-column: 1 / -1; width: 100%; }
+  /* Bob's chat: no empty "Background updates (0)" block under it. */
+  body.focus-ui .control-chat-updates:has(> #controlChatUpdates:empty) { display: none; }
   .ph-search { display: flex; align-items: center; gap: 10px; height: 48px; margin: 0 16px 4px; padding: 0 14px; border-radius: 14px; background: var(--field); color: var(--muted); }
   .ph-search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
   .ph-search svg { width: 18px; height: 18px; flex: none; }

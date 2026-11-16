@@ -44,8 +44,9 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
   })()`);
 
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-memory").click();
-  assert.match(await page.getByTestId("control-center-tabs").innerText(), /Bob's memory/);
+  // His memory opens from his chat, and the head names it.
+  await page.getByTestId("bob-memory-button").click();
+  assert.equal(await page.locator("#controlCenterPanel > .panel-bar h1").innerText(), "Bob's memory");
   await page.getByTestId("memory-topic-list").getByText("Bob has not saved anything yet").waitFor();
   assert.equal(await page.getByTestId("memory-changes-count").isHidden(), true);
 
@@ -103,7 +104,8 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
     for (const name of list) await api("/api/control-center/memory/topics", { method: "POST", body: JSON.stringify({ name, description: `About ${name}`, body: `Text of ${name}.` }) });
   }, names);
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-memory").click();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("bob-memory-button").click();
   await page.waitForFunction(() => {
     const list = document.querySelector('[data-testid="memory-topic-list"]');
     return list && list.clientHeight >= 3 * 46 + 2 * 2 && document.querySelectorAll('[data-testid="memory-topic"]').length >= 3;
@@ -197,7 +199,8 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
   await page.getByTestId("memory-ask-before").check();
   await page.waitForFunction(async () => (await (await fetch("/api/control-center/bob/settings")).json()).askBeforeSaving === true);
   await page.getByTestId("projects-open-control-center-button").click();
-  await page.getByTestId("control-tab-memory").click();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("bob-memory-button").click();
   await page.waitForFunction(() => (document.querySelector('[data-testid="memory-ask-before"]') as HTMLInputElement).checked);
   await page.getByTestId("memory-ask-before").uncheck();
   await page.waitForFunction(async () => (await (await fetch("/api/control-center/bob/settings")).json()).askBeforeSaving === false);
@@ -210,7 +213,8 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
     await api("/api/control-center/memory/topics", { method: "POST", body: JSON.stringify({ name: "elsewhere-only", description: "About the other project", body: "Only there.", project }) });
   }, elsewhere.id);
   await page.evaluate(async (id) => (await import("/app/control-center.js")).focusProject(id), here.id);
-  await page.getByTestId("control-tab-memory").click();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("bob-memory-button").click();
   await page.getByTestId("memory-search").fill("elsewhere");
   await page.waitForFunction(() => document.querySelector('[data-testid="memory-topic-list"]')?.textContent?.includes("No topic matches"));
   await page.getByTestId("memory-search").fill("release");
@@ -221,7 +225,8 @@ test("Bob's memory tab: topics with links, search, paging, edit and delete; what
   assert.ok((await rowNames(page)).every((name) => name?.startsWith("topic-")), "topics about no project show");
   assert.match(await page.getByTestId("memory-filter-note").innerText(), new RegExp(here.name));
   await page.evaluate(async () => (await import("/app/control-center.js")).focusProject(null));
-  await page.getByTestId("control-tab-memory").click();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("bob-memory-button").click();
   await page.getByTestId("memory-search").fill("elsewhere");
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="memory-topic"]').length === 1);
   assert.equal(await page.getByTestId("memory-filter-note").isHidden(), true);

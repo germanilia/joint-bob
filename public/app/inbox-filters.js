@@ -5,6 +5,8 @@
 //   Show     : how many Earlier conversations: by default the latest 10 of each project; the person can widen it (25 per project,
 //              the last day, week or month, everything). Needs you, Running and To review are never cut: they are live and every
 //              one of them stays in sight.
+//   Filter   : on the phone the four choices above fold behind one "Filter" button, which counts the ones that narrow the list,
+//              so Home starts with its conversations and not with two rows of boxes.
 //   Select   : turns the rows into a checklist (workspace.js `cardRow`); the bar then marks the chosen ones as read or deletes them.
 //              Mark read applies to the ones To review. Delete skips pinned and starred conversations (nothing may remove them
 //              by accident), running ones and other people's, and says so. Move… sends the chosen ones to another machine
@@ -52,7 +54,17 @@ export function sourceName(card) {
   return state.clusters.flatMap((cluster) => cluster.members).find((member) => member.nodeId === source)?.name || source.slice(0, 8);
 }
 
-let projects = new Set();
+// The chosen projects are kept in this browser: the desktop column lists only them until the person widens it again.
+const PROJECTS_KEY = "joint-bob-inbox-projects";
+function storedProjects() {
+  try { return new Set(JSON.parse(localStorage.getItem(PROJECTS_KEY) ?? "[]")); } catch { return new Set(); }
+}
+function chooseProjects(values) {
+  projects = values;
+  try { localStorage.setItem(PROJECTS_KEY, JSON.stringify([...projects])); } catch { /* private mode: the choice lasts the page */ }
+  emitView();
+}
+let projects = storedProjects();
 let sources = new Set();
 let statuses = new Set();
 let range = storedRange();
@@ -145,17 +157,43 @@ function button(className, testid, text, run) {
   return node;
 }
 
+/** Keeps a project multi-select's options (the projects that have conversations) and its chosen values current. */
+function projectOptions(select, allCards) {
+  let drawn = "";
+  return () => {
+    const names = new Map(allCards().map((card) => [card.projectId, card.projectName]));
+    const options = [...names].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    // A chosen project that no longer has conversations would hide everything with nothing to untick.
+    if (options.length && [...projects].some((id) => !names.has(id))) chooseProjects(new Set([...projects].filter((id) => names.has(id))));
+    const drawing = JSON.stringify(options);
+    if (drawing !== drawn) { drawn = drawing; select.setOptions(options); }
+    select.setValues(projects);
+  };
+}
+
+/** The desktop column's project filter: the same choice as the toolbars', on its own above the list. */
+export function createProjectFilter({ id, allCards }) {
+  const select = createMultiSelect({ id: `${id}Projects`, testid: `${id}-projects`, label: "Projects", prompt: "All projects", placeholder: "Search projects" });
+  select.onChange(chooseProjects);
+  select.root.classList.add("inbox-column-filter");
+  const update = projectOptions(select, allCards);
+  selectionListeners.add(update);
+  return { root: select.root, update };
+}
+/** Only the chosen projects' conversations (all of them when none is chosen). */
+export const inChosenProjects = (cards) => (projects.size ? cards.filter((card) => projects.has(card.projectId)) : cards);
+
 /**
  * `allCards()` is every conversation the Inbox knows (for the project list and for finding what is chosen), `visibleCards()` the
  * ones listed now (for "All shown"), `afterChange()` reads the board again after Mark read or Delete.
  */
-export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) {
+export function createInboxToolbar({ id, allCards, visibleCards, afterChange, folded = false }) {
   const root = document.createElement("div");
   root.className = "inbox-tools";
   root.dataset.testid = `${id}-tools`;
 
   const projectSelect = createMultiSelect({ id: `${id}Projects`, testid: `${id}-projects`, label: "Projects", prompt: "All projects", placeholder: "Search projects" });
-  projectSelect.onChange((values) => { projects = values; emitView(); });
+  projectSelect.onChange(chooseProjects);
   const sourceSelect = createMultiSelect({ id: `${id}Sources`, testid: `${id}-sources`, label: "Sources", prompt: "All sources", placeholder: "Search machines" });
   sourceSelect.onChange((values) => { sources = values; emitView(); });
   const statusSelect = createMultiSelect({ id: `${id}Statuses`, testid: `${id}-statuses`, label: "Status", prompt: "All statuses", placeholder: "Search statuses" });
@@ -181,7 +219,19 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) 
 
   const filters = document.createElement("div");
   filters.className = "inbox-tools-filters";
-  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, rangeSelect, selectButton);
+  filters.dataset.testid = `${id}-filters`;
+  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, rangeSelect);
+  // Folded (the phone's Home): one row with Filter and Select; Filter opens the choices under it.
+  const filterButton = button("inbox-filter-toggle", `${id}-filter`, "Filter", () => {
+    filters.hidden = !filters.hidden;
+    update();
+  });
+  const head = document.createElement("div");
+  head.className = "inbox-tools-head";
+  if (folded) {
+    filters.hidden = true;
+    head.append(filterButton, selectButton);
+  } else filters.append(selectButton);
 
   const count = document.createElement("span");
   count.className = "inbox-bar-count";
@@ -212,16 +262,13 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) 
   });
   moveButton.title = "Move the chosen conversations to another machine together";
   bar.append(count, allShown, markReadButton, moveButton, deleteButton);
-  root.append(filters, bar);
+  if (folded) root.classList.add("folded");
+  root.append(...(folded ? [head] : []), filters, bar);
 
-  let projectsDrawn = "";
+  const drawProjects = projectOptions(projectSelect, allCards);
   let sourcesDrawn = "";
   function update() {
-    const names = new Map(allCards().map((card) => [card.projectId, card.projectName]));
-    const options = [...names].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
-    const drawing = JSON.stringify(options);
-    if (drawing !== projectsDrawn) { projectsDrawn = drawing; projectSelect.setOptions(options); }
-    projectSelect.setValues(projects);
+    drawProjects();
     const machines = new Map(allCards().map((card) => [sourceOf(card), sourceName(card)]));
     const sourceOptions = [...machines].map(([value, label]) => ({ value, label })).sort((a, b) => (a.value === "local" ? -1 : b.value === "local" ? 1 : a.label.localeCompare(b.label)));
     const sourceDrawing = JSON.stringify(sourceOptions);
@@ -229,6 +276,10 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange }) 
     sourceSelect.setValues(sources);
     statusSelect.setValues(statuses);
     rangeSelect.value = range.id;
+    const narrowing = [projects.size, sources.size, statuses.size, range !== RANGES[0]].filter(Boolean).length;
+    filterButton.textContent = narrowing ? `Filter · ${narrowing}` : "Filter";
+    filterButton.classList.toggle("narrowing", narrowing > 0);
+    filterButton.setAttribute("aria-expanded", String(!filters.hidden));
     selectButton.textContent = selecting ? "Cancel" : "Select";
     selectButton.setAttribute("aria-pressed", String(selecting));
     bar.hidden = !selecting;

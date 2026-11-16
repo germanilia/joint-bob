@@ -93,6 +93,18 @@ const rows = (group: string) => page.locator(`[data-testid="workspace-group-${gr
 test("Home shows the filters, with the latest 10 Earlier conversations of each project by default", async () => {
   await page.getByTestId("workspace-group-count-review").filter({ hasText: /^[1-9]\d*( of \d+)?$/ }).waitFor();
   await page.getByTestId("inboxHome-tools").waitFor();
+  // Home starts with its conversations: the four choices are folded behind Filter, which opens them and counts the ones in use.
+  assert.equal(await page.getByTestId("inboxHome-filters").isVisible(), false, "the filters are folded");
+  assert.equal(await page.getByTestId("inboxHome-select").isVisible(), true, "Select stays in reach");
+  await page.getByTestId("inboxHome-filter").tap();
+  await page.getByTestId("inboxHome-filters").waitFor();
+  assert.equal(await page.getByTestId("inboxHome-filter").getAttribute("aria-expanded"), "true");
+  await page.getByTestId("inboxHome-range").selectOption("all");
+  assert.equal(await page.getByTestId("inboxHome-filter").innerText(), "Filter · 1");
+  await page.getByTestId("inboxHome-range").selectOption("latest-10");
+  assert.equal(await page.getByTestId("inboxHome-filter").innerText(), "Filter");
+  const range = (await page.getByTestId("inboxHome-range").boundingBox())!;
+  assert.ok(range.width > 300, "the Show choice has the row to itself, so its words are not cut");
   assert.equal(await page.getByTestId("inboxHome-range").inputValue(), "latest-10");
   assert.equal(await page.getByTestId("inboxHome-projects-trigger").innerText(), "All projects");
   assert.equal(await page.getByTestId("inboxHome-sources-trigger").innerText(), "All sources");

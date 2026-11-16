@@ -11,9 +11,10 @@ const card = (overrides: Record<string, unknown>) => ({
   turnRunning: false, backgroundRunning: false, summary: null, activity: null, autoRespondActive: false, pendingReviews: [], autoRespondStop: null, controlledBy: null, ...overrides,
 });
 const BOARD = {
-  projects: [{ id: "p1", name: "Joint Bob", color: "violet" }],
+  projects: [{ id: "p1", name: "Joint Bob", color: "violet" }, { id: "p2", name: "Billing", color: "blue" }],
   cards: [
     card({ conversationId: "c2", sessionId: "c2", title: "Mobile menu", column: "review", updatedAt: "2026-11-05T09:00:00Z", summary: "Fixed and tested." }),
+    card({ projectId: "p2", projectName: "Billing", conversationId: "c3", sessionId: "c3", path: "/c3", title: "Invoice totals", column: "review", updatedAt: "2026-11-05T08:00:00Z", summary: "Rounded per line." }),
   ],
 };
 const SYSTEM = [
@@ -150,4 +151,18 @@ test("Bob's own page is his chat with his updates beside it; his other pages kee
   await openBobChat(page);
   assert.equal(await page.getByTestId("control-chat").evaluate((node) => getComputedStyle(node).position), "fixed", "the chat floats over the page");
   assert.equal(await page.getByTestId("control-chat-updates").isVisible(), false, "the window keeps only the chat");
+});
+
+test("the column's project filter lists only the chosen projects, and the choice is kept", { timeout: 120_000 }, async (t) => {
+  const page = await open(t);
+  const review = page.getByTestId("workspace-group-review").getByTestId("workspace-group-row");
+  await review.filter({ hasText: "Mobile menu" }).waitFor();
+  await review.filter({ hasText: "Invoice totals" }).waitFor();
+  await page.getByTestId("inboxColumn-projects-trigger").click();
+  await page.getByTestId("inboxColumn-projects-options").locator("[role=option]", { hasText: "Billing" }).click();
+  await page.keyboard.press("Escape");
+  await review.filter({ hasText: "Mobile menu" }).waitFor({ state: "detached" });
+  assert.equal(await review.filter({ hasText: "Invoice totals" }).count(), 1);
+  assert.equal(await page.getByTestId("workspace-group-count-review").innerText(), "1 of 2", "the label says how many of all");
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("joint-bob-inbox-projects")!).length), 1, "kept in this browser");
 });

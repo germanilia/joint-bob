@@ -100,7 +100,8 @@ test('team control center shows picked members with free roles and persists orde
   await page.getByTestId('projects-open-control-center-button').click();
   await page.getByTestId('team-live-view').waitFor({ state: 'visible' });
   assert.equal(await page.getByTestId('team-assistants-view').isVisible(), false);
-  await page.getByTestId('control-tab-memory').click();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("bob-memory-button").click();
   await page.getByTestId('team-memory-view').waitFor({ state: 'visible' });
   assert.equal(await page.getByTestId('memory-topic-list').isVisible(), false, 'personal memory remains hidden, not repurposed');
   await page.getByTestId('control-tab-assistants').click();
@@ -187,7 +188,8 @@ test('team control center shows picked members with free roles and persists orde
   await page.getByText(/Expired — create a new challenge/).waitFor();
   assert.equal((await api(node, auth, 'POST', `/assistant-teams/${created.body.team.id}/telegram/group/${challenge.id}/confirm`, {})).status, 403);
   await page.getByTestId('settings-cancel-button').click();
-  await page.getByTestId('control-tab-memory').click();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("bob-memory-button").click();
   await page.getByTestId('team-topics-toggle').click();
   await page.getByTestId('team-memory-new').click();
   await page.getByTestId('team-memory-name').fill('shared-notes');
@@ -241,7 +243,8 @@ test('team control center shows picked members with free roles and persists orde
   assert.equal(sourced.status, 200, JSON.stringify(sourced.body));
   await page.getByTestId('team-select').selectOption('');
   await page.getByTestId('team-select').selectOption(created.body.team.id);
-  await page.getByTestId('control-tab-memory').click();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("bob-memory-button").click();
   await page.getByTestId('team-learning').getByText(/writer unavailable/).waitFor();
   await page.setViewportSize({ width: 390, height: 520 });
   await page.getByTestId('team-phone-assistants').click();
@@ -314,6 +317,7 @@ test('team control center shows picked members with free roles and persists orde
   assert.equal(await other.getByTestId('team-agent-card').count(), 0, 'revoked display cleared over SSE without polling');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId('team-select').selectOption('');
-  await page.getByTestId('control-tab-memory').click();
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.getByTestId("bob-memory-button").click();
   await page.getByTestId('memory-topic-list').waitFor({ state: 'visible' });
 });

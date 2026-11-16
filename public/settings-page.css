@@ -362,6 +362,8 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
   .theme-tile { min-height: 44px; font-size: 14px; }
   .settings-text-size { width: 100%; }
   .settings-text-size .settings-segment { min-height: 40px; font-size: 14px; }
+  /* Every other segmented choice (motion) is thumb-sized on the phone. */
+  #settingsForm .settings-segment:not(.settings-text-size .settings-segment) { min-height: 44px; }
   #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) {
     gap: 2px; padding: 3px; border-radius: 12px; background: var(--paper-raised, var(--field)); box-shadow: none;
   }

@@ -1,3 +1,5 @@
+/* Bob's row in the column and Memory in his chat are the desktop page's (below); everywhere else they are not shown. */
+.ws-bob-mark, .ws-bob-line, .bob-memory-button { display: none; }
 /* Paper · Editorial — Bob's page on the desktop (1024 px and wider, app/bob-page.js), version A of 12 Nov: a head card with
    what Bob does and his switches, then two cards, Bob's chat and the stage. The stage carries the control center's views as
    tabs on top. The chat folds into the "Ask Bob" button (.bob-fab). Text is larger than the control center's elsewhere.
@@ -81,17 +83,39 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   /* ---------- the stage: the views as tabs on top ---------- */
   body.bob-desk .control-stage { zoom: 1.12; }
   /* Bob's views: a sub-menu under Bob in the left column, there while Bob's page is open. */
-  body.bob-desk .ws-places > #controlTabs { display: none; }
-  body.bob-desk.view-control .ws-places > #controlTabs { display: flex; flex-direction: column; gap: 1px; margin: 0 0 4px 18px; padding: 0 0 0 8px; border: 0; border-left: 2px solid var(--line); }
+  /* Bob's pages are places of the column like Projects and Costs (app/bob-page.js moves #controlTabs there). Bob himself is
+     the first conversation of the list, Automations has its own place, and his memory opens from his chat. */
+  body.bob-desk .ws-places > #controlTabs { display: contents; }
   body.bob-desk .ws-places > #controlTabs .control-tab {
-    display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 0; height: 34px; padding: 0 10px; margin: 0; border: 0; border-radius: 10px;
-    background: transparent; box-shadow: none; color: var(--muted); font: 550 13.5px/1.2 var(--sans); text-align: left; white-space: nowrap; cursor: pointer;
+    position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; height: 38px; min-height: 38px; padding: 0 10px; margin: 0; border: 0; border-radius: 10px;
+    background: transparent; box-shadow: none; color: var(--muted); font: 550 15px/1.2 var(--sans); text-align: left; white-space: nowrap; cursor: pointer;
   }
   body.bob-desk .ws-places > #controlTabs .control-tab:hover { color: var(--text); background: color-mix(in srgb, var(--paper-raised) 60%, transparent); }
-  body.bob-desk .ws-places > #controlTabs .control-tab.active { color: var(--text); background: var(--paper-raised); }
+  body.bob-desk.view-control:not(.costs-page) .ws-places > #controlTabs .control-tab.active { color: var(--text); background: var(--paper-raised); }
   body.bob-desk .ws-places > #controlTabs .control-tab-badge { margin-left: auto; }
-  /* Bob himself is the "Bob" place above, and Automations has a place of its own: the sub-menu lists the rest. */
-  body.bob-desk .ws-places > #controlTabs .control-tab:is([data-view="live"], [data-view="automations"]) { display: none; }
+  body.bob-desk .ws-places > #controlTabs .control-tab:is([data-view="live"], [data-view="automations"], [data-view="memory"]) { display: none; }
+  body.bob-desk:not(.view-control) #controlTabs .control-tab.active .bob-tab-icon, body.bob-desk.costs-page #controlTabs .control-tab.active .bob-tab-icon { stroke: currentColor; }
+  /* Bob as a conversation: the app's mark where a row has its dot, his name, and what he does under it. */
+  body.bob-desk .ws-side > .ws-place-bob {
+    display: grid !important; grid-template-columns: 8px minmax(0, 1fr) auto; grid-template-areas: "mark name badge" "mark line line"; column-gap: 10px; row-gap: 0; align-items: start;
+    width: 100%; height: 56px; min-height: 56px; margin: 6px 0 2px; padding: 8px 10px; border: 0; border-radius: 12px; background: transparent; box-shadow: none; color: var(--text); text-align: left;
+  }
+  body.bob-desk .ws-side > .ws-place-bob:hover { background: color-mix(in srgb, var(--paper-raised) 55%, transparent); }
+  body.bob-desk .ws-side > .ws-place-bob.on { background: var(--panel); box-shadow: var(--shadow-soft); }
+  body.bob-desk .ws-side > .ws-place-bob > svg { display: none; }
+  /* The mark sits where a row has its dot, so his name lines up with every title under it. */
+  body.bob-desk .ws-side > .ws-place-bob .ws-bob-mark { display: block; grid-area: mark; width: 20px; max-width: none; height: 20px; margin: 0 0 0 -7px; }
+  body.bob-desk .ws-side > .ws-place-bob .ws-place-label { grid-area: name; overflow: hidden; font-size: 13.5px !important; font-weight: 600; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+  body.bob-desk .ws-side > .ws-place-bob .ws-bob-line { display: block; grid-area: line; overflow: hidden; color: var(--muted); font-size: 12.5px; font-weight: 400; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+  body.bob-desk .ws-side > .ws-place-bob .control-icon-badge { grid-area: badge; margin: 0; }
+  /* A short window: the places share two columns, so the list keeps its room. */
+  @media (max-height: 800px) {
+    body.bob-desk:not(.projects-collapsed, .ws-auto-rail, .ws-column-projects) .ws-places { grid-template-columns: 1fr 1fr; column-gap: 4px; }
+    body.bob-desk:not(.projects-collapsed, .ws-auto-rail, .ws-column-projects) .ws-places .ws-place-note { display: none; }
+  }
+  body.bob-desk:is(.projects-collapsed, .ws-auto-rail) .ws-side > .ws-place-bob { display: grid; grid-template-columns: 22px; grid-template-areas: "mark"; justify-content: center; padding: 6px 0; }
+  body.bob-desk:is(.projects-collapsed, .ws-auto-rail) .ws-side > .ws-place-bob :is(.ws-place-label, .ws-bob-line) { display: none; }
+  body.bob-desk .control-chat-head .bob-memory-button { display: inline-flex; align-items: center; align-self: center; }
   body.bob-desk #controlTabs .bob-tab-icon { display: block; flex: none; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   body.bob-desk #controlTabs .control-tab.active .bob-tab-icon { stroke: var(--accent); }
   body.bob-desk #controlTabs .control-tab-badge { margin-left: 0; padding: 1px 8px; border-radius: 999px; background: var(--paper-raised); color: var(--muted); font-size: 12.5px; font-weight: 700; font-style: normal; }

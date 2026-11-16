@@ -111,12 +111,25 @@ test("Bob's page: his chat is his own place, the head carries his switch and set
   // The column stays, with the Inbox (what he watches) as its list.
   assert.equal(await page.getByTestId("workspace-side").isVisible(), true);
   assert.equal(await page.getByTestId("workspace-groups").isVisible(), true);
-  // His other pages are his sub-menu in the left column; he himself is "Bob" above it and Automations is a place of its own.
+  // Bob is the first conversation of the column's list: the app's mark, his name and what he does, shaped like the rows under it.
+  const bobRow = page.getByTestId("projects-open-control-center-button");
+  assert.equal(await bobRow.locator(".ws-bob-mark").isVisible(), true, "the Joint Bob mark");
+  assert.equal(await bobRow.locator(".ws-bob-line").innerText(), "Acts as you in every project");
+  const bobBox = (await bobRow.boundingBox())!;
+  const places = (await page.getByTestId("workspace-places").boundingBox())!;
+  const groups = (await page.getByTestId("workspace-groups").boundingBox())!;
+  assert.ok(bobBox.y >= places.y + places.height && bobBox.y + bobBox.height <= groups.y + 1, "under the places, right above the list");
+  // Dashboard, Dashboards and Assistants are places of their own, beside Projects, Automations and Costs; his memory opens from his chat.
   const stage = page.locator(".ws-places");
-  for (const testid of ["control-tab-my-dashboard", "control-tab-memory", "control-tab-dashboards", "control-tab-assistants"]) {
+  for (const testid of ["control-tab-my-dashboard", "control-tab-dashboards", "control-tab-assistants"]) {
     assert.equal(await stage.getByTestId(testid).isVisible(), true, testid);
+    assert.equal((await stage.getByTestId(testid).boundingBox())!.x, (await page.getByTestId("workspace-projects-button").boundingBox())!.x, `${testid} is not indented under Bob`);
   }
-  for (const testid of ["control-tab-live", "control-tab-automations"]) assert.equal(await stage.getByTestId(testid).isVisible(), false, `${testid} is a place above`);
+  for (const testid of ["control-tab-live", "control-tab-automations", "control-tab-memory"]) assert.equal(await stage.getByTestId(testid).isVisible(), false, `${testid} is not a place`);
+  await page.getByTestId("bob-memory-button").click();
+  await page.locator("#controlView-memory").waitFor({ state: "visible" });
+  await bobRow.click();
+  await page.locator("body.bob-chat-page").waitFor();
   for (const gone of ["control-tab-clusters", "control-tab-overview", "bob-side", "control-center-board"]) assert.equal(await page.getByTestId(gone).count(), 0, `${gone} is gone`);
   // Bob's switch and his settings are in the head; the chat's own Monitoring button gives way to them.
   const pauseSwitch = page.getByTestId("bob-head-pause");

@@ -27,9 +27,14 @@ function greetingWord(hour = new Date().getHours()) {
   return "Good evening";
 }
 
+// The name is kept from the last visit, so the greeting and the avatar are whole at once and do not change as the page loads.
+const NAME_KEY = "joint-bob-greeting-name";
 function displayName() {
   const name = (state.username || "").trim();
-  return name ? name[0].toUpperCase() + name.slice(1) : "";
+  if (!name) { try { return localStorage.getItem(NAME_KEY) ?? ""; } catch { return ""; } }
+  const shown = name[0].toUpperCase() + name.slice(1);
+  try { localStorage.setItem(NAME_KEY, shown); } catch { /* private mode: the name shows once it is read */ }
+  return shown;
 }
 
 function syncGreeting() {
@@ -37,6 +42,7 @@ function syncGreeting() {
   byId("phoneGreeting").textContent = name ? `${greetingWord()}, ${name}` : greetingWord();
   byId("phoneAvatar").textContent = name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "·";
   const line = byId("phoneCounts");
+  line.classList.toggle("loading", !counts);
   if (!counts) { line.textContent = ""; return; }
   const need = counts["needs-you"] ?? 0;
   const needs = document.createElement(need ? "b" : "span");

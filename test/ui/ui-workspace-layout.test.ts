@@ -81,7 +81,7 @@ test("the left column starts in Inbox: places, then Needs you, Running and To re
   }
   assert.deepEqual(
     await page.locator('[data-testid="workspace-places"] .ws-place-label').allInnerTexts(),
-    ["Bob", "Inbox", "Projects", "Automations", "Costs"],
+    ["Inbox", "Projects", "Automations", "Costs"],
   );
   // The conversations answered again after their last review wait under To review.
   await page.getByTestId("workspace-group-count-review").filter({ hasText: /^[1-9]\d*$/ }).waitFor();
@@ -93,17 +93,23 @@ test("the left column starts in Inbox: places, then Needs you, Running and To re
   // The project panels wait behind Projects.
   assert.equal(await page.locator("#projectsPanel").isVisible(), false);
   assert.equal(await page.locator("#chatsPanel").isVisible(), false);
+  // Bob is the first conversation of the list, not a place; his pages are places beside Projects.
+  assert.equal(await page.getByTestId("projects-open-control-center-button").evaluate((node) => node.parentElement!.id), "workspaceSide");
+  assert.deepEqual(await page.locator('[data-testid="workspace-places"] .control-tab:visible').allInnerTexts(), ["Dashboard", "Dashboards", "Assistants"]);
   // The column never scrolls: it is exactly the window's height.
   const scroll = await page.evaluate(() => ({ document: document.scrollingElement!.scrollHeight, window: innerHeight, groups: [document.querySelector("#workspaceGroups")!.scrollHeight, document.querySelector("#workspaceGroups")!.clientHeight] }));
   assert.ok(scroll.document <= scroll.window, `the page does not scroll (${scroll.document} > ${scroll.window})`);
-  assert.ok(scroll.groups[0] <= scroll.groups[1] + 1, "the groups fit their part of the column");
+  const groupsBox = (await page.getByTestId("workspace-groups").boundingBox())!;
+  const footBox = (await page.getByTestId("workspace-foot").boundingBox())!;
+  assert.ok(groupsBox.y + groupsBox.height <= footBox.y + 1, "the groups keep to their part of the column (and scroll in it when the window is short)");
 });
 
 test("a group shows the rows that fit and Show all lists every row, one long scroll, in the middle", async () => {
   await page.setViewportSize({ width: 1440, height: 560 });
   await frames();
   const shown = await page.locator('[data-testid="workspace-group-review"] [data-testid="workspace-group-row"]').count();
-  assert.ok(shown < reviewCount, `a short window shows fewer rows (${shown} of ${reviewCount})`);
+  // A short window shows the first three of a group (the column scrolls for them) and Show all has the rest.
+  assert.ok(shown === Math.min(3, reviewCount), `a short window shows the first rows (${shown} of ${reviewCount})`);
   await page.getByTestId("workspace-show-all-review").click();
   await page.getByTestId("workspace-group-page").waitFor();
   assert.equal(await page.getByTestId("workspace-group-title").innerText(), "To review");

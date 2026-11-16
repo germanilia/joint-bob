@@ -25,7 +25,7 @@ import { openRowMenu } from "./row-menu.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { startGlobalConversation } from "./new-session.js";
-import { createInboxToolbar, filterInbox, inboxFilterKey, inboxSignature, isSelected, isSelecting, onInboxView, sourceName, toggleSelected } from "./inbox-filters.js";
+import { createInboxToolbar, createProjectFilter, filterInbox, inChosenProjects, inboxFilterKey, inboxSignature, isSelected, isSelecting, onInboxView, sourceName, toggleSelected } from "./inbox-filters.js";
 import { drawChunked } from "./long-scroll.js";
 import { openQuickNote } from "./quick-notes.js";
 import { openSpotlight } from "./spotlight.js";
@@ -172,7 +172,7 @@ function syncPlaces() {
   // On Bob's page "Bob" is lit for his own chat; his other pages light their place in his sub-menu instead.
   const shown = currentControlView();
   const active = body.classList.contains("costs-page") ? "costs" : control ? (shown === "automations" ? "automations" : shown === "live" ? "bob" : "") : column;
-  for (const placeButton of document.querySelectorAll(".ws-places [data-place]")) {
+  for (const placeButton of document.querySelectorAll(":is(.ws-places, .ws-side) [data-place]")) {
     const on = placeButton.dataset.place === active;
     placeButton.classList.toggle("on", on);
     if (placeButton.hasAttribute("aria-pressed")) placeButton.setAttribute("aria-pressed", String(on));
@@ -535,7 +535,6 @@ const ROW_TOOLS = ["system-control", "terminal", "git", "files", "story", "overv
 
 const groupsHost = byId("workspaceGroups");
 // The system messages and a batch of conversations being moved sit under the places, above the groups.
-byId("workspaceSide").append(systemStrip, movesJobPanel);
 /** After Mark read or Delete the board and the Earlier list are read again at once. */
 function refreshAfterChange() {
   earlierReadAt = 0;
@@ -543,13 +542,42 @@ function refreshAfterChange() {
 }
 // The phone's Home filters and selects above its groups (the desktop's column keeps every row; its Show all page has its own bar).
 const phoneToolbar = createInboxToolbar({
-  id: "inboxHome", allCards, afterChange: refreshAfterChange,
+  id: "inboxHome", allCards, afterChange: refreshAfterChange, folded: true,
   visibleCards: () => GROUPS.filter((group) => group.id !== "needs-you").flatMap((group) => filteredIn(group.id)),
 });
 phoneToolbar.root.classList.add("phone-only");
 groupsHost.before(phoneToolbar.root);
+// On the phone the column is not shown: the system messages and a running move sit on Home, above its filters.
+const phoneWidth = matchMedia("(max-width: 700px)");
+// The desktop column lists every project unless some are chosen here (the board's project chips, as one box).
+const columnFilter = createProjectFilter({ id: "inboxColumn", allCards });
+function placeColumnNotes() {
+  if (phoneWidth.matches) { phoneToolbar.root.before(systemStrip, movesJobPanel); return; }
+  const side = byId("workspaceSide");
+  side.append(systemStrip, movesJobPanel, columnFilter.root);
+  // Bob is the first conversation of the list (bob-page.js puts him here): he stays right above it.
+  const bob = side.querySelector(":scope > .ws-place-bob");
+  if (bob) side.append(bob);
+}
+phoneWidth.addEventListener("change", placeColumnNotes);
+placeColumnNotes();
+
+/** The phone's Home before the board has answered: the shape of what is coming (a card, then rows), not four empty headings. */
+function loadingGroups() {
+  const host = document.createElement("div");
+  host.className = "ws-loading";
+  host.dataset.testid = "workspace-loading";
+  host.setAttribute("role", "status");
+  host.setAttribute("aria-label", "Loading your conversations");
+  host.append(Object.assign(document.createElement("i"), { className: "ws-loading-label" }), Object.assign(document.createElement("i"), { className: "ws-loading-card" }),
+    Object.assign(document.createElement("i"), { className: "ws-loading-label" }));
+  for (let index = 0; index < 4; index += 1) host.append(Object.assign(document.createElement("i"), { className: "ws-loading-row" }));
+  return host;
+}
 // A group's label and its "nothing here" line; the phone sets taller ones (phone.css: --ws-lab-height, --ws-empty-height).
 const LABEL_HEIGHT = 43;
+/** Every group shows at least this many of its conversations, however short the window. */
+const MIN_ROWS = 3;
 const EMPTY_HEIGHT = 26;
 /** The deck's bar is this tall. */
 const DECK_BAR = 48;
@@ -571,7 +599,13 @@ function renderGroups(refit = true) {
   if (groupsHost.querySelector(".ws-wait.pushing")) return;
   // The phone's Home applies the project and Show filters (inbox-filters.js); the desktop column lists everything.
   phoneToolbar.update();
-  const listIn = (groupId) => (phoneHomeShown() ? filteredIn(groupId) : cardsIn(groupId));
+  phoneToolbar.root.hidden = !loaded;
+  if (!loaded && phoneHomeShown()) {
+    if (groupsHost.dataset.signature !== "loading") { groupsHost.dataset.signature = "loading"; groupsHost.replaceChildren(loadingGroups()); }
+    return;
+  }
+  columnFilter.update();
+  const listIn = (groupId) => (phoneHomeShown() ? filteredIn(groupId) : inChosenProjects(cardsIn(groupId)));
   const counts = GROUPS.map((group) => listIn(group.id).length);
   const sample = groupsHost.querySelector(".ws-row");
   const rowHeight = sample ? sample.getBoundingClientRect().height + 2 : 52;
@@ -605,6 +639,8 @@ function renderGroups(refit = true) {
       dealt = true;
     }
   }
+  // A short window still shows the first conversations of every group: the column scrolls instead of hiding them behind Show all.
+  if (!phoneHomeShown()) GROUPS.forEach((group, index) => { shown[index] = Math.max(shown[index], Math.min(counts[index], MIN_ROWS)); });
   // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
   const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, cardsIn(SNOOZED.id).length, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card)])), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }

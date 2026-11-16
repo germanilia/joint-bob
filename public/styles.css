@@ -1725,6 +1725,8 @@ select.chat-toolbar-control {
 .messages-wrap.activity-open > .messages { min-width: 0; }
 .messages-wrap.activity-open .jump-to-bottom { right: calc(var(--activity-width) + 18px); }
 .messages-wrap { --activity-width: clamp(280px, var(--activity-preferred-width, clamp(300px, 28vw, 420px)), 65%); }
+/* A wide window gives the panel room: its steps and files are read without cutting every line. */
+@media (min-width: 1400px) { .messages-wrap { --activity-width: clamp(380px, var(--activity-preferred-width, clamp(420px, 30vw, 640px)), 65%); } }
 .activity-panel { container: activity-panel / inline-size; position: relative; display: flex; flex: 0 0 var(--activity-width); flex-direction: column; width: var(--activity-width); min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
 .activity-panel[hidden] { display: none; }
 .activity-panel-resize { position: absolute; z-index: 5; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }

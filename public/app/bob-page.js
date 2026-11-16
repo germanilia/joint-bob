@@ -13,6 +13,7 @@ import { saveControlCenter, toggleFolded } from "./control-center.js";
 import { currentControlView, showControlView } from "./control-views.js";
 import { initFloatingChat } from "./bob-float.js";
 import { elements } from "./elements.js";
+import { setMobileView } from "./layout.js";
 import { state } from "./state.js";
 
 const wide = matchMedia("(min-width: 1024px)");
@@ -213,6 +214,21 @@ function restore() {
   homes.clear();
 }
 
+// Bob's memory is opened from his chat (it is his, not a place of the app); pressing Bob in the column comes back to the chat.
+const memoryButton = element("button", "ghost compact bob-memory-button", "Memory");
+memoryButton.type = "button";
+memoryButton.title = "What Bob remembers: topics, and what he changed";
+memoryButton.dataset.testid = "bob-memory-button";
+memoryButton.addEventListener("click", () => showControlView("memory"));
+
+// A page of his pressed from outside the control center opens it on that page (the tab's own handler then shows the view).
+tabs.addEventListener("click", (event) => {
+  const tab = event.target.closest(".control-tab");
+  if (!tab || body.classList.contains("view-control") || !body.classList.contains("bob-desk")) return;
+  state.controlCenter.view = tab.dataset.view;
+  setMobileView("control");
+}, { capture: true });
+
 function onPage() {
   return wide.matches && body.classList.contains("ws-desktop") && !body.classList.contains("focus-ui");
 }
@@ -223,7 +239,10 @@ function apply() {
   body.classList.toggle("bob-desk", page);
   if (changed) window.dispatchEvent(new CustomEvent("bob-desk-changed"));
   if (page) {
-    moveInto(tabs, document.querySelector(".ws-places"), { before: document.getElementById("workspaceInboxButton") });
+    // His pages are places of their own, after Automations; Bob himself is the first conversation of the column's list.
+    moveInto(tabs, document.querySelector(".ws-places"), { before: document.querySelector(".ws-places > [data-usage-open]") });
+    moveInto(elements.openControlCenterButton, document.getElementById("workspaceSide"));
+    if (!memoryButton.isConnected) elements.controlChatSettingsButton.before(memoryButton);
     moveInto(document.querySelector(".team-context-label"), chatHead, { before: elements.controlChatSettingsButton });
     if (giveBack.parentElement !== popupBar) moveInto(giveBack, popupBar);
     popupBar.append(document.getElementById("controlPopupClose"));
