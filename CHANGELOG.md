@@ -1,5 +1,9 @@
 # Changelog
 
+
+## 2.317.5 — 2026-11-16
+
+- Found secret accounts by provider when sharing with a cluster: the picker now shows "DAK-Dev · Stripe" like the Secrets page, so searching "stripe" works.
 ## 2.317.4 — 2026-11-16
 
 - Team answers in Telegram are formatted: bold, code, lists and headings show as formatting instead of raw `**` and backticks. If Telegram refuses the formatting, the answer is sent as plain text.

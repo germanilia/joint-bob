@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { fuzzyMatch } from "./fuzzy.js";
+import { providerLabels } from "./secrets.js";
 import { confirmAction, toast } from "./shell.js";
 
 /**
@@ -110,7 +111,7 @@ export async function renderClusterSharing(cluster, { localNodeId, onSaved }) {
   let secretsList = null;
   try {
     const { available, granted } = await api(`/api/clusters/${cluster.id}/secrets`);
-    if (current === revision) secretsList = scopeList("secret", available, "label", granted);
+    if (current === revision) secretsList = scopeList("secret", available.map((account) => ({ ...account, name: `${account.label} · ${providerLabels[account.provider] ?? account.provider}` })), "name", granted);
   } catch { /* Projects remain editable if credential inventory is temporarily unavailable. */ }
   const save = text("button", "Save sharing", "primary compact"); save.type = "button"; save.dataset.testid = "sharing-save";
   save.addEventListener("click", async () => {
