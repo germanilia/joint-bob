@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.321.0 — 2026-11-16
+
+- Made Bob the first conversation of the left column's list, with the Joint Bob mark, instead of a place with a sub-menu. **Dashboard**, **Dashboards** and **Assistants** are places of their own, and **Memory** opens from Bob's chat.
+- Added a project filter above the column's list, kept in this browser. Every group shows at least its first three conversations and the list scrolls on a short window.
+- Fixed the **Show all** list squeezing its rows when there are many, and kept it to a readable width on a very wide window. The Activity panel is wider on wide windows.
+- On the phone, folded Home's filters behind one **Filter** button beside **Select**, showed the system messages above them, and replaced the empty headings while loading with the shape of the list. The greeting keeps the name of the last visit, and Bob's chat hides an empty Background updates block.
+
 ## 2.320.2 — 2026-11-16
 
 - Fixed your machines failing to sync with each other after you stepped into a conversation Bob had not checked yet. The record of that was sent incomplete, the other machine refused it, and everything sent with it was refused too. Such records are now accepted, so what was held back is delivered, and new ones are sent complete.
