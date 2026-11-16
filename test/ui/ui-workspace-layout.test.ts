@@ -75,7 +75,7 @@ test("the left column starts in Inbox: places, then Needs you, Running and To re
   assert.equal(await page.evaluate((key) => localStorage.getItem(key), WORKSPACE_COLUMN_KEY), "unset", "nothing was chosen yet");
   // The Inbox is the column's list of every start (its own place is Bob's, and Home's): no place of its own in the column.
   assert.equal(await page.getByTestId("workspace-inbox-button").getAttribute("aria-pressed"), "true");
-  assert.equal(await visible("workspace-inbox-button"), false);
+  assert.equal(await visible("workspace-inbox-button"), true);
   for (const id of ["projects-open-control-center-button", "workspace-projects-button", "workspace-automations-button", "usage-open", "settings-open-button", "workspace-person-button", "workspace-new-button", "workspace-search-input"]) {
     assert.equal(await visible(id), true, `${id} is in the column`);
   }

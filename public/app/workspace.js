@@ -184,6 +184,8 @@ function syncPlaces() {
 byId("workspaceInboxButton").addEventListener("click", () => {
   closeGroupPage();
   setColumn("inbox");
+  // From Bob's pages the Inbox is the way back: the person leaves the control center by choosing it.
+  if (currentMobileView() === "control") elements.controlCenterCloseButton.click();
 });
 byId("workspaceProjectsButton").addEventListener("click", () => {
   closeGroupPage();
