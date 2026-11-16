@@ -1,6 +1,6 @@
 import { api } from "./api.js";
 import { createSearchableSelect } from "./searchable-select.js";
-import { loadSecretAccounts, secretAccounts } from "./secrets.js";
+import { loadSecretAccounts, providerBadge, secretAccounts } from "./secrets.js";
 import { toast } from "./shell.js";
 import { state } from "./state.js";
 
@@ -9,7 +9,11 @@ export async function openConversationSecretPicker() {
   const scope = `${state.engine}:${state.activeSessionId}`;
   const url = `/api/secrets/scopes/conversation/${encodeURIComponent(scope)}`;
   const [{ accountIds }] = await Promise.all([api(url), loadSecretAccounts()]);
-  const picker = createSearchableSelect({ id: "conversationSecret", testid: "conversation-secret", label: "Secret", prompt: "Choose a secret", placeholder: "Search secrets", emptyText: "No available secrets" });
+  const picker = createSearchableSelect({
+    id: "conversationSecret", testid: "conversation-secret", label: "Secret", prompt: "Choose a secret", placeholder: "Search secrets", emptyText: "No available secrets",
+    icon: id => providerBadge(secretAccounts.find(account => account.id === id).provider, "conversation-secret-provider-badge"),
+  });
+  picker.root.classList.add("conversation-secret-select");
   picker.setOptions(secretAccounts
     .filter(account => (!account.projectId || account.projectId === projectId) && !accountIds.includes(account.id))
     .map(account => ({ value: account.id, label: account.label, keywords: `${account.provider} ${account.websiteOrigin || ""} ${account.variables.map(variable => variable.name).join(" ")}` })));

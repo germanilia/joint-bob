@@ -2520,6 +2520,8 @@ fieldset:has(> .ntfy-manage) { min-inline-size: 0; }
 .secret-type-select .searchable-select-option { flex-direction: row; justify-content: flex-start; min-height: 40px; width: 100%; }
 .secret-type-select .searchable-select-popover { font-size: 13px; }
 .secret-type-select .searchable-select-options { max-height: min(280px, 40dvh); }
+.conversation-secret-select :is(.searchable-select-trigger, .searchable-select-option) { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; }
+.conversation-secret-select .searchable-select-option-label { min-width: 0; overflow-wrap: anywhere; }
 .secret-account-list, .secret-scope-list { display: grid; gap: 8px; }
 .secret-sharing-card { width: min(480px, calc(100vw - 24px)); max-height: min(75vh, 680px); overflow-y: auto; }
 .secret-sharing-card fieldset { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius-ctl); padding: 10px 12px; }
