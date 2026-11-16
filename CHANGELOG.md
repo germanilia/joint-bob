@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.318.0 — 2026-11-16
+
+- Bob's page now shares the app's shell: the left column stays beside it, so Projects, Automations, Costs and every conversation are one click away from any of Bob's pages. Bob's views (Live agents, Dashboard, Automations, Bob's memory, Dashboards, Assistants) moved from the tabs on top of the page into a sub-menu under Bob in the left column, and the column's conversation list steps aside while the Live agents board is open.
+
 ## 2.317.12 — 2026-11-16
 
 - Routing: Planning (level 10) now needs a model score of at least 90, so Claude Opus is chosen over Sonnet there. Sonnet scores 86 at that level and no longer qualifies.
