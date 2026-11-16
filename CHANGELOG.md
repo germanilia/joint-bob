@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.319.0 — 2026-11-16
+
+- Added Bob as the first place in his sub-menu in the left column: his chat fills the page beside the column, like a conversation, instead of floating over it. Opening another view folds it back into the Ask Bob button.
+
 ## 2.318.1 — 2026-11-16
 
 - Confirmed assistant replies from worktree-backed topics and kept command reloads inside the conversation's worktree.
