@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.320.0 — 2026-11-16
+
+- Merged Bob's page and the Inbox into one shell. The Live agents board is gone: the Inbox in the left column lists the conversations, **Bob** opens his chat filling the page beside it, with his background updates alongside, and his other pages are a sub-menu under Bob.
+- Moved what only the board had into the column: system messages as one line above the Inbox, a right-click menu on every row (Snooze, Wake, Star, Pin, Let Bob control, Terminal, Git, Folders, Story, Overview, the project's dashboard), a Snoozed list, and **Move…** in the Inbox's Select bar to send conversations to another machine.
+- Costs opens as a page beside the left column, and the head names the page that is open. Bob's display agent's answers show in his chat again, with their Undo.
+
 ## 2.319.0 — 2026-11-16
 
 - Added Bob as the first place in his sub-menu in the left column: his chat fills the page beside the column, like a conversation, instead of floating over it. Opening another view folds it back into the Ask Bob button.
