@@ -12,7 +12,7 @@ const MAX_SECONDS = 10 * 60;
 const CHUNK_SECONDS = 30;
 
 const [loader, cacheDir, audioFile] = process.argv.slice(2);
-os.setPriority(10); // The server stays responsive while this uses every core.
+os.setPriority(Math.max(os.getPriority(), 10)); // Keep an inherited lower priority instead of trying to raise it.
 const { env, ffmpegPath, pipeline, Tensor } = await import(pathToFileURL(loader).href);
 env.cacheDir = cacheDir;
 
