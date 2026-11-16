@@ -30,7 +30,7 @@ function fixture(resume: boolean) {
     registerTwinAssistantRoutes: () => {}, announceAssistantChanges: () => {},
     teamConversation: async () => undefined,
     getClusterNode: async () => ({ id: "node" }), getPersonalAssistant: async () => entry, projectVisible: async () => true,
-    listLocalUsers: () => [session], getProject: async () => project,
+    listLocalUsers: () => [session], getProject: async () => project, projectAdditionalPaths: async () => [],
     getPersonalAssistantSourceHistory: async () => [], listPersonalAssistantTurns: async () => [],
     listPersonalAssistantTopics: async () => resume ? [{ engine: "claude", sessionId: "existing" }] : [],
     sharedProjectSessions: async () => resume ? [{ harnessId: "claude", id: "existing", path: "claude:/existing", title: "Existing" }] : [],

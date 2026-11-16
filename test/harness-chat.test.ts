@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type WebSocket from "ws";
-import { projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { openChat, waitFor } from "./queued-prompt-harness.js";
 import { kiroV3SessionFixture } from "./kiro-v3-fixture.js";
 import { openNodeDatabase } from "../src/node-database.js";
@@ -259,7 +259,7 @@ test("a Kiro turn that ends without a reply is reported and stays visible after 
 // File sync delivers a project's files to every node but never `.git`, so a commit
 // pushed from another node leaves this node's HEAD behind. Each user message first
 // moves HEAD to the pushed commit once the files on disk already hold it.
-test("a user message first moves a synced project's git HEAD to the commit another node pushed", async () => {
+test("a project-folder conversation catches up the synced project's git HEAD before a user message", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "harness-chat-git-"));
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
   const sockets: WebSocket[] = [];
@@ -293,6 +293,8 @@ test("a user message first moves a synced project's git HEAD to the commit anoth
 
     server = await startDevNode(environment, node);
     const auth = await signIn(environment, node);
+    const optedOut = await api(node, auth, "PUT", "/settings", { newConversationWorktree: false });
+    assert.equal(optedOut.status, 200);
     const chat = openChat(node.url, auth.cookie, project.id, "kiro:new");
     sockets.push(chat.socket);
     await waitFor(chat.messages, () => chat.messages.some((message) => message.type === "ready" && message.engine === "kiro"));

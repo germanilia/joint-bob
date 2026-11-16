@@ -165,6 +165,7 @@ test("a Telegram bot reaches its assistant only through code that approves each 
   const root = await mkdtemp(path.join(os.tmpdir(), "assistant-telegram-"));
   const world = await outsideWorld();
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
+  const serverErrors: string[] = [];
   try {
     const environment = await seedDevEnvironment(root, 1);
     const node = environment.nodes[0];
@@ -179,6 +180,7 @@ test("a Telegram bot reaches its assistant only through code that approves each 
     for (const [key, value] of [["kiro.executable", executable], ["kiro.configPath", configPath], ["kiro.sessionPath", path.join(configPath, "sessions")]]) save.run(key, value, new Date().toISOString());
     settings.close();
     server = await startDevNode(environment, node, { JOINT_BOB_TYPESAFE_ENDPOINT: `${world.url}/v1/systemone`, JOINT_BOB_TELEGRAM_API: world.url, JOINT_BOB_ELEVENLABS_API: world.url });
+    server.stderr!.on("data", chunk => serverErrors.push(String(chunk)));
     const session = await signIn(environment, node);
     const projectId = projectNamed(node, "Joint Bob").id;
     const decisionKey = await api<{ account: { id: string } }>(node, session, "POST", "/secrets/accounts", { label: "decision", provider: "custom", variables: [{ name: "TYPESAFE_AI_API_KEY", kind: "value", value: "fixture-key" }] });
@@ -189,9 +191,10 @@ test("a Telegram bot reaches its assistant only through code that approves each 
     chat.socket.send(JSON.stringify({ type: "prompt", message: "We are planning a Rome trip", requestId: crypto.randomUUID() }));
     await waitFor(chat.messages, () => chat.messages.some(message => message.type === "promptCompleted"), 60_000);
     chat.socket.close();
-    const sessions = await api<{ sessions: Array<{ id: string; harnessId: string }> }>(node, session, "GET", `/projects/${projectId}/sessions`);
+    const sessions = await api<{ sessions: Array<{ id: string; harnessId: string; worktree?: { id: string } }> }>(node, session, "GET", `/projects/${projectId}/sessions`);
     const source = sessions.body.sessions.find(item => item.harnessId === "kiro");
     assert.ok(source, "the source conversation exists");
+    assert.ok(source.worktree?.id, "the assistant must resume a source conversation created in a worktree");
     const assistant = await api<{ assistant: { id: string } }>(node, session, "POST", "/personal-assistants", { projectId, engine: "kiro", sessionId: source.id, name: "Telegram helper", instructions: "" });
     assert.equal(assistant.status, 201, JSON.stringify(assistant.body));
     const assistantId = assistant.body.assistant.id;
@@ -288,7 +291,7 @@ test("a Telegram bot reaches its assistant only through code that approves each 
     const answer = await replyAfter(() => send(dm(OWNER, "What about hotels there?")));
     assert.equal(answer.chat_id, String(OWNER));
     assert.equal(answer.parse_mode, "HTML");
-    assert.match(answer.text!, /^<b>Done<\/b> in /);
+    assert.match(answer.text!, /^<b>Done<\/b> in /, JSON.stringify({ calls: (await status()).calls, turns: await turns(), serverErrors }));
     const ownerRoute = world.decisions.at(-1)!;
     assert.deepEqual(ownerRoute.criteria, ["topic_0", "new_topic", "recall_history"], "the owner's chat sees the assistant's topics and history");
     assert.equal(ownerRoute.state.user_message, "What about hotels there?");

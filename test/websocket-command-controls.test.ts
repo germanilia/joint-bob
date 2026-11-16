@@ -96,8 +96,12 @@ test("Pi tool commands list and change active tools over the chat WebSocket", as
     socket.send(JSON.stringify({ type: "setTools", toolNames: ["missing-tool"] }));
     await waitFor(messages, () => messages.some((message) => message.type === "error" && message.error === "Unknown tool: missing-tool"));
 
-    await mkdir(path.join(projectPath, ".pi", "prompts"), { recursive: true });
-    await writeFile(path.join(projectPath, ".pi", "prompts", "reloaded.md"), "Reloaded prompt", "utf8");
+    const worktreeResponse = await fetch(`${baseUrl}/api/projects/${project.id}/worktrees`, { headers });
+    assert.equal(worktreeResponse.status, 200);
+    const { worktrees } = await worktreeResponse.json() as { worktrees: Array<{ path: string }> };
+    assert.equal(worktrees.length, 1, "the new conversation runs in its own worktree");
+    await mkdir(path.join(worktrees[0].path, ".pi", "prompts"), { recursive: true });
+    await writeFile(path.join(worktrees[0].path, ".pi", "prompts", "reloaded.md"), "Reloaded prompt", "utf8");
     socket.send(JSON.stringify({ type: "prompt", message: "/reload" }));
     await waitFor(messages, () => messages.some((message) => message.type === "status" && (message.status as { promptTemplates?: string[] })?.promptTemplates?.includes("reloaded")));
     assert.equal(messages.some((message) => message.type === "userMessage" && message.text === "/reload"), false);

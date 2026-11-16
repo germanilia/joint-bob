@@ -10,6 +10,7 @@ import { conversationScopeId, genericSecretEnvironment, getScopeSecretAccounts, 
 import { queueConversationPrompt, type PromptAttachment } from "../conversation-prompt.js";
 import { ensureSessionTitle } from "../../names.js";
 import { sharedProjectSessions } from "../sessions-helpers.js";
+import { projectAdditionalPaths } from "../session-scope.js";
 import { getProject, projectVisible } from "../../store.js";
 import { addPersonalAssistantTopic, beginPersonalAssistantTurn, deleteItem, deletePersonalAssistant, finishPersonalAssistantTurn, getPersonalAssistant, getPersonalAssistantSourceHistory, getPersonalAssistantTurn, listPersonalAssistantTopics, listPersonalAssistantTurnSourceIds, listPersonalAssistantTurns, listPersonalAssistants, listSavedItems, saveItem, savePersonalAssistant, savePersonalAssistantSourceHistory, savedImage, type PersonalAssistantExecutionSettings, type TurnOrigin } from "../../personal-assistants.js";
 import { routeAssistantMessage, type AssistantRoute } from "../../classifiers/conversation-routing.js";
@@ -219,13 +220,14 @@ async function executeAssistantTurn(accountId: string, entry: AssistantEntry, se
     const active = segments.at(-1) ?? { engine: destination.engine, sessionId: destination.sessionId };
     await addPersonalAssistantTopic(accountId, entry.id, { projectId: project.id, engine: active.engine, sessionId: active.sessionId, source: false });
     await syncAssistantLoginGrants(entry.id, accountId);
-    const updated = await listHarnessSessions(project);
+    const transcriptProject = { ...project, additionalPaths: await projectAdditionalPaths(project.id) };
+    const updated = await listHarnessSessions(transcriptProject);
     const transcript = updated.find(candidate => candidate.harnessId === active.engine && candidate.id === active.sessionId)
       ?? updated.find(candidate => candidate.segments?.some(segment => segment.engine === active.engine && segment.sessionId === active.sessionId));
     const activePath = transcript && transcript.harnessId === active.engine && transcript.id === active.sessionId
       ? transcript.path
       : transcript?.segments?.find(segment => segment.engine === active.engine && segment.sessionId === active.sessionId)?.path;
-    const messages = activePath ? await getHarness(active.engine).sessions.loadMessages(project, activePath) : [];
+    const messages = activePath ? await getHarness(active.engine).sessions.loadMessages(transcriptProject, activePath) : [];
     // The agent's copy of the message also holds the assistant's instructions and context.
     const userMessage = [...messages].reverse().find(message => message.role === "user" && message.text.includes(destination.message));
     const userIndex = userMessage ? messages.lastIndexOf(userMessage) : -1;
