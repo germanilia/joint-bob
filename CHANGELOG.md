@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.318.1 — 2026-11-16
+
+- Confirmed assistant replies from worktree-backed topics and kept command reloads inside the conversation's worktree.
+- Started prompts arriving during an auto-reply check instead of leaving assistant setup waiting indefinitely.
+- Fixed local voice transcription when the worker inherited a lower background CPU priority.
+
 ## 2.318.0 — 2026-11-16
 
 - Bob's page now shares the app's shell: the left column stays beside it, so Projects, Automations, Costs and every conversation are one click away from any of Bob's pages. Bob's views (Live agents, Dashboard, Automations, Bob's memory, Dashboards, Assistants) moved from the tabs on top of the page into a sub-menu under Bob in the left column, and the column's conversation list steps aside while the Live agents board is open.
