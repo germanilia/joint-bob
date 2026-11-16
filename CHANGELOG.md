@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.320.1 — 2026-11-16
+
+- Fixed pressing **Bob** after **Projects** on Bob's page: the left column shows the Inbox again instead of keeping the project list.
+
 ## 2.320.0 — 2026-11-16
 
 - Merged Bob's page and the Inbox into one shell. The Live agents board is gone: the Inbox in the left column lists the conversations, **Bob** opens his chat filling the page beside it, with his background updates alongside, and his other pages are a sub-menu under Bob.
