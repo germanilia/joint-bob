@@ -10,9 +10,9 @@ test("mobile Add secret searches existing accounts and attaches only to the open
   const project = node.projects[0];
   const sessions = await api<{ sessions: SessionSummary[] }>(node, auth, "GET", `/projects/${project.id}/sessions`);
   const source = sessions.body.sessions.find(item => item.title === "Short one")!;
-  const create = async (label: string, projectId?: string) => {
+  const create = async (label: string, projectId?: string, provider = "custom") => {
     const result = await api<{ account: { id: string } }>(node, auth, "POST", "/secrets/accounts", {
-      label, projectId, provider: "custom", variables: [{ name: "TEST_SECRET", kind: "value", value: "synthetic" }],
+      label, projectId, provider, variables: [{ name: provider === "openai" ? "OPENAI_API_KEY" : "TEST_SECRET", kind: "value", value: "synthetic" }],
     });
     assert.equal(result.status, 201);
     return result.body.account.id;
@@ -20,7 +20,7 @@ test("mobile Add secret searches existing accounts and attaches only to the open
   const existing = await create("Already attached");
   const added = await create("Project deployment", project.id);
   await create("Other project", node.projects[1].id);
-  await create("Global account");
+  await create("Global account", undefined, "openai");
   const projectScopeBefore = (await api(node, auth, "GET", `/secrets/scopes/project/${project.id}`)).body.accountIds;
   const scopeUrl = `/secrets/scopes/conversation/${encodeURIComponent(`${source.harnessId}:${source.id}`)}`;
   await api(node, auth, "PUT", scopeUrl, { accountIds: [existing] });
@@ -41,9 +41,31 @@ test("mobile Add secret searches existing accounts and attaches only to the open
   await picker.click();
   const options = page.getByTestId("conversation-secret-option");
   assert.deepEqual((await options.allTextContents()).sort(), ["Global account", "Project deployment"].sort());
-  await page.getByTestId("conversation-secret-search").fill("deployment");
+  const badges = options.getByTestId("conversation-secret-provider-badge");
+  assert.equal(await badges.count(), 2, "each secret has a provider icon");
+  assert.equal(await badges.first().isVisible(), true);
+  assert.equal(await options.filter({ hasText: "Global account" }).locator(".secret-provider-icon.openai").count(), 1);
+  const aligned = await options.first().evaluate(row => {
+    const badge = row.querySelector(".secret-provider-badge")!.getBoundingClientRect();
+    const label = row.querySelector(".searchable-select-option-label")!.getBoundingClientRect();
+    return badge.right <= label.left && Math.abs(badge.y + badge.height / 2 - label.y - label.height / 2) < 2;
+  });
+  assert.equal(aligned, true, "the icon sits beside the secret name, not above it");
+  const search = page.getByTestId("conversation-secret-search");
+  assert.equal(await search.isVisible(), true);
+  assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute("data-testid")), "conversation-secret-search", "opening the mobile list leaves the keyboard down");
+  for (const query of ["openai", "OPENAI_API_KEY"]) {
+    await search.fill(query);
+    assert.deepEqual(await options.allTextContents(), ["Global account"], `search matches ${query}`);
+    assert.equal(await options.locator(".secret-provider-icon.openai").count(), 1, "filtering keeps the matching icon");
+  }
+  await search.fill("no-such-secret");
+  assert.equal(await options.count(), 0);
+  assert.equal(await page.getByTestId("conversation-secret-options").textContent(), "No available secrets");
+  await search.fill("deployment");
   assert.equal(await options.count(), 1);
   await options.click();
+  assert.equal(await picker.getByTestId("conversation-secret-provider-badge").isVisible(), true, "the selected secret keeps its icon");
   await page.getByTestId("conversation-secret-cancel").click();
   assert.deepEqual((await api(node, auth, "GET", scopeUrl)).body.accountIds, [existing]);
   await page.getByTestId("focus-controls-button").click();
