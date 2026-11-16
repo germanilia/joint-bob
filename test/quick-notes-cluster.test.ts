@@ -38,7 +38,7 @@ test("quick note launches run on the selected node and never fall back", { timeo
     const environment = await seedDevEnvironment(root, 2);
     const [a, b] = environment.nodes;
     const log = path.join(root, "engine.log");
-    for (const node of [a, b]) children.push(await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: log }));
+    for (const node of [a, b]) children.push(await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: log, JOINT_BOB_TEST_ENGINE_DETAIL_LOG: path.join(root, "turns.jsonl") }));
     await pairTwinNodes(environment);
     const sessionA = await signIn(environment, a);
     const projectA = projectNamed(a, "Internal Assistant");
@@ -58,6 +58,11 @@ test("quick note launches run on the selected node and never fall back", { timeo
     assert.equal(launch.body.sessionPath, `draft:pi:${launch.body.sessionId}`);
     await until("peer launch completed", async () => (await note(a, sessionA, created.body.note.id)).status === "completed");
     assert.deepEqual(await engineLogLines(log), [`pi:${b.nodeId}`], "the turn ran on the peer, not on the note's home node");
+    const sessionB = await signIn(environment, b);
+    const worktrees = await api<{ worktrees: Array<{ id: string; path: string }> }>(b, sessionB, "GET", `/projects/${projectA.id}/worktrees`);
+    assert.equal(worktrees.body.worktrees.length, 1, "remote starts also get a Joint Bob worktree");
+    const turn = JSON.parse((await readFile(path.join(root, "turns.jsonl"), "utf8")).trim());
+    assert.equal(turn.cwd, worktrees.body.worktrees[0].path, "the selected node runs in its own worktree, not the mapped project folder");
 
     // The peer conversation is visible from the home node through the shared project.
     const sessions = await api<{ sessions: Array<{ id: string; executionNodeId?: string }> }>(a, sessionA, "GET", `/projects/${projectA.id}/sessions`);

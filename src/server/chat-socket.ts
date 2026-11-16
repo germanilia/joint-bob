@@ -1,4 +1,5 @@
 import { guardTeamSocket } from './team-socket-access.js';
+import { newConversationWorktree } from "./new-conversation-worktree.js";
 import { queuedAutomationProfileSchema } from "../prompt-queue.js";
 import { isTrustedTwin } from "../cluster-sharing-policy.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
@@ -248,6 +249,11 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
   const suppliedSessionId = url.searchParams.get("sessionId");
   const requestedSessionId = suppliedSessionId ?? null;
   const worktreeIdParam = url.searchParams.get("worktreeId");
+  const worktreeChoice = url.searchParams.get("worktree");
+  if (worktreeChoice !== null && worktreeChoice !== "new" && worktreeChoice !== "project") {
+    socket.close(1008, "Invalid worktree choice");
+    return;
+  }
   if (worktreeIdParam !== null && !/^[0-9a-f-]{36}$/i.test(worktreeIdParam)) {
     socket.close(1008, "Invalid worktree ID");
     return;
@@ -434,7 +440,18 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     socket.close(1008, "Worktree is not synchronized on this node");
     return;
   }
-  const worktree = known ?? requested;
+  let worktree = known ?? requested;
+  if (!worktree && refreshSessionsAfterReady && !sessionReadOnly && !peerReadOnly && !foreignOwner) {
+    try {
+      worktree = await newConversationWorktree(project, sessionRequest.engine, ownershipSessionId, worktreeChoice);
+      if (worktree) broadcastToProject(project.id, { type: "worktreesChanged" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not create conversation worktree";
+      send(socket, { type: "error", error: message });
+      socket.close(1011, webSocketCloseReason(message));
+      return;
+    }
+  }
   if (worktree) {
     cwd = worktree.path;
     if (!peerReadOnly) {

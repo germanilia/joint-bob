@@ -27,12 +27,6 @@ const NEW_WORKTREE = "new";
 let newWorktreeByDefault = false;
 let worktreeChosen = false;
 
-/** A worktree created now exists only here until it syncs, so another node cannot start in it. */
-function runsOnThisNode() {
-  const node = newSessionNodes.find((candidate) => candidate.id === elements.newSessionNodeSelect.value);
-  return !node || node.local;
-}
-
 /** Worktrees are known for the open project only; another project's conversation runs in its folder. */
 function renderNewSessionWorktrees(selected = null) {
   const draft = state.newSessionDraft;
@@ -40,10 +34,7 @@ function renderNewSessionWorktrees(selected = null) {
   const worktrees = offered && draft.projectId === state.activeProjectId ? state.worktrees : [];
   const select = elements.newSessionWorktreeSelect;
   elements.newSessionNewWorktreeLabel.hidden = !offered;
-  elements.newSessionNewWorktree.disabled = !runsOnThisNode();
-  elements.newSessionNewWorktree.title = runsOnThisNode() ? "" : "A new worktree can start only on this node";
   const fresh = new Option("New worktree", NEW_WORKTREE);
-  fresh.disabled = !runsOnThisNode();
   fresh.dataset.testid = "new-session-new-worktree-option";
   select.replaceChildren(new Option("Project folder", ""), fresh, ...worktrees.map((worktree) => new Option(`Worktree: ${worktree.name}`, worktree.id)));
   const wanted = selected ?? (newWorktreeByDefault ? NEW_WORKTREE : "");
@@ -385,7 +376,6 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
   if (!node || !node.online || !node.mapped) { showWizardStep(3); toast("Choose an online node with this project mapped"); return; }
   const secretIds = [...elements.newSessionSecretList.querySelectorAll("input:checked:not(:disabled)")].map(input => input.value);
   let worktreeId = elements.newSessionWorktreeSelect.value || null;
-  if (worktreeId === NEW_WORKTREE && !node.local) { showWizardStep(3); toast("A new worktree can start only on this node; choose this node or the project folder"); return; }
   const submit = elements.newSessionNameForm.querySelector('[type="submit"]');
   if (submit.disabled) return;
   submit.disabled = true;
@@ -408,7 +398,7 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
       if (!elements.newSessionNameDialog.open || state.newSessionDraft !== draft || draft.projectId !== projectId) return;
     }
     const worktree = state.worktrees.find((candidate) => candidate.id === worktreeId);
-    if (worktreeId === NEW_WORKTREE) {
+    if (worktreeId === NEW_WORKTREE && node.local) {
       const pending = {
         projectId, sessionPath: draft.sessionPath, title: title || draft.defaultTitle, color,
         nodeId: node.id, secretIds, prompts: [], worktree: null, error: null,
@@ -421,7 +411,7 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
       worktreeId = null;
     }
     state.newSessionSecretAccountIds = secretIds;
-    state.newSessionWorktreeId = worktreeId;
+    state.newSessionWorktreeId = worktreeId ?? "";
     state.activeNodeId = node.id;
     if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: node.id });
     elements.newSessionNameDialog.close();

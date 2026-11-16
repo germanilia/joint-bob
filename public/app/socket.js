@@ -170,7 +170,9 @@ function websocketUrl(sessionPath) {
   url.searchParams.set("sessionPath", sessionPath || "new");
   if (state.activeSessionId) url.searchParams.set("sessionId", state.activeSessionId);
   if (state.activeNodeId) url.searchParams.set("nodeId", state.activeNodeId);
-  if (state.newSessionWorktreeId) url.searchParams.set("worktreeId", state.newSessionWorktreeId);
+  if (state.newSessionWorktreeId === "new") url.searchParams.set("worktree", "new");
+  else if (state.newSessionWorktreeId === "") url.searchParams.set("worktree", "project");
+  else if (state.newSessionWorktreeId) url.searchParams.set("worktreeId", state.newSessionWorktreeId);
   if (state.newSessionSecretAccountIds.length) url.searchParams.set("secretAccountIds", state.newSessionSecretAccountIds.join(","));
   return url.toString();
 }

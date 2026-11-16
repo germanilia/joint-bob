@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.10 — 2026-11-16
+
+- Applied the default worktree setting to every new conversation, including Bob, quick notes, schedules, webhooks and remote starts. Kept explicit folder choices across restarts and stopped failed copies from starting in the project folder.
+
 ## 2.317.9 — 2026-11-16
 
 - Kept existing conversations visible in Bob's Inbox and Earlier list after switching agents, without needing another message to bring them back.

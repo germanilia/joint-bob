@@ -98,8 +98,8 @@ test("Bob starts a task as a conversation, uses the agent the person names, cont
     assert.equal(left.body.action, "started", JSON.stringify(left.body));
     assert.match(left.body.reply.text, /You are in control of ".+", so I started a new conversation instead of interrupting it\./);
 
-    // 5. What the person pastes or attaches reaches the agent: saved in the project, named in the prompt, the image handed over too.
-    const prompts = async () => (await readFile(detailLog, "utf8").catch(() => "")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { prompt: string; images: number });
+    // 5. Attachments reach the agent by absolute path; images are materialized in the conversation's worktree.
+    const prompts = async () => (await readFile(detailLog, "utf8").catch(() => "")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { prompt: string; images: number; cwd: string });
     const image = { name: "screen.png", mimeType: "image/png", data: Buffer.from("not really a png").toString("base64") };
     const file = { name: "notes.txt", mimeType: "text/plain", data: Buffer.from("the logo is too small").toString("base64") };
     const savedPath = (prompt: string, name: string) => new RegExp(`- ${name.replace(".", "\\.")}: (\\S+)`).exec(prompt)?.[1];
@@ -109,12 +109,13 @@ test("Bob starts a task as a conversation, uses the agent the person names, cont
     const startedPrompt = await eventually(async () => (await prompts()).find((entry) => entry.prompt.includes("fix the logo")), "the new conversation got the brief");
     // A queued image reaches the agent by its resolved path (src/queued-attachments.ts), so where the temporary folder is a link
     // (macOS: /var -> /private/var) it is named under the real folder. Compare real paths.
-    const attachmentsFolder = await realpath(path.join(project.path, ".joint-bob-attachments"));
+    assert.notEqual(await realpath(startedPrompt.cwd), await realpath(project.path), "Bob's new conversations also run in worktrees");
     for (const [name, bytes] of [["screen.png", "not really a png"], ["notes.txt", "the logo is too small"]]) {
       const saved = savedPath(startedPrompt.prompt, name);
+      const attachmentsFolder = await realpath(path.join(name === "screen.png" ? startedPrompt.cwd : project.path, ".joint-bob-attachments"));
       assert.ok(saved, `${name} is named in the prompt: ${startedPrompt.prompt}`);
-      assert.equal(path.dirname(await realpath(saved)), attachmentsFolder, `${name} is in the project's attachments folder: ${saved}`);
-      assert.equal(await readFile(saved, "utf8"), bytes, `${name} is saved in the project`);
+      assert.equal(path.dirname(await realpath(saved)), attachmentsFolder, `${name} is in the conversation's attachments folder: ${saved}`);
+      assert.equal(await readFile(saved, "utf8"), bytes, `${name} remains available to the conversation`);
     }
     // Bob's agent answers with the stubbed Claude, which needs no model set up.
     assert.equal((await api(node, auth, "PUT", "/control-center/bob/settings", { harnessId: "claude" })).status, 200);

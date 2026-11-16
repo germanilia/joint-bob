@@ -187,11 +187,11 @@ function writeWorktree(db: DatabaseSync, existing: ConversationRecord, worktree:
 }
 
 /**
- * Records the worktree a conversation runs in, once. Later renames and the deletion come
+ * Records the worktree a conversation runs in, or an explicit project-folder choice, once. Later renames and the deletion come
  * through `syncConversationWorktrees`; a node that still holds a stale copy of the worktree
  * must not write its old name back, or bring a deleted worktree back, by opening the conversation.
  */
-export async function setConversationWorktree(projectId: string, engine: ConversationEngine, sessionId: string, worktree: ConversationWorktree, originNodeId: string): Promise<boolean> {
+export async function setConversationWorktree(projectId: string, engine: ConversationEngine, sessionId: string, worktree: ConversationWorktree | null, originNodeId: string): Promise<boolean> {
   const db = await database();
   db.exec("BEGIN IMMEDIATE");
   try {
