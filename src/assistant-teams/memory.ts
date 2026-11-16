@@ -9,7 +9,7 @@ import { redactQualityText } from '../server/quality-models.js';
 import { systemAiSettings } from '../system-ai-config.js';
 import { runTeamKnowledgeWriter } from './runtime.js';
 import { recheckTeamActor, teamMemberFromCluster, type TeamMember } from './access.js';
-import { getTeam, TeamError, announceTeamChange } from './store.js';
+import { getTeam, TeamError, announceTeamChange, TEAM_ROLE_PATTERN } from './store.js';
 import { conversationDatabase, getTeamMessage, type StoredTeamMessage } from './conversations.js';
 import { authorizeTeamTelegram } from './telegram.js';
 import { decideTeamMessage, listTeamDecisions } from './decisions.js';
@@ -25,22 +25,41 @@ export async function teamMemoryRedactor():Promise<(text:string)=>string> {
  for(const [name,value] of Object.entries(process.env))if(value&&/(TOKEN|SECRET|PASSWORD|API_KEY)/i.test(name))values.push(value);
  return text=>redactQualityText(text,values);
 }
+/** A member's own notes live apart from the team's, so each member carries only what it needs. */
+function memoryRoot(teamId:string,role:string|null):string{
+ if(role===null)return teamMemoryRoot(teamId);
+ if(!TEAM_ROLE_PATTERN.test(role))throw new TeamError('Invalid role',400);
+ return path.join(resolveDataDirectory(),'assistant-teams',teamId,'member-memory',role);
+}
 async function database(){
  const db=await conversationDatabase();db.exec(`CREATE TABLE IF NOT EXISTS assistant_team_memory_changes (
  id TEXT PRIMARY KEY, team_id TEXT NOT NULL, topic TEXT NOT NULL, revision INTEGER NOT NULL, before_text TEXT, after_text TEXT,
- actor TEXT NOT NULL, sources TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(team_id,topic,revision));
- CREATE TABLE IF NOT EXISTS assistant_team_memory_learning (team_id TEXT NOT NULL,message_id TEXT NOT NULL,revision INTEGER NOT NULL,status TEXT NOT NULL,PRIMARY KEY(team_id,message_id,revision));`);return db;
+ actor TEXT NOT NULL, sources TEXT NOT NULL, created_at TEXT NOT NULL, role TEXT);
+ CREATE TABLE IF NOT EXISTS assistant_team_memory_learning (team_id TEXT NOT NULL,message_id TEXT NOT NULL,revision INTEGER NOT NULL,status TEXT NOT NULL,PRIMARY KEY(team_id,message_id,revision));`);
+ // Memory now has an owner: NULL is the whole team, a role is that member alone. Rebuild a table made before that, whose inline UNIQUE ignores the owner.
+ if(db.prepare("PRAGMA index_list(assistant_team_memory_changes)").all().some(i=>i.origin==='u')){
+  db.exec('BEGIN IMMEDIATE');
+  try{
+   db.exec(`ALTER TABLE assistant_team_memory_changes RENAME TO assistant_team_memory_changes_legacy;
+    CREATE TABLE assistant_team_memory_changes (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, topic TEXT NOT NULL, revision INTEGER NOT NULL, before_text TEXT, after_text TEXT, actor TEXT NOT NULL, sources TEXT NOT NULL, created_at TEXT NOT NULL, role TEXT);
+    INSERT INTO assistant_team_memory_changes (id,team_id,topic,revision,before_text,after_text,actor,sources,created_at) SELECT id,team_id,topic,revision,before_text,after_text,actor,sources,created_at FROM assistant_team_memory_changes_legacy;
+    DROP TABLE assistant_team_memory_changes_legacy;`);
+   db.exec('COMMIT');
+  }catch(error){db.exec('ROLLBACK');throw error;}
+ }
+ db.exec("CREATE UNIQUE INDEX IF NOT EXISTS assistant_team_memory_owner_revision ON assistant_team_memory_changes(team_id,ifnull(role,''),topic,revision)");
+ return db;
 }
 const writers=new Map<string,Promise<unknown>>();
 function serialize<T>(teamId:string,work:()=>Promise<T>):Promise<T>{
  const result=(writers.get(teamId)??Promise.resolve()).catch(()=>{}).then(work);writers.set(teamId,result);
  void result.finally(()=>{if(writers.get(teamId)===result)writers.delete(teamId);}).catch(()=>{});return result;
 }
-interface Change {id:string;team_id:string;topic:string;revision:number;before_text:string|null;after_text:string|null;actor:string;sources:string;created_at:string}
-async function current(teamId:string,topic:string):Promise<Change|undefined>{return (await database()).prepare('SELECT * FROM assistant_team_memory_changes WHERE team_id=? AND topic=? ORDER BY revision DESC LIMIT 1').get(teamId,topic) as unknown as Change|undefined;}
+interface Change {id:string;team_id:string;topic:string;revision:number;before_text:string|null;after_text:string|null;actor:string;sources:string;created_at:string;role:string|null}
+async function current(teamId:string,topic:string,role:string|null=null):Promise<Change|undefined>{return (await database()).prepare('SELECT * FROM assistant_team_memory_changes WHERE team_id=? AND topic=? AND role IS ? ORDER BY revision DESC LIMIT 1').get(teamId,topic,role) as unknown as Change|undefined;}
 async function memberCheck(member:TeamMember){await recheckTeamActor(member);await teamMemberFromCluster(member,member.teamId);}
-export const teamMemoryWriteSchema=z.object({topic:z.string().regex(TOPIC_NAME),expectedRevision:z.number().int().nonnegative(),description:z.string().min(1).max(200),body:z.string().min(1).max(20000),sourceMessageIds:z.array(z.string().min(1).max(200)).max(20)}).strict();
-type WriteInput=z.infer<typeof teamMemoryWriteSchema>;
+export const teamMemoryWriteSchema=z.object({topic:z.string().regex(TOPIC_NAME),expectedRevision:z.number().int().nonnegative(),description:z.string().min(1).max(200),body:z.string().min(1).max(20000),sourceMessageIds:z.array(z.string().min(1).max(200)).max(20),scope:z.enum(['team','member']).default('team')}).strict();
+type WriteInput=z.input<typeof teamMemoryWriteSchema>;
 async function sources(teamId:string,ids:string[]){
  const db=await database();const evidence:StoredTeamMessage[]=[];const lines:string[]=[];
  for(const id of [...new Set(ids)]){
@@ -53,52 +72,57 @@ async function sources(teamId:string,ids:string[]){
  }
  return {evidence,lines};
 }
-async function commit(member:TeamMember,topic:string,expectedRevision:number,text:string|null,sourceIds:string[],learned?:StoredTeamMessage){
- await memberCheck(member);const db=await database();const before=await current(member.teamId,topic);
+async function commit(member:TeamMember,topic:string,expectedRevision:number,text:string|null,sourceIds:string[],learned?:StoredTeamMessage,role:string|null=null){
+ await memberCheck(member);const db=await database();const before=await current(member.teamId,topic,role);
  if((before?.revision??0)!==expectedRevision)throw new TeamError('Memory revision conflict',409);
  const revision=expectedRevision+1;
  // This single SQLite INSERT is the commit point. Files are derived, never the revision authority.
  db.exec('BEGIN IMMEDIATE');
  try{
-  db.prepare('INSERT INTO assistant_team_memory_changes VALUES(?,?,?,?,?,?,?,?,?)').run(randomUUID(),member.teamId,topic,revision,before?.after_text??null,text,member.accountId,JSON.stringify(sourceIds),new Date().toISOString());
+  db.prepare('INSERT INTO assistant_team_memory_changes (id,team_id,topic,revision,before_text,after_text,actor,sources,created_at,role) VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),member.teamId,topic,revision,before?.after_text??null,text,member.accountId,JSON.stringify(sourceIds),new Date().toISOString(),role);
   if(learned)db.prepare("UPDATE assistant_team_memory_learning SET status='learned' WHERE team_id=? AND message_id=? AND revision=?").run(member.teamId,learned.id,learned.revision);
   db.exec('COMMIT');
  }catch{db.exec('ROLLBACK');throw new TeamError('Memory revision conflict',409);}
  announceTeamChange(member.teamId);
- try{applyTopicText(teamMemoryRoot(member.teamId),topic,text);}catch{throw new TeamError('Memory committed; file application waiting for replay',503);}
+ try{applyTopicText(memoryRoot(member.teamId,role),topic,text);}catch{throw new TeamError('Memory committed; file application waiting for replay',503);}
  return {revision};
 }
-async function write(member:TeamMember,raw:WriteInput,learned?:StoredTeamMessage){
+async function write(member:TeamMember,raw:WriteInput,learned?:StoredTeamMessage,role:string|null=null){
  const input=teamMemoryWriteSchema.parse(raw);await memberCheck(member);
+ if(input.scope==='member'&&role===null)throw new TeamError('Member notes need a team member',400);
+ const owner=input.scope==='member'?role:null;
  const evidence=await sources(member.teamId,input.sourceMessageIds);const redact=await teamMemoryRedactor();
  if(redact(input.topic)!==input.topic)throw new TeamError('Topic name contains credential material',400);
  let text:string;try{text=topicText(cleanTopic(input.topic,{description:redact(input.description),body:redact(input.body)+(evidence.lines.length?'\n\n## Sources\n'+evidence.lines.join('\n'):'')}));}
  catch(error){if(error instanceof MemoryError)throw new TeamError(error.message,error.status);throw error;}
- return commit(member,input.topic,input.expectedRevision,text,input.sourceMessageIds,learned);
+ return commit(member,input.topic,input.expectedRevision,text,input.sourceMessageIds,learned,owner);
 }
-export function writeTeamMemory(member:TeamMember,input:WriteInput):Promise<{revision:number}>{return serialize(member.teamId,()=>write(member,input));}
+export function writeTeamMemory(member:TeamMember,input:WriteInput,role:string|null=null):Promise<{revision:number}>{return serialize(member.teamId,()=>write(member,input,undefined,role));}
 export async function readTeamMemory(teamId:string,subjectId:string):Promise<string>{
  await getTeam(teamId);if(!TOPIC_NAME.test(subjectId))throw new TeamError('Invalid topic',400);
  return (await current(teamId,subjectId))?.after_text??'';
 }
-/** What a member is shown at the start of every request: the playbook in full and the other topics by name, so lessons learned earlier are applied without anyone having to ask for them. */
-export async function teamMemoryDigest(teamId:string):Promise<string>{
- const rows=(await database()).prepare(`SELECT c.topic,c.after_text FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic) AND after_text IS NOT NULL ORDER BY topic LIMIT 60`).all(teamId) as unknown as {topic:string;after_text:string}[];
- const playbook=rows.find(r=>r.topic==='playbook'),others=rows.filter(r=>r.topic!=='playbook');
- const parts:string[]=[];
- if(playbook)parts.push(`Playbook (lessons from earlier requests; apply them before you start):\n${playbook.after_text.slice(0,6000)}`);
- if(others.length)parts.push(`Other team memory topics (read one with team_memory_read):\n${others.map(r=>`- ${r.topic}: ${parseTopic(r.topic,r.after_text).description}`).join('\n')}`);
+/** What a member is shown at the start of every request: the team's playbook, its own notes, and the other topics by name. Each member carries only what applies to it, so lessons learned earlier are used without anyone asking for them and nobody is loaded with the rest. */
+export async function teamMemoryDigest(teamId:string,role:string):Promise<string>{
+ const rows=(await database()).prepare(`SELECT c.topic,c.role,c.after_text FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic AND n.role IS c.role) AND after_text IS NOT NULL AND (role IS NULL OR role IS ?) ORDER BY topic LIMIT 80`).all(teamId,role) as unknown as {topic:string;role:string|null;after_text:string}[];
+ const team=rows.filter(r=>r.role===null),own=rows.filter(r=>r.role!==null);
+ const parts:string[]=[],full=(r:{topic:string;after_text:string}|undefined,title:string,limit:number)=>{if(r)parts.push(`${title}\n${r.after_text.slice(0,limit)}`);};
+ full(team.find(r=>r.topic==='playbook'),'Team playbook (lessons for every member; apply them before you start):',5000);
+ full(own.find(r=>r.topic==='playbook'),'Your own notes (only you see these; apply them before you start):',3000);
+ const named=(list:typeof rows)=>list.filter(r=>r.topic!=='playbook').map(r=>`- ${r.topic}: ${parseTopic(r.topic,r.after_text).description}`).join('\n');
+ if(named(team))parts.push(`Other team memory topics (read one with team_memory_read):\n${named(team)}`);
+ if(named(own))parts.push(`Your other notes (read one with team_memory_read, scope "member"):\n${named(own)}`);
  return parts.join('\n\n');
 }
-export async function readTeamMemoryTopic(member:TeamMember,topic:string){
+export async function readTeamMemoryTopic(member:TeamMember,topic:string,role:string|null=null){
  await memberCheck(member);if(!TOPIC_NAME.test(topic))throw new TeamError('Invalid topic',400);
- const row=await current(member.teamId,topic);return {text:row?.after_text??'',revision:row?.revision??0};
+ const row=await current(member.teamId,topic,role);return {text:row?.after_text??'',revision:row?.revision??0};
 }
 function page(offset:number,limit:number){if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new TeamError('Invalid memory page (limit 1–100)',400);}
-export async function listTeamMemoryTopics(member:TeamMember,offset=0,limit=50){
+export async function listTeamMemoryTopics(member:TeamMember,offset=0,limit=50,role:string|null=null){
  await memberCheck(member);page(offset,limit);const db=await database();
- const rows=db.prepare(`SELECT c.* FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic) AND after_text IS NOT NULL ORDER BY topic LIMIT ? OFFSET ?`).all(member.teamId,limit,offset) as unknown as Change[];
- return rows.map(c=>({...parseTopic(c.topic,c.after_text!),revision:c.revision,links:topicLinks(c.after_text!)}));
+ const rows=db.prepare(`SELECT c.* FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic AND n.role IS c.role) AND after_text IS NOT NULL AND (role IS NULL OR role IS ?) ORDER BY role IS NOT NULL, topic LIMIT ? OFFSET ?`).all(member.teamId,role,limit,offset) as unknown as Change[];
+ return rows.map(c=>({...parseTopic(c.topic,c.after_text!),revision:c.revision,links:topicLinks(c.after_text!),scope:c.role===null?'team':'member'}));
 }
 export async function listTeamMemoryChanges(member:TeamMember,offset=0,limit=50){await memberCheck(member);page(offset,limit);return (await database()).prepare('SELECT * FROM assistant_team_memory_changes WHERE team_id=? ORDER BY rowid DESC LIMIT ? OFFSET ?').all(member.teamId,limit,offset) as unknown as Change[];}
 export function revertTeamMemory(member:TeamMember,changeId:string,expectedRevision:number){return serialize(member.teamId,async()=>{
@@ -106,13 +130,13 @@ export function revertTeamMemory(member:TeamMember,changeId:string,expectedRevis
  const c=(await database()).prepare('SELECT * FROM assistant_team_memory_changes WHERE team_id=? AND id=?').get(member.teamId,changeId) as unknown as Change|undefined;
  if(!c)throw new TeamError('Memory change not found',404);
  if(c.revision!==expectedRevision)throw new TeamError('Cannot revert over newer edits',409);
- const redact=await teamMemoryRedactor();return commit(member,c.topic,expectedRevision,c.before_text===null?null:redact(c.before_text),[]);
+ const redact=await teamMemoryRedactor();return commit(member,c.topic,expectedRevision,c.before_text===null?null:redact(c.before_text),[],undefined,c.role);
  });}
 /** Rebuild all latest committed revisions, including already-applied rows: no inference or personal listeners. */
 export async function replayTeamMemory():Promise<void>{
  const db=await database();for(const team of db.prepare('SELECT DISTINCT team_id FROM assistant_team_memory_changes').all())await serialize(team.team_id as string,async()=>{
-  const rows=db.prepare(`SELECT c.* FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic) ORDER BY topic`).all(team.team_id) as unknown as Change[];
-  for(const c of rows)applyTopicText(teamMemoryRoot(c.team_id),c.topic,c.after_text);
+  const rows=db.prepare(`SELECT c.* FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic AND n.role IS c.role) ORDER BY topic`).all(team.team_id) as unknown as Change[];
+  for(const c of rows)applyTopicText(memoryRoot(c.team_id,c.role),c.topic,c.after_text);
   db.prepare("UPDATE assistant_team_memory_learning SET status='learned' WHERE team_id=? AND status='file_pending'").run(team.team_id);
  });
 }

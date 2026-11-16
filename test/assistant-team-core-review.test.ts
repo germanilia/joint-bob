@@ -107,10 +107,10 @@ import { teamSubjectCandidates, saveTeamSubject, bindTeamMessageSubject, listPen
  assert.match(projection,/FULL_SOURCE_MARKER/);assert.doesNotMatch(projection,/REVOKED_SOURCE_MUST_NOT_LEAK|UNRELATED_PRIVATE_TOPIC/);
  assert.ok(projection.length<13000,'supplementary discussion is bounded independently of retained source size');
  assert.equal((await getTeamMessage(f.team.id,long.id))!.text,long.text,'projection never truncates retained sources');
- assert.match(projection,/Learning: the team gets better/,'every request tells the member to record what it learns');assert.doesNotMatch(projection,/Playbook \(lessons/,'no playbook section before anything is learned');
+ assert.match(projection,/Learning: the team gets better/,'every request tells the member to record what it learns');assert.doesNotMatch(projection,/Team playbook/,'no playbook section before anything is learned');
  await writeTeamMemory(f.member,{topic:'playbook',expectedRevision:0,description:'How to answer',body:'For what changed recently, use git log origin/main.',sourceMessageIds:[]});
  const learned=await teamExecutionEvidence((await getTeamAssignment(a.id))!,call.text);
- assert.match(learned,/Playbook \(lessons from earlier requests/);assert.match(learned,/git log origin\/main/,'what the team learned is in front of the member on the next request');
+ assert.match(learned,/Team playbook \(lessons for every member/);assert.match(learned,/git log origin\/main/,'what the team learned is in front of the member on the next request');
  });
  test('pending new inquiry is a routable candidate before confirmation',async()=>{
  const f=await fixture(),source=await f.message('Checkout crashes when saving');

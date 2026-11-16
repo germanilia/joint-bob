@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.8 — 2026-11-16
+
+- Team memory can belong to the whole team or to one member. A member's own notes are read only by that member, the team's playbook by everyone, so each member starts a request with just what applies to it. Members choose the scope when they record a lesson (`scope` on the memory tools), and most lessons stay with the member who learned them.
+
 ## 2.317.7 — 2026-11-16
 
 - Team members now start every request with what the team has learned: the shared memory's playbook in full and the other topics by name. Each member is also asked to record a better method or missing source in the playbook, and the coordinator reviews how its members did the work, not only their answer, so the team gets smarter with use.

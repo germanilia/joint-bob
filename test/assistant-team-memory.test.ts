@@ -12,7 +12,7 @@ import { DEFAULT_GUARDIAN_SETTINGS } from '../src/guardian/rules.js';
 import { PRODUCTION_RULE } from '../src/guardian/production-rule.js';
 import { fixture } from './assistant-team-fixture.js';
 import { onTopicApplied } from '../src/control-center/memory-store.js';
-import { writeTeamMemory, readTeamMemory, teamMemoryRoot, listTeamMemoryChanges, listTeamMemoryTopics, revertTeamMemory, replayTeamMemory, learnTeamMessage, teamMemoryStatus } from '../src/assistant-teams/memory.js';
+import { writeTeamMemory, readTeamMemory, teamMemoryRoot, listTeamMemoryChanges, listTeamMemoryTopics, revertTeamMemory, replayTeamMemory, learnTeamMessage, teamMemoryStatus, teamMemoryDigest } from '../src/assistant-teams/memory.js';
 
 test('journaled team topics: CAS, evidence isolation, links, paging, safe revert and no personal replication', async()=>{
  const f=await fixture(), other=await fixture(); const m=await f.message('Proposal: ship Friday; human disagreement remains unresolved');
@@ -193,4 +193,26 @@ test('startup replay restores committed file and index, ignoring incomplete temp
  const original=globalThis.fetch;globalThis.fetch=async()=>{throw new Error('Replay must not infer');};
  try {await replayTeamMemory();assert.match(await readTeamMemory(f.team.id,'recovery'),/Good committed text/);assert.match(readFileSync(path.join(root,'INDEX.md'),'utf8'),/recovery/);}
  finally{globalThis.fetch=original;}
+});
+
+test('memory has an owner: the team or one member, so each member carries only what applies to it',async()=>{
+ const f=await fixture();const {conversationDatabase}=await import('../src/assistant-teams/conversations.js');
+ // A table made before memory had an owner is rebuilt with its history intact, and then accepts the same topic per owner.
+ const db=await conversationDatabase();
+ await readTeamMemory(f.team.id,'playbook');
+ db.exec(`DROP INDEX IF EXISTS assistant_team_memory_owner_revision;ALTER TABLE assistant_team_memory_changes RENAME TO legacy_copy;
+  CREATE TABLE assistant_team_memory_changes (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, topic TEXT NOT NULL, revision INTEGER NOT NULL, before_text TEXT, after_text TEXT, actor TEXT NOT NULL, sources TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(team_id,topic,revision));
+  INSERT INTO assistant_team_memory_changes SELECT id,team_id,topic,revision,before_text,after_text,actor,sources,created_at FROM legacy_copy;DROP TABLE legacy_copy;`);
+ await writeTeamMemory(f.member,{topic:'playbook',expectedRevision:0,description:'For everyone',body:'TEAM_LESSON use git history for recent changes',sourceMessageIds:[]});
+ db.exec(`ALTER TABLE assistant_team_memory_changes RENAME TO older;CREATE TABLE assistant_team_memory_changes (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, topic TEXT NOT NULL, revision INTEGER NOT NULL, before_text TEXT, after_text TEXT, actor TEXT NOT NULL, sources TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(team_id,topic,revision));INSERT INTO assistant_team_memory_changes SELECT id,team_id,topic,revision,before_text,after_text,actor,sources,created_at FROM older;DROP TABLE older;`);
+ await writeTeamMemory(f.member,{topic:'playbook',expectedRevision:0,description:'QA craft',body:'QA_ONLY_LESSON run the smoke suite first',sourceMessageIds:[],scope:'member'},'qa');
+ assert.match(await readTeamMemory(f.team.id,'playbook'),/TEAM_LESSON/,'the team memory written before the rebuild survived it');
+ const qa=await teamMemoryDigest(f.team.id,'qa'),designer=await teamMemoryDigest(f.team.id,'designer');
+ assert.match(qa,/TEAM_LESSON/);assert.match(qa,/QA_ONLY_LESSON/);
+ assert.match(designer,/TEAM_LESSON/);assert.doesNotMatch(designer,/QA_ONLY_LESSON/,'another member never carries a member\'s notes');
+ assert.doesNotMatch(await readTeamMemory(f.team.id,'playbook'),/QA_ONLY/,'member notes do not enter the team topic');
+ assert.deepEqual((await listTeamMemoryTopics(f.member,0,50,'qa')).map(t=>t.scope).sort(),['member','team']);
+ assert.deepEqual((await listTeamMemoryTopics(f.member,0,50,'designer')).map(t=>t.scope),['team']);
+ assert.match(readFileSync(path.join(path.dirname(teamMemoryRoot(f.team.id)),'member-memory','qa','playbook.md'),'utf8'),/QA_ONLY_LESSON/,'member notes are kept in their own folder');
+ await assert.rejects(writeTeamMemory(f.member,{topic:'x',expectedRevision:0,description:'d',body:'b',sourceMessageIds:[],scope:'member'}),/need a team member/);
 });
