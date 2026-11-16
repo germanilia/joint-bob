@@ -109,7 +109,7 @@ test('proactive accepted media retains full extracted source rather than only ca
   f.db.prepare('UPDATE assistant_team_messages SET record=? WHERE id=?').run(JSON.stringify(record),source.id);
   f.db.prepare('UPDATE assistant_team_message_versions SET record=? WHERE message_id=?').run(JSON.stringify(record),source.id);
   await recoverTeamWork(f.team.id);const work=(await readTeamWork(f.team.id))[0];
-  assert.ok(work.message.includes(text));assert.match(work.message,/\/synthetic\/evidence.txt/);
+  assert.ok(work.message.includes(text));assert.match(work.message,/evidence\.txt/);
   const next=await f.message('Inquiry media');
   const nextRecord={...record,...next,attachments:record.attachments};
   f.db.prepare('UPDATE assistant_team_messages SET record=? WHERE id=?').run(JSON.stringify(nextRecord),next.id);

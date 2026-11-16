@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.3 — 2026-11-16
+
+- When the team acts on a Telegram message, Bob now starts on it instead of replying "which subject and what work should the team handle?". That question is kept for messages the team leaves alone and for replies to a message it cannot find.
+
 ## 2.317.2 — 2026-11-16
 
 - Showed conversation steps first and expanded, made step markers reveal tucked panels, and moved the side chat out of More into a direct btw tab.

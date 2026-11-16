@@ -114,8 +114,10 @@ export async function decideTeamMessage(team: AssistantTeam, input: TeamMessage)
     stage = 'stale_input';
     if ((await getTeam(team.id)).revision !== record.settingsRevision || (await getTeamMessage(team.id, message.id))?.revision !== message.revision) throw new Error();
     stage = 'access_denied'; if (!await authorized(message)) throw new Error();
-    const route: TeamRoute = reply ?? (answers.subject.choice === 'new' ? { kind: 'new' } : answers.subject.choice === 'clarify' ? { kind: 'clarify' } : { kind: 'continue', subjectId: bounded.subjects[Number(answers.subject.choice.slice('subject_'.length))].id });
+    const picked: TeamRoute = reply ?? (answers.subject.choice === 'new' ? { kind: 'new' } : answers.subject.choice === 'clarify' ? { kind: 'clarify' } : { kind: 'continue', subjectId: bounded.subjects[Number(answers.subject.choice.slice('subject_'.length))].id });
     const attention = targets.length ? 'direct' : proactiveDisposition(answers.attention.choice as 'act' | 'none', answers.attention.confidence, currentTeam.settings);
+    // A message the team acts on is the subject itself: asking "which subject?" instead of answering helps nobody.
+    const route: TeamRoute = !reply && picked.kind === 'clarify' && attention !== 'silent' ? { kind: 'new' } : picked;
     const requestId = requests.length && answers.request.choice !== 'separate' ? requests[Number(answers.request.choice.slice('request_'.length))].id : undefined;
     const coordinator = await teamCoordinator(currentTeam);
     record.result = { ...(requestId ? { requestId } : {}), attention, targets: targets.length ? targets : attention === 'silent' || !coordinator ? [] : [coordinator], route, learn: answers.memory.choice === 'learn' };
