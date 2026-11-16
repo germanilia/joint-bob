@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.321.2 — 2026-11-16
+
+- Choosing a place in the left column (Automations, Dashboard, Costs, Bob…) now closes a conversation that is open over Bob's page.
+- The left column's list is one scroll with up to ten conversations of each group; **Show all** has the rest.
+- Fixed a long worktree name running over the project, state and agent in a conversation's header.
+
 ## 2.321.1 — 2026-11-16
 
 - Fixed the release of 2.321.0, which did not publish: the phone's greeting no longer keeps the name of the last visit in the browser.
