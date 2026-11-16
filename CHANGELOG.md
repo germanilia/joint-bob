@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.317.12 — 2026-11-16
+
+- Routing: Planning (level 10) now needs a model score of at least 90, so Claude Opus is chosen over Sonnet there. Sonnet scores 86 at that level and no longer qualifies.
+
 ## 2.317.11 — 2026-11-16
 
 - Removed the collapse arrow at the top of the Activity panel on the desktop. The panel icon in the conversation header opens and closes it, as before; the phone keeps its own button.

@@ -122,7 +122,7 @@
     {
       "level": "10",
       "description": "Planning: architecture, design, breaking down ambiguous multi-system work, or high-risk changes that need deep analysis before implementation.",
-      "minimumScore": 84
+      "minimumScore": 90
     }
   ],
   "models": {
