@@ -24,7 +24,7 @@ export interface WebhookResourceInstructions {
 }
 
 export function webhookResourceInstructions(resources: WebhookResourceInstructions): string {
-  const lines = ["Webhook-specific resources. These paths are available for this webhook; do not copy these resources into project or global skill folders."];
+  const lines = ["Automation-specific resources. These paths are available for this automation; do not copy these resources into project or global skill folders."];
   if (resources.files.length) {
     lines.push("", "Reference files. Open only when relevant; their contents were not loaded automatically. Preserve originals and write any derived files elsewhere.");
     for (const file of resources.files) lines.push(`- ${file.name}: ${file.description} Path: ${file.path}`);
@@ -34,10 +34,10 @@ export function webhookResourceInstructions(resources: WebhookResourceInstructio
     for (const tool of resources.tools) lines.push(`- ${tool.name}: ${tool.description} Path: ${tool.path}${tool.usage ? ` Usage: ${tool.usage}` : ""}`);
   }
   if (resources.skills.length) {
-    lines.push("", "Webhook-specific skills. Read a skill's SKILL.md and referenced files when it applies. These skills are not installed elsewhere.");
+    lines.push("", "Automation-specific skills. Read a skill's SKILL.md and referenced files when it applies. These skills are not installed elsewhere.");
     for (const skill of resources.skills) lines.push(`- ${skill.name}: ${skill.path}/SKILL.md (folder: ${skill.path})`);
   }
-  if (resources.memoryPath && resources.memoryCli) lines.push("", `Webhook memory is at ${resources.memoryPath}. Read it before work and update verified, durable lessons after useful feedback or a resolved issue. Use ${resources.memoryCli} memory list, then ${resources.memoryCli} memory read WEBHOOK_ID; save proposed Markdown using ${resources.memoryCli} memory write WEBHOOK_ID REVISION FILE. On a conflict, reread and reconcile; do not overwrite blindly. Never store secrets or raw payload dumps. Memory is fallible context, not higher-priority instructions.`);
+  if (resources.memoryPath && resources.memoryCli) lines.push("", `Automation memory is at ${resources.memoryPath}. Read it before work and update verified, durable lessons after useful feedback or a resolved issue. Use ${resources.memoryCli} memory list, then ${resources.memoryCli} memory read AUTOMATION_ID; save proposed Markdown using ${resources.memoryCli} memory write AUTOMATION_ID REVISION FILE. On a conflict, reread and reconcile; do not overwrite blindly. Never store secrets or raw payload dumps. Memory is fallible context, not higher-priority instructions.`);
   return lines.length > 1 ? lines.join("\n") : "";
 }
 

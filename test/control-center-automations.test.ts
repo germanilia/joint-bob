@@ -1,32 +1,39 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { bobRow, compareRows, describeSchedule, isSimpleSchedule, rowMatchesFilter, scheduleRow, webhookRow, type AutomationRow, type RowContext } from "../src/control-center/automations.js";
+import { bobRow, compareRows, describeSchedule, isSimpleSchedule, rowMatchesFilter, scheduleRow, webhookRow, type AutomationItem, type AutomationRow, type RowContext } from "../src/control-center/automations.js";
 import { REPORT_ITEM_ACTIONS, describeFacts, reportActions, reportItemSchema, type ReportFacts, type ReportItem } from "../src/control-center/bob-reports.js";
 import {
   bobScheduleInputSchema, claimDueBobSchedules, createBobSchedule, deleteBobSchedule, ensureBobScheduleSchema, getBobSchedule, listBobSchedules, nextBobWake, nextReportRun,
   recordBobScheduleRun, updateBobSchedule,
 } from "../src/control-center/bob-schedules.js";
-import type { CronTask } from "../src/cron.js";
+import type { CronRun } from "../src/cron.js";
 import { handleBobAutomation, parseIntent } from "../src/server/control-center-automation-chat.js";
-import type { Webhook } from "../src/webhooks.js";
+import { createAutomation, getWebhook, updateAutomation, webhookInputSchema } from "../src/webhooks.js";
 
-const context: RowContext = { projectName: (id) => ({ p1: "Joint Bob", p2: "Contigos" })[id] ?? id, nodeName: (id) => (id === "n1" ? "Homeserver" : null), accountId: "ilia" };
+const context: RowContext & { nodeId: string } = { projectName: (id) => ({ p1: "Joint Bob", p2: "Contigos" })[id] ?? id, nodeName: (id) => (id === "n1" ? "Homeserver" : null), accountId: "ilia", nodeId: "n1" };
 
-function task(overrides: Partial<CronTask> = {}): CronTask {
+const noTags = { managedTagIds: [], manualTags: [] };
+
+function base(): Omit<AutomationItem, "id" | "name" | "target" | "context" | "trigger" | "schedule" | "nextRun" | "ownerNodeId" | "senders"> {
   return {
-    id: "t1", assistantId: null, tags: { managedTagIds: [], manualTags: [] }, projectId: "p1", name: "Nightly release check", prompt: "Run the release gate,\n  report only", ownerNodeId: "n1", engine: "claude",
-    model: null, sessionId: null, enabled: true, pauseOnFailure: false, markForReview: false, hideFromHistory: false, creatorAccountId: "ilia", nextRun: 0, lastRun: null,
-    schedule: { frequency: "daily", hour: 2, minute: 0, weekday: 1, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
-    ...overrides,
-  } as CronTask;
+    tags: noTags, secretAccountIds: [], model: null, reasoning: null, titleTemplate: "", enabled: true, bypassGuardian: false, attachments: false, markForReview: false, hideFromHistory: false,
+    preserveFiles: false, runInWorktree: true, reply: null, autoRespond: null, pauseOnFailure: false, createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z",
+    lastReceivedAt: null, receivedCount: 0, creatorAccountId: "ilia", lastDelivery: null, lastRun: null,
+  };
 }
 
-function hook(overrides: Partial<Webhook> = {}): Webhook {
+function task(overrides: Partial<AutomationItem> = {}): AutomationItem {
   return {
-    id: "h1", name: "GitHub issues", tags: { managedTagIds: [], manualTags: [] }, target: { kind: "project", projectId: "p2" }, secretAccountIds: [], model: null, reasoning: null, titleTemplate: "",
-    context: "Triage the issue", enabled: true, attachments: false, markForReview: false, hideFromHistory: false, preserveFiles: false, reply: null, senders: null,
-    createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z", lastReceivedAt: null, receivedCount: 0, creatorAccountId: "ilia", ...overrides,
+    ...base(), id: "t1", name: "Nightly release check", target: { kind: "project", projectId: "p1", engine: "claude" }, context: "Run the release gate,\n  report only", trigger: "schedule", senders: null,
+    ownerNodeId: "n1", nextRun: 0, schedule: { frequency: "daily", hour: 2, minute: 0, weekday: 1, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] },
+    ...overrides,
+  };
+}
+
+function hook(overrides: Partial<AutomationItem> = {}): AutomationItem {
+  return {
+    ...base(), id: "h1", name: "GitHub issues", target: { kind: "project", projectId: "p2" }, context: "Triage the issue", trigger: "webhook", schedule: null, nextRun: null, ownerNodeId: null, senders: null, ...overrides,
   };
 }
 
@@ -65,7 +72,7 @@ test("a scheduled task becomes a row with its last result, and is the creator's 
   assert.equal(never.detail, "Run the release gate, report only", "the second line is one line");
   assert.deepEqual(never.edit, { kind: "schedule", prompt: "Run the release gate,\n  report only", frequency: "daily", time: "02:00", weekday: 1, timezone: "UTC", date: null, until: null, simple: true });
 
-  const run = { id: "r", taskId: "t1", dueAt: Date.UTC(2026, 10, 5, 2), sessionId: "s", tags: [] };
+  const run = { id: "r", taskId: "t1", dueAt: Date.UTC(2026, 10, 5, 2), sessionId: "s", tags: [] } as unknown as Omit<CronRun, "status" | "error" | "finishedAt">;
   assert.deepEqual(scheduleRow(task({ lastRun: { ...run, status: "succeeded", error: null, finishedAt: Date.UTC(2026, 10, 5, 2, 3) } }), context).last, { state: "ok", at: "2026-11-05T02:03:00.000Z", detail: null });
   assert.deepEqual(scheduleRow(task({ lastRun: { ...run, status: "failed", error: "Budget reached: daily", finishedAt: Date.UTC(2026, 10, 5, 2, 3) } }), context).last, { state: "failed", at: "2026-11-05T02:03:00.000Z", detail: "Budget reached: daily" });
   assert.equal(scheduleRow(task({ lastRun: { ...run, status: "running", error: null, finishedAt: null } }), context).last.state, "running");
@@ -79,7 +86,7 @@ test("a scheduled task becomes a row with its last result, and is the creator's 
 });
 
 test("a webhook becomes a row: where its calls go, who may call, and how the last call went", () => {
-  const row = (overrides: Partial<Webhook> = {}, delivery?: { at: string; status: "delivered" | "failed" | "refused"; detail: string; sender: null }) => webhookRow(hook(overrides), { ...context, nodeId: "n1", delivery });
+  const row = (overrides: Partial<AutomationItem> = {}, delivery: AutomationItem["lastDelivery"] = null) => webhookRow(hook({ ...overrides, lastDelivery: delivery }), context);
   const fresh = row();
   assert.deepEqual([fresh.kind, fresh.projectName, fresh.when, fresh.last.state, fresh.nodeName], ["webhook", "Contigos", "Starts a conversation · anyone with the address", "never", "Homeserver"]);
   assert.equal(row({ target: { kind: "conversation", projectId: "p2", sessionId: "s", engine: "claude" } }).when.startsWith("Adds to a conversation"), true);
@@ -93,10 +100,55 @@ test("a webhook becomes a row: where its calls go, who may call, and how the las
   assert.deepEqual(fresh.edit, { kind: "webhook", context: "Triage the issue" });
 });
 
+function withDelivery(webhook: NonNullable<ReturnType<typeof getWebhook>>): AutomationItem {
+  return { ...webhook, lastDelivery: null, lastRun: null };
+}
+
+const scheduleInput = (extra: Record<string, unknown> = {}) => webhookInputSchema.parse({
+  trigger: "schedule", name: "Nightly release check", target: { kind: "project", projectId: "p1", engine: "claude" }, context: "Run the release gate", enabled: true,
+  schedule: { frequency: "daily", hour: 2, minute: 0, weekday: 1, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] }, ...extra,
+});
+
+test("a stored scheduled automation that also keeps its files and pauses on failure is still a schedule row with its next run", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const { webhook } = createAutomation(db, scheduleInput({ preserveFiles: true, attachments: false, autoRespond: null, pauseOnFailure: true, tags: { managedTagIds: [], manualTags: ["nightly"] } }), { ownerNodeId: "n1", now: Date.UTC(2026, 10, 5, 12) });
+    assert.equal(webhook.nextRun, Date.UTC(2026, 10, 6, 2), "created at noon, it runs at 02:00 the next morning");
+    const row = scheduleRow(withDelivery(getWebhook(db, webhook.id)!), context);
+    assert.deepEqual([row.kind, row.id, row.when, row.last.state, row.projectName, row.editable], ["schedule", webhook.id, "Daily 02:00", "never", "Joint Bob", true]);
+    assert.equal(row.detail, "Run the release gate");
+    assert.deepEqual(row.edit, { kind: "schedule", prompt: "Run the release gate", frequency: "daily", time: "02:00", weekday: 1, timezone: "UTC", date: null, until: null, simple: true });
+  } finally { db.close(); }
+});
+
+test("switching the trigger of one automation changes its row between schedule and webhook, and keeps its id", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const { webhook } = createAutomation(db, scheduleInput(), { ownerNodeId: "n1", now: Date.UTC(2026, 10, 5, 12) });
+    const rowOf = () => {
+      const current = withDelivery(getWebhook(db, webhook.id)!);
+      return current.trigger === "schedule" ? scheduleRow(current, context) : webhookRow(current, context);
+    };
+    assert.deepEqual([rowOf().kind, rowOf().when], ["schedule", "Daily 02:00"]);
+
+    const toWebhook = updateAutomation(db, webhook.id, webhookInputSchema.parse({ name: "Nightly release check", target: { kind: "project", projectId: "p1" }, context: "Run the release gate" }), { now: Date.UTC(2026, 10, 5, 13) });
+    assert.ok(toWebhook.secret, "a new address is shown once");
+    const asWebhook = rowOf();
+    assert.deepEqual([asWebhook.kind, asWebhook.id, asWebhook.when, asWebhook.edit], ["webhook", webhook.id, "Starts a conversation · anyone with the address", { kind: "webhook", context: "Run the release gate" }]);
+    assert.equal(getWebhook(db, webhook.id)!.nextRun, null);
+
+    const back = updateAutomation(db, webhook.id, scheduleInput({ schedule: { frequency: "weekly", hour: 9, minute: 30, weekday: 2, timezone: "UTC" } }), { ownerNodeId: "n1", now: Date.UTC(2026, 10, 5, 13) });
+    assert.equal(back.secret, null);
+    const asSchedule = rowOf();
+    assert.deepEqual([asSchedule.kind, asSchedule.id, asSchedule.when], ["schedule", webhook.id, "Tue 09:30"]);
+    assert.equal(typeof getWebhook(db, webhook.id)!.nextRun, "number");
+  } finally { db.close(); }
+});
+
 test("rows follow the project filter, and Bob's reports for every project always show", () => {
   const rows = [
     scheduleRow(task(), context),
-    webhookRow(hook(), { ...context, nodeId: "n1", delivery: undefined }),
+    webhookRow(hook(), context),
     bobRow({ id: "b1", accountId: "ilia", report: "morning", name: "Morning report", hour: 8, minute: 0, timezone: "UTC", projectIds: [], enabled: true, nextRun: 0, lastRun: null, lastStatus: null, lastNote: null, createdAt: "", updatedAt: "" }, { ...context, nodeId: "n1", nodeName: "Homeserver" }),
     bobRow({ id: "b2", accountId: "ilia", report: "evening", name: "Evening report", hour: 19, minute: 0, timezone: "UTC", projectIds: ["p2"], enabled: true, nextRun: 0, lastRun: null, lastStatus: null, lastNote: null, createdAt: "", updatedAt: "" }, { ...context, nodeId: "n1", nodeName: "Homeserver" }),
   ];

@@ -10,32 +10,12 @@ import { listDiscoveredHarnesses } from "./harnesses/registry.js";
 import { isHarnessId } from "./types.js";
 import { automationTagAssignmentSchema, tagSnapshotSchema, type TagSnapshot } from "./automation-tags.js";
 import { createAutomationExecution, transitionAutomationExecution } from "./automation-executions.js";
+import { calendarDateSchema, nextCronRun, NO_MORE_RUNS, reasoningSchema, scheduleSchema, type Schedule } from "./schedule.js";
+import { webhookTitleTemplateSchema } from "./webhook-title.js";
+import { ensureWebhookSchema, hashWebhookSecret, newWebhookSecret } from "./webhooks.js";
+export { calendarDateSchema, nextCronRun, NO_MORE_RUNS };
 
-const timezoneSchema = z.string().min(1).max(100).refine(value => {
-  try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; }
-}, "Unknown timezone");
-const reasoningSchema = z.enum(["default", "off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-const clockSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM");
-/** A calendar day, YYYY-MM-DD, as a date picker gives it. */
-export const calendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").refine(value => {
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}, "Not a calendar date");
-// Like a meeting in a calendar: once on a day, or repeating (every few minutes or hours, daily, weekly, monthly), from a first
-// day until a last one. A monthly task repeats on its first day's day of the month.
-const scheduleSchema = z.object({ frequency: z.enum(["once", "minutely", "hourly", "daily", "weekly", "monthly"]), intervalMinutes: z.number().int().min(1).max(1440).optional(), intervalHours: z.number().int().min(1).max(168).optional(), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59), weekday: z.number().int().min(0).max(6), timezone: timezoneSchema, startHour: z.number().int().min(0).max(23).optional(),
-  days: z.array(z.number().int().min(0).max(6)).min(1).max(7).optional(), quietStart: clockSchema.optional(), quietEnd: clockSchema.optional(),
-  startDate: calendarDateSchema.optional(), endDate: calendarDateSchema.optional(),
-}).strict().superRefine((schedule, context) => {
-  if ((schedule.frequency === "once" || schedule.frequency === "monthly") && !schedule.startDate) context.addIssue({ code: "custom", path: ["startDate"], message: "Choose the date" });
-  if (schedule.frequency === "once" && schedule.endDate) context.addIssue({ code: "custom", path: ["endDate"], message: "A one-time task has no end date" });
-  if (schedule.startDate && schedule.endDate && schedule.endDate < schedule.startDate) context.addIssue({ code: "custom", path: ["endDate"], message: "The end date is before the start date" });
-  if (schedule.frequency === "minutely" && schedule.intervalMinutes === undefined) context.addIssue({ code: "custom", path: ["intervalMinutes"], message: "Minute interval is required" });
-  if (schedule.days && new Set(schedule.days).size !== schedule.days.length) context.addIssue({ code: "custom", path: ["days"], message: "Days must be unique" });
-  if (schedule.frequency === "weekly" && schedule.days && !schedule.days.includes(schedule.weekday)) context.addIssue({ code: "custom", path: ["days"], message: "Include the weekly run day" });
-  if (Boolean(schedule.quietStart) !== Boolean(schedule.quietEnd) || schedule.quietStart && schedule.quietStart === schedule.quietEnd) context.addIssue({ code: "custom", path: ["quietEnd"], message: "Quiet hours need two different times" });
-});
+
 const cronModelSchema = z.object({
   provider: z.string().trim().min(1).max(80),
   modelId: z.string().trim().min(1).max(200),
@@ -45,6 +25,10 @@ export const cronInputSchema = z.object({
   creatorAccountId: z.string().min(1).nullable().optional(),
   assistantId: z.string().uuid().nullable().default(null),
   providerProfileId: z.string().min(1).nullable().optional(),
+  providerPoolId: z.string().uuid().nullable().optional(),
+  secretAccountIds: z.array(z.string().uuid()).max(100).default([]),
+  /** Names each run's conversation; blank uses the task's name. */
+  titleTemplate: webhookTitleTemplateSchema,
   tags: automationTagAssignmentSchema.default({ managedTagIds: [], manualTags: [] }),
   projectId: z.string().min(1).max(240), name: z.string().trim().min(1).max(120),
   prompt: z.string().trim().min(1).max(100000), ownerNodeId: z.string().uuid(),
@@ -76,113 +60,61 @@ export const cronRunSchema = z.object({ id: z.string().uuid(), taskId: z.string(
 export type CronRun = z.infer<typeof cronRunSchema>;
 export interface CronTask extends CronInput { id: string; nextRun: number; lastRun: CronRun | null }
 
-/** No run is left: a one-time task that ran, or a schedule past its last day. Later than any real time, so it is never due. */
-export const NO_MORE_RUNS = 8_640_000_000_000_000;
 
-const pad2 = (value: number): string => String(value).padStart(2, "0");
+type Row = Record<string, unknown>;
 
-/** The instant a wall-clock time on a calendar day has in a timezone. */
-function wallTime(date: string, hour: number, minute: number, timeZone: string): number {
-  const [year, month, day] = date.split("-").map(Number);
-  const asUtc = Date.UTC(year, month - 1, day, hour, minute);
-  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const offset = (instant: number) => {
-    const p = Object.fromEntries(formatter.formatToParts(instant).map(part => [part.type, part.value]));
-    return Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute)) - instant;
+/** The column values of a scheduled task. Columns a webhook alone uses stay empty; the secret is set only when a row is made. */
+function taskColumns(data: CronInput): Record<string, string | number | null> {
+  return {
+    name: data.name, target_kind: data.sessionId ? "conversation" : "project", project_id: data.projectId, session_id: data.sessionId, engine: data.engine, assistant_id: data.assistantId, context: data.prompt,
+    enabled: data.enabled ? 1 : 0, attachments: 0, preserve_files: 0, mark_for_review: data.markForReview ? 1 : 0, senders: null, model: data.model ? JSON.stringify(data.model) : null, reasoning: data.reasoning ?? null,
+    secret_account_ids: JSON.stringify(data.secretAccountIds), title_template: data.titleTemplate, creator_account_id: data.creatorAccountId ?? null, provider_profile_id: data.providerProfileId ?? null,
+    provider_pool_id: data.providerPoolId ?? null, tags: JSON.stringify(data.tags), hide_from_history: data.hideFromHistory ? 1 : 0, reply: null, run_in_worktree: data.runInWorktree ? 1 : 0,
+    bypass_guardian: data.bypassGuardian ? 1 : 0, trigger_kind: "schedule", schedule: JSON.stringify(data.schedule), auto_respond: data.autoRespond ? JSON.stringify(data.autoRespond) : null,
+    pause_on_failure: data.pauseOnFailure ? 1 : 0, owner_node_id: data.ownerNodeId,
   };
-  return asUtc - offset(asUtc - offset(asUtc));
 }
 
-function dayAfter(date: string): string {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+/** A scheduled automation's settings as the task they run as, so the checks a task has always had can be applied before it is saved. */
+export function cronInputOf(input: { creatorAccountId?: string | null; providerProfileId?: string | null; providerPoolId?: string | null; secretAccountIds: string[]; titleTemplate: string; tags: CronInput["tags"];
+  name: string; context: string; model: { provider: string; modelId: string } | null; reasoning: string | null; autoRespond: CronInput["autoRespond"]; runInWorktree: boolean; bypassGuardian: boolean; enabled: boolean;
+  pauseOnFailure: boolean; markForReview: boolean; hideFromHistory: boolean; schedule: Schedule | null; target: { kind: string; projectId: string; sessionId?: string; assistantId?: string } }, ownerNodeId: string, engine: string): unknown {
+  return {
+    creatorAccountId: input.creatorAccountId ?? null, assistantId: input.target.kind === "assistant" ? input.target.assistantId : null, providerProfileId: input.providerProfileId ?? null, providerPoolId: input.providerPoolId ?? null,
+    secretAccountIds: input.secretAccountIds, titleTemplate: input.titleTemplate, tags: input.tags, projectId: input.target.projectId, name: input.name, prompt: input.context, ownerNodeId, engine,
+    model: input.model, ...(input.reasoning ? { reasoning: input.reasoning } : {}), autoRespond: input.autoRespond, runInWorktree: input.runInWorktree, bypassGuardian: input.bypassGuardian,
+    sessionId: input.target.kind === "conversation" ? input.target.sessionId : null, enabled: input.enabled, pauseOnFailure: input.pauseOnFailure, markForReview: input.markForReview,
+    hideFromHistory: input.hideFromHistory, schedule: input.schedule,
+  };
 }
 
-/** The next run on the first day's day of the month; a month without that day is skipped, as a calendar does. */
-function nextMonthly(schedule: CronInput["schedule"], after: number): number {
-  const [year, month, day] = schedule.startDate!.split("-").map(Number);
-  const now = new Date(after);
-  const passed = Math.max(0, (now.getUTCFullYear() - year) * 12 + now.getUTCMonth() - (month - 1) - 1);
-  for (let index = passed; index < passed + 25; index += 1) {
-    const first = new Date(Date.UTC(year, month - 1 + index, 1));
-    if (day > new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()) continue;
-    const at = wallTime(`${first.getUTCFullYear()}-${pad2(first.getUTCMonth() + 1)}-${pad2(day)}`, schedule.hour, schedule.minute, schedule.timezone);
-    if (at > after) return at;
-  }
-  return NO_MORE_RUNS;
+/** What a stored row says, checked the way a new input is. */
+function taskInput(row: Row): CronInput {
+  return cronInputSchema.parse({
+    creatorAccountId: row.creator_account_id ?? null, assistantId: row.assistant_id ?? null, providerProfileId: row.provider_profile_id ?? null, providerPoolId: row.provider_pool_id ?? null,
+    secretAccountIds: JSON.parse(String(row.secret_account_ids ?? "[]")), titleTemplate: String(row.title_template ?? ""), tags: JSON.parse(String(row.tags || "{}")),
+    projectId: String(row.project_id), name: String(row.name), prompt: String(row.context), ownerNodeId: String(row.owner_node_id), engine: String(row.engine),
+    model: row.model ? JSON.parse(String(row.model)) : null, ...(row.reasoning ? { reasoning: String(row.reasoning) } : {}), autoRespond: row.auto_respond ? JSON.parse(String(row.auto_respond)) : null,
+    runInWorktree: row.run_in_worktree === 1, bypassGuardian: row.bypass_guardian === 1, sessionId: row.session_id ? String(row.session_id) : null, enabled: row.enabled === 1,
+    pauseOnFailure: row.pause_on_failure === 1, markForReview: row.mark_for_review === 1, hideFromHistory: row.hide_from_history === 1, schedule: JSON.parse(String(row.schedule)),
+  });
 }
 
-/** When the schedule runs next after the given time, or NO_MORE_RUNS when it never runs again. */
-export function nextCronRun(schedule: CronInput["schedule"], after: number): number {
-  let next: number;
-  if (schedule.frequency === "once") next = wallTime(schedule.startDate!, schedule.hour, schedule.minute, schedule.timezone);
-  else {
-    // Nothing runs before its first day.
-    const from = schedule.startDate ? Math.max(after, wallTime(schedule.startDate, 0, 0, schedule.timezone) - 60_000) : after;
-    next = schedule.frequency === "monthly" ? nextMonthly(schedule, from) : nextRepeat(schedule, from);
-  }
-  if (next <= after) return NO_MORE_RUNS;
-  if (schedule.endDate && next >= wallTime(dayAfter(schedule.endDate), 0, 0, schedule.timezone)) return NO_MORE_RUNS;
-  return next;
-}
-
-/** The next run of a schedule that repeats every few minutes or hours, daily or weekly. */
-function nextRepeat(schedule: CronInput["schedule"], after: number): number {
-  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: schedule.timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" });
-  const parts = (time: number) => Object.fromEntries(formatter.formatToParts(time).map(part => [part.type, part.value]));
-  const start = parts(after);
-  const date = (p: Record<string, string>) => `${p.year}-${p.month}-${p.day}`;
-  const todayPassed = Number(start.hour) * 60 + Number(start.minute) >= schedule.hour * 60 + schedule.minute;
-  for (let time = Math.floor(after / 60000) * 60000 + 60000; time <= after + 16 * 86400000; time += 60000) {
-    const p = parts(time);
-    const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday);
-    if (schedule.days && !schedule.days.includes(weekday)) continue;
-    const wallMinute = Number(p.hour) * 60 + Number(p.minute);
-    if (schedule.quietStart && schedule.quietEnd) {
-      const startMinute = Number(schedule.quietStart.slice(0, 2)) * 60 + Number(schedule.quietStart.slice(3));
-      const endMinute = Number(schedule.quietEnd.slice(0, 2)) * 60 + Number(schedule.quietEnd.slice(3));
-      if (startMinute < endMinute ? wallMinute >= startMinute && wallMinute < endMinute : wallMinute >= startMinute || wallMinute < endMinute) continue;
-    }
-    if (schedule.frequency === "minutely") {
-      const day = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day)) / 86400000;
-      if ((day * 1440 + wallMinute - schedule.hour * 60 - schedule.minute) % schedule.intervalMinutes! === 0) return time;
-      continue;
-    }
-    if (Number(p.minute) !== schedule.minute) continue;
-    if (schedule.frequency === "hourly") {
-      if (schedule.startHour === undefined) {
-        if (Math.floor(time / 3600000) % (schedule.intervalHours ?? 1) === 0) return time;
-      } else {
-        // Local calendar hours anchor the interval; 08:00 + two hours stays at 08:00 after DST.
-        const day = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day)) / 86400000;
-        if ((day * 24 + Number(p.hour) - schedule.startHour) % (schedule.intervalHours ?? 1) === 0) {
-          const previousHour = parts(time - 3600000);
-          if (!(date(previousHour) === date(p) && previousHour.hour === p.hour)) return time;
-        }
-      }
-      continue;
-    }
-    // A daily/weekly wall-clock occurrence runs once, even when DST repeats it.
-    if (Number(p.hour) !== schedule.hour || todayPassed && date(p) === date(start)) continue;
-    if (schedule.frequency === "daily" || weekday === schedule.weekday) return time;
-  }
-  throw new Error("No schedule occurrence within sixteen days");
-}
-
+/** The scheduled automations. They share the `webhooks` table with webhook automations, told apart by `trigger_kind`. */
 export class CronStore {
   constructor(private readonly db: DatabaseSync) {
-    db.exec(`CREATE TABLE IF NOT EXISTS cron_tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, owner_node_id TEXT NOT NULL, input TEXT NOT NULL, next_run INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS cron_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, due_at INTEGER NOT NULL, status TEXT NOT NULL, error TEXT, session_id TEXT, finished_at INTEGER, tags TEXT NOT NULL DEFAULT '[]', UNIQUE(task_id, due_at));
+    ensureWebhookSchema(db);
+    db.exec(`CREATE TABLE IF NOT EXISTS cron_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, due_at INTEGER NOT NULL, status TEXT NOT NULL, error TEXT, session_id TEXT, finished_at INTEGER, tags TEXT NOT NULL DEFAULT '[]', UNIQUE(task_id, due_at));
       CREATE UNIQUE INDEX IF NOT EXISTS cron_active_run ON cron_runs(task_id) WHERE status IN ('waiting', 'running');`);
     const columns = db.prepare("PRAGMA table_info(cron_runs)").all() as Array<{ name: string }>;
     if (!columns.some(column => column.name === "tags")) db.exec("ALTER TABLE cron_runs ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
   }
   get(id: string): CronTask | null {
-    const row = this.db.prepare("SELECT * FROM cron_tasks WHERE id = ?").get(id) as { id: string; input: string; next_run: number } | undefined;
-    return row ? { creatorAccountId: null, providerProfileId: null, ...cronInputSchema.parse(JSON.parse(row.input)), id: row.id, nextRun: row.next_run, lastRun: this.history(id, 1)[0] ?? null } : null;
+    const row = this.db.prepare("SELECT * FROM webhooks WHERE id = ? AND trigger_kind = 'schedule'").get(id) as Row | undefined;
+    return row ? { creatorAccountId: null, providerProfileId: null, ...taskInput(row), id: String(row.id), nextRun: Number(row.next_run), lastRun: this.history(id, 1)[0] ?? null } : null;
   }
   list(projectId?: string): CronTask[] {
-    const rows = (projectId === undefined ? this.db.prepare("SELECT id FROM cron_tasks").all() : this.db.prepare("SELECT id FROM cron_tasks WHERE project_id = ?").all(projectId)) as { id: string }[];
+    const rows = (projectId === undefined ? this.db.prepare("SELECT id FROM webhooks WHERE trigger_kind = 'schedule'").all() : this.db.prepare("SELECT id FROM webhooks WHERE trigger_kind = 'schedule' AND project_id = ?").all(projectId)) as { id: string }[];
     return rows.map(row => this.get(row.id)!);
   }
   history(id: string, limit = 100): CronRun[] {
@@ -194,7 +126,10 @@ export class CronStore {
   }
   create(input: CronInput, now = Date.now(), id: string = randomUUID()): CronTask {
     const data = cronInputSchema.parse(input);
-    this.db.prepare("INSERT INTO cron_tasks VALUES (?, ?, ?, ?, ?)").run(id, data.projectId, data.ownerNodeId, JSON.stringify(data), nextCronRun(data.schedule, now));
+    const at = new Date(now).toISOString();
+    const columns = { id, ...taskColumns(data), secret_hash: hashWebhookSecret(newWebhookSecret()), created_at: at, updated_at: at, next_run: nextCronRun(data.schedule, now) };
+    const names = Object.keys(columns);
+    this.db.prepare(`INSERT INTO webhooks(${names.join(",")}) VALUES(${names.map(() => "?").join(",")})`).run(...Object.values(columns));
     return this.get(id)!;
   }
   install(id: string, input: CronInput, runs: CronRun[]): CronTask {
@@ -214,20 +149,24 @@ export class CronStore {
     if (old.ownerNodeId !== data.ownerNodeId || old.projectId !== data.projectId) throw new Error("Task owner and project cannot be changed in place");
     if (old.assistantId !== data.assistantId) throw new Error("Assistant target cannot be changed in place");
     const next = JSON.stringify(old.schedule) === JSON.stringify(data.schedule) && old.enabled === data.enabled ? old.nextRun : nextCronRun(data.schedule, now);
-    this.db.prepare("UPDATE cron_tasks SET input = ?, next_run = ? WHERE id = ?").run(JSON.stringify(data), next, id);
+    const columns = { ...taskColumns(data), updated_at: new Date(now).toISOString(), next_run: next };
+    this.db.prepare(`UPDATE webhooks SET ${Object.keys(columns).map(name => `${name} = ?`).join(", ")} WHERE id = ? AND trigger_kind = 'schedule'`).run(...Object.values(columns), id);
     return this.get(id)!;
   }
   runNow(id: string, now = Date.now()): CronTask {
     const task = this.get(id);
     if (!task) throw new Error("Scheduled task not found");
     if (this.active(id)) throw new Error("The scheduled task is already running");
-    const { id: _id, nextRun: _nextRun, lastRun: _lastRun, ...input } = task;
-    this.db.prepare("UPDATE cron_tasks SET input = ?, next_run = ? WHERE id = ?").run(JSON.stringify({ ...input, enabled: true }), now, id);
+    this.db.prepare("UPDATE webhooks SET enabled = 1, next_run = ? WHERE id = ? AND trigger_kind = 'schedule'").run(now, id);
     return this.get(id)!;
   }
   delete(id: string): void {
     if (this.active(id)) throw new Error("Wait for the scheduled run to finish before deleting");
-    this.db.prepare("DELETE FROM cron_tasks WHERE id = ?").run(id);
+    this.db.prepare("DELETE FROM webhooks WHERE id = ? AND trigger_kind = 'schedule'").run(id);
+  }
+  /** Forgets a deleted automation's runs, so a later one with the same id starts clean. */
+  purge(id: string): void {
+    this.db.prepare("DELETE FROM cron_runs WHERE task_id = ? AND status NOT IN ('waiting', 'running')").run(id);
   }
   active(id: string): boolean {
     return Boolean(this.db.prepare("SELECT 1 FROM cron_runs WHERE task_id = ? AND status IN ('waiting', 'running')").get(id));
@@ -237,7 +176,7 @@ export class CronStore {
     try {
       const task = this.get(id);
       if (!task || task.ownerNodeId !== nodeId || !task.enabled || task.nextRun > now) return null;
-      this.db.prepare("UPDATE cron_tasks SET next_run = ? WHERE id = ?").run(nextCronRun(task.schedule, now), id);
+      this.db.prepare("UPDATE webhooks SET next_run = ? WHERE id = ?").run(nextCronRun(task.schedule, now), id);
       // A late minute is missed, not replayed after reconnect/restart.
       if (now - task.nextRun >= 60000 || this.active(id)) return null;
       const run: CronRun = { id: randomUUID(), taskId: id, dueAt: task.nextRun, status: "waiting", error: null, sessionId: task.sessionId, finishedAt: null, tags };
@@ -271,7 +210,7 @@ export class CronStore {
           ? 'Node restarted during scheduled run; outcome uncertain. Task paused.'
           : 'Node restarted during scheduled run; outcome uncertain. Task will resume at the next scheduled time.', now, task.id);
     }
-    for (const task of this.list()) if (task.nextRun <= now) this.db.prepare("UPDATE cron_tasks SET next_run = ? WHERE id = ?").run(nextCronRun(task.schedule, now), task.id);
+    for (const task of this.list()) if (task.nextRun <= now) this.db.prepare("UPDATE webhooks SET next_run = ? WHERE id = ?").run(nextCronRun(task.schedule, now), task.id);
   }
 }
 let store: CronStore | undefined;

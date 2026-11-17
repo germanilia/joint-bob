@@ -19,7 +19,7 @@ const OTHER_TITLE = "Pending follow request review";
 const ROW_ON_REFUSING_MACHINE = "Short one";
 const ROW_HERE = "Flow Runner Tool Evaluation";
 const REFUSING_MACHINE = { id: "00000000-0000-4000-8000-0000000c0ffe", name: "Home server", local: false, online: true, mapped: true, terminal: false, runner: false };
-const WRITE_ACTIONS = ["session-fork-button", "session-rename-button", "session-remove-button", "session-classification-button", "session-secrets-button", "session-cron-button"];
+const WRITE_ACTIONS = ["session-fork-button", "session-rename-button", "session-remove-button", "session-classification-button", "session-secrets-button", "session-automation-button"];
 
 async function signInAndOpenProject(page: Page, url: string, username: string, password: string): Promise<void> {
   await page.goto(url, { waitUntil: "domcontentloaded" });

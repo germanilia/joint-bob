@@ -116,6 +116,7 @@ for (const source of ["scheduled", "webhook", "telegram-owner", "telegram-group"
       resolveWebhookResources: async () => ({ files: [], tools: [], skills: [] }), webhookResourceInstructions: () => "",
       persistTaskAttachments: async () => [], automationTitleInstruction: () => "", webhookMessage: () => f.message,
       telegramChatId: () => null, telegramText: () => null,
+      automationResourceContext: async () => "", attachAutomationSecrets: async () => {}, bindAutomationConversation: async () => {}, signedAutomationFetch: async () => ({ ready: true }),
       bindWebhookConversation: () => {}, setWebhookConversationHistory: () => {}, recordWebhookDelivery: () => {},
     });
     if (source === "scheduled") {

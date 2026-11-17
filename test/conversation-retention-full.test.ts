@@ -8,6 +8,7 @@ import path from "node:path";
 import test from "node:test";
 import type { RetentionSwitches } from "../src/server/conversation-retention.js";
 import { createSourceTables, fillRow } from "./source-schema.js";
+import { ensureWebhookSchema } from "../src/webhooks.js";
 import { openNodeDatabase } from "../src/node-database.js";
 
 const DAY = 86_400_000, HOUR = 3_600_000;
@@ -134,7 +135,8 @@ test("the full sweep keeps every exempt conversation, and each switch releases o
   const store = openSupervisorStore(f.root);
   try { store.reserveTask({ id: randomUUID(), identity: JSON.stringify([exempt.record.id, kept["task running"].id]), name: "A task", executable: "/bin/true", args: [], cwd: exempt.projectPath }); }
   finally { store.close(); }
-  await createSourceTables(f.db, ["update_recoveries", "personal_assistants", "personal_assistant_topics", "assistant_team_conversations", "cron_tasks", "webhooks"]);
+  await createSourceTables(f.db, ["update_recoveries", "personal_assistants", "personal_assistant_topics", "assistant_team_conversations", "webhooks"]);
+  ensureWebhookSchema(f.db); // adds the trigger column the CREATE TABLE statement does not carry
   fillRow(f.db, "update_recoveries", { session_id: kept["recovery pending"].id, status: "pending" });
   conversationLeaseRunning("claude", kept["run on another machine"].id); // opens the lease table
   fillRow(f.db, "conversation_runtime_leases", { engine: "claude", session_id: kept["run on another machine"].id, owner_node_id: other, updated_at: new Date().toISOString(), expires_at: new Date(Date.now() + HOUR).toISOString() });
@@ -142,7 +144,7 @@ test("the full sweep keeps every exempt conversation, and each switch releases o
   fillRow(f.db, "personal_assistants", { session_id: kept.assistant.id });
   fillRow(f.db, "personal_assistant_topics", { session_id: kept["assistant topic"].id });
   fillRow(f.db, "assistant_team_conversations", { conversation_id: kept["assistant team"].id });
-  fillRow(f.db, "cron_tasks", { input: JSON.stringify({ sessionId: kept["schedule target"].id }) });
+  fillRow(f.db, "webhooks", { session_id: kept["schedule target"].id, target_kind: "conversation", trigger_kind: "schedule" });
   fillRow(f.db, "webhooks", { session_id: kept["webhook target"].id, target_kind: "conversation" });
   await getConversationOwnership("claude", kept["another machine's"].id); // opens the ownership table
   fillRow(f.db, "conversation_ownership", { engine: "claude", session_id: kept["another machine's"].id, owner_node_id: other, status: "owned" });

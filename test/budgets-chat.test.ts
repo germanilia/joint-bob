@@ -7,7 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type WebSocket from "ws";
-import type { CronTask } from "../src/cron.js";
+import type { CronRun } from "../src/cron.js";
+import type { Webhook } from "../src/webhooks.js";
 import { ensureUsageSchema } from "../src/usage-ledger.js";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { openChat, waitFor } from "./queued-prompt-harness.js";
@@ -176,12 +177,12 @@ test("a scheduled run that is refused for budget is recorded, and its task stays
     server = await startDevNode(environment, node);
     const auth = await signIn(environment, node);
     assert.equal((await limit(environment, node, auth, project.id, 5)).status, 200);
-    const input = { projectId: project.id, name: "Nightly", prompt: "report", engine: "kiro", sessionId: null, ownerNodeId: node.nodeId, enabled: true, pauseOnFailure: true, schedule: { frequency: "hourly", hour: 9, minute: (new Date().getUTCMinutes() + 30) % 60, weekday: 1, timezone: "UTC" } };
-    const created = await api<{ task: CronTask }>(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "create", input } });
-    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const input = { trigger: "schedule", target: { kind: "project", projectId: project.id, engine: "kiro" }, name: "Nightly", context: "report", enabled: true, pauseOnFailure: true, schedule: { frequency: "hourly", hour: 9, minute: (new Date().getUTCMinutes() + 30) % 60, weekday: 1, timezone: "UTC" } };
+    const created = await api<{ automation: Webhook }>(node, auth, "POST", "/automations", input);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
     const db = openNodeDatabase(path.join(node.dataDir, "node.db")); db.exec("PRAGMA busy_timeout = 5000");
-    db.prepare("UPDATE cron_tasks SET next_run = ? WHERE id = ?").run(Date.now(), created.body.task.id); db.close();
-    const read = async () => (await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`)).body.tasks.find((task) => task.id === created.body.task.id)!;
+    db.prepare("UPDATE webhooks SET next_run = ? WHERE id = ?").run(Date.now(), created.body.automation.id); db.close();
+    const read = async () => (await api<{ automations: Array<Webhook & { lastRun: CronRun | null }> }>(node, auth, "GET", "/automations")).body.automations.find((task) => task.id === created.body.automation.id)!;
     const deadline = Date.now() + 60_000;
     while ((await read()).lastRun?.status !== "failed") { assert.ok(Date.now() < deadline, "the run settles"); await new Promise((resolve) => setTimeout(resolve, 200)); }
     const task = await read();

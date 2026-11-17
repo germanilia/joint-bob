@@ -91,7 +91,7 @@ test("memory capabilities cannot select another webhook or access settings and m
   assert.equal((await post(token, { action: "read", webhookId: other.webhook.id })).status, 400);
   assert.equal((await post(token, { action: "write", webhookId: other.webhook.id, expectedRevision: "0".repeat(64), content: "wrong webhook" })).status, 400);
   assert.equal((await readWebhookMemory(other.webhook.id)).content, "");
-  for (const endpoint of ["/api/settings", `/api/webhooks/${other.webhook.id}/memory`]) {
+  for (const endpoint of ["/api/settings", `/api/automations/${other.webhook.id}/memory`]) {
     const response = await fetch(`${origin}${endpoint}`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(response.status, 401);
   }

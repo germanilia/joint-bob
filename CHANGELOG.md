@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.323.0 — 2026-11-17
+
+- Merged scheduled tasks and webhooks into one kind, an **automation**, started either on a schedule or when its webhook is called. You can switch the trigger later; switching to a webhook makes a new address, shown once, and switching to a schedule turns the old address off.
+- Automations are made and changed only in the control center's **Automations** tab, in one editor with **Setup**, **Trigger**, **Run**, **Context** and **History**. The Scheduled tasks dialog, the Webhooks tab in Settings and **More options…** are gone; the project and conversation menus, the chat toolbar and an assistant's **Automations** button open the editor.
+- A scheduled automation can now have files, tools, skills, memory and secret accounts, and a webhook can choose its machine, model, worktree and auto reply and turn itself off after a failed run.
+- Existing scheduled tasks and webhooks become automations when the machine starts: their schedules, next runs, histories, addresses and Telegram bots stay as they were. Every machine of a cluster needs this version to manage automations on the others.
+- Fixed "null is not an object (evaluating 'preferred.modelId')" when opening a scheduled task without auto reply.
+- Fixed changing a scheduled automation from Bob's chat turning a paused one back on or dropping its instructions.
+- Expired Codex sign-ins now move the turn to another account instead of failing it.
+- Removed the duplicate theme and Settings buttons from Bob's top bar.
+- Antigravity turns in a cluster pool fall back to this machine's own Antigravity subscription, and only the thinking levels Antigravity accepts are offered.
+
 ## 2.322.1 — 2026-11-17
 
 - **Delete team** now asks for confirmation in the app's own dialog.

@@ -6,7 +6,7 @@ import { openConversation } from "./control-center.js";
 import { elements } from "./elements.js";
 import { createFittedList, makeButton, makeNode } from "./relay-ui.js";
 import { toast } from "./shell.js";
-import { openProjectWebhooks } from "./webhooks.js";
+import { openAutomationsFor } from "./control-automations.js";
 
 const BASE = "/api/control-center/triggers";
 
@@ -135,10 +135,10 @@ function openCall(trigger) {
   openConversation({ projectId: trigger.projectId, conversationId: trigger.conversation.id, title: trigger.conversation.title }).catch((error) => toast.error(error.message));
 }
 
-/** The webhook lives in its project's Webhooks screen, which is also where the Automations tab sends the person. */
+/** The webhook is an automation of its project; the Automations tab lists it there. */
 function openWebhook(trigger) {
   closePanel();
-  openProjectWebhooks({ id: trigger.projectId, name: trigger.projectName }).catch((error) => toast.error(error.message));
+  openAutomationsFor(trigger.projectId);
 }
 
 /**

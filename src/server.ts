@@ -104,7 +104,7 @@ import { recoverAutoResponders } from "./server/auto-respond-recovery.js";
 import { startConversationDigests } from "./server/conversation-digest-runner.js";
 import { startKnowledgeCleanupScheduler } from "./server/knowledge-cleanup.js";
 import { startQuickNoteScheduler } from "./server/quick-note-dispatch.js";
-import "./server/routes/cron.js";
+import "./server/routes/automations.js";
 import "./server/routes/worktrees.js";
 import "./server/routes/project-files.js";
 import "./server/routes/git-review.js";

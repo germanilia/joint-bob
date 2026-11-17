@@ -3,19 +3,18 @@ import { actingAccountFromSession, runAsAccount } from "../account-context.js";
 import type { AuthSession } from "../auth.js";
 import { getClusterNode } from "../cluster.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
-import { bobRow, compareRows, rowMatchesFilter, scheduleRow, webhookRow, type AutomationKind, type AutomationRow, type RowContext } from "../control-center/automations.js";
+import { bobRow, compareRows, rowMatchesFilter, scheduleRow, webhookRow, type AutomationItem, type AutomationKind, type AutomationRow, type RowContext } from "../control-center/automations.js";
 import { bobScheduleChangeSchema, bobScheduleInputSchema, createBobSchedule, deleteBobSchedule, ensureBobScheduleSchema, listBobSchedules, updateBobSchedule, type BobSchedule } from "../control-center/bob-schedules.js";
 import { bobDatabase } from "../control-center/bob-store.js";
-import { calendarDateSchema, type CronInput, type CronTask } from "../cron.js";
+import { calendarDateSchema } from "../cron.js";
+import type { Schedule } from "../schedule.js";
 import { Feature, hasFeature } from "../features.js";
 import { getProject } from "../store.js";
-import { webhookDeliveries, webhookInputSchema, type Webhook } from "../webhooks.js";
-import { listProjectCronTasks } from "./cron-list.js";
+import { webhookInputSchema, type WebhookInput } from "../webhooks.js";
 import { iconHarnessId } from "./label-icon.js";
 import { projectsWithSharedNames } from "./projects.js";
 import { listRuntimePeers } from "./runtime-peers.js";
-import { runCronCommand } from "./routes/cron.js";
-import { runWebhookCommand, webhookOwners } from "./routes/webhooks.js";
+import { automationOwners, runAutomationCommand } from "./routes/automations.js";
 import { rearmReportTimer } from "./control-center-report-timer.js";
 
 /** A refusal the person can act on: nothing there, or not theirs to change. */
@@ -23,7 +22,7 @@ export class AutomationError extends Error {
   constructor(readonly status: 400 | 403 | 404 | 409, message: string) { super(message); }
 }
 
-interface Entry { row: AutomationRow; task?: CronTask; webhook?: Webhook; bob?: BobSchedule }
+interface Entry { row: AutomationRow; automation?: AutomationItem; bob?: BobSchedule }
 export interface Collected { entries: Entry[]; projects: Array<{ id: string; name: string }>; errors: string[] }
 
 const failure = (error: unknown): string => (error instanceof Error ? error.message : String(error)).slice(0, 200);
@@ -41,31 +40,21 @@ export async function collectAutomations(session: AuthSession): Promise<Collecte
     const entries: Entry[] = [];
     const seen = new Set<string>();
 
-    const lists = await Promise.all(projects.map((project) => listProjectCronTasks(project.id).catch((error: unknown) => { errors.push(`${project.name}: ${failure(error)}`); return { tasks: [] as CronTask[], errors: [] }; })));
-    for (const list of lists) {
-      for (const problem of list.errors) errors.push(`${nodeNames.get(problem.nodeId) ?? "A machine"}: ${"error" in problem ? problem.error : "could not be read"}`);
-      for (const task of list.tasks) {
-        if (seen.has(`schedule:${task.id}`) || !projectNames.has(task.projectId)) continue;
-        seen.add(`schedule:${task.id}`);
-        entries.push({ row: scheduleRow(task, context), task });
-      }
-    }
-
     // A person who signed in from another machine does not manage webhooks, so they are not listed to them either.
-    if (hasFeature({ isRemoteLogin: session.isRemoteLogin }, Feature.SETTINGS)) {
-      const database = await clusterV2Database();
-      const owners = await webhookOwners();
-      await Promise.all(owners.map(async (owner) => {
-        try {
-          const { webhooks } = await runWebhookCommand(owner.id, { action: "list" }) as { webhooks: Webhook[] };
-          for (const hook of webhooks) {
-            if (seen.has(`webhook:${hook.id}`) || !projectNames.has(hook.target.projectId)) continue;
-            seen.add(`webhook:${hook.id}`);
-            entries.push({ row: webhookRow(hook, { ...context, nodeId: owner.id, delivery: owner.local ? webhookDeliveries(database, hook.id)[0] : undefined }), webhook: hook });
-          }
-        } catch (error) { errors.push(`${owner.name}: ${failure(error)}`); }
-      }));
-    }
+    const webhooksShown = hasFeature({ isRemoteLogin: session.isRemoteLogin }, Feature.SETTINGS);
+    const owners = await automationOwners();
+    await Promise.all(owners.map(async (owner) => {
+      try {
+        const { automations } = await runAutomationCommand(owner.id, { action: "list" }) as { automations: AutomationItem[] };
+        for (const automation of automations) {
+          const key = `${automation.trigger}:${automation.id}`;
+          if (seen.has(key) || !projectNames.has(automation.target.projectId) || automation.trigger === "webhook" && !webhooksShown) continue;
+          seen.add(key);
+          const rowContext = { ...context, nodeId: owner.id };
+          entries.push({ row: automation.trigger === "schedule" ? scheduleRow(automation, rowContext) : webhookRow(automation, rowContext), automation });
+        }
+      } catch (error) { errors.push(`${owner.name}: ${failure(error)}`); }
+    }));
 
     for (const schedule of listBobSchedules(db, session.accountId)) entries.push({ row: bobRow(schedule, { projectName: context.projectName, nodeId: local.id, nodeName: local.name }), bob: schedule });
     entries.sort((a, b) => compareRows(a.row, b.row));
@@ -94,26 +83,24 @@ export function entriesMatching(collected: Collected, filter: readonly string[])
   return collected.entries.filter((entry) => rowMatchesFilter(entry.row, filter));
 }
 
-function cronInputOf(task: CronTask): CronInput {
-  const { id: _id, nextRun: _nextRun, lastRun: _lastRun, ...input } = task;
-  return input;
-}
-
-function webhookInputOf(hook: Webhook, changes: { name?: string; context?: string; enabled?: boolean } = {}) {
+/** An automation's settings as the input that saves them again, with the changes applied. */
+function automationInputOf(item: AutomationItem, changes: { name?: string; context?: string; enabled?: boolean; schedule?: Schedule } = {}): WebhookInput {
   return webhookInputSchema.parse({
-    providerProfileId: hook.providerProfileId ?? null, tags: hook.tags, name: hook.name, target: hook.target, context: hook.context, enabled: hook.enabled,
-    attachments: hook.attachments, preserveFiles: hook.preserveFiles, runInWorktree: hook.runInWorktree, markForReview: hook.markForReview, hideFromHistory: hook.hideFromHistory,
-    senders: hook.senders, model: hook.model, reasoning: hook.reasoning, secretAccountIds: hook.secretAccountIds, titleTemplate: hook.titleTemplate, ...changes,
+    providerProfileId: item.providerProfileId ?? null, providerPoolId: item.providerPoolId ?? null, tags: item.tags, name: item.name, target: item.target, context: item.context, enabled: item.enabled,
+    trigger: item.trigger, schedule: item.schedule, autoRespond: item.autoRespond, pauseOnFailure: item.pauseOnFailure, bypassGuardian: item.bypassGuardian,
+    attachments: item.attachments, preserveFiles: item.preserveFiles, runInWorktree: item.runInWorktree, markForReview: item.markForReview, hideFromHistory: item.hideFromHistory,
+    senders: item.senders, model: item.model, reasoning: item.reasoning, secretAccountIds: item.secretAccountIds, titleTemplate: item.titleTemplate,
+    // A change that names a field changes it; one that leaves it out keeps what is stored.
+    ...Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined)),
   });
 }
 
-/** Turns a scheduled task, a webhook or a Bob report on or off through the same commands the other screens use. */
+/** Turns a scheduled automation, a webhook automation or a Bob report on or off through the same commands the editor uses. */
 export async function setAutomationEnabled(session: AuthSession, kind: AutomationKind, id: string, enabled: boolean): Promise<AutomationRow> {
   const { entry } = await find(session, kind, id);
   mustBeEditable(entry);
   await runAsAccount(actingAccountFromSession(session), async () => {
-    if (entry.task) await runCronCommand(entry.task.ownerNodeId, { action: "update", id: entry.task.id, input: { ...cronInputOf(entry.task), enabled } });
-    else if (entry.webhook) await runWebhookCommand(entry.row.nodeId!, { action: "update", id, input: webhookInputOf(entry.webhook, { enabled }) });
+    if (entry.automation) await runAutomationCommand(entry.row.nodeId!, { action: "update", id, input: automationInputOf(entry.automation, { enabled }) });
     else {
       updateBobSchedule(await bobDatabase(), session.accountId, id, { enabled });
       rearmReportTimer();
@@ -122,12 +109,11 @@ export async function setAutomationEnabled(session: AuthSession, kind: Automatio
   return { ...entry.row, enabled };
 }
 
-/** Deletes one automation. Whoever sees a task's or webhook's project may delete it; a Bob schedule is its owner's. */
+/** Deletes one automation. Whoever sees an automation's project may delete it; a Bob schedule is its owner's. */
 export async function deleteAutomation(session: AuthSession, kind: AutomationKind, id: string): Promise<AutomationRow> {
   const { entry } = await find(session, kind, id);
   await runAsAccount(actingAccountFromSession(session), async () => {
-    if (entry.task) await runCronCommand(entry.task.ownerNodeId, { action: "delete", id, projectId: entry.task.projectId });
-    else if (entry.webhook) await runWebhookCommand(entry.row.nodeId!, { action: "delete", id });
+    if (entry.automation) await runAutomationCommand(entry.row.nodeId!, { action: "delete", id });
     else {
       deleteBobSchedule(await bobDatabase(), session.accountId, id);
       rearmReportTimer();
@@ -182,7 +168,7 @@ export const webhookChangeSchema = z.object({ name: z.string().trim().min(1).max
 export const reportInputSchema = bobScheduleInputSchema;
 export const reportChangeSchema = bobScheduleChangeSchema;
 
-function cronSchedule(compact: CompactSchedule): CronInput["schedule"] {
+function cronSchedule(compact: CompactSchedule): Schedule {
   const hour = Number(compact.time.slice(0, 2));
   const minute = Number(compact.time.slice(3));
   const every = [0, 1, 2, 3, 4, 5, 6];
@@ -205,19 +191,15 @@ function defaultEngine(): string {
   try { return iconHarnessId(); } catch { throw new AutomationError(409, "No agent is set up on this machine to run scheduled tasks"); }
 }
 
-export async function createScheduledTask(session: AuthSession, raw: ScheduledTaskInput): Promise<CronTask> {
+export async function createScheduledTask(session: AuthSession, raw: ScheduledTaskInput): Promise<AutomationItem> {
   const input = scheduledTaskInputSchema.parse(raw);
   await mustSeeProject(session, input.projectId);
   return runAsAccount(actingAccountFromSession(session), async () => {
     const local = await getClusterNode();
     if (!await getProject(input.projectId)) throw new AutomationError(409, "This project is not on this machine, so a scheduled task cannot be created here");
-    const cron: CronInput = {
-      assistantId: null, tags: { managedTagIds: [], manualTags: [] }, projectId: input.projectId, name: input.name, prompt: input.prompt, ownerNodeId: local.id,
-      engine: defaultEngine(), model: null, sessionId: null, enabled: input.enabled, runInWorktree: true, pauseOnFailure: false, markForReview: false, hideFromHistory: false, bypassGuardian: false,
-      schedule: cronSchedule(input.schedule),
-    };
-    const { task } = await runCronCommand(local.id, { action: "create", input: cron }) as { task: CronTask };
-    return task;
+    const body = webhookInputSchema.parse({ name: input.name, target: { kind: "project", projectId: input.projectId, engine: defaultEngine() }, context: input.prompt, enabled: input.enabled, trigger: "schedule", schedule: cronSchedule(input.schedule) });
+    const { automation } = await runAutomationCommand(local.id, { action: "create", input: body }) as { automation: AutomationItem };
+    return automation;
   });
 }
 
@@ -225,28 +207,24 @@ export async function updateScheduledTask(session: AuthSession, id: string, raw:
   const change = scheduledTaskChangeSchema.parse(raw);
   const { entry } = await find(session, "schedule", id);
   mustBeEditable(entry);
-  const task = entry.task!;
-  if (change.schedule && entry.row.edit.kind === "schedule" && !entry.row.edit.simple) throw new AutomationError(409, "This schedule has options the quick editor cannot show; use More options");
-  const input: CronInput = {
-    ...cronInputOf(task), name: change.name ?? task.name, prompt: change.prompt ?? task.prompt, enabled: change.enabled ?? task.enabled,
-    schedule: change.schedule ? cronSchedule(change.schedule) : task.schedule,
-  };
-  await runAsAccount(actingAccountFromSession(session), () => runCronCommand(task.ownerNodeId, { action: "update", id, input }));
+  if (change.schedule && entry.row.edit.kind === "schedule" && !entry.row.edit.simple) throw new AutomationError(409, "This schedule has options the quick editor cannot show; open it in the editor");
+  const input = automationInputOf(entry.automation!, { name: change.name, context: change.prompt, enabled: change.enabled, ...(change.schedule ? { schedule: cronSchedule(change.schedule) } : {}) });
+  await runAsAccount(actingAccountFromSession(session), () => runAutomationCommand(entry.row.nodeId!, { action: "update", id, input }));
 }
 
-export async function createWebhookCompact(session: AuthSession, raw: WebhookCompactInput): Promise<{ webhook: Webhook; secret: string; bases: Array<{ id: string; label: string; base: string }> }> {
+export async function createWebhookCompact(session: AuthSession, raw: WebhookCompactInput): Promise<{ automation: AutomationItem; secret: string | null; bases: Array<{ id: string; label: string; base: string }> }> {
   const input = webhookInputCompactSchema.parse(raw);
   await mustSeeProject(session, input.projectId);
   if (!hasFeature({ isRemoteLogin: session.isRemoteLogin }, Feature.SETTINGS)) throw new AutomationError(403, "Webhooks are managed on the machine you sign in at home");
   const body = webhookInputSchema.parse({ name: input.name, target: { kind: "project", projectId: input.projectId }, context: input.context, enabled: input.enabled });
-  return await runAsAccount(actingAccountFromSession(session), () => runWebhookCommand(undefined, { action: "create", input: body })) as Awaited<ReturnType<typeof createWebhookCompact>>;
+  return await runAsAccount(actingAccountFromSession(session), () => runAutomationCommand(undefined, { action: "create", input: body })) as Awaited<ReturnType<typeof createWebhookCompact>>;
 }
 
 export async function updateWebhookCompact(session: AuthSession, id: string, raw: z.infer<typeof webhookChangeSchema>): Promise<void> {
   const change = webhookChangeSchema.parse(raw);
   const { entry } = await find(session, "webhook", id);
   mustBeEditable(entry);
-  await runAsAccount(actingAccountFromSession(session), () => runWebhookCommand(entry.row.nodeId!, { action: "update", id, input: webhookInputOf(entry.webhook!, change) }));
+  await runAsAccount(actingAccountFromSession(session), () => runAutomationCommand(entry.row.nodeId!, { action: "update", id, input: automationInputOf(entry.automation!, change) }));
 }
 
 /** Resolves the projects a report covers: every one must be visible to the person. */

@@ -166,12 +166,9 @@ function assistantConversations(): Set<string> {
   ]);
 }
 
-/** Conversations an existing scheduled task or webhook writes into every time it runs. */
+/** Conversations an existing automation, scheduled or called by a webhook, writes into every time it runs. */
 function automationTargets(): Set<string> {
-  return new Set([
-    ...ids("SELECT json_extract(input, '$.sessionId') AS id FROM cron_tasks", "cron_tasks"),
-    ...ids("SELECT session_id AS id FROM webhooks", "webhooks"),
-  ]);
+  return new Set(ids("SELECT session_id AS id FROM webhooks", "webhooks"));
 }
 
 /** Background runs a side chat still resumes: its state names the agent's session. */

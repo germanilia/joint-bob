@@ -195,8 +195,8 @@ test("relay-only machines share exactly what their clusters allow, and the relay
     await eventually(async () => assert.equal((await throughGateway(r.port, host, "GET", "/api/auth/status")).status, 404));
 
     // Webhooks need no phone sign-in: the relay hands the call to A on a webhook-only channel.
-    const hook = await api<{ webhook: { id: string }; secret: string; bases: Array<{ id: string; base: string }> }>(a, localSession, "POST", "/webhooks", {
-      name: "Relay hook", target: { kind: "project", projectId: forX.id }, context: "Triage this.",
+    const hook = await api<{ automation: { id: string }; secret: string; bases: Array<{ id: string; base: string }> }>(a, localSession, "POST", "/automations", {
+      trigger: "webhook", name: "Relay hook", target: { kind: "project", projectId: forX.id }, context: "Triage this.",
     });
     assert.equal(hook.status, 201, JSON.stringify(hook.body));
     assert.match(hook.body.secret, /^[A-Za-z0-9_-]{43}$/, "the secret is 256 random bits");
@@ -211,13 +211,13 @@ test("relay-only machines share exactly what their clusters allow, and the relay
     assert.equal((await throughGateway(r.port, relayHost, "POST", `/hooks/${names.get(a.nodeId)}/${hook.body.secret.slice(1)}x`, {})).status, 404, "a wrong secret finds nothing");
     assert.equal((await throughGateway(r.port, relayHost, "POST", `/hooks/nobody/${hook.body.secret}`, {})).status, 404, "an unknown machine finds nothing");
     await eventually(async () => {
-      const deliveries = await api<{ deliveries: Array<{ status: string }> }>(a, localSession, "GET", `/webhooks/${hook.body.webhook.id}/deliveries`);
-      assert.ok(deliveries.body.deliveries.length >= 1, "the call was recorded");
+      const deliveries = await api<{ calls: Array<{ status: string }> }>(a, localSession, "GET", `/automations/${hook.body.automation.id}/history`);
+      assert.ok(deliveries.body.calls.length >= 1, "the call was recorded");
     });
-    const regenerated = await api<{ secret: string }>(a, localSession, "POST", `/webhooks/${hook.body.webhook.id}/regenerate`, {});
+    const regenerated = await api<{ secret: string }>(a, localSession, "POST", `/automations/${hook.body.automation.id}/regenerate`, {});
     assert.equal((await throughGateway(r.port, relayHost, "POST", hookPath, {})).status, 404, "the old address stops working");
     assert.equal((await throughGateway(r.port, relayHost, "POST", `/hooks/${names.get(a.nodeId)}/${regenerated.body.secret}`, {})).status, 202);
-    assert.equal((await api(a, localSession, "DELETE", `/webhooks/${hook.body.webhook.id}`)).status, 204);
+    assert.equal((await fetch(`${a.url}/api/automations/${hook.body.automation.id}`, { method: "DELETE", headers: { Cookie: localSession.cookie, "x-csrf-token": localSession.csrfToken } })).status, 204);
     assert.equal((await throughGateway(r.port, relayHost, "POST", `/hooks/${names.get(a.nodeId)}/${regenerated.body.secret}`, {})).status, 404, "a deleted webhook finds nothing");
   } finally {
     await Promise.all(children.map(stopDevNode));

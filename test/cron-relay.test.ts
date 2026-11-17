@@ -5,7 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
-import type { CronTask } from "../src/cron.js";
+import type { Webhook } from "../src/webhooks.js";
+import type { CronRun } from "../src/cron.js";
 
 async function eventually(check: () => Promise<void>): Promise<void> {
   const deadline = Date.now() + 30_000;
@@ -60,35 +61,40 @@ test("a workspace relay hosts and runs schedules, transfers ownership, and rejec
     await mkdir(credentialDirectory, { recursive: true });
     await writeFile(path.join(credentialDirectory, "auth.json"), JSON.stringify({ anthropic: { type: "oauth", access: "synthetic-access", refresh: "synthetic-refresh", expires: Date.now() + 86_400_000 } }));
     assert.equal((await api(relay, relayAuth, "PUT", `/provider-profiles/${profile.body.profile.id}/sharing`, { shared: true })).status, 200);
-    const command = (nodeId: string, value: unknown) => api<{ task: CronTask; error?: string }>(owner, ownerAuth, "POST", "/cron", { nodeId, command: value });
-    const input = { projectId, name: "Relay report", prompt: "Report", engine: "claude", sessionId: null, ownerNodeId: relay.nodeId, enabled: false, schedule: { frequency: "hourly", hour: 9, minute: (new Date().getUTCMinutes() + 30) % 60, weekday: 1, timezone: "UTC" } };
-    const created = await command(relay.nodeId, { action: "create", input: { ...input, providerProfileId: profile.body.profile.id } });
-    assert.equal(created.status, 200, JSON.stringify(created.body));
-    assert.equal(created.body.task.ownerNodeId, relay.nodeId);
-    const id = created.body.task.id;
+    type Item = Webhook & { lastRun: CronRun | null };
+    // Commands go to the machine named by `?nodeId=`.
+    const send = (method: string, endpoint: string, nodeId: string, body: unknown = {}) => api<{ automation: Item; error?: string }>(owner, ownerAuth, method, `${endpoint}?nodeId=${nodeId}`, body);
+    const input = { trigger: "schedule", target: { kind: "project", projectId, engine: "claude" }, name: "Relay report", context: "Report", enabled: false, schedule: { frequency: "hourly", hour: 9, minute: (new Date().getUTCMinutes() + 30) % 60, weekday: 1, timezone: "UTC" } };
+    const created = await send("POST", "/automations", relay.nodeId, { ...input, providerProfileId: profile.body.profile.id });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.automation.ownerNodeId, relay.nodeId);
+    const id = created.body.automation.id;
     const relaySettings = await api<Record<string, unknown>>(relay, relayAuth, "GET", "/settings");
     assert.equal((await api(relay, relayAuth, "PUT", "/settings", { ...relaySettings.body, runnerAccess: { otherNodes: false } })).status, 200);
-    const disabledRun = await signedNodeRequest(ownerEnvironment, owner, relay, "POST", "/api/cluster/v2/runtime/cron", { action: "run", id, projectId });
+    const disabledRun = await signedNodeRequest(ownerEnvironment, owner, relay, "POST", "/api/cluster/v2/automations", { action: "run", id });
     assert.equal(disabledRun.status, 403, "turning off remote runs must also block Run now on existing schedules");
     assert.equal((await api(relay, relayAuth, "PUT", "/settings", { ...relaySettings.body, runnerAccess: { otherNodes: true } })).status, 200);
-    const run = await command(relay.nodeId, { action: "run", id, projectId });
+    const run = await send("POST", `/automations/${id}/run`, relay.nodeId);
     assert.equal(run.status, 200, JSON.stringify(run.body));
     await eventually(async () => {
-      const listed = await api<{ tasks: CronTask[] }>(owner, ownerAuth, "GET", `/projects/${projectId}/cron`);
-      assert.equal(listed.body.tasks.find(task => task.id === id)?.lastRun?.status, "succeeded", JSON.stringify(listed.body));
+      const listed = await api<{ automations: Item[] }>(owner, ownerAuth, "GET", `/automations?nodeId=${relay.nodeId}`);
+      assert.equal(listed.body.automations.find(task => task.id === id)?.lastRun?.status, "succeeded", JSON.stringify(listed.body));
     });
     assert.ok((await readFile(log, "utf8")).includes(`claude:${relay.nodeId}`), "the relay executes the scheduled agent, not the requesting node");
-    const moved = await command(relay.nodeId, { action: "update", id, input: { ...input, ownerNodeId: owner.nodeId } });
+    // The profile belongs to the relay, so it is dropped before the schedule moves to a machine that does not have it.
+    assert.equal((await send("PUT", `/automations/${id}`, relay.nodeId, input)).status, 200);
+    const moved = await send("POST", `/automations/${id}/transfer`, relay.nodeId, { nodeId: owner.nodeId });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
-    assert.equal(moved.body.task.ownerNodeId, owner.nodeId);
-    const returned = await command(owner.nodeId, { action: "update", id, input });
+    assert.equal(moved.body.automation.ownerNodeId, owner.nodeId);
+    const returned = await send("POST", `/automations/${id}/transfer`, owner.nodeId, { nodeId: relay.nodeId });
     assert.equal(returned.status, 200, JSON.stringify(returned.body));
+    assert.equal(returned.body.automation.ownerNodeId, relay.nodeId);
     const privateProject = relay.projects[0].id;
-    const denied = await signedNodeRequest(ownerEnvironment, owner, relay, "POST", "/api/cluster/v2/runtime/cron", { action: "list", projectId: privateProject });
+    const denied = await signedNodeRequest(ownerEnvironment, owner, relay, "POST", "/api/cluster/v2/automations", { action: "list", projectId: privateProject });
     assert.equal(denied.status, 403);
     assert.equal((await api(owner, ownerAuth, "PUT", `/workspaces/${workspace.body.workspace.id}/sharing`, { clusterIds: [], nodeIds: [], relayIds: [] })).status, 200);
     await eventually(async () => {
-      const reply = await signedNodeRequest(ownerEnvironment, owner, relay, "POST", "/api/cluster/v2/runtime/cron", { action: "run", id, projectId });
+      const reply = await signedNodeRequest(ownerEnvironment, owner, relay, "POST", "/api/cluster/v2/automations", { action: "run", id });
       assert.ok([401, 403].includes(reply.status), `revocation stops remote management of a stored schedule: ${reply.status}`);
     });
   } finally {

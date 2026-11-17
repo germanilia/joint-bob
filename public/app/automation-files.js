@@ -1,9 +1,10 @@
-// Settings → Webhooks → Files & tools. Each picked file becomes a staged card with its own type
-// and description. On an existing webhook "Add file" uploads it; on a new one the cards upload
-// after the webhook is created. Saved text files edit in place; all files can be replaced or reverted.
+// Automation editor → Context → Files & tools. Each picked file becomes a staged card with its own
+// type and description. On an existing automation "Add file" uploads it; on a new one the cards
+// upload after the automation is created. Saved text files edit in place; all files can be replaced
+// or reverted.
 import { api } from "./api.js";
 import { createFittedList, formatBytes, makeButton, makeNode, makeTwoStepButton } from "./relay-ui.js";
-import { byId, encodeFile, makeSegmented, saveBlob } from "./webhook-ui.js";
+import { encodeFile, makeSegmented, saveBlob } from "./automation-ui.js";
 
 function editableTextMimeType(mimeType) {
   return mimeType.startsWith("text/") || ["application/json", "application/xml", "application/javascript", "application/x-yaml"].includes(mimeType);
@@ -18,16 +19,35 @@ function textInput(testid, label, placeholder) {
   return input;
 }
 
-/** `url(suffix)` addresses the current webhook, `run(work)` runs one guarded action. */
-export function createWebhookFiles({ url, run, onCount }) {
+/** `url(suffix)` addresses the current automation, `run(work)` runs one guarded action. */
+export function createAutomationFiles({ url, run, onCount }) {
   let hook = null;
   let resources = [];
   const staged = [];
-  const stagedBox = byId("webhookResourceStaged");
-  const picker = byId("webhookResourceFiles");
+  const element = makeNode("div", "automation-files");
+  const picker = document.createElement("input");
+  picker.type = "file";
+  picker.multiple = true;
+  picker.hidden = true;
+  picker.dataset.testid = "automation-resource-files-input";
+  const zone = makeNode("div", "automation-drop");
+  zone.dataset.testid = "automation-resource-drop";
+  const dropText = makeNode("span", "", " or");
+  dropText.prepend(makeNode("strong", "", "Drop files here"));
+  zone.append(dropText, makeButton("Browse…", "automation-resource-browse-button", () => picker.click()), picker);
+  const stagedBox = makeNode("div", "automation-staged-list");
+  const listNode = makeNode("div", "relay-list");
+  listNode.dataset.testid = "automation-resource-list";
+  const pagerNode = makeNode("div", "relay-pager");
+  pagerNode.dataset.testid = "automation-resource-pager";
+  pagerNode.hidden = true;
+  element.append(
+    makeNode("p", "settings-hint", "The agent sees each file's name, path and description and opens it when needed. Tools are stored as files; the agent runs them only as your notes describe. Up to 4 MiB each."),
+    zone, stagedBox, listNode, pagerNode,
+  );
 
   const list = createFittedList({
-    list: byId("webhookResourceList"), pager: byId("webhookResourcePager"), testPrefix: "webhook-resources",
+    list: listNode, pager: pagerNode, testPrefix: "automation-resources",
     emptyText: "No files or tools yet.",
     fetchPage: async (page, size) => ({ total: resources.length, items: resources.slice((page - 1) * size, page * size) }),
     renderItem: fileRow,
@@ -53,19 +73,19 @@ export function createWebhookFiles({ url, run, onCount }) {
   }
 
   function stageFile(file) {
-    const entry = { file, kind: "file", card: makeNode("div", "webhooks-staged") };
-    entry.description = textInput("webhook-resource-description-input", `Description for ${file.name}`, "What is this file and when should the agent use it?");
-    entry.usage = textInput("webhook-resource-usage-input", `How to run ${file.name}`, `For example: python3 ${file.name} --help`);
+    const entry = { file, kind: "file", card: makeNode("div", "automation-staged") };
+    entry.description = textInput("automation-resource-description-input", `Description for ${file.name}`, "What is this file and when should the agent use it?");
+    entry.usage = textInput("automation-resource-usage-input", `How to run ${file.name}`, `For example: python3 ${file.name} --help`);
     const usageRow = makeNode("label", "", "How to run");
     usageRow.append(entry.usage);
     usageRow.hidden = true;
-    const kinds = makeSegmented([{ value: "file", label: "Static file", testid: "webhook-resource-kind-file" }, { value: "tool", label: "Tool or script", testid: "webhook-resource-kind-tool" }], "file", (kind) => { entry.kind = kind; usageRow.hidden = kind !== "tool"; });
+    const kinds = makeSegmented([{ value: "file", label: "Static file", testid: "automation-resource-kind-file" }, { value: "tool", label: "Tool or script", testid: "automation-resource-kind-tool" }], "file", (kind) => { entry.kind = kind; usageRow.hidden = kind !== "tool"; });
     const descriptionRow = makeNode("label", "", "Description");
     descriptionRow.append(entry.description);
-    entry.add = makeButton("Add file", "webhook-resource-add-button", () => void run(async () => { await upload(entry); await reload(); }), "primary compact");
+    entry.add = makeButton("Add file", "automation-resource-add-button", () => void run(async () => { await upload(entry); await reload(); }), "primary compact");
     entry.add.hidden = !hook;
     const actions = makeNode("div", "relay-row-actions");
-    actions.append(makeButton("Remove", "webhook-resource-remove-button", () => dropEntry(entry)), entry.add);
+    actions.append(makeButton("Remove", "automation-resource-remove-button", () => dropEntry(entry)), entry.add);
     const title = makeNode("div", "relay-row-title");
     title.append(makeNode("strong", "relay-row-name", file.name), makeNode("span", "relay-row-meta", formatBytes(file.size)));
     entry.card.append(title, kinds, descriptionRow, usageRow, actions);
@@ -98,29 +118,29 @@ export function createWebhookFiles({ url, run, onCount }) {
   }
 
   function fileRow(resource) {
-    const row = makeNode("div", "relay-row webhooks-file-row");
+    const row = makeNode("div", "relay-row automation-file-row");
     const name = makeNode("div", "relay-row-main");
     name.append(makeNode("strong", "relay-row-name", resource.name), makeNode("span", "relay-row-meta", `${resource.kind === "tool" ? "Tool" : "File"} · ${formatBytes(resource.bytes)}`));
     const notes = makeNode("div", "relay-row-main");
-    const description = textInput("webhook-resource-description-edit", `Description for ${resource.name}`, "What the agent should know");
+    const description = textInput("automation-resource-description-edit", `Description for ${resource.name}`, "What the agent should know");
     description.value = resource.description;
-    const usage = resource.kind === "tool" ? textInput("webhook-resource-usage-edit", `How to run ${resource.name}`, "How to run") : null;
+    const usage = resource.kind === "tool" ? textInput("automation-resource-usage-edit", `How to run ${resource.name}`, "How to run") : null;
     if (usage) usage.value = resource.usage ?? "";
     for (const input of [description, usage].filter(Boolean)) input.addEventListener("change", () => void run(() => saveDetails(resource, description, usage)));
     notes.append(description, ...(usage ? [usage] : []));
     const actions = makeNode("div", "relay-row-actions");
-    const edit = makeButton("Edit file", "webhook-resource-edit-content-button", () => void run(async () => {
+    const edit = makeButton("Edit file", "automation-resource-edit-content-button", () => void run(async () => {
       const current = await api(url(`/resources/${resource.id}/download`));
       if (!editableTextMimeType(current.mimeType)) throw new Error("This file is not a text file; replace or download it instead");
       let content;
       try { content = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(current.data), character => character.charCodeAt(0))); }
       catch { throw new Error("This file is not valid UTF-8 text; replace or download it instead"); }
       const editor = document.createElement("textarea");
-      editor.dataset.testid = "webhook-resource-content-editor";
+      editor.dataset.testid = "automation-resource-content-editor";
       editor.setAttribute("aria-label", `Contents of ${resource.name}`);
       editor.value = content;
-      const saveContent = makeButton("Save contents", "webhook-resource-content-save-button", () => void run(() => saveText(resource, editor)), "primary compact");
-      const cancel = makeButton("Cancel", "webhook-resource-content-cancel-button", () => { editor.remove(); saveContent.remove(); cancel.remove(); edit.hidden = false; });
+      const saveContent = makeButton("Save contents", "automation-resource-content-save-button", () => void run(() => saveText(resource, editor)), "primary compact");
+      const cancel = makeButton("Cancel", "automation-resource-content-cancel-button", () => { editor.remove(); saveContent.remove(); cancel.remove(); edit.hidden = false; });
       notes.append(editor, saveContent, cancel);
       edit.hidden = true;
     }));
@@ -128,17 +148,17 @@ export function createWebhookFiles({ url, run, onCount }) {
     const replacePicker = document.createElement("input");
     replacePicker.type = "file";
     replacePicker.hidden = true;
-    replacePicker.dataset.testid = "webhook-resource-replace-picker";
+    replacePicker.dataset.testid = "automation-resource-replace-picker";
     replacePicker.addEventListener("change", () => { const file = replacePicker.files?.[0]; if (file) void run(() => replaceFile(resource, file)); replacePicker.value = ""; });
-    const replace = makeButton("Replace", "webhook-resource-replace-button", () => replacePicker.click());
-    const revert = makeButton("Revert", "webhook-resource-revert-button", () => void run(async () => {
+    const replace = makeButton("Replace", "automation-resource-replace-button", () => replacePicker.click());
+    const revert = makeButton("Revert", "automation-resource-revert-button", () => void run(async () => {
       await api(url(`/resources/${resource.id}/revert`), { method: "POST", body: JSON.stringify({ expectedVersionId: resource.versionId }) });
       await reload();
     }));
     revert.hidden = !resource.hasPreviousVersion;
-    const save = makeButton("⤓", "webhook-resource-download-button", () => void run(() => download(resource)));
+    const save = makeButton("⤓", "automation-resource-download-button", () => void run(() => download(resource)));
     save.setAttribute("aria-label", `Download ${resource.name}`);
-    const remove = makeTwoStepButton({ label: "✕", armedLabel: "Delete it?", testid: "webhook-resource-delete-button", onConfirm: () => run(async () => {
+    const remove = makeTwoStepButton({ label: "✕", armedLabel: "Delete it?", testid: "automation-resource-delete-button", onConfirm: () => run(async () => {
       await api(url(`/resources/${resource.id}`), { method: "DELETE" });
       await reload();
     }) });
@@ -152,28 +172,27 @@ export function createWebhookFiles({ url, run, onCount }) {
     for (const file of files) stageFile(file);
   }
 
-  byId("webhookResourceBrowse").addEventListener("click", () => picker.click());
   picker.addEventListener("change", () => { pick(picker.files); picker.value = ""; });
-  const zone = byId("webhookResourceDrop");
   zone.addEventListener("dragover", (event) => event.preventDefault());
   zone.addEventListener("drop", (event) => { event.preventDefault(); pick(event.dataTransfer.files); });
 
   return {
-    /** Shows a webhook's files, or an empty page for a new one. Staged cards from before are dropped. */
+    element,
+    /** Shows an automation's files, or an empty page for a new one. Staged cards from before are dropped. */
     async open(next) {
       hook = next;
       for (const entry of [...staged]) dropEntry(entry);
       await reload();
     },
-    /** The webhook now exists: staged cards can be added one by one. */
+    /** The automation now exists: staged cards can be added one by one. */
     attach(next) {
       hook = next;
       for (const entry of staged) entry.add.hidden = false;
     },
-    /** The first staged file that cannot be uploaded yet, in the shape the save form reports. */
+    /** The first staged file that cannot be uploaded yet, with the field to focus and the message to show. */
     missing() {
       const entry = staged.find((candidate) => !candidate.description.value.trim());
-      return entry ? { tab: "files", element: entry.description, message: `Add a description for ${entry.file.name}, or remove it` } : null;
+      return entry ? { element: entry.description, message: `Add a description for ${entry.file.name}, or remove it` } : null;
     },
     async uploadStaged() {
       for (const entry of [...staged]) await upload(entry);

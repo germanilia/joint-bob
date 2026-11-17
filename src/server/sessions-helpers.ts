@@ -24,7 +24,7 @@ import type { ProjectRecord, SessionSummary } from "../types.js";
 import { listUserPins } from "../user-pins.js";
 import { sessionWatcher } from "./chat.js";
 import { findHarnessSession, harnessTurnBusy, harnessTurnWorking } from "./harness-sessions.js";
-import { listProjectCronTasks } from "./cron-list.js";
+import { listProjectAutomations } from "./automation-peers.js";
 import { measureOperation } from "./performance-diagnostics.js";
 import { conversationsChanged, sessionListingChanged, sharedProjectListing, sharedProjectListingUse } from "../session-listing-revisions.js";
 
@@ -94,7 +94,7 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
   const temporarySessionIds = await listByTheWaySessionIds(project.id);
   const catalog = await measureOperation("sessions.transcript_catalog", () => listHarnessSessions(searchProject, scope.includedSessionPaths, scope.includedSessionIds));
   const hiddenCronTaskIds = new Set(userId && catalog.some((session) => session.cronTaskId)
-    ? (await listProjectCronTasks(project.id)).tasks.filter((task) => task.hideFromHistory).map((task) => task.id)
+    ? (await listProjectAutomations(project.id)).automations.filter((automation) => automation.trigger === "schedule" && automation.hideFromHistory).map((automation) => automation.id)
     : []);
   // Viewer lists exclude hidden runs before review synchronization, badges, and notifications.
   // Internal snapshots still need them for scheduler readiness. Preserve review watermarks.

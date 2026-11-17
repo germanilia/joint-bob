@@ -13,7 +13,7 @@ function memoryPath(directory: string): string { return path.join(directory, "ME
 async function readMemoryBytes(file: string): Promise<Buffer> {
   try {
     const info = await lstat(file);
-    if (!info.isFile() || info.isSymbolicLink()) throw new WebhookResourceError("Webhook memory file is unavailable", 409);
+    if (!info.isFile() || info.isSymbolicLink()) throw new WebhookResourceError("Automation memory file is unavailable", 409);
     return await readFile(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return Buffer.alloc(0);
@@ -31,7 +31,7 @@ export async function readWebhookMemory(webhookId: string, options: WebhookResou
   const bytes = await readMemoryBytes(file);
   let content: string;
   try { content = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-  catch { throw new WebhookResourceError("Webhook memory is not valid UTF-8", 409); }
+  catch { throw new WebhookResourceError("Automation memory is not valid UTF-8", 409); }
   return { content, revision: revision(bytes), path: file };
 }
 
@@ -53,7 +53,7 @@ export async function writeWebhookMemory(db: DatabaseSync, webhookId: string, ex
   ensureWebhookResourceSchema(db);
   assertResourceOwner(db, webhookId);
   const bytes = Buffer.from(content, "utf8");
-  if (bytes.byteLength > WEBHOOK_MEMORY_MAX_BYTES) throw new WebhookResourceError("Webhook memory must be at most 200,000 bytes");
+  if (bytes.byteLength > WEBHOOK_MEMORY_MAX_BYTES) throw new WebhookResourceError("Automation memory must be at most 200,000 bytes");
   const directory = await ensureWebhookResourceDirectory(webhookId, options);
   const file = memoryPath(directory);
   const temporary = `${file}.${randomUUID()}.tmp`;
@@ -62,7 +62,7 @@ export async function writeWebhookMemory(db: DatabaseSync, webhookId: string, ex
   return withMemoryLock(webhookId, async () => {
     try {
       const current = await readMemoryBytes(file);
-      if (revision(current) !== expectedRevision) throw new WebhookResourceError("Webhook memory changed since you read it. Reload and reconcile before saving.", 409);
+      if (revision(current) !== expectedRevision) throw new WebhookResourceError("Automation memory changed since you read it. Reload and reconcile before saving.", 409);
       await writeFile(temporary, bytes, { flag: "wx", mode: 0o600 });
       await rename(temporary, file);
     } catch (error) {

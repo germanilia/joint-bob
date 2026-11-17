@@ -1,5 +1,4 @@
 import { loadWorktrees } from "./worktrees.js";
-import { loadHiddenCronTasks } from "./cron.js";
 import { api, savePreferencesInBackground } from "./api.js";
 import { clearAttachments } from "./attachments.js";
 import { loadHarnesses, loadSessionNodes, setComposerEnabled } from "./chat-controls.js";
@@ -18,6 +17,15 @@ import { renderSessions } from "./session-list.js";
 import { setListLoading, subscribeToPush, toast } from "./shell.js";
 import { closeSocket, ensureWatchSocket, openSession } from "./socket.js";
 import { state } from "./state.js";
+
+/** Which scheduled automations the history hides, and which ones exist at all (a conversation from a deleted one is shown as a plain conversation). */
+export async function loadHiddenCronTasks(projectId) {
+  const { automations } = await api(`/api/projects/${encodeURIComponent(projectId)}/automations`);
+  if (state.activeProjectId !== projectId) return;
+  state.hiddenCronTaskIds = new Set(automations.filter((automation) => automation.hideFromHistory).map((automation) => automation.id));
+  state.knownCronTaskIds = new Set([...automations.map((automation) => automation.id), ...state.sessions.map((session) => session.cronTaskId).filter(Boolean)]);
+  renderSessions();
+}
 
 export async function refreshProjectsQuietly() {
   if (state.projectsRefreshing) return;

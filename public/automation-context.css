@@ -1,0 +1,37 @@
+/* Automation editor → Context tab. Lists keep their natural height and page; nothing here scrolls. */
+.automation-context { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.automation-context [hidden] { display: none; }
+.automation-panel, .automation-files, .automation-skills, .automation-memory { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* Segmented switch */
+.automation-seg { display: inline-flex; flex-wrap: wrap; align-self: flex-start; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--field); }
+.automation-seg > button { min-height: 0; padding: 5px 13px; border: 0; border-radius: calc(var(--radius-ctl) - 2px); background: transparent; color: var(--muted); font-size: 12.5px; box-shadow: none; }
+.automation-seg > button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+
+/* Secret accounts */
+.automation-pick { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-ctl); font-size: 13px; }
+.automation-pick-name { min-width: 0; overflow-wrap: anywhere; }
+.automation-pick-meta { margin-left: auto; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Files */
+.automation-drop { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; padding: 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius-ctl); color: var(--muted); font-size: 13px; }
+.automation-staged-list { display: grid; gap: 8px; }
+.automation-staged-list:empty { display: none; }
+.automation-staged { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--panel); }
+.automation-staged label, .automation-file-row input { display: grid; gap: 4px; min-width: 0; font-size: 12.5px; }
+.automation-staged input, .automation-file-row input { width: 100%; }
+.automation-file-row { align-items: center; }
+.automation-file-row > .relay-row-main { min-width: 0; }
+
+/* Skills */
+.automation-add-panel { display: grid; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--panel); }
+.automation-available { display: grid; gap: 8px; flex: none; }
+.automation-available h4 { margin: 0; font-size: 13px; }
+
+/* Memory */
+.automation-option { align-items: flex-start; }
+.automation-option > span { display: grid; gap: 2px; }
+.automation-memory-on { display: flex; flex-direction: column; gap: 8px; }
+.automation-memory textarea, .automation-preview { min-height: 200px; width: 100%; font: 12.5px/1.5 var(--mono); }
+.automation-preview { overflow-y: auto; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--field); }
+.automation-empty { display: grid; gap: 4px; padding: 16px; border: 1px dashed var(--line-strong); border-radius: var(--radius-ctl); }

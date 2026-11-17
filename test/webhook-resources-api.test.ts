@@ -16,47 +16,47 @@ test("webhook files and editable memory use the authenticated management API", {
     await writeFile(path.join(projectSkill, "SKILL.md"), "---\nname: project-review\ndescription: Review project references.\n---\n");
     server = await startDevNode(environment, node);
     const auth = await signIn(environment, node);
-    const created = await api<{ webhook: { id: string; preserveFiles: boolean } }>(node, auth, "POST", "/webhooks", { name: "Resources", target: { kind: "project", projectId: node.projects[0].id, engine: "pi" } });
+    const created = await api<{ automation: { id: string; preserveFiles: boolean } }>(node, auth, "POST", "/automations", { name: "Resources", target: { kind: "project", projectId: node.projects[0].id, engine: "pi" } });
     assert.equal(created.status, 201);
-    const id = created.body.webhook.id;
-    assert.equal(created.body.webhook.preserveFiles, false);
+    const id = created.body.automation.id;
+    assert.equal(created.body.automation.preserveFiles, false);
     const bytes = Buffer.from("static CSV bytes");
-    const saved = await api<{ resource: { id: string; description: string; versionId: string } }>(node, auth, "POST", `/webhooks/${id}/resources`, {
+    const saved = await api<{ resource: { id: string; description: string; versionId: string } }>(node, auth, "POST", `/automations/${id}/resources`, {
       kind: "file", name: "rates.csv", description: "Reference rates", mimeType: "text/csv", data: bytes.toString("base64"),
     });
     assert.equal(saved.status, 201, JSON.stringify(saved.body));
-    const list = await api<{ resources: Array<{ id: string; description: string; path?: string }> }>(node, auth, "GET", `/webhooks/${id}/resources`);
+    const list = await api<{ resources: Array<{ id: string; description: string; path?: string }> }>(node, auth, "GET", `/automations/${id}/resources`);
     assert.equal(list.status, 200);
     assert.deepEqual(list.body.resources.map(resource => [resource.id, resource.description, resource.path]), [[saved.body.resource.id, "Reference rates", undefined]]);
     const replacedBytes = Buffer.from("replacement CSV bytes");
-    const replaced = await api<{ resource: { id: string; versionId: string } }>(node, auth, "POST", `/webhooks/${id}/resources`, {
+    const replaced = await api<{ resource: { id: string; versionId: string } }>(node, auth, "POST", `/automations/${id}/resources`, {
       kind: "file", resourceId: saved.body.resource.id, expectedVersionId: saved.body.resource.versionId, name: "rates.csv", description: "Reference rates", mimeType: "text/csv", data: replacedBytes.toString("base64"),
     });
     assert.equal(replaced.status, 200);
-    const replacedList = await api<{ resources: Array<{ hasPreviousVersion: boolean }> }>(node, auth, "GET", `/webhooks/${id}/resources`);
+    const replacedList = await api<{ resources: Array<{ hasPreviousVersion: boolean }> }>(node, auth, "GET", `/automations/${id}/resources`);
     assert.equal(replacedList.body.resources[0].hasPreviousVersion, true);
-    assert.equal((await api(node, auth, "POST", `/webhooks/${id}/resources/${saved.body.resource.id}/revert`, { expectedVersionId: replaced.body.resource.versionId })).status, 200);
-    assert.equal((await api(node, auth, "POST", `/webhooks/${id}/resources/${saved.body.resource.id}/revert`, { expectedVersionId: replaced.body.resource.versionId })).status, 409);
-    const download = await api<{ name: string; data: string }>(node, auth, "GET", `/webhooks/${id}/resources/${saved.body.resource.id}/download`);
+    assert.equal((await api(node, auth, "POST", `/automations/${id}/resources/${saved.body.resource.id}/revert`, { expectedVersionId: replaced.body.resource.versionId })).status, 200);
+    assert.equal((await api(node, auth, "POST", `/automations/${id}/resources/${saved.body.resource.id}/revert`, { expectedVersionId: replaced.body.resource.versionId })).status, 409);
+    const download = await api<{ name: string; data: string }>(node, auth, "GET", `/automations/${id}/resources/${saved.body.resource.id}/download`);
     assert.equal(Buffer.from(download.body.data, "base64").toString(), bytes.toString());
-    assert.equal((await api(node, auth, "POST", `/webhooks/${id}/memory`, { action: "enable", enabled: true })).status, 200);
-    const initial = await api<{ revision: string; content: string }>(node, auth, "GET", `/webhooks/${id}/memory`);
+    assert.equal((await api(node, auth, "POST", `/automations/${id}/memory`, { action: "enable", enabled: true })).status, 200);
+    const initial = await api<{ revision: string; content: string }>(node, auth, "GET", `/automations/${id}/memory`);
     assert.equal(initial.body.content, "");
-    const changed = await api<{ revision: string; content: string }>(node, auth, "PUT", `/webhooks/${id}/memory`, { content: "# Useful lesson\n", expectedRevision: initial.body.revision });
+    const changed = await api<{ revision: string; content: string }>(node, auth, "PUT", `/automations/${id}/memory`, { content: "# Useful lesson\n", expectedRevision: initial.body.revision });
     assert.equal(changed.status, 200);
     assert.equal(changed.body.content, "# Useful lesson\n");
-    const stale = await api(node, auth, "PUT", `/webhooks/${id}/memory`, { content: "overwritten\n", expectedRevision: initial.body.revision });
+    const stale = await api(node, auth, "PUT", `/automations/${id}/memory`, { content: "overwritten\n", expectedRevision: initial.body.revision });
     assert.equal(stale.status, 409);
-    const inventory = await api<{ skills: Array<{ inventoryId: string; name: string }> }>(node, auth, "GET", `/webhooks/${id}/skills?inventory=1`);
+    const inventory = await api<{ skills: Array<{ inventoryId: string; name: string }> }>(node, auth, "GET", `/automations/${id}/skills?inventory=1`);
     assert.equal(inventory.status, 200);
     assert.equal(JSON.stringify(inventory.body).includes(node.projects[0].path), false, "inventory ids do not reveal local paths");
     const selectable = inventory.body.skills.find(skill => skill.name === "project-review");
     assert.ok(selectable);
-    const imported = await api<{ skill: { id: string; name: string; path?: string } }>(node, auth, "POST", `/webhooks/${id}/skills`, { action: "import-existing", inventoryId: selectable.inventoryId });
+    const imported = await api<{ skill: { id: string; name: string; path?: string } }>(node, auth, "POST", `/automations/${id}/skills`, { action: "import-existing", inventoryId: selectable.inventoryId });
     assert.equal(imported.status, 201, JSON.stringify(imported.body));
     assert.equal(imported.body.skill.name, "project-review");
     assert.equal(imported.body.skill.path, undefined);
-    const uploaded = await api<{ skill: { name: string; path?: string } }>(node, auth, "POST", `/webhooks/${id}/skills`, { action: "upload", files: [{ relativePath: "SKILL.md", data: Buffer.from("---\nname: webhook-review\ndescription: Uploaded reference skill.\n---\n").toString("base64") }] });
+    const uploaded = await api<{ skill: { name: string; path?: string } }>(node, auth, "POST", `/automations/${id}/skills`, { action: "upload", files: [{ relativePath: "SKILL.md", data: Buffer.from("---\nname: webhook-review\ndescription: Uploaded reference skill.\n---\n").toString("base64") }] });
     assert.equal(uploaded.status, 201, JSON.stringify(uploaded.body));
     assert.equal(uploaded.body.skill.name, "webhook-review");
     assert.equal(uploaded.body.skill.path, undefined);

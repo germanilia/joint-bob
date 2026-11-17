@@ -29,8 +29,8 @@ test("webhooks and schedules bypass Guardian only for their own trusted turns", 
     socket.on("message", raw => frames.push(JSON.parse(raw.toString())));
     await waitFor(frames, () => frames.some(frame => frame.type === "ready"));
 
-    const hook = await api<{ secret: string }>(node, session, "POST", "/webhooks", {
-      name: "Trusted webhook", target: { kind: "conversation", projectId: project.id, sessionId, engine: "claude" },
+    const hook = await api<{ secret: string }>(node, session, "POST", "/automations", {
+      trigger: "webhook", name: "Trusted webhook", target: { kind: "conversation", projectId: project.id, sessionId, engine: "claude" },
       preserveFiles: true, runInWorktree: false, bypassGuardian: true, context: "Please delete the 2023 exports",
     });
     assert.equal(hook.status, 201, JSON.stringify(hook.body));
@@ -39,13 +39,13 @@ test("webhooks and schedules bypass Guardian only for their own trusted turns", 
     assert.equal(frames.some(frame => frame.type === "guardianReviews" && frame.reviews.length), false, "webhook turn needs no review");
     frames.length = 0;
 
-    const scheduled = await api<{ task: { id: string } }>(node, session, "POST", "/cron", { nodeId: node.nodeId, command: { action: "create", input: {
-      name: "Trusted schedule", projectId: project.id, prompt: "Please delete the 2023 exports", engine: "claude", sessionId,
-      ownerNodeId: node.nodeId, enabled: false, runInWorktree: false, bypassGuardian: true,
+    const scheduled = await api<{ automation: { id: string } }>(node, session, "POST", "/automations", {
+      trigger: "schedule", name: "Trusted schedule", context: "Please delete the 2023 exports", target: { kind: "conversation", projectId: project.id, sessionId, engine: "claude" },
+      enabled: false, runInWorktree: false, bypassGuardian: true,
       schedule: { frequency: "daily", hour: 0, minute: 0, weekday: 0, timezone: "UTC" },
-    } } });
-    assert.equal(scheduled.status, 200, JSON.stringify(scheduled.body));
-    assert.equal((await api(node, session, "POST", "/cron", { nodeId: node.nodeId, command: { action: "run", id: scheduled.body.task.id } })).status, 200);
+    });
+    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body));
+    assert.equal((await api(node, session, "POST", `/automations/${scheduled.body.automation.id}/run`, {})).status, 200);
     await waitFor(frames, () => frames.some(frame => frame.type === "promptCompleted"), 30_000);
     assert.equal(frames.some(frame => frame.type === "guardianReviews" && frame.reviews.length), false, "scheduled turn needs no review");
     frames.length = 0;

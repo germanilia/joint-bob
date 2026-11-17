@@ -166,7 +166,7 @@ test("the conversation header: title, project and state on one line, Mark done a
 
   // Every other toolbar action is in ⋯.
   await page.getByTestId("chat-more-button").click();
-  for (const id of ["chat-open-terminal-button", "chat-open-browser-button", "chat-notify-button", "chat-auto-respond-button", "chat-rename-button", "chat-more-dashboard-button", "chat-cron-button", "chat-session-menu-button", "chat-share-button", "chat-pin-button", "chat-personal-assistant-button"]) {
+  for (const id of ["chat-open-terminal-button", "chat-open-browser-button", "chat-notify-button", "chat-auto-respond-button", "chat-rename-button", "chat-more-dashboard-button", "chat-automations-button", "chat-session-menu-button", "chat-share-button", "chat-pin-button", "chat-personal-assistant-button"]) {
     assert.equal(await visible(id), true, `${id} is in the ⋯ menu`);
   }
   assert.equal(await page.locator("#chatMoreMenu #chatInstallButton, #chatMoreMenu [data-testid='chat-install-button']").count(), 1, "Install stays in the menu (shown when the browser offers it)");
@@ -223,10 +223,10 @@ test("the details column: Activity, btw, Files, Git and Tasks, More, the two swi
   // Browser, Terminal, Share and Schedule live once, in the ⋯ menu: the column has no row of buttons for them.
   assert.equal(await page.locator("#detailsLinks, #detailsFoot").count(), 0);
   await page.getByTestId("chat-more-button").click();
-  await page.getByTestId("chat-cron-button").click();
-  await page.locator("#cronDialog[open]").waitFor();
-  await page.keyboard.press("Escape");
-  await page.locator("#cronDialog[open]").waitFor({ state: "detached" });
+  await page.getByTestId("chat-automations-button").click();
+  await page.getByTestId("automation-editor").waitFor();
+  await page.getByTestId("automation-back").click();
+  await page.getByTestId("automation-editor").waitFor({ state: "detached" });
   // It collapses like the activity pane did, and the header brings it back.
   await page.getByTestId("chat-activity-toggle").click();
   await page.locator("#activityPanel").waitFor({ state: "hidden" });

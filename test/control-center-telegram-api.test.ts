@@ -121,7 +121,7 @@ test("Bob's Telegram bot is connected from the settings, answers only the linked
     const status = await call("GET", "/api/control-center/telegram");
     assert.equal(status.text.includes(BOT_TOKEN) || status.text.includes(webhook.secret_token) || status.text.includes(new URL(webhook.url).pathname), false);
     assert.equal((await call("GET", "/api/secrets")).text.includes(BOT_TOKEN), false, "no page can read the token again");
-    assert.equal((await call("GET", "/api/webhooks")).json.webhooks.length, 0, "the bot's address is not a webhook to manage");
+    assert.equal((await call("GET", "/api/automations")).json.automations.length, 0, "the bot's address is not a webhook to manage");
 
     let updateId = 5000;
     const post = (update: Record<string, unknown>, header = webhook.secret_token, url = webhook.url) => fetch(url, {

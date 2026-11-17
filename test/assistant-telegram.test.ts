@@ -201,7 +201,7 @@ test("a Telegram bot reaches its assistant only through code that approves each 
     const telegram = `/personal-assistants/${assistantId}/telegram`;
 
     // The generic webhook form can't create a bot without these protections.
-    const generic = await api<{ error: string }>(node, session, "POST", "/webhooks", { name: "Unprotected", target: { kind: "assistant", projectId, assistantId }, reply: "telegram" });
+    const generic = await api<{ error: string }>(node, session, "POST", "/automations", { name: "Unprotected", target: { kind: "assistant", projectId, assistantId }, reply: "telegram" });
     assert.equal(generic.status, 400);
 
     // Connecting: a bad token is refused, a good one gets a second secret that Telegram must send back.
@@ -222,7 +222,7 @@ test("a Telegram bot reaches its assistant only through code that approves each 
     const hookUrl = new URL(registered.url!).pathname;
     const pairingCode = new URL(connected.body.pairingLink).searchParams.get("start")!;
     assert.equal(new URL(connected.body.pairingLink).pathname, "/family_bot");
-    assert.equal(((await api<{ webhooks: unknown[] }>(node, session, "GET", "/webhooks")).body.webhooks).length, 0, "the bot's webhook is managed from the assistant");
+    assert.equal(((await api<{ automations: unknown[] }>(node, session, "GET", "/automations")).body.automations).length, 0, "the bot's webhook is managed from the assistant");
 
     let updateId = 1000;
     const send = (update: Record<string, unknown>, header: string | undefined = registered.secret_token) => fetch(`${node.url}${hookUrl}`, {

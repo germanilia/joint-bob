@@ -15,17 +15,15 @@ import { ensureSessionTitle } from "../names.js";
 import { bindWebhookTitle, automationTitleInstruction } from "../webhook-title.js";
 import { getProjectLock } from "../project-locks.js";
 import { getProject } from "../store.js";
-import { conversationScopeId, getScopeSecretAccounts, setScopeSecretAccounts, validateProjectSecretAccounts } from "../secrets.js";
 import { recordTurnFailure } from "../turn-failures.js";
 import { isHarnessId } from "../types.js";
 import {
-  MAX_PAYLOAD_CHARS, PAYLOAD_FILE_NAME, getWebhook, recordWebhookDelivery, WebhookError, webhookMessage, type Webhook, type WebhookAttachment, type WebhookCall,
+  MAX_PAYLOAD_CHARS, PAYLOAD_FILE_NAME, disableAutomation, getWebhook, recordWebhookDelivery, WebhookError, webhookMessage, type Webhook, type WebhookAttachment, type WebhookCall,
 } from "../webhooks.js";
 import { persistTaskAttachments } from "./chat.js";
 import { markSilentWebhookRequest } from "./scheduled-review.js";
-import { snapshotWebhookResources, resolveWebhookResources, webhookResourceInstructions } from "../webhook-resources.js";
 import { bindWebhookConversation } from "../webhook-agent.js";
-import { readWebhookMemory } from "../webhook-memory.js";
+import { attachAutomationSecrets, automationResourceContext } from "./automation-context.js";
 import { createWebhookWorkspace, setWebhookConversationWorkspace } from "../webhook-workspaces.js";
 import { queueConversationPrompt, type PromptAttachment, type PromptQueueSettings } from "./conversation-prompt.js";
 import { broadcastToProject } from "./realtime.js";
@@ -42,7 +40,7 @@ const SOCKET_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 
 /** The harness a new conversation uses when the webhook names none: the first one this node can run. */
 /** A webhook that names no agent runs on the background agent: one that is signed in here, not Pi by assumption. */
-function defaultEngine(): string {
+export function defaultAutomationEngine(): string {
   if (!listDiscoveredHarnesses().some((candidate) => candidate.runtime)) throw new WebhookError(503, "No harness is available on this machine");
   return backgroundAgent().harnessId;
 }
@@ -71,16 +69,6 @@ async function placeAttachments(cwd: string, attachments: WebhookAttachment[]) {
   return { images, files, listed };
 }
 
-/** Explicit webhook accounts add to, never replace, a conversation's existing attachments. */
-async function attachSecrets(webhook: Webhook, engine: string, sessionId: string): Promise<void> {
-  if (!webhook.secretAccountIds.length) return;
-  if (!isHarnessId(engine)) throw new WebhookError(409, "The webhook's harness is not available");
-  validateProjectSecretAccounts(webhook.target.projectId, webhook.secretAccountIds);
-  const scope = conversationScopeId(engine, sessionId);
-  const { accountIds } = await getScopeSecretAccounts("conversation", scope);
-  await setScopeSecretAccounts("conversation", scope, [...new Set([...accountIds, ...webhook.secretAccountIds])]);
-}
-
 /** Each chat or sender keeps its own conversations. The decision model reads their words, not this webhook's instructions. */
 function assistantRouting(webhook: Webhook, call: WebhookCall): { scope: string | null; message: string } {
   if (call.telegram) return call.telegram.routing;
@@ -104,15 +92,7 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?
   const lock = await getProjectLock(project.id);
   if (lock && lock.nodeId !== local.id) throw new WebhookError(409, `Project is locked by ${lock.nodeName}`);
   const db = await clusterV2Database();
-  const resourceSnapshot = call.resourceSnapshot ?? snapshotWebhookResources(db, webhook.id, local.id);
-  if (resourceSnapshot.ownerNodeId !== local.id || resourceSnapshot.webhookId !== webhook.id) throw new WebhookError(409, "Webhook resources belong to another owner");
-  const resources = await resolveWebhookResources(db, resourceSnapshot);
-  const memory = resourceSnapshot.memoryEnabled ? await readWebhookMemory(webhook.id) : undefined;
-  const resourceContext = webhookResourceInstructions({
-    files: resources.files.map(({ name, description, path: filePath }) => ({ name, description, path: filePath })),
-    tools: resources.tools.map(({ name, description, usage, path: filePath }) => ({ name, description, usage, path: filePath })),
-    skills: resources.skills, memoryPath: memory?.path, memoryCli: memory ? 'node "$JOINT_BOB_WEBHOOK_MEMORY_CLI"' : undefined,
-  });
+  const resourceContext = await automationResourceContext(webhook.id, call.resourceSnapshot);
   const attachments = [...(call.attachments ?? [])];
   if (call.body.trim().length > MAX_PAYLOAD_CHARS) attachments.push({ name: PAYLOAD_FILE_NAME, mimeType: "text/plain", data: Buffer.from(call.body) });
   // Without isolation, assistant turns keep using the assistant's project.
@@ -127,10 +107,10 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?
     let activeSessionId: string | null = null;
     const turn = await runPersonalAssistantAutomationTurn(webhook.creatorAccountId, assistantId, call.requestId!, message, {
       bypassGuardian: webhook.bypassGuardian,
-      worktreeId: worktree?.id,
+      worktreeId: worktree?.id, scheduledAutoRespond: webhook.autoRespond ?? undefined,
       label: "Webhook", origin: call.telegram && call.telegram.routing.scope === null ? "chat" : "webhook", automationProfile: automationProfileContext(webhook), images: placed.images, files: placed.files, routing: assistantRouting(webhook, call),
       prepare: async destination => {
-        await attachSecrets(webhook, destination.engine, destination.sessionId);
+        await attachAutomationSecrets(webhook, webhook.target.projectId, destination.engine, destination.sessionId);
         bindWebhookConversation(db, webhook.id, project.id, destination.sessionId, local.id, destination.isNew);
         if (destination.isNew) setWebhookConversationHistory(db, project.id, destination.sessionId, webhook.id, webhook.hideFromHistory, local.id);
       },
@@ -153,11 +133,11 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?
     await call.telegram?.answer(turn.response ?? "");
     return activeSessionId;
   }
-  const engine = webhook.target.engine ?? defaultEngine();
+  const engine = webhook.target.engine ?? defaultAutomationEngine();
   let activeSessionId = webhook.target.kind === "conversation" ? webhook.target.sessionId : null;
   const prompt = {
     bypassGuardian: webhook.bypassGuardian,
-    automationProfile: automationProfileContext(webhook), worktreeId: worktree?.id,
+    automationProfile: automationProfileContext(webhook), worktreeId: worktree?.id, scheduledAutoRespond: webhook.autoRespond ?? undefined,
     message, images: placed.images, files: placed.files, requestId: call.requestId!, label: "Webhook", until: "completed" as const,
     onStarted: () => {
       call.started = true;
@@ -183,7 +163,7 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?
     const ownership = await getConversationOwnership(engine, sessionId);
     if (ownership && ownership.ownerNodeId !== local.id) throw new WebhookError(409, "The conversation lives on another machine; create the webhook there");
     bindWebhookConversation(db, webhook.id, project.id, sessionId, local.id);
-    await attachSecrets(webhook, engine, sessionId);
+    await attachAutomationSecrets(webhook, webhook.target.projectId, engine, sessionId);
     await queueConversationPrompt({ projectId: project.id, engine, sessionId, ...prompt });
     return sessionId;
   }
@@ -200,7 +180,7 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?
   await ensureSessionTitle(sessionId, titleTemplate || webhook.name);
   broadcastToProject(project.id, { type: "sessionsChanged" });
   try {
-    await attachSecrets(webhook, engine, sessionId);
+    await attachAutomationSecrets(webhook, webhook.target.projectId, engine, sessionId);
     await queueConversationPrompt({ projectId: project.id, engine, sessionId, ...prompt });
   } catch (error) {
     // The conversation is already listed. It says why it is empty, instead of opening blank.
@@ -240,6 +220,8 @@ export function acceptWebhookCall(webhook: Webhook, call: WebhookCall): void {
         const database = await clusterV2Database();
         transitionAutomationExecution(database, call.requestId!, "failed", detail);
         if (!call.started) recordWebhookDelivery(database, webhook.id, "failed", detail);
+        // A used-up budget is not the automation's fault, so it stays on.
+        if (webhook.pauseOnFailure && !/Budget reached:/.test(detail)) disableAutomation(database, webhook.id);
       } catch { /* history is best effort */ }
     }
   })().catch(error => console.error(`Webhook ${webhook.id} execution setup failed`, error)).finally(() => {

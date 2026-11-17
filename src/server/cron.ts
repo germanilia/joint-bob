@@ -4,7 +4,8 @@ import { observeAutoResponder } from "./auto-respond-recovery.js";
 import { automationProfileContext, runWithAutomationProfile } from "./automation-profile.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { getClusterNode } from "../cluster.js";
-import { getRuntimePeer, runtimeFetch } from "./runtime-peers.js";
+import { getRuntimePeer } from "./runtime-peers.js";
+import { signedAutomationFetch } from "./automation-peers.js";
 import { queueConversationPrompt } from "./conversation-prompt.js";
 import { getConversationOwnership } from "../conversation-ownership.js";
 import { scheduledPromptText } from "../scheduled-prompt.js";
@@ -23,6 +24,7 @@ import { listProjectSessionsWithReviewState } from "./sessions-helpers.js";
 import { flags } from "./state.js";
 import { runPersonalAssistantAutomationTurn } from "./routes/personal-assistants.js";
 import { automationWorktreeInstruction, withAutomationWorktree } from "./automation-worktree.js";
+import { attachAutomationSecrets, automationResourceContext, bindAutomationConversation } from "./automation-context.js";
 
 export async function cronConversationReady(projectId: string, sessionId: string, engine: string): Promise<boolean> {
   const project = await getProject(projectId);
@@ -51,9 +53,7 @@ async function prepareConversation(task: CronTask): Promise<string> {
     if (ownership && ownership.ownerNodeId !== local.id) {
       const peer = await getRuntimePeer(ownership.ownerNodeId);
       if (!peer) throw new Error("Conversation owner is unavailable");
-      const reply = await runtimeFetch(`${peer.url}/api/cluster/cron`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ready", projectId: project.id, sessionId: task.sessionId, engine: task.engine }), signal: AbortSignal.timeout(5000) });
-      const body = await reply.json() as { ready: boolean; error?: string };
-      if (!reply.ok) throw new Error(body.error || "Cannot verify conversation owner");
+      const body = await signedAutomationFetch(peer, { action: "ready", projectId: project.id, sessionId: task.sessionId, engine: task.engine }, 5000) as { ready: boolean };
       ready = ready && body.ready;
     }
     if (ready) break;
@@ -68,16 +68,17 @@ export async function queuedCronPrompt(task: CronTask, run: CronRun, sessionId: 
   let titleInstruction = "";
   if (!task.sessionId) {
     const date = new Intl.DateTimeFormat("en-CA", { timeZone: task.schedule.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(run.dueAt);
-    const titleTemplate = task.name.replaceAll("[date]", date);
+    const titleTemplate = (task.titleTemplate || task.name).replaceAll("[date]", date);
     await ensureSessionTitle(sessionId, titleTemplate);
     titleInstruction = automationTitleInstruction(titleTemplate);
     if (titleInstruction) bindWebhookTitle(task.projectId, sessionId, titleTemplate);
   }
+  const resourceContext = await automationResourceContext(task.id);
   await queueConversationPrompt({
     bypassGuardian: task.bypassGuardian,
     automationProfile: automationProfileContext(task),
     scheduledAutoRespond: task.autoRespond ?? undefined,
-    projectId: task.projectId, engine: task.engine, sessionId, worktreeId, message: [scheduledPromptText(task.prompt), worktreeId ? automationWorktreeInstruction : "", titleInstruction].filter(Boolean).join("\n\n"), requestId: run.id, label: "Scheduled", until: "completed",
+    projectId: task.projectId, engine: task.engine, sessionId, worktreeId, message: [scheduledPromptText(task.prompt), resourceContext, worktreeId ? automationWorktreeInstruction : "", titleInstruction].filter(Boolean).join("\n\n"), requestId: run.id, label: "Scheduled", until: "completed",
     // Model and reasoning ride along with the queued prompt instead of
     // configuring the live session here: unrelated scheduled tasks share a
     // conversation, and configuring one mid-turn throws "session is busy".
@@ -99,12 +100,15 @@ async function executeCronRun(task: CronTask, run: CronRun): Promise<void> {
       if (worktree) task = { ...task, sessionId: null };
       if (task.assistantId) {
         if (!task.creatorAccountId) throw new Error("Assistant scheduled task has no creator account");
-        const turn = await runPersonalAssistantAutomationTurn(task.creatorAccountId, task.assistantId, run.id, [scheduledPromptText(task.prompt), worktree ? automationWorktreeInstruction : ""].filter(Boolean).join("\n\n"), {
+        const resourceContext = await automationResourceContext(task.id);
+        const turn = await runPersonalAssistantAutomationTurn(task.creatorAccountId, task.assistantId, run.id, [scheduledPromptText(task.prompt), resourceContext, worktree ? automationWorktreeInstruction : ""].filter(Boolean).join("\n\n"), {
           bypassGuardian: task.bypassGuardian,
           worktreeId: worktree?.id, label: "Scheduled", origin: "scheduled", automationProfile: automationProfileContext(task), scheduledAutoRespond: task.autoRespond ?? undefined,
           prepare: async destination => {
             cronStore().target(run.id, destination.sessionId);
             if (destination.isNew) await markCronConversation(task.projectId, destination.engine, destination.sessionId, task.id, task.ownerNodeId);
+            await attachAutomationSecrets(task, task.projectId, destination.engine, destination.sessionId);
+            await bindAutomationConversation(task.id, task.projectId, destination.sessionId, destination.isNew);
           },
           onStarted: destination => {
             cronStore().started(run.id, destination.sessionId);
@@ -121,6 +125,8 @@ async function executeCronRun(task: CronTask, run: CronRun): Promise<void> {
       await ensureConversationRecord(task.projectId, task.engine, sessionId, task.ownerNodeId);
       await markCronConversation(task.projectId, task.engine, sessionId, task.id, task.ownerNodeId);
       cronStore().target(run.id, sessionId);
+      await attachAutomationSecrets(task, task.projectId, task.engine, sessionId);
+      await bindAutomationConversation(task.id, task.projectId, sessionId, !task.sessionId);
       await queuedCronPrompt(task, run, sessionId, worktree?.id);
     }));
     transitionAutomationExecution(await clusterV2Database(), run.id, "succeeded");

@@ -7,8 +7,7 @@ import { type DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { AutomationRow } from "../src/control-center/automations.js";
 import type { BobMessage } from "../src/control-center/bob-store.js";
-import type { CronTask } from "../src/cron.js";
-import type { Webhook } from "../src/webhooks.js";
+import type { AutomationItem } from "../src/control-center/automations.js";
 import { api, seedDevEnvironment, signIn, stopDevNode, waitForDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { serverArgs } from "./server-entry.js";
 import { openNodeDatabase } from "../src/node-database.js";
@@ -16,6 +15,12 @@ import { openNodeDatabase } from "../src/node-database.js";
 const BASE = "/control-center/automations";
 
 interface Listed { rows: AutomationRow[]; projects: Array<{ id: string; name: string }>; errors: string[] }
+const daily = (hour: number, minute: number) => ({ frequency: "daily", hour, minute, weekday: 1, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6] });
+/** The body `/api/automations` takes for a scheduled task. */
+const scheduled = (projectId: string, name: string, context: string, schedule: object = daily(2, 0)) => ({ trigger: "schedule", name, target: { kind: "project", projectId, engine: "claude" }, context, schedule, enabled: true });
+const webhookBody = (projectId: string, name: string, context: string) => ({ trigger: "webhook", name, target: { kind: "project", projectId }, context, enabled: true });
+const automations = async (node: SeededNode, auth: SignedIn) => (await api<{ automations: AutomationItem[] }>(node, auth, "GET", "/automations")).body.automations;
+
 interface Timeline { messages: BobMessage[] }
 
 /** A real node with the automation stand-ins preloaded: what Bob's agent answers is read from files the test writes. */
@@ -62,17 +67,16 @@ test("the automations list, toggle, edit and delete run through the existing sch
     assert.deepEqual(empty.rows, []);
     assert.ok(empty.projects.some((candidate) => candidate.id === project.id), "the projects are listed for the filter and the forms");
 
-    // A scheduled task made here is an ordinary scheduled task: the project's own list has it, on this machine.
-    const task = await api<{ task: CronTask }>(node, auth, "POST", `${BASE}/schedule`, { projectId: project.id, name: "Nightly release check", prompt: "Run the release gate, report only", schedule: { frequency: "daily", time: "02:00", timezone: "UTC" } });
+    // A scheduled task made through the automations editor is listed on this machine.
+    const task = await api<{ automation: AutomationItem }>(node, auth, "POST", "/automations", scheduled(project.id, "Nightly release check", "Run the release gate, report only"));
     assert.equal(task.status, 201, JSON.stringify(task.body));
-    assert.equal(task.body.task.ownerNodeId, node.nodeId);
-    const existing = await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`);
-    assert.deepEqual(existing.body.tasks.map((candidate) => [candidate.name, candidate.enabled, candidate.schedule.hour, candidate.schedule.minute, candidate.schedule.timezone]), [["Nightly release check", true, 2, 0, "UTC"]]);
+    assert.equal(task.body.automation.ownerNodeId, node.nodeId);
+    assert.deepEqual((await automations(node, auth)).map((candidate) => [candidate.name, candidate.trigger, candidate.enabled, candidate.schedule!.hour, candidate.schedule!.minute, candidate.schedule!.timezone]), [["Nightly release check", "schedule", true, 2, 0, "UTC"]]);
 
-    const hook = await api<{ webhook: Webhook; secret: string; bases: unknown[] }>(node, auth, "POST", `${BASE}/webhook`, { projectId: project.id, name: "GitHub issues", context: "Triage the issue, read only" });
+    const hook = await api<{ automation: AutomationItem; secret: string; bases: unknown[] }>(node, auth, "POST", "/automations", webhookBody(project.id, "GitHub issues", "Triage the issue, read only"));
     assert.equal(hook.status, 201, JSON.stringify(hook.body));
     assert.ok(hook.body.secret.length >= 20, "the secret address is returned once");
-    assert.equal((await api<{ webhooks: Webhook[] }>(node, auth, "GET", "/webhooks")).body.webhooks.some((candidate) => candidate.name === "GitHub issues"), true, "the Webhooks settings see it too");
+    assert.equal((await automations(node, auth)).some((candidate) => candidate.name === "GitHub issues" && candidate.trigger === "webhook"), true, "the automations editor sees it too");
 
     const report = await api<{ schedule: { id: string; hour: number; minute: number; name: string; enabled: boolean } }>(node, auth, "POST", `${BASE}/bob`, { report: "evening", timezone: "UTC" });
     assert.equal(report.status, 201, JSON.stringify(report.body));
@@ -91,18 +95,17 @@ test("the automations list, toggle, edit and delete run through the existing sch
     // Pausing goes through the same update the old screens send, so they all agree.
     for (const row of listed.rows) assert.equal((await api(node, auth, "PUT", `${BASE}/${row.kind}/${row.id}/enabled`, { enabled: false })).status, 200);
     assert.deepEqual((await list()).rows.map((row) => [row.enabled, row.last.state]), [[false, "paused"], [false, "paused"], [false, "paused"]]);
-    assert.equal((await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`)).body.tasks[0].enabled, false);
-    assert.equal((await api<{ webhooks: Webhook[] }>(node, auth, "GET", "/webhooks")).body.webhooks.find((candidate) => candidate.id === webhook.id)!.enabled, false);
+    assert.deepEqual((await automations(node, auth)).map((candidate) => candidate.enabled), [false, false], "the automations editor agrees");
     assert.equal((await api(node, auth, "PUT", `${BASE}/schedule/${schedule.id}/enabled`, { enabled: true })).status, 200);
 
-    // The compact editors keep everything they do not show.
-    const edited = await api(node, auth, "PUT", `${BASE}/schedule/${schedule.id}`, { name: "Weekly release check", prompt: "Run the gate again", schedule: { frequency: "weekly", time: "08:30", weekday: 1, timezone: "UTC" } });
+    // The automations editor saves a whole automation; the list shows the result.
+    const edited = await api(node, auth, "PUT", `/automations/${schedule.id}`, scheduled(project.id, "Weekly release check", "Run the gate again", { frequency: "weekly", hour: 8, minute: 30, weekday: 1, timezone: "UTC" }));
     assert.equal(edited.status, 200, JSON.stringify(edited.body));
-    const [changed] = (await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`)).body.tasks;
-    assert.deepEqual([changed.name, changed.prompt, changed.enabled, changed.schedule.frequency, changed.schedule.hour, changed.schedule.minute, changed.engine], ["Weekly release check", "Run the gate again", true, "weekly", 8, 30, task.body.task.engine]);
-    assert.equal((await api(node, auth, "PUT", `${BASE}/webhook/${webhook.id}`, { name: "GitHub PRs", context: "Review the pull request", enabled: true })).status, 200);
-    const [renamed] = (await api<{ webhooks: Webhook[] }>(node, auth, "GET", "/webhooks")).body.webhooks;
-    assert.deepEqual([renamed.name, renamed.context, renamed.enabled, renamed.target.kind], ["GitHub PRs", "Review the pull request", true, "project"]);
+    const changed = (await automations(node, auth)).find((candidate) => candidate.id === schedule.id)!;
+    assert.deepEqual([changed.name, changed.context, changed.enabled, changed.schedule!.frequency, changed.schedule!.hour, changed.schedule!.minute, changed.target.kind === "project" && changed.target.engine], ["Weekly release check", "Run the gate again", true, "weekly", 8, 30, "claude"]);
+    assert.equal((await api(node, auth, "PUT", `/automations/${webhook.id}`, webhookBody(project.id, "GitHub PRs", "Review the pull request"))).status, 200);
+    const renamed = (await automations(node, auth)).find((candidate) => candidate.id === webhook.id)!;
+    assert.deepEqual([renamed.name, renamed.context, renamed.enabled, renamed.target.kind, renamed.trigger], ["GitHub PRs", "Review the pull request", true, "project", "webhook"]);
     const moved = await api<{ schedule: { hour: number; minute: number; projectIds: string[] } }>(node, auth, "PUT", `${BASE}/bob/${bob.id}`, { time: "20:15", projectIds: [project.id], enabled: true });
     assert.deepEqual([moved.body.schedule.hour, moved.body.schedule.minute, moved.body.schedule.projectIds], [20, 15, [project.id]]);
     const afterEdits = (await list()).rows;
@@ -110,29 +113,29 @@ test("the automations list, toggle, edit and delete run through the existing sch
     assert.deepEqual(afterEdits[0].projectIds, [project.id], "a report for chosen projects is tied to them");
 
     // A task can run once on a day, or repeat from a first day until a last one, as a meeting in a calendar does.
-    const once = await api<{ task: CronTask }>(node, auth, "POST", `${BASE}/schedule`, { projectId: project.id, name: "Launch check", prompt: "Check the launch", schedule: { frequency: "once", time: "14:30", date: "2099-11-12", timezone: "UTC" } });
+    const once = await api<{ automation: AutomationItem }>(node, auth, "POST", "/automations", scheduled(project.id, "Launch check", "Check the launch", { frequency: "once", hour: 14, minute: 30, weekday: 1, timezone: "UTC", startDate: "2099-11-12" }));
     assert.equal(once.status, 201, JSON.stringify(once.body));
-    assert.deepEqual([once.body.task.schedule.frequency, once.body.task.schedule.startDate, once.body.task.nextRun], ["once", "2099-11-12", Date.parse("2099-11-12T14:30:00Z")]);
-    const monthly = await api<{ task: CronTask }>(node, auth, "PUT", `${BASE}/schedule/${once.body.task.id}`, { schedule: { frequency: "monthly", time: "09:00", date: "2099-11-15", until: "2100-02-15", timezone: "UTC" } });
+    assert.deepEqual([once.body.automation.schedule!.frequency, once.body.automation.schedule!.startDate, once.body.automation.nextRun], ["once", "2099-11-12", Date.parse("2099-11-12T14:30:00Z")]);
+    const monthly = await api(node, auth, "PUT", `/automations/${once.body.automation.id}`, scheduled(project.id, "Launch check", "Check the launch", { frequency: "monthly", hour: 9, minute: 0, weekday: 1, timezone: "UTC", startDate: "2099-11-15", endDate: "2100-02-15" }));
     assert.equal(monthly.status, 200, JSON.stringify(monthly.body));
-    const row = (await list()).rows.find((entry) => entry.id === once.body.task.id)!;
+    const row = (await list()).rows.find((entry) => entry.id === once.body.automation.id)!;
     assert.equal(row.when, "Monthly on the 15th 09:00 · until 2100-02-15");
     assert.deepEqual([row.edit.kind === "schedule" && row.edit.date, row.edit.kind === "schedule" && row.edit.until], ["2099-11-15", "2100-02-15"], "the quick editor starts from its days");
-    assert.equal((await api(node, auth, "DELETE", `${BASE}/schedule/${once.body.task.id}`)).status, 200);
+    assert.equal((await api(node, auth, "DELETE", `${BASE}/schedule/${once.body.automation.id}`)).status, 200);
 
     // Everything is checked at the boundary.
     for (const [method, url, body, status] of [
-      ["POST", `${BASE}/schedule`, { projectId: project.id, name: "x", prompt: "y", schedule: { frequency: "once", time: "09:00", timezone: "UTC" } }, 400],
+      ["POST", "/automations", scheduled(project.id, "x", "y", { frequency: "once", hour: 9, minute: 0, weekday: 1, timezone: "UTC" }), 400],
       ["PUT", `${BASE}/gadget/${schedule.id}/enabled`, { enabled: true }, 400],
       ["PUT", `${BASE}/schedule/${schedule.id}/enabled`, { enabled: "yes" }, 400],
       ["PUT", `${BASE}/schedule/${schedule.id}/enabled`, { enabled: true, extra: 1 }, 400],
       ["PUT", `${BASE}/schedule/not-there/enabled`, { enabled: true }, 404],
       ["DELETE", `${BASE}/webhook/not-there`, undefined, 404],
-      ["POST", `${BASE}/schedule`, { projectId: project.id, name: "x", prompt: "y", schedule: { frequency: "daily", time: "25:00", timezone: "UTC" } }, 400],
-      ["POST", `${BASE}/schedule`, { projectId: project.id, name: "x", prompt: "y", schedule: { frequency: "daily", time: "09:00", timezone: "Mars/Base" } }, 400],
-      ["POST", `${BASE}/schedule`, { projectId: "no-such-project", name: "x", prompt: "y", schedule: { frequency: "daily", time: "09:00", timezone: "UTC" } }, 404],
-      ["POST", `${BASE}/schedule`, { projectId: project.id, name: "x", prompt: "y", schedule: { frequency: "daily", time: "09:00", timezone: "UTC" }, ownerNodeId: "elsewhere" }, 400],
-      ["POST", `${BASE}/webhook`, { projectId: project.id, name: "" }, 400],
+      ["POST", "/automations", scheduled(project.id, "x", "y", { ...daily(25, 0) }), 400],
+      ["POST", "/automations", scheduled(project.id, "x", "y", { ...daily(9, 0), timezone: "Mars/Base" }), 400],
+      ["POST", "/automations", { ...scheduled(project.id, "x", "y"), ownerNodeId: "elsewhere" }, 400],
+      ["POST", "/automations", { ...scheduled(project.id, "x", "y"), schedule: null }, 400],
+      ["POST", "/automations", webhookBody(project.id, "", "y"), 400],
       ["POST", `${BASE}/bob`, { report: "weekly", timezone: "UTC" }, 400],
       ["POST", `${BASE}/bob`, { report: "morning", timezone: "UTC", projectIds: ["no-such-project"] }, 404],
       ["PUT", `${BASE}/bob/not-there`, { enabled: false }, 404],
@@ -141,8 +144,7 @@ test("the automations list, toggle, edit and delete run through the existing sch
     // Deleting removes it from the systems that own it.
     for (const row of afterEdits) assert.equal((await api(node, auth, "DELETE", `${BASE}/${row.kind}/${row.id}`)).status, 200);
     assert.deepEqual((await list()).rows, []);
-    assert.deepEqual((await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`)).body.tasks, []);
-    assert.deepEqual((await api<{ webhooks: Webhook[] }>(node, auth, "GET", "/webhooks")).body.webhooks, []);
+    assert.deepEqual(await automations(node, auth), []);
     assert.equal((await api(node, auth, "DELETE", `${BASE}/bob/${bob.id}`)).status, 404, "a second delete finds nothing");
   } finally {
     if (child) await stopDevNode(child);
@@ -173,7 +175,7 @@ test("Bob lists, pauses and resumes at once, and asks before he changes, deletes
     child = await startNode(environment, node, directory);
     const auth = await signIn(environment, node);
     const list = async () => (await api<Listed>(node, auth, "GET", BASE)).body.rows;
-    const task = (await api<{ task: CronTask }>(node, auth, "POST", `${BASE}/schedule`, { projectId: project.id, name: "Nightly release check", prompt: "Run the release gate", schedule: { frequency: "daily", time: "02:00", timezone: "UTC" } })).body.task;
+    const task = (await api<{ automation: AutomationItem }>(node, auth, "POST", "/automations", scheduled(project.id, "Nightly release check", "Run the release gate"))).body.automation;
     const report = (await api<{ schedule: { id: string } }>(node, auth, "POST", `${BASE}/bob`, { report: "morning", timezone: "UTC" })).body.schedule;
     const taskKey = `schedule:${task.id}`;
     const reportKey = `bob:${report.id}`;
@@ -190,7 +192,7 @@ test("Bob lists, pauses and resumes at once, and asks before he changes, deletes
     assert.match(paused.text, /Paused: "Nightly release check", "Morning report"\./);
     assert.deepEqual(paused.actions, []);
     assert.deepEqual((await list()).map((row) => row.enabled), [false, false]);
-    assert.equal((await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`)).body.tasks[0].enabled, false, "the scheduled task screen agrees");
+    assert.equal((await automations(node, auth))[0].enabled, false, "the automations editor agrees");
     const again = await say(node, auth, directory, "pause the scheduled task", { intent: "pause", targets: [taskKey] });
     assert.match(again.text, /Already paused: "Nightly release check"\./);
     const resumed = await say(node, auth, directory, "resume the scheduled task", { intent: "resume", targets: [taskKey] });
@@ -209,7 +211,7 @@ test("Bob lists, pauses and resumes at once, and asks before he changes, deletes
     assert.match(changed.body.messages[0].text, /Changed "Nightly release check"/);
     const retimed = (await list()).find((row) => row.kind === "schedule")!;
     assert.deepEqual([retimed.name, retimed.when, retimed.enabled], ["Release gate", "Daily 03:30", true]);
-    assert.equal((await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`)).body.tasks[0].prompt, "Run the release gate", "the instructions stay");
+    assert.equal((await automations(node, auth))[0].context, "Run the release gate", "the instructions stay");
     const reportTime = await say(node, auth, directory, "send the morning report at 07:15", { intent: "change", target: reportKey, time: "07:15" });
     await api(node, auth, "POST", "/control-center/bob/action", { messageId: reportTime.id, actionId: "automations.change" });
     assert.match((await list()).find((row) => row.kind === "bob")!.when, /^Daily 07:15/);
@@ -226,7 +228,7 @@ test("Bob lists, pauses and resumes at once, and asks before he changes, deletes
     assert.equal(pressed.status, 200, JSON.stringify(pressed.body));
     assert.match(pressed.body.messages[0].text, /Deleted "Release gate"\./);
     assert.deepEqual((await list()).map((row) => row.name), ["Morning report"]);
-    assert.equal((await api<{ tasks: CronTask[] }>(node, auth, "GET", `/projects/${project.id}/cron`)).body.tasks.length, 0);
+    assert.equal((await automations(node, auth)).length, 0);
     assert.equal((await api(node, auth, "POST", "/control-center/bob/action", { messageId: ask.id, actionId: "automations.delete" })).status, 404, "a button runs once");
 
     // Cancelling changes nothing.
@@ -330,16 +332,13 @@ test("Bob writes his reports on their time, skips them while paused, and never q
     assert.match(plain.via ?? "", /facts only, Bob's agent could not write it/);
 
     // A finished conversation that waits for review is in the report, with a button that reads its summary.
-    const audit = await api<{ task: CronTask }>(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "create", input: {
-      projectId: project.id, name: "Dependency audit", prompt: "Audit the dependencies", engine: "claude", sessionId: null, ownerNodeId: node.nodeId, enabled: true, markForReview: true,
-      schedule: { frequency: "daily", hour: 4, minute: 0, weekday: 1, timezone: "UTC" },
-    } } });
-    assert.equal(audit.status, 200, JSON.stringify(audit.body));
+    const audit = await api<{ automation: AutomationItem }>(node, auth, "POST", "/automations", { ...scheduled(project.id, "Dependency audit", "Audit the dependencies", { frequency: "daily", hour: 4, minute: 0, weekday: 1, timezone: "UTC" }), markForReview: true });
+    assert.equal(audit.status, 201, JSON.stringify(audit.body));
     const makeTaskDue = (taskId: string) => {
       const db = nodeDatabase(node);
-      try { db.prepare("UPDATE cron_tasks SET next_run = ? WHERE id = ?").run(Date.now(), taskId); } finally { db.close(); }
+      try { db.prepare("UPDATE webhooks SET next_run = ? WHERE id = ?").run(Date.now(), taskId); } finally { db.close(); }
     };
-    makeTaskDue(audit.body.task.id);
+    makeTaskDue(audit.body.automation.id);
     const card = await until(async () => (await api<{ cards: Array<{ title: string; column: string }> }>(node, auth, "GET", "/control-center/board")).body.cards.find((candidate) => candidate.column === "review"), "the finished conversation on the board");
     await due(1000);
     const withReview = await until(async () => (await reports())[2], "the report with something waiting");
@@ -351,7 +350,7 @@ test("Bob writes his reports on their time, skips them while paused, and never q
     assert.equal(summary.body.messages[0].projectName, project.name);
 
     // A failed scheduled run is in the report too, with a button to run that task again.
-    const task = (await api<{ task: CronTask }>(node, auth, "POST", `${BASE}/schedule`, { projectId: project.id, name: "Slow query report", prompt: "Report slow queries", schedule: { frequency: "daily", time: "03:00", timezone: "UTC" } })).body.task;
+    const task = (await api<{ automation: AutomationItem }>(node, auth, "POST", "/automations", scheduled(project.id, "Slow query report", "Report slow queries", daily(3, 0)))).body.automation;
     const db = nodeDatabase(node);
     try { db.prepare("INSERT INTO cron_runs (id, task_id, due_at, status, error, finished_at) VALUES (?, ?, ?, 'failed', ?, ?)").run(crypto.randomUUID(), task.id, Date.now() - 600_000, "Budget reached: daily limit", Date.now() - 590_000); } finally { db.close(); }
     await due(1000);

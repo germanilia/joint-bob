@@ -7,7 +7,6 @@ import { machineRoutes } from "./state.js";
 import { isTrustedTwin } from "../cluster-sharing-policy.js";
 import type { DatabaseSync } from "node:sqlite";
 import { ensureConversationRecordSchema } from "../conversation-records.js";
-import { cronStore } from "../cron.js";
 import { mayShareProject, sharedProjectIds } from "./sharing-files.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { replicationPeers } from "./replication-v2.js";
@@ -79,20 +78,14 @@ async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:
  if(request.path==='/sessions/runtime-snapshot')return Array.isArray(body?.leases)&&body.leases.every((lease:{engine:unknown;sessionId:unknown})=>sessionShared(db,local,peer,lease.engine,lease.sessionId));
  if(request.path==='/sessions/ownership')return sessionShared(db,local,peer,request.query.engine,request.query.sessionId);
  if(request.path==='/sessions/ownership/apply')return sessionShared(db,local,peer,body?.record?.engine,body?.record?.sessionId);
- if(request.path==='/cron'){
-  // Task commands name the project in their input, or only by task ID. Both must be shared.
-  const stored=typeof body?.id==='string'?cronStore().get(body.id):null;
-  const projects=[body?.projectId,body?.input?.projectId,stored?.projectId].filter(project=>project!==undefined);
-  return projects.length>0&&projects.every(project=>typeof project==='string'&&mayShareProject(db,local,peer,project));
- }
- const id=typeof request.query.projectId==='string'?request.query.projectId:body?.projectId;
+  const id=typeof request.query.projectId==='string'?request.query.projectId:body?.projectId;
  return typeof id==='string'&&mayShareProject(db,local,peer,id);
 }
 export function dispatchSignedRuntime(request:Request,response:Response,next:NextFunction):void{
  const prefix='/api/cluster/v2/runtime/';
  if(!request.path.startsWith(prefix)){next();return;}
  const suffix=request.path.slice(prefix.length),target='/cluster/'+suffix;
- if(!/^(sessions\/|browser\/|git\/|projects\/presence$|project-file|project-files$|cron$|quick-notes\/prepare$|background-tasks$|control-center\/(?:bob\/(?:action|reply|send)|live|summarize)$|resources\/(?:inventory|manage-inventory|activation(?:\/(?:item|bulk))?)$)/.test(suffix)||!machineRoutes.has(`${request.method} ${target}`)){
+ if(!/^(sessions\/|browser\/|git\/|projects\/presence$|project-file|project-files$|quick-notes\/prepare$|background-tasks$|control-center\/(?:bob\/(?:action|reply|send)|live|summarize)$|resources\/(?:inventory|manage-inventory|activation(?:\/(?:item|bulk))?)$)/.test(suffix)||!machineRoutes.has(`${request.method} ${target}`)){
   response.status(404).json({error:'Unsupported signed runtime route'});return;
  }
  request.url=request.url.replace(prefix,'/api/cluster/');next();
