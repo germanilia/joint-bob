@@ -53,7 +53,7 @@ export async function profileModelRuntime(profile: ProviderProfile): Promise<Mod
 export async function bootstrapPiProfile(projectId: string, conversationId: string | undefined): Promise<ProviderProfile | undefined> {
   const pool = poolProfileContext();
   if (pool) return pool.provider === "pi" ? projectProviderProfile(projectId, conversationId, "", "pi") : undefined;
-  if (await mandatoryClusterPool(projectId)) return undefined;
+  if (await mandatoryClusterPool(projectId, "pi")) return undefined;
   const automation = automationProfileContext();
   if (automation?.profileId) {
     const profile = accessibleProviderProfile(automation.accountId, automation.profileId, "automation");
@@ -64,7 +64,7 @@ export async function bootstrapPiProfile(projectId: string, conversationId: stri
   const project = await asNode(() => getProject(projectId));
   if (!project) throw new Error("Project not found");
   const { resolveSubscriptionChoice } = await import("./pools.js");
-  const choice = resolveSubscriptionChoice(accountId, "pi", await projectScope(project.id, project.type!, conversationId), automation ? "automation" : "interactive");
+  const choice = resolveSubscriptionChoice(accountId, "pi", await projectScope(project.id, project.type!, conversationId, "pi"), automation ? "automation" : "interactive");
   return choice?.kind === "profile" ? choice.profile : undefined;
 }
 
@@ -73,16 +73,13 @@ export async function piTurnsOnPool(projectId: string, conversationId: string | 
   if (poolProfileContext()) return true;
   const project = await asNode(() => getProject(projectId));
   if (!project) return false;
-  const [{ clusterV2Database }, { getClusterNode }, { resolveClusterSubscriptionPools }] = await Promise.all([
-    import("../cluster-v2-store.js"), import("../cluster.js"), import("./pool-sharing.js"),
-  ]);
-  if (resolveClusterSubscriptionPools(await clusterV2Database(), (await getClusterNode()).id, projectId).length) return true;
+  if (await mandatoryClusterPool(projectId, "pi")) return true;
   const automation = automationProfileContext();
   if (automation?.profileId) return false;
   const accountId = automation?.accountId ?? actingAccount()?.accountId;
   if (!accountId) return false;
   const { resolveSubscriptionChoice } = await import("./pools.js");
-  const scope = await projectScope(project.id, project.type!, conversationId);
+  const scope = await projectScope(project.id, project.type!, conversationId, "pi");
   // A pool chosen for Pi itself, or for one of the subscriptions a Pi turn can run on.
   return (["pi", "claude", "openai-codex"] as const).some((provider) => {
     try { return resolveSubscriptionChoice(accountId, provider, scope, automation ? "automation" : "interactive")?.kind === "pool"; }
@@ -94,17 +91,17 @@ export async function projectProviderProfile(projectId: string, conversationId: 
   const targetProvider = provider === "anthropic" ? "claude" : provider;
   const poolProfile = poolProfileContext();
   if (poolProfile) {
-    if (poolProfile.provider === "pi" && poolProfile.clusterId) {
+    if ((poolProfile.provider === "pi" || poolProfile.provider === "antigravity") && poolProfile.clusterId) {
       const { getClusterNode } = await import("../cluster.js");
       if (poolProfile.poolOwnerNodeId !== (await getClusterNode()).id) {
         const { PoolAttemptFailure } = await import("./pool-execution.js");
-        throw new PoolAttemptFailure("unavailable", false, "Pi profile credentials stay on their configured node; this pool member is unavailable here");
+        throw new PoolAttemptFailure("unavailable", false, `${poolProfile.provider === "pi" ? "Pi" : "Antigravity"} profile credentials stay on their configured node; this pool member is unavailable here`);
       }
     }
     if (poolProfile.provider !== targetProvider && !(engine === "pi" && poolProfile.provider === "pi")) throw new Error("Selected pool profile does not match the turn's provider");
     return await authorizedLocalPoolProfile(poolProfile) ?? poolProfile.profile ?? { id: poolProfile.profileId, owner: "", label: poolProfile.label, provider: poolProfile.provider, createdAt: "", shared: false };
   }
-  if (await mandatoryClusterPool(projectId)) throw new Error("Selected cluster subscription pool requires pool-aware execution");
+  if (await mandatoryClusterPool(projectId, engine)) throw new Error("Selected cluster subscription pool requires pool-aware execution");
   const automation = automationProfileContext();
   const accountId = automation?.accountId ?? actingAccount()?.accountId;
   if (automation?.profileId) {
@@ -116,7 +113,7 @@ export async function projectProviderProfile(projectId: string, conversationId: 
   const project = await asNode(() => getProject(projectId));
   if (!project) throw new Error("Project not found");
   const owner = subscriptionOwner(accountId, project.id);
-  const scope = await projectScope(project.id, project.type!, conversationId);
+  const scope = await projectScope(project.id, project.type!, conversationId, engine);
   if (engine === "pi") {
     const selected = resolveProviderProfile(owner, "pi", scope, automation ? "automation" : "interactive");
     if (selected) return selected.profile;
@@ -130,14 +127,30 @@ export async function projectProviderProfile(projectId: string, conversationId: 
   if (!profile && owner !== adminAccountId()) throw new Error("Select your own subscription profile on this node. No other user's account was used.");
   return profile;
 }
-async function mandatoryClusterPool(projectId: string): Promise<boolean> {
+function clusterPoolSupportsEngine(assignment: { poolOwnerNodeId?: string; manifest?: { members: Array<{ provider: ProfileProvider }> } | null }, localNodeId: string, engine: "claude" | "pi" | "kiro" | "antigravity"): boolean {
+  if (engine === "kiro") return false;
+  if (!assignment.manifest) return engine === "claude" || engine === "pi";
+  return assignment.manifest.members.some((member) => {
+    if (engine === "claude") return member.provider === "claude";
+    if (engine === "antigravity") return member.provider === "antigravity" && assignment.poolOwnerNodeId === localNodeId;
+    return member.provider === "pi" || member.provider === "claude" || member.provider === "openai-codex";
+  });
+}
+async function mandatoryClusterPool(projectId: string, engine: "claude" | "pi" | "kiro" | "antigravity" = "claude"): Promise<boolean> {
+  if (engine === "kiro") return false;
   const [{ clusterV2Database }, { getClusterNode }, { resolveClusterSubscriptionPools }] = await Promise.all([import("../cluster-v2-store.js"), import("../cluster.js"), import("./pool-sharing.js")]);
-  return resolveClusterSubscriptionPools(await clusterV2Database(), (await getClusterNode()).id, projectId).length > 0;
+  const local = await getClusterNode();
+  return resolveClusterSubscriptionPools(await clusterV2Database(), local.id, projectId)
+    .some((assignment) => clusterPoolSupportsEngine(assignment, local.id, engine));
 }
 /** Where a turn runs, including the clusters its project is shared through for cluster choices. */
-async function projectScope(projectId: string, workspaceId: string, conversationId: string | undefined): Promise<ProfileScope> {
-  const [{ clusterV2Database }, { getClusterNode }, { projectClusterIds }] = await Promise.all([import("../cluster-v2-store.js"), import("../cluster.js"), import("./pool-sharing.js")]);
-  return { projectId, workspaceId, conversationId, clusterIds: projectClusterIds(await clusterV2Database(), (await getClusterNode()).id, projectId) };
+async function projectScope(projectId: string, workspaceId: string, conversationId: string | undefined, engine: "claude" | "pi" | "kiro" | "antigravity" = "claude"): Promise<ProfileScope> {
+  const [{ clusterV2Database }, { getClusterNode }, { projectClusterIds, resolveClusterSubscriptionPools }] = await Promise.all([import("../cluster-v2-store.js"), import("../cluster.js"), import("./pool-sharing.js")]);
+  const db = await clusterV2Database(), local = await getClusterNode();
+  const remotePoolClusters = engine === "antigravity"
+    ? new Set(resolveClusterSubscriptionPools(db, local.id, projectId).filter((assignment) => assignment.poolOwnerNodeId !== local.id).map((assignment) => assignment.clusterId))
+    : undefined;
+  return { projectId, workspaceId, conversationId, clusterIds: projectClusterIds(db, local.id, projectId).filter((id) => !remotePoolClusters?.has(id)) };
 }
 /** A single Pi profile serves a Pi turn whose provider it holds; it is never guessed for a provider it lacks. */
 function onlyPiProfileHolding(owner: string, provider: string): ProviderProfile | undefined {

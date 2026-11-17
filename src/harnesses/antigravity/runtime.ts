@@ -1,5 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { agentCapabilityEnvironment } from "../../agent-capabilities.js";
 import { agentEnvironment, persistConversationSecretAccounts } from "../../secrets.js";
 import { buildHandoffContext, stripHandoffEnvelope } from "../../handoff-context.js";
@@ -72,7 +73,7 @@ class AntigravitySession implements HarnessSession {
   private handoffPending = false;
   private enabledTools: string[] | undefined;
   private actualModel: ModelSummary | undefined;
-  private availableThinking = ["medium"];
+  private availableThinking = [...antigravityThinkingLevels];
   private readonly listeners = new Set<Listener>();
   private readonly profileContext = new AsyncLocalStorage<ProviderProfile | undefined>();
   private get profile(): ProviderProfile | undefined { return this.profileContext.getStore(); }
@@ -104,7 +105,7 @@ class AntigravitySession implements HarnessSession {
     this.nativeProfileId = stored.nativeProfileId;
     this.title = stored.title;
     this.handoffPending = stored.handoffPending;
-    this.config = { provider: "antigravity", modelId: stored.modelId, reasoning: stored.reasoning };
+    this.config = { provider: "antigravity", modelId: stored.modelId, reasoning: antigravityThinkingLevels.includes(stored.reasoning) ? stored.reasoning : "high" };
     this.enabledTools = stored.enabledTools;
   }
 
@@ -157,6 +158,50 @@ class AntigravitySession implements HarnessSession {
   }
 
   async preflight(): Promise<void> { return this.withProfile(() => this.checkReady()); }
+
+  async checkpointPoolAttempt(): Promise<unknown> {
+    if (this.running) throw new Error("Cannot checkpoint a busy Google Antigravity session");
+    await this.finishWrites();
+    let aliasContents: Buffer | null = null;
+    if (this.aliasFile) {
+      try { aliasContents = await readFile(this.aliasFile); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    }
+    return {
+      aliasFile: this.aliasFile, aliasContents, nativeSessionId: this.nativeSessionId, nativeProfileId: this.nativeProfileId,
+      transcript: structuredClone(this.transcript), title: this.title, handoffPending: this.handoffPending,
+      config: structuredClone(this.config), enabledTools: this.enabledTools ? [...this.enabledTools] : undefined,
+      actualModel: this.actualModel ? structuredClone(this.actualModel) : undefined, availableThinking: [...this.availableThinking],
+    };
+  }
+
+  async restorePoolAttempt(checkpoint: unknown): Promise<void> {
+    if (this.running) throw new Error("Cannot restore a busy Google Antigravity session");
+    await this.finishWrites();
+    const value = checkpoint as {
+      aliasFile: string | undefined; aliasContents: Buffer | null; nativeSessionId: string | null; nativeProfileId: string | null;
+      transcript: ChatMessage[]; title: string | undefined; handoffPending: boolean; config: HarnessModelSettings;
+      enabledTools: string[] | undefined; actualModel: ModelSummary | undefined; availableThinking: string[];
+    };
+    if (!value.aliasFile) {
+      if (this.aliasFile) await rm(this.aliasFile, { force: true });
+    } else if (value.aliasContents) {
+      await writeFile(value.aliasFile, value.aliasContents);
+    } else {
+      await rm(value.aliasFile, { force: true });
+    }
+    if (this.aliasFile && this.aliasFile !== value.aliasFile) await rm(this.aliasFile, { force: true });
+    this.aliasFile = value.aliasFile;
+    this.nativeSessionId = value.nativeSessionId;
+    this.nativeProfileId = value.nativeProfileId;
+    this.transcript = structuredClone(value.transcript);
+    this.title = value.title;
+    this.handoffPending = value.handoffPending;
+    this.config = structuredClone(value.config);
+    this.enabledTools = value.enabledTools ? [...value.enabledTools] : undefined;
+    this.actualModel = value.actualModel ? structuredClone(value.actualModel) : undefined;
+    this.availableThinking = [...value.availableThinking];
+  }
 
   private async checkReady(): Promise<void> {
     const { assertClusterResourceSupport } = await import("../../cluster-agent-resources.js");
@@ -250,7 +295,8 @@ class AntigravitySession implements HarnessSession {
     const selected = model.options.find((choice) => choice.value === model.currentValue);
     this.actualModel = { provider: "antigravity", id: model.currentValue, label: selected?.name ?? model.currentValue };
     const effort = options.find((option) => /effort|reasoning|thinking/i.test(`${option.id} ${option.name}`));
-    this.availableThinking = effort ? effort.options.map((choice) => choice.value.toLowerCase() === "extra" ? "xhigh" : choice.value.toLowerCase()) : ["medium"];
+    const levels = effort ? effort.options.map((choice) => choice.value.toLowerCase()).filter((item) => antigravityThinkingLevels.includes(item)) : [];
+    this.availableThinking = levels.length ? levels : ["medium"];
     this.emit({ type: "status", status: this.status() });
   }
 

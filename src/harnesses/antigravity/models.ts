@@ -8,7 +8,7 @@ import { createAntigravityConnection } from "./transport.js";
 import type { HarnessModel, HarnessModelSettings } from "../runtime.js";
 
 const execute = promisify(execFile);
-export const antigravityThinkingLevels = ["low", "medium", "high", "xhigh", "max"];
+export const antigravityThinkingLevels = ["low", "medium", "high"];
 type Rpc = ReturnType<typeof createAntigravityConnection>;
 type Choice = { value: string; name: string };
 type SelectOption = { id: string; name: string; currentValue: string; options: Choice[] };
@@ -44,22 +44,18 @@ function effortOption(options: SelectOption[]): SelectOption | undefined {
   return options.find((option) => /effort|reasoning|thinking/i.test(`${option.id} ${option.name}`));
 }
 
-function level(value: string): string {
-  return value.toLowerCase() === "extra" ? "xhigh" : value.toLowerCase();
-}
-
 export function antigravityModelsFromOptions(raw: unknown): HarnessModel[] {
   const options = antigravityConfigOptions(raw), models = modelOption(options), effort = effortOption(options);
-  const thinkingLevels = effort ? effort.options.map((choice) => level(choice.value)) : ["medium"];
+  const discovered = effort ? effort.options.map((choice) => choice.value.toLowerCase()).filter((item) => antigravityThinkingLevels.includes(item)) : [];
+  const thinkingLevels = discovered.length ? discovered : ["medium"];
   return [
-    { provider: "antigravity", id: "default", label: "Antigravity default", thinkingLevels: ["medium"] },
+    { provider: "antigravity", id: "default", label: "Antigravity default", thinkingLevels },
     ...models.options.map((choice) => ({ provider: "antigravity", id: choice.value, label: choice.name, thinkingLevels })),
   ];
 }
 
 function nativeLevel(selected: string, option: SelectOption): string {
-  const value = selected === "xhigh" ? "extra" : selected;
-  const choice = option.options.find((item) => item.value.toLowerCase() === value.toLowerCase());
+  const choice = option.options.find((item) => item.value.toLowerCase() === selected.toLowerCase());
   if (!choice) throw new Error(`Antigravity does not support thinking level ${selected}`);
   return choice.value;
 }

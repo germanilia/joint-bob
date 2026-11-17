@@ -60,8 +60,9 @@ test("validateRoutingPolicy rejects mappings the local harnesses cannot serve", 
   assert.throws(() => validateRoutingPolicy(policy({ harnesses: { smol: { levels: {} } } })), /Unknown harness/);
   // Kiro has a fixed kiro provider, so another provider is invalid.
   assert.throws(() => validateRoutingPolicy(policy({ harnesses: { kiro: { levels: { "7": { provider: "openai", modelId: "x", thinkingLevel: "high", description: "Complex multi-file work" } } } } })), /provider/);
-  // Kiro supports low to max thinking levels only.
+  // Kiro supports low to max thinking levels only; Antigravity supports low, medium, and high only.
   assert.throws(() => validateRoutingPolicy(policy({ harnesses: { kiro: { levels: { "7": { modelId: "default", thinkingLevel: "off", description: "Complex multi-file work" } } } } })), /thinking level/);
+  assert.throws(() => validateRoutingPolicy(policy({ harnesses: { antigravity: { levels: { "8": { modelId: "default", thinkingLevel: "xhigh", description: "Complex multi-file work" } } } } })), /Google Antigravity does not support thinking level xhigh/);
 });
 
 test("validateRoutingPolicy accepts a valid policy", () => {

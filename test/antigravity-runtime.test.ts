@@ -22,7 +22,7 @@ assert.deepEqual(args,['acp']);
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 const config=()=>[
 {id:'model',name:'Model',type:'select',currentValue:model,options:[{value:'model-a',name:'Model A'},{value:'model-b',name:'Model B'}]},
-{id:'effortLevel',name:'Thinking level',type:'select',currentValue:effort,options:[{value:'low',name:'Low'},{value:'medium',name:'Medium'},{value:'extra',name:'Extra'}]},
+{id:'thought_level',name:'Thinking Level',type:'select',currentValue:effort,options:[{value:'low',name:'Low'},{value:'medium',name:'Medium'},{value:'high',name:'High'}]},
 ];
 let model='model-a',effort='medium',sessionId=path.basename(process.env.HOME)==='antigravity-home'?'native-'+path.basename(path.dirname(process.env.HOME)):'native-antigravity-1',promptId;
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
@@ -46,7 +46,7 @@ return reply({...(request.method==='session/new'?{sessionId}:{}),configOptions:c
 }
 if(request.method==='session/set_config_option'){
 if(request.params.configId==='model')model=request.params.value;
-else if(request.params.configId==='effortLevel')effort=request.params.value;
+else if(request.params.configId==='thought_level')effort=request.params.value;
 else throw Error('unexpected config '+request.params.configId);
 return reply({configOptions:config()});
 }
@@ -76,14 +76,15 @@ test("Google Antigravity ACP readiness, model selection, native session and tran
     assert.deepEqual(await runtime.readiness(root), []);
     assert.deepEqual(await runtime.signInProblems(), []);
     session = await runtime.open({ projectId: project.id, cwd: root, sessionId: "antigravity-test" });
-    await session.configure({ provider: "antigravity", modelId: "model-b", reasoning: "xhigh" });
+    await assert.rejects(session.configure({ provider: "antigravity", modelId: "model-b", reasoning: "xhigh" }), /thinking level is not supported/);
+    await session.configure({ provider: "antigravity", modelId: "model-b", reasoning: "high" });
     const deltas: string[] = [];
     session.subscribe((event) => { if (event.type === "textDelta") deltas.push(String(event.text)); });
     await session.prompt({ text: "hello" });
 
     assert.deepEqual(deltas, ["Antigravity reply"]);
     assert.deepEqual(session.status().model, { provider: "antigravity", id: "model-b", label: "Model B" });
-    assert.equal(session.status().thinkingLevel, "xhigh");
+    assert.equal(session.status().thinkingLevel, "high");
     const stored = await readAntigravitySession(session.file!.replace(/^antigravity:/, ""));
     assert.equal(stored.nativeSessionId, "native-antigravity-1");
     assert.deepEqual(stored.messages.map(({ role, text }) => ({ role, text })), [
