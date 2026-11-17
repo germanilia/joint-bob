@@ -1,6 +1,5 @@
 import { api, savePreferencesInBackground } from "./api.js";
-import { openScheduledTasks } from "./cron.js";
-import { openProjectWebhooks } from "./webhooks.js";
+import { openAutomationsFor } from "./control-automations.js";
 import { elements } from "./elements.js";
 import { filteredProjects } from "./layout.js";
 import { loadProjects, refreshProjectsQuietly, selectProject } from "./project-selection.js";
@@ -312,8 +311,7 @@ function projectMenuItems(project) {
     { label: "Dashboard", icon: "dashboard", testid: "project-dashboard-button", onSelect: () => openDashboardMode({ kind: "project", id: project.id, projectId: project.id }).catch((error) => toast.error(error.message)) },
     { label: "Git repositories", icon: "folder", testid: "project-git-button", onSelect: () => { void openProjectGit(project); } },
     { label: "GitHub issues", icon: "github", testid: "project-issues-button", onSelect: () => openProjectIssues(project.id) },
-    { label: "Scheduled tasks", icon: "refresh", testid: "project-cron-button", onSelect: () => openScheduledTasks(project.id).catch(error => toast.error(error.message)) },
-    ...(!state.isRemoteLogin ? [{ label: "Webhooks", icon: "refresh", testid: "project-webhooks-button", onSelect: () => openProjectWebhooks(project).catch(error => toast.error(error.message)) }] : []),
+    { label: "Automations", icon: "refresh", testid: "project-automations-button", onSelect: () => openAutomationsFor(project.id) },
     { label: "Skills & tools", icon: "sliders", testid: "project-resources-button", onSelect: () => openResources({ scope: "project", projectId: project.id }) },
     ...(project.locallyOwned !== false ? [{
       label: "Budget…", icon: "sliders", testid: "project-budget-button",

@@ -1,6 +1,6 @@
 import { api, savePreferencesInBackground } from "./api.js";
 import { chooseConversationFeedback } from "./conversation-feedback.js";
-import { openScheduledTasks } from "./cron.js";
+import { openAutomationsFor, openNewAutomation } from "./control-automations.js";
 import { clearAttachments } from "./attachments.js";
 import { renderChatSessionControls, setComposerEnabled } from "./chat-controls.js";
 import { clearChat } from "./chat-transcript.js";
@@ -80,6 +80,19 @@ function reportLearning() {
     learning.delete(id);
   }
 }
+
+/** The conversation's own automation: a new one whose conversations go to this conversation. */
+function openAutomationForSession(session) {
+  const projectId = state.activeProjectId;
+  openNewAutomation({ projectId, target: { kind: "conversation", projectId, sessionId: session.id, engine: session.harnessId } })
+    .catch((error) => toast.error(error.message));
+}
+
+document.querySelector("#chatCronButton").addEventListener("click", () => {
+  const session = state.sessions.find((candidate) => candidate.id === state.activeSessionId || candidate.path === state.activeSessionPath);
+  if (session) openAutomationForSession(session);
+  else openAutomationsFor(state.activeProjectId);
+});
 
 export function renderSessions() {
   reportLearning();
@@ -435,7 +448,7 @@ function sessionMenuItems(session, sessionActive) {
         testid: "session-ntfy-button",
         onSelect: () => toggleSessionNtfy(session).catch((error) => toast.error(error.message)),
       },
-      { label: "Scheduled tasks", icon: "refresh", testid: "session-cron-button", onSelect: () => openScheduledTasks(state.activeProjectId, session).catch(error => toast.error(error.message)) },
+      { label: "New automation", icon: "refresh", testid: "session-automation-button", onSelect: () => openAutomationForSession(session) },
       {
         label: "Secret accounts",
         icon: "key",

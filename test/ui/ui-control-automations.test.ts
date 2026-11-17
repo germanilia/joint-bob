@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Page } from "playwright-core";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { backToList, dismissAddress, editorReady, editorTab } from "./automation-editor-driver.js";
 
 const BASE = "/api/control-center/automations";
 
@@ -30,11 +31,15 @@ async function findRow(page: Page, text: string) {
   throw new Error(`No row says "${text}"`);
 }
 
-const schedule = (projectId: string, name: string, extra: Record<string, unknown> = {}) => ({
-  projectId, name, prompt: `Do ${name}`, schedule: { frequency: "daily", time: "02:00", timezone: "UTC" }, ...extra,
+/** The input of one automation: a daily schedule at 02:00 UTC in a project. */
+const schedule = (projectId: string, name: string, extra: { prompt?: string; enabled?: boolean } = {}) => ({
+  name, target: { kind: "project", projectId }, context: extra.prompt ?? `Do ${name}`, trigger: "schedule", enabled: extra.enabled ?? true,
+  schedule: { frequency: "daily", hour: 2, minute: 0, weekday: 1, timezone: "UTC" },
 });
+type Stored = { id: string; name: string; trigger: string; enabled: boolean; context: string; schedule: { frequency: string; weekday: number; hour: number; minute: number } };
+const stored = async (page: Page) => (await call<{ automations: Stored[] }>(page, "GET", "/api/automations")).automations;
 
-test("the Automations tab lists every scheduled task, webhook and Bob report, filters by project, pages, and edits through the existing systems", { timeout: 180_000 }, async (t) => {
+test("the Automations tab lists every scheduled task, webhook and Bob report, filters by project, pages, and opens the full editor to edit or add one", { timeout: 180_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   const [alpha, beta] = node.projects;
   await page.goto(node.url);
@@ -47,10 +52,10 @@ test("the Automations tab lists every scheduled task, webhook and Bob report, fi
   await page.waitForTimeout(500);
 
   // What exists before the person opens the tab: tasks in two projects, a webhook, and enough tasks to need a second page.
-  const nightly = (await call<{ task: { id: string } }>(page, "POST", `${BASE}/schedule`, schedule(alpha.id, "Nightly release check", { prompt: "Run the release gate, report only" }))).task;
-  const slow = (await call<{ task: { id: string } }>(page, "POST", `${BASE}/schedule`, schedule(beta.id, "DB slow query report", { enabled: false }))).task;
-  await call(page, "POST", `${BASE}/webhook`, { projectId: alpha.id, name: "GitHub issues", context: "Triage the issue" });
-  for (let index = 1; index <= 16; index += 1) await call(page, "POST", `${BASE}/schedule`, schedule(alpha.id, `Zz filler ${String(index).padStart(2, "0")}`));
+  const nightly = (await call<{ automation: { id: string } }>(page, "POST", "/api/automations", schedule(alpha.id, "Nightly release check", { prompt: "Run the release gate, report only" }))).automation;
+  const slow = (await call<{ automation: { id: string } }>(page, "POST", "/api/automations", schedule(beta.id, "DB slow query report", { enabled: false }))).automation;
+  await call(page, "POST", "/api/automations", { name: "GitHub issues", target: { kind: "project", projectId: alpha.id }, context: "Triage the issue", trigger: "webhook" });
+  for (let index = 1; index <= 16; index += 1) await call(page, "POST", "/api/automations", schedule(alpha.id, `Zz filler ${String(index).padStart(2, "0")}`));
   const TOTAL = 19;
 
   await page.getByTestId("projects-open-control-center-button").click();
@@ -90,62 +95,75 @@ test("the Automations tab lists every scheduled task, webhook and Bob report, fi
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="automation-row"]').length > 3);
   await page.getByTestId("automations-filter-all").click();
 
-  // Turning a task off is the existing update: the project's own scheduled-task list agrees.
+  // Turning a task off is the existing update: the automations API agrees.
   await (await findRow(page, "Nightly release check")).getByTestId("automation-toggle").click();
   await page.waitForFunction((id) => document.querySelector(`[data-id="${id}"] [data-testid="automation-toggle"]`)?.getAttribute("aria-checked") === "false", nightly.id);
-  assert.equal((await call<{ tasks: Array<{ id: string; enabled: boolean }> }>(page, "GET", `/api/projects/${alpha.id}/cron`)).tasks.find((task) => task.id === nightly.id)!.enabled, false);
+  assert.equal((await stored(page)).find((item) => item.id === nightly.id)!.enabled, false);
   await (await findRow(page, "Nightly release check")).getByTestId("automation-toggle").click();
   await page.waitForFunction((id) => document.querySelector(`[data-id="${id}"] [data-testid="automation-toggle"]`)?.getAttribute("aria-checked") === "true", nightly.id);
 
-  // The compact editor starts from what is stored and changes only what the person changes.
+  // Edit opens the full editor, which starts from what is stored and changes only what the person changes.
   await (await findRow(page, "Nightly release check")).getByTestId("automation-edit").click();
-  assert.equal(await page.getByTestId("automation-form-name").inputValue(), "Nightly release check");
-  assert.equal(await page.getByTestId("automation-form-prompt").inputValue(), "Run the release gate, report only");
-  assert.equal(await page.getByTestId("automation-form-frequency").inputValue(), "daily");
-  assert.equal(await page.getByTestId("automation-form-time").inputValue(), "02:00");
-  assert.equal(await page.getByTestId("automation-form-project").isDisabled(), true, "a task stays in its project");
-  await page.getByTestId("automation-form-name").fill("Weekly release check");
-  await page.getByTestId("automation-form-frequency").selectOption("weekly");
-  await page.getByTestId("automation-form-weekday").selectOption("5");
-  await page.getByTestId("automation-form-time").fill("03:30");
-  await page.getByTestId("automation-form-save").click();
-  await page.getByTestId("automation-form").waitFor({ state: "hidden" });
+  await editorReady(page);
+  assert.equal(await page.getByTestId("automation-setup-name").inputValue(), "Nightly release check");
+  assert.equal(await page.getByTestId("automation-setup-instructions").inputValue(), "Run the release gate, report only");
+  assert.equal(await page.getByTestId("automation-setup-project").inputValue(), alpha.id, "a task stays in its project");
+  await editorTab(page, "trigger");
+  assert.equal(await page.getByTestId("automation-frequency-daily").getAttribute("aria-pressed"), "true");
+  assert.equal(await page.getByTestId("automation-time").inputValue(), "02:00");
+  await editorTab(page, "setup");
+  await page.getByTestId("automation-setup-name").fill("Weekly release check");
+  await editorTab(page, "trigger");
+  await page.getByTestId("automation-frequency-weekly").click();
+  await page.getByTestId("automation-weekday").selectOption("5");
+  await page.getByTestId("automation-time").fill("03:30");
+  await page.getByTestId("automation-save").click();
+  await page.waitForFunction(() => /saved/i.test(document.querySelector('[data-testid="automation-status"]')?.textContent ?? ""));
+  await backToList(page);
   await (await findRow(page, "Weekly release check")).waitFor();
   assert.equal(await (await findRow(page, "Weekly release check")).locator(".automation-when").textContent(), "Fri 03:30");
-  const stored = (await call<{ tasks: Array<{ id: string; name: string; prompt: string; schedule: { frequency: string; weekday: number; hour: number; minute: number } }> }>(page, "GET", `/api/projects/${alpha.id}/cron`)).tasks.find((task) => task.id === nightly.id)!;
-  assert.deepEqual([stored.name, stored.prompt, stored.schedule.frequency, stored.schedule.weekday, stored.schedule.hour, stored.schedule.minute], ["Weekly release check", "Run the release gate, report only", "weekly", 5, 3, 30]);
+  const changed = (await stored(page)).find((item) => item.id === nightly.id)!;
+  assert.deepEqual([changed.name, changed.context, changed.schedule.frequency, changed.schedule.weekday, changed.schedule.hour, changed.schedule.minute], ["Weekly release check", "Run the release gate, report only", "weekly", 5, 3, 30]);
 
-  // An edit of something that was deleted meanwhile says so in the form.
+  // An edit of something that was deleted meanwhile says so.
   await (await findRow(page, "Weekly release check")).getByTestId("automation-edit").click();
+  await editorReady(page);
   await call(page, "DELETE", `${BASE}/schedule/${nightly.id}`);
-  await page.getByTestId("automation-form-save").click();
-  await page.waitForFunction(() => /no longer there/.test(document.querySelector('[data-testid="automation-form-error"]')?.textContent ?? ""));
-  await page.getByTestId("automation-form-cancel").click();
+  await page.getByTestId("automation-setup-name").fill("Weekly release check, edited");
+  await page.getByTestId("automation-save").click();
+  await page.waitForFunction(() => (document.querySelector('[data-testid="automation-status"]')?.textContent ?? "") !== "");
+  assert.doesNotMatch(await page.getByTestId("automation-status").textContent() ?? "", /saved|created/i, "saving something that is gone does not claim success");
+  await backToList(page);
   await page.getByTestId("automation-row").first().waitFor();
 
-  // A scheduled task made in the form.
-  await page.getByTestId("automations-new-schedule").click();
-  await page.getByTestId("automation-form-name").fill("Log check");
-  await page.getByTestId("automation-form-project").selectOption(beta.id);
-  await page.getByTestId("automation-form-prompt").fill("Look for new errors in the logs");
-  await page.getByTestId("automation-form-frequency").selectOption("hourly");
-  await page.getByTestId("automation-form-time").fill("09:15");
-  await page.getByTestId("automation-form-save").click();
-  await page.getByTestId("automation-form").waitFor({ state: "hidden" });
-  const logCheck = (await call<{ tasks: Array<{ id: string; name: string; projectId: string; schedule: { frequency: string; minute: number } }> }>(page, "GET", `/api/projects/${beta.id}/cron`)).tasks.find((task) => task.name === "Log check")!;
-  assert.deepEqual([logCheck.projectId, logCheck.schedule.frequency, logCheck.schedule.minute], [beta.id, "hourly", 15]);
+  // A scheduled automation made in the editor, in another project than the one the list started on.
+  await page.getByTestId("automations-new-automation").click();
+  await editorReady(page);
+  await page.getByTestId("automation-setup-name").fill("Log check");
+  await page.getByTestId("automation-setup-project").selectOption(beta.id);
+  await page.getByTestId("automation-setup-instructions").fill("Look for new errors in the logs");
+  await editorTab(page, "trigger");
+  await page.getByTestId("automation-frequency-hourly").click();
+  await page.getByTestId("automation-time").fill("09:15");
+  await page.getByTestId("automation-save").click();
+  await page.waitForFunction(() => /created|saved/i.test(document.querySelector('[data-testid="automation-status"]')?.textContent ?? ""));
+  await backToList(page);
+  const logCheck = (await call<{ automations: Array<Stored & { target: { projectId: string } }> }>(page, "GET", "/api/automations")).automations.find((item) => item.name === "Log check")!;
+  assert.deepEqual([logCheck.target.projectId, logCheck.schedule.frequency, logCheck.schedule.minute], [beta.id, "hourly", 15]);
 
-  // A webhook made in the form shows its secret address once.
-  await page.getByTestId("automations-new-webhook").click();
-  await page.getByTestId("automation-form-name").fill("Stripe test events");
-  await page.getByTestId("automation-form-project").selectOption(alpha.id);
-  await page.getByTestId("automation-form-context").fill("Read only, report to me");
-  await page.getByTestId("automation-form-save").click();
-  await page.getByTestId("automation-reveal").waitFor({ state: "visible" });
-  assert.match(await page.getByTestId("automation-reveal").innerText(), /Stripe test events[\s\S]*only time the address is shown/);
-  await page.getByTestId("automation-reveal-done").click();
-  await page.getByTestId("automations-list").waitFor();
-  assert.equal((await call<{ webhooks: Array<{ name: string; context: string }> }>(page, "GET", "/api/webhooks")).webhooks.some((hook) => hook.name === "Stripe test events" && hook.context === "Read only, report to me"), true, "the Webhooks settings list it");
+  // A webhook made in the editor shows its secret address once.
+  await page.getByTestId("automations-new-automation").click();
+  await editorReady(page);
+  await page.getByTestId("automation-trigger-webhook").click();
+  await page.getByTestId("automation-setup-name").fill("Stripe test events");
+  await page.getByTestId("automation-setup-project").selectOption(alpha.id);
+  await page.getByTestId("automation-setup-instructions").fill("Read only, report to me");
+  await page.getByTestId("automation-save").click();
+  await page.getByTestId("automation-address").first().waitFor();
+  assert.match(await page.getByTestId("automation-address").textContent() ?? "", /\/hooks\//);
+  await dismissAddress(page);
+  await backToList(page);
+  assert.equal((await stored(page)).some((item) => item.name === "Stripe test events" && item.trigger === "webhook" && item.context === "Read only, report to me"), true, "the automations API lists it");
 
   // Bob's reports: the evening report starts at 19:00 and covers every project when none is chosen.
   await page.getByTestId("automations-new-bob").click();
@@ -174,14 +192,14 @@ test("the Automations tab lists every scheduled task, webhook and Bob report, fi
   assert.equal(await page.locator('[data-testid="automation-row"]', { hasText: "Zz filler 01" }).count(), 1, "the first press only asks");
   await filler.getByTestId("automation-delete").click();
   await page.waitForFunction(() => ![...document.querySelectorAll('[data-testid="automation-name"]')].some((name) => name.textContent === "Zz filler 01"));
-  assert.equal((await call<{ tasks: Array<{ name: string }> }>(page, "GET", `/api/projects/${alpha.id}/cron`)).tasks.some((task) => task.name === "Zz filler 01"), false);
+  assert.equal((await stored(page)).some((item) => item.name === "Zz filler 01"), false);
 
-  // What the compact form leaves out stays in the screens that already have it.
+  // Edit on any row opens that automation's full editor.
   await page.getByTestId("automations-filter-all").click();
   await (await findRow(page, "Log check")).getByTestId("automation-edit").click();
-  await page.getByTestId("automation-form-more").click();
-  await page.waitForFunction(() => (document.querySelector("#cronDialog") as HTMLDialogElement | null)?.open === true);
-  await page.waitForFunction(() => /Log check/.test(document.querySelector("#cronList")?.textContent ?? ""));
+  await editorReady(page);
+  assert.equal(await page.getByTestId("automation-setup-name").inputValue(), "Log check");
+  assert.equal(await page.getByTestId("automation-editor-kind").textContent(), "⏱ schedule");
 });
 
 test("machines that could not be read are one line with their names, and the full messages under Details", { timeout: 120_000 }, async (t) => {

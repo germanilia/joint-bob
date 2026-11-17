@@ -41,68 +41,68 @@ test("webhooks can be created and transferred to a shared relay without exposing
     });
     const settings = await api<Record<string, unknown>>(relay, sb, "GET", "/settings");
     assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { otherNodes: true } })).status, 200);
-    const owners = await api<{ owners: Array<{ id: string; twin?: boolean }> }>(owner, sa, "GET", `/webhooks/owners?projectId=${projectId}`);
+    const owners = await api<{ owners: Array<{ id: string; twin?: boolean }> }>(owner, sa, "GET", `/automations/owners?projectId=${projectId}`);
     assert.ok(owners.body.owners.some(item => item.id === relay.nodeId && item.twin === false), JSON.stringify(owners.body));
-    const hidden = await api<{ owners: Array<{ id: string }> }>(owner, sa, "GET", `/webhooks/owners?projectId=${owner.projects[0].id}`);
+    const hidden = await api<{ owners: Array<{ id: string }> }>(owner, sa, "GET", `/automations/owners?projectId=${owner.projects[0].id}`);
     assert.ok(!hidden.body.owners.some(item => item.id === relay.nodeId));
     const input = { name: "Shared relay hook", enabled: false, target: { kind: "project", projectId } };
-    const created = await api<{ webhook: { id: string }; secret: string }>(owner, sa, "POST", `/webhooks?nodeId=${relay.nodeId}`, input);
+    const created = await api<{ automation: { id: string }; secret: string }>(owner, sa, "POST", `/automations?nodeId=${relay.nodeId}`, input);
     assert.equal(created.status, 201, JSON.stringify(created.body));
     const privateSecret = await api<{ account: { id: string } }>(relay, sb, "POST", "/secrets/accounts", { label: "Private secret", provider: "custom", variables: [{ name: "PRIVATE_FIXTURE", kind: "value", value: "synthetic-private-value" }] });
     assert.equal(privateSecret.status, 201);
-    const options = await api<{ secretAccounts: Array<{ id: string }> }>(owner, sa, "GET", `/webhooks/options?nodeId=${relay.nodeId}`);
+    const options = await api<{ secretAccounts: Array<{ id: string }> }>(owner, sa, "GET", `/automations/options?nodeId=${relay.nodeId}`);
     assert.equal(options.status, 200);
     assert.ok(!options.body.secretAccounts.some(account => account.id === privateSecret.body.account.id));
-    assert.equal((await api(owner, sa, "POST", `/webhooks?nodeId=${relay.nodeId}`, { ...input, secretAccountIds: [privateSecret.body.account.id] })).status, 403);
-    const privateHook = await api<{ webhook: { id: string } }>(relay, sb, "POST", "/webhooks", { ...input, name: "Private hook", target: { kind: "project", projectId: relay.projects[0].id } });
+    assert.equal((await api(owner, sa, "POST", `/automations?nodeId=${relay.nodeId}`, { ...input, secretAccountIds: [privateSecret.body.account.id] })).status, 403);
+    const privateHook = await api<{ automation: { id: string } }>(relay, sb, "POST", "/automations", { ...input, name: "Private hook", target: { kind: "project", projectId: relay.projects[0].id } });
     assert.equal(privateHook.status, 201);
-    const listed = await api<{ webhooks: Array<{ id: string }> }>(owner, sa, "GET", `/webhooks?nodeId=${relay.nodeId}`);
+    const listed = await api<{ automations: Array<{ id: string }> }>(owner, sa, "GET", `/automations?nodeId=${relay.nodeId}`);
     assert.equal(listed.status, 200, JSON.stringify(listed.body));
-    assert.deepEqual(listed.body.webhooks.map(hook => hook.id), [created.body.webhook.id]);
-    const projects = await api<{ projects: Array<{ id: string }> }>(owner, sa, "GET", `/webhooks/projects?nodeId=${relay.nodeId}`);
+    assert.deepEqual(listed.body.automations.map(hook => hook.id), [created.body.automation.id]);
+    const projects = await api<{ projects: Array<{ id: string }> }>(owner, sa, "GET", `/automations/projects?nodeId=${relay.nodeId}`);
     assert.deepEqual(projects.body.projects.map(item => item.id), [projectId]);
     for (const command of [
-      { action: "deliveries", id: privateHook.body.webhook.id },
-      { action: "memory-read", id: privateHook.body.webhook.id },
-      { action: "resource-list", id: privateHook.body.webhook.id },
-      { action: "delete", id: privateHook.body.webhook.id },
-      { action: "update", id: privateHook.body.webhook.id, input },
+      { action: "history", id: privateHook.body.automation.id },
+      { action: "memory-read", id: privateHook.body.automation.id },
+      { action: "resource-list", id: privateHook.body.automation.id },
+      { action: "delete", id: privateHook.body.automation.id },
+      { action: "update", id: privateHook.body.automation.id, input },
       { action: "create", input: { ...input, target: { kind: "project", projectId: relay.projects[0].id } } },
     ]) {
-      const denied = await signedNodeRequest(a, owner, relay, "POST", "/api/cluster/v2/webhooks", command);
+      const denied = await signedNodeRequest(a, owner, relay, "POST", "/api/cluster/v2/automations", command);
       assert.equal(denied.status, 403, JSON.stringify(command));
     }
     assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { otherNodes: false } })).status, 200);
-    assert.equal((await api(owner, sa, "POST", `/webhooks?nodeId=${relay.nodeId}`, input)).status, 403, "relay owners must opt in to remote execution");
+    assert.equal((await api(owner, sa, "POST", `/automations?nodeId=${relay.nodeId}`, input)).status, 403, "relay owners must opt in to remote execution");
     assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { otherNodes: true } })).status, 200);
-    const privateSource = await api<{ webhook: { id: string } }>(owner, sa, "POST", "/webhooks", { ...input, enabled: true, target: { kind: "project", projectId: owner.projects[0].id } });
-    assert.equal((await api(owner, sa, "POST", `/webhooks/${privateSource.body.webhook.id}/transfer`, { nodeId: relay.nodeId })).status, 403);
-    const unchanged = await api<{ webhooks: Array<{ id: string; enabled: boolean }> }>(owner, sa, "GET", "/webhooks");
-    assert.equal(unchanged.body.webhooks.find(hook => hook.id === privateSource.body.webhook.id)?.enabled, true, "an unauthorized transfer must not pause its source");
+    const privateSource = await api<{ automation: { id: string } }>(owner, sa, "POST", "/automations", { ...input, enabled: true, target: { kind: "project", projectId: owner.projects[0].id } });
+    assert.equal((await api(owner, sa, "POST", `/automations/${privateSource.body.automation.id}/transfer`, { nodeId: relay.nodeId })).status, 403);
+    const unchanged = await api<{ automations: Array<{ id: string; enabled: boolean }> }>(owner, sa, "GET", "/automations");
+    assert.equal(unchanged.body.automations.find(hook => hook.id === privateSource.body.automation.id)?.enabled, true, "an unauthorized transfer must not pause its source");
     const profile = await api<{ profile: { id: string } }>(relay, sb, "POST", "/provider-profiles", { provider: "claude", label: "Synthetic webhook execution" });
     assert.equal(profile.status, 201);
     const credentialDirectory = path.join(relay.dataDir, "provider-profile-auth", profile.body.profile.id);
     await mkdir(credentialDirectory, { recursive: true });
     await writeFile(path.join(credentialDirectory, "auth.json"), JSON.stringify({ anthropic: { type: "oauth", access: "synthetic-access", refresh: "synthetic-refresh", expires: Date.now() + 86_400_000 } }));
     const execution = { ...input, enabled: true, target: { kind: "project", projectId, engine: "claude" }, providerProfileId: profile.body.profile.id };
-    assert.equal((await api(owner, sa, "PUT", `/webhooks/${created.body.webhook.id}?nodeId=${relay.nodeId}`, execution)).status, 403, "a shared project does not grant a private profile");
-    assert.equal((await api(owner, sa, "PUT", `/webhooks/${created.body.webhook.id}?nodeId=${relay.nodeId}`, { ...execution, providerProfileId: null })).status, 200, "an unpinned webhook uses the relay project owner's subscriptions");
+    assert.equal((await api(owner, sa, "PUT", `/automations/${created.body.automation.id}?nodeId=${relay.nodeId}`, execution)).status, 403, "a shared project does not grant a private profile");
+    assert.equal((await api(owner, sa, "PUT", `/automations/${created.body.automation.id}?nodeId=${relay.nodeId}`, { ...execution, providerProfileId: null })).status, 200, "an unpinned webhook uses the relay project owner's subscriptions");
     assert.equal((await fetch(`${relay.url}/hooks/${created.body.secret}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Run on the relay with relay defaults" }) })).status, 202);
     await eventually(async () => assert.ok((await readFile(log, "utf8")).includes(`claude:${relay.nodeId}`), "the relay runs the unpinned webhook conversation"));
     // The unpinned call just ran on this profile, as the relay owner's own; it can be shared once that turn has let go of it.
     await eventually(async () => assert.equal((await api(relay, sb, "PUT", `/provider-profiles/${profile.body.profile.id}/sharing`, { shared: true })).status, 200));
-    assert.equal((await api(owner, sa, "PUT", `/webhooks/${created.body.webhook.id}?nodeId=${relay.nodeId}`, execution)).status, 200);
-    const local = await api<{ webhook: { id: string } }>(owner, sa, "POST", "/webhooks", input);
+    assert.equal((await api(owner, sa, "PUT", `/automations/${created.body.automation.id}?nodeId=${relay.nodeId}`, execution)).status, 200);
+    const local = await api<{ automation: { id: string } }>(owner, sa, "POST", "/automations", input);
     assert.equal(local.status, 201);
-    const moved = await api<{ webhook: { id: string }; secret: string }>(owner, sa, "POST", `/webhooks/${local.body.webhook.id}/transfer`, { nodeId: relay.nodeId });
+    const moved = await api<{ automation: { id: string }; secret: string }>(owner, sa, "POST", `/automations/${local.body.automation.id}/transfer`, { nodeId: relay.nodeId });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
-    assert.equal(moved.body.webhook.id, local.body.webhook.id);
+    assert.equal(moved.body.automation.id, local.body.automation.id);
     assert.ok(moved.body.secret);
-    const source = await api<{ webhooks: Array<{ id: string }> }>(owner, sa, "GET", "/webhooks");
-    assert.ok(!source.body.webhooks.some(hook => hook.id === local.body.webhook.id));
+    const source = await api<{ automations: Array<{ id: string }> }>(owner, sa, "GET", "/automations");
+    assert.ok(!source.body.automations.some(hook => hook.id === local.body.automation.id));
     assert.equal((await api(owner, sa, "PUT", `/workspaces/${workspace.body.workspace.id}/sharing`, { clusterIds: [], nodeIds: [], relayIds: [] })).status, 200);
     await eventually(async () => {
-      const denied = await signedNodeRequest(a, owner, relay, "POST", "/api/cluster/v2/webhooks", { action: "list" });
+      const denied = await signedNodeRequest(a, owner, relay, "POST", "/api/cluster/v2/automations", { action: "list" });
       assert.ok([401, 403].includes(denied.status));
     });
   } finally {

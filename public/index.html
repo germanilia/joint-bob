@@ -22,6 +22,10 @@
     <link rel="stylesheet" href="/control-center.css" />
     <link rel="stylesheet" href="/control-team.css" />
     <link rel="stylesheet" href="/control-automations.css" />
+    <link rel="stylesheet" href="/automation-editor.css" />
+    <link rel="stylesheet" href="/automation-trigger.css" />
+    <link rel="stylesheet" href="/automation-run.css" />
+    <link rel="stylesheet" href="/automation-context.css" />
     <link rel="stylesheet" href="/control-dashboards.css" />
     <link rel="stylesheet" href="/control-memory.css" />
     <link rel="stylesheet" href="/control-triggers.css" />
@@ -459,7 +463,7 @@
                 <button class="ghost compact chat-action" id="autoRespondButton" data-shortcut-hint="autoRespond" type="button" title="Auto respond" data-testid="chat-auto-respond-button" aria-label="Auto respond"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 13-5"/><path d="M18 3.5V7h-3.5"/><path d="M19.5 12a7.5 7.5 0 0 1-13 5"/><path d="M6 20.5V17h3.5"/></svg><span class="chat-action-label">Auto respond</span></button>
                 <button class="ghost compact chat-action" id="renameSessionButton" data-shortcut-hint="rename" type="button" disabled data-testid="chat-rename-button" title="Rename" aria-label="Rename"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 19.5l1-4L16 5a2.1 2.1 0 0 1 3 3L8.5 18.5z"/><path d="m14 7 3 3"/></svg><span class="chat-action-label">Rename</span></button>
                 <button class="ghost compact chat-action" id="chatMoreDashboardButton" type="button" data-testid="chat-more-dashboard-button" title="Dashboard" aria-label="Dashboard"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4z"/><path d="M13 4h7v4h-7z"/><path d="M13 10h7v10h-7z"/><path d="M4 13h7v7H4z"/></svg><span class="chat-action-label">Dashboard</span></button>
-                <button class="ghost compact chat-action" id="chatCronButton" data-shortcut-hint="scheduledTasks" type="button" data-testid="chat-cron-button" title="Scheduled tasks" aria-label="Scheduled tasks"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M12 13v3.2l2.2 1.3"/></svg><span class="chat-action-label">Scheduled tasks</span></button>
+                <button class="ghost compact chat-action" id="chatCronButton" data-shortcut-hint="scheduledTasks" type="button" data-testid="chat-automations-button" title="Automations" aria-label="Automations"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M12 13v3.2l2.2 1.3"/></svg><span class="chat-action-label">Automations</span></button>
                 <button class="ghost compact chat-action" id="chatDoneButton" data-shortcut-hint="markDone" type="button" title="Mark done" data-testid="chat-done-button" aria-label="Mark done"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.3 2.4 2.4 4.8-5"/></svg><span class="chat-action-label">Mark done</span></button>
                 <button class="ghost compact chat-action" id="chatSessionMenuButton" data-shortcut-hint="sessionActions" type="button" title="Conversation actions" data-testid="chat-session-menu-button" aria-label="Conversation actions"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10.5L6.5 20v-3.5a2 2 0 0 1-2-2z"/><path d="M8.5 9h7M8.5 12h4.5"/></svg><span class="chat-action-label">Conversation actions</span></button>
                 <button class="ghost compact chat-action danger" id="chatDeleteButton" type="button" disabled data-testid="chat-delete-button" title="Delete conversation" aria-label="Delete conversation"><svg class="chat-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg><span class="chat-action-label">Delete conversation</span></button>
@@ -975,7 +979,6 @@
           <div class="settings-group-label" role="presentation" data-testid="settings-group-network">Network</div>
           <button class="settings-tab" type="button" data-settings-tab="cluster" role="tab" id="settingsTab-cluster" aria-controls="settingsPanel-cluster" aria-selected="false" tabindex="-1" data-testid="settings-tab-cluster"><span class="settings-tab-icon" style="--tile:#0ea5e9" aria-hidden="true">🕸️</span><span class="settings-tab-label">Cluster</span></button>
           <button class="settings-tab" type="button" data-settings-tab="relay" role="tab" id="settingsTab-relay" aria-controls="settingsPanel-relay" aria-selected="false" tabindex="-1" data-requires-settings data-testid="settings-tab-relay"><span class="settings-tab-icon" style="--tile:#6366f1" aria-hidden="true">📡</span><span class="settings-tab-label">Relay</span></button>
-          <button class="settings-tab" type="button" data-settings-tab="webhooks" role="tab" id="settingsTab-webhooks" aria-controls="settingsPanel-webhooks" aria-selected="false" tabindex="-1" data-requires-settings data-testid="settings-tab-webhooks"><span class="settings-tab-icon" style="--tile:#ec4899" aria-hidden="true">🪝</span><span class="settings-tab-label">Webhooks</span></button>
           </div>
           <div class="settings-group" data-settings-group="node" role="none">
           <div class="settings-group-label" role="presentation" data-testid="settings-group-node">This node</div>
@@ -1585,196 +1588,6 @@
             </aside>
           </div>
           </div>
-        </section>
-
-        <section class="settings-panel relay-panel" id="settingsPanel-webhooks" role="tabpanel" aria-labelledby="settingsTab-webhooks" tabindex="0" data-testid="settingsPanel-webhooks" hidden>
-          <p class="settings-hint relay-inline-status" id="webhooksStatus" role="status" data-testid="webhooks-status"></p>
-          <div class="relay-reveal" id="webhooksReveal" data-testid="webhooks-reveal" hidden>
-            <p class="settings-hint" id="webhooksRevealTitle"></p>
-            <div id="webhooksRevealUrls" class="relay-list"></div>
-            <p class="settings-hint">Shown once; only a fingerprint of the secret is kept. Anyone with the address can call the webhook, so keep it private. If it leaks, make a new address and the old one stops working. Send a POST with any body, up to 100 MB.</p>
-            <button class="ghost compact" type="button" id="webhooksRevealDone" data-testid="webhooks-reveal-done-button">Done</button>
-          </div>
-          <section class="webhooks-view" id="webhooksListSection" data-testid="webhooks-list-section">
-            <div class="relay-head">
-              <p class="settings-hint">A secret address another service can call. Each call starts a conversation or adds a message to one. Changes save as you make them.</p>
-              <div class="relay-row-actions">
-                <label class="webhooks-owner" title="Choose this machine or an active twin. Webhooks listed here belong only to that owner, which stores them and handles calls. No copies or automatic fallback. An existing webhook's owner cannot be changed.">Owner<select id="webhooksOwner" data-testid="webhooks-owner-select"></select></label>
-                <button class="primary compact" type="button" id="webhooksNew" data-testid="webhooks-new-button">+ New webhook</button>
-              </div>
-            </div>
-            <div class="relay-list" id="webhooksList" data-testid="webhooks-list"></div>
-            <div class="relay-pager" id="webhooksPager" data-testid="webhooks-pager" hidden></div>
-          </section>
-          <section class="webhooks-view" id="webhooksForm" data-testid="webhooks-form" hidden>
-            <div class="relay-head">
-              <div class="relay-row-actions webhooks-crumb">
-                <button class="ghost compact" type="button" id="webhooksBack" data-testid="webhooks-back-button">‹ Webhooks</button>
-                <h3 id="webhooksDetailTitle"></h3>
-                <span id="webhooksDetailState"></span>
-              </div>
-              <div class="relay-row-actions" id="webhooksDetailActions"></div>
-            </div>
-            <div class="webhooks-tabs" role="tablist" aria-label="Webhook sections" id="webhooksTabs">
-              <button type="button" role="tab" data-webhook-tab="setup" data-testid="webhooks-tab-setup">Setup</button>
-              <button type="button" role="tab" data-webhook-tab="access" data-testid="webhooks-tab-access">Access</button>
-              <button type="button" role="tab" data-webhook-tab="files" data-testid="webhooks-tab-files">Files &amp; tools <span class="cluster-badge" id="webhooksCountFiles">0</span></button>
-              <button type="button" role="tab" data-webhook-tab="skills" data-testid="webhooks-tab-skills">Skills <span class="cluster-badge" id="webhooksCountSkills">0</span></button>
-              <button type="button" role="tab" data-webhook-tab="memory" data-testid="webhooks-tab-memory">Memory <span class="webhooks-dot" id="webhooksMemoryDot" role="img" aria-label="Memory is on" hidden></span></button>
-              <button type="button" role="tab" data-webhook-tab="calls" data-testid="webhooks-tab-calls" id="webhooksCallsTab">Calls</button>
-            </div>
-
-            <div class="webhooks-tab-body" role="tabpanel" data-webhook-panel="setup" id="webhooksSetupPanel">
-              <div class="relay-form">
-                <label>Name<input id="webhooksName" name="name" maxlength="120" autocomplete="off" placeholder="GitHub issues" data-testid="webhooks-name-input" /></label>
-                <label>Each call
-                  <select id="webhooksTargetKind" data-testid="webhooks-target-kind-select">
-                    <option value="project">Starts a new conversation in a project</option>
-                    <option value="conversation">Adds a message to one conversation</option>
-                    <option value="assistant">Routes through a personal assistant</option>
-                  </select>
-                </label>
-                <label>Project<select id="webhooksProject" data-testid="webhooks-project-select"></select></label>
-                <p id="webhooksAssistantTargetLabel" class="settings-hint" data-testid="webhooks-assistant-target" hidden></p>
-                <label id="webhooksConversationLabel" hidden>Conversation<select id="webhooksConversation" data-testid="webhooks-conversation-select"></select></label>
-                <label>Harness<select id="webhooksHarness" data-testid="webhooks-harness-select"></select></label>
-                <label>Agent / model<select id="webhooksModel" data-testid="webhooks-model-select"></select></label>
-                <label>Effort<select id="webhooksEffort" data-testid="webhooks-effort-select"></select></label>
-              </div>
-              <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksHideFromHistory" data-testid="webhooks-hide-from-history-toggle" /><span><strong>Hide from conversation history</strong><span class="settings-hint">Hide existing and future conversations started by this webhook. Calls remain available here. Conversations it only adds messages to stay visible.</span></span></label>
-              <label>Instructions
-                <textarea id="webhooksContext" rows="4" maxlength="10000" placeholder="Optional. For example: Triage new issues and reply with a plan." data-testid="webhooks-context-input"></textarea>
-                <span class="settings-hint">Goes ahead of the call's content in every message this webhook creates.</span>
-              </label>
-              <div class="relay-form">
-                <label id="webhooksTitleTemplateLabel">Conversation title
-                  <input id="webhooksTitleTemplate" maxlength="200" autocomplete="off" placeholder="pr-[PR_REVIEW]" data-testid="webhooks-title-template-input" />
-                  <span class="settings-hint">Optional, for new conversations only. The agent fills [placeholders] from the call; text outside brackets stays fixed. Blank uses the webhook name, including its [placeholders].</span>
-                </label>
-                <div><span class="webhooks-label">Tags</span><div id="webhooksAutomationTags" data-testid="webhooks-automation-tags"></div></div>
-              </div>
-            </div>
-
-            <div class="webhooks-tab-body" role="tabpanel" data-webhook-panel="access" id="webhooksAccessPanel" hidden>
-              <div class="webhooks-columns">
-                <div class="webhooks-column">
-                  <h4>Calls</h4>
-                  <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksEnabled" checked data-testid="webhooks-enabled-toggle" /><span><strong>Accept calls</strong><span class="settings-hint">Off rejects every call without starting anything.</span></span></label>
-                  <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksAttachments" data-testid="webhooks-attachments-toggle" /><span><strong>Accept attachments</strong><span class="settings-hint">Files sent with a call are saved and passed to the agent: multipart file parts, or a JSON <code>attachments</code> list of <code>{"name", "mimeType", "data"}</code> with base64 data.</span></span></label>
-                  <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksRunInWorktree" checked data-testid="webhooks-run-in-worktree-toggle" /><span><strong>Run in a temporary worktree</strong><span class="settings-hint">Each call starts a new conversation in a fresh copy of origin/main. The worktree is removed when the run ends. Off keeps the existing conversation and file settings.</span></span></label>
-                  <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksPreserveFiles" data-testid="webhooks-preserve-files-toggle" /><span><strong>Preserve files between runs</strong><span class="settings-hint">Used only when temporary worktrees are off. Off gives every run a new temporary workspace. On reuses this webhook's own workspace and its files.</span></span></label>
-                  <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksBypassGuardian" data-testid="webhooks-bypass-guardian-toggle" /><span><strong>Bypass Guardian</strong><span class="settings-hint">Skip local Guardian checks during this webhook's turns. Relay rules and team safeguards still apply.</span></span></label>
-                  <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksMarkForReview" data-testid="webhooks-mark-for-review-toggle" /><span><strong>Count toward Needs review</strong><span class="settings-hint">Off keeps these conversations out of the review badge and inbox until you reply.</span></span></label>
-                  <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhooksSendersEnabled" data-testid="webhooks-senders-toggle" /><span><strong>Only listed senders</strong><span class="settings-hint">Refuse calls whose sender is not on the list. Refused calls show under Calls with an Allow button.</span></span></label>
-                  <div class="webhooks-senders" id="webhooksSenders" data-testid="webhooks-senders" hidden>
-                    <label>Sender field<input id="webhooksSenderFields" autocomplete="off" placeholder="message.from.id" data-testid="webhooks-sender-fields-input" /></label>
-                    <button class="ghost compact" type="button" id="webhooksSenderTelegram" data-testid="webhooks-sender-telegram-button">Use Telegram bot fields</button>
-                    <label>Allowed senders
-                      <textarea id="webhooksAllowedSenders" rows="3" placeholder="123456789 Ilia" data-testid="webhooks-allowed-senders-input"></textarea>
-                    </label>
-                    <p class="settings-hint">The sender is the first of these fields (dot paths, separated by commas) found in a JSON body or form fields. List one allowed value per line, optionally followed by a name the agent sees.</p>
-                  </div>
-                </div>
-                <div class="webhooks-column">
-                  <h4>Secret accounts</h4>
-                  <p class="settings-hint">Project and workspace secrets are inherited. Selected accounts are also attached to each conversation this webhook reaches. Removing one affects future calls only.</p>
-                  <input type="search" id="webhooksSecretSearch" placeholder="Search accounts…" aria-label="Search secret accounts" data-testid="webhooks-secret-search-input" />
-                  <div class="relay-list" id="webhooksSecrets" data-testid="webhooks-secret-accounts"></div>
-                  <div class="relay-pager" id="webhooksSecretsPager" data-testid="webhooks-secrets-pager" hidden></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="webhooks-tab-body" role="tabpanel" data-webhook-panel="files" hidden>
-              <p class="settings-hint" id="webhookResourceHint">The agent sees each file's name, path and description and opens it when needed. Tools are stored as files; the agent runs them only as your notes describe. Up to 4 MiB each.</p>
-              <div class="webhooks-drop" id="webhookResourceDrop" data-testid="webhook-resource-drop">
-                <span><strong>Drop files here</strong> or</span>
-                <button class="ghost compact" type="button" id="webhookResourceBrowse" data-testid="webhook-resource-browse-button">Browse…</button>
-                <input id="webhookResourceFiles" data-testid="webhook-resource-files-input" type="file" multiple hidden />
-              </div>
-              <div class="webhooks-staged-list" id="webhookResourceStaged"></div>
-              <div class="relay-list" id="webhookResourceList" data-testid="webhook-resource-list"></div>
-              <div class="relay-pager" id="webhookResourcePager" data-testid="webhook-resource-pager" hidden></div>
-            </div>
-
-            <div class="webhooks-tab-body" role="tabpanel" data-webhook-panel="skills" hidden>
-              <p class="settings-hint" data-create-first hidden>Create the webhook first, then add skills to it.</p>
-              <div class="webhooks-live" data-live>
-                <div class="relay-head">
-                  <p class="settings-hint">Skills only this webhook's agent can use. They are not added anywhere else. Imports are stored as inert files and never run or installed.</p>
-                  <button class="primary compact" type="button" id="webhookSkillAdd" data-testid="webhook-skill-add-button">+ Add skill</button>
-                </div>
-                <div class="webhooks-add-panel" id="webhookSkillPanel" data-testid="webhook-skill-panel" hidden>
-                  <div class="relay-head"><div id="webhookSkillMethods"></div><button class="ghost compact" type="button" id="webhookSkillClose" data-testid="webhook-skill-close-button">Close</button></div>
-                  <div data-skill-method="upload">
-                    <div class="webhooks-drop">
-                      <span>A skill folder must contain SKILL.md. Files are stored as-is and never run on upload.</span>
-                      <button class="ghost compact" type="button" id="webhookSkillChoose" data-testid="webhook-skill-choose-button">Choose folder…</button>
-                      <input id="webhookSkillFolder" data-testid="webhook-skill-folder-input" type="file" multiple webkitdirectory hidden />
-                    </div>
-                  </div>
-                  <div data-skill-method="git" hidden>
-                    <div class="relay-form">
-                      <label>Repository URL<input id="webhookSkillGitUrl" data-testid="webhook-skill-git-url-input" maxlength="2048" placeholder="https://github.com/org/repo.git" /></label>
-                      <label>Branch or tag (optional)<input id="webhookSkillGitRef" data-testid="webhook-skill-git-ref-input" maxlength="200" placeholder="main" /></label>
-                    </div>
-                    <button class="ghost compact" type="button" id="webhookSkillGitDiscover" data-testid="webhook-skill-git-discover-button">Find skills</button>
-                    <div class="relay-list" id="webhookSkillGitResults"></div>
-                  </div>
-                </div>
-                <div class="relay-list" id="webhookSkillList" data-testid="webhook-skill-list"></div>
-                <div class="relay-pager" id="webhookSkillPager" data-testid="webhook-skill-pager" hidden></div>
-                <section class="webhooks-available" data-testid="webhook-skill-available">
-                  <h4>Available in Resources <span id="webhookSkillAvailableCount"></span></h4>
-                  <p class="settings-hint">Skills set up in Resources on this machine. Add one to copy it into this webhook.</p>
-                  <input type="search" id="webhookSkillSearch" placeholder="Search skills in Resources…" aria-label="Search skills in Resources" data-testid="webhook-skill-search-input" />
-                  <div class="relay-list" id="webhookSkillInventory" data-testid="webhook-skill-inventory"></div>
-                </section>
-              </div>
-            </div>
-
-            <div class="webhooks-tab-body" role="tabpanel" data-webhook-panel="memory" hidden>
-              <p class="settings-hint" data-create-first hidden>Create the webhook first, then turn on its memory.</p>
-              <div class="webhooks-live" data-live>
-                <label class="checkbox-row webhooks-option"><input type="checkbox" id="webhookMemoryEnabled" data-testid="webhook-memory-enabled-toggle" /><span><strong>Persistent memory</strong><span class="settings-hint">The agent reads this note at the start of every call and adds what it learns from feedback and problems. You can edit it here.</span></span></label>
-                <div class="webhooks-memory" id="webhookMemoryOn">
-                  <div class="relay-head">
-                    <div id="webhookMemoryModes"></div>
-                    <div class="relay-row-actions" id="webhookMemoryActions">
-                      <button class="ghost compact" type="button" id="webhookMemoryUploadButton" data-testid="webhook-memory-upload-button">Upload .md</button>
-                      <input id="webhookMemoryUpload" data-testid="webhook-memory-upload-input" type="file" accept=".md,text/markdown" hidden />
-                      <button class="ghost compact" type="button" id="webhookMemoryDownload" data-testid="webhook-memory-download-button">Download</button>
-                      <button class="ghost compact" type="button" id="webhookMemoryReset" data-testid="webhook-memory-reset-button">Clear</button>
-                    </div>
-                  </div>
-                  <textarea id="webhookMemoryContent" data-testid="webhook-memory-content-input" maxlength="200000" spellcheck="false" aria-label="Markdown memory"></textarea>
-                  <div class="webhooks-preview" id="webhookMemoryPreview" data-testid="webhook-memory-preview" hidden></div>
-                  <div class="relay-head">
-                    <span class="settings-hint" id="webhookMemorySize"></span>
-                    <div class="relay-row-actions">
-                      <button class="ghost compact" type="button" id="webhookMemoryDiscard" data-testid="webhook-memory-discard-button">Discard</button>
-                      <button class="primary compact" type="button" id="webhookMemorySave" data-testid="webhook-memory-save-button">Save memory</button>
-                    </div>
-                  </div>
-                </div>
-                <div class="webhooks-empty" id="webhookMemoryOff" data-testid="webhook-memory-off" hidden><strong>Memory is off</strong><span class="settings-hint">Each call starts with no notes from earlier calls. Turn it on to let the agent keep what it learns.</span></div>
-              </div>
-            </div>
-
-            <div class="webhooks-tab-body" role="tabpanel" data-webhook-panel="calls" hidden>
-              <p class="settings-hint" id="webhooksCallsTitle"></p>
-              <div class="relay-list" id="webhooksCalls" data-testid="webhooks-history"></div>
-              <div class="relay-pager" id="webhooksCallsPager" data-testid="webhooks-calls-pager" hidden></div>
-            </div>
-
-            <div class="webhooks-savebar" id="webhooksSavebar" data-testid="webhooks-savebar" hidden>
-              <span class="settings-hint" id="webhooksSavebarText"></span>
-              <div class="relay-row-actions">
-                <button class="ghost compact" type="button" id="webhooksDiscard" data-testid="webhooks-discard-button">Discard</button>
-                <button class="primary compact" type="button" id="webhooksSave" data-testid="webhooks-save-button">Save changes</button>
-              </div>
-            </div>
-          </section>
         </section>
 
         <section class="settings-panel relay-panel" id="settingsPanel-relay" role="tabpanel" aria-labelledby="settingsTab-relay" tabindex="0" data-testid="settingsPanel-relay" hidden>
@@ -3217,84 +3030,6 @@
       </form>
     </dialog>
 
-    <!-- Scheduled tasks keep actions visible while the list or editor scrolls. -->
-    <dialog id="cronDialog" aria-labelledby="cronHeading" data-testid="cron-dialog">
-      <section class="dialog-card cron-card">
-        <div class="dialog-heading" tabindex="-1">
-          <span class="eyebrow">Automation</span>
-          <h2 id="cronHeading">Scheduled tasks</h2>
-          <p id="cronContext"></p>
-        </div>
-        <div id="cronBody" class="cron-body">
-        <p id="cronError" role="alert"></p>
-        <div id="cronListView">
-          <div id="cronList" class="cron-list" data-testid="cron-list"></div>
-        </div>
-        <form id="cronForm" data-testid="cron-form" hidden>
-          <div class="cron-form-heading">
-            <span class="eyebrow">Schedule details</span>
-            <h3 id="cronFormTitle">New scheduled task</h3>
-          </div>
-          <label>Name<input name="name" required maxlength="120" autocomplete="off" data-testid="cron-name"><span class="settings-hint">For new conversations, the agent fills [placeholders] in this name from the task. Text outside brackets stays fixed.</span></label>
-          <label>Prompt<textarea name="prompt" required maxlength="100000" rows="4" data-testid="cron-prompt"></textarea></label>
-          <fieldset class="relay-form-section"><legend>Tags</legend><div id="cronAutomationTags" data-testid="cron-automation-tags"></div></fieldset>
-          <div class="cron-schedule-grid">
-            <label>Repeat<select name="frequency" data-testid="cron-frequency"><option value="once">Once</option><option value="minutely">Minutes</option><option value="hourly" selected>Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label>
-            <label id="cronStartDateLabel"><span id="cronStartDateText">From (optional)</span><input name="startDate" type="date" data-testid="cron-start-date"></label>
-            <label id="cronTimeLabel">Start time<input name="time" type="time" value="08:00" required data-testid="cron-time"></label>
-            <label id="cronMinuteIntervalLabel" hidden>Repeat every (minutes)<input name="intervalMinutes" type="number" inputmode="numeric" min="1" max="1440" value="15" data-testid="cron-interval-minutes"></label>
-            <label id="cronIntervalLabel">Repeat every (hours)<input name="intervalHours" type="number" inputmode="numeric" min="1" max="168" value="1" required data-testid="cron-interval-hours"></label>
-            <label id="cronWeekdayLabel">Day<select name="weekday" data-testid="cron-weekday"><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label>
-            <label id="cronEndDateLabel">Until (optional)<input name="endDate" type="date" data-testid="cron-end-date"></label>
-          </div>
-          <fieldset id="cronDays" class="cron-days"><legend>Run on days <small>(unchecked days stay quiet)</small></legend>
-            <div class="cron-day-options">
-              <label><input type="checkbox" name="days" value="1" checked data-testid="cron-day-1">Mon</label>
-              <label><input type="checkbox" name="days" value="2" checked data-testid="cron-day-2">Tue</label>
-              <label><input type="checkbox" name="days" value="3" checked data-testid="cron-day-3">Wed</label>
-              <label><input type="checkbox" name="days" value="4" checked data-testid="cron-day-4">Thu</label>
-              <label><input type="checkbox" name="days" value="5" checked data-testid="cron-day-5">Fri</label>
-              <label><input type="checkbox" name="days" value="6" checked data-testid="cron-day-6">Sat</label>
-              <label><input type="checkbox" name="days" value="0" checked data-testid="cron-day-0">Sun</label>
-            </div>
-          </fieldset>
-          <label class="checkbox-row"><input name="quietEnabled" type="checkbox" data-testid="cron-quiet-enabled">Quiet hours (no runs)</label>
-          <div id="cronQuietTimes" class="cron-schedule-grid" hidden>
-            <label>From<input name="quietStart" type="time" value="22:00" data-testid="cron-quiet-start"></label>
-            <label>Until<input name="quietEnd" type="time" value="08:00" data-testid="cron-quiet-end"></label>
-          </div>
-          <p class="cron-help">Like a meeting in a calendar: once on a day, or repeating from a first day until an optional last one; a monthly task repeats on its first day's date. Times and days use this timezone. Quiet hours can cross midnight; end time is when runs resume. Skipped runs are not made up.</p>
-          <label>Timezone<input name="timezone" list="cronTimezones" required autocomplete="off" data-testid="cron-timezone"></label>
-          <datalist id="cronTimezones"></datalist>
-          <label>Execution node<select name="ownerNodeId" required data-testid="cron-owner"></select></label>
-          <label id="cronEngineLabel">Harness<select name="engine" required data-testid="cron-engine"></select></label>
-          <label>Model<select name="model" data-testid="cron-model"></select></label>
-          <label id="cronReasoningLabel">Reasoning<select name="reasoning" data-testid="cron-reasoning"></select></label>
-          <label class="checkbox-row"><input name="autoReplyEnabled" type="checkbox" data-testid="cron-auto-reply-enabled">Enable auto reply for each run</label>
-          <fieldset id="cronAutoReply" class="relay-form-section" hidden disabled>
-            <legend>Auto reply</legend>
-            <p class="cron-help">Drives the conversation until your stop criteria, response limit, or manual Stop. Failures retry automatically, including after a restart. Security restrictions and budgets still apply. Retries may incur model costs.</p>
-            <label>Responder harness<select name="autoReplyHarness" data-testid="cron-auto-reply-harness"></select></label>
-            <label>Responder model<select name="autoReplyModel" data-testid="cron-auto-reply-model"></select></label>
-            <label>Responder reasoning<select name="autoReplyThinking" data-testid="cron-auto-reply-thinking"></select></label>
-            <label>Instructions<textarea name="autoReplyInstructions" rows="4" maxlength="20000" data-testid="cron-auto-reply-instructions"></textarea></label>
-            <label>Stop only when<textarea name="autoReplyStopInstructions" rows="4" maxlength="20000" data-testid="cron-auto-reply-stop-instructions"></textarea><span class="settings-hint">Only these criteria may end auto reply automatically. Leave blank for no criteria-based stop.</span></label>
-            <label>Maximum replies<input name="autoReplyLimit" type="number" min="1" max="500" placeholder="Unlimited" data-testid="cron-auto-reply-limit"></label>
-            <label class="checkbox-row"><input name="autoReplyUseTools" type="checkbox" checked data-testid="cron-auto-reply-use-tools">Let the responder inspect files and run checks</label>
-          </fieldset>
-          <label class="checkbox-row"><input name="enabled" type="checkbox" checked data-testid="cron-enabled">Enabled</label>
-          <label class="checkbox-row"><input name="runInWorktree" type="checkbox" checked data-testid="cron-run-in-worktree">Run each time in a fresh temporary worktree from origin/main, then remove it</label>
-          <label class="checkbox-row"><input name="pauseOnFailure" type="checkbox" data-testid="cron-pause-on-failure">Pause schedule after a failed run</label>
-          <label class="checkbox-row"><input name="bypassGuardian" type="checkbox" data-testid="cron-bypass-guardian">Bypass Guardian for this task's turns. Relay rules and team safeguards still apply.</label>
-          <label class="checkbox-row"><input name="markForReview" type="checkbox" data-testid="cron-mark-for-review">Count completed runs toward Needs review</label>
-          <label class="checkbox-row"><input name="hideFromHistory" type="checkbox" data-testid="cron-hide-from-history">Hide this task's conversations from history, even when Show scheduled is on</label>
-          <p class="cron-help">Missed offline runs are skipped. Runs never overlap. Failed runs retry at the next scheduled time unless pause on failure is selected.</p>
-        </form>
-        </div>
-        <div id="cronFormActions" class="dialog-actions" hidden><button id="cronCancel" type="button" class="ghost" data-testid="cron-cancel">Cancel</button><button class="primary" type="submit" form="cronForm" data-testid="cron-save">Save task</button></div>
-        <div id="cronFooter" class="dialog-actions"><button id="cronNew" class="ghost icon-button" type="button" aria-label="New scheduled task" title="New scheduled task" data-testid="cron-new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><button id="cronRefresh" type="button" class="ghost" data-testid="cron-refresh">Refresh</button><button id="cronClose" class="primary" type="button" data-testid="cron-close">Close</button></div>
-      </section>
-    </dialog>
     <div class="row-menu" id="rowMenu" popover="auto" aria-label="Conversation actions" data-testid="session-row-menu"></div>
 
     <script src="/vendor/codemirror/lib/codemirror.js"></script>

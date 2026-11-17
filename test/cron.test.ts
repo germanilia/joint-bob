@@ -9,10 +9,13 @@ test("existing and new schedules default to worktrees and retain an explicit opt
   const { CronStore } = await import("../src/cron.js");
   const db = new DatabaseSync(":memory:");
   try {
+    // A task saved by an older build has no runInWorktree and lives in the old table until the store moves it.
+    const legacyId = randomUUID();
+    db.exec("CREATE TABLE cron_tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, owner_node_id TEXT NOT NULL, input TEXT NOT NULL, next_run INTEGER NOT NULL)");
+    const legacy = input();
+    db.prepare("INSERT INTO cron_tasks VALUES (?, ?, ?, ?, ?)").run(legacyId, legacy.projectId, legacy.ownerNodeId, JSON.stringify(legacy), 1);
     const store = new CronStore(db);
-    const task = store.create(input());
-    db.prepare("UPDATE cron_tasks SET input=? WHERE id=?").run(JSON.stringify(input()), task.id);
-    assert.equal(store.get(task.id)!.runInWorktree, true);
+    assert.equal(store.get(legacyId)!.runInWorktree, true);
     const created = store.create(input());
     assert.equal(created.runInWorktree, true);
     const { id, nextRun, lastRun, ...saved } = created;

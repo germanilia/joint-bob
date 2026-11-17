@@ -394,14 +394,14 @@ test("scheduled auto reply survives a restart without a browser and finishes its
     server = await startDevNode(environment, node, { JOINT_BOB_AUTO_RESPONDER: responder });
     let auth = await signIn(environment, node);
     const project = projectNamed(node, "Joint Bob");
-    const created = await api<{ task: { id: string } }>(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "create", input: {
-      projectId: project.id, name: "Auto scheduled", prompt: "Complete and verify the work", engine: "kiro", ownerNodeId: node.nodeId,
-      sessionId: null, enabled: false, autoRespond: { ...config, maxResponses: 3 },
+    const created = await api<{ automation: { id: string } }>(node, auth, "POST", "/automations", {
+      trigger: "schedule", name: "Auto scheduled", context: "Complete and verify the work", target: { kind: "project", projectId: project.id, engine: "kiro" },
+      enabled: false, autoRespond: { ...config, maxResponses: 3 },
       schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" },
-    } } });
-    assert.equal(created.status, 200, JSON.stringify(created.body));
-    const taskId = created.body.task.id;
-    assert.equal((await api(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "run", id: taskId, projectId: project.id } })).status, 200);
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const taskId = created.body.automation.id;
+    assert.equal((await api(node, auth, "POST", `/automations/${taskId}/run`, {})).status, 200);
     db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     const responderState = () => db!.prepare("SELECT status, stop_kind, responses FROM conversation_auto_responders WHERE project_id = ?").get(project.id) as { status: string; stop_kind: string; responses: number } | undefined;
     const history = () => db!.prepare("SELECT status, error FROM cron_runs WHERE task_id = ?").all(taskId) as Array<{ status: string; error: string | null }>;
@@ -443,16 +443,16 @@ test("scheduled auto-reply runs sharing a conversation do not replace each other
     await waitFor(chat.messages, () => chat.messages.some(message => message.type === "agent_end"));
     const taskIds: string[] = [];
     for (const name of ["First driver", "Second driver"]) {
-      const created = await api<{ task: { id: string } }>(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "create", input: {
-        projectId: project.id, name, prompt: name, engine: "kiro", ownerNodeId: node.nodeId, sessionId, runInWorktree: false, enabled: false,
+      const created = await api<{ automation: { id: string } }>(node, auth, "POST", "/automations", {
+        trigger: "schedule", name, context: name, target: { kind: "conversation", projectId: project.id, sessionId, engine: "kiro" }, runInWorktree: false, enabled: false,
         autoRespond: { ...config, maxResponses: 1 }, schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" },
-      } } });
-      assert.equal(created.status, 200, JSON.stringify(created.body));
-      taskIds.push(created.body.task.id);
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      taskIds.push(created.body.automation.id);
     }
-    await api(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "run", id: taskIds[0], projectId: project.id } });
+    await api(node, auth, "POST", `/automations/${taskIds[0]}/run`, {});
     await waitFor(chat.messages, () => chat.messages.some(message => message.type === "autoRespond" && (message.state as { retry?: unknown })?.retry));
-    await api(node, auth, "POST", "/cron", { nodeId: node.nodeId, command: { action: "run", id: taskIds[1], projectId: project.id } });
+    await api(node, auth, "POST", `/automations/${taskIds[1]}/run`, {});
     db = openNodeDatabase(path.join(node.dataDir, "node.db"));
     const completed = () => db!.prepare("SELECT COUNT(*) AS count FROM cron_runs WHERE status = 'succeeded' AND task_id IN (?, ?)").get(...taskIds)!.count;
     await waitFor(chat.messages, () => completed() === 2, 40_000);

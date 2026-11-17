@@ -15,7 +15,7 @@ import {
 import { runGitReview } from "./git-review-run.js";
 import { agentFor } from "../background-agent.js";
 import { projectsWithSharedNames } from "./projects.js";
-import { runCronCommand } from "./routes/cron.js";
+import { runAutomationCommand } from "./routes/automations.js";
 
 // ── What the person asked for, as data ─────────────────────────────────────────────────────────────────
 //
@@ -370,7 +370,7 @@ function registerReportItem(id: (typeof REPORT_ITEM_ACTIONS)[number]): void {
       const summary = storedDigest(data.projectId, data.conversationId)?.summary;
       return [bobSays(db, session, summary ? `${data.title}\n${summary}` : `${data.title}\nIt has no summary yet. Open it from the board to read it.`, { via: "Report · summary", ...label })];
     }
-    await runAsAccount(actingAccountFromSession(session), () => runCronCommand(data.nodeId, { action: "run", id: data.taskId, projectId: data.projectId }));
+    await runAsAccount(actingAccountFromSession(session), () => runAutomationCommand(data.nodeId, { action: "run", id: data.taskId }));
     return [bobSays(db, session, `Started "${data.name}" again. Its result will show under Automations.`, { importance: "done", via: "Report · run again", ...label })];
   });
 }

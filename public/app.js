@@ -5,8 +5,7 @@ import { api } from "./app/api.js";
 import { installConversationSwitcher } from "./app/conversation-switcher.js";
 import { initializeApplication, revealApplication } from "./app/auth.js";
 import { openSettings } from "./app/settings.js";
-import { openScheduledTasks } from "./app/cron.js";
-import { openAssistantWebhook } from "./app/webhooks.js";
+import { openNewAutomation } from "./app/control-automations.js";
 import { installShortcuts } from "./app/shortcuts.js";
 import { focusTopmostInput } from "./app/focus-input.js";
 import { openSpotlight } from "./app/spotlight.js";
@@ -93,12 +92,11 @@ import "./app/bob-page.js";
 
 const assistantAutomationParameters = new URLSearchParams(location.search);
 const assistantAutomationMode = assistantAutomationParameters.get("assistantAutomation") === "1"
-  && (assistantAutomationParameters.get("assistantAction") === "cron" || assistantAutomationParameters.get("assistantAction") === "webhook");
+  && assistantAutomationParameters.get("assistantAction") === "automation";
 const returnToAssistantChat = () => {
   if (assistantAutomationMode && window.parent !== window) window.parent.postMessage("assistant-automation-close", location.origin);
 };
-document.querySelector("#cronDialog").addEventListener("close", returnToAssistantChat);
-document.querySelector("#settingsDialog").addEventListener("close", returnToAssistantChat);
+window.addEventListener("automation-editor-closed", returnToAssistantChat);
 
 initializeFocusUi({
   openSettings, startConversation: startGlobalConversation,
@@ -185,13 +183,8 @@ initializeApplication()
     const { assistants } = await api("/api/personal-assistants");
     const assistant = assistants.find(entry => entry.id === assistantId && entry.projectId === projectId && entry.sessionId === sessionId);
     if (!assistant) throw new Error("Assistant not found");
-    if (action === "cron") { await openScheduledTasks(projectId, session, assistant); return; }
-    if (action === "webhook") {
-      await openAssistantWebhook(assistant);
-      await openSettings("webhooks");
-      return;
-    }
-    throw new Error("Unknown assistant automation");
+    if (action !== "automation") throw new Error("Unknown assistant automation");
+    await openNewAutomation({ projectId, nodeId: assistant.nodeId, target: { kind: "assistant", projectId, assistantId: assistant.id } });
   })
   .catch((error) => toast(error.message))
   .finally(revealApplication);

@@ -4,7 +4,6 @@ import { loadWorktrees } from "./worktrees.js";
 import { harnessIdFromPath, harnessLabel } from "../harness-metadata.js";
 import { api, loadPins, savePreferencesInBackground } from "./api.js";
 import { clearAttachments } from "./attachments.js";
-import { loadHiddenCronTasks } from "./cron.js";
 import { syncBackgroundTasks } from "./background-tasks.js";
 import { loadHarnesses, renderChatSessionControls, renderConversationLock, sendSocket, setComposerEnabled, setModels, syncEngineUI, syncTurnBusy, updateRoutingMode, updateStatus } from "./chat-controls.js";
 import { activityConversationChanged, activityDigestEvent, activityProgressed, activityReady } from "./activity-panel.js";
@@ -16,7 +15,7 @@ import { elements } from "./elements.js";
 import { syncQuickActionLabels } from "./focus-ui.js";
 import { conversationListView, currentMobileView, sessionDisplayTitle, setMobileView, syncChatTitleFromSessions } from "./layout.js";
 import { withPendingSessionChanges } from "./optimistic-sessions.js";
-import { refreshProjectsQuietly } from "./project-selection.js";
+import { loadHiddenCronTasks, refreshProjectsQuietly } from "./project-selection.js"
 import { loadRecentSessions } from "./recents.js";
 import { reviewableSessions, schedulePendingReviewsRefresh } from "./reviews.js";
 import { scheduleRunningRefresh } from "./running.js";
@@ -766,7 +765,8 @@ function scheduleAgentRunPoll() {
 
 /** Server "something changed" notices and the loader each one re-runs. Both sockets share it. */
 const INVALIDATION_HANDLERS = {
-  cronChanged: () => {
+  automationsChanged: () => {
+    window.dispatchEvent(new CustomEvent("automations-changed"));
     if (state.activeProjectId) loadHiddenCronTasks(state.activeProjectId).catch((error) => console.warn("Could not load scheduled task visibility", error));
   },
   sessionsChanged: (payload) => {

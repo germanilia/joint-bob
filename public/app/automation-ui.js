@@ -1,4 +1,4 @@
-// Small pieces shared by the webhook detail tabs (files, skills, memory).
+// Small pieces shared by the automation context modules (files, skills, memory).
 import { makeNode } from "./relay-ui.js";
 
 export const byId = (id) => document.getElementById(id);
@@ -26,7 +26,7 @@ export function saveBlob(name, blob) {
 
 /** A row of mutually exclusive buttons. `options` is `[{ value, label, testid }]`. */
 export function makeSegmented(options, selected, onSelect) {
-  const group = makeNode("div", "webhooks-seg");
+  const group = makeNode("div", "automation-seg");
   group.setAttribute("role", "group");
   for (const option of options) {
     const button = makeNode("button", "", option.label);

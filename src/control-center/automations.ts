@@ -1,4 +1,5 @@
-import type { CronInput, CronTask } from "../cron.js";
+import type { Schedule } from "../schedule.js";
+import type { CronRun } from "../cron.js";
 import type { Webhook, WebhookDelivery } from "../webhooks.js";
 import type { BobSchedule } from "./bob-schedules.js";
 
@@ -60,14 +61,14 @@ function daysText(days: number[] | undefined): string {
 const ordinal = (day: number): string => `${day}${day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th"}`;
 
 /** "Once 2026-11-12 14:30", "Daily 08:00 · from 2026-11-12 · until 2026-12-31", "Monthly on the 15th 09:00", "Mon 08:00". */
-export function describeSchedule(schedule: CronInput["schedule"]): string {
+export function describeSchedule(schedule: Schedule): string {
   if (schedule.frequency === "once") return `Once ${schedule.startDate} ${clock(schedule.hour, schedule.minute)}`;
   const from = schedule.startDate && schedule.frequency !== "monthly" ? ` · from ${schedule.startDate}` : "";
   const until = schedule.endDate ? ` · until ${schedule.endDate}` : "";
   return `${repeatText(schedule)}${from}${until}`;
 }
 
-function repeatText(schedule: CronInput["schedule"]): string {
+function repeatText(schedule: Schedule): string {
   switch (schedule.frequency) {
     case "once": return "Once";
     case "monthly": return `Monthly on the ${ordinal(Number(schedule.startDate!.slice(8)))} ${clock(schedule.hour, schedule.minute)}`;
@@ -82,13 +83,16 @@ function repeatText(schedule: CronInput["schedule"]): string {
 }
 
 /** Whether the compact editor can show and rewrite this schedule without losing something. */
-export function isSimpleSchedule(schedule: CronInput["schedule"]): boolean {
+export function isSimpleSchedule(schedule: Schedule): boolean {
   if (schedule.quietStart || schedule.frequency === "minutely") return false;
   if (schedule.frequency === "hourly") return (schedule.intervalHours ?? 1) === 1 && schedule.startHour !== undefined;
   return !schedule.days || schedule.days.length === 7 || schedule.frequency === "weekly";
 }
 
-function lastOfTask(task: CronTask): AutomationLast {
+/** What a list says about an automation: its settings and the last thing that happened to it. */
+export type AutomationItem = Webhook & { lastDelivery: WebhookDelivery | null; lastRun: CronRun | null };
+
+function lastOfTask(task: Pick<AutomationItem, "enabled" | "lastRun">): AutomationLast {
   const run = task.lastRun;
   if (!run) return { state: task.enabled ? "never" : "paused", at: null, detail: null };
   const at = new Date(run.finishedAt ?? run.dueAt).toISOString();
@@ -104,16 +108,18 @@ export interface RowContext {
   accountId: string;
 }
 
-export function scheduleRow(task: CronTask, context: RowContext): AutomationRow {
+export function scheduleRow(task: AutomationItem, context: RowContext & { nodeId: string }): AutomationRow {
+  const schedule = task.schedule!;
+  const projectId = task.target.projectId;
   return {
-    kind: "schedule", id: task.id, name: task.name, detail: task.prompt.replace(/\s+/g, " ").trim().slice(0, 140), enabled: task.enabled,
-    projectId: task.projectId, projectName: context.projectName(task.projectId), projectIds: [task.projectId],
-    nodeId: task.ownerNodeId, nodeName: context.nodeName(task.ownerNodeId), when: describeSchedule(task.schedule), last: lastOfTask(task),
+    kind: "schedule", id: task.id, name: task.name, detail: task.context.replace(/\s+/g, " ").trim().slice(0, 140), enabled: task.enabled,
+    projectId, projectName: context.projectName(projectId), projectIds: [projectId],
+    nodeId: context.nodeId, nodeName: context.nodeName(context.nodeId), when: describeSchedule(schedule), last: lastOfTask(task),
     editable: !task.creatorAccountId || task.creatorAccountId === context.accountId,
     edit: {
-      kind: "schedule", prompt: task.prompt, frequency: task.schedule.frequency === "minutely" ? "daily" : task.schedule.frequency,
-      time: clock(task.schedule.startHour ?? task.schedule.hour, task.schedule.minute), weekday: task.schedule.weekday, timezone: task.schedule.timezone,
-      date: task.schedule.startDate ?? null, until: task.schedule.endDate ?? null, simple: isSimpleSchedule(task.schedule),
+      kind: "schedule", prompt: task.context, frequency: schedule.frequency === "minutely" ? "daily" : schedule.frequency,
+      time: clock(schedule.startHour ?? schedule.hour, schedule.minute), weekday: schedule.weekday, timezone: schedule.timezone,
+      date: schedule.startDate ?? null, until: schedule.endDate ?? null, simple: isSimpleSchedule(schedule),
     },
   };
 }
@@ -123,9 +129,9 @@ function targetText(hook: Webhook): string {
   return hook.target.kind === "project" ? "Starts a conversation" : "Adds to a conversation";
 }
 
-export function webhookRow(hook: Webhook, context: RowContext & { nodeId: string; delivery: WebhookDelivery | undefined }): AutomationRow {
+export function webhookRow(hook: AutomationItem, context: RowContext & { nodeId: string }): AutomationRow {
   const senders = hook.senders ? `${hook.senders.allowed.length} allowed sender${hook.senders.allowed.length === 1 ? "" : "s"}` : "anyone with the address";
-  const delivery = context.delivery;
+  const delivery = hook.lastDelivery;
   const last: AutomationLast = !hook.enabled ? { state: "paused", at: hook.lastReceivedAt, detail: null }
     : delivery ? { state: delivery.status === "delivered" ? "ok" : delivery.status === "failed" ? "failed" : "refused", at: delivery.at, detail: delivery.status === "delivered" ? null : delivery.detail }
     : { state: hook.lastReceivedAt ? "ok" : "never", at: hook.lastReceivedAt, detail: null };

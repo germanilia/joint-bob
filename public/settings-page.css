@@ -252,16 +252,16 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
 #settingsForm .settings-text-size-areas .appearance-slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
 
 /* ---------- kind: a list with tabs ---------- */
-#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) {
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs) {
   display: flex; flex-wrap: nowrap; gap: 22px; max-width: 100%; padding: 0; overflow-x: auto; scrollbar-width: none;
   border: 0; border-radius: 0; background: none; box-shadow: inset 0 -1px 0 var(--line);
 }
-#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button) {
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button) {
   flex: none; min-height: 40px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   color: var(--muted); font-size: 14px; font-weight: 600; white-space: nowrap;
 }
-#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button):hover { color: var(--text); background: none; }
-#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button)[aria-selected="true"] {
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button):hover { color: var(--text); background: none; }
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button)[aria-selected="true"] {
   background: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--text);
 }
 /* Filter chips: pressed shows the ink. */
@@ -364,11 +364,11 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
   .settings-text-size .settings-segment { min-height: 40px; font-size: 14px; }
   /* Every other segmented choice (motion) is thumb-sized on the phone. */
   #settingsForm .settings-segment:not(.settings-text-size .settings-segment) { min-height: 44px; }
-  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) {
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs) {
     gap: 2px; padding: 3px; border-radius: 12px; background: var(--paper-raised, var(--field)); box-shadow: none;
   }
-  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button) { min-height: 38px; padding: 0 12px; border-radius: 9px; font-size: 14px; }
-  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button)[aria-selected="true"] { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button) { min-height: 38px; padding: 0 12px; border-radius: 9px; font-size: 14px; }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button)[aria-selected="true"] { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
   #settingsForm .settings-panel .settings-subtabs:not([role="tablist"]) .settings-subtab { min-height: 36px; font-size: 14px; }
   /* A finger needs 44 px and an eye 13 px, whatever a section's own rules say for a computer. */
   #settingsForm .settings-panel :is(button, [role="tab"], select, .searchable-select-trigger, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])):not(.theme-tile):not(.settings-segment) { min-height: 44px !important; }
@@ -379,13 +379,6 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
   #settingsForm .settings-scope, #settingsForm .settings-saved { font-size: 13.5px; }
 }
 
-/* Opened from the assistant app for one automation: only the section and the way back to the assistant, no list. */
-html.assistant-automation #settingsForm .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "head" "main"; }
-html.assistant-automation #settingsForm :is(.settings-sidebar, .settings-section-head, .settings-head > :not(.settings-exit)) { display: none !important; }
-html.assistant-automation #settingsForm .settings-head { display: flex; padding: 6px 12px 0; }
-html.assistant-automation #settingsForm .settings-head > .settings-exit { display: inline-flex !important; }
-html.assistant-automation #settingsForm.settings-card { padding: 0; --set-nav: 0px; --set-left: 0px; --set-card-w: 100vw; }
-html.assistant-automation #settingsForm .settings-panel { --set-card-w: 100vw; width: 100%; }
 
 /* ================= Settings polish (Editorial mock): quiet help, rows as cards, a native phone list ================= */
 /* Rows outside a titled group (Harnesses, Git, Labels…) sit in one rounded card like the grouped ones. */
@@ -461,7 +454,7 @@ body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help=
 #settingsForm :is(.settings-panel[data-settings-kind="form"], .settings-panel .phase-settings) > label:not(.checkbox-row) > .searchable-select { width: min(340px, 46vw); }
 
 /* Inner tabs never clip: they wrap onto a second line. */
-#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) { flex-wrap: wrap; row-gap: 0; overflow: visible; }
+#settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs) { flex-wrap: wrap; row-gap: 0; overflow: visible; }
 
 /* ---------- the phone: a settings app ---------- */
 @media (max-width: 700px) {
@@ -518,9 +511,9 @@ body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help=
   #settingsForm [data-harness-panel] > label :is(input:not([type="checkbox"]), select, textarea), #settingsForm .settings-panel[data-settings-kind="form"] > label :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea) { background-color: var(--field); box-shadow: none; }
 
   /* Inner tabs: a segmented control that wraps instead of clipping a name. */
-  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs, .webhooks-tabs) { flex-wrap: wrap; gap: 2px; margin-top: 4px; }
-  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button) { flex: 1 1 auto; min-width: max-content; padding: 0 10px; }
-  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button, .webhooks-tabs > button) :is(.settings-subtab-icon, img, svg) { flex: none; }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"], .resources-tabs) { flex-wrap: wrap; gap: 2px; margin-top: 4px; }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button) { flex: 1 1 auto; min-width: max-content; padding: 0 10px; }
+  #settingsForm .settings-panel :is(.settings-subtabs[role="tablist"] .settings-subtab, .resources-tabs > button) :is(.settings-subtab-icon, img, svg) { flex: none; }
   /* Long words (paths, addresses, ids) break instead of pushing the page sideways. */
   #settingsForm .settings-panel :is(p, output, li, small, code) { overflow-wrap: break-word; }
   #settingsForm .settings-panel .settings-about { margin-top: 18px; padding: 0 4px; }
@@ -607,10 +600,6 @@ body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help=
 #settingsForm .terminal-policy-limits > label:not(:has(.settings-unit)) { grid-template-columns: minmax(0, 1fr) auto; }
 /* A section's lone Refresh sits at the end of its line, small. */
 #settingsForm .settings-panel .relay-head { align-items: center; justify-content: flex-end; }
-#settingsForm .settings-panel .relay-head:has(> .webhooks-crumb) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
-@media (max-width: 720px) {
-  #settingsForm .settings-panel .relay-head:has(> .webhooks-crumb) { grid-template-columns: minmax(0, 1fr); }
-}
 #settingsForm .settings-panel .relay-head > button { flex: none; width: auto; }
 /* Relay: the phone sign-in switch is a row like the others. */
 #settingsForm .settings-panel .relay-switch { display: grid; gap: 0; padding: 4px 16px 10px; border-radius: 16px; background: var(--set-row-bg); }

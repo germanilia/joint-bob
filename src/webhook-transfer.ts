@@ -2,7 +2,8 @@ import { lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { createWebhook, deleteWebhook, getWebhook, webhookInputSchema, WebhookError } from "./webhooks.js";
+import { cronRunSchema, cronStore } from "./cron.js";
+import { createAutomation, deleteWebhook, getWebhook, webhookInputSchema, WebhookError } from "./webhooks.js";
 import { ensureWebhookResourceDirectory, ensureWebhookResourceSchema } from "./webhook-resources.js";
 import { listWebhookSkills } from "./webhook-skills.js";
 import { ensureWebhookAgentSchema, revokeWebhookMemoryAgentAccess } from "./webhook-agent.js";
@@ -14,6 +15,8 @@ export const webhookTransferSchema = z.object({
   id: z.string().uuid(), input: webhookInputSchema,
   createdAt: z.string(), lastReceivedAt: z.string().nullable(), receivedCount: z.number().int().nonnegative(),
   tables: z.array(z.object({ name: z.enum(tables), rows: z.array(rowSchema).max(10000) }).strict()).length(tables.length),
+  /** The settled runs of a scheduled automation, which keep their place in its history on the new machine. */
+  runs: z.array(cronRunSchema).max(100).default([]),
   files: z.array(z.object({ path: relativePath, data: z.string() }).strict()).max(10000),
 }).strict();
 export type WebhookTransfer = z.infer<typeof webhookTransferSchema>;
@@ -43,8 +46,9 @@ export async function exportWebhookTransfer(db: DatabaseSync, id: string): Promi
   const hook = getWebhook(db, id);
   if (!hook) throw new WebhookError(404, "Webhook not found");
   ensureTables(db, id);
-  const { id: _id, createdAt, updatedAt: _updated, lastReceivedAt, receivedCount, ...input } = hook;
+  const { id: _id, createdAt, updatedAt: _updated, lastReceivedAt, receivedCount, nextRun: _nextRun, ownerNodeId: _owner, ...input } = hook;
   const bundle = webhookTransferSchema.parse({ id, input, createdAt, lastReceivedAt, receivedCount,
+    runs: cronStore().history(id).filter(run => run.status === "succeeded" || run.status === "failed"),
     tables: tables.map(name => ({ name, rows: db.prepare(`SELECT * FROM ${name} WHERE webhook_id=?`).all(id).map(row => {
       if (name === "webhook_deliveries") { const { id: _deliveryId, ...delivery } = row; return delivery; }
       return row;
@@ -56,9 +60,10 @@ export async function exportWebhookTransfer(db: DatabaseSync, id: string): Promi
 }
 
 /** Installs paused. The source must be removed before the destination can be enabled. */
-export async function installWebhookTransfer(db: DatabaseSync, bundle: WebhookTransfer) {
+export async function installWebhookTransfer(db: DatabaseSync, bundle: WebhookTransfer, ownerNodeId: string) {
   if (getWebhook(db, bundle.id)) throw new WebhookError(409, "Webhook already exists on the destination; inspect both machines before retrying");
   ensureTables(db, bundle.id);
+  cronStore();
   if (new Set(bundle.tables.map(table => table.name)).size !== tables.length) throw new WebhookError(400, "Duplicate transfer table");
   for (const table of bundle.tables) {
     const columns = new Set(db.prepare(`PRAGMA table_info(${table.name})`).all().map(row => row.name));
@@ -80,8 +85,9 @@ export async function installWebhookTransfer(db: DatabaseSync, bundle: WebhookTr
     }
     db.exec("BEGIN IMMEDIATE");
     try {
-      const created = createWebhook(db, { ...bundle.input, enabled: false });
+      const created = createAutomation(db, { ...bundle.input, enabled: false }, { ownerNodeId });
       db.prepare("UPDATE webhooks SET id=?,created_at=?,last_received_at=?,received_count=? WHERE id=?").run(bundle.id, bundle.createdAt, bundle.lastReceivedAt, bundle.receivedCount, created.webhook.id);
+      for (const run of bundle.runs) db.prepare("INSERT INTO cron_runs (id,task_id,due_at,status,error,session_id,finished_at,tags) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, error = excluded.error, session_id = excluded.session_id, finished_at = excluded.finished_at, tags = excluded.tags").run(run.id, bundle.id, run.dueAt, run.status, run.error, run.sessionId, run.finishedAt, JSON.stringify(run.tags));
       for (const table of bundle.tables) for (const row of table.rows) {
         const columns = Object.keys(row);
         db.prepare(`INSERT INTO ${table.name} (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`).run(...Object.values(row));
@@ -103,5 +109,7 @@ export async function removeTransferredWebhook(db: DatabaseSync, id: string) {
     deleteWebhook(db, id);
     db.exec("COMMIT");
   } catch (error) { db.exec("ROLLBACK"); throw error; }
+  // After the commit: the run store has its own connection, which would wait on this transaction's lock.
+  cronStore().purge(id);
   await rm(root, { recursive: true });
 }

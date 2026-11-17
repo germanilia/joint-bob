@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Automations (unified) · mockup</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:#151412; --panel:#1d1b19; --surface:#23211f; --field:#1a1816; --header:#262321;
+    --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.18);
+    --text:#ece8e2; --muted:#a29c93; --heading:#f4f0ea;
+    --btn-bg:#2a2724; --btn-border:rgba(255,255,255,.14); --btn-hover:#33302c;
+    --accent:#8fd3a8; --accent-ink:#0d2a1a; --accent-soft:color-mix(in srgb, var(--accent) 15%, transparent);
+    --amber:#e3b36a; --danger:#e8705f; --live:#8fd3a8; --claude:#b9a2ff;
+    --r-card:14px; --r-ctl:11px;
+    --sans:"DM Sans",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --serif:"Fraunces","Iowan Old Style",Georgia,serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 var(--sans); -webkit-font-smoothing:antialiased; }
+  button, input, select, textarea { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  [hidden] { display:none !important; }
+  :focus-visible { outline:2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset:2px; }
+
+  /* mockup chrome */
+  .page { max-width:1240px; margin:0 auto; padding:22px 26px 48px; }
+  .eyebrow { margin:0 0 4px; color:var(--accent); font:700 11px/1.2 var(--mono); letter-spacing:.14em; text-transform:uppercase; }
+  h1 { margin:0 0 6px; font:600 26px var(--serif); color:var(--heading); }
+  .lede { margin:0 0 14px; color:var(--muted); max-width:900px; }
+  .switcher { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .switcher button { border:1px solid var(--line-strong); background:transparent; color:var(--muted); padding:6px 12px; border-radius:999px; font-size:13px; }
+  .switcher button[aria-pressed="true"] { background:var(--accent-soft); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, transparent); }
+  .note { border:1px dashed color-mix(in srgb, var(--amber) 55%, transparent); background:color-mix(in srgb, var(--amber) 7%, transparent); color:#ecdcb4; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:13px; }
+  .note b { color:var(--amber); }
+  .note ul { margin:4px 0 0; padding-left:18px; }
+
+  /* the Automations tab, as in the app */
+  .app { background:var(--panel); border:1px solid var(--line-strong); border-radius:20px; height:820px; display:flex; flex-direction:column; overflow:hidden; }
+  .tab-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:18px 24px 12px; }
+  .tab-head h2 { margin:0; font:600 21px var(--serif); color:var(--heading); }
+  .hint { color:var(--muted); font-size:12.5px; margin:0; }
+  .head-btns { display:flex; gap:8px; align-items:center; }
+  .chips { display:flex; gap:8px; padding:0 24px 12px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .chip { border:1px solid var(--line-strong); background:transparent; color:var(--muted); padding:5px 13px; border-radius:999px; font-size:13px; }
+  .chip.on { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 50%, transparent); background:var(--accent-soft); }
+  .stage { flex:1; min-height:0; display:flex; flex-direction:column; }
+
+  /* controls */
+  .btn { border:1px solid var(--btn-border); background:var(--btn-bg); padding:7px 14px; border-radius:var(--r-ctl); font-size:13px; white-space:nowrap; }
+  .btn:hover { background:var(--btn-hover); }
+  .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:650; }
+  .btn.ghost { background:transparent; border-color:transparent; }
+  .btn.ghost:hover { background:var(--btn-bg); }
+  .btn.danger { color:var(--danger); }
+  .btn.sm { padding:4px 11px; font-size:12.5px; }
+  .btn.icon { padding:5px 10px; }
+  .field { display:flex; flex-direction:column; gap:5px; font-size:12.5px; color:var(--muted); min-width:0; }
+  .field > span:first-child { color:var(--text); font-weight:600; font-size:13px; }
+  .in { background:var(--field); border:1px solid var(--line); border-radius:var(--r-ctl); padding:9px 12px; font-size:13.5px; width:100%; }
+  textarea.in { resize:vertical; line-height:1.5; }
+  .pill { display:inline-flex; align-items:center; gap:5px; font:600 11px/1 var(--mono); padding:4px 8px; border-radius:999px; border:1px solid var(--line-strong); color:var(--muted); white-space:nowrap; }
+  .pill.on { color:var(--live); border-color:color-mix(in srgb, var(--live) 45%, transparent); }
+  .pill.bad { color:var(--danger); border-color:color-mix(in srgb, var(--danger) 45%, transparent); }
+  .pill.claude { color:var(--claude); border-color:color-mix(in srgb, var(--claude) 40%, transparent); }
+  .pill.accent { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent); }
+  .pill.amber { color:var(--amber); border-color:color-mix(in srgb, var(--amber) 40%, transparent); }
+  .switch { position:relative; width:36px; height:21px; flex:none; border-radius:999px; background:var(--field); border:1px solid var(--line-strong); cursor:pointer; }
+  .switch::after { content:""; position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:var(--muted); transition:.15s; }
+  .switch[aria-checked="true"] { background:color-mix(in srgb, var(--accent) 35%, var(--field)); border-color:color-mix(in srgb, var(--accent) 55%, transparent); }
+  .switch[aria-checked="true"]::after { left:17px; background:var(--accent); }
+  .seg { display:inline-flex; gap:2px; padding:3px; background:var(--field); border:1px solid var(--line); border-radius:10px; flex-wrap:wrap; }
+  .seg button { border:0; background:transparent; color:var(--muted); padding:6px 13px; border-radius:8px; font-size:13px; }
+  .seg button[aria-pressed="true"] { background:var(--btn-bg); color:var(--text); box-shadow:inset 0 0 0 1px var(--btn-border); }
+  .daychips { display:flex; gap:6px; flex-wrap:wrap; }
+  .daychips button { width:46px; padding:7px 0; border-radius:10px; border:1px solid var(--line-strong); background:var(--field); color:var(--muted); font-size:13px; }
+  .daychips button[aria-pressed="true"] { background:var(--accent-soft); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 50%, transparent); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px 18px; }
+  .grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px 18px; }
+  .section-title { margin:0; font:600 15px var(--serif); color:var(--heading); }
+  .card { border:1px solid var(--line); background:var(--surface); border-radius:var(--r-card); padding:16px 18px; display:flex; flex-direction:column; gap:14px; }
+  .card > header { display:flex; flex-direction:column; gap:2px; }
+  .toggle-row { display:flex; gap:12px; align-items:flex-start; padding:11px 13px; border:1px solid var(--line); border-radius:var(--r-ctl); background:var(--field); }
+  .toggle-row b { display:block; font-size:13.5px; font-weight:600; }
+  .tags { display:flex; gap:6px; flex-wrap:wrap; align-items:center; background:var(--field); border:1px solid var(--line); border-radius:var(--r-ctl); padding:6px 8px; }
+  .tag { display:inline-flex; gap:6px; align-items:center; padding:3px 10px; border-radius:999px; background:var(--btn-bg); border:1px solid var(--btn-border); font-size:12.5px; }
+  .tag.managed { color:var(--accent); }
+  .tags input { border:0; background:transparent; flex:1; min-width:120px; padding:3px; font-size:13px; outline:none; }
+  .box { border:1px solid var(--line); border-radius:var(--r-card); background:var(--surface); }
+  .menu { position:relative; }
+  .menu-pop { position:absolute; right:0; top:calc(100% + 4px); z-index:5; min-width:230px; background:var(--header); border:1px solid var(--line-strong); border-radius:11px; padding:4px; box-shadow:0 12px 30px rgba(0,0,0,.45); }
+  .menu-pop button { display:block; width:100%; text-align:left; border:0; background:transparent; padding:8px 11px; border-radius:8px; font-size:13px; }
+  .menu-pop button:hover { background:var(--btn-bg); }
+  .menu-pop hr { border:0; border-top:1px solid var(--line); margin:4px 0; }
+
+  /* list */
+  .rows { padding:10px 18px; display:flex; flex-direction:column; gap:6px; flex:1; min-height:0; }
+  .cols, .arow { display:grid; grid-template-columns:44px minmax(0,2.2fr) 100px 120px minmax(0,1.5fr) 130px 150px; gap:12px; align-items:center; }
+  .cols { padding:6px 12px; color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+  .arow { padding:11px 12px; border:1px solid var(--line); background:var(--surface); border-radius:var(--r-card); cursor:pointer; }
+  .arow:hover { border-color:var(--line-strong); }
+  .arow strong { font-size:14px; display:block; }
+  .arow small { color:var(--muted); font-size:12px; display:block; }
+  .kind { font:600 11px var(--mono); padding:3px 8px; border-radius:999px; border:1px solid var(--line-strong); width:max-content; }
+  .kind.schedule { color:var(--amber); } .kind.webhook { color:var(--claude); } .kind.bob { color:var(--accent); }
+  .ok { color:var(--live); } .bad { color:var(--danger); }
+  .pager { display:flex; justify-content:space-between; align-items:center; padding:8px 24px 14px; color:var(--muted); font-size:12.5px; }
+
+  /* editor shell */
+  .ed-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 24px 0; }
+  .crumb { display:flex; align-items:center; gap:10px; min-width:0; }
+  .crumb a { color:var(--muted); text-decoration:none; font-size:13px; }
+  .crumb a:hover { color:var(--text); }
+  .crumb h3 { margin:0; font:600 20px var(--serif); color:var(--heading); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tabs { display:flex; gap:2px; padding:10px 20px 0; border-bottom:1px solid var(--line); }
+  .tabs button { border:0; background:transparent; color:var(--muted); padding:9px 14px 10px; font-size:13.5px; border-bottom:2px solid transparent; margin-bottom:-1px; display:flex; align-items:center; gap:7px; }
+  .tabs button[aria-selected="true"] { color:var(--text); border-bottom-color:var(--accent); }
+  .count { font:600 10.5px/1 var(--mono); padding:3px 6px; border-radius:999px; background:var(--field); color:var(--muted); }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--live); }
+  .body { flex:1; min-height:0; overflow:auto; padding:18px 24px; display:flex; flex-direction:column; gap:14px; }
+  .body > * { flex:none; }
+  .savebar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 24px; border-top:1px solid var(--line); background:color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+  .savebar .sum { color:var(--text); font-size:13px; }
+  .savebar .sum small { color:var(--muted); }
+  .runs-preview { display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-size:13px; }
+  .runs-preview .pill { font-family:var(--sans); font-weight:500; font-size:12.5px; padding:5px 10px; }
+  .callout { display:flex; gap:10px; padding:10px 13px; border-radius:var(--r-ctl); border:1px solid color-mix(in srgb, var(--amber) 40%, transparent); background:color-mix(in srgb, var(--amber) 7%, transparent); font-size:13px; color:#ecdcb4; }
+  .stat { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .stat div { border:1px solid var(--line); background:var(--surface); border-radius:var(--r-ctl); padding:9px 12px; }
+  .stat small { display:block; color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; }
+  .stat b { font-size:14px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:11.5px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; padding:8px 12px; border-bottom:1px solid var(--line); }
+  td { padding:10px 12px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:middle; }
+  tr:last-child td { border-bottom:0; }
+  .drop { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border:1.5px dashed var(--line-strong); border-radius:var(--r-card); background:var(--field); }
+  .file-ico { width:34px; height:34px; border-radius:9px; display:inline-grid; place-items:center; background:var(--field); font:700 10px var(--mono); color:var(--muted); border:1px solid var(--line); flex:none; }
+  .pick { display:flex; align-items:center; gap:12px; padding:9px 12px; border:1px solid var(--line); border-radius:var(--r-ctl); background:var(--field); }
+  .pick .grow { flex:1; }
+  .addr { display:flex; gap:10px; align-items:center; padding:10px 12px; border:1px solid var(--line); border-radius:var(--r-ctl); background:var(--field); }
+  .addr code { flex:1; font:12.5px var(--mono); color:var(--accent); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .editor textarea { width:100%; min-height:220px; background:var(--field); border:1px solid var(--line); border-radius:var(--r-ctl); padding:12px; font:12.5px/1.6 var(--mono); resize:vertical; }
+  .gone { opacity:.55; text-decoration:line-through; }
+  .removed { display:inline-flex; gap:8px; align-items:center; color:var(--danger); font-size:12.5px; }
+  .trig { border:1px solid var(--line-strong); color:var(--text); width:100%; }
+  .trig.picked { border-color:color-mix(in srgb, var(--accent) 60%, transparent); background:var(--accent-soft); }
+  .radio { width:16px; height:16px; border-radius:50%; border:1.5px solid var(--line-strong); flex:none; margin-top:3px; }
+  .trig.picked .radio { border-color:var(--accent); box-shadow:inset 0 0 0 3px var(--surface), inset 0 0 0 8px var(--accent); }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="eyebrow">Mockup · Automations</p>
+  <h1>Scheduled tasks and webhooks become one thing: an automation</h1>
+  <p class="lede">An automation is instructions, an agent and its context, started by a <b>trigger</b>: a schedule or a webhook call. The same editor makes and changes every automation, inside the Automations tab. Scheduled automations get what only webhooks had (files, skills, memory, secret accounts), and webhooks get what only schedules had (machine, model, worktree, auto reply, failure handling).</p>
+
+  <div class="switcher" id="switcher">
+    <button data-go="list">1 · Automations</button>
+    <button data-go="new">2 · New automation</button>
+    <button data-go="edit-s">3 · Edit · schedule trigger</button>
+    <button data-go="edit-w">4 · Edit · webhook trigger</button>
+    <button data-go="addr">5 · Address after saving</button>
+    <button data-go="changes">6 · What changes</button>
+  </div>
+  <div class="note" id="note"></div>
+
+  <div class="app">
+    <div class="tab-head">
+      <div>
+        <h2>Automations</h2>
+        <p class="hint">Automations in every project, started on a schedule or by a webhook call, and the reports Bob writes. Bob can create and change these from the chat too.</p>
+      </div>
+      <div class="head-btns">
+        <button class="btn ghost">Refresh</button>
+        <button class="btn ghost">+ Bob report</button>
+        <button class="btn primary" data-go="new">+ Automation</button>
+      </div>
+    </div>
+    <div class="chips"><button class="chip">All</button><button class="chip">My Assistant</button><button class="chip on">Joint Bob</button><button class="chip on">Contigos</button><button class="chip on">MOL</button><button class="chip">aws monitor</button></div>
+
+    <div class="stage">
+
+      <!-- ===== LIST ===== -->
+      <section class="stage" data-view="list">
+        <div class="rows">
+          <div class="cols"><span>On</span><span>Name</span><span>Trigger</span><span>Project</span><span>Next / calls</span><span>Last run</span><span></span></div>
+          <div class="arow" data-go="edit-s">
+            <span class="switch" role="switch" aria-checked="true" data-stop></span>
+            <span><strong>Conversation Quality Monitor</strong><small>Every 12 hours from 08:00 · Pi · gpt-6-astra</small></span>
+            <span class="kind schedule">⏱ schedule</span>
+            <span>Contigos<small>on Contigos EC2</small></span>
+            <span>Next 17/11, 20:00</span>
+            <span class="ok">running now</span>
+            <span style="display:flex;gap:6px" data-stop><button class="btn sm" data-go="edit-s">Edit</button><button class="btn sm ghost">Delete</button></span>
+          </div>
+          <div class="arow" data-go="edit-s">
+            <span class="switch" role="switch" aria-checked="true" data-stop></span>
+            <span><strong>deploy to prod – [date]</strong><small>Daily at 05:00 · Pi</small></span>
+            <span class="kind schedule">⏱ schedule</span>
+            <span>Contigos<small>on Contigos EC2</small></span>
+            <span>Next 18/11, 05:00</span>
+            <span class="ok">ok · 19h ago</span>
+            <span style="display:flex;gap:6px" data-stop><button class="btn sm" data-go="edit-s">Edit</button><button class="btn sm ghost">Delete</button></span>
+          </div>
+          <div class="arow" data-go="edit-w">
+            <span class="switch" role="switch" aria-checked="true" data-stop></span>
+            <span><strong>dba only vms</strong><small>New conversation per call · Claude · Opus 5.5 · listed senders only</small></span>
+            <span class="kind webhook">⚡ webhook</span>
+            <span>Contigos<small>on ai-kms-test</small></span>
+            <span>12 calls</span>
+            <span class="ok">ok · 2h ago</span>
+            <span style="display:flex;gap:6px" data-stop><button class="btn sm" data-go="edit-w">Edit</button><button class="btn sm ghost">Delete</button></span>
+          </div>
+          <div class="arow" data-go="edit-w">
+            <span class="switch" role="switch" aria-checked="false" data-stop></span>
+            <span><strong>GitHub issues</strong><small>New conversation per call · Claude · Sonnet 5.5</small></span>
+            <span class="kind webhook">⚡ webhook</span>
+            <span>Joint Bob</span>
+            <span>48 calls</span>
+            <span class="bad">failed · 1d ago</span>
+            <span style="display:flex;gap:6px" data-stop><button class="btn sm" data-go="edit-w">Edit</button><button class="btn sm ghost">Delete</button></span>
+          </div>
+          <div class="arow">
+            <span class="switch" role="switch" aria-checked="true" data-stop></span>
+            <span><strong>Morning report</strong><small>Every day at 08:00</small></span>
+            <span class="kind bob">Bob report</span>
+            <span>All projects</span>
+            <span>Next 18/11, 08:00</span>
+            <span class="ok">ok · 5h ago</span>
+            <span style="display:flex;gap:6px" data-stop><button class="btn sm">Send now</button><button class="btn sm">Edit</button></span>
+          </div>
+        </div>
+        <div class="pager"><span>1–5 of 5</span><span><button class="btn sm ghost" disabled>‹ Previous</button> <button class="btn sm ghost" disabled>Next ›</button></span></div>
+      </section>
+
+      <!-- ===== EDITOR (new + edit, both triggers) ===== -->
+      <section class="stage" data-view="new edit-s edit-w">
+        <div class="ed-head">
+          <div class="crumb">
+            <a href="#" data-go="list">‹ Automations</a><span class="hint">/</span>
+            <h3 id="edTitle">Conversation Quality Monitor</h3>
+            <span class="kind" id="edKind">⏱ schedule</span>
+            <span class="pill on" data-edit-only>● On</span>
+          </div>
+          <div class="head-btns" data-edit-only>
+            <button class="btn sm" id="runNow">Run now</button>
+            <button class="btn sm" id="pauseBtn">Pause</button>
+            <div class="menu"><button class="btn sm icon" data-menu>⋯</button>
+              <div class="menu-pop" hidden>
+                <button data-webhook-only>New address…</button>
+                <button>Transfer to another machine…</button>
+                <button>Duplicate</button>
+                <hr><button style="color:var(--danger)">Delete automation…</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tabs" role="tablist" data-tabs="ed">
+          <button role="tab" data-tab="setup">Setup</button>
+          <button role="tab" data-tab="trigger">Trigger</button>
+          <button role="tab" data-tab="run">Run</button>
+          <button role="tab" data-tab="context">Context <span class="count" id="ctxCount">0</span></button>
+          <button role="tab" data-tab="history" data-edit-only>History <span class="count" id="histCount">34</span></button>
+        </div>
+
+        <!-- SETUP -->
+        <div class="body" data-panel="ed:setup">
+          <div class="card">
+            <header><p class="section-title">What starts it</p><p class="hint">Pick one. You can change it later; the Trigger tab holds its settings.</p></header>
+            <div class="grid2" id="triggerPick">
+              <button class="toggle-row trig" data-trig="schedule" style="text-align:left;cursor:pointer"><span class="radio"></span><div><b>⏱ On a schedule</b><p class="hint">Runs at set times: once, every few minutes or hours, daily, weekly or monthly.</p></div></button>
+              <button class="toggle-row trig" data-trig="webhook" style="text-align:left;cursor:pointer"><span class="radio"></span><div><b>⚡ When a webhook is called</b><p class="hint">Another service calls a secret address. The call's content goes to the agent.</p></div></button>
+            </div>
+          </div>
+          <div class="grid2">
+            <label class="field"><span>Name</span><input class="in" id="fName">For new conversations the agent fills [placeholders] in the name. Text outside brackets stays fixed.</label>
+            <label class="field"><span>Project</span><select class="in"><option>Contigos</option><option>Joint Bob</option><option>MOL</option><option>My Assistant</option></select>Each run starts a conversation here, with the project's settings and inherited credentials.</label>
+          </div>
+          <label class="field"><span id="instrLabel">What should the agent do each time?</span><textarea class="in" rows="5" id="fInstr"></textarea><span id="instrHint"></span></label>
+          <div class="field"><span>Tags</span><div class="tags" id="fTags"><input placeholder="Add a tag…"></div><span>Teal tags are managed tags shared across automations.</span></div>
+        </div>
+
+        <!-- TRIGGER: schedule -->
+        <div class="body" data-panel="ed:trigger" data-trig-panel="schedule" hidden>
+          <div class="callout" id="switchToSchedule" hidden>Switching to a schedule removes this automation's webhook address when you save. Calls to it will be refused.</div>
+          <div class="card">
+            <header><p class="section-title">How often</p><p class="hint">Like a meeting in a calendar: once, or repeating from a first day until an optional last one.</p></header>
+            <div class="seg" id="freq">
+              <button data-f="once" aria-pressed="false">Once</button><button data-f="minutes" aria-pressed="false">Every few minutes</button><button data-f="hours" aria-pressed="true">Every few hours</button><button data-f="daily" aria-pressed="false">Daily</button><button data-f="weekly" aria-pressed="false">Weekly</button><button data-f="monthly" aria-pressed="false">Monthly</button>
+            </div>
+            <div class="grid3">
+              <label class="field" id="fEvery"><span id="fEveryLabel">Repeat every (hours)</span><input class="in" type="number" min="1" value="12"></label>
+              <label class="field" id="fWeekday" hidden><span>On</span><select class="in"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select></label>
+              <label class="field" id="fDate" hidden><span id="fDateLabel">On</span><input class="in" type="date" value="2026-11-17"></label>
+              <label class="field"><span id="fTimeLabel">Start time</span><input class="in" type="time" value="08:00" id="fTime"></label>
+            </div>
+            <div class="grid2">
+              <label class="field" id="fFrom"><span>From (optional)</span><input class="in" type="date" value="2026-11-17"></label>
+              <label class="field" id="fUntil"><span>Until (optional)</span><input class="in" type="date"></label>
+            </div>
+          </div>
+          <div class="card" id="cardDays">
+            <header><p class="section-title">Run on days</p><p class="hint">Unchecked days stay quiet.</p></header>
+            <div class="daychips"><button aria-pressed="true">Mon</button><button aria-pressed="true">Tue</button><button aria-pressed="true">Wed</button><button aria-pressed="true">Thu</button><button aria-pressed="true">Fri</button><button aria-pressed="true">Sat</button><button aria-pressed="true">Sun</button></div>
+          </div>
+          <div class="card">
+            <div class="toggle-row" style="border:0;padding:0;background:none"><span class="switch" role="switch" aria-checked="false" id="quietSwitch"></span><div><b>Quiet hours</b><p class="hint">No runs inside this window. It can cross midnight; runs resume at the end time.</p></div></div>
+            <div class="grid2" id="quietTimes" hidden><label class="field"><span>From</span><input class="in" type="time" value="22:00"></label><label class="field"><span>Until</span><input class="in" type="time" value="08:00"></label></div>
+            <label class="field"><span>Timezone</span><select class="in"><option>Asia/Jerusalem</option><option>UTC</option><option>Europe/London</option></select>Missed offline runs are skipped; runs never overlap.</label>
+          </div>
+          <div class="card"><header><p class="section-title">Next runs</p></header><div class="runs-preview" id="nextRuns"></div></div>
+        </div>
+
+        <!-- TRIGGER: webhook -->
+        <div class="body" data-panel="ed:trigger" data-trig-panel="webhook" hidden>
+          <div class="callout" id="switchToWebhook" hidden>Switching to a webhook stops the schedule and makes a secret address when you save. It is shown once, right after saving.</div>
+          <div class="card" data-edit-only id="addrCard">
+            <header><p class="section-title">Address</p><p class="hint">The secret part is shown only once, when it is made. Make a new address if it was lost or leaked; the old one stops working.</p></header>
+            <div class="addr"><span class="hint">Relay</span><code>https://relay.bobthebot.io/hook/wh_••••••••tQ7m</code><button class="btn sm">New address…</button></div>
+          </div>
+          <div class="card">
+            <header><p class="section-title">Each call</p></header>
+            <div class="seg"><button aria-pressed="true">Starts a new conversation</button><button aria-pressed="false">Adds a message to one conversation</button></div>
+            <div class="toggle-row"><span class="switch" role="switch" aria-checked="false"></span><div><b>Accept attachments</b><p class="hint">Files sent with a call are saved and passed to the agent.</p></div></div>
+            <div class="toggle-row"><span class="switch" role="switch" aria-checked="true"></span><div style="flex:1"><b>Only listed senders</b><p class="hint">Reject calls whose sender field doesn't match.</p>
+              <div class="grid2" style="margin-top:8px"><label class="field"><span>Sender field</span><input class="in" value="message.from.id"></label><label class="field"><span>Allowed senders</span><input class="in" value="123456789 Ilia, 555123 Dana"></label></div></div></div>
+          </div>
+        </div>
+
+        <!-- RUN -->
+        <div class="body" data-panel="ed:run" hidden>
+          <div class="card">
+            <header><p class="section-title">Where and with what</p></header>
+            <div class="grid2">
+              <label class="field"><span>Execution machine</span><select class="in" id="fMachine"><option>Contigos EC2</option><option>ai-kms-test (this machine)</option><option>Homeserver</option></select></label>
+              <label class="field"><span>Harness</span><select class="in" id="fHarness"><option>Pi</option><option>Claude</option><option>Kiro</option></select></label>
+              <label class="field"><span>Model</span><select class="in" id="fModel"><option>gpt-6-astra</option><option>Opus 5.5</option><option>Sonnet 5.5</option></select></label>
+              <label class="field"><span>Reasoning</span><select class="in"><option>xhigh</option><option>high</option><option>medium</option><option>Harness default</option></select></label>
+            </div>
+            <label class="field"><span>Conversation title</span><input class="in" id="fTitle" placeholder="Blank uses the name">Optional. The agent fills [placeholders] from the task or the call.</label>
+            <div class="toggle-row"><span class="switch" role="switch" aria-checked="true" id="wtSwitch"></span><div><b>Fresh worktree each run</b><p class="hint">Starts from origin/main in a temporary worktree and removes it after the run.</p></div></div>
+          </div>
+          <div class="card">
+            <header><p class="section-title">After the run</p></header>
+            <div class="toggle-row"><span class="switch" role="switch" aria-checked="false"></span><div><b>Turn the automation off after a failed run</b><p class="hint">Off tries again at the next scheduled time or call.</p></div></div>
+            <div class="toggle-row"><span class="switch" role="switch" aria-checked="true"></span><div><b>Count completed runs toward Needs review</b></div></div>
+            <div class="toggle-row"><span class="switch" role="switch" aria-checked="false"></span><div><b>Hide from conversation history</b><p class="hint">Even when “Show automations” is on.</p></div></div>
+            <div class="toggle-row"><span class="switch" role="switch" aria-checked="true"></span><div><b>Bypass Guardian for this automation's turns</b><p class="hint">Enforced rules, relay rules and team safeguards still apply.</p></div></div>
+          </div>
+          <div class="card">
+            <div class="toggle-row" style="border:0;padding:0;background:none"><span class="switch" role="switch" aria-checked="false" id="arSwitch"></span><div><b>Auto reply</b><p class="hint">A second agent keeps the conversation going until your stop criteria, the reply limit or a manual Stop. Retries may incur model costs.</p></div></div>
+            <div id="arBody" hidden style="display:flex;flex-direction:column;gap:14px">
+              <div class="grid3"><label class="field"><span>Responder harness</span><select class="in"><option>Pi</option></select></label><label class="field"><span>Responder model</span><select class="in"><option>gpt-6-astra</option></select></label><label class="field"><span>Responder reasoning</span><select class="in"><option>high</option></select></label></div>
+              <label class="field"><span>Instructions</span><textarea class="in" rows="2">Keep working until the PR is ready for merge.</textarea></label>
+              <label class="field"><span>Stop only when</span><textarea class="in" rows="2">The PR is open and its checks pass.</textarea></label>
+              <label class="field"><span>Maximum replies</span><input class="in" type="number" placeholder="Unlimited"></label>
+            </div>
+          </div>
+        </div>
+
+        <!-- CONTEXT -->
+        <div class="body" data-panel="ed:context" hidden>
+          <p class="hint">What the agent gets on every run, whatever started it.</p>
+          <div class="seg" id="ctxSeg"><button data-ctx="accounts" aria-pressed="true">Secret accounts</button><button data-ctx="files" aria-pressed="false">Files &amp; tools</button><button data-ctx="skills" aria-pressed="false">Skills</button><button data-ctx="memory" aria-pressed="false">Memory</button></div>
+          <div data-ctx-panel="accounts" style="display:flex;flex-direction:column;gap:8px">
+            <p class="hint">Project and workspace secrets come automatically. Picked accounts are added to each run's conversation.</p>
+            <div class="box"><label class="pick"><input type="checkbox" data-sample checked> aws “agentleauge”<span class="hint" style="margin-left:auto">AWS</span></label><label class="pick"><input type="checkbox"> github “iliagerman”<span class="hint" style="margin-left:auto">GITHUB</span></label><label class="pick"><input type="checkbox" data-sample checked> Contigos Dev<span class="hint" style="margin-left:auto">WEBSITE</span></label><label class="pick"><input type="checkbox"> tavily<span class="hint" style="margin-left:auto">CUSTOM</span></label></div>
+          </div>
+          <div data-ctx-panel="files" hidden style="display:flex;flex-direction:column;gap:10px">
+            <div class="drop"><div><b>Drop files here</b> <span class="hint">or</span> <button class="btn sm">Browse…</button><div class="hint">CSV, JSON, Markdown, scripts… up to 4 MiB each. Each needs a short description.</div></div></div>
+            <div class="box" data-sample-block><table><thead><tr><th style="width:32%">Name</th><th>What the agent should know</th><th style="width:90px"></th></tr></thead><tbody>
+              <tr><td><span class="file-ico">CSV</span> customer-map.csv</td><td>Mapping between customers and their VM resources</td><td><button class="btn sm icon">⤓</button> <button class="btn sm icon danger">🗑</button></td></tr>
+              <tr><td><span class="file-ico" style="color:var(--claude)">PY</span> vm_health.py</td><td>Checks CPU, disk and replication lag for one VM<div class="hint" style="font-family:var(--mono)">python3 vm_health.py --vm &lt;name&gt;</div></td><td><button class="btn sm icon">⤓</button> <button class="btn sm icon danger">🗑</button></td></tr>
+            </tbody></table></div>
+            <p class="hint box" data-empty-block style="padding:14px 16px">No files yet.</p>
+          </div>
+          <div data-ctx-panel="skills" hidden style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center"><p class="hint">Skills only this automation's agent can use.</p><button class="btn primary sm">+ Add skill</button></div>
+            <div class="box" data-sample-block><div class="pick" style="border:0"><span class="file-ico">✦</span><div class="grow"><b>mysql-backup-check</b> <span class="pill">Git · acme/dba-skills @ a1b2c3d</span><div class="hint">Verify last backup age and restore test</div></div><button class="btn sm">Update</button><button class="btn sm danger">Remove</button></div></div>
+            <p class="hint box" data-empty-block style="padding:14px 16px">No skills yet. Add from this machine, a folder or Git.</p>
+          </div>
+          <div data-ctx-panel="memory" hidden style="display:flex;flex-direction:column;gap:10px">
+            <div class="toggle-row"><span class="switch" role="switch" aria-checked="true" id="memSwitch"></span><div><b>Persistent memory</b><p class="hint">The agent reads this note at the start of every run and adds what it learns. A scheduled monitor can remember what it already reported.</p></div></div>
+            <div class="editor"><textarea id="fMem" spellcheck="false" placeholder="Empty. The agent adds notes here as it learns."></textarea>
+              <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="hint">1.2 KB of 200 KB</span><span><button class="btn sm">Upload .md</button> <button class="btn sm">Download</button> <button class="btn sm danger">Clear…</button></span></div></div>
+          </div>
+        </div>
+
+        <!-- HISTORY -->
+        <div class="body" data-panel="ed:history" hidden>
+          <div class="box"><table>
+            <thead><tr><th>Started</th><th>Started by</th><th>Result</th><th>Duration</th><th></th></tr></thead>
+            <tbody id="histRows"></tbody>
+          </table></div>
+          <div class="pager" style="padding:0"><span id="histPager">1–4 of 34</span><span><button class="btn sm ghost" disabled>‹ Previous</button> <button class="btn sm ghost">Next ›</button></span></div>
+        </div>
+
+        <div class="savebar">
+          <span class="sum" id="summary"></span>
+          <span class="head-btns"><button class="btn ghost" data-go="list">Cancel</button><button class="btn primary" id="saveBtn">Save changes</button></span>
+        </div>
+      </section>
+
+      <!-- ===== ADDRESS ===== -->
+      <section class="stage" data-view="addr">
+        <div class="ed-head"><div class="crumb"><a href="#" data-go="list">‹ Automations</a><span class="hint">/</span><h3>Address for “dba only vms”</h3><span class="kind webhook">⚡ webhook</span></div></div>
+        <div class="body">
+          <div class="callout">This is the only time the address is shown. Copy it now and give it to whatever should call it. You can make a new one later from the Trigger tab.</div>
+          <div class="addr"><span class="hint">Relay</span><code>https://relay.bobthebot.io/hook/wh_9Zk3Lq0aP2vX7tQ7m</code><button class="btn sm">Copy</button></div>
+          <div class="addr"><span class="hint">This machine</span><code>http://ai-kms-test.tailnet:8790/hook/wh_9Zk3Lq0aP2vX7tQ7m</code><button class="btn sm">Copy</button></div>
+          <div style="display:flex;gap:8px"><button class="btn primary" data-go="edit-w">Done · open the automation</button><button class="btn ghost" data-go="list">Back to Automations</button></div>
+        </div>
+      </section>
+
+      <!-- ===== CHANGES ===== -->
+      <section class="stage" data-view="changes">
+        <div class="body">
+          <p class="section-title">Names</p>
+          <div class="box"><table><thead><tr><th>Today</th><th>After</th></tr></thead><tbody>
+            <tr><td class="gone">Scheduled task</td><td>Automation with a ⏱ schedule trigger</td></tr>
+            <tr><td class="gone">Webhook</td><td>Automation with a ⚡ webhook trigger</td></tr>
+            <tr><td class="gone">+ Scheduled task · + Webhook</td><td>+ Automation (trigger picked in the editor)</td></tr>
+            <tr><td class="gone">“Show scheduled” in history</td><td>“Show automations”</td></tr>
+            <tr><td class="gone">“Webhook memory”, “webhook skills”, webhook files</td><td>Automation memory, skills and files, for both triggers</td></tr>
+          </tbody></table></div>
+          <p class="section-title">Old screens that go away</p>
+          <div class="box"><table><thead><tr><th>Today</th><th>After</th></tr></thead><tbody>
+            <tr><td class="gone">Project / conversation menu › Scheduled tasks (dialog)</td><td>Automations, filtered to that project</td></tr>
+            <tr><td class="gone">Chat toolbar “Scheduled tasks” button</td><td>Automations, filtered to the conversation's project</td></tr>
+            <tr><td class="gone">Project menu › Webhooks · Settings › Webhooks tab</td><td>Automations, filtered to that project</td></tr>
+            <tr><td class="gone">Compact editor + “More options…”</td><td>The single editor holds every option</td></tr>
+          </tbody></table></div>
+          <p class="section-title">Kept as is</p>
+          <div class="box"><table><tbody>
+            <tr><td>Existing webhook addresses keep working; nothing that calls them has to change.</td></tr>
+            <tr><td>Existing schedules keep their times, run history and conversations.</td></tr>
+            <tr><td>Bob can still create and change them from the chat, now as automations.</td></tr>
+            <tr><td>Bob reports stay a separate, smaller kind in the same list.</td></tr>
+          </tbody></table></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const SAMPLES = {
+  "edit-s": { trig:"schedule", name:"Conversation Quality Monitor", machine:0, harness:0, model:0, ctx:0, tags:["quality*","nightly"], title:"",
+    instr:"You are required to check the conversations in the past 11 hours, you need to evaluate the quality of the conversations, which conversations was not good, the agent failed to help, made a mistake, or any unwanted behaviour. If you find bad conversations, reproduce them and suggest a fix and test it, once ready and confirmed a PR is required to be ready for merge.", mem:"" },
+  "edit-w": { trig:"webhook", name:"dba only vms", machine:1, harness:1, model:1, ctx:5, tags:["dba*","customers"], title:"dba-[CUSTOMER]",
+    instr:"You are the DBA assistant for customer VMs. Use customer-map.csv to find the customer's resources before answering. Never run destructive commands.",
+    mem:"# dba only vms — memory\n\n## Customers\n- ACME uses MySQL 8 on vm-acme-db1; replica is vm-acme-db2.\n\n## Lessons\n- 2026-10-27: customer-map.csv lists retired VMs too; check the `active` column first." },
+  "new": { trig:"schedule", name:"", machine:0, harness:0, model:0, ctx:0, tags:[], title:"", instr:"", mem:"" },
+};
+const HISTORY = {
+  schedule: [["Today 08:00","⏱ schedule",'<span class="pill on">● running</span>',"—"],["Yesterday 20:00","⏱ schedule",'<span class="pill on">succeeded</span>',"14 min"],["15/11 20:00","⏱ schedule",'<span class="pill bad">failed</span> <span class="hint">Model request timed out</span>',"3 min"],["15/11 18:02","Run now (Ilia)",'<span class="pill on">succeeded</span>',"11 min"]],
+  webhook: [["Today 11:42","⚡ call · “vm-acme-db2 replication lag alert”",'<span class="pill on">succeeded</span>',"6 min"],["Today 09:10","⚡ call · “Globex disk usage 91%”",'<span class="pill on">succeeded</span>',"4 min"],["Yesterday","⚡ call · sender 777",'<span class="pill bad">refused</span> <span class="hint">not a listed sender</span>',"—"],["16/11 10:00","Run now (Ilia)",'<span class="pill on">succeeded</span>',"2 min"]],
+};
+const notes = {
+  list: `<b>One list, one kind.</b><ul><li>The Type column becomes <b>Trigger</b>: ⏱ schedule or ⚡ webhook. Bob reports stay in the same list.</li><li>One create button, “+ Automation”. Row click or Edit opens the editor.</li></ul>`,
+  new: `<b>New automation.</b><ul><li>Setup starts with the trigger choice. Click “When a webhook is called”: the Trigger tab, the footer and the instruction label follow.</li><li>Run, Context and the defaults are the same for both triggers.</li><li>Saving a webhook automation shows its address once (view 5).</li></ul>`,
+  "edit-s": `<b>Edit, schedule trigger</b> (your “Conversation Quality Monitor”).<ul><li>Trigger tab: how often, days, quiet hours, timezone, next runs.</li><li>Context is now available to schedules: give the monitor memory so it remembers what it already reported.</li><li>Try switching the trigger to webhook in Setup: the Trigger tab warns what happens on save.</li></ul>`,
+  "edit-w": `<b>Edit, webhook trigger</b> (“dba only vms”).<ul><li>Trigger tab: address, new conversation or add to one, attachments, allowed senders.</li><li>Run tab gives webhooks what only schedules had: machine, model, fresh worktree, auto reply, failure handling.</li><li>History shows calls and manual runs in one table. “Run now” works here too, with an empty call.</li></ul>`,
+  addr: `<b>After saving a webhook automation.</b> The address is shown once, as today.`,
+  changes: `<b>What changes for you.</b> Names, the screens that go away, and what stays the same.`,
+};
+let view = "list", trig = "schedule", originalTrig = null;
+function show(v) {
+  view = v;
+  $$("[data-view]").forEach(s => s.hidden = !s.dataset.view.split(" ").includes(v));
+  $$("#switcher button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.go === v)));
+  $("#note").innerHTML = notes[v];
+  const sample = SAMPLES[v];
+  if (!sample) return;
+  const isNew = v === "new";
+  $$("[data-edit-only]").forEach(n => n.hidden = isNew);
+  originalTrig = isNew ? null : sample.trig;
+  $("#edTitle").textContent = isNew ? "New automation" : sample.name;
+  $("#fName").value = sample.name; $("#fName").placeholder = "e.g. Weekly dependency check – [week]";
+  $("#fInstr").value = sample.instr; $("#fTitle").value = sample.title; $("#fMem").value = sample.mem;
+  $("#fMachine").selectedIndex = sample.machine; $("#fHarness").selectedIndex = sample.harness; $("#fModel").selectedIndex = sample.model;
+  $("#ctxCount").textContent = sample.ctx;
+  $("#fTags").innerHTML = sample.tags.map(t => `<span class="tag${t.endsWith("*") ? " managed" : ""}">${t.replace("*","")} ×</span>`).join("") + `<input placeholder="Add a tag…">`;
+  $$("[data-sample-block]").forEach(n => n.hidden = !sample.ctx);
+  $$("[data-empty-block]").forEach(n => n.hidden = !!sample.ctx);
+  $$("[data-sample]").forEach(n => n.checked = !!sample.ctx);
+  $("#saveBtn").textContent = isNew ? "Create automation" : "Save changes";
+  setTrig(sample.trig);
+  setTab("setup");
+}
+function setTrig(t) {
+  trig = t;
+  $$("#triggerPick .trig").forEach(b => b.classList.toggle("picked", b.dataset.trig === t));
+  $$("[data-trig-panel]").forEach(p => p.dataset.trigActive = String(p.dataset.trigPanel === t));
+  $("#edKind").className = `kind ${t}`; $("#edKind").textContent = t === "schedule" ? "⏱ schedule" : "⚡ webhook";
+  $("#instrLabel").textContent = t === "schedule" ? "What should the agent do each time?" : "What should the agent do with each call?";
+  $("#instrHint").textContent = t === "schedule" ? "This is the whole message each run starts with." : "Goes ahead of the call's content in every message.";
+  $$("[data-webhook-only]").forEach(n => n.hidden = t !== "webhook");
+  $("#switchToSchedule").hidden = !(originalTrig === "webhook" && t === "schedule");
+  $("#switchToWebhook").hidden = !(originalTrig === "schedule" && t === "webhook");
+  $("#addrCard").hidden = originalTrig !== "webhook" || t !== "webhook";
+  $("#histRows").innerHTML = HISTORY[originalTrig || t].map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}<td style="text-align:right">${r[3] === "—" && r[2].includes("refused") ? "" : '<button class="btn sm">Open conversation</button>'}</td></tr>`).join("");
+  $("#histCount").textContent = originalTrig === "webhook" ? "12" : "34";
+  $("#histPager").textContent = originalTrig === "webhook" ? "1–4 of 12" : "1–4 of 34";
+  setTab(currentTab);
+  summarise();
+}
+let currentTab = "setup";
+function setTab(name) {
+  currentTab = name;
+  $$('[data-tabs="ed"] button').forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  $$('[data-panel^="ed:"]').forEach(p => p.hidden = p.dataset.panel !== `ed:${name}` || (p.dataset.trigPanel && p.dataset.trigActive !== "true"));
+}
+document.addEventListener("click", e => {
+  const go = e.target.closest("[data-go]");
+  if (go && !(e.target.closest("[data-stop]") && !e.target.closest("button"))) { e.preventDefault(); show(go.dataset.go); return; }
+  const tb = e.target.closest('[data-tabs] button'); if (tb) return setTab(tb.dataset.tab);
+  const tr = e.target.closest(".trig"); if (tr) return setTrig(tr.dataset.trig);
+  const sw = e.target.closest(".switch");
+  if (sw) { const on = sw.getAttribute("aria-checked") !== "true"; sw.setAttribute("aria-checked", String(on));
+    if (sw.id === "quietSwitch") $("#quietTimes").hidden = !on; if (sw.id === "arSwitch") $("#arBody").hidden = !on; summarise(); return; }
+  const seg = e.target.closest(".seg button");
+  if (seg) { $$("button", seg.parentElement).forEach(b => b.setAttribute("aria-pressed", String(b === seg)));
+    if (seg.dataset.f) setFreq(seg.dataset.f);
+    if (seg.dataset.ctx) $$("[data-ctx-panel]").forEach(p => p.hidden = p.dataset.ctxPanel !== seg.dataset.ctx); return; }
+  const day = e.target.closest(".daychips button"); if (day) { day.setAttribute("aria-pressed", String(day.getAttribute("aria-pressed") !== "true")); summarise(); return; }
+  const m = e.target.closest("[data-menu]");
+  $$(".menu-pop").forEach(p => { if (!m || p !== m.nextElementSibling) p.hidden = true; });
+  if (m) m.nextElementSibling.hidden = !m.nextElementSibling.hidden;
+});
+$("#saveBtn").addEventListener("click", () => show(trig === "webhook" && originalTrig !== "webhook" ? "addr" : "list"));
+const FREQ = {
+  once:{every:0,weekday:0,date:1,dateLabel:"On",time:"At",until:0,days:0,from:0}, minutes:{every:1,label:"Repeat every (minutes)",time:"Start time",until:1,days:1,from:1},
+  hours:{every:1,label:"Repeat every (hours)",time:"Start time",until:1,days:1,from:1}, daily:{time:"At",until:1,days:1,from:1},
+  weekly:{weekday:1,time:"At",until:1,from:1}, monthly:{date:1,dateLabel:"From (repeats on this date each month)",time:"At",until:1},
+};
+let freq = "hours";
+function setFreq(f) {
+  freq = f; const c = FREQ[f];
+  $("#fEvery").hidden = !c.every; if (c.label) $("#fEveryLabel").textContent = c.label;
+  $("#fWeekday").hidden = !c.weekday; $("#fDate").hidden = !c.date; if (c.dateLabel) $("#fDateLabel").textContent = c.dateLabel;
+  $("#fTimeLabel").textContent = c.time; $("#fUntil").hidden = !c.until; $("#fFrom").hidden = !c.from; $("#cardDays").hidden = !c.days;
+  summarise();
+}
+function summarise() {
+  const every = $("#fEvery input").value || 1, time = $("#fTime").value;
+  const days = $$(".daychips button").filter(b => b.getAttribute("aria-pressed") === "true").length;
+  const when = { once:"Once", minutes:`Every ${every} minutes`, hours:`Every ${every} hours from ${time}`, daily:`Every day at ${time}`, weekly:`Every week at ${time}`, monthly:`Every month at ${time}` }[freq] + (FREQ[freq].days && days < 7 ? ` · ${days} days a week` : "");
+  const head = trig === "schedule" ? `⏱ ${when}` : "⚡ On each webhook call";
+  const run = [$("#fMachine").selectedOptions[0].text, $("#fHarness").selectedOptions[0].text, $("#fModel").selectedOptions[0].text].join(" · ");
+  $("#summary").innerHTML = `<b>${head}</b> <small>· ${run}${$("#wtSwitch").getAttribute("aria-checked") === "true" ? " · fresh worktree" : ""}</small>`;
+  const base = new Date(2026, 10, 17, 20, 0), step = freq === "minutes" ? every * 6e4 : freq === "hours" ? every * 36e5 : freq === "daily" ? 864e5 : freq === "weekly" ? 6048e5 : 2592e6;
+  $("#nextRuns").innerHTML = [0,1,2].map(i => `<span class="pill">${new Date(base.getTime() + i * step).toLocaleString("en-GB", { weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" })}</span>`).join("") + `<span class="hint">Asia/Jerusalem</span>`;
+}
+$$("#fEvery input, #fTime").forEach(i => i.addEventListener("input", summarise));
+$$("#fMachine, #fHarness, #fModel").forEach(i => i.addEventListener("change", summarise));
+setFreq("hours");
+show("list");
+</script>
+</body>
+</html>

@@ -1,10 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import type { AuthSession } from "../../auth.js";
-import {
-  AutomationError, createReport, createScheduledTask, createWebhookCompact, deleteAutomation, listAutomations, reportChangeSchema, reportInputSchema, scheduledTaskChangeSchema,
-  scheduledTaskInputSchema, setAutomationEnabled, updateReport, updateScheduledTask, updateWebhookCompact, webhookChangeSchema, webhookInputCompactSchema,
-} from "../control-center-automations.js";
+import { AutomationError, createReport, deleteAutomation, listAutomations, reportChangeSchema, reportInputSchema, setAutomationEnabled, updateReport } from "../control-center-automations.js";
 import "../control-center-automation-chat.js";
 import { sendReportNow, startBobReports } from "../control-center-reports.js";
 import { sendError } from "../http-auth.js";
@@ -39,23 +36,6 @@ app.put("/api/control-center/automations/:kind/:id/enabled", route(async (reques
 
 app.delete("/api/control-center/automations/:kind/:id", route(async (request, response) => {
   response.json({ deleted: await deleteAutomation(session(response), kindSchema.parse(request.params.kind), idSchema.parse(request.params.id)) });
-}));
-
-app.post("/api/control-center/automations/schedule", route(async (request, response) => {
-  response.status(201).json({ task: await createScheduledTask(session(response), scheduledTaskInputSchema.parse(request.body)) });
-}));
-app.put("/api/control-center/automations/schedule/:id", route(async (request, response) => {
-  await updateScheduledTask(session(response), idSchema.parse(request.params.id), scheduledTaskChangeSchema.parse(request.body));
-  response.json({ ok: true });
-}));
-
-/** The reply carries the webhook's secret address once, as the Webhooks settings do. */
-app.post("/api/control-center/automations/webhook", route(async (request, response) => {
-  response.status(201).json(await createWebhookCompact(session(response), webhookInputCompactSchema.parse(request.body)));
-}));
-app.put("/api/control-center/automations/webhook/:id", route(async (request, response) => {
-  await updateWebhookCompact(session(response), idSchema.parse(request.params.id), webhookChangeSchema.parse(request.body));
-  response.json({ ok: true });
 }));
 
 app.post("/api/control-center/automations/bob", route(async (request, response) => {

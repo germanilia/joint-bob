@@ -46,7 +46,7 @@ const COMMAND_ROWS = [
   { command: "browser", label: "Chat: open the browser" },
   { command: "notify", label: "Chat: toggle notifications" },
   { command: "rename", label: "Chat: rename this conversation" },
-  { command: "scheduledTasks", label: "Chat: open scheduled tasks" },
+  { command: "scheduledTasks", label: "Chat: open automations" },
   { command: "backgroundTasks", label: "Chat: open background tasks" },
   { command: "chatFiles", label: "Chat: open the project files" },
   { command: "sessionActions", label: "Chat: open the conversation actions" },

@@ -78,7 +78,7 @@ for (const theme of ["light", "dark"]) test(`focus mobile headers and shared FAB
   for (const id of ["focus-activity", "focus-files", "focus-git", "focus-tasks", "focus-model", "focus-harness", "focus-effort", "focus-node", "focus-auto-respond", "focus-notify", "focus-mark-done"]) {
     assert.equal(await page.getByTestId(id).count(), 1, `${id} is in the details sheet`);
   }
-  for (const id of ["chat-open-browser-button", "chat-share-button", "chat-more-dashboard-button", "chat-rename-button", "chat-cron-button", "chat-open-terminal-button"]) {
+  for (const id of ["chat-open-browser-button", "chat-share-button", "chat-more-dashboard-button", "chat-rename-button", "chat-automations-button", "chat-open-terminal-button"]) {
     await page.getByTestId(`focus-tool-${id}`).scrollIntoViewIfNeeded();
     assert.equal(await page.getByTestId(`focus-tool-${id}`).isVisible(), true, `${id} is reachable from the sheet`);
   }

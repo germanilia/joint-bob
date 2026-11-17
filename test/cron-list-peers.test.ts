@@ -1,4 +1,4 @@
-// Opening a project lists its scheduled tasks from every node that may hold some. Before
+// Opening a project lists its scheduled automations from every node that may hold some. Before
 // this, the list asked every peer sharing any project and waited up to 15 seconds for each,
 // so one unreachable cluster member stalled every project page.
 import assert from "node:assert/strict";
@@ -11,7 +11,7 @@ import test from "node:test";
 import { api, freePort, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { openNodeDatabase } from "../src/node-database.js";
 
-test("the scheduled task list asks only nodes sharing the project and does not wait long for a silent one", { timeout: 180_000 }, async () => {
+test("the scheduled automation list asks only nodes sharing the project and does not wait long for a silent one", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "cron-peers-"));
   const children: Awaited<ReturnType<typeof startDevNode>>[] = [];
   const sockets: Socket[] = [];
@@ -38,7 +38,7 @@ test("the scheduled task list asks only nodes sharing the project and does not w
 
     const timed = async (projectId: string) => {
       const started = Date.now();
-      const response = await api<{ tasks: unknown[]; errors: Array<{ nodeId: string }> }>(a, sa, "GET", `/projects/${projectId}/cron`);
+      const response = await api<{ automations: unknown[]; errors: Array<{ nodeId: string }> }>(a, sa, "GET", `/projects/${projectId}/automations`);
       return { ...response, elapsed: Date.now() - started };
     };
     const local = await timed(unshared.id);

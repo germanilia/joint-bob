@@ -16,14 +16,13 @@ test("every app module ships in the offline service-worker shell", async () => {
 test("only assistant automations, the assistant sign-in viewer and file previews may be framed, and only by the same origin", () => {
   for (const [url, expected] of [
     ["/?canvasPane=1", "DENY"],
-    ["/?assistantAutomation=1&assistantAction=cron", "SAMEORIGIN"],
-    ["/?assistantAutomation=1&assistantAction=webhook", "SAMEORIGIN"],
+    ["/?assistantAutomation=1&assistantAction=automation", "SAMEORIGIN"],
     ["/api/projects/project-id/file?path=report.pdf", "SAMEORIGIN"],
     ["/browser.html?embedded=1&projectId=p", "SAMEORIGIN"],
     ["/browser.html?projectId=p", "DENY"],
     ["/", "DENY"],
     ["/?canvasPane=0", "DENY"],
-    ["/?assistantAutomation=0&assistantAction=cron", "DENY"],
+    ["/?assistantAutomation=0&assistantAction=automation", "DENY"],
     ["/?assistantAutomation=1", "DENY"],
     ["/?assistantAutomation=1&assistantAction=other", "DENY"],
     ["/assistant.html?canvasPane=1", "DENY"],

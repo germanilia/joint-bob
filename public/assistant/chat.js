@@ -74,13 +74,13 @@ function showWorking(content) {
 const automationDialog = () => document.querySelector("#assistant-automation-dialog");
 const automationFrame = () => document.querySelector("#assistantAutomationFrame");
 
-function openAutomation(action) {
+function openAutomation() {
   const target = new URL("/", location.origin);
   target.searchParams.set("projectId", app.assistant.projectId);
   target.searchParams.set("sessionId", app.assistant.sessionId);
   if (app.assistant.nodeId) target.searchParams.set("nodeId", app.assistant.nodeId);
   target.searchParams.set("assistantId", app.assistant.id);
-  target.searchParams.set("assistantAction", action);
+  target.searchParams.set("assistantAction", "automation");
   target.searchParams.set("assistantAutomation", "1");
   automationFrame().src = target.toString();
   automationDialog().showModal();
@@ -100,8 +100,7 @@ export function bindChat() {
   document.querySelector("#chat-message").addEventListener("keydown", event => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.form.requestSubmit(); }
   });
-  document.querySelector("#new-scheduled-task").addEventListener("click", () => openAutomation("cron"));
-  document.querySelector("#new-webhook").addEventListener("click", () => openAutomation("webhook"));
+  document.querySelector("#new-automation").addEventListener("click", openAutomation);
   automationDialog().addEventListener("close", () => automationFrame().removeAttribute("src"));
   window.addEventListener("message", event => {
     if (event.origin === location.origin && event.source === automationFrame().contentWindow && event.data === "assistant-automation-close") automationDialog().close();

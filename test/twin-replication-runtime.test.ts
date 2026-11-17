@@ -67,21 +67,22 @@ test("twins replicate project events over signed transport without bearer peers"
       assert.equal(result.status,200,'signed runtime must acknowledge authorized conversation ownership');
       assert.equal((await result.json() as {accepted:boolean}).accepted,true);
     });
-    const cronInput = { projectId: id, name: "Twin schedule", prompt: "Continue", ownerNodeId: right.nodeId, engine: "pi", sessionId: null, enabled: true, schedule: { frequency: "daily", minute: 0, hour: 9, weekday: 1, timezone: "UTC" } };
-    const cron = (command: unknown) => api<{ task: { id: string; enabled: boolean }; runs: unknown[] }>(left, sa, "POST", "/cron", { nodeId: right.nodeId, command });
-    const created = await cron({ action: "create", input: cronInput });
-    assert.equal(created.status, 200, JSON.stringify(created.body));
-    const cronId = created.body.task.id;
-    const paused = await cron({ action: "update", id: cronId, input: { ...cronInput, enabled: false } });
+    const cronInput = { trigger: "schedule", target: { kind: "project", projectId: id, engine: "pi" }, name: "Twin schedule", context: "Continue", enabled: true, schedule: { frequency: "daily", minute: 0, hour: 9, weekday: 1, timezone: "UTC" } };
+    const owner = `?nodeId=${right.nodeId}`;
+    const created = await api<{ automation: { id: string; enabled: boolean } }>(left, sa, "POST", `/automations${owner}`, cronInput);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const cronId = created.body.automation.id;
+    const paused = await api<{ automation: { id: string; enabled: boolean } }>(left, sa, "PUT", `/automations/${cronId}${owner}`, { ...cronInput, enabled: false });
     assert.equal(paused.status, 200, JSON.stringify(paused.body));
-    assert.equal(paused.body.task.enabled, false);
-    // A command for another node names its project, which this node checks first.
-    const history = await cron({ action: "history", id: cronId, projectId: id });
+    assert.equal(paused.body.automation.enabled, false);
+    const history = await api<{ calls: unknown[]; runs: unknown[] }>(left, sa, "GET", `/automations/${cronId}/history${owner}`);
     assert.equal(history.status, 200, JSON.stringify(history.body));
-    assert.equal((await cron({ action: "history", id: cronId })).status, 404, "a remote task without its project can't be checked here");
-    assert.equal((await cron({ action: "delete", id: cronId, projectId: id })).status, 200, "a twin must be able to stop a task it owns remotely");
-    const unknown = await signedNodeRequest(a, left, right, "POST", "/api/cluster/v2/runtime/cron", { action: "delete", id: cronId });
-    assert.equal(unknown.status, 403, "a task ID with no stored project cannot authorize itself");
+    assert.deepEqual(history.body.runs, []);
+    const removed = await fetch(`${left.url}/api/automations/${cronId}${owner}`, { method: "DELETE", headers: { Cookie: sa.cookie, "x-csrf-token": sa.csrfToken } });
+    assert.equal(removed.status, 204, "a twin must be able to stop a task it owns remotely");
+    // The stored automation names its project, so a command carries none; an ID with nothing stored changes nothing.
+    const unknown = await signedNodeRequest(a, left, right, "POST", "/api/cluster/v2/automations", { action: "delete", id: cronId });
+    assert.equal(unknown.status, 404, "an automation ID with nothing stored cannot authorize itself");
     const renamed = await api(left, sa, "PATCH", `/projects/${id}`, { name: "Signed project" });
     assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
     const db = openNodeDatabase(path.join(right.dataDir, "node.db"));

@@ -99,7 +99,7 @@ test("the control center shares the top toolbar with larger icons and readable s
 });
 
 test("chat controls advertise shortcuts", async () => {
-  for (const id of ["chat-node-select", "chat-harness-select", "chat-model-button", "chat-reasoning-select", "chat-open-terminal-button", "chat-open-browser-button", "chat-notify-button", "chat-rename-button", "chat-cron-button", "background-tasks-open", "chat-files-button", "chat-session-menu-button", "chat-done-button", "chat-auto-respond-button", "chat-git-button", "activity-story-button"]) {
+  for (const id of ["chat-node-select", "chat-harness-select", "chat-model-button", "chat-reasoning-select", "chat-open-terminal-button", "chat-open-browser-button", "chat-notify-button", "chat-rename-button", "chat-automations-button", "background-tasks-open", "chat-files-button", "chat-session-menu-button", "chat-done-button", "chat-auto-respond-button", "chat-git-button", "activity-story-button"]) {
     const control = page.getByTestId(id);
     const host = await control.evaluate((element) => element.closest("[data-shortcut-hint]")?.getAttribute("data-shortcut-hint"));
     assert.ok(host, `${id} needs a shortcut hint`);

@@ -1,0 +1,5 @@
+/* Automation editor, Run tab. The shared pieces (cards, fields, switches) live in automation-trigger.css. */
+.atab .atab-card > .atab-seg { max-width: 100%; }
+.atab .atab-card > .atab-seg button { text-align: left; }
+.atab .atab-card > .atab-hint { max-width: 70ch; }
+.atab-stack > .atab-toggle { align-self: stretch; }

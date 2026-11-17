@@ -12,7 +12,6 @@ import { loadSkills } from "./composer-dialogs.js";
 import { authKnown, showSignedOut } from "./auth.js";
 import { loadClusterPanel } from "./cluster-panel.js";
 import { loadRelayServing } from "./relay-serving.js";
-import { loadWebhooks } from "./webhooks.js";
 import { loadAutomationTags } from "./automation-tags.js";
 import { loadUpdatesPanel } from "./updates.js";
 import { elements } from "./elements.js";
@@ -116,7 +115,7 @@ function renderClientLogs() {
 }
 
 // These panels guard their own loading and do not depend on Save settings.
-const ownLoading = (panel) => ["settingsPanel-cluster", "settingsPanel-relay", "settingsPanel-webhooks", "settingsPanel-browser", "settingsPanel-node", "settingsPanel-users", "settingsPanel-file-sync", "settingsPanel-automation-tags", "settingsPanel-story", "settingsPanel-guardian", "settingsPanel-system-ai"].includes(panel.id);
+const ownLoading = (panel) => ["settingsPanel-cluster", "settingsPanel-relay", "settingsPanel-browser", "settingsPanel-node", "settingsPanel-users", "settingsPanel-file-sync", "settingsPanel-automation-tags", "settingsPanel-story", "settingsPanel-guardian", "settingsPanel-system-ai"].includes(panel.id);
 
 /** Shows one settings panel and hides the rest, keeping the tablist's roving tabindex correct. */
 function selectSettingsTab(requested) {
@@ -141,7 +140,6 @@ function selectSettingsTab(requested) {
   if (name === "cluster" || name === "browser") void loadBrowserStatus();
   if (name === "browser") void loadBrowserProfileDirectory();
   if (name === "relay") void loadRelayServing();
-  if (name === "webhooks") void loadWebhooks();
   if (name === "automation-tags") void loadAutomationTags();
   if (name === "notifications") { void loadNtfyServicesPanel(); void loadErrorReportingSettings(); }
   if (name === "classifiers") void loadRoutingConfigs().catch((error) => { elements.routingConfigStatus.textContent = error.message; });
@@ -174,7 +172,7 @@ export function syncSettingsAccess() {
   for (const node of document.querySelectorAll("[data-requires-settings]")) {
     node.hidden = !allowed;
   }
-  if (!allowed && ["relay", "webhooks"].includes(elements.settingsForm.dataset.tab)) selectSettingsTab("account");
+  if (!allowed && elements.settingsForm.dataset.tab === "relay") selectSettingsTab("account");
 }
 
 let runtimeDefaults;

@@ -64,16 +64,16 @@ test("a saved command is available on its twin without a sharing action", async 
 });
 
 test("a webhook created from a twin exists only on its selected owner", async () => {
-  const created = await api<{ webhook: { id: string }; secret: string }>(nodeA, sessionA, "POST", `/webhooks?nodeId=${nodeB.nodeId}`, {
-    name: "Owned by B", target: { kind: "project", projectId: nodeA.projects[0].id }, enabled: false,
+  const created = await api<{ automation: { id: string }; secret: string }>(nodeA, sessionA, "POST", `/automations?nodeId=${nodeB.nodeId}`, {
+    trigger: "webhook", name: "Owned by B", target: { kind: "project", projectId: nodeA.projects[0].id }, enabled: false,
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const [local, remote] = await Promise.all([
-    api<{ webhooks: Array<{ id: string }> }>(nodeA, sessionA, "GET", "/webhooks"),
-    api<{ webhooks: Array<{ id: string }> }>(nodeB, sessionB, "GET", "/webhooks"),
+    api<{ automations: Array<{ id: string }> }>(nodeA, sessionA, "GET", "/automations"),
+    api<{ automations: Array<{ id: string }> }>(nodeB, sessionB, "GET", "/automations"),
   ]);
-  assert.equal(local.body.webhooks.some(hook => hook.id === created.body.webhook.id), false);
-  assert.equal(remote.body.webhooks.some(hook => hook.id === created.body.webhook.id), true);
+  assert.equal(local.body.automations.some(hook => hook.id === created.body.automation.id), false);
+  assert.equal(remote.body.automations.some(hook => hook.id === created.body.automation.id), true);
   assert.equal((await fetch(`${nodeA.url}/hooks/${created.body.secret}`, { method: "POST" })).status, 404);
   assert.equal((await fetch(`${nodeB.url}/hooks/${created.body.secret}`, { method: "POST" })).status, 403, "only B knows the disabled hook");
 });
@@ -146,29 +146,31 @@ test("scheduled conversation keeps its active run isolated while edits apply to 
   const project = nodeA.projects[0];
   const listed = await api<{ sessions: SessionView[] }>(nodeA, sessionA, "GET", `/projects/${project.id}/sessions`);
   const source = listed.body.sessions.find(session => session.harnessId === "pi")!;
-  assert.equal((await api(nodeA, sessionA, "POST", `/projects/${project.id}/sessions/take-ownership`, { sessionPath: source.path, sessionId: source.id, peerId: nodeA.nodeId })).status, 200);
   const runtimeDb = openPiRuntimeDatabase(nodeA.dataDir);
   const db = openNodeDatabase(path.join(nodeB.dataDir, "node.db"));
   const runtime = { sessionId: source.id, transcriptPath: source.path, runId: randomUUID() };
-  const input = { projectId: project.id, name: "Wait for active run", prompt: "Continue", ownerNodeId: nodeB.nodeId, engine: "pi", sessionId: source.id, runInWorktree: false, enabled: true, schedule: { frequency: "hourly", minute: 0, hour: 9, weekday: 1, timezone: "UTC" } };
+  const input = { trigger: "schedule", target: { kind: "conversation", projectId: project.id, sessionId: source.id, engine: "pi" }, name: "Wait for active run", context: "Continue", runInWorktree: false, enabled: true, schedule: { frequency: "hourly", minute: 0, hour: 9, weekday: 1, timezone: "UTC" } };
   try {
     db.exec("PRAGMA busy_timeout=5000");
+    // Saved while node B still owns the conversation: a conversation that another machine already owns is refused
+    // when the automation is saved ("Choose the machine that owns this conversation").
+    const created = await api<{ automation: { id: string } }>(nodeA, sessionA, "POST", `/automations?nodeId=${nodeB.nodeId}`, input);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const id = created.body.automation.id;
+    assert.equal((await api(nodeA, sessionA, "POST", `/projects/${project.id}/sessions/take-ownership`, { sessionPath: source.path, sessionId: source.id, peerId: nodeA.nodeId })).status, 200);
     publishPiRuntime(runtimeDb, runtime, true);
-    const created = await api<{ task: { id: string } }>(nodeA, sessionA, "POST", "/cron", { nodeId: nodeB.nodeId, command: { action: "create", input } });
-    assert.equal(created.status, 200, JSON.stringify(created.body));
-    const id = created.body.task.id;
-    db.prepare("UPDATE cron_tasks SET next_run = ? WHERE id = ?").run(Date.now(), id);
+    db.prepare("UPDATE webhooks SET next_run = ? WHERE id = ?").run(Date.now(), id);
     const deadline = Date.now() + 15000;
     while (!db.prepare("SELECT 1 FROM cron_runs WHERE task_id = ?").get(id) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
     await new Promise(resolve => setTimeout(resolve, 1200));
     assert.equal(db.prepare("SELECT status FROM cron_runs WHERE task_id = ?").get(id)?.status, "waiting", "must wait, not fail or dispatch while remote agent is active");
     assert.equal(db.prepare("SELECT owner_node_id FROM conversation_ownership WHERE session_id = ?").get(source.id)?.owner_node_id, nodeA.nodeId);
-    const nextInput = { ...input, name: "Updated while running", prompt: "Use this next time", enabled: false };
-    const edited = await api<{ task: { name: string; prompt: string; enabled: boolean } }>(nodeA, sessionA, "POST", "/cron", { nodeId: nodeB.nodeId, command: { action: "update", id, input: nextInput } });
+    const nextInput = { ...input, name: "Updated while running", context: "Use this next time", enabled: false };
+    const edited = await api<{ automation: { name: string; context: string; enabled: boolean } }>(nodeA, sessionA, "PUT", `/automations/${id}?nodeId=${nodeB.nodeId}`, nextInput);
     assert.equal(edited.status, 200, JSON.stringify(edited.body));
-    assert.equal(edited.body.task.name, nextInput.name);
-    assert.equal(edited.body.task.prompt, nextInput.prompt);
-    assert.equal(edited.body.task.enabled, false);
+    assert.equal(edited.body.automation.name, nextInput.name);
+    assert.equal(edited.body.automation.context, nextInput.context);
+    assert.equal(edited.body.automation.enabled, false);
     await new Promise(resolve => setTimeout(resolve, 1200));
     assert.equal(db.prepare("SELECT status FROM cron_runs WHERE task_id = ?").get(id)?.status, "waiting", "editing or pausing must not interrupt the active run");
     publishPiRuntime(runtimeDb, runtime, false);
@@ -177,17 +179,17 @@ test("scheduled conversation keeps its active run isolated while edits apply to 
     const finishedRun = db.prepare("SELECT status, error FROM cron_runs WHERE task_id = ?").get(id) as { status: string; error: string | null };
     assert.ok(["succeeded", "failed"].includes(finishedRun.status), JSON.stringify(finishedRun));
     assert.doesNotMatch(finishedRun.error ?? "", /paused while waiting/, "saved edits must not cancel the already claimed run");
-    const saved = await api<{ tasks: Array<{ id: string; name: string; prompt: string; enabled: boolean }> }>(nodeA, sessionA, "GET", `/projects/${project.id}/cron`);
-    const savedTask = saved.body.tasks.find(task => task.id === id)!;
+    const saved = await api<{ automations: Array<{ id: string; name: string; context: string; enabled: boolean }> }>(nodeA, sessionA, "GET", `/automations?nodeId=${nodeB.nodeId}`);
+    const savedTask = saved.body.automations.find(task => task.id === id)!;
     assert.equal(savedTask.name, nextInput.name);
-    assert.equal(savedTask.prompt, nextInput.prompt);
+    assert.equal(savedTask.context, nextInput.context);
     assert.equal(savedTask.enabled, false);
     publishPiRuntime(runtimeDb, runtime, true);
-    const resumed = await api<{ task: { enabled: boolean } }>(nodeA, sessionA, "POST", "/cron", { nodeId: nodeB.nodeId, command: { action: "update", id, input: { ...nextInput, enabled: true } } });
+    const resumed = await api<{ automation: { enabled: boolean } }>(nodeA, sessionA, "PUT", `/automations/${id}?nodeId=${nodeB.nodeId}`, { ...nextInput, enabled: true });
     assert.equal(resumed.status, 200, JSON.stringify(resumed.body));
-    assert.equal(resumed.body.task.enabled, true, "a previous conversation run must not block edits or resume");
+    assert.equal(resumed.body.automation.enabled, true, "a previous conversation run must not block edits or resume");
     publishPiRuntime(runtimeDb, runtime, false);
-    assert.equal((await api(nodeA, sessionA, "POST", "/cron", { nodeId: nodeB.nodeId, command: { action: "delete", id, projectId: project.id } })).status, 200);
+    assert.equal((await fetch(`${nodeA.url}/api/automations/${id}?nodeId=${nodeB.nodeId}`, { method: "DELETE", headers: { Cookie: sessionA.cookie, "x-csrf-token": sessionA.csrfToken } })).status, 204);
   } finally { publishPiRuntime(runtimeDb, runtime, false); runtimeDb.close(); db.close(); }
 });
 

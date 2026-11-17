@@ -147,13 +147,15 @@ test("the webhook log lists every call a page at a time with how it ended; a cal
   await page.keyboard.press("Escape");
   await page.getByTestId("control-triggers-panel").waitFor({ state: "hidden" });
   assert.equal(await page.locator("body.view-control").count(), 1, "Esc closed the log, not the control center");
+  const startingTab = await page.locator('[data-testid^="control-tab-"][aria-selected="true"]').getAttribute("data-view");
   await button.click();
   await page.getByTestId("control-trigger-open").first().click();
-  await page.getByTestId("project-webhooks-dialog").waitFor();
-  assert.match(await page.locator("#projectWebhooksHeading").innerText(), new RegExp(`^${project.name} webhooks$`));
-  await page.getByTestId("project-webhooks-close").click();
-  await page.getByTestId("project-webhooks-dialog").waitFor({ state: "detached" });
+  await page.getByTestId("automations-list").waitFor({ state: "visible" });
+  assert.deepEqual(await page.evaluate(async () => (await import("/app/state.js")).state.controlCenter.filter), [project.id], "the Automations tab is filtered to the call's project");
   assert.equal(await page.getByTestId("control-triggers-panel").isHidden(), true, "Webhook closes the log");
+  // Back on the board the rest of the log's buttons still work.
+  await page.evaluate(async (id) => (await import("/app/control-views.js")).showControlView(id), startingTab);
+  await page.getByTestId("control-triggers-bell").waitFor({ state: "visible" });
 
   // Open conversation opens the conversation that worked on the call, over the board.
   await button.click();

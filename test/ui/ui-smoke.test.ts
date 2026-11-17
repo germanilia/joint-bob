@@ -319,11 +319,11 @@ test("the project list shows every seeded project without browser automations", 
     await page.locator(".project-card", { hasText: project.name }).first().waitFor({ timeout: 15_000 });
   }
   await page.locator('[aria-label="Actions for Internal Assistant"]').click();
-  await page.getByTestId("project-cron-button").waitFor();
+  await page.getByTestId("project-automations-button").waitFor();
   assert.equal(await page.getByTestId("project-automations-button").count(), 0);
   assert.equal(await page.locator("#automationsDialog").count(), 0);
   await page.keyboard.press("Escape");
-  await page.getByTestId("project-cron-button").waitFor({ state: "hidden" });
+  await page.getByTestId("project-automations-button").waitFor({ state: "hidden" });
 });
 
 test("opening a conversation renders its transcript", async () => {
@@ -440,7 +440,7 @@ test("the selected project and conversation stay highlighted in their sidebars",
 // <details>'s content through `::details-content`, which once made Terminal, Notify, Rename and Browser vanish while
 // still occupying layout. Only a real browser sees that: the menu must show them when open, at every desktop width.
 test("the chat toolbar actions are visible on a wide screen and fold into the menu on a phone", async () => {
-  const ids = ["chat-open-terminal-button", "chat-open-browser-button", "chat-notify-button", "chat-rename-button", "chat-cron-button"];
+  const ids = ["chat-open-terminal-button", "chat-open-browser-button", "chat-notify-button", "chat-rename-button", "chat-automations-button"];
   for (const width of [1440, 720]) {
     await page.setViewportSize({ width, height: 900 });
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));

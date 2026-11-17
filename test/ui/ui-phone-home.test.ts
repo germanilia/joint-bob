@@ -147,7 +147,7 @@ test("a conversation opened on Home goes back to Home, and its details sheet hol
   await page.getByTestId("focus-controls-button").tap();
   await page.locator("#focusControls").waitFor();
   for (const id of ["focus-activity", "focus-files", "focus-git", "focus-tasks", "focus-harness", "focus-model", "focus-effort", "focus-node", "focus-auto-respond", "focus-notify", "focus-mark-done", "focus-add-secret",
-    "focus-tool-chat-open-terminal-button", "focus-tool-chat-open-browser-button", "focus-tool-chat-rename-button", "focus-tool-chat-share-button", "focus-tool-chat-cron-button", "focus-tool-chat-more-dashboard-button", "focus-tool-chat-session-menu-button",
+    "focus-tool-chat-open-terminal-button", "focus-tool-chat-open-browser-button", "focus-tool-chat-rename-button", "focus-tool-chat-share-button", "focus-tool-chat-automations-button", "focus-tool-chat-more-dashboard-button", "focus-tool-chat-session-menu-button",
     "focus-new-conversation", "focus-new-note", "focus-recents", "focus-running", "focus-reviews", "focus-projects", "focus-conversations", "focus-control-center", "focus-usage-open", "focus-settings"]) {
     assert.equal(await page.getByTestId(id).count(), 1, `${id} is in the details sheet`);
   }

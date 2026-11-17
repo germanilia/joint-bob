@@ -224,7 +224,7 @@ test("without the option, or for a sender's own attachments field, the body stay
 test("the input must name a target and stay within limits", () => {
   assert.throws(() => webhookInputSchema.parse({ name: "", target: { kind: "project", projectId: "p" } }));
   assert.throws(() => webhookInputSchema.parse({ name: "x", target: { kind: "conversation", projectId: "p" } }));
-  assert.throws(() => webhookInputSchema.parse({ name: "x", target: { kind: "project", projectId: "p" }, context: "y".repeat(10_001) }));
+  assert.throws(() => webhookInputSchema.parse({ name: "x", target: { kind: "project", projectId: "p" }, context: "y".repeat(100_001) }));
   const target = { kind: "assistant", projectId: "p", assistantId: randomUUID() };
   const db = new DatabaseSync(":memory:");
   try {

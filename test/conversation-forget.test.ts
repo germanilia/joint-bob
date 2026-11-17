@@ -106,7 +106,7 @@ test("what must be kept is in no delete statement, and a missing table is skippe
   const cleared = new Set(forgottenTables().map((entry) => entry.table));
   for (const kept of ["conversation_record_tombstones", "conversation_records", "model_usage_events", "usage_difficulty", "usage_inventory", "audit_events", "user_pins",
     "replication_outbox", "replication_inbox", "replication_deliveries", "browser_profiles", "browser_sessions", "browser_downloads", "quality_observations", "quality_feedback",
-    "tasks", "cron_tasks", "cron_runs", "quick_notes", "personal_assistants", "personal_assistant_topics", "assistant_team_conversations", "skill_scope_shares", "webhook_conversation_workspaces"]) {
+    "tasks", "webhooks", "cron_runs", "quick_notes", "personal_assistants", "personal_assistant_topics", "assistant_team_conversations", "skill_scope_shares", "webhook_conversation_workspaces"]) {
     assert.equal(cleared.has(kept), false, `${kept} must not be cleared`);
   }
   const empty = new DatabaseSync(":memory:");

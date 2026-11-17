@@ -93,7 +93,7 @@ export function securityHeaders(request: Request, response: Response, next: Next
   const filePreview = /^\/api\/projects\/[^/]+\/file$/.test(request.path) && request.query.browser !== "1" && request.query.download !== "1";
   const dashboardFrame = /^\/api\/dashboards\/[^/]+\/frame$/.test(request.path);
   const assistantAutomation = request.path === "/" && request.query.assistantAutomation === "1"
-    && (request.query.assistantAction === "cron" || request.query.assistantAction === "webhook");
+    && (request.query.assistantAction === "automation");
   const assistantSignIn = request.path === "/browser.html" && request.query.embedded === "1";
   response.setHeader("X-Frame-Options", assistantAutomation || assistantSignIn || filePreview || dashboardFrame ? "SAMEORIGIN" : "DENY");
   response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");

@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
-import type { Webhook } from "../src/webhooks.js";
+import type { Webhook } from "../src/automations.js";
 import { openNodeDatabase } from "../src/node-database.js";
 
 test("webhook transfer preserves settings, resources, memory and calls on the chosen machine", { timeout: 180_000 }, async () => {
@@ -19,10 +19,10 @@ test("webhook transfer preserves settings, resources, memory and calls on the ch
     for (const node of env.nodes) servers.push(await startDevNode(env, node));
     const auth = await signIn(env, a);
     await pairTwinNodes(env);
-    const created = await api<{ webhook: Webhook; secret: string }>(a, auth, "POST", "/webhooks", { name: "Move me", target: { kind: "project", projectId: a.projects[0].id }, context: "Keep these instructions", senders: { fields: ["sender"], allowed: [] } });
+    const created = await api<{ automation: Webhook; secret: string }>(a, auth, "POST", "/automations", { name: "Move me", target: { kind: "project", projectId: a.projects[0].id }, context: "Keep these instructions", senders: { fields: ["sender"], allowed: [] } });
     assert.equal(created.status, 201);
-    const id = created.body.webhook.id;
-    const url = `/webhooks/${id}`;
+    const id = created.body.automation.id;
+    const url = `/automations/${id}`;
     assert.equal((await api(a, auth, "POST", `${url}/transfer`, { nodeId: randomUUID() })).status, 403);
     const database = openNodeDatabase(path.join(a.dataDir, "node.db"));
     const runId = randomUUID();
@@ -41,14 +41,14 @@ test("webhook transfer preserves settings, resources, memory and calls on the ch
     assert.equal((await api(a, auth, "PUT", `${url}/memory`, { content: "Remember this", expectedRevision: memory.body.revision })).status, 200);
     assert.equal((await fetch(`${a.url}/hooks/${created.body.secret}`, { method: "POST", headers: { "content-type": "application/json" }, body: '{}' })).status, 202);
     assert.equal((await api(a, auth, "POST", `${url}/transfer`, { nodeId: a.nodeId })).status, 400);
-    const moved = await api<{ webhook: Webhook; secret: string; bases: Array<{ base: string }> }>(a, auth, "POST", `${url}/transfer`, { nodeId: b.nodeId });
+    const moved = await api<{ automation: Webhook; secret: string; bases: Array<{ base: string }> }>(a, auth, "POST", `${url}/transfer`, { nodeId: b.nodeId });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
-    assert.equal(moved.body.webhook.id, id);
-    assert.equal(moved.body.webhook.context, "Keep these instructions");
+    assert.equal(moved.body.automation.id, id);
+    assert.equal(moved.body.automation.context, "Keep these instructions");
     assert.ok(moved.body.bases.some(base => base.base === `${b.url}/hooks`));
     assert.equal((await fetch(`${a.url}/hooks/${created.body.secret}`, { method: "POST" })).status, 404);
-    const local = await api<{ webhooks: Webhook[] }>(a, auth, "GET", "/webhooks");
-    assert.equal(local.body.webhooks.length, 0);
+    const local = await api<{ automations: Webhook[] }>(a, auth, "GET", "/automations");
+    assert.equal(local.body.automations.length, 0);
     const suffix = `?nodeId=${b.nodeId}`;
     const resources = await api<{ resources: Array<{ id: string }> }>(a, auth, "GET", `${url}/resources${suffix}`);
     assert.equal(resources.body.resources.length, 1);
@@ -56,15 +56,15 @@ test("webhook transfer preserves settings, resources, memory and calls on the ch
     assert.equal(Buffer.from(file.body.data, "base64").toString(), "keep me");
     assert.equal((await api<{ content: string }>(a, auth, "GET", `${url}/memory${suffix}`)).body.content, "Remember this");
     assert.equal((await api<{ skills: unknown[] }>(a, auth, "GET", `${url}/skills${suffix}`)).body.skills.length, 1);
-    assert.equal((await api<{ deliveries: unknown[] }>(a, auth, "GET", `${url}/deliveries${suffix}`)).body.deliveries.length, 1);
+    assert.equal((await api<{ calls: unknown[] }>(a, auth, "GET", `${url}/history${suffix}`)).body.calls.length, 1);
     const back = await api(a, auth, "POST", `${url}/transfer${suffix}`, { nodeId: a.nodeId });
     assert.equal(back.status, 200, JSON.stringify(back.body));
     await stopDevNode(servers[1]);
     const failed = await api(a, auth, "POST", `${url}/transfer`, { nodeId: b.nodeId });
     assert.equal(failed.status, 503, JSON.stringify(failed.body));
-    const paused = await api<{ webhooks: Webhook[] }>(a, auth, "GET", "/webhooks");
-    assert.equal(paused.body.webhooks[0].id, id, "failed transfer retains the source");
-    assert.equal(paused.body.webhooks[0].enabled, false, "uncertain transfer stays paused");
+    const paused = await api<{ automations: Webhook[] }>(a, auth, "GET", "/automations");
+    assert.equal(paused.body.automations[0].id, id, "failed transfer retains the source");
+    assert.equal(paused.body.automations[0].enabled, false, "uncertain transfer stays paused");
   } finally {
     await Promise.all(servers.map(stopDevNode));
     await rm(root, { recursive: true, force: true });

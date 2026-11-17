@@ -270,7 +270,7 @@ async function walkMain() {
 }
 
 async function walkDialogs() {
-  for (const id of ["focus-tool-chat-open-terminal-button", "focus-tool-chat-open-browser-button", "focus-tool-chat-rename-button", "focus-tool-chat-share-button", "focus-tool-chat-cron-button", "focus-tool-chat-more-dashboard-button", "focus-tool-chat-session-menu-button", "focus-files", "focus-git", "focus-activity", "focus-tasks", "focus-add-secret", "focus-usage-open", "focus-new-note"]) {
+  for (const id of ["focus-tool-chat-open-terminal-button", "focus-tool-chat-open-browser-button", "focus-tool-chat-rename-button", "focus-tool-chat-share-button", "focus-tool-chat-automations-button", "focus-tool-chat-more-dashboard-button", "focus-tool-chat-session-menu-button", "focus-files", "focus-git", "focus-activity", "focus-tasks", "focus-add-secret", "focus-usage-open", "focus-new-note"]) {
     await step(`dialog-${id.replace("focus-tool-chat-", "")}`, async () => {
       if (!(await page.locator("#focusControls").isVisible())) { await tap("focus-controls-button"); await page.locator("#focusControls").waitFor(); }
       if (id.startsWith("focus-tool-chat") && !(await page.getByTestId(id).isVisible())) { await tap("focus-tools"); await settle(300); }

@@ -3,6 +3,7 @@ import test from "node:test";
 import type { Page } from "playwright-core";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 import { waitInPage } from "./wait-in-page.js";
+import { editorReady, editorTab } from "./automation-editor-driver.js";
 
 async function signIn(page: Page, url: string, username: string, password: string) {
   await page.goto(url);
@@ -36,6 +37,17 @@ async function leaveSettings(page: Page) {
 
 async function waitForHarnesses(page: Page) {
   await waitInPage(page, async () => (await import("/app/state.js")).state.harnesses.some((harness) => harness.id === "kiro"));
+}
+
+/** A new automation for the open project, on its Run tab, where the harness choices are. */
+async function openNewAutomationRunTab(page: Page) {
+  await page.evaluate(async () => {
+    const { state } = await import("/app/state.js");
+    await (await import("/app/control-automations.js")).openNewAutomation({ projectId: state.activeProjectId });
+  });
+  await editorReady(page);
+  await editorTab(page, "run");
+  await page.getByTestId("automation-harness").waitFor({ state: "visible" });
 }
 
 test("slow harness metadata does not hide projects", { timeout: 120_000 }, async (t) => {
@@ -362,13 +374,9 @@ test("harness settings and model picker follow runtime metadata", { timeout: 120
   await page.locator("#modelDialog").evaluate((dialog: HTMLDialogElement) => dialog.close());
 
   await page.locator("#projectList .project-card").filter({ has: page.getByText("Internal Assistant", { exact: true }) }).click();
-  await page.evaluate(async () => {
-    const { state } = await import("/app/state.js");
-    await (await import("/app/cron.js")).openScheduledTasks(state.activeProjectId);
-  });
-  await page.getByTestId("cron-new").click();
-  assert.deepEqual(await page.getByTestId("cron-engine").locator("option").allTextContents(), ["Pi", "Claude", "Kiro"]);
-  await page.locator("#cronDialog").evaluate((dialog: HTMLDialogElement) => dialog.close());
+  await openNewAutomationRunTab(page);
+  assert.deepEqual((await page.getByTestId("automation-harness").locator("option").allTextContents()).filter((label) => label !== "Machine default"), ["Pi", "Claude", "Kiro"]);
+  await page.getByTestId("automation-cancel").click();
 
   await page.evaluate(async () => {
     const { state } = await import("/app/state.js");
@@ -480,13 +488,9 @@ test("listing-only harness metadata does not offer execution or break settings",
   await page.locator("#projectList .project-card").filter({ has: page.getByText("Internal Assistant", { exact: true }) }).click();
   assert.equal(await page.locator("#chatHarnessSelect option[value=archive]").count(), 0);
 
-  await page.evaluate(async () => {
-    const { state } = await import("/app/state.js");
-    await (await import("/app/cron.js")).openScheduledTasks(state.activeProjectId);
-  });
-  await page.getByTestId("cron-new").click();
-  assert.equal(await page.getByTestId("cron-engine").locator("option[value=archive]").count(), 0);
-  await page.locator("#cronDialog").evaluate((dialog: HTMLDialogElement) => dialog.close());
+  await openNewAutomationRunTab(page);
+  assert.equal(await page.getByTestId("automation-harness").locator("option[value=archive]").count(), 0);
+  await page.getByTestId("automation-cancel").click();
 });
 
 test("node settings run the sync check by default and let the user pick its harness", { timeout: 120_000 }, async (t) => {

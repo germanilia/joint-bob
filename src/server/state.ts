@@ -25,7 +25,6 @@ export const flags = {
 export const port = Number(process.env.PORT ?? 8790);
 export const machineRoutes = new Set([
   "GET /cluster/projects/presence",
-  "POST /cluster/cron",
   "POST /cluster/quick-notes/prepare",
   "POST /cluster/background-tasks",
   "POST /cluster/resources/inventory",
