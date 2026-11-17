@@ -9,8 +9,7 @@ test("webhook header keeps identity left and actions right without overflow", { 
   await page.locator("#loginUsernameInput").fill(environment.username);
   await page.locator("#loginPasswordInput").fill(environment.password);
   await page.locator("#loginSubmitButton").click();
-  if (await page.getByTestId("bob-head-app-settings").isVisible()) await page.getByTestId("bob-head-app-settings").click();
-  else await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-webhooks").click();
   await page.waitForFunction(() => (document.querySelector("#webhooksProject") as HTMLSelectElement).options.length > 0 && !(document.querySelector("#webhooksNew") as HTMLButtonElement).disabled);
   await page.getByTestId("webhooks-new-button").click();

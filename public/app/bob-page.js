@@ -60,10 +60,9 @@ pause.append(element("span", "", "Bob is on"), element("i", "bob-switch-knob"));
 pause.addEventListener("click", () => elements.controlChatMonitor.click());
 
 // The top bar's icon buttons. Each keeps its text for narrow screens; on this page only the icon shows (bob-page.css).
+// Theme and Settings stay in the workspace footer, so the top bar does not repeat them.
 const HEAD_ICONS = {
   refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
-  theme: "M12 3a9 9 0 1 0 0 18z",
-  settings: "M4 7h9M17 7h3M4 17h3M11 17h9M13 4v6M9 14v6",
   exit: "M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h10",
 };
 function headIcon(name) {
@@ -76,21 +75,6 @@ function headIcon(name) {
   svg.append(path);
   return svg;
 }
-function headButton(className, testid, name, text) {
-  const node = button(className, testid);
-  node.title = text;
-  node.setAttribute("aria-label", text);
-  node.replaceChildren(headIcon(name), element("span", "bob-head-label", text));
-  return node;
-}
-
-// The workspace footer (theme, global Settings) is hidden on this page, so the top bar carries both and clicks the footer's buttons.
-const themeButton = headButton("ghost compact bob-head-theme", "bob-head-theme", "theme", "Theme");
-themeButton.title = "Theme and text size";
-themeButton.addEventListener("click", () => elements.workspacePersonButton.click());
-const appSettingsButton = headButton("ghost compact bob-head-app-settings", "bob-head-app-settings", "settings", "Settings");
-appSettingsButton.title = "Joint Bob settings";
-appSettingsButton.addEventListener("click", () => elements.settingsButton.click());
 elements.controlCenterRefresh.prepend(headIcon("refresh"));
 elements.controlCenterRefresh.title = "Refresh";
 elements.controlCenterRefresh.setAttribute("aria-label", "Refresh");
@@ -108,7 +92,6 @@ brand.append(avatar, version);
 header.prepend(brand);
 api("/api/health").then(({ version: release }) => { version.textContent = `v${release}`; });
 heading.after(tag, watching, pause);
-elements.controlCenterCloseButton.before(themeButton, appSettingsButton);
 
 /* ---------- folding: Bob's chat folds into the "Ask Bob" button ---------- */
 
