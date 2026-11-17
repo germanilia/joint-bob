@@ -10,6 +10,7 @@
 - Fixed changing a scheduled automation from Bob's chat turning a paused one back on or dropping its instructions.
 - Expired Codex sign-ins now move the turn to another account instead of failing it.
 - Removed the duplicate theme and Settings buttons from Bob's top bar.
+- Antigravity turns in a cluster pool fall back to this machine's own Antigravity subscription, and only the thinking levels Antigravity accepts are offered.
 
 ## 2.322.1 — 2026-11-17
 
