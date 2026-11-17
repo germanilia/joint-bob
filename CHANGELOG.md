@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.321.4 — 2026-11-17
+
+- Sharpened the automatic model choice: a report that something does not work is no longer taken for a plain question, and making a mock, listing layout options or building a feature whose approach is chosen is no longer taken for planning, which sends work to the costliest model.
+
 ## 2.321.3 — 2026-11-17
 
 - Brought back the Inbox entry in the left column. Choosing it from any of Bob's pages (Automations, Dashboards, Assistants and the rest) leaves that page and returns to the Inbox.

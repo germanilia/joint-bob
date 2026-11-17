@@ -96,7 +96,7 @@
   "categories": [
     {
       "level": "1",
-      "description": "General questions about the app, the project, or how something works, answered by reading and explaining without changing code.",
+      "description": "General questions about the app, the project, or how something works, answered by reading and explaining without changing code. A report that something does not work, or a question that needs an investigation across several files, is level 8, not this level.",
       "minimumScore": 70
     },
     {
@@ -121,7 +121,7 @@
     },
     {
       "level": "10",
-      "description": "Planning: architecture, design, breaking down ambiguous multi-system work, or high-risk changes that need deep analysis before implementation.",
+      "description": "Planning: architecture, system design, breaking down ambiguous multi-system work, or high-risk changes that need deep analysis before implementation. Making a UI mock or layout options (level 4), implementing a feature whose approach is already chosen (level 6), and answering a status question (level 1) are not planning.",
       "minimumScore": 90
     }
   ],
