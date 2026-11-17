@@ -9,8 +9,8 @@
 body:not(.focus-ui) .bob-settings-head { display: none; }
 .control-tab .bob-tab-icon { display: none; }
 
-/* Refresh, theme, Joint Bob settings and Exit are icon buttons in the top bar at every width; the text is their tooltip and label. */
-#controlCenterPanel > .panel-bar > button:is(.bob-head-theme, .bob-head-app-settings, #controlCenterRefresh, #controlCenterCloseButton) {
+/* Refresh and Exit are icon buttons in the top bar at every width; the text is their tooltip and label. */
+#controlCenterPanel > .panel-bar > button:is(#controlCenterRefresh, #controlCenterCloseButton) {
   display: inline-flex; flex: none; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0;
 }
 #controlCenterPanel > .panel-bar .bob-head-label, #controlCenterPanel > .panel-bar kbd { display: none; }
