@@ -676,7 +676,7 @@ test("the left column never clips: full above 1385 px, a real icon rail below, e
   await frames();
 });
 
-test("the left columns hold their width at every window width and in every theme: no pager, chips that wrap, workspace bars, tinted project rows", async () => {
+test("the left columns hold their width at every window width and in every theme: no pager, chips that wrap, workspace labels, Inbox-like project rows", async () => {
   // Five workspaces with projects (some coloured, some pinned) and sixty-four conversations in the open project.
   const session = await signIn(environment, node);
   const colours = ["green", "blue", "violet", "magenta", "amber", "red", "teal", "orange"];
@@ -738,8 +738,8 @@ test("the left columns hold their width at every window width and in every theme
   await page.getByTestId("conversation-filters-toggle").click();
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  // Each workspace is a section: a tinted bar of its own, a bold 13.5 px name, its colour dot, a count pill and a chevron
-  // with a hit area of 20 px, set off from the one above by space and a divider.
+  // Each workspace is headed like the Inbox's groups: a quiet 12.5 px label with its colour dot, its count in plain text
+  // and a chevron with a hit area of 20 px, set off from the one above by a divider.
   const bars = await page.locator("#projectList .project-group").evaluateAll((groups) => groups.map((group, index) => {
     const bar = group.querySelector<HTMLElement>(":scope > summary")!, label = bar.querySelector<HTMLElement>("span")!, count = bar.querySelector<HTMLElement>(".project-group-count")!;
     const style = getComputedStyle(bar), chevron = getComputedStyle(bar, "::before"), dot = getComputedStyle(label, "::before"), column = getComputedStyle(document.querySelector("#projectsPanel")!);
@@ -750,12 +750,11 @@ test("the left columns hold their width at every window width and in every theme
     };
   }));
   for (const bar of bars) {
-    assert.notEqual(bar.fill, "rgba(0, 0, 0, 0)", "the bar has a fill");
-    assert.notEqual(bar.fill, bar.page, "and it is not the page's colour");
-    assert.equal(bar.size, "13.5px");
-    assert.ok(bar.weight >= 700, `the name is bold (${bar.weight})`);
-    assert.ok(Math.abs(bar.width - bar.listWidth) <= 1, "the bar is as wide as the list");
-    assert.equal(bar.pill, true, "the count is a pill");
+    assert.notEqual(bar.fill, "rgba(0, 0, 0, 0)", "the label covers the rows scrolling under it");
+    assert.equal(bar.size, "12.5px");
+    assert.ok(bar.weight >= 600, `the name is semibold (${bar.weight})`);
+    assert.ok(Math.abs(bar.width - bar.listWidth) <= 1, "the label is as wide as the list");
+    assert.equal(bar.pill, false, "the count is plain text, as in the Inbox");
     assert.ok(bar.chevron[0] >= 20 && bar.chevron[1] >= 20, `the chevron has a 20 px hit area (${bar.chevron})`);
     assert.notEqual(bar.dot, "rgba(0, 0, 0, 0)", "the workspace's colour dot");
     if (bar.index > 0) assert.equal(bar.previous, "1px", "a divider sets one workspace off from the one above");
@@ -768,29 +767,29 @@ test("the left columns hold their width at every window width and in every theme
   await first.locator("> summary").click();
   assert.equal(await first.evaluate((group) => (group as HTMLDetailsElement).open), true);
 
-  // A project's colour tints its whole row (not only an edge); the open row and the pointer have states of their own.
+  // Rows are plain like the Inbox's; a project's colour is the dot before its name. The open row and the pointer have
+  // states of their own.
   const rows = await page.locator("#projectList .list-row").evaluateAll((items) => items.slice(0, 40).map((item) => {
-    const style = getComputedStyle(item), edge = getComputedStyle(item, "::before");
-    return { coloured: item.hasAttribute("data-color"), fill: style.backgroundColor, edge: edge.content !== "none" ? parseFloat(edge.width) : 0, active: item.classList.contains("active") };
+    const style = getComputedStyle(item), dot = getComputedStyle(item, "::before");
+    return { coloured: item.hasAttribute("data-color"), fill: style.backgroundColor, dot: dot.content !== "none" ? parseFloat(dot.width) : 0, dotColour: dot.backgroundColor, active: item.classList.contains("active") };
   }));
-  const plain = rows.filter((row) => !row.coloured && !row.active), tinted = rows.filter((row) => row.coloured && !row.active);
-  assert.ok(plain.length > 2 && tinted.length > 2);
-  assert.ok(plain.every((row) => row.fill === "rgba(0, 0, 0, 0)" && row.edge === 0), "uncoloured rows stay plain");
-  assert.ok(tinted.every((row) => row.fill !== "rgba(0, 0, 0, 0)" && row.edge >= 3), "coloured rows have a fill and a slim edge");
-  const coloured = page.locator("#projectList .list-row[data-color]:not(.active)").first();
-  const resting = await coloured.evaluate((item) => getComputedStyle(item).backgroundColor);
-  await coloured.hover();
-  const hovered = await coloured.evaluate((item) => getComputedStyle(item).backgroundColor);
-  assert.notEqual(hovered, resting, "the pointer deepens the tint");
+  const plain = rows.filter((row) => !row.coloured && !row.active), coloured = rows.filter((row) => row.coloured && !row.active);
+  assert.ok(plain.length > 2 && coloured.length > 2);
+  assert.ok([...plain, ...coloured].every((row) => row.fill === "rgba(0, 0, 0, 0)" && row.dot === 8), "every row is plain with a dot before its name");
+  assert.ok(coloured.every((row) => row.dotColour !== plain[0].dotColour), "a coloured project's dot is in its colour");
+  const colouredRow = page.locator("#projectList .list-row[data-color]:not(.active)").first();
+  const resting = await colouredRow.evaluate((item) => getComputedStyle(item).backgroundColor);
+  await colouredRow.hover();
+  const hovered = await colouredRow.evaluate((item) => getComputedStyle(item).backgroundColor);
+  assert.notEqual(hovered, resting, "the pointer lightens the row");
   await page.mouse.move(700, 450);
-  await coloured.locator(".project-card").click();
+  await colouredRow.locator(".project-card").click();
   await page.locator("#projectList .list-row[data-color].active").waitFor();
   await page.mouse.move(700, 450);
   await page.waitForTimeout(250);
   const selected = await page.locator("#projectList .list-row[data-color].active").evaluate((item) => ({ fill: getComputedStyle(item).backgroundColor, shadow: getComputedStyle(item).boxShadow }));
-  assert.notEqual(selected.fill, resting, "the open row is not the resting tint");
-  assert.notEqual(selected.fill, hovered, "nor the pointer's");
-  assert.notEqual(selected.shadow, "none", "it is outlined in its colour");
+  assert.notEqual(selected.fill, resting, "the open row is lifted off the column");
+  assert.notEqual(selected.fill, hovered, "and is not the pointer's state");
 
   // Contrast, measured, in every theme: every piece of text in the three columns reads at least 4.5:1.
   for (const place of ["projects", "inbox"]) {

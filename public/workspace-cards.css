@@ -35,8 +35,8 @@
   body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button[data-filter="active"]::before { content: "Running"; }
   body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button[data-filter="review"]::before { content: "Review"; }
   body.ws-desktop:not(.focus-ui) #conversationListPane .chat-filters button[data-filter="done"]::before { content: "Done"; }
-  body.ws-desktop:not(.focus-ui) .conversation-filters-toggle { display: inline-flex; width: auto; gap: 6px; padding: 0 11px; font: 600 13.5px/1 var(--sans); }
-  body.ws-desktop:not(.focus-ui) .conversation-filters-toggle::after { content: "Filter"; }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .conversation-filters-toggle { display: inline-flex; width: auto; gap: 6px; padding: 0 11px; font: 600 13.5px/1 var(--sans); }
+  body.ws-desktop:not(.focus-ui) #conversationListPane .conversation-filters-toggle::after { content: "Filter"; }
 
   /* ---------- the conversation ---------- */
   body.ws-desktop:not(.focus-ui) { --read: 16px; --read-leading: 1.65; }
