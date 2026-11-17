@@ -6,6 +6,7 @@ import { registerContextView, setControlContext, showControlView } from './contr
 import { renderTeamTelegram } from './control-team-telegram.js';
 import { createTeamWork } from './control-team-work.js';
 import { openConversation } from './control-center.js';
+import { confirmAction } from './shell.js';
 
 const panels = Object.fromEntries(['assistants', 'live', 'memory'].map(id => {
   const panel = makeNode('section', 'control-view team-control');
@@ -60,6 +61,12 @@ function input(parent, label, id, value, type = 'text') {
   if (type !== 'textarea') field.type = type;
   field.value = value ?? ''; wrapper.append(field); parent.append(wrapper); return field;
 }
+// Removes the team on whichever machine hosts it, with its project and conversations. The host refuses one still on Telegram or busy.
+const deleteButton = (teamId, name) => button('Delete team', 'team-delete', async () => {
+  if (!await confirmAction({ eyebrow: 'Shared team', title: `Delete the ${name} team?`, message: "Its members stay as your assistants; the team's conversations, memory and requests are removed.", confirmLabel: 'Delete team', destructive: true })) return;
+  await api(`/api/team-hub/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
+  select.replaceChildren(); await loadTeams(); select.value = ''; select.dispatchEvent(new Event('change'));
+});
 async function loadTeams() {
   if (select.options.length) return;
   // Built aside and put in at once: a failed load leaves the list empty, so the next opening tries again.
@@ -94,6 +101,7 @@ async function refresh(force = false) {
   decision.append(button('System AI settings', 'team-decision-settings', async () => (await import('./settings.js')).openSettings('system-ai')));
   panels.assistants.append(decision);
   panels.assistants.append(button('Team settings and Telegram', 'team-open-settings', async () => (await import('./settings.js')).openSettings('account')));
+  panels.assistants.append(deleteButton(team.id, hubTeams.get(team.id)?.clusterName ?? 'this'));
   const thresholds = makeNode('div', 'team-settings');
   const ask = input(thresholds, 'Ask (%)', 'team-ask', team.settings.askThreshold * 100, 'number');
   const act = input(thresholds, 'Act (%)', 'team-act', team.settings.actThreshold * 100, 'number');
@@ -290,6 +298,7 @@ select.addEventListener('change', () => {
     intro.append(makeNode('h2', '', `${remote.clusterName} team`), makeNode('p', '', `Hosted on ${remote.hostName}. Send it work and read its answers here; its members, Telegram and memory are managed on that machine.`),
       makeNode('ul', '', undefined));
     for (const member of remote.members) intro.lastChild.append(makeNode('li', '', `${member.coordinator ? 'coordinator' : member.role}${member.coordinator ? ` (${member.role})` : ''}${member.name ? ` — ${member.name}` : ''}${member.ready ? '' : ' · not ready on its machine'}${member.uses.length ? ` · uses ${member.uses.join(', ')}` : ''}`));
+    intro.append(deleteButton(remote.id, remote.clusterName));
     panels.assistants.append(intro);
     work = createTeamWork(remote.id, remote.members, { isCurrent: () => mine === generation, fail });
     panels.live.append(work.node);

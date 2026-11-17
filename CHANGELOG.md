@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.322.1 — 2026-11-17
+
+- **Delete team** now asks for confirmation in the app's own dialog.
+
+## 2.322.0 — 2026-11-17
+
+- Added **Delete team** to the shared team view, so a spare team can be removed from any machine of its cluster, with its project, workspace and conversations. A team still connected to Telegram or with work running is refused.
+
+## 2.321.5 — 2026-11-17
+
+- Fixed the Projects view on the desktop: the **Filter** label no longer overlaps the project search row, conversation rows and the search boxes' focus rings are no longer cut at the edges, and the project list is styled like the Inbox.
+- Brought back the project dropdown in **New › Conversation…**, so a conversation can be started in any project from the dialog.
+
 ## 2.321.4 — 2026-11-17
 
 - Sharpened the automatic model choice: a report that something does not work is no longer taken for a plain question, and making a mock, listing layout options or building a feature whose approach is chosen is no longer taken for planning, which sends work to the costliest model.

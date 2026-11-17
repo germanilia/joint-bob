@@ -512,6 +512,14 @@ test("every project and conversation row has its ⋯ in view without hover, apar
   }
 });
 
+test("New › Conversation… offers the project picker", async () => {
+  await page.getByTestId("workspace-new-button").click();
+  await page.getByTestId("workspace-new-conversation").click();
+  await page.getByTestId("new-session-name-dialog").waitFor();
+  assert.equal(await visible("new-session-project-select"), true, "Conversation… (any project) offers the project picker");
+  await page.getByTestId("new-session-name-cancel-button").click();
+});
+
 test("New, ⋯ and the places reach every action the old panels had", async () => {
   await page.getByTestId("workspace-new-button").click();
   for (const id of ["workspace-new-conversation", "workspace-new-note", "workspace-new-project", "workspace-new-pi", "workspace-new-claude"]) assert.equal(await visible(id), true, `${id} is in New`);

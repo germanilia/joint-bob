@@ -163,6 +163,13 @@ function describeMemberProxy(): void {
     assert.ok(relay.seen.length > before, `Pi's request reached the relay (${reply.stopReason})`);
     const forwarded = JSON.parse(relay.seen.at(-1)!.body.toString("utf8")) as { request: { path: string } };
     assert.match(forwarded.request.path, /^\/v1\/messages/);
+
+    const beforeCodex = relay.seen.length;
+    const codexReply = await runtime.complete(runtime.getModels("openai-codex")[0],
+      { messages: [{ role: "user", content: "hi", timestamp: Date.now() }] }, { transport: "sse" });
+    assert.ok(relay.seen.length > beforeCodex, `Codex's request reached the relay (${codexReply.stopReason}: ${codexReply.errorMessage})`);
+    const codexForwarded = JSON.parse(relay.seen.at(-1)!.body.toString("utf8")) as { request: { path: string } };
+    assert.equal(codexForwarded.request.path, "/backend-api/codex/responses");
   });
 }
 

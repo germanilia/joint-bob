@@ -87,6 +87,19 @@ test("credential failures can advance, while exhausted attempts leave the final 
   assert.equal(restores, 2, "restore only between attempts, not after the final failure");
 });
 
+test("Codex's expired-token response advances to another pool member", async () => {
+  const attempted: string[] = [];
+  let restores = 0;
+  const result = await runPoolAttempts(candidates, "openai-codex", async (candidate) => {
+    attempted.push(candidate.id);
+    if (candidate.provider === "openai-codex") throw new Error("Your authentication token has expired. Please try refreshing it.");
+    return candidate.id;
+  }, async () => async () => { restores += 1; });
+  assert.equal(result, "a");
+  assert.deepEqual(attempted, ["b", "a"]);
+  assert.equal(restores, 1);
+});
+
 test("restoring a failed attempt keeps exactly one user message and the successful reply", async () => {
   const transcript = ["prior turn"];
   const checkpoint = [...transcript];
@@ -150,6 +163,8 @@ test("provider error classification recognizes quota and auth responses only bef
   assert.equal(classifyPoolAttemptFailure(Object.assign(new Error("429 rate limit exceeded"), { status: 429 }), false)?.reason, "quota");
   assert.equal(classifyPoolAttemptFailure(Object.assign(new Error("unauthorized"), { status: 401 }), false)?.reason, "auth");
   assert.equal(classifyPoolAttemptFailure(new Error("model not found"), false), undefined);
+  assert.equal(classifyPoolAttemptFailure(new Error("Your authentication token has expired. Please try refreshing it."), true)?.reason, "auth");
+  assert.equal(classifyPoolAttemptFailure(new Error("A tool's cache token has expired"), false), undefined);
   assert.equal(classifyPoolAttemptFailure(new Error("429 rate limit exceeded"), true)?.started, true);
   // Claude's own wording, with and without the code and status the stream carries.
   assert.equal(classifyPoolAttemptFailure(new Error("You've hit your 5-hour limit · resets 3:10am (Asia/Jerusalem)"), true)?.reason, "quota");

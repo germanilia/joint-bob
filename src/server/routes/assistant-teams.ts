@@ -1,9 +1,14 @@
 import type { Request, Response, NextFunction } from 'express';
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
+import { getProject, deleteWorkspace } from '../../store.js';
+import { teamMemoryRoot } from '../../assistant-teams/memory.js';
+import { deleteProjectAsActor } from './projects.js';
 import type { AuthSession } from '../../auth.js';
 import { app } from '../state.js';
-import { requireClusterMember, requirePeerClusterMember, requireTeamMember, teamMemberFromCluster, teamMembershipRevision, type ClusterMember } from '../../assistant-teams/access.js';
-import { createTeam, getTeam, getTeamAssignment, listTeamAgents, listTeams, prepareTeamProject, resolveTeamExecutor, saveTeamSettings, announceTeamChange, onTeamChange, teamDatabase, TeamError } from '../../assistant-teams/store.js';
+import { requireClusterMember, requirePeerClusterMember, requireTeamMember, teamMemberFromCluster, teamMembershipRevision, type ClusterMember, type TeamMember } from '../../assistant-teams/access.js';
+import { createTeam, deleteTeam, getTeam, getTeamAssignment, listTeamAgents, listTeams, prepareTeamProject, resolveTeamExecutor, saveTeamSettings, announceTeamChange, onTeamChange, teamDatabase, TeamError } from '../../assistant-teams/store.js';
 import { runBrowserTeamAssignment, confirmTeamInquiry, wakeTeamWork, resolveTeamApproval, teamWorkStatus, routeTeamAssignment, listTeamRequests, startTeamRequest, cancelTeamRequest, retryTeamRequest } from '../../assistant-teams/assignments.js';
 import { teamAgentReadiness } from '../../assistant-teams/runtime.js';
 import { assistantLoginProfileIds, getPersonalAssistantById, listPersonalAssistants, personalAssistantDatabase, type PersonalAssistant } from '../../personal-assistants.js';
@@ -29,6 +34,7 @@ const operations = {
   assign: z.object({ teamId: id, role: z.string().regex(TEAM_ROLE_PATTERN).nullable(), message: z.string().trim().min(1).max(20000), requestId: z.string().uuid() }).strict(),
   cancel: z.object({ teamId: id, ref: z.string().max(64).nullable() }).strict(),
   retry: z.object({ teamId: id, ref: z.string().max(64).nullable() }).strict(),
+  delete: z.object({ teamId: id }).strict(),
 };
 export type Operation = keyof typeof operations;
 function route(handler: (request: Request, response: Response) => Promise<unknown>) {
@@ -58,6 +64,7 @@ export async function operate(member: ClusterMember, operation: Operation, body:
   if (operation === 'get') {
     return { team: await getTeam(target.teamId), snapshotRevision };
   }
+  if (operation === 'delete') { await removeTeam(actor); return { deleted: target.teamId, snapshotRevision }; }
   if (operation === 'roster') return { ...await teamRoster(target.teamId), snapshotRevision };
   if (operation === 'requests') return { requests: await listTeamRequests(actor, operations.requests.parse(input).limit), snapshotRevision };
   if (operation === 'assign') {
@@ -73,6 +80,18 @@ export async function operate(member: ClusterMember, operation: Operation, body:
   }
   const update = operations.settings.parse(input);
   return { team: await saveTeamSettings(actor, update.settings, update.expectedRevision), snapshotRevision };
+}
+/** Deletes the team, then the project and workspace made for it, and its folders. Its conversations go with the project. */
+async function removeTeam(actor: TeamMember): Promise<void> {
+  const team = await deleteTeam(actor);
+  await asNode(async () => {
+    const project = await getProject(team.projectId);
+    if (!project) return;
+    await deleteProjectAsActor(project.id);
+    await deleteWorkspace(project.type!); // a team project is always made in its own workspace
+    await rm(project.path, { recursive: true, force: true });
+  });
+  await rm(path.dirname(teamMemoryRoot(team.id)), { recursive: true, force: true });
 }
 function session(response: Response): AuthSession {
   const value = response.locals.authSession as AuthSession | undefined;
@@ -90,6 +109,10 @@ app.post('/api/assistant-teams', route(async (request, response) => {
 app.get('/api/assistant-teams/:id', route(async (request, response) => {
   const teamId = id.parse(request.params.id);
   return operate(await requireTeamMember(session(response), teamId), 'get', { teamId });
+}));
+app.delete('/api/assistant-teams/:id', route(async (_request, response) => {
+  const teamId = id.parse(_request.params.id);
+  return operate(await requireTeamMember(session(response), teamId), 'delete', { teamId });
 }));
 app.put('/api/assistant-teams/:id/settings', route(async (request, response) => {
   const input = z.object({ settings, expectedRevision: revision }).strict().parse(request.body);

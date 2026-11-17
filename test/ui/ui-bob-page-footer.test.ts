@@ -1,31 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { signIn } from "../dev-nodes.js";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 
-test("Bob's page puts the theme and Settings buttons in its top bar, next to Exit", { timeout: 120_000 }, async (t) => {
+test("Bob's page keeps theme and Settings in the workspace footer, not repeated in the top bar", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
+  const login = await signIn(environment, node);
+  await page.context().addCookies(login.cookie.split("; ").map(cookie => ({ name: cookie.slice(0, cookie.indexOf("=")), value: cookie.slice(cookie.indexOf("=") + 1), url: node.url })));
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(node.url);
-  await page.locator("#loginDialog[open]").waitFor();
-  await page.locator("#loginUsernameInput").fill(environment.username);
-  await page.locator("#loginPasswordInput").fill(environment.password);
-  await page.locator("#loginSubmitButton").click();
   await page.waitForFunction(() => !document.body.classList.contains("booting"));
+  await page.getByTestId("projects-open-control-center-button").click();
   await page.locator("body.bob-desk.view-control").waitFor();
 
-  const theme = page.locator(".bob-head-theme");
-  const settings = page.locator(".bob-head-app-settings");
+  const theme = page.getByTestId("workspace-person-button");
+  const settings = page.getByTestId("settings-open-button");
   const exit = page.getByTestId("control-center-close-button");
+  const refresh = page.getByTestId("control-center-refresh");
   await theme.waitFor({ state: "visible" });
   await settings.waitFor({ state: "visible" });
-  const bar = (await page.locator("#controlCenterPanel > .panel-bar").boundingBox())!;
-  const exitBox = (await exit.boundingBox())!;
-  for (const button of [theme, settings]) {
-    const box = (await button.boundingBox())!;
-    assert.ok(box.y >= bar.y && box.y + box.height <= bar.y + bar.height, "the button is in the top bar");
-    assert.ok(box.x + box.width <= exitBox.x, "the button sits to the left of Exit");
-  }
-  assert.equal(await page.locator("#workspaceFoot").isVisible(), false, "the footer stays hidden on this page");
-  for (const button of [theme, settings, exit, page.getByTestId("control-center-refresh")]) {
+  assert.equal(await page.locator("#controlCenterPanel > .panel-bar .bob-head-theme, #controlCenterPanel > .panel-bar .bob-head-app-settings").count(), 0, "the top bar has no theme or Settings button");
+  for (const button of [exit, refresh]) {
     assert.ok((await button.boundingBox())!.width <= 40, "the top-bar button is an icon, not a text button");
   }
   // The team context and Bob's settings are in Bob's chat header, not in the top bar.

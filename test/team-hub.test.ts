@@ -87,3 +87,36 @@ test('a running team request is stopped from another machine, and its late answe
     assert.equal(after.assignments[0].result, null);
   } finally { release(); await stop(); }
 });
+
+// A cluster keeps one team: a member removes a spare one from their own machine. The host refuses while work is running.
+test('a team is deleted from another machine with its project, and not while its work runs', { timeout: 180_000 }, async () => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const { host, member, hostAuth, memberAuth, team, requests, stop } = await startTeamHubFixture({ hold: () => held });
+  try {
+    const sent = await api<any>(member, memberAuth, 'POST', `/team-hub/${team.id}/assign`, { role: 'qa', message: 'Busy work' });
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    for (let i = 0; i < 300 && requests.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 100));
+    const busy = await api<any>(member, memberAuth, 'DELETE', `/team-hub/${team.id}`);
+    assert.equal(busy.status, 409, JSON.stringify(busy.body));
+    assert.match(busy.body.error, /work in progress/);
+    release();
+    for (let i = 0; i < 300; i++) {
+      const state = (await api<any>(member, memberAuth, 'GET', `/team-hub/${team.id}/requests`)).body.requests[0]?.state;
+      if (state === 'done' || state === 'stopped') break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    const deleted = await api<any>(member, memberAuth, 'DELETE', `/team-hub/${team.id}`);
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(deleted.body.deleted, team.id);
+    // Gone on both machines' pickers, and the host no longer keeps its project or the workspace made for it.
+    assert.deepEqual((await api<any>(member, memberAuth, 'GET', '/team-hub?fresh=1')).body.teams, []);
+    assert.deepEqual((await api<any>(host, hostAuth, 'GET', '/team-hub?fresh=1')).body.teams, []);
+    assert.equal((await api<any>(host, hostAuth, 'GET', `/assistant-teams/${team.id}`)).status, 404);
+    const hostProjects = (await api<any>(host, hostAuth, 'GET', '/projects?syncStatus=false')).body.projects;
+    assert.equal(hostProjects.some((entry: any) => entry.id === team.projectId), false, 'the team project is removed on the host');
+    const workspaces = (await api<any>(host, hostAuth, 'GET', '/workspaces')).body;
+    assert.doesNotMatch(JSON.stringify(workspaces), /"Team [0-9a-f-]+"/, 'the team workspace is removed on the host');
+  } finally { release(); await stop(); }
+});

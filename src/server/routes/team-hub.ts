@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import type { AuthSession } from '../../auth.js';
 import { TeamError } from '../../assistant-teams/store.js';
-import { hubAssign, hubCancel, hubOverview, hubRequests, hubRetry } from '../team-hub.js';
+import { hubAssign, hubCancel, hubDelete, hubOverview, hubRequests, hubRetry } from '../team-hub.js';
 import { app } from '../state.js';
 
 // The app's view of the teams of the person's clusters, wherever they run: see ../team-hub.ts.
@@ -34,3 +34,4 @@ app.post('/api/team-hub/:teamId/assign', route(async (request, session) => {
 }));
 app.post('/api/team-hub/:teamId/cancel', route(async (request, session) => hubCancel(session, teamId.parse(request.params.teamId), ref.parse(request.body).ref)));
 app.post('/api/team-hub/:teamId/retry', route(async (request, session) => hubRetry(session, teamId.parse(request.params.teamId), ref.parse(request.body).ref)));
+app.delete('/api/team-hub/:teamId', route(async (request, session) => hubDelete(session, teamId.parse(request.params.teamId))));
