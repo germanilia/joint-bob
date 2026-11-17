@@ -67,7 +67,7 @@ export function classifyPoolAttemptFailure(error: unknown, started: boolean): Po
   // Claude reports a subscription limit as "You've hit your 5-hour limit" with the code rate_limit.
   const reason: PoolFailureReason | undefined = status === 429 || /rate[_ -]?limit|quota[_ -]?(?:exceeded|exhausted)|usage limit|hit your [\w -]*limit|too many requests|insufficient_quota|billing_error/.test(message)
     ? "quota"
-    : status === 401 || status === 403 || /invalid_grant|authentication[_ -]?(?:error|failed)|unauthorized|token (?:expired|revoked)|sign[- ]in required|sign in to .* again|sign in on this node/.test(message)
+    : status === 401 || status === 403 || /invalid_grant|authentication[_ -]?(?:error|failed)|unauthorized|token (?:expired|revoked)|authentication token has expired|sign[- ]in required|sign in to .* again|sign in on this node/.test(message)
       ? "auth"
       : undefined;
   return reason ? new PoolAttemptFailure(reason, started, error.message, { cause: error }) : undefined;
