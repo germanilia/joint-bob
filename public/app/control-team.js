@@ -6,6 +6,7 @@ import { registerContextView, setControlContext, showControlView } from './contr
 import { renderTeamTelegram } from './control-team-telegram.js';
 import { createTeamWork } from './control-team-work.js';
 import { openConversation } from './control-center.js';
+import { confirmAction } from './shell.js';
 
 const panels = Object.fromEntries(['assistants', 'live', 'memory'].map(id => {
   const panel = makeNode('section', 'control-view team-control');
@@ -62,7 +63,7 @@ function input(parent, label, id, value, type = 'text') {
 }
 // Removes the team on whichever machine hosts it, with its project and conversations. The host refuses one still on Telegram or busy.
 const deleteButton = (teamId, name) => button('Delete team', 'team-delete', async () => {
-  if (!confirm(`Delete the ${name} team? Its members stay as your assistants; the team's conversations, memory and requests are removed.`)) return;
+  if (!await confirmAction({ eyebrow: 'Shared team', title: `Delete the ${name} team?`, message: "Its members stay as your assistants; the team's conversations, memory and requests are removed.", confirmLabel: 'Delete team', destructive: true })) return;
   await api(`/api/team-hub/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
   select.replaceChildren(); await loadTeams(); select.value = ''; select.dispatchEvent(new Event('change'));
 });

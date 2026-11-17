@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.322.1 — 2026-11-17
+
+- **Delete team** now asks for confirmation in the app's own dialog.
+
 ## 2.322.0 — 2026-11-17
 
 - Added **Delete team** to the shared team view, so a spare team can be removed from any machine of its cluster, with its project, workspace and conversations. A team still connected to Telegram or with work running is refused.
