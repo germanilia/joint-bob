@@ -1,7 +1,7 @@
 // Inbound webhooks (src/webhooks.ts). `POST /hooks/<secret>` is the public entry: it needs no
 // sign-in, because the secret in the URL is the credential. Relayed calls arrive on a channel
-// marked webhook-only, which can reach nothing else on this machine. Settings → Webhooks
-// manages them through `/api/webhooks`.
+// marked webhook-only, which can reach nothing else on this machine. The Automations tab
+// manages them through `/api/automations` (routes/automations.ts).
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { lstat, readFile } from "node:fs/promises";
 import type { Duplex } from "node:stream";
