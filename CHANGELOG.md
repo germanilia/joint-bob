@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.321.5 — 2026-11-17
 
+- Fixed the Projects view on the desktop: the **Filter** label no longer overlaps the project search row, conversation rows and the search boxes' focus rings are no longer cut at the edges, and the project list is styled like the Inbox.
 - Brought back the project dropdown in **New › Conversation…**, so a conversation can be started in any project from the dialog.
 
 ## 2.321.4 — 2026-11-17
