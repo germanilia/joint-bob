@@ -306,6 +306,12 @@ export function profileProviderForRuntime(provider: string): ProfileProvider | u
   if (provider === "antigravity") return "antigravity";
   return provider === "openai-codex" ? provider : "pi";
 }
+function poolMemberCompatible(engine: HarnessId, provider: ProfileProvider, ownedHere = true): boolean {
+  if (engine === "claude") return provider === "claude";
+  if (engine === "antigravity") return provider === "antigravity" && ownedHere;
+  if (engine === "pi") return provider === "pi" || provider === "claude" || provider === "openai-codex";
+  return false;
+}
 interface SubscriptionPoolRequest {
   engine: HarnessId; provider: string; projectId: string; workspaceId: string; conversationId: string;
   /** Whose subscription choice applies; none means only a cluster pool can. */
@@ -320,7 +326,7 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
   // A cluster assistant's turn runs only on its cluster's subscriptions (provider-profiles/cluster-assistant-subscriptions.ts).
   const assistantCluster = clusterOfAssistantsProject(request.projectId);
   if (assistantCluster && (engine === "kiro" || engine === "antigravity")) throw new Error(clusterSubscriptionMissing(await clusterV2Database(), assistantCluster));
-  if (engine === "kiro" || engine === "antigravity") return undefined;
+  if (engine === "kiro") return undefined;
   const preferred = profileProviderForRuntime(request.provider);
   const local = await getClusterNode(), db = await clusterV2Database();
   const assignments = resolveClusterSubscriptionPools(db, local.id, request.projectId);
@@ -329,15 +335,21 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
     if (signatures.size > 1) throw new Error("This project has conflicting cluster subscription pools");
     const assignment = assignments[0];
     if (!assignment.manifest) throw new Error("The cluster pool manifest is unavailable");
-    const host = getMembershipSnapshot(db, assignment.clusterId).body.members.find(member => member.nodeId === assignment.poolOwnerNodeId);
-    if (!host) throw new Error(`Missing verified member descriptor for ${assignment.poolOwnerNodeId}`);
-    return { id: assignment.poolId, name: assignment.manifest.name, nodeName: host.name, clusterName: getSharingCluster(db, assignment.clusterId).name, harnessId: engine, fallbackModels: assignment.manifest.fallbackModels, sameProviderOnly: engine === "claude",
-      candidates: assignment.manifest.members.map((member) => ({ profileId: member.profileId, provider: member.provider, label: member.label,
-        poolId: assignment.poolId, clusterId: assignment.clusterId, poolOwnerNodeId: assignment.poolOwnerNodeId })) };
+    const members = assignment.manifest.members.filter((member) => poolMemberCompatible(engine, member.provider, assignment.poolOwnerNodeId === local.id));
+    if (members.length) {
+      const host = getMembershipSnapshot(db, assignment.clusterId).body.members.find(member => member.nodeId === assignment.poolOwnerNodeId);
+      if (!host) throw new Error(`Missing verified member descriptor for ${assignment.poolOwnerNodeId}`);
+      return { id: assignment.poolId, name: assignment.manifest.name, nodeName: host.name, clusterName: getSharingCluster(db, assignment.clusterId).name, harnessId: engine, fallbackModels: assignment.manifest.fallbackModels, sameProviderOnly: engine === "claude" || engine === "antigravity",
+        candidates: members.map((member) => ({ profileId: member.profileId, provider: member.provider, label: member.label,
+          poolId: assignment.poolId, clusterId: assignment.clusterId, poolOwnerNodeId: assignment.poolOwnerNodeId })) };
+    }
   }
   if (assistantCluster && (request.fixedProfile || !preferred || !accountId)) throw new Error(clusterSubscriptionMissing(db, assistantCluster));
   if (request.fixedProfile || !preferred || !accountId) return undefined;
-  const scope = { projectId: request.projectId, workspaceId: request.workspaceId, conversationId: request.conversationId, clusterIds: projectClusterIds(db, local.id, request.projectId) };
+  const remotePoolClusters = engine === "antigravity"
+    ? new Set(assignments.filter((assignment) => assignment.poolOwnerNodeId !== local.id).map((assignment) => assignment.clusterId))
+    : undefined;
+  const scope = { projectId: request.projectId, workspaceId: request.workspaceId, conversationId: request.conversationId, clusterIds: projectClusterIds(db, local.id, request.projectId).filter((id) => !remotePoolClusters?.has(id)) };
   const choice = request.poolId ? { kind: "pool" as const, pool: getSubscriptionPool(accountId, request.poolId), source: "default" as const }
     : (engine === "pi" ? resolveSubscriptionChoice(accountId, "pi", scope, usage) : undefined)
       ?? resolveSubscriptionChoice(accountId, preferred, scope, usage);
@@ -346,8 +358,9 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
   const pool = choice?.kind === "pool" ? choice.pool
     : !choice && usage === "automation" ? automationFallbackPool(engine === "pi" ? ["pi", preferred] : [preferred], scope) : undefined;
   if (!pool) return undefined;
-  const profiles = poolCandidates(pool, preferred);
-  return { id: pool.id, name: pool.name, nodeName: local.name, harnessId: engine, fallbackModels: pool.fallbackModels, sameProviderOnly: engine === "claude",
+  const profiles = poolCandidates(pool, preferred).filter((profile) => poolMemberCompatible(engine, profile.provider));
+  if (!profiles.length) return undefined;
+  return { id: pool.id, name: pool.name, nodeName: local.name, harnessId: engine, fallbackModels: pool.fallbackModels, sameProviderOnly: engine === "claude" || engine === "antigravity",
     candidates: profiles.map((profile) => ({ profileId: profile.id, provider: profile.provider, label: profile.label, poolId: pool.id, profile })) };
 }
 function resolveTurnSubscriptionPool(connection: HarnessChatConnection, queued: { settings?: QueuedSettings | null; automationProfile?: QueuedPrompt["automationProfile"]; author?: MessageAuthor }): Promise<TurnSubscriptionPool | undefined> {
@@ -1636,7 +1649,8 @@ export async function attachHarnessChat(options: AttachOptions): Promise<void> {
     // Pool settings authenticate only inside a member attempt, never while opening history. Pi keeps a model
     // picked on a pool for the next attempt without signing in, so its picker shows the model the next turn uses.
     const pool = await resolveTurnSubscriptionPool(connection, { ...connection, settings: saved });
-    if (!pool) await measureOperation("chat.open.configure", () => shared.session.configure(runtimeSettings(saved)));
+    if (!pool) await measureOperation("chat.open.configure", () => shared.session.configure(runtimeSettings(saved)))
+      .catch((error) => console.warn(`Could not restore saved queue settings for ${options.engine}:${options.sessionId}`, error instanceof Error ? error.message : error));
     else if (options.engine === "pi") await measureOperation("chat.open.configure", () => shared.session.configure(runtimeSettings(saved)))
       .catch((error) => console.warn(`Could not show the saved model of pi:${options.sessionId} on its pool; the next turn still starts from it`, error instanceof Error ? error.message : error));
   }
