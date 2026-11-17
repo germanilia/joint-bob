@@ -112,3 +112,10 @@ export async function hubRetry(session: AuthSession, teamId: string, ref: string
   const { team, member } = await teamFor(session, teamId);
   return call(member, team.hostNodeId, 'retry', { teamId, ref });
 }
+/** Deletes a team on its host. Everyone's cached overview is dropped, so no picker keeps offering it. */
+export async function hubDelete(session: AuthSession, teamId: string): Promise<{ deleted: string }> {
+  const { team, member } = await teamFor(session, teamId);
+  const result = await call<{ deleted: string }>(member, team.hostNodeId, 'delete', { teamId });
+  held.clear();
+  return result;
+}

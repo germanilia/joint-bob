@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added **Delete team** to the shared team view, so a spare team can be removed from any machine of its cluster, with its project, workspace and conversations. A team still connected to Telegram or with work running is refused.
+
 ## 2.321.5 — 2026-11-17
 
 - Fixed the Projects view on the desktop: the **Filter** label no longer overlaps the project search row, conversation rows and the search boxes' focus rings are no longer cut at the edges, and the project list is styled like the Inbox.

@@ -170,6 +170,35 @@ export async function createTeam(member: ClusterMember, input: { projectId: stri
   catch (error) { if (String(error).includes('UNIQUE')) throw new TeamError('Team already exists for this cluster and host', 409); throw error; }
   announceTeamChange(team.id); return team;
 }
+const OPEN_STATES: AssignmentState[] = ['accepted', 'queued', 'running', 'waiting_for_human'];
+/**
+ * Removes a team's own records on its host. A team still connected to Telegram, or with work in progress, is refused:
+ * disconnect the bot and finish or cancel its work first. The caller removes the team's project and workspace.
+ */
+export async function deleteTeam(member: TeamMember): Promise<AssistantTeam> {
+  await recheckTeamActor(member);
+  const team = await getTeam(member.teamId);
+  if (team.clusterId !== member.clusterId) throw new TeamError('Wrong cluster', 403);
+  const db = await teamDatabase();
+  const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'assistant_team_%'").all() as { name: string }[]).map(row => row.name);
+  const hasTeamColumn = (table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(column => column.name === 'team_id');
+  if (tables.includes('assistant_team_telegram') && db.prepare('SELECT 1 FROM assistant_team_telegram WHERE team_id=?').get(team.id)) throw new TeamError('Disconnect this team from Telegram before deleting it', 409);
+  const records = (db.prepare('SELECT record FROM assistant_team_assignments WHERE team_id=?').all(team.id) as { record: string }[]).map(row => JSON.parse(row.record) as TeamAssignment);
+  if (records.some(assignment => OPEN_STATES.includes(assignment.state))) throw new TeamError('This team has work in progress: cancel it before deleting the team', 409);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // Rows keyed by an assignment or a message, not by the team, go first.
+    if (tables.includes('assistant_team_work')) db.prepare('DELETE FROM assistant_team_work WHERE assignment_id IN (SELECT id FROM assistant_team_assignments WHERE team_id=?)').run(team.id);
+    if (tables.includes('assistant_team_approvals')) db.prepare('DELETE FROM assistant_team_approvals WHERE assignment_id IN (SELECT id FROM assistant_team_assignments WHERE team_id=?)').run(team.id);
+    if (tables.includes('assistant_team_message_versions')) db.prepare('DELETE FROM assistant_team_message_versions WHERE message_id IN (SELECT id FROM assistant_team_messages WHERE team_id=?)').run(team.id);
+    for (const table of tables.filter(name => name !== 'assistant_teams' && hasTeamColumn(name))) db.prepare(`DELETE FROM ${table} WHERE team_id=?`).run(team.id);
+    db.prepare('DELETE FROM assistant_team_projects WHERE project_id=?').run(team.projectId);
+    db.prepare('DELETE FROM assistant_teams WHERE id=?').run(team.id);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  announceTeamChange(team.id);
+  return team;
+}
 export async function saveTeamSettings(member: TeamMember, settings: TeamSettings, expectedRevision: number): Promise<AssistantTeam> {
   await recheckTeamActor(member);
   const team = await getTeam(member.teamId);
