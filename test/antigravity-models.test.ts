@@ -10,16 +10,16 @@ const config = [
     { value: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
     { value: "gemini-3.1-pro-medium", name: "Gemini 3.1 Pro (Medium)" },
   ] },
-  { id: "effortLevel", name: "Thinking level", type: "select", currentValue: "medium", options: [
-    { value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "extra", name: "Extra" },
+  { id: "thought_level", name: "Thinking Level", type: "select", currentValue: "medium", options: [
+    { value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" },
   ] },
 ];
 
 test("Antigravity ACP model choices and thinking levels map into harness settings", () => {
   assert.deepEqual(antigravityModelsFromOptions(config), [
-    { provider: "antigravity", id: "default", label: "Antigravity default", thinkingLevels: ["medium"] },
-    { provider: "antigravity", id: "gemini-3.1-pro-low", label: "Gemini 3.1 Pro (Low)", thinkingLevels: ["low", "medium", "xhigh"] },
-    { provider: "antigravity", id: "gemini-3.1-pro-medium", label: "Gemini 3.1 Pro (Medium)", thinkingLevels: ["low", "medium", "xhigh"] },
+    { provider: "antigravity", id: "default", label: "Antigravity default", thinkingLevels: ["low", "medium", "high"] },
+    { provider: "antigravity", id: "gemini-3.1-pro-low", label: "Gemini 3.1 Pro (Low)", thinkingLevels: ["low", "medium", "high"] },
+    { provider: "antigravity", id: "gemini-3.1-pro-medium", label: "Gemini 3.1 Pro (Medium)", thinkingLevels: ["low", "medium", "high"] },
   ]);
 });
 
@@ -33,14 +33,17 @@ test("Antigravity applies ACP model and reasoning options using native values", 
     return { configOptions: current };
   } } as never;
   const updated = await applyAntigravitySettings(connection, "native-1", current, {
-    provider: "antigravity", modelId: "gemini-3.1-pro-low", reasoning: "xhigh",
+    provider: "antigravity", modelId: "gemini-3.1-pro-low", reasoning: "high",
   });
 
   assert.deepEqual(calls, [
     { method: "session/set_config_option", params: { sessionId: "native-1", configId: "model", value: "gemini-3.1-pro-low" } },
-    { method: "session/set_config_option", params: { sessionId: "native-1", configId: "effortLevel", value: "extra" } },
+    { method: "session/set_config_option", params: { sessionId: "native-1", configId: "thought_level", value: "high" } },
   ]);
-  assert.deepEqual(updated.map(({ currentValue }) => currentValue), ["gemini-3.1-pro-low", "extra"]);
+  assert.deepEqual(updated.map(({ currentValue }) => currentValue), ["gemini-3.1-pro-low", "high"]);
+  await assert.rejects(applyAntigravitySettings(connection, "native-1", current, {
+    provider: "antigravity", modelId: "gemini-3.1-pro-low", reasoning: "xhigh",
+  }), /Antigravity does not support thinking level xhigh/);
 });
 
 test("Antigravity environment excludes API keys and ADC and bypasses the OS keyring so it uses per-home CLI login files", () => {

@@ -28,6 +28,7 @@ export interface PoolClassifierModelMapping { provider: string; modelId: string;
 
 function profileProviderForModel(provider: string): ProfileProvider | undefined {
   if (provider === "anthropic" || provider === "claude") return "claude";
+  if (provider === "antigravity") return "antigravity";
   return provider === "openai-codex" ? provider : undefined;
 }
 

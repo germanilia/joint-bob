@@ -9,7 +9,7 @@ const configuration: HarnessConfiguration = {
   defaults: (home) => ({ executable: managedAntigravityExecutable(), configPath: path.join(home, ".gemini"), sessionPath: path.join(home, ".joint-bob/antigravity/sessions") }),
   fixedProvider: "antigravity",
   update: { type: "antigravity" },
-  thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
+  thinkingLevels: ["low", "medium", "high"],
   restartFields: ["executable", "configPath"],
 };
 function root(): string {

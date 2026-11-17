@@ -6,9 +6,12 @@ import path from "node:path";
 import { runAsAccount } from "../src/account-context.js";
 import { accountIdFor } from "../src/accounts.js";
 import { getClusterNode } from "../src/cluster.js";
+import { clusterV2Database } from "../src/cluster-v2-store.js";
+import { addSharingMember, createSharingCluster, ensureClusterSharingPolicySchema, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
 import { addProject } from "../src/store.js";
 import { adminAccountId, setResourceOwner } from "../src/ownership.js";
 import { settingsDatabase } from "../src/settings-store.js";
+import { ensureClusterSubscriptionPoolSchema, setClusterSubscriptionPool } from "../src/provider-profiles/pool-sharing.js";
 import { createProviderProfile, profileInputSchema, profileSelectionSchema, setProviderProfileSelection, setProviderProfileShared } from "../src/provider-profiles/store.js";
 import { bootstrapPiProfile, piTurnsOnPool, projectProviderProfile } from "../src/provider-profiles/service.js";
 import { createSubscriptionPool, updateSubscriptionPool, setSubscriptionPoolChoice, resolveSubscriptionChoice, poolCandidates } from "../src/provider-profiles/pools.js";
@@ -48,6 +51,25 @@ test("Antigravity assignments resolve the acting user's private profile and requ
     assert.equal((await runAsAccount(actor(owner), () => projectProviderProfile(project.id, "conversation", "antigravity", "antigravity")))?.id, conversation.id);
     assert.equal((await runAsAccount(actor(owner), () => projectProviderProfile(project.id, "other-conversation", "antigravity", "antigravity")))?.id, fallback.id);
     await assert.rejects(runAsAccount(actor("unassigned-antigravity-user"), () => projectProviderProfile(project.id, "conversation", "antigravity", "antigravity")), /Select your own subscription profile/);
+
+    const db = await clusterV2Database(), localId = (await getClusterNode()).id;
+    const clusterId = "00000000-0000-4000-8000-000000000091", remoteHost = "00000000-0000-4000-8000-000000000092";
+    ensureClusterSharingPolicySchema(db);
+    ensureClusterSubscriptionPoolSchema(db);
+    createSharingCluster(db, { id: clusterId, name: "Contigos" }, localId);
+    addSharingMember(db, clusterId, localId, remoteHost, 1);
+    registerOwnedResource(db, { kind: "project", id: project.id, ownerNodeId: localId }, localId);
+    setResourceShares(db, localId, "project", project.id, [{ clusterId, projectId: null }]);
+    setClusterSubscriptionPool(db, localId, clusterId, remoteHost, {
+      poolId: "00000000-0000-4000-8000-000000000093",
+      name: "Contigos shared",
+      fallbackModels: {},
+      members: [{ profileId: "00000000-0000-4000-8000-000000000094", provider: "claude", label: "Contigos Claude", position: 0 }],
+    }, 1);
+    assert.equal((await runAsAccount(actor(owner), () => projectProviderProfile(project.id, "other-conversation", "antigravity", "antigravity")))?.id, fallback.id,
+      "a cluster pool without Antigravity subscriptions falls back to the local Antigravity profile");
+    await assert.rejects(runAsAccount(actor(owner), () => projectProviderProfile(project.id, "other-conversation", "claude", "claude")),
+      /Selected cluster subscription pool requires pool-aware execution/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

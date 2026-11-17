@@ -302,3 +302,29 @@ test("a routed model runs on the first pool member and the default runs after sw
   assert.deepEqual(f.calls.map(call => call.profile), ["first", "second"]);
   assert.equal(saved.modelId, "opus", "saved queue settings reflect the model that completed the turn");
 });
+
+test("an Antigravity turn in a cluster with only Claude/Codex pool subscriptions falls back to the local Antigravity subscription", async () => {
+  const f = fixture("relay-pool");
+  f.connection.engine = "antigravity";
+  f.shared.engine = "antigravity";
+  f.shared.session.settings = () => ({ provider: "antigravity", modelId: "default", reasoning: "medium" });
+  f.dependencies.resolveSubscriptionChoice = (account: string, provider: string, scope: any, usage: string) => {
+    f.lookups.push({ account, provider, scope, usage });
+    return { kind: "profile", profile: { id: "local-antigravity", label: "Local Antigravity", provider: "antigravity" }, source: "default" };
+  };
+  f.dependencies.projectProviderProfile = async (_projectId: string, _conversationId: string, provider: string, engine: string) => {
+    assert.equal(provider, "antigravity");
+    assert.equal(engine, "antigravity");
+    return { id: "local-antigravity", label: "Local Antigravity", provider: "antigravity" };
+  };
+  f.shared.session.preflight = async () => {};
+  f.shared.session.prompt = async (input: any) => {
+    await input.beforeStart?.();
+    f.calls.push({ account: actingAccount()?.accountId, profile: "local-antigravity", text: input.text });
+    input.onStarted?.();
+    f.shared.session.messages.push({ role: "assistant", text: "Done.\nBOB_GOAL_COMPLETE" });
+  };
+  await runAsAccount(actor("writer"), () => f.exports.dispatch(f.connection, f.queued));
+  assert.deepEqual(f.calls.map(call => call.profile), ["local-antigravity"]);
+  assert.equal(f.events.find(event => event.type === "turnConnection")?.profile?.label, "Local Antigravity");
+});
