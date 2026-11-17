@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Brought back the project dropdown in **New › Conversation…**, so a conversation can be started in any project from the dialog.
+
 ## 2.321.4 — 2026-11-17
 
 - Sharpened the automatic model choice: a report that something does not work is no longer taken for a plain question, and making a mock, listing layout options or building a feature whose approach is chosen is no longer taken for planning, which sends work to the costliest model.
