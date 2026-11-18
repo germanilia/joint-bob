@@ -11,16 +11,17 @@ type Mocked = typeof window & { __saved: Array<Record<string, unknown>> };
 const base = {
   harnessId: "claude", agentId: "claude", agentLabel: "Claude", agentModel: null, executionNodeId: null, turnRunning: false, backgroundRunning: false,
   summary: null, activity: null, autoRespondActive: false, pendingReviews: [], autoRespondStop: null, controlledBy: null, worktree: null,
+  pinEngine: "claude", parentPath: null, classification: null,
 };
 
-function boardFor(projects: Array<{ id: string; name: string }>) {
+function boardFor(projects: Array<{ id: string; name: string }>, withTools = false) {
   const [first, second] = projects;
   const board = (id: string, project: { id: string; name: string }, title: string, column: string, updatedAt: string, extra: Record<string, unknown> = {}) =>
     ({ ...base, projectId: project.id, projectName: project.name, conversationId: id, sessionId: id, path: `/${id}`, title, column, updatedAt, ...extra });
   const earlier = (id: string, project: { id: string; name: string }, title: string, updatedAt: string, extra: Record<string, unknown> = {}) =>
     ({ projectId: project.id, projectName: project.name, conversationId: id, sessionId: id, path: `/${id}`, harnessId: "claude", agentLabel: "Claude", agentModel: null, title, updatedAt,
-      done: false, executionNodeId: null, scheduled: false, readOnly: false, fresh: false, worktree: null, ...extra });
-  return {
+      done: false, executionNodeId: null, scheduled: false, readOnly: false, fresh: false, worktree: null, pinEngine: "claude", parentPath: null, classification: null, ...extra });
+  const result = {
     projects: projects.map((project) => ({ ...project, color: "violet" })),
     cards: [
       board("n1", first, "Answer the deploy question", "needs-you", "2026-11-18T10:00:00Z"),
@@ -35,9 +36,15 @@ function boardFor(projects: Array<{ id: string; name: string }>) {
       earlier("d1", first, "Shipped release", "2026-11-15T07:00:00Z", { done: true }),
     ],
   };
+  if (withTools) {
+    // A sub-agent under the running conversation, and labels, for the tools below.
+    result.cards.push(board("r2", first, "Sub-agent: check the schema", "running", "2026-11-18T09:30:00Z", { turnRunning: true, parentPath: "/r1" }));
+    result.earlier[1] = earlier("e1", first, "Old design notes", "2026-11-17T07:00:00Z", { classification: "research" });
+  }
+  return result;
 }
 
-async function open(t: Parameters<typeof nativeUiFixture>[0]) {
+async function open(t: Parameters<typeof nativeUiFixture>[0], withTools = false) {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
@@ -54,7 +61,7 @@ async function open(t: Parameters<typeof nativeUiFixture>[0]) {
       const url = new URL(String(args[0]), location.href);
       const method = (args[1] && args[1].method) || 'GET';
       const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-      if (url.pathname === '/api/control-center/board') return json(${JSON.stringify(boardFor(projects))});
+      if (url.pathname === '/api/control-center/board') return json(${JSON.stringify(boardFor(projects, withTools))});
       if (url.pathname === '/api/preferences' && method === 'PUT') window.__saved.push(JSON.parse(args[1].body));
       return originalFetch(...args);
     };
@@ -195,4 +202,71 @@ test("by folder: folders and subfolders, filing by menu and by drag, and filing 
   assert.deepEqual(await page.evaluate(async () => (await import("/app/state.js")).state.controlCenter.folders), { "claude:n1": "Clients" });
   await page.getByTestId("workspace-mode-state").click();
   await page.getByTestId("workspace-group-earlier").getByTestId("workspace-group-row").filter({ hasText: "Old design notes" }).waitFor();
+});
+
+test("a sub-agent's conversation folds under its parent", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t, true);
+  await page.getByTestId("workspace-group-running").getByTestId("workspace-group-row").nth(1).waitFor();
+  const rows = page.getByTestId("workspace-group-running").getByTestId("workspace-group-row");
+  assert.match(await rows.nth(0).innerText(), /Running the migration/);
+  assert.match(await rows.nth(1).innerText(), /Sub-agent: check the schema/);
+  assert.equal(await rows.nth(1).evaluate((row) => row.classList.contains("ws-kid")), true, "the sub-agent is indented under its parent");
+  assert.equal(await rows.nth(0).getByTestId("inbox-row-kids").textContent(), "▾ 1");
+  await rows.nth(0).getByTestId("inbox-row-kids").click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="workspace-group-running"] [data-testid="workspace-group-row"]').length === 1);
+  assert.equal(await page.getByTestId("workspace-group-running").getByTestId("inbox-row-kids").textContent(), "▸ 1");
+});
+
+test("the Show all page filters by label and by worktree", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t, true);
+  await page.getByTestId("workspace-show-all-earlier").click();
+  await page.getByTestId("workspace-group-page-row").first().waitFor();
+  assert.equal(await page.getByTestId("workspace-group-page-row").count(), 3);
+  await page.getByTestId("inboxPage-labels-trigger").click();
+  await page.getByTestId("inboxPage-labels-options").locator('[data-value="label:research"]').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="workspace-group-page-row"]').length === 1);
+  assert.match(await page.getByTestId("workspace-group-page-row").innerText(), /Old design notes/);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("inboxPage-labels-trigger").click();
+  await page.getByTestId("inboxPage-labels-clear").click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="workspace-group-page-row"]').length === 3);
+  await page.getByTestId("inboxPage-worktrees-trigger").click();
+  await page.getByTestId("inboxPage-worktrees-options").locator('[data-value="w1"]').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="workspace-group-page-row"]').length === 0);
+  assert.match(await page.locator(".ws-page-list .ws-empty").innerText(), /Nothing matches the filters/);
+});
+
+test("by project, the menu has the notes and worktree tools, and a pin means the same in both lists", { timeout: 120_000 }, async (t) => {
+  const { page, projects } = await open(t);
+  await page.getByTestId("workspace-mode-project").click();
+  await page.locator(`[data-project="${projects[0].id}"]`).getByTestId("workspace-project-menu").click();
+  for (const label of ["Notes", "New worktree…", "Manage worktrees", "Review together…"]) {
+    assert.equal(await page.locator("#rowMenu button", { hasText: label }).count() > 0, true, `${label} is in the project menu`);
+  }
+  await page.keyboard.press("Escape");
+  // The Inbox pins a conversation by its first engine and conversation id, as the project list does.
+  const pin = await page.evaluate(async () => {
+    const marks = await import("/app/control-marks.js");
+    const state = (await import("/app/state.js")).state;
+    const card = { projectId: "pX", harnessId: "pi", pinEngine: "claude", sessionId: "newest", conversationId: "first" };
+    state.pinnedConversations = [{ projectId: "pX", engine: "claude", sessionId: "first" }];
+    return { pinned: marks.isPinned(card), unpinnedOther: marks.isPinned({ ...card, conversationId: "other", sessionId: "other" }) };
+  });
+  assert.deepEqual(pin, { pinned: true, unpinnedOther: false });
+});
+
+test("the phone's Home groups by state, project or folder too, with 44 px controls", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.body.classList.contains("focus-ui"));
+  await page.getByTestId("phone-tab-inbox").click();
+  await page.getByTestId("phone-mode").waitFor();
+  const small = await page.getByTestId("phone-mode").locator("button").evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height).filter((height) => height < 43.5));
+  assert.deepEqual(small, []);
+  await page.getByTestId("phone-mode-project").click();
+  await page.getByTestId("workspace-project").first().waitFor();
+  await page.getByTestId("phone-mode-folder").click();
+  await page.getByTestId("workspace-folder-new").waitFor();
+  await page.getByTestId("phone-mode-state").click();
+  await page.getByTestId("workspace-group-needs-you").waitFor();
 });

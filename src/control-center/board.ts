@@ -47,6 +47,12 @@ export interface BoardCard {
   othersMachine?: boolean;
   /** The Joint Bob worktree it runs in, for the row's badge. */
   worktree: { id: string; name: string; color: string } | null;
+  /** The engine the conversation's pin names: its first segment's, which never changes, so a pin survives a switch of agent. */
+  pinEngine: string;
+  /** The transcript of the conversation that started this one (a sub-agent's parent), so the Inbox can fold it under the parent. */
+  parentPath: string | null;
+  /** The conversation's label, for the Inbox's label filter. */
+  classification: string | null;
 }
 
 export interface BoardProject {
@@ -118,6 +124,9 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
         controlledBy: sources.controlledBy(project.projectId, conversationId),
         reviewCheck,
         snooze: snoozed && snooze ? { until: snooze.until, snoozedAt: snooze.snoozedAt } : null,
+        pinEngine: session.segments?.[0]?.engine ?? session.harnessId,
+        parentPath: session.parentSessionPath ?? null,
+        classification: session.classification ?? null,
         worktree: session.worktree ? { id: session.worktree.id, name: session.worktree.name, color: session.worktree.color } : null,
       });
     }

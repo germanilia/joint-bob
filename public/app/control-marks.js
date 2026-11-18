@@ -16,7 +16,10 @@ const UNDO_MS = 8_000;
 export const markKey = (card) => `${card.harnessId}:${card.sessionId}`;
 const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
 
-export const isPinned = (card) => state.pinnedConversations.some((pin) => pin.projectId === card.projectId && pin.engine === card.harnessId && pin.sessionId === card.sessionId);
+/** A pin names the conversation as the project list does: its first segment's engine and its conversation id, so both lists agree. */
+const pinOf = (card) => ({ projectId: card.projectId, engine: card.pinEngine ?? card.harnessId, sessionId: card.conversationId ?? card.sessionId });
+const samePin = (pin, other) => pin.projectId === other.projectId && pin.engine === other.engine && pin.sessionId === other.sessionId;
+export const isPinned = (card) => state.pinnedConversations.some((pin) => samePin(pin, pinOf(card)) || samePin(pin, { projectId: card.projectId, engine: card.harnessId, sessionId: card.sessionId }));
 export const isStarred = (card) => state.controlCenter.stars.includes(markKey(card));
 /** An assistant team's conversation is in the team's own folder (the card says which team), unless the person moved it. */
 export const teamFolderName = (team) => `${team.name} team`;
@@ -27,7 +30,12 @@ export const folderNames = (cards = []) => [...new Set([...Object.values(state.c
 export const isKept = (card) => isPinned(card) || isStarred(card);
 
 export function togglePin(card) {
-  return savePin({ kind: "conversation", projectId: card.projectId, engine: card.harnessId, sessionId: card.sessionId }, !isPinned(card));
+  const pinned = !isPinned(card);
+  const identity = pinOf(card);
+  const older = { projectId: card.projectId, engine: card.harnessId, sessionId: card.sessionId };
+  // Unpinning also clears the pin an older Inbox saved under the newest segment's name.
+  const targets = pinned || samePin(identity, older) ? [identity] : [identity, older];
+  return Promise.all(targets.map((target) => savePin({ kind: "conversation", ...target }, pinned)));
 }
 
 export function toggleStar(card, save) {

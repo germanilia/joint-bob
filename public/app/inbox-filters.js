@@ -82,6 +82,9 @@ export function setInboxMode(next) {
 }
 let projects = storedProjects();
 let sources = new Set();
+// Labels ("unclassified" or `label:Name`) and worktrees ("project" for none, else the worktree's id) of the conversations; nothing chosen means all.
+let labels = new Set();
+let worktrees = new Set();
 let statuses = new Set();
 let range = storedRange();
 let selecting = false;
@@ -95,9 +98,9 @@ const emitView = () => { for (const listener of viewListeners) listener(); selec
 const selectionChanged = () => { for (const listener of selectionListeners) listener(); };
 
 /** What the drawn rows depend on, to tell whether they must be drawn again. */
-export const inboxSignature = () => JSON.stringify([mode, [...projects], [...sources], [...statuses], range.id, selecting, [...selected]]);
+export const inboxSignature = () => JSON.stringify([mode, [...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting, [...selected]]);
 /** The same without the chosen rows: a list keeps its place while rows are chosen, and starts at the top for other filters. */
-export const inboxFilterKey = () => JSON.stringify([[...projects], [...sources], [...statuses], range.id, selecting]);
+export const inboxFilterKey = () => JSON.stringify([[...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting]);
 export const isSelecting = () => selecting;
 export const isSelected = (card) => selected.has(keyOf(card));
 
@@ -110,7 +113,8 @@ export function toggleSelected(card) {
 /** Applies status, project and source choices. Show all skips the phone's Earlier range. */
 export function filterInbox(groupId, cards, allEarlier = false) {
   if (statuses.size && !statuses.has(groupId)) return [];
-  const inProjects = cards.filter((card) => (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card))));
+  const inProjects = cards.filter((card) => (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card)))
+    && (!labels.size || labels.has(card.classification ? `label:${card.classification}` : "unclassified")) && (!worktrees.size || worktrees.has(card.worktree?.id ?? "project")));
   if (groupId !== "earlier" || allEarlier) return inProjects;
   if (range.within) {
     const since = Date.now() - range.within;
@@ -216,6 +220,11 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
   statusSelect.setOptions(STATUSES);
   statusSelect.onChange((values) => { statuses = values; emitView(); });
 
+  const labelSelect = createMultiSelect({ id: `${id}Labels`, testid: `${id}-labels`, label: "Labels", prompt: "All labels", placeholder: "Search labels" });
+  labelSelect.onChange((values) => { labels = values; emitView(); });
+  const worktreeSelect = createMultiSelect({ id: `${id}Worktrees`, testid: `${id}-worktrees`, label: "Worktrees", prompt: "All worktrees", placeholder: "Search worktrees" });
+  worktreeSelect.onChange((values) => { worktrees = values; emitView(); });
+
   const rangeSelect = document.createElement("select");
   rangeSelect.className = "inbox-range";
   rangeSelect.hidden = !folded;
@@ -237,7 +246,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
   const filters = document.createElement("div");
   filters.className = "inbox-tools-filters";
   filters.dataset.testid = `${id}-filters`;
-  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, rangeSelect);
+  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, labelSelect.root, worktreeSelect.root, rangeSelect);
   // Folded (the phone's Home): one row with Filter and Select; Filter opens the choices under it.
   const filterButton = button("inbox-filter-toggle", `${id}-filter`, "Filter", () => {
     filters.hidden = !filters.hidden;
@@ -284,6 +293,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
 
   const drawProjects = projectOptions(projectSelect, allCards);
   let sourcesDrawn = "";
+  let choicesDrawn = "";
   function update() {
     drawProjects();
     const machines = new Map(allCards().map((card) => [sourceOf(card), sourceName(card)]));
@@ -291,9 +301,17 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
     const sourceDrawing = JSON.stringify(sourceOptions);
     if (sourceDrawing !== sourcesDrawn) { sourcesDrawn = sourceDrawing; sourceSelect.setOptions(sourceOptions); }
     sourceSelect.setValues(sources);
+    const labelOptions = [{ value: "unclassified", label: "Unclassified" }, ...[...new Set([...allCards().map((card) => card.classification).filter(Boolean), ...[...labels].filter((value) => value.startsWith("label:")).map((value) => value.slice(6))])]
+      .sort((a, b) => a.localeCompare(b)).map((name) => ({ value: `label:${name}`, label: name }))];
+    const worktreeOptions = [{ value: "project", label: "Project folder" }, ...[...new Map(allCards().filter((card) => card.worktree).map((card) => [card.worktree.id, { value: card.worktree.id, label: card.worktree.name }])).values()]
+      .sort((a, b) => a.label.localeCompare(b.label))];
+    const choicesDrawing = JSON.stringify([labelOptions, worktreeOptions]);
+    if (choicesDrawing !== choicesDrawn) { choicesDrawn = choicesDrawing; labelSelect.setOptions(labelOptions); worktreeSelect.setOptions(worktreeOptions); }
+    labelSelect.setValues(labels);
+    worktreeSelect.setValues(worktrees);
     statusSelect.setValues(statuses);
     rangeSelect.value = range.id;
-    const narrowing = [projects.size, sources.size, statuses.size, range !== RANGES[0]].filter(Boolean).length;
+    const narrowing = [projects.size, sources.size, statuses.size, labels.size, worktrees.size, range !== RANGES[0]].filter(Boolean).length;
     filterButton.textContent = narrowing ? `Filter · ${narrowing}` : "Filter";
     filterButton.classList.toggle("narrowing", narrowing > 0);
     filterButton.setAttribute("aria-expanded", String(!filters.hidden));

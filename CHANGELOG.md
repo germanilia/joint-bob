@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.326.1 — 2026-11-19
+
+- The Inbox's **State | Project | Folder** switch is also on the phone's Home, with 44 px controls.
+- A sub-agent's conversation sits under its parent in the Inbox, with a **▾ n** tag that folds it.
+- **Labels** and **Worktrees** join the filters of the Inbox's Show all page and the phone's Home.
+- A project's menu in the Inbox has **Notes**, **New worktree…**, **Manage worktrees** and **Review together…**, which open them in the project.
+- Pinning in the Inbox and in the project list now means the same thing: a conversation pinned in one is pinned in the other, also after the agent was switched.
+
 ## 2.326.0 — 2026-11-18
 
 - **The Inbox now lists every conversation.** Finished scheduled runs, done conversations, read-only copies and conversations nobody has written in yet appear in it, in two new groups: **Scheduled** and **Done**. Rows show tags for their worktree, Auto respond, Read-only and New, and pinned and starred ones are marked.

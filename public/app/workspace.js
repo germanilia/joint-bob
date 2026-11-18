@@ -19,8 +19,11 @@ import { cardActionList, projectActionList } from "./control-cards.js";
 import { isControlCenterOpen, openConversation, saveControlCenter } from "./control-center.js";
 import { folderOf, isPinned, isStarred, togglePin, toggleStar } from "./control-marks.js";
 import { endDrag, openMoveMenu, startDrag } from "./inbox-folders.js";
-import { byUrgency, drawByFolder, drawByProject, modeSignature } from "./inbox-modes.js";
+import { byUrgency, drawByFolder, drawByProject, kidCount, kidDepth, kidsFolded, modeSignature, nestRows, toggleKids } from "./inbox-modes.js";
 import { openProjectMenu } from "./project-list.js";
+import { openWorktreeDialog } from "./worktrees.js";
+import { openContextReferencesDialog } from "./context-references.js";
+import { showQuickNotes } from "./quick-notes.js";
 import { openSessionAction, SESSION_ACTIONS } from "./session-list.js";
 import { startConversationInProject } from "./new-session.js";
 import { selectProject } from "./project-selection.js";
@@ -476,6 +479,16 @@ function rowTags(card) {
     if (color) node.style.setProperty("--tag", color);
     wrap.append(node);
   };
+  if (kidCount(card)) {
+    const kids = document.createElement("i");
+    kids.className = "ws-tag ws-kids";
+    kids.setAttribute("role", "button");
+    kids.textContent = `${kidsFolded(card) ? "▸" : "▾"} ${kidCount(card)}`;
+    kids.title = `${kidCount(card)} sub-agent conversation${kidCount(card) === 1 ? "" : "s"}: ${kidsFolded(card) ? "show" : "fold"} them`;
+    kids.dataset.testid = "inbox-row-kids";
+    kids.addEventListener("click", (event) => { event.stopPropagation(); toggleKids(card); refreshFolders(); });
+    wrap.append(kids);
+  }
   if (card.worktree) tag(card.worktree.name, `Worktree ${card.worktree.name}`, "inbox-row-tag-worktree", card.worktree.color);
   if (card.autoRespondActive) tag("Auto", "Auto respond is on", "inbox-row-tag-auto");
   if (card.readOnly) tag("Read-only", "A copy you can read but not write in", "inbox-row-tag-readonly");
@@ -493,6 +506,7 @@ function cardRow(card, group, testid, selectable = false) {
   row.dataset.testid = testid;
   row.dataset.key = `${card.projectId}:${card.conversationId}`;
   row.classList.toggle("sel", isActiveCard(card));
+  if (kidDepth(card)) { row.classList.add("ws-kid"); row.style.setProperty("--kid", String(kidDepth(card))); }
   row.title = `${card.title} · ${card.projectName}`;
   const dot = document.createElement("i");
   dot.className = `ws-dot ${group.dot}`;
@@ -602,28 +616,49 @@ function refreshFolders() {
 // How the column groups its list: by state, by project, or by folder.
 const columnTools = document.createElement("div");
 columnTools.className = "ws-column-tools";
-const modeBar = document.createElement("div");
-modeBar.className = "ws-mode";
-modeBar.setAttribute("role", "group");
-modeBar.setAttribute("aria-label", "Group the list");
-modeBar.dataset.testid = "workspace-mode";
-for (const [id, label] of [["state", "State"], ["project", "Project"], ["folder", "Folder"]]) {
-  const choice = document.createElement("button");
-  choice.type = "button";
-  choice.textContent = label;
-  choice.dataset.mode = id;
-  choice.dataset.testid = `workspace-mode-${id}`;
-  choice.addEventListener("click", () => { setInboxMode(id); closeGroupPage(); });
-  modeBar.append(choice);
+function makeModeBar(testid) {
+  const bar = document.createElement("div");
+  bar.className = "ws-mode";
+  bar.setAttribute("role", "group");
+  bar.setAttribute("aria-label", "Group the list");
+  bar.dataset.testid = testid;
+  for (const [id, label] of [["state", "State"], ["project", "Project"], ["folder", "Folder"]]) {
+    const choice = document.createElement("button");
+    choice.type = "button";
+    choice.textContent = label;
+    choice.dataset.mode = id;
+    choice.dataset.testid = `${testid}-${id}`;
+    choice.addEventListener("click", () => { setInboxMode(id); closeGroupPage(); });
+    bar.append(choice);
+  }
+  return bar;
 }
+const modeBar = makeModeBar("workspace-mode");
+// The phone's Home has its own, in the toolbar above its list.
+const phoneModeBar = makeModeBar("phone-mode");
 function syncModeBar() {
-  for (const choice of modeBar.children) choice.setAttribute("aria-pressed", String(choice.dataset.mode === inboxMode()));
+  for (const bar of [modeBar, phoneModeBar]) for (const choice of bar.children) choice.setAttribute("aria-pressed", String(choice.dataset.mode === inboxMode()));
 }
 syncModeBar();
 
-/** A project's menu from the Inbox: its page in the Projects place first, then the project's own entries. */
+/** Opens the project in the Projects place (its conversations, notes and worktrees are there) and runs `then` once it is the open one. */
+async function inProject(project, then) {
+  closeGroupPage();
+  setColumn("projects");
+  await selectProject(project.id);
+  then?.();
+}
+
+/** A project's menu from the Inbox: its notes and worktree tools first, then the project's own entries. */
 function openInboxProjectMenu(anchor, project) {
-  openProjectMenu(anchor, project, [{ label: "Open the project's page", icon: "folder", testid: "project-open-page", title: "Its conversations, notes and worktrees in the Projects place", onSelect: () => { closeGroupPage(); setColumn("projects"); selectProject(project.id).catch((error) => toast.error(error.message)); } }]);
+  const fail = (error) => toast.error(error.message);
+  openProjectMenu(anchor, project, [
+    { label: "Open the project's page", icon: "folder", testid: "project-open-page", title: "Its conversations, notes and worktrees in the Projects place", onSelect: () => inProject(project).catch(fail) },
+    { label: "Notes", icon: "pencil", testid: "project-open-notes", title: "The project's notes and their run queue", onSelect: () => inProject(project, showQuickNotes).catch(fail) },
+    { label: "New worktree…", icon: "folder", testid: "project-new-worktree", title: "A synced copy of the project's code for isolated work", onSelect: () => inProject(project, () => openWorktreeDialog(null)).catch(fail) },
+    { label: "Manage worktrees", icon: "folder", testid: "project-manage-worktrees", title: "Merge, rename or delete the project's worktrees", onSelect: () => inProject(project, () => setTimeout(() => { const section = document.querySelector('[data-testid="other-worktrees"]'); if (section) { section.open = true; section.scrollIntoView({ block: "nearest" }); } }, 600)).catch(fail) },
+    { label: "Review together…", icon: "copy", testid: "project-review-together", title: "Start a conversation with references to several worktrees or conversations", onSelect: () => inProject(project, openContextReferencesDialog).catch(fail) },
+  ]);
 }
 // The system messages and a batch of conversations being moved sit under the places, above the groups.
 /** After Mark read or Delete the board and the Earlier list are read again at once. */
@@ -637,6 +672,7 @@ const phoneToolbar = createInboxToolbar({
   visibleCards: () => GROUPS.filter((group) => group.id !== "needs-you").flatMap((group) => filteredIn(group.id)),
 });
 phoneToolbar.root.classList.add("phone-only");
+phoneToolbar.root.prepend(phoneModeBar);
 groupsHost.before(phoneToolbar.root);
 // On the phone the column is not shown: the system messages and a running move sit on Home, above its filters.
 const phoneWidth = matchMedia("(max-width: 700px)");
@@ -689,7 +725,7 @@ export function useNeedCards(render) {
 function renderGroups(refit = true) {
   if (!groupsShown()) return;
   syncModeBar();
-  if (!phoneHomeShown() && inboxMode() !== "state") { renderModeList(); return; }
+  if (inboxMode() !== "state") { renderModeList(); return; }
   // Words being written for Push it on on a card are not drawn away; the card draws the groups again when it closes.
   if (groupsHost.querySelector(".ws-wait.pushing")) return;
   // The phone's Home applies the project and Show filters (inbox-filters.js); the desktop column lists everything.
@@ -700,8 +736,9 @@ function renderGroups(refit = true) {
     return;
   }
   columnFilter.update();
-  const listIn = (groupId) => (phoneHomeShown() ? filteredIn(groupId) : inChosenProjects(cardsIn(groupId)));
-  const counts = GROUPS.map((group) => listIn(group.id).length);
+  const baseIn = (groupId) => (phoneHomeShown() ? filteredIn(groupId) : inChosenProjects(cardsIn(groupId)));
+  const listIn = (groupId) => nestRows(baseIn(groupId));
+  const counts = GROUPS.map((group) => baseIn(group.id).length);
   const sample = groupsHost.querySelector(".ws-row");
   const rowHeight = sample ? sample.getBoundingClientRect().height + 2 : 52;
   // The phone's Home shows what needs you as cards with their actions (home.js), as the desktop's Home does.
@@ -737,7 +774,7 @@ function renderGroups(refit = true) {
   // The column is one scroll with the first ten of every group, whatever the window's height.
   if (!phoneHomeShown()) GROUPS.forEach((group, index) => { shown[index] = Math.min(counts[index], COLUMN_ROWS); });
   // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
-  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, cardsIn(SNOOZED.id).length, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card), isPinned(card), isStarred(card), card.worktree?.name, card.autoRespondActive])), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
+  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, cardsIn(SNOOZED.id).length, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card), isPinned(card), isStarred(card), card.worktree?.name, card.autoRespondActive, kidCount(card)])), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
   groupsHost.dataset.signature = signature;
   const scroll = groupsHost.scrollTop;
@@ -984,7 +1021,7 @@ function renderListingPage(id, { title, crumb, cards: listed }) {
   byId("workspaceGroupTabs").replaceChildren();
   const scroll = pageList.scrollTop;
   pageList.replaceChildren();
-  const entries = inChosenProjects(listed).sort(byUrgency).map((card) => () => {
+  const entries = nestRows(inChosenProjects(listed).sort(byUrgency)).map((card) => () => {
     const row = cardRow(card, groupOfCard(card), "workspace-listing-page-row");
     row.classList.add("wide");
     return row;
@@ -1044,7 +1081,7 @@ function renderGroupPage() {
     tab.addEventListener("click", () => { pageGroup = item.id; renderGroupPage(); });
     return tab;
   }));
-  const items = filteredOnPage(group.id);
+  const items = nestRows(filteredOnPage(group.id));
   pageToolbar.update();
   const scroll = pageList.scrollTop;
   pageList.replaceChildren();

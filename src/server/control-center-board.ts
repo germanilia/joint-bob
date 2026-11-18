@@ -29,6 +29,9 @@ export interface EarlierConversation {
   /** Nothing written in it yet. */
   fresh: boolean;
   worktree: { id: string; name: string; color: string } | null;
+  pinEngine: string;
+  parentPath: string | null;
+  classification: string | null;
 }
 
 const FRESH_DRAFT_MS = 24 * 60 * 60 * 1000;
@@ -116,6 +119,9 @@ export function earlierConversations(groups: BoardProject[], cards: BoardCard[],
       projectId: group.projectId, projectName: group.projectName, conversationId: entry.conversationId ?? entry.id, sessionId: entry.id, path: entry.path,
       harnessId: entry.harnessId, agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, updatedAt: entry.updatedAt ?? null, done: Boolean(entry.doneAt),
       executionNodeId: entry.executionNodeId ?? null, scheduled: Boolean(entry.cronTaskId), readOnly: Boolean(entry.readOnly), fresh: !written(entry),
+      pinEngine: entry.segments?.[0]?.engine ?? entry.harnessId,
+      parentPath: entry.parentSessionPath ?? null,
+      classification: entry.classification ?? null,
       worktree: entry.worktree ? { id: entry.worktree.id, name: entry.worktree.name, color: entry.worktree.color } : null,
     })))
     .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));

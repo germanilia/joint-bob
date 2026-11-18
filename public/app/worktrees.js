@@ -277,7 +277,7 @@ function nextColor() {
   return DEFAULT_ORDER.find((color) => PROJECT_COLORS.includes(color) && !used.has(color)) || DEFAULT_ORDER[state.worktrees.length % DEFAULT_ORDER.length];
 }
 
-function openWorktreeDialog(worktree) {
+export function openWorktreeDialog(worktree) {
   if (!state.activeProjectId) return;
   editing = worktree;
   elements.worktreeDialogTitle.textContent = worktree ? `Edit ${worktree.name}` : "New worktree";

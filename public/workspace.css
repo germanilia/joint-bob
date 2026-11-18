@@ -947,7 +947,11 @@ body:is(.projects-collapsed, .ws-auto-rail) :is(.inbox-system, .ws-side > .contr
 .ws-row:hover .ws-row-more, .ws-row:focus-visible .ws-row-more, .ws-row.sel .ws-row-more { display: grid; }
 .ws-row:hover .ws-row-top time, .ws-row.sel .ws-row-top time { visibility: hidden; }
 @media (pointer: coarse) { body:not(.focus-ui) .ws-row-more { display: grid; } }
-body.focus-ui .ws-row-more { display: none !important; }
+body.focus-ui .ws-row-more { display: grid; top: 0; right: 0; width: 44px; height: 44px; border-radius: 12px; background: none; font-size: 20px; }
+body.focus-ui .ws-row:hover .ws-row-top time, body.focus-ui .ws-row.sel .ws-row-top time { visibility: visible; }
+body.focus-ui .ws-row-top { padding-right: 36px; }
+.ws-row.ws-kid { margin-left: calc(var(--kid, 1) * 16px); width: calc(100% - var(--kid, 1) * 16px); }
+.ws-kids { cursor: pointer; color: var(--text); }
 body:is(.ws-column-projects, .projects-collapsed, .ws-auto-rail, .focus-ui) .ws-column-tools { display: none; }
 .ws-column-tools { display: flex; align-items: center; gap: 6px; }
 .ws-column-tools .inbox-column-filter { flex: 1; min-width: 0; margin: 0; }
@@ -973,3 +977,12 @@ body:is(.ws-column-projects, .projects-collapsed, .ws-auto-rail, .focus-ui) .ws-
 .ws-folder-count { flex: none; color: var(--muted); font-size: 12px; font-style: normal; }
 .ws-folder-item { padding-left: calc(10px + var(--depth, 1) * 16px); }
 .ws-folder-more { margin: 2px 0 4px calc(10px + var(--depth, 1) * 16px); }
+/* On the phone every control is a 44 px target and no text is under 13 px. */
+body.focus-ui .ws-mode { margin: 0 0 8px; }
+body.focus-ui .ws-mode button { min-height: 44px; padding: 0 12px; font-size: 14px; }
+body.focus-ui .ws-tag { font-size: 13px; line-height: 20px; }
+body.focus-ui .ws-kids { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; }
+body.focus-ui .ws-project-tool, body.focus-ui .ws-folder-chevron { min-width: 44px; min-height: 44px; }
+body.focus-ui .ws-project-name, body.focus-ui .ws-folder-name { min-height: 44px; font-size: 15px; }
+body.focus-ui .ws-pill, body.focus-ui .ws-folder-count { font-size: 13px; }
+body.focus-ui .ws-folder-row { min-height: 44px; }
