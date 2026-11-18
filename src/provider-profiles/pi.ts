@@ -2,6 +2,7 @@ import { ModelRuntime } from "../pi-sdk.js";
 import type { PiCoreHooks } from "../pi-session-core.js";
 import type { ProfileCredential } from "./service.js";
 import { protectPiProfileRuntime } from "./pi-auth.js";
+import { modelsPathWithSupplements } from "../pi-supplemental-models.js";
 
 /** One runtime per session; requests ask the node to refresh the pinned profile under its lock. */
 export async function createSessionModelRuntime(
@@ -26,7 +27,8 @@ export async function createSessionModelRuntime(
       },
       delete: async () => { throw new Error("Manage subscription sign-ins in Settings > Connections"); },
   };
-  const runtime = await ModelRuntime.create({ credentials,
+  const modelsPath = await modelsPathWithSupplements();
+  const runtime = await ModelRuntime.create({ credentials, ...(modelsPath ? { modelsPath } : {}),
     // Creation restores the node's cached model catalog (no network). Skipping it left only
     // built-in models, so a model Pi had since learned about was "not found" in Joint Bob.
   });

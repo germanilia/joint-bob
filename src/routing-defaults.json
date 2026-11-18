@@ -1,6 +1,6 @@
 {
-  "reviewedAt": "2026-11-12",
-  "notes": "Scores 0-100 per level from public evals; routing tries models at or above a level's minimum, subscription before API, then cheapest. Pi uses only its Codex and Z.ai subscriptions. Kiro and Antigravity route the thinking level on their default model until their model IDs are listed on a signed-in machine (Kiro offers Claude, GPT-5.6 and GLM models [s12]; Antigravity offers Gemini 4 Carbon/Argon and 3.8 Flash [s14]).",
+  "reviewedAt": "2026-11-18",
+  "notes": "Scores 0-100 per level from public evals; routing tries models at or above a level's minimum, subscription before API, then cheapest. Pi uses only its Codex and Z.ai subscriptions. Kiro and Antigravity route the thinking level on their default model until their model IDs are listed on a signed-in machine (Kiro offers Claude, GPT-5.6 and GLM models [s12]; Antigravity offers Gemini 4 Carbon/Argon and 3.8 Flash [s14]). On 2026-11-18 Pi's Codex picks moved to GPT-6.2 Sol and GPT-6.2 Astra, which replace GPT-6.1 Sol and GPT-6 Astra.",
   "sources": [
     {
       "id": "s1",
@@ -91,6 +91,12 @@
       "title": "GPT-6 pricing roundup (aitokenprice)",
       "url": "https://aitokenprice.com/news/gpt-6-pricing",
       "date": "2026-10"
+    },
+    {
+      "id": "s18",
+      "title": "OpenAI launches GPT-6.2 Astra and Sol in ChatGPT Work and Codex (Thurrott)",
+      "url": "https://www.thurrott.com/a-i/344003/openai-launches-gpt-6-2-astra-and-sol-models-in-chatgpt-work-and-codex",
+      "date": "2026-11-17"
     }
   ],
   "categories": [
@@ -201,7 +207,7 @@
       },
       {
         "provider": "openai-codex",
-        "modelId": "gpt-6.1-sol",
+        "modelId": "gpt-6.2-sol",
         "billing": "subscription",
         "priceUsdPerMTok": {
           "input": 2,
@@ -233,15 +239,15 @@
             "thinkingLevel": "xhigh"
           }
         },
-        "evidence": "Terminal-Bench 4.0 55.1% at $1.72/test, best cost per point among frontier models [s1]; AA Index 52 vs Astra 53 [s17]."
+        "evidence": "GPT-6.2 Sol (released 2026-11-17) keeps GPT-6.1 Sol's price and, at max effort, comes within half a point of 6.2 Astra at about a fifth of the cost [s18]; scores carried over from 6.1 Sol until judged turns exist."
       },
       {
         "provider": "openai-codex",
-        "modelId": "gpt-6-astra",
+        "modelId": "gpt-6.2-astra",
         "billing": "subscription",
         "priceUsdPerMTok": {
-          "input": 10,
-          "output": 50
+          "input": 8,
+          "output": 40
         },
         "levels": {
           "1": {
@@ -269,7 +275,7 @@
             "thinkingLevel": "high"
           }
         },
-        "evidence": "Terminal-Bench 4.0 59.6% [s1]; AA Index 53 [s17]; FrontierSWE 2 65.5% [s15]; SWE-bench Pro v2 96.9 [s9]. Costly for simple work."
+        "evidence": "GPT-6.2 Astra (released 2026-11-17) lists about 20% below GPT-6 Astra [s18]; scores carried over from GPT-6 Astra. Its system card reports a regression in disclosing known blockers. Costly for simple work."
       },
       {
         "provider": "zai",

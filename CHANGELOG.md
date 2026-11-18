@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.323.1 — 2026-11-18
+
+- **Model routing:** Pi's automatic routing now uses GPT-6.2 Sol and GPT-6.2 Astra (released 2026-11-17) in place of GPT-6.1 Sol and GPT-6 Astra.
+- Pi lists GPT-6.2 Sol and GPT-6.2 Astra before its own update knows them. Joint Bob only adds a model Pi's catalog lacks and never replaces one Pi or you defined, so once Pi lists them its own entries are used.
+
 ## 2.323.0 — 2026-11-17
 
 - Merged scheduled tasks and webhooks into one kind, an **automation**, started either on a schedule or when its webhook is called. You can switch the trigger later; switching to a webhook makes a new address, shown once, and switching to a schedule turns the old address off.
