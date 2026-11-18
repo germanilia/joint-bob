@@ -87,6 +87,12 @@ export async function listReviewScopeSessions(project: ProjectRecord, userId: st
   return listHarnessSessions(scope.project, scope.includedSessionPaths, scope.includedSessionIds);
 }
 
+/** The conversation was marked done at or after its last activity. */
+export function doneCoversActivity(doneAt: string | undefined, updatedAt: string | undefined): boolean {
+  if (!doneAt) return false;
+  return !updatedAt || Date.parse(updatedAt) <= Date.parse(doneAt);
+}
+
 export async function listProjectSessionsWithReviewState(project: ProjectRecord, userId: string, username: string, historyDays = getSettings().conversationHistoryDays, includeTemporarySessionId?: string, rootLimit = 50): Promise<SessionSummary[]> {
   const scope = await measureOperation("sessions.review_scope", () => reviewScope(project, userId, username, historyDays));
   const searchProject = scope.project;
@@ -176,10 +182,12 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
     // The record names the worktree before file sync brings its folder, or this conversation's marker, here.
     const named = keys.map((key) => worktrees.get(key)).find(Boolean) ?? keys.map((key) => recorded.get(key)).find(Boolean);
     const worktree = named && (localWorktreesById.get(named.id) ?? { ...named, syncing: true as const });
+    const review = reviewDetails.get(session.path)?.state;
     return {
       ...summary,
       ...(worktree ? { worktree: { id: worktree.id, name: worktree.name, color: worktree.color, ...("syncing" in worktree ? { syncing: true as const } : {}) } } : {}),
-      reviewState: reviewDetails.get(session.path)?.state,
+      // Marking it done is the review: nothing that happened up to then waits for the person. What it does after that does.
+      reviewState: review === "needs_review" && doneCoversActivity(session.doneAt, session.updatedAt) ? "reviewed" : review,
       reviewedAt: reviewDetails.get(session.path)?.reviewedAt,
       reviewNotificationsEnabled: notifications.get(notificationConversationId(session))?.enabled === true,
       ntfyEnabled: ntfyPaths.has(notificationConversationId(session)),

@@ -137,8 +137,6 @@ export function refreshControlCenter() {
 export async function openConversation(card) {
   startOpenTiming("card");
   const overBoard = isControlCenterOpen();
-  // Shown in the list's Chat tab (`inline`), it stays "To review": marked reviewed it leaves the board, and the list would jump to another row.
-  const keepReview = Boolean(card.inline);
   state.keepControlView = overBoard;
   let listing = null;
   let fromCard = false;
@@ -167,7 +165,7 @@ export async function openConversation(card) {
       return;
     }
     // Over the board it opens behind the view (r-Esc2Out), the takeover from an offline machine included.
-    opening = openListedSession(session, { keepView: overBoard, keepReview, timed: true });
+    opening = openListedSession(session, { keepView: overBoard, timed: true });
   } finally {
     state.keepControlView = false;
   }
@@ -176,7 +174,7 @@ export async function openConversation(card) {
     void listing.then(() => {
       if (!fromCard) return;
       const listed = listedSession(card);
-      if (listed) settleOpenedSession(listed, { keepReview });
+      if (listed) settleOpenedSession(listed);
       // A card that outlived its conversation: the socket says why it cannot open, and the board drops the card.
       else void refreshControlCenter().catch((error) => console.warn("Could not refresh the board", error));
     }).catch((error) => toast.error(error.message));
@@ -244,7 +242,7 @@ export async function decideReview(card, review, decision) {
 
 // Reviewing a finished conversation is reading it: opening it marks it reviewed, and it leaves the review lane.
 registerCardAction({
-  id: "review", label: "Review", style: "primary", order: 1, title: "Open it to read what it did; once you have looked, it leaves Done · ready for review",
+  id: "review", label: "Review", style: "primary", order: 1, title: "Open it to read what it did; it waits for review until you mark it done",
   visible: (card) => card.column === "review", run: (card) => openConversation(card),
 });
 /** A new conversation from the board: the quick note form, started at once, in the project the board is focused on. */

@@ -23,24 +23,12 @@ function renderReviewCounts() {
   renderSessions();
 }
 
-function markSessionReviewed(session) {
-  if (session.reviewState !== "needs_review" || session.running) return;
-  const projectId = state.activeProjectId;
-  // The inbox snapshot answers for this project once another one is open, so it drops the row
-  // too, and a scan begun before the server stored the mark must not bring it back.
-  dropPendingReview(projectId, session.path);
-  void changeSessionOptimistically(session, { patch: { reviewState: "reviewed" } }, () => api(`/api/projects/${encodeURIComponent(projectId)}/sessions/reviewed`, {
-    method: "PUT",
-    body: JSON.stringify({ sessionPath: session.path, updatedAt: session.updatedAt }),
-  }), renderReviewCounts).catch((error) => toast.error(error.message)).finally(async () => {
-    pendingReviewsVersion += 1;
-    refreshPendingReviews().catch((error) => console.warn("Could not refresh pending reviews", error));
-    await refreshSessionsQuietly();
-    renderReviewCounts();
-  });
-}
-
-function dropPendingReview(projectId, sessionPath) {
+/**
+ * Marking a conversation done is its review (session-list.js): opening one to read it leaves it waiting. The inbox
+ * snapshot answers for this project once another one is open, so it drops the row too, and a scan begun before the
+ * server stored the mark must not bring it back.
+ */
+export function dropPendingReview(projectId, sessionPath) {
   pendingReviewsVersion += 1;
   state.pendingReviews = state.pendingReviews
     .map((group) => group.projectId === projectId ? { ...group, sessions: group.sessions.filter((entry) => entry.path !== sessionPath) } : group)
@@ -277,10 +265,10 @@ const listedSessionTransfers = new Set();
 
 /**
  * `keepView` opens it without showing it: the startup restore leaves the person in the view they were in, the control center too.
- * `keepReview` leaves it waiting for review: the Chat tab of Bob's list only shows it, and a reviewed one would leave that list.
+ * Opening it does not review it: it waits for review until it is marked done.
  * `timed`: the caller started timing the open at the click (open-timing.js); otherwise it is timed from here.
  */
-export async function openListedSession(session, { keepView = false, keepReview = false, timed = false } = {}) {
+export async function openListedSession(session, { keepView = false, timed = false } = {}) {
   // Lists render before harness metadata arrives, and the steps below resolve the engine from
   // it. A row tapped in that window threw here, so the tap did nothing at all.
   if (!state.harnesses.length) {
@@ -289,7 +277,6 @@ export async function openListedSession(session, { keepView = false, keepReview 
   }
   if (!timed) startOpenTiming("list");
   const reviewHighlightAfter = session.reviewState === "needs_review" ? session.reviewedAt : null;
-  if (!keepReview) markSessionReviewed(session);
   rememberRecentSession(session);
   const projectId = state.activeProjectId;
   state.activeSessionId = session.id;
@@ -341,13 +328,12 @@ export async function openListedSession(session, { keepView = false, keepReview 
 
 /**
  * A conversation opened from its card before its project's list arrived (control-center.js) gets what the list knows
- * once it does: its review mark, and the highlight of what came after the last review if the transcript is not drawn yet.
+ * once it does: the highlight of what came after the last review, if the transcript is not drawn yet.
  */
-export function settleOpenedSession(session, { keepReview = false } = {}) {
+export function settleOpenedSession(session) {
   // Its ready answer may name the newest segment; the conversation id stays the same.
   if (state.activeSessionId !== session.id && state.activeConversationId !== (session.conversationId ?? session.id)) return;
   if (session.reviewState === "needs_review" && !activeConversationReady()) state.reviewHighlightAfter = session.reviewedAt ?? null;
-  if (!keepReview) markSessionReviewed(session);
 }
 elements.markAllReviewedButton.addEventListener("click", () => { void markAllSessionsReviewed(); });
 

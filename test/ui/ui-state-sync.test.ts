@@ -328,7 +328,8 @@ test("a pending-review scan still lands when more refreshes are asked for while 
   } finally { await page.context().close(); }
 });
 
-test("opening a conversation clears it from the inbox and a scan begun before the mark cannot bring it back", { timeout: 60_000 }, async () => {
+// Reading a conversation is not reviewing it: only marking it done (or Mark all reviewed) takes it out of the inbox.
+test("opening a conversation leaves it in the inbox and sends no review mark", { timeout: 60_000 }, async () => {
   const page = await openPage();
   try {
     await page.evaluate(async () => { const module = "/app/reviews.js"; await (await import(module)).refreshPendingReviews(); });
@@ -338,33 +339,20 @@ test("opening a conversation clears it from the inbox and a scan begun before th
       const session = state.sessions[0];
       session.reviewState = "needs_review";
       session.running = false;
-      const groups = [{ projectId: state.activeProjectId, projectName: "Internal Assistant", sessions: [{ id: session.id, path: session.path, title: session.title, updatedAt: session.updatedAt }] }];
-      state.pendingReviews = groups;
-      return { path: session.path, groups };
+      state.pendingReviews = [{ projectId: state.activeProjectId, projectName: "Internal Assistant", sessions: [{ id: session.id, path: session.path, title: session.title, updatedAt: session.updatedAt }] }];
+      return { path: session.path, id: session.id };
     });
-    const scan = deferred<Route>(), mark = deferred<Route>(), afterMark = deferred<Route>();
-    let reads = 0;
-    await page.route("**/api/reviews/pending", (route) => {
-      if (++reads === 1) scan.resolve(route);
-      else if (reads === 2) afterMark.resolve(route);
-      else void route.fulfill({ json: { projects: [] } });
-    });
-    await page.route("**/api/projects/*/sessions/reviewed", (route) => mark.resolve(route));
-    await page.evaluate(async () => { const module = "/app/reviews.js"; void (await import(module)).refreshPendingReviews(); });
-    const staleScan = await scan.promise;
+    const marked: string[] = [];
+    await page.route("**/api/projects/*/sessions/reviewed", async (route) => { marked.push(route.request().postData() ?? ""); await route.fulfill({ status: 204 }); });
     await page.locator(`#sessionList [data-session-path=${JSON.stringify(fixture.path)}] .session-card`).click();
-    const markRequest = await mark.promise;
-    const listed = () => page.evaluate(async (sessionPath) => {
+    await page.waitForFunction(async (id) => { const module = "/app/state.js"; return (await import(module)).state.activeSessionId === id; }, fixture.id);
+    await page.waitForTimeout(500);
+    assert.deepEqual(marked, [], "opening it sends no review mark");
+    const listed = await page.evaluate(async (sessionPath) => {
       const module = "/app/state.js";
       return (await import(module)).state.pendingReviews.some((group: { sessions: Array<{ path: string }> }) => group.sessions.some((entry) => entry.path === sessionPath));
     }, fixture.path);
-    assert.equal(await listed(), false, "the inbox drops the conversation as soon as it opens");
-    await staleScan.fulfill({ json: { projects: fixture.groups } });
-    await markRequest.fulfill({ status: 204 });
-    const freshScan = await afterMark.promise;
-    assert.equal(await listed(), false, "a scan begun before the mark must not bring the conversation back");
-    await freshScan.fulfill({ json: { projects: [] } });
-    await page.waitForFunction(() => document.querySelector("#pendingReviewsBadge")!.hasAttribute("hidden"));
+    assert.equal(listed, true, "it still waits for review in the inbox");
   } finally { await page.context().close(); }
 });
 

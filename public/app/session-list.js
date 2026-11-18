@@ -14,7 +14,7 @@ import { keepListScroll } from "./list-scroll.js";
 import { drawChunked } from "./long-scroll.js";
 import { renderProjects } from "./project-list.js";
 import { syncRecentSessionActivity } from "./recents.js";
-import { openListedSession, reviewableSessions } from "./reviews.js";
+import { dropPendingReview, openListedSession, reviewableSessions } from "./reviews.js";
 import { conversationBudgetTarget, openBudgetDialog } from "./budget-dialog.js";
 import { openRowMenu, pinButton, refreshRowMenuAnchor } from "./row-menu.js";
 import { openSecretScope } from "./secrets.js";
@@ -585,8 +585,15 @@ async function toggleSessionDone(session) {
   const closeActive = done && active && (active.conversationId || active.id) === (session.conversationId || session.id);
   if (closeActive) clearActiveSession();
   toast(done ? (feedback.rating === "unimportant" ? "Conversation marked done" : "Conversation marked done; learning from it in the background") : "Conversation reopened");
+  // Done is the review: it stops waiting for review at once, and stays reviewed if it is reopened later.
+  const reviews = done && session.reviewState === "needs_review" && !session.running;
+  if (reviews) {
+    dropPendingReview(projectId, session.path);
+    if (session.updatedAt) api(`/api/projects/${encodeURIComponent(projectId)}/sessions/reviewed`, { method: "PUT", body: JSON.stringify({ sessionPath: session.path, updatedAt: session.updatedAt }) })
+      .catch((error) => console.warn("Could not store the review mark of a conversation marked done", error));
+  }
   try {
-    await changeSessionOptimistically(session, { patch: { doneAt: done ? new Date().toISOString() : undefined } }, () => api(`/api/projects/${encodeURIComponent(projectId)}/sessions/done`, {
+    await changeSessionOptimistically(session, { patch: { doneAt: done ? new Date().toISOString() : undefined, ...(reviews ? { reviewState: "reviewed" } : {}) } }, () => api(`/api/projects/${encodeURIComponent(projectId)}/sessions/done`, {
       method: "PUT",
       body: JSON.stringify({ sessionId: session.conversationId || session.id, engine, done, ...(feedback ? { feedback } : {}) }),
     }), renderSessions);

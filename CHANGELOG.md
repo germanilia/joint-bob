@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.325.0 — 2026-11-18
+
+- A conversation now waits for review until you mark it done. Opening it to read it, the board's **Review** button, and the page reopening it after a restart or reload no longer count as a review. **Mark all reviewed** still clears a project's reviews.
+- A conversation marked done no longer waits for review anywhere (its row, the review inbox, the board, review notifications), whichever Done button was used. If it runs again afterwards, its new answer waits for review again.
+
 ## 2.324.1 — 2026-11-18
 
 - Taking a conversation over twice at the same moment no longer fails with "A transfer is already in progress for this conversation". This happened when the page moved a conversation to this machine by itself while you pressed Take ownership, or when two windows asked together. Both requests now wait for the one transfer and get the same answer.
