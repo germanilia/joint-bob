@@ -92,8 +92,9 @@ test("Pi new and resumed sessions keep browser identity while shell secrets refr
       assert.ok(!instructions.includes("All web browsing and browser testing must"), "Pi must not receive the contradictory blanket test ban");
       const bash = handle.session.agent.state.tools.find((tool) => tool.name === "bash")!;
       const execute = async () => {
-        const result = await bash.execute("bridge-test", { command: `node -e 'console.log(JSON.stringify({token:process.env.JOINT_BOB_BROWSER_TOKEN,secret:process.env.BRIDGE_FIXTURE}))'` });
-        return JSON.parse(result.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
+        const capture = path.join(cwd, "bridge-fixture.json");
+        await bash.execute("bridge-test", { command: `node -e 'require("fs").writeFileSync(${JSON.stringify(capture)}, JSON.stringify({token:process.env.JOINT_BOB_BROWSER_TOKEN,secret:process.env.BRIDGE_FIXTURE}), {mode:384})'` });
+        return JSON.parse(await readFile(capture, "utf8"));
       };
       const first = await execute();
       assert.deepEqual(browserAgentIdentity(first.token), { projectId: project.id, engine: "pi", conversationId: sessionPath ? "canonical-browser-conversation" : handle.session.sessionManager.getSessionId() });

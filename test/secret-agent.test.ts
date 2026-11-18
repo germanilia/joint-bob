@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { startSupervisor } from "../scripts/joint-bob-supervisor.mjs";
+import { requestSupervisor } from "../scripts/supervisor-client.mjs";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -49,6 +53,26 @@ test("selects only attached accounts for one command without exposing values in 
     assert.equal(child.status, 0, child.stderr);
     assert.equal(child.stdout, "true");
     assert.doesNotMatch(child.stderr, /synthetic-/);
+    const supervisor = await startSupervisor({ dataDirectory: path.join(root, "state"), app: {
+      executable: process.execPath, args: ["-e", "setInterval(() => {}, 1000)"], cwd: root, env: {},
+    } });
+    try {
+      const id = randomUUID();
+      const request = (body: unknown) => requestSupervisor(supervisor.socketPath, supervisor.token, body);
+      await request({ action: "start", id, identity: "synthetic", name: "selected account log test", executable: process.execPath,
+        args: [cli, "run", two.id, "--", process.execPath, "-e", "console.log(process.env.AWS_SECRET_ACCESS_KEY);console.error(process.env.AWS_SECRET_ACCESS_KEY)"],
+        cwd: root, env: { HOME: root, PI_WEB_DATA_DIR: root, JOINT_BOB_SECRET_TOKEN: token,
+          JOINT_BOB_TASK_SOCKET: supervisor.socketPath, JOINT_BOB_TASK_TOKEN: supervisor.token },
+      });
+      const deadline = Date.now() + 10000;
+      while ((await request({ action: "task", id }) as { status: string }).status !== "completed") {
+        assert.ok(Date.now() < deadline, "selected account command did not complete");
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      const logged = await readFile(path.join(root, "state", "background-tasks", `${id}.log`), "utf8");
+      assert.ok(!logged.includes("synthetic-prod-secret"), "explicitly selected account values must be registered before the command can log them");
+      assert.ok(logged.includes("***\n"));
+    } finally { await supervisor.close(); }
     const denied = spawnSync(process.execPath, [cli, "run", outside.id, "--", process.execPath, "-e", "process.stdout.write('ran')"], {
       env: { HOME: root, PI_WEB_DATA_DIR: root, JOINT_BOB_SECRET_TOKEN: token }, encoding: "utf8",
     });

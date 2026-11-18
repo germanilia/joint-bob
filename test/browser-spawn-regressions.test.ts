@@ -128,8 +128,9 @@ test("live Claude to Pi and Pi to Claude to Pi switches keep the existing human-
       assert.notEqual(session.sessionId, originalId, "switch must allocate a fresh segment before testing its token");
       assert.equal((await getConversationRecord(project.id, "pi", session.sessionId))?.conversationId, originalId);
       const bash = session.agent.state.tools.find(tool => tool.name === "bash")!;
-      const result = await bash.execute("switch-token", { command: `node -e 'console.log(process.env.JOINT_BOB_BROWSER_TOKEN)'` });
-      const token = result.content.filter(part => part.type === "text").map(part => part.text).join("\n").trim();
+      const capture = path.join(root, `switch-token-${session.sessionId}.fixture`);
+      await bash.execute("switch-token", { command: `node -e 'require("fs").writeFileSync(${JSON.stringify(capture)}, process.env.JOINT_BOB_BROWSER_TOKEN, {mode:384})'` });
+      const token = await readFile(capture, "utf8");
       const identity = browserAgentIdentity(token)!;
       assert.deepEqual(identity, { projectId: project.id, engine: "pi", conversationId: originalId }, "live Pi bash must use the logical ID known before segment persistence");
       const agentBrowser = await runtime.create({ ...identity, appNodeId: local.id });

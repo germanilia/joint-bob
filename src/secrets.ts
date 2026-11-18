@@ -1,3 +1,4 @@
+import { registerLogSecrets } from "../scripts/log-masking.mjs";
 import { accountReceivesFrom } from "./cluster-accounts.js";
 import { createCipheriv, createDecipheriv, createHash, createPrivateKey, createPublicKey, randomBytes, randomUUID, X509Certificate } from "node:crypto";
 import { NotFoundError } from "./not-found.js";
@@ -95,6 +96,7 @@ function key(): Buffer {
 /** AES-256-GCM with this node's own key. Exported so the migration and the replication
     inbox can re-encrypt arriving material without a second key implementation. */
 export function encryptSecretValue(value: string): string {
+  registerLogSecrets([value]);
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key(), iv);
   const body = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
@@ -106,7 +108,9 @@ export function decryptSecretValue(value: string): string {
   if (!iv || !tag || !body) throw new Error("Stored secret account is invalid");
   const cipher = createDecipheriv("aes-256-gcm", key(), Buffer.from(iv, "base64"));
   cipher.setAuthTag(Buffer.from(tag, "base64"));
-  return Buffer.concat([cipher.update(Buffer.from(body, "base64")), cipher.final()]).toString("utf8");
+  const plaintext = Buffer.concat([cipher.update(Buffer.from(body, "base64")), cipher.final()]).toString("utf8");
+  registerLogSecrets([plaintext]);
+  return plaintext;
 }
 
 export function normalizeWebsiteOrigin(value: string): string {
@@ -178,7 +182,14 @@ function storedVariables(row: AccountRow): StoredVariable[] {
     const item = variable as Record<string, unknown>;
     if (typeof item.name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(item.name) || (item.kind !== "value" && item.kind !== "file") || typeof item.value !== "string") throw new Error("Stored secret account is invalid");
   }
+  registerLogSecrets((value as StoredVariable[]).map(variable => variable.value));
   return value as StoredVariable[];
+}
+
+/** Load existing accounts before the server emits startup logs, independent of attachment or Guardian. */
+export function registerStoredSecretsForLogging(): void {
+  const rows = db().prepare("SELECT variables_encrypted FROM secret_accounts").all() as AccountRow[];
+  for (const row of rows) storedVariables(row);
 }
 
 /** One variable from the first of these accounts that has it, for code that sends on an account's behalf. */
@@ -427,6 +438,7 @@ export async function saveSecretAccount(input: SecretAccountInput): Promise<Secr
     return { name: item.name, kind: item.kind, value };
   });
   const variables = input.provider === "github" ? finalizeGithubVariables(merged) : merged;
+  registerLogSecrets(variables.map(variable => variable.value));
   if (input.provider === "certificate") {
     try {
       const cert = new X509Certificate(variables.find((item) => item.name === "TLS_CERTIFICATE")!.value);
