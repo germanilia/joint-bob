@@ -12,7 +12,10 @@ import { broadcastToProject, send } from "./realtime.js";
 
 export const automationWorktreeInstruction = "This run has its own temporary Joint Bob worktree, created from origin/main. Do not create another worktree. Finish any required changes through the normal verified merge workflow before your final response. This worktree and all files left in it are removed when the run ends.";
 
-export async function withAutomationWorktree<T>(source: { projectId: string; name: string; runInWorktree: boolean }, requestId: string, run: (worktree?: ProjectWorktree) => Promise<T>): Promise<T> {
+export const automationCleanupInstruction = "Clean up after run is enabled. Keep downloads, attachments and generated files inside this worktree, including temporary files. Do not leave background work running after the run. Joint Bob removes the worktree after success or failure and keeps the run metadata and logs. Shared project files and credentials are not cleanup targets.";
+
+export async function withAutomationWorktree<T>(source: { projectId: string; name: string; runInWorktree: boolean; cleanupAfterRun?: boolean }, requestId: string, run: (worktree?: ProjectWorktree) => Promise<T>): Promise<T> {
+  if (source.cleanupAfterRun && !source.runInWorktree) throw new Error("Cleanup requires a fresh worktree");
   if (!source.runInWorktree) return run();
   const project = await getProject(source.projectId);
   if (!project) throw new Error("Automation project not found");
@@ -24,10 +27,20 @@ export async function withAutomationWorktree<T>(source: { projectId: string; nam
     originMain: true, gitEnvironment: genericSecretEnvironment(project.id),
   });
   broadcastToProject(project.id, { type: "worktreesChanged" });
+  let runError: unknown;
   try {
     return await run(worktree);
+  } catch (error) {
+    runError = error;
+    throw error;
   } finally {
-    await removeAutomationWorktree(worktree);
+    try {
+      await removeAutomationWorktree(worktree);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const prior = runError === undefined ? "" : `Run failed: ${runError instanceof Error ? runError.message : String(runError)}. `;
+      throw new Error(`${prior}Cleanup failed: ${detail}`, { cause: error });
+    }
   }
 }
 

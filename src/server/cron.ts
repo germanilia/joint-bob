@@ -23,7 +23,7 @@ import { takeLocalSessionOwnership } from "./routes/sessions.js";
 import { listProjectSessionsWithReviewState } from "./sessions-helpers.js";
 import { flags } from "./state.js";
 import { runPersonalAssistantAutomationTurn } from "./routes/personal-assistants.js";
-import { automationWorktreeInstruction, withAutomationWorktree } from "./automation-worktree.js";
+import { automationCleanupInstruction, automationWorktreeInstruction, withAutomationWorktree } from "./automation-worktree.js";
 import { attachAutomationSecrets, automationResourceContext, bindAutomationConversation } from "./automation-context.js";
 
 export async function cronConversationReady(projectId: string, sessionId: string, engine: string): Promise<boolean> {
@@ -78,7 +78,7 @@ export async function queuedCronPrompt(task: CronTask, run: CronRun, sessionId: 
     bypassGuardian: task.bypassGuardian,
     automationProfile: automationProfileContext(task),
     scheduledAutoRespond: task.autoRespond ?? undefined,
-    projectId: task.projectId, engine: task.engine, sessionId, worktreeId, message: [scheduledPromptText(task.prompt), resourceContext, worktreeId ? automationWorktreeInstruction : "", titleInstruction].filter(Boolean).join("\n\n"), requestId: run.id, label: "Scheduled", until: "completed",
+    projectId: task.projectId, engine: task.engine, sessionId, worktreeId, message: [scheduledPromptText(task.prompt), resourceContext, worktreeId ? automationWorktreeInstruction : "", task.cleanupAfterRun ? automationCleanupInstruction : "", titleInstruction].filter(Boolean).join("\n\n"), requestId: run.id, label: "Scheduled", until: "completed",
     // Model and reasoning ride along with the queued prompt instead of
     // configuring the live session here: unrelated scheduled tasks share a
     // conversation, and configuring one mid-turn throws "session is busy".
@@ -101,7 +101,7 @@ async function executeCronRun(task: CronTask, run: CronRun): Promise<void> {
       if (task.assistantId) {
         if (!task.creatorAccountId) throw new Error("Assistant scheduled task has no creator account");
         const resourceContext = await automationResourceContext(task.id);
-        const turn = await runPersonalAssistantAutomationTurn(task.creatorAccountId, task.assistantId, run.id, [scheduledPromptText(task.prompt), resourceContext, worktree ? automationWorktreeInstruction : ""].filter(Boolean).join("\n\n"), {
+        const turn = await runPersonalAssistantAutomationTurn(task.creatorAccountId, task.assistantId, run.id, [scheduledPromptText(task.prompt), resourceContext, worktree ? automationWorktreeInstruction : "", task.cleanupAfterRun ? automationCleanupInstruction : ""].filter(Boolean).join("\n\n"), {
           bypassGuardian: task.bypassGuardian,
           worktreeId: worktree?.id, label: "Scheduled", origin: "scheduled", automationProfile: automationProfileContext(task), scheduledAutoRespond: task.autoRespond ?? undefined,
           prepare: async destination => {
