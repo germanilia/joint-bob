@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.323.5 — 2026-11-18
+
+- The workspace cleanup settings now load offline: their module was missing from the list of files the app keeps for offline use, which also stopped releases from publishing.
+
 ## 2.323.4 — 2026-11-18
 
 - An agent no longer reports the browser as blocked because another machine in the cluster is offline. The browser's profile and status listings name that machine, say that only profiles and browsers stored on it are missing, and show which machine a new browser opens on.
