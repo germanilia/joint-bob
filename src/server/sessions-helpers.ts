@@ -87,12 +87,12 @@ export async function listReviewScopeSessions(project: ProjectRecord, userId: st
   return listHarnessSessions(scope.project, scope.includedSessionPaths, scope.includedSessionIds);
 }
 
-export async function listProjectSessionsWithReviewState(project: ProjectRecord, userId: string, username: string, historyDays = getSettings().conversationHistoryDays, includeTemporarySessionId?: string): Promise<SessionSummary[]> {
+export async function listProjectSessionsWithReviewState(project: ProjectRecord, userId: string, username: string, historyDays = getSettings().conversationHistoryDays, includeTemporarySessionId?: string, rootLimit = 50): Promise<SessionSummary[]> {
   const scope = await measureOperation("sessions.review_scope", () => reviewScope(project, userId, username, historyDays));
   const searchProject = scope.project;
   sessionWatcher.ensureProject(searchProject);
   const temporarySessionIds = await listByTheWaySessionIds(project.id);
-  const catalog = await measureOperation("sessions.transcript_catalog", () => listHarnessSessions(searchProject, scope.includedSessionPaths, scope.includedSessionIds));
+  const catalog = await measureOperation("sessions.transcript_catalog", () => listHarnessSessions(searchProject, scope.includedSessionPaths, scope.includedSessionIds, rootLimit));
   const hiddenCronTaskIds = new Set(userId && catalog.some((session) => session.cronTaskId)
     ? (await listProjectAutomations(project.id)).automations.filter((automation) => automation.trigger === "schedule" && automation.hideFromHistory).map((automation) => automation.id)
     : []);
@@ -225,10 +225,10 @@ export async function noteUnannouncedRunChanges(): Promise<void> {
  * acts on one conversation's state at that moment (a takeover, a scheduled run, a review
  * notification) calls listProjectSessionsWithReviewState itself.
  */
-export function sharedProjectSessions(project: ProjectRecord, userId: string, username: string, onlyInFlight = false): Promise<SessionSummary[]> {
-  const key = JSON.stringify([project.id, userId, username, getSettings().conversationHistoryDays, project.path, project.macPath ?? "", project.locations ?? []]);
+export function sharedProjectSessions(project: ProjectRecord, userId: string, username: string, onlyInFlight = false, rootLimit = 50): Promise<SessionSummary[]> {
+  const key = JSON.stringify([project.id, userId, username, getSettings().conversationHistoryDays, project.path, project.macPath ?? "", project.locations ?? [], rootLimit]);
   const reusedBefore = sharedProjectListingUse().reused;
-  const listing = sharedProjectListing(project.id, key, () => listProjectSessionsWithReviewState(project, userId, username), "", Date.now(), onlyInFlight);
+  const listing = sharedProjectListing(project.id, key, () => listProjectSessionsWithReviewState(project, userId, username, undefined, undefined, rootLimit), "", Date.now(), onlyInFlight);
   // Counted in the performance log, so what sharing saves can be read there: how many requests
   // built a list, and how many took one that was being built or kept.
   const reused = sharedProjectListingUse().reused > reusedBefore;

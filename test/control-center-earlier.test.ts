@@ -19,6 +19,15 @@ test("Earlier lists what is not on the board, newest first, without scheduled ru
   assert.equal(earlier.find((row) => row.conversationId === "1")!.done, false);
 });
 
+test("Earlier includes conversations beyond the old 2000-row cutoff", () => {
+  const sessions = Array.from({ length: 2005 }, (_, index) => session(`archive-${index}`, {
+    updatedAt: new Date(Date.UTC(2026, 10, 1, 0, index)).toISOString(),
+  }));
+  const earlier = earlierConversations([{ projectId: "dak", projectName: "Dak", sessions }], []);
+  assert.equal(earlier.length, 2005);
+  assert.equal(earlier.at(-1)!.conversationId, "archive-0", "the oldest conversation remains reachable");
+});
+
 // The list's Inbox and search: a conversation that was reviewed and never marked done is on no lane of the board and not in Past.
 test("the list reads the done conversations and the open ones, each newest first, with where they run", () => {
   const groups = [

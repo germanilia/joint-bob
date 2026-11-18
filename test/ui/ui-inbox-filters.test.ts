@@ -240,10 +240,9 @@ test("the Show all page on the desktop has the same filters and Select", async (
   await page.getByTestId("workspace-group-page").waitFor();
   assert.equal(await page.getByTestId("inboxPage-tools").isVisible(), true);
   assert.equal(await page.getByTestId("inboxHome-tools").isVisible(), false, "the phone's toolbar stays on the phone");
-  // One state for both toolbars: the earlier tests chose Everything.
-  assert.equal(await page.getByTestId("inboxPage-range").inputValue(), "all");
-  await page.getByTestId("inboxPage-range").selectOption("latest-10");
-  assert.equal(await page.getByTestId("inboxHome-range").inputValue(), "latest-10");
+  // Show all keeps project/source/status filters, but never limits Earlier to the phone's range.
+  assert.equal(await page.getByTestId("inboxPage-range").isVisible(), false);
+  assert.equal(await page.getByTestId("inboxPage-search").isVisible(), true);
   await page.getByTestId("inboxPage-select").click();
   await page.getByTestId("inboxPage-bar").waitFor();
   await page.locator('[data-testid="workspace-group-page-row"] .ws-check').first().waitFor();
