@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -80,8 +80,14 @@ test('task logger masks custom environment values across chunks on both streams 
   });
   try {
     const id = randomUUID();
-    const secretFile = path.join(root, 'synthetic-secret');
-    await writeFile(secretFile, 'synthetic-file-secret');
+    const accountFiles = path.join(root, 'state', 'secret-files', '8a50c6f1-dd2e-44ac-8b93-6423acf27e1b');
+    await mkdir(accountFiles, { recursive: true, mode: 0o700 });
+    const secretFile = path.join(accountFiles, 'CUSTOM_FILE');
+    await writeFile(secretFile, 'synthetic-file-secret', { mode: 0o600 });
+    const unrelated = path.join(root, 'unrelated');
+    await writeFile(unrelated, 'synthetic-unrelated-content', { mode: 0o600 });
+    const linked = path.join(accountFiles, 'LINKED_FILE');
+    await symlink(unrelated, linked);
     await control({ action: 'start', id, identity: 'synthetic-review', name: 'masking test',
       executable: process.execPath, args: ['-e', `
         process.stdout.write('stdout ' + process.env.CUSTOM_VALUE.slice(0, 12));
@@ -91,11 +97,13 @@ test('task logger masks custom environment values across chunks on both streams 
           process.stderr.write(process.env.CUSTOM_VALUE.slice(12) + '\\n');
           console.log(require('fs').readFileSync(process.env.CUSTOM_FILE, 'utf8'));
           console.log('short=' + process.env.SHORT_VALUE);
+          console.log('unrelated fixture: synthetic-unrelated-content');
           process.stdout.write('partial ' + process.env.CUSTOM_VALUE.slice(0, 12));
         }, 50);
       `], cwd: root, env: {
         CUSTOM_VALUE: 'synthetic-task-secret', SHORT_VALUE: 'q7!', CUSTOM_FILE: secretFile,
-        JOINT_BOB_SECRET_ENV_NAMES: JSON.stringify(['CUSTOM_VALUE', 'SHORT_VALUE', 'CUSTOM_FILE']),
+        OUTSIDE_FILE: unrelated, LINKED_FILE: linked,
+        JOINT_BOB_SECRET_ENV_NAMES: JSON.stringify(['CUSTOM_VALUE', 'SHORT_VALUE', 'CUSTOM_FILE', 'OUTSIDE_FILE', 'LINKED_FILE']),
       },
     });
     const deadline = Date.now() + 10000;
@@ -107,6 +115,7 @@ test('task logger masks custom environment values across chunks on both streams 
     assert.ok(!persisted.includes('synthetic-task-secret'), 'task secret must never reach disk');
     assert.ok(!persisted.includes('synthetic-file-secret'), 'secret file contents must never reach disk');
     assert.ok(!persisted.includes('q7!'), 'short task secrets must be masked');
+    assert.ok(persisted.includes('unrelated fixture: synthetic-unrelated-content'), 'task input must not register arbitrary files or follow symlinks');
     assert.ok(persisted.includes('partial '), 'ordinary output must survive stream end');
     assert.ok(persisted.includes('stdout '), 'stdout should preserve nonsecret output');
     assert.ok(persisted.includes('stderr '), 'stderr should preserve nonsecret output');

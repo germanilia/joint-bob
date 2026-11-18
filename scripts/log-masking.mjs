@@ -1,4 +1,5 @@
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
+import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { Transform } from "node:stream";
 
@@ -11,15 +12,12 @@ const CREDENTIAL_NAME = /(?:^|_)(?:secret(?:_access_key)?|password|passwd|token|
 /** Retain old values too: errors from an already-running command can arrive after rotation. */
 export function registerLogSecrets(secrets) {
   for (const secret of secrets) {
-    if (!secret) continue;
-    for (const value of [secret, JSON.stringify(secret).slice(1, -1), encodeURIComponent(secret)]) {
+    if (typeof secret !== "string" || !secret) continue;
+    for (const value of [secret, JSON.stringify(secret).slice(1, -1), encodeURIComponent(secret.toWellFormed())]) {
       if (!values.has(value)) { values.add(value); revision++; }
     }
   }
 }
-
-/** Only for in-memory transfer to task log writers. Never persist or return through an API. */
-export function logSecretValues() { return [...values]; }
 
 function registerJsonSecrets(value, name = "") {
   if (typeof value === "string") {
@@ -28,19 +26,38 @@ function registerJsonSecrets(value, name = "") {
   else if (value && typeof value === "object") Object.entries(value).forEach(([key, item]) => registerJsonSecrets(item, key));
 }
 
-export function registerEnvironmentLogSecrets(env) {
+function managedSecretFile(value, dataDirectory) {
+  if (!dataDirectory || !path.isAbsolute(value)) return;
+  const root = path.join(realpathSync(dataDirectory), "secret-files");
+  const relative = path.relative(path.join(dataDirectory, "secret-files"), value);
+  const canonicalRelative = path.relative(root, value);
+  const isAccountFile = name => /^[a-f0-9-]{36}[\\/][A-Za-z_][A-Za-z0-9_]*$/i.test(name);
+  const name = isAccountFile(relative) ? relative : canonicalRelative;
+  if (!isAccountFile(name)) return;
+  const file = path.join(root, name);
+  let fd;
+  try {
+    if (realpathSync(file) !== file) return;
+    fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.uid !== process.getuid() || info.nlink !== 1 || (info.mode & 0o777) !== 0o600 || info.size > 1024 * 1024) return;
+    const bytes = Buffer.alloc(info.size);
+    return bytes.subarray(0, readSync(fd, bytes, 0, bytes.length, 0)).toString("utf8");
+  } catch (error) {
+    if (!["ENOENT", "ENOTDIR", "ELOOP", "EACCES"].includes(error.code)) throw error;
+  } finally { if (fd !== undefined) closeSync(fd); }
+}
+
+export function registerEnvironmentLogSecrets(env, dataDirectory) {
   const attached = JSON.parse(env.JOINT_BOB_SECRET_ENV_NAMES || "[]");
+  if (!Array.isArray(attached) || attached.some(name => typeof name !== "string")) throw new Error("Invalid secret environment names");
   const names = new Set([...attached, ...Object.keys(env).filter(name => CREDENTIAL_NAME.test(name))]);
   for (const name of names) {
     const value = env[name];
     if (typeof value !== "string" || !value) continue;
     registerLogSecrets([value]);
-    // File-based credentials are injected as paths, but their contents are secret as well.
-    if (!value.startsWith("/")) continue;
-    let info;
-    try { info = statSync(value); } catch (error) { if (error.code === "ENOENT" || error.code === "ENOTDIR") continue; throw error; }
-    if (!info.isFile() || info.size > 1024 * 1024) continue;
-    const content = readFileSync(value, "utf8");
+    const content = managedSecretFile(value, dataDirectory);
+    if (content === undefined) continue;
     registerLogSecrets([content]);
     let parsed;
     try { parsed = JSON.parse(content); } catch { continue; }

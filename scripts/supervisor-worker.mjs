@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { setPriority } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { PassThrough } from "node:stream";
-import { createLogMaskingStream, registerEnvironmentLogSecrets, registerLogSecrets } from "./log-masking.mjs";
+import { createLogMaskingStream, registerEnvironmentLogSecrets } from "./log-masking.mjs";
 
 let command = null;
 
@@ -38,17 +38,10 @@ process.on("disconnect", () => {
   }
 });
 
-process.on("message", message => {
-  if (message.type !== "log-secrets") return;
-  registerEnvironmentLogSecrets(message.env);
-  send({ type: "log-secrets-registered", requestId: message.requestId });
-});
-
 process.once("message", message => {
   if (!message || message.type !== "launch") throw new Error("Invalid worker launch message");
   const { spec } = message;
-  registerLogSecrets(message.logSecrets);
-  registerEnvironmentLogSecrets(spec.env);
+  registerEnvironmentLogSecrets(spec.env, message.dataDirectory);
   // Set before spawning: commands and their descendants inherit the lower priority.
   // The lowest there is. At 10, a few dozen commands running at once (agents' test suites on a
   // four-core machine, 2026-11-10) still took a third of the CPU time the server asked for, and

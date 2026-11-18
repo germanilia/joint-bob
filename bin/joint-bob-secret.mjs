@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
-import { requestTaskControl } from "../scripts/supervisor-client.mjs";
+import { pipeline } from "node:stream/promises";
+import { resolveDataDirectory } from "../dist/data-directory.js";
+import { createLogMaskingStream, registerEnvironmentLogSecrets } from "../scripts/log-masking.mjs";
 import { secretAgentAccounts, secretAgentAccountEnvironment } from "../dist/secret-agent.js";
 
 const usage = "Usage: joint-bob-secret list | run ACCOUNT_ID -- COMMAND [ARGS...]";
@@ -20,16 +22,20 @@ async function main() {
   for (const name of removeNames) delete env[name];
   delete env.JOINT_BOB_SECRET_TOKEN;
   Object.assign(env, values);
-  if (process.env.JOINT_BOB_TASK_TOKEN) {
-    await requestTaskControl(process.env, { action: "mask-secrets", env: { ...values, JOINT_BOB_SECRET_ENV_NAMES: JSON.stringify(Object.keys(values)) } });
-  }
-  const child = spawn(command, args, { env, stdio: "inherit" });
+  registerEnvironmentLogSecrets({ ...values, JOINT_BOB_SECRET_ENV_NAMES: JSON.stringify(Object.keys(values)) }, resolveDataDirectory());
+  const child = spawn(command, args, { env, stdio: ["inherit", "pipe", "pipe"] });
+  const output = Promise.all([
+    pipeline(child.stdout, createLogMaskingStream(), process.stdout, { end: false }),
+    pipeline(child.stderr, createLogMaskingStream(), process.stderr, { end: false }),
+  ]);
+  output.catch(() => { child.kill("SIGTERM"); });
   process.on("SIGTERM", () => child.kill("SIGTERM"));
   process.on("SIGINT", () => child.kill("SIGINT"));
   const exitCode = await new Promise((resolve, reject) => {
     child.on("error", reject);
     child.on("close", (code, signal) => resolve(code ?? (signal ? 128 + (constants.signals[signal] ?? 1) : 1)));
   });
+  await output;
   process.exitCode = exitCode;
 }
 

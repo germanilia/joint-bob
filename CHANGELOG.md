@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.323.2 — 2026-11-18
+
+- Masked saved secrets as `***` before writing service and task logs or sending error notifications, even when Guardian is off.
+
 ## 2.323.1 — 2026-11-18
 
 - **Model routing:** Pi's automatic routing now uses GPT-6.2 Sol and GPT-6.2 Astra (released 2026-11-17) in place of GPT-6.1 Sol and GPT-6 Astra.
