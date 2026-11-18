@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
 import { signedNodeRequest } from "./signed-node-request.js";
 import { openNodeDatabase } from "../src/node-database.js";
@@ -137,6 +138,7 @@ test("two real servers move a conversation: now, after its turn, and by stopping
     assert.deepEqual(second.entries.map((entry) => [entry.status, entry.stopped, entry.continued]), [["moved", false, null]]);
     assert.deepEqual([(await owner()).ownerNodeId, (await owner()).epoch], [a.nodeId, 3]);
     assert.equal(await runs(b), 1, "nothing was sent to the conversation");
+    assert.deepEqual(SessionManager.open(transcript).buildSessionContext().model, { provider: "dev-environment", modelId: "dev-model" }, "the fixture transcript preserves its model when reopened after a move");
 
     // 3. A turn is running on A; "stop and move now" stops it, moves it to B and tells it to continue there.
     await rm(path.join(holds, "pi.release"));
@@ -144,7 +146,11 @@ test("two real servers move a conversation: now, after its turn, and by stopping
     sockets[1].send(JSON.stringify({ type: "prompt", message: "a long turn on A", requestId: randomUUID() }));
     await until("the turn to start on A", async () => (await runs(a)) === 1);
     const now = await start(a, b, "now");
-    await until("the running turn to be stopped", async () => ["stopping"].includes((await follow(a, now)).entries[0].status));
+    await until("the running turn to be stopped", async () => {
+      const job = await follow(a, now);
+      assert.equal(job.finishedAt, null, JSON.stringify(job));
+      return job.entries[0].status === "stopping";
+    });
     // The stubbed engine cannot be interrupted, so the test lets its turn end where a real stop would.
     await new Promise((resolve) => setTimeout(resolve, 1_500));
     await writeFile(path.join(holds, "pi.release"), "release");

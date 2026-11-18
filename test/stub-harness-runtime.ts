@@ -37,9 +37,12 @@ async function appendPiTranscript(session: HarnessSession, options: HarnessOpenO
   const userId = randomUUID();
   const assistantId = randomUUID();
   if (empty) await writeFile(file, `${JSON.stringify({ type: "session", version: 3, id: session.id, timestamp, cwd: options.cwd })}\n`);
+  const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+  const parentId = SessionManager.open(file).getLeafId();
+  const { provider, modelId } = session.settings();
   const records = [
-    { type: "message", id: userId, parentId: null, timestamp, message: { role: "user", content: [{ type: "text", text: input.text }], timestamp: Date.now() } },
-    { type: "message", id: assistantId, parentId: userId, timestamp, message: { role: "assistant", content: [{ type: "text", text: "stubbed response" }], timestamp: Date.now() } },
+    { type: "message", id: userId, parentId, timestamp, message: { role: "user", content: [{ type: "text", text: input.text }], timestamp: Date.now() } },
+    { type: "message", id: assistantId, parentId: userId, timestamp, message: { role: "assistant", provider, model: modelId, content: [{ type: "text", text: "stubbed response" }], timestamp: Date.now() } },
   ];
   await appendFile(file, JSON.stringify(records[0]) + "\n");
   const { simplifyMessages } = await import("../src/pi-service.js");

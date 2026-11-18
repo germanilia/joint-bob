@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -83,13 +84,21 @@ test("a signed-out harness is reported unavailable with the reason", { timeout: 
   assert.match(statuses.kiro.unavailableReason ?? "", /Kiro is not signed in/);
 });
 
-test("a harness that cannot load is listed as not ready, and the others still answer", { timeout: 180_000 }, async () => {
+test("a harness that cannot load is listed as not ready, and the others still answer", { timeout: 180_000 }, async t => {
+  const registry = createServer((_request, response) => {
+    response.writeHead(404, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ error: "Package not found" }));
+  });
+  await new Promise<void>(resolve => registry.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => registry.close(() => resolve())));
+  const address = registry.address();
+  assert.ok(address && typeof address !== "string");
   const seeded = await seedDevEnvironment(path.join(root, "broken-package"), 1);
   const node = seeded.nodes[0];
   const resources = path.join(seeded.home, "JointBob/.agent-resources/pi");
   await mkdir(resources, { recursive: true });
   await writeFile(path.join(resources, "packages.json"), '{"packages":["npm:joint-bob-test-no-such-package"]}');
-  const broken = await startDevNode(seeded, node);
+  const broken = await startDevNode(seeded, node, { npm_config_registry: `http://127.0.0.1:${address.port}` });
   try {
     const session = await signIn(seeded, node);
     const response = await api<{ harnesses: HarnessStatus[] }>(node, session, "GET", "/harnesses");
