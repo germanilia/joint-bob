@@ -831,7 +831,27 @@ setInterval(() => {
 const page = byId("workspaceGroupPage");
 const pageList = byId("workspaceGroupList");
 let pageGroup = "needs-you";
-const pageToolbar = createInboxToolbar({ id: "inboxPage", allCards, visibleCards: () => filteredIn(pageGroup), afterChange: refreshAfterChange });
+let pageQuery = "";
+/** Show all includes every Earlier conversation, regardless of the phone's range choice. */
+function filteredOnPage(groupId) {
+  const terms = pageQuery.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  return filterInbox(groupId, cardsIn(groupId), true).filter((card) => {
+    const text = [card.title, card.projectName, card.summary, card.activity, card.agentLabel, card.agentModel].filter(Boolean).join(" ").toLocaleLowerCase();
+    return terms.every((term) => text.includes(term));
+  });
+}
+const pageToolbar = createInboxToolbar({ id: "inboxPage", allCards, visibleCards: () => filteredOnPage(pageGroup), afterChange: refreshAfterChange });
+const pageSearch = document.createElement("input");
+pageSearch.type = "search";
+pageSearch.className = "inbox-search";
+pageSearch.dataset.testid = "inboxPage-search";
+pageSearch.placeholder = "Search conversations";
+pageSearch.setAttribute("aria-label", "Search conversations");
+pageSearch.addEventListener("input", () => {
+  pageQuery = pageSearch.value.trim();
+  renderGroupPage();
+});
+pageToolbar.root.prepend(pageSearch);
 pageList.before(pageToolbar.root);
 onInboxView(() => {
   renderGroups();
@@ -882,11 +902,11 @@ function renderGroupPage() {
     tab.setAttribute("role", "tab");
     tab.setAttribute("aria-selected", String(item.id === group.id));
     tab.dataset.testid = `workspace-group-tab-${item.id}`;
-    tab.append(item.title, Object.assign(document.createElement("b"), { textContent: String(filteredIn(item.id).length) }));
+    tab.append(item.title, Object.assign(document.createElement("b"), { textContent: String(filteredOnPage(item.id).length) }));
     tab.addEventListener("click", () => { pageGroup = item.id; renderGroupPage(); });
     return tab;
   }));
-  const items = filteredIn(group.id);
+  const items = filteredOnPage(group.id);
   pageToolbar.update();
   const scroll = pageList.scrollTop;
   pageList.replaceChildren();
@@ -901,7 +921,7 @@ function renderGroupPage() {
     empty.textContent = !loaded ? "Loading…" : cardsIn(group.id).length ? "Nothing matches the filters." : group.empty;
     entries.push(empty);
   }
-  drawChunked(pageList, entries, { key: `${group.id}|${inboxFilterKey()}` });
+  drawChunked(pageList, entries, { key: `${group.id}|${inboxFilterKey()}|${pageQuery}` });
   // Emptying a scroll box sends it to its top; a refresh of the same group puts it back (a new group's key resets it after this).
   pageList.scrollTop = scroll;
 }

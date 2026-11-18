@@ -23,7 +23,6 @@ export interface EarlierConversation {
   projectId: string; projectName: string; conversationId: string; sessionId: string; path: string; harnessId: string;
   agentLabel: string; agentModel: string | null; title: string; updatedAt: string | null; done: boolean; executionNodeId: string | null;
 }
-const EARLIER_LIMIT = 2000;
 
 /**
  * A conversation another of the person's machines runs has its summary and its turn's activity there: each such machine is asked
@@ -72,7 +71,7 @@ export async function loadBoard(session: AuthSession, options: { earlier?: boole
   const groups = await Promise.all(projects.map(async (project) => ({
     projectId: project.id,
     projectName: project.name,
-    sessions: (await sharedProjectSessions(project, session.userId, session.accountId)).filter((entry) => options.othersMachines || !theirs(entry.executionNodeId)),
+    sessions: (await sharedProjectSessions(project, session.userId, session.accountId, false, Infinity)).filter((entry) => options.othersMachines || !theirs(entry.executionNodeId)),
   })));
   const cards = buildBoard(groups, {
     summaryOf: (projectId, conversationId) => storedDigest(projectId, conversationId)?.summary ?? null,
@@ -104,8 +103,7 @@ export function earlierConversations(groups: BoardProject[], cards: BoardCard[])
       harnessId: entry.harnessId, agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, updatedAt: entry.updatedAt ?? null, done: Boolean(entry.doneAt),
       executionNodeId: entry.executionNodeId ?? null,
     })))
-    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
-    .slice(0, EARLIER_LIMIT);
+    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
 }
 
 /**

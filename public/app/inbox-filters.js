@@ -91,11 +91,11 @@ export function toggleSelected(card) {
   selectionChanged();
 }
 
-/** Applies the status, project and source choices, and the Show choice to Earlier. */
-export function filterInbox(groupId, cards) {
+/** Applies status, project and source choices. Show all skips the phone's Earlier range. */
+export function filterInbox(groupId, cards, allEarlier = false) {
   if (statuses.size && !statuses.has(groupId)) return [];
   const inProjects = cards.filter((card) => (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card))));
-  if (groupId !== "earlier") return inProjects;
+  if (groupId !== "earlier" || allEarlier) return inProjects;
   if (range.within) {
     const since = Date.now() - range.within;
     return inProjects.filter((card) => Date.parse(card.updatedAt) >= since);
@@ -202,6 +202,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
 
   const rangeSelect = document.createElement("select");
   rangeSelect.className = "inbox-range";
+  rangeSelect.hidden = !folded;
   rangeSelect.dataset.testid = `${id}-range`;
   rangeSelect.setAttribute("aria-label", "Show");
   for (const option of RANGES) rangeSelect.append(new Option(option.label, option.id));

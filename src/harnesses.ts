@@ -407,7 +407,7 @@ export async function findConversation(project: HarnessProject, opened: { engine
 }
 
 /** Lists every registered harness through the shared catalog, then applies Joint Bob metadata. */
-export async function listHarnessSessions(project: HarnessProject, pinnedSessionPaths: string[] = [], pinnedSessionIds: string[] = []): Promise<SessionSummary[]> {
+export async function listHarnessSessions(project: HarnessProject, pinnedSessionPaths: string[] = [], pinnedSessionIds: string[] = [], rootLimit = 50): Promise<SessionSummary[]> {
   const [labels, initialSessions, records, deleted] = await Promise.all([
     conversationLabels(project.id),
     sessionCatalog.list(project),
@@ -495,14 +495,14 @@ export async function listHarnessSessions(project: HarnessProject, pinnedSession
   }
   const ordered = [...byConversation.entries()].map(([conversationId, segments]) => groupConversation(conversationId, segments, labels)).sort((left, right) => (right.updatedAt ?? right.createdAt ?? "").localeCompare(left.updatedAt ?? left.createdAt ?? ""));
 
-  // Closed-out conversations sink below the live ones so the 50-row cap spends its
-  // room on work that is still moving. Pins still outrank everything.
+  // Closed-out conversations sink below live ones. Pins still outrank everything.
+  // The Inbox requests an uncapped listing; ordinary project lists keep their root limit.
   // Usage is a ledger query per conversation, so only the rows that survive the cap get one.
   return orderSessionFamilies([
     ...ordered.filter(isPinned),
     ...ordered.filter((session) => !isPinned(session) && !session.doneAt),
     ...ordered.filter((session) => !isPinned(session) && session.doneAt),
-  ], 50).map((session) => ({
+  ], rootLimit).map((session) => ({
     ...session,
     usage: session.readOnly
       ? usageTotals({ projectIds: [project.id], projectId: project.id, sessionId: session.id })
