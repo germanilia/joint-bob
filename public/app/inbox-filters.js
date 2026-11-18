@@ -42,7 +42,9 @@ const STATUSES = [
   { value: "needs-you", label: "Needs you" },
   { value: "running", label: "Running" },
   { value: "review", label: "To review" },
+  { value: "scheduled", label: "Scheduled" },
   { value: "earlier", label: "Earlier" },
+  { value: "done", label: "Done" },
 ];
 
 /** The machine a conversation runs on: "local" for this one, else its node id. */
@@ -64,6 +66,20 @@ function chooseProjects(values) {
   try { localStorage.setItem(PROJECTS_KEY, JSON.stringify([...projects])); } catch { /* private mode: the choice lasts the page */ }
   emitView();
 }
+// How the desktop column groups its list: by state (Needs you, Running…), by project, or by folder (a mailbox's folders and subfolders).
+const MODE_KEY = "joint-bob-inbox-mode";
+const MODES = ["state", "project", "folder"];
+function storedMode() {
+  try { return MODES.find((mode) => mode === localStorage.getItem(MODE_KEY)) ?? "state"; } catch { return "state"; }
+}
+let mode = storedMode();
+export const inboxMode = () => mode;
+export function setInboxMode(next) {
+  if (!MODES.includes(next) || next === mode) return;
+  mode = next;
+  try { localStorage.setItem(MODE_KEY, mode); } catch { /* private mode: the choice lasts the page */ }
+  emitView();
+}
 let projects = storedProjects();
 let sources = new Set();
 let statuses = new Set();
@@ -79,7 +95,7 @@ const emitView = () => { for (const listener of viewListeners) listener(); selec
 const selectionChanged = () => { for (const listener of selectionListeners) listener(); };
 
 /** What the drawn rows depend on, to tell whether they must be drawn again. */
-export const inboxSignature = () => JSON.stringify([[...projects], [...sources], [...statuses], range.id, selecting, [...selected]]);
+export const inboxSignature = () => JSON.stringify([mode, [...projects], [...sources], [...statuses], range.id, selecting, [...selected]]);
 /** The same without the chosen rows: a list keeps its place while rows are chosen, and starts at the top for other filters. */
 export const inboxFilterKey = () => JSON.stringify([[...projects], [...sources], [...statuses], range.id, selecting]);
 export const isSelecting = () => selecting;

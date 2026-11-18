@@ -254,6 +254,12 @@ harnessSelect.addEventListener("change", () => {
 });
 const HARNESS_SHORTCUTS = { pi: "newPiChat", claude: "newClaudeChat", kiro: "newKiroChat" };
 
+/** "New conversation" in a given project: the project is opened and the name dialog follows. */
+export async function startConversationInProject(projectId) {
+  if (state.activeProjectId !== projectId) await selectProject(projectId);
+  await startGlobalConversation();
+}
+
 export async function startNewHarnessConversation(harnessId, references = null) {
   if (!state.harnesses.length) await loadHarnesses();
   const harness = state.harnesses.find((candidate) => candidate.id === harnessId && candidate.runtimeConfigured);

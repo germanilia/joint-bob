@@ -1,8 +1,8 @@
-// Pin, star, folders and delete for the control center's list, as a mail inbox has them.
+// Pin, star, folders and delete for the Inbox, as a mail inbox has them (inbox-folders.js has the folder tree).
 //   Pin   : the account's conversation pin (the same one the project list uses); a pinned conversation stays on top.
 //   Star  : kept with the account (state.controlCenter.stars). A pinned or starred conversation is "kept": no automatic
 //           cleanup deletes it (the retention sweep reads both).
-//   Folder: one name per conversation (state.controlCenter.folders); a folder exists while a conversation is in it.
+//   Folder: one path per conversation (state.controlCenter.folders), "A/B" being a subfolder of "A".
 //   Delete: at once from the list, with an Undo; the conversation is really deleted when the Undo runs out. A kept one asks twice.
 // Stars and folders are keyed `engine:sessionId`, as a pin is.
 
@@ -21,10 +21,10 @@ export const isStarred = (card) => state.controlCenter.stars.includes(markKey(ca
 /** An assistant team's conversation is in the team's own folder (the card says which team), unless the person moved it. */
 export const teamFolderName = (team) => `${team.name} team`;
 export const folderOf = (card) => state.controlCenter.folders[markKey(card)] ?? (card.team ? teamFolderName(card.team) : null);
-/** Pinned or starred: nothing automatic may delete it. */
-export const isKept = (card) => isPinned(card) || isStarred(card);
 /** The person's folders, and a folder for each team that has conversations among `cards`. */
 export const folderNames = (cards = []) => [...new Set([...Object.values(state.controlCenter.folders), ...cards.flatMap((card) => (card.team ? [teamFolderName(card.team)] : []))])].sort((a, b) => a.localeCompare(b));
+/** Pinned or starred: nothing automatic may delete it. */
+export const isKept = (card) => isPinned(card) || isStarred(card);
 
 export function togglePin(card) {
   return savePin({ kind: "conversation", projectId: card.projectId, engine: card.harnessId, sessionId: card.sessionId }, !isPinned(card));
@@ -80,6 +80,7 @@ export function popMenu(anchor, items) {
     choice.dataset.testid = "control-pop-choice";
     const label = document.createElement("span");
     label.textContent = item.label;
+    if (item.depth) choice.style.paddingLeft = `${12 + item.depth * 16}px`;
     choice.append(label, item.checked ? "✓" : "");
     choice.addEventListener("click", () => { closeMenu(); item.run(); });
     menu.append(choice);
@@ -98,17 +99,6 @@ export function popMenu(anchor, items) {
   };
   setTimeout(() => document.addEventListener("pointerdown", outside, true));
   menu.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(); });
-}
-
-/** The folder menu of one conversation: its folder, the other folders, none, and a new one. */
-export function folderMenu(anchor, card, save, afterChange) {
-  const here = folderOf(card);
-  const put = (name) => () => { setFolder(card, name, save); afterChange(); };
-  popMenu(anchor, [
-    ...folderNames().map((name) => ({ label: name, checked: name === here, run: put(name === here ? null : name) })),
-    { label: "No folder", checked: !here, run: put(null) },
-    { input: "New folder…", run: (name) => put(name)() },
-  ]);
 }
 
 /* ---------- delete, at once, with an Undo ---------- */

@@ -368,6 +368,11 @@ function projectMenuItems(project) {
   ];
 }
 
+/** The project's menu, for a place that is not the project list (the Inbox grouped by project); `before` are entries of that place. */
+export function openProjectMenu(anchor, project, before = []) {
+  openRowMenu(anchor, [...before, ...projectMenuItems(project)]);
+}
+
 async function toggleOtherNodes(project) {
   const { hiddenFromOtherNodes } = await api(`/api/projects/${encodeURIComponent(project.id)}/other-nodes`, { method: "PUT", body: JSON.stringify({ hidden: !project.hiddenFromOtherNodes }) });
   toast(hiddenFromOtherNodes ? `${project.name} stays off the nodes you visit` : `${project.name} shows on the nodes you visit`);

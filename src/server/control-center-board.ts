@@ -12,7 +12,7 @@ import { listSnoozes } from "../control-center/snoozes.js";
 import { getClusterNode } from "../cluster.js";
 import { liveActivity } from "./control-center-live.js";
 import { askRemoteLive } from "./control-center-live-remote.js";
-import type { ProjectRecord } from "../types.js";
+import type { ProjectRecord, SessionSummary } from "../types.js";
 import { projectsWithSharedNames } from "./projects.js";
 import { noteUnannouncedRunChanges, sharedProjectSessions } from "./sessions-helpers.js";
 
@@ -22,7 +22,16 @@ export interface LoadedBoard { cards: BoardCard[]; projects: ProjectRecord[]; ea
 export interface EarlierConversation {
   projectId: string; projectName: string; conversationId: string; sessionId: string; path: string; harnessId: string;
   agentLabel: string; agentModel: string | null; title: string; updatedAt: string | null; done: boolean; executionNodeId: string | null;
+  /** A run of a scheduled automation: the Inbox's Scheduled group. */
+  scheduled: boolean;
+  /** A copy this person can read but not write in. */
+  readOnly: boolean;
+  /** Nothing written in it yet. */
+  fresh: boolean;
+  worktree: { id: string; name: string; color: string } | null;
 }
+
+const FRESH_DRAFT_MS = 24 * 60 * 60 * 1000;
 
 /**
  * A conversation another of the person's machines runs has its summary and its turn's activity there: each such machine is asked
@@ -93,15 +102,21 @@ export async function loadBoard(session: AuthSession, options: { earlier?: boole
   return { cards, projects, earlier: options.earlier ? earlierConversations(groups, cards) : undefined };
 }
 
-/** Every other conversation, newest first; skip scheduled runs, entirely empty drafts and read-only copies, not an existing conversation's empty newest segment. */
-export function earlierConversations(groups: BoardProject[], cards: BoardCard[]): EarlierConversation[] {
+/**
+ * Every other conversation, newest first, so the Inbox leaves nothing out: finished scheduled runs, done ones and read-only copies
+ * are listed and flagged. Only drafts nobody wrote in are left out, once they are a day old (they are what a cleaned-up transcript leaves).
+ */
+export function earlierConversations(groups: BoardProject[], cards: BoardCard[], now = Date.now()): EarlierConversation[] {
   const onBoard = new Set(cards.map((card) => `${card.projectId}:${card.conversationId}`));
+  const written = (entry: SessionSummary): boolean => !entry.draft || Boolean(entry.segments?.some((segment) => !segment.draft));
+  const justMade = (entry: SessionSummary): boolean => Boolean(entry.updatedAt) && now - Date.parse(entry.updatedAt!) < FRESH_DRAFT_MS;
   return groups.flatMap((group) => group.sessions
-    .filter((entry) => !entry.readOnly && !entry.cronTaskId && (!entry.draft || entry.segments?.some((segment) => !segment.draft)) && !onBoard.has(`${group.projectId}:${entry.conversationId ?? entry.id}`))
+    .filter((entry) => (written(entry) || justMade(entry)) && !onBoard.has(`${group.projectId}:${entry.conversationId ?? entry.id}`))
     .map((entry): EarlierConversation => ({
       projectId: group.projectId, projectName: group.projectName, conversationId: entry.conversationId ?? entry.id, sessionId: entry.id, path: entry.path,
       harnessId: entry.harnessId, agentLabel: entry.agentLabel, agentModel: entry.agentModel ?? null, title: entry.title, updatedAt: entry.updatedAt ?? null, done: Boolean(entry.doneAt),
-      executionNodeId: entry.executionNodeId ?? null,
+      executionNodeId: entry.executionNodeId ?? null, scheduled: Boolean(entry.cronTaskId), readOnly: Boolean(entry.readOnly), fresh: !written(entry),
+      worktree: entry.worktree ? { id: entry.worktree.id, name: entry.worktree.name, color: entry.worktree.color } : null,
     })))
     .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.326.0 — 2026-11-18
+
+- **The Inbox now lists every conversation.** Finished scheduled runs, done conversations, read-only copies and conversations nobody has written in yet appear in it, in two new groups: **Scheduled** and **Done**. Rows show tags for their worktree, Auto respond, Read-only and New, and pinned and starred ones are marked.
+- **Group the Inbox by State, Project or Folder** with the switch above its list. By project shows a section per project (pinned first) with its counts, a **+** for a new conversation in it and the project's own menu (Git, GitHub issues, Automations, Skills & tools, Budget, Edit, Lock, Secrets and the rest); its name opens every conversation of the project.
+- **Folders and subfolders, as in a mailbox.** Make folders, make subfolders inside them, and file a conversation with **⋯ › Move to folder…** or by dragging it onto a folder. **Pinned**, **Starred** and **Not filed** are views across every folder. A filed conversation leaves Scheduled, Earlier and Done but never Needs you, Running or To review, so filing cannot hide anything that needs you. Deleting a folder deletes no conversation.
+- Every Inbox row has a **⋯** button, and its menu now has what the project's list offered: Mark done, Rename, Fork, Move or copy to project, Budget, notifications, New automation, Secret accounts, Classification, Colour and Delete.
+
 ## 2.325.2 — 2026-11-18
 
 - Opening a conversation no longer says "That conversation is no longer listed" while its project's list is still loading. This happened when a card was clicked twice, or clicked right after the page loaded: the chat went blank and the status stayed on "Opening…".

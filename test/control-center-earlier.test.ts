@@ -6,17 +6,25 @@ import type { SessionSummary } from "../src/types.js";
 
 const session = (id: string, extra: Partial<SessionSummary> = {}) => ({ id, path: `/p/${id}`, harnessId: "pi", agentLabel: "Pi", title: `Title ${id}`, updatedAt: `2026-11-1${id}T10:00:00Z`, ...extra }) as SessionSummary;
 
-// The Inbox lists every conversation: the board's three groups, then Earlier for all the others.
-test("Earlier lists what is not on the board, newest first, without scheduled runs, drafts and read-only copies", () => {
+// The Inbox lists every conversation: the board's groups, then Earlier for all the others, flagged as scheduled, done, read-only or new.
+test("Earlier lists what is not on the board, newest first, with scheduled runs, done ones and read-only copies flagged", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z");
   const groups = [
-    { projectId: "dak", projectName: "Dak", sessions: [session("1"), session("2"), session("3", { cronTaskId: "c" }), session("4", { draft: true }), session("5", { readOnly: true })] },
+    { projectId: "dak", projectName: "Dak", sessions: [session("1"), session("2"), session("3", { cronTaskId: "c" }), session("4", { draft: true, updatedAt: "2026-11-18T11:00:00Z" }), session("5", { readOnly: true }), session("8", { draft: true, updatedAt: "2026-11-10T11:00:00Z" })] },
     { projectId: "contigos", projectName: "Contigos", sessions: [session("6", { doneAt: "2026-11-12T00:00:00Z" }), session("7", { conversationId: "conv-7" })] },
   ];
   const onBoard = [{ projectId: "dak", conversationId: "2" }] as BoardCard[];
-  const earlier = earlierConversations(groups, onBoard);
-  assert.deepEqual(earlier.map((row) => `${row.projectName}/${row.conversationId}`), ["Contigos/conv-7", "Contigos/6", "Dak/1"]);
-  assert.equal(earlier.find((row) => row.conversationId === "6")!.done, true);
-  assert.equal(earlier.find((row) => row.conversationId === "1")!.done, false);
+  const earlier = earlierConversations(groups, onBoard, now);
+  assert.deepEqual(earlier.map((row) => `${row.projectName}/${row.conversationId}`).sort(), ["Contigos/6", "Contigos/conv-7", "Dak/1", "Dak/3", "Dak/4", "Dak/5"]);
+  assert.deepEqual(earlier.map((row) => row.updatedAt), [...earlier.map((row) => row.updatedAt)].sort().reverse(), "newest first");
+  const by = (id: string) => earlier.find((row) => row.conversationId === id)!;
+  assert.equal(earlier.length, 6, "an old draft nobody wrote in is the only one left out");
+  assert.equal(by("6").done, true);
+  assert.equal(by("1").done, false);
+  assert.equal(by("3").scheduled, true);
+  assert.equal(by("5").readOnly, true);
+  assert.equal(by("4").fresh, true);
+  assert.equal(by("1").fresh, false);
 });
 
 test("Earlier includes conversations beyond the old 2000-row cutoff", () => {

@@ -368,9 +368,11 @@ export interface ControlCenterPreference {
   stars: string[];
   /** The inbox folder of a conversation, by the same key; a folder exists while a conversation is in it. */
   folders: Record<string, string>;
+  /** Every folder the person made, as paths (`Clients/Contigos` is a subfolder of `Clients`), so a folder can be empty. */
+  folderList: string[];
 }
 
-const emptyControlCenter = (): ControlCenterPreference => ({ colors: {}, filter: [], chatRight: false, chatWidth: 400, view: "live", collapsed: [], stars: [], folders: {} });
+const emptyControlCenter = (): ControlCenterPreference => ({ colors: {}, filter: [], chatRight: false, chatWidth: 400, view: "live", collapsed: [], stars: [], folders: {}, folderList: [] });
 
 function parseControlCenter(value: string): ControlCenterPreference {
   try {
@@ -387,6 +389,7 @@ function parseControlCenter(value: string): ControlCenterPreference {
       folders: stored.folders && typeof stored.folders === "object" && !Array.isArray(stored.folders)
         ? Object.fromEntries(Object.entries(stored.folders).filter(([key, name]) => key.length <= 300 && typeof name === "string" && name.trim().length > 0 && name.length <= 40).slice(0, 500))
         : {},
+      folderList: Array.isArray(stored.folderList) ? stored.folderList.filter((path): path is string => typeof path === "string" && path.trim().length > 0 && path.length <= 400).slice(0, 500) : [],
     };
   } catch { return emptyControlCenter(); }
 }

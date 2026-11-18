@@ -45,6 +45,8 @@ export interface BoardCard {
   snooze: { until: string | null; snoozedAt: string } | null;
   /** It runs on another person's machine: the Inbox lists it so nothing is missing, read-only (nothing here can act on it). */
   othersMachine?: boolean;
+  /** The Joint Bob worktree it runs in, for the row's badge. */
+  worktree: { id: string; name: string; color: string } | null;
 }
 
 export interface BoardProject {
@@ -116,6 +118,7 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
         controlledBy: sources.controlledBy(project.projectId, conversationId),
         reviewCheck,
         snooze: snoozed && snooze ? { until: snooze.until, snoozedAt: snooze.snoozedAt } : null,
+        worktree: session.worktree ? { id: session.worktree.id, name: session.worktree.name, color: session.worktree.color } : null,
       });
     }
   }

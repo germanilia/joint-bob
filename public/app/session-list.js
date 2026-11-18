@@ -486,6 +486,36 @@ function sessionMenuItems(session, sessionActive) {
 }
 
 /**
+ * What the Inbox's row menu offers from this list: the same entries, by the id the list's own menu gives them (so the two cannot drift
+ * apart). The Inbox row names a conversation of any project; the action opens it first, then runs the list's entry on the real row.
+ */
+export const SESSION_ACTIONS = [
+  { id: "done", testid: "session-done-button", icon: "check", label: (card) => (card.done ? "Mark not done" : "Mark done"), title: "Done conversations leave the active groups for Done" },
+  { id: "rename", testid: "session-rename-button", icon: "pencil", label: () => "Rename" },
+  { id: "fork", testid: "session-fork-button", icon: "copy", label: () => "Fork conversation", title: "Copy history and settings into an independent conversation" },
+  { id: "transfer", testid: "session-transfer-button", icon: "copy", label: () => "Move or copy to project…" },
+  { id: "budget", testid: "session-budget-button", icon: "sliders", label: () => "Budget…", title: "Limit what this conversation may spend" },
+  { id: "notify", testid: "session-review-notifications-button", icon: "sliders", label: () => "Review notifications" },
+  { id: "ntfy", testid: "session-ntfy-button", icon: "sliders", label: () => "ntfy notifications" },
+  { id: "automation", testid: "session-automation-button", icon: "refresh", label: () => "New automation" },
+  { id: "secrets", testid: "session-secrets-button", icon: "key", label: () => "Secret accounts", title: "Accounts this conversation gets on top of its project's and workspace's" },
+  { id: "classification", testid: "session-classification-button", icon: "sliders", label: () => "Classification" },
+  { id: "color", testid: "session-color-button", icon: "sliders", label: () => "Colour" },
+  { id: "delete", testid: "session-remove-button", icon: "trash", label: () => "Delete conversation", danger: true },
+];
+
+/** Opens the Inbox card's conversation (`open`), then runs the list's entry with that id on its row. */
+export async function openSessionAction(card, id, open) {
+  await open(card);
+  const session = state.sessions.find((candidate) => (candidate.conversationId ?? candidate.id) === card.conversationId) ?? state.sessions.find((candidate) => candidate.path === card.path);
+  if (!session) throw new Error("That conversation is no longer listed");
+  const testid = SESSION_ACTIONS.find((action) => action.id === id).testid;
+  const item = sessionMenuItems(session, true).find((candidate) => candidate.testid === testid);
+  if (!item || item.disabled) throw new Error("That action is not available for this conversation");
+  await item.onSelect();
+}
+
+/**
  * The open conversation gets the same menu its row gets, built from the same list,
  * so the two can never drift apart. Desktop flattens the More menu into the toolbar,
  * which leaves this button on screen to anchor the popup; mobile closes the More menu
