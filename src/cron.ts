@@ -37,10 +37,12 @@ export const cronInputSchema = z.object({
   model: cronModelSchema.nullable().optional(), reasoning: reasoningSchema.optional(),
   autoRespond: autoRespondConfigSchema.nullable().optional(),
   runInWorktree: z.boolean().default(true),
+  cleanupAfterRun: z.boolean().default(false),
   bypassGuardian: z.boolean().default(false),
   sessionId: z.string().min(1).max(240).nullable(), enabled: z.boolean(), pauseOnFailure: z.boolean().default(false), markForReview: z.boolean().default(false), hideFromHistory: z.boolean().default(false),
   schedule: scheduleSchema,
 }).strict().superRefine((input, context) => {
+  if (input.cleanupAfterRun && !input.runInWorktree) context.addIssue({ code: z.ZodIssueCode.custom, path: ["runInWorktree"], message: "Cleanup requires a fresh worktree" });
   if (input.assistantId && input.sessionId) context.addIssue({ code: z.ZodIssueCode.custom, path: ["sessionId"], message: "Assistant tasks route to the assistant, not a pinned conversation" });
   const adapter = listDiscoveredHarnesses().find((candidate) => candidate.id === input.engine);
   if (!adapter?.configuration) return;
@@ -71,18 +73,18 @@ function taskColumns(data: CronInput): Record<string, string | number | null> {
     secret_account_ids: JSON.stringify(data.secretAccountIds), title_template: data.titleTemplate, creator_account_id: data.creatorAccountId ?? null, provider_profile_id: data.providerProfileId ?? null,
     provider_pool_id: data.providerPoolId ?? null, tags: JSON.stringify(data.tags), hide_from_history: data.hideFromHistory ? 1 : 0, reply: null, run_in_worktree: data.runInWorktree ? 1 : 0,
     bypass_guardian: data.bypassGuardian ? 1 : 0, trigger_kind: "schedule", schedule: JSON.stringify(data.schedule), auto_respond: data.autoRespond ? JSON.stringify(data.autoRespond) : null,
-    pause_on_failure: data.pauseOnFailure ? 1 : 0, owner_node_id: data.ownerNodeId,
+    pause_on_failure: data.pauseOnFailure ? 1 : 0, owner_node_id: data.ownerNodeId, cleanup_after_run: data.cleanupAfterRun ? 1 : 0,
   };
 }
 
 /** A scheduled automation's settings as the task they run as, so the checks a task has always had can be applied before it is saved. */
 export function cronInputOf(input: { creatorAccountId?: string | null; providerProfileId?: string | null; providerPoolId?: string | null; secretAccountIds: string[]; titleTemplate: string; tags: CronInput["tags"];
-  name: string; context: string; model: { provider: string; modelId: string } | null; reasoning: string | null; autoRespond: CronInput["autoRespond"]; runInWorktree: boolean; bypassGuardian: boolean; enabled: boolean;
+  name: string; context: string; model: { provider: string; modelId: string } | null; reasoning: string | null; autoRespond: CronInput["autoRespond"]; runInWorktree: boolean; cleanupAfterRun: boolean; bypassGuardian: boolean; enabled: boolean;
   pauseOnFailure: boolean; markForReview: boolean; hideFromHistory: boolean; schedule: Schedule | null; target: { kind: string; projectId: string; sessionId?: string; assistantId?: string } }, ownerNodeId: string, engine: string): unknown {
   return {
     creatorAccountId: input.creatorAccountId ?? null, assistantId: input.target.kind === "assistant" ? input.target.assistantId : null, providerProfileId: input.providerProfileId ?? null, providerPoolId: input.providerPoolId ?? null,
     secretAccountIds: input.secretAccountIds, titleTemplate: input.titleTemplate, tags: input.tags, projectId: input.target.projectId, name: input.name, prompt: input.context, ownerNodeId, engine,
-    model: input.model, ...(input.reasoning ? { reasoning: input.reasoning } : {}), autoRespond: input.autoRespond, runInWorktree: input.runInWorktree, bypassGuardian: input.bypassGuardian,
+    model: input.model, ...(input.reasoning ? { reasoning: input.reasoning } : {}), autoRespond: input.autoRespond, runInWorktree: input.runInWorktree, cleanupAfterRun: input.cleanupAfterRun, bypassGuardian: input.bypassGuardian,
     sessionId: input.target.kind === "conversation" ? input.target.sessionId : null, enabled: input.enabled, pauseOnFailure: input.pauseOnFailure, markForReview: input.markForReview,
     hideFromHistory: input.hideFromHistory, schedule: input.schedule,
   };
@@ -95,7 +97,7 @@ function taskInput(row: Row): CronInput {
     secretAccountIds: JSON.parse(String(row.secret_account_ids ?? "[]")), titleTemplate: String(row.title_template ?? ""), tags: JSON.parse(String(row.tags || "{}")),
     projectId: String(row.project_id), name: String(row.name), prompt: String(row.context), ownerNodeId: String(row.owner_node_id), engine: String(row.engine),
     model: row.model ? JSON.parse(String(row.model)) : null, ...(row.reasoning ? { reasoning: String(row.reasoning) } : {}), autoRespond: row.auto_respond ? JSON.parse(String(row.auto_respond)) : null,
-    runInWorktree: row.run_in_worktree === 1, bypassGuardian: row.bypass_guardian === 1, sessionId: row.session_id ? String(row.session_id) : null, enabled: row.enabled === 1,
+    runInWorktree: row.run_in_worktree === 1, cleanupAfterRun: row.cleanup_after_run === 1, bypassGuardian: row.bypass_guardian === 1, sessionId: row.session_id ? String(row.session_id) : null, enabled: row.enabled === 1,
     pauseOnFailure: row.pause_on_failure === 1, markForReview: row.mark_for_review === 1, hideFromHistory: row.hide_from_history === 1, schedule: JSON.parse(String(row.schedule)),
   });
 }

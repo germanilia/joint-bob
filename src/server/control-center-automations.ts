@@ -88,7 +88,7 @@ function automationInputOf(item: AutomationItem, changes: { name?: string; conte
   return webhookInputSchema.parse({
     providerProfileId: item.providerProfileId ?? null, providerPoolId: item.providerPoolId ?? null, tags: item.tags, name: item.name, target: item.target, context: item.context, enabled: item.enabled,
     trigger: item.trigger, schedule: item.schedule, autoRespond: item.autoRespond, pauseOnFailure: item.pauseOnFailure, bypassGuardian: item.bypassGuardian,
-    attachments: item.attachments, preserveFiles: item.preserveFiles, runInWorktree: item.runInWorktree, markForReview: item.markForReview, hideFromHistory: item.hideFromHistory,
+    attachments: item.attachments, preserveFiles: item.preserveFiles, runInWorktree: item.runInWorktree, cleanupAfterRun: item.cleanupAfterRun, markForReview: item.markForReview, hideFromHistory: item.hideFromHistory,
     senders: item.senders, model: item.model, reasoning: item.reasoning, secretAccountIds: item.secretAccountIds, titleTemplate: item.titleTemplate,
     // A change that names a field changes it; one that leaves it out keeps what is stored.
     ...Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined)),

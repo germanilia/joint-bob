@@ -31,7 +31,7 @@ import { runPersonalAssistantAutomationTurn } from "./routes/personal-assistants
 import { telegramChatId, telegramText } from "../webhook-telegram.js";
 import { announceWebhookCall } from "../control-center/triggers-observe.js";
 import type { ProjectWorktree } from "../project-worktrees.js";
-import { automationWorktreeInstruction, withAutomationWorktree } from "./automation-worktree.js";
+import { automationCleanupInstruction, automationWorktreeInstruction, withAutomationWorktree } from "./automation-worktree.js";
 
 /** What one chat-socket prompt may carry, as for a browser message (src/server/schemas.ts). */
 const SOCKET_IMAGES = 4;
@@ -100,7 +100,7 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?
   const placed = await placeAttachments(workspacePath, attachments);
   const titleTemplate = webhook.target.kind === "project" ? webhook.titleTemplate || webhook.name : "";
   const titleInstruction = automationTitleInstruction(titleTemplate);
-  const message = [worktree ? automationWorktreeInstruction : "", ...(call.telegram ? [call.telegram.message, placed.listed] : [titleInstruction, webhookMessage(webhook, call), resourceContext, placed.listed])].filter(Boolean).join("\n\n");
+  const message = [worktree ? automationWorktreeInstruction : "", webhook.cleanupAfterRun ? automationCleanupInstruction : "", ...(call.telegram ? [call.telegram.message, placed.listed] : [titleInstruction, webhookMessage(webhook, call), resourceContext, placed.listed])].filter(Boolean).join("\n\n");
   if (webhook.target.kind === "assistant") {
     if (!webhook.creatorAccountId) throw new WebhookError(409, "Assistant webhook has no creator account");
     const assistantId = webhook.target.assistantId;

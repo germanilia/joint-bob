@@ -63,6 +63,7 @@ export const webhookInputSchema = z.object({
   hideFromHistory: z.boolean().default(false),
   preserveFiles: z.boolean().default(false),
   runInWorktree: z.boolean().default(true),
+  cleanupAfterRun: z.boolean().default(false),
   /** Set only on the webhook behind a connected Telegram bot, which is managed from the assistant. */
   reply: z.enum(["telegram"]).nullable().default(null),
   /**
@@ -75,6 +76,8 @@ export const webhookInputSchema = z.object({
     allowed: z.array(z.object({ value: z.string().trim().min(1).max(200), label: z.string().trim().max(120).default("") }).strict()).max(500),
   }).strict().nullable().default(null),
 }).strict().superRefine((input, context) => {
+  if (input.cleanupAfterRun && !input.runInWorktree) context.addIssue({ code: z.ZodIssueCode.custom, path: ["runInWorktree"], message: "Cleanup requires a fresh worktree" });
+  if (input.cleanupAfterRun && input.preserveFiles) context.addIssue({ code: z.ZodIssueCode.custom, path: ["preserveFiles"], message: "Cleanup cannot keep files between runs" });
   if (input.target.kind === "assistant" && (input.model || input.reasoning)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["target"], message: "Assistant webhooks use the assistant's execution settings" });
   if (input.reply && input.target.kind !== "assistant") context.addIssue({ code: z.ZodIssueCode.custom, path: ["reply"], message: "Only a webhook routed through an assistant can reply" });
   if (input.trigger === "webhook") {
@@ -109,6 +112,7 @@ export interface Webhook {
   hideFromHistory: boolean;
   preserveFiles: boolean;
   runInWorktree: boolean;
+  cleanupAfterRun: boolean;
   reply: "telegram" | null;
   senders: WebhookSenders | null;
   trigger: "webhook" | "schedule";
@@ -160,6 +164,7 @@ export function ensureWebhookSchema(db: DatabaseSync): void {
   const columns = db.prepare("PRAGMA table_info(webhooks)").all() as Array<{ name: string }>;
   if (!columns.some(column => column.name === "bypass_guardian")) db.exec("ALTER TABLE webhooks ADD COLUMN bypass_guardian INTEGER NOT NULL DEFAULT 0");
   if (!columns.some((column) => column.name === "attachments")) db.exec("ALTER TABLE webhooks ADD COLUMN attachments INTEGER NOT NULL DEFAULT 0");
+  if (!columns.some(column => column.name === "cleanup_after_run")) db.exec("ALTER TABLE webhooks ADD COLUMN cleanup_after_run INTEGER NOT NULL DEFAULT 0");
   if (!columns.some(column => column.name === "run_in_worktree")) db.exec("ALTER TABLE webhooks ADD COLUMN run_in_worktree INTEGER NOT NULL DEFAULT 1");
   if (!columns.some((column) => column.name === "preserve_files")) db.exec("ALTER TABLE webhooks ADD COLUMN preserve_files INTEGER NOT NULL DEFAULT 1");
   if (!columns.some((column) => column.name === "mark_for_review")) db.exec("ALTER TABLE webhooks ADD COLUMN mark_for_review INTEGER NOT NULL DEFAULT 0");
@@ -262,6 +267,7 @@ function webhookRow(row: Record<string, unknown>): Webhook {
     nextRun: row.next_run === null || row.next_run === undefined ? null : Number(row.next_run),
     autoRespond: row.auto_respond ? JSON.parse(String(row.auto_respond)) as WebhookInput["autoRespond"] : null,
     pauseOnFailure: row.pause_on_failure === 1,
+    cleanupAfterRun: row.cleanup_after_run === 1,
     ownerNodeId: row.owner_node_id ? String(row.owner_node_id) : null,
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
     lastReceivedAt: row.last_received_at ? String(row.last_received_at) : null, receivedCount: Number(row.received_count),
@@ -306,7 +312,7 @@ function inputColumns(input: WebhookInput): Record<string, string | number | nul
     title_template: input.titleTemplate, creator_account_id: input.creatorAccountId ?? null, provider_profile_id: input.providerProfileId ?? null, provider_pool_id: input.providerPoolId ?? null,
     tags: JSON.stringify(input.tags), hide_from_history: input.hideFromHistory ? 1 : 0, reply: input.reply, run_in_worktree: input.runInWorktree ? 1 : 0, bypass_guardian: input.bypassGuardian ? 1 : 0,
     trigger_kind: input.trigger, schedule: input.schedule ? JSON.stringify(input.schedule) : null, auto_respond: input.autoRespond ? JSON.stringify(input.autoRespond) : null,
-    pause_on_failure: input.pauseOnFailure ? 1 : 0,
+    pause_on_failure: input.pauseOnFailure ? 1 : 0, cleanup_after_run: input.cleanupAfterRun ? 1 : 0,
   };
 }
 

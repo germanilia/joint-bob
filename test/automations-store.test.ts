@@ -3,6 +3,32 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 
+test("cleanup is opt-in, persists across triggers and rejects shared or preserved files", async () => {
+  const { createAutomation, updateAutomation, webhookInputSchema, getWebhook } = await import("../src/webhooks.js");
+  const { CronStore, cronInputOf, cronInputSchema } = await import("../src/cron.js");
+  const db = new DatabaseSync(":memory:");
+  try {
+    const base = { name: "Disposable", target: { kind: "project", projectId: "project", engine: "claude" }, context: "Check files" };
+    const old = createAutomation(db, webhookInputSchema.parse(base)).webhook;
+    assert.equal(old.cleanupAfterRun, false);
+    const input = webhookInputSchema.parse({ ...base, cleanupAfterRun: true });
+    const hook = updateAutomation(db, old.id, input).webhook;
+    assert.equal(getWebhook(db, hook.id)!.cleanupAfterRun, true);
+    const owner = randomUUID();
+    const scheduled = webhookInputSchema.parse({ ...input, trigger: "schedule", schedule });
+    updateAutomation(db, hook.id, scheduled, { ownerNodeId: owner });
+    const store = new CronStore(db);
+    assert.equal(store.get(hook.id)!.cleanupAfterRun, true);
+    assert.equal(cronInputSchema.parse(cronInputOf(scheduled, owner, "claude")).cleanupAfterRun, true);
+    const { id, nextRun, lastRun, ...task } = store.get(hook.id)!;
+    store.update(id, { ...task, enabled: false });
+    assert.equal(getWebhook(db, id)!.cleanupAfterRun, true);
+    assert.throws(() => webhookInputSchema.parse({ ...input, runInWorktree: false }), /Cleanup requires a fresh worktree/);
+    assert.throws(() => webhookInputSchema.parse({ ...input, preserveFiles: true }), /Cleanup cannot keep files between runs/);
+    assert.throws(() => cronInputSchema.parse({ ...task, runInWorktree: false }), /Cleanup requires a fresh worktree/);
+  } finally { db.close(); }
+});
+
 const schedule = { frequency: "daily" as const, hour: 9, minute: 15, weekday: 1, timezone: "UTC" };
 const legacyTask = (id: string, extra: Record<string, unknown> = {}) => ({
   name: "Nightly check", prompt: "Check the build", projectId: "project", ownerNodeId: randomUUID(), engine: "claude", sessionId: null, assistantId: null, enabled: true,

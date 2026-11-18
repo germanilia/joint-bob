@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { WebSocketServer, type WebSocket } from "ws";
 import { getClusterNode } from "../src/cluster.js";
 import { clusterV2Database } from "../src/cluster-v2-store.js";
-import { ensureConversationRecord, setConversationWorktree } from "../src/conversation-records.js";
+import { ensureConversationRecord, getConversationRecord, setConversationWorktree } from "../src/conversation-records.js";
 import { DatabaseSync } from "node:sqlite";
 import { resolveDataDirectory } from "../src/data-directory.js";
 import { closeBackgroundTaskReaders } from "../src/background-tasks.js";
@@ -40,12 +40,12 @@ test("a completed automation never deletes a worktree still used by a background
   const supervisor = new DatabaseSync(path.join(resolveDataDirectory(), "supervisor.db"));
   supervisor.exec("CREATE TABLE IF NOT EXISTS supervisor_tasks(id TEXT PRIMARY KEY, identity TEXT NOT NULL, status TEXT NOT NULL)");
   try {
-    await assert.rejects(withAutomationWorktree({ projectId: project.id, name: "Background", runInWorktree: true }, randomUUID(), async worktree => {
+    await assert.rejects(withAutomationWorktree({ projectId: project.id, name: "Background", runInWorktree: true, cleanupAfterRun: true }, randomUUID(), async worktree => {
       await ensureConversationRecord(project.id, "pi", sessionId, local.id);
       await markWorktreeConversation(project.id, worktree!.id, "pi", sessionId);
       await setConversationWorktree(project.id, "pi", sessionId, worktree!, local.id);
       supervisor.prepare("INSERT INTO supervisor_tasks(id,identity,status) VALUES(?,?,'running')").run(sessionId, JSON.stringify([project.id, sessionId]));
-    }), /still has active work; it was retained/);
+    }), /Cleanup failed:.*still has active work; it was retained/);
     assert.equal((await listProjectWorktrees(project.id)).length, 1);
   } finally {
     supervisor.prepare("DELETE FROM supervisor_tasks WHERE id=?").run(sessionId);
@@ -55,9 +55,10 @@ test("a completed automation never deletes a worktree still used by a background
   }
 });
 
+for (const cleanupAfterRun of [false, true]) {
 for (const source of ["webhook", "scheduled"] as const) {
   for (const fail of [false, true]) {
-    test(`${source} runs use fresh origin main worktrees and remove them after ${fail ? "failure" : "completion"}`, async context => {
+    test(`${source} cleanup=${cleanupAfterRun} runs use fresh origin main worktrees and remove them after ${fail ? "failure" : "completion"}`, async context => {
       const root = await mkdtemp(path.join(os.tmpdir(), "jb-automation-worktrees-"));
       context.after(() => rm(root, { recursive: true, force: true }));
       const origin = path.join(root, "origin.git");
@@ -91,8 +92,8 @@ for (const source of ["webhook", "scheduled"] as const) {
         });
       });
       const db = await clusterV2Database();
-      const hook = source === "webhook" ? createWebhook(db, webhookInputSchema.parse({ name: "Fresh run", bypassGuardian: true, preserveFiles: true, target: { kind: "conversation", projectId: project.id, engine: "pi", sessionId: pinnedSessionId } })).webhook : null;
-      const task = source === "scheduled" ? cronStore().create({ projectId: project.id, name: "Fresh run", bypassGuardian: true, prompt: "Check code", engine: "pi", sessionId: pinnedSessionId, ownerNodeId: local.id, enabled: true, schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" } }) : null;
+      const hook = source === "webhook" ? createWebhook(db, webhookInputSchema.parse({ name: "Fresh run", bypassGuardian: true, cleanupAfterRun, preserveFiles: !cleanupAfterRun, target: { kind: "conversation", projectId: project.id, engine: "pi", sessionId: pinnedSessionId } })).webhook : null;
+      const task = source === "scheduled" ? cronStore().create({ projectId: project.id, name: "Fresh run", bypassGuardian: true, cleanupAfterRun, prompt: "Check code", engine: "pi", sessionId: pinnedSessionId, ownerNodeId: local.id, enabled: true, schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" } }) : null;
       try {
         const worktreeIds: string[] = [];
         for (let run = 0; run < 2; run++) {
@@ -110,12 +111,19 @@ for (const source of ["webhook", "scheduled"] as const) {
           assert.equal(trees[0].id, active.worktreeId);
           assert.equal(await readFile(path.join(trees[0].path, "source.txt"), "utf8"), "origin main\n");
           worktreeIds.push(trees[0].id);
+          if (cleanupAfterRun) assert.match(active.prompt.message, /Keep downloads, attachments and generated files inside this worktree/);
+          await mkdir(path.join(trees[0].path, "downloads"));
+          await writeFile(path.join(trees[0].path, "downloads", "output.bin"), Buffer.alloc(1024));
+          await mkdir(path.join(trees[0].path, ".joint-bob-attachments"));
+          await writeFile(path.join(trees[0].path, ".joint-bob-attachments", "input.bin"), Buffer.alloc(1024));
+          await symlink(projectPath, path.join(trees[0].path, "shared-project"));
           // The worktree must survive the started event, until the entire turn settles.
           active.socket.send(JSON.stringify({ type: fail ? "promptFailed" : "promptCompleted", queueId: "q", ...(fail ? { error: "synthetic turn failure" } : {}) }));
           if (hook) await until(() => !webhookDeliveryPending(hook.id));
           if (task) await until(() => ["succeeded", "failed"].includes(cronStore().get(task.id)!.lastRun!.status));
           assert.deepEqual(await listProjectWorktrees(project.id), []);
           await assert.rejects(access(trees[0].path), { code: "ENOENT" });
+          assert.ok(await getConversationRecord(project.id, "pi", active.sessionId), "cleanup keeps conversation metadata");
           if (task) assert.equal(cronStore().get(task.id)!.lastRun!.status, fail ? "failed" : "succeeded");
           if (hook) {
             assert.equal(automationRunOf(db, active.prompt.requestId)?.status, fail ? "failed" : "succeeded");
@@ -123,7 +131,7 @@ for (const source of ["webhook", "scheduled"] as const) {
           }
         }
         assert.notEqual(worktreeIds[0], worktreeIds[1], "every invocation creates its own worktree");
-        assert.equal(await readFile(path.join(projectPath, "source.txt"), "utf8"), "dirty project\n");
+        assert.equal(await readFile(path.join(projectPath, "source.txt"), "utf8"), "dirty project\n", "cleanup must not follow links into shared files");
       } finally {
         flags.startupReady = previousReady;
         for (const socket of endpoint.clients) socket.terminate();
@@ -131,4 +139,5 @@ for (const source of ["webhook", "scheduled"] as const) {
       }
     });
   }
+}
 }

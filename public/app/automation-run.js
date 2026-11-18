@@ -42,11 +42,12 @@ export function createRunTab(ctx) {
   const where = card("Where and with what", "", kind.element, conversationField, assistantNote, grid, worktree.row, preserve.row);
 
   // Around the run
+  const cleanup = switchRow("Clean up after run", "Removes the isolated worktree and its downloads, attachments and generated files after success or failure. Keeps run metadata and logs. Files outside the worktree are not removed.", "automation-cleanup-after-run");
   const pauseOnFailure = switchRow("Turn the automation off after a failed run", "Off tries again at the next scheduled time or call.", "automation-pause-on-failure");
   const markForReview = switchRow("Count completed runs toward Needs review", "", "automation-mark-for-review");
   const hideFromHistory = switchRow("Hide from conversation history", "Even when “Show automations” is on.", "automation-hide-from-history");
   const bypass = switchRow("Bypass Guardian for this automation's turns", "Enforced rules, relay rules and team safeguards still apply.", "automation-bypass-guardian");
-  const after = card("After the run", "", pauseOnFailure.row, markForReview.row, hideFromHistory.row, bypass.row);
+  const after = card("After the run", "", cleanup.row, pauseOnFailure.row, markForReview.row, hideFromHistory.row, bypass.row);
 
   // Auto reply
   const autoSwitch = switchRow("Auto reply", "A second agent keeps the conversation going until your stop criteria, the reply limit or a manual Stop. Retries may incur model costs.", "automation-autoreply-switch", true);
@@ -142,6 +143,11 @@ export function createRunTab(ctx) {
     assistantNote.hidden = !isAssistant;
     harness.disabled = isConversation || isAssistant;
     for (const node of [harnessField, modelField, reasoningField, preserve.row]) node.hidden = isAssistant;
+    if (cleanup.input.checked) {
+      worktree.input.checked = true;
+      preserve.input.checked = false;
+    }
+    worktree.input.disabled = cleanup.input.checked;
     preserve.input.disabled = worktree.input.checked;
     machine.disabled = Boolean(ctx.state.item) || isAssistant;
     if (isConversation) void loadConversations();
@@ -200,6 +206,7 @@ export function createRunTab(ctx) {
   model.addEventListener("change", () => renderExecution(model.value));
   conversation.addEventListener("change", syncConversationHarness);
   worktree.input.addEventListener("change", syncKind);
+  cleanup.input.addEventListener("change", syncKind);
   autoSwitch.input.addEventListener("change", () => { arBody.hidden = !autoSwitch.input.checked; });
   arHarness.addEventListener("change", () => fillAutoReplyModels());
   arModel.addEventListener("change", () => fillThinkingOptions(autoHarness(), ctx.state.options.models, arModel, arThinking, arThinking.value));
@@ -221,6 +228,7 @@ export function createRunTab(ctx) {
       void pool.refresh(item);
       worktree.input.checked = item?.runInWorktree ?? true;
       preserve.input.checked = item?.preserveFiles ?? false;
+      cleanup.input.checked = item?.cleanupAfterRun ?? false;
       pauseOnFailure.input.checked = item?.pauseOnFailure ?? false;
       markForReview.input.checked = item?.markForReview ?? false;
       hideFromHistory.input.checked = item?.hideFromHistory ?? false;
@@ -244,7 +252,7 @@ export function createRunTab(ctx) {
       if (target.kind === "project" && !target.engine && (chosenModel || chosenReasoning)) target.engine = ctx.state.options.harnesses[0]?.id;
       return {
         target, model: chosenModel, reasoning: chosenReasoning, ...pool.value(),
-        runInWorktree: worktree.input.checked, preserveFiles: preserve.input.checked, bypassGuardian: bypass.input.checked,
+        runInWorktree: worktree.input.checked, cleanupAfterRun: cleanup.input.checked, preserveFiles: preserve.input.checked, bypassGuardian: bypass.input.checked,
         markForReview: markForReview.input.checked, hideFromHistory: hideFromHistory.input.checked, pauseOnFailure: pauseOnFailure.input.checked,
         autoRespond: readAutoReply(),
       };
