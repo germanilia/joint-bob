@@ -71,7 +71,7 @@ export const DEFAULT_GUARDIAN_SETTINGS: GuardianSettings = {
   model: "jev",
   layaUrl: "",
   rules: [
-    rule("dangerous-commands", "Dangerous commands", "Could this action delete data, or make a change to the system that cannot be undone?", "commands", "ask", true),
+    rule("dangerous-commands", "Dangerous commands", "Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Routine edits and cleanup within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.", "commands", "ask", true),
     rule("secrets", "Secrets", "Does this contain a password, API key, access token or private key?", "outgoing", "fix", true),
     rule("personal-information", "Personal information", "Does this contain personal information about a real person, such as a name with an address, phone number, email or ID number?", "outgoing", "ask", false),
   ],

@@ -1,6 +1,6 @@
 # Guardian
 
-Guardian asks a decision model yes/no questions about what an agent is about to do, and stops it, asks you, or fixes the content when the answer is yes. Turn it on in **Settings → Guardian** (node admins only). Once on, it covers every conversation and agent on that machine: Pi, Claude and Kiro, scheduled runs, webhooks and helper agents.
+Guardian asks a decision model yes/no questions about what an agent is about to do, and stops it, asks you, or fixes the content when the answer is yes. Turn it on in **Settings → Guardian** (node admins only). Once on, it covers conversations and agents on that machine: Pi, Claude and Kiro, scheduled runs, webhooks and helper agents. Automations explicitly opted out skip all Guardian checks, including relay rules, for their dispatched turn. Later manual turns remain monitored.
 
 ## Rules
 
@@ -11,11 +11,15 @@ A rule is a question ("Could this action delete data, or make a change that cann
 - **How careful:** Relaxed acts only when the model is very sure (90%) and lets unsure answers through. Balanced acts at 70% and asks you when the model is unsure (between 30% and 70%). Cautious acts at 50% and treats doubt as yes.
 - **More options:** your own yes and no percentages, what to do when unsure, and the fix: the built-in secret removal (the project's secret values and common key formats), a script that reads the content on stdin and prints the replacement, or a helper agent (the conversation's own agent with every tool off).
 
-Rules are combined across this machine and every relay: a block wins, then a question, then a fix. Approving never overrides another rule's block.
+Direct Joint Bob CLI calls through the supplied `JOINT_BOB_*_CLI` entry points and ordinary Git/GitHub commands are allowed before model checks. Deleting `dev`, `main`, `master` or `staging` branches is blocked. Bulk deletion operations and PR merge-with-branch-deletion are blocked when the affected branch cannot be determined. Shell substitutions, redirects, aliases and chains containing unrelated commands still require ordinary checks; naming a trusted executable does not exempt the rest of a script.
+
+The shipped dangerous-command question targets database deletion, destructive changes outside the working directory, secret disclosure and irreversible system damage. Routine workspace edits and cleanup are not dangerous by default. Existing installations receive the updated shipped question; custom questions stay unchanged.
+
+For other actions, rules are combined across this machine and every relay: a block wins, then a question, then a fix. Approving never overrides another rule's block.
 
 ## Reviews
 
-A paused action shows in its conversation, above the message box: what the agent wants to do, the command or content, the rule and how sure the model was. **Allow once** applies to that exact action only. **Block** tells the agent why it was blocked. Stopping the turn blocks it too. Nobody answering within 10 minutes blocks it, so scheduled runs and webhooks never wait forever. Other windows of the project show a notice that a conversation is waiting.
+A paused action shows in its conversation, above the message box: what the agent wants to do, the command or content, the rule and how sure the model was. **Allow once** applies to that exact action only. **Allow always** remembers the exact action only within this conversation, agent, working directory and rule set, never another conversation. **Block** tells the agent why it was blocked. Stopping the turn blocks it too. Nobody answering within 10 minutes blocks it, so scheduled runs and webhooks never wait forever. Other windows of the project show a notice that a conversation is waiting.
 
 Blocks that need no review show as a notice in the conversation, and the agent is told the reason.
 
@@ -32,7 +36,7 @@ When the model cannot be reached, cannot answer, or the content is too long for 
 
 ## Relays
 
-On a machine that serves a relay, **Enforce these rules on every machine of the relay this machine serves** publishes its rules in the relay's signed policy. Members cannot turn them off or change them, apply them even with their own Guardian off, and keep the last policy while the relay is offline; leaving the relay removes them. A relay rule set to ask lets the member review; one set to block blocks. Relay rules use Jev or a Laya server address every member can reach, and fix only with the built-in secret removal: a relay never runs its own scripts or agents on a member's machine. Every relay a machine has joined is a policy author, and a block from any of them wins. A Jev check for a relay's rule is sent to the relay over the signed machine channel; the relay adds its own System AI key and the key never leaves it. If the relay cannot be reached, the action is blocked.
+On a machine that serves a relay, **Enforce these rules on every machine of the relay this machine serves** publishes its rules in the relay's signed policy. Members cannot edit them and apply them even with their own Guardian off, except during explicitly opted-out automation turns, and keep the last policy while the relay is offline; leaving the relay removes them. A relay rule set to ask lets the member review; one set to block blocks. Relay rules use Jev or a Laya server address every member can reach, and fix only with the built-in secret removal: a relay never runs its own scripts or agents on a member's machine. Every relay a machine has joined is a policy author, and a block from any of them wins. A Jev check for a relay's rule is sent to the relay over the signed machine channel; the relay adds its own System AI key and the key never leaves it. If the relay cannot be reached, the action is blocked.
 
 A production rule imposed this way counts as protection: a machine whose own Guardian is off shows no "Guardian is off" warning, and its team assistants may run production-capable work, while any relay it uses imposes the rule.
 
