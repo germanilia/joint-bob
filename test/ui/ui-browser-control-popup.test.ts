@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { signIn } from "../dev-nodes.js";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { waitForAppStarted } from "./wait-in-page.js";
 
 test("Browser stays open above a control-center conversation popup and closes with it", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   const login = await signIn(environment, node);
   await page.context().addCookies(login.cookie.split("; ").map(cookie => ({ name: cookie.slice(0, cookie.indexOf("=")), value: cookie.slice(cookie.indexOf("=") + 1), url: node.url })));
   await page.goto(node.url);
+  await waitForAppStarted(page);
   await page.locator("#projectList").getByText("Internal Assistant", { exact: true }).click();
   await page.locator("#sessionList .list-row").filter({ has: page.locator("strong", { hasText: "Thread-Based Agent Builder" }) }).first().click();
   await page.locator("#messages .message.assistant").first().waitFor();

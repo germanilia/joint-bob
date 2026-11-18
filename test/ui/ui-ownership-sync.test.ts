@@ -15,7 +15,8 @@ test("takeover counts only its working folder, cancels cleanly, and surfaces sta
   try {
     browser = await launchChrome({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
-    page.setDefaultTimeout(10_000);
+    // The first load fetches every module of the app; ten seconds was not enough on a busy machine.
+    page.setDefaultTimeout(20_000);
     const errors: string[] = [], scopedRequests: string[] = [], transfers: unknown[] = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(environment.nodes[0].url);

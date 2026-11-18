@@ -23,6 +23,8 @@ let browser: Browser;
 let context: BrowserContext;
 let page: Page;
 let project: SeededNode["projects"][number];
+// Chrome reports the machine's own audio device failing when the completion sound plays (a headset switching, say):
+// that is the test machine, not the app, so the checks below leave that one message out.
 const consoleErrors: string[] = [];
 
 async function exists(file: string): Promise<boolean> {
@@ -458,7 +460,7 @@ test("deleting a worktree removes its folder and keeps its conversation as histo
   // The list can update before the folder is fully gone.
   for (const deadline = Date.now() + 20_000; await exists(worktree) && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(await exists(worktree), false);
-  assert.equal(consoleErrors.filter((message) => !/favicon|ERR_ABORTED|WebSocket|instructions\/content\?.*worktreeId/i.test(message)).length, 0, consoleErrors.join("\n"));
+  assert.equal(consoleErrors.filter((message) => !/favicon|ERR_ABORTED|WebSocket|instructions\/content\?.*worktreeId|AudioContext encountered an error from the audio device/i.test(message)).length, 0, consoleErrors.join("\n"));
 });
 
 test("with the setting on, each new conversation starts in a worktree of its own named after it", async () => {
@@ -550,7 +552,7 @@ test("a conversation whose worktree has not synced has a badge and filter, witho
   await marked;
   await row.waitFor({ state: "detached", timeout: 20_000 });
   assert.equal(await page.getByTestId("other-worktrees").count(), 0, "no empty group for a worktree that cannot be used here");
-  assert.equal(consoleErrors.filter((message) => !/favicon|ERR_ABORTED|WebSocket|instructions\/content\?.*worktreeId/i.test(message)).length, 0, consoleErrors.join("\n"));
+  assert.equal(consoleErrors.filter((message) => !/favicon|ERR_ABORTED|WebSocket|instructions\/content\?.*worktreeId|AudioContext encountered an error from the audio device/i.test(message)).length, 0, consoleErrors.join("\n"));
 });
 
 test("a new worktree is created in the background: the conversation is on screen while the project is copied", async () => {
@@ -558,9 +560,11 @@ test("a new worktree is created in the background: the conversation is on screen
   await page.getByTestId("session-create-button").click();
   await page.locator("#newSessionNameDialog[open]").waitFor({ timeout: 10_000 });
   await page.getByTestId("new-session-name-input").fill(NAME);
+  // New worktree is chosen with its box on the first step. Once it is the default (the test above turns that on), the
+  // "Runs in" select on the last step is hidden, so it is not chosen there.
+  await page.getByTestId("new-session-new-worktree-checkbox").check();
   await page.getByTestId("new-session-next-button").click();
   await page.getByTestId("new-session-next-button").click();
-  await page.getByTestId("new-session-worktree-select").selectOption("new");
   // The copy is held back here: the chat must already be open under its own name while it runs.
   let releaseCopy!: () => void;
   const copyHeld = new Promise<void>((resolve) => { releaseCopy = resolve; });
@@ -575,7 +579,8 @@ test("a new worktree is created in the background: the conversation is on screen
   assert.equal(await page.locator("#sessionTitle").innerText(), NAME, "the chat opens at once under the new name");
   releaseCopy();
   await page.unroute("**/api/projects/*/worktrees");
-  const row = page.locator("#sessionList .list-row.active");
-  await row.waitFor({ timeout: 60_000 });
+  // The row is listed (and active) before the list learns its worktree, so wait for the worktree, not the row.
+  const row = page.locator("#sessionList .list-row.active", { hasText: NAME });
+  await row.getByTestId("session-worktree-badge").waitFor({ timeout: 60_000 });
   assert.match(await row.getAttribute("class") ?? "", /\bhas-worktree\b/, "the conversation then starts in the new worktree");
 });

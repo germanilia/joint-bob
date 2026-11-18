@@ -11,8 +11,9 @@ import { selectProject } from "./project-selection.js";
 import { rememberRecentSession } from "./recents.js";
 import { renderSessions } from "./session-list.js";
 import { formatDate, toast } from "./shell.js";
-import { openSession, refreshSessionsQuietly } from "./socket.js";
+import { activeConversationReady, openSession, refreshSessionsQuietly } from "./socket.js";
 import { state } from "./state.js";
+import { noteOpenTiming, startOpenTiming } from "./open-timing.js";
 
 /**
  * The open project's conversations are the live source for its own review count. Redrawing
@@ -277,37 +278,47 @@ const listedSessionTransfers = new Set();
 /**
  * `keepView` opens it without showing it: the startup restore leaves the person in the view they were in, the control center too.
  * `keepReview` leaves it waiting for review: the Chat tab of Bob's list only shows it, and a reviewed one would leave that list.
+ * `timed`: the caller started timing the open at the click (open-timing.js); otherwise it is timed from here.
  */
-export async function openListedSession(session, { keepView = false, keepReview = false } = {}) {
+export async function openListedSession(session, { keepView = false, keepReview = false, timed = false } = {}) {
   // Lists render before harness metadata arrives, and the steps below resolve the engine from
   // it. A row tapped in that window threw here, so the tap did nothing at all.
   if (!state.harnesses.length) {
     try { await loadHarnesses(); }
     catch (error) { toast.error(error.message); return; }
   }
+  if (!timed) startOpenTiming("list");
   const reviewHighlightAfter = session.reviewState === "needs_review" ? session.reviewedAt : null;
   if (!keepReview) markSessionReviewed(session);
   rememberRecentSession(session);
   const projectId = state.activeProjectId;
   state.activeSessionId = session.id;
   const listedOwner = state.sessionNodes.find((node) => node.id === session.executionNodeId);
-  if (session.executionNodeId && !listedOwner?.local) {
-    try { await loadSessionNodes(projectId, session.executionNodeId); }
-    catch (error) { toast.error(error.message); }
-    if (state.activeProjectId !== projectId || state.activeSessionId !== session.id) return;
+  // This machine's own conversations need no check; right after a project is chosen its node list is still empty.
+  const elsewhere = Boolean(session.executionNodeId) && session.executionNodeId !== state.localNodeId && !listedOwner?.local;
+  noteOpenTiming({ owner: elsewhere ? "peer" : "local", ids: [session.id, session.conversationId] });
+  // The machine that runs it is asked at once, and whether it is online is checked beside that, not first: over a slow
+  // relay the check waits up to five seconds for an answer, and the page showed nothing new while it did.
+  const presence = elsewhere ? loadSessionNodes(projectId, session.executionNodeId).then(() => true, (error) => { toast.error(error.message); return false; }) : null;
+  if (session.executionNodeId) {
+    state.activeNodeId = session.executionNodeId;
+    if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: session.executionNodeId });
   }
+  const title = sessionDisplayTitle(session);
+  openSession(session.path, title, false, reviewHighlightAfter, keepView);
+  if (!presence || !await presence) return;
+  if (state.activeProjectId !== projectId || state.activeSessionId !== session.id) return;
   const owner = state.sessionNodes.find((node) => node.id === session.executionNodeId);
   const local = owner && !owner.online
     ? state.sessionNodes.find((node) => node.local && node.online && node.mapped)
     : null;
-  const destinationId = local?.id || session.executionNodeId;
-  if (destinationId) {
-    state.activeNodeId = destinationId;
-    if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: destinationId });
-  }
-  const title = sessionDisplayTitle(session);
-  openSession(session.path, title, false, reviewHighlightAfter, keepView);
-  if (!local) return;
+  // A conversation that already answered is reachable, whatever a late or stored presence answer says.
+  if (!local || activeConversationReady()) return;
+  state.activeNodeId = local.id;
+  if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: local.id });
+  // The chat is on screen already. What follows is automatic, so it keeps whatever view the person is in by now
+  // (.agents/knowledge/control-center-ui.md, r-Esc2Out).
+  openSession(session.path, title, false, reviewHighlightAfter, true);
   const transferKey = JSON.stringify([projectId, session.harnessId, session.id]);
   // Reopening still navigates here, but must not start a second ownership transfer.
   if (listedSessionTransfers.has(transferKey)) return;
@@ -318,7 +329,7 @@ export async function openListedSession(session, { keepView = false, keepReview 
     });
     if (state.activeProjectId !== projectId || state.activeSessionId !== session.id) return;
     state.activeSessionId = null;
-    openSession(result.sessionPath, title, false, reviewHighlightAfter, keepView);
+    openSession(result.sessionPath, title, false, reviewHighlightAfter, true);
     toast(result.pendingPeerIds?.length ? "Switched to this node; offline nodes will update when they return" : "Switched to this node");
   } catch (error) {
     if (state.activeProjectId === projectId && state.activeSessionId === session.id
@@ -326,6 +337,17 @@ export async function openListedSession(session, { keepView = false, keepReview 
   } finally {
     listedSessionTransfers.delete(transferKey);
   }
+}
+
+/**
+ * A conversation opened from its card before its project's list arrived (control-center.js) gets what the list knows
+ * once it does: its review mark, and the highlight of what came after the last review if the transcript is not drawn yet.
+ */
+export function settleOpenedSession(session, { keepReview = false } = {}) {
+  // Its ready answer may name the newest segment; the conversation id stays the same.
+  if (state.activeSessionId !== session.id && state.activeConversationId !== (session.conversationId ?? session.id)) return;
+  if (session.reviewState === "needs_review" && !activeConversationReady()) state.reviewHighlightAfter = session.reviewedAt ?? null;
+  if (!keepReview) markSessionReviewed(session);
 }
 elements.markAllReviewedButton.addEventListener("click", () => { void markAllSessionsReviewed(); });
 

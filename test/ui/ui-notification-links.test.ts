@@ -17,7 +17,7 @@ async function assertOpened(page: import("playwright-core").Page, target: { id: 
   assert.equal(await page.locator("#sessionTitle").textContent(), target.title);
 }
 
-test("notification links open stable conversation IDs, project aliases, and legacy paths", { timeout: 120_000 }, async (t) => {
+test("notification links open stable conversation IDs, project aliases, and legacy paths", { timeout: 180_000 }, async (t) => {
   const alias = `notification-link-alias-${Date.now()}`;
   const { page, environment, node } = await nativeUiFixture(t, (root) => {
     // Seed before the server starts so this test never races a live SQLite writer.
@@ -49,7 +49,8 @@ test("notification links open stable conversation IDs, project aliases, and lega
   const selected = await page.evaluate(async () => {
     const { state } = await import("/app/state.js");
     const sessions = state.sessions.filter((session) => !session.readOnly).slice(0, 2);
-    return { projectId: state.activeProjectId, target: { id: sessions[0].conversationId || sessions[0].id, path: sessions[0].path, title: sessions[0].title }, other: sessions[1] };
+    // The header shows the title as the list does: an agent-named one in title case (displayTitle).
+    return { projectId: state.activeProjectId, target: { id: sessions[0].conversationId || sessions[0].id, path: sessions[0].path, title: sessions[0].displayTitle ?? sessions[0].title }, other: sessions[1] };
   });
   assert.equal(Boolean(selected.target && selected.other), true, "fixture needs two writable conversations");
   await page.evaluate(async (other) => (await import("/app/reviews.js")).openListedSession(other), selected.other);

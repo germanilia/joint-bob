@@ -17,3 +17,14 @@ export async function waitInPage<Arg>(page: Page, check: (arg: Arg) => Promise<u
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
+
+/**
+ * The app has signed in, loaded the person's preferences and listed the projects. Until then the project list is drawn
+ * again as each answer arrives, and on a busy machine a click on it could land on a row that was being replaced.
+ */
+export function waitForAppStarted(page: Page, timeout = 60_000): Promise<void> {
+  return waitInPage(page, async () => {
+    const { state } = await import("/app/state.js");
+    return state.authenticated && state.preferencesLoaded && !state.projectsLoading;
+  }, undefined, timeout);
+}

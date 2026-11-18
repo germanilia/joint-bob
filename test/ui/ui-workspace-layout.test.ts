@@ -166,9 +166,11 @@ test("the conversation header: title, project and state on one line, Mark done a
 
   // Every other toolbar action is in ⋯.
   await page.getByTestId("chat-more-button").click();
-  for (const id of ["chat-open-terminal-button", "chat-open-browser-button", "chat-notify-button", "chat-auto-respond-button", "chat-rename-button", "chat-more-dashboard-button", "chat-automations-button", "chat-session-menu-button", "chat-share-button", "chat-pin-button", "chat-personal-assistant-button"]) {
+  for (const id of ["chat-open-terminal-button", "chat-open-browser-button", "chat-rename-button", "chat-more-dashboard-button", "chat-automations-button", "chat-session-menu-button", "chat-share-button", "chat-pin-button", "chat-personal-assistant-button"]) {
     assert.equal(await visible(id), true, `${id} is in the ⋯ menu`);
   }
+  // Notify and Auto respond are the details column's two switches, so the menu does not repeat them.
+  for (const id of ["chat-notify-button", "chat-auto-respond-button"]) assert.equal(await visible(id), false, `${id} is not repeated in the ⋯ menu`);
   assert.equal(await page.locator("#chatMoreMenu #chatInstallButton, #chatMoreMenu [data-testid='chat-install-button']").count(), 1, "Install stays in the menu (shown when the browser offers it)");
   await page.getByTestId("chat-rename-button").click();
   await page.locator("dialog[open]").first().waitFor();
@@ -227,6 +229,10 @@ test("the details column: Activity, btw, Files, Git and Tasks, More, the two swi
   await page.getByTestId("automation-editor").waitFor();
   await page.getByTestId("automation-back").click();
   await page.getByTestId("automation-editor").waitFor({ state: "detached" });
+  // Automations live on Bob's Automations page: leaving the editor shows that list, and the conversation is opened again.
+  await page.locator("body.view-control").waitFor();
+  await openDetailsConversation();
+  if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
   // It collapses like the activity pane did, and the header brings it back.
   await page.getByTestId("chat-activity-toggle").click();
   await page.locator("#activityPanel").waitFor({ state: "hidden" });
@@ -666,7 +672,8 @@ test("the left column never clips: full above 1385 px, a real icon rail below, e
       return { right: Math.round(box.right), rail, crossing, places, chat: Math.round(document.querySelector("#chatPanel")!.getBoundingClientRect().width), searchIcon: getComputedStyle(document.querySelector("#workspaceSearchRailButton")!).display !== "none" };
     });
     assert.deepEqual(state.crossing, [], `${width}px: nothing crosses the column's right edge`);
-    assert.ok(state.places.length >= 5 && state.places.every((place) => place.whole), `${width}px: every place is whole and in view: ${JSON.stringify(state.places)}`);
+    // Inbox, Projects, Automations and Costs: Bob left the places to head the conversation list.
+    assert.ok(state.places.length >= 4 && state.places.every((place) => place.whole), `${width}px: every place is whole and in view: ${JSON.stringify(state.places)}`);
     if (width >= 1385) assert.equal(state.rail, false, `${width}px: the full column is back`);
     if (width <= 1000) {
       assert.equal(state.rail, true, `${width}px: the column is a rail`);

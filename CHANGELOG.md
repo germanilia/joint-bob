@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.324.0 — 2026-11-18
+
+- Opening a conversation from Home, the Inbox or the board shows it at once, with a spinner while it loads. Before, the page stayed as it was until the conversation arrived, sometimes for several seconds.
+- Conversations open without waiting for their project's list, and one that runs on another machine no longer waits up to five seconds for a check that the machine is online. If that machine turns out to be offline, the conversation still moves to this one as before.
+- When the link to the machine running a conversation drops, the chat says so while it reconnects instead of repeating "Opening this conversation on…".
+- Each machine records how long conversations take to open in its performance log, so the speed of opening can be measured.
+
 ## 2.323.5 — 2026-11-18
 
 - The workspace cleanup settings now load offline: their module was missing from the list of files the app keeps for offline use, which also stopped releases from publishing.

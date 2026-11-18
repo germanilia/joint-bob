@@ -1530,6 +1530,10 @@ select.chat-toolbar-control {
 .empty-state { margin: auto; max-width: 480px; text-align: center; display: grid; gap: 14px; place-items: center; padding: 12px; }
 .empty-state h2 { font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
 .empty-state p { color: var(--muted); font-size: 14.5px; line-height: 1.65; max-width: 44ch; }
+/* A conversation on its way (socket.js): a turning ring says something is happening while it is found and reached. */
+.empty-state.opening::before { content: ""; width: 22px; height: 22px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--muted) 35%, transparent); border-top-color: var(--accent); animation: empty-state-turn .9s linear infinite; }
+@keyframes empty-state-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .empty-state.opening::before { animation-duration: 2.4s; } }
 .orb { width: 56px; height: 56px; border-radius: 16px; }
 
 .reconnect-banner { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 7px 12px; border-top: 1px solid var(--line); color: var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); font-size: 12px; font-weight: 550; }

@@ -14,7 +14,8 @@ test("conversation conflicts offer safe choices and require explicit replacement
   try {
     browser = await launchChrome({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
-    page.setDefaultTimeout(10_000);
+    // The first load fetches every module of the app; ten seconds was not enough on a busy machine.
+    page.setDefaultTimeout(20_000);
     const errors: string[] = [], accepted: unknown[] = [], forked: unknown[] = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.route("**/api/twins", route => route.fulfill({ json: { relationships: [{ relationshipId: "twin", status: "active", peer: { name: "Homeserver", nodeId: "owner" } }] } }));
@@ -72,7 +73,8 @@ test("conversation conflicts offer safe choices and require explicit replacement
     await choice.locator('input[value="owner"]').check();
     await page.getByTestId("choice-accept-button").click();
     await page.getByTestId("confirm-accept-button").click();
-    await page.getByText(/Could not reconcile history: This machine's copy changed/).waitFor();
+    // The request's own failure names the request before the machine's reason.
+    await page.getByText(/Could not reconcile history: .*This machine's copy changed/).waitFor();
     assert.equal(accepted.length, 2, "failed replacement is not retried automatically");
     await show();
     await choice.locator('input[value="fork"]').check();

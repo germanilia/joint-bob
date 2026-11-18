@@ -1,12 +1,12 @@
 {
   "name": "joint-bob",
-  "version": "2.323.5",
+  "version": "2.324.0",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "joint-bob",
-      "version": "2.323.5",
+      "version": "2.324.0",
       "license": "MIT",
       "dependencies": {
         "@anthropic-ai/claude-code": "2.1.327",

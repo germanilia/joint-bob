@@ -66,7 +66,9 @@ test("conversations chosen in the Inbox move after their turn or are stopped and
         return json({ job: job(body.mode === 'now' ? 'j2' : 'j1', body.mode, false) }, 202);
       }
       if (url.pathname === '/api/control-center/moves/j1/cancel') { window.__moves.cancels += 1; return json({ job: job('j1', 'after-turn', false) }); }
-      if (url.pathname === '/api/control-center/moves/j1') { window.__moves.polls += 1; return json({ job: job('j1', 'after-turn', window.__moves.polls > 1) }); }
+      // The batch ends only after the test has pressed Stop waiting: ending on a count of polls (every 1.5 s) raced the
+      // test's own steps on a busy machine, and the button was gone before it was pressed.
+      if (url.pathname === '/api/control-center/moves/j1') { window.__moves.polls += 1; return json({ job: job('j1', 'after-turn', window.__moves.cancels > 0) }); }
       if (url.pathname === '/api/control-center/moves/j2') return json({ job: job('j2', 'now', true) });
       return originalFetch(...args);
     };

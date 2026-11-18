@@ -25,6 +25,7 @@ import { renderSessions } from "./session-list.js";
 import { maybeNotifyTurnComplete, playCompletionSound, setConnecting, setStatus, subscribeToPush, toast } from "./shell.js";
 import { state } from "./state.js";
 import { logTranscriptChanges } from "./transcript-diagnostics.js";
+import { finishOpenTiming, markOpenStep } from "./open-timing.js";
 
 const GOAL_COMPLETE_MARKER = "BOB_GOAL_COMPLETE";
 
@@ -52,6 +53,29 @@ function sendPendingQuickNotePrompt() {
 }
 
 let connectionGeneration = 0;
+/** The open conversation has answered (its ready payload arrived) since it was opened. */
+let conversationReady = false;
+
+export function activeConversationReady() {
+  return conversationReady;
+}
+
+/**
+ * The chat from the click until the conversation is asked for: finding it in its project's list can take seconds on a
+ * busy machine, and the page went on showing what it showed before the click, with nothing to say a conversation was
+ * on its way. The conversation being left is closed here, so nothing of it lands under the new title.
+ */
+export function showConversationOpening(title) {
+  closeSocket();
+  conversationReady = false;
+  clearChat();
+  elements.sessionTitle.textContent = title || "Conversation";
+  showChatEmptyState("Opening…", `Loading ${title || "this conversation"}.`).classList.add("opening");
+  setComposerEnabled(false);
+  setStatus("Opening…", false, true);
+  setMobileView("chat");
+  markOpenStep("shown");
+}
 
 export function closeSocket() {
   connectionGeneration += 1;
@@ -220,8 +244,11 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
     state.followChat = true;
     clearChat();
     clearAttachments();
+    conversationReady = false;
     const node = state.sessionNodes.find((candidate) => candidate.id === state.activeNodeId);
-    showChatEmptyState("Connecting…", `Opening this conversation on ${node?.name || "the selected node"}.`);
+    showChatEmptyState("Connecting…", `Opening this conversation on ${node?.name || "the selected node"}.`).classList.add("opening");
+    markOpenStep("shown");
+    markOpenStep("connecting");
   }
   const nextPath = pending ? `draft:${harnessIdFromPath(state.harnesses, sessionPath)}:${state.activeSessionId}` : sessionPath || "new";
   if (preserveChat) setActiveSessionPath(nextPath);
@@ -311,6 +338,10 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
     const payload = JSON.parse(event.data);
     if (payload.type === "ready") refusedCloses = 0;
     handleSocketPayload(payload, !preserveChat);
+    if (payload.type === "ready") {
+      conversationReady = true;
+      finishOpenTiming(payload);
+    }
   });
 }
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
+import { waitForAppStarted } from "./wait-in-page.js";
 
 test("a local conversation opens while unrelated node discovery is still pending", { timeout: 90_000 }, async (t) => {
   const { page, node, environment } = await nativeUiFixture(t);
@@ -30,6 +31,7 @@ test("a local conversation opens while unrelated node discovery is still pending
     await page.getByTestId("login-username-input").fill(environment.username);
     await page.getByTestId("login-password-input").fill(environment.password);
     await page.getByTestId("login-submit-button").click();
+    await waitForAppStarted(page);
     await page.locator("#projectList .project-card", { hasText: "Joint Bob" }).click();
     await started;
     const first = page.locator("#sessionList .session-card").first();
@@ -46,7 +48,8 @@ test("a local conversation opens while unrelated node discovery is still pending
     await first.click();
     const socket = await socketOpened;
     assert.equal(new URL(socket.url()).searchParams.get("nodeId"), node.nodeId);
-    assert.deepEqual(targeted, [node.nodeId], "only the selected owner is refreshed before opening");
+    // This machine's own conversation needs no check once the page knows its node; a check, if any, names only the owner.
+    assert.ok(targeted.every((id) => id === node.nodeId), `only the selected owner may be checked, not ${targeted.join(", ")}`);
 
     const retained = await page.evaluate(async local => {
       const { state } = await import("/app/state.js");

@@ -21,6 +21,7 @@ import { confirmTwinHttp } from "../twins.js";
 import { relayTransportOf } from "../../relay/stream.js";
 import { otherUsersMayUsePhone } from "../../relay/phone-policy.js";
 import { authorizeRemoteSignIn, verifyRemoteMfa } from "../remote-mfa.js";
+import { performanceDiagnostics } from "../performance-diagnostics.js";
 
 app.use(securityHeaders);
 app.set("trust proxy", 1);
@@ -236,6 +237,29 @@ app.use("/api", (request, response, next) => {
     return;
   }
   next();
+});
+
+/** How long the page took to open a conversation (public/app/open-timing.js). */
+const conversationOpenTimingSchema = z.object({
+  source: z.enum(["card", "list"]),
+  list: z.enum(["listed", "card", "fetched"]),
+  owner: z.enum(["local", "peer"]),
+  shownMs: z.number().int().min(0).max(600_000),
+  connectingMs: z.number().int().min(0).max(600_000),
+  readyMs: z.number().int().min(0).max(600_000),
+}).strict();
+
+/* Counted beside the server's own stages, by whether another machine runs the conversation: opening one over a relay
+   and opening one here differ by seconds, and one average would hide both. */
+app.post("/api/performance/conversation-open", (request, response) => {
+  const timing = conversationOpenTimingSchema.safeParse(request.body);
+  if (!timing.success) { sendError(response, 400, "Invalid timing"); return; }
+  const { source, list, owner, shownMs, connectingMs, readyMs } = timing.data;
+  const fields = { source, list, owner };
+  performanceDiagnostics.record(`client.conversation.shown.${owner}`, shownMs, fields);
+  performanceDiagnostics.record(`client.conversation.connecting.${owner}`, connectingMs, fields);
+  performanceDiagnostics.record(`client.conversation.ready.${owner}`, readyMs, fields);
+  response.status(204).send();
 });
 
 const mfaRouter = express.Router();

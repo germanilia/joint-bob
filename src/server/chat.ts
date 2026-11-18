@@ -58,10 +58,15 @@ export function claudeRunKey(projectId: string, sessionPath: string): string { r
 export function claudeConnectionKey(projectId: string, sessionId: string | null): string { return `${projectId}:${sessionId ?? "new"}`; }
 export const promptQueueIsDraining = harnessPromptQueueIsDraining;
 
-function closeProxiedSocket(socket: WebSocket, code: number, reason: Buffer): void {
-  if ([1005, 1006].includes(code)) socket.close();
+/** `fromOwner`: the machine running the conversation went away, and `socket` is the page's. */
+function closeProxiedSocket(socket: WebSocket, code: number, reason: Buffer, fromOwner = false): void {
+  // 1006 from the owner is the link dropping (a relay going away, a network change). Closed without a reason, the page
+  // kept saying it was opening the conversation and retried with nothing to tell the person why.
+  if (fromOwner && code === 1006) socket.close(1011, LOST_EXECUTION_NODE);
+  else if ([1005, 1006].includes(code)) socket.close();
   else socket.close(code, webSocketCloseReason(reason.toString()));
 }
+export const LOST_EXECUTION_NODE = "Lost the connection to the machine running this conversation";
 export function proxySocket(socket: WebSocket, upstream: WebSocket): void {
   let closing = false;
   const connectionTimeout = setTimeout(() => fail("Execution node connection timed out"), 10_000).unref();
@@ -72,7 +77,7 @@ export function proxySocket(socket: WebSocket, upstream: WebSocket): void {
   upstream.once("open", () => clearTimeout(connectionTimeout));
   upstream.on("message", (raw, isBinary) => { if (socket.readyState === socket.OPEN) socket.send(raw, { binary: isBinary }); });
   socket.on("message", (raw, isBinary) => { if (upstream.readyState === upstream.OPEN) upstream.send(raw, { binary: isBinary }); });
-  upstream.once("close", (code, reason) => { if (!closing) { closing = true; clearTimeout(connectionTimeout); closeProxiedSocket(socket, code, reason); } });
+  upstream.once("close", (code, reason) => { if (!closing) { closing = true; clearTimeout(connectionTimeout); closeProxiedSocket(socket, code, reason, true); } });
   socket.once("close", (code, reason) => { if (!closing) { closing = true; clearTimeout(connectionTimeout); closeProxiedSocket(upstream, code, reason); } });
   upstream.once("unexpected-response", (_request, response) => fail(`Execution node rejected connection (${response.statusCode})`));
   upstream.on("error", () => fail("Execution node connection failed"));

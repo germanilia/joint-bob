@@ -1,8 +1,11 @@
 import { api, savePreferencesInBackground } from "./api.js";
 import { elements } from "./elements.js";
 import { selectProject } from "./project-selection.js";
-import { openListedSession } from "./reviews.js";
+import { openListedSession, settleOpenedSession } from "./reviews.js";
 import { toast } from "./shell.js";
+import { showConversationOpening } from "./socket.js";
+import { showChatEmptyState } from "./chat-transcript.js";
+import { noteOpenTiming, startOpenTiming } from "./open-timing.js";
 import { state } from "./state.js";
 import { registerControlView } from "./control-views.js";
 import { chooseConversationFeedback } from "./conversation-feedback.js";
@@ -132,25 +135,68 @@ export function refreshControlCenter() {
  * opens over the board, with the person in control (control-lease.js). Closing it goes back to the board.
  */
 export async function openConversation(card) {
+  startOpenTiming("card");
   const overBoard = isControlCenterOpen();
+  // Shown in the list's Chat tab (`inline`), it stays "To review": marked reviewed it leaves the board, and the list would jump to another row.
+  const keepReview = Boolean(card.inline);
   state.keepControlView = overBoard;
+  let listing = null;
+  let fromCard = false;
+  let opening;
   try {
-    if (state.activeProjectId !== card.projectId) await selectProject(card.projectId);
-    const session = state.sessions.find((candidate) => (candidate.conversationId ?? candidate.id) === card.conversationId) ?? (card.path ? state.sessions.find((candidate) => candidate.path === card.path) : undefined);
-    if (!session) {
-      toast("That conversation is no longer listed");
-      await refreshControlCenter();
-      return;
-    }
+    // The project's list is fetched beside the opening, not before it: it takes seconds on a busy machine, and the page
+    // showed what it showed before the click until it came. The card knows enough to open the conversation itself.
+    if (state.activeProjectId !== card.projectId) listing = selectProject(card.projectId);
     if (overBoard) {
       document.body.classList.add("control-popup");
       window.dispatchEvent(new CustomEvent("control-popup-opened", { detail: card }));
     }
-    // Shown in the list's Chat tab (`inline`), it stays "To review": marked reviewed it leaves the board, and the list would jump to another row.
-    await openListedSession(session, { keepReview: Boolean(card.inline) });
+    showConversationOpening(card.title);
+    let session = listedSession(card);
+    if (!session && listing) {
+      session = cardSession(card);
+      fromCard = Boolean(session);
+      noteOpenTiming({ list: fromCard ? "card" : "fetched" });
+      if (!session) { await listing; listing = null; session = listedSession(card); }
+    }
+    if (!session) {
+      closeConversationPopup();
+      showChatEmptyState("Not listed", "That conversation is no longer listed.");
+      toast("That conversation is no longer listed");
+      await refreshControlCenter();
+      return;
+    }
+    // Over the board it opens behind the view (r-Esc2Out), the takeover from an offline machine included.
+    opening = openListedSession(session, { keepView: overBoard, keepReview, timed: true });
   } finally {
     state.keepControlView = false;
   }
+  // The list still on its way: a failure is told as before, and an open made from the card gets what the list knows.
+  if (listing) {
+    void listing.then(() => {
+      if (!fromCard) return;
+      const listed = listedSession(card);
+      if (listed) settleOpenedSession(listed, { keepReview });
+      // A card that outlived its conversation: the socket says why it cannot open, and the board drops the card.
+      else void refreshControlCenter().catch((error) => console.warn("Could not refresh the board", error));
+    }).catch((error) => toast.error(error.message));
+  }
+  await opening;
+}
+
+/** The project's listed row for a card, once the project's list (kept from an earlier visit, or fresh) holds it. */
+function listedSession(card) {
+  return state.sessions.find((candidate) => (candidate.conversationId ?? candidate.id) === card.conversationId)
+    ?? (card.path ? state.sessions.find((candidate) => candidate.path === card.path) : undefined);
+}
+
+/** What a board card already says about its conversation, enough to open it. A card without a path waits for the list. */
+function cardSession(card) {
+  if (!card.path || !card.sessionId) return null;
+  return {
+    id: card.sessionId, conversationId: card.conversationId, path: card.path, title: card.title, harnessId: card.harnessId,
+    executionNodeId: card.executionNodeId ?? null, updatedAt: card.updatedAt ?? null, running: Boolean(card.turnRunning || card.backgroundRunning),
+  };
 }
 
 export function closeConversationPopup() {
