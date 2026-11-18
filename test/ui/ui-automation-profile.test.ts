@@ -23,6 +23,13 @@ test("automation pool picker defaults to the current pool and restores an explic
   await fillSetup(page, "Pool test", "Synthetic, never executed");
   await editorTab(page, "run");
   await pickerLoaded();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  const reasoningBox = await page.getByTestId("automation-reasoning").boundingBox();
+  const poolBox = await picker.boundingBox();
+  assert.ok(reasoningBox && poolBox, "both dropdowns are visible");
+  assert.ok(poolBox.x > reasoningBox.x, "pool is in the column after Reasoning");
+  assert.equal(poolBox.y, reasoningBox.y, "pool dropdown aligns with Reasoning");
+  assert.equal(poolBox.height, reasoningBox.height, "pool dropdown matches Reasoning's height");
   assert.equal(await picker.inputValue(), "");
   assert.equal(await picker.locator("option").first().textContent(), "Use my current pool");
   await picker.selectOption(poolId);
