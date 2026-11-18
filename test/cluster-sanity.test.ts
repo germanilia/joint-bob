@@ -923,7 +923,7 @@ test("cancelling a takeover during transcript fetch releases its source fence", 
   await stopDevNode(servers[1]);
   let entered!: () => void, cancelled!: () => void;
   const fetching = new Promise<void>(resolve => { entered = resolve; });
-  const released = new Promise<void>(resolve => { cancelled = resolve; });
+  const released = Object.assign(new Promise<void>(resolve => { cancelled = resolve; }), { done: false });
   let owner = { engine: "claude", sessionId: target.id, ownerNodeId: nodeB.nodeId, epoch: 1, status: "owned", transferToNodeId: null as string | null };
   const peer = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
@@ -935,22 +935,28 @@ test("cancelling a takeover during transcript fetch releases its source fence", 
     else if (request.url === "/api/cluster/v2/runtime/sessions/queue-transfer/cancel") {
       owner = { ...owner, epoch: 2, status: "owned", transferToNodeId: null };
       response.end(JSON.stringify({ accepted: true, current: owner }));
+      released.done = true;
       cancelled();
     } else { response.statusCode = 404; response.end("{}"); }
   });
   await new Promise<void>(resolve => peer.listen(Number(new URL(nodeB.url).port), "127.0.0.1", resolve));
   try {
-    const controller = new AbortController();
-    const pending = fetch(`${nodeA.url}/api/projects/${project.id}/sessions/take-ownership`, {
+    const controller = new AbortController(), repeat = new AbortController();
+    const takeover = (signal: AbortSignal) => fetch(`${nodeA.url}/api/projects/${project.id}/sessions/take-ownership`, {
       method: "POST", headers: { Cookie: sessionA.cookie, "X-CSRF-Token": sessionA.csrfToken, "Content-Type": "application/json" },
-      body: JSON.stringify({ peerId: nodeA.nodeId, sessionId: target.id, sessionPath: target.path }), signal: controller.signal,
+      body: JSON.stringify({ peerId: nodeA.nodeId, sessionId: target.id, sessionPath: target.path }), signal,
     });
-    const aborted = assert.rejects(pending, /abort/i);
+    const aborted = assert.rejects(takeover(controller.signal), /abort/i);
     await fetching;
-    const concurrent = await api(nodeA, sessionA, "POST", `/projects/${project.id}/sessions/take-ownership`, { peerId: nodeA.nodeId, sessionId: target.id, sessionPath: target.path });
-    assert.notEqual(concurrent.status, 200, "a second request cannot cancel the first request's fence");
+    // The same takeover asked for again waits for the transfer under way instead of being refused.
+    const repeated = assert.rejects(takeover(repeat.signal), /abort/i);
+    await new Promise(resolve => setTimeout(resolve, 2_000));
     controller.abort();
     await aborted;
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+    assert.equal(released.done, false, "one caller leaving does not cancel a transfer another still waits for");
+    repeat.abort();
+    await repeated;
     await released;
     const deadline = Date.now() + 5_000;
     while (readOwnershipRow(nodeA, "claude", target.id)?.status !== "owned" && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
