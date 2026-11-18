@@ -9,7 +9,14 @@ const SETTINGS_KEY = "guardian";
 export function getGuardianSettings(): GuardianSettings {
   const stored = value(SETTINGS_KEY);
   if (!stored) return structuredClone(DEFAULT_GUARDIAN_SETTINGS);
-  return guardianSettingsSchema.parse(JSON.parse(stored));
+  const settings = guardianSettingsSchema.parse(JSON.parse(stored));
+  // Upgrade only the shipped question; preserve questions the person customized.
+  for (const rule of settings.rules) {
+    if (rule.id === 'dangerous-commands' && rule.question === 'Could this action delete data, or make a change to the system that cannot be undone?') {
+      rule.question = DEFAULT_GUARDIAN_SETTINGS.rules[0].question;
+    }
+  }
+  return settings;
 }
 
 export function updateGuardianSettings(input: unknown): GuardianSettings {

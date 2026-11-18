@@ -11,6 +11,7 @@ import { localLayaUrl } from "./laya.js";
 import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } from "./model.js";
 import { announceGuardianBlock, guardianActionAllowed, requestGuardianReview } from "./reviews.js";
 import { guardianBypassed } from "./bypass.js";
+import { guardianCommandPolicy } from './commands.js';
 import { ruleApplies, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
 import { fetchThroughRelay } from "./relay-model.js";
 import { guardianGroups, productionGuard, type GuardianGroup } from "./settings.js";
@@ -58,7 +59,7 @@ async function modelTarget(group: GuardianGroup, projectId: string): Promise<Gua
 function modelState(identity: GuardianIdentity, request: GuardianRequest): string {
   const agent = getHarness(identity.harness).label;
   return request.kind === "tool"
-    ? JSON.stringify({ about: `A tool call the coding agent ${agent} is about to run`, tool: request.tool, arguments: request.input })
+    ? JSON.stringify({ about: `A tool call the coding agent ${agent} is about to run`, workingDirectory: identity.cwd, tool: request.tool, arguments: request.input })
     : JSON.stringify({ about: `Content about to be sent to an AI model: ${request.source}`, content: request.text });
 }
 
@@ -128,14 +129,18 @@ async function applyFixes(identity: GuardianIdentity, request: GuardianRequest, 
  * applies is asked in one request per group. A block anywhere wins; user approval never overrides it.
  */
 export async function checkGuardian(identity: GuardianIdentity, original: GuardianRequest): Promise<GuardianVerdict> {
+  if (guardianBypassed(identity.projectId, identity.conversationId)) return { action: "continue" };
+  const commandPolicy = guardianCommandPolicy(original);
+  if (commandPolicy === 'allow') return { action: 'continue' };
   const team = !!teamAssistantForConversation(identity.projectId, identity.conversationId);
   const effectCapable = original.kind === 'tool' && (original.category === 'commands' || original.category === 'file-changes');
   if (team && effectCapable && await productionGuard(identity.projectId) !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
-  const exempt = !team && (isGuardianExempt(identity.projectId, identity.conversationId) || guardianBypassed(identity.projectId, identity.conversationId));
+  const exempt = !team && (isGuardianExempt(identity.projectId, identity.conversationId));
   const groups = (await guardianGroups(identity.projectId)).filter(group => group.relay || !exempt);
   // Team Pi retains write/edit without a shell. The mandatory production rule checks those effects too.
   if (team && effectCapable) for (const group of groups) group.rules = group.rules.map(rule => rule.id === PRODUCTION_RULE_ID ? { ...rule, check: 'all' } : rule);
   if (!groups.some((group) => group.rules.some((rule) => ruleApplies(rule, original)))) return { action: "continue" };
+  if (commandPolicy === 'block') return announced(identity, 'Guardian blocked deletion of a protected branch (dev, main, master or staging), or a deletion whose branch cannot be determined.');
   let request = original;
   for (let attempt = 0; ; attempt += 1) {
     const { findings, failure } = await evaluate(identity, groups, request);
@@ -158,7 +163,7 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
     const reviewed = acting.length ? acting : findings;
     // Relay and team approvals remain one-time. A changed rule or working directory needs fresh consent.
     const alwaysKey = !team && !reviewed.some(finding => finding.group.relay)
-      ? createHash('sha256').update(JSON.stringify([identity.projectId, identity.harness, identity.cwd, request, groups])).digest('hex') : undefined;
+      ? createHash('sha256').update(JSON.stringify([identity.projectId, identity.conversationId, identity.harness, identity.cwd, request, groups])).digest('hex') : undefined;
     if (alwaysKey && guardianActionAllowed(alwaysKey)) return request === original ? { action: "continue" } : replaced(request);
     const decision = await requestGuardianReview({
       alwaysKey,
@@ -185,7 +190,8 @@ function replaced(request: GuardianRequest): GuardianVerdict {
  * A relay rule an agent cannot enforce stops the agent before it starts, so a machine never looks
  * protected when it is not. Claude and Kiro read tool output before anything can check it.
  */
-export async function guardianStartProblem(harness: HarnessId, projectId?: string): Promise<string | null> {
+export async function guardianStartProblem(harness: HarnessId, projectId?: string, conversationId?: string): Promise<string | null> {
+  if (projectId && conversationId && guardianBypassed(projectId, conversationId)) return null;
   if (harness === "pi") return null;
   for (const group of await guardianGroups(projectId)) {
     if (!group.relay) continue;

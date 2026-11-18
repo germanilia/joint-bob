@@ -47,6 +47,15 @@ test("settings refuse a no value above the yes value and Laya without an address
   assert.throws(() => guardianSettingsSchema.parse({ ...DEFAULT_GUARDIAN_SETTINGS, model: "laya-remote", layaUrl: "" }));
 });
 
+test('shipped dangerous-command questions upgrade without replacing custom rules', (t) => {
+  t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
+  const legacy = 'Could this action delete data, or make a change to the system that cannot be undone?';
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [rule({ question: legacy })] });
+  assert.equal(getGuardianSettings().rules[0].question, DEFAULT_GUARDIAN_SETTINGS.rules[0].question);
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [rule({ question: 'My custom question?' })] });
+  assert.equal(getGuardianSettings().rules[0].question, 'My custom question?');
+});
+
 test("secret removal takes out project secrets and common token formats", () => {
   const text = "export AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP\nmy-project-secret-value\npassword: hunter2hunter\nghp_" + "a".repeat(36);
   const removed = removeSecrets(text, ["my-project-secret-value"]);
@@ -190,8 +199,10 @@ test("allow always remembers only the exact action and scope, without overriding
   });
   t.after(stop);
   assert.deepEqual(await checkGuardian(identity, action), { action: "continue" });
-  assert.deepEqual(await checkGuardian({ ...identity, conversationId: "two" }, action), { action: "continue" });
-  assert.equal(questions, 1, "the saved approval survives a new conversation");
+  assert.deepEqual(await checkGuardian(identity, action), { action: "continue" });
+  assert.equal(questions, 1, "the saved approval survives in the same conversation");
+  assert.equal((await checkGuardian({ ...identity, conversationId: "two" }, action)).action, "block");
+  assert.equal(questions, 2, "another conversation needs its own approval");
   assert.equal((await checkGuardian(identity, { ...action, input: { command: "rm -rf /tmp/different" } })).action, "block");
   assert.equal((await checkGuardian({ ...identity, cwd: "/tmp/two" }, action)).action, "block");
   updateGuardianSettings({ ...getGuardianSettings(), rules: getGuardianSettings().rules.map(item => ({ ...item, ifYes: "block" })) });
@@ -228,6 +239,18 @@ test("a later manual turn never inherits an automation still draining background
     });
   } finally { finishBackground(); await automation; }
   assert.equal(guardianBypassed("overlap", "c"), false);
+});
+
+test('trusted commands skip the model, protected branch deletion does not', async (t) => {
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote', layaUrl: 'http://127.0.0.1:1' });
+  t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
+  const identity: GuardianIdentity = { projectId: 'command-policy', conversationId: 'c', harness: 'pi', cwd: '/workspace', canReplaceTool: true };
+  for (const command of ['git push origin main', 'gh pr edit 456 --body verified', 'node "$JOINT_BOB_WORKTREE_CLI" list']) {
+    assert.deepEqual(await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command } }), { action: 'continue' });
+  }
+  const verdict = await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command: 'git push origin --delete main' } });
+  assert.equal(verdict.action, 'block');
+  assert.match((verdict as { reason: string }).reason, /protected branch/);
 });
 
 test("a check that cannot reach its model blocks the action", async () => {

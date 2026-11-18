@@ -58,7 +58,7 @@ function render() {
   allow.addEventListener("click", () => answer("allow"));
   const always = document.createElement("button");
   always.type = "button"; always.className = "ghost"; always.textContent = "Allow always"; always.dataset.testid = "guardian-review-allow-always";
-  always.title = "Remember this exact action in this project and working directory";
+  always.title = "Remember this exact action only in this conversation and working directory";
   always.addEventListener("click", () => answer("allow-always"));
   block.disabled = allow.disabled = always.disabled = state.conversationReadOnly === true || answered.has(review.id);
   foot.append(detail, block, allow);

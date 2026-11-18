@@ -11,7 +11,7 @@ export async function kiroChecksTools(): Promise<boolean> {
 
 /** The prompt Kiro may send, after Guardian; throws when Guardian withholds it. */
 export async function guardKiroPrompt(identity: GuardianIdentity, text: string): Promise<string> {
-  const problem = await guardianStartProblem("kiro");
+  const problem = await guardianStartProblem("kiro", identity.projectId, identity.conversationId);
   if (problem) throw new Error(problem);
   const verdict = await checkGuardian(identity, { kind: "outgoing", source: "the user's message", text });
   if (verdict.action === "block") throw new Error(verdict.reason);

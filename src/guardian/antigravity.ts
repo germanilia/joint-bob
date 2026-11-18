@@ -9,7 +9,7 @@ export async function antigravityChecksTools(): Promise<boolean> {
 }
 
 export async function guardAntigravityPrompt(identity: GuardianIdentity, text: string): Promise<string> {
-  const problem = await guardianStartProblem("antigravity");
+  const problem = await guardianStartProblem("antigravity", identity.projectId, identity.conversationId);
   if (problem) throw new Error(problem);
   const verdict = await checkGuardian(identity, { kind: "outgoing", source: "the user's message", text });
   if (verdict.action === "block") throw new Error(verdict.reason);
