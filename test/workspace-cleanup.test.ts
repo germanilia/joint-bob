@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { cleanupDue, nextWorkspaceCleanup } from '../src/server/workspace-cleanup.js';
+import { createProjectWorktree } from '../src/project-worktrees.js';
+import { inspectWorkspaceChanges, saveWorkspaceStash, restoreWorkspaceStash } from '../src/workspace-cleanup-git.js';
+import { addProject } from '../src/store.js';
+
+const hour = 3600_000;
+test('cleanup policy uses the two idle windows and schedules the top of the next hour', () => {
+  assert.equal(cleanupDue(0, false, hour - 1), false);
+  assert.equal(cleanupDue(0, false, hour), true);
+  assert.equal(cleanupDue(0, true, 72 * hour), false);
+  assert.equal(cleanupDue(0, true, 72 * hour + 1), true);
+  assert.equal(nextWorkspaceCleanup(hour), 2 * hour);
+  assert.equal(nextWorkspaceCleanup(hour - 1), hour);
+});
+
+test('cleanup stash restores binary, symlink, deletes and executable mode without touching the project index', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-cleanup-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const source = path.join(dir, 'project'), root = path.join(dir, 'worktrees');
+  await fs.mkdir(source);
+  const git = (...args: string[]) => execFileSync('git', ['-C', source, ...args]).toString().trim();
+  git('init', '-q');
+  await fs.writeFile(path.join(source, 'delete.txt'), 'original');
+  await fs.writeFile(path.join(source, 'script'), '#!/bin/sh\n');
+  git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'base');
+  const project = await addProject('Stash fixture', source, { writeInstructions: false });
+  const workspace = await createProjectWorktree(project, { name: 'Original' }, root);
+  assert.equal((await inspectWorkspaceChanges(project, workspace)).entries.length, 0);
+  await fs.writeFile(path.join(workspace.path, 'payload.png'), Buffer.from([0, 255, 1]));
+  await fs.symlink('payload.png', path.join(workspace.path, 'pointer'));
+  await fs.unlink(path.join(workspace.path, 'delete.txt'));
+  await fs.chmod(path.join(workspace.path, 'script'), 0o755);
+  await fs.writeFile(path.join(workspace.path, '.env'), 'private');
+  await assert.rejects(inspectWorkspaceChanges(project, workspace), /excluded/i);
+  await fs.unlink(path.join(workspace.path, '.env'));
+  const changes = await inspectWorkspaceChanges(project, workspace);
+  const ref = await saveWorkspaceStash(project, workspace, changes);
+  assert.equal(await saveWorkspaceStash(project, workspace, changes), ref);
+  assert.equal(git('status', '--porcelain'), '');
+  const restored = await restoreWorkspaceStash(project, ref, 'Restored fixture', root);
+  assert.deepEqual(await fs.readFile(path.join(restored.path, 'payload.png')), Buffer.from([0, 255, 1]));
+  assert.equal(await fs.readlink(path.join(restored.path, 'pointer')), 'payload.png');
+  await assert.rejects(fs.access(path.join(restored.path, 'delete.txt')), { code: 'ENOENT' });
+  assert.ok((await fs.stat(path.join(restored.path, 'script'))).mode & 0o111);
+});

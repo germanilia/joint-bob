@@ -1,3 +1,4 @@
+import path from "node:path";
 import { spawn as spawnPty, type IPty } from "node-pty";
 import WebSocket from "ws";
 import { z } from "zod";
@@ -17,6 +18,12 @@ const terminalMessageSchema = z.union([
   }),
 ]);
 
+const terminalDirectories = new Map<IPty, string>();
+
+export function terminalOpenIn(directory: string): boolean {
+  return [...terminalDirectories.values()].some(cwd => cwd === directory || cwd.startsWith(`${directory}${path.sep}`));
+}
+
 function send(socket: WebSocket, payload: unknown): void {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
 }
@@ -34,6 +41,7 @@ export function attachTerminalSession(socket: WebSocket, cwd: string, nodeId: st
     rows: 24,
     env: runtimeEnvironment(runtime, { ...process.env, TERM: "xterm-256color" }) as Record<string, string>,
   });
+  terminalDirectories.set(terminal, cwd);
   let exited = false;
   const lifetime = watchSubprocess({ pid: terminal.pid, kill: (signal) => {
     if (exited) return false;
@@ -58,6 +66,7 @@ export function attachTerminalSession(socket: WebSocket, cwd: string, nodeId: st
   terminal.onData((data) => send(socket, { type: "terminalOutput", data }));
   terminal.onExit(({ exitCode, signal }) => {
     exited = true;
+    terminalDirectories.delete(terminal);
     lifetime.exited();
     send(socket, { type: "terminalExit", code: exitCode, signal });
     socket.close(1000, "Shell exited");

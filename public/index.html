@@ -984,6 +984,7 @@
           <div class="settings-group-label" role="presentation" data-testid="settings-group-node">This node</div>
           <button class="settings-tab" type="button" data-settings-tab="node" role="tab" id="settingsTab-node" aria-controls="settingsPanel-node" aria-selected="false" tabindex="-1" data-testid="settings-tab-node" data-admin-only><span class="settings-tab-icon" style="--tile:#64748b" aria-hidden="true">🖥️</span><span class="settings-tab-label">Node</span></button>
           <button class="settings-tab" type="button" data-settings-tab="resources" role="tab" id="settingsTab-resources" aria-controls="settingsPanel-resources" aria-selected="false" tabindex="-1" data-testid="settings-tab-resources" data-admin-only><span class="settings-tab-icon" style="--tile:#84cc16" aria-hidden="true">📊</span><span class="settings-tab-label">Resources</span></button>
+          <button class="settings-tab" type="button" data-settings-tab="workspace-cleanup" role="tab" id="settingsTab-workspace-cleanup" aria-controls="settingsPanel-workspace-cleanup" aria-selected="false" tabindex="-1" data-testid="settings-tab-workspace-cleanup" data-admin-only>Workspace cleanup</button>
           <button class="settings-tab" type="button" data-settings-tab="file-sync" role="tab" id="settingsTab-file-sync" aria-controls="settingsPanel-file-sync" aria-selected="false" tabindex="-1" data-testid="settings-tab-file-sync" data-admin-only><span class="settings-tab-icon" style="--tile:#14b8a6" aria-hidden="true">🔄</span><span class="settings-tab-label">File sync</span></button>
           <button class="settings-tab" type="button" data-settings-tab="users" role="tab" id="settingsTab-users" aria-controls="settingsPanel-users" aria-selected="false" tabindex="-1" data-testid="settings-tab-users" data-admin-only><span class="settings-tab-icon" style="--tile:#f43f5e" aria-hidden="true">👥</span><span class="settings-tab-label">Users</span></button>
           <button class="settings-tab" type="button" data-settings-tab="updates" role="tab" id="settingsTab-updates" aria-controls="settingsPanel-updates" aria-selected="false" tabindex="-1" data-testid="settings-tab-updates" data-admin-only><span class="settings-tab-icon" style="--tile:#22c55e" aria-hidden="true">⬇️</span><span class="settings-tab-label">Updates</span></button>
@@ -1998,6 +1999,17 @@
           </div>
         </section>
 
+        <section class="settings-panel" id="settingsPanel-workspace-cleanup" role="tabpanel" aria-labelledby="settingsTab-workspace-cleanup" tabindex="0" data-testid="settings-panel-workspace-cleanup" data-admin-only hidden>
+          <h2>Workspace cleanup</h2>
+          <p class="settings-hint">Every machine checks its projects hourly. Worktrees without conversations qualify after 1 idle hour. Worktrees with conversations qualify after 3 idle days. Unmerged changes are saved in Git before removal; conversation history stays available.</p>
+          <label class="checkbox-row"><input type="checkbox" id="workspaceCleanupEnabled" disabled /> Enable automatic cleanup on my machines</label>
+          <div class="relay-actions">
+            <button class="ghost" type="button" id="workspaceCleanupPreview" disabled>Preview cleanup</button>
+            <button class="ghost" type="button" id="workspaceCleanupRun" disabled>Run cleanup now</button>
+          </div>
+          <p id="workspaceCleanupStatus" role="status"></p>
+          <div id="workspaceCleanupResults"></div>
+        </section>
         <!-- settings-page (P4): Settings → File sync, filled by app/file-sync-settings.js. -->
         <section class="settings-panel relay-panel file-sync-panel" id="settingsPanel-file-sync" role="tabpanel" aria-labelledby="settingsTab-file-sync" tabindex="0" data-testid="settings-panel-file-sync" data-admin-only hidden>
           <div class="relay-head">

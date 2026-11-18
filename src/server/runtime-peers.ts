@@ -70,6 +70,7 @@ async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:
  const body=request.body as {projectId?:unknown;id?:unknown;input?:{projectId?:unknown};record?:{engine?:unknown;sessionId?:unknown};leases?:Array<{engine:unknown;sessionId:unknown}>}|undefined;
  if(request.path.startsWith('/browser/'))return request.path==='/browser/config'?isTrustedTwin(db,local,peer):true;
  if(request.path==='/background-tasks')return true;
+ if(request.path==='/workspace-cleanup/admin')return isTrustedTwin(db,local,peer);
  // A press of Bob's button comes only from the person's own machines; the route checks the person and the message.
  if(request.path==='/control-center/bob/action'||request.path==='/control-center/bob/reply'||request.path==='/control-center/bob/send'||request.path==='/control-center/live'||request.path==='/control-center/summarize')return isTrustedTwin(db,local,peer);
  if(request.path==='/resources/manage-inventory'||/^\/resources\/activation(?:\/(?:item|bulk))?$/.test(request.path))return isTrustedTwin(db,local,peer);
@@ -85,7 +86,7 @@ export function dispatchSignedRuntime(request:Request,response:Response,next:Nex
  const prefix='/api/cluster/v2/runtime/';
  if(!request.path.startsWith(prefix)){next();return;}
  const suffix=request.path.slice(prefix.length),target='/cluster/'+suffix;
- if(!/^(sessions\/|browser\/|git\/|projects\/presence$|project-file|project-files$|quick-notes\/prepare$|background-tasks$|control-center\/(?:bob\/(?:action|reply|send)|live|summarize)$|resources\/(?:inventory|manage-inventory|activation(?:\/(?:item|bulk))?)$)/.test(suffix)||!machineRoutes.has(`${request.method} ${target}`)){
+ if(!/^(sessions\/|browser\/|git\/|projects\/presence$|project-file|project-files$|quick-notes\/prepare$|background-tasks$|workspace-cleanup\/(?:check|admin)$|control-center\/(?:bob\/(?:action|reply|send)|live|summarize)$|resources\/(?:inventory|manage-inventory|activation(?:\/(?:item|bulk))?)$)/.test(suffix)||!machineRoutes.has(`${request.method} ${target}`)){
   response.status(404).json({error:'Unsupported signed runtime route'});return;
  }
  request.url=request.url.replace(prefix,'/api/cluster/');next();

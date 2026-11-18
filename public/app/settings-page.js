@@ -40,6 +40,7 @@ export const SECTION_INFO = {
   node: { kind: "form", scope: "machine", text: "Who may open terminals and run work here, and which nodes are blocked." },
   resources: { kind: "tabs", scope: "machine", text: "The skills, MCP servers, tools and plugins agents may load on each node." },
   "file-sync": { kind: "list", scope: "machines", text: "Keep the files of shared projects the same on every machine." },
+  "workspace-cleanup": { kind: "list", scope: "machines", text: "Review idle worktrees, set up hourly cleanup, and restore unmerged changes saved in Git." },
   users: { kind: "list", scope: "machine", text: "The people on this node and the model subscriptions they share." },
   updates: { kind: "list", scope: "machine", text: "Install the newest release here, update the agent harnesses, and roll out to the cluster." },
   logs: { kind: "form", scope: "device", text: "What this browser tab logged, for reporting a problem." },

@@ -124,6 +124,17 @@ test("a worktree is created from the conversation list as a code-only copy", asy
   assert.equal((await section.getByTestId("worktree-section-count").innerText()).trim(), "0");
 });
 
+test("workspace cleanup settings preview keeps a new worktree", async () => {
+  await page.evaluate(async () => (await import("/app/settings.js")).openSettings("workspace-cleanup"));
+  const panel = page.getByTestId("settings-panel-workspace-cleanup");
+  await panel.getByRole("button", { name: "Preview cleanup" }).click();
+  await panel.getByText(/Kept\. Recent conversation or workspace activity/).waitFor();
+  assert.equal(await panel.getByRole("checkbox", { name: /Enable automatic cleanup/ }).isChecked(), false);
+  await access(await onlyWorktreePath());
+  await page.keyboard.press("Escape");
+  await panel.waitFor({ state: "hidden" });
+});
+
 test("a conversation that ran in the worktree stays in the flat list with a badge", async () => {
   const worktree = await onlyWorktreePath();
   await seedWorktreeConversation(worktree);

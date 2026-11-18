@@ -27,6 +27,8 @@ export const machineRoutes = new Set([
   "GET /cluster/projects/presence",
   "POST /cluster/quick-notes/prepare",
   "POST /cluster/background-tasks",
+  "POST /cluster/workspace-cleanup/check",
+  "POST /cluster/workspace-cleanup/admin",
   "POST /cluster/resources/inventory",
   "POST /cluster/resources/manage-inventory",
   "GET /cluster/resources/activation",

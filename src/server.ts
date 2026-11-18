@@ -101,6 +101,7 @@ import { cleanupAbandonedByTheWayConversations } from "./server/routes/sessions.
 import { sweepConversationRetention } from "./server/conversation-retention.js";
 import "./server/routes/retention.js";
 import { sweepWorktrees } from "./server/worktree-cleanup.js";
+import { scheduleWorkspaceCleanup } from "./server/workspace-cleanup.js";
 import { startCronScheduler } from "./server/cron.js";
 import { recoverAutoResponders } from "./server/auto-respond-recovery.js";
 import { startConversationDigests } from "./server/conversation-digest-runner.js";
@@ -108,6 +109,7 @@ import { startKnowledgeCleanupScheduler } from "./server/knowledge-cleanup.js";
 import { startQuickNoteScheduler } from "./server/quick-note-dispatch.js";
 import "./server/routes/automations.js";
 import "./server/routes/worktrees.js";
+import "./server/routes/workspace-cleanup.js";
 import "./server/routes/project-files.js";
 import "./server/routes/git-review.js";
 import "./server/routes/conversation-digest.js";
@@ -267,10 +269,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const sweepRetention = (): void => { sweepConversationRetention().catch((error) => console.warn("Conversation retention sweep failed", error)); };
     setTimeout(sweepRetention, 5 * 60_000).unref();
     setInterval(sweepRetention, 60 * 60_000).unref();
-    // Worktrees without an undone conversation are removed every half hour.
+    // Verified finish reconciliation is separate from inactivity cleanup.
     const sweepWorktreeFolders = (): void => { sweepWorktrees().catch((error) => console.warn("Worktree sweep failed", error)); };
     setTimeout(sweepWorktreeFolders, 5 * 60_000).unref();
     setInterval(sweepWorktreeFolders, 30 * 60_000).unref();
+    scheduleWorkspaceCleanup(() => flags.startupReady);
     // The Mac's service logs (launchd's StandardOutPath/StandardErrorPath) are trimmed hourly.
     const trimLogs = (): void => { import("./server/service-logs.js").then(({ trimServiceLogs }) => trimServiceLogs(path.join(resolveDataDirectory(), "logs"))).catch((error) => console.warn("Service log trim failed", error)); };
     setTimeout(trimLogs, 60_000).unref();

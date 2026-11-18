@@ -12,6 +12,7 @@ import { sessionDoneOverrides, setSessionDone } from "../src/names.js";
 import { createProjectWorktree, markWorktreeConversation, projectWorktreeRoot, recordWorktreePullRequest } from "../src/project-worktrees.js";
 import { cleanupDoneWorktrees, sweepWorktrees } from "../src/server/worktree-cleanup.js";
 import { addProject } from "../src/store.js";
+import { workspaceCleanupCheck as checkWorkspace } from "../src/server/workspace-cleanup.js";
 
 async function fixture(context: test.TestContext, verified = true) {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-cleanup-"));
@@ -150,24 +151,6 @@ test("unverified worktrees without conversations survive the grace period", asyn
   await access(edited.path);
 });
 
-test("quiet time does not authorize deleting an unverified worktree", async (context) => {
-  const { project } = await fixture(context);
-  const worktree = await createProjectWorktree(project, { name: "active without conversation" });
-  const created = Date.now();
-  let clock = created + 31 * 60_000;
-  context.mock.method(Date, "now", () => clock);
-  const file = path.join(worktree.path, "index.ts");
-  await writeFile(file, "export const value = 2;\n");
-  await utimes(file, new Date(clock - 5 * 60_000), new Date(clock - 5 * 60_000));
-  const kept = await cleanupDoneWorktrees(project);
-  assert.deepEqual(kept.deletedWorktreeIds, []);
-  assert.equal(kept.retainedWorktrees[worktree.id], "Worktree kept: recent activity");
-  await access(worktree.path);
-  clock = created + 31 * 60_000 + 40 * 60_000;
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
-  await access(worktree.path);
-});
-
 test("the periodic sweep retains unmerged edits and pull requests", async (context) => {
   const { project, worktree, sessionId } = await fixture(context, false);
   await writeFile(path.join(worktree.path, "index.ts"), "export const value = 2;\n");
@@ -177,55 +160,30 @@ test("the periodic sweep retains unmerged edits and pull requests", async (conte
   await access(worktree.path);
 });
 
-test("five inactive days retire a verified worktree without a Done mark", async (context) => {
-  const { project, worktree } = await fixture(context);
-  const now = Date.now();
-  context.mock.method(Date, "now", () => now + 6 * 86_400_000);
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
-});
-
-test("merged retention counts file activity as well as conversation age", async (context) => {
-  const { project, worktree } = await fixture(context);
-  const now = Date.now();
-  const touched = new Date(now + 4 * 86_400_000);
-  await utimes(path.join(worktree.path, "index.ts"), touched, touched);
-  context.mock.method(Date, "now", () => now + 11 * 86_400_000);
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id], "seven quiet days qualify for merged cleanup, even though the conversation is eleven days old");
-});
-
-test("unmerged work survives five days but expires after ten, preserving history", async (context) => {
-  const { project, worktree } = await fixture(context, false);
-  await writeFile(path.join(worktree.path, "index.ts"), "unmerged work\n");
-  const now = Date.now();
-  let days = 6;
-  context.mock.method(Date, "now", () => now + days * 86_400_000);
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
-  days = 11;
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
-  const { worktreeSessionPaths } = await import("../src/project-worktrees.js");
-  assert.ok((await worktreeSessionPaths(project.id)).includes(worktree.path));
-});
-
-test("unstarted worktrees and open PRs expire only after ten inactive days", async (context) => {
+test("age-based cleanup is opt-in and previews without writing a stash", async (context) => {
   const { project, worktree } = await fixture(context, false);
   const empty = await createProjectWorktree(project, { name: "never started" });
-  await recordWorktreePullRequest(project.id, worktree.id, { number: 8, url: "https://github.com/o/r/pull/8", branch: "task", base: "main", baseCommit: "a".repeat(40) });
+  await writeFile(path.join(worktree.path, "index.ts"), "unmerged work\n");
   const now = Date.now();
-  context.mock.method(Date, "now", () => now + 11 * 86_400_000);
-  assert.deepEqual(new Set((await cleanupDoneWorktrees(project)).deletedWorktreeIds), new Set([empty.id, worktree.id]));
+  context.mock.method(Date, "now", () => now + 4 * 86_400_000);
+  const { previewWorkspaceCleanup, runWorkspaceCleanup, workspaceCleanupHistory } = await import("../src/server/workspace-cleanup.js");
+  assert.deepEqual(await runWorkspaceCleanup("scheduled"), []);
+  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+  const planned = await previewWorkspaceCleanup([project]);
+  assert.deepEqual(new Set(planned.filter(row => row.status === "ready").map(row => row.workspaceId)), new Set([empty.id, worktree.id]));
+  assert.equal(workspaceCleanupHistory(new Set([project.id])).saved.length, 0);
+  await access(worktree.path);
+  const runs = await Promise.all([runWorkspaceCleanup("manual", [project]), runWorkspaceCleanup("manual", [project])]);
+  assert.deepEqual(runs[0], runs[1]);
+  assert.deepEqual(new Set(runs[0].filter(row => row.status === "removed").map(row => row.workspaceId)), new Set([empty.id, worktree.id]));
+  assert.equal(workspaceCleanupHistory(new Set([project.id])).saved.length, 1);
+  const { worktreeSessionPaths } = await import("../src/project-worktrees.js");
+  const paths = await worktreeSessionPaths(project.id);
+  assert.ok(paths.includes(worktree.path));
+  assert.ok(!paths.includes(empty.path));
 });
 
-test("a file-only merge expires after five inactive days", async (context) => {
-  const { project, worktree } = await fixture(context, false);
-  const { mergeProjectWorktree } = await import("../src/project-worktrees.js");
-  await writeFile(path.join(worktree.path, "index.ts"), "merged\n");
-  assert.ok((await mergeProjectWorktree(project, worktree.id)).merged);
-  const now = Date.now();
-  context.mock.method(Date, "now", () => now + 6 * 86_400_000);
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, [worktree.id]);
-});
-
-test("unresolved integration blocks ten-day expiration", async (context) => {
+test("unresolved integration blocks scheduled cleanup", async (context) => {
   const { project, worktree } = await fixture(context);
   const { openNodeDatabase } = await import("../src/node-database.js");
   const { resolveDataDirectory } = await import("../src/data-directory.js");
@@ -235,7 +193,7 @@ test("unresolved integration blocks ten-day expiration", async (context) => {
   db.close();
   const now = Date.now();
   context.mock.method(Date, "now", () => now + 11 * 86_400_000);
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+  assert.equal((await checkWorkspace(project, worktree)).reason !== undefined, true);
 });
 
 test("recent transcript activity keeps an old worktree even with no file edits", async (context) => {
@@ -251,19 +209,19 @@ test("recent transcript activity keeps an old worktree even with no file edits",
   ].map(record => JSON.stringify(record)).join("\n") + "\n");
   context.after(() => rm(transcript, { force: true }));
   context.mock.method(Date, "now", () => now + 11 * 86_400_000);
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+  assert.equal((await checkWorkspace(project, worktree)).reason !== undefined, true);
 });
 
-test("ten-day expiration protects running work and recent file activity", async (context) => {
+test("cleanup protects running work and recent file activity", async (context) => {
   const { project, worktree, sessionId } = await fixture(context, false);
   const now = Date.now();
   context.mock.method(Date, "now", () => now + 11 * 86_400_000);
   holdEndedRun("pi", sessionId, false);
-  try { assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []); }
+  try { assert.equal((await checkWorkspace(project, worktree)).reason !== undefined, true); }
   finally { releaseEndedRun("pi", sessionId); }
   const recent = new Date(now + 10 * 86_400_000);
   await utimes(path.join(worktree.path, "index.ts"), recent, recent);
-  assert.deepEqual((await cleanupDoneWorktrees(project)).deletedWorktreeIds, []);
+  assert.equal((await checkWorkspace(project, worktree)).reason !== undefined, true);
 });
 
 test("the periodic sweep keeps a worktree with an undone or running conversation", async (context) => {

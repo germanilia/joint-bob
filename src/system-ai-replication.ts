@@ -7,13 +7,14 @@ import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent
 import { save, settingsDatabase } from './settings-store.js';
 import { getClusterNode } from './cluster.js';
 
-export const SYSTEM_AI_KEYS = ['systemAI', 'backgroundAgent', 'syncCheck', 'dashboards', 'conversationSummary', 'conversationSummaryInstructions'] as const;
+export const SYSTEM_AI_KEYS = ['systemAI', 'backgroundAgent', 'syncCheck', 'dashboards', 'conversationSummary', 'conversationSummaryInstructions', 'workspaceCleanup'] as const;
 type SharedKey = typeof SYSTEM_AI_KEYS[number];
 const eventSchema = z.object({ key: z.enum(SYSTEM_AI_KEYS), value: z.string().max(30000), revision: z.number().int().positive(), originNodeId: z.string().uuid() }).strict();
 function validate(key: string, value: string): SharedKey {
   const parsed = z.enum(SYSTEM_AI_KEYS).parse(key);
   const schemas = { systemAI: systemAiSchema, backgroundAgent: backgroundAgentSchema, syncCheck: syncCheckSchema, dashboards: dashboardAgentSchema, conversationSummary: summaryPolicySchema };
   if (parsed === 'conversationSummaryInstructions') summaryInstructionsSchema.parse(value);
+  else if (parsed === 'workspaceCleanup') z.boolean().parse(JSON.parse(value));
   else schemas[parsed].parse(JSON.parse(value));
   return parsed;
 }
