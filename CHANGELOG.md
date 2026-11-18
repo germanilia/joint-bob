@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.324.1 — 2026-11-18
+
+- Taking a conversation over twice at the same moment no longer fails with "A transfer is already in progress for this conversation". This happened when the page moved a conversation to this machine by itself while you pressed Take ownership, or when two windows asked together. Both requests now wait for the one transfer and get the same answer.
+- A transfer that several pages wait for is cancelled only when all of them have left. Before, closing or cancelling in one page undid it for the others.
+- While a cancelled transfer is still being undone, a new attempt says so and asks you to try again in a moment.
+- Guardian lets direct Joint Bob commands and ordinary Git and GitHub operations through without a model check, and still blocks deleting the dev, main, master and staging branches.
+- An approval Guardian remembers applies only to the conversation it was given in.
+- Automation turns that opted out of Guardian are no longer checked, on this machine or over the relay.
+- The built-in dangerous-command question is narrower. Custom questions are kept as written.
+
 ## 2.324.0 — 2026-11-18
 
 - Opening a conversation from Home, the Inbox or the board shows it at once, with a spinner while it loads. Before, the page stayed as it was until the conversation arrived, sometimes for several seconds.

@@ -615,9 +615,22 @@ async function forceLocalSessionOwnership(project: ProjectRecord, session: Sessi
   return { sessionPath: session.path, ownership, pendingPeerIds: [...unavailable], saved };
 }
 
-const transferringSessions = new Set<string>();
+type TakeoverResult = { sessionPath: string; ownership: ConversationOwnership; pendingPeerIds: string[]; saved?: string };
+type Takeover = { kind: string; promise: Promise<TakeoverResult>; controller: AbortController; callers: number };
+const transferringSessions = new Map<string, Takeover>();
 
-export async function takeLocalSessionOwnership(project: ProjectRecord, payload: z.infer<typeof routedSessionTakeOwnershipSchema>, requireOnline = false, signal?: AbortSignal): Promise<{ sessionPath: string; ownership: ConversationOwnership; pendingPeerIds: string[]; saved?: string }> {
+/**
+ * Waits for a takeover with everyone else who asked for it. It is cancelled only once every caller has gone:
+ * one page closing must not undo a transfer another page still waits for.
+ */
+async function shareTakeover(takeover: Takeover, caller?: AbortSignal): Promise<TakeoverResult> {
+  takeover.callers++;
+  const leave = () => { if (--takeover.callers === 0) takeover.controller.abort(caller!.reason); };
+  if (caller?.aborted) leave(); else caller?.addEventListener("abort", leave, { once: true });
+  try { return await takeover.promise; } finally { caller?.removeEventListener("abort", leave); }
+}
+
+export async function takeLocalSessionOwnership(project: ProjectRecord, payload: z.infer<typeof routedSessionTakeOwnershipSchema>, requireOnline = false, caller?: AbortSignal): Promise<TakeoverResult> {
   const [local, sessions, peers] = await Promise.all([getClusterNode(), listProjectScopeSessions(project), listRuntimePeers(project.id)]);
   if (payload.peerId !== local.id) throw new Error("Takeover destination is not this node");
   const matching = payload.sessionId ? sessions.find((session) => session.id === payload.sessionId) : sessions.find((session) => session.path === payload.sessionPath);
@@ -628,10 +641,21 @@ export async function takeLocalSessionOwnership(project: ProjectRecord, payload:
   const sessionId = matching.id;
   if (!payload.force && conversationIsActive(project.id, engine, sessionId, matching.path)) throw new ConversationTransferError("Wait for the current turn to finish before taking ownership");
   const key = `${engine}:${sessionId}`;
-  if (transferringSessions.has(key)) throw new ConversationTransferError("A transfer is already in progress for this conversation");
-  transferringSessions.add(key);
+  const kind = JSON.stringify([Boolean(payload.force), payload.historyOwnerNodeId ?? null, requireOnline]);
+  const running = transferringSessions.get(key);
+  if (running) {
+    // The same takeover asked for again (a second click, another window, the page switching by itself) is one transfer.
+    if (running.kind !== kind) throw new ConversationTransferError("A different transfer is already in progress for this conversation");
+    if (running.controller.signal.aborted) throw new ConversationTransferError("The previous transfer of this conversation is still being cancelled; try again in a moment");
+    return shareTakeover(running, caller);
+  }
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const takeover: Takeover = { kind, controller, callers: 0, promise: undefined as unknown as Promise<TakeoverResult> };
+  transferringSessions.set(key, takeover);
+  takeover.promise = (async (): Promise<TakeoverResult> => {
   try {
-  signal?.throwIfAborted();
+  signal.throwIfAborted();
   if (payload.force) return await forceLocalSessionOwnership(project, matching, local.id, peers);
   const unavailable = await synchronizeQueueBeforeTakeover(project.id, engine, sessionId, local.id, peers, requireOnline);
   const expected = await getConversationOwnership(engine, sessionId);
@@ -691,6 +715,8 @@ export async function takeLocalSessionOwnership(project: ProjectRecord, payload:
   }
   return { sessionPath: matching.path, ownership, pendingPeerIds, ...(saved ? { saved } : {}) };
   } finally { transferringSessions.delete(key); }
+  })();
+  return shareTakeover(takeover, caller);
 }
 
 app.put("/api/projects/:projectId/sessions/reviewed", async (request, response, next) => {

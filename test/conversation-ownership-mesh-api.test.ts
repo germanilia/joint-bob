@@ -157,9 +157,12 @@ async function exerciseClaudeOwnership(mesh: Mesh, source: SeededNode, destinati
   await assertSpoofRejected(mesh, source, destination, "claude", sessionId);
   await exerciseConcurrentBoundary(mesh, "claude", source, destination, sessionPath, sockets);
   const beforeTakeover = await readFile(sessionPath, "utf8");
-  const takeover = await takeOwnership(mesh, destination, { sessionPath: `claude:${sessionPath}` });
+  // A second click, another window or the page switching by itself asks for the same takeover while it runs.
+  const [takeover, repeated] = await Promise.all([1, 2].map(() => takeOwnership(mesh, destination, { sessionPath: `claude:${sessionPath}` })));
   assert.equal(takeover.status, 200, JSON.stringify(takeover.body));
   assert.equal((takeover.body.ownership as Record<string, unknown>).ownerNodeId, destination.nodeId);
+  assert.equal(repeated.status, 200, `the repeated takeover joins the one under way: ${JSON.stringify(repeated.body)}`);
+  assert.deepEqual(repeated.body.ownership, takeover.body.ownership);
   assert.equal(await readFile(sessionPath, "utf8"), beforeTakeover);
 }
 
