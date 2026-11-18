@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.325.1 — 2026-11-18
+
+- A turn on a cluster subscription pool now waits for the relay that holds the sign-in when it cannot be reached, instead of failing at once with "The relay holding claude cannot be reached". This happened right after a service update restarted the relay. The turn tries again after 1 second, then 2, 4 and so on up to every 30 seconds, and at once when the relay answers anything else, for up to 5 minutes. A model request in a turn that is already running is held the same way.
+- The 5 minutes count from the relay's first failure, so the pool's next member on the same relay does not wait again. After that the error says how long the relay has not answered.
+- **Stop** ends the wait right away.
+
 ## 2.325.0 — 2026-11-18
 
 - A conversation now waits for review until you mark it done. Opening it to read it, the board's **Review** button, and the page reopening it after a restart or reload no longer count as a review. **Mark all reviewed** still clears a project's reviews.

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -6,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import { getClusterNode } from "../cluster.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
+import { isPeerUnreachable, onPeerReturned } from "../peer-presence.js";
 import type { PoolProfileContext } from "./context.js";
 import { PoolAttemptFailure } from "./pool-execution.js";
 import type { ProviderProfile } from "./store.js";
@@ -114,6 +116,100 @@ async function sendToRelay(context: PoolProfileContext, request: RelayProxiedReq
     { clusterId: context.clusterId, poolId: context.poolId, profileId: context.profileId, ...(request ? { request } : {}) }, signal);
 }
 
+/**
+ * A relay that does not answer is waited for: requests back off from one second to thirty and go
+ * again at once when the relay answers anything else, for up to five minutes. A service update
+ * restarts the relay in a minute or two; a turn used to fail on the first ten-second timeout
+ * (Mac, 2026-11-18: "The relay holding claude cannot be reached" right after an update).
+ *
+ * The five minutes count from the relay's first failure, not from each request: every member of a
+ * pool is held by the same relay, so the next member does not wait again. Once an outage has been
+ * waited out, requests fail at once for a minute before a new one is waited for.
+ */
+const timing = { waitMs: 5 * 60_000, giveUpMs: 60_000, firstRetryMs: 1_000, maxRetryMs: 30_000 };
+/** Relay node → when it first failed to answer in the current outage. */
+const outages = new Map<string, number>();
+const waiting = new Map<string, Set<() => void>>();
+let watchingReturns = false;
+/** What a person's Stop aborts; a relay wait in a turn that is being stopped ends with it. */
+const stopSignals = new AsyncLocalStorage<AbortSignal>();
+const neverStopped = new AbortController().signal;
+
+export function relayOutageTimingForTests(overrides: Partial<typeof timing>): () => void {
+  const previous = { ...timing };
+  Object.assign(timing, overrides);
+  outages.clear();
+  return () => { Object.assign(timing, previous); outages.clear(); };
+}
+
+/** Runs a turn's work so that pressing Stop (`signal`) ends any wait for a relay inside it. */
+export function relayWaitsEndOn<T>(signal: AbortSignal, work: () => T): T { return stopSignals.run(signal, work); }
+
+export class RelayWaitStopped extends Error {
+  constructor() { super("You stopped the turn"); this.name = "RelayWaitStopped"; }
+}
+
+function watchReturns(): void {
+  if (watchingReturns) return;
+  watchingReturns = true;
+  onPeerReturned((peerId) => {
+    outages.delete(peerId);
+    for (const wake of waiting.get(peerId) ?? []) wake();
+  });
+}
+
+/** Sleeps `ms`, or less when the relay answers again; rejects when `signal` aborts. */
+function untilRetry(relay: string, ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const wakes = waiting.get(relay) ?? new Set<() => void>();
+    waiting.set(relay, wakes);
+    const settle = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", stop);
+      wakes.delete(wake);
+      if (!wakes.size && waiting.get(relay) === wakes) waiting.delete(relay);
+    };
+    const wake = (): void => { settle(); resolve(); };
+    const stop = (): void => { settle(); reject(signal.reason); };
+    const timer = setTimeout(wake, ms);
+    wakes.add(wake);
+    signal.addEventListener("abort", stop, { once: true });
+  });
+}
+
+/** `sendToRelay`, retried while the relay cannot be reached (see `timing`). `attemptMs` limits each try. */
+async function relayAnswer(context: PoolProfileContext, request: RelayProxiedRequest | undefined, signal: AbortSignal, attemptMs?: number): Promise<Response> {
+  const relay = context.poolOwnerNodeId!;
+  watchReturns();
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const answer = await sendToRelay(context, request, attemptMs ? AbortSignal.any([signal, AbortSignal.timeout(attemptMs)]) : signal);
+      if (outages.delete(relay)) console.log(`The relay holding ${context.label} answers again`);
+      return answer;
+    } catch (error) {
+      if (signal.aborted || !isPeerUnreachable(error)) throw error;
+      const now = Date.now();
+      let since = outages.get(relay);
+      if (since === undefined || now - since >= timing.waitMs + timing.giveUpMs) {
+        since = now;
+        outages.set(relay, since);
+        console.warn(`The relay holding ${context.label} cannot be reached; trying again for up to ${Math.round(timing.waitMs / 60_000)} minutes`);
+      }
+      const left = since + timing.waitMs - now;
+      if (left <= 0) throw error;
+      await untilRetry(relay, Math.min(timing.firstRetryMs * 2 ** attempt, timing.maxRetryMs, left), signal);
+    }
+  }
+}
+
+function relayUnreachable(context: PoolProfileContext, label: string): string {
+  const since = outages.get(context.poolOwnerNodeId!);
+  const minutes = since === undefined ? 0 : Math.floor((Date.now() - since) / 60_000);
+  return minutes >= 1
+    ? `The relay holding ${label} has not answered for ${minutes} minute${minutes === 1 ? "" : "s"}`
+    : `The relay holding ${label} cannot be reached`;
+}
+
 async function readBody(request: http.IncomingMessage): Promise<Buffer | undefined> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -147,9 +243,11 @@ async function proxyToRelay(request: http.IncomingMessage, response: http.Server
   response.on("close", () => abort.abort());
   let answer: Response;
   try {
-    answer = await sendToRelay(lease.context, { path: request.url ?? "/", headers: forwardedHeaders(Object.entries(request.headers)), body: body.toString("base64") }, abort.signal);
+    // The harness keeps this request open while the relay is waited for; stopping the turn closes it.
+    answer = await relayAnswer(lease.context, { path: request.url ?? "/", headers: forwardedHeaders(Object.entries(request.headers)), body: body.toString("base64") }, abort.signal);
   } catch {
-    refuse(response, 503, `The relay holding ${lease.context.label} cannot be reached`);
+    if (abort.signal.aborted) return;
+    refuse(response, 503, relayUnreachable(lease.context, lease.context.label));
     return;
   }
   await streamAnswer(answer, response);
@@ -178,9 +276,14 @@ async function relayRefusal(answer: Response): Promise<string> {
 export async function relayProxyCredential(profile: ProviderProfile, context: PoolProfileContext) {
   if (!context.clusterId || !context.poolOwnerNodeId) throw new Error("Cluster pool credential route is incomplete");
   if (!isProxiedProvider(profile.provider)) throw new PoolAttemptFailure("unavailable", false, `${profile.label} cannot be used through the relay`);
+  const stopped = stopSignals.getStore() ?? neverStopped;
   let ready: Response;
-  try { ready = await sendToRelay(context, undefined, AbortSignal.timeout(10_000)); }
-  catch (error) { throw new PoolAttemptFailure("unavailable", false, `The relay holding ${profile.label} cannot be reached`, { cause: error }); }
+  try { ready = await relayAnswer(context, undefined, stopped, 10_000); }
+  catch (error) {
+    // Not a pool failure: the next member must not be tried for a turn the person stopped.
+    if (stopped.aborted) throw new RelayWaitStopped();
+    throw new PoolAttemptFailure("unavailable", false, relayUnreachable(context, profile.label), { cause: error });
+  }
   if (!ready.ok) {
     throw new PoolAttemptFailure(ready.status === 503 ? "unavailable" : "auth", false, `Could not use ${profile.label} through the relay: ${await relayRefusal(ready)}`);
   }

@@ -11,20 +11,29 @@ import { addSharingMember, createSharingCluster } from "../src/cluster-sharing-p
 import { clusterV2Database } from "../src/cluster-v2-store.js";
 import { createSessionModelRuntime } from "../src/provider-profiles/pi.js";
 import { PoolAttemptFailure } from "../src/provider-profiles/pool-execution.js";
-import { forwardToProvider, RelayRouteRefused, relayProxyCredential, streamAnswer } from "../src/provider-profiles/relay-proxy.js";
+import { forwardToProvider, RelayRouteRefused, relayOutageTimingForTests, relayProxyCredential, relayWaitsEndOn, RelayWaitStopped, streamAnswer } from "../src/provider-profiles/relay-proxy.js";
 import type { ProviderProfile } from "../src/provider-profiles/store.js";
 
 interface Seen { method: string; url: string; headers: http.IncomingHttpHeaders; body: Buffer }
-async function serve(answer: (seen: Seen, response: http.ServerResponse) => void): Promise<{ url: string; seen: Seen[]; close: () => Promise<void> }> {
+async function serve(answer: (seen: Seen, response: http.ServerResponse) => void, port = 0): Promise<{ url: string; seen: Seen[]; close: () => Promise<void> }> {
   const seen: Seen[] = [];
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => { const entry = { method: request.method!, url: request.url!, headers: request.headers, body: Buffer.concat(chunks) }; seen.push(entry); answer(entry, response); });
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, seen, close: () => new Promise((resolve) => server.close(() => resolve())) };
 }
+/** A port nothing listens on, the way a relay that is restarting looks. */
+async function freePort(): Promise<number> {
+  const server = http.createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const jwt = (claims: object) => `${Buffer.from("{}").toString("base64url")}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
 
 test("the relay sends only model routes on, with its own sign-in in place of the member's placeholder", async () => {
@@ -80,14 +89,21 @@ function describeMemberProxy(): void {
   const clusterId = randomUUID(), relayNodeId = randomUUID(), poolId = randomUUID();
   let relay: Awaited<ReturnType<typeof serve>>;
   let checkStatus = 200;
+  const answerAsRelay = (seen: Seen, response: http.ServerResponse): void => {
+    const input = JSON.parse(seen.body.toString("utf8")) as { request?: { path: string; headers: Record<string, string>; body: string } };
+    if (!input.request) { response.writeHead(checkStatus, { "content-type": "application/json" }).end(JSON.stringify(checkStatus === 200 ? { ready: true } : { error: "Not signed in on the relay" })); return; }
+    response.writeHead(200, { "content-type": "text/event-stream", "request-id": "relay-request" });
+    response.write("event: message_start\n\n");
+    setTimeout(() => response.end("event: message_stop\n\n"), 20);
+  };
+  /** Moves the relay to another address, as a restart that has not come back yet; returns the undo. */
+  const pointRelayAt = async (url: string): Promise<() => void> => {
+    const db = await clusterV2Database(), move = db.prepare("UPDATE cluster_v2_membership_nodes SET url=? WHERE cluster_id=? AND node_id=?");
+    move.run(url, clusterId, relayNodeId);
+    return () => { move.run(relay.url, clusterId, relayNodeId); };
+  };
   before(async () => {
-    relay = await serve((seen, response) => {
-      const input = JSON.parse(seen.body.toString("utf8")) as { request?: { path: string; headers: Record<string, string>; body: string } };
-      if (!input.request) { response.writeHead(checkStatus, { "content-type": "application/json" }).end(JSON.stringify(checkStatus === 200 ? { ready: true } : { error: "Not signed in on the relay" })); return; }
-      response.writeHead(200, { "content-type": "text/event-stream", "request-id": "relay-request" });
-      response.write("event: message_start\n\n");
-      setTimeout(() => response.end("event: message_stop\n\n"), 20);
-    });
+    relay = await serve(answerAsRelay);
     const local = await getClusterNode(), db = await clusterV2Database();
     getOrCreateClusterIdentity(db, local.id);
     ensureMembershipSchema(db);
@@ -141,6 +157,68 @@ function describeMemberProxy(): void {
     await assert.rejects(relayProxyCredential(profile, context), (error: unknown) => error instanceof PoolAttemptFailure && error.reason === "unavailable");
     checkStatus = 200;
     await assert.rejects(relayProxyCredential(profile, { ...context, poolOwnerNodeId: randomUUID() }), (error: unknown) => error instanceof PoolAttemptFailure && error.reason === "unavailable", "a relay that is not a member of the group is never asked");
+  });
+
+  test("a relay that does not answer is waited for until it is back, and the turn then starts", async () => {
+    const { profile, context } = member("claude");
+    const restore = relayOutageTimingForTests({ firstRetryMs: 100, maxRetryMs: 200 });
+    const port = await freePort(), undo = await pointRelayAt(`http://127.0.0.1:${port}`);
+    let back: Awaited<ReturnType<typeof serve>> | undefined;
+    try {
+      const started = Date.now();
+      const pending = relayProxyCredential(profile, context);
+      await pause(500);
+      back = await serve(answerAsRelay, port);
+      const credential = await pending;
+      assert.ok(Date.now() - started >= 500, "the check waited for the relay instead of failing");
+      assert.match(credential.access, /^sk-ant-oat01-/);
+      assert.ok(back.seen.length >= 1, "the relay was asked again once it was back");
+    } finally { undo(); restore(); await back?.close(); }
+  });
+
+  test("Stop ends a wait for the relay, and the pool does not move on to the next member", async () => {
+    const { profile, context } = member("claude");
+    const restore = relayOutageTimingForTests({ firstRetryMs: 10_000 });
+    const undo = await pointRelayAt(`http://127.0.0.1:${await freePort()}`);
+    try {
+      const stop = new AbortController(), started = Date.now();
+      const pending = relayWaitsEndOn(stop.signal, () => relayProxyCredential(profile, context));
+      setTimeout(() => stop.abort("user-stop"), 200);
+      await assert.rejects(pending, (error: unknown) => error instanceof RelayWaitStopped && !(error instanceof PoolAttemptFailure));
+      assert.ok(Date.now() - started < 2_000, "Stop did not wait out the retry");
+    } finally { undo(); restore(); }
+  });
+
+  test("a relay that stays away fails the turn after the wait, and the pool's next member on it does not wait again", async () => {
+    const claude = member("claude"), codex = member("openai-codex");
+    const restore = relayOutageTimingForTests({ waitMs: 400, firstRetryMs: 50, maxRetryMs: 100 });
+    const undo = await pointRelayAt(`http://127.0.0.1:${await freePort()}`);
+    try {
+      let started = Date.now();
+      await assert.rejects(relayProxyCredential(claude.profile, claude.context),
+        (error: unknown) => error instanceof PoolAttemptFailure && error.reason === "unavailable" && !error.started && /relay holding Team claude/.test(error.message));
+      assert.ok(Date.now() - started >= 400, "the first member waited");
+      started = Date.now();
+      await assert.rejects(relayProxyCredential(codex.profile, codex.context), PoolAttemptFailure);
+      assert.ok(Date.now() - started < 300, "the same relay's outage was already waited out");
+    } finally { undo(); restore(); }
+  });
+
+  test("a model request in a running turn is held while the relay restarts, then answered", async () => {
+    const { profile, context } = member("claude");
+    const credential = await relayProxyCredential(profile, context);
+    const restore = relayOutageTimingForTests({ firstRetryMs: 100, maxRetryMs: 200 });
+    const port = await freePort(), undo = await pointRelayAt(`http://127.0.0.1:${port}`);
+    let back: Awaited<ReturnType<typeof serve>> | undefined;
+    try {
+      const answering = fetch(`${credential.proxyBaseUrl}/v1/messages`, { method: "POST", body: "{}",
+        headers: { authorization: `Bearer ${credential.access}`, "content-type": "application/json" } });
+      await pause(500);
+      back = await serve(answerAsRelay, port);
+      const answer = await answering;
+      assert.equal(answer.status, 200, "the harness never saw the relay away");
+      assert.equal(await answer.text(), "event: message_start\n\nevent: message_stop\n\n");
+    } finally { undo(); restore(); await back?.close(); }
   });
 
   test("Pi sends a relay member's model requests to the relay proxy", async () => {

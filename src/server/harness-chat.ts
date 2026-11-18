@@ -24,6 +24,7 @@ import { automationFallbackPool, getSubscriptionPool, poolCandidates, resolveSub
 import { projectProviderProfile } from "../provider-profiles/service.js";
 import { withPoolProfile, type PoolProfileContext } from "../provider-profiles/context.js";
 import { classifyPoolAttemptFailure, memberModelLadder, resolvePoolModelSettings, resolvePoolSwitchModel, runOnModels, runPoolAttempts } from "../provider-profiles/pool-execution.js";
+import { relayWaitsEndOn } from "../provider-profiles/relay-proxy.js";
 import type { ProfileProvider } from "../provider-profiles/store.js";
 import { getConversationRecord, ensureConversationRecord, listConversationSegments } from "../conversation-records.js";
 import type { UsageDifficulty } from "../usage-types.js";
@@ -102,6 +103,8 @@ const drains = new Map<string, Promise<void>>();
 const idleWakes = new Map<string, () => void>();
 const pausedDrains = new Set<string>();
 const stops = new Map<string, Promise<void>>();
+/** Stop aborts it: a turn waiting for an unreachable relay before it starts (relay-proxy.ts) gives up at once. */
+const drainStops = new Map<string, AbortController>();
 const startingIds = new Set<string>();
 // A responder decision in progress, so a person typing, Stop, or a settings change can cancel it,
 // and every client, one that reconnects included, can show what it is checking.
@@ -1218,13 +1221,15 @@ export function drainHarnessPromptQueue(connection: HarnessChatConnection): Prom
   const key = queueKey(connection);
   const existing = drains.get(key); if (existing) return existing;
   idleWakes.get(key)?.();
-  const drain = drainLoop(connection).catch(async error => {
+  const stop = new AbortController();
+  drainStops.set(key, stop);
+  const drain = relayWaitsEndOn(stop.signal, () => drainLoop(connection)).catch(async error => {
     if (error instanceof ConversationOwnershipError) throw error;
     if (promptQueuePaused(key)) return;
     const state = await getAutoRespond(connection.project.id, connection.conversationId);
     if (state?.status !== "active") throw error;
     await retryAutoResponse(connection, error);
-  }).finally(() => drains.delete(key));
+  }).finally(() => { drains.delete(key); if (drainStops.get(key) === stop) drainStops.delete(key); });
   drains.set(key, drain); return drain;
 }
 
@@ -1314,6 +1319,7 @@ async function stopConversation(connection: HarnessChatConnection): Promise<void
   setPromptQueuePaused(key, true);
   idleWakes.get(key)?.();
   autoDecisions.get(key)?.controller.abort("user-stop");
+  drainStops.get(key)?.abort("user-stop");
   cancelGuardianReviews(connection.project.id, connection.conversationId);
   const stopping = stopConversationExecution(connection).finally(() => stops.delete(key));
   stops.set(key, stopping);
