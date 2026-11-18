@@ -225,7 +225,7 @@ export function resourceRoute(work: (request: Request, response: Response, entry
       const entry = await localAssistant(response, request.params.id);
       if (entry) await work(request, response, entry);
     } catch (error) {
-      if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map(issue => issue.message).join(", ")); return; }
+      if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map(issue => issue.message).join(", ")); return; }
       if (error instanceof WebhookResourceError) { sendError(response, error.statusCode, error.message); return; }
       next(error);
     }

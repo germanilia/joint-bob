@@ -13,7 +13,7 @@ const connectSchema = z.object({
 const mine = (response: { locals: Record<string, unknown> }): AuthSession => response.locals.authSession as AuthSession;
 
 function failure(error: unknown, response: Parameters<typeof sendError>[0], next: (error: unknown) => void): void {
-  if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+  if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
   if (error instanceof TelegramConnectError) { sendError(response, error.status, error.message); return; }
   next(error);
 }

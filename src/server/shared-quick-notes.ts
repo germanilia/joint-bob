@@ -8,7 +8,8 @@ import { peerAway } from "../peer-presence.js";
 import { mayShareProject, sharedProjectIds } from "./sharing-files.js";
 import { quickNoteSchema } from "./schemas.js";
 
-const noteSchema = quickNoteSchema.innerType().extend({
+const noteSchema = z.object({
+  ...quickNoteSchema.shape,
   id: z.string().min(1).max(120),
   status: z.enum(["pending", "starting", "started", "completed", "failed"]),
   error: z.string().nullable(), sessionId: z.string().nullable(), launchRequestId: z.string().nullable(),
@@ -17,10 +18,10 @@ const noteSchema = quickNoteSchema.innerType().extend({
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   provider: z.string().nullable(), modelId: z.string().nullable(), thinkingLevel: z.string().nullable(),
   nodeId: z.string().uuid().nullable(), secretAccountIds: z.array(z.string().uuid()),
-  images: z.array(quickNoteSchema.innerType().shape.images.unwrap().element.extend({
+  images: z.array(quickNoteSchema.shape.images.unwrap().element.extend({
     id: z.string().uuid(),
     // A failed note may have lost an image file on its home node.
-    data: quickNoteSchema.innerType().shape.images.unwrap().element.shape.data.or(z.literal("")),
+    data: quickNoteSchema.shape.images.unwrap().element.shape.data.or(z.literal("")),
   })).max(4), scheduledAt: z.string().datetime().nullable(),
 }).strict();
 

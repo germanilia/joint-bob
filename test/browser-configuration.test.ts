@@ -25,8 +25,8 @@ test("upgrade preserves original global executor row and conversation inheritanc
 
 test("conversation preference LWW uses node tie-breaks, inheritance tombstones, and exact scope", () => {
   const identity={projectId:randomUUID(),engine:"pi" as const,conversationId:randomUUID()};
-  const earlier={...identity,nodeId:randomUUID(),originNodeId:"00000000-0000-0000-0000-000000000001",updatedAt:"2026-01-01T00:00:00.000Z"};
-  const later={...earlier,nodeId:null,originNodeId:"00000000-0000-0000-0000-000000000002"};
+  const earlier={...identity,nodeId:randomUUID(),originNodeId:"00000000-0000-4000-8000-000000000001",updatedAt:"2026-01-01T00:00:00.000Z"};
+  const later={...earlier,nodeId:null,originNodeId:"00000000-0000-4000-8000-000000000002"};
   applyBrowserPreference(later);applyBrowserPreference(earlier);
   assert.deepEqual(readBrowserPreference(identity),later);
   assert.deepEqual(readBrowserPreference({...identity,engine:"claude"}),later,"Harness segments share the logical conversation preference");

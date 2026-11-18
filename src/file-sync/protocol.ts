@@ -193,12 +193,12 @@ export const opSchemas = {
   peerPresence: z.object({ peer: z.string(), present: z.boolean(), origins: z.array(z.string()).optional() }),
   announce: z.object({ slept: z.boolean() }),
   notice: z.object({ peer: z.string(), body: z.unknown() }),
-  serve: z.object({ peer: z.string(), endpoint: z.enum(["shares", "index", "changed", "fetch", "file", "status"]), query: z.record(z.string()).default({}), body: z.unknown().optional(), range: z.string().optional() }),
+  serve: z.object({ peer: z.string(), endpoint: z.enum(["shares", "index", "changed", "fetch", "file", "status"]), query: z.record(z.string(), z.string()).default({}), body: z.unknown().optional(), range: z.string().optional() }),
   status: z.object({ shares: z.array(z.string()).optional() }),
   differences: z.object({ share: z.string(), peer: z.string(), offset: z.number().int().min(0), limit: z.number().int().positive().max(200) }),
   errors: z.object({ share: z.string(), offset: z.number().int().min(0), limit: z.number().int().positive().max(200) }),
   confirmReplacedRoot: z.object({ share: z.string() }),
-  bootstrap: z.object({ share: z.string(), builtinSinceByPeer: z.record(z.number().int()) }),
+  bootstrap: z.object({ share: z.string(), builtinSinceByPeer: z.record(z.string(), z.number().int()) }),
   /** The transfer queue: what to fetch, move or apply next (§5.4, §6.2). `inFlight` items are left out. */
   nextNeeds: z.object({
     limit: z.number().int().min(0).max(10_000),

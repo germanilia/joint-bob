@@ -13,8 +13,8 @@ const serverSchema = z.object({
   authMode: z.enum(["shared", "native"]).optional(),
   type: z.enum(["stdio", "http", "streamable-http"]).optional(),
   command: z.string().min(1).max(4096).optional(), args: z.array(z.string().max(8192)).max(100).optional(),
-  env: z.record(z.string().max(8192)).optional(), cwd: z.string().max(4096).optional(),
-  url: secureUrl.optional(), headers: z.record(z.string().max(8192)).optional(),
+  env: z.record(z.string(), z.string().max(8192)).optional(), cwd: z.string().max(4096).optional(),
+  url: secureUrl.optional(), headers: z.record(z.string(), z.string().max(8192)).optional(),
   oauth: z.object({ clientId: z.string().min(1), clientSecret: z.string().optional() }).strict().optional(),
 }).strict().superRefine((server, ctx) => {
   const stdio = Boolean(server.command), http = Boolean(server.url);

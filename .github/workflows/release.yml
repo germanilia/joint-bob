@@ -62,8 +62,11 @@ jobs:
           cache: npm
           cache-dependency-path: npm-shrinkwrap.json
       - name: Reject private dependency URLs before installation
-        run: node scripts/check-public-dependencies.mjs package-lock.json npm-shrinkwrap.json
+        run: node scripts/check-public-dependencies.mjs npm-shrinkwrap.json
       - run: npm ci
+      - name: Audit production dependencies
+        if: matrix.shard == 1
+        run: npm audit --omit=dev --audit-level=low --registry=https://registry.npmjs.org
       - name: Typecheck
         if: matrix.shard == 1
         run: npm run typecheck
@@ -107,7 +110,7 @@ jobs:
           node scripts/prepare-release.mjs
       - name: Reject private dependency URLs before packing
         if: steps.release.outputs.publish == 'true'
-        run: node scripts/check-public-dependencies.mjs package-lock.json npm-shrinkwrap.json
+        run: node scripts/check-public-dependencies.mjs npm-shrinkwrap.json
       # Packing builds dist (prepack), which needs the dev dependencies.
       - run: npm ci
         if: steps.release.outputs.publish == 'true'

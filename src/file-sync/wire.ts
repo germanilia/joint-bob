@@ -185,8 +185,8 @@ export const sharesAnswerSchema = z.object({
 export const indexQuerySchema = z.object({
   projectId: projectIdSchema,
   kind: shareKindSchema,
-  since: decimal(0, Number.MAX_SAFE_INTEGER).default("0"),
-  limit: decimal(1, INDEX_PAGE_LIMIT).default(String(INDEX_PAGE_LIMIT)),
+  since: decimal(0, Number.MAX_SAFE_INTEGER).prefault("0"),
+  limit: decimal(1, INDEX_PAGE_LIMIT).prefault(String(INDEX_PAGE_LIMIT)),
 });
 /** The JSON inside the gzip answer of …/files/index, before entries are validated (see parseIndexPage). */
 export const indexPageSchema = indexPageHeader;

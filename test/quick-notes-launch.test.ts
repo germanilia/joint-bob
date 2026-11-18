@@ -277,7 +277,7 @@ test("launch failures are visible and never silently drop credentials", { timeou
     const project = projectNamed(node, "Internal Assistant");
     await api(node, session, "PUT", "/quick-notes/queue", { queue: { enabled: true, maxParallel: 1 } });
 
-    const missing = "11111111-2222-3333-4444-555555555555";
+    const missing = "11111111-2222-4333-8444-555555555555";
     const doomed = await createNote(node, session, project.id, "Missing secret", { secretAccountIds: [missing] });
     await until("missing secret fails the note", async () => (await noteStatus(node, session, doomed.id)).status === "failed");
     const failed = await noteStatus(node, session, doomed.id);

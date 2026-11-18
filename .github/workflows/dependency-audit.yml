@@ -1,0 +1,27 @@
+name: Dependency audit
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - npm-shrinkwrap.json
+      - .github/workflows/dependency-audit.yml
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.1
+      - run: node scripts/check-public-dependencies.mjs npm-shrinkwrap.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+      - run: npm audit --omit=dev --audit-level=low --registry=https://registry.npmjs.org

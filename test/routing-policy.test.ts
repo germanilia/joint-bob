@@ -94,8 +94,8 @@ test("stored policies from before classifier descriptions remain readable", () =
 test("classifier cadence and context window are bounded", () => {
   assert.throws(() => policy({ evalCadence: { mode: "every-n" } }), /requires n/);
   assert.throws(() => policy({ evalCadence: { mode: "first-message", n: 2 } }), /cannot carry n/);
-  assert.throws(() => policy({ contextMessages: 0 }), /greater than or equal to 1/);
-  assert.throws(() => policy({ contextMessages: 101 }), /less than or equal to 100/);
+  assert.throws(() => policy({ contextMessages: 0 }), /expected number to be >=1/);
+  assert.throws(() => policy({ contextMessages: 101 }), /expected number to be <=100/);
   const legacy = structuredClone(policy()) as Partial<RoutingPolicy>;
   delete legacy.contextMessages;
   assert.equal(validateRoutingPolicy(legacy).contextMessages, undefined, "policies saved before context windows remain valid");

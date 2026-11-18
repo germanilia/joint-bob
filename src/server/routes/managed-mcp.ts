@@ -129,7 +129,7 @@ app.post("/api/resources/mcp/native/auth/sign-out", async (request, response) =>
   catch (error) { invalid(error, response); }
 });
 
-const agentSchema = z.object({ server: nameSchema, action: z.enum(["tools", "call"]), tool: z.string().min(1).max(300).optional(), arguments: z.record(z.unknown()).optional() }).strict();
+const agentSchema = z.object({ server: nameSchema, action: z.enum(["tools", "call"]), tool: z.string().min(1).max(300).optional(), arguments: z.record(z.string(), z.unknown()).optional() }).strict();
 export async function authorizeMcpServer(identity: McpAgentIdentity, name: string): Promise<boolean> {
   if (!await getProject(identity.projectId)) return false;
   // Joint Bob's own tools decide for themselves who may use them.

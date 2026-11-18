@@ -63,7 +63,7 @@ function settingsRules(settings: StorySettings): string {
   ].filter(Boolean).join("\n");
 }
 
-export function parseWriterAnswer<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, answer: string): T {
+export function parseWriterAnswer<T>(schema: z.ZodType<T, unknown>, answer: string): T {
   let parsed: unknown;
   try { parsed = JSON.parse(answer.trim().replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { throw new GitReviewError(422, "Podcast rejected. The writer did not return valid JSON."); }
   const checked = schema.safeParse(parsed);
@@ -124,7 +124,7 @@ async function ask(thread: GitReviewThread, cwd: string, instructions: string, p
 }
 
 async function writeValidatedScript<T extends { chapters: PodcastChapter[] }>(
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>, saved: OverviewSource, settings: StorySettings,
+  schema: z.ZodType<T, unknown>, saved: OverviewSource, settings: StorySettings,
   write: (feedback: string) => Promise<string>,
 ): Promise<T> {
   let feedback = "";

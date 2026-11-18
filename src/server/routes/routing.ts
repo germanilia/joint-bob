@@ -105,7 +105,7 @@ app.post("/api/routing-configs", async (request, response, next) => {
     response.status(201).json({ config: configView(local.id, config, await ownerNames(local)) });
   } catch (error) {
     if (error instanceof RoutingConfigError || error instanceof RoutingPolicyError) { sendError(response, error.statusCode, error.message); return; }
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
     next(error);
   }
 });
@@ -121,7 +121,7 @@ app.put("/api/routing-configs/selection", async (request, response, next) => {
     response.json({ selectedId: input.configId });
   } catch (error) {
     if (error instanceof RoutingConfigError) { sendError(response, error.statusCode, error.message); return; }
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
     next(error);
   }
 });
@@ -146,7 +146,7 @@ app.put("/api/routing-configs/:id", async (request, response, next) => {
     response.json({ config: configView(local.id, config, await ownerNames(local)), results });
   } catch (error) {
     if (error instanceof RoutingConfigError || error instanceof RoutingPolicyError) { sendError(response, error.statusCode, error.message); return; }
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
     next(error);
   }
 });
@@ -167,7 +167,7 @@ app.delete("/api/routing-configs/:id", async (request, response, next) => {
     response.json({ ok: true, results });
   } catch (error) {
     if (error instanceof RoutingConfigError) { sendError(response, error.statusCode, error.message); return; }
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
     next(error);
   }
 });
@@ -190,7 +190,7 @@ app.post("/api/routing-configs/:id/share", async (request, response, next) => {
     response.json({ config: configView(local.id, shared, await ownerNames(local)), results });
   } catch (error) {
     if (error instanceof RoutingConfigError) { sendError(response, error.statusCode, error.message); return; }
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
     next(error);
   }
 });
@@ -214,7 +214,7 @@ app.post("/api/cluster/v2/routing-configs", async (request, response, next) => {
     response.json({ received });
   } catch (error) {
     if (error instanceof RoutingConfigError) { sendError(response, error.statusCode, error.message); return; }
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
     next(error);
   }
 });

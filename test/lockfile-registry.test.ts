@@ -7,12 +7,10 @@ import test from "node:test";
 
 const validator = path.resolve("scripts/check-public-dependencies.mjs");
 
-for (const file of ["package-lock.json", "npm-shrinkwrap.json"]) {
-  test(`${file} uses only public npm URLs with integrity hashes`, () => {
-    const result = spawnSync(process.execPath, [validator, file], { encoding: "utf8" });
-    assert.equal(result.status, 0, result.stderr);
-  });
-}
+test("npm-shrinkwrap.json uses only public npm URLs with integrity hashes", () => {
+  const result = spawnSync(process.execPath, [validator, "npm-shrinkwrap.json"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
 
 test("release dependency guard rejects private, authenticated, linked and unpinned packages", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "public-dependencies-"));
@@ -56,7 +54,7 @@ test("release dependency guard rejects private, authenticated, linked and unpinn
 
 test("release validates source locks before installation and anonymously installs the packed shrinkwrap before publishing", async () => {
   const workflow = await readFile(".github/workflows/release.yml", "utf8");
-  const sourceGuard = "node scripts/check-public-dependencies.mjs package-lock.json npm-shrinkwrap.json";
+  const sourceGuard = "node scripts/check-public-dependencies.mjs npm-shrinkwrap.json";
   assert.ok(workflow.indexOf(sourceGuard) >= 0);
   assert.ok(workflow.indexOf(sourceGuard) < workflow.indexOf("- run: npm ci"));
   const packedGuard = 'node scripts/check-public-dependencies.mjs "$smoke/package/npm-shrinkwrap.json"';

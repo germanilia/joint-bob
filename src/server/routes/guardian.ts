@@ -106,7 +106,7 @@ app.post(GUARDIAN_ASK_PATH, async (request, response, next) => {
   }
 });
 
-const hookRequest = z.object({ tool: z.string().min(1).max(200), input: z.record(z.unknown()) }).strict();
+const hookRequest = z.object({ tool: z.string().min(1).max(200), input: z.record(z.string(), z.unknown()) }).strict();
 
 /** The Claude PreToolUse hook. The token names the conversation; the call waits while the person reviews. */
 app.post("/api/guardian/agent", async (request, response, next) => {

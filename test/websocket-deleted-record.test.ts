@@ -11,7 +11,7 @@ function waitFor(messages: Array<Record<string, unknown>>, predicate: () => bool
     const timeout = setTimeout(() => {
       clearInterval(timer);
       reject(new Error(`Timed out waiting for WebSocket message; saw ${JSON.stringify(messages.map(({ type }) => type))}`));
-    }, 4_000);
+    }, 30_000);
     const timer = setInterval(() => {
       if (!predicate()) return;
       clearInterval(timer);
@@ -64,6 +64,7 @@ test("reopening a deleted conversation closes the socket instead of killing the 
     const ready: Array<Record<string, unknown>> = [];
     opened.on("message", (raw) => ready.push(JSON.parse(raw.toString())));
     await new Promise<void>((resolve) => opened!.once("open", resolve));
+    // A cold Pi SDK session can take more than four seconds to initialize.
     await waitFor(ready, () => ready.some((message) => message.type === "ready"));
     const sessionId = String(ready.find((message) => message.type === "ready")!.sessionId);
     opened.close();

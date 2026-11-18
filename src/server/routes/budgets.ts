@@ -17,7 +17,7 @@ const subjectQuery = z.object({
 const limitsBody = z.object({ limits: z.array(budgetLimitSchema), utcOffsetMinutes: offset.default(0) }).strict();
 
 function fail(error: unknown, response: Parameters<typeof sendError>[0], next: (error?: unknown) => void): void {
-  if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+  if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
   if (error instanceof BudgetError) { sendError(response, error.statusCode, error.message); return; }
   next(error);
 }

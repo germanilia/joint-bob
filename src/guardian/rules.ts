@@ -120,7 +120,7 @@ export type GuardianRequest =
 
 /** A request from outside the server: a Pi worker or the Claude hook. */
 export const guardianRequestSchema: z.ZodType<GuardianRequest> = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("tool"), tool: z.string().min(1).max(200), category: z.enum(["commands", "file-changes", "other"]), input: z.record(z.unknown()) }).strict(),
+  z.object({ kind: z.literal("tool"), tool: z.string().min(1).max(200), category: z.enum(["commands", "file-changes", "other"]), input: z.record(z.string(), z.unknown()) }).strict(),
   z.object({ kind: z.literal("outgoing"), source: z.string().min(1).max(200), text: z.string().max(5_000_000) }).strict(),
 ]);
 

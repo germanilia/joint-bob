@@ -250,7 +250,7 @@ export function listPhases(db: DatabaseSync): Map<string, PhaseRecord> {
   const rows = db.prepare("SELECT project_id, phase, builtin_since, updated_at, error FROM file_sync_phases").all() as unknown as Array<{ project_id: string; phase: Phase; builtin_since: string; updated_at: string; error: string | null }>;
   return new Map(rows.map((row) => {
     let builtinSince: Record<string, number> = {};
-    try { builtinSince = z.record(z.number().int()).parse(JSON.parse(row.builtin_since)); } catch { /* unknown: nothing recorded */ }
+    try { builtinSince = z.record(z.string(), z.number().int()).parse(JSON.parse(row.builtin_since)); } catch { /* unknown: nothing recorded */ }
     return [row.project_id, { projectId: row.project_id, phase: row.phase, builtinSince, updatedAt: row.updated_at, error: row.error }];
   }));
 }

@@ -147,7 +147,7 @@ app.get("/api/audit", async (request, response, next) => {
     response.json({ events: await listAuditEvents(limit, (response.locals.authSession as AuthSession).userId) });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      sendError(response, 400, error.errors.map((issue) => issue.message).join(", "));
+      sendError(response, 400, error.issues.map((issue) => issue.message).join(", "));
       return;
     }
     next(error);
@@ -212,7 +212,7 @@ app.put("/api/settings/personal", async (request, response, next) => {
     }
     response.json(isNodeAdmin(session) ? getSettings() : personalSettingsView());
   } catch (error) {
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
     if (error instanceof HomeOfflineError) { sendError(response, error.statusCode, error.message); return; }
     next(error);
   }
@@ -235,7 +235,7 @@ app.put("/api/terminal-policy", (request, response, next) => {
     const session = response.locals.authSession as AuthSession;
     response.json(updateTerminalAccessSettings(terminalPolicySchema.parse(request.body), session.userId));
   } catch (error) {
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
     next(error);
   }
 });
@@ -267,7 +267,7 @@ app.post("/api/settings/runtime-check", (request, response, next) => {
   try {
     response.json(checkRuntimeSettings(runtimeCheckSchema.parse(request.body)));
   } catch (error) {
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
     next(error);
   }
 });
@@ -277,7 +277,7 @@ app.post("/api/settings/label-icon", async (request, response, next) => {
     const payload = labelIconRequestSchema.parse(request.body);
     response.json({ icon: await generateLabelIcon(payload.label, payload) });
   } catch (error) {
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
     if (error instanceof Error && /^(Icon harness|No agent|The agent did not)/.test(error.message)) { sendError(response, 422, error.message); return; }
     next(error);
   }
@@ -302,7 +302,7 @@ app.put("/api/settings", async (request, response, next) => {
     response.json(settings);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      sendError(response, 400, error.errors.map((issue) => issue.message).join(", "));
+      sendError(response, 400, error.issues.map((issue) => issue.message).join(", "));
       return;
     }
     // Tagged, so the page can show the reason next to the backup fields as well as where every failed save shows.

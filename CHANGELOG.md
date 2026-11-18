@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.323.3 — 2026-11-18
+
+- Updated Claude Code, the bundled Pi SDK, Express request parsing and Zod validation to patched releases. Malformed compressed requests can no longer crash the server, and oversized constrained collections are rejected before validating every item.
+- Removed the obsolete package lock. Releases and security checks now use the shipped npm shrinkwrap, with weekly dependency updates and production vulnerability audits in CI.
+- Kept failed Pi extension-package installations visible as unavailable after the SDK upgrade.
+
 ## 2.323.2 — 2026-11-18
 
 - Masked saved secrets as `***` before writing service and task logs or sending error notifications, even when Guardian is off.

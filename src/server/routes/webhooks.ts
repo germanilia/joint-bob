@@ -150,7 +150,7 @@ upgradeHandlers.push((request: IncomingMessage, socket: Duplex) => {
 function handle(work: (request: Request, response: Response) => Promise<void>) {
   return async (request: Request, response: Response, next: NextFunction): Promise<void> => {
     try { await work(request, response); } catch (error) {
-      if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+      if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
       if (error instanceof WebhookError || error instanceof WebhookResourceError) { sendError(response, error.statusCode, error.message); return; }
       next(error);
     }
@@ -173,7 +173,7 @@ app.post("/api/webhook-agent/memory", handle(async (request, response) => {
 
 const titleCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status") }).strict(),
-  z.object({ action: z.literal("fill"), replacements: z.record(z.string().max(200)) }).strict(),
+  z.object({ action: z.literal("fill"), replacements: z.record(z.string(), z.string().max(200)) }).strict(),
 ]);
 
 // No caller-supplied conversation ID or template: the capability selects both.

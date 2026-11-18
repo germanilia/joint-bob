@@ -38,7 +38,7 @@ function handle(work: (request: Request, response: Response) => Promise<void> | 
       await startRelay();
       await work(request, response);
     } catch (error) {
-      if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+      if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
       if (error instanceof RelayServerError || error instanceof RelayRuntimeError || error instanceof RelayStoreError) { sendError(response, error.statusCode, error.message); return; }
       next(error);
     }

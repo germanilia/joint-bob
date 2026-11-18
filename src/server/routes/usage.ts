@@ -133,7 +133,7 @@ app.get(["/api/usage", "/api/usage/summary"], async (request, response, next) =>
     if (query.refresh === "true") requestUsageRefresh();
     response.json({ ...result, coverage: { scope: "observed transcripts and replicated usage", ...savedCoverage, ...usageRefreshStatus(), revision: usageLedgerRevision() }, subscriptions: listSubscriptionPlans((response.locals.authSession as AuthSession).accountId) });
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.errors.map((issue) => issue.message).join(", ") : error.message); return; }
+    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join(", ") : error.message); return; }
     if ((error as { statusCode?: number }).statusCode === 404) { sendError(response, 404, (error as Error).message); return; }
     next(error);
   }
@@ -159,7 +159,7 @@ app.get("/api/usage/days", async (request, response, next) => {
     const days = timeZone ? usageCalendarBreakdown(scope, timeZone, query.bucket) : usageBreakdown(scope, "day");
     response.json({ days, coverage: { ...usageInventoryCoverage(ids), ...usageRefreshStatus(), scope: "observed transcripts and replicated usage" } });
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.errors.map((issue) => issue.message).join(", ") : error.message); return; }
+    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join(", ") : error.message); return; }
     if ((error as { statusCode?: number }).statusCode === 404) { sendError(response, 404, (error as Error).message); return; }
     next(error);
   }
@@ -184,7 +184,7 @@ app.get("/api/usage/skills", async (request, response, next) => {
       conversationTitles: Object.fromEntries(titles.filter((row) => row.title !== row.conversationId).map((row) => [row.conversationId, row.title])),
       coverage: { ...usageInventoryCoverage(ids), ...usageRefreshStatus() } });
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.errors.map((issue) => issue.message).join(", ") : error.message); return; }
+    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join(", ") : error.message); return; }
     if ((error as { statusCode?: number }).statusCode === 404) { sendError(response, 404, (error as Error).message); return; }
     next(error);
   }
@@ -204,7 +204,7 @@ app.get("/api/usage/skills/content", async (request, response, next) => {
     response.json({ name: chosen.name, description: chosen.description, origin: chosen.origin, harnesses: chosen.harnesses,
       copies: copies.map(({ origin, harnesses }) => ({ origin, harnesses })), ...await readSkillContents(chosen.path) });
   } catch (error) {
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
     next(error);
   }
 });
@@ -247,7 +247,7 @@ app.get("/api/usage/skills/suggestions", async (request, response, next) => {
       coverage: { ...usageInventoryCoverage(ids), ...usageRefreshStatus() },
     });
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.errors.map((issue) => issue.message).join(", ") : error.message); return; }
+    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join(", ") : error.message); return; }
     if ((error as { statusCode?: number }).statusCode === 404) { sendError(response, 404, (error as Error).message); return; }
     next(error);
   }
@@ -360,7 +360,7 @@ app.get("/api/usage/clusters/:clusterId/report", async (request, response, next)
         totals: usageTotals({ ...filters, originNodeIds: nodeId === local.id ? [nodeId, ""] : [nodeId] }) })),
       models: usageBreakdown(filters, "model"), skills: usageSkillBreakdown(filters) });
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.errors.map((issue) => issue.message).join(", ") : error.message); return; }
+    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join(", ") : error.message); return; }
     if ((error as { statusCode?: number }).statusCode === 404) { sendError(response, 404, (error as Error).message); return; }
     next(error);
   }
@@ -381,7 +381,7 @@ app.get("/api/usage/timing", async (request, response, next) => {
     };
     response.json(usageTurnTiming({ ...rest, ...bounds, projectIds: ids, ...(clusters ? { originNodeIds: await originNodeIds(clusters) } : {}) }, zone));
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.errors.map((issue) => issue.message).join(", ") : error.message); return; }
+    if (error instanceof z.ZodError || error instanceof RangeError) { sendError(response, 400, error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join(", ") : error.message); return; }
     if ((error as { statusCode?: number }).statusCode === 404) { sendError(response, 404, (error as Error).message); return; }
     next(error);
   }
@@ -392,7 +392,7 @@ app.get("/api/subscription-usage", (_request, response) => response.json({ plans
 app.put("/api/subscription-usage", (request, response, next) => {
   try { response.json(saveSubscriptionPlan((response.locals.authSession as AuthSession).accountId, subscriptionPlanInputSchema.parse(request.body))); }
   catch (error) {
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
     if ((error as { statusCode?: number }).statusCode === 409) { sendError(response, 409, "Subscription plan belongs to another account"); return; }
     next(error);
   }

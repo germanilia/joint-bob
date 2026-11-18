@@ -21,7 +21,7 @@ async function answer(response: Response, next: (error: unknown) => void, work: 
   try {
     response.json(await work());
   } catch (error) {
-    if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => `${issue.path.join(".") || "request"}: ${issue.message}`).join(", ")); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => `${issue.path.join(".") || "request"}: ${issue.message}`).join(", ")); return; }
     const { FileSyncRequestError } = await import("./index.js");
     if (error instanceof FileSyncRequestError) { sendError(response, error.status, error.message); return; }
     next(error);

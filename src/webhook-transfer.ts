@@ -9,7 +9,7 @@ import { listWebhookSkills } from "./webhook-skills.js";
 import { ensureWebhookAgentSchema, revokeWebhookMemoryAgentAccess } from "./webhook-agent.js";
 
 const tables = ["webhook_deliveries", "webhook_resource_versions", "webhook_resources", "webhook_memory_settings", "webhook_skill_versions", "webhook_skills", "webhook_conversation_bindings"] as const;
-const rowSchema = z.record(z.union([z.string(), z.number(), z.null()]));
+const rowSchema = z.record(z.string(), z.union([z.string(), z.number(), z.null()]));
 const relativePath = z.string().min(1).max(1000).refine(value => !value.includes("\\") && !value.includes("\0") && value.split("/").every(part => part !== "" && part !== "." && part !== ".."), "Invalid transfer file path");
 export const webhookTransferSchema = z.object({
   id: z.string().uuid(), input: webhookInputSchema,

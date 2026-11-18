@@ -18,8 +18,8 @@ test("Joint Bob package is public, executable, and pinned", async () => {
   const lock = JSON.parse(await text("npm-shrinkwrap.json"));
   assert.equal(lock.packages["node_modules/playwright-core"].dev, undefined, "Browser control must be installed in production");
   await access("bin/joint-bob-browser.mjs");
-  assert.equal(dependencies["@earendil-works/pi-coding-agent"], "0.87.1");
-  assert.equal(dependencies["@anthropic-ai/claude-code"], "2.1.239");
+  assert.equal(dependencies["@earendil-works/pi-coding-agent"], "1.5.2");
+  assert.equal(dependencies["@anthropic-ai/claude-code"], "2.1.327");
   assert.equal(dependencies.codemirror, "5.65.16");
   assert.deepEqual(packageJson.publishConfig, { access: "public", provenance: true, registry: "https://registry.npmjs.org" });
   assert.ok((packageJson.files as string[]).includes(".joint-bob-release"));
@@ -60,8 +60,8 @@ test("one manifest pins every managed prerequisite", async () => {
   const versions = await text("scripts/versions.sh");
 
   assert.match(versions, /^JOINT_BOB_NODE_VERSION=24\.22\.1$/m);
-  assert.match(versions, /^JOINT_BOB_PI_VERSION=0\.84\.2$/m);
-  assert.match(versions, /^JOINT_BOB_CLAUDE_VERSION=2\.1\.239$/m);
+  assert.match(versions, /^JOINT_BOB_PI_VERSION=1\.5\.2$/m);
+  assert.match(versions, /^JOINT_BOB_CLAUDE_VERSION=2\.1\.327$/m);
   assert.doesNotMatch(versions, /SYNCTHING/);
 });
 

@@ -172,8 +172,8 @@ app.use((error: unknown, request: Request, response: Response, _next: NextFuncti
     return;
   }
   if (error instanceof z.ZodError) {
-    if (request.method !== "GET") console.warn(`Rejected ${request.method} ${request.path} (400): ${error.errors.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`).join("; ")}`);
-    sendError(response, 400, error.errors.map((issue) => issue.message).join(", "));
+    if (request.method !== "GET") console.warn(`Rejected ${request.method} ${request.path} (400): ${error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`).join("; ")}`);
+    sendError(response, 400, error.issues.map((issue) => issue.message).join(", "));
     return;
   }
   const message = error instanceof Error ? error.message : "Unexpected server error";

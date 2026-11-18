@@ -116,7 +116,7 @@ function sendLogin(request: Request, response: Response, result: AuthSession | M
 
 function authError(error: unknown, _request: Request, response: Response, next: NextFunction): void {
   if (error instanceof AuthError) { sendError(response, error.statusCode, error.message); return; }
-  if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map(issue => issue.message).join(", ")); return; }
+  if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map(issue => issue.message).join(", ")); return; }
   next(error);
 }
 
@@ -138,7 +138,7 @@ app.post("/api/auth/setup", (request, response, next) => {
     sendLogin(request, response.status(201), session);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      sendError(response, 400, error.errors.map((issue) => issue.message).join(", "));
+      sendError(response, 400, error.issues.map((issue) => issue.message).join(", "));
       return;
     }
     if (error instanceof AuthError) { sendError(response, error.statusCode, error.message); return; }
@@ -168,7 +168,7 @@ app.post("/api/auth/login", async (request, response, next) => {
     sendLogin(request, response, session);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      sendError(response, 400, error.errors.map((issue) => issue.message).join(", "));
+      sendError(response, 400, error.issues.map((issue) => issue.message).join(", "));
       return;
     }
     if (error instanceof AuthError) { sendError(response, error.statusCode, error.message); return; }
@@ -263,7 +263,7 @@ app.post("/api/auth/change-password", (request, response, next) => {
     response.status(204).send();
   } catch (error) {
     if (error instanceof z.ZodError) {
-      sendError(response, 400, error.errors.map((issue) => issue.message).join(", "));
+      sendError(response, 400, error.issues.map((issue) => issue.message).join(", "));
       return;
     }
     if (error instanceof Error && error.message === "Current password is incorrect") {

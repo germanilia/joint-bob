@@ -73,7 +73,14 @@ function configureCursorProviderPolicy(): void {
  */
 export function createPiResourceLoader(options: LoaderOptions, strict: boolean, packagesFile?: string, isolatedTeam = false): DefaultResourceLoader {
   configureCursorProviderPolicy();
-  if (!strict) return new DefaultResourceLoader(options);
+  const extensionsOverride: NonNullable<LoaderOptions["extensionsOverride"]> = (result) => {
+    // Pi 1.5 reports failed package installs as warnings instead of rejecting reload.
+    // A missing configured package must still make Joint Bob report Pi as unavailable.
+    const failure = (result.warnings ?? []).find(({ warning }) => warning.startsWith("failed to install ("));
+    if (failure) throw new Error(`Pi package ${failure.path}: ${failure.warning}`);
+    return options.extensionsOverride ? options.extensionsOverride(result) : result;
+  };
+  if (!strict) return new DefaultResourceLoader({ ...options, extensionsOverride });
   // Validate before SDK storage; it tolerates read errors by falling back to defaults.
   if (!isolatedTeam) globalResourceSettings(packagesFile, options.agentDir);
   const settingsManager = SettingsManager.fromStorage({
@@ -83,6 +90,7 @@ export function createPiResourceLoader(options: LoaderOptions, strict: boolean, 
   }, { projectTrusted: false });
   return new DefaultResourceLoader({
     ...options,
+    extensionsOverride,
     settingsManager,
     systemPrompt: "",
     appendSystemPrompt: [],

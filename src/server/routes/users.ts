@@ -20,7 +20,7 @@ const deleteSchema = z.object({ confirm: z.string().min(1).max(80) }).strict();
 
 function authFailure(error: unknown, response: Parameters<typeof sendError>[0], next: (error: unknown) => void): void {
   if (error instanceof AuthError) { sendError(response, error.statusCode, error.message); return; }
-  if (error instanceof z.ZodError) { sendError(response, 400, error.errors.map((issue) => issue.message).join(", ")); return; }
+  if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => issue.message).join(", ")); return; }
   next(error);
 }
 

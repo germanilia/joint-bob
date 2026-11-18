@@ -84,6 +84,15 @@ Always go through `npm run test:file`. Its launcher removes only `TYPESAFE_AI_AP
 
 Disposable servers bind only to loopback, not the machine's external network interfaces. The shared data-directory resolver also detects Node's test runner. A bare `node --test test/<file>.test.ts` gets its own temporary data directory, and a test process aimed at `~/.joint-bob` fails before opening SQLite. This second boundary prevents a missed setup import from writing fixtures into the production database.
 
+## Dependency security
+
+`npm-shrinkwrap.json` is the only dependency lock and is included in release packages.
+Use `--registry=https://registry.npmjs.org` when updating dependencies so the lock
+keeps public download URLs. Run `node scripts/check-public-dependencies.mjs npm-shrinkwrap.json`
+and `npm audit --omit=dev --audit-level=low --registry=https://registry.npmjs.org`
+before delivery. Release CI audits production dependencies; a separate weekly and
+pull-request audit checks them without executing dependency installation scripts.
+
 ## The three kinds of test in this repository
 
 | Kind | Where | What it proves |
