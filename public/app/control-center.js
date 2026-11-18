@@ -1,8 +1,8 @@
 import { api, savePreferencesInBackground } from "./api.js";
 import { elements } from "./elements.js";
-import { selectProject } from "./project-selection.js";
+import { projectListing, selectProject } from "./project-selection.js";
 import { openListedSession, settleOpenedSession } from "./reviews.js";
-import { toast } from "./shell.js";
+import { setStatus, toast } from "./shell.js";
 import { showConversationOpening } from "./socket.js";
 import { showChatEmptyState } from "./chat-transcript.js";
 import { noteOpenTiming, startOpenTiming } from "./open-timing.js";
@@ -140,11 +140,15 @@ export async function openConversation(card) {
   state.keepControlView = overBoard;
   let listing = null;
   let fromCard = false;
+  let joined = false;
   let opening;
   try {
     // The project's list is fetched beside the opening, not before it: it takes seconds on a busy machine, and the page
     // showed what it showed before the click until it came. The card knows enough to open the conversation itself.
     if (state.activeProjectId !== card.projectId) listing = selectProject(card.projectId);
+    // The project is chosen and its list is still on its way (the page just loaded, or a card of it was clicked a moment
+    // ago): the list in the page is empty until it answers, which is not the conversation being gone.
+    else { listing = projectListing(card.projectId); joined = Boolean(listing); }
     if (overBoard) {
       document.body.classList.add("control-popup");
       window.dispatchEvent(new CustomEvent("control-popup-opened", { detail: card }));
@@ -160,6 +164,7 @@ export async function openConversation(card) {
     if (!session) {
       closeConversationPopup();
       showChatEmptyState("Not listed", "That conversation is no longer listed.");
+      setStatus("Not listed");
       toast("That conversation is no longer listed");
       await refreshControlCenter();
       return;
@@ -177,7 +182,8 @@ export async function openConversation(card) {
       if (listed) settleOpenedSession(listed);
       // A card that outlived its conversation: the socket says why it cannot open, and the board drops the card.
       else void refreshControlCenter().catch((error) => console.warn("Could not refresh the board", error));
-    }).catch((error) => toast.error(error.message));
+      // A list this open only joined tells its failure where it was asked for.
+    }).catch((error) => { if (!joined) toast.error(error.message); });
   }
   await opening;
 }

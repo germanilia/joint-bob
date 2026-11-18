@@ -122,7 +122,21 @@ export async function loadProjects() {
   setMobileView(conversationListView());
 }
 
-export async function selectProject(projectId, shouldRender = true, preserveSession = false) {
+/** The choice of a project that is still fetching its list. */
+let listingUnderWay = null;
+
+/** The list of this project while it is on its way, for an open that must not read the empty list as "not listed". */
+export const projectListing = (projectId) => (listingUnderWay?.projectId === projectId ? listingUnderWay.promise : null);
+
+export function selectProject(projectId, shouldRender = true, preserveSession = false) {
+  const entry = { projectId, promise: chooseProject(projectId, shouldRender, preserveSession) };
+  listingUnderWay = entry;
+  const settled = () => { if (listingUnderWay === entry) listingUnderWay = null; };
+  entry.promise.then(settled, settled);
+  return entry.promise;
+}
+
+async function chooseProject(projectId, shouldRender, preserveSession) {
   const started = performance.now();
   // A finished list is kept for the project it belongs to, so coming back to it shows rows at
   // once while the fresh list, which takes seconds on a busy machine, is fetched.

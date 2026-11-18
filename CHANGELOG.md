@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.325.2 — 2026-11-18
+
+- Opening a conversation no longer says "That conversation is no longer listed" while its project's list is still loading. This happened when a card was clicked twice, or clicked right after the page loaded: the chat went blank and the status stayed on "Opening…".
+- When a conversation really is gone, the status now says "Not listed" instead of staying on "Opening…".
+
 ## 2.325.1 — 2026-11-18
 
 - A turn on a cluster subscription pool now waits for the relay that holds the sign-in when it cannot be reached, instead of failing at once with "The relay holding claude cannot be reached". This happened right after a service update restarted the relay. The turn tries again after 1 second, then 2, 4 and so on up to every 30 seconds, and at once when the relay answers anything else, for up to 5 minutes. A model request in a turn that is already running is held the same way.
