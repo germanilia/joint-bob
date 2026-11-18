@@ -7,7 +7,7 @@ import { getClusterNode } from "../../cluster.js";
 import { readBrowserClusterDefault, applyBrowserPreference, readBrowserPreference, browserPreferenceSchema, browserClusterDefaultSchema } from "../../browser-configuration.js";
 import { browserIdentitySchema, browserStartSchema, browserCommandSchema, type BrowserActor } from "../../browser-types.js";
 import { type AuthSession } from "../../auth.js";
-import { acceptBrowserClusterDefault, configureClusterBrowserDefault, configureClusterBrowserOverride, browserRuntime, browserStatus, localBrowserStatus, configureBrowserExecutor, browserPreferences, canonicalBrowserIdentity, authorizeBrowserAgent, relayedSessionAllowed, requireCompleteDiscovery, discoverBrowserProfiles, type BrowserDiscovery, browserOperation, browserOperationSchema, profileAccessUpdateSchema, profileChangeSchema, browserProfileDirectory, manageBrowserProfile, browserShareTargets, localBrowserOperation, BrowserRequestError, browserDownload, browserSessionOwner } from "../browser.js";
+import { acceptBrowserClusterDefault, configureClusterBrowserDefault, configureClusterBrowserOverride, browserRuntime, browserStatus, localBrowserStatus, configureBrowserExecutor, browserPreferences, canonicalBrowserIdentity, authorizeBrowserAgent, relayedSessionAllowed, requireCompleteDiscovery, conversationDiscovery, describeUnavailableNodes, browserStartTarget, discoverBrowserProfiles, type BrowserDiscovery, browserOperation, browserOperationSchema, profileAccessUpdateSchema, profileChangeSchema, browserProfileDirectory, manageBrowserProfile, browserShareTargets, localBrowserOperation, BrowserRequestError, browserDownload, browserSessionOwner } from "../browser.js";
 import { clusterPeerMayAccessProject } from "../cluster-helpers.js";
 import { sendError } from "../http-auth.js";
 import { browserAgentCredential, browserAgentCredentialOrigins } from "../../browser-agent.js";
@@ -166,13 +166,15 @@ app.post("/api/browser/agent",route(async (request,response)=>{
   const listed=await browserOperation({operation:"list",args:identity},actor,undefined,identity) as BrowserDiscovery;
   if(body.operation==="profiles") {
     const discovered=await discoverBrowserProfiles(identity,actor);
-    response.json({profiles:discovered.profiles,unavailableNodes:[...listed.unavailableNodes,...discovered.unavailableNodes.filter(node=>!listed.unavailableNodes.some(entry=>entry.nodeId===node.nodeId))]});return;
+    const unavailableNodes=[...listed.unavailableNodes,...discovered.unavailableNodes.filter(node=>!listed.unavailableNodes.some(entry=>entry.nodeId===node.nodeId))];
+    response.json({profiles:discovered.profiles,unavailableNodes:describeUnavailableNodes(unavailableNodes),startsOn:await browserStartTarget(identity)});return;
   }
   if(body.operation==="status") {
     const status=await browserStatus();
-    response.json({...listed,nodes:status.nodes,config:status.config,preference:await browserPreferences(identity)});return;
+    response.json({...listed,unavailableNodes:describeUnavailableNodes(listed.unavailableNodes),nodes:status.nodes,config:status.config,preference:await browserPreferences(identity),startsOn:await browserStartTarget(identity)});return;
   }
-  if(!body.profileId || !listed.sessions.some(session=>session.profileId===body.profileId)) requireCompleteDiscovery(listed);
+  if(!body.profileId) requireCompleteDiscovery(conversationDiscovery(listed,identity));
+  else if(!listed.sessions.some(session=>session.profileId===body.profileId)) requireCompleteDiscovery(listed);
   const ending=body.operation==="command" && body.command.action==="close";
   const sessions=listed.sessions.filter(session=>(session.state==="running" || (ending && session.restoreOnRestart)) && (!body.profileId || session.profileId===body.profileId));
   if(sessions.length>1) throw new BrowserRequestError(409,"Multiple browser profiles are running. Specify --profile ID.");

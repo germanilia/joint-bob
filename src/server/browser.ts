@@ -204,7 +204,7 @@ async function peerRequest(peerId: string, route: string, body: unknown, timeout
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body), signal: AbortSignal.timeout(timeout),
     });
-  } catch { throw new BrowserRequestError(503, "Browser node is unreachable. Its browser is not moved to another node."); }
+  } catch { throw new BrowserRequestError(503, peerUnreachable); }
   if (!response.ok) {
     const error = await response.json().catch(() => ({})) as { error?: string };
     throw new BrowserRequestError(response.status, error.error || `Browser node returned ${response.status}`);
@@ -484,9 +484,31 @@ function announceBrowserLoginCompleted(session: BrowserSessionView, requestId: s
   } catch (error) { console.warn("Browser login continuation prompt failed", error); }
 }
 
-export interface BrowserDiscovery { sessions: BrowserSessionView[]; unavailableNodes: Array<{ nodeId: string; reason: string }>; }
+export interface BrowserDiscovery { sessions: BrowserSessionView[]; unavailableNodes: Array<{ nodeId: string; name?: string; reason: string }>; }
 export function requireCompleteDiscovery(discovery: BrowserDiscovery) {
-  if (discovery.unavailableNodes.length) throw new BrowserRequestError(503, `Browser attachment discovery incomplete: ${discovery.unavailableNodes.map(node => `${node.nodeId}: ${node.reason}`).join("; ")}. No account was selected or created.`);
+  if (discovery.unavailableNodes.length) throw new BrowserRequestError(503, `Browser attachment discovery incomplete: ${discovery.unavailableNodes.map(node => `${node.name ? `${node.name} (${node.nodeId})` : node.nodeId}: ${node.reason}`).join("; ")}. No account was selected or created.`);
+}
+/**
+ * The discovery a command without a profile has to trust. While a browser of this conversation is
+ * running on a machine that answered, an unreachable machine leaves doubt only if the conversation
+ * opened a browser on it from here. With none running, every unreachable machine still counts.
+ */
+export function conversationDiscovery(discovery: BrowserDiscovery, identity: { projectId: string; conversationId: string }): BrowserDiscovery {
+  if (!discovery.sessions.some(session => session.state === "running")) return discovery;
+  const recorded = new Set(readBrowserSessionNodes(identity.projectId, identity.conversationId));
+  return { ...discovery, unavailableNodes: discovery.unavailableNodes.filter(node => recorded.has(node.nodeId)) };
+}
+const peerUnreachable = "Browser node is unreachable. Its browser is not moved to another node.";
+/** An agent's listing names each machine it could not ask and says what that leaves out, so an offline peer is not read as a blocked browser. */
+export function describeUnavailableNodes(nodes: BrowserDiscovery["unavailableNodes"]) {
+  return nodes.map(node => node.reason === peerUnreachable
+    ? { ...node, reason: `${node.name ?? "This machine"} is offline. Only profiles and browsers stored on it are missing here; start on another machine is not affected.` } : node);
+}
+/** The machine a plain start opens this conversation's browser on, from what this machine already knows. */
+export async function browserStartTarget(identity: z.infer<typeof browserIdentitySchema>) {
+  const local = await getClusterNode();
+  const nodeId = readBrowserPreference(identity)?.nodeId ?? (await browserDefault(identity.projectId)).nodeId ?? local.id;
+  return { nodeId, name: nodeId === local.id ? local.name : (await getRuntimePeer(nodeId))?.name ?? nodeId };
 }
 export async function browserOperation(input: BrowserOperation, actor: BrowserActor, nodeId?: string, identity?: z.infer<typeof browserIdentitySchema>): Promise<unknown> {
   const operation = browserOperationSchema.parse(input);
@@ -530,10 +552,10 @@ async function discoverBrowsers(operation: Extract<BrowserOperation, { operation
         async () => await (await peerRequest(peer.id, "operation", { ...operation, actor, identity }, 5000)).json() as { sessions: BrowserSessionView[] },
         { unreachable: browserPeerUnreachable });
       result.sessions.push(...(await visibleSessions(remote.value.sessions, actor)).map(session => ({ ...session, nodeId: peer.id })));
-      if (!remote.fresh) result.unavailableNodes.push({ nodeId: peer.id, reason: staleSnapshotReason(remote.fetchedAt) });
+      if (!remote.fresh) result.unavailableNodes.push({ nodeId: peer.id, name: peer.name, reason: staleSnapshotReason(remote.fetchedAt) });
     } catch (error) {
       if (error instanceof BrowserRequestError && ((error.status === 403 && /Project is not shared/.test(error.message)) || (error.status === 404 && /Project not found/.test(error.message)))) return;
-      result.unavailableNodes.push({ nodeId: peer.id, reason: error instanceof Error ? error.message : "Browser node unavailable" });
+      result.unavailableNodes.push({ nodeId: peer.id, name: peer.name, reason: error instanceof Error ? error.message : "Browser node unavailable" });
     }
   }));
   return result;
@@ -554,10 +576,10 @@ export async function discoverBrowserProfiles(identity: z.infer<typeof browserId
         // peer keeps its full answer time here; a peer known to be down still fails at once.
         { unreachable: browserPeerUnreachable, waitMs: 5_000 });
       result.profiles.push(...remote.value.profiles.map(profile => ({ ...profile, nodeId: peer.id })));
-      if (!remote.fresh) result.unavailableNodes.push({ nodeId: peer.id, reason: staleSnapshotReason(remote.fetchedAt) });
+      if (!remote.fresh) result.unavailableNodes.push({ nodeId: peer.id, name: peer.name, reason: staleSnapshotReason(remote.fetchedAt) });
     } catch (error) {
       if (error instanceof BrowserRequestError && ((error.status === 403 && /Project is not shared/.test(error.message)) || (error.status === 404 && /Project not found/.test(error.message)))) return;
-      result.unavailableNodes.push({ nodeId: peer.id, reason: error instanceof Error ? error.message : "Browser node unavailable" });
+      result.unavailableNodes.push({ nodeId: peer.id, name: peer.name, reason: error instanceof Error ? error.message : "Browser node unavailable" });
     }
   }));
   return result;

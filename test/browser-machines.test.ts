@@ -14,7 +14,7 @@ import { openNodeDatabase } from "../src/node-database.js";
 
 let root: string, env: DevEnvironment, logins: SignedIn[];
 const servers: ChildProcess[] = [];
-const conversationId = randomUUID();
+const conversationId = randomUUID(), sharedConversationId = conversationId;
 before(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "browser-machines-"));
   env = await seedDevEnvironment(root, 2);
@@ -32,7 +32,7 @@ async function childCode(index: number, code: string) {
   const result=await promisify(execFile)(process.execPath,["--import","tsx","--input-type=module","-e",code],{env:{...process.env,HOME:env.home,JOINT_BOB_DATA_DIR:node.dataDir}});
   return JSON.parse(result.stdout);
 }
-async function agent(index: number, body: unknown, engine: "pi" | "claude" = "pi") {
+async function agent(index: number, body: unknown, engine: "pi" | "claude" = "pi", conversationId = sharedConversationId) {
   const token=await childCode(index,`import { browserAgentEnvironment } from './src/browser-agent.ts';console.log(JSON.stringify(browserAgentEnvironment(${JSON.stringify(env.nodes[index].projects[0].id)},${JSON.stringify(engine)},${JSON.stringify(conversationId)}).JOINT_BOB_BROWSER_TOKEN));`);
   const response=await fetch(`${env.nodes[index].url}/api/browser/agent`,{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify(body)});
   return {status:response.status,body:response.headers.get("content-type")?.includes("application/json") ? await response.json() : await response.text()};
@@ -300,4 +300,30 @@ test("offline discovery is explicit, rejects guesses, and preferences converge a
     assert.equal((await request(0,"PUT",`/browser/preferences?${query()}`,{nodeId:b.nodeId})).status,200);
   } finally {db.close();servers[1]=await startDevNode(env,b,{JOINT_BOB_BROWSER_EXECUTABLE:`/missing/browser-${b.key}`});}
   assert.deepEqual(conversationChoice((await request(1,"GET",`/browser/preferences?${query()}`)).body),{nodeId:b.nodeId,effectiveNodeId:b.nodeId});
+});
+
+test("an offline machine the conversation never used is named and does not block its running browser", async () => {
+  const [a,b]=env.nodes, own=randomUUID();
+  const session=await childCode(0,`import { BrowserStore } from './src/browser-store.ts';const s=new BrowserStore();const p=s.createProfile(${JSON.stringify(a.projects[0].id)},'Running account ${randomUUID()}',true);s.grantProfileAccess(p.id,{scope:'conversation',projectId:p.projectId,conversationId:${JSON.stringify(own)}});console.log(JSON.stringify(s.create({projectId:p.projectId,engine:'pi',conversationId:${JSON.stringify(own)},appNodeId:${JSON.stringify(a.nodeId)},profileId:p.id})));s.close();`);
+  const db=openNodeDatabase(path.join(a.dataDir,"node.db"));
+  db.exec("PRAGMA busy_timeout=5000");
+  db.prepare("UPDATE browser_sessions SET state='running' WHERE id=?").run(session.id);
+  await stopDevNode(servers[1]);
+  try {
+    for (const operation of ["profiles","status"]) {
+      const listed=await agent(0,{operation},"pi",own);
+      assert.equal(listed.status,200);
+      assert.deepEqual(listed.body.unavailableNodes.map((n:any)=>n.nodeId),[b.nodeId]);
+      assert.ok(listed.body.unavailableNodes[0].name,"The offline machine is named");
+      assert.match(listed.body.unavailableNodes[0].reason,/is offline\. Only profiles and browsers stored on it are missing here/);
+      assert.ok(listed.body.startsOn.nodeId && listed.body.startsOn.name,"The listing says where a plain start opens");
+    }
+    const command=await agent(0,{operation:"command",command:{action:"snapshot"}},"pi",own);
+    assert.doesNotMatch(JSON.stringify(command.body),/discovery incomplete/i,"The running browser is reached without the offline machine");
+    assert.notEqual(command.status,503);
+    db.prepare("INSERT INTO browser_session_nodes(project_id,conversation_id,node_id,updated_at) VALUES(?,?,?,?)").run(a.projects[0].id,own,b.nodeId,new Date().toISOString());
+    const doubtful=await agent(0,{operation:"command",command:{action:"snapshot"}},"pi",own);
+    assert.equal(doubtful.status,503,"A machine this conversation opened a browser on still has to answer");
+    assert.match(doubtful.body.error,/discovery incomplete/i);
+  } finally {db.close();servers[1]=await startDevNode(env,b,{JOINT_BOB_BROWSER_EXECUTABLE:`/missing/browser-${b.key}`});}
 });

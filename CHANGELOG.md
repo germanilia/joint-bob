@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.323.4 — 2026-11-18
+
+- An agent no longer reports the browser as blocked because another machine in the cluster is offline. The browser's profile and status listings name that machine, say that only profiles and browsers stored on it are missing, and show which machine a new browser opens on.
+- A browser command without a profile reaches the conversation's running browser while an unrelated machine is offline. A machine the conversation opened a browser on must still answer first.
+- Agents are told to choose a browser machine themselves only when the user asks for a specific one.
+
 ## 2.323.3 — 2026-11-18
 
 - Updated Claude Code, the bundled Pi SDK, Express request parsing and Zod validation to patched releases. Malformed compressed requests can no longer crash the server, and oversized constrained collections are rejected before validating every item.
