@@ -1,3 +1,4 @@
+import { maskLogText } from "../../scripts/log-masking.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFile, chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { Session } from "node:inspector/promises";
@@ -104,7 +105,7 @@ export function createPerformanceDiagnostics(directory: string, options: { slowM
 
   function log(event: string, fields: Fields): void {
     if (pending >= 128) { dropped++; return; }
-    const line = JSON.stringify({ at: new Date().toISOString(), pid: process.pid, event, ...fields, ...(dropped ? { dropped } : {}) }) + "\n";
+    const line = maskLogText(JSON.stringify({ at: new Date().toISOString(), pid: process.pid, event, ...fields, ...(dropped ? { dropped } : {}) })) + "\n";
     dropped = 0;
     pending++;
     writes = writes.then(async () => {

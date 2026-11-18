@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
+import { requestTaskControl } from "../scripts/supervisor-client.mjs";
 import { secretAgentAccounts, secretAgentAccountEnvironment } from "../dist/secret-agent.js";
 
 const usage = "Usage: joint-bob-secret list | run ACCOUNT_ID -- COMMAND [ARGS...]";
@@ -19,6 +20,9 @@ async function main() {
   for (const name of removeNames) delete env[name];
   delete env.JOINT_BOB_SECRET_TOKEN;
   Object.assign(env, values);
+  if (process.env.JOINT_BOB_TASK_TOKEN) {
+    await requestTaskControl(process.env, { action: "mask-secrets", env: { ...values, JOINT_BOB_SECRET_ENV_NAMES: JSON.stringify(Object.keys(values)) } });
+  }
   const child = spawn(command, args, { env, stdio: "inherit" });
   process.on("SIGTERM", () => child.kill("SIGTERM"));
   process.on("SIGINT", () => child.kill("SIGINT"));

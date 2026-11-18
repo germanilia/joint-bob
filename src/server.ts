@@ -1,3 +1,5 @@
+import { installServiceLogging } from "./logging.js";
+import { registerStoredSecretsForLogging } from "./secrets.js";
 // Composition root. Route modules register on the shared Express app when they
 // load, so they are imported here in the original registration order: the /api
 // auth gate in routes/core must run before every protected route, and the error
@@ -127,6 +129,8 @@ import { closeManagedMcpClients } from "./server/routes/managed-mcp.js";
 export { app, createApp, server } from "./server/state.js";
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  installServiceLogging();
+  registerStoredSecretsForLogging();
   installBackendErrorCapture();
   // JOINT_BOB_DATABASE_URL is read here, at start; an unreachable PostgreSQL stops the node before it serves anything.
   console.log(`Node database: ${describeNodeDatabase(resolveDataDirectory())}`);

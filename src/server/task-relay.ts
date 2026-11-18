@@ -12,6 +12,7 @@ import { refreshSecretAgentEnvironment, secretAgentIdentity } from "../secret-ag
 
 const id = z.string().uuid();
 const relayBody = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("mask-secrets"), env: z.record(z.string(), z.string().max(65536)) }).strict(),
   z.object({
     action: z.literal("start"), id, name: z.string().min(1).max(1024),
     executable: z.string().min(1).max(4096), args: z.array(z.string().max(65536)).max(256),

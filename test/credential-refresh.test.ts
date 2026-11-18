@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import test, { after, before } from "node:test";
@@ -106,8 +107,9 @@ async function websiteAccount(label: string, value: string, id?: string) {
 
 async function browserCapture(handle: Awaited<ReturnType<typeof createPiSession>>) {
   const bash = handle.session.agent.state.tools.find((tool) => tool.name === "bash")!;
-  const result = await bash.execute("browser-credential-check", { command: `printf '%s\\n%s' "$JOINT_BOB_BROWSER_TOKEN" "\${LOGIN_PASSWORD+x}"` });
-  const text = result.content.find((part) => part.type === "text")?.text ?? "";
+  const capture = path.join(os.homedir(), `browser-credential-${randomUUID()}.fixture`);
+  await bash.execute("browser-credential-check", { command: `node -e 'require("fs").writeFileSync(${JSON.stringify(capture)}, process.env.JOINT_BOB_BROWSER_TOKEN + "\\n" + (process.env.LOGIN_PASSWORD === undefined ? "" : "x"), {mode:384})'` });
+  const text = await readFile(capture, "utf8");
   const [token, websiteEnvPresent] = text.split("\n");
   return { token, websiteEnvPresent: websiteEnvPresent === "x" };
 }

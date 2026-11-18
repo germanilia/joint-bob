@@ -1,3 +1,4 @@
+import { installLogMasking, logSecretValues, registerEnvironmentLogSecrets } from "./log-masking.mjs";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { chmodSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync, unlinkSync, writeSync } from "node:fs";
@@ -82,6 +83,7 @@ function safeWorkerEnvironment() {
   return env;
 }
 function launchWorker(spec, stdio, background) {
+  registerEnvironmentLogSecrets(spec.env);
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [workerPath], { detached: true, env: safeWorkerEnvironment(), stdio: ["ignore", ...stdio, "ipc"] });
     let settled = false;
@@ -94,7 +96,7 @@ function launchWorker(spec, stdio, background) {
     child.once("close", (code, signal) => {
       if (!settled) { settled = true; reject(new Error(`Worker exited before launch (${code ?? signal})`)); }
     });
-    child.send({ type: "launch", spec, background });
+    child.send({ type: "launch", spec, background, logSecrets: logSecretValues() });
   });
 }
 async function socketAvailable(socketPath) {
@@ -173,6 +175,7 @@ class Runtime {
     return { instanceId: this.instanceId, protocolVersion: 1, app: { pid: state && !state.commandExited ? state.commandPid : null, cwd: state?.spec.cwd ?? null, error: state?.error ?? null, exitCode: state?.exitCode ?? null, signal: state?.signal ?? null }, activeRelease: this.installation?.activeRelease ?? null, installing: this.installing === true, activeTaskCount: this.owned.size };
   }
   async launchApp(spec) {
+    registerEnvironmentLogSecrets(spec.env);
     const launched = await launchWorker(spec, ["inherit", "inherit"], false);
     const state = { spec, child: launched.child, commandPid: launched.commandPid, commandExited: false, exitCode: null, signal: null, error: null };
     launched.child.on("message", message => {
@@ -328,7 +331,7 @@ class Runtime {
       });
       this.owned.set(task.id, owned);
       launched.child.on("message", message => {
-        if (message.type === "exited") this.finishTask(task.id, launched.child, { code: message.code, signal: message.signal });
+        if (message.type === "exited") this.finishTask(task.id, launched.child, { code: message.code, signal: message.signal, error: message.error });
       });
       launched.child.once("close", (code, signal) => this.finishTask(task.id, launched.child, { code, signal, error: "Worker exited unexpectedly" }));
       return this.store.markRunning(task.id, launched.child.pid);
@@ -354,17 +357,39 @@ class Runtime {
       return { chunk: buffer.subarray(0, bytesRead).toString("base64"), nextOffset: body.offset + bytesRead, size: info.size, eof: body.offset + bytesRead === info.size };
     } finally { closeSync(fd); }
   }
+  async maskSecrets(body, identity) {
+    const env = environment(body.env);
+    registerEnvironmentLogSecrets(env);
+    const workers = [...this.owned].filter(([id]) => !identity || this.store.getTask(id).identity === identity);
+    await Promise.all(workers.map(([, { child }]) => new Promise((resolve, reject) => {
+      const requestId = randomUUID();
+      const finish = error => {
+        clearTimeout(timer);
+        child.off("message", received);
+        child.off("close", closed);
+        if (error) reject(error); else resolve();
+      };
+      const received = message => { if (message.type === "log-secrets-registered" && message.requestId === requestId) finish(); };
+      const closed = () => finish();
+      const timer = setTimeout(() => finish(new Error("Task logger did not register secrets")), 5000);
+      child.on("message", received);
+      child.once("close", closed);
+      child.send({ type: "log-secrets", requestId, env }, error => { if (error) finish(error); });
+    })));
+    return null;
+  }
   dispatch(body, scopedIdentity) {
     if (this.state !== "running" && body.action !== "status") throw new InputError("Supervisor is closing", 409);
     const action = text(body.action, "action", 32);
     const limit = value => { if (!Number.isInteger(value) || value < 1 || value > 100) throw new InputError("Invalid limit"); return value; };
-    if (scopedIdentity && !["start", "list", "task", "output", "stop", "completions"].includes(action)) throw new InputError("Forbidden", 403);
+    if (scopedIdentity && !["start", "list", "task", "output", "stop", "completions", "mask-secrets"].includes(action)) throw new InputError("Forbidden", 403);
     if (scopedIdentity && ["task", "output", "stop"].includes(action)) {
       const row = this.store.getTask(validId(body.id));
       if (!row || row.identity !== scopedIdentity) throw new InputError("Task not found", 404);
     }
     switch (action) {
       case "status": return this.status();
+      case "mask-secrets": return this.track(this.maskSecrets(body, scopedIdentity));
       case "replace-app": return this.queueReplacement(commandSpec(body.app));
       case "activate-release": return this.activateRelease(text(body.releaseRoot, "releaseRoot"), body.maintenance === true);
       case "start": return this.track(this.startTask(scopedIdentity ? { ...body, identity: scopedIdentity } : body));
@@ -521,6 +546,7 @@ function cliArguments(argv) {
   return values;
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  installLogMasking();
   try {
     const args = cliArguments(process.argv.slice(2));
     const runtime = await startSupervisor({ dataDirectory: args["--data-dir"], app: { executable: process.execPath, args: [args["--app"]], cwd: args["--cwd"], env: { ...process.env } } });

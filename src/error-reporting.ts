@@ -1,4 +1,5 @@
 import os from "node:os";
+import { maskLogText } from "../scripts/log-masking.mjs";
 import { z } from "zod";
 import { appVersion } from "./changelog.js";
 import { ntfyTopicName } from "./ntfy-admin.js";
@@ -111,6 +112,7 @@ export interface ErrorReport {
 
 /** Publishes one error to the channel's ntfy topic. Never throws; a failed delivery is logged as a warning. */
 export async function reportError(channel: ErrorChannel, report: ErrorReport, now = Date.now()): Promise<boolean> {
+  report = { summary: maskLogText(report.summary), ...(report.detail ? { detail: maskLogText(report.detail) } : {}), ...(report.source ? { source: maskLogText(report.source) } : {}) };
   try {
     const destination = errorDestination(channel);
     if (!destination) return false;

@@ -110,6 +110,24 @@ test("a reported error reaches its channel's topic with the stack, once per wind
   assert.equal(await reportError("backend", { summary: "Hub pull failed for 3f6c2a10-1b2c-4d5e-8f90-123456789abc" }, now + REPORT_WINDOW_MS + 1), true, "the same error is sent again after the window");
 });
 
+test("error notifications mask saved credentials in summary, detail and source without Guardian", async () => {
+  const { saveSecretAccount } = await import("../src/secrets.js");
+  await saveSecretAccount({ label: "log masking", provider: "custom", variables: [{ name: "PRIVATE_VALUE", kind: "value", value: "synthetic-notification-secret" }] });
+  const service = addNtfyService("Errors", ntfyUrl, "");
+  updateErrorReportingSettings(settings(service.id));
+  assert.equal(await reportError("backend", {
+    summary: "Notification masking synthetic-notification-secret",
+    detail: "Error: synthetic-notification-secret\n    at fixture.ts:1:1",
+    source: "/fixture?value=synthetic-notification-secret",
+  }), true);
+  await waitForPublished(1);
+  const message = published[0].body.message;
+  assert.ok(!message.includes("synthetic-notification-secret"));
+  assert.match(message, /Notification masking \*\*\*/);
+  assert.match(message, /Error: \*\*\*/);
+  assert.match(message, /Source: \/fixture\?value=\*\*\*/);
+});
+
 test("a channel sends at most its per-window limit, then reports how many it held back", async () => {
   const service = addNtfyService("Errors", ntfyUrl, "");
   updateErrorReportingSettings(settings(service.id));
