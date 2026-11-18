@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { isNodeAdmin } from "./node-admin.js";
 import { elements } from "./elements.js";
 import { menuIcon } from "./icons.js";
 import { openRowMenu } from "./row-menu.js";
@@ -129,7 +130,16 @@ export function otherWorktreesSection(worktrees, expanded) {
   for (const session of state.sessions) {
     if (session.worktree) counts.set(session.worktree.id, (counts.get(session.worktree.id) || 0) + 1);
   }
-  section.append(summary, ...worktrees.map((worktree) => worktreeSectionHeader(worktree, counts.get(worktree.id) || 0)));
+  section.append(summary);
+  if (isNodeAdmin()) {
+    const cleanup = document.createElement("button");
+    cleanup.type = "button";
+    cleanup.className = "ghost compact";
+    cleanup.textContent = "Workspace cleanup";
+    cleanup.addEventListener("click", () => import("./settings.js").then(({ openSettings }) => openSettings("workspace-cleanup")).catch((error) => toast.error(error.message)));
+    section.append(cleanup);
+  }
+  section.append(...worktrees.map((worktree) => worktreeSectionHeader(worktree, counts.get(worktree.id) || 0)));
   return section;
 }
 

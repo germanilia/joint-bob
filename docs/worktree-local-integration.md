@@ -20,7 +20,7 @@ A conflict returns the inspected `targetCommit`. Combine both sides in the workt
 
 ## Retirement
 
-Verified integration can retire a worktree immediately when its writers stop. The housekeeping retention policy also removes merged worktrees after five days without activity, and any worktree after ten inactive days, **including unmerged changes and open PR worktrees**. Opening a PR is not a merge. Conversation timestamps and file/directory changes count as activity; Done alone does not authorize deleting unmerged work.
+Verified integration can retire a worktree immediately when its writers stop. In **Settings → Workspace cleanup**, an administrator can preview inactivity cleanup, run it manually, or enable the hourly job across their machines. Worktrees without conversations qualify after one idle hour. Worktrees with conversations qualify after more than three idle days. Cleanup skips active or unverifiable copies, saves unmerged changes to a named Git recovery ref before removing files, and keeps conversation history. Restore creates a new worktree on the machine that holds the recovery entry. Opening a PR is not a merge, and Done alone does not authorize deleting unmerged work.
 
 Expiration protects running conversations, background tasks, open harness working directories and unresolved integrations. It waits for file sync and checks eligible peers even when this machine created the worktree. Unknown activity or an unavailable peer retains the worktree rather than guessing.
 

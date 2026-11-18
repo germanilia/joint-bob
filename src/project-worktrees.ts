@@ -193,11 +193,39 @@ export async function listProjectWorktrees(projectId: string, root = worktreeRoo
   return worktrees.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
+const cleanupClaims = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** A short final-check reservation blocks new Joint Bob work in the same copy. */
+export function claimWorktreeCleanup(projectId: string, worktreeId: string): (() => void) | undefined {
+  const key = `${projectId}:${worktreeId}`;
+  if (cleanupClaims.has(key)) return;
+  const release = () => {
+    if (cleanupClaims.get(key) !== timer) return;
+    cleanupClaims.delete(key);
+    clearTimeout(timer);
+  };
+  const timer = setTimeout(release, 30_000).unref();
+  cleanupClaims.set(key, timer);
+  return release;
+}
+
+function assertNoCleanupClaim(projectId: string, worktreeId: string) {
+  if (cleanupClaims.has(`${projectId}:${worktreeId}`)) throw new ProjectWorktreeError(409, 'Workspace cleanup is checking this worktree. Try again shortly.');
+}
+
+export async function worktreeCopyNodeIds(worktree: ProjectWorktree): Promise<string[]> {
+  const directory = path.join(worktree.path, WORKTREE_META_DIR, 'nodes');
+  const entries = await fs.readdir(directory).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
+  return entries.filter(file => file.endsWith('.json')).map(file => file.slice(0, -5));
+}
+
 export async function getProjectWorktree(projectId: string, worktreeId: string, root = worktreeRoot()): Promise<ProjectWorktree | undefined> {
+  assertNoCleanupClaim(projectId, worktreeId);
   const worktree = expectedWorktreePath(projectId, worktreeId, root);
   const metadata = await readMetadata(worktree);
   if (!metadata) return undefined;
   const found = view(projectId, worktree, metadata);
+  assertNoCleanupClaim(projectId, worktreeId);
   // Asking for one worktree is using it (a terminal, an agent, a new conversation in it).
   await useProjectWorktree(found).catch((error) => console.warn("Worktree could not be marked as used here", error));
   return found;
@@ -209,6 +237,7 @@ export async function getProjectWorktree(projectId: string, worktreeId: string, 
  * Returns how many files a machine that is present can still send.
  */
 export async function useProjectWorktree(worktree: ProjectWorktree): Promise<number> {
+  assertNoCleanupClaim(worktree.projectId, worktree.id);
   await registerLocalPath(worktree.path, (await getClusterNode()).id);
   return useWorktreeFiles(worktree.projectId, worktree.id);
 }
@@ -331,7 +360,7 @@ async function copyRemoteBase(source: string, staging: string, gitEnvironment: N
   return { gitBase: base.commit, gitBaseRef: base.ref };
 }
 
-export async function createProjectWorktree(project: ProjectRecord, input: { name: unknown; color?: unknown; createdBy?: WorktreeCreator; gitEnvironment?: NodeJS.ProcessEnv; localMain?: boolean; originMain?: boolean }, root = worktreeRoot()): Promise<ProjectWorktree> {
+export async function createProjectWorktree(project: ProjectRecord, input: { name: unknown; color?: unknown; createdBy?: WorktreeCreator; gitEnvironment?: NodeJS.ProcessEnv; localMain?: boolean; originMain?: boolean; restore?: { beforeBaseline(staging: string): Promise<void>; afterBaseline(staging: string): Promise<void> } }, root = worktreeRoot()): Promise<ProjectWorktree> {
   const name = normalizeName(input.name);
   const existing = await listProjectWorktrees(project.id, root);
   if (existing.some((worktree) => worktree.name.toLowerCase() === name.toLowerCase())) throw new ProjectWorktreeError(409, "A worktree with this name already exists");
@@ -355,8 +384,10 @@ export async function createProjectWorktree(project: ProjectRecord, input: { nam
       uncommittedDiff = await gitDiff(source);
       await fs.cp(source, staging, { recursive: true, force: false, errorOnExist: true, filter: (entry) => copyCandidate(source, entry) });
     }
+    await input.restore?.beforeBaseline(staging);
     await ensureWorktreeLocalFiles(source, staging);
     const baselineDigest = await captureBaseline(staging, worktreePathAllowed, [WORKTREE_META_DIR]);
+    await input.restore?.afterBaseline(staging);
     const metadata: WorktreeMetadata = { version: 1, id, name, color, createdAt: new Date().toISOString(), createdByNodeId: node.id, baselineDigest, lastMergedAt: null, gitBase, gitBaseRef: remote?.gitBaseRef ?? null, createdBy: input.createdBy ?? null, pullRequest: null };
     await writeAtomic(metadataFile(staging), `${JSON.stringify(metadata, null, 2)}\n`);
     // Write base.patch if there were uncommitted changes - this syncs to other machines
@@ -396,11 +427,11 @@ async function carryToConversationRecords(projectId: string, worktreeId: string,
 }
 
 /** Deleting the folder is the deletion: file sync removes it from every node sharing the project. */
-export async function deleteProjectWorktree(projectId: string, worktreeId: string, root = worktreeRoot()): Promise<void> {
+export async function deleteProjectWorktree(projectId: string, worktreeId: string, root = worktreeRoot(), options: { preserveSessionPaths?: boolean } = {}): Promise<void> {
   const worktree = expectedWorktreePath(projectId, worktreeId, root);
   if (!await readMetadata(worktree)) throw new ProjectWorktreeError(404, "Worktree not found");
   const retired = path.join(projectWorktreeRoot(projectId, root), ".retired", `${worktreeId}.json`);
-  const paths = (await worktreeSessionPaths(projectId, root)).filter(directory => path.basename(directory) === worktreeId);
+  const paths = options.preserveSessionPaths === false ? [] : (await worktreeSessionPaths(projectId, root)).filter(directory => path.basename(directory) === worktreeId);
   await writeAtomic(retired, `${JSON.stringify(paths)}\n`);
   worktreeFilesChanged(projectId, retired);
   await fs.rm(metadataFile(worktree), { force: true });
@@ -416,6 +447,7 @@ function conversationMarker(worktree: string, engine: string, sessionId: string)
 }
 
 export async function markWorktreeConversation(projectId: string, worktreeId: string, engine: string, sessionId: string, root = worktreeRoot()): Promise<void> {
+  assertNoCleanupClaim(projectId, worktreeId);
   const file = conversationMarker(expectedWorktreePath(projectId, worktreeId, root), engine, sessionId);
   try { await fs.access(file); return; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
@@ -456,7 +488,7 @@ export async function worktreeSessionPaths(projectId: string, root = worktreeRoo
     const saved: unknown = JSON.parse(await fs.readFile(path.join(retired, file), "utf8"));
     if (!Array.isArray(saved) || saved.some(directory => typeof directory !== "string" || !path.isAbsolute(directory) || path.basename(directory) !== file.slice(0, -5))) throw new ProjectWorktreeError(409, `Invalid retired worktree paths: ${file}`);
     for (const directory of saved) paths.add(directory);
-    paths.add(path.join(projectWorktreeRoot(projectId, root), file.slice(0, -5)));
+    if (saved.length) paths.add(path.join(projectWorktreeRoot(projectId, root), file.slice(0, -5)));
   }
   for (const worktree of await listProjectWorktrees(projectId, root)) {
     paths.add(worktree.path);
@@ -498,6 +530,7 @@ async function sha256File(file: string): Promise<string> {
 }
 
 async function mergeLocked(project: ProjectRecord, worktreeId: string, root: string): Promise<WorktreeMergeResult> {
+  assertNoCleanupClaim(project.id, worktreeId);
   const worktree = expectedWorktreePath(project.id, worktreeId, root);
   const metadata = await readMetadata(worktree);
   if (!metadata) throw new ProjectWorktreeError(404, "Worktree not found");
@@ -569,15 +602,7 @@ async function readUncommittedPaths(worktree: string): Promise<Set<string>> {
 /** Everything the worktree changed since it was copied (or last merged), for a pull request. */
 export async function worktreeChanges(projectId: string, worktreeId: string, root = worktreeRoot()): Promise<WorktreeChanges> {
   const worktree = expectedWorktreePath(projectId, worktreeId, root);
-  const metadata = await readMetadata(worktree);
-  if (!metadata) throw new ProjectWorktreeError(404, "Worktree not found");
-  const baseline = await readBaseline(worktree);
-  // The digest recorded at creation pins the manifest an agent could otherwise rewrite.
-  if (!baseline || baseline.digest !== metadata.baselineDigest) {
-    // On another node than the creator the baseline is the last thing file sync brings, so it is often missing or older than worktree.json.
-    if (await worktreeHasPendingFiles(projectId, worktreeId)) throw new ProjectWorktreeError(409, "Files of this worktree are still arriving from another machine; try again in a moment");
-    throw new ProjectWorktreeError(409, "Worktree baseline changed; its changes cannot be determined");
-  }
+  const { metadata, baseline } = await readWorktreeBaseline(projectId, worktreeId, root);
   const skipped = new Set([TICKET_BASELINE_DIR, TICKET_MERGE_DIR, WORKTREE_META_DIR]);
   const writes: WorktreeFileChange[] = [];
   const present = new Set<string>();
@@ -592,12 +617,24 @@ export async function worktreeChanges(projectId: string, worktreeId: string, roo
     writes.push({ path: relative, content, executable });
   }
   const deletes = Object.entries(baseline.manifest.files).filter(([file, entry]) => !("symlink" in entry) && !present.has(file)).map(([file]) => file).sort();
-  // Find which changed files had uncommitted edits at creation
   const uncommittedAtCreation = await readUncommittedPaths(worktree);
   const changedPaths = new Set([...writes.map((w) => w.path), ...deletes]);
   const uncommittedPaths = [...changedPaths].filter((p) => uncommittedAtCreation.has(p)).sort();
-
   return { gitBase: metadata.gitBase ?? null, writes, deletes, uncommittedPaths };
+}
+
+export async function readWorktreeBaseline(projectId: string, worktreeId: string, root = worktreeRoot()) {
+  const worktree = expectedWorktreePath(projectId, worktreeId, root);
+  const metadata = await readMetadata(worktree);
+  if (!metadata) throw new ProjectWorktreeError(404, "Worktree not found");
+  const baseline = await readBaseline(worktree);
+  // The digest recorded at creation pins the manifest an agent could otherwise rewrite.
+  if (!baseline || baseline.digest !== metadata.baselineDigest) {
+    // On another node than the creator the baseline is the last thing file sync brings, so it is often missing or older than worktree.json.
+    if (await worktreeHasPendingFiles(projectId, worktreeId)) throw new ProjectWorktreeError(409, "Files of this worktree are still arriving from another machine; try again in a moment");
+    throw new ProjectWorktreeError(409, "Worktree baseline changed; its changes cannot be determined");
+  }
+  return { metadata, baseline };
 }
 
 /** Paths the project's git ignores (.gitignore, .git/info/exclude, global excludes), tracked files excepted. */
