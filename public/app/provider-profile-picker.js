@@ -1,3 +1,5 @@
+import { field } from "./automation-trigger.js";
+
 /** Automation-only, node-local profile selection. Never silently drop a saved assignment. */
 export function createAutomationProfilePicker(anchor, testId, load) {
   const label = document.createElement("label");
@@ -38,13 +40,9 @@ export function createAutomationProfilePicker(anchor, testId, load) {
 
 /** Automation-only pool selection. Keep saved legacy profiles until explicitly replaced. */
 export function createAutomationPoolPicker(anchor, testId, load) {
-  const label = document.createElement("label");
-  label.textContent = "Run with pool";
   const select = document.createElement("select");
   select.name = "providerPoolId";
-  select.dataset.testid = testId;
-  label.append(select);
-  anchor.after(label);
+  anchor.after(field("Run with pool", select, testId));
   let revision = 0, failure = null;
   function options(pools, saved) {
     select.replaceChildren(new Option("Use my current pool", ""), ...pools.map(pool => new Option(pool.name, pool.id)));
