@@ -216,7 +216,7 @@ function relayControl() {
 function modelLine() {
   const line = el("p", "settings-hint");
   const name = view.settings.model === "jev" ? "Jev" : view.settings.model === "laya-local" ? "Laya on this machine" : `Laya at ${view.settings.layaUrl}`;
-  line.append("Checked by ", el("strong", "", name), ". Change it in Classifiers. If Guardian can't reach it, the action is blocked.");
+  line.append("Checked by ", el("strong", "", name), ". Change it in Classifiers. If it is unavailable, Guardian warns and uses the other model. If neither answers, Guardian blocks the turn.");
   return line;
 }
 
@@ -233,9 +233,9 @@ function render() {
   const enabled = el("label", "checkbox-row");
   const box = el("input"); box.type = "checkbox"; box.checked = view.settings.enabled; box.dataset.testid = "guardian-enabled";
   box.addEventListener("change", () => save({ ...view.settings, enabled: box.checked }));
-  enabled.append(box, " Turn on Guardian for every conversation");
+  enabled.append(box, " Apply local Guardian rules on this machine");
   host.replaceChildren(
-    el("p", "", "Guardian looks at what agents are about to do and stops them, or asks you, when something looks risky. Once on, it covers every conversation and agent on this machine, scheduled runs and webhooks included."),
+    el("p", "", "Guardian looks at what agents are about to do and stops them, or asks you, when something looks risky. Shared projects inherit their cluster or relay rules even when local rules are off."),
     enabled, rulesFieldset(), modelLine(), ...relayControl(), limits(),
   );
   renderModels();

@@ -150,6 +150,46 @@ test("a review waits for the person, and an unanswered one blocks", async () => 
   assert.ok(seen.length >= 2);
 });
 
+test('command-only Guardian gates turns on model availability, falls back in either direction, and never probes while off', async t => {
+  const { saveSecretAccount, deleteSecretAccount } = await import('../src/secrets.js');
+  const { getClusterNode } = await import('../src/cluster.js');
+  await getClusterNode();
+  const project = await addProject('Fallback', mkdtempSync(path.join(os.tmpdir(), 'guardian-fallback-')), { writeInstructions: false });
+  const identity: GuardianIdentity = { projectId: project.id, conversationId: 'fallback', cwd: process.cwd(), harness: 'pi', canReplaceTool: true };
+  const prompt = { kind: 'outgoing' as const, source: "the user's message", text: 'private user input' };
+  const settings = { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, rules: [rule()], layaUrl: 'https://laya.example' };
+  const warnings: string[] = [], calls: string[] = [];
+  t.after(onGuardianEvent(event => { if (event.type === 'warning') warnings.push(event.message); }));
+  t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
+  let jevUp = true, layaUp = true;
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    const laya = String(url).startsWith(settings.layaUrl);
+    calls.push(laya ? 'Laya' : 'Jev');
+    assert.equal(JSON.parse(String(init.body)).state, 'ready', 'availability probes do not disclose the prompt');
+    return laya ? layaUp ? Response.json({ answers: { ready: { noul: 1 } } }) : new Response('', { status: 503 })
+      : jevUp ? Response.json({ answers: { ready: { noul: 1 } } }) : new Response('', { status: 503 });
+  });
+  updateGuardianSettings(settings);
+  assert.equal((await checkGuardian(identity, prompt)).action, 'continue');
+  assert.deepEqual(calls.splice(0), ['Laya']);
+  assert.match(warnings.pop()!, /TypeSafe key.*Using Laya/);
+  const account = await saveSecretAccount({ label: 'guardian fixture', provider: 'typesafe', variables: [{ name: 'TYPESAFE_AI_API_KEY', kind: 'value', value: 'fixture' }] });
+  t.after(() => deleteSecretAccount(account.id));
+  assert.equal((await checkGuardian(identity, prompt)).action, 'continue');
+  assert.deepEqual(calls.splice(0), ['Jev']);
+  updateGuardianSettings({ ...settings, model: 'laya-remote' });
+  layaUp = false;
+  assert.equal((await checkGuardian(identity, prompt)).action, 'continue');
+  assert.deepEqual(calls.splice(0), ['Laya', 'Laya', 'Jev']);
+  assert.match(warnings.pop()!, /Using Jev/);
+  jevUp = false;
+  assert.equal((await checkGuardian(identity, prompt)).action, 'block');
+  calls.length = 0;
+  updateGuardianSettings({ ...settings, enabled: false });
+  assert.equal((await checkGuardian(identity, prompt)).action, 'continue');
+  assert.deepEqual(calls, []);
+});
+
 test("checkGuardian blocks, asks, fixes and continues by the rules", async (t) => {
   clearGuardianModelCache();
   const model = await fakeModel((state) => /rm -rf|AKIA[A-Z0-9]{16}/.test(state) ? 0.95 : 0.05);

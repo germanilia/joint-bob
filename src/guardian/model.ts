@@ -97,17 +97,17 @@ function chunks(text: string, size: number): string[] {
  * piece by piece and the highest answer counts, so a secret at the end is not lost to truncation.
  * Throws when the model cannot answer; callers treat that as a failed check.
  */
-export async function askGuardianModel(target: GuardianModelTarget, state: string, questions: Record<string, string>, fetchImpl: typeof fetch = fetch): Promise<Record<string, number>> {
+export async function askGuardianModel(target: GuardianModelTarget, state: string, questions: Record<string, string>, fetchImpl: typeof fetch = fetch, scope = '', useCache = true): Promise<Record<string, number>> {
   const pieces = chunks(state, target.chunkCharacters);
   if (pieces.length > target.maxChunks) {
     throw new GuardianModelError(`The content is too long for ${target.label} to check (${state.length.toLocaleString("en-US")} characters)`);
   }
   const results = await Promise.all(pieces.map(async (piece) => {
-    const key = createHash("sha256").update(JSON.stringify([target.url, target.model, questions, piece])).digest("hex");
-    const known = cached(key);
+    const key = createHash("sha256").update(JSON.stringify([scope, target.url, target.model, questions, piece])).digest("hex");
+    const known = useCache && cached(key);
     if (known) return known;
     const answers = await askOnce(target, piece, questions, fetchImpl);
-    remember(key, answers);
+    if (useCache) remember(key, answers);
     return answers;
   }));
   return Object.fromEntries(Object.keys(questions).map((id) => [id, Math.max(...results.map((answers) => answers[id]))]));

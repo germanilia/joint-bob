@@ -36,7 +36,7 @@ export async function answerRelayGuardian(db: DatabaseSync, sender: string, body
   dependencies: { key?: () => string; fetchImpl?: typeof fetch } = {}): Promise<Response> {
   if (!servingSettings(db).enabled) throw new RelayGuardianRefused(403, "This machine does not serve a relay");
   if (relayMachine(db, sender)?.status !== "admitted") throw new RelayGuardianRefused(403, "Only machines admitted to this relay may use its Guardian model");
-  if (publishedRelayPolicy(db, (await getClusterNode()).id).body.guardian?.model !== "jev") throw new RelayGuardianRefused(403, "This relay imposes no Jev rules");
+  if (!publishedRelayPolicy(db, (await getClusterNode()).id).body.guardian) throw new RelayGuardianRefused(403, "This relay imposes no Jev rules");
   let key: string;
   try { key = (dependencies.key ?? (() => systemDecisionKey("typesafe")))(); }
   catch (error) { throw new RelayGuardianRefused(409, error instanceof Error ? error.message : "The relay has no TypeSafe key"); }

@@ -39,6 +39,8 @@ export async function renderClusterPolicy(cluster, localNodeId, nodeName) {
     for (const item of view.sources) { const option = element("option", nodeName(item.nodeId)); option.value = item.nodeId; source.append(option); }
     source.value = view.policy?.sourceRelayNodeId ?? ""; source.disabled = !manager;
     const original = view.policy?.policy ?? view.effective.local;
+    const guardian = field(section, "Use the default production Guardian rule when not inheriting a policy", element("input", undefined, "cluster-policy-guardian"));
+    guardian.type = "checkbox"; guardian.checked = original.guardian !== null; guardian.disabled = !manager;
     const blocked = field(section, "Blocked skills (one name per line, all agents)", element("textarea", undefined, "cluster-policy-blocked-skills"));
     blocked.rows = 4; blocked.value = original.rules.filter(rule => rule.action === "block" && rule.harness === "all").map(rule => rule.name).join("\n"); blocked.disabled = !manager;
     const advanced = element("details"); advanced.append(element("summary", "Advanced policy")); section.append(advanced);
@@ -51,6 +53,8 @@ export async function renderClusterPolicy(cluster, localNodeId, nodeName) {
       save.disabled = true;
       try {
         const policy = JSON.parse(json.value);
+        if (!guardian.checked) policy.guardian = null;
+        else if (policy.guardian === null) delete policy.guardian;
         const names = [...new Set(blocked.value.split(/\s+/).filter(Boolean))];
         policy.rules = [...policy.rules.filter(rule => !(rule.action === "block" && rule.harness === "all")), ...names.map(name => ({ action: "block", name, harness: "all" }))];
         const result = await api(`${base}/agent-policy`, { method: "PUT", body: JSON.stringify({ expectedEpoch: cluster.managerEpoch, sourceRelayNodeId: source.value || null, policy }) });

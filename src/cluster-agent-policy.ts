@@ -1,10 +1,11 @@
+import { PRODUCTION_RULE } from "./guardian/production-rule.js";
 import { readOncePerPass } from "./resource-pass.js";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { getSharingCluster, listSharingClusterMembers } from "./cluster-sharing-policy.js";
+import { ensureClusterSharingPolicySchema, getSharingCluster, listSharingClusterMembers } from "./cluster-sharing-policy.js";
 import { pinnedClusterPublicKey, verifyClusterMessage } from "./cluster-identity.js";
 import { projectClusterIds } from "./provider-profiles/pool-sharing.js";
-import { agentPolicyBodySchema, publishedRelayPolicy, signedRelaySkillPolicySchema, type SignedRelaySkillPolicy } from "./relay/resource-policy.js";
+import { agentPolicyBodySchema, publishedRelayPolicy, relayPolicySubscriptions, signedRelaySkillPolicySchema, type SignedRelaySkillPolicy } from "./relay/resource-policy.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from "./replication.js";
 
 export { agentPolicyBodySchema };
@@ -106,40 +107,54 @@ export function publishClusterPolicySource(db: DatabaseSync, statement: SignedRe
     enqueueReplicationEvent(db, { originNodeId: statement.body.relayNodeId, entityType: "cluster.agentPolicySource", entityKey: assignment.clusterId, operation: "upsert", payload: { clusterId: assignment.clusterId, statement } });
   }
 }
-export type ProjectAgentPolicy = { clusterId: string; source: string; sourceNodeId: string; policy: AgentPolicyBody };
+export type ProjectAgentPolicy = { clusterId: string; source: string; sourceNodeId: string; relaySource?: boolean; policy: AgentPolicyBody };
 const databaseIds = new WeakMap<DatabaseSync, number>();
 let lastDatabaseId = 0;
-export function projectAgentPolicies(db: DatabaseSync, projectId: string | undefined): ProjectAgentPolicy[] {
+export function projectAgentPolicies(db: DatabaseSync, projectId: string | undefined, guardianDefaults = false): ProjectAgentPolicy[] {
   if (!projectId) return [];
   let id = databaseIds.get(db);
   if (id === undefined) databaseIds.set(db, id = ++lastDatabaseId);
-  return readOncePerPass(`cluster-agent-policy:${id}:${projectId}`, () => readProjectAgentPolicies(db, projectId));
+  return readOncePerPass(`cluster-agent-policy:${id}:${projectId}:${guardianDefaults}`, () => readProjectAgentPolicies(db, projectId, guardianDefaults));
 }
-function readProjectAgentPolicies(db: DatabaseSync, projectId: string): ProjectAgentPolicy[] {
+function readProjectAgentPolicies(db: DatabaseSync, projectId: string, guardianDefaults: boolean): ProjectAgentPolicy[] {
   ensureClusterAgentPolicySchema(db);
-  if (!db.prepare("SELECT 1 FROM cluster_agent_policies LIMIT 1").get()) return [];
+  if (!guardianDefaults && !db.prepare('SELECT 1 FROM cluster_agent_policies LIMIT 1').get()) return [];
+  ensureClusterSharingPolicySchema(db);
+  if (!db.prepare("SELECT 1 FROM sharing_resource_shares WHERE kind='project' AND resource_id=? LIMIT 1").get(projectId)) return [];
   const local = db.prepare("SELECT id FROM cluster_node WHERE singleton=1").get() as { id: string };
-  return projectClusterIds(db, local.id, projectId).flatMap(clusterId => clusterAgentPolicyLayers(db, clusterId));
+  return projectClusterIds(db, local.id, projectId).flatMap(clusterId => clusterAgentPolicyLayers(db, clusterId, guardianDefaults));
 }
 /** The policy layers of every cluster this machine has a policy for, one list per cluster, whatever project they apply to. */
 export function allClusterAgentPolicies(db: DatabaseSync): ProjectAgentPolicy[][] {
   ensureClusterAgentPolicySchema(db);
   return (db.prepare("SELECT cluster_id FROM cluster_agent_policies").all() as Array<{ cluster_id: string }>).map(({ cluster_id }) => clusterAgentPolicyLayers(db, cluster_id));
 }
-function clusterAgentPolicyLayers(db: DatabaseSync, clusterId: string): ProjectAgentPolicy[] {
+function clusterAgentPolicyLayers(db: DatabaseSync, clusterId: string, guardianDefaults = true): ProjectAgentPolicy[] {
   const assignment = getClusterAgentPolicy(db, clusterId);
-  if (!assignment) return [];
+  if (!guardianDefaults && !assignment) return [];
   const cluster = getSharingCluster(db, clusterId);
-  if (cluster.closed || assignment.managerEpoch !== cluster.managerEpoch || assignment.originNodeId !== cluster.managerNodeId) throw new Error(`Cluster policy requires refresh: ${cluster.name}`);
-  const layers = [{ clusterId, source: cluster.name, sourceNodeId: assignment.originNodeId, policy: assignment.policy }];
-  if (assignment.sourceRelayNodeId) {
+  if (cluster.closed || !cluster.managerNodeId || assignment && (assignment.managerEpoch !== cluster.managerEpoch || assignment.originNodeId !== cluster.managerNodeId)) throw new Error(`Cluster policy requires refresh: ${cluster.name}`);
+  const policy = assignment?.policy ?? agentPolicyBodySchema.parse({});
+  // Missing means use the shared default; null is the manager's explicit opt-out.
+  const useDefault = guardianDefaults && policy.guardian === undefined && !assignment?.sourceRelayNodeId;
+  const relayGroup = useDefault && db.prepare('SELECT relay_node_id FROM relay_sharing_groups WHERE cluster_id=?').get(clusterId) as { relay_node_id: string } | undefined;
+  if (relayGroup) {
+    const relayId = relayGroup.relay_node_id;
+    const localId = (db.prepare('SELECT id FROM cluster_node WHERE singleton=1').get() as { id: string }).id;
+    const statement = relayId === localId ? publishedRelayPolicy(db, relayId) : relayPolicySubscriptions(db).find(item => item.relay.relayNodeId === relayId)?.statement;
+    if (statement) return [{ clusterId, source: cluster.name, sourceNodeId: relayId, relaySource: localId !== relayId, policy: { ...policy, guardian: statement.body.guardian } }];
+  }
+  const effective = useDefault
+    ? { ...policy, guardian: { model: 'jev' as const, layaUrl: '', rules: [PRODUCTION_RULE] } } : policy;
+  const layers: ProjectAgentPolicy[] = [{ clusterId, source: cluster.name, sourceNodeId: cluster.managerNodeId, policy: effective }];
+  if (assignment?.sourceRelayNodeId) {
     if (!listSharingClusterMembers(db, clusterId).some(({ nodeId }) => nodeId === assignment.sourceRelayNodeId)) throw new Error(`Cluster policy source was removed: ${cluster.name}`);
     const statement = clusterPolicySource(db, assignment.sourceRelayNodeId);
     if (!statement) throw new Error(`Cluster policy source unavailable: ${cluster.name}`);
     const key = sourcePublicKey(db, assignment.sourceRelayNodeId);
     if (!key || !verifyClusterMessage(key, "relay-skill-policy", JSON.stringify(statement.body), statement.signature)) throw new Error(`Cluster policy source signature is invalid: ${cluster.name}`);
     const { relayNodeId, version, ...policy } = statement.body;
-    layers.unshift({ clusterId, source: `${cluster.name} · source`, sourceNodeId: assignment.sourceRelayNodeId, policy });
+    layers.unshift({ clusterId, relaySource: true, source: `${cluster.name} · source`, sourceNodeId: assignment.sourceRelayNodeId, policy });
   }
   return layers;
 }

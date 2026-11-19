@@ -64,15 +64,22 @@ export function systemMessages(facts: SystemFacts): SystemMessage[] {
   if (facts.guardian !== "on") {
     const found = GUARDIAN[facts.guardian];
     const uncovered = facts.guardianUncovered ?? [], coveredBy = facts.guardianCoveredBy ?? [];
-    const partial = coveredBy.length
-      ? ` ${coveredBy.join(" and ")} asks first in the projects it covers, but not in ${uncovered.slice(0, 5).join(", ")}${uncovered.length > 5 ? ` and ${uncovered.length - 5} more` : ""}.`
-      : "";
-    messages.push({
-      id: "guardian", severity: "warn", title: found.title, short: coveredBy.length ? `Not checked in ${uncovered.length === 1 ? "1 project" : `${uncovered.length} projects`}` : "Production and destructive steps are not checked", where: "Settings → Guardian",
-      why: found.why + partial,
-      steps: ["Open `Settings → Guardian`.", "Turn Guardian on and turn on the rule `Production or destructive steps`.", "Press Check again."],
-      action: { label: "Open Guardian settings", open: "settings-guardian" },
-    });
+    if (uncovered.length) {
+      const count = `${uncovered.length} project${uncovered.length === 1 ? '' : 's'}`;
+      messages.push({
+        id: 'guardian', severity: 'warn', title: `Production checks missing in ${count}`, short: `Not checked in ${count}`, where: uncovered.join(', '),
+        why: `No production rule covers: ${uncovered.join(', ')}.${coveredBy.length ? ` Other projects are protected by ${coveredBy.join(', ')}.` : ''}`,
+        steps: ['Check which cluster each listed project is shared with.', 'On the cluster manager, open `Settings → Cluster → Policy & pools` and check the Guardian rule or its inherited source.', 'For an unshared project, use `Settings → Guardian` on its machine.'],
+        action: { label: 'Open cluster settings', open: 'settings-cluster' },
+      });
+    } else {
+      messages.push({
+        id: "guardian", severity: "warn", title: found.title, short: "Production and destructive steps are not checked", where: "Settings → Guardian",
+        why: found.why,
+        steps: ["Open `Settings → Guardian`.", "Turn Guardian on and turn on the rule `Production or destructive steps`.", "Press Check again."],
+        action: { label: "Open Guardian settings", open: "settings-guardian" },
+      });
+    }
   }
   for (const machine of facts.machinesAway) {
     const running = machine.conversations === 1 ? "1 conversation runs" : `${machine.conversations} conversations run`;

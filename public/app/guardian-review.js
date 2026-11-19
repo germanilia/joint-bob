@@ -70,6 +70,7 @@ function render() {
 document.addEventListener("guardian-event", (event) => {
   const payload = event.detail;
   if (payload.type === "guardianReviews") show(payload.reviews || []);
+  if (payload.type === "guardianWarning") toast(`Guardian warning: ${payload.message}`, 8000, 'warning');
   if (payload.type === "guardianBlocked") toast.error(payload.message);
 });
 

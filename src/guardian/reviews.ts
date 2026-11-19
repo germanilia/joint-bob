@@ -34,7 +34,7 @@ export function guardianActionAllowed(key: string): boolean {
 /** What the chat server pushes to a conversation's viewers: its open reviews changed, or Guardian blocked something on its own. */
 export type GuardianEvent =
   | { type: "reviews"; projectId: string; conversationId: string; review: GuardianReview }
-  | { type: "blocked"; projectId: string; conversationId: string; message: string };
+  | { type: "blocked" | "warning"; projectId: string; conversationId: string; message: string };
 
 const pending = new Map<string, { review: GuardianReview; settle: (decision: ReviewDecision) => void }>();
 const listeners = new Set<(event: GuardianEvent) => void>();
@@ -56,6 +56,10 @@ function changed(review: GuardianReview): void {
 /** A block nobody was asked about still shows in the conversation, so the person knows why the agent stopped. */
 export function announceGuardianBlock(projectId: string, conversationId: string, message: string): void {
   emit({ type: "blocked", projectId, conversationId, message });
+}
+
+export function announceGuardianWarning(projectId: string, conversationId: string, message: string): void {
+  emit({ type: "warning", projectId, conversationId, message });
 }
 
 /** Waits for the person's decision on one action. Resolves "block" after the timeout or when the run is stopped. */
