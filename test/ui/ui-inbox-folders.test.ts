@@ -144,11 +144,61 @@ test("pinned conversations stay above the other Inbox groups until unpinned", { 
     assert.equal(await row(title).count(), 1);
   }
   await page.getByTestId("workspace-show-all-pinned").click();
-  await page.getByTestId("workspace-listing-page-row").getByText(title).waitFor();
+  await page.getByTestId("workspace-group-page-row").getByText(title).waitFor();
+  assert.equal(await page.getByTestId("workspace-group-tab-pinned").getAttribute("aria-selected"), "true");
   await page.getByTestId("workspace-group-close").click();
   await togglePin(title);
   await page.getByTestId("workspace-group-done").getByText(title).waitFor();
   assert.equal(await pinned.count(), 0);
+});
+
+test("Show all has Pinned and Starred tabs with search, counts, and live updates", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  const tab = (id: string) => page.getByTestId(`workspace-group-tab-${id}`);
+  const rows = page.getByTestId("workspace-group-page-row");
+  await page.getByTestId("workspace-show-all-review").click();
+  await tab("pinned").waitFor({ timeout: 5_000 });
+  assert.equal(await tab("starred").locator("b").textContent(), "0");
+  const review = rows.filter({ hasText: "Review the invoice fix" });
+  await review.hover();
+  await review.getByTestId("inbox-row-menu").click();
+  await page.getByTestId("inbox-row-pin").click();
+  await tab("pinned").click();
+  await review.waitFor();
+  assert.equal(await tab("pinned").locator("b").textContent(), "1");
+  assert.equal(await review.locator(".ws-dot.rev").count(), 1);
+
+  // An older conversation still appears in Starred after it moves to a folder.
+  await tab("earlier").click();
+  const old = rows.filter({ hasText: "Old design notes" });
+  await old.hover();
+  await old.getByTestId("inbox-row-menu").click();
+  await page.getByTestId("inbox-row-star").click();
+  assert.equal(await tab("starred").locator("b").textContent(), "1");
+  await old.hover();
+  await old.getByTestId("inbox-row-menu").click();
+  await page.getByTestId("inbox-row-folder").click();
+  await page.getByTestId("control-pop-input").fill("Design");
+  await page.keyboard.press("Enter");
+  await old.waitFor({ state: "detached" });
+  await tab("starred").click();
+  await old.waitFor();
+  const search = page.getByTestId("inboxPage-search");
+  await search.fill("invoice");
+  assert.equal(await tab("starred").locator("b").textContent(), "0");
+  assert.equal(await rows.count(), 0);
+  await tab("pinned").click();
+  await review.waitFor();
+  await search.clear();
+  await tab("starred").click();
+  await old.hover();
+  await old.getByTestId("inbox-row-menu").click();
+  await page.getByTestId("inbox-row-star").click();
+  await old.waitFor({ state: "detached" });
+  assert.equal(await tab("starred").getAttribute("aria-selected"), "true", "removing the last star keeps the tab open");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.body.classList.contains("focus-ui"));
+  assert.equal(await page.getByTestId("workspace-group-tabs").evaluate((bar) => bar.scrollWidth <= bar.clientWidth), true, "all tabs fit on a phone");
 });
 
 test("by project: a section per project with its counts, and the project's own menu", { timeout: 120_000 }, async (t) => {
@@ -243,10 +293,11 @@ test("by folder: folders and subfolders, filing by menu and by drag, and filing 
   await page.getByTestId("workspace-mode-folder").click();
   await contigos.waitFor();
 
-  // Pinned and Starred are views across every folder.
+  // The folder view's Starred shortcut opens the Starred tab in Show all.
   await page.getByTestId("workspace-folder-starred-open").click();
   await page.getByTestId("workspace-group-page").waitFor();
-  assert.equal(await page.getByTestId("workspace-listing-page-row").count(), 0);
+  assert.equal(await page.getByTestId("workspace-group-tab-starred").getAttribute("aria-selected"), "true");
+  assert.equal(await page.getByTestId("workspace-group-page-row").count(), 0);
   await page.getByTestId("workspace-group-close").click();
 
   // Deleting a folder deletes no conversation: the filed ones are back in the Inbox.

@@ -168,7 +168,7 @@ export function drawByFolder(host, { cards, makeRow, groupOf, openPage, afterCha
   nodes.push(head);
   const starred = el("div", "ws-folder-row ws-folder-view");
   starred.dataset.testid = "workspace-folder-starred";
-  starred.append(el("span", "ws-folder-chevron"), button("ws-folder-name", "Starred conversations", "workspace-folder-starred-open", () => openPage("view:starred"), "Starred"), el("em", "ws-folder-count", String(cards.filter(isStarred).length)));
+  starred.append(el("span", "ws-folder-chevron"), button("ws-folder-name", "Starred conversations", "workspace-folder-starred-open", () => openPage("starred"), "Starred"), el("em", "ws-folder-count", String(cards.filter(isStarred).length)));
   nodes.push(starred);
   const addFolder = (path) => {
     const team = isTeamFolder(path, cards);

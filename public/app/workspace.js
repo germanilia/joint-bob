@@ -400,6 +400,10 @@ const OFF_BOARD = ["scheduled", "earlier", "done"];
 /** Put aside from Needs you (control-snooze.js): not a group of the column, which counts them on Needs you's label; the "Show all"
  * page lists them on a tab of their own while there are any. */
 const SNOOZED = { id: "snoozed", title: "Snoozed", dot: "old", empty: "Nothing is snoozed." };
+const MARK_GROUPS = [
+  { id: "pinned", title: "Pinned", empty: "No pinned conversations.", mark: isPinned },
+  { id: "starred", title: "Starred", empty: "No starred conversations.", mark: isStarred },
+];
 let cards = [];
 let loaded = false;
 /** The conversations that are not on the board, read at most once a minute (they change slowly and there can be thousands). */
@@ -416,8 +420,10 @@ function syncEarlier() {
   earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row))).map((row) => ({ ...row, column: row.scheduled ? "scheduled" : row.done ? "done" : "earlier" }));
 }
 
-/** A team's conversations live in the team's folder (each card says which team, `card.team`), not in the four groups. */
+/** Marks span all folders and statuses; team and filing rules still apply to the status groups. */
 function cardsIn(groupId) {
+  const marked = MARK_GROUPS.find((group) => group.id === groupId);
+  if (marked) return allCards().filter(marked.mark);
   const listed = OFF_BOARD.includes(groupId) ? earlierRows.filter((card) => card.column === groupId && !folderOf(card)) : cards.filter((card) => card.column === groupId);
   return listed.filter((card) => !card.team);
 }
@@ -576,7 +582,7 @@ function openCardMenu(card, anchor) {
   if (card.column === "snoozed") items.push({ label: "Wake", icon: "clock", testid: "inbox-row-wake", title: "Bring it back to Needs you now", onSelect: () => wakeCard(card).catch((error) => toast.error(error.message)) });
   if (!card.othersMachine) {
     items.push({ label: "Move to folder…", icon: "folder", testid: "inbox-row-folder", title: "File it in a folder or a subfolder, as in a mailbox", onSelect: () => openMoveMenu(anchor, [card], allCards(), refreshFolders) });
-    items.push({ label: isStarred(card) ? "Unstar" : "Star", icon: "star", testid: "inbox-row-star", title: "A starred conversation is never removed by any automatic cleanup", onSelect: () => { toggleStar(card, saveControlCenter); renderGroups(); } });
+    items.push({ label: isStarred(card) ? "Unstar" : "Star", icon: "star", testid: "inbox-row-star", title: "A starred conversation is never removed by any automatic cleanup", onSelect: () => { toggleStar(card, saveControlCenter); renderGroups(); if (!page.hidden) renderGroupPage(); } });
     items.push({ label: isPinned(card) ? "Unpin" : "Pin", icon: "pin", testid: "inbox-row-pin", title: "A pinned conversation is never removed by any automatic cleanup", onSelect: () => togglePin(card).catch((error) => toast.error(error.message)) });
   }
   // Let Bob control (control-lease.js), then the conversation's own tools (control-moves.js): each opens it first.
@@ -731,20 +737,20 @@ function prependPinned(pins, chunked) {
   const label = document.createElement("div");
   label.className = "ws-lab";
   label.append(Object.assign(document.createElement("span"), { textContent: "Pinned" }), Object.assign(document.createElement("i"), { textContent: String(pins.length) }));
-  if (!phoneHomeShown()) label.append(showAllButton("pinned", "Pinned", pins.length, "view:pinned"));
+  if (!phoneHomeShown()) label.append(showAllButton("pinned", "Pinned", pins.length));
   section.append(label);
   groupsHost.prepend(section);
   for (const card of pins) chunked.push({ make: () => cardRow(card, groupOfCard(card), "workspace-group-row", phoneHomeShown(), false), into: section });
 }
 
-function showAllButton(id, title, count, pageId = id) {
+function showAllButton(id, title, count) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "ws-show-all";
   button.dataset.testid = `workspace-show-all-${id}`;
   button.textContent = "Show all";
   button.setAttribute("aria-label", `Show all ${count}: ${title}`);
-  button.addEventListener("click", () => openGroupPage(pageId));
+  button.addEventListener("click", () => openGroupPage(id));
   return button;
 }
 
@@ -1047,14 +1053,13 @@ onInboxView(() => {
   if (!page.hidden) renderGroupPage();
 });
 
-/** A team's folder: every conversation of the team in one scrolling list, newest first, each with the dot of where it stands. */
-/** A project, a folder, or Pinned, Starred and Not filed as one list in the middle: every conversation of it, most urgent first. */
+/** A project, folder or Not filed as one list in the middle, most urgent first. */
 function listingPage(id) {
   const [kind, ...rest] = id.split(":");
   const name = rest.join(":");
   if (kind === "project") return { title: allCards().find((card) => card.projectId === name)?.projectName ?? "Project", cards: allCards().filter((card) => card.projectId === name) };
   if (kind === "folder") return { title: name.split("/").pop(), crumb: name, cards: allCards().filter((card) => (folderOf(card) ?? "") === name || (folderOf(card) ?? "").startsWith(`${name}/`)) };
-  if (kind === "view") return { title: { pinned: "Pinned", starred: "Starred", unfiled: "Not filed" }[name], cards: allCards().filter((card) => (name === "pinned" ? isPinned(card) : name === "starred" ? isStarred(card) : !folderOf(card))) };
+  if (id === "view:unfiled") return { title: "Not filed", cards: allCards().filter((card) => !folderOf(card)) };
   return null;
 }
 function renderListingPage(id, { title, crumb, cards: listed }) {
@@ -1063,10 +1068,8 @@ function renderListingPage(id, { title, crumb, cards: listed }) {
   byId("workspaceGroupTabs").replaceChildren();
   const scroll = pageList.scrollTop;
   pageList.replaceChildren();
-  const ordered = inChosenProjects(listed).sort(byUrgency);
-  const nested = id !== "view:pinned";
-  const entries = (nested ? nestRows(ordered) : ordered).map((card) => () => {
-    const row = cardRow(card, groupOfCard(card), "workspace-listing-page-row", false, nested);
+  const entries = nestRows(inChosenProjects(listed).sort(byUrgency)).map((card) => () => {
+    const row = cardRow(card, groupOfCard(card), "workspace-listing-page-row");
     row.classList.add("wide");
     return row;
   });
@@ -1112,9 +1115,11 @@ function renderGroupPage() {
   const listing = listingPage(pageGroup);
   if (listing) { renderListingPage(pageGroup, listing); return; }
   // Snoozed is a tab of its own while there are any, or while it is the one open.
-  const tabs = cardsIn(SNOOZED.id).length || pageGroup === SNOOZED.id ? [...GROUPS, SNOOZED] : GROUPS;
+  const tabs = [...MARK_GROUPS, ...GROUPS];
+  if (cardsIn(SNOOZED.id).length || pageGroup === SNOOZED.id) tabs.push(SNOOZED);
   const group = tabs.find((item) => item.id === pageGroup) ?? GROUPS[0];
   byId("workspaceGroupTitle").textContent = group.title;
+  page.querySelector(".ws-page-crumb").textContent = "Every project";
   byId("workspaceGroupTabs").replaceChildren(...tabs.map((item) => {
     const tab = document.createElement("button");
     tab.type = "button";
@@ -1125,12 +1130,13 @@ function renderGroupPage() {
     tab.addEventListener("click", () => { pageGroup = item.id; renderGroupPage(); });
     return tab;
   }));
-  const items = nestRows(filteredOnPage(group.id));
+  const filtered = filteredOnPage(group.id);
+  const items = group.mark ? filtered.sort(byUrgency) : nestRows(filtered);
   pageToolbar.update();
   const scroll = pageList.scrollTop;
   pageList.replaceChildren();
   const entries = items.map((card) => () => {
-    const row = cardRow(card, group, "workspace-group-page-row", true);
+    const row = cardRow(card, groupOfCard(card), "workspace-group-page-row", true, !group.mark);
     row.classList.add("wide");
     return withPageAction(card, row);
   });
