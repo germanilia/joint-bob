@@ -33,6 +33,8 @@ export const ADMIN_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   // Node identity and twins.
   { method: "PUT", path: /^\/cluster\/node$/ },
   { method: "*", path: /^\/twins(\/|$)/ },
+  // One link that makes a machine this person's twin and joins it to their clusters.
+  { method: "*", path: /^\/machine-links(\/|$)/ },
   { method: "*", path: /^\/clusters\/[^/]+\/members\/[^/]+\/twin-request$/ },
   // Global resource paths and node-wide resource inventory.
   { method: "*", path: /^\/resources\/inventory$/ },

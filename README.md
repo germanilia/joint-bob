@@ -299,9 +299,22 @@ Install Joint Bob and configure private HTTPS on every machine first. Tailscale 
 
 A node can belong to any number of clusters, and a cluster has no member limit.
 
+### Add a machine with one link
+
+The quickest way to bring in another machine is **Settings > Cluster > Add a machine** on a machine that is already set up.
+
+1. Choose **My own machine** to make it a twin of this machine and of every twin it has, or **Someone else's machine** to join clusters only. Tick the clusters it should join and select **Create link**. The link works once, for 15 minutes.
+2. On the other machine, open **Settings > Cluster > Use a link**, paste the link and select **Join**. A machine nobody has set up yet takes the same link on its welcome screen, next to the administrator's name and password.
+
+The other machine then joins the relays this machine can be reached on, becomes a twin, and joins the clusters, in that order, and lists each step with its result. A step that fails says why; use the link again after fixing it, and the steps already done are skipped. Only the node's administrator can create or use such a link.
+
+The link carries a one-time relay pass when the relay allows it (**Settings > Relay > Serving > Machines on this relay can bring in another machine**, on by default). A relay that runs an older Joint Bob, or has the switch off, gives no pass: the new machine then asks that relay for access and waits for its operator's approval. **Use a link** also accepts a plain cluster invitation, a twin link and a relay token link.
+
+### Set up a cluster step by step
+
 1. On one node, create a cluster in **Settings > Cluster**. That node manages it.
 2. Select **Generate one-time link** for the cluster and copy the link. A link works once and expires after 15 minutes.
-3. On the joining node, paste the link under **Join an existing cluster** and select **Join cluster**. Joining another cluster keeps the node's existing memberships.
+3. On the joining node, paste the link under **Settings > Cluster > Use a link** and select **Join**. Joining another cluster keeps the node's existing memberships.
 4. Choose what to share. Joining shares nothing: in **Selected sharing**, pick the projects or whole workspaces this node shares with the cluster. Every member of the cluster receives them; projects added to a selected workspace later are shared too. Members of your other clusters never see them.
 
 **Twins** are the same user's machines, for example your laptop and your home server. Both sides consent through a twin invitation; afterwards they share everything they own: projects, conversations, tasks, files, transcripts, credentials, routing configurations, push notifications, and update rights. Use twins for your own machines and clusters for machines you share with others.

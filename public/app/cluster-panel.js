@@ -7,6 +7,7 @@ import { renderClusterSharing } from "./cluster-sharing.js";
 import { activeTwin, badge, declareLost, memberTwinControls, refreshTwinInventory, refreshTwins, renderTwinLink, renderTwinRequests, renderTwinSection, syncLabel, twinName, twinNodeIds, twinSyncProblem, twins, unpair } from "./cluster-twins.js";
 import { elements } from "./elements.js";
 import { refreshProjectsQuietly } from "./project-selection.js";
+import { clearMachineLinkSteps, installMachineLinks, useOtherLink } from "./machine-link.js";
 import { displayNodeUrl } from "./relay-ui.js";
 import { confirmAction, toast } from "./shell.js";
 
@@ -528,7 +529,9 @@ async function generateInvitation() {
 
 async function joinCluster() {
   const link = elements.clusterJoinLinkInput.value.trim();
-  if (!link) throw new Error("Join link is required");
+  if (!link) throw new Error("Paste a link first");
+  // A link for adding this machine, a twin link or a relay pass goes its own way and reports there.
+  if (await useOtherLink(link)) return;
   if (pendingJoin.link !== link) pendingJoin = { link, requestId: crypto.randomUUID() };
   const current = panelRequestId;
   const result = await api("/api/clusters/join", { method: "POST", body: JSON.stringify(pendingJoin) });
@@ -568,8 +571,15 @@ function mutation(button, action) { button.addEventListener("click", () => actio
 mutation(elements.clusterSaveButton, saveClusterNode); mutation(elements.clusterCreateButton, createCluster);
 mutation(elements.clusterGenerateInviteButton, generateInvitation); mutation(elements.clusterJoinButton, joinCluster);
 
-newButton.addEventListener("click", () => { showForm(joinForm, joinReveal, false); showForm(createForm, newButton, createForm.hidden); });
-joinReveal.addEventListener("click", () => { showForm(createForm, newButton, false); showForm(joinForm, joinReveal, joinForm.hidden); });
+const machineLinks = installMachineLinks({
+  clusters: () => data.clusters.map((cluster) => ({ id: cluster.id, name: cluster.name })),
+  twinNames: () => twins.relationships.filter((item) => item.status === "active").map((item) => item.endpoint?.name || twinName(item.peer.nodeId, data.clusters)),
+  localName: () => data.localNode.name || "this machine",
+  hideOtherForms: () => { showForm(createForm, newButton, false); showForm(joinForm, joinReveal, false); },
+  afterChange: async () => { await refreshTwins(); await afterMembershipChange(); },
+});
+newButton.addEventListener("click", () => { machineLinks.hide(); showForm(joinForm, joinReveal, false); showForm(createForm, newButton, createForm.hidden); });
+joinReveal.addEventListener("click", () => { machineLinks.hide(); showForm(createForm, newButton, false); clearMachineLinkSteps(); showForm(joinForm, joinReveal, joinForm.hidden); });
 document.getElementById("clusterCreateCancel").addEventListener("click", () => { elements.clusterCreateNameInput.value = ""; showForm(createForm, newButton, false); newButton.focus(); });
 document.getElementById("clusterJoinCancel").addEventListener("click", () => { showForm(joinForm, joinReveal, false); joinReveal.focus(); });
 for (const [form, trigger, submit] of [[createForm, newButton, elements.clusterCreateButton], [joinForm, joinReveal, elements.clusterJoinButton]]) {

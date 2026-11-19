@@ -8,7 +8,19 @@ import { RELAY_NAME_PATTERN, relayNameSlug } from "./protocol.js";
 export const NAME_RESERVATION_MS = 30 * 24 * 60 * 60 * 1000;
 export const DEFAULT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** Databases whose relay tables were already brought up to date in this process. */
+const upgraded = new WeakSet<DatabaseSync>();
+
 export function ensureRelaySchema(db: DatabaseSync): void {
+  if (upgraded.has(db)) return;
+  createRelaySchema(db);
+  // Added after the table shipped: a relay created by an older release gains the column here.
+  const columns = db.prepare("PRAGMA table_info(relay_serving)").all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "member_invites")) db.exec("ALTER TABLE relay_serving ADD COLUMN member_invites INTEGER NOT NULL DEFAULT 1");
+  upgraded.add(db);
+}
+
+function createRelaySchema(db: DatabaseSync): void {
   db.exec(`CREATE TABLE IF NOT EXISTS relay_serving(
     singleton INTEGER PRIMARY KEY CHECK(singleton=1),
     enabled INTEGER NOT NULL DEFAULT 0,
@@ -84,25 +96,29 @@ export interface ServingSettings {
   alertTopic: string;
   /** Serve only this machine's own machines (its twins); other users' machines are refused. */
   ownMachinesOnly: boolean;
+  /** A machine on this relay may ask it for a one-time pass, to bring one more machine in. */
+  memberInvites: boolean;
 }
 
 export function servingSettings(db: DatabaseSync): ServingSettings {
   ensureRelaySchema(db);
   const row = db.prepare("SELECT * FROM relay_serving WHERE singleton=1").get() as Record<string, unknown> | undefined;
-  if (!row) return { enabled: false, origin: "", environment: "", requestsEnabled: true, maxMachines: 100, monthlyCapBytes: 0, alertTopic: "", ownMachinesOnly: false };
+  if (!row) return { enabled: false, origin: "", environment: "", requestsEnabled: true, maxMachines: 100, monthlyCapBytes: 0, alertTopic: "", ownMachinesOnly: false, memberInvites: true };
   return {
     enabled: row.enabled === 1, origin: String(row.origin), environment: String(row.environment), requestsEnabled: row.requests_enabled === 1,
     maxMachines: Number(row.max_machines), monthlyCapBytes: Number(row.monthly_cap_bytes), alertTopic: String(row.alert_topic), ownMachinesOnly: row.owner_only === 1,
+    memberInvites: row.member_invites !== 0,
   };
 }
 
-export function saveServingSettings(db: DatabaseSync, settings: ServingSettings): void {
+export function saveServingSettings(db: DatabaseSync, input: Omit<ServingSettings, "memberInvites"> & { memberInvites?: boolean }): void {
   ensureRelaySchema(db);
-  db.prepare(`INSERT INTO relay_serving(singleton,enabled,origin,environment,requests_enabled,max_machines,monthly_cap_bytes,alert_topic,owner_only,updated_at)
-    VALUES(1,?,?,?,?,?,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET enabled=excluded.enabled,origin=excluded.origin,environment=excluded.environment,
+  const settings: ServingSettings = { ...input, memberInvites: input.memberInvites ?? servingSettings(db).memberInvites };
+  db.prepare(`INSERT INTO relay_serving(singleton,enabled,origin,environment,requests_enabled,max_machines,monthly_cap_bytes,alert_topic,owner_only,member_invites,updated_at)
+    VALUES(1,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET enabled=excluded.enabled,origin=excluded.origin,environment=excluded.environment,
     requests_enabled=excluded.requests_enabled,max_machines=excluded.max_machines,monthly_cap_bytes=excluded.monthly_cap_bytes,alert_topic=excluded.alert_topic,
-    owner_only=excluded.owner_only,updated_at=excluded.updated_at`)
-    .run(settings.enabled ? 1 : 0, settings.origin, settings.environment, settings.requestsEnabled ? 1 : 0, settings.maxMachines, settings.monthlyCapBytes, settings.alertTopic, settings.ownMachinesOnly ? 1 : 0, now());
+    owner_only=excluded.owner_only,member_invites=excluded.member_invites,updated_at=excluded.updated_at`)
+    .run(settings.enabled ? 1 : 0, settings.origin, settings.environment, settings.requestsEnabled ? 1 : 0, settings.maxMachines, settings.monthlyCapBytes, settings.alertTopic, settings.ownMachinesOnly ? 1 : 0, settings.memberInvites ? 1 : 0, now());
 }
 
 export type MachineStatus = "pending" | "admitted" | "suspended" | "revoked";

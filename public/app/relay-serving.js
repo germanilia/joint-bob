@@ -8,7 +8,7 @@ import { copyText, createFittedList, formatBytes, formatWhen, makeBadge, makeBut
 
 const byId = (id) => document.getElementById(id);
 const field = {
-  enabled: byId("relayEnabled"), origin: byId("relayOrigin"), environment: byId("relayEnvironment"), requests: byId("relayRequestsEnabled"), ownOnly: byId("relayOwnMachinesOnly"),
+  enabled: byId("relayEnabled"), origin: byId("relayOrigin"), environment: byId("relayEnvironment"), requests: byId("relayRequestsEnabled"), ownOnly: byId("relayOwnMachinesOnly"), memberInvites: byId("relayMemberInvites"),
   maxMachines: byId("relayMaxMachines"), capGb: byId("relayMonthlyCapGb"), alertTopic: byId("relayAlertTopic"),
 };
 const loadStatus = byId("relayStatus");
@@ -37,6 +37,7 @@ function fillForm(settings) {
   field.environment.value = settings.environment;
   field.requests.checked = settings.requestsEnabled;
   field.ownOnly.checked = settings.ownMachinesOnly === true;
+  field.memberInvites.checked = settings.memberInvites !== false;
   field.maxMachines.value = settings.maxMachines;
   field.capGb.value = settings.monthlyCapGb;
   field.alertTopic.value = settings.alertTopic;
@@ -74,7 +75,7 @@ async function saveServing() {
     method: "PUT",
     body: JSON.stringify({
       enabled: field.enabled.checked, origin: field.origin.value.trim(), environment: field.environment.value.trim(),
-      requestsEnabled: field.requests.checked, ownMachinesOnly: field.ownOnly.checked, maxMachines, monthlyCapGb: capGb, alertTopic: field.alertTopic.value.trim(),
+      requestsEnabled: field.requests.checked, ownMachinesOnly: field.ownOnly.checked, memberInvites: field.memberInvites.checked, maxMachines, monthlyCapGb: capGb, alertTopic: field.alertTopic.value.trim(),
     }),
   });
   checkResults.replaceChildren();

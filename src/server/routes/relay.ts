@@ -186,6 +186,7 @@ const servingSchema = z.object({
   monthlyCapGb: z.number().min(0).max(1_000_000),
   alertTopic: z.string().trim().regex(/^(?:[A-Za-z0-9_-]{1,64})?$/, "ntfy topics use letters, digits, - and _"),
   ownMachinesOnly: z.boolean().default(false),
+  memberInvites: z.boolean().optional(),
 }).strict();
 app.put("/api/relay/serving", handle(async (request, response) => {
   const body = servingSchema.parse(request.body);
@@ -198,6 +199,7 @@ app.put("/api/relay/serving", handle(async (request, response) => {
   saveServingSettings(db, {
     enabled: body.enabled, origin, environment: body.environment, requestsEnabled: body.requestsEnabled, maxMachines: body.maxMachines,
     monthlyCapBytes: Math.round(body.monthlyCapGb * 1e9), alertTopic: body.alertTopic, ownMachinesOnly: body.ownMachinesOnly,
+    memberInvites: body.memberInvites,
   });
   await relayServingChanged();
   response.status(204).end();

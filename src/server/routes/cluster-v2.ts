@@ -306,9 +306,8 @@ app.post("/api/clusters", handler(async (request, response) => {
   } catch (error) { db.exec("ROLLBACK TO cluster_v2_create; RELEASE cluster_v2_create"); throw error; }
 }));
 
-app.post("/api/clusters/:clusterId/invitations", handler(async (request, response) => {
-  localOnly(response);
-  const clusterId = uuid.parse(request.params.clusterId), { expectedEpoch } = epochSchema.parse(request.body);
+/** A one-time link that admits one node to a cluster; a member that does not manage the cluster asks the manager for it. */
+export async function issueClusterInvitation(clusterId: string, expectedEpoch: number): Promise<string> {
   const local = await getClusterNode(), db = await clusterV2Database(), manager = clusterManager(db, clusterId);
   let invitation: MembershipInvitation;
   if (manager === local.id) invitation = createMembershipInvitation(db, local.id, local.id, clusterId, expectedEpoch, Date.now(), requiredClusterFeatures(db, clusterId));
@@ -319,29 +318,33 @@ app.post("/api/clusters/:clusterId/invitations", handler(async (request, respons
     if (!key || invitation.body.clusterId !== clusterId || invitation.body.manager.nodeId !== manager || invitation.body.managerEpoch !== expectedEpoch || state.managerEpoch !== expectedEpoch || invitation.body.manager.publicKey !== key || !verifyClusterMessage(key, "membership-invitation", JSON.stringify(invitation.body), invitation.signature)
       || getClusterSubscriptionPool(db, clusterId) && !invitation.body.requiredFeatures?.includes("subscription-pools-v1")) throw new ClusterV2HttpError(503, "Cluster peer returned an invalid response");
   }
-  response.status(201).json({ link: invitationLink(invitation) });
+  return invitationLink(invitation);
+}
+
+app.post("/api/clusters/:clusterId/invitations", handler(async (request, response) => {
+  localOnly(response);
+  const clusterId = uuid.parse(request.params.clusterId), { expectedEpoch } = epochSchema.parse(request.body);
+  response.status(201).json({ link: await issueClusterInvitation(clusterId, expectedEpoch) });
 }));
 
-app.post("/api/clusters/join", handler(async (request, response) => {
-  const person = clusterPerson(response);
-  const payload = z.object({ link: z.string().max(32768), requestId: uuid }).strict().parse(request.body);
-  const parsed = parseV2InvitationLink(payload.link);
+/** Joins the cluster a one-time link names, for one person on this node; a node that is already in only gains that person. */
+export async function joinClusterByLink(link: string, requestId: string, accountId: string): Promise<{ snapshot: SignedMembershipSnapshot; created: boolean }> {
+  const parsed = parseV2InvitationLink(link);
   const clusterId = parsed.invitation.body.clusterId;
   const db = await clusterV2Database(), local = await getClusterNode();
   // The node is already in: a valid invitation lets one more person here join it. A retried
   // or reused request id goes the usual way, which answers it consistently.
   ensureV2HttpSchema(db);
-  const seen = db.prepare("SELECT 1 FROM cluster_v2_join_results WHERE request_id=? UNION ALL SELECT 1 FROM cluster_v2_join_attempts WHERE request_id=?").get(payload.requestId, payload.requestId);
+  const seen = db.prepare("SELECT 1 FROM cluster_v2_join_results WHERE request_id=? UNION ALL SELECT 1 FROM cluster_v2_join_attempts WHERE request_id=?").get(requestId, requestId);
   if (!seen && db.prepare("SELECT 1 FROM sharing_memberships WHERE cluster_id=? AND node_id=?").get(clusterId, local.id)) {
     const key = pinnedClusterPublicKey(db, parsed.invitation.body.manager.nodeId);
     if (!key || key !== parsed.invitation.body.manager.publicKey || Date.now() > parsed.invitation.body.expiresAt
       || !verifyClusterMessage(key, "membership-invitation", JSON.stringify(parsed.invitation.body), parsed.invitation.signature)) throw new ClusterV2HttpError(401, "Unauthorized");
-    addClusterLocalMember(db, clusterId, person.accountId);
-    response.json({ snapshot: getMembershipSnapshot(db, clusterId) });
-    return;
+    addClusterLocalMember(db, clusterId, accountId);
+    return { snapshot: getMembershipSnapshot(db, clusterId), created: false };
   }
-  const result = await joinV2Membership(payload.link, payload.requestId);
-  addClusterLocalMember(db, result.snapshot.body.clusterId, person.accountId);
+  const result = await joinV2Membership(link, requestId);
+  addClusterLocalMember(db, result.snapshot.body.clusterId, accountId);
   await pullPoolAssignmentAfterJoin(db, local.id, result.snapshot.body.clusterId);
   await pullClusterAgentPolicy(db, local.id, result.snapshot.body.clusterId);
   void import("../cluster-hubs.js").then(({ pullFromHubs }) => pullFromHubs()).catch((error) => console.warn("Cluster event catch-up after join failed", error));
@@ -350,6 +353,13 @@ app.post("/api/clusters/join", handler(async (request, response) => {
   void import("../ntfy-share.js").then(({ syncNtfyServiceShares }) => syncNtfyServiceShares()).catch((error) => console.warn("ntfy service share sync after join failed", error));
   void import("../shared-workspaces.js").then(({ syncSharedWorkspaces }) => syncSharedWorkspaces()).catch((error) => console.warn("Shared workspace sync after join failed", error));
   void import("../../file-sync/index.js").then(({ fileSyncAnnounce }) => fileSyncAnnounce(false)).catch((error) => console.warn("File sync catch-up after join failed", error));
+  return result;
+}
+
+app.post("/api/clusters/join", handler(async (request, response) => {
+  const person = clusterPerson(response);
+  const payload = z.object({ link: z.string().max(32768), requestId: uuid }).strict().parse(request.body);
+  const result = await joinClusterByLink(payload.link, payload.requestId, person.accountId);
   response.status(result.created ? 201 : 200).json({ snapshot: result.snapshot });
 }));
 

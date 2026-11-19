@@ -25,7 +25,7 @@ import { RelayStream, relayTransportOf } from "./stream.js";
 import { POLL_PATH, PollServer, type FrameSocket } from "./poll.js";
 import { SKILL_BUNDLE_PATH, serveSkillBundle } from "./skill-bundle.js";
 import {
-  addMachineUsage, admitMachine, audit, countAdmittedMachines, currentMonth, deleteMachine, ensureRelaySchema, expirePendingMachines, isKeyRevoked, machineUsage, markMachineAlerted,
+  addMachineUsage, admitMachine, audit, countAdmittedMachines, createRelayToken, currentMonth, deleteMachine, ensureRelaySchema, expirePendingMachines, isKeyRevoked, machineUsage, markMachineAlerted,
   redeemRelayToken, relayMachine, relayMachineByName, renameRelayMachine, servingSettings, setMachinePhoneSignIn, setMachineStatus,
   touchMachine, upsertPendingMachine, type RelayMachine, type ServingSettings,
 } from "./store.js";
@@ -44,6 +44,10 @@ const MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
 const MAX_UNAUTHENTICATED_PER_IP = 16;
 const MAX_WATCHED = 10_000;
 const REQUESTS_PER_HOUR = 5;
+/** A pass for one more machine works once and for this long; a machine gets a few per window. */
+const INVITE_TTL_MS = 60 * 60 * 1000;
+const INVITE_WINDOW_MS = 60 * 60 * 1000;
+const MAX_INVITES_PER_WINDOW = 10;
 /** The same cap the machine applies (WEBHOOK_MAX_BODY_BYTES), so a call with attachments passes through. */
 const WEBHOOK_MAX_BODY = 100 * 1024 * 1024;
 const USAGE_FLUSH_BYTES = 1024 * 1024;
@@ -341,6 +345,7 @@ export class RelayServer {
     ws.send(encodeControl({
       t: "welcome", name: machine.name, environment: this.settings.environment, relayOrigin: this.origin,
       ...(relay ? { relayName: relay.name, relayPhone: relay.phone } : {}),
+      ...(this.settings.memberInvites ? { invites: true } : {}),
       signature: this.sign(welcomePayload(relayNonce, message.nonce, message.nodeId, "admitted")),
     }));
     const session: Session = {
@@ -511,6 +516,16 @@ export class RelayServer {
         if (session.kind === "remote") this.broadcastWorkspaceSharing();
         return;
       }
+      case "invite-request": {
+        if (session.kind !== "remote" || typeof message.ref !== "number") return;
+        try {
+          const pass = this.invitePass(session.nodeId);
+          session.deliver(encodeControl({ t: "invite-answer", ref: message.ref, secret: pass.secret, expiresAt: pass.expiresAt }));
+        } catch (error) {
+          session.deliver(encodeControl({ t: "invite-answer", ref: message.ref, error: error instanceof RelayServerError ? error.message : "The relay could not make a pass" }));
+        }
+        return;
+      }
       case "watch": {
         if (!Array.isArray(message.nodeIds)) return;
         const wanted = new Set(message.nodeIds.filter((nodeId) => typeof nodeId === "string" && UUID.test(nodeId)).slice(0, MAX_WATCHED));
@@ -591,6 +606,31 @@ export class RelayServer {
     audit(this.db, "allowance-reached", session.nodeId, machine.name);
     if (this.settings.alertTopic) this.alert(this.settings.alertTopic, `Relay machine ${machine.name} used its monthly allowance. New channels are refused until next month.`);
   }
+
+  // ------------------------------------------------------------ passes for one more machine
+
+  /**
+   * A one-time pass a machine on this relay hands to a machine it is bringing in. The relay
+   * grants nothing by itself, so the pass only lets that machine connect; it counts against the
+   * machine limit like any other, and each machine gets a few an hour.
+   */
+  invitePass(byNodeId: string): { secret: string; expiresAt: string } {
+    if (!this.enabled) throw new RelayServerError(409, "This relay is off");
+    if (byNodeId !== this.nodeId) {
+      if (!this.settings.memberInvites) throw new RelayServerError(403, "This relay does not let its machines invite others");
+      if (relayMachine(this.db, byNodeId)?.status !== "admitted") throw new RelayServerError(403, "Only a machine on this relay can invite another");
+    }
+    if (countAdmittedMachines(this.db) >= this.settings.maxMachines) throw new RelayServerError(409, "The relay is full");
+    const at = Date.now(), recent = (this.inviteLog.get(byNodeId) ?? []).filter((time) => at - time < INVITE_WINDOW_MS);
+    if (recent.length >= MAX_INVITES_PER_WINDOW) throw new RelayServerError(429, "This machine asked for too many passes; try again later");
+    recent.push(at);
+    this.inviteLog.set(byNodeId, recent);
+    const inviter = byNodeId === this.nodeId ? this.nodeName() : relayMachine(this.db, byNodeId)?.name ?? "a machine";
+    const { token, secret } = createRelayToken(this.db, { label: `Invited by ${inviter}`.slice(0, 80), uses: 1, ttlMs: INVITE_TTL_MS });
+    audit(this.db, "token-created", byNodeId, `"${token.label}" for one machine`);
+    return { secret, expiresAt: token.expiresAt };
+  }
+  private readonly inviteLog = new Map<string, number[]>();
 
   // ------------------------------------------------------------ operator actions
 

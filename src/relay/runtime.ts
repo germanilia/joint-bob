@@ -109,6 +109,10 @@ class RelayConnection {
   /** A token is spent once; it lives only in memory until the relay accepts it. */
   token: string | undefined;
   request = false;
+  /** The relay said it hands out passes for one more machine (older relays never do). */
+  invites = false;
+  private nextInviteRef = 1;
+  private readonly inviteWaiters = new Map<number, { resolve: (pass: { secret: string; expiresAt: string }) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
 
   constructor(private readonly runtime: RelayRuntime, readonly id: string) {
     this.usePoll = runtime.handlers.preferPoll === true;
@@ -276,6 +280,7 @@ class RelayConnection {
     });
     this.relayListing = typeof message.relayName === "string" && RELAY_NAME_PATTERN.test(message.relayName) ? { name: message.relayName, phone: message.relayPhone !== false } : undefined;
     this.relayPublicKey = handshake.relayPublicKey;
+    this.invites = message.invites === true;
     this.attempt = 0;
     this.connected = true;
     this.admittedAt = Date.now();
@@ -324,6 +329,8 @@ class RelayConnection {
     this.nextWorkspaceHeartbeat = 0;
     const wasConnected = this.connected;
     this.connected = false;
+    this.invites = false;
+    for (const [ref, waiter] of this.inviteWaiters) { clearTimeout(waiter.timer); this.inviteWaiters.delete(ref); waiter.reject(new RelayRuntimeError(503, "The relay connection closed")); }
     this.hub?.closeAll(reason);
     this.hub = undefined;
     this.online.clear();
@@ -370,6 +377,18 @@ class RelayConnection {
 
   sendGateway(enabled: boolean): void {
     if (this.hub && this.ws?.readyState === WebSocket.OPEN) this.ws.send(encodeControl({ t: "gateway", enabled }));
+  }
+
+  /** Asks the relay for a one-time pass that lets one more machine connect to it. */
+  requestInvite(timeoutMs = 8_000): Promise<{ secret: string; expiresAt: string }> {
+    if (!this.invites || !this.hub || this.ws?.readyState !== WebSocket.OPEN) return Promise.reject(new RelayRuntimeError(409, "This relay does not hand out passes"));
+    const ref = this.nextInviteRef++, ws = this.ws;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.inviteWaiters.delete(ref); reject(new RelayRuntimeError(504, "The relay did not answer")); }, timeoutMs);
+      timer.unref();
+      this.inviteWaiters.set(ref, { resolve, reject, timer });
+      ws.send(encodeControl({ t: "invite-request", ref }));
+    });
   }
 
   private handleControl(message: ControlMessage): void {
@@ -419,6 +438,15 @@ class RelayConnection {
         if (!current || !this.relayPublicKey) throw new Error("Relay not authenticated");
         this.runtime.emit(receiveRelayPolicy(this.runtime.db, current, this.relayPublicKey, message.statement) ? "skill-policy-changed" : "skill-policy-received");
       } catch (error) { console.warn(`Relay skill policy rejected: ${(error as Error).message}`); }
+      return;
+    }
+    if (message.t === "invite-answer") {
+      const waiter = this.inviteWaiters.get(message.ref);
+      if (!waiter) return;
+      clearTimeout(waiter.timer);
+      this.inviteWaiters.delete(message.ref);
+      if (typeof message.secret === "string" && /^[A-Za-z0-9_-]{43}$/.test(message.secret)) waiter.resolve({ secret: message.secret, expiresAt: String(message.expiresAt ?? "") });
+      else waiter.reject(new RelayRuntimeError(409, typeof message.error === "string" ? message.error.slice(0, 200) : "The relay refused"));
       return;
     }
     if (message.t === "presence") {
@@ -554,6 +582,28 @@ export class RelayRuntime extends EventEmitter {
       const connection = this.connections.get(item.id);
       return { ...item, connected: Boolean(connection?.connected), onlinePeers: connection?.online.size ?? 0 };
     });
+  }
+
+  /**
+   * The relays this machine can be reached on, each with a one-time pass when its relay gives
+   * one. A machine being brought in joins them to reach this one; without a pass it has to ask
+   * the relay's operator for access.
+   */
+  async invitePasses(): Promise<Array<{ origin: string; link: string | null; note: string | null }>> {
+    const passes: Array<{ origin: string; link: string | null; note: string | null }> = [];
+    if (this.relayServer.enabled) {
+      const origin = normalizeRelayOrigin(this.relayServer.origin);
+      try { passes.push({ origin, link: enrollLink(origin, this.relayServer.fingerprint, this.relayServer.invitePass(this.nodeId).secret), note: null }); }
+      catch (error) { passes.push({ origin, link: null, note: (error as Error).message }); }
+    }
+    for (const item of listMemberships(this.db)) {
+      if (item.status !== "admitted" || !item.fingerprint) continue;
+      const connection = this.connections.get(item.id);
+      if (!connection?.connected) continue;
+      try { passes.push({ origin: item.origin, link: enrollLink(item.origin, item.fingerprint, (await connection.requestInvite()).secret), note: null }); }
+      catch (error) { passes.push({ origin: item.origin, link: null, note: (error as Error).message }); }
+    }
+    return passes;
   }
 
   localStatus(): { connected: boolean; onlinePeers: number } {

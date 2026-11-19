@@ -60,6 +60,7 @@ import "./server/routes/roaming.js";
 import "./server/routes/users.js";
 import "./server/routes/cluster-manager.js";
 import "./server/routes/twins.js";
+import "./server/routes/machine-links.js";
 import "./server/routes/sharing.js";
 import "./server/routes/resource-policy.js";
 import "./server/routes/preferences.js";

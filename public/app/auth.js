@@ -157,6 +157,8 @@ function applyAuthStatus(status) {
   elements.loginSubmitButton.textContent = state.setupRequired ? "Create administrator" : state.mustChangePassword ? "Change password" : "Sign in";
   elements.loginMessage.textContent = state.setupRequired ? "Create this node's administrator. You'll be its admin." : state.mustChangePassword ? "Change the generated initial password before using this node." : "Sign in to this node.";
   elements.loginUsernameText.textContent = state.setupRequired ? "Username" : "Username or email";
+  // A machine being set up can join its owner's other machines in the same step.
+  document.querySelector("#loginMachineLinkLabel").hidden = !state.setupRequired;
   const askEmail = state.setupRequired || (state.needsEmail && !state.mustChangePassword);
   elements.loginEmailLabel.hidden = !askEmail;
   elements.loginEmailInput.required = askEmail;
@@ -264,10 +266,13 @@ async function submitLogin(event) {
         method: "POST",
         body: JSON.stringify({ username: elements.loginUsernameInput.value.trim(), email: elements.loginEmailInput.value.trim(), password: elements.newPasswordInput.value }),
       });
+      const machineLink = document.querySelector("#loginMachineLinkInput").value.trim();
       applyAuthStatus({ authenticated: true, setupRequired: false, ...response });
       elements.newPasswordInput.value = "";
+      document.querySelector("#loginMachineLinkInput").value = "";
       elements.loginDialog.close();
       await initializeApplication();
+      if (machineLink) void import("./machine-link.js").then(({ startWithMachineLink }) => startWithMachineLink(machineLink)).catch((error) => console.warn("Could not use the machine link", error));
       return;
     }
     if (state.needsEmail && !state.mustChangePassword) {

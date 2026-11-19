@@ -36,7 +36,10 @@ export interface PeerListing { name: string; phone: boolean }
 export type ControlMessage =
   | { t: "hello"; relayNodeId: string; relayPublicKey: string; nonce: string; protocol: 1 }
   | { t: "auth"; nodeId: string; publicKey: string; name: string; nonce: string; signature: string; token?: string; request?: boolean; requestNonce?: string; gateway: boolean }
-  | { t: "welcome"; name: string; environment: string; relayOrigin: string; relayName?: string; relayPhone?: boolean; signature: string }
+  | { t: "welcome"; name: string; environment: string; relayOrigin: string; relayName?: string; relayPhone?: boolean; invites?: boolean; signature: string }
+  /** A machine on the relay asks for a one-time pass to bring one more machine in; `invites` in the welcome says the relay answers these. */
+  | { t: "invite-request"; ref: number }
+  | { t: "invite-answer"; ref: number; secret?: string; expiresAt?: string; error?: string }
   | { t: "pending"; pairingCode: string; signature: string }
   | { t: "denied"; reason: string; code: DeniedCode }
   | { t: "admin"; event: "renamed" | "suspended" | "revoked"; name?: string }

@@ -291,7 +291,7 @@ Joining a cluster and pairing twins are human-controlled browser steps:
 
 1. On every node, open **Settings > Cluster** and set its node name and stable private HTTPS origin.
 2. On the node that manages the cluster, create the cluster if it does not exist and select **Generate one-time link**.
-3. Have the human paste the link on the joining node under **Join an existing cluster** and select **Join cluster**. A node may belong to several clusters; joining another keeps its memberships.
+3. Have the human paste the link on the joining node under **Settings > Cluster > Use a link** and select **Join**. A node may belong to several clusters; joining another keeps its memberships.
 4. Repeat with a new one-time link for each additional node. A cluster has no member limit.
 5. Membership shares nothing. Have the human choose the projects or workspaces each node shares with the cluster under **Selected sharing**.
 6. For machines the human owns, suggest pairing them as **Twins** instead: they then share everything they own.
