@@ -325,3 +325,15 @@ test("the phone's Home groups by state, project or folder too, with 44 px contro
   await page.getByTestId("phone-mode-state").click();
   await page.getByTestId("workspace-group-needs-you").waitFor();
 });
+
+test("the column's project filter opens a list wide enough for one line per project", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  await page.getByTestId("inboxColumn-projects-trigger").click();
+  const options = page.getByTestId("inboxColumn-projects-options").locator("[role=option]");
+  await options.first().waitFor();
+  const popover = await page.getByTestId("inboxColumn-projects").locator(".searchable-select-popover").boundingBox();
+  assert.ok(popover!.width >= 240, `the list is ${popover!.width}px wide`);
+  assert.ok(popover!.x >= 0, "the list stays on screen");
+  const lines = await options.locator(".multi-select-option-label").evaluateAll((labels) => labels.map((label) => Math.round(label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight || "18"))));
+  assert.ok(lines.every((count) => count <= 1), `one line per project: ${lines.join(", ")}`);
+});

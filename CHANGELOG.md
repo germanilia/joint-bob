@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.326.2 — 2026-11-19
+
+- Fixed the Inbox column's project filter: its list was as narrow as the box beside the State | Project | Folder switch, so project names broke over several lines. It now opens 270 px wide, to the left, one line per project.
+
 ## 2.326.1 — 2026-11-19
 
 - The Inbox's **State | Project | Folder** switch is also on the phone's Home, with 44 px controls.

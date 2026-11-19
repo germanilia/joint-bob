@@ -986,3 +986,6 @@ body.focus-ui .ws-project-tool, body.focus-ui .ws-folder-chevron { min-width: 44
 body.focus-ui .ws-project-name, body.focus-ui .ws-folder-name { min-height: 44px; font-size: 15px; }
 body.focus-ui .ws-pill, body.focus-ui .ws-folder-count { font-size: 13px; }
 body.focus-ui .ws-folder-row { min-height: 44px; }
+/* The column's project filter sits beside the grouping switch, so its box is narrow: the list opens wider, to the left, one line per project. */
+.inbox-column-filter .searchable-select-popover { left: auto; right: 0; width: 270px; max-width: calc(100vw - 24px); }
+.inbox-column-filter .multi-select-option-label { overflow: hidden; overflow-wrap: normal; text-overflow: ellipsis; white-space: nowrap; }
