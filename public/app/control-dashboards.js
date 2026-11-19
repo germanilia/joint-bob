@@ -190,6 +190,10 @@ async function load() {
   if ([...projectDashboards.keys()].sort().join() !== before) await refreshControlCenter();
 }
 
+export function openDashboardCard(card) {
+  return openCard(card);
+}
+
 function openCard(card) {
   // What is still being built, or was never finished, is followed and finished in the full view.
   return card.status === "ready" ? openViewer(card) : openDashboardMode(targetOf(card));

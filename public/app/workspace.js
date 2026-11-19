@@ -186,7 +186,7 @@ function syncPlaces() {
   const control = view === "control";
   // On Bob's page "Bob" is lit for his own chat; his other pages light their place in his sub-menu instead.
   const shown = currentControlView();
-  const active = body.classList.contains("costs-page") ? "costs" : control ? (shown === "automations" ? "automations" : shown === "live" ? "bob" : "") : column;
+  const active = body.classList.contains("costs-page") ? "costs" : control ? (shown === "automations" ? "automations" : shown === "live" ? "bob" : "") : body.classList.contains("ws-home") ? "home" : column;
   for (const placeButton of document.querySelectorAll(":is(.ws-places, .ws-side) [data-place]")) {
     const on = placeButton.dataset.place === active;
     placeButton.classList.toggle("on", on);

@@ -73,15 +73,17 @@ after(async () => {
 test("the left column starts in Inbox: places, then Needs you, Running and To review with their counts", async () => {
   await page.getByTestId("workspace-side").waitFor();
   assert.equal(await page.evaluate((key) => localStorage.getItem(key), WORKSPACE_COLUMN_KEY), "unset", "nothing was chosen yet");
-  // The Inbox is the column's list of every start (its own place is Bob's, and Home's): no place of its own in the column.
-  assert.equal(await page.getByTestId("workspace-inbox-button").getAttribute("aria-pressed"), "true");
+  // Home is the welcome screen shown in the middle above Inbox; Inbox stays visible right below it.
+  await page.getByTestId("home-page").waitFor();
+  assert.equal(await page.getByTestId("workspace-nav-home-button").getAttribute("aria-pressed"), "true");
+  assert.equal(await visible("workspace-nav-home-button"), true);
   assert.equal(await visible("workspace-inbox-button"), true);
-  for (const id of ["projects-open-control-center-button", "workspace-projects-button", "workspace-automations-button", "usage-open", "settings-open-button", "workspace-person-button", "workspace-new-button", "workspace-search-input"]) {
+  for (const id of ["projects-open-control-center-button", "workspace-nav-home-button", "workspace-projects-button", "workspace-automations-button", "usage-open", "settings-open-button", "workspace-person-button", "workspace-new-button", "workspace-search-input"]) {
     assert.equal(await visible(id), true, `${id} is in the column`);
   }
   assert.deepEqual(
     await page.locator('[data-testid="workspace-places"] .ws-place-label').allInnerTexts(),
-    ["Inbox", "Projects", "Automations", "Costs"],
+    ["Home", "Inbox", "Projects", "Automations", "Costs"],
   );
   // The conversations answered again after their last review wait under To review.
   await page.getByTestId("workspace-group-count-review").filter({ hasText: /^[1-9]\d*$/ }).waitFor();

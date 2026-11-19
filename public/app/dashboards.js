@@ -20,7 +20,7 @@ const statusNode = document.querySelector("#dashboardStatus");
 const actionsNode = document.querySelector("#dashboardActions");
 const body = document.querySelector("#dashboardBody");
 
-const KIND_LABELS = { conversation: "Conversation dashboard", project: "Project dashboard", workspace: "Workspace dashboard" };
+const KIND_LABELS = { conversation: "Conversation dashboard", project: "Project dashboard", workspace: "Workspace dashboard", account: "My dashboard" };
 const EXAMPLES = [
   "Errors per day for the last 7 days, and the error types that came back after a fix",
   "Conversations and messages per day, filterable by tenant and project",
@@ -85,7 +85,7 @@ async function loadDetail() {
   if (index >= 0) view.listing.dashboards[index] = view.detail.dashboard;
 }
 
-/** Opens the dashboard an entity shows; with none, the description form. */
+/** Opens the dashboard an entity shows; with none, the description form. Optional `dashboardId` and `initialMode` ("creator" | "empty") jump straight to editing or creating. */
 export async function openDashboardMode(target) {
   view.target = target;
   view.currentId = null;
@@ -93,7 +93,7 @@ export async function openDashboardMode(target) {
   view.creator = null;
   view.live = null;
   // Never show the previous entity's dashboard while this one loads.
-  eyebrowNode.textContent = KIND_LABELS[target.kind];
+  eyebrowNode.textContent = KIND_LABELS[target.kind] ?? "Dashboard";
   titleNode.textContent = "Loading…";
   picker.hidden = true;
   statusNode.replaceChildren();
@@ -101,10 +101,18 @@ export async function openDashboardMode(target) {
   body.replaceChildren(el("p", "dashboard-note dashboard-loading", "Loading…"));
   if (!dialog.open) dialog.showModal();
   await loadListing();
-  const unsaved = view.listing.dashboards.find((dashboard) => dashboard.origin === "own" && !dashboard.saved);
-  const running = view.listing.dashboards.find((dashboard) => dashboard.running?.kind === "creator");
-  view.currentId = running?.id ?? view.listing.displayedId ?? unsaved?.id ?? null;
-  view.mode = !view.currentId ? "empty" : current().saved && (!current().hasDraft || (current().origin === "received" && !current().canEdit)) ? "view" : "creator";
+  if (target.initialMode === "empty") {
+    view.currentId = null;
+    view.mode = "empty";
+  } else {
+    const requested = target.dashboardId ? view.listing.dashboards.find((dashboard) => dashboard.id === target.dashboardId) : null;
+    const unsaved = view.listing.dashboards.find((dashboard) => dashboard.origin === "own" && !dashboard.saved);
+    const running = view.listing.dashboards.find((dashboard) => dashboard.running?.kind === "creator");
+    view.currentId = requested?.id ?? running?.id ?? view.listing.displayedId ?? unsaved?.id ?? null;
+    const active = current();
+    const wantsCreator = target.initialMode === "creator" && active && (active.origin === "own" || active.canEdit);
+    view.mode = !view.currentId ? "empty" : wantsCreator ? "creator" : active.saved && (!active.hasDraft || (active.origin === "received" && !active.canEdit)) ? "view" : "creator";
+  }
   watching.delete(view.currentId);
   await loadDetail();
   render();
@@ -180,7 +188,9 @@ function renderActions() {
     actions.push(button("Refresh", "dashboard-refresh", () => startRefresh("live"), { icon: "refresh", primary: true, disabled: Boolean(dashboard.running) || !dashboard.approved }));
     if (dashboard.origin === "own") {
       actions.push(button("Edit", "dashboard-edit", () => { view.mode = "creator"; render(); }, { icon: "pencil" }));
-      actions.push(button("Share", "dashboard-share", () => { view.mode = "share"; render(); }, { icon: "share" }));
+      if (dashboard.entity?.kind !== "account") {
+        actions.push(button("Share", "dashboard-share", () => { view.mode = "share"; render(); }, { icon: "share" }));
+      }
     } else {
       if (dashboard.canEdit) actions.push(button("Edit shared dashboard", "dashboard-edit", () => { view.mode = "creator"; render(); }, { icon: "pencil" }));
       actions.push(button("Make a copy", "dashboard-copy", copyDashboard, { icon: "copy" }));
@@ -486,6 +496,7 @@ function watchAfterClose(target, id, label) {
 document.querySelector("#dashboardClose").addEventListener("click", () => dialog.close());
 dialog.addEventListener("close", () => {
   clearTimeout(view.pollTimer);
+  window.dispatchEvent(new CustomEvent("dashboards-changed"));
   const running = view.detail?.dashboard.running;
   if (!running) return;
   const label = view.listing?.label ?? "Dashboard";

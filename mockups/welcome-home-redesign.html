@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome (Home) Redesign · Mockup</title>
+<style>
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #171412; --panel: #211d1a; --surface: #262220; --field: #2b2723; --paper-raised: #2e2925;
+    --line: rgba(255, 244, 230, 0.08); --line-strong: rgba(255, 244, 230, 0.18);
+    --text: #f2ede6; --muted: #b5aba0; --heading: #f7f2eb;
+    --accent: #7fcf9f; --accent-ink: #10231a; --accent-soft: rgba(127, 207, 159, 0.14);
+    --amber: #f0b45a; --amber-soft: rgba(240, 180, 90, 0.15);
+    --danger: #f08a76; --danger-soft: rgba(240, 138, 118, 0.16);
+    --rev: #8b9cf6;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f2ebdf; --panel: #fffbf4; --surface: #fffbf4; --field: #f6f0e5; --paper-raised: #ebe2d3;
+    --line: rgba(43, 36, 28, 0.09); --line-strong: rgba(43, 36, 28, 0.2);
+    --text: #2b241c; --muted: #6e6457; --heading: #2b241c;
+    --accent: #2f6b4f; --accent-ink: #ffffff; --accent-soft: rgba(47, 107, 79, 0.12);
+    --amber: #9a5b00; --amber-soft: rgba(154, 91, 0, 0.12);
+    --danger: #c4472f; --danger-soft: rgba(196, 71, 47, 0.13);
+    --rev: #5b6bd6;
+  }
+  :root {
+    --sans: "DM Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --serif: "Young Serif", "Iowan Old Style", Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  [hidden] { display: none !important; }
+
+  /* Mockup review chrome */
+  .review-bar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    padding: 12px 20px; background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line-strong);
+  }
+  .review-title { display: flex; align-items: center; gap: 10px; }
+  .review-eyebrow {
+    font: 700 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent); padding: 4px 8px; border-radius: 999px; background: var(--accent-soft);
+  }
+  .review-title strong { font-size: 14.5px; color: var(--heading); }
+  .review-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .review-tab {
+    padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line-strong);
+    background: transparent; color: var(--muted); font-size: 13px; font-weight: 600;
+  }
+  .review-tab[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .review-meta { display: flex; align-items: center; gap: 8px; }
+  .review-note {
+    max-width: 1400px; margin: 12px auto 0; padding: 10px 16px;
+    border-radius: 12px; border: 1px dashed color-mix(in srgb, var(--amber) 50%, transparent);
+    background: color-mix(in srgb, var(--amber) 7%, transparent); color: var(--text); font-size: 13px;
+  }
+  .review-note b { color: var(--amber); }
+
+  /* App frame matching the user's screenshot */
+  .frame-wrap { max-width: 1420px; margin: 14px auto 32px; padding: 0 16px; }
+  .shell {
+    display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 12px;
+    height: 820px; padding: 12px; border-radius: 26px; background: var(--bg);
+    border: 1px solid var(--line-strong); overflow: hidden;
+  }
+
+  /* Left sidebar */
+  .side { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 4px 4px 4px 6px; }
+  .brand { display: flex; align-items: center; gap: 8px; }
+  .brand-mark { width: 24px; height: 24px; border-radius: 7px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+  .brand strong { font-size: 15px; color: var(--heading); }
+  .brand-spacer { flex: 1; }
+  .btn-new { height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--accent); color: var(--accent-ink); font-size: 13px; font-weight: 700; }
+  .search {
+    display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px;
+    border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); font-size: 13px;
+  }
+  .search kbd { margin-left: auto; font: 500 11px var(--sans); opacity: .7; }
+  .places { display: grid; gap: 2px; }
+  .place {
+    display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px;
+    border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-size: 13.5px; font-weight: 500; text-align: left;
+  }
+  .place svg { width: 16px; height: 16px; flex: none; }
+  .place.on { background: var(--paper-raised); color: var(--heading); font-weight: 600; }
+  .place.new-highlight { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .place .note-r { margin-left: auto; font-size: 12px; color: var(--amber); font-weight: 600; }
+  .place .badge { margin-left: auto; min-width: 19px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--field); color: var(--muted); font-size: 11px; display: grid; place-items: center; }
+  .place-new-tag { margin-left: auto; font: 700 9.5px/1 var(--mono); letter-spacing: .06em; padding: 3px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .guardian {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px;
+    background: var(--amber-soft); color: var(--amber); font-size: 12.5px; font-weight: 600;
+  }
+  .guardian span:last-child { margin-left: auto; opacity: .85; }
+  .bob-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 10px; }
+  .bob-row small { display: block; color: var(--muted); font-size: 11.5px; }
+  .bob-row .cnt { margin-left: auto; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--amber-soft); color: var(--amber); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+  .side-list { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); }
+  .side-grp { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted); padding: 0 6px; }
+  .side-grp b { color: var(--text); }
+  .side-item { padding: 5px 8px; border-radius: 8px; font-size: 12.5px; }
+  .side-item b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-item small { display: block; color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-foot { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+
+  /* Main Home panel */
+  .home-panel {
+    background: var(--panel); border-radius: 22px; border: 1px solid var(--line);
+    display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+  }
+  .home-in {
+    display: flex; flex-direction: column; flex: 1; min-height: 0;
+    width: min(1040px, 100%); margin: 0 auto; padding: 30px 44px 20px;
+  }
+  .home-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .greet { margin: 0; font: 400 38px/1.05 var(--serif); color: var(--heading); letter-spacing: -0.01em; }
+  .sub { margin: 7px 0 0; font-size: 15.5px; color: var(--muted); }
+  .sub b { color: var(--amber); font-weight: 650; }
+
+  /* Variant A: toggle pills */
+  .picker { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .pick {
+    display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px;
+    border-radius: 999px; border: 1px solid var(--line-strong); background: transparent;
+    color: var(--muted); font-size: 13px; font-weight: 600;
+  }
+  .pick svg { width: 14px; height: 14px; }
+  .pick.on { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 48%, transparent); color: var(--accent); }
+
+  /* Variant B: quiet customize button + popover */
+  .custom-wrap { position: relative; }
+  .custom-btn {
+    display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px;
+    border-radius: 11px; border: 1px solid var(--line-strong); background: var(--field);
+    color: var(--text); font-size: 13px; font-weight: 600;
+  }
+  .custom-pop {
+    position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; width: 270px;
+    padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line-strong);
+    box-shadow: 0 18px 44px rgba(0,0,0,.45); display: grid; gap: 6px;
+  }
+  .custom-pop h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .check-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+    background: var(--field); cursor: pointer; font-size: 13px;
+  }
+  .check-row input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+  .check-row small { display: block; color: var(--muted); font-size: 11.5px; }
+
+  /* Variant C: status strip + focus tabs */
+  .glance-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+  .glance {
+    display: flex; flex-direction: column; gap: 3px; padding: 11px 13px; border-radius: 14px;
+    background: var(--field); border: 1px solid transparent; text-align: left;
+  }
+  .glance.active { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 9%, var(--field)); }
+  .glance-top { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .glance strong { font-size: 16px; color: var(--heading); }
+  .glance small { font-size: 11.5px; color: var(--muted); }
+  .focus-tabs { display: flex; align-items: center; gap: 4px; margin-top: 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  .ftab {
+    height: 30px; padding: 0 12px; border-radius: 9px; border: 0; background: transparent;
+    color: var(--muted); font-size: 13px; font-weight: 600;
+  }
+  .ftab.on { background: var(--paper-raised); color: var(--heading); }
+
+  /* Scrollable content */
+  .sections { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; margin-top: 8px; display: flex; flex-direction: column; gap: 18px; }
+  .bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  .bento .span2 { grid-column: 1 / -1; }
+
+  /* Section chrome */
+  .sec-head { display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; flex-wrap: wrap; }
+  .sec-head h2 { margin: 0; font: 400 20px/1.2 var(--serif); color: var(--heading); }
+  .sec-cnt { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+  .sec-sp { flex: 1; }
+  .sec-link { border: 0; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 600; padding: 4px 6px; }
+  .sec-link:hover { color: var(--text); }
+
+  /* Pills & dots */
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--field); color: var(--muted); }
+  .pill.ok { background: var(--accent-soft); color: var(--accent); }
+  .pill.warn { background: var(--amber-soft); color: var(--amber); }
+  .pill.bad { background: var(--danger-soft); color: var(--danger); }
+  .tag { display: inline-flex; align-items: center; height: 19px; padding: 0 6px; border-radius: 5px; background: color-mix(in srgb, var(--line-strong) 45%, transparent); color: var(--muted); font-size: 11px; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.need { background: var(--amber); }
+  .dot.run, .dot.online { background: var(--accent); }
+  .dot.rev { background: var(--rev); }
+  .dot.offline { background: var(--danger); }
+
+  /* Activity cards */
+  .need-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .wait { background: var(--field); border-radius: 15px; padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 5px; }
+  .wait-top { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .wait-top time { margin-left: auto; font-weight: 500; }
+  .wait-title { font: 400 16.5px/1.25 var(--serif); color: var(--heading); }
+  .wait-q { margin: 0; font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .wait-acts { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .act { height: 28px; padding: 0 10px; border-radius: 9px; font-size: 12.5px; font-weight: 600; border: 0; }
+  .act.pri { background: var(--accent); color: var(--accent-ink); }
+  .act.soft { background: var(--accent-soft); color: var(--accent); }
+  .act.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); }
+  .act.open { margin-left: auto; background: transparent; color: var(--muted); }
+  .two-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 10px; }
+  .table { display: grid; }
+  .row { display: flex; align-items: center; gap: 10px; min-height: 50px; padding: 8px 14px; background: var(--field); }
+  .row:first-child { border-radius: 14px 14px 0 0; }
+  .row:last-child { border-radius: 0 0 14px 14px; }
+  .row:only-child { border-radius: 14px; }
+  .row + .row { box-shadow: inset 0 1px 0 var(--line); }
+  .row-copy { min-width: 0; flex: 1; }
+  .row-copy b { display: block; font-size: 13.5px; color: var(--heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-copy small { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Switch */
+  .sw { position: relative; width: 32px; height: 18px; border-radius: 999px; border: 0; background: var(--line-strong); flex: none; padding: 0; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); transition: transform .15s; }
+  .sw[aria-checked="true"] { background: var(--accent); }
+  .sw[aria-checked="true"]::after { transform: translateX(14px); }
+
+  /* Clusters */
+  .cluster-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .bento .cluster-grid { grid-template-columns: 1fr; }
+  .ccard { background: var(--field); border-radius: 15px; padding: 14px 16px; display: flex; flex-direction: column; gap: 7px; }
+  .ccard-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ccard-top b { font: 400 17px/1.2 var(--serif); color: var(--heading); }
+  .ccard-meta { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .members { display: flex; flex-wrap: wrap; gap: 6px; }
+  .member { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--panel); font-size: 12px; }
+  .member em { font-style: normal; color: var(--muted); font-size: 10.5px; font-weight: 600; }
+  .member em.mgr { color: var(--amber); }
+
+  /* Dashboards */
+  .dash-box { background: var(--field); border-radius: 15px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .dash-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dash-stage {
+    border-radius: 11px; background: var(--panel); border: 1px solid var(--line); padding: 16px 18px;
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+  }
+  .kpi { background: var(--field); border-radius: 11px; padding: 12px 14px; }
+  .kpi span { display: block; font-size: 11.5px; color: var(--muted); }
+  .kpi strong { display: block; font-size: 22px; color: var(--heading); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .kpi small { font-size: 11.5px; color: var(--accent); }
+  .dash-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+  .dcard { background: var(--field); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .dcard-top { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+  .dcard b { font: 400 15.5px/1.25 var(--serif); color: var(--heading); }
+</style>
+</head>
+<body>
+
+<div class="review-bar">
+  <div class="review-title">
+    <span class="review-eyebrow">Design Mockups</span>
+    <strong>Welcome (Home) Page + Home Button Above Inbox</strong>
+  </div>
+  <div class="review-tabs" role="group" aria-label="Mockup options">
+    <button class="review-tab" data-variant="a" aria-pressed="true">Option A · Toggle Pills + Stacked</button>
+    <button class="review-tab" data-variant="b" aria-pressed="false">Option B · Customize Menu + Bento Grid</button>
+    <button class="review-tab" data-variant="c" aria-pressed="false">Option C · Glance Strip + Focus Tabs</button>
+  </div>
+  <div class="review-meta">
+    <button class="review-tab" id="themeBtn" aria-pressed="false">Switch to Light</button>
+  </div>
+</div>
+
+<div class="frame-wrap">
+  <div class="review-note" id="variantNote"></div>
+</div>
+
+<div class="frame-wrap">
+  <div class="shell">
+    <!-- Left Sidebar (shared across all 3 options) -->
+    <aside class="side">
+      <div class="brand">
+        <span class="brand-mark">B</span>
+        <strong>Joint Bob</strong>
+        <span class="brand-spacer"></span>
+        <button class="btn-new" type="button">+ New</button>
+      </div>
+      <div class="search">Search or ask Bob… <kbd>^⌥P</kbd></div>
+      <nav class="places">
+        <button class="place on new-highlight" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H14.5v-5.5h-5v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg>
+          <span>Home</span>
+          <span class="place-new-tag">NEW</span>
+        </button>
+        <button class="place" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l1.6 2.5h4.8L16 13h4"/><path d="M4 13 6.4 5.6A2 2 0 0 1 8.3 4.2h7.4a2 2 0 0 1 1.9 1.4L20 13v4.3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
+          <span>Inbox</span>
+          <span class="note-r">7 need you</span>
+        </button>
+        <button class="place" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
+          <span>Projects</span>
+          <span style="margin-left:auto;font-size:12px;">Contigos</span>
+        </button>
+        <button class="place" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg>
+          <span>Automations</span>
+        </button>
+        <button class="place" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 7h6V4h-6z"/></svg>
+          <span>Dashboard</span>
+        </button>
+        <button class="place" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4zM10 4v16M16 4v16"/></svg>
+          <span>Dashboards</span>
+          <span class="badge">3</span>
+        </button>
+        <button class="place" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4.5" y="6" width="15" height="15" rx="3"/></svg>
+          <span>Assistants</span>
+          <span class="badge">1</span>
+        </button>
+        <button class="place" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/></svg>
+          <span>Costs</span>
+        </button>
+      </nav>
+      <div class="guardian"><span>! Guardian is off</span><span>Check</span></div>
+      <div class="bob-row">
+        <span class="brand-mark">B</span>
+        <div><strong>Bob</strong><small>Acts as you in every project</small></div>
+        <span class="cnt">9</span>
+      </div>
+      <div class="side-list">
+        <div class="side-grp"><span><b>Needs you</b> 2 of 7</span><span>Show all</span></div>
+        <div class="side-item"><b>vplans cleanup</b><small>Contigos · Consolidate scatte…</small></div>
+        <div class="side-item"><b>log error - Follow-up eval…</b><small>Contigos · Stop duplicate not…</small></div>
+        <div class="side-grp"><span><b>To review</b> 6 of 154</span><span>Show all</span></div>
+        <div class="side-item"><b>Conversation Quality Mon…</b><small>Contigos · on Contigos EC2</small></div>
+        <div class="side-item"><b>deploy to prod - 2026-11…</b><small>Contigos · on Contigos EC2</small></div>
+      </div>
+      <div class="side-foot">
+        <span class="avatar">I</span>
+        <div><strong>ilia</strong><div style="font-size:11px;color:var(--muted)">Ilia's MacBook · Dark theme</div></div>
+      </div>
+    </aside>
+
+    <!-- Main Welcome / Home Panel -->
+    <main class="home-panel">
+      <div class="home-in">
+        <header class="home-head">
+          <div>
+            <h1 class="greet">Good morning, Ilia</h1>
+            <p class="sub"><b>7 need you</b> · 1 running · 162 to review · US$69.96 spent today</p>
+          </div>
+          <!-- Variant B & C Customize button -->
+          <div class="custom-wrap" id="customWrap" hidden>
+            <button class="custom-btn" id="customBtn" type="button">⚙ Customize Home</button>
+            <div class="custom-pop" id="customPop" hidden>
+              <h4>Show on Home</h4>
+              <label class="check-row"><input type="checkbox" data-sec="activity" checked><span><b>Activity</b><small>Needs you, Running &amp; Review</small></span></label>
+              <label class="check-row"><input type="checkbox" data-sec="automations" checked><span><b>Automation statuses</b><small>Schedules, webhooks &amp; reports</small></span></label>
+              <label class="check-row"><input type="checkbox" data-sec="clusters" checked><span><b>Connected clusters</b><small>Clusters, twins &amp; relays</small></span></label>
+              <label class="check-row"><input type="checkbox" data-sec="dashboard" checked><span><b>Dashboard features</b><small>Overview &amp; project dashboards</small></span></label>
+            </div>
+          </div>
+        </header>
+
+        <!-- Variant A: inline toggle pills -->
+        <div class="picker" id="pickerA">
+          <button class="pick on" data-sec="activity" type="button">Activity</button>
+          <button class="pick on" data-sec="automations" type="button">⚡ Automations</button>
+          <button class="pick on" data-sec="clusters" type="button">⬡ Clusters</button>
+          <button class="pick on" data-sec="dashboard" type="button">▦ Dashboards</button>
+        </div>
+
+        <!-- Variant C: glance strip + focus tabs -->
+        <div id="chromeC" hidden>
+          <div class="glance-strip">
+            <button class="glance active" data-tab="activity" type="button">
+              <div class="glance-top"><span>Activity</span><span class="dot need"></span></div>
+              <strong>7 need you</strong>
+              <small>1 running · 162 to review</small>
+            </button>
+            <button class="glance" data-tab="automations" type="button">
+              <div class="glance-top"><span>Automations</span><span class="dot offline"></span></div>
+              <strong>1 failed · 1 live</strong>
+              <small>4 active · 1 paused</small>
+            </button>
+            <button class="glance" data-tab="clusters" type="button">
+              <div class="glance-top"><span>Clusters</span><span class="dot online"></span></div>
+              <strong>2 clusters online</strong>
+              <small>3 machines · 1 relay</small>
+            </button>
+            <button class="glance" data-tab="dashboard" type="button">
+              <div class="glance-top"><span>Dashboards</span><span class="dot rev"></span></div>
+              <strong>Daily Pulse</strong>
+              <small>Refreshed 5m ago · 3 cards</small>
+            </button>
+          </div>
+          <div class="focus-tabs">
+            <button class="ftab on" data-tab="all" type="button">All selected</button>
+            <button class="ftab" data-tab="activity" type="button">Activity</button>
+            <button class="ftab" data-tab="automations" type="button">Automations</button>
+            <button class="ftab" data-tab="clusters" type="button">Clusters</button>
+            <button class="ftab" data-tab="dashboard" type="button">Dashboards</button>
+          </div>
+        </div>
+
+        <!-- Dynamic Content Stage -->
+        <div class="sections" id="sections">
+          <!-- 1. Activity -->
+          <section data-block="activity" class="span2">
+            <div class="sec-head">
+              <h2>Needs you</h2><span class="sec-cnt">7</span>
+              <span class="sec-sp"></span>
+              <button class="sec-link" type="button">Show all ›</button>
+            </div>
+            <div class="need-grid">
+              <article class="wait">
+                <div class="wait-top"><i class="dot need"></i><span>Joint Bob</span><time>00:02 · Claude</time></div>
+                <b class="wait-title">unify projects and inbbox</b>
+                <p class="wait-q">What I still need from you: do you want me to remove the Projects place from the left column now?</p>
+                <div class="wait-acts">
+                  <button class="act pri">Answer</button><button class="act soft">Push it on</button>
+                  <button class="act ghost">Snooze</button><button class="act ghost">Done</button>
+                  <button class="act open">Open ›</button>
+                </div>
+              </article>
+              <article class="wait">
+                <div class="wait-top"><i class="dot need"></i><span>Joint Bob</span><time>18 Nov · Claude</time></div>
+                <b class="wait-title">mis align in automatons</b>
+                <p class="wait-q">What I need from you: is the Projects box above the list showing a project, or "All projects"?</p>
+                <div class="wait-acts">
+                  <button class="act pri">Answer</button><button class="act soft">Push it on</button>
+                  <button class="act ghost">Snooze</button><button class="act ghost">Done</button>
+                  <button class="act open">Open ›</button>
+                </div>
+              </article>
+            </div>
+            <div class="two-lists">
+              <div>
+                <div class="sec-head"><h2>Running</h2><span class="sec-cnt">1</span></div>
+                <div class="table">
+                  <div class="row">
+                    <i class="dot run"></i>
+                    <div class="row-copy"><b>moshe demo fixes</b><small>Dak-Live · Working…</small></div>
+                    <span style="color:var(--muted);font-size:12px">8 min</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div class="sec-head"><h2>Ready to review</h2><span class="sec-cnt">162</span><span class="sec-sp"></span><button class="sec-link">Show all ›</button></div>
+                <div class="table">
+                  <div class="row">
+                    <i class="dot rev"></i>
+                    <div class="row-copy"><b>promote the demo 2</b><small>Dak-Live · Finished. Open it to review.</small></div>
+                    <button class="act soft">Review</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 2. Automation statuses -->
+          <section data-block="automations">
+            <div class="sec-head">
+              <h2>Automation statuses</h2><span class="sec-cnt">4</span>
+              <span class="pill ok">1 running</span>
+              <span class="pill bad">1 failed</span>
+              <span class="sec-sp"></span>
+              <button class="sec-link" type="button">Open Automations ›</button>
+            </div>
+            <div class="table">
+              <div class="row">
+                <button class="sw" aria-checked="true" type="button" title="Toggle"></button>
+                <div class="row-copy">
+                  <b>Conversation Quality Monitor <span class="tag">Schedule</span></b>
+                  <small>Contigos · on Contigos EC2 · Every 2 hours</small>
+                </div>
+                <span class="pill ok">Running now</span>
+              </div>
+              <div class="row">
+                <button class="sw" aria-checked="true" type="button" title="Toggle"></button>
+                <div class="row-copy">
+                  <b>deploy to prod <span class="tag">Webhook</span></b>
+                  <small>Contigos · on Contigos EC2 · On release hook</small>
+                </div>
+                <span class="pill bad">Failed · 14m ago</span>
+              </div>
+              <div class="row">
+                <button class="sw" aria-checked="true" type="button" title="Toggle"></button>
+                <div class="row-copy">
+                  <b>Daily Briefing <span class="tag">Bob report</span></b>
+                  <small>All projects · Daily at 08:00</small>
+                </div>
+                <span class="pill ok">OK · 2h ago</span>
+              </div>
+              <div class="row">
+                <button class="sw" aria-checked="false" type="button" title="Toggle"></button>
+                <div class="row-copy">
+                  <b>Nightly Cleanup <span class="tag">Schedule</span></b>
+                  <small>Joint Bob · Daily at 03:00</small>
+                </div>
+                <span class="pill">Paused</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 3. Connected clusters -->
+          <section data-block="clusters">
+            <div class="sec-head">
+              <h2>Connected clusters</h2><span class="sec-cnt">2</span>
+              <span class="pill ok">1/1 twin online</span>
+              <span class="pill ok">1 relay</span>
+              <span class="sec-sp"></span>
+              <button class="sec-link" type="button">Manage clusters ›</button>
+            </div>
+            <div class="cluster-grid">
+              <article class="ccard">
+                <div class="ccard-top"><b>Contigos Prod</b><span class="pill ok">Connected</span></div>
+                <p class="ccard-meta">2 machines · 3 shared · Pool: Team Pool</p>
+                <div class="members">
+                  <span class="member"><i class="dot online"></i>Ilia's MacBook <em>You</em> <em class="mgr">★</em></span>
+                  <span class="member"><i class="dot online"></i>Contigos EC2 <em>Twin</em></span>
+                </div>
+              </article>
+              <article class="ccard">
+                <div class="ccard-top"><b>Home Lab</b><span class="pill warn">1 syncing</span></div>
+                <p class="ccard-meta">2 machines · 1 shared · Relay: Home Relay (2 online)</p>
+                <div class="members">
+                  <span class="member"><i class="dot online"></i>Ilia's MacBook <em>You</em></span>
+                  <span class="member"><i class="dot offline"></i>Homeserver</span>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <!-- 4. Dashboard features -->
+          <section data-block="dashboard" class="span2">
+            <div class="sec-head">
+              <h2>Dashboards</h2><span class="sec-cnt">4</span>
+              <span class="sec-sp"></span>
+              <button class="sec-link" type="button">+ New dashboard</button>
+              <button class="sec-link" type="button">Dashboard ›</button>
+              <button class="sec-link" type="button">All dashboards ›</button>
+            </div>
+            <div class="dash-box">
+              <div class="dash-bar">
+                <span class="pick on" style="height:28px;font-size:12.5px">★ Daily Pulse</span>
+                <span class="pick" style="height:28px;font-size:12.5px">Weekly Spend</span>
+                <span class="sec-sp"></span>
+                <span class="pill ok">Refreshed 5m ago</span>
+                <button class="act soft" type="button">Refresh</button>
+              </div>
+              <div class="dash-stage">
+                <div class="kpi"><span>Completed today</span><strong>28 runs</strong><small>+14% vs yesterday</small></div>
+                <div class="kpi"><span>Automation pass rate</span><strong>96.4%</strong><small>27 / 28 passed</small></div>
+                <div class="kpi"><span>Today's API spend</span><strong>$69.96</strong><small>Across 3 projects</small></div>
+              </div>
+            </div>
+            <div class="dash-cards">
+              <article class="dcard">
+                <div class="dcard-top"><span>Contigos</span><span class="tag">made by Bob</span></div>
+                <b>Conversation Quality</b>
+                <div class="dcard-top"><span class="pill ok">Refreshed 12m ago</span><span>Script</span></div>
+              </article>
+              <article class="dcard">
+                <div class="dcard-top"><span>Joint Bob</span><span class="tag">yours</span></div>
+                <b>Release Readiness</b>
+                <div class="dcard-top"><span class="pill ok">Refreshed 1h ago</span><span>Script</span></div>
+              </article>
+              <article class="dcard">
+                <div class="dcard-top"><span>Workspace · Ops</span><span class="tag">made by Bob</span></div>
+                <b>Cluster Spend &amp; Load</b>
+                <div class="dcard-top"><span class="pill warn">Building…</span><span>AI refresh</span></div>
+              </article>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  const NOTES = {
+    a: "<b>Option A (Toggle Pills + Stacked Sections)</b> — One-click pill toggles right under the greeting let you mix & match Activity, Automations, Clusters, and Dashboards in a clean vertical editorial stack. (This is the layout currently wired up in the worktree.)",
+    b: "<b>Option B (Customize Menu + Bento Grid)</b> — Keeps the greeting header clean with a single <b>Customize Home</b> popover, and arranges Automations and Clusters side-by-side in a 2-column Bento grid so more fits on screen with less scrolling.",
+    c: "<b>Option C (Glance Strip + Focus Tabs)</b> — Adds 4 live status cards at the top (so you always see Activity, Automations, Clusters, and Dashboards at a glance) plus quick focus tabs (All selected / individual views) and a Customize popover for the All view.",
+  };
+
+  let variant = "a";
+  let focusTab = "all";
+  const selected = new Set(["activity", "automations", "clusters", "dashboard"]);
+
+  const sectionsEl = document.getElementById("sections");
+  const pickerA = document.getElementById("pickerA");
+  const customWrap = document.getElementById("customWrap");
+  const customPop = document.getElementById("customPop");
+  const chromeC = document.getElementById("chromeC");
+  const noteEl = document.getElementById("variantNote");
+
+  function sync() {
+    noteEl.innerHTML = NOTES[variant];
+    pickerA.hidden = variant !== "a";
+    customWrap.hidden = variant === "a";
+    chromeC.hidden = variant !== "c";
+    sectionsEl.classList.toggle("bento", variant === "b");
+    if (variant === "a") customPop.hidden = true;
+
+    for (const btn of pickerA.querySelectorAll("[data-sec]")) {
+      btn.classList.toggle("on", selected.has(btn.dataset.sec));
+    }
+    for (const chk of customPop.querySelectorAll("input[data-sec]")) {
+      chk.checked = selected.has(chk.dataset.sec);
+    }
+    for (const tab of chromeC.querySelectorAll(".ftab")) {
+      tab.classList.toggle("on", tab.dataset.tab === focusTab);
+    }
+    for (const card of chromeC.querySelectorAll(".glance")) {
+      card.classList.toggle("active", focusTab === card.dataset.tab);
+    }
+    for (const block of sectionsEl.querySelectorAll("[data-block]")) {
+      const id = block.dataset.block;
+      block.hidden = variant === "c" && focusTab !== "all" ? id !== focusTab : !selected.has(id);
+    }
+  }
+
+  for (const btn of document.querySelectorAll("[data-variant]")) {
+    btn.addEventListener("click", () => {
+      variant = btn.dataset.variant;
+      focusTab = "all";
+      for (const b of document.querySelectorAll("[data-variant]")) b.setAttribute("aria-pressed", String(b === btn));
+      sync();
+    });
+  }
+  for (const btn of pickerA.querySelectorAll("[data-sec]")) {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.sec;
+      if (selected.has(id)) selected.delete(id); else selected.add(id);
+      sync();
+    });
+  }
+  document.getElementById("customBtn").addEventListener("click", () => { customPop.hidden = !customPop.hidden; });
+  for (const chk of customPop.querySelectorAll("input[data-sec]")) {
+    chk.addEventListener("change", () => {
+      if (chk.checked) selected.add(chk.dataset.sec); else selected.delete(chk.dataset.sec);
+      sync();
+    });
+  }
+  for (const el of chromeC.querySelectorAll("[data-tab]")) {
+    el.addEventListener("click", () => { focusTab = el.dataset.tab; sync(); });
+  }
+  for (const sw of document.querySelectorAll(".sw")) {
+    sw.addEventListener("click", () => sw.setAttribute("aria-checked", String(sw.getAttribute("aria-checked") !== "true")));
+  }
+  const themeBtn = document.getElementById("themeBtn");
+  themeBtn.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    themeBtn.textContent = next === "dark" ? "Switch to Light" : "Switch to Dark";
+  });
+
+  sync();
+</script>
+</body>
+</html>
