@@ -271,11 +271,11 @@ app.get('/api/assistant-teams/:id/decisions', route(async (request, response) =>
 app.get('/api/assistant-teams/:id/readiness', route(async (request, response) => {
   await requireTeamMember(session(response), id.parse(request.params.id));
   const { systemAiSettings } = await import('../../system-ai-config.js');
-  const { systemDecisionKey } = await import('../../system-ai.js');
+  const { systemDecisionKeyOrRelay } = await import('../../decision-relay-proxy.js');
   const { decisionModelTarget } = await import('../../classifiers/conversation-routing.js');
   const model = systemAiSettings().decision.model;
   let ready = false;
-  try { const key = systemDecisionKey(model); ready = Boolean(key && await decisionModelTarget(model, key)); } catch { /* Safe readiness only, never credentials or provider errors. */ }
+  try { const key = await systemDecisionKeyOrRelay(model); ready = Boolean(key && await decisionModelTarget(model, key)); } catch { /* Safe readiness only, never credentials or provider errors. */ }
   const host = await (await import('../../cluster.js')).getClusterNode();
   return { host: { id: host.id, name: host.name }, decision: { model, ready } };
 }));

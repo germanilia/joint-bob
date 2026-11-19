@@ -10,7 +10,8 @@ import { projectAgentPolicies } from "../cluster-agent-policy.js";
 import { activeRoutingConfig, routingConfigDatabase } from "../routing-configs.js";
 import { type RoutingMapping } from "../routing-policy.js";
 import { type ConversationNote, type KnowledgeProblem, listProposals, normalizedRuleText, proposalHistory, readNotes, readSubjects, writeNote, writeProposal } from "../project-knowledge.js";
-import { systemDecisionKey, withSystemAiProfile } from "../system-ai.js";
+import { withSystemAiProfile } from "../system-ai.js";
+import { systemDecisionKeyOrRelay } from "../decision-relay-proxy.js";
 import { systemAiSettings } from "../system-ai-config.js";
 import { getSettings } from "../settings.js";
 import { sessionFeedbackOverrides } from "../names.js";
@@ -66,7 +67,7 @@ async function classifiedRun(project: ProjectRecord, own: ConversationModel, mat
       .sort((left, right) => left.level - right.level);
     if (!config || !options.length) return null;
     const classifier = getDifficultyClassifier(systemAiSettings().decision.model);
-    const apiKey = classifier ? systemDecisionKey(classifier.id as "typesafe" | "laya") : undefined;
+    const apiKey = classifier ? await systemDecisionKeyOrRelay(classifier.id as "typesafe" | "laya") : undefined;
     if (!classifier || (!apiKey && !classifier.keyOptional)) return null;
     const task = `Task: update a short running summary of a conversation with its newest messages.\n\n${material.slice(-CLASSIFIER_INPUT_LIMIT)}`;
     const classification = await classifier.classify(task, apiKey ?? "", { options });

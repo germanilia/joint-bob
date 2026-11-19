@@ -10,7 +10,7 @@ import { integrationCheckpoint } from "../worktree-integration.js";
 import { routingPolicyDatabase } from "../routing-policy.js";
 import { decisionModelTarget } from "../classifiers/conversation-routing.js";
 import { systemAiSettings } from "../system-ai-config.js";
-import { systemDecisionKey } from "../system-ai.js";
+import { systemDecisionKeyOrRelay } from "../decision-relay-proxy.js";
 import { assessTask, type TaskAssessmentInput } from "../task-assessment.js";
 import { withFreshUsage, ingestUsageSessions } from "../usage-ingest.js";
 import { usageDatabase } from "../usage-ledger.js";
@@ -56,7 +56,7 @@ export async function prepareConversationAllocation(connection: HarnessChatConne
 
 export async function assessAllocationTask(input: TaskAssessmentInput) {
   const classifier = systemAiSettings().decision.model;
-  const configured = await decisionModelTarget(classifier, systemDecisionKey(classifier));
+  const configured = await decisionModelTarget(classifier, await systemDecisionKeyOrRelay(classifier));
   if (!configured) throw new Error("Task assessment unavailable; configure the decision model");
   return assessTask(input, configured.target, configured.apiKey);
 }

@@ -5,7 +5,7 @@ import { allocationInputSchema, ALLOCATION_POLICY_VERSION, recommendModels } fro
 import { allocationPolicySchema, allocationValidation } from "../../model-allocation-policy.js";
 import { modelAllocationStore as store } from "../model-allocation.js";
 import { listProjects } from "../../store.js";
-import { systemDecisionKey } from "../../system-ai.js";
+import { systemDecisionKeyOrRelay } from "../../decision-relay-proxy.js";
 import { systemAiSettings } from "../../system-ai-config.js";
 import { assessTask, taskAssessmentInputSchema } from "../../task-assessment.js";
 import { sendError } from "../http-auth.js";
@@ -81,7 +81,7 @@ app.post("/api/routing-configs/allocation/assess", async (request, response, nex
     const input = taskAssessmentInputSchema.parse(request.body);
     const classifier = systemAiSettings().decision.model;
     let target;
-    try { target = await decisionModelTarget(classifier, systemDecisionKey(classifier)); }
+    try { target = await decisionModelTarget(classifier, await systemDecisionKeyOrRelay(classifier)); }
     catch { sendError(response, 503, "Task assessment unavailable; configure the node's decision model"); return; }
     if (!target) { sendError(response, 503, "Task assessment unavailable; keep the approved baseline"); return; }
     response.json({ assessment: await assessTask(input, target.target, target.apiKey) });

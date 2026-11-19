@@ -12,6 +12,7 @@ import { automationProfileContext, poolProfileContext, withAutomationProfile, wi
 import { classifyPoolAttemptFailure, memberModelLadder, resolvePoolModelSettings, resolvePoolSwitchModel, runOnModels, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { ConversationOwnershipError } from "../src/conversation-ownership.js";
 import { withGuardianBypass } from "../src/guardian/bypass.js";
+import { poolMemberCompatible } from "../src/provider-profiles/pool-sharing.js";
 
 const require = createRequire(import.meta.url);
 function load(file: string, dependencies: Record<string, any>, extra = ""): any {
@@ -90,7 +91,7 @@ function fixture(selection: Selection, failure?: string) {
     nearestReasoning: (_levels: string[], reasoning: string) => reasoning,
     ownerAsActor: actor, resourceOwner: () => "project-owner",
     runWithAutomationProfile: (input: any, work: () => any) => withAutomationProfile({ accountId: input.creatorAccountId, profileId: input.providerProfileId }, work),
-    getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
+    poolMemberCompatible, getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
     getSharingCluster: () => ({ name: "Contigos" }),
     getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Homeserver" }] } }),
     getProject: async () => connection.project,

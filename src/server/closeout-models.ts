@@ -6,7 +6,8 @@ import type { CloseoutDeps } from "../conversation-closeout.js";
 import { digestMaterial, digestMessages } from "../conversation-digest.js";
 import { isKnowledgeSlug, readSubjects } from "../project-knowledge.js";
 import { systemAiSettings } from "../system-ai-config.js";
-import { systemDecisionKey, withSystemAiProfile } from "../system-ai.js";
+import { withSystemAiProfile } from "../system-ai.js";
+import { systemDecisionKeyOrRelay } from "../decision-relay-proxy.js";
 import { getSettings } from "../settings.js";
 import type { ChatMessage, ProjectRecord } from "../types.js";
 import { summaryPolicyNow, summaryRun } from "./conversation-digest-runner.js";
@@ -41,7 +42,7 @@ async function decision(project: ProjectRecord, data: object, question: SystemOn
   const classifier = getDifficultyClassifier(model);
   if (!classifier) throw new CloseoutUnavailableError("No supported system decision model configured for conversation feedback");
   let key: string;
-  try { key = systemDecisionKey(model); }
+  try { key = await systemDecisionKeyOrRelay(model); }
   catch (error) { throw new CloseoutUnavailableError((error as Error).message); }
   const target = await decisionModelTarget(classifier.id as "typesafe" | "laya", key);
   // Laya can be unreachable for a while; that is worth another try later.

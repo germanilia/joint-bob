@@ -1,7 +1,7 @@
 import { askSystemOneChoices, type SystemOneQuestion } from "./classifiers/typesafe.js";
 import { decisionModelTarget } from "./classifiers/conversation-routing.js";
 import { systemAiSettings } from "./system-ai-config.js";
-import { systemDecisionKey } from "./system-ai.js";
+import { systemDecisionKeyOrRelay } from "./decision-relay-proxy.js";
 
 /** What the page offers, described without any typed value. Indexes are positions in these lists. */
 export interface LoginStepCandidates {
@@ -21,7 +21,7 @@ const NOT_SIGN_IN = "None of the listed ones, or this page is not a sign-in step
     The model only selects among elements the code listed; the caller still checks every element. */
 export const chooseLoginStepWithSystemAi: LoginStepChooser = async candidates => {
   const model = systemAiSettings().decision.model;
-  const selected = await decisionModelTarget(model, systemDecisionKey(model));
+  const selected = await decisionModelTarget(model, await systemDecisionKeyOrRelay(model));
   if (!selected) throw new Error("System AI decision model is not available. Check Settings → System AI.");
   const options = (prefix: string, entries: Array<[number, string]>) => Object.fromEntries(entries.map(([index, text]) => [`${prefix}_${index}`, text]));
   const fields = candidates.inputs.map((input, index) => [index, input] as const);
