@@ -1,3 +1,4 @@
+import { getConversationOwnership } from "./conversation-ownership.js";
 import { projectAdditionalPaths } from "./server/session-scope.js";
 import { listHarnessSessions } from "./harnesses.js";
 import { listProjects } from "./store.js";
@@ -16,6 +17,8 @@ export interface SearchResult {
   subtitle: string;
   sessionId?: string;
   sessionPath?: string;
+  conversationId?: string;
+  executionNodeId?: string;
   harnessId?: HarnessId;
   updatedAt?: string;
 }
@@ -61,6 +64,7 @@ async function conversationsIn(project: { id: string; name: string; path: string
     subtitle: `${project.name} · ${session.agentLabel}`,
     sessionId: session.id,
     sessionPath: session.path,
+    conversationId: session.conversationId ?? session.id,
     harnessId: session.harnessId,
     updatedAt: session.updatedAt,
   }));
@@ -101,12 +105,12 @@ export async function searchWorkspace(query: string): Promise<SearchResult[]> {
 
   const trimmed = query.trim();
   if (!trimmed) {
-    return [
+    return withExecutionNodes([
       ...conversationResults.sort(byNewest).slice(0, IDLE_CONVERSATIONS),
       ...projectResults.sort(byNewest).slice(0, IDLE_PROJECTS),
-    ];
+    ]);
   }
-  return [...projectResults, ...conversationResults]
+  return withExecutionNodes([...projectResults, ...conversationResults]
     .map((result) => ({ result, score: resultScore(result, trimmed) }))
     .filter((entry): entry is { result: SearchResult; score: number } => entry.score !== null)
     // A project outranks a conversation of the same strength: it is the smaller list,
@@ -115,5 +119,14 @@ export async function searchWorkspace(query: string): Promise<SearchResult[]> {
       || Number(right.result.kind === "project") - Number(left.result.kind === "project")
       || byNewest(left.result, right.result))
     .slice(0, RESULT_LIMIT)
-    .map((entry) => entry.result);
+    .map((entry) => entry.result));
+}
+
+/** Only look up owners for displayed hits, so opening one does not have to wait for the project list. */
+function withExecutionNodes(results: SearchResult[]): Promise<SearchResult[]> {
+  return Promise.all(results.map(async (result) => {
+    if (!result.harnessId || !result.sessionId) return result;
+    const ownership = await getConversationOwnership(result.harnessId, result.sessionId);
+    return { ...result, executionNodeId: ownership?.ownerNodeId };
+  }));
 }

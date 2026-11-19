@@ -5,14 +5,13 @@
 import { api } from "./api.js";
 import { elements } from "./elements.js";
 import { markedText } from "./choice-popover.js";
+import { openConversation } from "./control-center.js";
 import { fuzzyHits, rankChoices } from "./fuzzy.js";
 import { attachDigitShortcuts, isRowSelectorQuery, LIST_SHORTCUT_LIMIT, shortcutIndexBadge } from "./list-shortcuts.js";
 import { setMobileView } from "./layout.js";
 import { selectProject } from "./project-selection.js";
-import { openListedSession } from "./reviews.js";
 import { openSettings } from "./settings.js";
 import { toast } from "./shell.js";
-import { state } from "./state.js";
 
 /** Typing is faster than the node can answer, so only the newest answer is drawn. */
 let generation = 0;
@@ -131,15 +130,12 @@ async function chooseResult(index) {
       await result.action();
       return;
     }
-    await selectProject(result.projectId);
-    if (result.kind === "project") { place("project"); return; }
-    const session = state.sessions.find((candidate) => candidate.path === result.sessionPath)
-      || state.sessions.find((candidate) => candidate.id === result.sessionId);
-    if (!session) {
-      toast(`${result.title} is no longer available`);
+    if (result.kind === "project") {
+      await selectProject(result.projectId);
+      place("project");
       return;
     }
-    openListedSession(session);
+    await openConversation({ ...result, path: result.sessionPath }, { overBoard: false });
   } catch (error) {
     toast.error(error instanceof Error ? error.message : "Could not open that");
   }
