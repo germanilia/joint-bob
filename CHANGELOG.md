@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.329.1 — 2026-11-19
+
+- Fixed the failing release check: the activity panel's saved section and tab choices are now listed among the display preferences kept in the browser.
+
 ## 2.329.0 — 2026-11-19
 
 - Redesigned the desktop Home: a glance strip with live Activity, Automations, Clusters and Dashboards tiles, focus tabs to look at one section, and a Customize Home menu that remembers what you show. A Home button sits above Inbox.
