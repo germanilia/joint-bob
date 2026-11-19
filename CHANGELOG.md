@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 2.328.0 — 2026-11-19
+
+- Added collapsible sections to the desktop Inbox. Counts and Show all stay visible, and the browser remembers which sections you closed.
+- Made Inbox section headings more compact and stopped them from overlapping conversations in narrow sidebars.
+- Focused the message box when starting a new conversation, even while its worktree is still being created.
 
 - Deleting a conversation from the Inbox removes its row at once and finishes in the background, without opening the conversation. Older conversations no longer fail with "Session not found", opening one past the project's newest 50 works, and the Inbox refreshes when a cleanup, retention or another machine removes conversations.
 
