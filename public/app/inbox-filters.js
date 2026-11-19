@@ -112,8 +112,9 @@ export function toggleSelected(card) {
 
 /** Applies status, project and source choices. Show all skips the phone's Earlier range. */
 export function filterInbox(groupId, cards, allEarlier = false) {
-  if (statuses.size && !statuses.has(groupId)) return [];
-  const inProjects = cards.filter((card) => (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card)))
+  if (groupId !== "pinned" && statuses.size && !statuses.has(groupId)) return [];
+  const inProjects = cards.filter((card) => (groupId !== "pinned" || !statuses.size || statuses.has(card.column))
+    && (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card)))
     && (!labels.size || labels.has(card.classification ? `label:${card.classification}` : "unclassified")) && (!worktrees.size || worktrees.has(card.worktree?.id ?? "project")));
   if (groupId !== "earlier" || allEarlier) return inProjects;
   if (range.within) {
