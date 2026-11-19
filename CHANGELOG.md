@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.335.3 — 2026-11-19
+
+- Fixed the failing release check: the desktop sidebar's saved width is now listed among the display preferences kept in the browser.
+
 ## 2.335.2 — 2026-11-19
 
 - Fixed a long machine address running past the edge of its card in Settings › Cluster: it now ends in an ellipsis.

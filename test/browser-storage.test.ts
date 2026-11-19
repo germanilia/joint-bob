@@ -34,9 +34,9 @@ test("browser storage is limited to legacy migration and request-scoped sign-in 
     // Per-browser display preferences: the activity pane's width, the appearance (theme and text sizes), and in the
     // workspace's left column which list is shown and whether its filters are open, which page the app opens on, and
     // whether Bob's Live agents show as a list or as cards, how the list is grouped and how wide it is, and where the
-    // "Ask Bob" button and Bob's floating chat were left, which dates and which projects the Inbox shows, and how much the interface moves.
+    // "Ask Bob" button and Bob's floating chat were left, which dates and which projects the Inbox shows, how much the interface moves, and how wide the desktop sidebar is.
     const nearby = app.slice(Math.max(0, match.index! - 120), match.index! + 120);
-    const displayPreference = ["WIDTH_STORAGE_KEY", "APPEARANCE_STORAGE_KEY", "COLUMN_KEY", "FILTERS_OPEN_KEY", "START_VIEW_KEY", "LAYOUT_KEY", "LIST_GROUP_KEY", "LIST_WIDTH_KEY", "FAB_KEY", "BOX_KEY", "RANGE_KEY", "PROJECTS_KEY", "MODE_KEY", "OPEN_KEY", "AUTOMATIONS_KEY", "COLLAPSED_GROUPS_KEY", "SECTIONS_KEY", "TAB_KEY", "MOTION_KEY"].some((key) => nearby.includes(key));
+    const displayPreference = ["WIDTH_STORAGE_KEY", "APPEARANCE_STORAGE_KEY", "COLUMN_KEY", "FILTERS_OPEN_KEY", "START_VIEW_KEY", "LAYOUT_KEY", "LIST_GROUP_KEY", "LIST_WIDTH_KEY", "FAB_KEY", "BOX_KEY", "RANGE_KEY", "PROJECTS_KEY", "MODE_KEY", "OPEN_KEY", "AUTOMATIONS_KEY", "COLLAPSED_GROUPS_KEY", "SECTIONS_KEY", "TAB_KEY", "MOTION_KEY", "SIDEBAR_WIDTH_KEY"].some((key) => nearby.includes(key));
     assert.ok(inMigration || inDismissal || displayPreference, "Web Storage access must be limited to migration, sign-in notice state, activity width, appearance, the left column's view or the start page");
   }
   assert.doesNotMatch(migration, /(?:credential|password|token)/i);
