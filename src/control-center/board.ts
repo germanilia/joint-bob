@@ -49,6 +49,8 @@ export interface BoardCard {
   worktree: { id: string; name: string; color: string } | null;
   /** The engine the conversation's pin names: its first segment's, which never changes, so a pin survives a switch of agent. */
   pinEngine: string;
+  /** A run of a scheduled automation, for the Inbox's Hide automations switch. */
+  scheduled: boolean;
   /** The transcript of the conversation that started this one (a sub-agent's parent), so the Inbox can fold it under the parent. */
   parentPath: string | null;
   /** The conversation's label, for the Inbox's label filter. */
@@ -125,6 +127,7 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
         reviewCheck,
         snooze: snoozed && snooze ? { until: snooze.until, snoozedAt: snooze.snoozedAt } : null,
         pinEngine: session.segments?.[0]?.engine ?? session.harnessId,
+        scheduled: Boolean(session.cronTaskId),
         parentPath: session.parentSessionPath ?? null,
         classification: session.classification ?? null,
         worktree: session.worktree ? { id: session.worktree.id, name: session.worktree.name, color: session.worktree.color } : null,

@@ -14,7 +14,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function client({ presence = async () => {}, ready = () => false }: { presence?: () => Promise<void>; ready?: () => boolean } = {}) {
+function client({ presence = async () => {}, ready = () => false, confirm = async () => true }: { presence?: () => Promise<void>; ready?: () => boolean; confirm?: () => Promise<boolean> } = {}) {
   const state = {
     activeProjectId: "project", activeSessionId: null as string | null, activeSessionPath: "", harnesses: [{ id: "pi" }], localNodeId: "local",
     sessionNodes: [{ id: "remote", local: false, online: false }, { id: "local", local: true, online: true, mapped: true }],
@@ -33,6 +33,7 @@ function client({ presence = async () => {}, ready = () => false }: { presence?:
       state.activeSessionPath = sessionPath; keptView.push(rest[3] === true);
       opened.push({ path: sessionPath, node: (state as { activeNodeId?: unknown }).activeNodeId });
     },
+    confirmAction: confirm,
     reconcileTranscriptConflict: async () => false,
     toast: Object.assign((message: string) => messages.push(message), { error: (message: string) => errors.push(message) }),
     api: (endpoint: string, options: { body: string }) => {
@@ -49,14 +50,29 @@ function complete(request: ReturnType<typeof client>["requests"][number], sessio
   request.reply.resolve({ sessionPath, pendingPeerIds: [] });
 }
 
-test("reopening a conversation during automatic takeover sends only one transfer", async () => {
+test("an offline conversation does not move unless the person confirms", async () => {
+  const decision = deferred();
+  let prompts = 0;
+  const page = client({ confirm: async () => { prompts++; return await decision.promise as boolean; } });
+  const opening = page.open(session);
+  await setImmediate();
+  await page.open(session);
+  assert.equal(prompts, 1);
+  assert.equal(page.requests.length, 0);
+  assert.deepEqual(page.opened.map(({ node }) => node), ["remote", "remote"]);
+  decision.resolve(false);
+  await opening;
+  assert.equal(page.requests.length, 0);
+});
+
+test("reopening a conversation during confirmed takeover sends only one transfer", async () => {
   const page = client();
   const first = page.open(session);
   await setImmediate();
   const repeated = page.open(session);
   await setImmediate();
   assert.equal(page.requests.length, 1, "a repeated opening must not send the duplicate request that gets a 409");
-  assert.deepEqual(page.requests[0].body, { peerId: "local", sessionId: "conversation", sessionPath: "pi:conversation", sessionName: "Conversation" });
+  assert.deepEqual(page.requests[0].body, { peerId: "local", offlineOwnerNodeId: "remote", sessionId: "conversation", sessionPath: "pi:conversation", sessionName: "Conversation" });
   complete(page.requests[0]);
   await Promise.all([first, repeated]);
   assert.deepEqual(page.errors, []);
@@ -119,12 +135,12 @@ test("a conversation reopened on page load stays behind the view, through the ta
   complete(page.requests[0]);
   await restored;
   assert.deepEqual(page.messages, ["Switched to this node"]);
-  assert.deepEqual(page.keptView, [true, true, true], "neither the open, the reopen here nor the one after the takeover may switch to the chat");
+  assert.deepEqual(page.keptView, [true, true], "neither restore nor reopening after confirmation may switch to the chat");
   const clicked = page.open(session);
   await setImmediate();
   complete(page.requests[1]);
   await clicked;
-  assert.deepEqual(page.keptView.slice(3), [false, true, true], "a conversation the person opens is shown; the takeover after it keeps the view");
+  assert.deepEqual(page.keptView.slice(2), [false, true], "a conversation the person opens is shown; the takeover after it keeps the view");
 });
 
 test("a conversation on another machine is asked for before that machine's presence answers", async () => {
@@ -135,9 +151,10 @@ test("a conversation on another machine is asked for before that machine's prese
   assert.deepEqual(page.opened, [{ path: session.path, node: "remote" }], "the socket goes to the owner without waiting for the check");
   answer.resolve(undefined);
   await setImmediate();
-  assert.deepEqual(page.opened.map(({ node }) => node), ["remote", "local"], "an owner the check finds offline is replaced by this machine");
+  assert.deepEqual(page.opened.map(({ node }) => node), ["remote"], "do not route locally before ownership is confirmed");
   complete(page.requests[0]);
   await opening;
+  assert.deepEqual(page.opened.map(({ node }) => node), ["remote", "local"]);
   assert.deepEqual(page.messages, ["Switched to this node"]);
 });
 

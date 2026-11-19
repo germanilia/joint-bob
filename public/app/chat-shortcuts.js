@@ -25,7 +25,7 @@ export const CHAT_SHORTCUT_CONTROLS = {
  */
 function inDesktopMenu(control) {
   return matchMedia("(min-width: 701px)").matches
-    && Boolean(control.closest("#chatMoreMenu, .ws-pane, #detailsMoreMenu"))
+    && Boolean(control.closest("#chatMoreMenu, .ws-pane, #activityBody"))
     && document.getElementById("chatPanel").checkVisibility();
 }
 

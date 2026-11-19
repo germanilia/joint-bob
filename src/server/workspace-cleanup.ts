@@ -141,6 +141,7 @@ async function evaluate(project: ProjectRecord, tree: ProjectWorktree, nodeId: s
     } finally { release(); }
     broadcastToProject(project.id, { type: 'worktreesChanged' });
     broadcastToProject(project.id, { type: 'sessionsChanged' });
+    broadcastToProject(project.id, { type: 'conversationsRemoved' });
     return { ...row, status: 'removed', detail: check.changes.entries.length ? 'Saved in Git' : 'Removed without a stash' };
   } catch (error) {
     // Details from Git can contain local paths. Do not expose them in the admin UI.

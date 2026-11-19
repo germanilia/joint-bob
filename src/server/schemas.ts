@@ -111,6 +111,7 @@ export const gitReviewFollowUpSchema = z.object({
 export const sessionTakeOwnershipSchema = z.object({
   peerId: z.string().uuid(),
   force: z.boolean().optional(),
+  offlineOwnerNodeId: z.string().uuid().optional(),
   historyOwnerNodeId: z.string().uuid().optional(),
   sessionId: z.string().min(1).max(240).optional(),
   sessionPath: z.string().min(1),
@@ -397,7 +398,7 @@ const keymapKeySchema = z.string().trim().refine((key) => canonicalShortcutKeyTo
 // token semantics and collisions; the schema only caps client input size.
 const chordSchema = z.array(z.string().trim().min(1).max(16)).max(8);
 const keymapPreferenceSchema = z.object({
-  version: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
+  version: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional(),
   // Legacy shape, from a client that predates chords: one modifier set plus one key
   // per command. Still accepted and migrated by the normalizer.
   modifiers: z.array(z.enum(["meta", "ctrl", "alt", "shift"])).max(4).optional(),

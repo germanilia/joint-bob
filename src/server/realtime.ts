@@ -87,10 +87,21 @@ export function broadcastToAllClients(payload: unknown, accountId?: string): voi
 }
 /** Push transient updates without invalidating the conversation listings. */
 export function announceToAllClients(payload: unknown, accountId?: string): void {
+  for (const socket of clientSockets()) if (!accountId || socketAccounts.get(socket)?.accountId === accountId) send(socket, payload);
+}
+
+export function announceToNodeAdmins(payload: unknown): void {
+  for (const socket of clientSockets()) {
+    const account = socketAccounts.get(socket);
+    if (account?.role === "admin" && !account.isRemoteLogin && account.userId) send(socket, payload);
+  }
+}
+
+function clientSockets(): Set<WebSocket> {
   const sockets = new Set<WebSocket>();
   for (const clients of watchClients.values()) for (const client of clients) sockets.add(client);
   for (const session of harnessSessions.values()) for (const client of session.clients) sockets.add(client);
-  for (const socket of sockets) if (!accountId || socketAccounts.get(socket)?.accountId === accountId) send(socket, payload);
+  return sockets;
 }
 /**
  * The open pages of the people who can see a project, as it is now: who to tell that the
@@ -142,6 +153,7 @@ export function broadcastReplicationInvalidations(events: ReplicationBatch["even
   // Another machine saved the global AGENTS.md: open sessions read it before their next message.
   if (events.some((event) => event.entityType === "instructions.global")) markHarnessSessionsStale();
   for (const type of replicationInvalidations(events)) announceToAllClients({ type });
+  if (events.some((event) => event.entityType === "conversation.record" && event.operation === "delete")) announceToAllClients({ type: "conversationsRemoved" });
 }
 
 const REVIEW_NOTIFICATION_QUIET_MS = 10_000;

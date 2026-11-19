@@ -146,9 +146,9 @@ test("a row opens its conversation, and reading it takes it off To review", asyn
   await page.waitForFunction((name) => ![...document.querySelectorAll('[data-testid="workspace-group-review"] .ws-row b')].some((cell) => cell.textContent === name && !cell.closest(".sel")), title);
 });
 
-test("the conversation header: title, project and state on one line, Mark done and ⋯ beside them, four chips under it", async () => {
+test("the conversation header: title, project and state on one line, Listen, Mark done and ⋯ beside them, four chips under it", async () => {
   const head = page.getByTestId("chat-head-actions");
-  for (const id of ["chat-done-button", "chat-activity-toggle", "chat-more-button"]) assert.equal(await head.getByTestId(id).count(), 1, `${id} is in the header`);
+  for (const id of ["activity-overview-button", "chat-done-button", "chat-activity-toggle", "chat-more-button"]) assert.equal(await head.getByTestId(id).count(), 1, `${id} is in the header`);
   // Middles of each control, in order: title, Mark done, ⋯, then three chips. (No named helpers inside evaluate: the
   // test runner's compiler would wrap them in a function the page does not have.)
   const middles = await page.evaluate((selectors) => selectors.map((selector) => {
@@ -166,9 +166,9 @@ test("the conversation header: title, project and state on one line, Mark done a
   assert.equal(await page.getByTestId("chat-meta").locator("#turnTimer").count(), 1);
   assert.equal(await page.getByTestId("chat-meta").locator("#contextUsage").count(), 1);
 
-  // Every other toolbar action is in ⋯.
+  // Every other toolbar action is in ⋯ (including Files, moved out of the right panel).
   await page.getByTestId("chat-more-button").click();
-  for (const id of ["chat-open-terminal-button", "chat-open-browser-button", "chat-rename-button", "chat-more-dashboard-button", "chat-automations-button", "chat-session-menu-button", "chat-share-button", "chat-pin-button", "chat-personal-assistant-button"]) {
+  for (const id of ["chat-files-button", "chat-open-terminal-button", "chat-open-browser-button", "chat-rename-button", "chat-more-dashboard-button", "chat-automations-button", "chat-session-menu-button", "chat-share-button", "chat-pin-button", "chat-personal-assistant-button"]) {
     assert.equal(await visible(id), true, `${id} is in the ⋯ menu`);
   }
   // Notify and Auto respond are the details column's two switches, so the menu does not repeat them.
@@ -192,28 +192,44 @@ async function openDetailsConversation() {
   await page.locator("#messages .message.assistant").first().waitFor();
 }
 
-test("the details column: Activity, btw, Files, Git and Tasks, More, the two switches and the links", async () => {
+test("the details column: unified Activity monitor, Ask, inline Git with sub-tabs, top-level Story, and Files in ⋯", async () => {
   await openDetailsConversation();
   if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
-  for (const id of ["activity-activity-tab", "activity-chat-tab", "details-files-tab", "details-git-tab", "details-tasks-tab", "details-more-button"]) assert.equal(await visible(id), true, `${id} is a segment`);
+  for (const id of ["activity-activity-tab", "activity-chat-tab", "details-git-tab", "details-story-tab"]) assert.equal(await visible(id), true, `${id} is a top-level segment`);
+  assert.equal(await page.getByTestId("activity-chat-tab").innerText(), "Ask");
+  assert.equal(await page.locator("#detailsFilesTab, #detailsTasksTab, #detailsMoreButton").count(), 0, "Files, Tasks and More tabs are gone");
+
+  // Unified Activity monitor holds live metrics, running tasks, steps, switches and summary.
+  assert.equal(await visible("activity-monitor-strip"), true, "Activity shows live monitor strip");
+  assert.equal(await visible("activity-tasks"), true, "Activity unifies inline background tasks");
+  assert.equal(await page.getByTestId("activity-tasks").getByTestId("background-tasks-open").isVisible(), true, "Tasks history trigger lives in unified Activity");
   assert.equal(await visible("activity-summary"), true, "Activity shows the summary");
-  await page.getByTestId("details-files-tab").click();
-  assert.equal(await visible("details-files"), true);
-  assert.equal(await visible("activity-body"), false);
-  assert.equal(await page.getByTestId("details-files").getByTestId("chat-files-button").isVisible(), true, "Files opens today's files screen");
+
+  // Inline Git hub shows Pipelines, PRs and Changed files on screen with sub-tabs, no separate modal required.
   await page.getByTestId("details-git-tab").click();
-  assert.equal(await page.getByTestId("details-git").getByTestId("chat-git-button").isVisible(), true, "Git opens today's Git screen");
+  assert.equal(await visible("details-git"), true);
+  assert.equal(await visible("activity-body"), false);
+  for (const sub of ["details-git-sub-all", "details-git-sub-changes", "details-git-sub-prs", "details-git-sub-pipelines", "details-git-sub-history", "details-git-sub-reviews"]) {
+    assert.equal(await visible(sub), true, `${sub} is a Git sub-tab`);
+  }
+  assert.equal(await visible("details-git-pipelines-card"), true, "Pipelines show on screen by default");
+  assert.equal(await visible("details-git-prs-card"), true, "Pull requests show on screen by default");
+  assert.equal(await visible("details-git-changes-card"), true, "Changed files show on screen by default");
   await page.getByTestId("chat-git-button").click();
   await page.locator("#gitReviewDialog[open]").waitFor();
   await page.keyboard.press("Escape");
   await page.locator("#gitReviewDialog[open]").waitFor({ state: "detached" });
-  await page.getByTestId("details-tasks-tab").click();
-  assert.equal(await page.getByTestId("details-tasks").getByTestId("background-tasks-open").isVisible(), true, "Tasks opens today's tasks dialog");
-  await page.getByTestId("details-more-button").click();
-  for (const id of ["activity-story-button", "activity-overview-button"]) assert.equal(await visible(id), true, `${id} is under More`);
+
+  // Top-level Story pane opens directly inline.
+  await page.getByTestId("details-story-tab").click();
+  assert.equal(await visible("details-story"), true);
+  assert.equal(await visible("details-story-host"), true);
+  assert.equal(await page.getByTestId("details-story").getByTestId("activity-story-button").isVisible(), true);
+
+  // Ask opens directly in the column.
   await page.getByTestId("activity-chat-tab").click();
-  assert.equal(await visible("conversation-chat"), true, "the side chat opens in the column");
-  assert.equal(await visible("details-tasks"), false);
+  assert.equal(await visible("conversation-chat"), true, "Ask side chat opens in the column");
+  assert.equal(await visible("details-story"), false);
   await page.getByTestId("activity-activity-tab").click();
   assert.equal(await visible("activity-body"), true);
 
@@ -242,13 +258,13 @@ test("the details column: Activity, btw, Files, Git and Tasks, More, the two swi
   await page.locator("#activityPanel").waitFor();
 });
 
-test("the details column is tabs and content only, More shows its two rows at any text size, and every theme draws them readably", async () => {
+test("the details column is tabs and content only, keyboard arrows walk all four tabs, and every theme draws them readably", async () => {
   await openDetailsConversation();
   if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
   await page.getByTestId("activity-activity-tab").click();
   // The test runner wraps named functions in a helper the page does not have.
   await page.evaluate("window.__name = (value) => value");
-  // Under the segments comes the content: no row of buttons, no footer. The two switches are the first section of Activity.
+  // Under the segments comes the content: no row of buttons, no footer. The two switches sit before Summary.
   const rows = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
     return {
@@ -261,35 +277,27 @@ test("the details column is tabs and content only, More shows its two rows at an
   assert.ok(rows.when.top < rows.summary.top, "the switches come before the summary");
   assert.equal(await page.locator("#activityWhenStops [role=switch]").count(), 2);
 
-  // More is a segment with a pane of its own: a click shows Story and the Activity overview, each with
-  // a line about it and its button. With larger Details text too: the old popover menu opened outside the window.
+  // Story is a top-level segment visible at both normal and zoomed text sizes; Podcast playback stays in the top header.
   for (const zoom of ["1", "1.3"]) {
     await page.evaluate((value) => document.documentElement.style.setProperty("--ui-zoom-activity", value), zoom);
     await frames();
     if (!(await page.locator("#activityPanel").isVisible())) await page.getByTestId("chat-activity-toggle").click();
-    await page.getByTestId("activity-activity-tab").click();
-    await page.getByTestId("details-more-button").click();
-    assert.equal(await page.getByTestId("details-more-button").getAttribute("aria-selected"), "true");
-    assert.equal(await visible("activity-body"), false);
-    for (const [row, button] of [["details-more-story", "activity-story-button"], ["details-more-overview", "activity-overview-button"]]) {
-      const seen = await page.getByTestId(row).evaluate((element, id) => {
-        const inside = (rect: DOMRect) => rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
-        element.scrollIntoView({ block: "nearest" });
-        return { words: element.querySelector("p")!.textContent!.trim().length > 20 && inside(element.querySelector("b")!.getBoundingClientRect()), button: inside(element.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect()) };
-      }, button);
-      assert.deepEqual(seen, { words: true, button: true }, `${row} shows inside the window at text size ${zoom}`);
-    }
+    await page.getByTestId("details-story-tab").click();
+    assert.equal(await page.getByTestId("details-story-tab").getAttribute("aria-selected"), "true");
+    assert.equal(await visible("details-story"), true);
+    assert.equal(await visible("activity-overview-button"), true, `Listen stays in top bar at text size ${zoom}`);
   }
   await page.evaluate(() => document.documentElement.style.removeProperty("--ui-zoom-activity"));
-  // btw opens directly; More stays the way back to Story and Overview.
-  await page.getByTestId("activity-chat-tab").click();
-  assert.equal(await visible("conversation-chat"), true);
-  await page.getByTestId("details-more-button").click();
-  assert.equal(await visible("details-more"), true);
-  assert.equal(await visible("conversation-chat"), false);
-  await page.getByTestId("details-more-button").press("ArrowLeft");
-  assert.equal(await visible("details-tasks"), true, "Left and Right walk the segments");
-  await page.getByTestId("details-more-button").click();
+
+  // ArrowLeft and ArrowRight walk all four top-level segments.
+  await page.getByTestId("details-story-tab").click();
+  await page.getByTestId("details-story-tab").press("ArrowLeft");
+  assert.equal(await visible("details-git"), true, "Left from Story opens Git");
+  await page.getByTestId("details-git-tab").press("ArrowLeft");
+  assert.equal(await visible("conversation-chat"), true, "Left from Git opens Ask");
+  await page.getByTestId("activity-chat-tab").press("ArrowLeft");
+  assert.equal(await visible("activity-body"), true, "Left from Ask opens Activity");
+  await page.getByTestId("details-git-tab").click();
 
   // Contrast, measured: every label at least 4.5:1 on its own fill, and the outline of the segments' track, of the lit
   // segment and of each action button at least 3:1 against the column, in every theme.

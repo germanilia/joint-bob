@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.328.1 — 2026-11-19
+
+- Fixed saving settings that carry the new shortcut layout: the server refused keymap version 5, which broke syncing a person's profile to another machine.
+
+## 2.328.0 — 2026-11-19
+
+- Added collapsible sections to the desktop Inbox. Counts and Show all stay visible, and the browser remembers which sections you closed.
+- Made Inbox section headings more compact and stopped them from overlapping conversations in narrow sidebars.
+- Focused the message box when starting a new conversation, even while its worktree is still being created.
+
+- The Quick reply window keeps its recent messages readable: the history no longer collapses to a sliver above the reply box.
+- Deleting a conversation from the Inbox removes its row at once and finishes in the background, without opening the conversation. Older conversations no longer fail with "Session not found", opening one past the project's newest 50 works, and the Inbox refreshes when a cleanup, retention or another machine removes conversations.
+
+## 2.327.2 — 2026-11-19
+
+- Removed four stray backup files that were published with the last release. Nothing in the app changed.
+
+## 2.327.1 — 2026-11-19
+
+- **Hide automations** in the Inbox: a switch under the State | Project | Folder row (and in the Filter of the Show all page and the phone's Home) leaves the conversations that schedules and webhooks start out of every list: the groups, by project, by folder, Pinned, Show all and Home. The choice is kept in this browser.
+- A group's heading, a project's name and a folder's name are now larger than the conversation rows under them.
+- The offline shell now includes the takeback notice module, which it was missing.
+
+## 2.327.0 — 2026-11-19
+
+- Added **Pinned** and **Starred** tabs to Inbox **Show all**, with the same search and filters as the other tabs.
+
+## 2.326.2 — 2026-11-19
+
+- Fixed the Inbox column's project filter: its list was as narrow as the box beside the State | Project | Folder switch, so project names broke over several lines. It now opens 270 px wide, to the left, one line per project.
+
 ## 2.326.1 — 2026-11-19
 
 - The Inbox's **State | Project | Folder** switch is also on the phone's Home, with 44 px controls.

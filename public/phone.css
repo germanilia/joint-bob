@@ -133,7 +133,7 @@
   body.focus-ui #workspaceGroupPage .ws-page-crumb { margin: 0; color: var(--muted); font-size: 13px; }
   body.focus-ui #workspaceGroupPage h1 { margin: 0; color: var(--heading); font: 400 28px/1.2 var(--serif); }
   body.focus-ui #workspaceGroupPage #workspaceGroupClose { grid-column: 2; grid-row: 1; width: 44px; height: 44px; border: 0; background: var(--field); border-radius: 50%; }
-  body.focus-ui #workspaceGroupPage .ws-page-tabs { grid-column: 1 / -1; display: flex; gap: 8px; }
+  body.focus-ui #workspaceGroupPage .ws-page-tabs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; min-width: 0; gap: 8px; }
   body.focus-ui #workspaceGroupList { flex: 1; min-height: 0; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 6px; }
   body.focus-ui #workspaceGroupPage .ws-page-tabs button { flex: 0 1 auto; padding: 0 12px; border: 0; border-radius: 22px; background: var(--field); box-shadow: none; color: var(--text); font: 600 14px var(--sans); white-space: nowrap; }
   body.focus-ui #workspaceGroupPage .ws-page-tabs button[aria-selected="true"] { background: var(--ink); color: var(--on-ink); }

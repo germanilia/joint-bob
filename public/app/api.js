@@ -116,6 +116,7 @@ function renderPins() {
   renderProjects();
   renderSessions();
   if (elements.recentSessionsDialog.open) renderRecentSessionsDialog();
+  window.dispatchEvent(new Event("conversation-pins-changed"));
 }
 
 export async function loadPins() {

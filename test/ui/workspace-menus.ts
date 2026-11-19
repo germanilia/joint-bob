@@ -9,10 +9,9 @@ const HOLDERS: Array<[selector: string, opener: string]> = [
   ["#workspaceMoreMenu", "workspace-more-button"],
   ["#workspaceNewMenu", "workspace-new-button"],
   ["#chatMoreMenu", "chat-more-button"],
-  ["#detailsMoreMenu", "details-more-button"],
-  ["#detailsFiles", "details-files-tab"],
+  ["#activityBody", "activity-activity-tab"],
   ["#detailsGit", "details-git-tab"],
-  ["#detailsTasks", "details-tasks-tab"],
+  ["#detailsStory", "details-story-tab"],
 ];
 
 /**
@@ -32,7 +31,7 @@ export async function reach(page: Page, testid: string): Promise<Locator> {
   if (await target.isVisible()) return target;
   const holder = await target.evaluate((element, holders) => holders.find(([selector]) => element.closest(selector))?.[1] ?? null, HOLDERS);
   if (!holder) return target;
-  if (holder.startsWith("details-") && !(await page.getByTestId(holder).isVisible())) {
+  if ((holder.startsWith("details-") || holder === "activity-activity-tab") && !(await page.getByTestId(holder).isVisible())) {
     await page.getByTestId("chat-activity-toggle").click();
   }
   await page.getByTestId(holder).click();

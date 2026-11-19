@@ -17,7 +17,7 @@ import { openAppearance, themeLabel } from "./appearance.js";
 import { currentControlView, showControlView } from "./control-views.js";
 import { cardActionList, projectActionList } from "./control-cards.js";
 import { isControlCenterOpen, openConversation, saveControlCenter } from "./control-center.js";
-import { folderOf, isPinned, isStarred, togglePin, toggleStar } from "./control-marks.js";
+import { deleteConversations, folderOf, isHidden, isPinned, isStarred, togglePin, toggleStar } from "./control-marks.js";
 import { endDrag, openMoveMenu, startDrag } from "./inbox-folders.js";
 import { byUrgency, drawByFolder, drawByProject, kidCount, kidDepth, kidsFolded, modeSignature, nestRows, toggleKids } from "./inbox-modes.js";
 import { openProjectMenu } from "./project-list.js";
@@ -30,19 +30,26 @@ import { selectProject } from "./project-selection.js";
 import { movesJobPanel } from "./control-moves.js";
 import { chooseSnooze, snoozedWords, wakeCard } from "./control-snooze.js";
 import { refreshSystemStrip, systemStrip } from "./inbox-system.js";
+import { openInboxReply } from "./inbox-reply.js";
 import { openRowMenu } from "./row-menu.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { startGlobalConversation } from "./new-session.js";
-import { createInboxToolbar, createProjectFilter, filterInbox, inChosenProjects, inboxFilterKey, inboxMode, inboxSignature, isSelected, isSelecting, onInboxView, setInboxMode, sourceName, toggleSelected } from "./inbox-filters.js";
+import { createAutomationToggle, shownCard, createInboxToolbar, createProjectFilter, filterInbox, inChosenProjects, inboxFilterKey, inboxMode, inboxSignature, isSelected, isSelecting, onInboxView, setInboxMode, sourceName, toggleSelected } from "./inbox-filters.js";
 import { drawChunked } from "./long-scroll.js";
 import { openQuickNote } from "./quick-notes.js";
 import { openSpotlight } from "./spotlight.js";
-import { toast } from "./shell.js";
+import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
 
 const desktop = matchMedia("(min-width: 701px)");
 const COLUMN_KEY = "joint-bob-workspace-column";
+const COLLAPSED_GROUPS_KEY = "joint-bob-inbox-collapsed-groups";
+const collapsedGroups = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem(COLLAPSED_GROUPS_KEY) ?? "[]");
+  if (Array.isArray(saved)) saved.forEach((id) => collapsedGroups.add(id));
+} catch { /* storage is unavailable or the saved choice is invalid */ }
 const body = document.body;
 const byId = (id) => document.getElementById(id);
 
@@ -66,7 +73,9 @@ function restoreAll() {
 }
 
 const PLACEMENTS = [
-  // The header's first line: Stop, Mark done, the details toggle and the ⋯ menu.
+  // The header's first line: Podcast playback (Listen), Stop, Mark done, the details toggle and the ⋯ menu.
+  // Files (#chatFilesButton) stays inside the ⋯ menu under Open instead of the details panel.
+  ["activityOverviewButton", "chatHeadActions"],
   ["abortButton", "chatHeadActions"],
   ["chatDoneButton", "chatHeadActions"],
   ["activityToggleButton", "chatHeadActions"],
@@ -74,13 +83,10 @@ const PLACEMENTS = [
   // Quiet meta at the end of the chip row.
   ["contextUsage", "chatMeta"],
   ["turnTimer", "chatMeta"],
-  // The details column opens today's full screens from its summaries.
-  ["chatFilesButton", "detailsFilesActions"],
+  // Full-view triggers sit quietly inside their unified desktop panes.
+  ["backgroundTasksButton", "activityTasksActions"],
   ["chatGitButton", "detailsGitActions"],
-  ["backgroundTasksButton", "detailsTasksActions"],
-  // Story and Activity overview live in More; btw stays in the tab strip.
-  ["activityStoryButton", "detailsMoreStory"],
-  ["activityOverviewButton", "detailsMoreOverview"],
+  ["activityStoryButton", "detailsStoryActions"],
 ];
 
 function applyPlacements() {
@@ -400,6 +406,10 @@ const OFF_BOARD = ["scheduled", "earlier", "done"];
 /** Put aside from Needs you (control-snooze.js): not a group of the column, which counts them on Needs you's label; the "Show all"
  * page lists them on a tab of their own while there are any. */
 const SNOOZED = { id: "snoozed", title: "Snoozed", dot: "old", empty: "Nothing is snoozed." };
+const MARK_GROUPS = [
+  { id: "pinned", title: "Pinned", empty: "No pinned conversations.", mark: isPinned },
+  { id: "starred", title: "Starred", empty: "No starred conversations.", mark: isStarred },
+];
 let cards = [];
 let loaded = false;
 /** The conversations that are not on the board, read at most once a minute (they change slowly and there can be thousands). */
@@ -413,11 +423,13 @@ const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
 /** A refresh of the board can be newer than the last read of the rest: what is on the board is not listed twice. */
 function syncEarlier() {
   const onBoard = new Set(cards.map(cardKey));
-  earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row))).map((row) => ({ ...row, column: row.scheduled ? "scheduled" : row.done ? "done" : "earlier" }));
+  earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row)) && !isHidden(row)).map((row) => ({ ...row, column: row.scheduled ? "scheduled" : row.done ? "done" : "earlier" }));
 }
 
-/** A team's conversations live in the team's folder (each card says which team, `card.team`), not in the four groups. */
+/** Marks span all folders and statuses; team and filing rules still apply to the status groups. */
 function cardsIn(groupId) {
+  const marked = MARK_GROUPS.find((group) => group.id === groupId);
+  if (marked) return allCards().filter(marked.mark);
   const listed = OFF_BOARD.includes(groupId) ? earlierRows.filter((card) => card.column === groupId && !folderOf(card)) : cards.filter((card) => card.column === groupId);
   return listed.filter((card) => !card.team);
 }
@@ -437,9 +449,10 @@ function teamFolders() {
 /** The group a team conversation would be in: its dot in the folder says where it stands. */
 const groupOfCard = (card) => (card.column === "snoozed" ? SNOOZED : GROUPS.find((group) => group.id === (card.column ?? "earlier")) ?? GROUPS[GROUPS.length - 1]);
 
-/** What the phone's Home and the Show all page list: the group with the project and Show filters of inbox-filters.js applied. */
-const filteredIn = (groupId) => filterInbox(groupId, cardsIn(groupId));
 const allCards = () => [...cards, ...earlierRows];
+const pinnedCards = () => allCards().filter(isPinned).sort(byUrgency);
+const unpinned = (card) => !isPinned(card);
+const visiblePins = () => phoneHomeShown() ? filterInbox("pinned", pinnedCards()) : inChosenProjects(pinnedCards());
 
 function isActiveCard(card) {
   const projectId = state.activeConversationProjectId || state.activeProjectId;
@@ -467,7 +480,7 @@ function cardLine(card) {
 }
 
 /** What a row says about the conversation besides its title: its worktree, auto respond, a read-only copy, a new one and its folder. */
-function rowTags(card) {
+function rowTags(card, nested) {
   const wrap = document.createElement("span");
   wrap.className = "ws-tags";
   const tag = (text, title, testid, color) => {
@@ -479,7 +492,7 @@ function rowTags(card) {
     if (color) node.style.setProperty("--tag", color);
     wrap.append(node);
   };
-  if (kidCount(card)) {
+  if (nested && kidCount(card)) {
     const kids = document.createElement("i");
     kids.className = "ws-tag ws-kids";
     kids.setAttribute("role", "button");
@@ -499,14 +512,14 @@ function rowTags(card) {
 }
 
 /** `selectable`: the row is part of a checklist while Select is on (inbox-filters.js): pressing it chooses it instead of opening it. */
-function cardRow(card, group, testid, selectable = false) {
+function cardRow(card, group, testid, selectable = false, nested = true) {
   const row = document.createElement("button");
   row.type = "button";
   row.className = "ws-row";
   row.dataset.testid = testid;
   row.dataset.key = `${card.projectId}:${card.conversationId}`;
   row.classList.toggle("sel", isActiveCard(card));
-  if (kidDepth(card)) { row.classList.add("ws-kid"); row.style.setProperty("--kid", String(kidDepth(card))); }
+  if (nested && kidDepth(card)) { row.classList.add("ws-kid"); row.style.setProperty("--kid", String(kidDepth(card))); }
   row.title = `${card.title} · ${card.projectName}`;
   const dot = document.createElement("i");
   dot.className = `ws-dot ${group.dot}`;
@@ -520,7 +533,7 @@ function cardRow(card, group, testid, selectable = false) {
   const time = document.createElement("time");
   time.textContent = timeLabel(card.updatedAt);
   if (card.updatedAt) time.dateTime = card.updatedAt;
-  top.append(title, rowTags(card), time);
+  top.append(title, rowTags(card, nested), time);
   const line = document.createElement("span");
   line.className = "ws-row-line";
   line.textContent = cardLine(card);
@@ -575,8 +588,8 @@ function openCardMenu(card, anchor) {
   if (card.column === "snoozed") items.push({ label: "Wake", icon: "clock", testid: "inbox-row-wake", title: "Bring it back to Needs you now", onSelect: () => wakeCard(card).catch((error) => toast.error(error.message)) });
   if (!card.othersMachine) {
     items.push({ label: "Move to folder…", icon: "folder", testid: "inbox-row-folder", title: "File it in a folder or a subfolder, as in a mailbox", onSelect: () => openMoveMenu(anchor, [card], allCards(), refreshFolders) });
-    items.push({ label: isStarred(card) ? "Unstar" : "Star", icon: "star", testid: "inbox-row-star", title: "A starred conversation is never removed by any automatic cleanup", onSelect: () => { toggleStar(card, saveControlCenter); renderGroups(); } });
-    items.push({ label: isPinned(card) ? "Unpin" : "Pin", icon: "pin", testid: "inbox-row-pin", title: "A pinned conversation is never removed by any automatic cleanup", onSelect: () => togglePin(card).then(() => renderGroups()).catch((error) => toast.error(error.message)) });
+    items.push({ label: isStarred(card) ? "Unstar" : "Star", icon: "star", testid: "inbox-row-star", title: "A starred conversation is never removed by any automatic cleanup", onSelect: () => { toggleStar(card, saveControlCenter); renderGroups(); if (!page.hidden) renderGroupPage(); } });
+    items.push({ label: isPinned(card) ? "Unpin" : "Pin", icon: "pin", testid: "inbox-row-pin", title: "A pinned conversation is never removed by any automatic cleanup", onSelect: () => togglePin(card).catch((error) => toast.error(error.message)) });
   }
   // Let Bob control (control-lease.js), then the conversation's own tools (control-moves.js): each opens it first.
   if (!card.othersMachine) {
@@ -588,7 +601,7 @@ function openCardMenu(card, anchor) {
   if (!card.othersMachine && !card.readOnly) {
     for (const action of SESSION_ACTIONS) {
       if (action.when && !action.when(card)) continue;
-      items.push({ label: action.label(card), icon: action.icon, testid: `inbox-row-${action.id}`, title: action.title, danger: action.danger, onSelect: () => openSessionAction(card, action.id, openConversation).then(refreshAfterChange).catch((error) => toast.error(error.message)) });
+      items.push({ label: action.label(card), icon: action.icon, testid: `inbox-row-${action.id}`, title: action.title, danger: action.danger, onSelect: () => (action.id === "delete" ? deleteFromRow(card) : openSessionAction(card, action.id, openConversation).then(refreshAfterChange)).catch((error) => toast.error(error.message)) });
     }
   }
   // Its project's dashboard, or asking Bob for one (control-dashboards.js); asking happens in Bob's chat, so his page opens first.
@@ -664,12 +677,25 @@ function openInboxProjectMenu(anchor, project) {
 /** After Mark read or Delete the board and the Earlier list are read again at once. */
 function refreshAfterChange() {
   earlierReadAt = 0;
-  scheduleGroupsRefresh(0);
+  return readBoard();
+}
+/** The board drawn again without the conversations being deleted (control-marks.js). */
+const redrawBoard = () => acceptCards(cards);
+/** Deleting from a row's menu: asked once, then the row goes at once and the server finishes behind it; the conversation is not opened. */
+async function deleteFromRow(card) {
+  const confirmed = await confirmAction({
+    eyebrow: "Delete conversation",
+    title: `Delete conversation “${card.title}”?`,
+    message: "The transcript is deleted from this node.",
+    confirmLabel: "Delete conversation",
+    destructive: true,
+  });
+  if (confirmed) await deleteConversations([card], { redraw: redrawBoard, refresh: refreshAfterChange });
 }
 // The phone's Home filters and selects above its groups (the desktop's column keeps every row; its Show all page has its own bar).
 const phoneToolbar = createInboxToolbar({
-  id: "inboxHome", allCards, afterChange: refreshAfterChange, folded: true,
-  visibleCards: () => GROUPS.filter((group) => group.id !== "needs-you").flatMap((group) => filteredIn(group.id)),
+  id: "inboxHome", allCards, afterChange: refreshAfterChange, redraw: redrawBoard, folded: true,
+  visibleCards: () => [...visiblePins(), ...GROUPS.filter((group) => group.id !== "needs-you").flatMap((group) => filterInbox(group.id, cardsIn(group.id).filter(unpinned)))],
 });
 phoneToolbar.root.classList.add("phone-only");
 phoneToolbar.root.prepend(phoneModeBar);
@@ -682,7 +708,7 @@ function placeColumnNotes() {
   if (phoneWidth.matches) { phoneToolbar.root.before(systemStrip, movesJobPanel); return; }
   const side = byId("workspaceSide");
   // The grouping choice and the project filter share one row, so the column keeps its height for the list.
-  columnTools.append(modeBar, columnFilter.root);
+  columnTools.append(modeBar, columnFilter.root, createAutomationToggle("inboxColumn-automations"));
   side.append(systemStrip, movesJobPanel, columnTools);
   // Bob is the first conversation of the list (bob-page.js puts him here): he stays right above it.
   const bob = side.querySelector(":scope > .ws-place-bob");
@@ -721,7 +747,64 @@ export function useNeedCards(render) {
   renderGroups();
 }
 
-/** Each group shows the rows that fit: rows are dealt one at a time in group order, so a long group cannot starve the others. */
+function sectionHeading(id, title, count, collapsed, phone) {
+  const label = document.createElement("div");
+  label.className = "ws-lab ws-state-heading";
+  const name = document.createElement("span");
+  name.textContent = title;
+  if (phone) label.append(name, count);
+  else {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ws-section-toggle";
+    toggle.dataset.testid = `workspace-group-toggle-${id}`;
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.append(name, count);
+    toggle.addEventListener("click", () => {
+      const hadFocus = document.activeElement === toggle;
+      if (collapsed) collapsedGroups.delete(id);
+      else collapsedGroups.add(id);
+      try { localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify([...collapsedGroups])); } catch { /* the choice lasts the page */ }
+      renderGroups();
+      if (hadFocus) groupsHost.querySelector(`[data-testid="${toggle.dataset.testid}"]`)?.focus({ preventScroll: true });
+    });
+    label.append(toggle);
+  }
+  return label;
+}
+
+function prependPinned(pins, chunked) {
+  if (!pins.length) return;
+  const section = document.createElement("section");
+  section.className = "ws-group";
+  section.dataset.group = "pinned";
+  section.dataset.testid = "workspace-group-pinned";
+  const phone = phoneHomeShown();
+  const collapsed = !phone && collapsedGroups.has("pinned");
+  const count = Object.assign(document.createElement("i"), { textContent: String(pins.length) });
+  const label = sectionHeading("pinned", "Pinned", count, collapsed, phone);
+  if (!phone) label.append(showAllButton("pinned", "Pinned", pins.length));
+  section.append(label);
+  groupsHost.prepend(section);
+  if (!collapsed) for (const card of pins) chunked.push({ make: () => cardRow(card, groupOfCard(card), "workspace-group-row", phone, false), into: section });
+}
+
+function showAllButton(id, title, count) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ws-show-all";
+  button.dataset.testid = `workspace-show-all-${id}`;
+  button.textContent = "Show all";
+  button.setAttribute("aria-label", `Show all ${count}: ${title}`);
+  button.addEventListener("click", () => openGroupPage(id));
+  return button;
+}
+
+const rowSignature = (card) => [cardKey(card), card.column, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary,
+  card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card), isStarred(card), folderOf(card),
+  card.worktree?.name, card.autoRespondActive, kidCount(card), card.snooze?.until];
+
+/** The Inbox previews each state group below the pinned conversations. */
 function renderGroups(refit = true) {
   if (!groupsShown()) return;
   syncModeBar();
@@ -736,9 +819,15 @@ function renderGroups(refit = true) {
     return;
   }
   columnFilter.update();
-  const baseIn = (groupId) => (phoneHomeShown() ? filteredIn(groupId) : inChosenProjects(cardsIn(groupId)));
-  const listIn = (groupId) => nestRows(baseIn(groupId));
-  const counts = GROUPS.map((group) => baseIn(group.id).length);
+  const phone = phoneHomeShown();
+  const pins = visiblePins();
+  const groupCards = GROUPS.map((group) => cardsIn(group.id));
+  const visibleGroups = GROUPS.map((group, index) => {
+    const list = groupCards[index].filter(unpinned);
+    return phone ? filterInbox(group.id, list) : inChosenProjects(list);
+  });
+  const listIn = (index) => nestRows(visibleGroups[index]);
+  const counts = visibleGroups.map((list) => list.length);
   const sample = groupsHost.querySelector(".ws-row");
   const rowHeight = sample ? sample.getBoundingClientRect().height + 2 : 52;
   // The phone's Home shows what needs you as cards with their actions (home.js), as the desktop's Home does.
@@ -772,9 +861,10 @@ function renderGroups(refit = true) {
     }
   }
   // The column is one scroll with the first ten of every group, whatever the window's height.
-  if (!phoneHomeShown()) GROUPS.forEach((group, index) => { shown[index] = Math.min(counts[index], COLUMN_ROWS); });
+  if (!phone) GROUPS.forEach((group, index) => { shown[index] = collapsedGroups.has(group.id) ? 0 : Math.min(counts[index], COLUMN_ROWS); });
   // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
-  const signature = JSON.stringify([loaded, cardsHere, groupsHost.clientWidth, counts, cardsIn(SNOOZED.id).length, inboxSignature(), GROUPS.map((group, index) => listIn(group.id).slice(0, shown[index]).map((card) => [card.projectId, card.conversationId, card.title, card.updatedAt, card.activity, card.controlledBy, card.summary, card.reviewCheck?.reason, card.pendingReviews?.length, card.autoRespondStop?.reason, isActiveCard(card), isPinned(card), isStarred(card), card.worktree?.name, card.autoRespondActive, kidCount(card)])), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
+  const fullCounts = GROUPS.map((group, index) => (phone ? filterInbox(group.id, groupCards[index]) : inChosenProjects(groupCards[index])).length);
+  const signature = JSON.stringify([loaded, phone, cardsHere, groupsHost.clientWidth, counts, fullCounts, cardsIn(SNOOZED.id).length, inboxSignature(), phone ? [] : [...collapsedGroups], pins.map(rowSignature), GROUPS.map((_, index) => listIn(index).slice(0, shown[index]).map(rowSignature)), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
   groupsHost.dataset.signature = signature;
   const scroll = groupsHost.scrollTop;
@@ -784,15 +874,12 @@ function renderGroups(refit = true) {
     section.className = "ws-group";
     section.dataset.group = group.id;
     section.dataset.testid = `workspace-group-${group.id}`;
-    const label = document.createElement("div");
-    label.className = "ws-lab";
-    const name = document.createElement("span");
-    name.textContent = group.title;
     const count = document.createElement("i");
     count.dataset.testid = `workspace-group-count-${group.id}`;
-    const total = cardsIn(group.id).length;
+    const total = groupCards[index].filter(unpinned).length;
     count.textContent = !loaded ? "…" : total === counts[index] ? String(counts[index]) : `${counts[index]} of ${total}`;
-    label.append(name, count);
+    const collapsed = !phone && collapsedGroups.has(group.id);
+    const label = sectionHeading(group.id, group.title, count, collapsed, phone);
     const snoozed = group.id === "needs-you" ? cardsIn(SNOOZED.id).length : 0;
     if (snoozed) {
       const link = document.createElement("button");
@@ -804,28 +891,21 @@ function renderGroups(refit = true) {
       link.addEventListener("click", () => openGroupPage(SNOOZED.id));
       label.append(link);
     }
-    // Every group with conversations opens its full list, which is also where several are chosen at once (Select).
-    if (!phoneHomeShown() && counts[index]) {
-      const all = document.createElement("button");
-      all.type = "button";
-      all.className = "ws-show-all";
-      all.dataset.testid = `workspace-show-all-${group.id}`;
-      all.textContent = "Show all";
-      all.setAttribute("aria-label", `Show all ${counts[index]}: ${group.title}`);
-      all.addEventListener("click", () => openGroupPage(group.id));
-      label.append(all);
-    }
+    // The full status list still includes pins for review and bulk actions.
+    const fullCount = fullCounts[index];
+    if (!phone && fullCount) label.append(showAllButton(group.id, group.title, fullCount));
     section.append(label);
+    if (collapsed) return section;
     if (loaded && !counts[index]) {
       const empty = document.createElement("p");
       empty.className = "ws-empty";
-      empty.textContent = total ? "Nothing matches the filters." : group.empty;
+      empty.textContent = fullCount ? "All matching conversations are pinned." : total ? "Nothing matches the filters." : group.empty;
       section.append(empty);
     }
     if (cardsHere && group.id === "needs-you") {
-      if (counts[index]) section.append(needCard(listIn(group.id)));
-    } else if (phoneHomeShown()) for (const card of listIn(group.id)) chunked.push({ make: () => cardRow(card, group, "workspace-group-row", true), into: section });
-    else for (const card of listIn(group.id).slice(0, shown[index])) section.append(cardRow(card, group, "workspace-group-row"));
+      if (counts[index]) section.append(needCard(listIn(index)));
+    } else if (phone) for (const card of listIn(index)) chunked.push({ make: () => cardRow(card, group, "workspace-group-row", true), into: section });
+    else for (const card of listIn(index).slice(0, shown[index])) section.append(cardRow(card, group, "workspace-group-row"));
     return section;
   }));
   const folders = teamFolders();
@@ -863,11 +943,10 @@ function renderGroups(refit = true) {
     }
     groupsHost.append(section);
   }
-  if (phoneHomeShown()) {
-    drawChunked(groupsHost, chunked, { key: "phone-home" });
-    // A refresh draws the same rows again where the person was.
-    groupsHost.scrollTop = scroll;
-  }
+  const pinnedRows = [];
+  prependPinned(pins, pinnedRows);
+  drawChunked(groupsHost, [...pinnedRows, ...chunked], { key: phoneHomeShown() ? "phone-home" : "inbox-state" });
+  groupsHost.scrollTop = scroll;
   // The first render measures a row; a different height deals again once.
   const measured = groupsHost.querySelector(".ws-row");
   const measuredCard = groupsHost.querySelector(".ws-wait");
@@ -883,13 +962,17 @@ function renderModeList() {
   if (!loaded) return;
   // By folder every conversation is listed, in its folder; by project a filed one is out of Scheduled, Earlier and Done as in the state groups.
   const visible = inChosenProjects(allCards()).filter((card) => inboxMode() === "folder" || !OFF_BOARD.includes(card.column) || card.team || !folderOf(card));
-  const signature = JSON.stringify([inboxMode(), inboxSignature(), modeSignature(), visible.map((card) => [cardKey(card), card.title, card.updatedAt, card.column, card.activity, card.controlledBy, isPinned(card), isStarred(card), card.worktree?.name, card.autoRespondActive, isActiveCard(card)])]);
+  const pins = visiblePins();
+  const signature = JSON.stringify([inboxMode(), inboxSignature(), modeSignature(), pins.map(rowSignature), visible.map(rowSignature)]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
   groupsHost.dataset.signature = signature;
   const scroll = groupsHost.scrollTop;
   const common = { makeRow: cardRow, groupOf: groupOfCard, openPage: openGroupPage, afterChange: refreshFolders };
   if (inboxMode() === "project") drawByProject(groupsHost, { ...common, cards: visible, newIn: (project) => startConversationInProject(project.id).catch((error) => toast.error(error.message)), openMenu: openInboxProjectMenu });
   else drawByFolder(groupsHost, { ...common, cards: visible });
+  const pinnedRows = [];
+  prependPinned(pins, pinnedRows);
+  drawChunked(groupsHost, pinnedRows, { key: `inbox-${inboxMode()}` });
   groupsHost.scrollTop = scroll;
   syncInboxNote();
 }
@@ -917,27 +1000,31 @@ async function readBoard() {
     do {
       again = false;
       const wantEarlier = Date.now() - earlierReadAt > EARLIER_EVERY_MS;
-      const board = await api(`/api/control-center/board?look=1${wantEarlier ? "&earlier=1" : ""}`);
+      let board = await api(`/api/control-center/board?look=1${wantEarlier ? "&earlier=1" : ""}`);
+      // Read the new home of a pin before removing its old row from the board.
+      if (!board.earlier) {
+        const nextKeys = new Set((board.cards || []).map(cardKey));
+        if (cards.some((card) => isPinned(card) && !nextKeys.has(cardKey(card)))) board = await api("/api/control-center/board?look=1&earlier=1");
+      }
       if (board.earlier) { earlierRead = board.earlier; earlierReadAt = Date.now(); }
-      acceptCards(board.cards || []);
+      acceptCards(board.cards || [], Boolean(board.earlier));
     } while (again);
     void refreshSystemStrip();
   })().catch((error) => console.warn("Could not read the workspace groups", error)).finally(() => { refreshing = null; });
   return refreshing;
 }
 
-function acceptCards(next) {
+function acceptCards(next, updatedEarlier) {
   const nextKeys = new Set(next.map(cardKey));
   // A conversation left the board (finished, marked done): it now belongs to Earlier, which is read again at once.
   const left = cards.some((card) => !nextKeys.has(cardKey(card)));
-  cards = next;
+  cards = next.filter((card) => !isHidden(card));
   loaded = true;
   syncEarlier();
-  if (left && started) { earlierReadAt = 0; scheduleGroupsRefresh(0); }
+  if (left && !updatedEarlier && started) { earlierReadAt = 0; scheduleGroupsRefresh(0); }
   // The phone's greeting and its Inbox tab count them (phone-ui.js).
   window.dispatchEvent(new CustomEvent("workspace-groups-counted", { detail: Object.fromEntries(GROUPS.map((group) => [group.id, cardsIn(group.id).length])) }));
-  // Home (home.js) draws the same cards in the middle.
-  window.dispatchEvent(new CustomEvent("workspace-cards", { detail: { cards } }));
+  announceCards();
   renderGroups();
   if (!page.hidden) renderGroupPage();
 }
@@ -955,6 +1042,12 @@ for (const name of ["running-refreshed", "control-center-changed", "conversation
 // The control center read its board: something changed. Its board leaves out other people's machines, which the Inbox lists,
 // so the Inbox reads its own instead of taking those cards.
 window.addEventListener("control-center-board-refreshed", () => scheduleGroupsRefresh());
+// Conversations were removed by a cleanup, another machine or a delete: Earlier is cached for a minute, so it is read again now.
+window.addEventListener("conversations-removed", () => { earlierReadAt = 0; scheduleGroupsRefresh(); });
+window.addEventListener("conversation-pins-changed", () => {
+  renderGroups();
+  if (!page.hidden) renderGroupPage();
+});
 // "activeConversationChanged" is announced on every redraw of the chat controls (about once a second while an agent
 // works). The groups mark the open conversation, so they are drawn again only when another conversation is open;
 // drawing them on every announcement rebuilt every row of the column each second.
@@ -987,7 +1080,7 @@ function filteredOnPage(groupId) {
     return terms.every((term) => text.includes(term));
   });
 }
-const pageToolbar = createInboxToolbar({ id: "inboxPage", allCards, visibleCards: () => filteredOnPage(pageGroup), afterChange: refreshAfterChange });
+const pageToolbar = createInboxToolbar({ id: "inboxPage", allCards, visibleCards: () => filteredOnPage(pageGroup), afterChange: refreshAfterChange, redraw: redrawBoard });
 const pageSearch = document.createElement("input");
 pageSearch.type = "search";
 pageSearch.className = "inbox-search";
@@ -1000,19 +1093,23 @@ pageSearch.addEventListener("input", () => {
 });
 pageToolbar.root.prepend(pageSearch);
 pageList.before(pageToolbar.root);
+/** Home (home.js) draws the cards in the middle: the same ones the column lists, without the automations when they are hidden. */
+function announceCards() {
+  window.dispatchEvent(new CustomEvent("workspace-cards", { detail: { cards: cards.filter(shownCard) } }));
+}
 onInboxView(() => {
+  announceCards();
   renderGroups();
   if (!page.hidden) renderGroupPage();
 });
 
-/** A team's folder: every conversation of the team in one scrolling list, newest first, each with the dot of where it stands. */
-/** A project, a folder, or Pinned, Starred and Not filed as one list in the middle: every conversation of it, most urgent first. */
+/** A project, folder or Not filed as one list in the middle, most urgent first. */
 function listingPage(id) {
   const [kind, ...rest] = id.split(":");
   const name = rest.join(":");
   if (kind === "project") return { title: allCards().find((card) => card.projectId === name)?.projectName ?? "Project", cards: allCards().filter((card) => card.projectId === name) };
   if (kind === "folder") return { title: name.split("/").pop(), crumb: name, cards: allCards().filter((card) => (folderOf(card) ?? "") === name || (folderOf(card) ?? "").startsWith(`${name}/`)) };
-  if (kind === "view") return { title: { pinned: "Pinned", starred: "Starred", unfiled: "Not filed" }[name], cards: allCards().filter((card) => (name === "pinned" ? isPinned(card) : name === "starred" ? isStarred(card) : !folderOf(card))) };
+  if (id === "view:unfiled") return { title: "Not filed", cards: allCards().filter((card) => !folderOf(card)) };
   return null;
 }
 function renderListingPage(id, { title, crumb, cards: listed }) {
@@ -1024,7 +1121,7 @@ function renderListingPage(id, { title, crumb, cards: listed }) {
   const entries = nestRows(inChosenProjects(listed).sort(byUrgency)).map((card) => () => {
     const row = cardRow(card, groupOfCard(card), "workspace-listing-page-row");
     row.classList.add("wide");
-    return row;
+    return withPageActions(card, row);
   });
   if (!entries.length) entries.push(() => Object.assign(document.createElement("p"), { className: "ws-empty", textContent: loaded ? "Nothing here yet." : "Loading…" }));
   drawChunked(pageList, entries, { key: `listing-${id}|${inboxFilterKey()}` });
@@ -1068,9 +1165,11 @@ function renderGroupPage() {
   const listing = listingPage(pageGroup);
   if (listing) { renderListingPage(pageGroup, listing); return; }
   // Snoozed is a tab of its own while there are any, or while it is the one open.
-  const tabs = cardsIn(SNOOZED.id).length || pageGroup === SNOOZED.id ? [...GROUPS, SNOOZED] : GROUPS;
+  const tabs = [...MARK_GROUPS, ...GROUPS];
+  if (cardsIn(SNOOZED.id).length || pageGroup === SNOOZED.id) tabs.push(SNOOZED);
   const group = tabs.find((item) => item.id === pageGroup) ?? GROUPS[0];
   byId("workspaceGroupTitle").textContent = group.title;
+  page.querySelector(".ws-page-crumb").textContent = "Every project";
   byId("workspaceGroupTabs").replaceChildren(...tabs.map((item) => {
     const tab = document.createElement("button");
     tab.type = "button";
@@ -1081,14 +1180,15 @@ function renderGroupPage() {
     tab.addEventListener("click", () => { pageGroup = item.id; renderGroupPage(); });
     return tab;
   }));
-  const items = nestRows(filteredOnPage(group.id));
+  const filtered = filteredOnPage(group.id);
+  const items = group.mark ? filtered.sort(byUrgency) : nestRows(filtered);
   pageToolbar.update();
   const scroll = pageList.scrollTop;
   pageList.replaceChildren();
   const entries = items.map((card) => () => {
-    const row = cardRow(card, group, "workspace-group-page-row", true);
+    const row = cardRow(card, groupOfCard(card), "workspace-group-page-row", true, !group.mark);
     row.classList.add("wide");
-    return withPageAction(card, row);
+    return withPageActions(card, row);
   });
   if (!items.length) {
     const empty = document.createElement("p");
@@ -1101,23 +1201,41 @@ function renderGroupPage() {
   pageList.scrollTop = scroll;
 }
 
-/** On the page, a Needs you row has Snooze beside it and a snoozed one Wake (the column's rows keep them in their menu). */
-function withPageAction(card, row) {
+function withPageActions(card, row) {
+  if (isSelecting()) return row;
   const snooze = card.column === "needs-you";
-  if (isSelecting() || (!snooze && card.column !== "snoozed")) return row;
+  const wake = card.column === "snoozed";
+  const canReply = !card.readOnly && !card.othersMachine && !card.pendingReviews?.length;
+  if (!canReply && !snooze && !wake) return row;
   const item = document.createElement("div");
   item.className = "ws-page-item";
-  const action = document.createElement("button");
-  action.type = "button";
-  action.className = "ghost compact ws-page-action";
-  action.dataset.testid = snooze ? "workspace-page-snooze" : "workspace-page-wake";
-  action.textContent = snooze ? "Snooze" : "Wake";
-  action.title = snooze ? "Put it aside for now: it leaves Needs you until the time you choose or something new happens" : "Bring it back to Needs you now";
-  action.addEventListener("click", () => {
-    if (snooze) chooseSnooze(card, action);
-    else wakeCard(card).catch((error) => toast.error(error.message));
-  });
-  item.append(row, action);
+  item.append(row);
+  if (canReply) {
+    const reply = document.createElement("button");
+    reply.type = "button";
+    reply.className = "ghost compact ws-page-action ws-page-reply";
+    reply.textContent = "Reply";
+    reply.title = "Quick reply";
+    reply.setAttribute("aria-label", `Quick reply to ${card.title || "conversation"}`);
+    reply.addEventListener("click", () => openInboxReply(card, {
+      open: () => row.click(),
+      onSent: () => scheduleGroupsRefresh(0),
+    }));
+    item.append(reply);
+  }
+  if (snooze || wake) {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "ghost compact ws-page-action";
+    action.dataset.testid = snooze ? "workspace-page-snooze" : "workspace-page-wake";
+    action.textContent = snooze ? "Snooze" : "Wake";
+    action.title = snooze ? "Put it aside for now: it leaves Needs you until the time you choose or something new happens" : "Bring it back to Needs you now";
+    action.addEventListener("click", () => {
+      if (snooze) chooseSnooze(card, action);
+      else wakeCard(card).catch((error) => toast.error(error.message));
+    });
+    item.append(action);
+  }
   return item;
 }
 

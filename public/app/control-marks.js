@@ -3,7 +3,7 @@
 //   Star  : kept with the account (state.controlCenter.stars). A pinned or starred conversation is "kept": no automatic
 //           cleanup deletes it (the retention sweep reads both).
 //   Folder: one path per conversation (state.controlCenter.folders), "A/B" being a subfolder of "A".
-//   Delete: at once from the list, with an Undo; the conversation is really deleted when the Undo runs out. A kept one asks twice.
+//   Delete: gone from the list at once and finished on the server behind it, without opening the conversation.
 // Stars and folders are keyed `engine:sessionId`, as a pin is.
 
 import { api, savePin } from "./api.js";
@@ -11,7 +11,6 @@ import { toast } from "./shell.js";
 import { state } from "./state.js";
 
 const MAX_STARS = 500;
-const UNDO_MS = 8_000;
 
 export const markKey = (card) => `${card.harnessId}:${card.sessionId}`;
 const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
@@ -109,65 +108,31 @@ export function popMenu(anchor, items) {
   menu.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(); });
 }
 
-/* ---------- delete, at once, with an Undo ---------- */
+/* ---------- delete: gone from the list at once, finished on the server behind it ---------- */
 
-const pending = new Map();
-let armed = null;
+const hidden = new Set();
 
-/** A conversation whose delete is waiting out its Undo is not shown. */
-export const isDeleting = (card) => pending.has(cardKey(card));
+/** A conversation being deleted, or one the project does not list, is not shown, whatever a list read before still says. */
+export const isHidden = (card) => hidden.has(cardKey(card));
 
-async function reallyDelete(card, refresh) {
-  try {
-    await api(`/api/projects/${encodeURIComponent(card.projectId)}/sessions?${new URLSearchParams({ sessionId: card.sessionId, engine: card.harnessId })}`, { method: "DELETE" });
-  } catch (error) {
-    toast.error(`Could not delete “${card.title}”: ${error.message}`);
-  } finally {
-    pending.delete(cardKey(card));
-    await refresh();
-  }
+/** The person found it is not listed: it leaves the Inbox for as long as the page stays open. */
+export function hideUnlisted(card) {
+  hidden.add(cardKey(card));
+  window.dispatchEvent(new CustomEvent("conversations-removed"));
 }
 
-/** Hides the conversations and deletes them when the Undo runs out; one notice and one Undo cover all of them. */
-function scheduleDelete(cards, { redraw, refresh }) {
-  const timers = cards.map((card) => {
-    const timer = setTimeout(() => void reallyDelete(card, refresh), UNDO_MS);
-    pending.set(cardKey(card), timer);
-    return [card, timer];
-  });
+/**
+ * Takes the conversations out of the list at once (`redraw` draws it without them) and deletes them on the server behind it, without
+ * opening them or changing the view. `refresh` reads the list again afterwards: a conversation the server refused comes back with
+ * that read, and its reason is told.
+ */
+export async function deleteConversations(cards, { redraw, refresh }) {
+  for (const card of cards) hidden.add(cardKey(card));
   redraw();
-  const notice = toast(cards.length === 1 ? `Deleted “${cards[0].title}”` : `Deleted ${cards.length} conversations`, UNDO_MS);
-  const undo = document.createElement("button");
-  undo.type = "button";
-  undo.className = "toast-undo";
-  undo.textContent = "Undo";
-  undo.dataset.testid = "control-list-undo";
-  undo.addEventListener("click", () => {
-    for (const [card, timer] of timers) { clearTimeout(timer); pending.delete(cardKey(card)); }
-    notice.remove();
-    redraw();
-  });
-  notice.insertBefore(undo, notice.querySelector(".toast-close"));
-}
-
-/** Deletes now. Pinned or starred, it asks first: a second press within five seconds goes through. */
-export function deleteConversation(card, actions) {
-  const key = cardKey(card);
-  if (isKept(card) && armed !== key) {
-    armed = key;
-    setTimeout(() => { if (armed === key) armed = null; }, 5_000);
-    toast(`“${card.title}” is ${isPinned(card) ? "pinned" : "starred"}. Press delete again to remove it anyway.`, 5_000);
-    return;
-  }
-  armed = null;
-  scheduleDelete([card], actions);
-}
-
-/** Deletes several at once with one Undo. Pinned and starred ones are left alone: only a single, twice-asked delete removes those. Returns how many were deleted. */
-export function deleteConversations(cards, actions) {
-  const kept = cards.filter(isKept);
-  const doomed = cards.filter((card) => !isKept(card));
-  if (kept.length) toast(`${kept.length} pinned or starred conversation${kept.length === 1 ? " was" : "s were"} kept. Delete those one at a time.`, 5_000);
-  if (doomed.length) scheduleDelete(doomed, actions);
-  return doomed.length;
+  const results = await Promise.allSettled(cards.map((card) => api(`/api/projects/${encodeURIComponent(card.projectId)}/sessions?${new URLSearchParams({ sessionId: card.sessionId, engine: card.harnessId })}`, { method: "DELETE" })));
+  // Already gone (a cleanup or another machine deleted it first) is what was asked for: nothing to tell.
+  const failed = results.filter((result) => result.status === "rejected" && result.reason.status !== 404);
+  if (failed.length) toast.error(cards.length === 1 ? `Could not delete “${cards[0].title}”: ${failed[0].reason.message}` : `Could not delete ${failed.length} of ${cards.length}: ${failed[0].reason.message}`);
+  for (const card of cards) hidden.delete(cardKey(card));
+  await refresh();
 }

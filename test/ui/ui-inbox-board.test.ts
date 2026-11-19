@@ -3,6 +3,7 @@
 //
 // Run with `npm run test:file -- test/ui/ui-inbox-board.test.ts`.
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 
@@ -24,10 +25,10 @@ const SYSTEM = [
     steps: ["Open Settings → Guardian.", "Turn Guardian on."], action: { label: "Open Guardian settings", open: "settings-guardian" } },
 ];
 
-type Mocked = typeof window & { __system: unknown[]; __pins: Array<{ sessionId: string }>; __deleted: string[] };
+type Mocked = typeof window & { __older: unknown[]; __askedAll: boolean; __holdDelete: boolean; __system: unknown[]; __pins: Array<{ sessionId: string }>; __deleted: string[]; __releaseDelete: () => void; __deleteStatus: number };
 
-async function open(t: Parameters<typeof nativeUiFixture>[0]) {
-  const { page, environment, node } = await nativeUiFixture(t);
+async function open(t: Parameters<typeof nativeUiFixture>[0], extraEnv?: Parameters<typeof nativeUiFixture>[1]) {
+  const { page, environment, node } = await nativeUiFixture(t, extraEnv);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
   await page.locator("#loginUsernameInput").fill(environment.username);
@@ -39,12 +40,12 @@ async function open(t: Parameters<typeof nativeUiFixture>[0]) {
   await page.evaluate(`(() => {
     const originalFetch = window.fetch;
     window.__system = ${JSON.stringify(SYSTEM)};
-    window.__pins = []; window.__deleted = [];
+    window.__pins = []; window.__deleted = []; window.__deleteStatus = 200; window.__releaseDelete = () => {}; window.__holdDelete = false; window.__older = []; window.__askedAll = false;
     window.fetch = async (...args) => {
       const url = new URL(String(args[0]), location.href);
       const method = (args[1] && args[1].method) || 'GET';
       const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-      if (url.pathname === '/api/control-center/board') return json(${JSON.stringify(BOARD)});
+      if (url.pathname === '/api/control-center/board') { const board = ${JSON.stringify(BOARD)}; return json({ ...board, cards: board.cards.filter((card) => !window.__deleted.some((search) => search.includes('sessionId=' + card.sessionId + '&'))) }); }
       if (url.pathname === '/api/control-center/system') return json({ messages: window.__system });
       if (url.pathname === '/api/pins' && method === 'GET') return json({ projectIds: [], conversations: window.__pins });
       if (url.pathname === '/api/pins' && method === 'PUT') {
@@ -53,7 +54,13 @@ async function open(t: Parameters<typeof nativeUiFixture>[0]) {
         if (change.pinned) window.__pins.push({ projectId: change.projectId, engine: change.engine, sessionId: change.sessionId });
         return json({ projectIds: [], conversations: window.__pins });
       }
-      if (url.pathname === '/api/projects/p1/sessions' && method === 'DELETE') { window.__deleted.push(url.search); return json({ ok: true }); }
+      if (url.pathname === '/api/projects/p1/sessions' && method === 'GET' && url.searchParams.get('all') === '1') { window.__askedAll = true; return json({ sessions: window.__older }); }
+      if (['/api/projects/p1/sessions', '/api/projects/p2/sessions'].includes(url.pathname) && method === 'DELETE') {
+        if (window.__holdDelete) await new Promise((resolve) => { window.__releaseDelete = resolve; });
+        window.__deleted.push(url.search);
+        if (window.__deleteStatus === 404) return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+        return json({ ok: true });
+      }
       return originalFetch(...args);
     };
   })()`);
@@ -118,6 +125,130 @@ test("a row's own menu stars and pins it, and Delete in the Inbox leaves a starr
   await page.getByTestId("inboxPage-delete").click();
   await page.locator(".toast-message", { hasText: "Pinned, starred, running and other people's conversations are not deleted here." }).waitFor();
   assert.deepEqual(await page.evaluate(() => (window as unknown as Mocked).__deleted), []);
+});
+
+test("Delete from a row's menu takes the row out at once, opens nothing, and says nothing of a conversation that is already gone", { timeout: 120_000 }, async (t) => {
+  const page = await open(t);
+  const group = page.getByTestId("workspace-group-review");
+  const mobile = group.getByTestId("workspace-group-row").filter({ hasText: "Mobile menu" });
+  const invoice = group.getByTestId("workspace-group-row").filter({ hasText: "Invoice totals" });
+  await mobile.waitFor();
+  // The server is slow: the row goes before it answers, and the person is not taken into the conversation.
+  await page.evaluate(() => { (window as unknown as Mocked).__holdDelete = true; });
+  await mobile.click({ button: "right" });
+  await page.getByTestId("inbox-row-delete").click();
+  await page.locator("#confirmDialog").getByRole("button", { name: "Delete conversation" }).click();
+  await mobile.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => document.body.classList.contains("control-popup")), false, "nothing was opened");
+  assert.ok(await page.locator("body.view-control").count(), "the view did not change");
+  assert.deepEqual(await page.evaluate(() => (window as unknown as Mocked).__deleted), [], "the server has not answered yet");
+  await page.evaluate(() => { const mocked = window as unknown as Mocked; mocked.__holdDelete = false; mocked.__releaseDelete(); });
+  await page.waitForFunction(() => (window as unknown as Mocked).__deleted.length === 1);
+  await invoice.waitFor();
+  assert.equal(await mobile.count(), 0, "it stays gone once the server has deleted it");
+
+  // Already deleted by a cleanup: the server says not found, and that is what was asked for.
+  await page.evaluate(() => { (window as unknown as Mocked).__deleteStatus = 404; });
+  await invoice.click({ button: "right" });
+  await page.getByTestId("inbox-row-delete").click();
+  await page.locator("#confirmDialog").getByRole("button", { name: "Delete conversation" }).click();
+  await invoice.waitFor({ state: "detached" });
+  await page.waitForTimeout(1500);
+  assert.equal(await page.locator(".toast.error, .toast-message", { hasText: "not found" }).count(), 0, "no error was shown");
+});
+
+test("a conversation the project does not list is not shown in the Inbox once it is found out", { timeout: 120_000 }, async (t) => {
+  const page = await open(t);
+  const row = page.getByTestId("workspace-group-review").getByTestId("workspace-group-row").filter({ hasText: "Mobile menu" });
+  // The project is already chosen and its list is read: nothing is on its way that could still list the conversation.
+  await page.evaluate(async () => { (await import("/app/state.js")).state.activeProjectId = "p1"; });
+  await row.click();
+  await row.waitFor({ state: "detached" });
+  // It stays away when the board is read again.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("conversations-removed")));
+  await page.waitForTimeout(2000);
+  assert.equal(await row.count(), 0);
+});
+
+test("a conversation past the newest ones is opened from the full list, not hidden", { timeout: 120_000 }, async (t) => {
+  const page = await open(t);
+  const row = page.getByTestId("workspace-group-review").getByTestId("workspace-group-row").filter({ hasText: "Mobile menu" });
+  await page.evaluate(async () => {
+    const mocked = window as unknown as Mocked;
+    mocked.__older = [{ id: "c2", conversationId: "c2", path: "/c2", title: "Mobile menu", harnessId: "claude", executionNodeId: null }];
+    (await import("/app/state.js")).state.activeProjectId = "p1";
+  });
+  await row.click();
+  await page.waitForFunction(() => (window as unknown as Mocked).__askedAll);
+  await page.waitForTimeout(1500);
+  assert.equal(await row.count(), 1, "the row stays");
+  assert.equal(await page.getByText("That conversation is no longer listed.").count(), 0);
+});
+
+test("Ctrl+Alt+N opens New with a project selector from the full Inbox list", { timeout: 120_000 }, async (t) => {
+  const page = await open(t, (root) => ({ JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "turns.jsonl") }));
+  await page.getByTestId("workspace-show-all-review").click();
+  await page.keyboard.press("Control+Alt+KeyN");
+  const dialog = page.getByTestId("new-session-name-dialog");
+  await dialog.waitFor({ timeout: 5000 });
+  const project = dialog.getByRole("button", { name: "Project" });
+  await project.click();
+  await dialog.getByTestId("new-session-project-option").filter({ hasText: "Joint Bob" }).click();
+  assert.match(await project.innerText(), /Joint Bob/);
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  await page.getByTestId("inboxPage-search").waitFor();
+});
+
+test("Quick Reply shows the last four messages and sends without leaving the Inbox", { timeout: 120_000 }, async (t) => {
+  const page = await open(t);
+  const samples = ["First answer", "Follow-up question", "Second answer", "One more question"];
+  const replies: unknown[] = [];
+  await page.route("**/api/control-center/cards/detail?*", (route) => route.fulfill({ json: {
+    // Long answers, as real ones are: the history must scroll inside the dialog, not squeeze to nothing.
+    recentMessages: samples.map((text, index) => ({ text: `${text}\n\n${Array.from({ length: 12 }, (_, line) => `Line ${line} of ${text}.`).join("\n\n")}`, role: index % 2 ? "user" : "assistant" })),
+  } }));
+  await page.route("**/api/control-center/cards/reply", (route) => {
+    replies.push(route.request().postDataJSON());
+    return replies.length === 1
+      ? route.fulfill({ status: 409, json: { error: "The conversation is busy." } })
+      : route.fulfill({ json: { ok: true } });
+  });
+  await page.getByTestId("workspace-show-all-review").click();
+  const search = page.getByTestId("inboxPage-search");
+  await search.fill("Mobile menu");
+  const quickReply = page.getByRole("button", { name: "Quick reply to Mobile menu" });
+  await quickReply.click({ timeout: 5000 });
+  const dialog = page.getByRole("dialog", { name: "Mobile menu" });
+  const input = dialog.getByRole("textbox", { name: "Reply" });
+  assert.equal(await input.evaluate((element) => document.activeElement === element), true);
+  await dialog.getByText(samples.at(-1)!, { exact: true }).waitFor();
+  // The messages have room to be read: the history is not squeezed to a sliver between the title and the box.
+  assert.ok((await dialog.getByRole("region", { name: "Recent messages" }).boundingBox())!.height >= 120, "the history is tall enough to read");
+  assert.deepEqual((await dialog.getByTestId("inbox-reply-message").locator(".inbox-reply-text").allTextContents()).map((text) => samples.find((sample) => text.startsWith(sample))), samples);
+  await input.fill("Please check the tablet layout too.");
+  const send = dialog.getByRole("button", { name: "Send reply" });
+  await send.click();
+  await dialog.getByRole("alert").filter({ hasText: "The conversation is busy." }).waitFor();
+  assert.equal(await input.inputValue(), "Please check the tablet layout too.");
+  await send.click();
+  await dialog.waitFor({ state: "hidden" });
+  assert.deepEqual(replies, Array(2).fill({ projectId: "p1", conversationId: "c2", message: "Please check the tablet layout too." }));
+  assert.equal(await search.inputValue(), "Mobile menu");
+  assert.equal(await quickReply.isVisible(), true);
+  assert.equal(await page.locator("body.control-popup").count(), 0);
+
+  await quickReply.click();
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  assert.equal(await quickReply.evaluate((element) => document.activeElement === element), true);
+  await quickReply.click();
+  await page.evaluate(() => window.addEventListener("control-popup-opened", (event) => {
+    document.body.dataset.openedCard = (event as CustomEvent).detail.conversationId;
+  }, { once: true }));
+  await dialog.getByRole("button", { name: "Open", exact: true }).click();
+  await search.waitFor({ state: "hidden" });
+  await page.locator('body[data-opened-card="c2"]').waitFor();
 });
 
 test("Bob's own page is his chat with his updates beside it; his other pages keep the Ask Bob button and its window", { timeout: 120_000 }, async (t) => {

@@ -265,9 +265,11 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
   // off the current view every time a socket blips.
   if (!preserveChat && !keepView) setMobileView("chat");
   setStatus("Connecting…", false, true);
-  setComposerEnabled(false);
+  // A worktree draft can queue prompts until the socket is ready. Keep the input enabled through the handoff.
+  setComposerEnabled(Boolean(pending && !pending.error));
 
   if (pending) {
+    if (!preserveChat && !pending.error) elements.messageInput.focus({ preventScroll: true });
     state.pendingSessionTitle = pending.title;
     state.pendingSessionColor = pending.color;
     state.activeNodeId = pending.nodeId;
@@ -278,7 +280,6 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
         showChatEmptyState("Creating worktree…", "You can send messages now. They will wait until the worktree is ready.");
         pending.prompts.forEach(appendWorktreeWaitingMessage);
       }
-      setComposerEnabled(!pending.error);
       if (pending.error) {
         setStatus("Worktree creation failed");
         appendErrorMessage(`The worktree could not be created: ${pending.error.message}. Your waiting messages have not been sent.`);
@@ -293,7 +294,6 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
       return;
     }
     state.newSessionWorktreeId = pending.worktree.id;
-    setComposerEnabled(true);
   }
 
   const socket = new WebSocket(websocketUrl(sessionPath));
@@ -390,8 +390,8 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
       if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: payload.executionNodeId });
     }
     setComposerEnabled(true);
-    if (openingDraft) elements.messageInput.focus();
     renderConversationLock();
+    if (openingDraft && !pendingWorktree && scrollOnReady) elements.messageInput.focus({ preventScroll: true });
     state.activeSessionId = payload.sessionId || state.activeSessionId;
     state.activeConversationId = payload.conversationId || payload.sessionId || null;
     state.activeConversationProjectId = payload.project?.id || state.activeProjectId;
@@ -811,7 +811,11 @@ const INVALIDATION_HANDLERS = {
     schedulePendingReviewsRefresh();
     scheduleRunningRefresh();
   },
+  // A cleanup, another machine or a delete removed conversations: the Inbox reads its Earlier list again at once.
+  conversationsRemoved: () => window.dispatchEvent(new CustomEvent("conversations-removed")),
   browserSessionsChanged: () => document.dispatchEvent(new Event("browserSessionsChanged")),
+  takebackRequested: (payload) => document.dispatchEvent(new CustomEvent("takeback-requested", { detail: payload })),
+  takebackClosed: (payload) => document.dispatchEvent(new CustomEvent("takeback-closed", { detail: payload.id })),
   guardianReviewsChanged: (payload) => document.dispatchEvent(new CustomEvent("guardian-elsewhere", { detail: payload })),
   instructionsChanged: () => document.dispatchEvent(new Event("instructions-changed")),
   projectsChanged: () => refreshProjectsQuietly(),
@@ -936,6 +940,7 @@ export function ensureWatchSocket() {
   socket.addEventListener("open", () => {
     if (state.watchSocket !== socket) return;
     elements.chatsLiveDot.hidden = false;
+    document.dispatchEvent(new Event("takeback-watch-connected"));
     // Invalidations have no replay log. Every new subscription needs a snapshot,
     // including the gap between the initial HTTP load and subscribing.
     refreshSessionsQuietly();

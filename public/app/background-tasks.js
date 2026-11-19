@@ -32,6 +32,75 @@ let detailsSignature = "";
 const tasks = new Map();
 const olderCursors = new Map();
 let nodes = new Map();
+const listeners = new Set();
+
+function snapshot() {
+  const all = [...tasks.values()].sort(compareTasks);
+  const activeCount = all.filter((task) => activeStatuses.has(safeStatus(task.status))).length;
+  return {
+    tasks: all,
+    activeCount,
+    stoppingKey,
+    nodes: new Map(nodes),
+    hasScope: Boolean(scope()),
+  };
+}
+
+function notifyListeners() {
+  const stateSnapshot = snapshot();
+  for (const listener of listeners) {
+    try { listener(stateSnapshot); } catch (error) { console.warn("Background tasks listener failed", error); }
+  }
+}
+
+export function subscribeBackgroundTasks(listener) {
+  listeners.add(listener);
+  listener(snapshot());
+  return () => listeners.delete(listener);
+}
+
+export async function fetchBackgroundTaskOutput(task, offset = 0) {
+  const currentScope = scope();
+  if (!currentScope) return { text: "", nextOffset: offset, eof: true };
+  const result = await api("/api/background-tasks/operation", {
+    method: "POST",
+    body: JSON.stringify({
+      nodeId: task.nodeId,
+      command: { action: "output", ...currentScope, id: task.id, offset, limit: 16384 },
+    }),
+  });
+  const bytes = Uint8Array.from(atob(result.chunk || ""), (char) => char.charCodeAt(0));
+  return {
+    text: new TextDecoder().decode(bytes),
+    nextOffset: result.nextOffset ?? offset,
+    eof: Boolean(result.eof),
+  };
+}
+
+export async function stopBackgroundTaskInline(task) {
+  const identity = taskKey(task);
+  const currentScope = scope();
+  if (!currentScope || !nodes.get(task.nodeId)?.available) return false;
+  if (!await confirmAction({
+    title: `Stop ${task.name}?`,
+    message: `This stops the task on ${task.nodeName}.`,
+    confirmLabel: "Stop task",
+    destructive: true,
+  })) return false;
+  stoppingKey = identity;
+  notifyListeners();
+  try {
+    await api("/api/background-tasks/operation", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: task.nodeId, command: { action: "stop", ...currentScope, id: task.id } }),
+    });
+    await refresh();
+    return true;
+  } finally {
+    if (stoppingKey === identity) stoppingKey = "";
+    notifyListeners();
+  }
+}
 
 function scope() {
   const conversationId = state.activeConversationId;
@@ -186,6 +255,7 @@ function render() {
   if (!visibleSelection) clearSelection(values.length ? "Select a task to inspect its output." : "No tasks match this filter.");
   if (!selected && values.length) selectTask(values[0]);
   else if (selected) renderDetails(tasks.get(taskKey(selected)) || selected);
+  notifyListeners();
 }
 
 function renderDetails(task) {

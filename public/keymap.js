@@ -127,7 +127,7 @@ export const KEYMAP_COMMANDS = [
 export const COMMAND_MODIFIERS = ["ctrl", "alt"];
 const commandChord = (key) => [...COMMAND_MODIFIERS, key];
 export const DEFAULT_KEYMAP = {
-  version: 4,
+  version: 5,
   // The chord every conversation key rides under: the base modifiers plus its key.
   base: ["meta", "shift"],
   commands: {
@@ -142,7 +142,7 @@ export const DEFAULT_KEYMAP = {
     toggleProjects: commandChord("["),
     toggleChats: commandChord("]"),
     newProject: commandChord("="),
-    newPiChat: commandChord("N"),
+    newPiChat: ["ctrl", "alt", "shift", "N"],
     newClaudeChat: commandChord("C"),
     newKiroChat: commandChord("Q"),
     quickNote: commandChord("."),
@@ -165,7 +165,7 @@ export const DEFAULT_KEYMAP = {
     git: ["ctrl", "alt", "shift", "G"],
     explainConversation: ["ctrl", "alt", "shift", "E"],
     costs: ["ctrl", "alt", "shift", "C"],
-    newConversation: ["ctrl", "alt", "shift", "N"],
+    newConversation: commandChord("N"),
     activity: ["ctrl", "alt", "shift", "S"],
   },
 };
@@ -176,20 +176,26 @@ export function normalizeKeymap(keymap) {
   // Version 4 moved every command onto one modifier pair, so a keymap saved before it
   // describes a scheme that no longer exists: its command chords are rebuilt from the
   // defaults and only the conversation base modifiers carry over.
-  const rebuild = !(source.version >= 4);
+  const version = Number(source.version);
+  const rebuild = !(version >= 4);
+  const storedCommands = source.commands ?? {};
+  const oldNewKeys = { newPiChat: DEFAULT_KEYMAP.commands.newConversation, newConversation: DEFAULT_KEYMAP.commands.newPiChat };
+  // Swap the pair only if neither was customized: a freed chord may already have been assigned elsewhere.
+  const swapNewKeys = version === 4 && Object.entries(oldNewKeys).every(([command, chord]) =>
+    storedCommands[command] === undefined || JSON.stringify(normalizeChord(storedCommands[command])) === JSON.stringify(chord));
   const commands = {};
   const taken = [];
   for (const command of KEYMAP_COMMANDS) {
-    const raw = rebuild || source.commands?.[command] === undefined
-      ? [...DEFAULT_KEYMAP.commands[command]]
-      : source.commands[command];
+    const stored = storedCommands[command];
+    const fallback = version === 4 && !swapNewKeys ? oldNewKeys[command] ?? DEFAULT_KEYMAP.commands[command] : DEFAULT_KEYMAP.commands[command];
+    const raw = rebuild || stored === undefined || (swapNewKeys && command in oldNewKeys) ? fallback : stored;
     const chord = raw === null ? null : normalizeChord(raw);
     // A chord the keymap cannot carry is dropped, not stored; a chord two commands
     // would share goes to the earlier one, so the second is unbound rather than random.
     commands[command] = chord && !taken.some((existing) => shortcutsConflict(existing, chord)) ? chord : null;
     if (commands[command]) taken.push(chord);
   }
-  return { version: 4, base, commands };
+  return { version: DEFAULT_KEYMAP.version, base, commands };
 }
 /** Command/Control + ? opens the shortcuts panel. This one is fixed: it is how a person
  *  finds out what the configurable keys are. It matches the typed "?" as well as

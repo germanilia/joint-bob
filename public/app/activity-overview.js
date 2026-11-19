@@ -100,8 +100,11 @@ async function openActivityOverview(conversationId, audio) {
   // The movie is written for sound, so a silent one says why instead of playing as if nothing was wrong.
   if (settings.narrate && voiceError) toast.error(`The Activity overview plays without sound. ${voiceError.message}`);
   const write = (extra, onProgress) => requestMovie(url("story-podcast"), { threadId: thread.id, settings, ...extra }, onProgress).then((line) => line.script);
+  const desktopDock = window.matchMedia("(min-width: 701px)").matches && !document.body.classList.contains("focus-ui")
+    ? document.getElementById("chatHeadActions")
+    : null;
   const movie = playStoryPodcast({
-    script, settings, host: document.body, notify: toast.error, audio,
+    script, settings, host: document.body, dockHost: desktopDock, notify: toast.error, audio,
     onEnd: () => { if (live?.movie === movie) live = null; },
     narrate: narrates ? voice.narrate : null,
     ask: settings.ask ? (question, onProgress) => write({ question }, onProgress) : null,

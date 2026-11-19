@@ -56,21 +56,21 @@ test("steps and btw are discoverable and markers reveal steps from other panes",
       }), true, "steps precede the long overview");
     });
 
-    await t.test("btw opens directly and More stays unselected", async () => {
+    await t.test("Ask opens directly and Story stays unselected", async () => {
       const tab = page.getByTestId("activity-chat-tab");
       assert.equal(await tab.isVisible(), true);
-      assert.equal(await tab.innerText(), "btw");
+      assert.equal(await tab.innerText(), "Ask");
       await tab.click();
       await page.getByTestId("conversation-chat").waitFor();
-      assert.equal(await page.getByTestId("details-more-button").getAttribute("aria-selected"), "false");
+      assert.equal(await page.getByTestId("details-story-tab").getAttribute("aria-selected"), "false");
     });
 
     await t.test("a marker reveals steps even when the details were tucked with another pane open", async () => {
-      await page.getByTestId("details-more-button").click();
+      await page.getByTestId("details-story-tab").click();
       await page.evaluate(() => document.body.classList.add("ws-details-tucked"));
       await page.getByTestId("discovery-marker").click();
       await page.getByTestId("activity-list").waitFor();
-      assert.equal(await page.getByTestId("details-more").isVisible(), false);
+      assert.equal(await page.getByTestId("details-story").isVisible(), false);
       assert.equal(await page.locator("body.ws-details-tucked").count(), 0);
       const inView = await page.getByTestId("discovery-group").evaluate((group) => {
         const box = group.getBoundingClientRect();

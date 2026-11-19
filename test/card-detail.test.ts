@@ -25,7 +25,25 @@ test("a very long answer keeps its end and says it was cut; an empty transcript 
   assert.equal(detail.answerCut, true);
   assert.equal(detail.answer.length, ANSWER_LIMIT);
   assert.ok(detail.answer.endsWith("THE END"));
-  assert.deepEqual(cardDetail([]), { request: "", answer: "", answerAt: null, answerCut: false, steps: [] });
+  assert.deepEqual(cardDetail([]), { request: "", answer: "", answerAt: null, answerCut: false, steps: [], recentMessages: [] });
+});
+
+test("quick reply gets the latest four messages in order, without tools, blank text or attachment paths", () => {
+  const detail = cardDetail([
+    { id: "1", role: "user", text: "Older question" },
+    { id: "2", role: "assistant", text: "First answer" },
+    { id: "3", role: "user", text: "Follow-up\n\nFile attachments:\n- a.txt: /private/a.txt" },
+    { id: "4", role: "assistant", text: " " },
+    { id: "5", role: "assistant", text: "Second answer" },
+    { id: "6", role: "toolResult", text: "Tool output" },
+    { id: "7", role: "user", text: "Thanks" },
+  ]);
+  assert.deepEqual(detail.recentMessages, [
+    { role: "assistant", text: "First answer", cut: false },
+    { role: "user", text: "Follow-up", cut: false },
+    { role: "assistant", text: "Second answer", cut: false },
+    { role: "user", text: "Thanks", cut: false },
+  ]);
 });
 
 test("the attachment index the app adds to a message is not shown as what was asked", () => {

@@ -12,6 +12,8 @@ export interface CardDetail {
   answerCut: boolean;
   /** The last tool steps the agent took, oldest first. */
   steps: Array<{ name: string; target: string; failed: boolean }>;
+  /** The latest four text messages, oldest first, for the Inbox reply popup. */
+  recentMessages: Array<{ role: "user" | "assistant"; text: string; cut: boolean }>;
   /** The conversation's transcript could not be read on this machine. */
   unavailable?: boolean;
 }
@@ -24,6 +26,17 @@ const STEPS = 5;
 function withoutAttachmentIndex(text: string): string {
   const starts = ["Image attachments:", "File attachments:"].map((marker) => text.indexOf(marker)).filter((index) => index >= 0);
   return starts.length ? text.slice(0, Math.min(...starts)).trim() : text;
+}
+
+function recentMessages(messages: ReadonlyArray<ChatMessage>): CardDetail["recentMessages"] {
+  const recent: CardDetail["recentMessages"] = [];
+  for (let i = messages.length - 1; i >= 0 && recent.length < 4; i--) {
+    const { role, text } = messages[i]!;
+    if (role !== "user" && role !== "assistant") continue;
+    const content = role === "user" ? withoutAttachmentIndex(text.trim()) : text.trim();
+    if (content) recent.push({ role, text: content.slice(-ANSWER_LIMIT), cut: content.length > ANSWER_LIMIT });
+  }
+  return recent.reverse();
 }
 
 /** Reads the detail out of a transcript. The end of a long answer matters most, so its start is cut first. */
@@ -43,5 +56,6 @@ export function cardDetail(messages: ReadonlyArray<ChatMessage>): CardDetail {
     answerAt: answered?.timestamp ?? null,
     answerCut: text.length > ANSWER_LIMIT,
     steps,
+    recentMessages: recentMessages(messages),
   };
 }

@@ -14,7 +14,7 @@
 // One state, any number of toolbars: a change in one is shown in the others.
 
 import { api } from "./api.js";
-import { isKept } from "./control-marks.js";
+import { deleteConversations, isKept } from "./control-marks.js";
 import { startMoving } from "./control-moves.js";
 import { createMultiSelect } from "./multi-select.js";
 import { confirmAction, toast } from "./shell.js";
@@ -98,9 +98,9 @@ const emitView = () => { for (const listener of viewListeners) listener(); selec
 const selectionChanged = () => { for (const listener of selectionListeners) listener(); };
 
 /** What the drawn rows depend on, to tell whether they must be drawn again. */
-export const inboxSignature = () => JSON.stringify([mode, [...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting, [...selected]]);
+export const inboxSignature = () => JSON.stringify([hideAutomations, mode, [...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting, [...selected]]);
 /** The same without the chosen rows: a list keeps its place while rows are chosen, and starts at the top for other filters. */
-export const inboxFilterKey = () => JSON.stringify([[...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting]);
+export const inboxFilterKey = () => JSON.stringify([hideAutomations, [...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting]);
 export const isSelecting = () => selecting;
 export const isSelected = (card) => selected.has(keyOf(card));
 
@@ -112,8 +112,10 @@ export function toggleSelected(card) {
 
 /** Applies status, project and source choices. Show all skips the phone's Earlier range. */
 export function filterInbox(groupId, cards, allEarlier = false) {
-  if (statuses.size && !statuses.has(groupId)) return [];
-  const inProjects = cards.filter((card) => (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card)))
+  const mixedStatus = groupId === "pinned" || groupId === "starred";
+  if (!mixedStatus && statuses.size && !statuses.has(groupId)) return [];
+  const inProjects = cards.filter((card) => shownCard(card) && (!mixedStatus || !statuses.size || statuses.has(card.column))
+    && (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card)))
     && (!labels.size || labels.has(card.classification ? `label:${card.classification}` : "unclassified")) && (!worktrees.size || worktrees.has(card.worktree?.id ?? "project")));
   if (groupId !== "earlier" || allEarlier) return inProjects;
   if (range.within) {
@@ -148,7 +150,7 @@ async function markRead(cards, afterChange) {
   afterChange();
 }
 
-async function deleteChosen(cards, afterChange) {
+async function deleteChosen(cards, actions, afterConfirm) {
   const targets = cards.filter((card) => !isKept(card) && card.column !== "running" && !card.othersMachine);
   const skipped = cards.length - targets.length;
   if (!targets.length) { toast("Pinned, starred, running and other people's conversations are not deleted here."); return; }
@@ -158,11 +160,8 @@ async function deleteChosen(cards, afterChange) {
     confirmLabel: "Delete", destructive: true,
   });
   if (!confirmed) return;
-  const results = await Promise.allSettled(targets.map((card) => api(`/api/projects/${encodeURIComponent(card.projectId)}/sessions?${new URLSearchParams({ sessionId: card.sessionId, engine: card.harnessId })}`, { method: "DELETE" })));
-  const failed = results.filter((result) => result.status === "rejected");
-  if (failed.length) toast.error(`Could not delete ${failed.length} of ${targets.length}: ${failed[0].reason.message}`);
-  else toast(`Deleted ${plural(targets.length, "conversation")}`);
-  afterChange();
+  afterConfirm();
+  await deleteConversations(targets, actions);
 }
 
 /* ---------- the toolbar ---------- */
@@ -201,13 +200,41 @@ export function createProjectFilter({ id, allCards }) {
   return { root: select.root, update };
 }
 /** Only the chosen projects' conversations (all of them when none is chosen). */
-export const inChosenProjects = (cards) => (projects.size ? cards.filter((card) => projects.has(card.projectId)) : cards);
+// Conversations the schedules start can be left out of every list of the Inbox (kept in this browser).
+const AUTOMATIONS_KEY = "joint-bob-inbox-hide-automations";
+let hideAutomations = (() => { try { return localStorage.getItem(AUTOMATIONS_KEY) === "1"; } catch { return false; } })();
+export const automationsHidden = () => hideAutomations;
+export function setAutomationsHidden(hidden) {
+  if (hidden === hideAutomations) return;
+  hideAutomations = hidden;
+  try { localStorage.setItem(AUTOMATIONS_KEY, hidden ? "1" : "0"); } catch { /* private mode: the choice lasts the page */ }
+  emitView();
+}
+/** The choice as a button: the column's row and the toolbars show the same one. */
+export function createAutomationToggle(testid) {
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "inbox-automation-toggle";
+  toggle.dataset.testid = testid;
+  const sync = () => {
+    toggle.setAttribute("aria-pressed", String(hideAutomations));
+    toggle.textContent = hideAutomations ? "Automations hidden" : "Hide automations";
+    toggle.title = hideAutomations ? "Show the conversations that schedules and webhooks start" : "Leave out the conversations that schedules and webhooks start";
+  };
+  toggle.addEventListener("click", () => setAutomationsHidden(!hideAutomations));
+  viewListeners.add(sync);
+  sync();
+  return toggle;
+}
+export const shownCard = (card) => !(hideAutomations && card.scheduled);
+export const inChosenProjects = (cards) => cards.filter((card) => shownCard(card) && (!projects.size || projects.has(card.projectId)));
 
 /**
  * `allCards()` is every conversation the Inbox knows (for the project list and for finding what is chosen), `visibleCards()` the
- * ones listed now (for "All shown"), `afterChange()` reads the board again after Mark read or Delete.
+ * ones listed now (for "All shown"), `afterChange()` reads the board again after Mark read or Delete, and `redraw()` draws the
+ * board without the conversations being deleted.
  */
-export function createInboxToolbar({ id, allCards, visibleCards, afterChange, folded = false }) {
+export function createInboxToolbar({ id, allCards, visibleCards, afterChange, redraw, folded = false }) {
   const root = document.createElement("div");
   root.className = "inbox-tools";
   root.dataset.testid = `${id}-tools`;
@@ -246,7 +273,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
   const filters = document.createElement("div");
   filters.className = "inbox-tools-filters";
   filters.dataset.testid = `${id}-filters`;
-  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, labelSelect.root, worktreeSelect.root, rangeSelect);
+  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, labelSelect.root, worktreeSelect.root, createAutomationToggle(`${id}-automations`), rangeSelect);
   // Folded (the phone's Home): one row with Filter and Select; Filter opens the choices under it.
   const filterButton = button("inbox-filter-toggle", `${id}-filter`, "Filter", () => {
     filters.hidden = !filters.hidden;
@@ -276,7 +303,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
   });
   const deleteButton = button("inbox-bar-button danger", `${id}-delete`, "Delete", () => {
     const cards = chosen();
-    void deleteChosen(cards, () => { selected.clear(); selecting = false; emitView(); afterChange(); });
+    void deleteChosen(cards, { redraw, refresh: afterChange }, () => { selected.clear(); selecting = false; emitView(); });
   });
   const bar = document.createElement("div");
   bar.className = "inbox-tools-bar";

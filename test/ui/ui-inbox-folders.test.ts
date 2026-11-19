@@ -38,6 +38,7 @@ function boardFor(projects: Array<{ id: string; name: string }>, withTools = fal
   };
   if (withTools) {
     // A sub-agent under the running conversation, and labels, for the tools below.
+    result.cards.push(board("a1", second, "Nightly cost digest run", "review", "2026-11-18T07:30:00Z", { scheduled: true }));
     result.cards.push(board("r2", first, "Sub-agent: check the schema", "running", "2026-11-18T09:30:00Z", { turnRunning: true, parentPath: "/r1" }));
     result.earlier[1] = earlier("e1", first, "Old design notes", "2026-11-17T07:00:00Z", { classification: "research" });
   }
@@ -57,11 +58,27 @@ async function open(t: Parameters<typeof nativeUiFixture>[0], withTools = false)
   await page.evaluate(`(() => {
     const originalFetch = window.fetch;
     window.__saved = [];
+    let pins = [];
     window.fetch = async (...args) => {
       const url = new URL(String(args[0]), location.href);
       const method = (args[1] && args[1].method) || 'GET';
       const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-      if (url.pathname === '/api/control-center/board') return json(${JSON.stringify(boardFor(projects, withTools))});
+      if (url.pathname === '/api/control-center/board') {
+        const board = ${JSON.stringify(boardFor(projects, withTools))};
+        if (window.__finishPinned) {
+          if (url.searchParams.has('earlier')) board.earlier.push({ ...board.cards.shift(), done: true });
+          else { board.cards.shift(); delete board.earlier; }
+        }
+        return json(board);
+      }
+      if (url.pathname === '/api/pins') {
+        if (method === 'PUT') {
+          const { projectId, engine, sessionId, pinned } = JSON.parse(args[1].body);
+          pins = pins.filter((pin) => pin.projectId !== projectId || pin.engine !== engine || pin.sessionId !== sessionId);
+          if (pinned) pins.push({ projectId, engine, sessionId });
+        }
+        return json({ projectIds: [], conversations: pins });
+      }
       if (url.pathname === '/api/preferences' && method === 'PUT') window.__saved.push(JSON.parse(args[1].body));
       return originalFetch(...args);
     };
@@ -94,6 +111,117 @@ test("every conversation is listed: scheduled runs and done ones are groups, and
   for (const id of ["inbox-row-folder", "inbox-row-star", "inbox-row-pin", "inbox-row-done", "inbox-row-rename", "inbox-row-fork", "inbox-row-transfer", "inbox-row-delete"]) {
     assert.equal(await page.getByTestId(id).count(), 1, `${id} is in the row menu`);
   }
+});
+
+test("an Inbox conversation menu stays beside its row when the pointer enters the menu and the lists refresh", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  const row = page.getByTestId("workspace-group-running").getByTestId("workspace-group-row");
+  const trigger = row.getByTestId("inbox-row-menu");
+  const menu = page.getByTestId("session-row-menu");
+  await row.hover();
+  const anchor = (await trigger.boundingBox())!;
+  await trigger.click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const opened = (await menu.boundingBox())!;
+  assert.ok(opened.x >= anchor.x + anchor.width, "the tall menu opens to the right of the row trigger");
+
+  await page.getByTestId("inbox-row-folder").hover();
+  assert.equal(await row.evaluate((element) => element.matches(":hover")), false);
+  await page.evaluate(async () => {
+    const { renderProjects } = await import("/app/project-list.js");
+    renderProjects();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  assert.deepEqual(await menu.boundingBox(), opened, "refresh must not move the open menu away from its row");
+});
+
+test("pinned conversations stay above the other Inbox groups until unpinned", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  const pinned = page.getByTestId("workspace-group-pinned");
+  const row = (title: string) => page.getByTestId("workspace-groups").getByTestId("workspace-group-row").filter({ hasText: title });
+  const title = "Answer the deploy question";
+  const togglePin = async (title: string) => {
+    await row(title).hover();
+    await row(title).getByTestId("inbox-row-menu").click();
+    await page.getByTestId("inbox-row-pin").click();
+  };
+  assert.equal(await pinned.count(), 0, "do not show an empty Pinned section");
+  await togglePin(title);
+  await pinned.getByText(title).waitFor();
+  assert.equal(await row(title).count(), 1, "the pinned row is not repeated under Needs you");
+  assert.equal(await pinned.evaluate((section) => section.parentElement?.firstElementChild === section), true);
+  assert.equal(await pinned.locator(".ws-lab span").first().textContent(), "Pinned");
+  assert.equal(await pinned.locator(".ws-dot.need").count(), 1, "keep the real status on the row");
+  assert.equal(await page.getByTestId("workspace-inbox-note").textContent(), "1 needs you");
+
+  // A fresh board moves the conversation to Done, but its row stays at the top.
+  await page.evaluate(async () => {
+    (window as unknown as { __finishPinned: boolean }).__finishPinned = true;
+    (await import("/app/workspace.js")).scheduleGroupsRefresh(0);
+  });
+  await pinned.locator(".ws-dot.done").waitFor();
+  assert.equal(await row(title).count(), 1);
+  for (const mode of ["project", "folder", "state"]) {
+    await page.getByTestId(`workspace-mode-${mode}`).click();
+    assert.equal(await pinned.evaluate((section) => section.parentElement?.firstElementChild === section), true, `Pinned stays first by ${mode}`);
+    assert.equal(await row(title).count(), 1);
+  }
+  await page.getByTestId("workspace-show-all-pinned").click();
+  await page.getByTestId("workspace-group-page-row").getByText(title).waitFor();
+  assert.equal(await page.getByTestId("workspace-group-tab-pinned").getAttribute("aria-selected"), "true");
+  await page.getByTestId("workspace-group-close").click();
+  await togglePin(title);
+  await page.getByTestId("workspace-group-done").getByText(title).waitFor();
+  assert.equal(await pinned.count(), 0);
+});
+
+test("Show all has Pinned and Starred tabs with search, counts, and live updates", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  const tab = (id: string) => page.getByTestId(`workspace-group-tab-${id}`);
+  const rows = page.getByTestId("workspace-group-page-row");
+  await page.getByTestId("workspace-show-all-review").click();
+  await tab("pinned").waitFor({ timeout: 5_000 });
+  assert.equal(await tab("starred").locator("b").textContent(), "0");
+  const review = rows.filter({ hasText: "Review the invoice fix" });
+  await review.hover();
+  await review.getByTestId("inbox-row-menu").click();
+  await page.getByTestId("inbox-row-pin").click();
+  await tab("pinned").click();
+  await review.waitFor();
+  assert.equal(await tab("pinned").locator("b").textContent(), "1");
+  assert.equal(await review.locator(".ws-dot.rev").count(), 1);
+
+  // An older conversation still appears in Starred after it moves to a folder.
+  await tab("earlier").click();
+  const old = rows.filter({ hasText: "Old design notes" });
+  await old.hover();
+  await old.getByTestId("inbox-row-menu").click();
+  await page.getByTestId("inbox-row-star").click();
+  assert.equal(await tab("starred").locator("b").textContent(), "1");
+  await old.hover();
+  await old.getByTestId("inbox-row-menu").click();
+  await page.getByTestId("inbox-row-folder").click();
+  await page.getByTestId("control-pop-input").fill("Design");
+  await page.keyboard.press("Enter");
+  await old.waitFor({ state: "detached" });
+  await tab("starred").click();
+  await old.waitFor();
+  const search = page.getByTestId("inboxPage-search");
+  await search.fill("invoice");
+  assert.equal(await tab("starred").locator("b").textContent(), "0");
+  assert.equal(await rows.count(), 0);
+  await tab("pinned").click();
+  await review.waitFor();
+  await search.clear();
+  await tab("starred").click();
+  await old.hover();
+  await old.getByTestId("inbox-row-menu").click();
+  await page.getByTestId("inbox-row-star").click();
+  await old.waitFor({ state: "detached" });
+  assert.equal(await tab("starred").getAttribute("aria-selected"), "true", "removing the last star keeps the tab open");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.body.classList.contains("focus-ui"));
+  assert.equal(await page.getByTestId("workspace-group-tabs").evaluate((bar) => bar.scrollWidth <= bar.clientWidth), true, "all tabs fit on a phone");
 });
 
 test("by project: a section per project with its counts, and the project's own menu", { timeout: 120_000 }, async (t) => {
@@ -188,10 +316,11 @@ test("by folder: folders and subfolders, filing by menu and by drag, and filing 
   await page.getByTestId("workspace-mode-folder").click();
   await contigos.waitFor();
 
-  // Pinned and Starred are views across every folder.
+  // The folder view's Starred shortcut opens the Starred tab in Show all.
   await page.getByTestId("workspace-folder-starred-open").click();
   await page.getByTestId("workspace-group-page").waitFor();
-  assert.equal(await page.getByTestId("workspace-listing-page-row").count(), 0);
+  assert.equal(await page.getByTestId("workspace-group-tab-starred").getAttribute("aria-selected"), "true");
+  assert.equal(await page.getByTestId("workspace-group-page-row").count(), 0);
   await page.getByTestId("workspace-group-close").click();
 
   // Deleting a folder deletes no conversation: the filed ones are back in the Inbox.
@@ -269,4 +398,45 @@ test("the phone's Home groups by state, project or folder too, with 44 px contro
   await page.getByTestId("workspace-folder-new").waitFor();
   await page.getByTestId("phone-mode-state").click();
   await page.getByTestId("workspace-group-needs-you").waitFor();
+});
+
+test("the column's project filter opens a list wide enough for one line per project", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  await page.getByTestId("inboxColumn-projects-trigger").click();
+  const options = page.getByTestId("inboxColumn-projects-options").locator("[role=option]");
+  await options.first().waitFor();
+  const popover = await page.getByTestId("inboxColumn-projects").locator(".searchable-select-popover").boundingBox();
+  assert.ok(popover!.width >= 240, `the list is ${popover!.width}px wide`);
+  assert.ok(popover!.x >= 0, "the list stays on screen");
+  const lines = await options.locator(".multi-select-option-label").evaluateAll((labels) => labels.map((label) => Math.round(label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight || "18"))));
+  assert.ok(lines.every((count) => count <= 1), `one line per project: ${lines.join(", ")}`);
+});
+
+test("Hide automations leaves the conversations schedules start out of every list, and Show all too", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t, true);
+  const column = () => page.locator('[data-testid="workspace-group-row"]').filter({ hasText: "Nightly cost digest run" });
+  await column().waitFor();
+  await page.getByTestId("inboxColumn-automations").click();
+  await page.waitForFunction(() => !document.body.innerText.includes("Nightly cost digest run"));
+  assert.equal(await page.getByTestId("inboxColumn-automations").textContent(), "Automations hidden");
+  // By project and by folder too, and the choice is kept.
+  await page.getByTestId("workspace-mode-project").click();
+  await page.getByTestId("workspace-project").first().waitFor();
+  assert.equal(await page.locator("body").innerText().then((text) => text.includes("Nightly cost digest run")), false);
+  assert.equal(await page.evaluate(() => localStorage.getItem("joint-bob-inbox-hide-automations")), "1");
+  // The scheduled group's own Show all page is empty while they are hidden; showing them again brings them back.
+  await page.getByTestId("workspace-mode-state").click();
+  await page.getByTestId("inboxColumn-automations").click();
+  await page.getByTestId("workspace-group-review").getByText("Nightly cost digest run").waitFor();
+});
+
+test("a group's heading is larger than the rows under it", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  const size = (selector: string) => page.locator(selector).first().evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+  const heading = await size('[data-testid="workspace-group-needs-you"] .ws-lab span');
+  const row = await size('[data-testid="workspace-group-needs-you"] .ws-row-top b');
+  assert.ok(heading > row, `heading ${heading}px, row ${row}px`);
+  await page.getByTestId("workspace-mode-project").click();
+  await page.getByTestId("workspace-project").first().waitFor();
+  assert.ok((await size(".ws-project-name")) > (await size(".ws-project .ws-row-top b")));
 });
