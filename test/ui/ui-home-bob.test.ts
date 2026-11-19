@@ -207,6 +207,9 @@ test("Home nav button sits above Inbox and Home lets you pick Activity, Automati
     },
   }));
 
+  // Home already read the real (empty) lists before these routes existed; reload so every module reads the mocks.
+  await page.reload();
+  await page.getByTestId("home-page").waitFor({ state: "visible" });
   // Option C Glance Strip shows live summaries across all 4 modules; Focus Tabs jump into each.
   await page.getByTestId("home-glance-strip").waitFor({ state: "visible" });
   await page.getByTestId("home-tab-automations").click();
