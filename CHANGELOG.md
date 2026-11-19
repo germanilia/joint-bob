@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.330.0 — 2026-11-19
+
+- Added **Add a machine** to Settings › Cluster. One link sets up another machine: it joins the relays this machine is reached on, becomes a twin of this machine and of every twin it has (for your own machine), and joins the clusters you tick. The link works once, for 15 minutes.
+- **Join cluster** is now **Use a link**. It takes a link for adding the machine, a cluster invitation, a twin link or a relay token link, says what the link will do before anything happens, and lists each step with its result. A step that fails says why, and using the link again skips the steps already done.
+- A machine nobody has set up yet can paste the link on its welcome screen, next to the administrator's name and password.
+- A relay now gives a machine on it a one-time pass for one more machine, so the link needs no token from the relay's operator. Turn it off under Settings › Relay › Serving › Machines on this relay can bring in another machine. A relay on an older release gives no pass, and the new machine asks it for access.
+- Fixed the install commands in the README, the agents guide, bootstrap.sh and install-windows.ps1: they fetched the installer from the old repository, which installed release 2.250.0.
+
 ## 2.329.1 — 2026-11-19
 
 - Fixed the failing release check: the activity panel's saved section and tab choices are now listed among the display preferences kept in the browser.
