@@ -15,7 +15,6 @@ import type { HarnessAdapter } from "./harnesses/contract.js";
 import { decrypt, save, setting, settingsDatabase, value } from "./settings-store.js";
 import { untilNextWrite } from "./sqlite-generation.js";
 import { knownReadyHarnesses } from "./harness-readiness.js";
-import { servingSettings } from "./relay/store.js";
 import { commandPresetSchema, identifyCommandPresets } from "./saved-commands.js";
 import { defaultManagedHome } from "./managed-home.js";
 import { scopedSkillRoots } from "./scoped-skills.js";
@@ -50,8 +49,8 @@ export const DEFAULT_CONVERSATION_COMMANDS: ConversationCommandsSettings = {
 };
 
 export interface RemoteTerminalSettings { twins: boolean; otherNodes: boolean }
-/** Whether nodes other than this node's twins may pick it in Runs on. Twins always may. */
-export interface RunnerAccessSettings { otherNodes: boolean }
+/** Whether machines other than this node's twins may start conversations here (Runs on) and run automations here. Twins always may. */
+export interface RunnerAccessSettings { conversations: boolean; automations: boolean }
 
 /** The background check that finds conflict copies and file sync errors and fixes them quietly. */
 export interface SyncCheckSettings extends ConversationDefault { enabled: boolean; harnessId: string }
@@ -190,10 +189,15 @@ export function remoteTerminalSettings(): RemoteTerminalSettings {
   };
 }
 
-/** Other nodes may not run here unless this node says so; a node serving a relay allows it until told otherwise. */
+/**
+ * Other machines may start conversations and run automations here until this node opts out. The old opt-in
+ * "runnerAccess.otherNodes" is not read: the settings page saved it on every change, so its "false" was no one's choice.
+ */
 export function runnerAccessSettings(): RunnerAccessSettings {
-  const relayDefault = servingSettings(settingsDatabase()).enabled;
-  return { otherNodes: value("runnerAccess.otherNodes", String(relayDefault)) === "true" };
+  return {
+    conversations: value("runnerAccess.conversations", "true") === "true",
+    automations: value("runnerAccess.automations", "true") === "true",
+  };
 }
 
 export type TerminalAccessMode = "off" | "admin" | "everyone" | "selected";
@@ -959,8 +963,10 @@ export function updateSettings(input: SettingsInput, actorId?: string): Settings
     if (backgroundAgentSettings) save(db, "backgroundAgent", JSON.stringify(backgroundAgentSettings));
     save(db, "remoteTerminal.twins", String(remoteTerminal.twins));
     save(db, "remoteTerminal.otherNodes", String(remoteTerminal.otherNodes));
-    // Only an explicit choice is stored, so a node that later starts serving a relay still gets the relay default.
-    if (input.runnerAccess) save(db, "runnerAccess.otherNodes", String(input.runnerAccess.otherNodes));
+    if (input.runnerAccess) {
+      save(db, "runnerAccess.conversations", String(input.runnerAccess.conversations));
+      save(db, "runnerAccess.automations", String(input.runnerAccess.automations));
+    }
     save(db, "conversationCommands", JSON.stringify(conversationCommands));
     save(db, "conversationDefaults", JSON.stringify(conversationDefaults));
     for (const type of RESOURCE_TYPES) save(db, `resources.${type}`, JSON.stringify(resources[type]));

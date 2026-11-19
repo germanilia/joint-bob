@@ -20,6 +20,7 @@ import { localVoiceStatus, startLocalVoiceInstall, testStoryVoice, updateLocalVo
 import { getClusterNode } from "../../cluster.js";
 import { isTrustedTwin, listSharingClusterMembers, listSharingMemberships } from "../../cluster-sharing-policy.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
+import { clusterPoolServesEngine } from "../../provider-profiles/pool-sharing.js";
 import { forgetNtfyServiceSharing, ntfyServicesSharedWith, ntfyServiceSharingView, setNtfyServiceSharing, shareNtfyServiceNow } from "../ntfy-share.js";
 import type { AgentCapabilityIdentity } from "../../agent-capabilities.js";
 import { z } from "zod";
@@ -261,7 +262,11 @@ app.post("/api/client-errors", (request, response) => {
 async function harnessProblems(id: HarnessId): Promise<string[]> {
   const runtime = await getHarnessRuntime(id);
   const installation = await runtime.readiness(process.cwd());
-  return installation.length ? installation : runtime.signInProblems();
+  if (installation.length) return installation;
+  const signIn = await runtime.signInProblems();
+  // A cluster's shared pool runs the agent without a sign-in on this node.
+  if (signIn.length && clusterPoolServesEngine(await clusterV2Database(), (await getClusterNode()).id, id)) return [];
+  return signIn;
 }
 
 // `ready` means installed and signed in on this node; the UI offers only ready harnesses for new work.

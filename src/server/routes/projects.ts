@@ -379,7 +379,7 @@ app.get('/api/cluster/projects/presence',async(request,response,next)=>{
     if(!response.locals.machineAuth){sendError(response,401,'Unauthorized');return;}
     const projectId=z.string().min(1).parse(request.query.projectId);
     if(!await clusterPeerMayAccessProject(response.locals.machineNodeId,projectId)){sendError(response,403,'Project is not shared with this node');return;}
-    response.json({mapped:Boolean(await getProject(projectId)),terminal:terminalAccessSettings().mode!=="off"&&await peerMayOpenTerminal(response.locals.machineNodeId),runner:await peerMayRunHere(response.locals.machineNodeId)});
+    response.json({mapped:Boolean(await getProject(projectId)),terminal:terminalAccessSettings().mode!=="off"&&await peerMayOpenTerminal(response.locals.machineNodeId),runner:await peerMayRunHere(response.locals.machineNodeId,"conversations")});
   }catch(error){next(error);}
 });
 

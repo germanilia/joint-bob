@@ -40,7 +40,7 @@ test("webhooks can be created and transferred to a shared relay without exposing
       assert.ok(projects.body.projects.some(item => item.id === projectId));
     });
     const settings = await api<Record<string, unknown>>(relay, sb, "GET", "/settings");
-    assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { otherNodes: true } })).status, 200);
+    assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { conversations: true, automations: true } })).status, 200);
     const owners = await api<{ owners: Array<{ id: string; twin?: boolean }> }>(owner, sa, "GET", `/automations/owners?projectId=${projectId}`);
     assert.ok(owners.body.owners.some(item => item.id === relay.nodeId && item.twin === false), JSON.stringify(owners.body));
     const hidden = await api<{ owners: Array<{ id: string }> }>(owner, sa, "GET", `/automations/owners?projectId=${owner.projects[0].id}`);
@@ -72,9 +72,9 @@ test("webhooks can be created and transferred to a shared relay without exposing
       const denied = await signedNodeRequest(a, owner, relay, "POST", "/api/cluster/v2/automations", command);
       assert.equal(denied.status, 403, JSON.stringify(command));
     }
-    assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { otherNodes: false } })).status, 200);
+    assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { conversations: true, automations: false } })).status, 200);
     assert.equal((await api(owner, sa, "POST", `/automations?nodeId=${relay.nodeId}`, input)).status, 403, "relay owners must opt in to remote execution");
-    assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { otherNodes: true } })).status, 200);
+    assert.equal((await api(relay, sb, "PUT", "/settings", { ...settings.body, runnerAccess: { conversations: true, automations: true } })).status, 200);
     const privateSource = await api<{ automation: { id: string } }>(owner, sa, "POST", "/automations", { ...input, enabled: true, target: { kind: "project", projectId: owner.projects[0].id } });
     assert.equal((await api(owner, sa, "POST", `/automations/${privateSource.body.automation.id}/transfer`, { nodeId: relay.nodeId })).status, 403);
     const unchanged = await api<{ automations: Array<{ id: string; enabled: boolean }> }>(owner, sa, "GET", "/automations");

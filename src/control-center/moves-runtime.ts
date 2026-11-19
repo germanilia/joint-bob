@@ -46,7 +46,7 @@ export async function localMoveBlockers(input: MoveCheckInput, callerNodeId?: st
   if (!project) return ["The project is not set up on this machine"];
   try { if (!(await stat(project.path)).isDirectory()) return ["The project folder on this machine is not a folder"]; }
   catch { return ["The project folder is not available on this machine"]; }
-  if (callerNodeId && !await peerMayRunHere(callerNodeId)) return ["This machine does not accept runs from other machines"];
+  if (callerNodeId && !await peerMayRunHere(callerNodeId, "conversations")) return ["This machine does not accept runs from other machines"];
   const harnessId = input.engine as HarnessId;
   let label: string;
   try { label = getHarness(harnessId).label; } catch { return [`${input.engine} is not installed on this machine`]; }

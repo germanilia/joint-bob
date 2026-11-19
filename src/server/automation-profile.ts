@@ -1,5 +1,4 @@
 import { getSubscriptionPool } from "../provider-profiles/pools.js";
-import { NotFoundError } from "../not-found.js";
 import { accessibleProviderProfile } from "../provider-profiles/store.js";
 import { withAutomationProfile, withoutAutomationProfile } from "../provider-profiles/context.js";
 
@@ -13,9 +12,6 @@ export function validateAutomationAssignment(input: AutomationAssignment): void 
   if (input.providerProfileId) accessibleProviderProfile(input.creatorAccountId, input.providerProfileId, "automation");
 }
 
-export function assertAutomationCreator(creatorAccountId: string | null | undefined, editorAccountId: string | null | undefined): void {
-  if (creatorAccountId && creatorAccountId !== editorAccountId) throw new NotFoundError("Automation not found or not owned by this creator");
-}
 export function automationProfileContext(input: AutomationAssignment) {
   validateAutomationAssignment(input);
   if (!input.creatorAccountId) {

@@ -130,7 +130,7 @@ test("every section that waited for Save settings saves as it changes and keeps 
   await openSection(page, "node");
   await page.getByTestId("settings-remote-terminal-twins").setChecked(!before.remoteTerminal.twins);
   await waitForSaved(page);
-  await page.getByTestId("settings-runner-other-nodes").setChecked(!before.runnerAccess.otherNodes);
+  await page.getByTestId("settings-runner-automations").setChecked(!before.runnerAccess.automations);
   await waitForSaved(page);
   // The dev seed turns terminal access on for its admin; the page fills the policy in just after it loads.
   await page.waitForFunction(() => (document.querySelector('[data-testid="terminal-policy-mode"]') as HTMLSelectElement).value === "admin");
@@ -194,7 +194,7 @@ test("every section that waited for Save settings saves as it changes and keeps 
   assert.equal(saved.gitPullFileLimit, 640);
   assert.equal(saved.conversationDefaults.claude.modelId, otherModel);
   assert.equal(saved.remoteTerminal.twins, !before.remoteTerminal.twins);
-  assert.equal(saved.runnerAccess.otherNodes, !before.runnerAccess.otherNodes);
+  assert.equal(saved.runnerAccess.automations, !before.runnerAccess.automations);
   assert.deepEqual(saved.resources.skills, [skills]);
   assert.equal(saved.syncCheck.enabled, !before.syncCheck.enabled);
   assert.equal((await page.evaluate(async () => (await fetch("/api/terminal-policy")).json())).idleMinutes, 45);
@@ -226,7 +226,7 @@ test("every section that waited for Save settings saves as it changes and keeps 
   assert.equal(await page.getByTestId("settings-claude-default-model").getAttribute("data-value"), otherModel);
   await openSection(page, "node");
   assert.equal(await page.getByTestId("settings-remote-terminal-twins").isChecked(), !before.remoteTerminal.twins);
-  assert.equal(await page.getByTestId("settings-runner-other-nodes").isChecked(), !before.runnerAccess.otherNodes);
+  assert.equal(await page.getByTestId("settings-runner-automations").isChecked(), !before.runnerAccess.automations);
   await page.waitForFunction(() => (document.querySelector('[data-testid="terminal-policy-idle"]') as HTMLInputElement).value === "45");
   await openSection(page, "resources");
   await page.getByTestId("resources-tab-paths").click();

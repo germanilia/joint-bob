@@ -1,7 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { ensureClusterSharingPolicySchema, getSharingCluster, listSharingClusterMembers } from "../cluster-sharing-policy.js";
+import { ensureClusterSharingPolicySchema, getSharingCluster, listSharingClusterMembers, listSharingMemberships } from "../cluster-sharing-policy.js";
 import { enqueueReplicationEvent, ensureReplicationSchema, type ReplicationEvent } from "../replication.js";
+import type { HarnessId } from "../types.js";
 import type { ProfileProvider } from "./store.js";
 
 const uuid = z.string().uuid();
@@ -278,4 +279,19 @@ export function clusterPoolProfileAuthorized(db: DatabaseSync, clusterId: string
 
 export function poolManifestProfiles(manifest: ClusterSubscriptionPoolManifest): Array<{ profileId: string; provider: ProfileProvider; label: string; position: number }> {
   return manifestSchema.parse(manifest).members.map((member) => ({ ...member }));
+}
+
+export function poolMemberCompatible(engine: HarnessId, provider: ProfileProvider, ownedHere = true): boolean {
+  if (engine === "claude") return provider === "claude";
+  if (engine === "antigravity") return provider === "antigravity" && ownedHere;
+  if (engine === "pi") return provider === "pi" || provider === "claude" || provider === "openai-codex";
+  return false;
+}
+
+/** Whether a pool assigned to a cluster this node belongs to has a member this agent can run on, so it needs no sign-in of its own here. */
+export function clusterPoolServesEngine(db: DatabaseSync, localNodeId: string, engine: HarnessId): boolean {
+  return listSharingMemberships(db, localNodeId, true).some(({ clusterId }) => {
+    const assignment = getClusterSubscriptionPool(db, clusterId);
+    return assignment?.manifest?.members.some((member) => poolMemberCompatible(engine, member.provider, assignment.poolOwnerNodeId === localNodeId)) ?? false;
+  });
 }

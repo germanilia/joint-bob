@@ -4,7 +4,7 @@ import { realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type ClusterPeer, getClusterNode } from "../cluster.js";
-import { getSettings, remoteTerminalAllowed, remoteTerminalSettings, runnerAccessSettings } from "../settings.js";
+import { getSettings, remoteTerminalAllowed, remoteTerminalSettings, runnerAccessSettings, type RunnerAccessSettings } from "../settings.js";
 import { canonicalProjectId, listProjects, listWorkspaces } from "../store.js";
 import { TaskWorkspaceError } from "../task-workspaces.js";
 import type { ProjectRecord } from "../types.js";
@@ -33,11 +33,11 @@ export async function peerMayOpenTerminal(machineNodeId: string): Promise<boolea
   return remoteTerminalAllowed(remoteTerminalSettings(), isTrustedTwin(await clusterV2Database(), local.id, machineNodeId));
 }
 
-/** Whether a peer may pick this node in Runs on. Its twins always may; any other node only when this node allows it. */
-export async function peerMayRunHere(machineNodeId: string): Promise<boolean> {
+/** Whether a peer may start conversations (pick this node in Runs on) or run automations here. Twins always may; any other node unless this node opted out. */
+export async function peerMayRunHere(machineNodeId: string, kind: keyof RunnerAccessSettings): Promise<boolean> {
   const local = await getClusterNode();
   if (machineNodeId === local.id) return true;
-  return isTrustedTwin(await clusterV2Database(), local.id, machineNodeId) || runnerAccessSettings().otherNodes;
+  return isTrustedTwin(await clusterV2Database(), local.id, machineNodeId) || runnerAccessSettings()[kind];
 }
 
 export function publicClusterPeer(peer: ClusterPeer): ClusterPeer & { online: boolean } {
