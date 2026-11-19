@@ -18,10 +18,11 @@ const SCOPES = {
  * The sentence comes from the section's own text.
  */
 export const SECTION_INFO = {
-  account: { kind: "form", scope: "machine", text: "How Joint Bob looks and behaves for you, and how you sign in." },
+  account: { kind: "form", scope: "machine", text: "Who you are on this node, how you sign in, and the nodes you can reach." },
+  appearance: { kind: "form", scope: "device", text: "How Joint Bob looks in this browser: theme, motion and text size." },
   notifications: { kind: "form", scope: "device", text: "How Joint Bob tells you that a conversation needs you." },
   shortcuts: { kind: "form", scope: "machine", text: "Change the keys for any command in Joint Bob." },
-  conversations: { kind: "form", scope: "machine", text: "How new conversations start, and the side chat beside Activity." },
+  conversations: { kind: "form", scope: "machine", text: "How conversations start, how long they are kept, and what they may carry." },
   labels: { kind: "form", scope: "machine", text: "The labels you classify conversations with, and the icon each one shows." },
   "automation-tags": { kind: "list", scope: "machine", text: "Workspace tags, and the runs of scheduled tasks and webhooks." },
   commands: { kind: "form", scope: "machines", text: "Prompts that open and close a conversation, and commands you paste into chat." },
@@ -49,6 +50,8 @@ export const SECTION_INFO = {
 
 /** One line icon per section, drawn like the rest of the app's icons (24 px grid, 1.8 stroke). */
 const ICONS = {
+  appearance: "M12 3a9 9 0 1 0 0 18c1.2 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3a2 2 0 0 1 2-2h2.3A3.7 3.7 0 0 0 21 10.7C21 6.4 17 3 12 3zM7.5 12h.01M9.5 8h.01M14.5 7.5h.01",
+  "workspace-cleanup": "M14 4l6 6M4 20l6-6M10 14l-5 1 4 4 1-5zM12 12l6-6",
   account: "M20 21a8 8 0 0 0-16 0M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
   notifications: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0",
   shortcuts: "M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10",
@@ -140,20 +143,18 @@ export function showSection(tab, { title, crumb, saveState, restartMessage }) {
  * Help text reads like a settings app's: a section opens on its controls, not on paragraphs.
  * - The paragraphs that open a section (before its first control) move into one collapsed
  *   "About this" note at the end of the section; every sentence stays there.
- * - A long help line under a row shows one line; a tap or Enter opens the rest.
+ * - Help under a row is always shown in full.
  * Status lines (anything with an id) stay where their code writes them. Sections drawn later by
  * their own module are tidied again when their content changes.
  */
-const LONG_HELP = 110;
 const INTRO_HOLDERS = ":scope > .engines-card, :scope > .relay-head, :scope > .guardian-settings, :scope > section > .relay-head, :scope > section > .relays-head";
-const HELP_LINES = ".settings-hint, .cluster-muted, .engine-defaults, :scope .phase-settings > p, :scope .settings-section-text";
 
 const isIntro = (node) => node instanceof HTMLParagraphElement && !node.id && !node.hidden && node.textContent.trim().length > 0;
 
 function introParagraphs(holder) {
   const found = [];
   for (const child of holder.children) {
-    if (child.matches(".settings-section-head, .settings-about, .engines-card-header") || child.hidden) continue;
+    if (child.matches(".settings-section-head, .settings-jump, .settings-about, .engines-card-header") || child.hidden) continue;
     if (!isIntro(child)) break;
     found.push(child);
   }
@@ -174,15 +175,31 @@ function aboutNote(panel) {
   return note;
 }
 
-function markLongHelp(panel) {
-  for (const line of panel.querySelectorAll(HELP_LINES)) {
-    if (line.closest(".settings-about") || line.dataset.help) continue;
-    const limit = line.classList.contains("settings-section-text") ? 60 : LONG_HELP;
-    const long = line.textContent.trim().length > limit && !line.querySelector("input, select, textarea, button, a, ul, ol");
-    if (!long) continue;
-    line.dataset.help = "long";
-    line.setAttribute("aria-expanded", "false");
-    line.tabIndex = 0;
+/** A section with many groups starts with a bar of links to them, so a long section can be crossed in one click. */
+const JUMP_FROM = 5;
+function jumpBar(panel) {
+  const groups = [...panel.querySelectorAll(":scope > fieldset.phase-settings")].filter((group) => group.querySelector(":scope > legend"));
+  let bar = panel.querySelector(":scope > .settings-jump");
+  if (groups.length < JUMP_FROM) return;
+  if (!bar) {
+    bar = document.createElement("nav");
+    bar.className = "settings-jump";
+    bar.setAttribute("aria-label", "Groups in this section");
+    bar.dataset.testid = `settings-jump-${panel.id.replace("settingsPanel-", "")}`;
+    for (const group of groups) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = group.querySelector(":scope > legend").textContent.trim();
+      button.addEventListener("click", () => group.scrollIntoView({ block: "start", behavior: "smooth" }));
+      button._group = group;
+      bar.append(button);
+    }
+    panel.querySelector(":scope > .settings-section-head")?.after(bar);
+  }
+  // A group a visitor never sees (admin-only, or not drawn yet) has no link.
+  for (const button of bar.children) {
+    const hidden = !button._group.checkVisibility();
+    if (button.hidden !== hidden) button.hidden = hidden;
   }
 }
 
@@ -191,17 +208,17 @@ export function tidySection(panel) {
   if (tidying) return;
   tidying = true;
   try {
+    jumpBar(panel);
     const holders = [panel, ...panel.querySelectorAll(INTRO_HOLDERS)];
     const intro = holders.flatMap(introParagraphs);
     if (intro.length) {
       const note = aboutNote(panel);
       for (const paragraph of intro) { paragraph.dataset.about = "moved"; note.append(paragraph); }
     }
-    markLongHelp(panel);
   } finally { tidying = false; }
 }
 
-/** Wires the page once: tidying when a section's module redraws it, help lines that open, rows that open their list, the phone bar's title. */
+/** Wires the page once: tidying when a section's module redraws it, rows that open their list, the phone bar's title. */
 export function installSettingsPage(form) {
   const phone = window.matchMedia("(max-width: 700px)");
   let queued = false;
@@ -217,10 +234,7 @@ export function installSettingsPage(form) {
 
   installPhoneBack(form, phone);
 
-  const toggle = (line) => line.setAttribute("aria-expanded", String(line.getAttribute("aria-expanded") !== "true"));
   form.addEventListener("click", (event) => {
-    const line = event.target.closest?.("[data-help='long']");
-    if (line && !window.getSelection()?.toString()) { toggle(line); return; }
     // On a phone a whole row is the button: tapping its words opens the row's list, as the value does.
     if (!phone.matches) return;
     const row = event.target.closest?.(".settings-panel label:not(.checkbox-row)");
@@ -230,10 +244,6 @@ export function installSettingsPage(form) {
     // The label's own click would move focus to the select and close the list that just opened.
     event.preventDefault();
     select.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
-  });
-  form.addEventListener("keydown", (event) => {
-    const line = event.target.closest?.("[data-help='long']");
-    if (line && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); toggle(line); }
   });
   // The phone bar shows the section's name once its big title has scrolled away.
   form.addEventListener("scroll", (event) => {

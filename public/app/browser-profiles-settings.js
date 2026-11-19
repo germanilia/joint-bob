@@ -1,10 +1,11 @@
 // Settings → Browser → Profiles: every browser profile this machine may see across the
 // cluster. Logins stay on the machine that owns a profile; changes go to that machine.
-// The list fits the section and pages (list-pager.js); a filter box and a machine dropdown narrow it.
+// One long list that the section scrolls, drawn in chunks (long-scroll.js); a filter box and a machine dropdown narrow it.
 import { api } from "./api.js";
 import { describeShare, shareGrantPayload, shareGrantValue, shareScopeLabel } from "./browser-profile-access.js";
 import { fuzzyMatch } from "./fuzzy.js";
-import { createListPager, rowActions } from "./list-pager.js";
+import { rowActions } from "./list-pager.js";
+import { createChunkedList } from "./long-scroll.js";
 import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
 
@@ -17,7 +18,7 @@ const statusLine = () => document.querySelector("#browserProfileDirectoryStatus"
 const filters = () => document.querySelector("#browserProfileFilters");
 const filterInput = () => document.querySelector("#browserProfileFilter");
 const machineSelect = () => document.querySelector("#browserProfileMachine");
-const pager = createListPager({ list: container(), prefix: "browser-profile", label: "Browser profile pages", render });
+const pager = createChunkedList({ list: container(), render });
 filterInput().addEventListener("input", () => { pager.reset(); render(); });
 machineSelect().addEventListener("change", () => { pager.reset(); render(); });
 

@@ -265,6 +265,7 @@ test("node settings configure or disable automatic context compaction", { timeou
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment.username, environment.password);
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await page.locator("#settingsDialog[open]").waitFor();
 
   await page.locator('#settingsForm[data-ready="true"]').waitFor();
@@ -279,6 +280,8 @@ test("node settings configure or disable automatic context compaction", { timeou
   assert.equal(await page.evaluate(async () => (await (await fetch("/api/settings")).json()).autoCompactThreshold), 82);
 
   await page.getByTestId("settings-open-button").click();
+
+  await page.getByTestId("settings-tab-conversations").click();
   await page.locator("#settingsDialog[open]").waitFor();
   await page.locator('#settingsForm[data-ready="true"]').waitFor();
   await enabled.uncheck();
@@ -292,6 +295,7 @@ test("node settings leave shell commands unlimited by default and can cap their 
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment.username, environment.password);
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await page.locator("#settingsDialog[open]").waitFor();
 
   await page.locator('#settingsForm[data-ready="true"]').waitFor();
@@ -308,6 +312,8 @@ test("node settings leave shell commands unlimited by default and can cap their 
   assert.equal(await page.evaluate(async () => (await (await fetch("/api/settings")).json()).shellCommandTimeoutSeconds), 900);
 
   await page.getByTestId("settings-open-button").click();
+
+  await page.getByTestId("settings-tab-conversations").click();
   await page.locator("#settingsDialog[open]").waitFor();
   await page.locator('#settingsForm[data-ready="true"]').waitFor();
   assert.equal(await enabled.isChecked(), true);

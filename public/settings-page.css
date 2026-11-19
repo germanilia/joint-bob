@@ -401,18 +401,6 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
 #settingsForm .settings-facts:has(.settings-restart-message:not([hidden])), #settingsForm .settings-facts:has(.settings-saved:is([data-state="failed"], [data-state="unavailable"])) { flex-wrap: wrap; }
 #settingsForm .settings-facts .settings-saved:is([data-state="failed"], [data-state="unavailable"]) { flex-wrap: wrap; white-space: normal; }
 
-/* Help that runs long shows its first line; a tap opens the rest. */
-#settingsForm .settings-panel [data-help="long"] { padding-right: 22px; cursor: pointer; background: var(--set-chev-down) no-repeat right 2px top 3px / 15px; border-radius: 4px; }
-#settingsForm .settings-panel [data-help="long"][aria-expanded="false"]:not([hidden]) { display: block !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A long line only an admin sees stays out for everyone else: the rule above would show it again. */
-body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help="long"] { display: none !important; }
-#settingsForm .settings-panel [data-help="long"][aria-expanded="true"] { background-image: none; }
-/* A group's first line starts lower, under the group's top edge: its arrow follows. */
-#settingsForm .settings-panel .phase-settings > legend + [data-help="long"] { background-position: right 2px top 17px; }
-#settingsForm .settings-panel [data-help="long"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* The description under a title is read in full on a computer. */
-@media (min-width: 701px) { #settingsForm .settings-panel .settings-section-text[data-help="long"] { padding-right: 0; background: none; cursor: auto; white-space: normal !important; } }
-
 /* The section's opening paragraphs, collapsed at its end. */
 #settingsForm .settings-panel > .settings-about { order: 99; margin: 22px 0 0; padding: 0; color: var(--muted); }
 #settingsForm .settings-about > summary {
@@ -425,7 +413,6 @@ body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help=
 
 /* Code-like defaults (harness paths) are quiet: small, muted, two lines until tapped. */
 #settingsForm .settings-panel .engine-defaults:not(:empty) { padding: 2px 22px 2px 0; border: 0; border-radius: 0; background-color: transparent; color: var(--set-faint); font-size: 11.5px; }
-#settingsForm .settings-panel .engine-defaults[data-help="long"] { background: var(--set-chev-down) no-repeat right 2px top 2px / 15px; }
 
 /* Rows that are not inside a titled group still form one card. */
 #settingsForm :is(.settings-panel[data-settings-kind="form"], [data-harness-panel]) > :is(label:not(.sr-only):not(.keymap-search), .checkbox-row) {
@@ -553,7 +540,7 @@ body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help=
 }
 
 /* Shortcuts: one card of rows, the command on the left and its keys on the right. */
-#settingsForm .keymap-grid { gap: 0; overflow: hidden; border-radius: 16px; background: var(--set-row-bg); }
+#settingsForm .keymap-grid { gap: 0; overflow: clip; border-radius: 16px; background: var(--set-row-bg); }
 #settingsForm .keymap-grid > .keymap-command { padding: 8px 10px 8px 16px; font-size: 14px; font-weight: 500; }
 #settingsForm .keymap-grid > .keymap-command + .keymap-command { box-shadow: inset 0 1px 0 var(--line); }
 #settingsForm .keymap-grid > .keymap-command input { background-color: var(--panel); box-shadow: inset 0 0 0 1px var(--line); font-size: 13.5px; }
@@ -662,3 +649,73 @@ body:not(.node-admin) #settingsForm .settings-panel [data-admin-only][data-help=
 @container cluster (min-width: 1000px) {
   #settingsForm .cluster-layout { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); }
 }
+
+/* ---------- restyle 2026-11-19: one column, real group cards, a compact head ---------- */
+
+/* A section's content is one centred column, so a label and its control stay together on a wide screen. */
+#settingsForm .settings-panel { --set-col: 920px; }
+#settingsForm .settings-panel:is([data-settings-kind="tabs"], [data-settings-kind="list"]) { --set-col: 1100px; }
+#settingsForm #settingsPanel-cluster { --set-col: 1280px; }
+@media (min-width: 721px) {
+  #settingsForm .settings-panel { padding-inline: max(clamp(24px, 5vw, 64px), calc((100% - var(--set-col)) / 2)); }
+}
+
+/* A group's title is out of the flow, so every engine puts the card's top in the same place: the card is drawn
+   below the title by ::before at the title's height, and the rows start there. (A rendered legend was placed
+   differently in Safari and Chrome, which left the first row above its card.) */
+#settingsForm .settings-panel .phase-settings:has(> legend) { padding-top: var(--legend-space); }
+#settingsForm .settings-panel .phase-settings > legend {
+  position: absolute; top: 0; left: 0; right: 0; float: none; width: auto; height: calc(var(--legend-space) - 10px); margin: 0;
+}
+#settingsForm .settings-panel .phase-settings > legend + * { padding-top: 14px; }
+
+/* The head: where it is, the title, and the scope and save state beside it. */
+#settingsForm .settings-section-head {
+  grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "crumb crumb" "title facts" "text text"; align-items: end; gap: 2px 16px; margin-bottom: 8px;
+}
+#settingsForm .settings-section-head .settings-crumb { grid-area: crumb; }
+#settingsForm .settings-section-head .settings-section-title { grid-area: title; font-size: clamp(26px, 2.4vw, 32px); }
+#settingsForm .settings-section-head .settings-section-text { grid-area: text; }
+#settingsForm .settings-section-head .settings-facts { grid-area: facts; justify-content: flex-end; margin: 0 0 4px; }
+@media (max-width: 720px) {
+  #settingsForm .settings-section-head { grid-template-columns: minmax(0, 1fr); grid-template-areas: "crumb" "title" "facts" "text"; }
+  #settingsForm .settings-section-head .settings-facts { justify-content: flex-start; }
+}
+
+/* Lists scroll with the section; they do not carry a scroll box of their own. */
+#settingsForm .changelog-list { max-height: none; overflow: visible; }
+#settingsForm .label-icons { height: auto; padding: 0; overflow: visible; border: 0; }
+#settingsForm .settings-panel .engine-defaults { overflow-wrap: anywhere; }
+
+/* The section's own contents: a bar of links to its groups, for sections that hold many. */
+#settingsForm .settings-jump { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
+#settingsForm .settings-jump > button {
+  min-height: 30px; padding: 0 12px; border: 0; border-radius: 15px; background: var(--paper-raised, var(--field)); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+#settingsForm .settings-jump > button:hover { background: color-mix(in srgb, var(--paper-raised, var(--field)) 82%, var(--text)); }
+#settingsForm .settings-jump > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Resources: the filters wrap and size to their words instead of squeezing to a sliver. */
+#settingsForm .resources-toolbar { flex-wrap: wrap; overflow-x: visible; }
+#settingsForm .resources-toolbar > select { flex: 1 1 150px; min-width: 150px; max-width: 100%; }
+
+/* The three background agents: harness, provider, model and thinking sit side by side, one line per agent. */
+#settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) { grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); column-gap: 12px; align-items: start; }
+#settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) > div[id$="Model"] { display: grid !important; grid-column: 2 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 12px; gap: 0 12px; box-shadow: none; padding: 0; }
+#settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) > :is(legend, .checkbox-row, output, p, .settings-hint, .engine-readiness) { grid-column: 1 / -1; }
+#settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) label:not(.checkbox-row) {
+  display: grid; grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 4px; align-items: start; margin: 0; padding: 12px 6px 4px 18px; box-shadow: none; font-size: 12.5px; color: var(--muted);
+}
+#settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) label:not(.checkbox-row) :is(select, .searchable-select, .searchable-select-trigger) { width: 100%; max-width: 100%; }
+@media (max-width: 960px) {
+  #settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) { grid-template-columns: minmax(0, 1fr); }
+  #settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) > div[id$="Model"] { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  #settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) > div[id$="Model"] { grid-template-columns: minmax(0, 1fr); }
+}
+#settingsForm .settings-panel .phase-settings:is([data-testid="settings-background-agent"], [data-testid="settings-sync-check"], [data-testid="settings-dashboards"]) > p { margin-top: 10px; }
+
+/* Workspace cleanup: the kept workspaces are one folded count. */
+#settingsForm [data-testid="workspace-cleanup-kept"] > summary { cursor: pointer; color: var(--muted); font-size: 13.5px; font-weight: 600; }
+#settingsForm [data-testid="workspace-cleanup-kept"] > ul { margin-top: 8px; }

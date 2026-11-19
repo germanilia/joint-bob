@@ -59,6 +59,16 @@ function isNewerVersion(candidate, baseline) {
   return false;
 }
 
+/** A change's text with its **bold** parts drawn bold. Only text nodes and <strong> are made, so nothing in a change can inject markup. */
+function changeNodes(text) {
+  return text.split(/\*\*(.+?)\*\*/).map((part, index) => {
+    if (index % 2 === 0) return document.createTextNode(part);
+    const strong = document.createElement("strong");
+    strong.textContent = part;
+    return strong;
+  });
+}
+
 /** Renders released versions newest first into a container, one section each. */
 function renderChangelogEntries(container, entries) {
   container.replaceChildren();
@@ -76,7 +86,7 @@ function renderChangelogEntries(container, entries) {
     const changes = document.createElement("ul");
     for (const change of entry.changes) {
       const item = document.createElement("li");
-      item.textContent = change;
+      item.append(...changeNodes(change));
       changes.append(item);
     }
     section.append(heading, changes);
@@ -1158,10 +1168,10 @@ for (const tab of elements.settingsTabs) {
   });
 }
 elements.settingsBackButton.addEventListener("click", () => { elements.settingsForm.dataset.mobileView = "menu"; });
-// The phone list's Appearance row names the theme in use and opens the tiles, which lead Account.
+// The phone list's Appearance row names the theme in use and opens the tiles, which lead Appearance.
 document.querySelector("#settingsAppearanceLink").addEventListener("click", () => {
   settingsSearch.clear();
-  selectSettingsTab("account");
+  selectSettingsTab("appearance");
   document.querySelector("#settingsThemeTiles [aria-checked='true']")?.focus({ preventScroll: true });
 });
 // Search sections and saved account metadata. Never index secret values.

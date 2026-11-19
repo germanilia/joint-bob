@@ -136,6 +136,7 @@ async function openSettings(): Promise<void> {
   const dialog = page.getByTestId("settings-dialog");
   if (await dialog.isVisible()) await dialog.evaluate((element: HTMLDialogElement) => element.close());
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await settingsLoaded();
   await page.getByTestId("settings-backup").scrollIntoViewIfNeeded();
   looked = saved.length;
@@ -864,15 +865,14 @@ test("on a phone the backup group stacks and nothing in it scrolls sideways", as
   await page.setViewportSize({ width: 390, height: 844 });
   try {
     // A phone has no Settings button in the header; the app opens the section the same way.
-    await page.evaluate(async () => { await (await import("/app/settings.js" as string)).openSettings("account"); });
+    await page.evaluate(async () => { await (await import("/app/settings.js" as string)).openSettings("conversations"); });
     await settingsLoaded();
     await page.getByTestId("settings-backup-problem").waitFor();
     /** What reaches past the panel's right edge, and whether the panel or the page scrolls sideways. */
     const sideways = () => page.evaluate(() => {
-      const panel = document.querySelector<HTMLElement>("#settingsPanel-account")!;
+      const panel = document.querySelector<HTMLElement>("#settingsPanel-conversations")!;
       const edge = panel.getBoundingClientRect().right + 1;
-      // A long help line shows its first line until it is tapped: what it cuts off is not on the page.
-      const wide = [...document.querySelectorAll<HTMLElement>("#settingsBackup, #settingsBackup *, #settingsRetentionPreview *")].filter((element) => !element.matches('[data-help="long"][aria-expanded="false"] *') && element.getBoundingClientRect().right > edge);
+      const wide = [...document.querySelectorAll<HTMLElement>("#settingsBackup, #settingsBackup *, #settingsRetentionPreview *")].filter((element) => element.getBoundingClientRect().right > edge);
       return { wide: wide.map((element) => `${element.tagName.toLowerCase()}#${element.id}.${element.className}`), panel: panel.scrollWidth - panel.clientWidth, page: document.documentElement.scrollWidth - window.innerWidth };
     });
     const fits = { wide: [], panel: 0, page: 0 };

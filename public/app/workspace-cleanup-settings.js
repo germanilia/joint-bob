@@ -29,9 +29,25 @@ function render(view) {
     if (node.enabled !== undefined && node.enabled !== view.enabled) section.append(nodeText('p', 'This machine has not received the latest setting.'));
     const rows = node.rows ?? node.lastRun?.rows ?? [];
     if (rows.length) {
-      const items = document.createElement('ul');
-      for (const row of rows) items.append(nodeText('li', `${row.projectName} / ${row.name}: ${row.status === 'kept' ? 'Kept. ' : row.status === 'removed' ? 'Removed. ' : ''}${row.detail}`));
-      section.append(items);
+      // What needs a decision comes first; the workspaces that are simply kept are one folded count.
+      const line = (row) => nodeText('li', `${row.projectName} / ${row.name}: ${row.status === 'kept' ? 'Kept. ' : row.status === 'removed' ? 'Removed. ' : ''}${row.detail}`);
+      const kept = rows.filter((row) => row.status === 'kept');
+      const other = rows.filter((row) => row.status !== 'kept');
+      section.append(nodeText('p', `${rows.length} checked: ${kept.length} kept${other.length ? `, ${other.length} to review or remove` : ''}.`));
+      if (other.length) {
+        const items = document.createElement('ul');
+        items.append(...other.map(line));
+        section.append(items);
+      }
+      if (kept.length) {
+        const folded = document.createElement('details');
+        folded.dataset.testid = 'workspace-cleanup-kept';
+        folded.append(nodeText('summary', `Kept (${kept.length})`));
+        const items = document.createElement('ul');
+        items.append(...kept.map(line));
+        folded.append(items);
+        section.append(folded);
+      }
     } else if (node.rows) section.append(nodeText('p', 'No workspaces to check.'));
     if (node.saved?.length) section.append(nodeText('h4', 'Saved Git changes'));
     for (const entry of node.saved ?? []) {

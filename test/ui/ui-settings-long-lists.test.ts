@@ -3,9 +3,8 @@ import test from "node:test";
 import type { Page } from "playwright-core";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 
-// Settings › Browser and Secrets are long lists: rows of one height that fit the window and page with Previous /
-// "1–8 of 31" / Next, never growing the section. Workspaces are one long scroll, drawn in chunks (app/long-scroll.js;
-// .agents/knowledge/list-scrolling.md): every workspace is reachable by scrolling the section, with no pager.
+// Settings › Browser, Secrets and Workspaces are long lists: one continuous list, drawn in chunks (app/long-scroll.js;
+// .agents/knowledge/list-scrolling.md), so every row is reachable by scrolling the section, with no pager.
 // Synthetic metadata only: no profile, secret value or workspace folder is created.
 const LISTS = [
   { section: "browser", prefix: "browser-profile", list: "browser-profile-directory", total: 31 },
@@ -20,7 +19,7 @@ async function openSection(page: Page, section: string) {
   await page.locator(`#settingsPanel-${section}`).waitFor();
 }
 
-test("long Settings lists fit the window, page, and keep every row action", { timeout: 180_000 }, async (t) => {
+test("long Settings lists scroll, have no pager, and keep every row action", { timeout: 180_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -52,28 +51,20 @@ test("long Settings lists fit the window, page, and keep every row action", { ti
     await page.setViewportSize({ width, height });
     for (const { section, prefix, list, total } of LISTS) {
       await openSection(page, section);
-      const label = page.getByTestId(`${prefix}-page-label`);
-      await page.waitForFunction(({ id, count }) => new RegExp(`^1–\\d+ of ${count}$`).test(document.querySelector(`[data-testid="${id}"]`)?.textContent ?? ""), { id: `${prefix}-page-label`, count: total });
-      await frames(page);
-      const shown = Number((await label.innerText()).match(/^1–(\d+)/)![1]);
-      assert.ok(shown >= 3 && shown < total, `${section} at ${width}px shows several rows and pages: ${shown}`);
       const rows = page.getByTestId(list).locator(":scope > .long-list-row");
-      assert.equal(await rows.count(), shown, `${section} draws one page of rows`);
-      const geometry = await page.getByTestId(list).evaluate((element, pager) => {
+      await rows.first().waitFor();
+      assert.equal(await page.getByTestId(`${prefix}-pager`).count(), 0, `${section} has no pager`);
+      assert.equal(await page.getByTestId(list).getAttribute("data-total"), String(total));
+      await frames(page);
+      assert.equal(await rows.count(), total, `${section} draws every row at ${width}px`);
+      const geometry = await page.getByTestId(list).evaluate((element) => {
         const panel = element.closest(".settings-panel")!;
-        panel.scrollTop = 0;
-        const box = panel.getBoundingClientRect(), bar = document.querySelector(`[data-testid="${pager}"]`)!.getBoundingClientRect();
         const heights = [...element.querySelectorAll(":scope > .long-list-row")].map((row) => Math.round(row.getBoundingClientRect().height));
-        return { listBottom: element.getBoundingClientRect().bottom, pagerBottom: bar.bottom, panelBottom: box.bottom, heights: [...new Set(heights)], overflowX: panel.scrollWidth - panel.clientWidth };
-      }, `${prefix}-pager`);
+        return { heights: [...new Set(heights)], overflowX: panel.scrollWidth - panel.clientWidth, scrolls: panel.scrollHeight > panel.clientHeight };
+      });
       assert.deepEqual(geometry.heights.length, 1, `${section} rows share one height at ${width}px: ${geometry.heights}`);
-      assert.ok(geometry.listBottom <= geometry.panelBottom && geometry.pagerBottom <= geometry.panelBottom, `${section} list and pager stay inside the section at ${width}x${height}: ${JSON.stringify(geometry)}`);
       assert.equal(geometry.overflowX <= 1, true, `${section} does not scroll sideways at ${width}px`);
-      assert.equal(await page.getByTestId(`${prefix}-page-previous`).isDisabled(), true);
-      await page.getByTestId(`${prefix}-page-next`).click();
-      assert.equal(await label.innerText(), `${shown + 1}–${Math.min(total, shown * 2)} of ${total}`, `${section} Next turns the page`);
-      await page.getByTestId(`${prefix}-page-previous`).click();
-      assert.equal(await label.innerText(), `1–${shown} of ${total}`);
+      assert.equal(geometry.scrolls, true, `${section} scrolls with the section at ${width}x${height}`);
     }
   }
 
@@ -115,18 +106,15 @@ test("long Settings lists fit the window, page, and keep every row action", { ti
   await page.getByTestId("browser-profile-rename-input").press("Escape");
   assert.equal(await page.locator("#settingsDialog").isVisible(), true, "Escape leaves the rename, not Settings");
 
-  // The filter and the machine dropdown narrow the list and start on its first page.
+  // The filter and the machine dropdown narrow the list.
   await page.setViewportSize({ width: 1440, height: 900 });
   await openSection(page, "browser");
-  await page.getByTestId("browser-profile-page-next").click();
   await page.getByTestId("browser-profile-machine").selectOption(machines[1].id);
-  await page.waitForFunction(() => /^1–\d+ of 15$/.test(document.querySelector('[data-testid="browser-profile-page-label"]')?.textContent ?? ""));
+  await page.waitForFunction(() => document.querySelector('[data-testid="browser-profile-directory"]')?.querySelectorAll(":scope > .long-list-row").length === 15);
   await page.getByTestId("browser-profile-filter").fill("Profile 30");
   assert.deepEqual(await page.getByTestId("browser-profile-directory-row").locator("strong").allInnerTexts(), ["Profile 30"]);
-  assert.equal(await page.getByTestId("browser-profile-pager").isVisible(), false, "one page needs no pager");
 
-  // Settings search, from another section, opens the page that holds an account, wherever the list was
-  // (it was last measured on the phone, so it refits as it opens).
+  // Settings search, from another section, reveals the row that holds an account.
   const search = page.getByTestId("settings-search-input");
   await search.fill("FIXTURE_LAST_KEY");
   await page.getByTestId("settings-search-result").getByText("Fixture", { exact: true }).click();
@@ -134,8 +122,6 @@ test("long Settings lists fit the window, page, and keep every row action", { ti
   await row.waitFor();
   assert.ok(await row.evaluate((element) => element.classList.contains("settings-hit")));
   assert.equal(await page.getByTestId("secret-account-search").inputValue(), "Fixture");
-  assert.match(await page.getByTestId("secret-account-page-label").innerText(), /^\d+–23 of 23$/, "the last page shows");
-  assert.doesNotMatch(await page.getByTestId("secret-account-page-label").innerText(), /^1–/);
 
   assert.deepEqual(errors, []);
 });

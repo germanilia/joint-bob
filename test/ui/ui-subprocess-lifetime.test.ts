@@ -10,6 +10,7 @@ test("Settings edits and reloads the bounded subprocess lifetime", { timeout: 12
   await page.getByTestId("login-password-input").fill(environment.password);
   await page.getByTestId("login-submit-button").click();
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await page.locator('#settingsForm[data-ready="true"]').waitFor();
   const minutes = page.getByTestId("settings-subprocess-max-lifetime-minutes");
   const saveState = page.getByTestId("settings-save-state");
@@ -29,6 +30,7 @@ test("Settings edits and reloads the bounded subprocess lifetime", { timeout: 12
   assert.equal(await page.evaluate(async () => (await (await fetch("/api/settings")).json()).subprocessMaxLifetimeMinutes), 120);
   await page.reload();
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await page.locator('#settingsForm[data-ready="true"]').waitFor();
   assert.equal(await minutes.inputValue(), "120");
 });

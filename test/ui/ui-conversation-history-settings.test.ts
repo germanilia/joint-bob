@@ -40,6 +40,7 @@ const settingsLoaded = () => page.waitForFunction(() => !document.querySelector(
 
 test("conversation history window saves and reloads", async () => {
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await settingsLoaded();
   const input = page.getByTestId("settings-conversation-history-days");
   await page.waitForFunction(() => (document.querySelector("#settingsConversationHistoryDays") as HTMLInputElement).value === "30");
@@ -52,6 +53,7 @@ test("conversation history window saves and reloads", async () => {
     await page.getByTestId("settings-cancel-button").click();
     await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
     await page.getByTestId("settings-open-button").click();
+    await page.getByTestId("settings-tab-conversations").click();
     await settingsLoaded();
     await page.waitForFunction((expected) => (document.querySelector("#settingsConversationHistoryDays") as HTMLInputElement).value === expected, value);
     assert.equal(await input.inputValue(), value);
