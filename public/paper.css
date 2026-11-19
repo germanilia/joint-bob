@@ -56,6 +56,136 @@
   --paper-raised: #e4d8c1;
 }
 
+/* ---------- Classic Dark palettes (VS Code) ---------- */
+:root[data-theme="dark"][data-palette="dracula"] {
+  --bg: #1e1f29; --panel: #282a36; --header: #282a36; --surface: #303341; --field: #343746;
+  --line: rgba(248, 248, 242, 0.09); --line-strong: rgba(248, 248, 242, 0.2);
+  --text: #f8f8f2; --muted: #9aa5ce; --ink: #f8f8f2; --on-ink: #1e1f29;
+  --btn-bg: #bd93f9; --btn-fg: #1e1f29; --btn-border: transparent; --btn-bg-hover: #caa8ff;
+  --accent: #bd93f9; --live: #50fa7b; --amber: #ffb86c; --danger: #ff5555;
+  --heading: #f8f8f2; --heading-soft: #ff79c6;
+  --paper-raised: #44475a;
+}
+:root[data-theme="dark"][data-palette="tokyo-night"] {
+  --bg: #16161e; --panel: #1a1b26; --header: #1a1b26; --surface: #202333; --field: #24283b;
+  --line: rgba(192, 202, 245, 0.09); --line-strong: rgba(192, 202, 245, 0.2);
+  --text: #c0caf5; --muted: #7882a8; --ink: #c0caf5; --on-ink: #16161e;
+  --btn-bg: #7aa2f7; --btn-fg: #131521; --btn-border: transparent; --btn-bg-hover: #8db0ff;
+  --accent: #7aa2f7; --live: #9ece6a; --amber: #e0af68; --danger: #f7768e;
+  --heading: #dde4ff; --heading-soft: #7dcfff;
+  --paper-raised: #292e42;
+}
+:root[data-theme="dark"][data-palette="catppuccin-mocha"] {
+  --bg: #181825; --panel: #1e1e2e; --header: #1e1e2e; --surface: #252538; --field: #29293d;
+  --line: rgba(205, 214, 244, 0.09); --line-strong: rgba(205, 214, 244, 0.2);
+  --text: #cdd6f4; --muted: #9399b2; --ink: #cdd6f4; --on-ink: #181825;
+  --btn-bg: #cba6f7; --btn-fg: #181825; --btn-border: transparent; --btn-bg-hover: #d7b9fa;
+  --accent: #cba6f7; --live: #a6e3a1; --amber: #f9e2af; --danger: #f38ba8;
+  --heading: #e4e9fc; --heading-soft: #89b4fa;
+  --paper-raised: #313244;
+}
+:root[data-theme="dark"][data-palette="nord"] {
+  --bg: #242933; --panel: #2e3440; --header: #2e3440; --surface: #353c4a; --field: #3b4252;
+  --line: rgba(236, 239, 244, 0.09); --line-strong: rgba(236, 239, 244, 0.2);
+  --text: #eceff4; --muted: #9aa7bd; --ink: #eceff4; --on-ink: #242933;
+  --btn-bg: #88c0d0; --btn-fg: #1c222b; --btn-border: transparent; --btn-bg-hover: #9bcdda;
+  --accent: #88c0d0; --live: #a3be8c; --amber: #ebcb8b; --danger: #bf616a;
+  --heading: #f5f7fa; --heading-soft: #8fbcbb;
+  --paper-raised: #434c5e;
+}
+:root[data-theme="dark"][data-palette="one-dark-pro"] {
+  --bg: #21252b; --panel: #282c34; --header: #282c34; --surface: #2e333d; --field: #323842;
+  --line: rgba(220, 223, 228, 0.09); --line-strong: rgba(220, 223, 228, 0.19);
+  --text: #dcdfe4; --muted: #9097a5; --ink: #dcdfe4; --on-ink: #21252b;
+  --btn-bg: #61afef; --btn-fg: #182029; --btn-border: transparent; --btn-bg-hover: #7bbdf2;
+  --accent: #61afef; --live: #98c379; --amber: #e5c07b; --danger: #e06c75;
+  --heading: #f0f2f5; --heading-soft: #56b6c2;
+  --paper-raised: #3a404c;
+}
+:root[data-theme="dark"][data-palette="gruvbox-dark"] {
+  --bg: #1d2021; --panel: #282828; --header: #282828; --surface: #32302f; --field: #363331;
+  --line: rgba(235, 219, 178, 0.1); --line-strong: rgba(235, 219, 178, 0.22);
+  --text: #ebdbb2; --muted: #a89984; --ink: #ebdbb2; --on-ink: #1d2021;
+  --btn-bg: #fabd2f; --btn-fg: #1d2021; --btn-border: transparent; --btn-bg-hover: #fcc94e;
+  --accent: #fabd2f; --live: #b8bb26; --amber: #fe8019; --danger: #fb4934;
+  --heading: #fbf1c7; --heading-soft: #8ec07c;
+  --paper-raised: #3c3836;
+}
+:root[data-theme="dark"][data-palette="monokai-pro"] {
+  --bg: #221f22; --panel: #2d2a2e; --header: #2d2a2e; --surface: #353236; --field: #39363a;
+  --line: rgba(252, 252, 250, 0.09); --line-strong: rgba(252, 252, 250, 0.2);
+  --text: #fcfcfa; --muted: #9b9a9b; --ink: #fcfcfa; --on-ink: #221f22;
+  --btn-bg: #ffd866; --btn-fg: #221f22; --btn-border: transparent; --btn-bg-hover: #ffe185;
+  --accent: #ffd866; --live: #a9dc76; --amber: #fc9867; --danger: #ff6188;
+  --heading: #fcfcfa; --heading-soft: #78dce8;
+  --paper-raised: #444046;
+}
+:root[data-theme="dark"][data-palette="solarized-dark"] {
+  --bg: #00212b; --panel: #002b36; --header: #002b36; --surface: #073642; --field: #0a3c49;
+  --line: rgba(238, 232, 213, 0.1); --line-strong: rgba(238, 232, 213, 0.22);
+  --text: #eee8d5; --muted: #839496; --ink: #eee8d5; --on-ink: #00212b;
+  --btn-bg: #2aa198; --btn-fg: #00212b; --btn-border: transparent; --btn-bg-hover: #38b8ae;
+  --accent: #2aa198; --live: #859900; --amber: #b58900; --danger: #dc322f;
+  --heading: #fdf6e3; --heading-soft: #268bd2;
+  --paper-raised: #104958;
+}
+:root[data-theme="dark"][data-palette="rose-pine"] {
+  --bg: #191724; --panel: #1f1d2e; --header: #1f1d2e; --surface: #26233a; --field: #2b2740;
+  --line: rgba(224, 222, 244, 0.09); --line-strong: rgba(224, 222, 244, 0.2);
+  --text: #e0def4; --muted: #908caa; --ink: #e0def4; --on-ink: #191724;
+  --btn-bg: #ebbcba; --btn-fg: #191724; --btn-border: transparent; --btn-bg-hover: #f2ccca;
+  --accent: #ebbcba; --live: #9ccfd8; --amber: #f6c177; --danger: #eb6f92;
+  --heading: #f0eefc; --heading-soft: #c4a7e7;
+  --paper-raised: #34304c;
+}
+:root[data-theme="dark"][data-palette="kanagawa"] {
+  --bg: #16161d; --panel: #1f1f28; --header: #1f1f28; --surface: #272734; --field: #2a2a37;
+  --line: rgba(220, 215, 186, 0.09); --line-strong: rgba(220, 215, 186, 0.2);
+  --text: #dcd7ba; --muted: #938aa9; --ink: #dcd7ba; --on-ink: #16161d;
+  --btn-bg: #7e9cd8; --btn-fg: #16161d; --btn-border: transparent; --btn-bg-hover: #95b0e4;
+  --accent: #7e9cd8; --live: #98bb6c; --amber: #e6c384; --danger: #e46876;
+  --heading: #ece7cc; --heading-soft: #7fb4ca;
+  --paper-raised: #363646;
+}
+
+/* ---------- Classic Light palettes (VS Code) ---------- */
+:root[data-theme="light"][data-palette="catppuccin-latte"] {
+  --bg: #e6e9ef; --panel: #eff1f5; --header: #eff1f5; --surface: #f7f8fb; --field: #e6e9ef;
+  --line: rgba(76, 79, 105, 0.1); --line-strong: rgba(76, 79, 105, 0.22);
+  --text: #4c4f69; --muted: #6c6f85; --ink: #4c4f69; --on-ink: #eff1f5;
+  --btn-bg: #8839ef; --btn-fg: #ffffff; --btn-border: transparent; --btn-bg-hover: #7628dd;
+  --accent: #8839ef; --live: #40a02b; --amber: #df8e1d; --danger: #d20f39;
+  --heading: #3b3e54; --heading-soft: #8839ef;
+  --paper-raised: #dce0e8;
+}
+:root[data-theme="light"][data-palette="solarized-light"] {
+  --bg: #eee8d5; --panel: #fdf6e3; --header: #fdf6e3; --surface: #f7f0dd; --field: #eee8d5;
+  --line: rgba(7, 54, 66, 0.1); --line-strong: rgba(7, 54, 66, 0.22);
+  --text: #073642; --muted: #657b83; --ink: #073642; --on-ink: #fdf6e3;
+  --btn-bg: #268bd2; --btn-fg: #ffffff; --btn-border: transparent; --btn-bg-hover: #1e78b8;
+  --accent: #268bd2; --live: #859900; --amber: #b58900; --danger: #dc322f;
+  --heading: #002b36; --heading-soft: #2aa198;
+  --paper-raised: #e3dcc8;
+}
+:root[data-theme="light"][data-palette="github-light"] {
+  --bg: #f6f8fa; --panel: #ffffff; --header: #ffffff; --surface: #f6f8fa; --field: #f0f3f6;
+  --line: rgba(31, 35, 40, 0.1); --line-strong: rgba(31, 35, 40, 0.22);
+  --text: #1f2328; --muted: #656d76; --ink: #1f2328; --on-ink: #ffffff;
+  --btn-bg: #0969da; --btn-fg: #ffffff; --btn-border: transparent; --btn-bg-hover: #0757b8;
+  --accent: #0969da; --live: #1a7f37; --amber: #9a6700; --danger: #cf222e;
+  --heading: #1f2328; --heading-soft: #0969da;
+  --paper-raised: #eaeef2;
+}
+:root[data-theme="light"][data-palette="gruvbox-light"] {
+  --bg: #ebdbb2; --panel: #fbf1c7; --header: #fbf1c7; --surface: #f2e5bc; --field: #ebdbb2;
+  --line: rgba(60, 56, 54, 0.12); --line-strong: rgba(60, 56, 54, 0.25);
+  --text: #3c3836; --muted: #7c6f64; --ink: #282828; --on-ink: #fbf1c7;
+  --btn-bg: #b57614; --btn-fg: #fbf1c7; --btn-border: transparent; --btn-bg-hover: #9b640f;
+  --accent: #b57614; --live: #79740e; --amber: #af3a03; --danger: #9d0006;
+  --heading: #282828; --heading-soft: #427b58;
+  --paper-raised: #dfd0a3;
+}
+
 /* The logo's teal follows the accent: forest green on light themes, sage on dark ones. */
 :root img[src^="/icon"], :root[data-palette] img[src^="/icon"] { filter: hue-rotate(-14deg) saturate(0.72); }
 :root[data-theme="dark"] img[src^="/icon"] { filter: hue-rotate(-23deg) saturate(0.8) brightness(1.08); }
@@ -117,8 +247,27 @@ dialog::backdrop { background: color-mix(in srgb, var(--ink) 28%, transparent); 
 input[type="radio"]:focus-visible { border-radius: 50%; outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: none; }
 /* Sliders, checkboxes and radios take the accent, not the browser's blue. */
 input:is([type="range"], [type="checkbox"], [type="radio"]) { accent-color: var(--accent); }
-/* The quick Appearance dialog: the six themes in two even rows. */
-#appearanceThemes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* The quick Appearance dialog: grouped color themes (Built-in, Classic Dark, Classic Light) with swatches in 3-column rows. */
+#appearanceThemes { display: grid; gap: 8px; }
+.appearance-theme-group { display: grid; gap: 6px; }
+.appearance-theme-group-label {
+  display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 500; color: var(--muted);
+}
+.appearance-theme-group-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.appearance-theme-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.appearance-theme-choice {
+  display: flex; align-items: center; justify-content: flex-start; gap: 7px; padding: 6px 9px;
+  min-width: 0; text-align: left; font-size: 12.5px;
+}
+.appearance-theme-choice[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 600;
+}
+.appearance-theme-swatch {
+  flex-shrink: 0; width: 14px; height: 14px; border-radius: 50%;
+  background: linear-gradient(90deg, var(--swatch-bg) 0 50%, var(--swatch-accent) 50%);
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
+}
+.appearance-theme-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Git review › Story: the pull-request box shares its line with Explain PR instead of taking a line of its own, so
    the flow diagram under the head keeps its height (in a 900 px window its lower steps were cut off). */
 .git-story .gs-head > .gs-state-actions input { flex: 1 1 220px; width: auto; max-width: 460px; }

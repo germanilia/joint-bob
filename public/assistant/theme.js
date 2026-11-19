@@ -9,6 +9,20 @@
     dark: { theme: "dark", color: "#171412" },
     midnight: { theme: "dark", palette: "midnight", color: "#0e1320" },
     graphite: { theme: "dark", palette: "graphite", color: "#1a1a1b" },
+    dracula: { theme: "dark", palette: "dracula", color: "#1e1f29" },
+    "tokyo-night": { theme: "dark", palette: "tokyo-night", color: "#16161e" },
+    "catppuccin-mocha": { theme: "dark", palette: "catppuccin-mocha", color: "#181825" },
+    nord: { theme: "dark", palette: "nord", color: "#242933" },
+    "one-dark-pro": { theme: "dark", palette: "one-dark-pro", color: "#21252b" },
+    "gruvbox-dark": { theme: "dark", palette: "gruvbox-dark", color: "#1d2021" },
+    "monokai-pro": { theme: "dark", palette: "monokai-pro", color: "#221f22" },
+    "solarized-dark": { theme: "dark", palette: "solarized-dark", color: "#00212b" },
+    "rose-pine": { theme: "dark", palette: "rose-pine", color: "#191724" },
+    kanagawa: { theme: "dark", palette: "kanagawa", color: "#16161d" },
+    "catppuccin-latte": { theme: "light", palette: "catppuccin-latte", color: "#e6e9ef" },
+    "solarized-light": { theme: "light", palette: "solarized-light", color: "#eee8d5" },
+    "github-light": { theme: "light", palette: "github-light", color: "#f6f8fa" },
+    "gruvbox-light": { theme: "light", palette: "gruvbox-light", color: "#ebdbb2" },
   };
   const systemDark = matchMedia("(prefers-color-scheme: dark)");
 

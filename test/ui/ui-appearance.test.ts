@@ -60,6 +60,15 @@ test("the logo opens quick appearance settings that change theme and font size a
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#projectsPanel")!).zoom), "1.5");
 
   await page.getByTestId("workspace-person-button").click();
+  await page.getByTestId("appearance-theme-dracula").click();
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.palette), "dracula");
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim()), "#1e1f29");
+
+  await page.getByTestId("appearance-theme-catppuccin-latte").click();
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.palette), "catppuccin-latte");
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "light");
+
   await page.getByTestId("appearance-reset-button").click();
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#projectsPanel")!).zoom), "1");
   assert.equal(await page.evaluate(() => document.documentElement.dataset.palette ?? ""), "");

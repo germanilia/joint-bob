@@ -28,18 +28,46 @@ test("the worker caches the Paper files", async () => {
 
 test("Paper sets the tokens for every theme", async () => {
   const sheet = await text("public/paper.css");
+  const assistantSheet = await text("public/assistant/assistant.css");
+  const assistantTheme = await text("public/assistant/theme.js");
+  const darkPalettes = [
+    "midnight",
+    "graphite",
+    "dracula",
+    "tokyo-night",
+    "catppuccin-mocha",
+    "nord",
+    "one-dark-pro",
+    "gruvbox-dark",
+    "monokai-pro",
+    "solarized-dark",
+    "rose-pine",
+    "kanagawa",
+  ];
+  const lightPalettes = [
+    "sepia",
+    "catppuccin-latte",
+    "solarized-light",
+    "github-light",
+    "gruvbox-light",
+  ];
   const selectors = [
     ":root",
     ':root[data-theme="dark"]',
-    ':root[data-theme="dark"][data-palette="midnight"]',
-    ':root[data-theme="dark"][data-palette="graphite"]',
-    ':root[data-theme="light"][data-palette="sepia"]',
+    ...darkPalettes.map((id) => `:root[data-theme="dark"][data-palette="${id}"]`),
+    ...lightPalettes.map((id) => `:root[data-theme="light"][data-palette="${id}"]`),
   ];
   for (const selector of selectors) {
     const block = new RegExp(`(^|\\n)${selector.replace(/[[\]"]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(sheet);
     assert.ok(block, `no token block for ${selector}`);
     for (const token of ["--bg", "--panel", "--header", "--surface", "--field", "--line", "--text", "--muted", "--accent", "--btn-bg", "--btn-fg"]) {
       assert.match(block[2], new RegExp(`${token}:`), `${selector} does not set ${token}`);
+    }
+  }
+  for (const [base, palettes] of [["dark", darkPalettes], ["light", lightPalettes]] as const) {
+    for (const id of palettes) {
+      assert.ok(assistantSheet.includes(`:root[data-theme=${base}][data-palette=${id}]`), `assistant.css missing ${base}/${id}`);
+      assert.ok(assistantTheme.includes(`palette: "${id}"`), `assistant/theme.js missing ${id}`);
     }
   }
 });

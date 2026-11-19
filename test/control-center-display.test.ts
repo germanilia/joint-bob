@@ -30,6 +30,8 @@ test("a message goes to the display agent when the decision model says so, or it
   assert.equal(mayBeAboutDisplay("switch to the dark theme", decision("task"), 0.9), false, "the model is sure it is work in a project");
   assert.equal(mayBeAboutDisplay("switch to the dark theme", decision("task", 0.4), 0.9), true, "an unsure guess does not rule it out");
   assert.equal(mayBeAboutDisplay("make the text bigger", null, 0.9), true);
+  assert.equal(mayBeAboutDisplay("switch to dracula", null, 0.9), true);
+  assert.equal(mayBeAboutDisplay("use tokyo night", null, 0.9), true);
   assert.equal(mayBeAboutDisplay("what is running?", null, 0.9), false);
 });
 

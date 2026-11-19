@@ -175,10 +175,15 @@ test("the phone's Settings list names the theme, and Account opens on six theme 
     const box = item.getBoundingClientRect();
     return { name: item.textContent ?? "", left: Math.round(box.left), top: Math.round(box.top), bottom: box.bottom, width: box.width, height: box.height, chosen: item.getAttribute("aria-checked") };
   }));
-  assert.deepEqual(tiles.map((tile) => tile.name), ["System", "Light", "Sepia", "Dark", "Midnight", "Graphite"]);
+  assert.deepEqual(tiles.map((tile) => tile.name), [
+    "System", "Light", "Sepia", "Dark", "Midnight", "Graphite",
+    "Dracula", "Tokyo Night", "Catppuccin", "Nord", "One Dark", "Gruvbox", "Monokai", "Solarized", "Rosé Pine", "Kanagawa",
+    "Latte", "Solarized Lt", "GitHub Lt", "Gruvbox Lt",
+  ]);
   assert.equal(new Set(tiles.map((tile) => tile.left)).size, 3, "three tiles to a line");
-  assert.equal(new Set(tiles.map((tile) => tile.top)).size, 2, "two lines");
-  for (const tile of tiles) assert.ok(tile.top > 0 && tile.bottom <= 844 && tile.width >= 88 && tile.height >= 44, `${tile.name} shows on the first screen and is large enough to tap: ${JSON.stringify(tile)}`);
+  assert.equal(new Set(tiles.map((tile) => tile.top)).size, 7, "seven lines for twenty palettes");
+  for (const tile of tiles.slice(0, 6)) assert.ok(tile.top > 0 && tile.bottom <= 844, `${tile.name} shows on the first screen: ${JSON.stringify(tile)}`);
+  for (const tile of tiles) assert.ok(tile.width >= 88 && tile.height >= 44, `${tile.name} is large enough to tap: ${JSON.stringify(tile)}`);
   assert.deepEqual(tiles.filter((tile) => tile.chosen === "true").map((tile) => tile.name), ["System"], "the theme in use is marked");
 
   // Choosing one applies it, marks it, names it on the list, and it survives a reload.
