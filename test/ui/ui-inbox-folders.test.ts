@@ -57,11 +57,27 @@ async function open(t: Parameters<typeof nativeUiFixture>[0], withTools = false)
   await page.evaluate(`(() => {
     const originalFetch = window.fetch;
     window.__saved = [];
+    let pins = [];
     window.fetch = async (...args) => {
       const url = new URL(String(args[0]), location.href);
       const method = (args[1] && args[1].method) || 'GET';
       const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-      if (url.pathname === '/api/control-center/board') return json(${JSON.stringify(boardFor(projects, withTools))});
+      if (url.pathname === '/api/control-center/board') {
+        const board = ${JSON.stringify(boardFor(projects, withTools))};
+        if (window.__finishPinned) {
+          if (url.searchParams.has('earlier')) board.earlier.push({ ...board.cards.shift(), done: true });
+          else { board.cards.shift(); delete board.earlier; }
+        }
+        return json(board);
+      }
+      if (url.pathname === '/api/pins') {
+        if (method === 'PUT') {
+          const { projectId, engine, sessionId, pinned } = JSON.parse(args[1].body);
+          pins = pins.filter((pin) => pin.projectId !== projectId || pin.engine !== engine || pin.sessionId !== sessionId);
+          if (pinned) pins.push({ projectId, engine, sessionId });
+        }
+        return json({ projectIds: [], conversations: pins });
+      }
       if (url.pathname === '/api/preferences' && method === 'PUT') window.__saved.push(JSON.parse(args[1].body));
       return originalFetch(...args);
     };
@@ -94,6 +110,45 @@ test("every conversation is listed: scheduled runs and done ones are groups, and
   for (const id of ["inbox-row-folder", "inbox-row-star", "inbox-row-pin", "inbox-row-done", "inbox-row-rename", "inbox-row-fork", "inbox-row-transfer", "inbox-row-delete"]) {
     assert.equal(await page.getByTestId(id).count(), 1, `${id} is in the row menu`);
   }
+});
+
+test("pinned conversations stay above the other Inbox groups until unpinned", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  const pinned = page.getByTestId("workspace-group-pinned");
+  const row = (title: string) => page.getByTestId("workspace-groups").getByTestId("workspace-group-row").filter({ hasText: title });
+  const title = "Answer the deploy question";
+  const togglePin = async (title: string) => {
+    await row(title).hover();
+    await row(title).getByTestId("inbox-row-menu").click();
+    await page.getByTestId("inbox-row-pin").click();
+  };
+  assert.equal(await pinned.count(), 0, "do not show an empty Pinned section");
+  await togglePin(title);
+  await pinned.getByText(title).waitFor();
+  assert.equal(await row(title).count(), 1, "the pinned row is not repeated under Needs you");
+  assert.equal(await pinned.evaluate((section) => section.parentElement?.firstElementChild === section), true);
+  assert.equal(await pinned.locator(".ws-lab span").first().textContent(), "Pinned");
+  assert.equal(await pinned.locator(".ws-dot.need").count(), 1, "keep the real status on the row");
+  assert.equal(await page.getByTestId("workspace-inbox-note").textContent(), "1 needs you");
+
+  // A fresh board moves the conversation to Done, but its row stays at the top.
+  await page.evaluate(async () => {
+    (window as unknown as { __finishPinned: boolean }).__finishPinned = true;
+    (await import("/app/workspace.js")).scheduleGroupsRefresh(0);
+  });
+  await pinned.locator(".ws-dot.done").waitFor();
+  assert.equal(await row(title).count(), 1);
+  for (const mode of ["project", "folder", "state"]) {
+    await page.getByTestId(`workspace-mode-${mode}`).click();
+    assert.equal(await pinned.evaluate((section) => section.parentElement?.firstElementChild === section), true, `Pinned stays first by ${mode}`);
+    assert.equal(await row(title).count(), 1);
+  }
+  await page.getByTestId("workspace-show-all-pinned").click();
+  await page.getByTestId("workspace-listing-page-row").getByText(title).waitFor();
+  await page.getByTestId("workspace-group-close").click();
+  await togglePin(title);
+  await page.getByTestId("workspace-group-done").getByText(title).waitFor();
+  assert.equal(await pinned.count(), 0);
 });
 
 test("by project: a section per project with its counts, and the project's own menu", { timeout: 120_000 }, async (t) => {

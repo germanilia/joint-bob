@@ -1,7 +1,7 @@
 // The Inbox column grouped by project or by folder (the third grouping, by state, is workspace.js). Both draw into the column's own list
 // with the same rows as by state (`makeRow`), so a row looks and acts the same wherever it is listed.
 //   By project : a section per project (pinned first, then the latest), its most urgent conversations, and the project's own menu.
-//   By folder  : Pinned, Starred, then the person's folders and subfolders as a tree that opens in place; drag a row onto a folder to file it.
+//   By folder  : Starred, then the person's folders and subfolders as a tree that opens in place; drag a row onto a folder to file it.
 
 import { folderOf, isPinned, isStarred, popMenu } from "./control-marks.js";
 import { childFolders, depthOf, draggedCard, endDrag, folderPaths, isInFolder, isTeamFolder, leafOf, moveToFolder, openFolderMenu, createFolder } from "./inbox-folders.js";
@@ -115,8 +115,9 @@ export function drawByProject(host, { cards, makeRow, groupOf, openPage, newIn, 
       );
     }
     section.append(head);
-    for (const card of nestRows(project.cards).slice(0, PROJECT_ROWS)) section.append(makeRow(card, groupOf(card), "workspace-group-row"));
-    if (project.cards.length > PROJECT_ROWS) {
+    const unpinned = project.cards.filter((card) => !isPinned(card));
+    for (const card of nestRows(unpinned).slice(0, PROJECT_ROWS)) section.append(makeRow(card, groupOf(card), "workspace-group-row"));
+    if (unpinned.length > PROJECT_ROWS) {
       const all = button("ws-show-all ws-project-all", `Show all ${project.cards.length} of ${project.name}`, "workspace-project-show-all", () => openPage(`project:${project.id}`), `Show all ${project.cards.length}`);
       section.append(all);
     }
@@ -165,18 +166,16 @@ export function drawByFolder(host, { cards, makeRow, groupOf, openPage, afterCha
   const head = el("div", "ws-lab");
   head.append(el("span", "", "Folders"), button("ws-show-all", "New folder", "workspace-folder-new", (anchor) => popMenu(anchor, [{ input: "New folder…", run: (name) => { createFolder("", name); afterChange(); } }]), "New folder"));
   nodes.push(head);
-  for (const [id, label, test] of [["pinned", "Pinned", isPinned], ["starred", "Starred", isStarred]]) {
-    const row = el("div", "ws-folder-row ws-folder-view");
-    row.dataset.testid = `workspace-folder-${id}`;
-    row.append(el("span", "ws-folder-chevron"), button("ws-folder-name", `${label} conversations`, `workspace-folder-${id}-open`, () => openPage(`view:${id}`), label), el("em", "ws-folder-count", String(cards.filter(test).length)));
-    nodes.push(row);
-  }
+  const starred = el("div", "ws-folder-row ws-folder-view");
+  starred.dataset.testid = "workspace-folder-starred";
+  starred.append(el("span", "ws-folder-chevron"), button("ws-folder-name", "Starred conversations", "workspace-folder-starred-open", () => openPage("view:starred"), "Starred"), el("em", "ws-folder-count", String(cards.filter(isStarred).length)));
+  nodes.push(starred);
   const addFolder = (path) => {
     const team = isTeamFolder(path, cards);
     nodes.push(folderRow(path, cards, { openPage, afterChange, team }));
     if (!openFolders.has(path)) return;
     for (const child of childFolders(paths, path)) addFolder(child);
-    const here = nestRows(cards.filter((card) => isInFolder(card, path)).sort(byUrgency));
+    const here = nestRows(cards.filter((card) => isInFolder(card, path) && !isPinned(card)).sort(byUrgency));
     for (const card of here.slice(0, FOLDER_ROWS)) {
       const wrap = el("div", "ws-folder-item");
       wrap.style.setProperty("--depth", String(depthOf(path) + 1));
