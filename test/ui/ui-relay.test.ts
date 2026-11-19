@@ -407,7 +407,8 @@ test("adding a relay offers a link or a request, and refusals stay inline", asyn
   expectFailure(response.status(), "POST", "/api/relays");
   assert.ok(response.status() >= 400 && response.status() < 500, `the server refuses the link with a client error, got ${response.status()}`);
   const body = await response.json() as { error: string };
-  assert.equal((await page.getByTestId("relays-status").innerText()).trim(), body.error, "the server's message shows as it is");
+  // The page names the failed call first ("Could not complete POST /api/relays: "), then gives the server's words as they are.
+  assert.ok((await page.getByTestId("relays-status").innerText()).trim().endsWith(`: ${body.error}`), "the server's message shows as it is");
   assert.equal(await page.getByTestId("relays-add-form").isVisible(), true, "the form stays open so the link can be fixed");
   await page.getByTestId("relays-add-cancel").click();
   await page.getByTestId("relays-add-form").waitFor({ state: "hidden" });
@@ -424,7 +425,7 @@ test("the sign-in form shows the relay's sign-in refusal as it is", async () => 
     await visitor.getByTestId("login-password-input").fill(environment.password);
     await visitor.getByTestId("login-submit-button").click();
     await visitor.locator("#loginError:not([hidden])").waitFor();
-    assert.equal((await visitor.locator("#loginError").innerText()).trim(), TWO_FACTOR_MESSAGE);
+    assert.ok((await visitor.locator("#loginError").innerText()).trim().endsWith(`: ${TWO_FACTOR_MESSAGE}`), "the sign-in refusal is shown in the server's words");
   } finally {
     await guest.close();
   }
