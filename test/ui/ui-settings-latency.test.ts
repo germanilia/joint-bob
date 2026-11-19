@@ -81,6 +81,7 @@ test("the save line shows progress, failure, and success", { timeout: 90_000 }, 
   assert.equal(await line.getAttribute("data-state"), "idle");
   assert.equal(await line.innerText(), "Changes save as you make them");
   assert.equal(await page.getByTestId("settings-section-head-account").getByTestId("settings-save-state").count(), 1, "the line sits in the open section's head");
+  await page.getByTestId("settings-tab-conversations").click();
   const digest = page.getByTestId("settings-digest-attachments");
   const before = await digest.isChecked();
   const pending = gate(), requested = gate();
@@ -138,6 +139,7 @@ test("a save finishes, and Settings closes, even while the conversation refresh 
   });
   try {
     const saved = page.waitForResponse(response => response.url().endsWith("/api/settings") && response.request().method() === "PUT");
+    await page.getByTestId("settings-tab-conversations").click();
     await page.getByTestId("settings-digest-attachments").click();
     assert.equal((await saved).status(), 200);
     await requested.promise;

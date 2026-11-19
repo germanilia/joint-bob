@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.331.0 — 2026-11-19
+
+- Redrew Settings so a section reads as one column. Rows keep their label and control together on a wide screen, every group is a card that holds its rows (in Safari the first row of a group sat above its card), and the head is compact with the scope and save state beside the title.
+- Help under a setting is now shown in full. Long lines are no longer cut to one line with a ⌄ that opens the rest.
+- Regrouped the Settings list into You, Workspace, AI and agents, Access, Network, This node and About. Secrets and Browser moved to Access, Activity overview to AI and agents, and File sync to Network. Workspace cleanup now has an icon like the other sections.
+- Split Account in two: **Appearance** (theme, motion, text size, interface) is its own section, and conversation history, backup before deleting, context compaction, attachments and shell commands moved to **Conversations**. Sections with many groups start with a row of links to them.
+- Browser profiles and Secrets are one list that scrolls, like Workspaces, instead of pages with Previous and Next.
+- System AI shows harness, provider, model and thinking side by side for each background agent, so the page is a fraction as tall. The Resources filters wrap instead of being cut off.
+- Shortcuts, Labels and the changelog no longer scroll inside the section, and the changelog shows bold text instead of asterisks.
+- Workspace cleanup says how many workspaces it checked and lists only the ones that need a decision. The kept ones are one folded count.
+
 ## 2.330.1 — 2026-11-19
 
 - Fixed the conversation shaking while it opens on a running turn and catches up. The line that counts a turn's steps no longer leaves the thread and returns on every tool call, which moved everything under it up and down each time.

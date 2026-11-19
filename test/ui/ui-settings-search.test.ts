@@ -18,7 +18,7 @@ test("settings search finds a setting by its name, opens its section, and flashe
   await page.getByTestId("settings-tab-conversations").click();
 
   // One list: every group is a quiet label over all of its sections, each a row with its icon and name.
-  assert.deepEqual(await page.locator(".settings-group-label").allTextContents(), ["You", "Workspace", "Agents", "Network", "This node"]);
+  assert.deepEqual(await page.locator(".settings-group-label").allTextContents(), ["You", "Workspace", "AI and agents", "Access", "Network", "This node", "About"]);
   const rows = () => page.locator("#settingsForm .settings-tab[data-settings-tab]").evaluateAll((tabs) => tabs.filter((tab) => (tab as HTMLElement).checkVisibility()).map((tab) => {
     const box = tab.getBoundingClientRect();
     const icon = tab.querySelector(".settings-tab-icon svg path")?.getBoundingClientRect();
@@ -33,7 +33,7 @@ test("settings search finds a setting by its name, opens its section, and flashe
     assert.ok(row.height >= 34 && row.height <= 36, `${row.name} is 34–36 px tall, got ${row.height}`);
     assert.ok(row.icon, `${row.name} has its icon`);
   }
-  assert.deepEqual([...new Set(all.map((row) => row.group))], ["You", "Workspace", "Agents", "Network", "This node"], "all five groups show their rows");
+  assert.deepEqual([...new Set(all.map((row) => row.group))], ["You", "Workspace", "AI and agents", "Access", "Network", "This node", "About"], "all five groups show their rows");
   for (const name of ["Account", "Conversations", "Harnesses", "Cluster", "Changelog"]) assert.ok(all.some((row) => row.name === name), `${name} is in the list`);
   // The list fits a short window by scrolling under the search box, which stays where it is.
   await page.setViewportSize({ width: 1280, height: 700 });
@@ -65,7 +65,7 @@ test("settings search finds a setting by its name, opens its section, and flashe
   await search.fill("harnesses");
   await page.waitForFunction(() => document.querySelector(".settings-sidebar")?.hasAttribute("data-searching"));
   assert.deepEqual((await rows()).map((row) => row.name), ["Harnesses"], "only the matching section stays in the list");
-  assert.deepEqual(await page.locator(".settings-group-label").evaluateAll((labels) => labels.filter((label) => (label as HTMLElement).checkVisibility()).map((label) => label.textContent)), ["Agents"], "groups without a match leave the list");
+  assert.deepEqual(await page.locator(".settings-group-label").evaluateAll((labels) => labels.filter((label) => (label as HTMLElement).checkVisibility()).map((label) => label.textContent)), ["AI and agents"], "groups without a match leave the list");
   await search.press("Enter");
   assert.equal(await page.getByTestId("settings-tab-engines").getAttribute("aria-selected"), "true");
   assert.equal((await rows()).length, all.length, "the whole list is back");
@@ -170,7 +170,7 @@ test("the phone's Settings list names the theme, and Account opens on six theme 
   assert.equal(await page.getByTestId("settings-appearance-value").innerText(), "System");
   await link.click();
   assert.equal(await page.locator("#settingsForm").getAttribute("data-mobile-view"), "panel");
-  assert.equal(await page.getByTestId("settings-tab-account").getAttribute("aria-selected"), "true");
+  assert.equal(await page.getByTestId("settings-tab-appearance").getAttribute("aria-selected"), "true");
   const tiles = await page.locator('[data-testid="settings-theme-tiles"] .theme-tile').evaluateAll((items) => items.map((item) => {
     const box = item.getBoundingClientRect();
     return { name: item.textContent ?? "", left: Math.round(box.left), top: Math.round(box.top), bottom: box.bottom, width: box.width, height: box.height, chosen: item.getAttribute("aria-checked") };

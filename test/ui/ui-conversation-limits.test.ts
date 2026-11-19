@@ -10,6 +10,7 @@ test("Settings turns the per-conversation CPU and memory limits on, saves and re
   await page.getByTestId("login-password-input").fill(environment.password);
   await page.getByTestId("login-submit-button").click();
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await page.locator('#settingsForm[data-ready="true"]').waitFor();
   const saved = page.locator('[data-testid="settings-save-state"][data-state="saved"]');
   const cpuEnabled = page.getByTestId("settings-conversation-cpu-limit-enabled");
@@ -35,6 +36,7 @@ test("Settings turns the per-conversation CPU and memory limits on, saves and re
   assert.deepEqual(stored, [2.5, 12]);
   await page.reload();
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await page.locator('#settingsForm[data-ready="true"]').waitFor();
   assert.equal(await cores.inputValue(), "2.5");
   assert.equal(await gigabytes.inputValue(), "12");

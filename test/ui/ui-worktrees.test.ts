@@ -130,6 +130,7 @@ test("workspace cleanup settings preview keeps a new worktree", async () => {
   await page.evaluate(async () => (await import("/app/settings.js")).openSettings("workspace-cleanup"));
   const panel = page.getByTestId("settings-panel-workspace-cleanup");
   await panel.getByRole("button", { name: "Preview cleanup" }).click();
+  await panel.getByTestId("workspace-cleanup-kept").locator("summary").click();
   await panel.getByText(/Kept\. Recent conversation or workspace activity/).waitFor();
   assert.equal(await panel.getByRole("checkbox", { name: /Enable automatic cleanup/ }).isChecked(), false);
   await access(await onlyWorktreePath());

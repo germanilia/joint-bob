@@ -992,6 +992,7 @@
           <div class="settings-group" data-settings-group="you" role="none">
           <div class="settings-group-label" role="presentation" data-testid="settings-group-you">You</div>
           <button class="settings-tab" type="button" data-settings-tab="account" role="tab" id="settingsTab-account" aria-controls="settingsPanel-account" aria-selected="true" data-testid="settings-tab-account"><span class="settings-tab-icon" style="--tile:#3b82f6" aria-hidden="true">👤</span><span class="settings-tab-label">Account</span></button>
+          <button class="settings-tab" type="button" data-settings-tab="appearance" role="tab" id="settingsTab-appearance" aria-controls="settingsPanel-appearance" aria-selected="false" tabindex="-1" data-testid="settings-tab-appearance"><span class="settings-tab-icon" style="--tile:#ec4899" aria-hidden="true">🎨</span><span class="settings-tab-label">Appearance</span></button>
           <button class="settings-tab" type="button" data-settings-tab="notifications" role="tab" id="settingsTab-notifications" aria-controls="settingsPanel-notifications" aria-selected="false" tabindex="-1" data-testid="settings-tab-notifications"><span class="settings-tab-icon" style="--tile:#ef4444" aria-hidden="true">🔔</span><span class="settings-tab-label">Notifications</span></button>
           <button class="settings-tab" type="button" data-settings-tab="shortcuts" role="tab" id="settingsTab-shortcuts" aria-controls="settingsPanel-shortcuts" aria-selected="false" tabindex="-1" data-testid="settings-tab-shortcuts"><span class="settings-tab-icon" style="--tile:#8b5cf6" aria-hidden="true">⌨️</span><span class="settings-tab-label">Shortcuts</span></button>
           </div>
@@ -1005,13 +1006,16 @@
           <button class="settings-tab" type="button" data-settings-tab="git" role="tab" id="settingsTab-git" aria-controls="settingsPanel-git" aria-selected="false" tabindex="-1" data-testid="settings-tab-git"><span class="settings-tab-icon" style="--tile:#f97316" aria-hidden="true">🌿</span><span class="settings-tab-label">Git</span></button>
           </div>
           <div class="settings-group" data-settings-group="agents" role="none">
-          <div class="settings-group-label" role="presentation" data-testid="settings-group-agents">Agents</div>
-          <button class="settings-tab" type="button" data-settings-tab="story" role="tab" id="settingsTab-story" aria-controls="settingsPanel-story" aria-selected="false" tabindex="-1" data-testid="settings-tab-story"><span class="settings-tab-icon" style="--tile:#ec4899" aria-hidden="true">🎙</span><span class="settings-tab-label">Activity overview</span></button>
+          <div class="settings-group-label" role="presentation" data-testid="settings-group-agents">AI and agents</div>
           <button class="settings-tab" type="button" data-settings-tab="engines" role="tab" id="settingsTab-engines" aria-controls="settingsPanel-engines" aria-selected="false" tabindex="-1" data-testid="settings-tab-engines"><span class="settings-tab-icon" style="--tile:#a855f7" aria-hidden="true">🤖</span><span class="settings-tab-label">Harnesses</span></button>
           <button class="settings-tab" type="button" data-settings-tab="connections" role="tab" id="settingsTab-connections" aria-controls="settingsPanel-connections" aria-selected="false" tabindex="-1" data-testid="settings-tab-connections"><span class="settings-tab-icon" style="--tile:#f59e0b" aria-hidden="true">🔌</span><span class="settings-tab-label">Connections</span></button>
           <button class="settings-tab" type="button" data-settings-tab="classifiers" role="tab" id="settingsTab-classifiers" aria-controls="settingsPanel-classifiers" aria-selected="false" tabindex="-1" data-testid="settings-tab-classifiers"><span class="settings-tab-icon" style="--tile:#14b8a6" aria-hidden="true">🧭</span><span class="settings-tab-label">Classifiers</span></button>
           <button class="settings-tab" type="button" data-settings-tab="system-ai" role="tab" id="settingsTab-system-ai" aria-controls="settingsPanel-system-ai" aria-selected="false" tabindex="-1" data-testid="settings-tab-system-ai" data-admin-only><span class="settings-tab-icon" style="--tile:#6366f1" aria-hidden="true">🧠</span><span class="settings-tab-label">System AI</span></button>
           <button class="settings-tab" type="button" data-settings-tab="guardian" role="tab" id="settingsTab-guardian" aria-controls="settingsPanel-guardian" aria-selected="false" tabindex="-1" data-testid="settings-tab-guardian" data-admin-only><span class="settings-tab-icon" style="--tile:#dc2626" aria-hidden="true">🛡️</span><span class="settings-tab-label">Guardian</span></button>
+          <button class="settings-tab" type="button" data-settings-tab="story" role="tab" id="settingsTab-story" aria-controls="settingsPanel-story" aria-selected="false" tabindex="-1" data-testid="settings-tab-story"><span class="settings-tab-icon" style="--tile:#ec4899" aria-hidden="true">🎙</span><span class="settings-tab-label">Activity overview</span></button>
+          </div>
+          <div class="settings-group" data-settings-group="access" role="none">
+          <div class="settings-group-label" role="presentation" data-testid="settings-group-access">Access</div>
           <button class="settings-tab" type="button" data-settings-tab="secrets" role="tab" id="settingsTab-secrets" aria-controls="settingsPanel-secrets" aria-selected="false" tabindex="-1" data-testid="settings-tab-secrets"><span class="settings-tab-icon" style="--tile:#37cfab" aria-hidden="true">🔑</span><span class="settings-tab-label">Secrets</span></button>
           <button class="settings-tab" type="button" data-settings-tab="browser" role="tab" id="settingsTab-browser" aria-controls="settingsPanel-browser" aria-selected="false" tabindex="-1" data-testid="settings-tab-browser"><span class="settings-tab-icon" style="--tile:#3b82f6" aria-hidden="true">🌐</span><span class="settings-tab-label">Browser</span></button>
           </div>
@@ -1019,15 +1023,18 @@
           <div class="settings-group-label" role="presentation" data-testid="settings-group-network">Network</div>
           <button class="settings-tab" type="button" data-settings-tab="cluster" role="tab" id="settingsTab-cluster" aria-controls="settingsPanel-cluster" aria-selected="false" tabindex="-1" data-testid="settings-tab-cluster"><span class="settings-tab-icon" style="--tile:#0ea5e9" aria-hidden="true">🕸️</span><span class="settings-tab-label">Cluster</span></button>
           <button class="settings-tab" type="button" data-settings-tab="relay" role="tab" id="settingsTab-relay" aria-controls="settingsPanel-relay" aria-selected="false" tabindex="-1" data-requires-settings data-testid="settings-tab-relay"><span class="settings-tab-icon" style="--tile:#6366f1" aria-hidden="true">📡</span><span class="settings-tab-label">Relay</span></button>
+          <button class="settings-tab" type="button" data-settings-tab="file-sync" role="tab" id="settingsTab-file-sync" aria-controls="settingsPanel-file-sync" aria-selected="false" tabindex="-1" data-testid="settings-tab-file-sync" data-admin-only><span class="settings-tab-icon" style="--tile:#14b8a6" aria-hidden="true">🔄</span><span class="settings-tab-label">File sync</span></button>
           </div>
           <div class="settings-group" data-settings-group="node" role="none">
           <div class="settings-group-label" role="presentation" data-testid="settings-group-node">This node</div>
           <button class="settings-tab" type="button" data-settings-tab="node" role="tab" id="settingsTab-node" aria-controls="settingsPanel-node" aria-selected="false" tabindex="-1" data-testid="settings-tab-node" data-admin-only><span class="settings-tab-icon" style="--tile:#64748b" aria-hidden="true">🖥️</span><span class="settings-tab-label">Node</span></button>
-          <button class="settings-tab" type="button" data-settings-tab="resources" role="tab" id="settingsTab-resources" aria-controls="settingsPanel-resources" aria-selected="false" tabindex="-1" data-testid="settings-tab-resources" data-admin-only><span class="settings-tab-icon" style="--tile:#84cc16" aria-hidden="true">📊</span><span class="settings-tab-label">Resources</span></button>
-          <button class="settings-tab" type="button" data-settings-tab="workspace-cleanup" role="tab" id="settingsTab-workspace-cleanup" aria-controls="settingsPanel-workspace-cleanup" aria-selected="false" tabindex="-1" data-testid="settings-tab-workspace-cleanup" data-admin-only>Workspace cleanup</button>
-          <button class="settings-tab" type="button" data-settings-tab="file-sync" role="tab" id="settingsTab-file-sync" aria-controls="settingsPanel-file-sync" aria-selected="false" tabindex="-1" data-testid="settings-tab-file-sync" data-admin-only><span class="settings-tab-icon" style="--tile:#14b8a6" aria-hidden="true">🔄</span><span class="settings-tab-label">File sync</span></button>
           <button class="settings-tab" type="button" data-settings-tab="users" role="tab" id="settingsTab-users" aria-controls="settingsPanel-users" aria-selected="false" tabindex="-1" data-testid="settings-tab-users" data-admin-only><span class="settings-tab-icon" style="--tile:#f43f5e" aria-hidden="true">👥</span><span class="settings-tab-label">Users</span></button>
+          <button class="settings-tab" type="button" data-settings-tab="resources" role="tab" id="settingsTab-resources" aria-controls="settingsPanel-resources" aria-selected="false" tabindex="-1" data-testid="settings-tab-resources" data-admin-only><span class="settings-tab-icon" style="--tile:#84cc16" aria-hidden="true">📊</span><span class="settings-tab-label">Resources</span></button>
+          <button class="settings-tab" type="button" data-settings-tab="workspace-cleanup" role="tab" id="settingsTab-workspace-cleanup" aria-controls="settingsPanel-workspace-cleanup" aria-selected="false" tabindex="-1" data-testid="settings-tab-workspace-cleanup" data-admin-only><span class="settings-tab-icon" style="--tile:#84cc16" aria-hidden="true">🧹</span><span class="settings-tab-label">Workspace cleanup</span></button>
           <button class="settings-tab" type="button" data-settings-tab="updates" role="tab" id="settingsTab-updates" aria-controls="settingsPanel-updates" aria-selected="false" tabindex="-1" data-testid="settings-tab-updates" data-admin-only><span class="settings-tab-icon" style="--tile:#22c55e" aria-hidden="true">⬇️</span><span class="settings-tab-label">Updates</span></button>
+          </div>
+          <div class="settings-group" data-settings-group="about" role="none">
+          <div class="settings-group-label" role="presentation" data-testid="settings-group-about">About</div>
           <button class="settings-tab" type="button" data-settings-tab="logs" role="tab" id="settingsTab-logs" aria-controls="settingsPanel-logs" aria-selected="false" tabindex="-1" data-testid="settings-tab-logs"><span class="settings-tab-icon" style="--tile:#78716c" aria-hidden="true">📜</span><span class="settings-tab-label">Client logs</span></button>
           <button class="settings-tab" type="button" data-settings-tab="changelog" role="tab" id="settingsTab-changelog" aria-controls="settingsPanel-changelog" aria-selected="false" tabindex="-1" data-testid="settings-tab-changelog"><span class="settings-tab-icon" style="--tile:#78716c" aria-hidden="true">🗒️</span><span class="settings-tab-label">Changelog</span></button>
           </div>
@@ -1139,9 +1146,9 @@
           </fieldset>
           <p class="settings-hint" id="usersStatus" role="status" data-testid="users-status"></p>
         </section>
-        <section class="settings-panel" id="settingsPanel-account" role="tabpanel" aria-labelledby="settingsTab-account" tabindex="0">
+        <section class="settings-panel" id="settingsPanel-appearance" role="tabpanel" aria-labelledby="settingsTab-appearance" tabindex="0" hidden>
           <fieldset class="phase-settings settings-appearance" data-testid="settings-appearance">
-            <legend>Appearance</legend>
+            <legend>Theme, motion and size</legend>
             <div class="settings-appearance-row">
               <div class="settings-row-text"><strong>Theme</strong><span class="settings-hint">Colours only. The layout stays the same. Kept in this browser.</span></div>
               <div class="theme-tiles" id="settingsThemeTiles" role="radiogroup" aria-label="Theme" data-testid="settings-theme-tiles"></div>
@@ -1156,136 +1163,20 @@
               <div class="settings-text-size-areas" id="settingsTextSizeAreas" data-testid="settings-text-size-areas"></div>
             </div>
           </fieldset>
+          <fieldset class="phase-settings">
+            <legend>Interface</legend>
+            <label class="checkbox-row"><input type="checkbox" id="settingsFocusUi" data-testid="settings-focus-ui-toggle" /> Focus interface (experimental)</label>
+            <p class="settings-hint compact-copy">One screen at a time, with floating contextual controls. Saves immediately for your account on this node. Turn off here to restore the classic interface without leaving your conversation.</p>
+          </fieldset>
+        </section>
+
+        <section class="settings-panel" id="settingsPanel-account" role="tabpanel" aria-labelledby="settingsTab-account" tabindex="0">
           <fieldset class="phase-settings" id="myNodesFieldset" data-testid="my-nodes" hidden>
             <legend>My nodes</legend>
             <p class="settings-hint">The nodes of the clusters you joined. Your settings, pins and recents reach a node only after you sign in there.</p>
             <ul class="my-nodes" id="myNodesList" data-testid="my-nodes-list"></ul>
             <label class="checkbox-row"><input type="checkbox" id="settingsShowProjectsOnOtherNodes" data-testid="settings-show-projects-on-other-nodes" /> Show my projects on other nodes</label>
             <p class="settings-hint">Signed in on one of these nodes, you see your unshared projects there too. They run here and are never copied there. Hide a single project from its menu.</p>
-          </fieldset>
-          <fieldset class="phase-settings">
-            <legend>Interface</legend>
-            <label class="checkbox-row"><input type="checkbox" id="settingsFocusUi" data-testid="settings-focus-ui-toggle" /> Focus interface (experimental)</label>
-            <p class="settings-hint compact-copy">One screen at a time, with floating contextual controls. Saves immediately for your account on this node. Turn off here to restore the classic interface without leaving your conversation.</p>
-          </fieldset>
-          <fieldset class="phase-settings">
-            <legend>Conversation history</legend>
-            <label>Load conversation summaries from the last
-              <input id="settingsConversationHistoryDays" type="number" min="1" max="3650" step="1" required data-testid="settings-conversation-history-days" />
-              days
-            </label>
-            <p class="settings-hint">Older transcripts stay on disk and load only when opened from a pin, recent item, or direct link.</p>
-            <label data-admin-only>Delete conversations with no activity for
-              <input id="settingsConversationRetentionDays" type="number" min="1" max="3650" step="1" required data-testid="settings-conversation-retention-days" />
-              days
-            </label>
-            <p class="settings-hint" data-admin-only>Deletion removes the transcript on every node. Pinned, ticket, and scheduled conversations are kept. Conversations that never got a message are deleted after an hour.</p>
-            <div class="retention-scope" data-testid="settings-retention-scope" data-admin-only>
-              <p class="settings-hint">Only the conversations a project's list still shows are checked. Older ones stay until you tick the first box.</p>
-              <label class="checkbox-row">
-                <input id="settingsRetentionFull" type="checkbox" data-retention-scope="full" data-testid="settings-retention-full" />
-                Also delete older conversations that the list no longer shows
-              </label>
-              <label class="checkbox-row retention-scope-dependent">
-                <input id="settingsRetentionUnrecorded" type="checkbox" data-retention-scope="includeUnrecorded" data-retention-needs-full data-testid="settings-retention-unrecorded" />
-                …and old transcripts that have no conversation record (in project folders only)
-              </label>
-              <label class="checkbox-row retention-scope-dependent">
-                <input id="settingsRetentionScheduled" type="checkbox" data-retention-scope="includeScheduled" data-retention-needs-full data-testid="settings-retention-scheduled" />
-                …and conversations started by schedules and webhooks
-              </label>
-              <label class="checkbox-row">
-                <input id="settingsRetentionLeftovers" type="checkbox" data-retention-scope="leftovers" data-testid="settings-retention-leftovers" />
-                Remove files left behind by conversations that were already deleted
-              </label>
-              <label class="checkbox-row">
-                <input id="settingsRetentionBackgroundRuns" type="checkbox" data-retention-scope="backgroundRuns" data-testid="settings-retention-background-runs" />
-                Remove Joint Bob's own background-run transcripts after 7 days
-              </label>
-              <button class="ghost" id="settingsRetentionPreviewButton" type="button" data-testid="settings-retention-preview-button">Show what would be deleted</button>
-              <p class="settings-hint">Deleting more, or sooner, asks you first. Nothing is deleted before the next hourly check.</p>
-              <div id="settingsRetentionPreview" class="retention-preview" data-testid="settings-retention-preview" aria-live="polite" hidden></div>
-            </div>
-          </fieldset>
-          <!-- A row with data-backup-kind shows for that place ("on": any place); one with data-backup-credentials also needs that way to sign in. -->
-          <fieldset class="phase-settings retention-backup" id="settingsBackup" data-testid="settings-backup" data-admin-only>
-            <legend>Backup before deleting</legend>
-            <p class="settings-hint">With a place chosen, the hourly check deletes a conversation only after its backup is stored there. If a backup cannot be written, old conversations are kept and the problem is shown here.</p>
-            <p class="settings-hint">Not backed up: a conversation that someone deletes by hand, a conversation that never got a message, and Joint Bob's own background runs. Pinned conversations are never deleted.</p>
-            <label>Back up to
-              <select id="settingsBackupDestination" data-testid="settings-backup-destination">
-                <option value="off">Do not back up</option>
-                <option value="folder">A folder on this machine</option>
-                <option value="s3">An Amazon S3 bucket</option>
-              </select>
-            </label>
-            <div class="retention-backup-notes" id="settingsBackupSaveError" data-testid="settings-backup-save-error"></div>
-            <label data-backup-kind="folder" hidden>Folder
-              <input id="settingsBackupFolder" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1024" data-testid="settings-backup-folder" />
-            </label>
-            <p class="settings-hint" id="settingsBackupFolderHint" data-backup-kind="folder" data-testid="settings-backup-folder-hint" hidden>Leave this empty to use the folder shown in the field. Use a folder outside your projects.</p>
-            <label data-backup-kind="s3" hidden>Bucket
-              <input id="settingsBackupS3Bucket" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" data-testid="settings-backup-s3-bucket" />
-            </label>
-            <label data-backup-kind="s3" hidden>Region
-              <input id="settingsBackupS3Region" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32" placeholder="eu-west-1" data-testid="settings-backup-s3-region" />
-            </label>
-            <label data-backup-kind="s3" hidden>Folder in the bucket (optional)
-              <input id="settingsBackupS3Prefix" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" data-testid="settings-backup-s3-prefix" />
-            </label>
-            <p class="settings-hint" data-backup-kind="s3" hidden>Backups are stored under this machine's name, so several machines can share one bucket.</p>
-            <label data-backup-kind="s3" hidden>Sign in with
-              <select id="settingsBackupS3Credentials" data-testid="settings-backup-s3-credentials">
-                <option value="keys">An access key</option>
-                <option value="profile">An AWS profile on this machine</option>
-              </select>
-            </label>
-            <label data-backup-kind="s3" data-backup-credentials="keys" hidden>Access key ID
-              <input id="settingsBackupS3AccessKeyId" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="128" data-testid="settings-backup-s3-access-key-id" />
-            </label>
-            <label data-backup-kind="s3" data-backup-credentials="keys" hidden>Secret access key
-              <input id="settingsBackupS3SecretAccessKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="256" data-testid="settings-backup-s3-secret-access-key" />
-            </label>
-            <p class="settings-hint" data-backup-kind="s3" data-backup-credentials="keys" data-testid="settings-backup-s3-secret-hint" hidden><span id="settingsBackupS3SecretSaved" hidden>A key is saved. Leave this empty to keep it. </span>The secret key is stored encrypted on this machine and is never shown again.</p>
-            <label data-backup-kind="s3" data-backup-credentials="profile" hidden>Profile name
-              <input id="settingsBackupS3Profile" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="default profile" data-testid="settings-backup-s3-profile" />
-            </label>
-            <p class="settings-hint" data-backup-kind="s3" data-backup-credentials="profile" hidden>This needs the AWS command line tool on this machine. Leave the name empty to use the default profile.</p>
-            <details class="retention-backup-more" id="settingsBackupS3More" data-backup-kind="s3" data-testid="settings-backup-s3-more" hidden>
-              <summary>Other S3-compatible service</summary>
-              <label>Address of the service
-                <input id="settingsBackupS3Endpoint" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="https://" data-testid="settings-backup-s3-endpoint" />
-              </label>
-              <p class="settings-hint">Leave this empty for Amazon S3.</p>
-            </details>
-            <label data-backup-kind="on" hidden>Delete each backup after
-              <input id="settingsBackupKeepDays" type="number" min="0" max="3650" step="1" required disabled data-testid="settings-backup-keep-days" />
-              days
-            </label>
-            <p class="settings-hint" data-backup-kind="on" hidden>0 keeps backups for good. The number also applies to backups already made.</p>
-            <button class="ghost" id="settingsBackupCheckButton" type="button" data-backup-kind="on" data-testid="settings-backup-check-button" hidden>Check that backups can be written</button>
-            <div class="retention-backup-notes" id="settingsBackupCheckResult" data-backup-kind="on" data-testid="settings-backup-check-result" aria-live="polite" hidden></div>
-            <div class="retention-backup-notes" id="settingsBackupStatus" data-testid="settings-backup-status"></div>
-          </fieldset>
-          <fieldset class="phase-settings">
-            <legend>Context compaction</legend>
-            <label class="checkbox-row">
-              <input id="settingsAutoCompactEnabled" type="checkbox" data-testid="settings-auto-compact-enabled" />
-              Compact conversations automatically between messages
-            </label>
-            <label>Compact when context reaches
-              <input id="settingsAutoCompactThreshold" type="number" min="1" max="100" step="1" required data-testid="settings-auto-compact-threshold" />
-              percent
-            </label>
-            <p class="settings-hint">This setting applies only to conversations running on this node. Disable it to compact manually.</p>
-          </fieldset>
-          <fieldset class="phase-settings">
-            <legend>Attachments</legend>
-            <label class="checkbox-row">
-              <input id="settingsDigestAttachments" type="checkbox" data-testid="settings-digest-attachments" />
-              Digest images and files for the agent
-            </label>
-            <p class="settings-hint">When on, this node describes uploaded images and browser screenshots with a vision-capable Pi model and inlines small text files, sending the words and the file path instead of the raw image so the harness does not carry every picture in its history. Agents can still open the file. When off, attachments are sent as today.</p>
           </fieldset>
           <fieldset class="phase-settings" data-testid="settings-background-agent" data-admin-only>
             <legend>Background agent</legend>
@@ -1316,39 +1207,6 @@
             </label>
             <div id="settingsDashboardsModel"></div>
             <p class="settings-hint">The agent that builds and edits dashboards when you describe them, and that refreshes dashboards whose data needs AI. Script dashboards refresh without it. This choice is shared with trusted twins; availability is checked on the execution machine.</p>
-          </fieldset>
-          <fieldset class="phase-settings" data-admin-only>
-            <legend>Shell commands</legend>
-            <label class="checkbox-row">
-              <input id="settingsShellTimeoutEnabled" type="checkbox" data-testid="settings-shell-timeout-enabled" />
-              Limit how long an agent's shell command may run
-            </label>
-            <label>Stop a command after
-              <input id="settingsShellTimeoutSeconds" type="number" min="1" max="86400" step="1" required data-testid="settings-shell-timeout-seconds" />
-              seconds
-            </label>
-            <p class="settings-hint">Optional shorter limit for agent shell commands. A command stopped by this limit returns exit code 124. The subprocess maximum below still applies.</p>
-            <label>Subprocess maximum lifetime, minutes
-              <input id="settingsSubprocessMaxLifetimeMinutes" type="number" min="1" max="10080" step="1" required data-testid="settings-subprocess-max-lifetime-minutes" />
-            </label>
-            <p class="settings-hint">Default 360 minutes, measured from launch, not last activity. Applies to owned agent processes, shell/background tasks, terminal shells and command helpers on this node. Changes also affect running work. Sends TERM, then KILL after 5 seconds. Excludes the server, supervisor, update installer and persistent browser service. Descendants that detach before observation cannot be guaranteed.</p>
-            <label class="checkbox-row">
-              <input id="settingsConversationCpuLimitEnabled" type="checkbox" data-testid="settings-conversation-cpu-limit-enabled" />
-              Limit the CPU one conversation's commands may use
-            </label>
-            <label>Slow a conversation down above
-              <input id="settingsConversationCpuLimitCores" type="number" min="0.1" max="1024" step="0.1" required data-testid="settings-conversation-cpu-limit-cores" />
-              CPU cores
-            </label>
-            <label class="checkbox-row">
-              <input id="settingsConversationMemoryLimitEnabled" type="checkbox" data-testid="settings-conversation-memory-limit-enabled" />
-              Limit the memory one conversation's commands may use
-            </label>
-            <label>Stop a command when its conversation is above
-              <input id="settingsConversationMemoryLimitGb" type="number" min="0.1" max="4096" step="0.1" required data-testid="settings-conversation-memory-limit-gb" />
-              GB
-            </label>
-            <p class="settings-hint">Both are off by default and apply on this node to everything one conversation's shell commands and background tasks start, added together. The agent itself is not limited. Above the CPU limit the commands are paused for part of each second, so they run slower and do not fail. Above the memory limit for three seconds, the conversation's largest command is stopped and its output says why. Memory that processes share is counted once for each, so the total reads high. Changes reach running work within two seconds.</p>
           </fieldset>
           <fieldset class="phase-settings">
             <legend>Account</legend>
@@ -1493,6 +1351,158 @@
             <label>Summary instructions<textarea id="settingsSummaryInstructions" rows="9" maxlength="6000" spellcheck="false" data-testid="settings-summary-instructions"></textarea></label>
             <div class="settings-summary-instructions-actions"><span class="settings-hint" id="settingsSummaryInstructionsStatus" data-testid="settings-summary-instructions-status"></span><button type="button" class="ghost compact" id="settingsSummaryInstructionsReset" data-testid="settings-summary-instructions-reset">Reset to default</button></div>
             <p class="settings-hint">What a summary is for and how it reads. Joint Bob adds the new messages, current summary, and output format. Saved when you leave the box. These instructions are shared with trusted twins; a relay's policy does not change them.</p>
+          </fieldset>
+          <fieldset class="phase-settings">
+            <legend>Conversation history</legend>
+            <label>Load conversation summaries from the last
+              <input id="settingsConversationHistoryDays" type="number" min="1" max="3650" step="1" required data-testid="settings-conversation-history-days" />
+              days
+            </label>
+            <p class="settings-hint">Older transcripts stay on disk and load only when opened from a pin, recent item, or direct link.</p>
+            <label data-admin-only>Delete conversations with no activity for
+              <input id="settingsConversationRetentionDays" type="number" min="1" max="3650" step="1" required data-testid="settings-conversation-retention-days" />
+              days
+            </label>
+            <p class="settings-hint" data-admin-only>Deletion removes the transcript on every node. Pinned, ticket, and scheduled conversations are kept. Conversations that never got a message are deleted after an hour.</p>
+            <div class="retention-scope" data-testid="settings-retention-scope" data-admin-only>
+              <p class="settings-hint">Only the conversations a project's list still shows are checked. Older ones stay until you tick the first box.</p>
+              <label class="checkbox-row">
+                <input id="settingsRetentionFull" type="checkbox" data-retention-scope="full" data-testid="settings-retention-full" />
+                Also delete older conversations that the list no longer shows
+              </label>
+              <label class="checkbox-row retention-scope-dependent">
+                <input id="settingsRetentionUnrecorded" type="checkbox" data-retention-scope="includeUnrecorded" data-retention-needs-full data-testid="settings-retention-unrecorded" />
+                …and old transcripts that have no conversation record (in project folders only)
+              </label>
+              <label class="checkbox-row retention-scope-dependent">
+                <input id="settingsRetentionScheduled" type="checkbox" data-retention-scope="includeScheduled" data-retention-needs-full data-testid="settings-retention-scheduled" />
+                …and conversations started by schedules and webhooks
+              </label>
+              <label class="checkbox-row">
+                <input id="settingsRetentionLeftovers" type="checkbox" data-retention-scope="leftovers" data-testid="settings-retention-leftovers" />
+                Remove files left behind by conversations that were already deleted
+              </label>
+              <label class="checkbox-row">
+                <input id="settingsRetentionBackgroundRuns" type="checkbox" data-retention-scope="backgroundRuns" data-testid="settings-retention-background-runs" />
+                Remove Joint Bob's own background-run transcripts after 7 days
+              </label>
+              <button class="ghost" id="settingsRetentionPreviewButton" type="button" data-testid="settings-retention-preview-button">Show what would be deleted</button>
+              <p class="settings-hint">Deleting more, or sooner, asks you first. Nothing is deleted before the next hourly check.</p>
+              <div id="settingsRetentionPreview" class="retention-preview" data-testid="settings-retention-preview" aria-live="polite" hidden></div>
+            </div>
+          </fieldset>
+          <!-- A row with data-backup-kind shows for that place ("on": any place); one with data-backup-credentials also needs that way to sign in. -->
+          <fieldset class="phase-settings retention-backup" id="settingsBackup" data-testid="settings-backup" data-admin-only>
+            <legend>Backup before deleting</legend>
+            <p class="settings-hint">With a place chosen, the hourly check deletes a conversation only after its backup is stored there. If a backup cannot be written, old conversations are kept and the problem is shown here.</p>
+            <p class="settings-hint">Not backed up: a conversation that someone deletes by hand, a conversation that never got a message, and Joint Bob's own background runs. Pinned conversations are never deleted.</p>
+            <label>Back up to
+              <select id="settingsBackupDestination" data-testid="settings-backup-destination">
+                <option value="off">Do not back up</option>
+                <option value="folder">A folder on this machine</option>
+                <option value="s3">An Amazon S3 bucket</option>
+              </select>
+            </label>
+            <div class="retention-backup-notes" id="settingsBackupSaveError" data-testid="settings-backup-save-error"></div>
+            <label data-backup-kind="folder" hidden>Folder
+              <input id="settingsBackupFolder" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1024" data-testid="settings-backup-folder" />
+            </label>
+            <p class="settings-hint" id="settingsBackupFolderHint" data-backup-kind="folder" data-testid="settings-backup-folder-hint" hidden>Leave this empty to use the folder shown in the field. Use a folder outside your projects.</p>
+            <label data-backup-kind="s3" hidden>Bucket
+              <input id="settingsBackupS3Bucket" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" data-testid="settings-backup-s3-bucket" />
+            </label>
+            <label data-backup-kind="s3" hidden>Region
+              <input id="settingsBackupS3Region" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32" placeholder="eu-west-1" data-testid="settings-backup-s3-region" />
+            </label>
+            <label data-backup-kind="s3" hidden>Folder in the bucket (optional)
+              <input id="settingsBackupS3Prefix" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" data-testid="settings-backup-s3-prefix" />
+            </label>
+            <p class="settings-hint" data-backup-kind="s3" hidden>Backups are stored under this machine's name, so several machines can share one bucket.</p>
+            <label data-backup-kind="s3" hidden>Sign in with
+              <select id="settingsBackupS3Credentials" data-testid="settings-backup-s3-credentials">
+                <option value="keys">An access key</option>
+                <option value="profile">An AWS profile on this machine</option>
+              </select>
+            </label>
+            <label data-backup-kind="s3" data-backup-credentials="keys" hidden>Access key ID
+              <input id="settingsBackupS3AccessKeyId" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="128" data-testid="settings-backup-s3-access-key-id" />
+            </label>
+            <label data-backup-kind="s3" data-backup-credentials="keys" hidden>Secret access key
+              <input id="settingsBackupS3SecretAccessKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="256" data-testid="settings-backup-s3-secret-access-key" />
+            </label>
+            <p class="settings-hint" data-backup-kind="s3" data-backup-credentials="keys" data-testid="settings-backup-s3-secret-hint" hidden><span id="settingsBackupS3SecretSaved" hidden>A key is saved. Leave this empty to keep it. </span>The secret key is stored encrypted on this machine and is never shown again.</p>
+            <label data-backup-kind="s3" data-backup-credentials="profile" hidden>Profile name
+              <input id="settingsBackupS3Profile" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="default profile" data-testid="settings-backup-s3-profile" />
+            </label>
+            <p class="settings-hint" data-backup-kind="s3" data-backup-credentials="profile" hidden>This needs the AWS command line tool on this machine. Leave the name empty to use the default profile.</p>
+            <details class="retention-backup-more" id="settingsBackupS3More" data-backup-kind="s3" data-testid="settings-backup-s3-more" hidden>
+              <summary>Other S3-compatible service</summary>
+              <label>Address of the service
+                <input id="settingsBackupS3Endpoint" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="https://" data-testid="settings-backup-s3-endpoint" />
+              </label>
+              <p class="settings-hint">Leave this empty for Amazon S3.</p>
+            </details>
+            <label data-backup-kind="on" hidden>Delete each backup after
+              <input id="settingsBackupKeepDays" type="number" min="0" max="3650" step="1" required disabled data-testid="settings-backup-keep-days" />
+              days
+            </label>
+            <p class="settings-hint" data-backup-kind="on" hidden>0 keeps backups for good. The number also applies to backups already made.</p>
+            <button class="ghost" id="settingsBackupCheckButton" type="button" data-backup-kind="on" data-testid="settings-backup-check-button" hidden>Check that backups can be written</button>
+            <div class="retention-backup-notes" id="settingsBackupCheckResult" data-backup-kind="on" data-testid="settings-backup-check-result" aria-live="polite" hidden></div>
+            <div class="retention-backup-notes" id="settingsBackupStatus" data-testid="settings-backup-status"></div>
+          </fieldset>
+          <fieldset class="phase-settings">
+            <legend>Context compaction</legend>
+            <label class="checkbox-row">
+              <input id="settingsAutoCompactEnabled" type="checkbox" data-testid="settings-auto-compact-enabled" />
+              Compact conversations automatically between messages
+            </label>
+            <label>Compact when context reaches
+              <input id="settingsAutoCompactThreshold" type="number" min="1" max="100" step="1" required data-testid="settings-auto-compact-threshold" />
+              percent
+            </label>
+            <p class="settings-hint">This setting applies only to conversations running on this node. Disable it to compact manually.</p>
+          </fieldset>
+          <fieldset class="phase-settings">
+            <legend>Attachments</legend>
+            <label class="checkbox-row">
+              <input id="settingsDigestAttachments" type="checkbox" data-testid="settings-digest-attachments" />
+              Digest images and files for the agent
+            </label>
+            <p class="settings-hint">When on, this node describes uploaded images and browser screenshots with a vision-capable Pi model and inlines small text files, sending the words and the file path instead of the raw image so the harness does not carry every picture in its history. Agents can still open the file. When off, attachments are sent as today.</p>
+          </fieldset>
+          <fieldset class="phase-settings" data-admin-only>
+            <legend>Shell commands</legend>
+            <label class="checkbox-row">
+              <input id="settingsShellTimeoutEnabled" type="checkbox" data-testid="settings-shell-timeout-enabled" />
+              Limit how long an agent's shell command may run
+            </label>
+            <label>Stop a command after
+              <input id="settingsShellTimeoutSeconds" type="number" min="1" max="86400" step="1" required data-testid="settings-shell-timeout-seconds" />
+              seconds
+            </label>
+            <p class="settings-hint">Optional shorter limit for agent shell commands. A command stopped by this limit returns exit code 124. The subprocess maximum below still applies.</p>
+            <label>Subprocess maximum lifetime, minutes
+              <input id="settingsSubprocessMaxLifetimeMinutes" type="number" min="1" max="10080" step="1" required data-testid="settings-subprocess-max-lifetime-minutes" />
+            </label>
+            <p class="settings-hint">Default 360 minutes, measured from launch, not last activity. Applies to owned agent processes, shell/background tasks, terminal shells and command helpers on this node. Changes also affect running work. Sends TERM, then KILL after 5 seconds. Excludes the server, supervisor, update installer and persistent browser service. Descendants that detach before observation cannot be guaranteed.</p>
+            <label class="checkbox-row">
+              <input id="settingsConversationCpuLimitEnabled" type="checkbox" data-testid="settings-conversation-cpu-limit-enabled" />
+              Limit the CPU one conversation's commands may use
+            </label>
+            <label>Slow a conversation down above
+              <input id="settingsConversationCpuLimitCores" type="number" min="0.1" max="1024" step="0.1" required data-testid="settings-conversation-cpu-limit-cores" />
+              CPU cores
+            </label>
+            <label class="checkbox-row">
+              <input id="settingsConversationMemoryLimitEnabled" type="checkbox" data-testid="settings-conversation-memory-limit-enabled" />
+              Limit the memory one conversation's commands may use
+            </label>
+            <label>Stop a command when its conversation is above
+              <input id="settingsConversationMemoryLimitGb" type="number" min="0.1" max="4096" step="0.1" required data-testid="settings-conversation-memory-limit-gb" />
+              GB
+            </label>
+            <p class="settings-hint">Both are off by default and apply on this node to everything one conversation's shell commands and background tasks start, added together. The agent itself is not limited. Above the CPU limit the commands are paused for part of each second, so they run slower and do not fail. Above the memory limit for three seconds, the conversation's largest command is stopped and its output says why. Memory that processes share is counted once for each, so the total reads high. Changes reach running work within two seconds.</p>
           </fieldset>
         </section>
 

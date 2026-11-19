@@ -2,7 +2,8 @@ import { api } from "./api.js";
 import { elements } from "./elements.js";
 import { brandIcon, brandIconPaths, menuIcon } from "./icons.js";
 import { fuzzyMatch } from "./fuzzy.js";
-import { createListPager, rowActions } from "./list-pager.js";
+import { rowActions } from "./list-pager.js";
+import { createChunkedList } from "./long-scroll.js";
 import { createSearchableSelect } from "./searchable-select.js";
 import { parseMobaSshSession } from "./ssh-session-import.js";
 import { confirmAction, toast } from "./shell.js";
@@ -260,8 +261,8 @@ function githubVariables() {
   return variables;
 }
 
-// The list fits the section and pages (list-pager.js). `revealAccountId` turns to the page holding that account once.
-const secretPager = createListPager({ list: elements.secretAccountList, prefix: "secret-account", label: "Secret account pages", render: renderSecretAccounts });
+// One long list that the section scrolls, drawn in chunks (long-scroll.js). `revealAccountId` draws that account's row once.
+const secretPager = createChunkedList({ list: elements.secretAccountList, render: renderSecretAccounts });
 let revealAccountId = null;
 
 function renderSecretAccounts() {

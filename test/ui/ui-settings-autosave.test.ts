@@ -62,8 +62,8 @@ test("every section that waited for Save settings saves as it changes and keeps 
   const home = path.join(environment.home, "autosave-home");
   const skills = path.join(environment.home, "autosave-skills");
 
-  // Account: numbers save when the field is left, switches at once.
-  await openSection(page, "account");
+  // Conversations and Account: numbers save when the field is left, switches at once.
+  await openSection(page, "conversations");
   assert.equal(await page.getByTestId("settings-save-button").count(), 0, "there is no shared Save button");
   assert.equal(await page.getByTestId("settings-save-state").innerText(), "Changes save as you make them");
   await page.getByTestId("settings-conversation-history-days").fill("45");
@@ -75,6 +75,7 @@ test("every section that waited for Save settings saves as it changes and keeps 
   await waitForSaved(page);
   await page.getByTestId("settings-digest-attachments").setChecked(!before.digestAttachments);
   await waitForSaved(page);
+  await openSection(page, "account");
   await page.getByTestId("settings-show-projects-on-other-nodes").setChecked(before.showProjectsOnOtherNodes === false);
   await waitForSaved(page);
   assert.equal(await page.locator("#settingsDialog").evaluate((dialog: HTMLDialogElement) => dialog.open), true, "saving never closes Settings");
@@ -202,11 +203,12 @@ test("every section that waited for Save settings saves as it changes and keeps 
   await leaveSettings(page);
   await page.reload();
   await page.locator(".project-card").first().waitFor();
-  await openSection(page, "account");
+  await openSection(page, "conversations");
   assert.equal(await page.getByTestId("settings-conversation-history-days").inputValue(), "45");
   assert.equal(await page.getByTestId("settings-auto-compact-enabled").isChecked(), true);
   assert.equal(await page.getByTestId("settings-auto-compact-threshold").inputValue(), "85");
   assert.equal(await page.getByTestId("settings-digest-attachments").isChecked(), !before.digestAttachments);
+  await openSection(page, "account");
   assert.equal(await page.getByTestId("settings-show-projects-on-other-nodes").isChecked(), before.showProjectsOnOtherNodes === false);
   await openSection(page, "labels");
   assert.ok((await page.getByTestId("settings-conversation-labels").inputValue()).split("\n").includes("Autosaved label"));
@@ -251,7 +253,7 @@ test("a failure from the node shows on the save line and in a toast, and the nex
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment.username, environment.password);
   const before = await nodeSettings(page);
-  await openSection(page, "account");
+  await openSection(page, "conversations");
   await page.route("**/api/settings", (route) => route.request().method() === "PUT"
     ? route.fulfill({ status: 503, json: { error: "Settings store unavailable" } })
     : route.continue());
@@ -297,7 +299,7 @@ test("leaving Settings right after a change still saves it", { timeout: 120_000 
   await until((settings) => settings.gitPullFileLimit === 512, "the number still in its field");
 
   // Escape leaves Settings too, and saves on the way out.
-  await openSection(page, "account");
+  await openSection(page, "conversations");
   await page.getByTestId("settings-conversation-history-days").fill("21");
   await page.keyboard.press("Escape");
   await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });
