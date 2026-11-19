@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.327.1 — 2026-11-19
+
+- **Hide automations** in the Inbox: a switch under the State | Project | Folder row (and in the Filter of the Show all page and the phone's Home) leaves the conversations that schedules and webhooks start out of every list: the groups, by project, by folder, Pinned, Show all and Home. The choice is kept in this browser.
+- A group's heading, a project's name and a folder's name are now larger than the conversation rows under them.
+- The offline shell now includes the takeback notice module, which it was missing.
+
 ## 2.327.0 — 2026-11-19
 
 - Added **Pinned** and **Starred** tabs to Inbox **Show all**, with the same search and filters as the other tabs.

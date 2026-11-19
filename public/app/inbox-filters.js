@@ -98,9 +98,9 @@ const emitView = () => { for (const listener of viewListeners) listener(); selec
 const selectionChanged = () => { for (const listener of selectionListeners) listener(); };
 
 /** What the drawn rows depend on, to tell whether they must be drawn again. */
-export const inboxSignature = () => JSON.stringify([mode, [...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting, [...selected]]);
+export const inboxSignature = () => JSON.stringify([hideAutomations, mode, [...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting, [...selected]]);
 /** The same without the chosen rows: a list keeps its place while rows are chosen, and starts at the top for other filters. */
-export const inboxFilterKey = () => JSON.stringify([[...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting]);
+export const inboxFilterKey = () => JSON.stringify([hideAutomations, [...projects], [...sources], [...statuses], [...labels], [...worktrees], range.id, selecting]);
 export const isSelecting = () => selecting;
 export const isSelected = (card) => selected.has(keyOf(card));
 
@@ -114,7 +114,7 @@ export function toggleSelected(card) {
 export function filterInbox(groupId, cards, allEarlier = false) {
   const mixedStatus = groupId === "pinned" || groupId === "starred";
   if (!mixedStatus && statuses.size && !statuses.has(groupId)) return [];
-  const inProjects = cards.filter((card) => (!mixedStatus || !statuses.size || statuses.has(card.column))
+  const inProjects = cards.filter((card) => shownCard(card) && (!mixedStatus || !statuses.size || statuses.has(card.column))
     && (!projects.size || projects.has(card.projectId)) && (!sources.size || sources.has(sourceOf(card)))
     && (!labels.size || labels.has(card.classification ? `label:${card.classification}` : "unclassified")) && (!worktrees.size || worktrees.has(card.worktree?.id ?? "project")));
   if (groupId !== "earlier" || allEarlier) return inProjects;
@@ -203,7 +203,34 @@ export function createProjectFilter({ id, allCards }) {
   return { root: select.root, update };
 }
 /** Only the chosen projects' conversations (all of them when none is chosen). */
-export const inChosenProjects = (cards) => (projects.size ? cards.filter((card) => projects.has(card.projectId)) : cards);
+// Conversations the schedules start can be left out of every list of the Inbox (kept in this browser).
+const AUTOMATIONS_KEY = "joint-bob-inbox-hide-automations";
+let hideAutomations = (() => { try { return localStorage.getItem(AUTOMATIONS_KEY) === "1"; } catch { return false; } })();
+export const automationsHidden = () => hideAutomations;
+export function setAutomationsHidden(hidden) {
+  if (hidden === hideAutomations) return;
+  hideAutomations = hidden;
+  try { localStorage.setItem(AUTOMATIONS_KEY, hidden ? "1" : "0"); } catch { /* private mode: the choice lasts the page */ }
+  emitView();
+}
+/** The choice as a button: the column's row and the toolbars show the same one. */
+export function createAutomationToggle(testid) {
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "inbox-automation-toggle";
+  toggle.dataset.testid = testid;
+  const sync = () => {
+    toggle.setAttribute("aria-pressed", String(hideAutomations));
+    toggle.textContent = hideAutomations ? "Automations hidden" : "Hide automations";
+    toggle.title = hideAutomations ? "Show the conversations that schedules and webhooks start" : "Leave out the conversations that schedules and webhooks start";
+  };
+  toggle.addEventListener("click", () => setAutomationsHidden(!hideAutomations));
+  viewListeners.add(sync);
+  sync();
+  return toggle;
+}
+export const shownCard = (card) => !(hideAutomations && card.scheduled);
+export const inChosenProjects = (cards) => cards.filter((card) => shownCard(card) && (!projects.size || projects.has(card.projectId)));
 
 /**
  * `allCards()` is every conversation the Inbox knows (for the project list and for finding what is chosen), `visibleCards()` the
@@ -248,7 +275,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
   const filters = document.createElement("div");
   filters.className = "inbox-tools-filters";
   filters.dataset.testid = `${id}-filters`;
-  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, labelSelect.root, worktreeSelect.root, rangeSelect);
+  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, labelSelect.root, worktreeSelect.root, createAutomationToggle(`${id}-automations`), rangeSelect);
   // Folded (the phone's Home): one row with Filter and Select; Filter opens the choices under it.
   const filterButton = button("inbox-filter-toggle", `${id}-filter`, "Filter", () => {
     filters.hidden = !filters.hidden;

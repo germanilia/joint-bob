@@ -186,8 +186,8 @@
 
   /* ---------- the groups ---------- */
   .ws-group { display: flex; flex: none; flex-direction: column; min-height: 0; }
-  .ws-lab { display: flex; align-items: baseline; gap: 6px; height: 38px; padding: 16px 10px 4px; color: var(--text); font: 600 12.5px/1.2 var(--sans); letter-spacing: 0.02em; }
-  .ws-lab > i { color: var(--muted); font: 600 12.5px/1 var(--sans); font-style: normal; }
+  .ws-lab { display: flex; align-items: baseline; gap: 6px; height: 38px; padding: 16px 10px 4px; color: var(--text); font: 700 15px/1.2 var(--sans); letter-spacing: 0; }
+p0 13px/1 var(--sans); font-style: normal; }
   .ws-group + .ws-group { margin-top: 4px; border-top: 1px solid var(--line-strong); }
   .ws-show-all { margin-left: auto; min-height: 0; padding: 0; border: 0; background: none; color: var(--accent); font: 600 12px/1 var(--sans); cursor: pointer; }
   .ws-show-all:hover { text-decoration: underline; }
@@ -995,3 +995,13 @@ body.focus-ui .ws-folder-row { min-height: 44px; }
 /* The column's project filter sits beside the grouping switch, so its box is narrow: the list opens wider, to the left, one line per project. */
 .inbox-column-filter .searchable-select-popover { left: auto; right: 0; width: 270px; max-width: calc(100vw - 24px); }
 .inbox-column-filter .multi-select-option-label { overflow: hidden; overflow-wrap: normal; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A header is larger than the rows under it: group, project and folder names. */
+.ws-project-name, .ws-folder-name { font-size: 15px; }
+.ws-pill { font-size: 12px; }
+.ws-column-tools { flex-wrap: wrap; }
+.inbox-automation-toggle { flex-basis: 100%; min-height: 24px; padding: 0 4px; border: 0; background: none; color: var(--muted); font: 600 12px var(--sans); text-align: left; cursor: pointer; }
+.inbox-automation-toggle[aria-pressed="true"] { color: var(--accent); }
+.inbox-automation-toggle:hover { text-decoration: underline; }
+.inbox-tools-filters .inbox-automation-toggle { flex: 1 1 140px; min-height: 44px; padding: 0 14px; border-radius: 12px; background: var(--field); color: var(--text); font-size: 14px; text-align: center; }
+.inbox-tools-filters .inbox-automation-toggle[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--field)); color: var(--accent); }

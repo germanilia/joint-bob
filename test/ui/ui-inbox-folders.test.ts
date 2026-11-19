@@ -38,6 +38,7 @@ function boardFor(projects: Array<{ id: string; name: string }>, withTools = fal
   };
   if (withTools) {
     // A sub-agent under the running conversation, and labels, for the tools below.
+    result.cards.push(board("a1", second, "Nightly cost digest run", "review", "2026-11-18T07:30:00Z", { scheduled: true }));
     result.cards.push(board("r2", first, "Sub-agent: check the schema", "running", "2026-11-18T09:30:00Z", { turnRunning: true, parentPath: "/r1" }));
     result.earlier[1] = earlier("e1", first, "Old design notes", "2026-11-17T07:00:00Z", { classification: "research" });
   }
@@ -409,4 +410,33 @@ test("the column's project filter opens a list wide enough for one line per proj
   assert.ok(popover!.x >= 0, "the list stays on screen");
   const lines = await options.locator(".multi-select-option-label").evaluateAll((labels) => labels.map((label) => Math.round(label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight || "18"))));
   assert.ok(lines.every((count) => count <= 1), `one line per project: ${lines.join(", ")}`);
+});
+
+test("Hide automations leaves the conversations schedules start out of every list, and Show all too", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t, true);
+  const column = () => page.locator('[data-testid="workspace-group-row"]').filter({ hasText: "Nightly cost digest run" });
+  await column().waitFor();
+  await page.getByTestId("inboxColumn-automations").click();
+  await page.waitForFunction(() => !document.body.innerText.includes("Nightly cost digest run"));
+  assert.equal(await page.getByTestId("inboxColumn-automations").textContent(), "Automations hidden");
+  // By project and by folder too, and the choice is kept.
+  await page.getByTestId("workspace-mode-project").click();
+  await page.getByTestId("workspace-project").first().waitFor();
+  assert.equal(await page.locator("body").innerText().then((text) => text.includes("Nightly cost digest run")), false);
+  assert.equal(await page.evaluate(() => localStorage.getItem("joint-bob-inbox-hide-automations")), "1");
+  // The scheduled group's own Show all page is empty while they are hidden; showing them again brings them back.
+  await page.getByTestId("workspace-mode-state").click();
+  await page.getByTestId("inboxColumn-automations").click();
+  await page.getByTestId("workspace-group-review").getByText("Nightly cost digest run").waitFor();
+});
+
+test("a group's heading is larger than the rows under it", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  const size = (selector: string) => page.locator(selector).first().evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+  const heading = await size('[data-testid="workspace-group-needs-you"] .ws-lab span');
+  const row = await size('[data-testid="workspace-group-needs-you"] .ws-row-top b');
+  assert.ok(heading > row, `heading ${heading}px, row ${row}px`);
+  await page.getByTestId("workspace-mode-project").click();
+  await page.getByTestId("workspace-project").first().waitFor();
+  assert.ok((await size(".ws-project-name")) > (await size(".ws-project .ws-row-top b")));
 });

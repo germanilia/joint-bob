@@ -35,7 +35,7 @@ import { openRowMenu } from "./row-menu.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
 import { startGlobalConversation } from "./new-session.js";
-import { createInboxToolbar, createProjectFilter, filterInbox, inChosenProjects, inboxFilterKey, inboxMode, inboxSignature, isSelected, isSelecting, onInboxView, setInboxMode, sourceName, toggleSelected } from "./inbox-filters.js";
+import { createAutomationToggle, shownCard, createInboxToolbar, createProjectFilter, filterInbox, inChosenProjects, inboxFilterKey, inboxMode, inboxSignature, isSelected, isSelecting, onInboxView, setInboxMode, sourceName, toggleSelected } from "./inbox-filters.js";
 import { drawChunked } from "./long-scroll.js";
 import { openQuickNote } from "./quick-notes.js";
 import { openSpotlight } from "./spotlight.js";
@@ -690,7 +690,7 @@ function placeColumnNotes() {
   if (phoneWidth.matches) { phoneToolbar.root.before(systemStrip, movesJobPanel); return; }
   const side = byId("workspaceSide");
   // The grouping choice and the project filter share one row, so the column keeps its height for the list.
-  columnTools.append(modeBar, columnFilter.root);
+  columnTools.append(modeBar, columnFilter.root, createAutomationToggle("inboxColumn-automations"));
   side.append(systemStrip, movesJobPanel, columnTools);
   // Bob is the first conversation of the list (bob-page.js puts him here): he stays right above it.
   const bob = side.querySelector(":scope > .ws-place-bob");
@@ -981,8 +981,7 @@ function acceptCards(next, updatedEarlier) {
   if (left && !updatedEarlier && started) { earlierReadAt = 0; scheduleGroupsRefresh(0); }
   // The phone's greeting and its Inbox tab count them (phone-ui.js).
   window.dispatchEvent(new CustomEvent("workspace-groups-counted", { detail: Object.fromEntries(GROUPS.map((group) => [group.id, cardsIn(group.id).length])) }));
-  // Home (home.js) draws the same cards in the middle.
-  window.dispatchEvent(new CustomEvent("workspace-cards", { detail: { cards } }));
+  announceCards();
   renderGroups();
   if (!page.hidden) renderGroupPage();
 }
@@ -1049,7 +1048,12 @@ pageSearch.addEventListener("input", () => {
 });
 pageToolbar.root.prepend(pageSearch);
 pageList.before(pageToolbar.root);
+/** Home (home.js) draws the cards in the middle: the same ones the column lists, without the automations when they are hidden. */
+function announceCards() {
+  window.dispatchEvent(new CustomEvent("workspace-cards", { detail: { cards: cards.filter(shownCard) } }));
+}
 onInboxView(() => {
+  announceCards();
   renderGroups();
   if (!page.hidden) renderGroupPage();
 });
