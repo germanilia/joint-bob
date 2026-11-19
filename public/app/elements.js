@@ -59,6 +59,7 @@ export const elements = {
   doneConversationNotice: document.querySelector("#doneConversationNotice"),
   doneConversationTitle: document.querySelector("#doneConversationTitle"),
   doneConversationDetail: document.querySelector("#doneConversationDetail"),
+  conversationTakeBackButton: document.querySelector("#conversationTakeBackButton"),
   attachmentList: document.querySelector("#attachmentList"),
   attachmentInput: document.querySelector("#attachmentInput"),
   attachButton: document.querySelector("#attachButton"),

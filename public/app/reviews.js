@@ -10,7 +10,7 @@ import { renderProjects } from "./project-list.js";
 import { selectProject } from "./project-selection.js";
 import { rememberRecentSession } from "./recents.js";
 import { renderSessions } from "./session-list.js";
-import { formatDate, toast } from "./shell.js";
+import { confirmAction, formatDate, toast } from "./shell.js";
 import { activeConversationReady, openSession, refreshSessionsQuietly } from "./socket.js";
 import { state } from "./state.js";
 import { noteOpenTiming, startOpenTiming } from "./open-timing.js";
@@ -286,7 +286,7 @@ export async function openListedSession(session, { keepView = false, timed = fal
   noteOpenTiming({ owner: elsewhere ? "peer" : "local", ids: [session.id, session.conversationId] });
   // The machine that runs it is asked at once, and whether it is online is checked beside that, not first: over a slow
   // relay the check waits up to five seconds for an answer, and the page showed nothing new while it did.
-  const presence = elsewhere ? loadSessionNodes(projectId, session.executionNodeId).then(() => true, (error) => { toast.error(error.message); return false; }) : null;
+  const presence = elsewhere ? loadSessionNodes(projectId, session.executionNodeId, { preserveSelection: true }).then(() => true, (error) => { toast.error(error.message); return false; }) : null;
   if (session.executionNodeId) {
     state.activeNodeId = session.executionNodeId;
     if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: session.executionNodeId });
@@ -301,20 +301,22 @@ export async function openListedSession(session, { keepView = false, timed = fal
     : null;
   // A conversation that already answered is reachable, whatever a late or stored presence answer says.
   if (!local || activeConversationReady()) return;
-  state.activeNodeId = local.id;
-  if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: local.id });
-  // The chat is on screen already. What follows is automatic, so it keeps whatever view the person is in by now
-  // (.agents/knowledge/control-center-ui.md, r-Esc2Out).
-  openSession(session.path, title, false, reviewHighlightAfter, true);
   const transferKey = JSON.stringify([projectId, session.harnessId, session.id]);
-  // Reopening still navigates here, but must not start a second ownership transfer.
   if (listedSessionTransfers.has(transferKey)) return;
   listedSessionTransfers.add(transferKey);
   try {
+    const confirmed = await confirmAction({
+      title: `Take over “${title}” here?`,
+      message: `${owner.name} did not respond. This node will continue from its last synced history, which may be older.`,
+      confirmLabel: "Take over here",
+    });
+    if (!confirmed || state.activeProjectId !== projectId || state.activeSessionId !== session.id || activeConversationReady()) return;
     const result = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions/take-ownership`, {
-      method: "POST", body: JSON.stringify({ peerId: local.id, sessionId: session.id, sessionPath: session.path, sessionName: title }),
+      method: "POST", body: JSON.stringify({ peerId: local.id, offlineOwnerNodeId: owner.id, sessionId: session.id, sessionPath: session.path, sessionName: title.slice(0, 120) }),
     });
     if (state.activeProjectId !== projectId || state.activeSessionId !== session.id) return;
+    state.activeNodeId = local.id;
+    if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: local.id });
     state.activeSessionId = null;
     openSession(result.sessionPath, title, false, reviewHighlightAfter, true);
     toast(result.pendingPeerIds?.length ? "Switched to this node; offline nodes will update when they return" : "Switched to this node");

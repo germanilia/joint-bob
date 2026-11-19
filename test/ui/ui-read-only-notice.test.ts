@@ -81,6 +81,9 @@ test("a conversation whose machine refuses this one says so, where to change it,
   assert.match(text, /Read-only here/);
   assert.match(text, /Home server does not let other machines run work on it/);
   assert.match(text, /Settings → Node on Home server/, "the notice says where the setting is");
+  await notice.getByRole("button", { name: "Take back here" }).click();
+  assert.match(await page.getByTestId("confirm-dialog").innerText(), /30 seconds to decline/);
+  await page.getByTestId("confirm-cancel-button").click();
   assert.equal(await page.locator("#composer").isHidden(), true, "nothing can be sent from here");
   assert.equal(await page.getByTestId("chat-delete-button").getAttribute("hidden"), "", "read-only chat cannot be deleted from its More menu");
   assert.deepEqual(await offeredWriteActions(page, REFUSED_TITLE), [], "the open conversation's menu offers nothing its machine would refuse");
@@ -123,6 +126,7 @@ test("a sub-agent conversation says it can't be continued", { timeout: 180_000 }
   const text = await notice.innerText();
   assert.match(text, /Sub-agent conversation/);
   assert.match(text, /can't be continued/);
+  assert.equal(await page.getByTestId("conversation-take-back").isHidden(), true);
   assert.match(text, /conversation that started it/, "the notice says where to write instead");
   assert.equal(await page.locator("#composer").isHidden(), true);
 });

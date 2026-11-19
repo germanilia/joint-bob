@@ -635,6 +635,9 @@
             <strong id="doneConversationTitle">Read-only</strong>
             <span id="doneConversationDetail" data-testid="done-conversation-detail">This conversation is read-only.</span>
           </div>
+          <div class="conversation-lock-actions">
+            <button class="ghost compact" id="conversationTakeBackButton" type="button" data-testid="conversation-take-back" hidden>Take back here</button>
+          </div>
         </div>
         <form class="composer" id="composer">
           <div class="attachment-list" id="attachmentList" aria-live="polite"></div>
@@ -3024,6 +3027,20 @@
           <button class="primary" type="submit" value="confirm" id="confirmAcceptButton" data-testid="confirm-accept-button">Confirm</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="takebackDialog" aria-labelledby="takebackTitle" aria-describedby="takebackMessage" data-testid="takeback-dialog">
+      <div class="dialog-card confirm-card">
+        <div class="dialog-heading">
+          <span class="eyebrow">Conversation ownership</span>
+          <h2 id="takebackTitle">Takeback requested</h2>
+          <p id="takebackMessage"></p>
+          <p id="takebackError" role="alert"></p>
+        </div>
+        <div class="dialog-actions">
+          <button class="primary" id="takebackDecline" type="button" data-testid="takeback-decline">Decline transfer</button>
+        </div>
+      </div>
     </dialog>
 
     <!-- The app's own pick-one box. Replaces window.prompt for destination pickers. -->
