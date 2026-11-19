@@ -14,7 +14,7 @@ test("Joint Bob package is public, executable, and pinned", async () => {
   assert.equal(packageJson.private, false);
   assert.equal(packageJson.license, "MIT");
   assert.deepEqual(packageJson.bin, { "joint-bob": "bin/joint-bob.mjs", "joint-bob-browser": "bin/joint-bob-browser.mjs" });
-  assert.equal(dependencies["playwright-core"], "^1.62.1");
+  assert.equal(dependencies["playwright-core"], "^1.65.1");
   const lock = JSON.parse(await text("npm-shrinkwrap.json"));
   assert.equal(lock.packages["node_modules/playwright-core"].dev, undefined, "Browser control must be installed in production");
   await access("bin/joint-bob-browser.mjs");
