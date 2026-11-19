@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.328.1 — 2026-11-19
+
+- Fixed saving settings that carry the new shortcut layout: the server refused keymap version 5, which broke syncing a person's profile to another machine.
+
 ## 2.328.0 — 2026-11-19
 
 - Added collapsible sections to the desktop Inbox. Counts and Show all stay visible, and the browser remembers which sections you closed.
