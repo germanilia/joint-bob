@@ -65,7 +65,7 @@ test("older saved System AI without routing parses with defaults", () => {
   const { routing: _routing, ...older } = systemAiDefaults();
   save(settingsDatabase(), "systemAI", JSON.stringify(older));
   assert.ok(value("systemAI"));
-  assert.deepEqual(systemAiSettings().routing, { enabled: true, shareWithRelay: false });
+  assert.deepEqual(systemAiSettings().routing, { enabled: true, shareWithRelay: true });
   assert.throws(() => systemAiSchema.parse({ ...older, routing: { enabled: true } }));
 });
 

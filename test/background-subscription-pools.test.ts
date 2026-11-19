@@ -7,6 +7,7 @@ import ts from "typescript";
 import { classifyPoolAttemptFailure, memberModelLadder, resolvePoolModelSettings, resolvePoolSwitchModel, runOnModels, runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { automationProfileContext, poolProfileContext, withAutomationProfile, withPoolProfile } from "../src/provider-profiles/context.js";
 import { nearestReasoning } from "../src/server/git-review-run.js";
+import { poolMemberCompatible } from "../src/provider-profiles/pool-sharing.js";
 
 const require = createRequire(import.meta.url);
 function load(file: string, dependencies: Record<string, any>, extra = ""): any {
@@ -64,7 +65,7 @@ for (const runner of runners) for (const source of ["cluster", "conversation", "
       getSettings: () => ({ conversationDefaults: { claude: { provider: "claude", modelId: "sonnet", thinkingLevel: "medium" }, pi: { provider: "openai-codex", modelId: "gpt-fixture", thinkingLevel: "medium" } } }),
       // The fallback model has no "medium", like Claude Opus 5.5 has no "off".
       listHarnessModels: async (harness: string) => harness === "claude" ? [{ provider: "claude", id: "sonnet", thinkingLevels: ["medium"] }] : [{ provider: "openai-codex", id: "gpt-fixture", thinkingLevels: ["minimal", "low", "high"] }],
-      getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
+      poolMemberCompatible, getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
     getSharingCluster: () => ({ name: "Contigos" }),
     getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Homeserver" }] } }),
       clusterOfAssistantsProject: () => undefined, poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => source !== "conversation" && source !== "none" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],

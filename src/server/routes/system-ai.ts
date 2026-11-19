@@ -22,7 +22,7 @@ async function routingView(system: ReturnType<typeof systemAiSettings>, localKey
   const db = await clusterV2Database();
   const relays = listMemberships(db).filter(relay => relay.status === 'admitted' && relay.relayNodeId).map(relayPolicyLabel);
   const source = localKey ? 'This machine classifies with its own decision credential.'
-    : relays.length ? `No decision credential here: routing asks ${relays.join(', ')} when it shares its decision model.`
+    : relays.length ? `No decision credential here: every use of the decision model (routing, summaries, feedback, team decisions, knowledge cleanup, quality analytics) asks ${relays.join(', ')} when it shares its decision model.`
       : 'No decision credential here and no relay to ask: prompts are not routed.';
   return { ...system.routing, servesRelay: servingSettings(db).enabled, source, defaults: routingDefaultsView() };
 }

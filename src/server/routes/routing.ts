@@ -12,6 +12,7 @@ import { sendError } from "../http-auth.js";
 import { flushRoutingConfigDeliveries } from "../maintenance.js";
 import { broadcastRoutingMode } from "../harness-chat.js";
 import { app } from "../state.js";
+import { answerRelayAsk, DECISION_ASK_PATH, decisionAskSchema } from "../../decision-relay-proxy.js";
 import { answerRelayDecision, DECISION_RELAY_PATH, decisionRelayRequestSchema, RelayDecisionRefused } from "../../routing-decision-relay.js";
 
 const uuid = z.string().uuid();
@@ -215,6 +216,22 @@ app.post("/api/cluster/v2/routing-configs", async (request, response, next) => {
   } catch (error) {
     if (error instanceof RoutingConfigError) { sendError(response, error.statusCode, error.message); return; }
     if (error instanceof z.ZodError) { sendError(response, 400, error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")); return; }
+    next(error);
+  }
+});
+
+/** An admitted machine's Jev request, asked here with this relay's own key. */
+app.post(DECISION_ASK_PATH, async (request, response, next) => {
+  try {
+    if (response.locals.machineProtocol !== 2 || typeof response.locals.machineNodeId !== "string") { sendError(response, 401, "Unauthorized"); return; }
+    const { body } = decisionAskSchema.parse(request.body);
+    const abort = new AbortController();
+    response.on("close", () => abort.abort());
+    const answer = await answerRelayAsk(await clusterV2Database(), response.locals.machineNodeId, body, abort.signal);
+    response.status(answer.status).type("json").send(await answer.text());
+  } catch (error) {
+    if (error instanceof RelayDecisionRefused) { sendError(response, error.statusCode, error.message); return; }
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid decision request"); return; }
     next(error);
   }
 });

@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { decisionModelTarget } from '../classifiers/conversation-routing.js';
 import type { SystemOneTarget } from '../classifiers/typesafe.js';
 import { genericSecretEnvironment } from '../secrets.js';
-import { systemDecisionKey, withSystemAiProfile } from '../system-ai.js';
+import { withSystemAiProfile } from '../system-ai.js';
+import { systemDecisionKeyOrRelay } from '../decision-relay-proxy.js';
 import { withClaudeProfile } from '../provider-profiles/execution.js';
 import { getProject } from '../store.js';
 import { readSubjects } from '../project-knowledge.js';
@@ -67,7 +68,7 @@ export async function judgeQuality(evidence: QualityChunk & { conversationFeedba
 export async function analyzeQualityReply(projectId: string, reply: QualityReply, types: string[], signal: AbortSignal): Promise<QualityResult> {
   const environment = genericSecretEnvironment(projectId);
   let key: string;
-  try { key = systemDecisionKey('typesafe'); }
+  try { key = await systemDecisionKeyOrRelay('typesafe'); }
   catch (error) { throw new QualityCollectionError((error as Error).message); }
   const target = await decisionModelTarget('typesafe', key);
   if (!target) throw new QualityCollectionError('Jev is unavailable on this machine.');

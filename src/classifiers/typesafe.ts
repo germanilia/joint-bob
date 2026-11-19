@@ -1,4 +1,5 @@
 import type { DifficultyClassification, DifficultyClassifier, DifficultyClassifierContext } from "./contract.js";
+import { systemOneFetch } from "./relay-key.js";
 
 export const DIFFICULTY_LEVELS = 10;
 
@@ -98,7 +99,7 @@ export interface SystemOneTarget { endpoint: string; model: string; stateCharact
 export interface SystemOneChoice { choice: string; confidence: number }
 
 /** Selects one supplied option without coupling conversation routing to difficulty scoring. */
-export async function classifyConversationChoiceWithSystemOne(target: SystemOneTarget, state: string, questionId: string, criteria: Record<string, string>, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<SystemOneChoice | null> {
+export async function classifyConversationChoiceWithSystemOne(target: SystemOneTarget, state: string, questionId: string, criteria: Record<string, string>, apiKey: string, fetchImpl: typeof fetch = systemOneFetch): Promise<SystemOneChoice | null> {
   if (!state.trim() || !Object.keys(criteria).length) return null;
   let response: Response | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
@@ -131,7 +132,7 @@ export interface SystemOneQuestion { instructions: string; criteria: Record<stri
 
 /** Several Choice questions in one request. Null unless every question has a valid answer:
     a missing, malformed or out-of-catalog answer never becomes a decision. */
-export async function askSystemOneChoices(target: SystemOneTarget, state: string, questions: Record<string, SystemOneQuestion>, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<Record<string, SystemOneChoice> | null> {
+export async function askSystemOneChoices(target: SystemOneTarget, state: string, questions: Record<string, SystemOneQuestion>, apiKey: string, fetchImpl: typeof fetch = systemOneFetch): Promise<Record<string, SystemOneChoice> | null> {
   const ids = Object.keys(questions);
   // The caller fits the state to the budget; a state that still doesn't fit is never truncated here.
   if (!state.trim() || state.length > target.stateCharacters || !ids.length || ids.some(id => !Object.keys(questions[id].criteria).length)) return null;
@@ -181,13 +182,13 @@ async function postOnce(target: SystemOneTarget, text: string, apiKey: string, c
 /** Evaluates prompt difficulty through a TypeSafe System One score or configured-option choice.
     Harness-owned option descriptions become the Choice criteria.
     Returns null on any failure: network error, timeout, non-2xx status, or a malformed answer. */
-export async function classifyWithTypesafe(text: string, apiKey: string, context: string | DifficultyClassifierContext = "", fetchImpl: typeof fetch = fetch): Promise<DifficultyClassification | null> {
+export async function classifyWithTypesafe(text: string, apiKey: string, context: string | DifficultyClassifierContext = "", fetchImpl: typeof fetch = systemOneFetch): Promise<DifficultyClassification | null> {
   if (!apiKey) return null;
   return classifyWithSystemOne(JEV, text, apiKey, context, fetchImpl);
 }
 
 /** The same classification against any System One server; an empty key sends no Authorization header. */
-export async function classifyWithSystemOne(target: SystemOneTarget, text: string, apiKey: string, context: string | DifficultyClassifierContext = "", fetchImpl: typeof fetch = fetch): Promise<DifficultyClassification | null> {
+export async function classifyWithSystemOne(target: SystemOneTarget, text: string, apiKey: string, context: string | DifficultyClassifierContext = "", fetchImpl: typeof fetch = systemOneFetch): Promise<DifficultyClassification | null> {
   if (!text.trim()) return null;
   // Routing records only "classifier failed"; the log keeps the cause.
   const fail = (cause: string): null => { console.warn(`Difficulty classification failed (${target.endpoint}): ${cause}`); return null; };

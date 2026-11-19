@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { systemAiSettings } from '../system-ai-config.js';
-import { systemDecisionKey } from '../system-ai.js';
+import { systemDecisionKeyOrRelay } from '../decision-relay-proxy.js';
 import { decisionModelTarget } from '../classifiers/conversation-routing.js';
 import { askSystemOneChoices, type SystemOneChoice, type SystemOneTarget, type SystemOneQuestion } from '../classifiers/typesafe.js';
 import { getTeam, teamCoordinator, teamRolesSync, announceTeamChange, type AssistantTeam, type TeamMessage, type TeamRole, type TeamRoute, type TeamSettings, type TeamSubject } from './store.js';
@@ -77,7 +77,7 @@ export async function decideTeamMessage(team: AssistantTeam, input: TeamMessage)
     const reply = await teamReplyRoute(message);
     stage = 'credentials_unavailable';
     const model = systemAiSettings().decision.model; record.model = model;
-    const key = systemDecisionKey(model);
+    const key = await systemDecisionKeyOrRelay(model);
     stage = 'target_unavailable';
     const selected = await decisionModelTarget(model, key); if (!selected) throw new Error();
     record.target = safeTarget(selected.target);

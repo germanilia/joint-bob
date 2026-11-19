@@ -11,7 +11,8 @@ import {
 } from "../project-knowledge.js";
 import { servingSettings } from "../relay/store.js";
 import { systemAiSettings } from "../system-ai-config.js";
-import { systemDecisionKey, withSystemAiProfile } from "../system-ai.js";
+import { withSystemAiProfile } from "../system-ai.js";
+import { systemDecisionKeyOrRelay } from "../decision-relay-proxy.js";
 import { listProjects } from "../store.js";
 import type { HarnessId, ProjectRecord } from "../types.js";
 import { summaryPolicyNow } from "./conversation-digest-runner.js";
@@ -31,7 +32,7 @@ export interface CleanupDeps {
   review(project: ProjectRecord, subject: KnowledgeSubject): Promise<CleanupVerdict[]>;
   /** The decision model's answer on one remove or merge verdict; null when it cannot be asked. */
   decide(project: ProjectRecord, subject: KnowledgeSubject, verdict: CleanupVerdict): Promise<{ apply: boolean; confidence: number } | null>;
-  hasDecisionModel(project: ProjectRecord): boolean;
+  hasDecisionModel(project: ProjectRecord): boolean | Promise<boolean>;
 }
 
 export interface CleanupResult { applied: number; flagged: number; skipped: boolean }
@@ -41,7 +42,7 @@ export async function cleanProjectKnowledge(project: ProjectRecord, deps: Cleanu
   const root = project.path;
   if (!existsSync(knowledgeDirectory(root))) return { applied: 0, flagged: 0, skipped: false };
   pruneOld(root, now);
-  if (!deps.hasDecisionModel(project)) {
+  if (!await deps.hasDecisionModel(project)) {
     appendCleanupLog(root, ["Skipped: no decision model secret for this project"], now);
     return { applied: 0, flagged: 0, skipped: true };
   }
@@ -90,10 +91,10 @@ function projectClassifier(project: ProjectRecord) {
   return getDifficultyClassifier(systemAiSettings().decision.model);
 }
 
-function decisionKey(project: ProjectRecord): { classifier: NonNullable<ReturnType<typeof projectClassifier>>; apiKey: string } | null {
+async function decisionKey(project: ProjectRecord): Promise<{ classifier: NonNullable<ReturnType<typeof projectClassifier>>; apiKey: string } | null> {
   const classifier = projectClassifier(project);
   if (!classifier) return null;
-  const apiKey = systemDecisionKey(classifier.id as "typesafe" | "laya");
+  const apiKey = await systemDecisionKeyOrRelay(classifier.id as "typesafe" | "laya");
   return apiKey || classifier.keyOptional ? { classifier, apiKey } : null;
 }
 
@@ -122,7 +123,7 @@ function parseVerdicts(answer: string, subject: KnowledgeSubject, root: string):
 }
 
 const realDeps: CleanupDeps = {
-  hasDecisionModel: (project) => decisionKey(project) !== null,
+  hasDecisionModel: async (project) => await decisionKey(project) !== null,
   async review(project, subject) {
     const others = readSubjects(project.path).filter((candidate) => candidate.slug !== subject.slug)
       .flatMap((candidate) => candidate.rules.map((rule) => `- (${candidate.slug}) ${rule.id}: ${rule.text}`));
@@ -146,7 +147,7 @@ const realDeps: CleanupDeps = {
     return parseVerdicts(result.answer, subject, project.path);
   },
   async decide(project, subject, verdict) {
-    const key = decisionKey(project);
+    const key = await decisionKey(project);
     const rule = subject.rules.find((candidate) => candidate.id === verdict.ruleId);
     if (!key || !rule) return null;
     const target = await decisionModelTarget(key.classifier.id as "typesafe" | "laya", key.apiKey);

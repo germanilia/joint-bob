@@ -8,6 +8,7 @@ import { actingAccount, runAsAccount } from "../src/account-context.js";
 import { automationProfileContext, poolProfileContext, withAutomationProfile, withPoolProfile, withoutAutomationProfile } from "../src/provider-profiles/context.js";
 import { runPoolAttempts } from "../src/provider-profiles/pool-execution.js";
 import { ConversationOwnershipError } from "../src/conversation-ownership.js";
+import { poolMemberCompatible } from "../src/provider-profiles/pool-sharing.js";
 
 const require = createRequire(import.meta.url);
 const source = readFileSync(new URL("../src/server/harness-chat.ts", import.meta.url), "utf8");
@@ -41,7 +42,7 @@ function fixture(selection: "cluster" | "conversation" | "none", failure?: Error
     actingAccount, runAsAccount, withPoolProfile, withoutAutomationProfile, runPoolAttempts, ConversationOwnershipError,
     ownerAsActor: (accountId: string) => ({ accountId }), resourceOwner: () => "owner",
     runWithAutomationProfile: (input: any, work: () => any) => withAutomationProfile({ accountId: input.creatorAccountId, profileId: input.providerProfileId }, work),
-    getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
+    poolMemberCompatible, getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
     getSharingCluster: () => ({ name: "Contigos" }),
     getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Homeserver" }] } }),
     clusterOfAssistantsProject: () => undefined, poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => selection === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
