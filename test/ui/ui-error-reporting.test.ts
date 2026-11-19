@@ -52,6 +52,7 @@ test("errors are sent to the ntfy topics chosen in Settings", { timeout: 120_000
   await page.getByTestId("settings-open-button").waitFor();
   await openNotifications(page);
 
+  await page.getByTestId("ntfy-add-details").locator("summary").click();
   await page.getByTestId("ntfy-service-name-input").fill("Errors fixture");
   await page.getByTestId("ntfy-service-url-input").fill(ntfy.url);
   const adding = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/ntfy/services" && response.request().method() === "POST");

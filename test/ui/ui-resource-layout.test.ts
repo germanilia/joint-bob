@@ -6,7 +6,7 @@ import test from "node:test";
 import { launchChrome } from "./launch-chrome.js";
 import { seedDevEnvironment, signIn, startDevNode, stopDevNode } from "../dev-nodes.js";
 
-test("Resources uses one filter row without relay details and scrolls tall skill content", { timeout: 120_000 }, async () => {
+test("Resources uses one filter row without relay details and the section scrolls tall skill content", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "resource-layout-ui-"));
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
   let browser: Awaited<ReturnType<typeof launchChrome>> | undefined;
@@ -53,23 +53,21 @@ test("Resources uses one filter row without relay details and scrolls tall skill
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const layout = await list.evaluate((element) => {
         const description = element.querySelector(".skill-option-description")!;
-        return { height: element.clientHeight, overflow: element.scrollHeight - element.clientHeight, scrolling: getComputedStyle(element).overflowY,
-          clippedDescription: description.scrollWidth > description.clientWidth + 1 || description.scrollHeight > description.clientHeight + 1 };
+        return { height: element.clientHeight, clippedDescription: description.scrollWidth > description.clientWidth + 1 || description.scrollHeight > description.clientHeight + 1 };
       });
-      assert.ok(layout.height >= 120, `skill viewport must not collapse at ${width}x${height}: ${JSON.stringify(layout)}`);
+      assert.ok(layout.height >= 120, `skill list must not collapse at ${width}x${height}: ${JSON.stringify(layout)}`);
       assert.equal(layout.clippedDescription, false, "skill descriptions wrap instead of being cut off");
-      assert.ok(layout.overflow > 0, `precondition: real skill content exceeds a page at ${width}x${height}: ${JSON.stringify(layout)}`);
-      assert.match(layout.scrolling, /auto|scroll/, "an oversized row must allow user scrolling");
-      await list.scrollIntoViewIfNeeded();
-      await list.evaluate((element) => { element.scrollTop = 0; });
-      await list.hover();
+      // The section scrolls with the list in it: tall content is reached by scrolling the section.
+      assert.ok(await panel.evaluate((element) => element.scrollHeight > element.clientHeight), `precondition: real skill content exceeds the section at ${width}x${height}`);
+      await panel.evaluate((element) => { element.scrollTop = 0; });
+      await panel.hover();
       await page.mouse.wheel(0, 200);
-      await page.waitForFunction(() => document.querySelector("#resourcesList")!.scrollTop > 0);
+      await page.waitForFunction(() => document.querySelector("#settingsPanel-resources")!.scrollTop > 0);
       const lastToggle = row.getByTestId("resources-activation-toggle").last();
       await lastToggle.scrollIntoViewIfNeeded();
       const reachable = await lastToggle.evaluate((element) => {
-        const rect = element.getBoundingClientRect(), list = document.querySelector("#resourcesList")!.getBoundingClientRect(), panel = document.querySelector("#settingsPanel-resources")!.getBoundingClientRect();
-        return rect.top >= Math.max(list.top, panel.top) && rect.bottom <= Math.min(list.bottom, panel.bottom) + 1;
+        const rect = element.getBoundingClientRect(), panelBox = document.querySelector("#settingsPanel-resources")!.getBoundingClientRect();
+        return rect.top >= panelBox.top && rect.bottom <= panelBox.bottom + 1;
       });
       assert.ok(reachable, `last agent switch reachable at ${width}x${height}`);
       assert.ok(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1), "panel fits horizontally");

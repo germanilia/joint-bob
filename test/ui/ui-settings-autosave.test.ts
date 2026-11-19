@@ -172,6 +172,7 @@ test("every section that waited for Save settings saves as it changes and keeps 
   // Notifications › Send errors to ntfy: on, with a topic.
   await openSection(page, "notifications");
   await page.getByTestId("error-reporting-settings").waitFor();
+  await page.getByTestId("ntfy-add-details").locator("summary").click();
   await page.getByTestId("ntfy-service-name-input").fill("Autosave ntfy");
   await page.getByTestId("ntfy-service-url-input").fill(ntfyUrl);
   await page.getByTestId("ntfy-service-add-button").click();

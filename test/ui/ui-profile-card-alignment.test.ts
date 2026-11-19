@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { api, signIn } from "../dev-nodes.js";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 
-test("profile card actions stay aligned when one card has a sign-in result", { timeout: 120_000 }, async (t) => {
+test("profiles are rows whose actions stay on the right when one has a sign-in result", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   const session = await signIn(environment, node);
   const ids: string[] = [];
@@ -48,14 +48,11 @@ test("profile card actions stay aligned when one card has a sign-in result", { t
     const boxes = await cards.evaluateAll((items) => items.map((item) => {
       const card = item.getBoundingClientRect();
       const actions = item.querySelector(":scope > .profile-actions")!.getBoundingClientRect();
-      const check = item.querySelector('[data-testid="provider-profile-check"]')!.getBoundingClientRect();
-      const share = item.querySelector('[data-testid="provider-profile-sharing"]')!.getBoundingClientRect();
-      return { cardTop: card.top, actionTop: actions.top, actionBottom: actions.bottom, checkTop: check.top, shareTop: share.top };
+      return { left: card.left, right: card.right, top: card.top, bottom: card.bottom, actionsRight: actions.right };
     }));
     assert.equal(boxes.length, 2);
-    assert.ok(Math.abs(boxes[0].cardTop - boxes[1].cardTop) < 1, `cards share a row at ${width}px: ${JSON.stringify(boxes)}`);
-    assert.ok(boxes.every((box) => box.shareTop > box.checkTop), "buttons wrap onto multiple rows");
-    assert.ok(Math.abs(boxes[0].actionTop - boxes[1].actionTop) < 1, `action rows align at ${width}px: ${JSON.stringify(boxes)}`);
-    assert.ok(Math.abs(boxes[0].actionBottom - boxes[1].actionBottom) < 1, `action bottoms align at ${width}px: ${JSON.stringify(boxes)}`);
+    assert.ok(Math.abs(boxes[0].left - boxes[1].left) < 1 && Math.abs(boxes[0].right - boxes[1].right) < 1, `rows share one width at ${width}px: ${JSON.stringify(boxes)}`);
+    assert.ok(boxes[1].top >= boxes[0].bottom - 1, `rows stack at ${width}px: ${JSON.stringify(boxes)}`);
+    if (width >= 1200) assert.ok(boxes.every((box) => box.right - box.actionsRight < 24), `actions sit at the right end of their row at ${width}px: ${JSON.stringify(boxes)}`);
   }
 });

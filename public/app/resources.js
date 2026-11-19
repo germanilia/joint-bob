@@ -23,8 +23,9 @@ const view = {
   // Claude MCP sign-ins for the person viewing: checked once per scope, and the sign-in waiting for its browser.
   mcpAuth: { key: null, servers: null, loading: false, error: "", flow: null, busy: false },
 };
-// Rows per page, refitted to whatever height the panel gives each list.
-const pageSizes = { list: 8, scan: 8, git: 6 };
+// Every list is one continuous list that the section scrolls (.agents/knowledge/list-scrolling.md): a page holds every row, so no pager shows.
+const ALL_ROWS = 1e9;
+const pageSizes = { list: ALL_ROWS, scan: ALL_ROWS, git: ALL_ROWS };
 const conversationTitles = new Map();
 
 function harnessLabel(id) {
@@ -1015,35 +1016,6 @@ function paged(items, page, size) {
   return { current, shown: items.slice(current * size, (current + 1) * size) };
 }
 
-let refitting = false;
-const fittedFor = {};
-/** Refit for panel resizes, not temporary toolbar/status changes during refreshes. */
-function alreadyFitted(list, key) {
-  const signature = `${view.tab}:${list.clientWidth}x${elements.resourcesPanel.clientHeight}`;
-  if (fittedFor[key] === signature) return true;
-  fittedFor[key] = signature;
-  return false;
-}
-
-/** Fit whole rows when the list's size changes; an oversized single row remains scrollable. */
-function fitPage(list, key, pageKey, rerender) {
-  const children = [...list.children];
-  const rows = children.filter((child) => child.classList.contains("resources-row"));
-  if (view.loading || !rows.length || !list.clientHeight) return;
-  if (!refitting && alreadyFitted(list, key)) return;
-  const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
-  const rowHeight = Math.max(...rows.map((row) => row.offsetHeight)) + gap;
-  const other = children.filter((child) => !rows.includes(child)).reduce((sum, child) => sum + child.offsetHeight + gap, 0);
-  const size = Math.max(1, Math.floor((list.clientHeight - other + gap) / rowHeight));
-  // Headings move between pages, so only shrinking may follow a refit; that always settles.
-  if (size === pageSizes[key] || (refitting && size > pageSizes[key])) return;
-  const first = view[pageKey] * pageSizes[key];
-  pageSizes[key] = size;
-  view[pageKey] = Math.floor(first / size);
-  refitting = true;
-  try { rerender(); } finally { refitting = false; }
-}
-
 /* ---- Lists ---- */
 
 function renderList() {
@@ -1108,7 +1080,6 @@ function renderList() {
     }
   }
   renderPager(elements.resourcesListPager, items.length, view.page, pageSizes.list, (page) => { view.page = page; renderList(); });
-  fitPage(list, "list", "page", renderList);
 }
 
 function countFor(entry, key) { return entry?.inventory ? (key === "skills" ? filteredSkills(entry.inventory) : filteredServers(entry.inventory)).length : 0; }
@@ -1172,7 +1143,7 @@ function render() {
 }
 
 async function loadInventory() {
-  const position = { tab: view.tab, page: view.page, scrollTop: elements.resourcesList.scrollTop };
+  const position = { tab: view.tab, page: view.page, scrollTop: elements.resourcesPanel.scrollTop };
   const request = ++view.request;
   view.loading = true;
   view.ready = false;
@@ -1205,7 +1176,7 @@ async function loadInventory() {
       view.loading = false;
       render();
       // The loading layout can clamp scrollTop; restore it only if the person stayed on this page.
-      if (view.tab === position.tab && view.page === position.page) elements.resourcesList.scrollTop = position.scrollTop;
+      if (view.tab === position.tab && view.page === position.page) elements.resourcesPanel.scrollTop = position.scrollTop;
     }
   }
 }
@@ -1265,7 +1236,6 @@ function renderAdd() {
   renderPager(elements.resourcesScanPager, indexed.length, view.scanPage, pageSizes.scan, (page) => { view.scanPage = page; renderAdd(); });
   if (view.scanRoot) setStatus(`${view.scanRoot}: ${counts.new} new, ${counts.changed} changed, ${counts.installed + counts.linked} already available.`);
   syncAddButtons();
-  fitPage(list, "scan", "scanPage", renderAdd);
 }
 
 let sources = Promise.resolve([]);
@@ -1367,7 +1337,7 @@ async function shareSelectedServers() {
 const KIND_LABELS = { skill: "skill", plugin: "plugin", mcp: "MCP" };
 const GIT_STATUS_LABELS = { available: "Not installed", imported: "Installed", edited: "Edited here", removed: "Removed here", gone: "Gone upstream" };
 const git = { sources: [], credentials: [], loaded: false, selectedId: null, selectedOwner: null, chosen: new Set(), sourcePage: 0, itemPage: 0 };
-const GIT_SOURCES_PER_PAGE = 3;
+const GIT_SOURCES_PER_PAGE = ALL_ROWS;
 
 const shortCommit = (commit) => (commit || "").slice(0, 8);
 const sameSource = (source) => source.id === git.selectedId && (source.ownerNodeId ?? null) === git.selectedOwner;
@@ -1627,22 +1597,6 @@ function renderGit() {
   for (const item of shown.shown) itemsList.append(gitItemRow(source, item));
   renderPager(elements.resourcesGitItemsPager, items.length, git.itemPage, pageSizes.git, (page) => { git.itemPage = page; renderGit(); });
   syncGitButtons();
-  fitGitPage();
-}
-
-/** Same refit as the other lists, against the git item list. */
-function fitGitPage() {
-  const list = elements.resourcesGitItems;
-  const rows = [...list.children].filter((child) => child.classList.contains("resources-row"));
-  if (!rows.length || !list.clientHeight || refitting || alreadyFitted(list, "git")) return;
-  const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
-  const size = Math.max(1, Math.floor((list.clientHeight + gap) / (Math.max(...rows.map((row) => row.offsetHeight)) + gap)));
-  if (size === pageSizes.git) return;
-  const first = git.itemPage * pageSizes.git;
-  pageSizes.git = size;
-  git.itemPage = Math.floor(first / size);
-  refitting = true;
-  try { renderGit(); } finally { refitting = false; }
 }
 
 function renderGitCredentials(accounts) {
@@ -1830,18 +1784,3 @@ elements.resourcesRefreshButton.addEventListener("click", async () => {
 });
 elements.chatResourcesButton.addEventListener("click", () => openResources());
 elements.skillsDialogManageButton.addEventListener("click", () => { elements.skillsDialog.close(); openResources(); });
-// Each list's height decides its page size; refit on the next frame whenever it changes.
-const listHeights = new WeakMap();
-const resized = new ResizeObserver((entries) => {
-  const changed = entries.filter((entry) => entry.contentRect.height && listHeights.get(entry.target) !== entry.contentRect.height);
-  for (const entry of changed) listHeights.set(entry.target, entry.contentRect.height);
-  if (!changed.length) return;
-  requestAnimationFrame(() => {
-    if (changed.some((entry) => entry.target === elements.resourcesList) && !elements.resourcesList.hidden) renderList();
-    if (changed.some((entry) => entry.target === elements.resourcesScanList) && !elements.resourcesAddPanel.hidden) renderAdd();
-    if (changed.some((entry) => entry.target === elements.resourcesGitItems) && !elements.resourcesGitPanel.hidden) renderGit();
-  });
-});
-resized.observe(elements.resourcesList);
-resized.observe(elements.resourcesScanList);
-resized.observe(elements.resourcesGitItems);

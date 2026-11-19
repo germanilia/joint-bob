@@ -38,10 +38,9 @@ test("Resources omits receiving-node status even when a peer is failing", { time
     await page.getByText("Internal Assistant", { exact: true }).waitFor();
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-resources").click();
-    await page.getByTestId("resources-list-pager").getByTestId("resources-page-label").waitFor();
+    await page.getByTestId("resources-skill-row").first().waitFor();
     assert.equal(await page.locator(".resources-peer-status").count(), 0, "receiving-node section removed");
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    assert.ok(await page.getByTestId("resources-skill-row").count() < 30, "precondition: paginated list");
     await page.getByTestId("resources-refresh-button").click();
     await page.getByTestId("resources-skill-row").first().waitFor();
     assert.equal(await page.locator(".resources-peer-status").count(), 0, "refresh does not restore receiving-node status");

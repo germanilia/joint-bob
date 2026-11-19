@@ -370,6 +370,7 @@ function render() {
   const root = elements.ntfyManagePanel;
   // One token field at a time: the add form's optional token is for a new service, not this one.
   elements.ntfyServiceAddForm.hidden = Boolean(manager);
+  elements.ntfyServiceAddForm.closest("details").hidden = Boolean(manager);
   if (!manager) { root.hidden = true; root.replaceChildren(); return; }
   root.hidden = false;
   const heading = el("h3", { className: "ntfy-manage-heading", text: `Manage ${manager.service.name}`, testid: "ntfy-manage-heading", attrs: { id: "ntfyManageHeading" } });

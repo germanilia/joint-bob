@@ -5,8 +5,6 @@ import { api } from "./api.js";
 import { qrSvg } from "./qr.js";
 import { copyText, isRelayOnlyUrl, makeBadge, makeButton, makeNode, makeTwoStepButton, shortFingerprint, showStatus } from "./relay-ui.js";
 
-const PAGE_SIZE = 3;
-const PHONE_PAGE_SIZE = 3;
 const MFA_HINT = "Phone sign-in through a relay needs two-factor authentication. You can set it up when you sign in, or under Account.";
 const STATUS_LABEL = {
   connecting: "Connecting", pending: "Waiting for approval", admitted: "Admitted", suspended: "Suspended", revoked: "Removed", denied: "Declined",
@@ -17,12 +15,10 @@ const byId = (id) => document.getElementById(id);
 const section = byId("relayJoinedSection");
 const status = byId("relaysStatus");
 const list = byId("relaysList");
-const pager = byId("relaysPager");
 const addForm = byId("relaysAddForm");
 const addReveal = byId("relaysAddReveal");
 
 let view = { relays: [], local: null, directUrl: "", advertisedUrl: "", mfaEnabled: false, otherUsersPhoneSignIn: false };
-let page = 1;
 let loaded = false;
 
 // ---- loading ----
@@ -65,8 +61,6 @@ function renderAddress() {
   address.textContent = `This machine's address for clusters: ${shown}`;
 }
 
-/** Which page of a card's phone addresses is showing, by relay id. */
-const phonePages = new Map();
 /** The phone address whose QR code is showing, as relay id and address. One at a time keeps the card short. */
 let shownQr = "";
 
@@ -85,9 +79,7 @@ function phoneAccess(id, directory, emptyText) {
   const hint = makeNode("p", "relay-row-meta", "Open these on your phone to sign in through this relay.");
   hint.dataset.testid = "relay-phone-access-hint";
   box.append(hint);
-  const pages = Math.ceil(directory.length / PHONE_PAGE_SIZE);
-  const current = Math.min(phonePages.get(id) ?? 0, pages - 1);
-  for (const entry of directory.slice(current * PHONE_PAGE_SIZE, (current + 1) * PHONE_PAGE_SIZE)) {
+  for (const entry of directory) {
     const row = makeNode("div", "relay-phone-entry");
     row.dataset.testid = "relay-phone-entry";
     row.dataset.kind = entry.kind;
@@ -107,17 +99,6 @@ function phoneAccess(id, directory, emptyText) {
     row.append(label, link, copy, qr);
     box.append(row);
     if (shownQr === key) box.append(qrFigure(entry));
-  }
-  if (pages > 1) {
-    const pager = makeNode("div", "relay-phone-pager");
-    const previous = makeButton("Previous", "relay-phone-access-previous", () => { phonePages.set(id, current - 1); render(); });
-    previous.disabled = current === 0;
-    const position = makeNode("span", "", `${current * PHONE_PAGE_SIZE + 1}–${Math.min(directory.length, (current + 1) * PHONE_PAGE_SIZE)} of ${directory.length}`);
-    position.dataset.testid = "relay-phone-access-label";
-    const next = makeButton("Next", "relay-phone-access-next", () => { phonePages.set(id, current + 1); render(); });
-    next.disabled = current >= pages - 1;
-    pager.append(previous, position, next);
-    box.append(pager);
   }
   return box;
 }
@@ -209,21 +190,9 @@ function relayCard(relay) {
 function render() {
   renderAddress();
   const items = [...(view.local ? [{ local: view.local }] : []), ...view.relays.map((relay) => ({ relay }))];
-  const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  page = Math.min(page, pages);
   list.replaceChildren();
   if (!items.length) list.append(makeNode("p", "relay-empty", "No relays yet. Add one to reach machines that have no public address."));
-  for (const item of items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)) list.append(item.local ? localCard(item.local) : relayCard(item.relay));
-  pager.replaceChildren();
-  pager.hidden = items.length <= PAGE_SIZE;
-  if (pager.hidden) return;
-  const previous = makeButton("Previous", "relays-page-previous", () => { page -= 1; render(); });
-  previous.disabled = page <= 1;
-  const label = makeNode("span", "", `${(page - 1) * PAGE_SIZE + 1}–${Math.min(items.length, page * PAGE_SIZE)} of ${items.length}`);
-  label.dataset.testid = "relays-page-label";
-  const next = makeButton("Next", "relays-page-next", () => { page += 1; render(); });
-  next.disabled = page >= pages;
-  pager.append(previous, label, next);
+  for (const item of items) list.append(item.local ? localCard(item.local) : relayCard(item.relay));
 }
 
 // ---- adding a relay ----
@@ -241,7 +210,6 @@ async function addRelay(body, done) {
     byId("relaysLinkInput").value = "";
     byId("relaysOriginInput").value = "";
     showAddForm(false);
-    page = 1;
     await loadRelayMemberships();
     showStatus(status, done, "ok");
   } catch (error) { showStatus(status, error.message, "error"); }

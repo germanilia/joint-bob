@@ -69,17 +69,15 @@ test("Resources → Git repos adds a repository, installs the ticked items, and 
     await page.getByTestId("resources-git-add-button").click();
     await page.getByTestId("resources-status").getByText(/2 skills, 1 plugin, 1 MCP server/).waitFor();
     assert.equal(await page.getByTestId("resources-git-source").count(), 1);
-    assert.equal(await page.getByTestId("resources-git-item").count(), 2);
-    assert.equal(await page.getByTestId("resources-git-items-pager").getByTestId("resources-page-label").textContent(), "1–2 of 4");
+    assert.equal(await page.getByTestId("resources-git-item").count(), 4, "every item of the source is in the one list");
+    assert.equal(await page.getByTestId("resources-git-items-pager").isVisible(), false, "no pager");
     const alpha = page.getByTestId("resources-git-item").filter({ hasText: "alpha" });
     await alpha.getByText("Not installed", { exact: true }).waitFor();
     await alpha.getByText("Not installed on this node", { exact: false }).waitFor();
     assert.equal(await page.getByTestId("resources-git-apply").isDisabled(), true);
 
     await alpha.getByTestId("resources-git-item-select").check();
-    await page.getByTestId("resources-git-items-pager").getByTestId("resources-page-next").click();
     for (const name of ["docs", "kit"]) await page.getByTestId("resources-git-item").filter({ hasText: name }).getByTestId("resources-git-item-select").check();
-    await page.getByTestId("resources-git-items-pager").getByTestId("resources-page-previous").click();
     await alpha.getByText("Selected to install · not installed yet", { exact: false }).waitFor();
     await page.getByTestId("resources-git-apply").getByText("Install 3 selected").waitFor();
     await page.getByTestId("resources-git-apply").click();
@@ -91,11 +89,9 @@ test("Resources → Git repos adds a repository, installs the ticked items, and 
     await alpha.getByText("Installed", { exact: true }).waitFor();
     const alphaText = await alpha.innerText();
     assert.match(alphaText, /Installed here · eligible for new runs: Claude, Kiro, Pi/, alphaText);
-    await page.getByTestId("resources-git-items-pager").getByTestId("resources-page-next").click();
     for (const name of ["docs", "kit"]) await page.getByTestId("resources-git-item").filter({ hasText: name }).getByText("Installed", { exact: true }).waitFor();
     await page.getByTestId("resources-git-item").filter({ hasText: "docs" }).getByText(/Installed here · eligible for new runs: Claude, Kiro/).waitFor();
     await page.getByTestId("resources-git-item").filter({ hasText: "kit" }).getByText(/Installed here · eligible for new runs: Claude/).waitFor();
-    await page.getByTestId("resources-git-items-pager").getByTestId("resources-page-previous").click();
     await assert.rejects(lstat(path.join(resources, "shared/skills/beta")), { code: "ENOENT" });
 
     await write(repository, "skills/alpha/SKILL.md", "---\nname: alpha\ndescription: Alpha skill\n---\nv2\n");

@@ -41,17 +41,10 @@ test("Settings → Resources shares single and bulk skills with clusters, worksp
     await page.locator('[data-testid="chat-message-input"]:enabled').waitFor();
     await page.getByTestId("chat-resources-button").click();
     const panel = page.getByTestId("resources-panel");
-    const pageLabel = page.getByTestId("resources-list-pager").getByTestId("resources-page-label");
-    await pageLabel.getByText(/^1–\d+ of \d+$/).waitFor();
+    await page.getByTestId("resources-skill-row").first().waitFor();
     // The settings loading banner changes the list height independently of resource loading.
     await page.locator("#settingsForm:not([aria-busy])").waitFor();
-    // ResizeObserver refits on the next frame; measure the settled page, not its first render.
-    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    const perPage = await page.getByTestId("resources-skill-row").count();
-    assert.ok(perPage >= 3, `a page shows several skills (${perPage})`);
-    assert.ok(await panel.evaluate((element) => element.querySelector("#resourcesList")!.scrollHeight <= element.querySelector("#resourcesList")!.clientHeight + 1), "the list pages instead of scrolling");
-    await page.getByTestId("resources-list-pager").getByTestId("resources-page-next").click();
-    await pageLabel.getByText(new RegExp(`^${perPage + 1}–`)).waitFor();
+    assert.equal(await page.getByTestId("resources-list-pager").isVisible(), false, "the list is one continuous list with no pager");
 
     // Names match fuzzily (bulk-0 also finds bulk-10), so select by the description's exact text.
     await page.getByTestId("resources-search-input").fill("first batch");

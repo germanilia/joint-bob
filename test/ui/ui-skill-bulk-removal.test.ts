@@ -44,12 +44,12 @@ test("Select all removes every removable skill across pages, preserves relay/nat
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-resources").click();
     await page.getByTestId("resources-search-input").fill("bulk-");
-    await page.getByTestId("resources-list-pager").waitFor();
+    await page.getByTestId("resources-skill-row").first().waitFor();
     await page.getByTestId("resources-select-all").click();
     const remove = page.getByTestId("resources-remove-selected");
     await remove.waitFor();
     assert.match(await remove.innerText(), /\(17\)/, "received copy included, relay and independent native copy excluded");
-    assert.ok(await page.getByTestId("resources-skill-row").count() < names.length, "selection spans more than the visible page");
+    assert.ok(await page.getByTestId("resources-skill-row").count() >= 17, "the selection covers rows far down the one list");
     await remove.click();
     await page.getByTestId("confirm-cancel-button").click();
     assert.deepEqual(deletes, [], "cancel sends no deletion requests");

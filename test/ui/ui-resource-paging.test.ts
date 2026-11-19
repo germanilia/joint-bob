@@ -6,7 +6,7 @@ import test from "node:test";
 import { launchChrome } from "./launch-chrome.js";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 
-test("Changing a skill's harness keeps the current Resources page", { timeout: 180_000 }, async () => {
+test("Changing a skill's harness keeps the place in the Resources list", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "resource-activation-paging-ui-"));
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
   let browser: Awaited<ReturnType<typeof launchChrome>> | undefined;
@@ -36,53 +36,35 @@ test("Changing a skill's harness keeps the current Resources page", { timeout: 1
     await rows.first().getByTestId("resources-activation-toggle").first().waitFor();
     const settle = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await settle();
-    const label = page.getByTestId("resources-page-label");
-    // Start on a later page with long rows, after page size was fitted to the short rows.
-    while (Number((await rows.first().locator("strong").textContent())!.split("-").at(-1)) < 16) {
-      assert.equal(await page.getByTestId("resources-page-next").isEnabled(), true);
-      await page.getByTestId("resources-page-next").click();
-      await settle();
-    }
-    const before = await label.textContent();
-    assert.ok(Number(before!.split("–")[0]) > 1, `test starts beyond the first page: ${before}`);
-    const name = await rows.first().locator("strong").textContent();
-    const toggle = page.getByRole("checkbox", { name: `Disable ${name} for Pi`, exact: true });
-    await toggle.uncheck();
-    await page.getByTestId("resources-status").getByText(`${name} disabled for Pi.`, { exact: false }).waitFor();
-    await settle();
-    assert.equal(await label.textContent(), before, "disabling a harness must not move to a different page");
-    assert.equal(await page.getByRole("checkbox", { name: `Enable ${name} for Pi`, exact: true }).isChecked(), false);
-    await page.getByRole("checkbox", { name: `Enable ${name} for Pi`, exact: true }).check();
-    await page.getByTestId("resources-status").getByText(`${name} enabled for Pi.`, { exact: false }).waitFor();
-    await settle();
-    assert.equal(await label.textContent(), before, "enabling a harness must not move to a different page");
-
-    const list = page.getByTestId("resources-list");
+    assert.equal(await page.getByTestId("resources-list-pager").isVisible(), false, "no pager");
+    assert.equal(await rows.count(), 30, "every skill is in the one list");
+    const panel = page.getByTestId("resources-panel");
+    // Start low in the list, on the long rows.
     const lastName = await rows.last().locator("strong").textContent();
     const lastToggle = page.getByRole("checkbox", { name: `Disable ${lastName} for Pi`, exact: true });
     await lastToggle.scrollIntoViewIfNeeded();
-    const scrollBefore = await list.evaluate((element) => element.scrollTop);
-    const layout = await list.evaluate((element) => ({ height: element.clientHeight, scrollHeight: element.scrollHeight, rows: [...element.querySelectorAll(".resources-row")].map((row) => ({ name: row.querySelector("strong")!.textContent, height: row.clientHeight })) }));
-    assert.ok(scrollBefore > 0, `precondition: editing a row after scrolling the list: ${before}, ${JSON.stringify(layout)}`);
+    await settle();
+    const scrollBefore = await panel.evaluate((element) => element.scrollTop);
+    assert.ok(scrollBefore > 0, `precondition: the list is scrolled to its last row: ${scrollBefore}`);
     await lastToggle.uncheck();
     await page.getByTestId("resources-status").getByText(`${lastName} disabled for Pi.`, { exact: false }).waitFor();
     await settle();
-    assert.equal(await label.textContent(), before, "editing a scrolled row keeps its page");
-    assert.equal(await list.evaluate((element) => element.scrollTop), scrollBefore, "editing a harness preserves list scroll position");
-
+    assert.equal(await rows.count(), 30, "disabling a harness keeps every row");
+    assert.equal(await panel.evaluate((element) => element.scrollTop), scrollBefore, "editing a harness keeps the place in the list");
+    assert.equal(await page.getByRole("checkbox", { name: `Enable ${lastName} for Pi`, exact: true }).isChecked(), false);
     const lastRow = rows.filter({ has: page.locator("strong", { hasText: lastName! }) });
     await lastRow.getByTestId("resources-activation-reset").click();
     await page.getByTestId("resources-status").getByText(`${lastName} uses the default for Pi.`, { exact: false }).waitFor();
     await settle();
-    assert.equal(await label.textContent(), before, "resetting a harness keeps its page");
+    assert.equal(await panel.evaluate((element) => element.scrollTop), scrollBefore, "resetting a harness keeps the place in the list");
     assert.equal(await page.getByRole("checkbox", { name: `Disable ${lastName} for Pi`, exact: true }).isChecked(), true);
     await page.getByTestId("resources-refresh-button").click();
     await page.getByRole("checkbox", { name: `Disable ${lastName} for Pi`, exact: true }).waitFor();
     await settle();
-    assert.equal(await label.textContent(), before, "refreshing keeps the current page");
+    assert.equal(await rows.count(), 30, "refreshing keeps every row");
     await page.getByTestId("resources-search-input").fill(lastName!);
     await settle();
-    assert.equal(await rows.count(), 1, "changing the search still resets to the first page");
+    assert.equal(await rows.count(), 1, "the search narrows the list");
     assert.equal(await rows.locator("strong").textContent(), lastName);
     assert.deepEqual(errors, []);
   } finally {
@@ -92,8 +74,8 @@ test("Changing a skill's harness keeps the current Resources page", { timeout: 1
   }
 });
 
-// Wrapped descriptions give rows different heights; Next must still walk every page.
-test("Resources Next reaches every skill when rows have different heights", { timeout: 180_000 }, async () => {
+// Wrapped descriptions give rows different heights; the one list must still hold every skill.
+test("Resources list holds every skill when rows have different heights", { timeout: 180_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "resource-paging-ui-"));
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
   let browser: Awaited<ReturnType<typeof launchChrome>> | undefined;
@@ -123,20 +105,9 @@ test("Resources Next reaches every skill when rows have different heights", { ti
     await rows.filter({ hasText: names[0] }).waitFor();
     const settle = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await settle();
-    const label = page.getByTestId("resources-page-label"), next = page.getByTestId("resources-page-next");
-    const seen = new Set<string>();
-    const starts: number[] = [];
-    for (let clicks = 0; ; clicks += 1) {
-      assert.ok(clicks <= names.length, "paging terminates");
-      for (const text of await rows.locator("strong").allTextContents()) seen.add(text);
-      starts.push(Number((await label.textContent())!.split("–")[0]));
-      if (await next.isDisabled()) break;
-      await next.click();
-      await settle();
-    }
-    assert.deepEqual([...seen].sort(), names, "every skill is reachable with Next");
-    for (let index = 1; index < starts.length; index += 1) assert.ok(starts[index] > starts[index - 1], `Next advances: ${starts.join(", ")}`);
-    assert.match((await label.textContent())!, /–30 of 30$/);
+    assert.equal(await page.getByTestId("resources-list-pager").isVisible(), false, "no pager");
+    const seen = await rows.locator("strong").allTextContents();
+    assert.deepEqual([...seen].sort(), names, "every skill is in the one list, whatever its row height");
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

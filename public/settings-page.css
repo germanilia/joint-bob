@@ -758,3 +758,39 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
 /* Help is shown in full now, so a long unbroken word in it (a folder path, an address) wraps instead of widening its group. */
 #settingsForm .settings-panel .phase-settings > * { min-width: 0; }
 #settingsForm .settings-panel :is(.settings-hint, .retention-backup-notes, .retention-backup-notes *, .settings-hint code) { overflow-wrap: anywhere; }
+
+/* Resources: the lists are continuous lists now, so a block takes the height its rows need and the section scrolls. */
+#settingsForm .resources-panel > :is(.resources-page, .resources-add, .resources-paths) { flex: none; min-height: auto; overflow: visible; }
+#settingsForm .resources-panel :is(.resources-list, .resources-scan-list) { overflow: visible; }
+
+/* Notifications: the form that adds an ntfy server is folded until it is wanted. */
+#settingsForm .ntfy-add-details { margin-top: 4px; }
+#settingsForm .ntfy-add-details > summary { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 11px; background: var(--paper-raised, var(--field)); font-size: 13.5px; font-weight: 600; cursor: pointer; list-style: none; }
+#settingsForm .ntfy-add-details > summary::-webkit-details-marker { display: none; }
+#settingsForm .ntfy-add-details[open] > summary { margin-bottom: 10px; }
+
+/* Labels: the labels with their icons come first; the box that edits the same list as text follows them. */
+#settingsForm #settingsPanel-labels > .settings-section-head { order: -1; }
+#settingsForm #settingsPanel-labels > #settingsLabelIcons { order: 1; }
+#settingsForm #settingsPanel-labels > label:has(#settingsLabelIconHarness), #settingsForm #settingsPanel-labels > #settingsLabelIconModelLabel { order: 2; }
+#settingsForm #settingsPanel-labels > p:not(#settingsLabelsHint) { order: 3; }
+#settingsForm #settingsPanel-labels > label:has(#settingsConversationLabels) { order: 4; }
+#settingsForm #settingsPanel-labels > #settingsLabelsHint { order: 5; }
+
+/* Connections: a profile is a row (name, state, actions), not a card, so a list of them reads at a glance. */
+#settingsForm .profile-grid { grid-template-columns: minmax(0, 1fr); gap: 0; border-radius: 16px; background: var(--field); overflow: clip; }
+#settingsForm .profile-grid > .profile-card {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; align-items: center; gap: 6px 16px;
+  padding: 12px 16px; border: 0; border-left: 3px solid var(--brand); border-radius: 0; background: none;
+}
+#settingsForm .profile-grid > .profile-card + .profile-card { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .profile-card > .profile-card-head { grid-column: 1; }
+#settingsForm .profile-card > .profile-status { grid-column: 2; }
+#settingsForm .profile-card > .profile-actions { grid-column: 3; justify-content: flex-end; margin-top: 0; }
+#settingsForm .profile-card > :not(.profile-card-head, .profile-status, .profile-actions) { grid-column: 1 / -1; }
+@media (max-width: 900px) {
+  #settingsForm .profile-grid > .profile-card { grid-template-columns: minmax(0, 1fr); }
+  #settingsForm .profile-card > :is(.profile-card-head, .profile-status, .profile-actions) { grid-column: 1; }
+  #settingsForm .profile-card > .profile-actions { justify-content: flex-start; }
+}
+#settingsForm .resources-panel .resources-add > .resources-page { flex: none; min-height: auto; overflow: visible; }

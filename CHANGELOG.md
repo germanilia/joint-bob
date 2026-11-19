@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.333.0 — 2026-11-19
+
+- Resources, and Joined relays with each relay's phone addresses, are continuous lists that the section scrolls, like the other Settings lists.
+- Connections shows each sign-in as a row (name, state, actions) instead of a card.
+- Notifications folds the form that adds an ntfy server behind **Add a service**.
+- Labels lists the labels with their icons first; the box that edits the same list as text comes after them.
+- The Users table's last column has a name for screen readers.
+- Fixed Settings tests for the new layout: relay refusals are shown after the failed call's name.
+
 ## 2.332.0 — 2026-11-19
 
 - In Secrets, Browser and Workspaces a row shows its main action (Edit, Close there, Secrets) and keeps the rest behind a ⋯ menu. In a narrow window the main action moves into the menu too.
