@@ -1078,10 +1078,14 @@
           <fieldset class="phase-settings" data-admin-only>
             <legend>Runs on this node</legend>
             <label class="checkbox-row">
-              <input id="settingsRunnerOtherNodes" type="checkbox" data-testid="settings-runner-other-nodes" />
-              Allow other nodes to pick this node in Runs on
+              <input id="settingsRunnerConversations" type="checkbox" data-testid="settings-runner-conversations" />
+              Let other people's machines start conversations here (Runs on)
             </label>
-            <p class="settings-hint">Off by default, except on a node that serves a relay. Your twins can always run conversations here.</p>
+            <label class="checkbox-row">
+              <input id="settingsRunnerAutomations" type="checkbox" data-testid="settings-runner-automations" />
+              Let other people's machines create, change and run automations here
+            </label>
+            <p class="settings-hint">Both are on by default. Turn one off to keep this machine for yourself. Your twins can always run here.</p>
           </fieldset>
           <fieldset class="phase-settings" data-testid="settings-node-blocks">
             <legend>Blocked nodes</legend>

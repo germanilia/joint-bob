@@ -486,7 +486,7 @@ const MAIN_FIELDS = [
   "#settingsProjectHome", "#settingsGitPullFileLimit", "#settingsGitPullTimeoutSeconds",
   "#harnessPanels input[data-save-when-left]", "#harnessPanels [data-testid='settings-kiro-enabled']",
   "#harnessPanels .searchable-select-trigger[data-testid*='-default-']", "#harnessPanels select[data-testid*='-default-']",
-  "#settingsRemoteTerminalTwins", "#settingsRemoteTerminalOtherNodes", "#settingsRunnerOtherNodes",
+  "#settingsRemoteTerminalTwins", "#settingsRemoteTerminalOtherNodes", "#settingsRunnerConversations", "#settingsRunnerAutomations",
   "#settingsResourceSkillsPaths", "#settingsResourcePromptsPaths", "#settingsResourceRulesPaths", "#settingsResourcePluginsPaths",
 ].join(", ");
 /** Saved when the field is left, not while typing: a half-typed number or path must never apply. */
@@ -572,7 +572,8 @@ async function loadSettings() {
   if (!admin) return;
   elements.settingsRemoteTerminalTwins.checked = settings.remoteTerminal.twins;
   elements.settingsRemoteTerminalOtherNodes.checked = settings.remoteTerminal.otherNodes;
-  elements.settingsRunnerOtherNodes.checked = settings.runnerAccess.otherNodes;
+  elements.settingsRunnerConversations.checked = settings.runnerAccess.conversations;
+  elements.settingsRunnerAutomations.checked = settings.runnerAccess.automations;
   elements.settingsGitPullFileLimit.value = settings.gitPullFileLimit ?? 1000;
   elements.settingsGitPullTimeoutSeconds.value = settings.gitPullTimeoutSeconds ?? 360;
   elements.settingsProjectHome.value = settings.projects.homePath;
@@ -754,7 +755,7 @@ async function saveSettings() {
       gitPullFileLimit: Number(elements.settingsGitPullFileLimit.value),
       gitPullTimeoutSeconds: Number(elements.settingsGitPullTimeoutSeconds.value),
       remoteTerminal: { twins: elements.settingsRemoteTerminalTwins.checked, otherNodes: elements.settingsRemoteTerminalOtherNodes.checked },
-      runnerAccess: { otherNodes: elements.settingsRunnerOtherNodes.checked },
+      runnerAccess: { conversations: elements.settingsRunnerConversations.checked, automations: elements.settingsRunnerAutomations.checked },
       conversationCommands: { ...personalSettingsValue().conversationCommands, presets },
     }),
   }).catch((error) => { showBackupSaveError(error); throw error; });

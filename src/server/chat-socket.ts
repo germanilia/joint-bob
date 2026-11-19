@@ -394,7 +394,7 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
   }
   // Run permission does not hide shared history. Existing conversations use the
   // same server-side read-only fence as subagent transcripts.
-  const peerReadOnly = Boolean(signedPeer && !await peerMayRunHere(signedPeer));
+  const peerReadOnly = Boolean(signedPeer && !await peerMayRunHere(signedPeer, "conversations"));
   if (peerReadOnly && !listedSession) {
     socket.close(1008, "This node does not accept runs from other nodes");
     return;

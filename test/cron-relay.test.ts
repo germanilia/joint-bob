@@ -49,7 +49,7 @@ test("a workspace relay hosts and runs schedules, transfers ownership, and rejec
     });
     for (const [node, auth] of [[relay, relayAuth], [owner, ownerAuth]] as const) {
       const settings = await api<Record<string, unknown>>(node, auth, "GET", "/settings");
-      assert.equal((await api(node, auth, "PUT", "/settings", { ...settings.body, runnerAccess: { otherNodes: true } })).status, 200);
+      assert.equal((await api(node, auth, "PUT", "/settings", { ...settings.body, runnerAccess: { conversations: true, automations: true } })).status, 200);
     }
     await eventually(async () => {
       const result = await api<{ nodes: Array<{ id: string; online: boolean; mapped: boolean; runner: boolean }> }>(owner, ownerAuth, "GET", `/projects/${projectId}/session-nodes`);
@@ -70,10 +70,10 @@ test("a workspace relay hosts and runs schedules, transfers ownership, and rejec
     assert.equal(created.body.automation.ownerNodeId, relay.nodeId);
     const id = created.body.automation.id;
     const relaySettings = await api<Record<string, unknown>>(relay, relayAuth, "GET", "/settings");
-    assert.equal((await api(relay, relayAuth, "PUT", "/settings", { ...relaySettings.body, runnerAccess: { otherNodes: false } })).status, 200);
+    assert.equal((await api(relay, relayAuth, "PUT", "/settings", { ...relaySettings.body, runnerAccess: { conversations: true, automations: false } })).status, 200);
     const disabledRun = await signedNodeRequest(ownerEnvironment, owner, relay, "POST", "/api/cluster/v2/automations", { action: "run", id });
     assert.equal(disabledRun.status, 403, "turning off remote runs must also block Run now on existing schedules");
-    assert.equal((await api(relay, relayAuth, "PUT", "/settings", { ...relaySettings.body, runnerAccess: { otherNodes: true } })).status, 200);
+    assert.equal((await api(relay, relayAuth, "PUT", "/settings", { ...relaySettings.body, runnerAccess: { conversations: true, automations: true } })).status, 200);
     const run = await send("POST", `/automations/${id}/run`, relay.nodeId);
     assert.equal(run.status, 200, JSON.stringify(run.body));
     await eventually(async () => {
@@ -81,6 +81,14 @@ test("a workspace relay hosts and runs schedules, transfers ownership, and rejec
       assert.equal(listed.body.automations.find(task => task.id === id)?.lastRun?.status, "succeeded", JSON.stringify(listed.body));
     });
     assert.ok((await readFile(log, "utf8")).includes(`claude:${relay.nodeId}`), "the relay executes the scheduled agent, not the requesting node");
+    // fix: only the creator could change an automation. Anyone who can open it may now; it still runs as its creator.
+    const editedHere = await api<{ automation: Item }>(relay, relayAuth, "PUT", `/automations/${id}`, { ...input, name: "Relay report, edited on the relay", providerProfileId: profile.body.profile.id });
+    assert.equal(editedHere.status, 200, JSON.stringify(editedHere.body));
+    assert.equal(editedHere.body.automation.name, "Relay report, edited on the relay");
+    assert.equal(editedHere.body.automation.creatorAccountId, created.body.automation.creatorAccountId, "an edit keeps the automation's creator");
+    const relayAccount = (await api<{ accountId: string }>(relay, relayAuth, "GET", "/auth/status")).body.accountId;
+    assert.ok(created.body.automation.creatorAccountId);
+    assert.notEqual(relayAccount, created.body.automation.creatorAccountId, "the relay's admin did not create it");
     // The profile belongs to the relay, so it is dropped before the schedule moves to a machine that does not have it.
     assert.equal((await send("PUT", `/automations/${id}`, relay.nodeId, input)).status, 200);
     const moved = await send("POST", `/automations/${id}/transfer`, relay.nodeId, { nodeId: owner.nodeId });

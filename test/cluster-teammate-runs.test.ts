@@ -112,7 +112,9 @@ test("a teammate's messages run on the third machine that runs the conversation,
     assert.equal(row.executionNodeId, server.nodeId, "the teammate's machine knows where the conversation runs");
     const params = { projectId: project.id, sessionPath: row.path, sessionId: row.id, nodeId: server.nodeId };
 
-    // The server does not let other machines run work on it yet: readable, and the page is told why.
+    // The server opts out of other machines' conversations: readable, and the page is told why.
+    const optedOut = await api(server, onServer, "PUT", "/settings", { runnerAccess: { conversations: false, automations: true } });
+    assert.equal(optedOut.status, 200, JSON.stringify(optedOut.body));
     const refused = openConversation(maya, onMaya, params);
     sockets.push(refused.socket);
     const readOnly = await until(refused.received, ["ready"]);
@@ -121,7 +123,7 @@ test("a teammate's messages run on the third machine that runs the conversation,
     assert.equal(readOnly.executionNodeName, server.name, "the page can name the machine whose setting decides");
     refused.socket.close();
 
-    const allowed = await api(server, onServer, "PUT", "/settings", { runnerAccess: { otherNodes: true } });
+    const allowed = await api(server, onServer, "PUT", "/settings", { runnerAccess: { conversations: true, automations: true } });
     assert.equal(allowed.status, 200, JSON.stringify(allowed.body));
 
     // Maya writes in the conversation itself.

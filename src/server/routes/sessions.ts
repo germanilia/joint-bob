@@ -869,7 +869,7 @@ function takeoverSignal(response: import("express").Response): AbortSignal {
 app.post(["/api/cluster/sessions/take-ownership", "/api/cluster/v2/runtime/sessions/take-ownership"], async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
-    if (!await peerMayRunHere(response.locals.machineNodeId)) { sendError(response, 403, "This node does not accept runs from other nodes"); return; }
+    if (!await peerMayRunHere(response.locals.machineNodeId, "conversations")) { sendError(response, 403, "This node does not accept runs from other nodes"); return; }
     const payload = routedSessionTakeOwnershipSchema.parse(request.body);
     const project = await getProject(payload.projectId);
     if (!project) { sendError(response, 404, "Project not found"); return; }

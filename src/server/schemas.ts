@@ -387,7 +387,7 @@ export const settingsSchema = z.object({
   dashboards: dashboardAgentSchema.optional(),
   backgroundAgent: backgroundAgentSchema.optional(),
   remoteTerminal: z.object({ twins: z.boolean(), otherNodes: z.boolean() }).strict().optional(),
-  runnerAccess: z.object({ otherNodes: z.boolean() }).strict().optional(),
+  runnerAccess: z.object({ conversations: z.boolean(), automations: z.boolean() }).strict().optional(),
   conversationCommands: conversationCommandsSchema.optional(),
 }).extend(runtimeSchemaShape) as unknown as z.ZodType<SettingsInput>;
 export const auditQuerySchema = z.object({

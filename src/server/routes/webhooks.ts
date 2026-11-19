@@ -9,7 +9,7 @@ import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { actingAccount } from "../../account-context.js";
 import { listSubscriptionPools, poolCandidates, getSubscriptionPool } from "../../provider-profiles/pools.js";
-import { assertAutomationCreator, validateAutomationAssignment } from "../automation-profile.js";
+import { validateAutomationAssignment } from "../automation-profile.js";
 import { accessibleProviderProfile, listAccessibleProviderProfiles } from "../../provider-profiles/store.js";
 import { getClusterNode } from "../../cluster.js";
 import { signClusterRequest } from "../../cluster-protocol.js";

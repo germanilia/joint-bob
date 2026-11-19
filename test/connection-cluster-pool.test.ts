@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -22,7 +22,9 @@ test("Connections cluster pool assignments publish a shared rule, not a personal
     assert.equal((await api(member, memberSession, "POST", "/clusters/join", { link: invitation.body.link, requestId: randomUUID() })).status, 201);
     const profile = await api<{ profile: { id: string } }>(manager, managerSession, "POST", "/provider-profiles", { provider: "openai-codex", label: "Hosted Codex" });
     assert.equal(profile.status, 201);
-    const pool = await api<{ pool: { id: string } }>(manager, managerSession, "POST", "/provider-profiles/pools", { name: "Contigos shared", profileIds: [profile.body.profile.id], fallbackModels: {} });
+    const claudeProfile = await api<{ profile: { id: string } }>(manager, managerSession, "POST", "/provider-profiles", { provider: "claude", label: "Hosted Claude" });
+    assert.equal(claudeProfile.status, 201);
+    const pool = await api<{ pool: { id: string } }>(manager, managerSession, "POST", "/provider-profiles/pools", { name: "Contigos shared", profileIds: [profile.body.profile.id, claudeProfile.body.profile.id], fallbackModels: {} });
     assert.equal(pool.status, 201);
     const choice = { scope: "cluster", scopeId: clusterId, poolId: pool.body.pool.id };
     const saved = await api(manager, managerSession, "PUT", "/provider-profiles/pool-selection", choice);
@@ -34,6 +36,17 @@ test("Connections cluster pool assignments publish a shared rule, not a personal
     assert.ok(grants.body.pools.some(item => item.poolId === pool.body.pool.id && item.enabled));
     const inherited = await api<{ rules: Array<{ clusterId: string; poolId: string; providers: string[] }> }>(member, memberSession, "GET", "/provider-profiles/relay-rules");
     assert.ok(inherited.body.rules.some(item => item.clusterId === clusterId && item.poolId === pool.body.pool.id && item.providers.includes("openai-codex")), JSON.stringify(inherited.body));
+    // fix: a member with no sign-in of its own was told "No agent is installed and signed in on this node" though the cluster's pool could run its agents.
+    const signedOut = path.join(root, "signed-out-cli");
+    await writeFile(signedOut, `#!/bin/sh\ncase "$1" in\n  --version) echo "1.0.0" ;;\n  *) echo "Not logged in"; exit 1 ;;\nesac\n`);
+    await chmod(signedOut, 0o755);
+    const memberSettings = (await api<{ runtimes: Record<string, Record<string, unknown>> }>(member, memberSession, "GET", "/settings")).body;
+    const signOut = await api(member, memberSession, "PUT", "/settings", { runtimes: { ...memberSettings.runtimes,
+      claude: { ...memberSettings.runtimes.claude, executable: signedOut }, kiro: { ...memberSettings.runtimes.kiro, executable: signedOut } } });
+    assert.equal(signOut.status, 200, JSON.stringify(signOut.body));
+    const harnesses = Object.fromEntries((await api<{ harnesses: Array<{ id: string; ready: boolean }> }>(member, memberSession, "GET", "/harnesses")).body.harnesses.map(item => [item.id, item.ready]));
+    assert.equal(harnesses.claude, true, "Claude runs on the cluster pool's Claude member without a sign-in here");
+    assert.equal(harnesses.kiro, false, "a pool never runs Kiro, so Kiro still needs a sign-in here");
     const memberProfiles = await api<{ profiles: Array<{ id: string }> }>(member, memberSession, "GET", "/provider-profiles");
     assert.equal(memberProfiles.body.profiles.some(item => item.id === profile.body.profile.id), false, "cluster access must not copy the owner's profiles or credentials");
     assert.equal((await api(manager, managerSession, "PUT", `/provider-profiles/${profile.body.profile.id}/sharing`, { shared: true })).status, 200);

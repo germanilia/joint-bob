@@ -10,7 +10,7 @@ import { actingAccount } from "../../account-context.js";
 import type { AuthSession } from "../../auth.js";
 import { DEFAULT_AUTO_RESPOND_INSTRUCTIONS, DEFAULT_AUTO_RESPOND_STOP_INSTRUCTIONS, validateAutoRespondProfile } from "../../conversation-auto-respond.js";
 import { listSubscriptionPools, poolCandidates, getSubscriptionPool } from "../../provider-profiles/pools.js";
-import { assertAutomationCreator, validateAutomationAssignment } from "../automation-profile.js";
+import { validateAutomationAssignment } from "../automation-profile.js";
 import { accessibleProviderProfile, listAccessibleProviderProfiles } from "../../provider-profiles/store.js";
 import { getClusterNode } from "../../cluster.js";
 import { isTrustedTwin } from "../../cluster-sharing-policy.js";
@@ -159,18 +159,21 @@ async function automationPeerScope(peerId: string): Promise<AutomationPeerScope 
 function assertAutomationPeerScope(db: Awaited<ReturnType<typeof clusterV2Database>>, command: Command, scope: AutomationPeerScope): void {
   const input = "input" in command ? command.input : command.action === "install-transfer" ? command.bundle.input : undefined;
   const projects = [...("projectId" in command && command.projectId ? [command.projectId] : []), ...(input ? [input.target.projectId] : [])];
+  // An edit keeps the automation's creator (manage), so its profile or pool is checked as the creator's, not the editor's.
+  let creatorAccountId = input?.creatorAccountId;
   if ("id" in command) {
     const hook = getWebhook(db, command.id);
     if (!hook) throw new WebhookError(404, "Webhook not found");
     projects.push(hook.target.projectId);
+    creatorAccountId = hook.creatorAccountId ?? creatorAccountId;
   }
   if (projects.some(id => !scope.projects.has(id))) throw new WebhookError(403, "Webhook project is not shared with this machine");
   if (input?.target.kind === "assistant") throw new WebhookError(403, "Assistant webhooks stay on their assistant's machine");
   if (input?.secretAccountIds.some(id => !scope.secrets.has(id))) throw new WebhookError(403, "Selected secrets are not attached to a shared project");
-  if (input?.providerProfileId && (!input.creatorAccountId || !listAccessibleProviderProfiles(input.creatorAccountId, "automation").some(profile => profile.id === input.providerProfileId && profile.shared))) throw new WebhookError(403, "Select a shared automation profile on this machine");
+  if (input?.providerProfileId && (!creatorAccountId || !listAccessibleProviderProfiles(creatorAccountId, "automation").some(profile => profile.id === input.providerProfileId && profile.shared))) throw new WebhookError(403, "Select a shared automation profile on this machine");
   if (input?.providerPoolId) {
-    validateAutomationAssignment(input);
-    const pool = getSubscriptionPool(input.creatorAccountId!, input.providerPoolId);
+    validateAutomationAssignment({ ...input, creatorAccountId });
+    const pool = getSubscriptionPool(creatorAccountId!, input.providerPoolId);
     if (!poolCandidates(pool, "claude").every(profile => profile.shared)) throw new WebhookError(403, "Select a pool of shared automation profiles on this machine");
   }
   if (command.action === "skill-inventory" || command.action === "skill-import-existing") throw new WebhookError(403, "Machine-local skill imports require a trusted twin; upload a skill or import it from Git instead");
@@ -246,7 +249,6 @@ async function manage(command: Command, scope?: AutomationPeerScope): Promise<un
   if (isWebhookResourceCommand(command)) {
     const webhook = getWebhook(db, command.id);
     if (!webhook) throw new WebhookError(404, "Webhook not found");
-    assertAutomationCreator(webhook.creatorAccountId, command.creatorAccountId);
     if (command.action === "resource-list") return { resources: listWebhookResources(db, webhook.id).map(({ path: _path, ...item }) => item) };
     if (command.action === "resource-download") {
       const resource = listWebhookResources(db, webhook.id).find(item => item.id === command.resourceId);
@@ -306,15 +308,12 @@ async function manage(command: Command, scope?: AutomationPeerScope): Promise<un
   }
   if (command.action === "create" || command.action === "update") {
     const existing = command.action === "update" ? getWebhook(db, command.id) : undefined;
+    // Anyone who can open an automation may change it; it keeps running as its creator, on the creator's profile or pool.
     if (existing) {
-      assertAutomationCreator(existing.creatorAccountId, command.input.creatorAccountId);
       if (existing.target.kind === "assistant" && (command.input.target.kind !== "assistant" || command.input.target.assistantId !== existing.target.assistantId)) throw new WebhookError(409, "Assistant webhook target cannot be changed in place");
     }
-    if (command.input.providerProfileId) {
-      if (!command.input.creatorAccountId) throw new WebhookError(400, "Sign in to select a profile");
-      accessibleProviderProfile(command.input.creatorAccountId, command.input.providerProfileId, "automation");
-    }
     command.input.creatorAccountId = existing?.creatorAccountId ?? command.input.creatorAccountId ?? null;
+    if (command.input.providerProfileId && !command.input.creatorAccountId) throw new WebhookError(400, "Sign in to select a profile");
     validateAutomationAssignment(command.input);
     command.input.providerProfileId ??= null;
     if (command.input.providerProfileId) accessibleProviderProfile(command.input.creatorAccountId!, command.input.providerProfileId, "automation");
@@ -360,7 +359,6 @@ async function transferAutomation(command: Extract<Command, { action: "transfer"
   const hook = getWebhook(db, command.id);
   if (!hook) throw new WebhookError(404, "Webhook not found");
   if (!(await listRuntimePeers(hook.target.projectId)).some(peer => peer.id === command.nodeId)) throw new WebhookError(403, "Choose a machine sharing this webhook's project");
-  assertAutomationCreator(hook.creatorAccountId, command.creatorAccountId);
   ensureAutomationExecutionSchema(db);
   const sourceKind = hook.trigger === "schedule" ? "scheduled" : "webhook";
   if (transferring.has(hook.id) || webhookDeliveryPending(hook.id) || cronStore().active(hook.id) || db.prepare("SELECT 1 FROM automation_executions WHERE source_kind=? AND source_id=? AND status IN ('queued','running') LIMIT 1").get(sourceKind, hook.id)) throw new WebhookError(409, "Wait for active runs to finish before transferring");
@@ -434,7 +432,7 @@ app.post("/api/cluster/v2/automations", handle(async (request, response) => {
   const peerId = response.locals.machineNodeId;
   if (response.locals.machineProtocol !== 2 || !(await listRuntimePeers()).some(peer => peer.id === peerId)) throw new WebhookError(403, "Only machines sharing a project may manage webhooks");
   const command = commandSchema.parse(request.body);
-  if (["create", "update", "install-transfer", "run"].includes(command.action) && !await peerMayRunHere(peerId)) throw new WebhookError(403, "This node does not accept runs from other nodes");
+  if (["create", "update", "install-transfer", "run"].includes(command.action) && !await peerMayRunHere(peerId, "automations")) throw new WebhookError(403, "This node does not accept automations from other nodes");
   response.json(await manage(command, await automationPeerScope(peerId)));
 }));
 

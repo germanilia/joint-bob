@@ -51,7 +51,7 @@ function renderReadOnlyNotice(readOnly) {
   elements.conversationTakeBackButton.textContent = shared.ownershipTaking ? "Takeback requested…" : "Take back here";
   const notice = reason === "runnerAccess" ? {
     title: "Read-only here",
-    detail: `${machine || "The machine this conversation runs on"} does not let other machines run work on it, so you can read this conversation here but not write in it. To allow it, turn on “Allow other nodes to pick this node in Runs on” in Settings → Node on ${machine || "that machine"}.`,
+    detail: `${machine || "The machine this conversation runs on"} does not let other machines run work on it, so you can read this conversation here but not write in it. To allow it, turn on “Let other people's machines start conversations here” in Settings → Node on ${machine || "that machine"}.`,
   } : {
     title: "Sub-agent conversation",
     detail: "A sub-agent wrote this while working on another conversation. You can read it, but it can't be continued. To do more, write in the conversation that started it.",

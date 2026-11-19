@@ -6,7 +6,7 @@ import { CronStore, cronInputSchema } from "../src/cron.js";
 import { createWebhook, updateWebhook, webhookInputSchema, webhookForSecret } from "../src/webhooks.js";
 import { createProviderProfile, setProviderProfileShared, deleteProviderProfile } from "../src/provider-profiles/store.js";
 import { automationProfileContext } from "../src/provider-profiles/context.js";
-import { assertAutomationCreator, runWithAutomationProfile } from "../src/server/automation-profile.js";
+import { runWithAutomationProfile } from "../src/server/automation-profile.js";
 import { assertQueuedPromptEditor, editQueuedPrompt, enqueuePrompt, listQueuedPrompts, mergeQueuedPrompts, clearQueuedPrompts } from "../src/prompt-queue.js";
 
 test("queued automation identity survives persistence and cannot merge into an interactive turn", async () => {
@@ -45,13 +45,6 @@ test("queue edits and merges cannot turn another author's profile into an execut
     const adopted = listQueuedPrompts(key).find((prompt) => prompt.id === automated.id)!;
     assert.deepEqual([adopted.author?.accountId, adopted.automationProfile], [alice, undefined], "rewritten words run as their editor, not on the automation");
   } finally { clearQueuedPrompts(key); }
-});
-
-test("only the creator can change automation execution settings, including inherited profiles", () => {
-  assertAutomationCreator("alice", "alice");
-  assert.throws(() => assertAutomationCreator("alice", "bob"), /creator/);
-  assert.throws(() => assertAutomationCreator("alice", undefined), /creator/);
-  assertAutomationCreator(null, "alice");
 });
 
 test("schedules persist creator and nullable profile through updates and run-now", () => {

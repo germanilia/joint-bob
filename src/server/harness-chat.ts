@@ -19,7 +19,7 @@ import { getSharingCluster } from "../cluster-sharing-policy.js";
 import { clusterOfAssistantsProject } from "../cluster-assistants.js";
 import { clusterSubscriptionMissing } from "../provider-profiles/cluster-assistant-subscriptions.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
-import { projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscriptionPoolAssignment } from "../provider-profiles/pool-sharing.js";
+import { poolMemberCompatible, projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscriptionPoolAssignment } from "../provider-profiles/pool-sharing.js";
 import { automationFallbackPool, getSubscriptionPool, poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
 import { projectProviderProfile } from "../provider-profiles/service.js";
 import { withPoolProfile, type PoolProfileContext } from "../provider-profiles/context.js";
@@ -308,12 +308,6 @@ export function profileProviderForRuntime(provider: string): ProfileProvider | u
   if (provider === "anthropic" || provider === "claude") return "claude";
   if (provider === "antigravity") return "antigravity";
   return provider === "openai-codex" ? provider : "pi";
-}
-function poolMemberCompatible(engine: HarnessId, provider: ProfileProvider, ownedHere = true): boolean {
-  if (engine === "claude") return provider === "claude";
-  if (engine === "antigravity") return provider === "antigravity" && ownedHere;
-  if (engine === "pi") return provider === "pi" || provider === "claude" || provider === "openai-codex";
-  return false;
 }
 interface SubscriptionPoolRequest {
   engine: HarnessId; provider: string; projectId: string; workspaceId: string; conversationId: string;
