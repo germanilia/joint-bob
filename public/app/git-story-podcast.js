@@ -28,7 +28,7 @@ const END = -1;
 const wordCount = (text) => text.split(/\s+/).length;
 
 // `audio` should be an element first played inside the viewer's click: Safari only lets such an element make sound later.
-export function playStoryPodcast({ script: first, host, settings, narrate = null, ask = null, rewrite = null, notify = () => {}, onEnd = () => {}, audio = new Audio() }) {
+export function playStoryPodcast({ script: first, host, dockHost = null, settings, narrate = null, ask = null, rewrite = null, notify = () => {}, onEnd = () => {}, audio = new Audio() }) {
   const player = {
     script: first, chapters: [], lines: [], index: -1, chapter: -1, playing: false, finished: false, speed: 1, muted: false,
     voice: Boolean(narrate), clips: new Map(), urls: [], busy: false, token: 0, frame: 0, lastFrame: 0, silentLeft: 0,
@@ -81,7 +81,9 @@ export function playStoryPodcast({ script: first, host, settings, narrate = null
     h("button", { type: "button", class: "gsp-dock-open", "aria-label": "Open Activity overview", "data-testid": "git-story-podcast-dock-open", onclick: () => restore() }, h("span", { class: "gsp-dock-icon", "aria-hidden": "true" }, "▶"), dockText),
     h("button", { type: "button", class: "gsp-dock-end", "aria-label": "End Activity overview", title: "End it", "data-testid": "git-story-podcast-dock-end", onclick: () => destroy() }, "×"));
   link();
-  host.append(overlay, dock);
+  host.append(overlay);
+  if (dockHost) dockHost.prepend(dock);
+  else host.append(dock);
   overlay.focus();
   const resize = new ResizeObserver(() => { stage.style.transform = `scale(${wrap.clientWidth / STAGE_W})`; sketch.resize(wrap.clientWidth); });
   resize.observe(wrap);

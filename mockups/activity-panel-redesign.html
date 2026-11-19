@@ -1,0 +1,1678 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Activity Panel Redesign · Interactive Mock</title>
+<style>
+  @font-face { font-family: "DM Sans"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("../public/fonts/dm-sans.woff2") format("woff2"); }
+  @font-face { font-family: "Young Serif"; font-style: normal; font-weight: 400; font-display: swap; src: url("../public/fonts/young-serif.woff2") format("woff2"); }
+
+  :root {
+    --bg: #f2ebdf; --panel: #fffbf4; --header: #fffbf4; --surface: #fffbf4; --field: #f6f0e5;
+    --line: rgba(43, 36, 28, 0.09); --line-strong: rgba(43, 36, 28, 0.2);
+    --text: #2b241c; --muted: #6e6457; --ink: #2b241c; --on-ink: #fffbf4;
+    --btn-bg: #2f6b4f; --btn-fg: #ffffff; --btn-bg-hover: #285c44;
+    --accent: #2f6b4f; --live: #2e8b57; --amber: #9a5b00; --danger: #c4472f; --indigo: #4b55a8;
+    --heading: #2b241c; --heading-soft: #2f6b4f; --paper-raised: #ebe2d3;
+    --ctl-fill: color-mix(in srgb, var(--text) 7%, var(--panel));
+    --ctl-fill-hover: color-mix(in srgb, var(--text) 13%, var(--panel));
+    --ctl-edge: color-mix(in srgb, var(--text) 28%, var(--panel));
+    --ctl-ink: color-mix(in srgb, var(--text) 88%, var(--panel));
+    --ctl-on: color-mix(in srgb, var(--accent) 16%, var(--panel));
+    --shadow: 0 18px 50px rgba(60, 45, 25, 0.18);
+    --shadow-soft: 0 1px 2px rgba(60, 45, 25, 0.06), 0 6px 20px rgba(60, 45, 25, 0.06);
+    --radius: 20px; --radius-card: 16px; --radius-ctl: 11px;
+    --sans: "DM Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --serif: "Young Serif", "Iowan Old Style", Georgia, "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --add-bg: rgba(46, 139, 87, 0.13); --add-fg: #1d6b41;
+    --del-bg: rgba(196, 71, 47, 0.13); --del-fg: #a6341f;
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #171412; --panel: #211d1a; --header: #211d1a; --surface: #262220; --field: #2b2723;
+    --line: rgba(255, 244, 230, 0.08); --line-strong: rgba(255, 244, 230, 0.18);
+    --text: #f2ede6; --muted: #b5aba0; --ink: #f2ede6; --on-ink: #171412;
+    --btn-bg: #7fcf9f; --btn-fg: #10231a; --btn-bg-hover: #96dab0;
+    --accent: #7fcf9f; --live: #6fcf97; --amber: #f0b45a; --danger: #f08a76; --indigo: #a5b4fc;
+    --heading: #f7f2eb; --heading-soft: #a5dcbb; --paper-raised: #2e2925;
+    --ctl-fill: color-mix(in srgb, var(--text) 7%, var(--panel));
+    --ctl-fill-hover: color-mix(in srgb, var(--text) 14%, var(--panel));
+    --ctl-edge: color-mix(in srgb, var(--text) 34%, var(--panel));
+    --ctl-ink: color-mix(in srgb, var(--text) 88%, var(--panel));
+    --ctl-on: color-mix(in srgb, var(--accent) 18%, var(--panel));
+    --shadow: 0 20px 56px rgba(0, 0, 0, 0.55);
+    --shadow-soft: 0 0 0 1px rgba(255, 244, 230, 0.07);
+    --add-bg: rgba(111, 207, 151, 0.14); --add-fg: #9ce2b8;
+    --del-bg: rgba(240, 138, 118, 0.15); --del-fg: #f6a99a;
+  }
+
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.48 var(--sans); -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- Mockup Chrome Bar (top strip for reviewers) ---------- */
+  .mock-bar {
+    flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 16px; background: color-mix(in srgb, var(--panel) 80%, var(--bg));
+    border-bottom: 1px solid var(--line-strong); font-size: 12.5px;
+  }
+  .mock-badge {
+    font: 700 10.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+    padding: 4px 8px; border-radius: 999px;
+    background: var(--ctl-on); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  .mock-bar-title { font-family: var(--serif); font-size: 15px; color: var(--heading); margin-right: 4px; }
+  .mock-group { display: inline-flex; align-items: center; gap: 4px; padding: 2px; border-radius: 10px; background: var(--field); border: 1px solid var(--line); }
+  .mock-group-label { color: var(--muted); font-size: 11.5px; padding: 0 6px; }
+  .mock-chip {
+    border: 0; background: transparent; color: var(--muted); padding: 4px 9px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  }
+  .mock-chip:hover { color: var(--text); }
+  .mock-chip[aria-pressed="true"] { background: var(--ctl-on); color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent); }
+  .mock-spacer { flex: 1; }
+  .mock-legend-btn {
+    border: 1px solid var(--line-strong); background: var(--field); color: var(--text);
+    padding: 4px 10px; border-radius: 9px; font-size: 12px; font-weight: 600;
+  }
+  .mock-legend-btn:hover { background: var(--paper-raised); }
+
+  /* ---------- Diff Summary Drawer ---------- */
+  .changes-drawer {
+    flex: none; padding: 12px 18px; background: var(--surface); border-bottom: 1px solid var(--line-strong);
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; font-size: 12.5px;
+  }
+  .changes-drawer[hidden] { display: none; }
+  .change-pill {
+    padding: 9px 11px; border-radius: 12px; background: var(--field); border: 1px solid var(--line);
+  }
+  .change-pill strong { display: block; color: var(--heading-soft); font-size: 12px; margin-bottom: 2px; }
+  .change-pill span { color: var(--muted); line-height: 1.38; }
+
+  /* ---------- App Shell ---------- */
+  .app-shell {
+    flex: 1; min-height: 0; display: grid;
+    grid-template-columns: 224px minmax(0, 1fr);
+    gap: 12px; padding: 12px;
+  }
+
+  /* Left rail (quiet context) */
+  .left-rail {
+    background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow-soft);
+    display: flex; flex-direction: column; padding: 14px 12px; gap: 14px; overflow: hidden;
+  }
+  .brand-row { display: flex; align-items: center; gap: 9px; padding: 0 4px; }
+  .brand-dot {
+    width: 28px; height: 28px; border-radius: 9px; background: var(--ctl-on);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    display: grid; place-items: center; color: var(--accent); font-family: var(--serif); font-size: 15px;
+  }
+  .brand-row strong { font-family: var(--serif); font-size: 16px; font-weight: 400; color: var(--heading); }
+  .rail-nav { display: flex; flex-direction: column; gap: 2px; }
+  .rail-nav-item {
+    display: flex; align-items: center; justify-content: space-between; padding: 7px 10px;
+    border-radius: 10px; color: var(--muted); font-size: 13px; font-weight: 500; border: 0; background: transparent; text-align: left;
+  }
+  .rail-nav-item.on { background: var(--field); color: var(--text); font-weight: 600; }
+  .rail-section-label { font-family: var(--serif); font-size: 13px; color: var(--muted); padding: 4px 10px 0; }
+  .rail-chat {
+    padding: 8px 10px; border-radius: 11px; font-size: 12.5px; display: flex; flex-direction: column; gap: 2px;
+    border: 0; background: transparent; text-align: left; width: 100%;
+  }
+  .rail-chat.on { background: var(--paper-raised); }
+  .rail-chat b { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-chat small { color: var(--muted); font-size: 11.5px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.live { background: var(--live); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 25%, transparent); animation: pulse 1.8s infinite; }
+  .dot.amber { background: var(--amber); }
+  .dot.danger { background: var(--danger); }
+  .dot.muted { background: var(--muted); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+
+  /* Main workspace = Chat + Activity Panel */
+  .workspace {
+    min-width: 0; min-height: 0;
+    display: grid; grid-template-columns: minmax(320px, 1fr) var(--panel-w, 460px);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  /* ---------- Conversation Top Bar (WITH Podcast Playback + Files in ...) ---------- */
+  .chat-topbar {
+    grid-column: 1 / -1;
+    background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow-soft);
+    padding: 10px 14px 10px 18px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    position: relative;
+  }
+  .chat-title-block { min-width: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .chat-title-block h1 { margin: 0; font: 400 18px/1.2 var(--serif); color: var(--heading); }
+  .chat-project-pill {
+    font-size: 12px; color: var(--muted); padding: 2px 8px; border-radius: 999px; background: var(--field);
+  }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+    background: color-mix(in srgb, var(--live) 15%, var(--panel)); color: var(--live);
+  }
+  .chip-row { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .meta-chip {
+    padding: 4px 9px; border-radius: 999px; background: var(--field); border: 1px solid var(--line);
+    color: var(--text); font-size: 12px; font-weight: 500;
+  }
+
+  .top-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .top-btn {
+    display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
+    border-radius: 10px; border: 1px solid var(--line-strong); background: var(--field);
+    color: var(--text); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  }
+  .top-btn:hover { background: var(--paper-raised); }
+  .top-btn.ghost { background: transparent; border-color: var(--line); color: var(--muted); }
+  .top-btn.ghost:hover { color: var(--text); background: var(--field); border-color: var(--line-strong); }
+  .top-btn.active { background: var(--ctl-on); border-color: color-mix(in srgb, var(--accent) 65%, transparent); color: var(--text); }
+  .top-btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: transparent; }
+  .top-btn svg { width: 15px; height: 15px; flex: none; }
+
+  /* NEW: Podcast Playback Pill in Top Menu */
+  .podcast-top {
+    display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px;
+    border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 11%, var(--panel));
+    color: var(--text); font-size: 12.5px; font-weight: 600; transition: all .18s ease;
+  }
+  .podcast-top:hover { background: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
+  .podcast-top.is-playing {
+    padding: 0 6px 0 8px; gap: 8px;
+    background: var(--field); border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .podcast-top.is-generating {
+    border-color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, var(--panel));
+  }
+  .podcast-play-dot {
+    width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--btn-fg);
+    display: grid; place-items: center; border: 0; padding: 0; flex: none;
+  }
+  .podcast-play-dot svg { width: 11px; height: 11px; }
+  .podcast-meta { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+  .podcast-meta b { font-weight: 600; color: var(--text); }
+  .podcast-meta small { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .podcast-bar { width: 56px; height: 4px; border-radius: 99px; background: var(--line-strong); overflow: hidden; }
+  .podcast-bar i { display: block; height: 100%; width: 38%; background: var(--accent); border-radius: 99px; }
+  .podcast-mini-btn {
+    border: 0; background: transparent; color: var(--muted); height: 22px; padding: 0 6px;
+    border-radius: 6px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center;
+  }
+  .podcast-mini-btn:hover { background: var(--paper-raised); color: var(--text); }
+  .podcast-wave { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .podcast-wave i { width: 2px; background: var(--accent); border-radius: 2px; animation: wave 1s ease-in-out infinite; }
+  .podcast-wave i:nth-child(1) { height: 5px; animation-delay: 0s; }
+  .podcast-wave i:nth-child(2) { height: 11px; animation-delay: .18s; }
+  .podcast-wave i:nth-child(3) { height: 7px; animation-delay: .35s; }
+  @keyframes wave { 0%,100% { transform: scaleY(.45); } 50% { transform: scaleY(1); } }
+
+  /* More menu popover (shows Files moved here!) */
+  .more-menu-wrap { position: relative; }
+  .more-popover {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: 226px;
+    background: var(--surface); border: 1px solid var(--line-strong); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .more-popover[hidden] { display: none; }
+  .more-group { font-size: 11px; font-weight: 700; color: var(--muted); padding: 6px 9px 3px; }
+  .more-item {
+    display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 9px;
+    border: 0; border-radius: 9px; background: transparent; color: var(--text); font-size: 13px; text-align: left;
+  }
+  .more-item:hover { background: var(--field); }
+  .more-item.highlight { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .more-item .moved-tag {
+    margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 2px 6px; border-radius: 999px;
+    background: var(--ctl-on); color: var(--accent);
+  }
+  .more-item svg { width: 15px; height: 15px; color: var(--muted); flex: none; }
+  .more-rule { height: 1px; background: var(--line); margin: 4px 6px; }
+
+  /* ---------- Chat Thread Column ---------- */
+  .chat-card {
+    background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow-soft);
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  }
+  .chat-messages {
+    flex: 1; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .msg { max-width: 680px; }
+  .msg.user {
+    align-self: flex-end; background: var(--paper-raised); padding: 10px 14px; border-radius: 16px; font-size: 13.5px;
+  }
+  .msg.agent { align-self: flex-start; font-size: 14px; line-height: 1.55; }
+  .msg-turn-link {
+    display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px;
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--field);
+    color: var(--muted); font-size: 12px; font-weight: 500;
+  }
+  .msg-turn-link:hover { color: var(--text); border-color: var(--line-strong); }
+  .msg code { font-family: var(--mono); font-size: 12.5px; padding: 1px 5px; border-radius: 5px; background: var(--field); }
+  .chat-composer {
+    padding: 10px 18px 14px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center;
+  }
+  .chat-composer input {
+    flex: 1; height: 38px; padding: 0 13px; border-radius: 12px; border: 1px solid var(--line-strong);
+    background: var(--field); color: var(--text); font-size: 13.5px;
+  }
+  .send-btn {
+    height: 38px; padding: 0 14px; border-radius: 12px; border: 0;
+    background: var(--btn-bg); color: var(--btn-fg); font-weight: 700; font-size: 13px;
+  }
+
+  /* ---------- REDESIGNED ACTIVITY PANEL ---------- */
+  .activity-panel {
+    background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow-soft);
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden; position: relative;
+  }
+  .panel-header {
+    flex: none; padding: 12px 14px 10px; border-bottom: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  /* Top-level 4-tab segmented control: Activity | Ask | Git | Story */
+  .seg-tabs {
+    display: flex; gap: 2px; padding: 3px; border-radius: 12px;
+    background: var(--ctl-fill); box-shadow: inset 0 0 0 1px var(--ctl-edge);
+  }
+  .seg-tab {
+    flex: 1 1 0; min-width: 0; height: 31px; padding: 0 8px; border: 0; border-radius: 9px;
+    background: transparent; color: var(--ctl-ink); font-size: 12.5px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap;
+  }
+  .seg-tab:hover:not([aria-selected="true"]) { background: var(--ctl-fill-hover); color: var(--text); }
+  .seg-tab[aria-selected="true"] {
+    background: var(--ctl-on); box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--text); font-weight: 700;
+  }
+  .seg-count { font-size: 11px; font-weight: 700; opacity: .9; }
+  .seg-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--live); flex: none; }
+
+  .panel-body {
+    flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 18px;
+    display: flex; flex-direction: column; gap: 11px;
+  }
+  .panel-body > * { flex: none; }
+  .panel-body[hidden] { display: none; }
+  .panel-body#pane-ask:not([hidden]) { display: flex; }
+  .panel-body#pane-ask > .ask-wrap { flex: 1; min-height: 0; }
+
+  /* Shared typography & cards inside panel */
+  .pane-head { display: flex; align-items: baseline; gap: 8px; }
+  .pane-head h2 { margin: 0; font: 400 16px/1.2 var(--serif); color: var(--heading); }
+  .pane-head small { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+  .card {
+    background: var(--field); border-radius: 13px; overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .card-title { font: 400 13.5px/1.2 var(--serif); color: var(--heading); }
+  .card-meta { margin-left: auto; font-size: 11.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+  .card-link {
+    border: 0; background: transparent; color: var(--accent); font-size: 12px; font-weight: 600; padding: 0;
+  }
+  .card-link:hover { text-decoration: underline; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; white-space: nowrap;
+  }
+  .badge.live { background: color-mix(in srgb, var(--live) 16%, transparent); color: var(--live); }
+  .badge.amber { background: color-mix(in srgb, var(--amber) 17%, transparent); color: var(--amber); }
+  .badge.danger { background: color-mix(in srgb, var(--danger) 17%, transparent); color: var(--danger); }
+  .badge.indigo { background: color-mix(in srgb, var(--indigo) 18%, transparent); color: var(--indigo); }
+  .badge.muted { background: var(--paper-raised); color: var(--muted); }
+
+  .btn-sm {
+    display: inline-flex; align-items: center; gap: 5px; height: 27px; padding: 0 9px;
+    border-radius: 8px; border: 1px solid var(--ctl-edge); background: var(--ctl-fill);
+    color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .btn-sm:hover { background: var(--ctl-fill-hover); }
+  .btn-sm.primary { background: var(--btn-bg); color: var(--btn-fg); border-color: transparent; }
+  .btn-sm.primary:hover { background: var(--btn-bg-hover); }
+  .btn-sm.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: transparent; }
+
+  /* ---------- GIT TAB ---------- */
+  .git-branch-bar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 11px;
+    border-radius: 11px; background: var(--field); border: 1px solid var(--line);
+    font-size: 12.5px; flex-wrap: wrap;
+  }
+  .git-branch-name { font: 600 12.5px var(--mono); color: var(--text); }
+  .git-branch-track { color: var(--muted); font-size: 12px; }
+  .git-branch-right { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+
+  /* Git Sub-tabs */
+  .sub-tabs {
+    flex: none; display: flex; align-items: center; gap: 4px; overflow-x: auto; padding-bottom: 2px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sub-tab[hidden] { display: none; }
+  .sub-tab {
+    flex: none; border: 0; background: transparent; color: var(--muted);
+    padding: 6px 8px 8px; font-size: 12px; font-weight: 600; position: relative;
+    display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  }
+  .sub-tab:hover { color: var(--text); }
+  .sub-tab[aria-selected="true"] { color: var(--text); }
+  .sub-tab[aria-selected="true"]::after {
+    content: ""; position: absolute; left: 6px; right: 6px; bottom: 0; height: 2px;
+    border-radius: 2px; background: var(--accent);
+  }
+  .sub-tab-count {
+    font-size: 10.5px; font-weight: 700; padding: 1px 5px; border-radius: 999px;
+    background: var(--paper-raised); color: var(--muted);
+  }
+  .sub-tab[aria-selected="true"] .sub-tab-count { background: var(--ctl-on); color: var(--accent); }
+
+  /* Pinned strip (Variant B) */
+  .pinned-strip {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .pinned-strip[hidden] { display: none; }
+  .pinned-card {
+    padding: 8px 10px; border-radius: 11px; background: var(--field); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 3px; text-align: left; width: 100%;
+  }
+  .pinned-card:hover { background: var(--paper-raised); }
+  .pinned-card-top { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+  .pinned-card b { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Rows inside Git cards */
+  .list-rows { display: flex; flex-direction: column; }
+  .row-item {
+    border: 0; background: transparent; width: 100%; text-align: left;
+    padding: 9px 12px; display: flex; flex-direction: column; gap: 4px;
+    border-top: 1px solid var(--line); transition: background .12s;
+  }
+  .row-item:first-child { border-top: 0; }
+  .row-item:hover { background: color-mix(in srgb, var(--paper-raised) 65%, transparent); }
+  .row-item.is-open { background: color-mix(in srgb, var(--paper-raised) 55%, transparent); }
+  .row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .row-title { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .row-sub { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .diff-stat { font-family: var(--mono); font-size: 11px; display: inline-flex; gap: 4px; }
+  .diff-stat .add { color: var(--live); }
+  .diff-stat .del { color: var(--danger); }
+
+  /* Inline expansion panels (diffs, pipeline logs, PR details) */
+  .inline-detail {
+    border-top: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 52%, var(--panel));
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12px;
+  }
+  .inline-detail[hidden] { display: none; }
+  .inline-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .code-block {
+    margin: 0; padding: 8px 10px; border-radius: 9px; background: var(--bg);
+    border: 1px solid var(--line); font: 11px/1.55 var(--mono); overflow-x: auto;
+  }
+  .code-line { display: block; padding: 0 4px; white-space: pre-wrap; word-break: break-word; }
+  .code-line.add { background: var(--add-bg); color: var(--add-fg); }
+  .code-line.del { background: var(--del-bg); color: var(--del-fg); }
+  .code-line.hunk { color: var(--indigo); opacity: .9; }
+  .code-line.err { background: var(--del-bg); color: var(--del-fg); font-weight: 600; }
+
+  .job-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+  .job-pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 8px;
+    background: var(--field); border: 1px solid var(--line); font-size: 11.5px; font-weight: 500;
+  }
+  .job-pill.err { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
+  .job-pill.run { border-color: color-mix(in srgb, var(--amber) 45%, transparent); color: var(--amber); }
+
+  /* Scope filter row for Changed Files */
+  .filter-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .scope-pills { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--bg); border: 1px solid var(--line); }
+  .scope-pill {
+    border: 0; background: transparent; color: var(--muted); padding: 3px 8px; border-radius: 7px; font-size: 11.5px; font-weight: 600;
+  }
+  .scope-pill[aria-pressed="true"] { background: var(--field); color: var(--text); }
+  .search-mini {
+    flex: 1; min-width: 110px; height: 28px; padding: 0 9px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 12px;
+  }
+
+  /* ---------- UNIFIED ACTIVITY MONITOR ---------- */
+  .monitor-strip {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
+  }
+  .stat-tile {
+    padding: 8px 9px; border-radius: 11px; background: var(--field); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .stat-tile b { font-size: 15px; color: var(--heading); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 5px; }
+  .stat-tile span { font-size: 11px; color: var(--muted); }
+
+  .task-row {
+    padding: 9px 12px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line);
+  }
+  .task-row:first-child { border-top: 0; }
+  .task-cmd { font: 500 12px var(--mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step-item {
+    display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 12.5px;
+  }
+  .step-item:first-child { border-top: 0; }
+  .step-tool { font: 600 11.5px var(--mono); color: var(--heading-soft); background: var(--bg); padding: 2px 6px; border-radius: 6px; }
+  .step-desc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .step-time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between; padding: 10px 12px;
+    border: 0; background: transparent; width: 100%; color: var(--text); font-size: 13px; font-weight: 500;
+    border-top: 1px solid var(--line);
+  }
+  .switch-row:first-child { border-top: 0; }
+  .switch-track {
+    width: 36px; height: 21px; border-radius: 999px; background: var(--paper-raised);
+    box-shadow: inset 0 0 0 1.5px var(--ctl-edge); position: relative; transition: background .18s;
+  }
+  .switch-track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px;
+    border-radius: 50%; background: var(--muted); transition: left .18s, background .18s;
+  }
+  .switch-row[aria-checked="true"] .switch-track { background: var(--accent); box-shadow: none; }
+  .switch-row[aria-checked="true"] .switch-track::after { left: 18px; background: var(--panel); }
+
+  details.fold {
+    background: var(--field); border-radius: 13px; border: 1px solid var(--line); overflow: hidden;
+  }
+  details.fold > summary {
+    list-style: none; padding: 10px 12px; display: flex; align-items: center; gap: 7px;
+    cursor: pointer; font: 400 13.5px var(--serif); color: var(--heading);
+  }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary .chev { font-family: var(--sans); color: var(--muted); transition: transform .15s; font-size: 14px; }
+  details.fold[open] > summary .chev { transform: rotate(90deg); }
+  details.fold > summary small { margin-left: auto; font-family: var(--sans); font-size: 11.5px; color: var(--muted); }
+  .fold-body { padding: 0 12px 11px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+  /* ---------- ASK TAB (renamed from btw) ---------- */
+  .ask-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 10px; }
+  .ask-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .ask-bubble { padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.48; }
+  .ask-bubble.me { align-self: flex-end; max-width: 88%; background: var(--paper-raised); color: var(--text); }
+  .ask-bubble.ai { align-self: flex-start; background: var(--field); border: 1px solid var(--line); color: var(--text); }
+  .ask-form { display: flex; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .ask-form input {
+    flex: 1; height: 36px; padding: 0 11px; border-radius: 10px; border: 1px solid var(--line-strong);
+    background: var(--field); color: var(--text); font-size: 13px;
+  }
+
+  /* ---------- STORY TAB (promoted to top-level) ---------- */
+  .story-hero {
+    padding: 12px 13px; border-radius: 13px; background: var(--field); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .story-hero h3 { margin: 0; font: 400 16px/1.25 var(--serif); color: var(--heading); }
+  .story-hero p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .story-diagram {
+    padding: 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .flow-node {
+    display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 9px;
+    background: var(--field); border: 1px solid var(--line-strong); font-size: 12px;
+  }
+  .flow-node b { color: var(--heading); }
+  .flow-node small { color: var(--muted); margin-left: auto; font-family: var(--mono); font-size: 11px; }
+  .flow-arrow { text-align: center; color: var(--accent); font-size: 12px; line-height: 1; }
+
+  /* ---------- Podcast Stage Overlay (when expanded from Top Menu) ---------- */
+  .stage-backdrop {
+    position: fixed; inset: 0; z-index: 80; background: rgba(12, 10, 8, 0.72);
+    backdrop-filter: blur(5px); display: grid; place-items: center; padding: 24px;
+  }
+  .stage-backdrop[hidden] { display: none; }
+  .stage-card {
+    width: min(760px, 100%); background: var(--panel); border: 1px solid var(--line-strong);
+    border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column;
+  }
+  .stage-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line);
+  }
+  .stage-head h2 { margin: 0; font: 400 18px var(--serif); color: var(--heading); }
+  .stage-canvas {
+    padding: 24px 26px; background: color-mix(in srgb, var(--bg) 65%, var(--panel));
+    display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 16px; align-items: center;
+  }
+  .host-card {
+    padding: 14px; border-radius: 14px; background: var(--field); border: 1px solid var(--line);
+    text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center;
+  }
+  .host-card.speaking { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent); }
+  .host-avatar {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--paper-raised);
+    display: grid; place-items: center; font-family: var(--serif); font-size: 18px; color: var(--heading);
+  }
+  .slide-board {
+    padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line-strong);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .slide-board small { color: var(--accent); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .slide-board b { font: 400 15px/1.3 var(--serif); color: var(--heading); }
+  .stage-controls {
+    padding: 14px 18px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 10px;
+  }
+
+  /* Responsive fallback */
+  @media (max-width: 960px) {
+    .app-shell { grid-template-columns: 1fr; }
+    .left-rail { display: none; }
+    .workspace { grid-template-columns: 1fr; }
+    .chat-card { display: none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Reviewer Controls Bar -->
+  <div class="mock-bar">
+    <span class="mock-badge">Mock · Not Built Yet</span>
+    <span class="mock-bar-title">Activity Panel Redesign</span>
+
+    <div class="mock-group" role="group" aria-label="Git layout option">
+      <span class="mock-group-label">Git layout</span>
+      <button type="button" class="mock-chip" data-git-variant="all-subtabs" aria-pressed="true">A: All default + Sub-tabs (Rec)</button>
+      <button type="button" class="mock-chip" data-git-variant="pinned-subtabs" aria-pressed="false">B: Pinned CI/PR strip + Sub-tabs</button>
+    </div>
+
+    <div class="mock-group" role="group" aria-label="Panel width">
+      <span class="mock-group-label">Width</span>
+      <button type="button" class="mock-chip" data-width="380px" aria-pressed="false">380px</button>
+      <button type="button" class="mock-chip" data-width="460px" aria-pressed="true">460px</button>
+      <button type="button" class="mock-chip" data-width="580px" aria-pressed="false">580px</button>
+    </div>
+
+    <div class="mock-group" role="group" aria-label="Theme">
+      <button type="button" class="mock-chip" data-theme-set="dark" aria-pressed="true">Dark</button>
+      <button type="button" class="mock-chip" data-theme-set="light" aria-pressed="false">Paper Light</button>
+    </div>
+
+    <div class="mock-spacer"></div>
+    <button type="button" class="mock-legend-btn" id="toggleChangesBtn" aria-expanded="false">What changed ▸</button>
+  </div>
+
+  <!-- Summary of Structural Changes -->
+  <div class="changes-drawer" id="changesDrawer" hidden>
+    <div class="change-pill">
+      <strong>1. Panel tabs: 6 → 4</strong>
+      <span><code>Activity · Ask · Git · Story</code>. Dropped <code>Files</code>, <code>Tasks</code>, and <code>More</code>.</span>
+    </div>
+    <div class="change-pill">
+      <strong>2. Files moved out</strong>
+      <span>Browse files lives in the top header <code>⋯</code> menu. Changed files stay first-class inside <code>Git</code>.</span>
+    </div>
+    <div class="change-pill">
+      <strong>3. btw → Ask &amp; Story → Top level</strong>
+      <span><code>btw</code> renamed to <code>Ask</code>. <code>Story</code> promoted out of <code>More</code> to its own top-level inline tab.</span>
+    </div>
+    <div class="change-pill">
+      <strong>4. Git all-on-screen (no modal)</strong>
+      <span>Pipelines, PRs, and Changed files show immediately inline with expandable diffs &amp; logs + sub-tabs.</span>
+    </div>
+    <div class="change-pill">
+      <strong>5. Unified Activity Monitor</strong>
+      <span>Merges live Agent Steps, Background Tasks (old <code>Tasks 1+</code>), switches, summary, stats &amp; rules.</span>
+    </div>
+    <div class="change-pill">
+      <strong>6. Podcast Playback → Top Menu</strong>
+      <span>Two-host podcast overview lives in the top header bar with inline mini-player &amp; expandable stage.</span>
+    </div>
+  </div>
+
+  <!-- Simulated Joint Bob Desktop Shell -->
+  <div class="app-shell">
+
+    <!-- Left Navigation Rail -->
+    <aside class="left-rail" aria-label="Workspace navigation">
+      <div class="brand-row">
+        <span class="brand-dot">B</span>
+        <strong>Joint Bob</strong>
+      </div>
+      <nav class="rail-nav">
+        <button type="button" class="rail-nav-item on"><span>Inbox</span><span>11</span></button>
+        <button type="button" class="rail-nav-item"><span>Projects</span></button>
+        <button type="button" class="rail-nav-item"><span>Board</span></button>
+        <button type="button" class="rail-nav-item"><span>Automations</span></button>
+      </nav>
+      <div class="rail-section-label">Running</div>
+      <button type="button" class="rail-chat on">
+        <b>Pre-sale booking orchestrator</b>
+        <small><span class="dot live"></span>crm-backend · 2m 14s</small>
+      </button>
+      <button type="button" class="rail-chat">
+        <b>Eval fixture harness cleanup</b>
+        <small><span class="dot amber"></span>crm-backend · needs you</small>
+      </button>
+      <button type="button" class="rail-chat">
+        <b>Webhook retry backoff</b>
+        <small><span class="dot muted"></span>crm-backend · review</small>
+      </button>
+    </aside>
+
+    <!-- Main Workspace: Top Header + Chat + Redesigned Right Panel -->
+    <div class="workspace" id="workspace">
+
+      <!-- TOP MENU / CONVERSATION HEADER -->
+      <header class="chat-topbar">
+        <div class="chat-title-block">
+          <h1>Pre-sale booking orchestrator</h1>
+          <span class="chat-project-pill">crm-backend</span>
+          <span class="status-pill"><span class="dot live"></span>Working</span>
+        </div>
+
+        <div class="chip-row">
+          <span class="meta-chip">Claude · Opus</span>
+          <span class="meta-chip">mac-studio</span>
+          <span>42% ctx · $0.48</span>
+        </div>
+
+        <div class="top-actions">
+          <!-- NEW: Podcast-style playback directly in the top menu! -->
+          <div id="podcastTopMount"></div>
+
+          <button type="button" class="top-btn danger" title="Stop agent">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+            Stop
+          </button>
+          <button type="button" class="top-btn ghost" title="Mark done">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.3 2.4 2.4 4.8-5"/></svg>
+            Done
+          </button>
+          <button type="button" class="top-btn active" title="Toggle right panel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg>
+            Panel
+          </button>
+
+          <!-- More (...) menu — now holds Browse Files! -->
+          <div class="more-menu-wrap">
+            <button type="button" class="top-btn ghost" id="topMoreBtn" aria-expanded="false" aria-haspopup="menu" title="More actions (Files moved here)">
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+            </button>
+            <div class="more-popover" id="topMoreMenu" role="menu" hidden>
+              <div class="more-group">Open</div>
+              <button type="button" class="more-item highlight" role="menuitem" onclick="toastHint('Opens project file explorer (moved from Activity panel)')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2.5h7.2a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
+                <span>Browse files</span>
+                <span class="moved-tag">Moved here</span>
+              </button>
+              <button type="button" class="more-item" role="menuitem">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 7 5 5-5 5M12.5 17h6.5"/></svg>
+                <span>Terminal</span>
+              </button>
+              <button type="button" class="more-item" role="menuitem">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/></svg>
+                <span>Browser</span>
+              </button>
+              <div class="more-rule"></div>
+              <div class="more-group">This conversation</div>
+              <button type="button" class="more-item" role="menuitem"><span>Rename</span></button>
+              <button type="button" class="more-item" role="menuitem"><span>Dashboard</span></button>
+              <button type="button" class="more-item" role="menuitem"><span>Automations</span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Chat Thread (left/middle context) -->
+      <main class="chat-card">
+        <div class="chat-messages">
+          <div class="msg user">
+            Fix the appointment booking fallback in <code>response_parser.py</code> and make sure the pre-sale eval suite passes before updating PR #418.
+          </div>
+          <div class="msg agent">
+            <button type="button" class="msg-turn-link" onclick="selectTopTab('activity')">
+              <span class="dot live"></span>14 steps · 2 running tasks · open in Activity →
+            </button>
+            <div>
+              I traced the malformed slot payload to <code>response_parser.py</code> when the knowledge tool returns an empty availability block. I updated the parser to fall back to the agent's slot clarification template and added fixture coverage in <code>backend/evals/test_harness.py</code>.
+              <br><br>
+              CI pipeline <strong>Backend Evals</strong> is running on <code>main</code> now, and I left the local eval watcher running in the background so you can monitor it from the unified Activity tab.
+            </div>
+          </div>
+          <div class="msg user">
+            Nice — check why the webhook smoke test failed on the last run too.
+          </div>
+          <div class="msg agent">
+            <button type="button" class="msg-turn-link" onclick="selectTopTab('git'); selectGitSubtab('pipelines');">
+              <span class="dot danger"></span>Webhook CI failed · view inline log in Git →
+            </button>
+            <div>
+              Looking at <code>webhook_service.py</code> and the failed step in <strong>Webhook Smoke Tests</strong>. You can expand the failed pipeline job directly in the <strong>Git</strong> tab without opening another screen.
+            </div>
+          </div>
+        </div>
+        <div class="chat-composer">
+          <input type="text" placeholder="Ask the agent to work…" readonly>
+          <button type="button" class="send-btn">Send</button>
+        </div>
+      </main>
+
+      <!-- =========================================================
+           REDESIGNED RIGHT-HAND ACTIVITY PANEL
+           Top-level tabs: [ Activity | Ask | Git 495 | Story ]
+           ========================================================= -->
+      <aside class="activity-panel" aria-label="Conversation panel">
+        <header class="panel-header">
+          <div class="seg-tabs" role="tablist" aria-label="Panel views">
+            <button type="button" role="tab" class="seg-tab" data-tab="activity" aria-selected="false">
+              <span class="seg-dot" title="Active work"></span>
+              <span>Activity</span>
+              <span class="seg-count">2</span>
+            </button>
+            <button type="button" role="tab" class="seg-tab" data-tab="ask" aria-selected="false">
+              <span>Ask</span>
+            </button>
+            <button type="button" role="tab" class="seg-tab" data-tab="git" aria-selected="true">
+              <span>Git</span>
+              <span class="seg-count">495</span>
+            </button>
+            <button type="button" role="tab" class="seg-tab" data-tab="story" aria-selected="false">
+              <span>Story</span>
+            </button>
+          </div>
+        </header>
+
+        <!-- ================= TAB 1: UNIFIED ACTIVITY MONITOR ================= -->
+        <section class="panel-body" id="pane-activity" hidden>
+          <div class="pane-head">
+            <h2>Activity monitor</h2>
+            <small>Live steps · tasks · controls</small>
+          </div>
+
+          <!-- Unified live status tiles -->
+          <div class="monitor-strip">
+            <div class="stat-tile">
+              <b><span class="dot live"></span>2m 14s</b>
+              <span>Agent time</span>
+            </div>
+            <div class="stat-tile">
+              <b>14</b>
+              <span>Steps</span>
+            </div>
+            <div class="stat-tile">
+              <b>2</b>
+              <span>Tasks live</span>
+            </div>
+            <div class="stat-tile">
+              <b>0</b>
+              <span>Failed</span>
+            </div>
+          </div>
+
+          <!-- Unified Background Tasks (replaces old Tasks 1+ tab & separate dialog!) -->
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">Running tasks</span>
+              <span class="badge live"><span class="dot live"></span>2 running</span>
+              <span class="card-meta">Inline · no modal</span>
+            </div>
+            <div class="task-row">
+              <div class="row-top">
+                <span class="dot live"></span>
+                <span class="task-cmd">pytest backend/evals -k presale --watch</span>
+                <button type="button" class="btn-sm" onclick="toggleInline('task-log-1')">Logs</button>
+                <button type="button" class="btn-sm danger">Stop</button>
+              </div>
+              <div class="row-sub"><span>mac-studio</span><span>·</span><span>Started 4m ago</span><span>·</span><span>12 passed, watching…</span></div>
+              <div class="inline-detail" id="task-log-1" hidden>
+                <pre class="code-block"><span class="code-line">backend/evals/test_harness.py::test_presale_booking_fallback PASSED [0.8s]</span><span class="code-line add">12 passed in 4.18s — watching for file changes…</span></pre>
+              </div>
+            </div>
+            <div class="task-row">
+              <div class="row-top">
+                <span class="dot live"></span>
+                <span class="task-cmd">uvicorn app.main:app --reload --port 8000</span>
+                <button type="button" class="btn-sm" onclick="toggleInline('task-log-2')">Logs</button>
+                <button type="button" class="btn-sm danger">Stop</button>
+              </div>
+              <div class="row-sub"><span>mac-studio</span><span>·</span><span>Started 18m ago</span><span>·</span><span>Listening :8000</span></div>
+              <div class="inline-detail" id="task-log-2" hidden>
+                <pre class="code-block"><span class="code-line">INFO:     Uvicorn running on http://127.0.0.1:8000</span><span class="code-line">INFO:     POST /webhooks/booking 200 OK (41ms)</span></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Agent Steps -->
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">Steps</span>
+              <span class="card-meta">14 tool calls</span>
+            </div>
+            <div class="step-item">
+              <span class="dot live"></span>
+              <span class="step-tool">read_file</span>
+              <span class="step-desc">backend/app/services/webhook_service.py</span>
+              <span class="step-time">now</span>
+            </div>
+            <div class="step-item">
+              <span class="dot muted"></span>
+              <span class="step-tool">edit_file</span>
+              <span class="step-desc">backend/app/services/multi_agent_orchestrator/response_parser.py</span>
+              <span class="step-time">1.2s</span>
+            </div>
+            <div class="step-item">
+              <span class="dot muted"></span>
+              <span class="step-tool">run_command</span>
+              <span class="step-desc">pytest backend/evals/test_harness.py</span>
+              <span class="step-time">4.2s</span>
+            </div>
+            <div class="step-item">
+              <span class="dot muted"></span>
+              <span class="step-tool">edit_file</span>
+              <span class="step-desc">backend/db_population/agents/prompts/pre-sale-agent/08-appointment-booking.md</span>
+              <span class="step-time">0.6s</span>
+            </div>
+          </div>
+
+          <!-- When it stops -->
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">When it stops</span>
+            </div>
+            <button type="button" class="switch-row" role="switch" aria-checked="false" onclick="toggleSwitch(this)">
+              <span>Answer for me</span>
+              <span class="switch-track"></span>
+            </button>
+            <button type="button" class="switch-row" role="switch" aria-checked="true" onclick="toggleSwitch(this)">
+              <span>Notify me</span>
+              <span class="switch-track"></span>
+            </button>
+          </div>
+
+          <!-- Running Summary, Instructions, Rules -->
+          <details class="fold" open>
+            <summary><span class="chev">›</span>Summary<small>Updated 1m ago</small></summary>
+            <div class="fold-body">
+              Fixed empty availability fallback in <code>response_parser.py</code>, aligned pre-sale booking prompts, added eval fixture coverage, and started investigating the webhook smoke failure.
+            </div>
+          </details>
+
+          <details class="fold">
+            <summary><span class="chev">›</span>Instructions &amp; skills<small>3 active</small></summary>
+            <div class="fold-body">
+              <code>CLAUDE.md</code> · <code>backend/evals/README.md</code> · Skill: <code>eval-runner</code>
+            </div>
+          </details>
+
+          <details class="fold">
+            <summary><span class="chev">›</span>Rule suggestions<small>1 pending</small></summary>
+            <div class="fold-body">
+              Always run <code>pytest backend/evals -k presale</code> after editing prompt templates in <code>db_population/agents/prompts/</code>.
+              <div style="margin-top:8px; display:flex; gap:6px;">
+                <button type="button" class="btn-sm primary">Add to knowledge</button>
+                <button type="button" class="btn-sm">Dismiss</button>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <!-- ================= TAB 2: ASK (RENAMED FROM BTW) ================= -->
+        <section class="panel-body" id="pane-ask" hidden>
+          <div class="pane-head">
+            <h2>Ask</h2>
+            <small>Side chat · read-only · doesn't interrupt agent</small>
+          </div>
+
+          <details class="fold">
+            <summary><span class="chev">›</span>Ask settings<small>Read-only · Sonnet</small></summary>
+            <div class="fold-body" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <label style="display:inline-flex; gap:5px; align-items:center;"><input type="checkbox" checked> Read-only</label>
+              <span class="meta-chip">Claude Sonnet</span>
+              <span class="meta-chip">Medium effort</span>
+            </div>
+          </details>
+
+          <div class="ask-wrap">
+            <div class="ask-messages" id="askMessages">
+              <div class="ask-bubble me">Why did <code>response_parser.py</code> break only on pre-sale bookings?</div>
+              <div class="ask-bubble ai">
+                <code>agent_knowledge_tool.py</code> returns <code>slots: []</code> instead of <code>None</code> when a dealer calendar is unlinked. The old parser checked <code>if slots is None</code>, so empty lists fell through to the confirmation builder and threw a <code>KeyError</code>.
+              </div>
+              <div class="ask-bubble me">Did we touch any database migrations?</div>
+              <div class="ask-bubble ai">No — only prompt templates, parser logic, webhook service, and eval fixtures. Zero migration files changed.</div>
+            </div>
+            <form class="ask-form" onsubmit="event.preventDefault(); sendAsk();">
+              <input type="text" id="askInput" placeholder="Ask about this conversation or repo…">
+              <button type="submit" class="btn-sm primary" style="height:36px; padding:0 13px;">Ask</button>
+            </form>
+          </div>
+        </section>
+
+        <!-- ================= TAB 3: GIT (ALL-ON-SCREEN + SUB-TABS, NO MODAL!) ================= -->
+        <section class="panel-body" id="pane-git">
+          <div class="pane-head">
+            <h2>Git</h2>
+            <small id="gitHeadMeta">1 pipeline running · 2 open PRs · 495 pending</small>
+          </div>
+
+          <!-- Branch + Repo Bar -->
+          <div class="git-branch-bar">
+            <span class="git-branch-name">main</span>
+            <span class="git-branch-track">→ origin/main ↓33</span>
+            <span class="git-branch-right">
+              <span class="badge live"><span class="dot live"></span>CI running</span>
+              <button type="button" class="btn-sm" style="height:24px; padding:0 7px;" title="Refresh Git, PRs and Pipelines">↻</button>
+            </span>
+          </div>
+
+          <!-- Variant B only: Pinned live CI & PR strip above sub-tabs -->
+          <div class="pinned-strip" id="gitPinnedStrip" hidden>
+            <button type="button" class="pinned-card" onclick="selectGitSubtab('pipelines')">
+              <div class="pinned-card-top"><span>Pipeline</span><span class="badge amber">Running · 1m 42s</span></div>
+              <b>Backend Evals · 3/5 jobs</b>
+            </button>
+            <button type="button" class="pinned-card" onclick="selectGitSubtab('prs')">
+              <div class="pinned-card-top"><span>PR #418</span><span class="badge live">✓ 4/5 checks</span></div>
+              <b>Pre-sale booking orchestrator</b>
+            </button>
+          </div>
+
+          <!-- Git Sub-tabs -->
+          <div class="sub-tabs" role="tablist" aria-label="Git views" id="gitSubtabs">
+            <button type="button" role="tab" class="sub-tab" data-git-sub="all" aria-selected="true">All</button>
+            <button type="button" role="tab" class="sub-tab" data-git-sub="changes" aria-selected="false">Changes <span class="sub-tab-count">495</span></button>
+            <button type="button" role="tab" class="sub-tab" data-git-sub="prs" aria-selected="false">PRs <span class="sub-tab-count">2</span></button>
+            <button type="button" role="tab" class="sub-tab" data-git-sub="pipelines" aria-selected="false">Pipelines <span class="sub-tab-count">1</span></button>
+            <button type="button" role="tab" class="sub-tab" data-git-sub="history" aria-selected="false">History</button>
+            <button type="button" role="tab" class="sub-tab" data-git-sub="reviews" aria-selected="false">Reviews</button>
+          </div>
+
+          <!-- SUB-TAB: ALL (Default on-screen dashboard — Pipelines + PRs + Changed files right away!) -->
+          <div class="git-subpane" id="git-sub-all" style="display:flex; flex-direction:column; gap:11px;">
+
+            <!-- 1. Running & Recent Pipelines -->
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Pipelines</span>
+                <span class="badge amber"><span class="dot amber"></span>1 running</span>
+                <span class="card-meta"><button type="button" class="card-link" onclick="selectGitSubtab('pipelines')">All runs →</button></span>
+              </div>
+              <div class="list-rows">
+                <div>
+                  <button type="button" class="row-item" onclick="toggleInline('all-pipe-1')">
+                    <div class="row-top">
+                      <span class="dot amber"></span>
+                      <span class="row-title">CI / Backend Evals</span>
+                      <span class="badge amber">Running · 1m 42s</span>
+                    </div>
+                    <div class="row-sub"><span>main · 9f3c2a1</span><span>·</span><span>3/5 jobs done</span><span>·</span><span>Click to inspect jobs</span></div>
+                  </button>
+                  <div class="inline-detail" id="all-pipe-1" hidden>
+                    <div class="job-pills">
+                      <span class="job-pill">✓ lint-python</span>
+                      <span class="job-pill">✓ unit-tests</span>
+                      <span class="job-pill">✓ prompt-schema</span>
+                      <span class="job-pill run">◌ presale-evals (48s)</span>
+                      <span class="job-pill">◌ build-image</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <button type="button" class="row-item" onclick="toggleInline('all-pipe-2')">
+                    <div class="row-top">
+                      <span class="dot danger"></span>
+                      <span class="row-title">Webhook Smoke Tests</span>
+                      <span class="badge danger">Failed · 6m ago</span>
+                    </div>
+                    <div class="row-sub"><span>PR #418</span><span>·</span><span>webhook-retry-test</span><span>·</span><span>Click for error log</span></div>
+                  </button>
+                  <div class="inline-detail" id="all-pipe-2" hidden>
+                    <div class="inline-toolbar">
+                      <span class="badge danger">✕ webhook-retry-test (exit 1)</span>
+                      <button type="button" class="btn-sm" onclick="selectTopTab('ask')">Ask AI why</button>
+                      <button type="button" class="btn-sm">Re-run failed</button>
+                    </div>
+                    <pre class="code-block"><span class="code-line">FAIL backend/tests/test_webhook_service.py::test_empty_slot_retry</span><span class="code-line err">AssertionError: expected status 200, got 502 (upstream timeout)</span><span class="code-line">  at webhook_service.py:142 in dispatch_booking_event</span></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Active Pull Requests -->
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Pull requests</span>
+                <span class="badge muted">2 open</span>
+                <span class="card-meta"><button type="button" class="card-link" onclick="selectGitSubtab('prs')">All PRs →</button></span>
+              </div>
+              <div class="list-rows">
+                <div>
+                  <button type="button" class="row-item" onclick="toggleInline('all-pr-418')">
+                    <div class="row-top">
+                      <span class="row-title">#418 Pre-sale appointment booking orchestration</span>
+                      <span class="badge amber">4/5 checks</span>
+                    </div>
+                    <div class="row-sub">
+                      <span>feat/presale-booking → main</span>
+                      <span class="diff-stat"><span class="add">+312</span><span class="del">-89</span></span>
+                      <span>8 files</span>
+                    </div>
+                  </button>
+                  <div class="inline-detail" id="all-pr-418" hidden>
+                    <div style="color:var(--muted);">Adds fallback slot clarification in <code>response_parser.py</code>, updates pre-sale agent prompts, and wires eval harness fixtures.</div>
+                    <div class="inline-toolbar">
+                      <button type="button" class="btn-sm primary" onclick="selectTopTab('story')">Explain PR in Story</button>
+                      <button type="button" class="btn-sm" onclick="selectGitSubtab('changes')">Inspect 8 files</button>
+                      <button type="button" class="btn-sm">Open on GitHub ↗</button>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <button type="button" class="row-item" onclick="toggleInline('all-pr-412')">
+                    <div class="row-top">
+                      <span class="row-title">#412 Eval harness fixture cleanup</span>
+                      <span class="badge live">✓ Approved</span>
+                    </div>
+                    <div class="row-sub">
+                      <span>chore/eval-fixtures → main</span>
+                      <span class="diff-stat"><span class="add">+64</span><span class="del">-140</span></span>
+                      <span>Ready to merge</span>
+                    </div>
+                  </button>
+                  <div class="inline-detail" id="all-pr-412" hidden>
+                    <div class="inline-toolbar">
+                      <button type="button" class="btn-sm primary" onclick="selectTopTab('story')">Explain PR in Story</button>
+                      <button type="button" class="btn-sm">Open on GitHub ↗</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Changed Files (inline diff — no separate Git review screen!) -->
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Changed files</span>
+                <span class="card-meta">
+                  <button type="button" class="card-link" onclick="selectGitSubtab('changes')">All 495 →</button>
+                </span>
+              </div>
+              <div style="padding:8px 12px; border-bottom:1px solid var(--line);" class="filter-bar">
+                <div class="scope-pills">
+                  <button type="button" class="scope-pill" aria-pressed="true" onclick="setFileScope(this, 'chat')">This chat (8)</button>
+                  <button type="button" class="scope-pill" aria-pressed="false" onclick="setFileScope(this, 'all')">All pending (495)</button>
+                </div>
+                <input type="search" class="search-mini" placeholder="Filter files…">
+              </div>
+              <div class="list-rows">
+                <div>
+                  <button type="button" class="row-item is-open" onclick="toggleInline('diff-1')">
+                    <div class="row-top">
+                      <span class="row-title">response_parser.py</span>
+                      <span class="diff-stat"><span class="add">+28</span><span class="del">-9</span></span>
+                      <span class="badge muted">modified</span>
+                    </div>
+                    <div class="row-sub"><span>backend/app/services/multi_agent_orchestrator</span></div>
+                  </button>
+                  <div class="inline-detail" id="diff-1">
+                    <div class="inline-toolbar">
+                      <span style="color:var(--muted); font-family:var(--mono); font-size:11px;">@@ -84,7 +84,11 @@</span>
+                      <span style="margin-left:auto; display:inline-flex; gap:5px;">
+                        <button type="button" class="btn-sm" onclick="selectTopTab('ask')">Ask AI</button>
+                        <button type="button" class="btn-sm" onclick="selectGitSubtab('reviews')">Review</button>
+                      </span>
+                    </div>
+                    <pre class="code-block"><span class="code-line"> def parse_booking_response(payload):</span><span class="code-line">     slots = payload.get("slots")</span><span class="code-line del">-    if slots is None:</span><span class="code-line add">+    if not slots:</span><span class="code-line add">+        return build_slot_clarification(payload)</span><span class="code-line">     return build_confirmation(slots[0])</span></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <button type="button" class="row-item" onclick="toggleInline('diff-2')">
+                    <div class="row-top">
+                      <span class="row-title">agent_knowledge_tool.py</span>
+                      <span class="diff-stat"><span class="add">+14</span><span class="del">-3</span></span>
+                      <span class="badge muted">modified</span>
+                    </div>
+                    <div class="row-sub"><span>backend/app/services</span></div>
+                  </button>
+                  <div class="inline-detail" id="diff-2" hidden>
+                    <pre class="code-block"><span class="code-line hunk">@@ -41,4 +41,7 @@</span><span class="code-line">     if not dealer.calendar_connected:</span><span class="code-line del">-        return {"slots": []}</span><span class="code-line add">+        return {"slots": [], "reason": "calendar_unlinked"}</span></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <button type="button" class="row-item" onclick="toggleInline('diff-3')">
+                    <div class="row-top">
+                      <span class="row-title">webhook_service.py</span>
+                      <span class="diff-stat"><span class="add">+19</span><span class="del">-6</span></span>
+                      <span class="badge muted">modified</span>
+                    </div>
+                    <div class="row-sub"><span>backend/app/services</span></div>
+                  </button>
+                  <div class="inline-detail" id="diff-3" hidden>
+                    <pre class="code-block"><span class="code-line hunk">@@ -138,5 +138,8 @@</span><span class="code-line"> async def dispatch_booking_event(event):</span><span class="code-line add">+    if event.status == "clarification_needed":</span><span class="code-line add">+        return await emit_soft_ack(event)</span></pre>
+                  </div>
+                </div>
+
+                <button type="button" class="row-item" onclick="selectGitSubtab('changes')">
+                  <div class="row-top">
+                    <span class="row-title">08-appointment-booking.md</span>
+                    <span class="diff-stat"><span class="add">+12</span><span class="del">-2</span></span>
+                    <span class="badge muted">modified</span>
+                  </div>
+                  <div class="row-sub"><span>backend/db_population/agents/prompts/pre-sale-agent</span></div>
+                </button>
+
+                <button type="button" class="row-item" onclick="selectGitSubtab('changes')">
+                  <div class="row-top">
+                    <span class="row-title">test_harness.py</span>
+                    <span class="diff-stat"><span class="add">+44</span><span class="del">-0</span></span>
+                    <span class="badge live">staged</span>
+                  </div>
+                  <div class="row-sub"><span>backend/evals</span></div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-TAB: CHANGES -->
+          <div class="git-subpane" id="git-sub-changes" hidden style="flex-direction:column; gap:10px;">
+            <div class="filter-bar">
+              <div class="scope-pills">
+                <button type="button" class="scope-pill" aria-pressed="true">This chat (8)</button>
+                <button type="button" class="scope-pill" aria-pressed="false">All pending (495)</button>
+              </div>
+              <input type="search" class="search-mini" placeholder="Search 495 changed files…">
+            </div>
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Inline diff explorer</span>
+                <span class="card-meta">Click any file to expand diff</span>
+              </div>
+              <div class="list-rows">
+                <div>
+                  <button type="button" class="row-item is-open" onclick="toggleInline('chg-diff-1')">
+                    <div class="row-top"><span class="row-title">response_parser.py</span><span class="diff-stat"><span class="add">+28</span><span class="del">-9</span></span><span class="badge muted">modified</span></div>
+                    <div class="row-sub"><span>backend/app/services/multi_agent_orchestrator</span></div>
+                  </button>
+                  <div class="inline-detail" id="chg-diff-1">
+                    <div class="inline-toolbar">
+                      <button type="button" class="btn-sm" onclick="selectTopTab('ask')">Ask AI about this file</button>
+                      <button type="button" class="btn-sm">Stage file</button>
+                    </div>
+                    <pre class="code-block"><span class="code-line hunk">@@ -84,7 +84,11 @@</span><span class="code-line"> def parse_booking_response(payload):</span><span class="code-line">     slots = payload.get("slots")</span><span class="code-line del">-    if slots is None:</span><span class="code-line add">+    if not slots:</span><span class="code-line add">+        return build_slot_clarification(payload)</span><span class="code-line">     return build_confirmation(slots[0])</span></pre>
+                  </div>
+                </div>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">TASKS.md</span><span class="diff-stat"><span class="add">+6</span><span class="del">-1</span></span><span class="badge muted">modified</span></div><div class="row-sub"><span>root</span></div></button>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">agent_knowledge_tool.py</span><span class="diff-stat"><span class="add">+14</span><span class="del">-3</span></span><span class="badge muted">modified</span></div><div class="row-sub"><span>backend/app/services</span></div></button>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">webhook_service.py</span><span class="diff-stat"><span class="add">+19</span><span class="del">-6</span></span><span class="badge muted">modified</span></div><div class="row-sub"><span>backend/app/services</span></div></button>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">08-appointment-booking.md</span><span class="diff-stat"><span class="add">+12</span><span class="del">-2</span></span><span class="badge muted">modified</span></div><div class="row-sub"><span>backend/db_population/agents/prompts/pre-sale-agent</span></div></button>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">robert.md</span><span class="diff-stat"><span class="add">+9</span><span class="del">-4</span></span><span class="badge muted">modified</span></div><div class="row-sub"><span>backend/db_population/agents/prompts</span></div></button>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">__init__.py</span><span class="diff-stat"><span class="add">+5</span><span class="del">-0</span></span><span class="badge muted">modified</span></div><div class="row-sub"><span>backend/evals/fixtures</span></div></button>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">test_harness.py</span><span class="diff-stat"><span class="add">+44</span><span class="del">-0</span></span><span class="badge live">staged</span></div><div class="row-sub"><span>backend/evals</span></div></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-TAB: PRS -->
+          <div class="git-subpane" id="git-sub-prs" hidden style="flex-direction:column; gap:10px;">
+            <div class="filter-bar">
+              <div class="scope-pills">
+                <button type="button" class="scope-pill" aria-pressed="true">Open (2)</button>
+                <button type="button" class="scope-pill" aria-pressed="false">Merged</button>
+                <button type="button" class="scope-pill" aria-pressed="false">Closed</button>
+              </div>
+              <input type="search" class="search-mini" placeholder="Filter pull requests…">
+            </div>
+            <div class="card">
+              <div class="list-rows">
+                <div class="row-item is-open">
+                  <div class="row-top"><span class="row-title">#418 Pre-sale appointment booking orchestration</span><span class="badge amber">4/5 checks</span></div>
+                  <div class="row-sub"><span>ilia · updated 3m ago</span><span>·</span><span>feat/presale-booking → main</span><span class="diff-stat"><span class="add">+312</span><span class="del">-89</span></span></div>
+                </div>
+                <div class="inline-detail">
+                  <div class="job-pills">
+                    <span class="job-pill">✓ lint</span>
+                    <span class="job-pill">✓ unit-tests</span>
+                    <span class="job-pill run">◌ presale-evals</span>
+                    <span class="job-pill err">✕ webhook-smoke</span>
+                  </div>
+                  <div class="inline-toolbar">
+                    <button type="button" class="btn-sm primary" onclick="selectTopTab('story')">Explain PR in Story</button>
+                    <button type="button" class="btn-sm" onclick="selectTopTab('ask')">Ask AI</button>
+                    <button type="button" class="btn-sm">GitHub ↗</button>
+                  </div>
+                </div>
+                <div class="row-item">
+                  <div class="row-top"><span class="row-title">#412 Eval harness fixture cleanup</span><span class="badge live">✓ Approved</span></div>
+                  <div class="row-sub"><span>ilia · updated 2h ago</span><span>·</span><span>chore/eval-fixtures → main</span><span class="diff-stat"><span class="add">+64</span><span class="del">-140</span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-TAB: PIPELINES -->
+          <div class="git-subpane" id="git-sub-pipelines" hidden style="flex-direction:column; gap:10px;">
+            <div class="filter-bar">
+              <div class="scope-pills">
+                <button type="button" class="scope-pill" aria-pressed="true">All</button>
+                <button type="button" class="scope-pill" aria-pressed="false">Running (1)</button>
+                <button type="button" class="scope-pill" aria-pressed="false">Failed (1)</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="list-rows">
+                <div class="row-item">
+                  <div class="row-top"><span class="dot amber"></span><span class="row-title">CI / Backend Evals #942</span><span class="badge amber">Running · 1m 42s</span></div>
+                  <div class="row-sub"><span>main · 9f3c2a1</span><span>·</span><span>3/5 jobs completed</span></div>
+                </div>
+                <div class="row-item is-open">
+                  <div class="row-top"><span class="dot danger"></span><span class="row-title">Webhook Smoke Tests #941</span><span class="badge danger">Failed · 6m ago</span></div>
+                  <div class="row-sub"><span>PR #418</span><span>·</span><span>webhook-retry-test</span></div>
+                </div>
+                <div class="inline-detail">
+                  <div class="inline-toolbar">
+                    <button type="button" class="btn-sm" onclick="selectTopTab('ask')">Ask AI about failure</button>
+                    <button type="button" class="btn-sm">Re-run failed jobs</button>
+                  </div>
+                  <pre class="code-block"><span class="code-line">pytest backend/tests/test_webhook_service.py -q</span><span class="code-line err">FAILED test_empty_slot_retry - AssertionError: 502 != 200</span><span class="code-line">E   webhook_service.py:142: UpstreamTimeoutError</span></pre>
+                </div>
+                <div class="row-item">
+                  <div class="row-top"><span class="dot live"></span><span class="row-title">Lint &amp; Typecheck #940</span><span class="badge live">Passed · 14m ago</span></div>
+                  <div class="row-sub"><span>main · 4d18b0e</span><span>·</span><span>38s</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-TAB: HISTORY -->
+          <div class="git-subpane" id="git-sub-history" hidden style="flex-direction:column; gap:10px;">
+            <div class="card">
+              <div class="card-head"><span class="card-title">Recent commits</span><span class="card-meta">3 in this chat</span></div>
+              <div class="list-rows">
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">Handle empty availability slots in response parser</span><span class="badge indigo">this chat</span></div><div class="row-sub"><span>9f3c2a1</span><span>·</span><span>12m ago</span><span>·</span><span>3 files</span></div></button>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">Add pre-sale appointment fallback fixtures</span><span class="badge indigo">this chat</span></div><div class="row-sub"><span>4d18b0e</span><span>·</span><span>28m ago</span><span>·</span><span>2 files</span></div></button>
+                <button type="button" class="row-item"><div class="row-top"><span class="row-title">Tune robert.md slot clarification prompt</span><span class="badge indigo">this chat</span></div><div class="row-sub"><span>1a7e92c</span><span>·</span><span>41m ago</span><span>·</span><span>2 files</span></div></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-TAB: REVIEWS -->
+          <div class="git-subpane" id="git-sub-reviews" hidden style="flex-direction:column; gap:10px;">
+            <div class="card" style="padding:11px 12px; display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span class="meta-chip">Claude · Opus</span>
+                <span class="meta-chip">High effort</span>
+                <button type="button" class="btn-sm primary" style="margin-left:auto;">Generate review</button>
+              </div>
+              <small style="color:var(--muted); font-size:12px;">Read-only reviewer inspects this conversation's diff inline.</small>
+            </div>
+            <div class="card">
+              <div class="card-head"><span class="card-title">Review findings</span><span class="badge amber">2 notes</span></div>
+              <div class="list-rows">
+                <div class="row-item">
+                  <div class="row-top"><span class="row-title">webhook_service.py:142</span><span class="badge danger">Bug risk</span></div>
+                  <div class="row-sub"><span>Soft ack skips retry headers when dealer calendar returns HTTP 502.</span></div>
+                </div>
+                <div class="row-item">
+                  <div class="row-top"><span class="row-title">response_parser.py:87</span><span class="badge live">Clean</span></div>
+                  <div class="row-sub"><span>Fallback properly handles both <code>None</code> and empty list <code>[]</code>.</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= TAB 4: STORY (PROMOTED TO TOP-LEVEL!) ================= -->
+        <section class="panel-body" id="pane-story" hidden>
+          <div class="pane-head">
+            <h2>Story</h2>
+            <small>Up to date · 4m ago</small>
+          </div>
+
+          <!-- Source & Actions -->
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span class="meta-chip">This chat · 8 files</span>
+            <button type="button" class="btn-sm">Explain PR #418</button>
+            <button type="button" class="btn-sm" style="margin-left:auto;">Export</button>
+            <button type="button" class="btn-sm">↻</button>
+          </div>
+
+          <!-- Story section sub-tabs -->
+          <div class="sub-tabs" role="tablist" id="storySubtabs">
+            <button type="button" class="sub-tab" data-story-sub="overview" aria-selected="true">Overview</button>
+            <button type="button" class="sub-tab" data-story-sub="conversation" aria-selected="false">Conversation</button>
+            <button type="button" class="sub-tab" data-story-sub="examples" aria-selected="false">Examples</button>
+            <button type="button" class="sub-tab" data-story-sub="implementation" aria-selected="false">Implementation</button>
+          </div>
+
+          <div class="story-subpane" id="story-sub-overview" style="display:flex; flex-direction:column; gap:10px;">
+            <div class="story-hero">
+              <h3>Graceful fallback when a dealer calendar has no linked slots</h3>
+              <p>Prevents pre-sale booking crashes when <code>agent_knowledge_tool</code> returns an empty slot array by routing cleanly to slot clarification and adding regression evals.</p>
+            </div>
+            <div class="story-diagram">
+              <div style="font-size:11.5px; font-weight:700; color:var(--muted);">FLOW</div>
+              <div class="flow-node"><b>1. Knowledge lookup</b><small>agent_knowledge_tool.py</small></div>
+              <div class="flow-arrow">↓ slots = []</div>
+              <div class="flow-node" style="border-color:var(--accent);"><b>2. Parser checks empty list</b><small>response_parser.py</small></div>
+              <div class="flow-arrow">↓ fallback</div>
+              <div class="flow-node"><b>3. Clarification prompt + soft ack</b><small>08-appointment-booking.md</small></div>
+            </div>
+            <div class="card" style="padding:10px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <div style="font-size:12.5px; color:var(--muted);">Want the 2-host audio walkthrough?</div>
+              <button type="button" class="btn-sm primary" onclick="startPodcastFromStory()">Play in top bar ▶</button>
+            </div>
+          </div>
+
+          <div class="story-subpane" id="story-sub-conversation" hidden style="flex-direction:column; gap:8px;">
+            <div class="card">
+              <div class="list-rows">
+                <div class="row-item"><div class="row-top"><span class="row-title">Turn 1 · Diagnosed empty slot crash</span><span class="badge muted">11:02</span></div><div class="row-sub"><span>Traced KeyError to truthiness check in response_parser.py</span></div></div>
+                <div class="row-item"><div class="row-top"><span class="row-title">Turn 2 · Added eval fixtures &amp; prompt guard</span><span class="badge muted">11:09</span></div><div class="row-sub"><span>12/12 pre-sale evals passing locally</span></div></div>
+                <div class="row-item"><div class="row-top"><span class="row-title">Turn 3 · Investigating webhook smoke failure</span><span class="badge amber">in progress</span></div><div class="row-sub"><span>Inspecting 502 retry path in webhook_service.py</span></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="story-subpane" id="story-sub-examples" hidden style="flex-direction:column; gap:8px;">
+            <div class="card">
+              <div class="list-rows">
+                <div class="row-item"><div class="row-top"><span class="row-title">Calendar linked with open slots</span><span class="badge live">Happy path</span></div><div class="row-sub"><span>Returns earliest available slot and books immediately.</span></div></div>
+                <div class="row-item"><div class="row-top"><span class="row-title">Calendar unlinked (empty array)</span><span class="badge amber">Edge case</span></div><div class="row-sub"><span>Asks customer for preferred day/time instead of crashing.</span></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="story-subpane" id="story-sub-implementation" hidden style="flex-direction:column; gap:8px;">
+            <div class="card">
+              <div class="list-rows">
+                <button type="button" class="row-item" onclick="selectTopTab('git'); selectGitSubtab('changes');">
+                  <div class="row-top"><span class="row-title">Orchestrator Parser</span><span class="badge muted">response_parser.py →</span></div>
+                  <div class="row-sub"><span>Switched None check to empty-sequence guard + clarification builder.</span></div>
+                </button>
+                <button type="button" class="row-item" onclick="selectTopTab('git'); selectGitSubtab('changes');">
+                  <div class="row-top"><span class="row-title">Eval Harness</span><span class="badge muted">test_harness.py →</span></div>
+                  <div class="row-sub"><span>Added unlinked-calendar fixture and assertions.</span></div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </aside>
+    </div>
+  </div>
+
+  <!-- Expanded Podcast Stage Modal (opened from Top Menu mini-player ↗) -->
+  <div class="stage-backdrop" id="podcastStage" hidden>
+    <div class="stage-card" role="dialog" aria-modal="true" aria-label="Podcast overview stage">
+      <div class="stage-head">
+        <h2>Maya &amp; Jonah · Pre-sale booking orchestrator</h2>
+        <span class="badge live" style="margin-left:auto;">Chapter 2 of 4</span>
+        <button type="button" class="btn-sm" onclick="closeStage()">Dock to top bar</button>
+      </div>
+      <div class="stage-canvas">
+        <div class="host-card speaking">
+          <div class="host-avatar">M</div>
+          <b>Maya</b>
+          <small style="color:var(--accent); font-size:11.5px;">Speaking…</small>
+        </div>
+        <div class="slide-board">
+          <small>Chapter 2 · The Bug</small>
+          <b>Why an empty list slipped past the guard</b>
+          <p style="margin:0; font-size:12.5px; color:var(--muted);"><code>slots: []</code> wasn't <code>None</code>, so the confirmation builder indexed <code>slots[0]</code> and crashed.</p>
+        </div>
+        <div class="host-card">
+          <div class="host-avatar">J</div>
+          <b>Jonah</b>
+          <small style="color:var(--muted); font-size:11.5px;">Listening</small>
+        </div>
+      </div>
+      <div class="stage-controls">
+        <button type="button" class="btn-sm primary" onclick="togglePodcastPlay()">⏸ Pause</button>
+        <div class="podcast-bar" style="flex:1; height:6px;"><i style="width:42%;"></i></div>
+        <span style="font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums;">1:24 / 4:10</span>
+        <button type="button" class="btn-sm" onclick="cycleSpeed()">1.25×</button>
+        <button type="button" class="btn-sm" onclick="closeStage(); selectTopTab('ask');">Ask hosts</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  /* ---------- Top-level Panel Tabs ---------- */
+  function selectTopTab(name) {
+    document.querySelectorAll('.seg-tab').forEach(btn => {
+      btn.setAttribute('aria-selected', String(btn.dataset.tab === name));
+    });
+    ['activity', 'ask', 'git', 'story'].forEach(pane => {
+      document.getElementById('pane-' + pane).hidden = pane !== name;
+    });
+  }
+  document.querySelectorAll('.seg-tab').forEach(btn => {
+    btn.addEventListener('click', () => selectTopTab(btn.dataset.tab));
+  });
+
+  /* ---------- Git Sub-tabs & Layout Variants ---------- */
+  let gitVariant = 'all-subtabs';
+  function selectGitSubtab(name) {
+    document.querySelectorAll('#gitSubtabs .sub-tab').forEach(btn => {
+      btn.setAttribute('aria-selected', String(btn.dataset.gitSub === name));
+    });
+    document.querySelectorAll('.git-subpane').forEach(p => {
+      const match = p.id === 'git-sub-' + name;
+      p.hidden = !match;
+      p.style.display = match ? 'flex' : 'none';
+    });
+  }
+  document.querySelectorAll('#gitSubtabs .sub-tab').forEach(btn => {
+    btn.addEventListener('click', () => selectGitSubtab(btn.dataset.gitSub));
+  });
+
+  function setGitVariant(variant) {
+    gitVariant = variant;
+    const allTab = document.querySelector('#gitSubtabs [data-git-sub="all"]');
+    const pinned = document.getElementById('gitPinnedStrip');
+    if (variant === 'pinned-subtabs') {
+      allTab.hidden = true;
+      pinned.hidden = false;
+      selectGitSubtab('changes');
+    } else {
+      allTab.hidden = false;
+      pinned.hidden = true;
+      selectGitSubtab('all');
+    }
+    document.querySelectorAll('[data-git-variant]').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.gitVariant === variant));
+    });
+  }
+  document.querySelectorAll('[data-git-variant]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectTopTab('git');
+      setGitVariant(btn.dataset.gitVariant);
+    });
+  });
+
+  /* ---------- Story Sub-tabs ---------- */
+  document.querySelectorAll('#storySubtabs .sub-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.storySub;
+      document.querySelectorAll('#storySubtabs .sub-tab').forEach(b => b.setAttribute('aria-selected', String(b === btn)));
+      document.querySelectorAll('.story-subpane').forEach(p => {
+        const match = p.id === 'story-sub-' + name;
+        p.hidden = !match;
+        p.style.display = match ? 'flex' : 'none';
+      });
+    });
+  });
+
+  /* ---------- Inline expanders & switches ---------- */
+  function toggleInline(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.hidden = !el.hidden;
+    const trigger = el.previousElementSibling;
+    if (trigger) trigger.classList.toggle('is-open', !el.hidden);
+  }
+  function toggleSwitch(el) {
+    const on = el.getAttribute('aria-checked') === 'true';
+    el.setAttribute('aria-checked', String(!on));
+  }
+  function setFileScope(btn) {
+    btn.parentElement.querySelectorAll('.scope-pill').forEach(p => p.setAttribute('aria-pressed', String(p === btn)));
+  }
+
+  /* ---------- Ask chat mock ---------- */
+  function sendAsk() {
+    const input = document.getElementById('askInput');
+    const text = input.value.trim();
+    if (!text) return;
+    const box = document.getElementById('askMessages');
+    const me = document.createElement('div');
+    me.className = 'ask-bubble me';
+    me.textContent = text;
+    const ai = document.createElement('div');
+    ai.className = 'ask-bubble ai';
+    ai.textContent = 'Checked the active conversation and diff — everything stays read-only here without interrupting the main agent.';
+    box.append(me, ai);
+    input.value = '';
+    box.scrollTop = box.scrollHeight;
+  }
+
+  /* ---------- Top Menu Podcast-Style Player ---------- */
+  // States: 'idle' | 'generating' | 'playing' | 'paused'
+  let podcastState = 'playing';
+  let podcastSpeed = '1.25×';
+  const speeds = ['1×', '1.25×', '1.5×', '2×'];
+
+  function renderPodcastTop() {
+    const mount = document.getElementById('podcastTopMount');
+    if (podcastState === 'idle') {
+      mount.innerHTML = `
+        <button type="button" class="podcast-top" onclick="startPodcast()" title="Play two-host podcast overview">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 13a8 8 0 0 1 16 0"/><rect x="3" y="13" width="4" height="7" rx="1.5"/><rect x="17" y="13" width="4" height="7" rx="1.5"/></svg>
+          <span>Listen</span>
+        </button>`;
+      return;
+    }
+    if (podcastState === 'generating') {
+      mount.innerHTML = `
+        <div class="podcast-top is-generating" role="status">
+          <span class="dot amber"></span>
+          <span>Writing podcast… 0:18</span>
+          <button type="button" class="podcast-mini-btn" onclick="podcastState='playing'; renderPodcastTop();" title="Skip to playing state (mock)">Ready →</button>
+        </div>`;
+      return;
+    }
+    const playing = podcastState === 'playing';
+    mount.innerHTML = `
+      <div class="podcast-top is-playing" role="region" aria-label="Podcast player">
+        <button type="button" class="podcast-play-dot" onclick="togglePodcastPlay()" title="${playing ? 'Pause' : 'Play'}">
+          ${playing
+            ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'}
+        </button>
+        ${playing ? '<span class="podcast-wave" aria-hidden="true"><i></i><i></i><i></i></span>' : ''}
+        <span class="podcast-meta">
+          <b>Ch 2/4</b>
+          <span class="podcast-bar"><i></i></span>
+          <small>1:24</small>
+        </span>
+        <button type="button" class="podcast-mini-btn" onclick="cycleSpeed()" title="Playback speed">${podcastSpeed}</button>
+        <button type="button" class="podcast-mini-btn" onclick="openStage()" title="Open full visual stage">↗</button>
+        <button type="button" class="podcast-mini-btn" onclick="stopPodcast()" title="Close player">×</button>
+      </div>`;
+  }
+  function startPodcast() {
+    podcastState = 'generating';
+    renderPodcastTop();
+    setTimeout(() => {
+      if (podcastState === 'generating') { podcastState = 'playing'; renderPodcastTop(); }
+    }, 1100);
+  }
+  function startPodcastFromStory() {
+    podcastState = 'playing';
+    renderPodcastTop();
+  }
+  function togglePodcastPlay() {
+    podcastState = podcastState === 'playing' ? 'paused' : 'playing';
+    renderPodcastTop();
+  }
+  function stopPodcast() {
+    podcastState = 'idle';
+    renderPodcastTop();
+  }
+  function cycleSpeed() {
+    podcastSpeed = speeds[(speeds.indexOf(podcastSpeed) + 1) % speeds.length];
+    renderPodcastTop();
+  }
+  function openStage() { document.getElementById('podcastStage').hidden = false; }
+  function closeStage() { document.getElementById('podcastStage').hidden = true; }
+  renderPodcastTop();
+
+  /* ---------- Top More (...) Popover ---------- */
+  const topMoreBtn = document.getElementById('topMoreBtn');
+  const topMoreMenu = document.getElementById('topMoreMenu');
+  topMoreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = topMoreMenu.hidden;
+    topMoreMenu.hidden = !open;
+    topMoreBtn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', () => {
+    topMoreMenu.hidden = true;
+    topMoreBtn.setAttribute('aria-expanded', 'false');
+  });
+
+  function toastHint(msg) {
+    topMoreMenu.hidden = true;
+    const t = document.createElement('div');
+    t.textContent = msg;
+    Object.assign(t.style, {
+      position: 'fixed', bottom: '18px', left: '50%', transform: 'translateX(-50%)',
+      background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--accent)',
+      padding: '8px 14px', borderRadius: '11px', fontSize: '13px', boxShadow: 'var(--shadow)', zIndex: 100
+    });
+    document.body.append(t);
+    setTimeout(() => t.remove(), 2600);
+  }
+
+  /* ---------- Mockup Chrome Controls ---------- */
+  document.querySelectorAll('[data-width]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('workspace').style.setProperty('--panel-w', btn.dataset.width);
+      document.querySelectorAll('[data-width]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+    });
+  });
+  document.querySelectorAll('[data-theme-set]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.documentElement.setAttribute('data-theme', btn.dataset.themeSet);
+      document.querySelectorAll('[data-theme-set]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+    });
+  });
+  document.getElementById('toggleChangesBtn').addEventListener('click', (e) => {
+    const drawer = document.getElementById('changesDrawer');
+    drawer.hidden = !drawer.hidden;
+    e.currentTarget.setAttribute('aria-expanded', String(!drawer.hidden));
+    e.currentTarget.textContent = drawer.hidden ? 'What changed ▸' : 'What changed ▾';
+  });
+
+  /* ---------- Optional URL params for preview snapshots ---------- */
+  const params = new URLSearchParams(location.search);
+  if (params.get('tab')) selectTopTab(params.get('tab'));
+  if (params.get('variant')) setGitVariant(params.get('variant'));
+  if (params.get('sub')) selectGitSubtab(params.get('sub'));
+  if (params.get('menu') === 'open') { topMoreMenu.hidden = false; topMoreBtn.setAttribute('aria-expanded', 'true'); }
+  if (params.get('podcast')) { podcastState = params.get('podcast'); renderPodcastTop(); }
+  if (params.get('theme')) document.documentElement.setAttribute('data-theme', params.get('theme'));
+</script>
+</body>
+</html>

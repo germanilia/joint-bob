@@ -626,7 +626,9 @@ async function openSavedStory(page: Page, environment: { username: string; passw
   // The conversation becomes active a moment after its card is clicked.
   const opened = () => fixture.via === "overview" ? (fixture.overviewPosts?.length ?? 0) > 0 : page.locator("#gitReviewDialog[open]").count();
   for (let attempt = 0; attempt < 40 && !(await opened()); attempt += 1) {
-    await (await reach(page, fixture.via === "overview" ? "activity-overview-button" : "activity-story-button")).click();
+    const trigger = await reach(page, fixture.via === "overview" ? "activity-overview-button" : "activity-story-button");
+    if (await trigger.isDisabled()) { await page.waitForTimeout(250); continue; }
+    await trigger.click();
     if (fixture.answerVoice) {
       // Until the conversation is active the click only says so; once it is, the first-use voice question opens.
       try { await page.getByTestId("choice-dialog").waitFor({ timeout: 2_000 }); } catch { continue; }
@@ -883,7 +885,7 @@ test("Activity overview plays the drawn movie from the activity panel without a 
   assert.equal(await page.getByTestId("activity-overview-button").getAttribute("aria-label"), "Activity overview");
 });
 
-test("the details column keeps Activity as a segment, and More holds the side chat, Story and Overview, each with an icon", { timeout: 120_000 }, async (t) => {
+test("the details column shows Activity, Ask, Git and Story on one row, and Podcast playback lives in the top header", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await page.goto(node.url);
   await page.getByTestId("login-username-input").fill(environment.username);
@@ -892,17 +894,15 @@ test("the details column keeps Activity as a segment, and More holds the side ch
   await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await page.locator("#sessionList .session-card").first().click();
   if (await page.getByTestId("chat-activity-toggle").getAttribute("aria-expanded") !== "true") await page.getByTestId("chat-activity-toggle").click();
-  // The desktop workspace shows Activity, Files, Git and Tasks as one segmented row; the side chat, Story and the
-  // Activity overview are the rows of its More menu.
   await page.getByTestId("activity-activity-tab").waitFor();
-  const segments = ["activity-activity-tab", "details-files-tab", "details-git-tab", "details-tasks-tab", "details-more-button"];
+  const segments = ["activity-activity-tab", "activity-chat-tab", "details-git-tab", "details-story-tab"];
   const middles = await page.evaluate((ids) => ids.map((id) => { const box = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect(); return Math.round(box.top + box.height / 2); }), segments);
   assert.ok(Math.max(...middles) - Math.min(...middles) <= 2, `every segment sits on one row, got ${JSON.stringify(middles)}`);
-  await page.getByTestId("details-more-button").click();
-  for (const id of ["activity-chat-tab", "activity-story-button", "activity-overview-button"]) {
-    assert.equal(await page.getByTestId(id).isVisible(), true, `${id} is in More`);
-    assert.equal(await page.getByTestId(id).locator("svg").isVisible(), true, `${id} has an icon`);
-  }
+  assert.equal(await page.getByTestId("chat-head-actions").getByTestId("activity-overview-button").isVisible(), true, "Podcast overview lives in top menu");
+  assert.equal(await page.getByTestId("activity-overview-button").locator("svg").isVisible(), true, "Podcast button has an icon");
+  await page.getByTestId("details-story-tab").click();
+  assert.equal(await page.getByTestId("details-story").isVisible(), true, "Story opens inline at top level");
+  assert.equal(await page.getByTestId("activity-story-button").isVisible(), true, "Story button stays reachable inside Story pane");
 });
 
 test("Activity overview asks once which voice narrates, saves it, and installs the open-source voice where the project is narrated", { timeout: 150_000 }, async (t) => {
