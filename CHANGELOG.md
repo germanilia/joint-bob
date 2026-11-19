@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.327.2 — 2026-11-19
+
+- Removed four stray backup files that were published with the last release. Nothing in the app changed.
+
 ## 2.327.1 — 2026-11-19
 
 - **Hide automations** in the Inbox: a switch under the State | Project | Folder row (and in the Filter of the Show all page and the phone's Home) leaves the conversations that schedules and webhooks start out of every list: the groups, by project, by folder, Pinned, Show all and Home. The choice is kept in this browser.
