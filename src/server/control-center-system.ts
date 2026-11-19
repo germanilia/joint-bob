@@ -2,7 +2,7 @@ import type { AuthSession } from "../auth.js";
 import { bobDatabase, readBobSettings } from "../control-center/bob-store.js";
 import { otherPersonsMachine } from "../control-center/clusters-data.js";
 import { systemMessages, type SystemMessage } from "../control-center/system-messages.js";
-import { productionGuard } from "../guardian/settings.js";
+import { productionGuardCoverage } from "../guardian/settings.js";
 import { peerAway } from "../peer-presence.js";
 import { collectSubscriptionDetections } from "../subscription-detection.js";
 import { projectsWithSharedNames } from "./projects.js";
@@ -15,6 +15,11 @@ import { listRuntimePeers } from "./runtime-peers.js";
  * the same facts the rest of the app acts on (the keys projects have attached, Guardian's settings, Claude's own sign-in
  * status, which machines answer), so a message is there exactly while its cause is.
  */
+async function guardianFacts(projects: Array<{ id: string; name: string }>) {
+  const { status, coveredBy, uncovered } = await productionGuardCoverage(projects);
+  return { guardian: status, guardianCoveredBy: coveredBy, guardianUncovered: uncovered };
+}
+
 export async function loadSystemMessages(session: AuthSession): Promise<SystemMessage[]> {
   const [projects, db, detections, peers, theirs, { cards }] = await Promise.all([
     projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }),
@@ -29,7 +34,7 @@ export async function loadSystemMessages(session: AuthSession): Promise<SystemMe
   return systemMessages({
     classifier: settings.classifier,
     decisionModelReady: Boolean(await bobDecisionModel(projects, settings)),
-    guardian: await productionGuard(),
+    ...await guardianFacts(projects),
     claudeSignedOut: claude?.status === "unavailable" && claude.message.startsWith("Claude is not signed in"),
     machinesAway: peers.filter((peer) => !theirs(peer.id) && peerAway(peer.id))
       .map((peer) => ({ id: peer.id, name: peer.name, conversations: cards.filter((card) => card.executionNodeId === peer.id).length })),

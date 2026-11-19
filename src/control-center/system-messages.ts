@@ -26,6 +26,9 @@ export interface SystemFacts {
   /** Whether a decision model could be set up with the keys the projects have. */
   decisionModelReady: boolean;
   guardian: ProductionGuardStatus;
+  /** With Guardian off here: the relays or clusters whose rule covers some projects, and the projects nothing covers. */
+  guardianCoveredBy?: string[];
+  guardianUncovered?: string[];
   /** Claude Code is installed here but reports that nobody is signed in. */
   claudeSignedOut: boolean;
   /** Machines of the person's own that do not answer, with how many of their conversations run there. */
@@ -60,9 +63,13 @@ export function systemMessages(facts: SystemFacts): SystemMessage[] {
   }
   if (facts.guardian !== "on") {
     const found = GUARDIAN[facts.guardian];
+    const uncovered = facts.guardianUncovered ?? [], coveredBy = facts.guardianCoveredBy ?? [];
+    const partial = coveredBy.length
+      ? ` ${coveredBy.join(" and ")} asks first in the projects it covers, but not in ${uncovered.slice(0, 5).join(", ")}${uncovered.length > 5 ? ` and ${uncovered.length - 5} more` : ""}.`
+      : "";
     messages.push({
-      id: "guardian", severity: "warn", title: found.title, short: "Production and destructive steps are not checked", where: "Settings → Guardian",
-      why: found.why,
+      id: "guardian", severity: "warn", title: found.title, short: coveredBy.length ? `Not checked in ${uncovered.length === 1 ? "1 project" : `${uncovered.length} projects`}` : "Production and destructive steps are not checked", where: "Settings → Guardian",
+      why: found.why + partial,
       steps: ["Open `Settings → Guardian`.", "Turn Guardian on and turn on the rule `Production or destructive steps`.", "Press Check again."],
       action: { label: "Open Guardian settings", open: "settings-guardian" },
     });

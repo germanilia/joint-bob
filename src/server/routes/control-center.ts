@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { z } from "zod";
 import type { AuthSession } from "../../auth.js";
-import { getGuardianSettings, productionGuard, updateGuardianSettings } from "../../guardian/settings.js";
+import { getGuardianSettings, productionGuardCoverage, updateGuardianSettings } from "../../guardian/settings.js";
 import { productionGuardStatus, withProductionGuard } from "../../guardian/production-rule.js";
 import { allPendingGuardianReviews, decideGuardianReview } from "../../guardian/reviews.js";
-import { getProject, projectVisible } from "../../store.js";
+import { getProject, listProjects, projectVisible } from "../../store.js";
 import { isKeptOut, keepBobOut, loadKeptOut, releaseLease, takeLease } from "../../control-center/leases.js";
 import { requireAdmin } from "../admin.js";
 import { broadcastToAllClients } from "../realtime.js";
@@ -149,7 +149,7 @@ app.post("/api/control-center/guardian/decide", async (request, response, next) 
 
 /** Whether production and destructive steps ask first on this machine. */
 app.get("/api/control-center/guardian", async (_request, response) => {
-  response.json({ status: await productionGuard() });
+  response.json(await productionGuardCoverage((await listProjects()).map(({ id, name }) => ({ id, name }))));
 });
 
 /** Turns Guardian on with the production rule. Guardian is a machine setting, so only an administrator can. */
