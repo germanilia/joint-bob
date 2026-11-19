@@ -439,10 +439,48 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
     handleSocketPayload({ type: "toolStart", toolName: "Bash", toolCallId: "live-1", toolTarget: { target: "npm run migrate" } });
   });
   assert.match(await working.innerText(), /Running Bash · npm run migrate/);
-  // The running step is named once: the working row shows it, so its marker stays hidden.
+  // The turn's marker keeps its line while a step runs: hiding it took the line out and put it back on every tool
+  // call, and the whole thread under it moved up and down each time.
   const runningMarkers = page.locator("#messages [data-testid='activity-marker'][data-status='running']");
   assert.ok(await runningMarkers.count() >= 1, "the turn's marker is running");
-  assert.equal(await runningMarkers.evaluateAll((nodes) => nodes.filter((node) => getComputedStyle(node).display !== "none").length), 0, "a running marker is hidden while the working row shows");
+  assert.equal(await runningMarkers.evaluateAll((nodes) => nodes.filter((node) => getComputedStyle(node).display === "none").length), 0, "a running marker stays in the thread");
+  // A burst of steps and answers, the way a conversation opened on a running turn replays it: every painted frame
+  // is at the bottom, and nothing in the thread moves back down.
+  const painted = await page.evaluate(async () => {
+    const { handleSocketPayload } = await import("/app/socket.js");
+    const box = document.querySelector<HTMLElement>("#messages")!;
+    box.scrollTop = box.scrollHeight;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const users = box.querySelectorAll<HTMLElement>(".message.user");
+    const anchor = users[users.length - 1];
+    const frames: Array<{ gap: number; anchor: number }> = [];
+    // A resize observer runs after the frame's callbacks and layout, just before paint, so it reads what is painted.
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:fixed;left:-99px;top:0;width:1px;height:1px;visibility:hidden";
+    document.body.append(probe);
+    const observer = new ResizeObserver(() => frames.push({ gap: Math.round(box.scrollHeight - box.scrollTop - box.clientHeight), anchor: Math.round(anchor.getBoundingClientRect().top) }));
+    observer.observe(probe);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    handleSocketPayload({ type: "toolEnd", toolName: "Bash", toolCallId: "live-1", text: "ok" });
+    // A step starts in one frame and ends in the next, so the frames between steps are painted too.
+    for (let frame = 0; frame < 48; frame += 1) {
+      probe.style.width = `${(frame % 2) + 2}px`;
+      const step = Math.floor(frame / 2);
+      if (frame % 12 === 0) handleSocketPayload({ type: "assistantFinal", text: `Replayed note ${step}: checking the next part of the work.\n\n- one\n- two` });
+      if (frame % 2 === 0) handleSocketPayload({ type: "toolStart", toolName: "Bash", toolCallId: `burst-${step}`, toolTarget: { target: `npm run step ${step}` } });
+      else handleSocketPayload({ type: "toolEnd", toolName: "Bash", toolCallId: `burst-${step}`, text: "ok" });
+      // The next events arrive as their own task after the frame, as socket messages do, not inside its callbacks.
+      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+    }
+    handleSocketPayload({ type: "toolStart", toolName: "Bash", toolCallId: "live-1", toolTarget: { target: "npm run migrate" } });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    observer.disconnect();
+    probe.remove();
+    return frames;
+  });
+  assert.ok(painted.length >= 40, `the burst was observed frame by frame (${painted.length} frames)`);
+  assert.deepEqual(painted.filter((frame) => frame.gap > 1), [], "every painted frame of the burst is pinned to the bottom");
+  assert.deepEqual(painted.filter((frame, index) => index > 0 && frame.anchor > painted[index - 1].anchor), [], "nothing in the thread moves back down during the burst");
   await page.evaluate(async () => {
     const { handleSocketPayload } = await import("/app/socket.js");
     handleSocketPayload({ type: "toolEnd", toolName: "Bash", toolCallId: "live-1", text: "migrated" });
@@ -459,7 +497,7 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
     const answer = actions.closest(".message") || actions.previousElementSibling;
     return answer.textContent.includes("Migration 42 finished");
   }), true);
-  await page.waitForFunction(() => document.querySelector("[data-testid='activity-stats-status']")?.textContent === "305 steps · 2 skills");
+  await page.waitForFunction(() => document.querySelector("[data-testid='activity-stats-status']")?.textContent === "330 steps · 2 skills");
   await working.click();
   await page.waitForFunction(() => document.querySelector("#activityList .activity-group.highlighted"));
   await page.evaluate(async () => (await import("/app/socket.js")).handleSocketPayload({ type: "agent_end" }));

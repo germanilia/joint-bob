@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.330.1 — 2026-11-19
+
+- Fixed the conversation shaking while it opens on a running turn and catches up. The line that counts a turn's steps no longer leaves the thread and returns on every tool call, which moved everything under it up and down each time.
+- New messages and the scroll that follows them now land in the same frame, so the thread is no longer drawn short of the newest line and then jumped down, on open and while the agent writes.
+
 ## 2.330.0 — 2026-11-19
 
 - Added **Add a machine** to Settings › Cluster. One link sets up another machine: it joins the relays this machine is reached on, becomes a twin of this machine and of every twin it has (for your own machine), and joins the clusters you tick. The link works once, for 15 minutes.

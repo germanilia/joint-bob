@@ -436,15 +436,26 @@ function pinChatToBottom() {
   box.scrollTop = box.scrollHeight;
 }
 
-// Pins are coalesced to one per frame and re-check follow state when they run,
-// so a scroll-away that lands between a pin request and its frame releases
-// follow mode instead of yanking the reader back down.
-let pinChatFrame = 0;
+// Bubble text and pins share one frame callback: every bubble whose text changed is drawn first and the pin runs
+// after them, so the frame that grows the transcript is the frame that follows it. With a callback per bubble the
+// pin ran before the bubbles asked for after it had drawn, and each burst of new content (a conversation opening on
+// a running turn replays that turn's whole output) was painted short of the bottom, then jumped a frame later.
+// The pin re-checks follow state when it runs, so a scroll-away that lands between a pin request and its frame
+// releases follow mode instead of yanking the reader back down.
+const bubblesToDraw = new Set();
+let chatFrame = 0;
 let lastPinScrollTop = -1;
 export function requestPinChat() {
-  if (pinChatFrame) return;
-  pinChatFrame = requestAnimationFrame(() => {
-    pinChatFrame = 0;
+  if (chatFrame) return;
+  chatFrame = requestAnimationFrame(() => {
+    chatFrame = 0;
+    const bubbles = [...bubblesToDraw];
+    bubblesToDraw.clear();
+    for (const bubble of bubbles) {
+      // One bubble that cannot be drawn must not leave the rest blank and the pane unpinned.
+      try { drawBubbleContent(bubble); }
+      catch (error) { console.error("Could not draw a message", error); }
+    }
     if (state.followChat) pinChatToBottom();
     syncJumpButton();
   });
@@ -557,23 +568,23 @@ function renderToolContent(container, text) {
   container.replaceChildren(...nodes);
 }
 
+function drawBubbleContent(bubble) {
+  const content = bubble.querySelector(".message-content") || bubble;
+  const role = bubble.dataset.role;
+  if (role === "assistant" || role === "user") {
+    renderMarkdown(content, bubble._raw, { resolveFileUrl: role === "assistant" ? projectFileUrl : undefined });
+  }
+  else if (role === "tool-output") renderToolContent(content, bubble._raw);
+  else content.textContent = prettyText(bubble._raw);
+}
+
 // Coalesce bursts to one paint per frame, formatting partial assistant text as
 // it arrives rather than leaving raw Markdown visible until the turn ends.
+// The frame that draws the text also pins the pane, after every bubble has grown.
 export function renderBubbleContent(bubble, text) {
   bubble._raw = text;
-  const content = bubble.querySelector(".message-content") || bubble;
-  if (bubble._renderRaf) return;
-  bubble._renderRaf = requestAnimationFrame(() => {
-    bubble._renderRaf = 0;
-    const role = bubble.dataset.role;
-    if (role === "assistant" || role === "user") {
-      renderMarkdown(content, bubble._raw, { resolveFileUrl: role === "assistant" ? projectFileUrl : undefined });
-    }
-    else if (role === "tool-output") renderToolContent(content, bubble._raw);
-    else content.textContent = prettyText(bubble._raw);
-    // Streaming grows the bubble inside this frame, so the pin must run after it.
-    requestPinChat();
-  });
+  bubblesToDraw.add(bubble);
+  requestPinChat();
 }
 
 // The raw text goes with the bubble when the stream moves on, or the next
