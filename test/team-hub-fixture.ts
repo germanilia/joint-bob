@@ -20,7 +20,13 @@ export async function startTeamHubFixture(options: { answer?: string; memberEnv?
   const requests: any[] = [];
   const provider: Server = createServer(async (req, res) => {
     let raw = ''; for await (const part of req) raw += part;
-    requests.push(JSON.parse(raw || '{}'));
+    const input = JSON.parse(raw || '{}');
+    if (req.url === '/v1/systemone') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ answers: Object.fromEntries(Object.keys(input.questions).map(id => [id, { noul: 0.01 }])) }));
+      return;
+    }
+    requests.push(input);
     await options.hold?.();
     const chunk = (delta: unknown, finish: string | null) => `data: ${JSON.stringify({ id: 'hub', object: 'chat.completion.chunk', created: 0, model: 'dev-model', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -59,7 +65,7 @@ export async function startTeamHubFixture(options: { answer?: string; memberEnv?
       console.log(JSON.stringify(accountSnapshotFor(await clusterV2Database(),${JSON.stringify(member.nodeId)},${JSON.stringify(host.nodeId)})));
     `], { env: { ...process.env, HOME: memberEnv.home, NODE_ENV: 'test', JOINT_BOB_DATA_DIR: member.dataDir } });
     assert.equal((await signedNodeRequest(memberEnv, member, host, 'POST', '/api/cluster/v2/accounts', JSON.parse(snapshot.stdout.trim().split('\n').at(-1)!))).status, 200);
-    assert.equal((await api(host, hostAuth, 'PUT', '/guardian', { settings: { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, rules: [PRODUCTION_RULE] } })).status, 200);
+    assert.equal((await api(host, hostAuth, 'PUT', '/guardian', { settings: { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote', layaUrl: url, rules: [PRODUCTION_RULE] } })).status, 200);
     const { addNodeMembers } = await import('./team-members-fixture.js');
     await addNodeMembers((method, route, body) => api<any>(host, hostAuth, method as any, route, body), host.projects.map((p: any) => p.id), team.id,
       [{ role: 'lead', instructions: 'The coordinator' }, { role: 'qa', instructions: 'Checks things' }], 'lead', { harnessId: 'pi', provider: 'dev-environment', modelId: 'dev-model', reasoning: 'off' });

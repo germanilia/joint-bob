@@ -125,7 +125,7 @@ test('quiet discussion uses the real isolated selected Pi writer, no specialist 
    const secret=await saveSecretAccount({label:'memory classifier',provider:'custom',variables:[{name:'TYPESAFE_AI_API_KEY',kind:'value',value:'synthetic-memory-key-123456'}]});
    const config=systemAiDefaults();config.profiles.pi=profile.id;config.decision.typesafeAccountId=secret.id;config.operations.knowledge={harnessId:'pi',provider:'dev-environment',modelId:'dev-model',thinkingLevel:'off'};save(settingsDatabase(),'systemAI',JSON.stringify(config));
    const original=fetch;let decisions=0;
-   globalThis.fetch=async(url,init)=>{if(String(url).includes(':${port}/'))return original(url,init);decisions++;const body=JSON.parse(String(init.body));assert.ok(!JSON.stringify(body).includes('synthetic-memory-key-123456'));assert.ok(!JSON.stringify(body).includes('sk-provider-shaped-123456789'));return Response.json({answers:Object.fromEntries(Object.keys(body.questions).map(k=>[k,{type:'choice',choice:k==='memory'?(body.state.includes('casual hello')?'none':'learn'):k==='attention'?'none':'new',confidence:0.99}]))});};
+   globalThis.fetch=async(url,init)=>{if(String(url).includes(':${port}/'))return original(url,init);const body=JSON.parse(String(init.body));if(body.questions.ready?.type==='noul')return Response.json({answers:{ready:{noul:1}}});decisions++;assert.ok(!JSON.stringify(body).includes('synthetic-memory-key-123456'));assert.ok(!JSON.stringify(body).includes('sk-provider-shaped-123456789'));return Response.json({answers:Object.fromEntries(Object.keys(body.questions).map(k=>[k,{type:'choice',choice:k==='memory'?(body.state.includes('casual hello')?'none':'learn'):k==='attention'?'none':'new',confidence:0.99}]))});};
    const m=await f.message('Proposal Friday; disagreement unresolved. synthetic-memory-key-123456 sk-provider-shaped-123456789 '+ 'full original '.repeat(12000));
    await recoverTeamWork(f.team.id);
    assert.equal((await teamMemoryStatus(f.member))[0].status,'learned',JSON.stringify(await teamMemoryStatus(f.member)));
@@ -145,7 +145,9 @@ test('quiet discussion uses the real isolated selected Pi writer, no specialist 
 
 test('real member HTTP paging/edit/revert and live specialist memory tools, without delegation', {timeout:120000},async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'team-memory-http-'));const requests:any[]=[];
- const provider=createServer(async(req,res)=>{let body='';for await(const part of req)body+=part;const input=JSON.parse(body);requests.push(input);
+ const provider=createServer(async(req,res)=>{let body='';for await(const part of req)body+=part;const input=JSON.parse(body);
+  if(req.url==='/v1/systemone'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({answers:Object.fromEntries(Object.keys(input.questions).map(id=>[id,{noul:0.01}]))}));return;}
+  requests.push(input);
   const count=input.messages.filter((m:any)=>m.role==='tool').length;
   const name=count===0?'team_memory_write':'team_memory_read';const args=count===0?{topic:'tool-note',expectedRevision:0,description:'Shared note',body:'Specialist proposal, not consensus',sourceMessageIds:[]}:{topic:'tool-note'};
   res.writeHead(200,{'Content-Type':'text/event-stream'});const chunk=(delta:unknown,finish:string|null)=>`data: ${JSON.stringify({id:'tools',object:'chat.completion.chunk',created:0,model:'dev-model',choices:[{index:0,delta,finish_reason:finish}]})}\n\n`;
@@ -158,7 +160,7 @@ test('real member HTTP paging/edit/revert and live specialist memory tools, with
   const cluster=await api<any>(node,auth,'POST','/clusters',{name:'Memory HTTP'});
   const created=await api<any>(node,auth,'POST','/assistant-teams',{clusterId:cluster.body.snapshot.body.clusterId});assert.equal(created.status,201);
   const team=created.body.team,base=`/assistant-teams/${team.id}`;
-  assert.equal((await api(node,auth,'PUT','/guardian',{settings:{...DEFAULT_GUARDIAN_SETTINGS,enabled:true,rules:[PRODUCTION_RULE]}})).status,200);
+  assert.equal((await api(node,auth,'PUT','/guardian',{settings:{...DEFAULT_GUARDIAN_SETTINGS,enabled:true,model:'laya-remote',layaUrl:`http://127.0.0.1:${port}`,rules:[PRODUCTION_RULE]}})).status,200);
   await (await import('./team-members-fixture.js')).addNodeMembers((method,route,body)=>api<any>(node,auth,method as any,route,body),node.projects.map((p:any)=>p.id),team.id,[{role:'bob'},{role:'qa',instructions:'Use shared memory tools.'}],'bob',{harnessId:'pi',provider:'dev-environment',modelId:'dev-model',reasoning:'off'});
   const turn=await api<any>(node,auth,'POST',`${base}/agents/qa/turn`,{subjectId:'memory-check',requestId:crypto.randomUUID(),message:'Store and read a shared proposal'});assert.equal(turn.status,200,JSON.stringify(turn.body));
   assert.equal(requests.length,3);assert.ok(requests[0].tools.some((t:any)=>t.function.name==='mcp__joint_bob__team_memory_write'));

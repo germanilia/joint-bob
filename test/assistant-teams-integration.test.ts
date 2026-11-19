@@ -151,7 +151,7 @@ test('loopback Telegram HTTP → durable queue → Pi tools: four private specia
    for(const waiter of [...waiters])if(waiter.match(body)){waiters.splice(waiters.indexOf(waiter),1);waiter.resolve(body);}return;
   }
   if(input.questions){
-   res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({answers:Object.fromEntries(Object.keys(input.questions).map(name=>[name,{type:'choice',choice:name==='attention'?(String(input.state).includes('QUIET_DECISION')?'none':'act'):name==='subject'?'new':(String(input.state).includes('QUIET_DECISION')?'learn':'none'),confidence:.90}]))}));return;
+   res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({answers:Object.fromEntries(Object.keys(input.questions).map(name=>[name,input.questions[name].type==='noul'?{noul:0.01}:{type:'choice',choice:name==='attention'?(String(input.state).includes('QUIET_DECISION')?'none':'act'):name==='subject'?'new':(String(input.state).includes('QUIET_DECISION')?'learn':'none'),confidence:.90}]))}));return;
   }
   requests.push(input);
   const lastUser=JSON.stringify([...input.messages].reverse().find((m:any)=>m.role==='user')?.content??'');

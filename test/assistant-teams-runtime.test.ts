@@ -84,7 +84,13 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
   const requests: any[] = [];
   const provider = createServer(async (req, res) => {
     let body = ''; for await (const part of req) body += part;
-    requests.push(JSON.parse(body));
+    const input = JSON.parse(body);
+    if (req.url === '/v1/systemone') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ answers: Object.fromEntries(Object.keys(input.questions).map(id => [id, { noul: 0.01 }])) }));
+      return;
+    }
+    requests.push(input);
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     const chunk = (delta: unknown, finish: string | null) => `data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', created: 0, model: 'dev-model', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
     const request = requests.at(-1);
@@ -136,7 +142,7 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
     assert.deepEqual(agents.body.agents.map((a: any) => a.role), ['bob', 'qa', 'support']); assert.equal(agents.body.coordinatorRole, 'bob');
     assert.equal(requests.length, 0, 'picking members never runs a model');
     assert.ok(agents.body.agents.every((agent: any) => agent.readiness.some((problem: string) => /production.*guard/i.test(problem))), 'missing production guard blocks effect-capable readiness, including file tools');
-    const guard = await api<any>(node, auth, 'PUT', '/guardian', { settings: { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, rules: [PRODUCTION_RULE] } });
+    const guard = await api<any>(node, auth, 'PUT', '/guardian', { settings: { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote', layaUrl: `http://127.0.0.1:${address.port}`, rules: [PRODUCTION_RULE] } });
     assert.equal(guard.status, 200, JSON.stringify(guard.body));
     const qa = picked.qa as any;
     const available = await api<any>(node, humanAuth, 'GET', `/assistant-teams/${team.id}/available-assistants`);

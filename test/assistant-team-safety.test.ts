@@ -88,7 +88,7 @@ test('real session/CSRF team approval endpoint carries a second human, never con
  const pending=checkGuardian({projectId:f.team.projectId,conversationId:resolved.destination.sessionId,harness:'pi',cwd:process.cwd(),canReplaceTool:true},{kind:'tool',tool:'bash',category:'commands',input:{command:'synthetic deployment operation --revision exact'}});
  try{
   for(let i=0;i<200&&!pendingGuardianReviews(f.team.projectId,resolved.destination.sessionId).length;i++)await new Promise(resolve=>setTimeout(resolve,2));
-  assert.equal(modelCalls,1);const review=pendingGuardianReviews(f.team.projectId,resolved.destination.sessionId)[0];assert.ok(review,'0.99 confidence asks, never approves');
+  assert.equal(modelCalls,2,'the local rule and inherited production rule both check the operation');const review=pendingGuardianReviews(f.team.projectId,resolved.destination.sessionId)[0];assert.ok(review,'0.99 confidence asks, never approves');
   const endpoint=`${url}/api/assistant-teams/${f.team.id}/assignments/${a.id}/reviews/${review.id}`;
   const post=(body:unknown,custom=headers)=>fetch(endpoint,{method:'POST',headers:custom,body:JSON.stringify(body)});
   assert.equal((await post({allow:true})).status,403,'authenticated outsider cannot approve');

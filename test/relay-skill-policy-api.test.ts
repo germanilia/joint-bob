@@ -20,12 +20,15 @@ test("joined relay blocks and per-harness choices survive receiver and publisher
     let sr = await signIn(publisher, r), sn = await signIn(receiver, n);
     const serving = await fetch(`${r.url}/api/relay/serving`, { method: "PUT", headers: { Cookie: sr.cookie, "x-csrf-token": sr.csrfToken, "content-type": "application/json" }, body: JSON.stringify({ enabled: true, origin: `http://localhost:${r.port}`, environment: "test", requestsEnabled: true, maxMachines: 10, monthlyCapGb: 0, alertTopic: "", ownMachinesOnly: false }) });
     assert.equal(serving.status, 204);
+    const initial = await api<{ version: number; guardian: { rules: { id: string }[] } }>(r, sr, 'GET', '/relay/serving/skill-policy');
+    assert.ok(initial.body.guardian.rules.some(rule => rule.id === 'production-or-destructive'));
+    const firstSkillRevision = initial.body.version + 1;
     const rules = [{ action: "block", name: "policy-restart", harness: "pi" }];
     assert.equal((await api(r, sr, "PUT", "/relay/serving/skill-policy", { rules })).status, 200);
     const token = await api<{ link: string }>(r, sr, "POST", "/relay/serving/tokens", { label: "receiver" });
     assert.equal((await api(n, sn, "POST", "/relays", { link: token.body.link })).status, 201);
     const subscription = async (session: SignedIn) => (await api<{ subscriptions: Array<{ id: string; version: number }> }>(n, session, "GET", "/relays/skill-policies")).body.subscriptions[0];
-    await waitForAssertion(async () => assert.equal((await subscription(sn))?.version, 1), 15_000);
+    await waitForAssertion(async () => assert.equal((await subscription(sn))?.version, firstSkillRevision), 15_000);
     const enabled = async (harness: string) => {
       const inventory = await api<{ nodes: Array<{ inventory: { skills: Array<{ name: string; activation: Record<string, { enabled: boolean; preference: boolean | null }> }> } }> }>(n, sn, "GET", "/resources/inventory");
       return inventory.body.nodes[0].inventory.skills.find((item) => item.name === "policy-restart")!.activation[harness];
@@ -45,14 +48,14 @@ test("joined relay blocks and per-harness choices survive receiver and publisher
     children[0] = await startDevNode(publisher, r);
     sr = await signIn(publisher, r);
     const published = await api<{ version: number; rules: unknown[] }>(r, sr, "GET", "/relay/serving/skill-policy");
-    assert.equal(published.body.version, 1);
+    assert.equal(published.body.version, firstSkillRevision);
     assert.deepEqual(published.body.rules, rules);
     assert.equal((await api(r, sr, "PUT", "/relay/serving/skill-policy", { rules: [] })).status, 200);
-    await waitForAssertion(async () => assert.equal((await subscription(sn)).version, 2), 20_000);
+    await waitForAssertion(async () => assert.equal((await subscription(sn)).version, firstSkillRevision + 1), 20_000);
     assert.equal((await enabled("pi")).enabled, true, "reconnect receives the new policy without losing the explicit enable");
     assert.equal((await enabled("claude")).enabled, false, "other harness keeps explicit disable");
     assert.equal((await api(r, sr, "PUT", "/relay/serving/skill-policy", { rules })).status, 200);
-    await waitForAssertion(async () => assert.equal((await subscription(sn)).version, 3), 10_000);
+    await waitForAssertion(async () => assert.equal((await subscription(sn)).version, firstSkillRevision + 2), 10_000);
   } finally {
     await Promise.all(children.map(stopDevNode));
     await rm(root, { recursive: true, force: true });
