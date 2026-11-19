@@ -112,6 +112,28 @@ test("every conversation is listed: scheduled runs and done ones are groups, and
   }
 });
 
+test("an Inbox conversation menu stays beside its row when the pointer enters the menu and the lists refresh", { timeout: 120_000 }, async (t) => {
+  const { page } = await open(t);
+  const row = page.getByTestId("workspace-group-running").getByTestId("workspace-group-row");
+  const trigger = row.getByTestId("inbox-row-menu");
+  const menu = page.getByTestId("session-row-menu");
+  await row.hover();
+  const anchor = (await trigger.boundingBox())!;
+  await trigger.click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const opened = (await menu.boundingBox())!;
+  assert.ok(opened.x >= anchor.x + anchor.width, "the tall menu opens to the right of the row trigger");
+
+  await page.getByTestId("inbox-row-folder").hover();
+  assert.equal(await row.evaluate((element) => element.matches(":hover")), false);
+  await page.evaluate(async () => {
+    const { renderProjects } = await import("/app/project-list.js");
+    renderProjects();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  assert.deepEqual(await menu.boundingBox(), opened, "refresh must not move the open menu away from its row");
+});
+
 test("pinned conversations stay above the other Inbox groups until unpinned", { timeout: 120_000 }, async (t) => {
   const { page } = await open(t);
   const pinned = page.getByTestId("workspace-group-pinned");
