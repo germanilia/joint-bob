@@ -83,8 +83,7 @@ function mount(session) {
   current.escape = event => {
     if (event.key !== "Escape") return;
     event.preventDefault(); event.stopImmediatePropagation();
-    // Full screen is a view state: Escape backs out of it before dismissing the
-    // sign-in. A phone has no inline state to back out to, so Escape dismisses.
+    // Exit full screen before dismissing a sign-in that can be shown inline.
     const expand = host.querySelector('[data-testid="browser-login-expand"]');
     if (host.classList.contains("browser-login-fullscreen") && expand?.offsetParent) { expand.click(); return; }
     dismiss();
@@ -98,9 +97,12 @@ function mount(session) {
       dismissed.add(current.requestKey); close(current, false);
     } else if (next.loginRequest.id !== current.requestId) { close(current, false); queueMicrotask(schedule); }
   };
-  function showViewer() {
+  function showViewer(inlineMfa = false) {
     current.viewer?.dispose();
     host.classList.remove("browser-login-card");
+    host.classList.toggle("browser-login-mfa-message", inlineMfa);
+    const placeInline = () => inlineMfa ? elements.messages.append(host) : elements.composer.before(host);
+    placeInline();
     current.viewer = createBrowserViewer(host, {
       api, identity: sessionIdentity(session), sessionId: session.id, nodeId: session.nodeId,
       confirm: confirmAction, loginMode: true, onClose: dismiss,
@@ -115,23 +117,24 @@ function mount(session) {
       expandButton.textContent = on ? "Exit full screen" : "Full screen";
       expandButton.setAttribute("aria-pressed", String(on));
       if (on) document.body.append(host);
-      else elements.composer.before(host);
+      else placeInline();
     });
     if (window.innerWidth >= 700) expandButton.style.display = "revert";
-    expandButton.click();
+    if (inlineMfa) host.scrollIntoView({ block: "end" });
+    else expandButton.click();
     const back = document.createElement("button");
     back.type = "button"; back.textContent = "Back to sign-in card"; back.dataset.testid = "browser-login-back-to-card";
-    back.addEventListener("click", showCard); expandButton.before(back);
-    host.querySelector('[data-testid="browser-login-done"]')?.focus();
+    back.addEventListener("click", () => showCard(false)); expandButton.before(back);
+    if (!inlineMfa) host.querySelector('[data-testid="browser-login-done"]')?.focus();
   }
-  function showCard() {
+  function showCard(autoMfa = true) {
     current.viewer?.dispose();
-    host.classList.remove("browser-login-fullscreen");
+    host.classList.remove("browser-login-fullscreen", "browser-login-mode", "browser-login-mfa-message");
     elements.composer.before(host);
     current.viewer = createBrowserLoginCard(host, {
       api, session,
       isCurrent: () => state.authenticated && popup === current && !current.closed && identityKey(identity()) === current.identityKey && host.isConnected,
-      onSession, onTakeover: showViewer, onDismiss: dismiss,
+      onSession, onMfa: autoMfa ? () => showViewer(true) : undefined, onTakeover: () => showViewer(), onDismiss: dismiss,
     });
   }
   showCard();
@@ -139,7 +142,7 @@ function mount(session) {
 
 async function discover() {
   const currentIdentityKey = identityKey(identity());
-  if (popup && (!state.authenticated || popup.identityKey !== currentIdentityKey)) close(popup, false);
+  if (popup && (!state.authenticated || popup.identityKey !== currentIdentityKey || !popup.host.isConnected)) close(popup, false);
   if (discovering || popup || !state.authenticated || window.top !== window || document.hidden) return;
   discovering = true;
   try {

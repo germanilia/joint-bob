@@ -3,7 +3,7 @@ import type { Page } from "playwright-core";
 export const browserLoginDetectionScript = `(() => {
   const visible = element => element.getClientRects().length > 0 && getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden";
   const inputs = [...document.querySelectorAll("input")].filter(visible);
-  if (inputs.some(input => (input.getAttribute("autocomplete") || "").toLowerCase().split(/\\s+/).includes("one-time-code"))) return "challenge";
+  if (inputs.some(input => (input.getAttribute("autocomplete") || "").toLowerCase().split(/\\s+/).includes("one-time-code"))) return "mfa";
   if ([...document.querySelectorAll("iframe")].filter(visible).some(frame => {
     const source = frame.getAttribute("src") || "";
     return !/[?&]size=invisible(?:&|$)/i.test(source) && /captcha|recaptcha|hcaptcha|challenges\\.cloudflare/i.test((frame.getAttribute("title") || "") + " " + source);
@@ -34,6 +34,7 @@ export const browserLoginDetectionScript = `(() => {
   return null;
 })()`;
 
-export function detectBrowserLogin(page: Page): Promise<"credentials" | "challenge" | null> {
-  return page.evaluate(browserLoginDetectionScript) as Promise<"credentials" | "challenge" | null>;
+export async function detectBrowserLogin(page: Page): Promise<"credentials" | "challenge" | null> {
+  const step = await page.evaluate<"credentials" | "challenge" | "mfa" | null>(browserLoginDetectionScript);
+  return step === "mfa" ? "challenge" : step;
 }
