@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.329.0 — 2026-11-19
+
+- Redesigned the desktop Home: a glance strip with live Activity, Automations, Clusters and Dashboards tiles, focus tabs to look at one section, and a Customize Home menu that remembers what you show. A Home button sits above Inbox.
+- Edit, create, refresh and delete your dashboards from Home with the full Dashboard Editor.
+
 ## 2.328.1 — 2026-11-19
 
 - Fixed saving settings that carry the new shortcut layout: the server refused keymap version 5, which broke syncing a person's profile to another machine.
