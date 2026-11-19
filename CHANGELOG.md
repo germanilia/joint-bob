@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.335.1 — 2026-11-19
+
+- Fixed a dropdown in Settings being cut off by the group below it. The open list now sits above the next group.
+
 ## 2.335.0 — 2026-11-19
 
 - Settings › Cluster now has a dedicated **Add a twin** button for another machine of your own. There is nothing to choose: the machine becomes a twin of this machine and of its twins, and joins every cluster this machine is in, so it reaches the same things.

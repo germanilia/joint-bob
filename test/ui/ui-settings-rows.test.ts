@@ -52,3 +52,26 @@ test("labels and commands are lists of editable rows that save as they change", 
   await page.getByTestId("saved-command-remove").click();
   await row.waitFor({ state: "detached" });
 });
+
+test("a dropdown that opens past its group is not covered by the next group", { timeout: 24_000_000 }, async (t) => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  page.setDefaultTimeout(45_000);
+  await page.goto(node.url);
+  await page.locator("#loginDialog[open]").waitFor();
+  await page.getByTestId("login-username-input").fill(environment.username);
+  await page.getByTestId("login-password-input").fill(environment.password);
+  await page.getByTestId("login-submit-button").click();
+  await page.locator(".project-card", { hasText: "Internal Assistant" }).first().waitFor();
+  await openSettingsTab(page, "system-ai");
+  // Any dropdown in a group that is followed by another group.
+  const trigger = page.locator("#settingsPanel-system-ai .phase-settings:has(~ .phase-settings) .searchable-select-trigger:visible").last();
+  await trigger.click();
+  const popover = page.locator("#settingsPanel-system-ai .searchable-select-popover:not([hidden])");
+  await popover.waitFor();
+  const covered = await popover.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.bottom - 4);
+    return !hit || !node.contains(hit);
+  });
+  assert.equal(covered, false, "the open list is on top of the next group");
+});

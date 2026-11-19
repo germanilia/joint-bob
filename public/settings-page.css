@@ -824,3 +824,6 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
   #settingsForm .label-icon-row > button { justify-self: start; }
 }
 #settingsForm #settingsLabelAdd { justify-self: start; margin-top: 8px; }
+
+/* A group is its own layer (so its backdrop stays behind its rows), which would let the next group paint over a dropdown that opens past its edge. The group with an open dropdown goes above the others. */
+#settingsForm .settings-panel .phase-settings:has(.searchable-select-popover:not([hidden])) { z-index: 5; }
