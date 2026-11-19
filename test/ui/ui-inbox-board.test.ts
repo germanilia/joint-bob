@@ -3,6 +3,7 @@
 //
 // Run with `npm run test:file -- test/ui/ui-inbox-board.test.ts`.
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import { nativeUiFixture, openBobChat } from "./native-ui-fixture.js";
 
@@ -26,8 +27,8 @@ const SYSTEM = [
 
 type Mocked = typeof window & { __system: unknown[]; __pins: Array<{ sessionId: string }>; __deleted: string[] };
 
-async function open(t: Parameters<typeof nativeUiFixture>[0]) {
-  const { page, environment, node } = await nativeUiFixture(t);
+async function open(t: Parameters<typeof nativeUiFixture>[0], extraEnv?: Parameters<typeof nativeUiFixture>[1]) {
+  const { page, environment, node } = await nativeUiFixture(t, extraEnv);
   await page.goto(node.url);
   await page.locator("#loginDialog[open]").waitFor();
   await page.locator("#loginUsernameInput").fill(environment.username);
@@ -118,6 +119,69 @@ test("a row's own menu stars and pins it, and Delete in the Inbox leaves a starr
   await page.getByTestId("inboxPage-delete").click();
   await page.locator(".toast-message", { hasText: "Pinned, starred, running and other people's conversations are not deleted here." }).waitFor();
   assert.deepEqual(await page.evaluate(() => (window as unknown as Mocked).__deleted), []);
+});
+
+test("Ctrl+Alt+N opens New with a project selector from the full Inbox list", { timeout: 120_000 }, async (t) => {
+  const page = await open(t, (root) => ({ JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "turns.jsonl") }));
+  await page.getByTestId("workspace-show-all-review").click();
+  await page.keyboard.press("Control+Alt+KeyN");
+  const dialog = page.getByTestId("new-session-name-dialog");
+  await dialog.waitFor({ timeout: 5000 });
+  const project = dialog.getByRole("button", { name: "Project" });
+  await project.click();
+  await dialog.getByTestId("new-session-project-option").filter({ hasText: "Joint Bob" }).click();
+  assert.match(await project.innerText(), /Joint Bob/);
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  await page.getByTestId("inboxPage-search").waitFor();
+});
+
+test("Quick Reply shows the last four messages and sends without leaving the Inbox", { timeout: 120_000 }, async (t) => {
+  const page = await open(t);
+  const samples = ["First answer", "Follow-up question", "Second answer", "One more question"];
+  const replies: unknown[] = [];
+  await page.route("**/api/control-center/cards/detail?*", (route) => route.fulfill({ json: {
+    recentMessages: samples.map((text, index) => ({ text, role: index % 2 ? "user" : "assistant" })),
+  } }));
+  await page.route("**/api/control-center/cards/reply", (route) => {
+    replies.push(route.request().postDataJSON());
+    return replies.length === 1
+      ? route.fulfill({ status: 409, json: { error: "The conversation is busy." } })
+      : route.fulfill({ json: { ok: true } });
+  });
+  await page.getByTestId("workspace-show-all-review").click();
+  const search = page.getByTestId("inboxPage-search");
+  await search.fill("Mobile menu");
+  const quickReply = page.getByRole("button", { name: "Quick reply to Mobile menu" });
+  await quickReply.click({ timeout: 5000 });
+  const dialog = page.getByRole("dialog", { name: "Mobile menu" });
+  const input = dialog.getByRole("textbox", { name: "Reply" });
+  assert.equal(await input.evaluate((element) => document.activeElement === element), true);
+  await dialog.getByText(samples.at(-1)!).waitFor();
+  assert.deepEqual(await dialog.getByTestId("inbox-reply-message").locator(".inbox-reply-text").allTextContents(), samples);
+  await input.fill("Please check the tablet layout too.");
+  const send = dialog.getByRole("button", { name: "Send reply" });
+  await send.click();
+  await dialog.getByRole("alert").filter({ hasText: "The conversation is busy." }).waitFor();
+  assert.equal(await input.inputValue(), "Please check the tablet layout too.");
+  await send.click();
+  await dialog.waitFor({ state: "hidden" });
+  assert.deepEqual(replies, Array(2).fill({ projectId: "p1", conversationId: "c2", message: "Please check the tablet layout too." }));
+  assert.equal(await search.inputValue(), "Mobile menu");
+  assert.equal(await quickReply.isVisible(), true);
+  assert.equal(await page.locator("body.control-popup").count(), 0);
+
+  await quickReply.click();
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  assert.equal(await quickReply.evaluate((element) => document.activeElement === element), true);
+  await quickReply.click();
+  await page.evaluate(() => window.addEventListener("control-popup-opened", (event) => {
+    document.body.dataset.openedCard = (event as CustomEvent).detail.conversationId;
+  }, { once: true }));
+  await dialog.getByRole("button", { name: "Open", exact: true }).click();
+  await search.waitFor({ state: "hidden" });
+  await page.locator('body[data-opened-card="c2"]').waitFor();
 });
 
 test("Bob's own page is his chat with his updates beside it; his other pages keep the Ask Bob button and its window", { timeout: 120_000 }, async (t) => {

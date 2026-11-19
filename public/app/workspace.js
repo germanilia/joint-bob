@@ -30,6 +30,7 @@ import { selectProject } from "./project-selection.js";
 import { movesJobPanel } from "./control-moves.js";
 import { chooseSnooze, snoozedWords, wakeCard } from "./control-snooze.js";
 import { refreshSystemStrip, systemStrip } from "./inbox-system.js";
+import { openInboxReply } from "./inbox-reply.js";
 import { openRowMenu } from "./row-menu.js";
 import { elements } from "./elements.js";
 import { currentMobileView, setMobileView } from "./layout.js";
@@ -1071,7 +1072,7 @@ function renderListingPage(id, { title, crumb, cards: listed }) {
   const entries = nestRows(inChosenProjects(listed).sort(byUrgency)).map((card) => () => {
     const row = cardRow(card, groupOfCard(card), "workspace-listing-page-row");
     row.classList.add("wide");
-    return row;
+    return withPageActions(card, row);
   });
   if (!entries.length) entries.push(() => Object.assign(document.createElement("p"), { className: "ws-empty", textContent: loaded ? "Nothing here yet." : "Loading…" }));
   drawChunked(pageList, entries, { key: `listing-${id}|${inboxFilterKey()}` });
@@ -1138,7 +1139,7 @@ function renderGroupPage() {
   const entries = items.map((card) => () => {
     const row = cardRow(card, groupOfCard(card), "workspace-group-page-row", true, !group.mark);
     row.classList.add("wide");
-    return withPageAction(card, row);
+    return withPageActions(card, row);
   });
   if (!items.length) {
     const empty = document.createElement("p");
@@ -1151,23 +1152,41 @@ function renderGroupPage() {
   pageList.scrollTop = scroll;
 }
 
-/** On the page, a Needs you row has Snooze beside it and a snoozed one Wake (the column's rows keep them in their menu). */
-function withPageAction(card, row) {
+function withPageActions(card, row) {
+  if (isSelecting()) return row;
   const snooze = card.column === "needs-you";
-  if (isSelecting() || (!snooze && card.column !== "snoozed")) return row;
+  const wake = card.column === "snoozed";
+  const canReply = !card.readOnly && !card.othersMachine && !card.pendingReviews?.length;
+  if (!canReply && !snooze && !wake) return row;
   const item = document.createElement("div");
   item.className = "ws-page-item";
-  const action = document.createElement("button");
-  action.type = "button";
-  action.className = "ghost compact ws-page-action";
-  action.dataset.testid = snooze ? "workspace-page-snooze" : "workspace-page-wake";
-  action.textContent = snooze ? "Snooze" : "Wake";
-  action.title = snooze ? "Put it aside for now: it leaves Needs you until the time you choose or something new happens" : "Bring it back to Needs you now";
-  action.addEventListener("click", () => {
-    if (snooze) chooseSnooze(card, action);
-    else wakeCard(card).catch((error) => toast.error(error.message));
-  });
-  item.append(row, action);
+  item.append(row);
+  if (canReply) {
+    const reply = document.createElement("button");
+    reply.type = "button";
+    reply.className = "ghost compact ws-page-action ws-page-reply";
+    reply.textContent = "Reply";
+    reply.title = "Quick reply";
+    reply.setAttribute("aria-label", `Quick reply to ${card.title || "conversation"}`);
+    reply.addEventListener("click", () => openInboxReply(card, {
+      open: () => row.click(),
+      onSent: () => scheduleGroupsRefresh(0),
+    }));
+    item.append(reply);
+  }
+  if (snooze || wake) {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "ghost compact ws-page-action";
+    action.dataset.testid = snooze ? "workspace-page-snooze" : "workspace-page-wake";
+    action.textContent = snooze ? "Snooze" : "Wake";
+    action.title = snooze ? "Put it aside for now: it leaves Needs you until the time you choose or something new happens" : "Bring it back to Needs you now";
+    action.addEventListener("click", () => {
+      if (snooze) chooseSnooze(card, action);
+      else wakeCard(card).catch((error) => toast.error(error.message));
+    });
+    item.append(action);
+  }
   return item;
 }
 

@@ -83,7 +83,7 @@ test("preferences store the keymap, ignore the removed canvas layout and map a s
     const savedKeymap = await fetch(`${node.baseUrl}/api/preferences`, { method: "PUT", headers, body: JSON.stringify({ canvasKeymap: keymap }) });
     assert.equal(savedKeymap.status, 200);
     const savedKeymapBody = await savedKeymap.json() as { canvasKeymap: { version?: number; commands: Record<string, string[] | null> } };
-    assert.equal(savedKeymapBody.canvasKeymap.version, 4);
+    assert.equal(savedKeymapBody.canvasKeymap.version, 5);
     assert.deepEqual(savedKeymapBody.canvasKeymap.commands.newPiChat, ["ctrl", "SPACE", "\\"]);
     assert.equal("splitRight" in savedKeymapBody.canvasKeymap.commands, false, "pane commands left with the canvas");
 

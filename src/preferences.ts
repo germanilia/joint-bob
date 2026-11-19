@@ -25,7 +25,7 @@ export type ShortcutModifier = ShortcutChordModifier;
  * two-stroke sequence, at most four physical keys, or null when unbound. Conversation
  * keys ride the `base` modifier chord plus their own single key. */
 export interface KeymapPreference {
-  version: 4;
+  version: 5;
   base: ShortcutModifier[];
   commands: Record<string, string[] | null>;
 }
@@ -48,7 +48,7 @@ const COMMAND_MODIFIERS: ShortcutModifier[] = ["ctrl", "alt"];
 const commandChord = (key: string): string[] => [...COMMAND_MODIFIERS, key];
 
 export const defaultKeymap = (): KeymapPreference => ({
-  version: 4,
+  version: 5,
   base: ["meta", "shift"],
   commands: {
     toggleView: commandChord("V"),
@@ -62,7 +62,7 @@ export const defaultKeymap = (): KeymapPreference => ({
     toggleProjects: commandChord("["),
     toggleChats: commandChord("]"),
     newProject: commandChord("="),
-    newPiChat: commandChord("N"),
+    newPiChat: ["ctrl", "alt", "shift", "N"],
     newClaudeChat: commandChord("C"),
     newKiroChat: commandChord("Q"),
     quickNote: commandChord("."),
@@ -85,7 +85,7 @@ export const defaultKeymap = (): KeymapPreference => ({
     git: ["ctrl", "alt", "shift", "G"],
     explainConversation: ["ctrl", "alt", "shift", "E"],
     costs: ["ctrl", "alt", "shift", "C"],
-    newConversation: ["ctrl", "alt", "shift", "N"],
+    newConversation: commandChord("N"),
     activity: ["ctrl", "alt", "shift", "S"],
   },
 });
@@ -116,17 +116,25 @@ export function normalizeKeymapPreference(value: unknown): KeymapPreference {
   // Before commands existed the base modifiers were stored as `modifiers`.
   const base = (normalizeShortcutChordTokens(source.commands ? source.base : source.modifiers, true)
     ?? [...defaultKeymap().base]) as ShortcutModifier[];
-  const rebuild = !(Number(source.version) >= 4);
+  const version = Number(source.version);
+  const rebuild = !(version >= 4);
+  const defaults = defaultKeymap();
+  const storedCommands = (source.commands ?? {}) as Record<string, unknown>;
+  const oldNewKeys: Record<string, string[]> = { newPiChat: defaults.commands.newConversation!, newConversation: defaults.commands.newPiChat! };
+  // Swap the pair only if neither was customized: a freed chord may already have been assigned elsewhere.
+  const swapNewKeys = version === 4 && Object.entries(oldNewKeys).every(([command, chord]) =>
+    storedCommands[command] === undefined || JSON.stringify(normalizeShortcutChordTokens(storedCommands[command])) === JSON.stringify(chord));
   const commands: Record<string, string[] | null> = {};
   const taken: string[][] = [];
   for (const command of KEYMAP_COMMANDS) {
-    const stored = (source.commands as Record<string, unknown> | undefined)?.[command];
-    const raw: unknown = rebuild || stored === undefined ? [...defaultKeymap().commands[command]!] : stored;
+    const stored = storedCommands[command];
+    const fallback = version === 4 && !swapNewKeys ? oldNewKeys[command] ?? defaults.commands[command] : defaults.commands[command];
+    const raw = rebuild || stored === undefined || (swapNewKeys && command in oldNewKeys) ? fallback : stored;
     const chord = raw === null || typeof raw === "string" ? null : normalizeShortcutChordTokens(raw);
     commands[command] = chord && !taken.some((existing) => shortcutsConflict(existing, chord)) ? chord : null;
     if (commands[command]) taken.push(commands[command]!);
   }
-  return { version: 4, base, commands };
+  return { version: defaults.version, base, commands };
 }
 
 /** A hand-edited column must degrade to the default chord, never take the node down. */
