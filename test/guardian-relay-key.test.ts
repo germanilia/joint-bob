@@ -15,7 +15,7 @@ import { checkGuardian } from "../src/guardian/check.js";
 import { PRODUCTION_RULE } from "../src/guardian/production-rule.js";
 import { answerRelayGuardian, RelayGuardianRefused } from "../src/guardian/relay-model.js";
 import { DEFAULT_GUARDIAN_SETTINGS, guardianRelayPolicySchema } from "../src/guardian/rules.js";
-import { guardianGroups, productionGuard, updateGuardianSettings } from "../src/guardian/settings.js";
+import { guardianGroups, productionGuard, productionGuardCoverage, updateGuardianSettings } from "../src/guardian/settings.js";
 import { publishRelayPolicy, receiveRelayPolicy } from "../src/relay/resource-policy.js";
 import { createMembership, ensureRelaySchema, updateMembership } from "../src/relay/store.js";
 import { addProject } from "../src/store.js";
@@ -47,6 +47,8 @@ test("a relay's Jev rules reach a cluster's projects, are asked through the rela
 
   assert.equal(await productionGuard(project.id), "on", "no warning below a relay that imposes the production rule");
   assert.equal(await productionGuard(), "on", "every cluster policy of this machine imposes it");
+  const covered = await productionGuardCoverage([{ id: project.id, name: project.name }]);
+  assert.deepEqual([covered.status, covered.uncovered], ["on", []], "a relay's rule covers its cluster's project");
   assert.equal((await guardianGroups(project.id))[0].relayNodeId, relayId);
   const verdict = await checkGuardian({ projectId: project.id, conversationId: "c", harness: "pi", cwd: process.cwd(), canReplaceTool: true },
     { kind: "tool", tool: "bash", category: "commands", input: { command: "ls" } });
@@ -60,6 +62,12 @@ test("a relay's Jev rules reach a cluster's projects, are asked through the rela
   setClusterAgentPolicy(local, manager, bare, { policy: agentPolicyBodySchema.parse({}), sourceRelayNodeId: null }, 1);
   assert.equal(await productionGuard(), "guardian-off");
   assert.equal(await productionGuard(project.id), "on", "the project's own cluster still imposes it");
+
+  // fix: a project that no relay or cluster covers is named, instead of the whole machine being called unprotected.
+  const loose = await addProject("Unshared notes", mkdtempSync(path.join(os.tmpdir(), "guardian-loose-")), { writeInstructions: false });
+  const coverage = await productionGuardCoverage([{ id: project.id, name: project.name }, { id: loose.id, name: loose.name }]);
+  assert.deepEqual([coverage.status, coverage.uncovered, coverage.coveredBy.length], ["guardian-off", ["Unshared notes"], 1]);
+  assert.match(coverage.coveredBy[0], /Key cluster/);
 });
 
 test("a relay answers only its admitted machines, only while it imposes Jev rules, and with its own key", async () => {

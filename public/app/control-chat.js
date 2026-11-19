@@ -622,8 +622,11 @@ const GUARD_TEXT = {
 };
 
 async function showGuard() {
-  const { status } = await api("/api/control-center/guardian");
-  elements.controlBobGuardText.textContent = GUARD_TEXT[status];
+  const { status, coveredBy, uncovered } = await api("/api/control-center/guardian");
+  const partial = status !== "on" && coveredBy.length
+    ? ` ${coveredBy.join(" and ")} asks first in the projects it covers, but not in ${uncovered.slice(0, 5).join(", ")}${uncovered.length > 5 ? ` and ${uncovered.length - 5} more` : ""}.`
+    : "";
+  elements.controlBobGuardText.textContent = GUARD_TEXT[status] + partial;
   elements.controlBobGuardButton.hidden = status === "on";
 }
 

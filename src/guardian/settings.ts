@@ -48,6 +48,32 @@ export async function guardianGroups(projectId?: string): Promise<GuardianGroup[
   return groups;
 }
 
+export interface ProductionGuardCoverage {
+  status: ProductionGuardStatus;
+  /** The clusters or relays whose rule asks first, for the projects they cover. */
+  coveredBy: string[];
+  /** Projects nothing asks first in: this machine's Guardian is not on and no relay or cluster imposes the rule on them. */
+  uncovered: string[];
+}
+
+/**
+ * Where production and destructive steps ask first, project by project. This machine's own Guardian covers every
+ * project; without it, a project is covered only by a rule that a cluster or relay it is shared with imposes.
+ */
+export async function productionGuardCoverage(projects: Array<{ id: string; name: string }>): Promise<ProductionGuardCoverage> {
+  const own = productionGuardStatus(getGuardianSettings());
+  if (own === "on") return { status: "on", coveredBy: [], uncovered: [] };
+  if (!projects.length) return { status: await productionGuard(), coveredBy: [], uncovered: [] };
+  const db = await clusterV2Database();
+  const coveredBy = new Set<string>(), uncovered: string[] = [];
+  for (const project of projects) {
+    const imposing = projectAgentPolicies(db, project.id).filter((layer) => layer.policy.guardian?.rules.some(actsOnProduction));
+    if (imposing.length) imposing.forEach((layer) => coveredBy.add(layer.source));
+    else uncovered.push(project.name);
+  }
+  return { status: uncovered.length ? own : "on", coveredBy: [...coveredBy], uncovered };
+}
+
 /**
  * Whether production and destructive steps ask first: through this machine's own Guardian, or through a rule
  * its clusters impose. With a project, the policies of that project's clusters count; without one, the

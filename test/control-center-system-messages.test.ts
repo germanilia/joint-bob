@@ -30,3 +30,14 @@ test("the TypeSafe decision model asks for its own key", () => {
   assert.match(message.steps[0], /TYPESAFE_AI_API_KEY/);
   assert.equal(message.severity, "warn", "Bob still answers without it, only slower");
 });
+
+// fix: "Guardian is off" was shown whole while a relay covered some projects; it now says where it asks and where it does not.
+test("Guardian off here says which projects a relay covers and which nothing covers", () => {
+  const [message] = systemMessages({ ...healthy, guardian: "guardian-off", guardianCoveredBy: ["Contigos relay"], guardianUncovered: ["Notes", "Scratch"] });
+  assert.equal(message.id, "guardian");
+  assert.equal(message.short, "Not checked in 2 projects");
+  assert.match(message.why, /Contigos relay asks first in the projects it covers, but not in Notes, Scratch\./);
+  const [plain] = systemMessages({ ...healthy, guardian: "guardian-off" });
+  assert.equal(plain.short, "Production and destructive steps are not checked");
+  assert.doesNotMatch(plain.why, /asks first in the projects/);
+});
