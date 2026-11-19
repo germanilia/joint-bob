@@ -19,7 +19,7 @@
 /* Only the desktop shows these; the phone keeps today's panels and its own menu. */
 .ws-side, .ws-groups, .ws-foot, .ws-group-page, .ws-head-actions, .ws-chat-meta, .ws-seg-tab, .ws-pane,
 .ws-monitor-strip, .ws-tasks-card, .activity-when-stops, .ws-picker-title, .ws-label, .ws-item-label, .conversation-filters-toggle { display: none; }
-.ws-menu:not(:popover-open) { display: none; }
+.ws-sidebar-toggle, .ws-sidebar-resize, .ws-menu:not(:popover-open) { display: none; }
 #activityPanel .ws-seg-tab { display: none; }
 
 @media (min-width: 701px) {
@@ -30,7 +30,10 @@
     /* Larger text widens the columns with it (a column's contents lay out in its width divided by the zoom, so a fixed
        column would truncate every label), but never past a quarter of the window and never below the normal width,
        so the conversation keeps its room. */
-    --ws-col-side: max(var(--ws-side-width), min(calc(var(--ws-side-width) * var(--ui-zoom-projects, 1)), 25vw));
+    --ws-default-col-side: max(var(--ws-side-width), min(calc(var(--ws-side-width) * var(--ui-zoom-projects, 1)), 25vw));
+    --ws-room-for-side: calc(100vw - 480px - 2 * var(--ws-gap));
+    --ws-col-side: clamp(232px, var(--ws-side-preferred, var(--ws-default-col-side)),
+      max(var(--ws-default-col-side), min(560px, 40vw, var(--ws-room-for-side))));
     --ws-col-list: max(var(--ws-list-width), min(calc(var(--ws-list-width) * var(--ui-zoom-conversations, 1)), 25vw));
     display: grid;
     grid-template-columns: var(--ws-col-side) minmax(0, 1fr);
@@ -42,15 +45,18 @@
     padding: var(--ws-gap) var(--ws-gap) var(--ws-gap) 0;
   }
   body:not(.focus-ui).ws-column-projects:is(:not(.ws-picker), .chats-collapsed) .shell {
+    --ws-room-for-side: calc(100vw - 480px - var(--ws-col-list) - 3 * var(--ws-gap));
     grid-template-columns: var(--ws-col-side) var(--ws-col-list) minmax(0, 1fr);
     grid-template-areas: "side-top list main" "side-body list main" "side-foot list main";
   }
   @media (min-width: 1200px) {
     body:not(.focus-ui).browser-visible .shell {
+      --ws-room-for-side: calc(100vw - 640px - 3 * var(--ws-gap));
       grid-template-columns: var(--ws-col-side) minmax(320px, 1fr) minmax(320px, 1.1fr);
       grid-template-areas: "side-top main browser" "side-body main browser" "side-foot main browser";
     }
     body:not(.focus-ui).browser-visible.ws-column-projects:is(:not(.ws-picker), .chats-collapsed) .shell {
+      --ws-room-for-side: calc(100vw - 640px - var(--ws-col-list) - 4 * var(--ws-gap));
       grid-template-columns: var(--ws-col-side) var(--ws-col-list) minmax(320px, 1fr) minmax(320px, 1.1fr);
       grid-template-areas: "side-top list main browser" "side-body list main browser" "side-foot list main browser";
     }
@@ -119,6 +125,15 @@
   .ws-icon-button svg { width: 18px; height: 18px; }
   .ws-new-button { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 11px 0 8px; border-radius: 10px; font-size: 13.5px; font-weight: 650; }
   .ws-new-button svg { width: 15px; height: 15px; }
+
+  body:not(.focus-ui) .ws-sidebar-toggle { display: inline-flex; flex: none; }
+  .ws-sidebar-toggle[aria-expanded="false"] svg { transform: scaleX(-1); }
+  body:not(.focus-ui):not(.projects-collapsed, .ws-auto-rail) .ws-sidebar-resize {
+    display: block; position: relative; z-index: 2; grid-area: 1 / 1 / -1 / 2; justify-self: end;
+    width: var(--ws-gap); margin-right: calc(-1 * var(--ws-gap)); cursor: col-resize; touch-action: none;
+  }
+  .ws-sidebar-resize::after { content: ""; position: absolute; inset: calc(50% - 18px) calc(50% - 1px); border-radius: 2px; background: var(--line-strong); }
+  .ws-sidebar-resize:is(:hover, :focus-visible, :active)::after { inset-block: 0; background: var(--accent); }
 
   .ws-search { position: relative; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 12px; border-radius: 12px; background: var(--field); color: var(--muted); cursor: text; }
   .ws-search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
