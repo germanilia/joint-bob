@@ -428,7 +428,11 @@ export function flushSharedTranscripts():Promise<void>{
  if(!activeFlush)activeFlush=runSharedTranscripts().finally(()=>{activeFlush=undefined;});
  return activeFlush;
 }
-export type TranscriptConflict={projectId:string;projectName:string|null;engine:string;sessionId:string;detectedAt:string;title?:string};
+const conflictVersion=(row:Pick<ConflictRow,'remoteHash'|'localHash'>)=>createHash('sha256').update(`${row.localHash}\n${row.remoteHash}`).digest('hex');
+export const transcriptConflictSchema=transcriptQuery.required().extend({
+ projectName:z.string().nullable(),detectedAt:z.string(),title:z.string().optional(),version:z.string().regex(/^[a-f0-9]{64}$/).optional(),
+});
+type TranscriptConflict=z.infer<typeof transcriptConflictSchema>;
 export function sharedTranscriptStatus(db:DatabaseSync,local:string,peer:string):{pending:number;error?:string;conflicts?:TranscriptConflict[]}{
  ensureSchema(db);
  const projects=sharedProjectIds(db,local,peer).filter(id=>db.prepare('SELECT 1 FROM projects WHERE id=?').get(id)&&projectMetadataVisible(db,local,id));
@@ -445,24 +449,28 @@ export function sharedTranscriptStatus(db:DatabaseSync,local:string,peer:string)
  const details=failures.slice(0,10).map(row=>`${row.name??row.project_id}: ${row.error}`);
  if(failures.length>10)details.push(`And ${failures.length-10} more projects.`);
  // Named one by one, so each can be reviewed and settled from the twin's panel.
- const conflicts=(db.prepare(`SELECT c.project_id projectId,p.name projectName,c.engine,c.session_id sessionId,c.detected_at detectedAt FROM cluster_v2_transcript_conflicts c
-  LEFT JOIN projects p ON p.id=c.project_id WHERE c.peer_id=? ORDER BY p.name,c.detected_at,c.session_id`).all(peer) as unknown as TranscriptConflict[]).filter(row=>eligible.has(row.projectId));
+ const conflicts=(db.prepare(`SELECT c.project_id projectId,p.name projectName,c.engine,c.session_id sessionId,c.detected_at detectedAt,c.local_hash localHash,c.remote_hash remoteHash FROM cluster_v2_transcript_conflicts c
+  LEFT JOIN projects p ON p.id=c.project_id WHERE c.peer_id=? ORDER BY p.name,c.detected_at,c.session_id`).all(peer) as unknown as Array<TranscriptConflict & Pick<ConflictRow,'localHash'|'remoteHash'>>)
+  .filter(row=>eligible.has(row.projectId)).map(({localHash,remoteHash,...row})=>({...row,version:conflictVersion({localHash,remoteHash})}));
  return {pending,...(failures.length?{error:`Conversation history sync failed:\n${details.join('\n')}`}:{}),...(conflicts.length?{conflicts}:{})};
 }
 /** The reviewed answer for a conversation both machines continued: take its owner's history.
     This machine's version is saved next to the kept copy first, so nothing is lost. */
-export async function acceptOwnerTranscript(peerId:string,projectId:string,engine:string,sessionId:string,signal?:AbortSignal):Promise<{saved:string}>{
+type RemoteReview={version:string;ownerEpoch:number};
+export async function acceptOwnerTranscript(peerId:string,projectId:string,engine:string,sessionId:string,signal?:AbortSignal,review?:RemoteReview):Promise<{saved:string}>{
  const db=await clusterV2Database();ensureSchema(db);
- return oneAtATime(peerId,engine,sessionId,()=>acceptOwnerTranscriptNow(db,peerId,projectId,engine,sessionId,signal));
+ return oneAtATime(peerId,engine,sessionId,()=>acceptOwnerTranscriptNow(db,peerId,projectId,engine,sessionId,signal,review));
 }
 /** For a caller that already holds this conversation's turn in oneAtATime. */
-async function acceptOwnerTranscriptNow(db:DatabaseSync,peerId:string,projectId:string,engine:string,sessionId:string,signal?:AbortSignal):Promise<{saved:string}>{
+async function acceptOwnerTranscriptNow(db:DatabaseSync,peerId:string,projectId:string,engine:string,sessionId:string,signal?:AbortSignal,review?:RemoteReview):Promise<{saved:string}>{
  signal?.throwIfAborted();
  await sharedTranscriptProject(peerId,projectId);
  const row=db.prepare(`SELECT ${conflictColumns} FROM cluster_v2_transcript_conflicts WHERE ${conflictKey}`).get(peerId,projectId,engine,sessionId) as ConflictRow|undefined;
  if(!row)throw new ClusterV2HttpError(404,'This conversation no longer needs review');
  const ownership=await getConversationOwnership(engine,sessionId);
  if(ownership&&ownership.ownerNodeId!==peerId)throw new ClusterV2HttpError(409,'This conversation now belongs to another machine; check again');
+ if(review&&(ownership?.status!=='owned'||ownership.epoch!==review.ownerEpoch||conflictVersion(row)!==review.version))
+  throw new ClusterV2HttpError(409,'The history or conversation owner changed; check again');
  const existing=await lstat(row.path).catch(()=>undefined),held=await lstat(row.artifact).catch(()=>undefined);
  if(!existing?.isFile()||await fileHash(row.path,existing)!==row.localHash)throw new ClusterV2HttpError(409,'This machine\'s copy changed since it was compared; check again');
  if(!held?.isFile()||await fileHash(row.artifact,held)!==row.remoteHash){
@@ -476,6 +484,11 @@ async function acceptOwnerTranscriptNow(db:DatabaseSync,peerId:string,projectId:
   await copyFile(row.artifact,temporary,constants.COPYFILE_EXCL);
   const current=await stat(row.path);
   if(current.size!==existing.size||current.mtimeMs!==existing.mtimeMs)throw new ClusterV2HttpError(409,'This machine\'s copy changed since it was compared; check again');
+  if(review){
+   const owner=await getConversationOwnership(engine,sessionId);
+   if(owner?.ownerNodeId!==peerId||owner.status!=='owned'||owner.epoch!==review.ownerEpoch)
+    throw new ClusterV2HttpError(409,'The conversation owner changed; check again');
+  }
   signal?.throwIfAborted();
   await rename(temporary,row.path);
  }finally{await rm(temporary,{force:true});}
