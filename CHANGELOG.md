@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.335.4 — 2026-11-19
+
+- Default shared projects to production Guardian checks. Show uncovered projects, and warn when Guardian switches between Jev and Laya.
+- Distinguish unfinished work from final review, and show browser MFA prompts inside conversations.
+
 ## 2.335.3 — 2026-11-19
 
 - Fixed the failing release check: the desktop sidebar's saved width is now listed among the display preferences kept in the browser.
