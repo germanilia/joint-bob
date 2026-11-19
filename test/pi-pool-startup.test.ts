@@ -17,7 +17,7 @@ function poolCheck(assignments: unknown[], accountId: string | undefined) {
     getProject: async () => ({ id: "project", type: "workspace" }),
     getClusterNode: async () => ({ id: "execution-node" }),
     clusterV2Database: async () => ({}),
-    clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: (_db: unknown, nodeId: string, projectId: string) => {
+    clusterOfAssistantsProject: () => undefined, poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: (_db: unknown, nodeId: string, projectId: string) => {
       assert.equal(nodeId, "execution-node");
       assert.equal(projectId, "project");
       return assignments;

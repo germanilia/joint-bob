@@ -94,7 +94,7 @@ function fixture(selection: Selection, failure?: string) {
     getSharingCluster: () => ({ name: "Contigos" }),
     getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Homeserver" }] } }),
     getProject: async () => connection.project,
-    clusterOfAssistantsProject: () => undefined, resolveClusterSubscriptionPools: () => selection === "relay-pool" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
+    clusterOfAssistantsProject: () => undefined, poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => selection === "relay-pool" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
     resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
       lookups.push({ account, provider, scope, usage });
       return selection === "pool" ? { kind: "pool", pool } : undefined;

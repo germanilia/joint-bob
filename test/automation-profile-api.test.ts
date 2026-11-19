@@ -42,9 +42,16 @@ test("automation saves reject unavailable profiles, ignore forged creators, and 
       db.prepare("UPDATE webhooks SET creator_account_id=? WHERE id=?").run("different-creator", hook.body.automation.id);
       db.prepare("UPDATE webhooks SET creator_account_id=? WHERE id=?").run("different-creator", task.body.automation.id);
     } finally { db.close(); }
-    const rewrittenHook = await api(node, auth, "PUT", `/automations/${hook.body.automation.id}`, { ...base, context: "Unapproved work", providerProfileId: null });
-    assert.equal(rewrittenHook.status, 404, "an editor must not cause work under the original creator's current profile");
-    const rewrittenTask = await api(node, auth, "PUT", `/automations/${task.body.automation.id}`, { ...input, context: "Unapproved work", providerProfileId: null });
-    assert.equal(rewrittenTask.status, 404, "inherited-profile schedule updates require the creator too");
+    // Anyone may edit an automation (cluster members, 7387f55a), but an edit never moves it to the editor: the creator stays,
+    // and clearing the profile leaves it on the node's defaults rather than on the creator's current profile.
+    type Saved = { automation: { creatorAccountId: string; providerProfileId: string | null; context: string } };
+    const rewrittenHook = await api<Saved>(node, auth, "PUT", `/automations/${hook.body.automation.id}`, { ...base, context: "Edited by another person", providerProfileId: null });
+    assert.equal(rewrittenHook.status, 200, JSON.stringify(rewrittenHook.body));
+    assert.equal(rewrittenHook.body.automation.creatorAccountId, "different-creator", "an editor does not become the creator");
+    assert.equal(rewrittenHook.body.automation.providerProfileId, null, "an editor does not run the work under the creator's profile");
+    const rewrittenTask = await api<Saved>(node, auth, "PUT", `/automations/${task.body.automation.id}`, { ...input, context: "Edited by another person", providerProfileId: null });
+    assert.equal(rewrittenTask.status, 200, JSON.stringify(rewrittenTask.body));
+    assert.equal(rewrittenTask.body.automation.creatorAccountId, "different-creator");
+    assert.equal(rewrittenTask.body.automation.providerProfileId, null);
   } finally { if (server) await stopDevNode(server); await rm(root, { recursive: true, force: true }); }
 });
