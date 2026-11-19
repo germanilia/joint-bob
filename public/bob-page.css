@@ -2,10 +2,10 @@
 .ws-bob-mark, .ws-bob-line, .bob-memory-button { display: none; }
 /* Paper · Editorial — Bob's page on the desktop (1024 px and wider, app/bob-page.js), version A of 12 Nov: a head card with
    what Bob does and his switches, then two cards, Bob's chat and the stage. The stage carries the control center's views as
-   tabs on top. The chat folds into the "Ask Bob" button (.bob-fab). Text is larger than the control center's elsewhere.
+   tabs on top. Bob's chat opens from the column. Text is larger than the control center's elsewhere.
    Loaded before paper.css. */
 
-.bob-head-brand, .bob-head-avatar, .bob-head-tag, .bob-head-state, .bob-head-pause, .bob-fab, #controlChat .bob-fold { display: none; }
+.bob-head-brand, .bob-head-avatar, .bob-head-tag, .bob-head-state, .bob-head-pause, #controlChat .bob-fold { display: none; }
 body:not(.focus-ui) .bob-settings-head { display: none; }
 .control-tab .bob-tab-icon { display: none; }
 
@@ -139,20 +139,8 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   /* Bob's window is the conversation only: the items (background updates, their filters) live on the board in the stage. */
   body.bob-desk :is(.control-chat-updates, .control-chat-filters) { display: none; }
 
-  /* ---------- folding: the chat becomes the "Ask Bob" button ---------- */
+  /* ---------- folding: hide the chat window ---------- */
   body.bob-desk.bob-chat-folded #controlChat { display: none; }
-  body.bob-desk.view-control.bob-chat-folded .bob-fab { display: inline-flex; }
-  .bob-fab {
-    position: absolute; z-index: 4; left: 24px; bottom: 24px; align-items: center; justify-content: center; width: 56px; height: 56px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
-    background: var(--accent); color: var(--btn-fg, #fff); font: 700 13px/1 var(--sans); cursor: pointer; transition: transform 0.15s;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
-  }
-  .bob-fab:hover { transform: scale(1.04); }
-  /* The hat takes the button's ink, so it never sits green on green. */
-  .bob-fab-hat { flex: none; width: 28px; height: 28px; background: currentColor; -webkit-mask: url("/icon-mark.svg") center / contain no-repeat; mask: url("/icon-mark.svg") center / contain no-repeat; }
-  .bob-fab-count { position: absolute; top: -4px; right: -4px; display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 999px; background: var(--btn-fg, #fff); color: var(--accent); font-size: 13px; }
-  .bob-fab-count:empty { display: none; }
-  @media (prefers-reduced-motion: reduce) { .bob-fab { transition: none; } }
 }
 
 /* Bob's page shares the app's shell: the left column (the places and the Inbox list) stays beside it. The views are Bob's
@@ -162,8 +150,6 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   /* Half a page: the head keeps Bob, what waits, his switch, settings, Refresh and Exit. */
   body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar :is(.bob-head-tag, kbd, .bob-state-pill:not(.waiting)) { display: none; }
   body.bob-desk.view-control.browser-visible #controlCenterPanel > .panel-bar { gap: 8px; padding-inline: 16px; }
-  /* The floating Ask Bob button sits over the page's bottom left: the stage keeps a strip for it, so no control ends up under it. */
-  body.bob-desk.view-control.bob-chat-folded .control-stage { padding-bottom: 80px; }
   /* A group's full list (Show all in the column) takes the page's place until it is closed. */
   body.bob-desk.ws-desktop.view-control.ws-page-open #controlCenterPanel { display: none; }
 }
@@ -204,10 +190,8 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk .control-popup-bar > :not(.control-popup-mode) { flex: none; }
 }
 
-/* Ask Bob: the button can be dragged, and the chat opens as a window that floats over the page (app/bob-float.js) */
+/* Contextual Ask Bob actions open a floating chat window (app/bob-float.js). */
 @media (min-width: 1024px) {
-  .bob-fab { cursor: grab; touch-action: none; user-select: none; }
-  .bob-fab.dragging { cursor: grabbing; transition: none; box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), 0 0 0 6px color-mix(in srgb, var(--accent) 24%, transparent); }
   body.bob-desk.view-control:not(.bob-chat-folded) .control-main > .control-chat {
     /* Above the conversation popup (z-index 40, later in the DOM): the floating chat must never sit behind it. */
     position: fixed; z-index: 41; flex: none; width: 440px; height: 640px; min-width: 340px; min-height: 380px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
@@ -225,7 +209,7 @@ body:not(.focus-ui).bob-chat-page .control-main > .control-chat {
   display: flex !important; flex: 1 1 0 !important; position: static !important; inset: auto !important; left: auto !important; top: auto !important;
   width: auto !important; height: auto !important; max-width: none !important; z-index: auto !important; resize: none; box-shadow: none; border-left: 0;
 }
-body:not(.focus-ui).bob-chat-page :is(.control-chat-resize, .bob-fab, #controlChat .bob-fold) { display: none !important; }
+body:not(.focus-ui).bob-chat-page :is(.control-chat-resize, #controlChat .bob-fold) { display: none !important; }
 /* What Bob and the system raise on their own (a check that found work waiting, Guardian, a stuck conversation) sits beside the
    conversation with him: with no board, his own page is where these are read and acted on. The floating window keeps only the chat. */
 body:not(.focus-ui).bob-chat-page .control-chat-updates { display: block; }

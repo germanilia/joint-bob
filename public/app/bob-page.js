@@ -4,8 +4,8 @@ import { api } from "./api.js";
 // everything he does on his own), "Bob's settings", Refresh and Exit; below it Bob's chat and the stage, whose tabs are
 // the control center's views (Bob himself, Dashboard, Automations, Memory, Dashboards, Assistants) with their counts; the views
 // are Bob's sub-menu in the left column, which stays beside the page.
-// The view opened last opens again, on every browser (state.controlCenter.view). Bob's chat folds into the "Ask Bob"
-// button (state.controlCenter.collapsed), and every opening starts folded. Nothing here leaves the control center: only
+// The view opened last opens again, on every browser (state.controlCenter.view). Bob's chat starts folded
+// on other pages (state.controlCenter.collapsed). Nothing here leaves the control center: only
 // the person does (Exit, Esc twice, the toggle shortcut). The tab strip and the team context move into the page and back, by markers.
 // Styles: public/bob-page.css.
 
@@ -93,18 +93,11 @@ header.prepend(brand);
 api("/api/health").then(({ version: release }) => { version.textContent = `v${release}`; });
 heading.after(tag, watching, pause);
 
-/* ---------- folding: Bob's chat folds into the "Ask Bob" button ---------- */
+/* ---------- folding: hide Bob's floating chat ---------- */
 
 const chatFold = button("ghost compact bob-fold", "control-chat-fold", "–");
-chatFold.title = "Fold Bob's chat into a button";
+chatFold.title = "Close Bob's chat window";
 elements.controlChatSide.after(chatFold);
-const chatFab = button("bob-fab bob-fab-chat", "bob-fab-chat");
-chatFab.title = "Ask Bob";
-chatFab.setAttribute("aria-label", "Ask Bob");
-const fabCount = element("span", "bob-fab-count");
-fabCount.dataset.testid = "bob-fab-count";
-chatFab.append(element("i", "bob-fab-hat"), fabCount);
-panel.append(chatFab);
 
 function applyFolds() {
   body.classList.toggle("bob-chat-folded", state.controlCenter.collapsed.includes("chat"));
@@ -115,8 +108,7 @@ function fold(id) {
   applyFolds();
 }
 chatFold.addEventListener("click", () => fold("chat"));
-// The button can be dragged; a click that is not the end of a drag opens the chat as a window that floats over the page.
-const float = initFloatingChat({ panel, chat: elements.controlChat, fab: chatFab, fold });
+const float = initFloatingChat({ panel, chat: elements.controlChat });
 // Code that writes into Bob's chat (Spotlight's "Ask Bob", "Ask Bob for a dashboard", a trigger's triage) opens it first.
 window.addEventListener("bob-chat-wanted", () => { if (state.controlCenter.collapsed.includes("chat")) fold("chat"); });
 
@@ -244,7 +236,7 @@ function apply() {
 // The view opened last opens again; a view asked for right as the control center opens (Automations in the left column,
 // a dashboard Bob opens) follows this and wins. Any wide window keeps it (the page's own classes may come later); a
 // phone always starts at the chat (control-phone.js), so it neither restores nor saves the view.
-// The page opens at its full width: Bob's chat starts folded into the "Ask Bob" button. Only entering folds it: the control
+// The page opens at its full width: Bob's chat starts folded. Only entering folds it: the control
 // center is activated again while it is open (a conversation closing, a search), and that must not close a chat the person opened.
 let entered = false;
 /** The column's list before Bob's page showed the Inbox in it: leaving puts it back. */
@@ -309,7 +301,6 @@ window.addEventListener("control-center-rendered", (event) => {
     running ? pill(`Watching ${running} running`, "running live") : pill("Nothing running", "running"),
     ...(waiting ? [pill(`${waiting} need${waiting === 1 ? "s" : ""} you`, "waiting")] : []),
   );
-  fabCount.textContent = waiting ? String(waiting) : "";
 });
 
 apply();

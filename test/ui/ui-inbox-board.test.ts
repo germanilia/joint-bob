@@ -251,7 +251,7 @@ test("Quick Reply shows the last four messages and sends without leaving the Inb
   await page.locator('body[data-opened-card="c2"]').waitFor();
 });
 
-test("Bob's own page is his chat with his updates beside it; his other pages keep the Ask Bob button and its window", { timeout: 120_000 }, async (t) => {
+test("Bob's chat stays accessible from the column without a floating button", { timeout: 120_000 }, async (t) => {
   const page = await open(t);
   // His own page: the chat fills the page beside the left column, the updates beside it, no button.
   await openBobChat(page);
@@ -267,21 +267,15 @@ test("Bob's own page is his chat with his updates beside it; his other pages kee
   const column = (await page.getByTestId("workspace-side").boundingBox())!;
   assert.ok(chat.x >= column.x + column.width - 1, "the chat sits beside the column");
 
-  // Another of his pages: the chat folds into the button, which can be dragged and opens a window of its own.
-  await page.getByTestId("control-tab-dashboards").click();
-  const fab = page.getByTestId("bob-fab-chat");
-  await fab.waitFor();
-  const before = (await fab.boundingBox())!;
-  await page.mouse.move(before.x + 20, before.y + 20);
-  await page.mouse.down();
-  await page.mouse.move(before.x + 220, before.y - 120, { steps: 8 });
-  await page.mouse.up();
-  const moved = (await fab.boundingBox())!;
-  assert.ok(Math.abs(moved.x - before.x - 200) < 4 && Math.abs(moved.y - before.y + 140) < 24, "the button follows the pointer");
-  assert.equal(await page.evaluate(() => document.body.classList.contains("bob-chat-folded")), true, "a drag does not open the chat");
-  await openBobChat(page);
-  assert.equal(await page.getByTestId("control-chat").evaluate((node) => getComputedStyle(node).position), "fixed", "the chat floats over the page");
-  assert.equal(await page.getByTestId("control-chat-updates").isVisible(), false, "the window keeps only the chat");
+  for (const view of ["dashboards", "my-dashboard", "assistants"]) {
+    await page.getByTestId(`control-tab-${view}`).click();
+    await page.locator(`#controlView-${view}`).waitFor({ state: "visible" });
+    assert.equal(await page.getByTestId("bob-fab-chat").count(), 0, "no floating button on other pages");
+    assert.notEqual(await page.locator(".control-stage").evaluate((node) => getComputedStyle(node).paddingBottom), "80px", "no space reserved for the removed button");
+  }
+  await page.getByTestId("projects-open-control-center-button").click();
+  await page.locator("body.bob-chat-page").waitFor();
+  assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
 });
 
 test("the column's project filter lists only the chosen projects, and the choice is kept", { timeout: 120_000 }, async (t) => {
