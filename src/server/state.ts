@@ -86,6 +86,7 @@ export const machineRoutes = new Set([
   "POST /cluster/control-center/summarize",
   "POST /cluster/sessions/queue-transfer",
   "POST /cluster/sessions/force-prepare",
+  "POST /cluster/sessions/takeback",
   "POST /cluster/sessions/queue-transfer/cancel",
   "POST /cluster/sessions/queue-transfer/complete",
   "GET /cluster/sessions/transcript-presence",

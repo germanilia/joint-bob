@@ -67,7 +67,7 @@ function sessionShared(db:DatabaseSync,local:string,peer:string,engine:unknown,s
  return rows.length===1&&mayShareProject(db,local,peer,rows[0].project_id);
 }
 async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:string):Promise<boolean>{
- const body=request.body as {projectId?:unknown;id?:unknown;input?:{projectId?:unknown};record?:{engine?:unknown;sessionId?:unknown};leases?:Array<{engine:unknown;sessionId:unknown}>}|undefined;
+ const body=request.body as {action?:unknown;projectId?:unknown;id?:unknown;input?:{projectId?:unknown};record?:{engine?:unknown;sessionId?:unknown};leases?:Array<{engine:unknown;sessionId:unknown}>}|undefined;
  if(request.path.startsWith('/browser/'))return request.path==='/browser/config'?isTrustedTwin(db,local,peer):true;
  if(request.path==='/background-tasks')return true;
  if(request.path==='/workspace-cleanup/admin')return isTrustedTwin(db,local,peer);
@@ -79,6 +79,7 @@ async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:
  if(request.path==='/sessions/runtime-snapshot')return Array.isArray(body?.leases)&&body.leases.every((lease:{engine:unknown;sessionId:unknown})=>sessionShared(db,local,peer,lease.engine,lease.sessionId));
  if(request.path==='/sessions/ownership')return sessionShared(db,local,peer,request.query.engine,request.query.sessionId);
  if(request.path==='/sessions/ownership/apply')return sessionShared(db,local,peer,body?.record?.engine,body?.record?.sessionId);
+ if(request.path==='/sessions/takeback'&&(body?.action==='notice'||body?.action==='close'||body?.action==='decline'))return isTrustedTwin(db,local,peer);
   const id=typeof request.query.projectId==='string'?request.query.projectId:body?.projectId;
  return typeof id==='string'&&mayShareProject(db,local,peer,id);
 }

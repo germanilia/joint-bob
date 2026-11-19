@@ -45,6 +45,10 @@ export function setComposerEnabled(enabled) {
 function renderReadOnlyNotice(readOnly) {
   const reason = readOnly ? state.conversationReadOnlyReason : null;
   const machine = state.conversationNodeName;
+  const takeBack = reason === "runnerAccess" && state.sessionNodes.some(node => node.local && node.mapped) && !activeChatSession()?.draft;
+  elements.conversationTakeBackButton.hidden = !takeBack;
+  elements.conversationTakeBackButton.disabled = shared.ownershipTaking;
+  elements.conversationTakeBackButton.textContent = shared.ownershipTaking ? "Takeback requested…" : "Take back here";
   const notice = reason === "runnerAccess" ? {
     title: "Read-only here",
     detail: `${machine || "The machine this conversation runs on"} does not let other machines run work on it, so you can read this conversation here but not write in it. To allow it, turn on “Allow other nodes to pick this node in Runs on” in Settings → Node on ${machine || "that machine"}.`,
@@ -238,7 +242,7 @@ export function loadHarnesses() {
   return harnessesRequest;
 }
 
-export async function loadSessionNodes(projectId, targetNodeId) {
+export async function loadSessionNodes(projectId, targetNodeId, { preserveSelection = false } = {}) {
   const query = targetNodeId ? `?nodeId=${encodeURIComponent(targetNodeId)}` : "";
   const body = await api(`/api/projects/${encodeURIComponent(projectId)}/session-nodes${query}`);
   if (state.activeProjectId !== projectId) return;
@@ -250,8 +254,9 @@ export async function loadSessionNodes(projectId, targetNodeId) {
   const previousNodeId = state.activeNodeId;
   const selected = state.sessionNodes.find((node) => node.id === state.activeNodeId && node.online && node.mapped)
     || state.sessionNodes.find((node) => node.local);
-  state.activeNodeId = selected?.id || null;
+  if (!preserveSelection) state.activeNodeId = selected?.id || null;
   if (state.preferencesLoaded && state.activeNodeId !== previousNodeId) savePreferencesInBackground({ activeNodeId: state.activeNodeId });
+  renderConversationLock();
   renderSessions();
 }
 // A changed terminal policy shows up on the button without a reload.

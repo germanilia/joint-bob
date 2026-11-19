@@ -7,6 +7,7 @@ import { confirmAction, toast } from "./shell.js";
 import { openSession } from "./socket.js";
 import { shared, state, TAKE_OWNERSHIP_WAIT_SECONDS } from "./state.js";
 import { activeChatSession } from "./terminal.js";
+import "./takeback-notice.js";
 
 function resetOwnershipWait() {
   if (shared.ownershipWait) shared.ownershipWait.resolve(false);
@@ -105,18 +106,23 @@ let takeoverController = null;
 // Takeover continues the conversation on this node's own filesystem: the
 // transcript and the project's files are expected here already, and only the
 // write lock moves.
-async function takeLockedConversationOwnership(force = false) {
+async function takeLockedConversationOwnership(force = false, takeBackHere = false) {
   const session = activeChatSession();
-  if (shared.ownershipWait || shared.ownershipTaking || !state.activeProjectId || !session) return;
+  if (shared.ownershipWait || shared.ownershipTaking || !state.activeProjectId || !state.activeSessionPath) return;
+  if (!session && !takeBackHere) return;
   const projectId = state.activeProjectId;
-  const owner = state.conversationLock;
-  const destination = state.sessionNodes.find((node) => node.id === state.activeNodeId);
+  const sessionPath = state.activeSessionPath;
+  const sessionId = session?.id || state.activeSessionId;
+  const title = session ? shortSessionTitle(session) : elements.sessionTitle.textContent;
+  const owner = state.conversationLock || { nodeName: state.conversationNodeName };
+  const destination = state.sessionNodes.find((node) => takeBackHere ? node.local : node.id === state.activeNodeId);
   if (!destination?.mapped) throw new Error("Map project first on this node");
   if (force && !await confirmAction({
     title: `Force ownership transfer to ${destination.name}?`,
-    message: "This stops reachable runs and continues from the history already on the destination, which may be older. Existing histories are preserved with backups. An unreachable machine may keep running; its run cannot be confirmed stopped. Proceed anyway?",
+    message: "If reachable, the controlling node and its twins get 30 seconds to decline. Otherwise, the transfer can stop reachable runs and continue from this node's synced history, which may be older. Existing histories are kept in backups. An unreachable node may keep running.",
     confirmLabel: "Force ownership transfer", destructive: true,
   })) return;
+  if (state.activeProjectId !== projectId || state.activeSessionPath !== sessionPath) return;
   const proceed = force || await waitForLockOwnershipSync(projectId, destination, session.worktree?.id);
   if (!proceed) { resetOwnershipWait(); return; }
   shared.ownershipTaking = true;
@@ -126,26 +132,31 @@ async function takeLockedConversationOwnership(force = false) {
     shared.ownershipTaking = true;
     renderConversationLock();
     const result = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions/take-ownership`, {
-      method: "POST", body: JSON.stringify({ peerId: destination.id, sessionId: session.id, sessionPath: session.path, sessionName: shortSessionTitle(session), ...(force ? { force: true } : {}), ...(historyOwnerNodeId ? { historyOwnerNodeId } : {}) }),
+      method: "POST", body: JSON.stringify({ peerId: destination.id, sessionId: sessionId || undefined, sessionPath: session?.path || sessionPath, sessionName: title.slice(0, 120), ...(force ? { force: true } : {}), ...(historyOwnerNodeId ? { historyOwnerNodeId } : {}) }),
       signal: takeoverController.signal,
     });
-    state.activeNodeId = destination.id;
-    state.activeSessionId = null;
-    if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: destination.id, activeSessionId: null });
-    resetOwnershipWait();
-    // Taking it over from a conversation opened over the control center board keeps the board there.
-    openSession(result.sessionPath, shortSessionTitle(session), false, null, currentMobileView() === "control");
+    if (state.activeProjectId === projectId && state.activeSessionPath === sessionPath) {
+      state.activeNodeId = destination.id;
+      state.activeSessionId = null;
+      if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: destination.id, activeSessionId: null });
+      resetOwnershipWait();
+      openSession(result.sessionPath, title, false, null, currentMobileView() === "control");
+    }
     toast(force ? `Ownership forced using ${destination.name}'s history. Backup: ${result.saved}.${result.pendingPeerIds.length ? " Some machines could not confirm stopping; they will receive ownership when they reconnect." : " Reachable runs stopped."}` : result.saved ? `Ownership taken using ${owner.nodeName}'s history. Backup: ${result.saved}` : result.pendingPeerIds?.length ? "Ownership taken; offline nodes will update when they return" : "Ownership taken", result.saved ? 12000 : 8000);
   };
   try { await transfer(); }
   catch (error) {
     resetOwnershipWait();
     if (error.cancelled) { toast("Cancellation requested. Reopen the conversation to check which machine owns it; the transfer may already have completed.", 12000); return; }
-    if (!await reconcileTranscriptConflict(error, { projectId, engine: session.harnessId, sessionId: session.id,
+    if (force || !await reconcileTranscriptConflict(error, { projectId, engine: session.harnessId, sessionId,
       transfer: { ownerName: owner.nodeName, destinationName: destination.name, accept: () => transfer(owner.nodeId) },
     })) throw error;
   } finally { takeoverController = null; resetOwnershipWait(); }
 }
+
+elements.conversationTakeBackButton.addEventListener("click", () => {
+  void takeLockedConversationOwnership(true, true).catch((error) => { resetOwnershipWait(); toast.error(error.message); });
+});
 
 elements.conversationLockForceButton.addEventListener("click", () => {
   void takeLockedConversationOwnership(true).catch((error) => { resetOwnershipWait(); toast.error(error.message); });

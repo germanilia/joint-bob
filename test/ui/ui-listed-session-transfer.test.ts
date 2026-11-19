@@ -3,6 +3,8 @@ import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 import { waitInPage } from "./wait-in-page.js";
 
+const offlineOwnerSocket = /\/ws\?.*\bnodeId=offline-fixture-owner(?:&|$)/;
+
 test("repeated conversation opens show successful takeover without a duplicate-transfer alert", { timeout: 120_000 }, async (t) => {
   const { page, node, environment } = await nativeUiFixture(t);
   const pageErrors: string[] = [];
@@ -18,7 +20,9 @@ test("repeated conversation opens show successful takeover without a duplicate-t
       && !state.sessionsLoading && !state.sessionsRefreshing && state.sessions.some(session => !session.readOnly);
   });
 
-  const result = await page.evaluate(async () => {
+  // Do not route the synthetic owner to the local server: a real offline owner sends no ready frame.
+  await page.routeWebSocket(offlineOwnerSocket, () => {});
+  const resultPending = page.evaluate(async () => {
     const { state } = await import("/app/state.js");
     const { openListedSession } = await import("/app/reviews.js");
     const session = { ...state.sessions.find(session => !session.readOnly), executionNodeId: "offline-fixture-owner", reviewState: "reviewed" };
@@ -61,6 +65,8 @@ test("repeated conversation opens show successful takeover without a duplicate-t
       window.fetch = originalFetch;
     }
   });
+  await page.getByRole("button", { name: "Take over here" }).click();
+  const result = await resultPending;
   assert.equal(result.requests, 1, "repeat opens must not issue a transfer that the server will reject");
   assert.deepEqual(result.errors, [], "no irrelevant transfer error may remain beside the success message");
   assert.ok(result.success.includes("Switched to this node"));
@@ -95,7 +101,8 @@ test("reloading in the control center stays there while the open conversation is
     return preferences.mobileView === "control" && preferences.activeSessionPath === path;
   }, opened.path);
 
-  // After the reload the conversation's machine is offline, so the page takes it over; the takeover answers late.
+  // After reload, the page asks before taking ownership; the confirmed transfer answers late.
+  await page.routeWebSocket(offlineOwnerSocket, () => {});
   const offline = { id: "offline-fixture-owner", name: "Offline fixture owner", local: false, online: false, mapped: true };
   await page.route(/\/api\/projects\/[^/]+\/sessions(\?.*)?$/, async route => {
     if (route.request().method() !== "GET") return route.fallback();
@@ -120,6 +127,9 @@ test("reloading in the control center stays there while the open conversation is
   try {
     try {
       await page.reload();
+      await page.getByTestId("confirm-dialog").waitFor();
+      assert.equal(transfers, 0);
+      await page.getByRole("button", { name: "Take over here" }).click();
       for (const deadline = Date.now() + 30_000; !transfers; await new Promise(resolve => setTimeout(resolve, 100))) {
         if (Date.now() > deadline) throw new Error("The reloaded page never took the conversation over");
       }

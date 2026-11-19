@@ -812,6 +812,8 @@ const INVALIDATION_HANDLERS = {
     scheduleRunningRefresh();
   },
   browserSessionsChanged: () => document.dispatchEvent(new Event("browserSessionsChanged")),
+  takebackRequested: (payload) => document.dispatchEvent(new CustomEvent("takeback-requested", { detail: payload })),
+  takebackClosed: (payload) => document.dispatchEvent(new CustomEvent("takeback-closed", { detail: payload.id })),
   guardianReviewsChanged: (payload) => document.dispatchEvent(new CustomEvent("guardian-elsewhere", { detail: payload })),
   instructionsChanged: () => document.dispatchEvent(new Event("instructions-changed")),
   projectsChanged: () => refreshProjectsQuietly(),
@@ -936,6 +938,7 @@ export function ensureWatchSocket() {
   socket.addEventListener("open", () => {
     if (state.watchSocket !== socket) return;
     elements.chatsLiveDot.hidden = false;
+    document.dispatchEvent(new Event("takeback-watch-connected"));
     // Invalidations have no replay log. Every new subscription needs a snapshot,
     // including the gap between the initial HTTP load and subscribing.
     refreshSessionsQuietly();

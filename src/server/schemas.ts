@@ -111,6 +111,7 @@ export const gitReviewFollowUpSchema = z.object({
 export const sessionTakeOwnershipSchema = z.object({
   peerId: z.string().uuid(),
   force: z.boolean().optional(),
+  offlineOwnerNodeId: z.string().uuid().optional(),
   historyOwnerNodeId: z.string().uuid().optional(),
   sessionId: z.string().min(1).max(240).optional(),
   sessionPath: z.string().min(1),
