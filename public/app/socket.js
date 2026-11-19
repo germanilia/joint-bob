@@ -74,6 +74,7 @@ export function showConversationOpening(title) {
   setComposerEnabled(false);
   setStatus("Opening…", false, true);
   setMobileView("chat");
+  window.dispatchEvent(new Event("conversation-opening"));
   markOpenStep("shown");
 }
 

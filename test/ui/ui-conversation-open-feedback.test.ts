@@ -78,6 +78,51 @@ test("a card opens its conversation before the project's list answers, saying it
   await page.unrouteAll({ behavior: "wait" });
 });
 
+test("Spotlight replaces Home with a chat loader and opens the transcript before the project list answers", { timeout: 120_000 }, async (t) => {
+  const { page, node, environment } = await nativeUiFixture(t);
+  const project = node.projects.find((item) => item.name === "Infra Scripts")!;
+  const title = "Terraform state locking";
+  await page.goto(node.url);
+  await page.getByTestId("login-username-input").fill(environment.username);
+  await page.getByTestId("login-password-input").fill(environment.password);
+  await page.getByTestId("login-submit-button").click();
+  await page.locator("#loginDialog[open]").waitFor({ state: "detached" });
+  await page.getByTestId("workspace-home-button").click();
+  await page.locator("#homePage").waitFor();
+  await page.evaluate(async () => (await import("/app/spotlight.js")).openSpotlight());
+  await page.getByTestId("spotlight-input").fill(title);
+  const result = page.getByRole("option", { name: `Go to ${title}`, exact: true });
+  await result.waitFor();
+
+  // Hold both replies so that we can inspect what is painted, then release only the transcript.
+  let releaseList!: () => void;
+  const listGate = new Promise<void>((resolve) => { releaseList = resolve; });
+  let releaseSocket!: () => void;
+  const socketGate = new Promise<void>((resolve) => { releaseSocket = resolve; });
+  await page.route(`**/api/projects/${project.id}/sessions`, async (route) => { await listGate; await route.fallback(); });
+  await page.routeWebSocket(/\/ws\?/, (route) => {
+    const url = new URL(route.url());
+    if (url.searchParams.get("projectId") !== project.id || url.searchParams.get("sessionPath") === "watch") {
+      route.connectToServer();
+      return;
+    }
+    const server = route.connectToServer();
+    server.onMessage(async (message) => { await socketGate; route.send(message); });
+  });
+  try {
+    await result.click();
+    await page.locator("#messages .empty-state.opening").waitFor({ state: "visible", timeout: 5_000 });
+    assert.equal(await page.locator("#homePage").isVisible(), false, "Home must not cover the loader");
+    await page.getByText(title, { exact: false }).and(page.locator("#sessionTitle")).waitFor();
+    releaseSocket();
+    await page.locator("#messages .message.user").first().waitFor({ state: "visible" });
+  } finally {
+    releaseSocket();
+    releaseList();
+  }
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 // The card's project is already the chosen one, but its list has not answered yet: the page has just loaded, or another
 // card of that project was clicked a moment before. The list held in the page is empty then, and the open read that as
 // "That conversation is no longer listed", blanking the chat the first click was filling.

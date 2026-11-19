@@ -287,7 +287,8 @@ export async function openListedSession(session, { keepView = false, timed = fal
   // The machine that runs it is asked at once, and whether it is online is checked beside that, not first: over a slow
   // relay the check waits up to five seconds for an answer, and the page showed nothing new while it did.
   const presence = elsewhere ? loadSessionNodes(projectId, session.executionNodeId, { preserveSelection: true }).then(() => true, (error) => { toast.error(error.message); return false; }) : null;
-  if (session.executionNodeId) {
+  // A card's null owner means let the socket resolve it, not reuse the previous chat's node.
+  if (session.executionNodeId !== undefined) {
     state.activeNodeId = session.executionNodeId;
     if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: session.executionNodeId });
   }

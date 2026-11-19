@@ -135,9 +135,8 @@ export function refreshControlCenter() {
  * Opens a conversation by its project and conversation id (or its path), the way a card does. From the control center it
  * opens over the board, with the person in control (control-lease.js). Closing it goes back to the board.
  */
-export async function openConversation(card) {
+export async function openConversation(card, { overBoard = isControlCenterOpen() } = {}) {
   startOpenTiming("card");
-  const overBoard = isControlCenterOpen();
   state.keepControlView = overBoard;
   let listing = null;
   let fromCard = false;

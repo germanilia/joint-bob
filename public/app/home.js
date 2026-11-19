@@ -439,8 +439,10 @@ let lastActive = activeKey();
 function wanted() {
   if (!desktop.matches || body.classList.contains("focus-ui") || !body.classList.contains("ws-column-inbox")) return false;
   if (body.classList.contains("ws-page-open")) return false;
-  if (currentMobileView() === "control") return false;
-  return requested || !(state.activeSessionId || state.activeSessionPath);
+  const view = currentMobileView();
+  if (view === "control") return false;
+  const opening = view === "chat" && elements.messages.querySelector(".empty-state.opening");
+  return requested || !(opening || state.activeSessionId || state.activeSessionPath);
 }
 
 function sync() {
@@ -508,6 +510,7 @@ async function readSpent() {
 window.addEventListener("workspace-cards", (event) => { cards = event.detail.cards ?? []; loaded = true; schedule(); });
 for (const name of ["app-view-changed", "workspace-column-changed", "project-selected", "running-refreshed"]) window.addEventListener(name, schedule);
 document.addEventListener("activeConversationChanged", schedule);
+window.addEventListener("conversation-opening", () => { requested = false; schedule(); });
 desktop.addEventListener("change", schedule);
 new MutationObserver(schedule).observe(body, { attributes: true, attributeFilter: ["class"] });
 new ResizeObserver(schedule).observe(home);
