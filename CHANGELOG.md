@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.335.0 — 2026-11-19
+
+- Settings › Cluster now has a dedicated **Add a twin** button for another machine of your own. There is nothing to choose: the machine becomes a twin of this machine and of its twins, and joins every cluster this machine is in, so it reaches the same things.
+- **Invite a machine** is the separate button for someone else's machine: it joins the clusters you tick and becomes nobody's twin. The two replace the single Add a machine form.
+
 ## 2.334.0 — 2026-11-19
 
 - Labels is one list you edit in place: each label is a row with its name, icon, Generate and Remove, and **Add label** starts a new one. The text box that edits the same list moved behind **Edit the labels as text…**.

@@ -24,7 +24,7 @@ async function openCluster(browser: Browser, environment: DevEnvironment, node: 
 }
 
 // Settings > Cluster on two real nodes behind a relay: one makes the link, the other pastes it.
-test("Add a machine makes one link, and Use a link on the other machine shows each step it took", { timeout: 240_000 }, async () => {
+test("Add a twin makes one link, and Use a link on the other machine shows each step it took", { timeout: 240_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-ui-machine-link-"));
   const servers: ChildProcess[] = [];
   let browser: Browser | undefined;
@@ -47,11 +47,20 @@ test("Add a machine makes one link, and Use a link on the other machine shows ea
     const errors: string[] = [];
 
     const macPage = await openCluster(browser, macEnv, mac, errors);
-    await macPage.getByTestId("machine-add-reveal").click();
+    // Someone else's machine: clusters to tick, and no twin.
+    await macPage.getByTestId("machine-invite-reveal").click();
     await macPage.getByTestId("machine-add-form").waitFor();
-    assert.equal(await macPage.getByTestId("machine-own-choice").isChecked(), true, "your own machine is the default");
     assert.equal(await macPage.getByTestId("machine-cluster-choice").count(), 1);
-    assert.match(await macPage.locator("#machineOwnHint").innerText(), /twin of MacBook/);
+    assert.match(await macPage.getByTestId("machine-form-intro").innerText(), /someone else's machine/);
+    assert.equal(await macPage.getByTestId("machine-invite-reveal").getAttribute("aria-expanded"), "true");
+
+    // Another machine of yours: nothing to choose, it joins every cluster this machine is in.
+    await macPage.getByTestId("machine-add-reveal").click();
+    assert.equal((await macPage.getByTestId("machine-add-reveal").innerText()).trim(), "Add a twin");
+    assert.equal(await macPage.getByTestId("machine-add-reveal").getAttribute("aria-expanded"), "true");
+    assert.equal(await macPage.getByTestId("machine-invite-reveal").getAttribute("aria-expanded"), "false");
+    assert.equal(await macPage.getByTestId("machine-clusters").isVisible(), false);
+    assert.match(await macPage.getByTestId("machine-form-intro").innerText(), /twin of MacBook.*joins the cluster this machine is in \(Home cluster\)/);
     await macPage.getByTestId("machine-create-button").click();
     await macPage.getByTestId("confirm-accept-button").click();
     await macPage.getByTestId("machine-link-result").waitFor();

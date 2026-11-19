@@ -837,7 +837,7 @@
         </label>
         <label id="loginMachineLinkLabel" hidden>
           Link from one of your machines (optional)
-          <input id="loginMachineLinkInput" name="machineLink" type="url" autocomplete="off" spellcheck="false" placeholder="Settings › Cluster › Add a machine" data-testid="login-machine-link-input" />
+          <input id="loginMachineLinkInput" name="machineLink" type="url" autocomplete="off" spellcheck="false" placeholder="Settings › Cluster › Add a twin" data-testid="login-machine-link-input" />
         </label>
         <label id="loginMfaSetupLabel" hidden>Authenticator setup key
           <input id="loginMfaSetupKey" class="mfa-key" readonly autocomplete="off" spellcheck="false" data-testid="login-mfa-setup-key" />
@@ -1562,7 +1562,8 @@
               <input id="clusterSearchInput" type="search" autocomplete="off" spellcheck="false" placeholder="Find a cluster or node" data-testid="cluster-search-input" />
             </label>
             <div class="cluster-list-actions">
-              <button class="primary compact" type="button" id="machineAddReveal" data-testid="machine-add-reveal" aria-expanded="false" aria-controls="machineAddForm">Add a machine</button>
+              <button class="primary compact" type="button" id="machineAddReveal" data-testid="machine-add-reveal" aria-expanded="false" aria-controls="machineAddForm">Add a twin</button>
+              <button class="ghost compact" type="button" id="machineInviteReveal" data-testid="machine-invite-reveal" aria-expanded="false" aria-controls="machineAddForm">Invite a machine</button>
               <button class="ghost compact" type="button" id="clusterNewButton" data-testid="cluster-new-button" aria-expanded="false" aria-controls="clusterCreateForm">New cluster</button>
               <button class="ghost compact" type="button" id="clusterJoinReveal" data-testid="cluster-join-reveal" aria-expanded="false" aria-controls="clusterJoinDetails">Use a link</button>
             </div>
@@ -1576,11 +1577,7 @@
             </div>
           </div>
           <div class="cluster-create-row" id="machineAddForm" data-testid="machine-add-form" hidden>
-            <p>One link sets up another machine: it joins a relay to reach this one, then becomes what you choose here.</p>
-            <div class="machine-choices" role="radiogroup" aria-label="Whose machine is it">
-              <label class="machine-choice"><input type="radio" name="machineWhose" value="own" checked data-testid="machine-own-choice" /><span><strong>My own machine</strong><small id="machineOwnHint">Becomes a twin of this machine and of its twins. Twins share everything you own.</small></span></label>
-              <label class="machine-choice"><input type="radio" name="machineWhose" value="other" data-testid="machine-other-choice" /><span><strong>Someone else's machine</strong><small>Joins the clusters you tick. Nothing is shared until you choose projects.</small></span></label>
-            </div>
+            <p id="machineFormIntro" data-testid="machine-form-intro"></p>
             <fieldset class="machine-clusters" id="machineClusters" data-testid="machine-clusters" hidden></fieldset>
             <div class="cluster-form-actions">
               <button class="primary compact" type="button" id="machineCreateButton" data-testid="machine-create-button">Create link</button>
@@ -1740,7 +1737,7 @@
             <label class="checkbox-row"><input type="checkbox" id="relayOwnMachinesOnly" data-testid="relay-own-machines-only-toggle" /> Only my own machines can use this relay</label>
             <p class="settings-hint">Your own machines are this machine's twins. Other machines are disconnected and refused.</p>
             <label class="checkbox-row"><input type="checkbox" id="relayMemberInvites" data-testid="relay-member-invites-toggle" checked /> Machines on this relay can bring in another machine</label>
-            <p class="settings-hint">A machine's "Add a machine" link then carries a one-time pass for this relay, so the new machine needs no token from you. Each pass counts against the machine limit and is listed under Tokens.</p>
+            <p class="settings-hint">A machine's "Add a twin" or "Invite a machine" link then carries a one-time pass for this relay, so the new machine needs no token from you. Each pass counts against the machine limit and is listed under Tokens.</p>
             <div class="github-group-actions">
               <button class="primary compact" type="button" id="relayServingSave" data-testid="relay-serving-save-button">Save</button>
               <button class="ghost compact" type="button" id="relayCheckButton" data-testid="relay-check-button" disabled>Check DNS and TLS</button>

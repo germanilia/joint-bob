@@ -301,10 +301,12 @@ A node can belong to any number of clusters, and a cluster has no member limit.
 
 ### Add a machine with one link
 
-The quickest way to bring in another machine is **Settings > Cluster > Add a machine** on a machine that is already set up.
+The quickest way to bring in another machine is a link from a machine that is already set up, made under **Settings > Cluster**. The link works once, for 15 minutes.
 
-1. Choose **My own machine** to make it a twin of this machine and of every twin it has, or **Someone else's machine** to join clusters only. Tick the clusters it should join and select **Create link**. The link works once, for 15 minutes.
-2. On the other machine, open **Settings > Cluster > Use a link**, paste the link and select **Join**. A machine nobody has set up yet takes the same link on its welcome screen, next to the administrator's name and password.
+- **Add a twin** is for another machine of your own. The machine becomes a twin of this machine and of every twin it has, so it gets everything you own. It also joins every cluster this machine is in: a twin receives what you own, while what other people share with you arrives through your clusters, so it needs both to reach the same things.
+- **Invite a machine** is for someone else's machine. It joins the clusters you tick and becomes nobody's twin. Nothing is shared until projects are chosen.
+
+On the other machine, open **Settings > Cluster > Use a link**, paste the link and select **Join**. A machine nobody has set up yet takes the same link on its welcome screen, next to the administrator's name and password.
 
 The other machine then joins the relays this machine can be reached on, becomes a twin, and joins the clusters, in that order, and lists each step with its result. A step that fails says why; use the link again after fixing it, and the steps already done are skipped. Only the node's administrator can create or use such a link.
 

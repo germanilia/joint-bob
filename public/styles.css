@@ -3782,15 +3782,9 @@ body.file-view { overflow: auto; }
 .cluster-create-row[hidden] { display: none; }
 .cluster-create-row p { margin: 0; color: var(--muted); font-size: 12px; }
 .cluster-create-row label { display: grid; gap: 6px; min-width: 0; }
-/* Add a machine: whose machine it is, the clusters it joins, and the steps a pasted link took. */
-body:not(.node-admin) #machineAddReveal { display: none; }
-.machine-choices { display: grid; gap: 8px; }
-.cluster-create-row label.machine-choice { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-ctl); cursor: pointer; font-weight: 400; }
-.cluster-create-row label.machine-choice:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.machine-choice input { flex: none; width: 16px; height: 16px; min-width: auto; margin: 2px 0 0; accent-color: var(--accent); }
-.machine-choice span { display: grid; gap: 2px; min-width: 0; }
-.machine-choice strong { font-weight: 600; }
-.machine-choice small, .machine-steps small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+/* Add a twin and Invite a machine: the clusters a link joins, and the steps a pasted link took. */
+body:not(.node-admin) :is(#machineAddReveal, #machineInviteReveal) { display: none; }
+.machine-steps small { color: var(--muted); font-size: 12px; line-height: 1.4; }
 .machine-clusters { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .machine-clusters[hidden], .machine-link-result[hidden], .machine-steps[hidden], .machine-notes[hidden] { display: none; }
 .machine-clusters legend { padding: 0; margin-bottom: 4px; font-weight: 600; font-size: 12px; }

@@ -3,8 +3,8 @@ import { isNodeAdmin } from "./node-admin.js";
 import { confirmAction, toast } from "./shell.js";
 
 /**
- * Settings > Cluster: "Add a machine" makes one link that sets up another machine, and "Use a
- * link" takes any link another machine made. The link bundles a relay pass, twin invitations
+ * Settings > Cluster: "Add a twin" makes one link that sets up another machine of the same person,
+ * "Invite a machine" makes one for someone else's, and "Use a link" takes any link another machine made. The link bundles a relay pass, twin invitations
  * and cluster invitations; the machine that uses it works through them in order and shows
  * each step, so nobody has to know which tab a link belongs to.
  */
@@ -12,7 +12,8 @@ import { confirmAction, toast } from "./shell.js";
 const addReveal = document.getElementById("machineAddReveal");
 const addForm = document.getElementById("machineAddForm");
 const clustersBox = document.getElementById("machineClusters");
-const ownHint = document.getElementById("machineOwnHint");
+const inviteReveal = document.getElementById("machineInviteReveal");
+const intro = document.getElementById("machineFormIntro");
 const createButton = document.getElementById("machineCreateButton");
 const result = document.getElementById("machineLinkResult");
 const output = document.getElementById("machineLinkOutput");
@@ -51,34 +52,48 @@ export function linkKind(link) {
   return "unknown";
 }
 
-function showAddForm(show) {
+/** The form serves both buttons: "twin" for another machine of yours, "invite" for someone else's. */
+let mode = "twin";
+
+function showAddForm(next) {
+  const show = Boolean(next);
   addForm.hidden = !show;
-  addReveal.setAttribute("aria-expanded", String(show));
+  addReveal.setAttribute("aria-expanded", String(show && next === "twin"));
+  inviteReveal.setAttribute("aria-expanded", String(show && next === "invite"));
   if (!show) return;
+  mode = next;
   options.hideOtherForms();
   result.hidden = true;
   output.value = "";
-  const twins = options.twinNames();
-  ownHint.textContent = `Becomes a twin of ${list([options.localName(), ...twins])}. Twins share everything you own.`;
-  clustersBox.replaceChildren(element("legend", "", "Also join"));
   const clusters = options.clusters();
-  for (const cluster of clusters) {
-    const label = element("label", "checkbox-row");
-    const box = element("input");
-    Object.assign(box, { type: "checkbox", value: cluster.id, checked: true });
-    box.dataset.testid = "machine-cluster-choice";
-    label.append(box, ` ${cluster.name}`);
-    clustersBox.append(label);
+  clustersBox.replaceChildren(element("legend", "", "Clusters to join"));
+  if (mode === "twin") {
+    // A twin gets what you own; what others share with you comes through your clusters, so it joins them all.
+    const reach = clusters.length ? ` It also joins ${clusters.length === 1 ? "the cluster" : "every cluster"} this machine is in (${list(clusters.map((cluster) => cluster.name))}), so it reaches what others share with you too.` : "";
+    intro.textContent = `For another machine of yours. It becomes a twin of ${list([options.localName(), ...options.twinNames()])}: everything you own is shared with it.${reach}`;
+  } else {
+    intro.textContent = clusters.length
+      ? "For someone else's machine. It joins the clusters you tick and becomes nobody's twin. Nothing is shared until projects are chosen."
+      : "For someone else's machine. Create a cluster first: the link invites the machine to the clusters you tick.";
+    for (const cluster of clusters) {
+      const label = element("label", "checkbox-row");
+      const box = element("input");
+      Object.assign(box, { type: "checkbox", value: cluster.id, checked: clusters.length === 1 });
+      box.dataset.testid = "machine-cluster-choice";
+      label.append(box, ` ${cluster.name}`);
+      clustersBox.append(label);
+    }
   }
-  clustersBox.hidden = !clusters.length;
-  addForm.querySelector("input").focus();
+  clustersBox.hidden = mode === "twin" || !clusters.length;
+  createButton.disabled = mode === "invite" && !clusters.length;
+  createButton.focus();
 }
 
 async function createLink() {
-  const own = addForm.querySelector('input[name="machineWhose"]:checked').value === "own";
-  const clusterIds = [...clustersBox.querySelectorAll("input:checked")].map((box) => box.value);
-  if (!own && !clusterIds.length) throw new Error("Tick at least one cluster for someone else's machine");
-  if (own && !await confirmAction({ eyebrow: "Add a machine", title: "Make a link for your own machine?",
+  const own = mode === "twin";
+  const clusterIds = own ? options.clusters().map((cluster) => cluster.id) : [...clustersBox.querySelectorAll("input:checked")].map((box) => box.value);
+  if (!own && !clusterIds.length) throw new Error("Tick at least one cluster");
+  if (own && !await confirmAction({ eyebrow: "Add a twin", title: "Make a link for another machine of yours?",
     message: "The machine that uses the link becomes your twin: your projects, conversations, files and credentials are shared with it. Send the link only to that machine.", confirmLabel: "Create link" })) return;
   const created = await api("/api/machine-links", { method: "POST", body: JSON.stringify({ own, clusterIds, ...(own ? { confirmOwnedData: true } : {}) }) });
   output.value = created.link;
@@ -164,16 +179,17 @@ export async function startWithMachineLink(link) {
 
 export function installMachineLinks(next) {
   options = { ...options, ...next };
-  addReveal.addEventListener("click", () => showAddForm(addForm.hidden));
-  document.getElementById("machineAddCancel").addEventListener("click", () => { showAddForm(false); addReveal.focus(); });
+  addReveal.addEventListener("click", () => showAddForm(addForm.hidden || mode !== "twin" ? "twin" : false));
+  inviteReveal.addEventListener("click", () => showAddForm(addForm.hidden || mode !== "invite" ? "invite" : false));
+  const trigger = () => (mode === "twin" ? addReveal : inviteReveal);
+  document.getElementById("machineAddCancel").addEventListener("click", () => { showAddForm(false); trigger().focus(); });
   createButton.addEventListener("click", () => { createLink().catch((error) => toast.error(error.message)); });
   document.getElementById("machineLinkCopy").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(output.value); toast("Link copied"); }
     catch (error) { toast.error(error.message || "Could not copy the link"); }
   });
-  for (const choice of addForm.querySelectorAll('input[name="machineWhose"]')) choice.addEventListener("change", () => { result.hidden = true; });
   addForm.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); showAddForm(false); addReveal.focus(); }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); showAddForm(false); trigger().focus(); }
   });
   return { hide: () => showAddForm(false) };
 }
