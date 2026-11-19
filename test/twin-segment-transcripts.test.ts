@@ -219,3 +219,60 @@ test("one transcript the twin cannot take does not hold back the rest of the pro
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("the conversation owner can repair a conflict on its twin without signing in there", { timeout: 120_000 }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "twin-remote-conflict-"));
+  const children: Awaited<ReturnType<typeof startDevNode>>[] = [];
+  try {
+    const a = await seedDevEnvironment(path.join(root, "a"), 1), b = await seedDevEnvironment(path.join(root, "b"), 1);
+    const owner = a.nodes[0], twin = b.nodes[0];
+    children.push(await startDevNode(a, owner), await startDevNode(b, twin));
+    const [admin, twinAdmin] = await Promise.all([signIn(a, owner), signIn(b, twin)]);
+    const invitation = await api<{ link: string; relationshipId: string }>(owner, admin, "POST", "/twins/invitations", { confirmOwnedData: true });
+    assert.equal(invitation.status, 201);
+    assert.equal((await api(twin, twinAdmin, "POST", "/twins/accept", { link: invitation.body.link, confirmOwnedData: true })).status, 201);
+    const relationshipId = invitation.body.relationshipId;
+    const directory = path.join(root, "conflict-project");
+    await mkdir(directory);
+    const created = await api<{ project: { id: string } }>(owner, admin, "POST", "/projects", { name: "Remote conflict", type: "personal", path: directory, synced: false });
+    assert.equal(created.status, 201);
+    const projectId = created.body.project.id, engine = "pi", sessionId = randomUUID();
+    // Register the same owned conversation on both nodes with different user turns.
+    const files = [a, b].map(env => path.join(env.home, ".pi", "sessions", `${sessionId}.jsonl`));
+    const contents = ["Owner turn", "Twin-only turn"].map(turn => piTranscriptAt(sessionId, directory, "2026-10-07T09:00:00.000Z", turn));
+    const sharing = `/twins/${relationshipId}/sharing`;
+    assert.equal((await api(owner, admin, "POST", sharing, { ownerNodeId: owner.nodeId, confirmOwnedData: true })).status, 200);
+    await eventually(async () => assert.ok(query(twin, "SELECT 1 FROM projects WHERE id=?", projectId).length));
+    for (const [env, node] of [[a, owner], [b, twin]] as const) {
+      execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
+        import { ensureConversationRecord } from "./src/conversation-records.ts";
+        import { claimConversationOwnership } from "./src/conversation-ownership.ts";
+        await ensureConversationRecord(${JSON.stringify(projectId)}, "pi", ${JSON.stringify(sessionId)}, ${JSON.stringify(owner.nodeId)});
+        await claimConversationOwnership("pi", ${JSON.stringify(sessionId)}, ${JSON.stringify(owner.nodeId)});
+      `], { env: { ...process.env, HOME: env.home, JOINT_BOB_DATA_DIR: node.dataDir }, stdio: "pipe" });
+    }
+    for (const [i, file] of [...files].reverse().entries()) {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, contents[1 - i]);
+    }
+    const list = async () => (await api<{ remoteConflicts?: Array<{ sessionId: string; version: string }> }>(owner, admin, "GET", sharing)).body.remoteConflicts ?? [];
+    let version = "";
+    await eventually(async () => {
+      version = (await list()).find(conflict => conflict.sessionId === sessionId)?.version ?? "";
+      assert.match(version, /^[a-f0-9]{64}$/);
+    });
+    const endpoint = `/twins/${relationshipId}/transcript-conflicts/accept-on-twin`;
+    const payload = { projectId, engine, sessionId, version };
+    assert.equal((await api(owner, admin, "POST", endpoint, payload)).status, 400, "confirmation is required");
+    assert.equal((await api(owner, admin, "POST", endpoint, { ...payload, version: "0".repeat(64), confirmReplaceOnTwin: true })).status, 409, "a stale review cannot replace history");
+    assert.equal(await readFile(files[1], "utf8"), contents[1]);
+    const accepted = await api<{ saved: string }>(owner, admin, "POST", endpoint, { ...payload, confirmReplaceOnTwin: true });
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+    assert.equal(await readFile(accepted.body.saved, "utf8"), contents[1]);
+    for (const file of files) assert.equal(await readFile(file, "utf8"), contents[0]);
+    await eventually(async () => assert.ok(!(await list()).some(conflict => conflict.sessionId === sessionId)));
+  } finally {
+    await Promise.all(children.map(stopDevNode));
+    await rm(root, { recursive: true, force: true });
+  }
+});

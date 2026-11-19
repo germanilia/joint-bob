@@ -9,7 +9,7 @@ import { ClusterV2HttpError } from "../cluster-v2-errors.js";
 import { ownedByAdmin } from "../ownership.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
 import { sharingFilesStatus, sharedProjectIds } from "./sharing-files.js";
-import { flushSharedTranscripts, sharedTranscriptStatus } from "./shared-transcripts.js";
+import { flushSharedTranscripts, sharedTranscriptStatus, transcriptConflictSchema } from "./shared-transcripts.js";
 import { mayReplicateEvent, signedPeerPost } from "./replication-v2.js";
 import { pendingEventsForPeer } from "../replication.js";
 import { listProjectMetadataDeliveries } from "../cluster-project-metadata.js";
@@ -87,22 +87,26 @@ export async function localTwinSharingStatus(db: DatabaseSync, local: string, re
   // A conversation both machines continued is listed by title, so it can be recognized and settled.
   const titles=transcripts.conflicts?await sessionTitleOverrides():{};
   const conflicts=transcripts.conflicts?.map(conflict=>({...conflict,...(titles[conflict.sessionId]?{title:titles[conflict.sessionId]}:{})}));
-  return {state:error?"error":row&&files.ready&&!pendingDeliveries&&!missing.count?"ready":"pending",
+  return {state:error||conflicts?.length?"error":row&&files.ready&&!pendingDeliveries&&!missing.count?"ready":"pending",
     initialized:Boolean(row||job),ownerNodeId:row?.owner_node_id??defaultTwinOwner(db,local,peer,relationshipId),projectCount,pendingDeliveries,...(error?{error}:{}),...(conflicts?{conflicts}:{})};
 }
 
+const peerSharingStatusSchema=z.object({state:z.enum(['pending','ready','error']),pendingDeliveries:z.number().int().nonnegative(),error:z.string().optional(),conflicts:z.array(transcriptConflictSchema).optional()});
+
 export async function twinSharingStatus(db:DatabaseSync,local:string,relationshipId:string){
   const status=await localTwinSharingStatus(db,local,relationshipId);
-  if(status.state!=='ready')return status;
+  if(!status.initialized)return status;
   const peer=sharingTwin(db,local,relationshipId),endpoint=peerEndpoint(db,'twin',relationshipId,peer);
   try{
-    const snapshot=await peerSnapshot(`twin-sharing:${relationshipId}`,peer,async()=>z.object({state:z.enum(['pending','ready','error']),pendingDeliveries:z.number().int().nonnegative(),error:z.string().optional()}).passthrough()
-      .parse(await signedPeerPost(endpoint,'/api/cluster/v2/twins/sharing-status',{relationshipId})));
-    // A twin that is not answering is never shown as ready from an old report.
-    if(!snapshot.fresh)return {...status,state:'error',error:staleSnapshotReason(snapshot.fetchedAt)};
+    const snapshot=await peerSnapshot(`twin-sharing:${relationshipId}`,peer,async()=>peerSharingStatusSchema.parse(await signedPeerPost(endpoint,'/api/cluster/v2/twins/sharing-status',{relationshipId})));
+    // Do not offer a repair for a twin that is not answering.
+    if(!snapshot.fresh)return status.state!=='ready'?status:{...status,state:'error',error:staleSnapshotReason(snapshot.fetchedAt)};
     const remote=snapshot.value;
-    return {...status,state:remote.state,pendingDeliveries:status.pendingDeliveries+remote.pendingDeliveries,...(remote.error?{error:remote.error}:{})};
-  }catch(error){return {...status,state:'error',error:error instanceof Error?error.message:'Twin peer status unavailable'};}
+    const remoteConflicts=remote.conflicts?.filter(conflict=>conflict.version);
+    const error=[...new Set([status.error,remote.error].filter(Boolean))].join('\n');
+    const state=status.state==='error'||remote.state==='error'||remoteConflicts?.length?'error':status.state==='ready'&&remote.state==='ready'?'ready':'pending';
+    return {...status,state,pendingDeliveries:status.pendingDeliveries+remote.pendingDeliveries,...(error?{error}:{}),...(remoteConflicts?.length?{remoteConflicts}:{})};
+  }catch(error){return status.state!=='ready'?status:{...status,state:'error',error:error instanceof Error?error.message:'Twin peer status unavailable'};}
 }
 
 export function scheduleTwinSharing(db:DatabaseSync,relationshipId:string):void {

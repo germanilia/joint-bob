@@ -52,19 +52,27 @@ export function syncLabel(data) {
 const CONFLICTS_SHOWN = 5;
 /** One row per conversation both machines continued, with the way to settle it from this machine. */
 function transcriptConflicts(status, onChange) {
-  const conflicts = status.conflicts || [];
-  // Reported by the twin: it holds the other history, so only it can replace that history.
+  const conflicts = [...(status.conflicts || []).map(conflict => ({ conflict, onTwin: false })),
+    ...(status.remoteConflicts || []).map(conflict => ({ conflict, onTwin: true }))];
   if (!conflicts.length) return /Divergent transcript requires review/.test(status.error || "") ? [text("p", "A conversation was continued on both machines. Settle it from the other machine's Settings, under Cluster.")] : [];
   if (!status.relationshipId) return [];
   const list = document.createElement("div"); list.className = "cluster-sync-conflicts"; list.dataset.testid = "twin-sync-conflicts";
   list.append(text("p", `${conflicts.length === 1 ? "One conversation was" : `${conflicts.length} conversations were`} continued on both machines, so the two histories differ:`));
-  for (const conflict of conflicts.slice(0, CONFLICTS_SHOWN)) {
+  for (const { conflict, onTwin } of conflicts.slice(0, CONFLICTS_SHOWN)) {
     const name = conflict.title || `${conflict.engine} conversation ${conflict.sessionId.slice(0, 8)}`;
+    const twin = status.peerName || "the other machine";
+    const where = onTwin ? twin : "this machine";
+    const action = onTwin ? "accept-on-twin" : "accept";
+    const label = onTwin ? `Use this machine's version on ${twin}` : "Use the other machine's version";
     const row = document.createElement("div"); row.className = "cluster-sync-conflict"; row.dataset.testid = "twin-sync-conflict";
-    row.append(text("span", `${conflict.projectName || conflict.projectId}: ${name}`), button("Use the other machine's version", "twin-sync-conflict-accept", "ghost compact", async () => {
-      if (!await confirmAction({ eyebrow: "Twins", title: `Replace this machine's history of "${name}"?`, message: "The other machine owns this conversation, so its history replaces the one here. This machine's version is saved to a file first; nothing is deleted.", confirmLabel: "Use the other version" })) return;
-      const { saved } = await api(`/api/twins/${status.relationshipId}/transcript-conflicts/accept`, { method: "POST", body: JSON.stringify({ projectId: conflict.projectId, engine: conflict.engine, sessionId: conflict.sessionId, confirmReplaceLocal: true }) });
-      toast(`This machine's version was saved to ${saved}`);
+    row.append(text("span", `${conflict.projectName || conflict.projectId}: ${name}`), button(label, `twin-sync-conflict-${action}`, "ghost compact", async () => {
+      if (!await confirmAction({ eyebrow: "Twins", title: `Replace the history of "${name}" on ${where}?`,
+        message: `The conversation owner's version will become the active history. The current history on ${where} will be saved to a backup file first. The two histories won't be merged.`,
+        confirmLabel: "Replace history" })) return;
+      const { projectId, engine, sessionId, version } = conflict;
+      const body = { projectId, engine, sessionId, ...(onTwin ? { version, confirmReplaceOnTwin: true } : { confirmReplaceLocal: true }) };
+      const { saved } = await api(`/api/twins/${status.relationshipId}/transcript-conflicts/${action}`, { method: "POST", body: JSON.stringify(body) });
+      toast(`Previous history saved on ${where} to ${saved}`);
       await onChange();
     }));
     list.append(row);
@@ -93,12 +101,12 @@ export async function refreshTwins() {
   const [{ relationships }, { requests }] = await Promise.all([api("/api/twins"), api("/api/twins/requests")]);
   twins.relationships = relationships; twins.requests = requests;
   await Promise.all(relationships.filter((item) => item.status === "active").map(async (item) => {
-    try { twins.status.set(item.relationshipId, { ...await api(`/api/twins/${item.relationshipId}/sharing`), relationshipId: item.relationshipId }); }
+    try { twins.status.set(item.relationshipId, { ...await api(`/api/twins/${item.relationshipId}/sharing`), relationshipId: item.relationshipId, peerName: item.endpoint?.name }); }
     catch (error) { twins.status.set(item.relationshipId, { readError: error.message }); }
   }));
   return JSON.stringify([relationships.map(({ relationshipId, status }) => [relationshipId, status]),
     requests.map(({ relationshipId, direction }) => [relationshipId, direction]),
-    [...twins.status].map(([id, data]) => [id, syncLabel(data), data.error || data.readError || "", data.projectCount ?? 0])]);
+    [...twins.status].map(([id, data]) => [id, syncLabel(data), data.error || data.readError || "", data.projectCount ?? 0, data.conflicts, data.remoteConflicts])]);
 }
 
 /** Reachability and names of the twins; slow when a twin is down, so it never blocks the page. */
