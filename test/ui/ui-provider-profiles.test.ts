@@ -121,9 +121,8 @@ if(args[0]==='acp'&&args[1]==='--login'){
     assert.equal(response.status(), 201, `Account ${i}: ${await response.text()}`);
     await page.getByTestId("provider-profile-row").filter({ hasText: `Account ${i}` }).waitFor();
   }
-  assert.equal(await page.getByTestId("provider-profile-row").count(), 1);
-  await page.getByTestId("provider-profile-prev").click();
-  assert.equal(await page.getByTestId("provider-profile-row").count(), 4);
+  assert.equal(await page.getByTestId("provider-profile-row").count(), 5, "every profile is in one list, not pages");
+  assert.equal(await page.getByTestId("provider-profile-next").count(), 0);
   const first = page.getByTestId("provider-profile-row").filter({ hasText: "Account 1" });
   await first.getByTestId("provider-profile-status").filter({ hasText: "Sign in on this node or on a twin." }).waitFor();
   assert.equal(await first.locator(".profile-pill").innerText(), "Not signed in");

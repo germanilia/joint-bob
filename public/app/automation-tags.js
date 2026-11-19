@@ -49,7 +49,7 @@ async function loadCatalog() {
   tagFilter.replaceChildren(new Option("All tags", ""), ...active.map(tag => new Option(tag.name, tag.normalizedName)));
   if (selected && [...tagFilter.options].some(option => option.value === selected)) tagFilter.value = selected;
   const container = byId("automationTagsList");
-  if (!catalogFitted) catalogFitted = createFittedList({ list: container, pager: byId("automationTagsPager"), testPrefix: "automation-tags", fetchPage: async (page, size) => ({ items: catalogTags.slice((page - 1) * size, page * size), total: catalogTags.length }), renderItem: renderTag, emptyText: "No managed tags in this workspace." });
+  if (!catalogFitted) catalogFitted = createFittedList({ scroll: true, list: container, pager: byId("automationTagsPager"), testPrefix: "automation-tags", fetchPage: async (page, size) => ({ items: catalogTags.slice((page - 1) * size, page * size), total: catalogTags.length }), renderItem: renderTag, emptyText: "No managed tags in this workspace." });
   else await catalogFitted.reload();
 }
 
@@ -105,7 +105,7 @@ export async function loadAutomationTags() {
     workspaceSelect.replaceChildren(...workspaces.map(workspace => new Option(workspace.label, workspace.id)));
     if (!workspaceSelect.value && workspaces.length) workspaceSelect.value = workspaces[0].id;
     await loadCatalog();
-    if (!fitted) fitted = createFittedList({ list, pager, testPrefix: "automation-executions", fetchPage: fetchExecutions, renderItem: renderExecution, emptyText: "No executions match these filters." });
+    if (!fitted) fitted = createFittedList({ scroll: true, list, pager, testPrefix: "automation-executions", fetchPage: fetchExecutions, renderItem: renderExecution, emptyText: "No executions match these filters." });
     else await fitted.first();
     showStatus(status, "");
   } catch (error) { showStatus(status, error.message, "error"); }

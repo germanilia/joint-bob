@@ -8,9 +8,6 @@ import { confirmAction, toast } from "./shell.js";
  * Every list is paginated so the section fits the panel instead of scrolling.
  */
 
-const TOPICS_PER_PAGE = 3;
-const MESSAGES_PER_PAGE = 4;
-const USERS_PER_PAGE = 8;
 const CONCRETE_TOPIC = /^[A-Za-z0-9_-]{1,64}$/;
 const PERMISSIONS = [
   ["read-write", "Read & write"],
@@ -73,26 +70,6 @@ function permissionSelect(testid, value) {
   return select;
 }
 
-function pageCount(total, size) {
-  return Math.max(1, Math.ceil(total / size));
-}
-
-/** Prev / "Page X of Y" / Next. `list.page` is clamped so deletes never strand the user on an empty page. */
-function paginator(prefix, list, total, size, rerender) {
-  const pages = pageCount(total, size);
-  list.page = Math.min(Math.max(list.page, 0), pages - 1);
-  const label = el("span", { className: "settings-hint", text: `Page ${list.page + 1} of ${pages}`, testid: `${prefix}-page-label`, attrs: { "aria-live": "polite" } });
-  const prev = button("Prev", `${prefix}-prev-button`, "ghost compact", () => { list.page -= 1; rerender(); });
-  const next = button("Next", `${prefix}-next-button`, "ghost compact", () => { list.page += 1; rerender(); });
-  prev.disabled = list.page === 0;
-  next.disabled = list.page >= pages - 1;
-  return el("div", { className: "ntfy-manage-pager", testid: `${prefix}-pager` }, prev, label, next);
-}
-
-function slice(items, list, size) {
-  return items.slice(list.page * size, (list.page + 1) * size);
-}
-
 function status(text, testid) {
   return el("p", { className: "settings-hint", text, testid, attrs: { role: "status" } });
 }
@@ -135,7 +112,6 @@ const loadUsers = () => loadInto("users", async () => (await api(servicePath("/u
 
 function loadMessages(topic) {
   manager.messages.topic = topic;
-  manager.messages.page = 0;
   manager.messages.data = null;
   return loadInto("messages", async () => {
     const query = new URLSearchParams({ topic, since: "all", limit: "200" });
@@ -224,8 +200,8 @@ function renderTopicsView(body) {
   else if (!slot.data.length) body.append(status("No topics have access grants yet.", "ntfy-manage-topics-empty"));
   else {
     const list = el("ul", { className: "ntfy-manage-topic-list settings-list", testid: "ntfy-manage-topic-list" });
-    list.append(...slice(slot.data, slot, TOPICS_PER_PAGE).map(renderTopicRow));
-    body.append(list, paginator("ntfy-manage-topics", slot, slot.data.length, TOPICS_PER_PAGE, render));
+    list.append(...slot.data.map(renderTopicRow));
+    body.append(list);
   }
   body.append(renderAddGrantForm());
 }
@@ -269,8 +245,8 @@ function renderMessagesView(body) {
   else if (!slot.data.length) body.append(status("No cached messages. The server only keeps messages for about 12 hours, so an empty list is normal.", "ntfy-manage-messages-empty"));
   else {
     const list = el("ul", { className: "ntfy-manage-message-list settings-list", testid: "ntfy-manage-message-list" });
-    list.append(...slice(slot.data, slot, MESSAGES_PER_PAGE).map(describeMessage));
-    body.append(list, paginator("ntfy-manage-messages", slot, slot.data.length, MESSAGES_PER_PAGE, render));
+    list.append(...slot.data.map(describeMessage));
+    body.append(list);
   }
 }
 
@@ -307,8 +283,8 @@ function renderUsersView(body) {
   else if (!slot.data.length) body.append(status("No users on this server.", "ntfy-manage-users-empty"));
   else {
     const list = el("ul", { className: "ntfy-manage-user-list settings-list", testid: "ntfy-manage-user-list" });
-    list.append(...slice(slot.data, slot, USERS_PER_PAGE).map(renderUserRow));
-    body.append(list, paginator("ntfy-manage-users", slot, slot.data.length, USERS_PER_PAGE, render));
+    list.append(...slot.data.map(renderUserRow));
+    body.append(list);
   }
   const username = input("ntfy-manage-user-name-input", { placeholder: "alice", maxLength: 64 });
   const password = input("ntfy-manage-user-password-input", { type: "password", autocomplete: "new-password" });
@@ -388,7 +364,7 @@ function render() {
 }
 
 function freshList() {
-  return { data: null, loading: false, error: "", page: 0 };
+  return { data: null, loading: false, error: "" };
 }
 
 /** Opens (or switches) the inline manager for a service and loads its topics. */

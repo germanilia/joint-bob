@@ -1120,6 +1120,16 @@
             <button class="ghost compact" type="button" id="usersEnableConfirmButton" data-testid="users-enable-confirm-button">Turn it on</button>
             <button class="ghost compact" type="button" id="usersEnableCancelButton" data-testid="users-enable-cancel-button">Cancel</button>
           </div>
+          <details class="add-details" id="usersAddFieldset" data-testid="users-add">
+            <summary>Add a person…</summary>
+            <div class="node-block-add">
+              <label>Username<input id="usersAddUsername" autocomplete="off" maxlength="28" form="usersAddForm" data-testid="users-add-username" /></label>
+              <label>Email<input id="usersAddEmail" type="email" autocomplete="off" maxlength="254" form="usersAddForm" data-testid="users-add-email" /></label>
+              <button class="ghost compact" type="button" id="usersAddButton" data-testid="users-add-button">Add</button>
+            </div>
+            <p class="settings-hint">They sign in once with a one-time password shown here, then choose their own. Each person gets their own OS account, projects and settings.</p>
+          </details>
+          <p class="users-one-time" id="usersOneTime" data-testid="users-one-time" hidden></p>
           <table class="users-table" data-testid="users-table">
             <thead><tr><th>Email</th><th>Username</th><th>Role</th><th>Status</th><th>Added</th><th><span class="sr-only">Actions</span></th></tr></thead>
             <tbody id="usersTableBody"></tbody>
@@ -1133,16 +1143,6 @@
               <button class="ghost compact" type="button" id="usersClaudeTokenClear" data-testid="users-claude-token-clear">Remove</button>
             </div>
             <p class="settings-hint" id="usersClaudeTokenStatus" role="status" data-testid="users-claude-token-status"></p>
-          </fieldset>
-          <fieldset class="phase-settings" id="usersAddFieldset" data-testid="users-add">
-            <legend>Add a person</legend>
-            <div class="node-block-add">
-              <label>Username<input id="usersAddUsername" autocomplete="off" maxlength="28" form="usersAddForm" data-testid="users-add-username" /></label>
-              <label>Email<input id="usersAddEmail" type="email" autocomplete="off" maxlength="254" form="usersAddForm" data-testid="users-add-email" /></label>
-              <button class="ghost compact" type="button" id="usersAddButton" data-testid="users-add-button">Add</button>
-            </div>
-            <p class="settings-hint">They sign in once with a one-time password shown here, then choose their own. Each person gets their own OS account, projects and settings.</p>
-            <p class="users-one-time" id="usersOneTime" data-testid="users-one-time" hidden></p>
           </fieldset>
           <p class="settings-hint" id="usersStatus" role="status" data-testid="users-status"></p>
         </section>
@@ -1258,7 +1258,7 @@
             <p class="settings-hint">Define ntfy servers once, share them with paired nodes, and choose a default. Tokens are encrypted on every node; the chosen server and token also travel with each conversation you enable.</p>
             <ul id="ntfyServiceList" class="settings-list" data-testid="ntfy-service-list"></ul>
             <section id="ntfyManagePanel" class="ntfy-manage" data-testid="ntfy-manage-panel" hidden></section>
-            <details class="ntfy-add-details" data-testid="ntfy-add-details">
+            <details class="add-details" data-testid="ntfy-add-details">
               <summary>Add a service</summary>
             <div id="ntfyServiceAddForm" class="ntfy-service-add" data-testid="ntfy-service-add-form">
             <label>Name
@@ -1304,12 +1304,10 @@
         </section>
 
         <section class="settings-panel" id="settingsPanel-labels" role="tabpanel" aria-labelledby="settingsTab-labels" tabindex="0" hidden>
-          <label>Edit the labels as text, one per line
-            <textarea id="settingsConversationLabels" rows="8" data-testid="settings-conversation-labels" aria-describedby="settingsLabelsHint"></textarea>
-          </label>
-          <p class="settings-hint" id="settingsLabelsHint">One label per line, up to 50 labels of 80 characters each. These choices are node-local. Other always allows free text. Changing this list does not change existing conversation classifications.</p>
           <fieldset class="label-icons" id="settingsLabelIcons" data-testid="settings-label-icons">
-            <legend>Label icons</legend>
+            <legend>Labels</legend>
+            <div class="label-icon-rows" id="settingsLabelRows"></div>
+            <button type="button" class="ghost compact" id="settingsLabelAdd" data-testid="label-add">Add label</button>
           </fieldset>
           <label>Agent that generates icons
             <select id="settingsLabelIconHarness" data-testid="settings-label-icon-harness"></select>
@@ -1318,6 +1316,13 @@
             <select id="settingsLabelIconModel" data-testid="settings-label-icon-model"></select>
           </label>
           <p class="settings-hint">An icon replaces the label's text in lists and filters. Leave it empty to show the text. Generate asks the chosen agent and model for one emoji. Automatic uses the default agent on its default model.</p>
+          <details class="add-details" data-testid="labels-text-details">
+            <summary>Edit the labels as text…</summary>
+          <label>One label per line
+            <textarea id="settingsConversationLabels" rows="8" data-testid="settings-conversation-labels" aria-describedby="settingsLabelsHint"></textarea>
+          </label>
+          <p class="settings-hint" id="settingsLabelsHint">One label per line, up to 50 labels of 80 characters each. These choices are node-local. Other always allows free text. Changing this list does not change existing conversation classifications.</p>
+          </details>
         </section>
 
         <section class="settings-panel" id="settingsPanel-conversations" role="tabpanel" aria-labelledby="settingsTab-conversations" tabindex="0" hidden>
@@ -1509,7 +1514,7 @@
           </fieldset>
         </section>
 
-        <section class="settings-panel" id="settingsPanel-automation-tags" role="tabpanel" aria-labelledby="settingsTab-automation-tags" tabindex="0" data-testid="settings-panel-automation-tags" hidden>
+        <section class="settings-panel relay-panel" id="settingsPanel-automation-tags" role="tabpanel" aria-labelledby="settingsTab-automation-tags" tabindex="0" data-testid="settings-panel-automation-tags" hidden>
           <p class="settings-hint">Manage workspace tags and review scheduled-task and webhook executions. Manual tags never enter this list unless you add them here.</p>
           <label>Workspace<select id="automationTagsWorkspace" data-testid="automation-tags-workspace"></select></label>
           <div class="relay-form"><label>New managed tag<input id="automationTagsNewName" maxlength="80" autocomplete="off" data-testid="automation-tags-new-name" /></label><button id="automationTagsAdd" type="button" class="primary compact" data-testid="automation-tags-add">Add tag</button></div>

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.334.0 — 2026-11-19
+
+- Labels is one list you edit in place: each label is a row with its name, icon, Generate and Remove, and **Add label** starts a new one. The text box that edits the same list moved behind **Edit the labels as text…**.
+- Each custom command is one line (name, prompt, Share). The prompt opens to a few lines while you type in it, and Remove is in the ⋯ menu.
+- Adding a person on Users starts from **Add a person…** above the table; the one-time password still shows under it.
+- Connections lists every profile, pool and exception on one scrolling page instead of pages of four, and a pool is a row that shows its profiles in order.
+- Notifications shows all of a server's topics, messages and users in one list, and Automation tags and Execution history scroll instead of paging.
+
 ## 2.333.0 — 2026-11-19
 
 - Resources, and Joined relays with each relay's phone addresses, are continuous lists that the section scrolls, like the other Settings lists.

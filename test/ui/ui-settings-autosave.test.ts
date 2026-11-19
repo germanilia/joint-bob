@@ -82,6 +82,7 @@ test("every section that waited for Save settings saves as it changes and keeps 
 
   // Labels: typed text saves after a pause.
   await openSection(page, "labels");
+  await page.getByTestId("labels-text-details").evaluate((details) => { (details as HTMLDetailsElement).open = true; });
   await page.getByTestId("settings-conversation-labels").fill("Research\nBug\nAutosaved label");
   await waitForSaved(page);
 
@@ -288,6 +289,7 @@ test("leaving Settings right after a change still saves it", { timeout: 120_000 
 
   // Typed text that has not waited out its pause yet.
   await openSection(page, "labels");
+  await page.getByTestId("labels-text-details").evaluate((details) => { (details as HTMLDetailsElement).open = true; });
   await page.getByTestId("settings-conversation-labels").fill("Research\nLeft in a hurry");
   await page.getByTestId("settings-cancel-button").click();
   await page.locator("#settingsDialog[open]").waitFor({ state: "hidden" });

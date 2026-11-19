@@ -112,6 +112,7 @@ test("a member sees no admin entries, never calls an admin route, and saves only
   await page.locator('#settingsForm[data-ready="true"]').waitFor({ timeout: 40_000 });
   // A member's change saves on its own, through their personal settings.
   const saving = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings/personal" && response.request().method() === "PUT", { timeout: 40_000 });
+  await page.getByTestId("labels-text-details").evaluate((details) => { (details as HTMLDetailsElement).open = true; });
   await page.locator("#settingsConversationLabels").fill("noam-label");
   const response = await saving;
   assert.equal(response.status(), 200);
@@ -164,6 +165,7 @@ test("the admin adds a person in Users, who signs in with the one-time password"
   await page.getByTestId("settings-open-button").click();
   await page.getByTestId("settings-tab-users").click();
   await page.getByTestId("users-row").first().waitFor();
+  await page.getByTestId("users-add").locator("summary").click();
   await page.getByTestId("users-add-username").fill("lior");
   await page.getByTestId("users-add-email").fill("lior@example.test");
   await page.getByTestId("users-add-button").click();

@@ -201,7 +201,6 @@ test("ntfy settings manage topics, messages, users and the admin token inline", 
   assert.deepEqual(await texts("ntfy-manage-topic-name"), ["alerts", "home-*"]);
   const alerts = sub("ntfy-manage-topic-row").nth(0);
   assert.deepEqual(await alerts.getByTestId("ntfy-manage-grant-user").allTextContents(), ["everyone", "alice"]);
-  assert.equal(await sub("ntfy-manage-topics-page-label").textContent(), "Page 1 of 1");
   // Wildcard patterns cannot be read; concrete topics can.
   assert.equal(await sub("ntfy-manage-topic-messages-button").nth(1).isDisabled(), true);
   assert.equal(await sub("ntfy-manage-topic-messages-button").nth(0).isDisabled(), false);
@@ -226,22 +225,14 @@ test("ntfy settings manage topics, messages, users and the admin token inline", 
   assert.deepEqual(await lastMutation(), { path: `${base}/topics`, method: "DELETE", body: { topic: "alerts", username: "alice" } });
   await until(async () => (await alerts.getByTestId("ntfy-manage-grant-row").count()) === 1, "removed grant disappears");
 
-  // Read messages, newest first, paginated.
+  // Read messages, newest first, all in one list.
   await click("ntfy-manage-topic-messages-button", sub("ntfy-manage-topic-row").nth(0));
-  await until(async () => (await sub("ntfy-manage-message-row").count()) === 4, "first message page renders");
+  await until(async () => (await sub("ntfy-manage-message-row").count()) === 8, "all messages render");
   assert.match((await sub("ntfy-manage-messages-heading").textContent()) ?? "", /alerts/);
   assert.deepEqual(await sub("ntfy-manage-read-topic-options").evaluate((list: HTMLDataListElement) => [...list.options].map((option) => option.value)), ["alerts"], "pulled concrete topics are suggested");
-  const firstPage = await texts("ntfy-manage-message-body");
-  assert.deepEqual(firstPage, ["message 8", "message 7", "message 6", "message 5"]);
+  assert.deepEqual(await texts("ntfy-manage-message-body"), ["message 8", "message 7", "message 6", "message 5", "message 4", "message 3", "message 2", "message 1"]);
   assert.equal(await sub("ntfy-manage-message-title").first().textContent(), "Disk full");
   assert.match((await sub("ntfy-manage-message-meta").first().textContent()) ?? "", /priority 4 · warning/);
-  assert.equal(await sub("ntfy-manage-messages-page-label").textContent(), "Page 1 of 2");
-  assert.equal(await sub("ntfy-manage-messages-prev-button").isDisabled(), true);
-  await click("ntfy-manage-messages-next-button");
-  await until(async () => (await sub("ntfy-manage-message-row").count()) === 4, "second message page renders");
-  assert.deepEqual(await texts("ntfy-manage-message-body"), ["message 4", "message 3", "message 2", "message 1"]);
-  assert.equal(await sub("ntfy-manage-messages-page-label").textContent(), "Page 2 of 2");
-  assert.equal(await sub("ntfy-manage-messages-next-button").isDisabled(), true);
   const messageRequests = async () => (await page.evaluate(() => (window as unknown as { ntfyServer: { requests: RecordedRequest[] } }).ntfyServer.requests) as RecordedRequest[])
     .filter((request) => request.path.includes("/messages"));
   assert.equal((await messageRequests()).at(-1)?.path, `${base}/messages?topic=alerts&since=all&limit=200`);

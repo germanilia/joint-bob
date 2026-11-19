@@ -336,6 +336,7 @@ usersAdd?.addEventListener("click", async () => {
     usersOneTime.hidden = false;
     document.querySelector("#usersAddUsername").value = "";
     document.querySelector("#usersAddEmail").value = "";
+    document.querySelector("#usersAddFieldset").open = false;
     await loadUsers();
   } catch (error) {
     usersStatus.textContent = error.message;

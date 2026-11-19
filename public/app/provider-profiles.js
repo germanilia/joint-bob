@@ -22,7 +22,6 @@ const SCOPES = [
 ];
 /** A pool needs no provider, so a pool assignment can also cover everything at once. */
 const POOL_SCOPES = [{ id: "default", label: "Default", icon: "folder" }, ...SCOPES];
-const PAGE_SIZE = { profiles: 4, pools: 4, exceptions: 6 };
 const HISTORY_WARNING = "The next turn may send conversation history under a different provider account. Running turns keep their current account.";
 
 let root;
@@ -33,7 +32,6 @@ let modelCatalogLoad;
 let conversationDefaultProvider = "claude";
 let simulationModelChoice = "configured-default";
 const simulationUnavailable = new Map();
-const pages = { profiles: 0, pools: 0, exceptions: 0 };
 const profileStatuses = new Map();
 /** Which tab is open, which provider each provider tab bar shows, and what the Pools tab shows. */
 let view = "profiles";
@@ -84,18 +82,6 @@ function sectionHeader(title, hint) {
   if (hint) head.append(el("p", { className: "settings-hint", text: hint }));
   return head;
 }
-function pager(name, total, testPrefix, section = name) {
-  const count = Math.ceil(total / PAGE_SIZE[name]);
-  pages[name] = Math.min(pages[name], Math.max(0, count - 1));
-  if (count <= 1) return [];
-  const bar = el("div", { className: "profile-pager" });
-  const previous = actionButton("Previous", `${testPrefix}-prev`, () => { pages[name] -= 1; rerender(section); });
-  const next = actionButton("Next", `${testPrefix}-next`, () => { pages[name] += 1; rerender(section); });
-  previous.disabled = pages[name] === 0; next.disabled = pages[name] >= count - 1;
-  bar.append(previous, el("span", { text: `Page ${pages[name] + 1} of ${count}` }), next);
-  return [bar];
-}
-function pageOf(name, items) { return items.slice(pages[name] * PAGE_SIZE[name], (pages[name] + 1) * PAGE_SIZE[name]); }
 /** The same provider tabs, with the same icons, wherever profiles are listed or chosen. */
 function providerTabs(selected, onSelect, testPrefix, count) {
   const tabs = el("div", { className: "settings-subtabs profile-provider-tabs", testid: `${testPrefix}-tabs` });
@@ -132,7 +118,7 @@ export async function loadProviderProfiles() {
 }
 /** Pool cards show each member's sign-in, including profiles on another provider tab or page. */
 function prefetchStatuses() {
-  const shown = new Set(pageOf("profiles", profiles.filter((profile) => profile.provider === profileProvider)).map((profile) => profile.id));
+  const shown = new Set(profiles.filter((profile) => profile.provider === profileProvider).map((profile) => profile.id));
   for (const profile of profiles) {
     if (shown.has(profile.id)) continue;
     void fetchStatus(profile).catch((error) => {
@@ -206,13 +192,12 @@ function rerender(name) {
 function profilesSection() {
   const section = el("section", { testid: "provider-profile-section", className: "profile-section" });
   const own = profiles.filter((profile) => profile.provider === profileProvider);
-  const tabs = providerTabs(profileProvider, (id) => { profileProvider = id; pages.profiles = 0; rerender("profiles"); }, "provider-profile-provider",
+  const tabs = providerTabs(profileProvider, (id) => { profileProvider = id; rerender("profiles"); }, "provider-profile-provider",
     (id) => profiles.filter((profile) => profile.provider === id).length);
-  const pagination = pager("profiles", own.length, "provider-profile");
   const list = el("div", { testid: "provider-profile-list", className: "profile-grid" });
-  list.append(...pageOf("profiles", own).map(profileCard));
+  list.append(...own.map(profileCard));
   if (!own.length) list.append(el("p", { className: "profile-empty", text: `No ${providerOf(profileProvider).name} profiles yet. Add one above, then sign in.` }));
-  section.append(tabs, el("p", { className: "settings-hint", text: providerOf(profileProvider).note }), addProfileForm(profileProvider), list, ...pagination);
+  section.append(tabs, el("p", { className: "settings-hint", text: providerOf(profileProvider).note }), addProfileForm(profileProvider), list);
   return section;
 }
 function addProfileForm(provider) {
@@ -222,7 +207,6 @@ function addProfileForm(provider) {
   const add = actionButton("Add profile", "provider-profile-add", async () => {
     if (!name.value.trim()) { name.focus(); throw new Error("Enter a profile name first."); }
     await api("/api/provider-profiles", { method: "POST", body: JSON.stringify({ provider, label: name.value, ...(kiro ? { kiro: kiro.value() } : {}) }) });
-    pages.profiles = Math.floor(profiles.filter((profile) => profile.provider === provider).length / PAGE_SIZE.profiles);
     await loadProviderProfiles();
   }, { icon: "plus", className: "primary profile-action" });
   form.append(name, ...(kiro ? kiro.fields : []), add);
@@ -388,9 +372,9 @@ function poolsSection() {
   const head = el("div", { className: "profile-section-toolbar" });
   head.append(sectionHeader("Pools", "A pool is an ordered list of your private profiles. When the one in use runs out of quota or its sign-in fails, the next one takes over. To use a pool only in one cluster's projects, assign it to that cluster under Assignments."), create);
   const list = el("div", { testid: "subscription-pool-list", className: "subscription-pool-grid" });
-  list.append(...pageOf("pools", pools).map(poolCard));
+  list.append(...pools.map(poolCard));
   if (!pools.length) list.append(el("p", { className: "profile-empty", text: "No pools yet. Add profiles on the Profiles tab, then group them here so a turn can move to the next one when a quota runs out." }));
-  section.append(head, list, ...pager("pools", pools.length, "subscription-pool"));
+  section.append(head, list);
   return section;
 }
 
@@ -561,7 +545,7 @@ async function refreshLogin(profile, container, settled) {
  */
 function assignmentsSection() {
   const section = el("section", { testid: "provider-assignments", className: "profile-section" });
-  const tabs = providerTabs(assignmentProvider, (id) => { assignmentProvider = id; exceptionDraft = null; pages.exceptions = 0; rerender("assignments"); }, "provider-assignment-provider",
+  const tabs = providerTabs(assignmentProvider, (id) => { assignmentProvider = id; exceptionDraft = null; rerender("assignments"); }, "provider-assignment-provider",
     (id) => new Set([
       ...selections.filter((item) => item.provider === id).map((item) => JSON.stringify([item.scope, item.scopeId])),
       ...relayRules.filter((rule) => rule.providers.includes(id)).map((rule) => JSON.stringify(["cluster", rule.clusterId])),
@@ -635,14 +619,12 @@ function exceptionsBlock(provider) {
   const exceptions = selections.filter((item) => item.provider === provider && item.scope !== "default" && !item.poolId)
     .sort((left, right) => SCOPE_RANK[left.scope] - SCOPE_RANK[right.scope] || scopeName(left).localeCompare(scopeName(right)));
   const block = el("div", { testid: "provider-assignment-exceptions", className: "assignment-block" });
-  const pagination = pager("exceptions", exceptions.length, "provider-exceptions", "assignments");
-  const visible = pageOf("exceptions", exceptions);
   const list = el("ul", { testid: "provider-exception-list", className: "assignment-exception-list" });
-  list.append(...visible.map(exceptionRow));
+  list.append(...exceptions.map(exceptionRow));
   if (!exceptions.length) list.append(el("li", { className: "profile-empty", text: `No exceptions. Every ${name} conversation uses the profile above.` }));
   const add = exceptionDraft && !exceptionDraft.pool ? exceptionForm(provider) : actionButton("Add exception", "provider-exception-new", () => { exceptionDraft = { scope: "workspace" }; rerender("assignments"); }, { icon: "plus" });
-  block.append(sectionHeader("Exceptions", "Use a different profile or pool in one workspace, in the projects shared through one cluster, in one project, or in one conversation. A pool applies to every provider its profiles use. These are your choices: they apply on this machine and your twins, never to other members. When several match, the most specific wins: a conversation over its project, a project over its cluster, a cluster over its workspace."), list, ...pagination, add);
-  void loadConversationTitles(visible).catch((error) => toast.error(error.message));
+  block.append(sectionHeader("Exceptions", "Use a different profile or pool in one workspace, in the projects shared through one cluster, in one project, or in one conversation. A pool applies to every provider its profiles use. These are your choices: they apply on this machine and your twins, never to other members. When several match, the most specific wins: a conversation over its project, a project over its cluster, a cluster over its workspace."), list, add);
+  void loadConversationTitles(exceptions).catch((error) => toast.error(error.message));
   return block;
 }
 function exceptionRow(entry) {

@@ -5,11 +5,12 @@ import { state } from "./state.js";
 import { toast } from "./shell.js";
 
 /**
- * Settings → Labels: one row per label line in the textarea, each with an icon the user
- * can type, leave empty (the label then shows as text), or ask an agent to pick.
+ * Settings → Labels: one editable row per label, each with an icon the user can type, leave empty (the label then
+ * shows as text), or ask an agent to pick. The textarea (Edit the labels as text) holds the same list and is what
+ * Settings saves, so a change in a row writes it and a change in the textarea redraws the rows.
  */
 const labelsField = document.querySelector("#settingsConversationLabels");
-const rows = document.querySelector("#settingsLabelIcons");
+const rows = document.querySelector("#settingsLabelRows");
 const harnessSelect = document.querySelector("#settingsLabelIconHarness");
 const modelSelect = document.querySelector("#settingsLabelIconModel");
 const modelLabel = document.querySelector("#settingsLabelIconModelLabel");
@@ -53,13 +54,33 @@ function pickedModel() {
   return { ...(provider ? { provider } : {}), ...(modelId ? { modelId } : {}) };
 }
 
-function row(label) {
+/** The textarea is the saved list: rewrite it from the rows and let Settings autosave see the change. */
+function writeText() {
+  labelsField.value = [...rows.querySelectorAll(".label-icon-name")].map((field) => field.value.trim()).filter(Boolean).join("\n");
+  labelsField.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function row(first) {
+  let label = first;
   const item = document.createElement("div");
   item.className = "label-icon-row";
   item.dataset.testid = "label-icon-row";
-  const name = document.createElement("span");
+  const name = document.createElement("input");
   name.className = "label-icon-name";
-  name.textContent = label;
+  name.maxLength = 80;
+  name.autocomplete = "off";
+  name.placeholder = "Label";
+  name.value = label;
+  name.dataset.testid = "label-name-input";
+  name.setAttribute("aria-label", "Label name");
+  name.addEventListener("input", () => {
+    const renamed = name.value.trim();
+    if (renamed === label) return;
+    if (draft[label]) { draft[renamed] = draft[label]; delete draft[label]; }
+    label = renamed;
+    input.setAttribute("aria-label", `Icon for ${label || "this label"}`);
+    writeText();
+  });
   const input = document.createElement("input");
   input.className = "label-icon-input";
   input.maxLength = 16;
@@ -69,6 +90,13 @@ function row(label) {
   input.dataset.testid = "label-icon-input";
   input.setAttribute("aria-label", `Icon for ${label}`);
   input.addEventListener("input", () => { draft[label] = input.value.trim(); });
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "ghost";
+  remove.textContent = "Remove";
+  remove.dataset.testid = "label-remove";
+  remove.setAttribute("aria-label", "Remove label");
+  remove.addEventListener("click", () => { delete draft[label]; item.remove(); writeText(); });
   const generate = document.createElement("button");
   generate.type = "button";
   generate.className = "ghost";
@@ -76,6 +104,7 @@ function row(label) {
   generate.dataset.testid = "label-icon-generate";
   generate.setAttribute("aria-label", `Generate an icon for ${label}`);
   generate.addEventListener("click", async () => {
+    if (!label) { name.focus(); toast.error("Name the label first."); return; }
     generate.disabled = true;
     generate.textContent = "Generating…";
     try {
@@ -91,7 +120,7 @@ function row(label) {
       generate.textContent = "Generate";
     }
   });
-  item.append(name, input, generate);
+  item.append(name, input, generate, remove);
   return item;
 }
 
@@ -100,6 +129,12 @@ function render() {
   const names = labelNames();
   rows.replaceChildren(...names.map(row));
 }
+
+document.querySelector("#settingsLabelAdd").addEventListener("click", () => {
+  const added = row("");
+  rows.append(added);
+  added.querySelector(".label-icon-name").focus();
+});
 
 labelsField.addEventListener("change", render);
 labelsField.addEventListener("blur", render);

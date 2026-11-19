@@ -764,18 +764,11 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
 #settingsForm .resources-panel :is(.resources-list, .resources-scan-list) { overflow: visible; }
 
 /* Notifications: the form that adds an ntfy server is folded until it is wanted. */
-#settingsForm .ntfy-add-details { margin-top: 4px; }
-#settingsForm .ntfy-add-details > summary { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 11px; background: var(--paper-raised, var(--field)); font-size: 13.5px; font-weight: 600; cursor: pointer; list-style: none; }
-#settingsForm .ntfy-add-details > summary::-webkit-details-marker { display: none; }
-#settingsForm .ntfy-add-details[open] > summary { margin-bottom: 10px; }
+#settingsForm .add-details { margin-top: 4px; }
+#settingsForm .add-details > summary { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 11px; background: var(--paper-raised, var(--field)); font-size: 13.5px; font-weight: 600; cursor: pointer; list-style: none; }
+#settingsForm .add-details > summary::-webkit-details-marker { display: none; }
+#settingsForm .add-details[open] > summary { margin-bottom: 10px; }
 
-/* Labels: the labels with their icons come first; the box that edits the same list as text follows them. */
-#settingsForm #settingsPanel-labels > .settings-section-head { order: -1; }
-#settingsForm #settingsPanel-labels > #settingsLabelIcons { order: 1; }
-#settingsForm #settingsPanel-labels > label:has(#settingsLabelIconHarness), #settingsForm #settingsPanel-labels > #settingsLabelIconModelLabel { order: 2; }
-#settingsForm #settingsPanel-labels > p:not(#settingsLabelsHint) { order: 3; }
-#settingsForm #settingsPanel-labels > label:has(#settingsConversationLabels) { order: 4; }
-#settingsForm #settingsPanel-labels > #settingsLabelsHint { order: 5; }
 
 /* Connections: a profile is a row (name, state, actions), not a card, so a list of them reads at a glance. */
 #settingsForm .profile-grid { grid-template-columns: minmax(0, 1fr); gap: 0; border-radius: 16px; background: var(--field); overflow: clip; }
@@ -794,3 +787,40 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
   #settingsForm .profile-card > .profile-actions { justify-content: flex-start; }
 }
 #settingsForm .resources-panel .resources-add > .resources-page { flex: none; min-height: auto; overflow: visible; }
+
+/* Commands: one line per command (name, prompt, actions). The prompt opens to a few lines while it is being edited. */
+#savedCommandsList > .saved-command-row { grid-template-columns: minmax(120px, 1fr) minmax(200px, 3fr) auto; align-items: start; margin: 6px 0; }
+#savedCommandsList > .saved-command-row textarea { min-height: 0; height: 2.4em; resize: vertical; transition: height .12s ease; }
+#savedCommandsList > .saved-command-row textarea:focus { height: 7em; }
+#savedCommandsList > .saved-command-row .long-row-controls { align-self: center; }
+@media (max-width: 600px) {
+  #savedCommandsList > .saved-command-row { grid-template-columns: 1fr auto; }
+  #savedCommandsList > .saved-command-row textarea { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Connections › Pools: a pool is a row (name, its profiles in order, actions); the fallback and where it is used sit under it. */
+#settingsForm .subscription-pool-grid { grid-template-columns: minmax(0, 1fr); gap: 0; border-radius: 16px; background: var(--field); overflow: clip; }
+#settingsForm .subscription-pool-grid > .subscription-pool-card {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; align-items: center; gap: 4px 16px;
+  padding: 12px 16px; border: 0; border-left: 3px solid var(--brand); border-radius: 0; background: none;
+}
+#settingsForm .subscription-pool-grid > .subscription-pool-card + .subscription-pool-card { box-shadow: inset 0 1px 0 var(--line); }
+#settingsForm .subscription-pool-card > .pool-card-head { grid-column: 1; justify-content: flex-start; flex-wrap: wrap; }
+#settingsForm .subscription-pool-card > .pool-card-members { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+#settingsForm .subscription-pool-card > .profile-actions { grid-column: 3; grid-row: 1; justify-content: flex-end; margin-top: 0; }
+#settingsForm .subscription-pool-card > :is(p.profile-status-detail) { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 900px) {
+  #settingsForm .subscription-pool-grid > .subscription-pool-card { grid-template-columns: minmax(0, 1fr); }
+  #settingsForm .subscription-pool-card > :is(.pool-card-head, .pool-card-members, .profile-actions) { grid-column: 1; grid-row: auto; }
+  #settingsForm .subscription-pool-card > .profile-actions { justify-content: flex-start; }
+}
+
+/* Labels: each label is one editable row (name, icon, Generate, Remove). */
+#settingsForm .label-icon-rows { display: grid; gap: 8px; }
+#settingsForm .label-icon-row { grid-template-columns: minmax(0, 1fr) 72px auto auto; }
+#settingsForm .label-icon-row > .label-icon-name { min-width: 0; }
+@media (max-width: 600px) {
+  #settingsForm .label-icon-row { grid-template-columns: minmax(0, 1fr) 72px; }
+  #settingsForm .label-icon-row > button { justify-self: start; }
+}
+#settingsForm #settingsLabelAdd { justify-self: start; margin-top: 8px; }

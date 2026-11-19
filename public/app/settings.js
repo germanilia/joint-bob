@@ -1,3 +1,4 @@
+import { rowActions } from "./list-pager.js";
 import { api, savePreferencesInBackground } from "./api.js";
 import { loadProviderProfiles } from "./provider-profiles.js";
 import { antigravityLoginControls } from "./antigravity-login.js";
@@ -638,7 +639,7 @@ function addSavedCommandRow(command = { name: "", prompt: "" }) {
   prompt.setAttribute("aria-label", "Command prompt");
   prompt.maxLength = 10000;
   prompt.required = true;
-  prompt.rows = 2;
+  prompt.rows = 1;
   prompt.value = command.prompt;
   const remove = document.createElement("button");
   remove.type = "button";
@@ -665,7 +666,8 @@ function addSavedCommandRow(command = { name: "", prompt: "" }) {
       await openCommandSharing(row.dataset.commandId);
     } catch (error) { toast.error(error.message); }
   });
-  row.append(name, prompt, remove, share);
+  const { controls } = rowActions([remove], "Command actions", share);
+  row.append(name, prompt, controls);
   savedCommandsList.append(row);
   if (!command.name) name.focus();
 }

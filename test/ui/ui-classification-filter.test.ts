@@ -85,6 +85,7 @@ test("classification filters combine with search and status, include custom labe
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-labels").click();
     await page.locator('#settingsForm[data-ready="true"]').waitFor();
+    await page.getByTestId("labels-text-details").evaluate((details) => { (details as HTMLDetailsElement).open = true; });
     await page.getByTestId("settings-conversation-labels").fill("Research\nBug\nFeature\nPOC\nSupport");
     await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
     await page.getByTestId("settings-cancel-button").click();
@@ -94,6 +95,7 @@ test("classification filters combine with search and status, include custom labe
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-labels").click();
     await page.locator('#settingsForm[data-ready="true"]').waitFor();
+    await page.getByTestId("labels-text-details").evaluate((details) => { (details as HTMLDetailsElement).open = true; });
     await page.getByTestId("settings-conversation-labels").fill("Research\nBug\nFeature\nPOC");
     await page.locator('[data-testid="settings-save-state"][data-state="saved"]').waitFor();
     await page.getByTestId("settings-cancel-button").click();
