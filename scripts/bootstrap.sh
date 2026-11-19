@@ -4,7 +4,7 @@
 # expose it over tailnet HTTPS, then verify local and served health.
 #
 # Usage (pipe over SSH or run locally):
-#   curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/bootstrap.sh | bash
 #
 # Environment:
 #   PORT / HTTPS_PORT       forwarded to the app and Tailscale Serve (defaults 8787 / 8443)
@@ -15,7 +15,7 @@ set -euo pipefail
 PORT="${PORT:-8787}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
 APP_DIR="${HOME}/.local/share/joint-bob/app"
-BASE_URL="https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts"
+BASE_URL="https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts"
 
 command -v curl >/dev/null 2>&1 || { echo "curl is required" >&2; exit 1; }
 [ "$(id -u)" -ne 0 ] || { echo "Run as a normal user, not root" >&2; exit 1; }

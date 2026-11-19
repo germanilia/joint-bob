@@ -38,13 +38,13 @@ For one local node, install and use the local URL. For a remote node without Tai
 Run this as the user who will run Joint Bob. Do not use `sudo`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install.sh | bash
 ```
 
 One command can install and, when Tailscale is already signed in, configure Serve and verify health:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/bootstrap.sh | bash
 ```
 
 The installer downloads the latest GitHub release, verifies its SHA-256 checksum, installs dependencies, and creates a native user service.
@@ -123,7 +123,7 @@ Joint Bob is not a native Windows program. On Windows it runs inside a WSL 2 Lin
 1. Open a normal PowerShell window, not an administrator one, and run:
 
    ```powershell
-   irm https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install-windows.ps1 | iex
+   irm https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install-windows.ps1 | iex
    ```
 
 If WSL is not installed, the script installs WSL and Ubuntu itself, after asking you. Windows then asks for administrator approval (UAC). If Windows needs a restart to finish, it stops and says so: restart Windows and run the same command again. Ubuntu is the default distribution and the one Joint Bob is tested on.
@@ -141,7 +141,7 @@ The script uses your default WSL distribution and:
 To choose the distribution or the port of a new installation, or to answer the prompts yourself:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install-windows.ps1))) -Distro Ubuntu -Port 9000 -Force
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install-windows.ps1))) -Distro Ubuntu -Port 9000 -Force
 ```
 
 `-Force` answers yes to the prompts for installing WSL and turning on systemd. `-KeepAliveOnly` registers the logon task without installing, and `-NoKeepAlive` installs without it. Run the same command again to upgrade or repair; **Settings > Updates** works as on Linux.
@@ -152,7 +152,7 @@ To install by hand, enable systemd, restart WSL, then use the Linux installer:
 
 ```bash
 printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf   # inside the distribution; then run 'wsl --shutdown' in PowerShell and reopen it
-curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install.sh | bash
 sudo loginctl enable-linger "$USER"
 ```
 
@@ -172,7 +172,7 @@ What differs from a Linux machine:
 Run the same installation command again:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install.sh | bash
 ```
 
 The installer preserves projects, credentials, settings, tasks, cluster identity, and other state. It builds the replacement in a staging directory before swapping files. Manual installs, push deployments, and self-updates share an OS lock; a competing install fails rather than modifying the same files. A failed activation restores and restarts the previous installed copy without reinstalling its dependencies. Existing `~/.pi-mobile-web` state migrates automatically.
@@ -200,7 +200,7 @@ For a persistent remote node, create a supported Linux host, connect over SSH as
 
 ```bash
 ssh <user>@<host>
-curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install.sh | bash
 sudo loginctl enable-linger "$USER"
 ```
 

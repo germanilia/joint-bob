@@ -12,11 +12,11 @@ terminal closes.
 Run it as your own Windows user, not as administrator. Installing WSL asks for
 administrator approval through the Windows prompt, and a restart may be needed:
 
-  irm https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install-windows.ps1 | iex
+  irm https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install-windows.ps1 | iex
 
 With options:
 
-  & ([scriptblock]::Create((irm https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install-windows.ps1))) -Distro Ubuntu -Port 9000
+  & ([scriptblock]::Create((irm https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install-windows.ps1))) -Distro Ubuntu -Port 9000
 
 .PARAMETER Distro
 WSL distribution to install into. Defaults to the default distribution, or Ubuntu when WSL is installed fresh.
@@ -50,8 +50,8 @@ function Install-JointBobWsl {
 
   # Failures throw instead of exiting: this usually runs through iex in the user's own window.
   $ErrorActionPreference = "Stop"
-  $scriptsUrl = "https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts"
-  $guide = "https://github.com/iliagerman/joint-bob#install-on-windows"
+  $scriptsUrl = "https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts"
+  $guide = "https://github.com/germanilia/joint-bob#install-on-windows"
 
   if ($Port -lt 1 -or $Port -gt 65535) { throw "Port must be between 1 and 65535." }
   # wsl.exe prints UTF-16 unless told otherwise; Invoke-Wsl also strips NULs for builds that ignore this.

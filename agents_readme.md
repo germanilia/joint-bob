@@ -124,7 +124,7 @@ wsl --list --verbose
 Then run the Windows installer as the human's normal Windows user, not as administrator:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install-windows.ps1))) -Distro '<distribution>' -Port <port>
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install-windows.ps1))) -Distro '<distribution>' -Port <port>
 ```
 
 When systemd is off, the script asks before editing `/etc/wsl.conf` and restarting the distribution, which stops everything running in it. Get the human's agreement first, then add `-Force` if your session cannot answer the prompts. Add `-SkipWslInstall` if the human wants WSL installed by hand instead. The script also enables lingering, runs the Linux installer in the distribution, and registers the logon task `Joint Bob WSL (<distribution>)` that keeps the distribution running.
@@ -145,13 +145,13 @@ Tell the human that Joint Bob starts when they sign in to Windows, not at boot, 
 Default port or any upgrade:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install.sh | bash
 ```
 
 Custom port for a new installation:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iliagerman/joint-bob/main/scripts/install.sh | PORT='<chosen-port>' bash
+curl -fsSL https://raw.githubusercontent.com/germanilia/joint-bob/main/scripts/install.sh | PORT='<chosen-port>' bash
 ```
 
 Validate a custom port as a decimal integer from `1` through `65535` before using it. Change an installed node's port only by editing `~/.joint-bob/env` and restarting the service.

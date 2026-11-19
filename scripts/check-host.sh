@@ -5,7 +5,7 @@
 #
 set -euo pipefail
 
-WINDOWS_GUIDE="https://github.com/iliagerman/joint-bob#install-on-windows"
+WINDOWS_GUIDE="https://github.com/germanilia/joint-bob#install-on-windows"
 
 kernel="$(uname -s)"
 case "${kernel}" in
