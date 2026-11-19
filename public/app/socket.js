@@ -265,9 +265,11 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
   // off the current view every time a socket blips.
   if (!preserveChat && !keepView) setMobileView("chat");
   setStatus("Connecting…", false, true);
-  setComposerEnabled(false);
+  // A worktree draft can queue prompts until the socket is ready. Keep the input enabled through the handoff.
+  setComposerEnabled(Boolean(pending && !pending.error));
 
   if (pending) {
+    if (!preserveChat && !pending.error) elements.messageInput.focus({ preventScroll: true });
     state.pendingSessionTitle = pending.title;
     state.pendingSessionColor = pending.color;
     state.activeNodeId = pending.nodeId;
@@ -278,7 +280,6 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
         showChatEmptyState("Creating worktree…", "You can send messages now. They will wait until the worktree is ready.");
         pending.prompts.forEach(appendWorktreeWaitingMessage);
       }
-      setComposerEnabled(!pending.error);
       if (pending.error) {
         setStatus("Worktree creation failed");
         appendErrorMessage(`The worktree could not be created: ${pending.error.message}. Your waiting messages have not been sent.`);
@@ -293,7 +294,6 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
       return;
     }
     state.newSessionWorktreeId = pending.worktree.id;
-    setComposerEnabled(true);
   }
 
   const socket = new WebSocket(websocketUrl(sessionPath));
@@ -390,8 +390,8 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
       if (state.preferencesLoaded) savePreferencesInBackground({ activeNodeId: payload.executionNodeId });
     }
     setComposerEnabled(true);
-    if (openingDraft) elements.messageInput.focus();
     renderConversationLock();
+    if (openingDraft && !pendingWorktree && scrollOnReady) elements.messageInput.focus({ preventScroll: true });
     state.activeSessionId = payload.sessionId || state.activeSessionId;
     state.activeConversationId = payload.conversationId || payload.sessionId || null;
     state.activeConversationProjectId = payload.project?.id || state.activeProjectId;

@@ -44,6 +44,12 @@ import { state } from "./state.js";
 
 const desktop = matchMedia("(min-width: 701px)");
 const COLUMN_KEY = "joint-bob-workspace-column";
+const COLLAPSED_GROUPS_KEY = "joint-bob-inbox-collapsed-groups";
+const collapsedGroups = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem(COLLAPSED_GROUPS_KEY) ?? "[]");
+  if (Array.isArray(saved)) saved.forEach((id) => collapsedGroups.add(id));
+} catch { /* storage is unavailable or the saved choice is invalid */ }
 const body = document.body;
 const byId = (id) => document.getElementById(id);
 
@@ -742,19 +748,46 @@ export function useNeedCards(render) {
   renderGroups();
 }
 
+function sectionHeading(id, title, count, collapsed, phone) {
+  const label = document.createElement("div");
+  label.className = "ws-lab ws-state-heading";
+  const name = document.createElement("span");
+  name.textContent = title;
+  if (phone) label.append(name, count);
+  else {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ws-section-toggle";
+    toggle.dataset.testid = `workspace-group-toggle-${id}`;
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.append(name, count);
+    toggle.addEventListener("click", () => {
+      const hadFocus = document.activeElement === toggle;
+      if (collapsed) collapsedGroups.delete(id);
+      else collapsedGroups.add(id);
+      try { localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify([...collapsedGroups])); } catch { /* the choice lasts the page */ }
+      renderGroups();
+      if (hadFocus) groupsHost.querySelector(`[data-testid="${toggle.dataset.testid}"]`)?.focus({ preventScroll: true });
+    });
+    label.append(toggle);
+  }
+  return label;
+}
+
 function prependPinned(pins, chunked) {
   if (!pins.length) return;
   const section = document.createElement("section");
   section.className = "ws-group";
   section.dataset.group = "pinned";
   section.dataset.testid = "workspace-group-pinned";
-  const label = document.createElement("div");
-  label.className = "ws-lab";
-  label.append(Object.assign(document.createElement("span"), { textContent: "Pinned" }), Object.assign(document.createElement("i"), { textContent: String(pins.length) }));
-  if (!phoneHomeShown()) label.append(showAllButton("pinned", "Pinned", pins.length));
+  const phone = phoneHomeShown();
+  const collapsed = !phone && collapsedGroups.has("pinned");
+  const count = Object.assign(document.createElement("i"), { textContent: String(pins.length) });
+  const label = sectionHeading("pinned", "Pinned", count, collapsed, phone);
+  if (!phone) label.append(showAllButton("pinned", "Pinned", pins.length));
   section.append(label);
   groupsHost.prepend(section);
-  for (const card of pins) chunked.push({ make: () => cardRow(card, groupOfCard(card), "workspace-group-row", phoneHomeShown(), false), into: section });
+  if (!collapsed) for (const card of pins) chunked.push({ make: () => cardRow(card, groupOfCard(card), "workspace-group-row", phone, false), into: section });
 }
 
 function showAllButton(id, title, count) {
@@ -829,10 +862,10 @@ function renderGroups(refit = true) {
     }
   }
   // The column is one scroll with the first ten of every group, whatever the window's height.
-  if (!phoneHomeShown()) GROUPS.forEach((group, index) => { shown[index] = Math.min(counts[index], COLUMN_ROWS); });
+  if (!phone) GROUPS.forEach((group, index) => { shown[index] = collapsedGroups.has(group.id) ? 0 : Math.min(counts[index], COLUMN_ROWS); });
   // Nothing that is drawn changed (a refresh found the same board): the rows, and a deck being swiped, stay as they are.
   const fullCounts = GROUPS.map((group, index) => (phone ? filterInbox(group.id, groupCards[index]) : inChosenProjects(groupCards[index])).length);
-  const signature = JSON.stringify([loaded, phone, cardsHere, groupsHost.clientWidth, counts, fullCounts, cardsIn(SNOOZED.id).length, inboxSignature(), pins.map(rowSignature), GROUPS.map((_, index) => listIn(index).slice(0, shown[index]).map(rowSignature)), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
+  const signature = JSON.stringify([loaded, phone, cardsHere, groupsHost.clientWidth, counts, fullCounts, cardsIn(SNOOZED.id).length, inboxSignature(), phone ? [] : [...collapsedGroups], pins.map(rowSignature), GROUPS.map((_, index) => listIn(index).slice(0, shown[index]).map(rowSignature)), teamFolders().map((folder) => [folder.id, folder.cards.length, folder.cards.map((card) => card.column).join()])]);
   if (groupsHost.childElementCount && groupsHost.dataset.signature === signature) { syncInboxNote(); return; }
   groupsHost.dataset.signature = signature;
   const scroll = groupsHost.scrollTop;
@@ -842,15 +875,12 @@ function renderGroups(refit = true) {
     section.className = "ws-group";
     section.dataset.group = group.id;
     section.dataset.testid = `workspace-group-${group.id}`;
-    const label = document.createElement("div");
-    label.className = "ws-lab";
-    const name = document.createElement("span");
-    name.textContent = group.title;
     const count = document.createElement("i");
     count.dataset.testid = `workspace-group-count-${group.id}`;
     const total = groupCards[index].filter(unpinned).length;
     count.textContent = !loaded ? "…" : total === counts[index] ? String(counts[index]) : `${counts[index]} of ${total}`;
-    label.append(name, count);
+    const collapsed = !phone && collapsedGroups.has(group.id);
+    const label = sectionHeading(group.id, group.title, count, collapsed, phone);
     const snoozed = group.id === "needs-you" ? cardsIn(SNOOZED.id).length : 0;
     if (snoozed) {
       const link = document.createElement("button");
@@ -864,8 +894,9 @@ function renderGroups(refit = true) {
     }
     // The full status list still includes pins for review and bulk actions.
     const fullCount = fullCounts[index];
-    if (!phoneHomeShown() && fullCount) label.append(showAllButton(group.id, group.title, fullCount));
+    if (!phone && fullCount) label.append(showAllButton(group.id, group.title, fullCount));
     section.append(label);
+    if (collapsed) return section;
     if (loaded && !counts[index]) {
       const empty = document.createElement("p");
       empty.className = "ws-empty";

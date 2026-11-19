@@ -187,7 +187,7 @@
   /* ---------- the groups ---------- */
   .ws-group { display: flex; flex: none; flex-direction: column; min-height: 0; }
   .ws-lab { display: flex; align-items: baseline; gap: 6px; height: 38px; padding: 16px 10px 4px; color: var(--text); font: 700 15px/1.2 var(--sans); letter-spacing: 0; }
-p0 13px/1 var(--sans); font-style: normal; }
+  .ws-lab > i { color: var(--muted); font: 600 13px/1 var(--sans); font-style: normal; }
   .ws-group + .ws-group { margin-top: 4px; border-top: 1px solid var(--line-strong); }
   .ws-show-all { margin-left: auto; min-height: 0; padding: 0; border: 0; background: none; color: var(--accent); font: 600 12px/1 var(--sans); cursor: pointer; }
   .ws-show-all:hover { text-decoration: underline; }
@@ -918,9 +918,26 @@ body.focus-ui.view-projects.ws-column-inbox .inbox-tools.phone-only { display: g
 /* The rail of icons has no room for words. */
 body:is(.projects-collapsed, .ws-auto-rail) :is(.inbox-system, .ws-side > .control-moves-job) { display: none; }
 
+/* Wrap whole controls onto the next line rather than wrapping labels into the first row. */
+body:not(.focus-ui) .ws-state-heading {
+  flex-wrap: wrap; align-items: center; gap: 2px 8px; height: auto; min-height: 32px; padding: 4px 10px;
+}
+.ws-section-toggle {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 4px 0; min-height: 24px;
+  border: 0; border-radius: 4px; background: none; color: inherit; font: 600 12px/1.2 var(--sans); white-space: nowrap;
+}
+.ws-section-toggle i { color: var(--muted); font-style: normal; }
+.ws-section-toggle::before {
+  content: ""; width: 5px; height: 5px; border: solid var(--muted); border-width: 0 1px 1px 0;
+  transform: rotate(-45deg);
+}
+.ws-section-toggle[aria-expanded="true"]::before { transform: translateY(-1px) rotate(45deg); }
+.ws-section-toggle:hover > span { text-decoration: underline; }
+.ws-state-heading .ws-show-all { flex: 0 0 auto; white-space: nowrap; }
+
 /* Needs you's label counts what was snoozed; the "Show all" page puts Snooze and Wake beside the rows. */
 .ws-snoozed-link { color: var(--muted); }
-.ws-snoozed-link + .ws-show-all { margin-left: 10px; }
+.ws-snoozed-link + .ws-show-all { margin-left: 0; }
 .ws-page-item { display: flex; align-items: center; gap: 8px; }
 .ws-page-item > .ws-row { flex: 1; min-width: 0; }
 .ws-page-action { flex: none; }
