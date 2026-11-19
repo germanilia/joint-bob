@@ -97,9 +97,9 @@ test("settings search finds a setting by its name, opens its section, and flashe
   // The theme is found by its name.
   await search.fill("theme");
   await results.first().waitFor();
-  assert.match(await results.first().innerText(), /Theme\s+Account › Appearance/);
+  assert.match(await results.first().innerText(), /Theme, motion and size\s+Appearance › Theme, motion and size/);
   await search.press("Enter");
-  assert.equal(await page.getByTestId("settings-tab-account").getAttribute("aria-selected"), "true");
+  assert.equal(await page.getByTestId("settings-tab-appearance").getAttribute("aria-selected"), "true");
 
   // A saved account can be found by name or variable from anywhere, even when
   // the Secrets list is currently filtered to another provider.

@@ -255,7 +255,7 @@ function peerFacts(peer) {
 }
 
 const peerList = createFittedList({
-  list: byId("fileSyncPeerList"), pager: byId("fileSyncPeerPager"), testPrefix: "file-sync-peers", initialSize: 3,
+  scroll: true, list: byId("fileSyncPeerList"), pager: byId("fileSyncPeerPager"), testPrefix: "file-sync-peers", initialSize: 3,
   emptyText: "No other machine syncs files with this one right now.",
   fetchPage: async (page, size) => paged(status?.peers ?? [], page, size),
   renderItem: (peer) => {
@@ -289,7 +289,7 @@ async function rescan(project, statusNode) {
 }
 
 const projectList = createFittedList({
-  list: byId("fileSyncProjectList"), pager: byId("fileSyncProjectPager"), testPrefix: "file-sync-projects",
+  scroll: true, list: byId("fileSyncProjectList"), pager: byId("fileSyncProjectPager"), testPrefix: "file-sync-projects",
   emptyText: "No project is shared with another machine.",
   fetchPage: async (page, size) => paged(projects, page, size),
   renderItem: (project) => {
@@ -393,7 +393,7 @@ function renderProjectDetail() {
 }
 
 const errorList = createFittedList({
-  list: byId("fileSyncErrorList"), pager: byId("fileSyncErrorPager"), testPrefix: "file-sync-errors",
+  scroll: true, list: byId("fileSyncErrorList"), pager: byId("fileSyncErrorPager"), testPrefix: "file-sync-errors",
   emptyText: "No files with problems.",
   fetchPage: async (page, size) => errorShare
     ? api(`/api/file-sync/errors?share=${encodeURIComponent(errorShare)}&page=${page}&pageSize=${size}`)
@@ -439,7 +439,7 @@ function renderDiffCount() {
 }
 
 const diffList = createFittedList({
-  list: byId("fileSyncDiffList"), pager: byId("fileSyncDiffPager"), testPrefix: "file-sync-diffs",
+  scroll: true, list: byId("fileSyncDiffList"), pager: byId("fileSyncDiffPager"), testPrefix: "file-sync-diffs",
   emptyText: "Nothing to compare yet. Share a project with another machine.",
   fetchPage: async (page, size) => paged(differenceRows(), page, size),
   renderItem: (item) => {
@@ -513,7 +513,7 @@ function differenceText(item) {
 }
 
 const diffItems = createFittedList({
-  list: byId("fileSyncDiffItems"), pager: byId("fileSyncDiffItemsPager"), testPrefix: "file-sync-diff-items",
+  scroll: true, list: byId("fileSyncDiffItems"), pager: byId("fileSyncDiffItemsPager"), testPrefix: "file-sync-diff-items",
   emptyText: "No files differ.",
   fetchPage: async (page, size) => openDiff?.share
     ? api(`/api/file-sync/differences?share=${encodeURIComponent(openDiff.share)}&peer=${encodeURIComponent(openDiff.peer)}&page=${page}&pageSize=${size}`)

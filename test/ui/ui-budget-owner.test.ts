@@ -75,7 +75,9 @@ test("an owner limits a project and a conversation from the app, and sees the bu
     // Workspace limits are the admin's, from Settings > Workspaces.
     await page.getByTestId("settings-open-button").click();
     await page.getByTestId("settings-tab-workspaces").click();
-    await page.getByTestId("workspace-budget-button").first().click();
+    const budgetRow = page.locator("#workspaceList > .long-list-row").filter({ has: page.getByTestId("workspace-budget-button") }).first();
+    await budgetRow.getByTestId("workspace-more").click();
+    await budgetRow.getByTestId("workspace-budget-button").click();
     await dialog.waitFor();
     await dialog.locator('[data-budget-period="month"]').fill("100");
     await page.getByTestId("budget-dialog-save").click();

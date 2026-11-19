@@ -268,6 +268,7 @@ test("a failure from the node shows on the save line and in a toast, and the nex
 
   await page.unroute("**/api/settings");
   // The next change saves both: every save sends the whole section.
+  await openSection(page, "account");
   await page.getByTestId("settings-show-projects-on-other-nodes").setChecked(before.showProjectsOnOtherNodes === false);
   await waitForSaved(page);
   assert.equal(await page.getByTestId("settings-save-retry").count(), 0);

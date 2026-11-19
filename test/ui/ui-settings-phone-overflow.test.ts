@@ -65,7 +65,7 @@ test("on a phone, settings opens on the section list and a section has a way bac
   await list.click();
   await page.getByTestId("settings-panel-connections").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("settings-current-title").textContent(), "Connections");
-  assert.equal(await page.getByTestId("settings-current-crumb").textContent(), "Settings · Agents");
+  assert.equal(await page.getByTestId("settings-current-crumb").textContent(), "Settings · AI and agents");
   assert.equal(await page.locator("#settingsForm").getAttribute("data-mobile-view"), "panel");
   assert.equal(await page.getByTestId("settings-tab-account").isVisible(), false, "the section replaces the list");
   assert.equal(await page.getByTestId("settings-section-head-connections").getByTestId("settings-save-state").isVisible(), true, "the section says how its changes save");

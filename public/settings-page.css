@@ -719,3 +719,42 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
 /* Workspace cleanup: the kept workspaces are one folded count. */
 #settingsForm [data-testid="workspace-cleanup-kept"] > summary { cursor: pointer; color: var(--muted); font-size: 13.5px; font-weight: 600; }
 #settingsForm [data-testid="workspace-cleanup-kept"] > ul { margin-top: 8px; }
+
+/* Row actions of the long lists: the main one in the row, the rest behind ⋯ (a small menu), on every screen size. */
+#settingsForm .long-row-controls { grid-column: actions; display: flex; align-items: center; justify-content: flex-end; gap: 4px; justify-self: end; }
+#settingsForm .long-row-more {
+  display: inline-grid; place-items: center; width: 32px; min-width: 32px; min-height: 32px; padding: 0; border-radius: 9px;
+  background: none; color: var(--text); font-size: 20px; line-height: 1;
+}
+#settingsForm .long-row-more:hover { background: var(--paper-raised, var(--field)); }
+#settingsForm .long-row-actions:not(:popover-open) { display: none; }
+#settingsForm .long-row-actions:popover-open {
+  position: fixed; inset: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 180px; padding: 6px; border: 0; border-radius: 14px;
+  background: var(--panel); box-shadow: var(--shadow); color: var(--text);
+}
+#settingsForm .long-row-actions > button { display: flex; justify-content: flex-start; width: 100%; min-height: 34px; padding: 0 12px; text-align: left; }
+@media (max-width: 1100px) {
+  #settingsForm .long-row-controls { grid-area: more; align-self: center; }
+}
+
+/* A picker that has not received its options yet says so, instead of looking empty and broken. */
+#settingsForm .settings-panel .searchable-select-trigger:empty::before { content: "Loading…"; color: var(--muted); font-weight: 500; }
+#settingsForm .settings-panel select:not(:has(option)) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='20'%3E%3Ctext x='0' y='15' font-family='sans-serif' font-size='14' fill='%23887d6f'%3ELoading…%3C/text%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 12px center;
+}
+
+/* Relay and File sync lists are continuous lists now: the section scrolls, and the lists and the blocks that hold them take the
+   height their rows need instead of a share of the window. */
+#settingsForm .settings-panel.relay-panel { overflow-x: hidden; overflow-y: auto; }
+#settingsForm .relay-panel :is(.relay-section, .file-sync-section, .file-sync-overview, .file-sync-detail) { flex: none; min-height: auto; overflow: visible; }
+#settingsForm .relay-panel .relay-list { flex: none; min-height: 0; overflow: visible; }
+
+/* Motion's choices are ghost buttons: on a phone they are as tall as every other segmented choice. */
+@media (max-width: 700px) {
+  #settingsForm .settings-panel button.settings-segment.ghost:not(.settings-subtab):not(.searchable-select-trigger):not(.settings-saved-retry) { min-height: 44px; }
+}
+
+/* Help is shown in full now, so a long unbroken word in it (a folder path, an address) wraps instead of widening its group. */
+#settingsForm .settings-panel .phase-settings > * { min-width: 0; }
+#settingsForm .settings-panel :is(.settings-hint, .retention-backup-notes, .retention-backup-notes *, .settings-hint code) { overflow-wrap: anywhere; }

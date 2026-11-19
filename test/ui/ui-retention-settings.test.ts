@@ -241,6 +241,7 @@ after(async () => {
 
 test("every box starts unticked, and the three that widen the first follow it", async () => {
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await settingsLoaded();
   await page.getByTestId("settings-retention-scope").scrollIntoViewIfNeeded();
   const group = await page.getByTestId("settings-retention-scope").innerText();
@@ -346,6 +347,7 @@ test("saving sends the five boxes as one setting, and they come back ticked", as
   await page.getByTestId("settings-cancel-button").click();
   await page.getByTestId("settings-dialog").waitFor({ state: "hidden" });
   await page.getByTestId("settings-open-button").click();
+  await page.getByTestId("settings-tab-conversations").click();
   await settingsLoaded();
   await page.waitForFunction(() => (document.querySelector("#settingsRetentionFull") as HTMLInputElement).checked);
   for (const name of BOXES) assert.equal(await box(name).isChecked(), expected[name], name);
@@ -824,6 +826,7 @@ test("a node that predates backups shows no backup group, and a save leaves the 
     await page.reload();
     await page.getByText("Internal Assistant", { exact: true }).waitFor();
     await page.getByTestId("settings-open-button").click();
+    await page.getByTestId("settings-tab-conversations").click();
     await settingsLoaded();
     await page.getByTestId("settings-retention-scope").scrollIntoViewIfNeeded();
     assert.equal(await page.getByTestId("settings-backup").isVisible(), false);
@@ -929,7 +932,7 @@ test("the settings search opens the line a bucket's other service sits behind", 
   await page.getByTestId("settings-search-input").fill("Address of the service");
   const found = page.getByTestId("settings-search-result").first();
   await found.waitFor();
-  assert.match(await found.innerText(), /Address of the service\s+Account › Backup before deleting/);
+  assert.match(await found.innerText(), /Address of the service\s+Conversations › Backup before deleting/);
   await found.click();
   await field("s3-endpoint").waitFor();
   assert.equal(await field("s3-more").evaluate((details: HTMLDetailsElement) => details.open), true);

@@ -4,12 +4,26 @@
  */
 
 /**
- * A row's actions. On a desktop they sit in the row; on a phone (≤ 700 px) they fold behind a ⋯
- * button and open as a small menu above the section, so every action stays one tap away and the
- * row keeps its height. The actions element is a popover inside the Settings dialog, so it is
- * never inert behind it.
+ * A row's actions. The one that is used most (`primary`, a button) sits in the row; the others fold behind a ⋯ button and
+ * open as a small menu above the section, so the row stays quiet and every action is one click away. In a narrow window
+ * the primary action moves into the menu too, so the row keeps its height. The menu is a popover inside the
+ * Settings dialog, so it is never inert behind it. Returns `controls`, the element to put in the row, with `actions` (the
+ * menu) and `more` (the ⋯ button) for the caller's test ids.
  */
-export function rowActions(buttons, label) {
+/** The main action of a row sits in the row in a wide window and in the ⋯ menu in a narrow one (the same button, so it keeps its test id). */
+const narrowWindow = window.matchMedia("(max-width: 1100px)");
+const primaryPlacements = new Set();
+function placePrimary({ primary, controls, actions }) {
+  if (narrowWindow.matches) actions.prepend(primary); else controls.prepend(primary);
+}
+narrowWindow.addEventListener("change", () => {
+  for (const reference of primaryPlacements) {
+    const placement = reference.deref();
+    if (placement) placePrimary(placement); else primaryPlacements.delete(reference);
+  }
+});
+
+export function rowActions(buttons, label, primary = null) {
   const actions = document.createElement("span");
   actions.className = "long-row-actions";
   actions.popover = "auto";
@@ -31,5 +45,13 @@ export function rowActions(buttons, label) {
     if (event.target instanceof Element && event.target.closest("button") && actions.matches(":popover-open")) actions.hidePopover();
   });
   more.setAttribute("aria-expanded", "false");
-  return { actions, more };
+  const controls = document.createElement("span");
+  controls.className = "long-row-controls";
+  controls.append(more, actions);
+  if (primary) {
+    primary.classList.add("long-row-primary");
+    primaryPlacements.add(new WeakRef({ primary, controls, actions }));
+    placePrimary({ primary, controls, actions });
+  }
+  return { controls, actions, more };
 }

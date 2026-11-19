@@ -309,9 +309,9 @@ function secretAccountRow(account) {
     edit.addEventListener("click", () => openSecretAccount(account));
     const remove = document.createElement("button"); remove.type = "button"; remove.className = "ghost compact danger"; remove.textContent = "Delete"; remove.dataset.testid = "secret-account-delete-button";
     remove.addEventListener("click", () => deleteSecretAccount(account));
-    const { actions, more } = rowActions([share, edit, remove], `Actions for ${account.label}`);
+    const { controls, more } = rowActions([share, remove], `Actions for ${account.label}`, edit);
     more.dataset.testid = "secret-account-more";
-    row.append(actions, more);
+    row.append(controls);
   }
   return row;
 }

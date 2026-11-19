@@ -2,6 +2,7 @@
 // and Joined relays (this machine's memberships). Plain DOM helpers, a two-click
 // button for destructive actions, and a list that pages to the height it is given.
 import { toast } from "./shell.js";
+import { scrollerOf } from "./long-scroll.js";
 
 const VIRTUAL_SUFFIX = ".relay.invalid";
 const DISARM_MS = 6000;
@@ -103,9 +104,15 @@ export function displayNodeUrl(url) {
  * never scrolls. `fetchPage(page, size)` resolves `{ total, items }`; `renderItem(item)` returns
  * a row. After painting, the page size is refitted to the measured row height (growing at most
  * once per load, then only shrinking, which always settles) and again whenever the box resizes.
+ *
+ * With `scroll: true` the list is one continuous list instead (.agents/knowledge/list-scrolling.md): it shows the first
+ * SCROLL_CHUNK rows with no pager, and asks for SCROLL_CHUNK more each time the end comes near. A refresh asks again for
+ * as many rows as were drawn, so the place is kept.
  */
-export function createFittedList({ list, pager, testPrefix, fetchPage, renderItem, emptyText, initialSize = 5, maxSize = 50 }) {
-  const view = { page: 1, size: initialSize, total: 0, items: [], ticket: 0, refitting: false };
+const SCROLL_CHUNK = 40;
+export function createFittedList({ list, pager, testPrefix, fetchPage, renderItem, emptyText, initialSize = 5, scroll = false, maxSize = 50 }) {
+  const view = { page: 1, size: scroll ? SCROLL_CHUNK : initialSize, total: 0, items: [], ticket: 0, refitting: false, chunks: 1 };
+  let sentinelObserver = null;
 
   function paintPager() {
     pager.replaceChildren();
@@ -129,8 +136,27 @@ export function createFittedList({ list, pager, testPrefix, fetchPage, renderIte
       row.dataset.fitRow = "true";
       list.append(row);
     }
+    if (scroll) { pager.hidden = true; watchEnd(); return; }
     paintPager();
     fit();
+  }
+
+  /** In scroll mode: when the end of the list comes into view, ask for the next chunk. */
+  function watchEnd() {
+    sentinelObserver?.disconnect();
+    list.dataset.total = String(view.total);
+    list.dataset.rendered = String(view.items.length);
+    if (view.items.length >= view.total) return;
+    const sentinel = makeNode("div", "long-scroll-sentinel");
+    sentinel.setAttribute("aria-hidden", "true");
+    list.append(sentinel);
+    sentinelObserver = new IntersectionObserver((records) => {
+      if (!records.some((record) => record.isIntersecting)) return;
+      sentinelObserver.disconnect();
+      view.chunks += 1;
+      void load().catch(report);
+    }, { root: scrollerOf(list), rootMargin: "0px 0px 1200px 0px" });
+    sentinelObserver.observe(sentinel);
   }
 
   function fit() {
@@ -150,6 +176,20 @@ export function createFittedList({ list, pager, testPrefix, fetchPage, renderIte
 
   async function load() {
     const ticket = ++view.ticket;
+    if (scroll) {
+      // Scroll mode asks again for every chunk drawn so far, one page each (a node caps a page).
+      const items = [];
+      let total = 0;
+      for (let page = 1; page <= view.chunks; page += 1) {
+        const body = await fetchPage(page, SCROLL_CHUNK);
+        if (ticket !== view.ticket) return;
+        total = body.total;
+        items.push(...body.items);
+        if (items.length >= total) break;
+      }
+      view.total = total; view.items = items; paint();
+      return;
+    }
     const body = await fetchPage(view.page, view.size);
     if (ticket !== view.ticket) return;
     const last = Math.max(1, Math.ceil(body.total / view.size));
@@ -162,7 +202,7 @@ export function createFittedList({ list, pager, testPrefix, fetchPage, renderIte
   function report(error) { console.warn("Could not refresh a relay list", error); }
 
   let lastHeight = 0;
-  new ResizeObserver(() => {
+  if (!scroll) new ResizeObserver(() => {
     const height = list.clientHeight;
     if (height === lastHeight) return;
     lastHeight = height;
@@ -171,7 +211,7 @@ export function createFittedList({ list, pager, testPrefix, fetchPage, renderIte
 
   return {
     reload: load,
-    first() { view.page = 1; return load(); },
+    first() { view.page = 1; view.chunks = 1; return load(); },
     get total() { return view.total; },
   };
 }

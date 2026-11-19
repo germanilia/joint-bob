@@ -283,38 +283,17 @@ test("revoking a token takes a second click", async () => {
   assert.equal(await row.getByTestId("relay-token-revoke").count(), 0, "a revoked token offers no revoke");
 });
 
-test("the token list pages to the height it has and never scrolls", async () => {
+test("the token list is one continuous list with no pager", async () => {
   for (let index = 0; index < 24; index += 1) {
     const created = await api(node, session, "POST", "/relay/serving/tokens", { label: `Bulk ${String(index).padStart(2, "0")}`, uses: 1, ttlHours: 24 });
     assert.equal(created.status, 201, "the fixture token is created");
   }
   await page.getByTestId("relay-refresh-button").click();
-  await page.getByTestId("relay-tokens-page-label").waitFor();
-
-  const measure = () => page.getByTestId("relay-tokens-list").evaluate((list) => {
-    const box = list.getBoundingClientRect();
-    const rows = [...list.querySelectorAll('[data-testid="relay-token-row"]')].map((row) => row.getBoundingClientRect());
-    return { rows: rows.length, scrollable: list.scrollHeight > list.clientHeight + 1, overflowing: rows.some((row) => row.bottom > box.bottom + 1), listHeight: box.height };
-  });
-  const first = await measure();
-  const label = await page.getByTestId("relay-tokens-page-label").innerText();
-  const [, shown, total] = /^1–(\d+) of (\d+)$/.exec(label) ?? [];
-  assert.ok(shown && total, `the pager names the rows on screen: ${label}`);
-  assert.equal(Number(total), 26, "two earlier tokens and twenty-four fixtures are listed");
-  assert.equal(first.rows, Number(shown), "the page holds exactly the rows the label names");
-  assert.ok(first.rows >= 1 && first.rows < 26, `the page is smaller than the list (${first.rows} rows in ${first.listHeight}px)`);
-  assert.equal(first.scrollable, false, "the list does not scroll");
-  assert.equal(first.overflowing, false, "no row is cut off by the list's edge");
-  await shot("tokens-paged");
-
-  const firstLabel = await page.getByTestId("relay-token-label").first().innerText();
-  await page.getByTestId("relay-tokens-page-next").click();
-  await page.getByTestId("relay-tokens-page-label").filter({ hasText: new RegExp(`^${Number(shown) + 1}–`) }).waitFor();
-  assert.notEqual(await page.getByTestId("relay-token-label").first().innerText(), firstLabel, "the next page shows other tokens");
-  assert.equal((await measure()).scrollable, false, "the second page does not scroll either");
-  assert.equal(await page.getByTestId("relay-tokens-page-previous").isDisabled(), false);
-  await page.getByTestId("relay-tokens-page-previous").click();
-  await page.getByTestId("relay-tokens-page-label").filter({ hasText: /^1–/ }).waitFor();
+  const list = page.getByTestId("relay-tokens-list");
+  await page.waitForFunction(() => document.querySelector('[data-testid="relay-tokens-list"]')?.getAttribute("data-total") === "26");
+  assert.equal(await page.getByTestId("relay-tokens-pager").isVisible(), false, "no pager");
+  assert.equal(await list.locator('[data-testid="relay-token-row"]').count(), 26, "two earlier tokens and twenty-four fixtures are listed");
+  await shot("tokens-scrolled");
 });
 
 test("the audit log lists what the operator did", async () => {

@@ -43,6 +43,7 @@ test("workspace creation chooses sharing recipients and existing rows can revoke
   await row.waitFor();
   const sharing = await api<{ clusterIds: string[] }>(node, session, "GET", "/workspaces/shared-clients/sharing");
   assert.deepEqual(sharing.body.clusterIds, [clusterId]);
+  await row.getByTestId("workspace-more").click();
   await row.getByTestId("workspace-share-button").click();
   assert.equal(await page.getByTestId(`workspace-share-cluster-${clusterId}`).isChecked(), true);
   await page.getByTestId(`workspace-share-cluster-${clusterId}`).uncheck();

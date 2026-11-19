@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.332.0 — 2026-11-19
+
+- In Secrets, Browser and Workspaces a row shows its main action (Edit, Close there, Secrets) and keeps the rest behind a ⋯ menu. In a narrow window the main action moves into the menu too.
+- File sync and Relay (machines, tokens, audit log) are one list that scrolls, drawn in chunks, instead of pages with Previous and Next. The sections scroll as a whole.
+- A picker that has not received its options yet reads "Loading…" instead of looking empty.
+- Motion's choices are thumb-sized on a phone, and a long folder path or address in a help line wraps instead of widening its group.
+
 ## 2.331.0 — 2026-11-19
 
 - Redrew Settings so a section reads as one column. Rows keep their label and control together on a wide screen, every group is a card that holds its rows (in Safari the first row of a group sat above its card), and the head is compact with the scope and save state beside the title.

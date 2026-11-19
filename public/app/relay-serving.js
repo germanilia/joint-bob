@@ -258,7 +258,7 @@ function machineRow(machine) {
 }
 
 const machines = createFittedList({
-  list: byId("relayMachinesList"), pager: byId("relayMachinesPager"), testPrefix: "relay-machines",
+  scroll: true, list: byId("relayMachinesList"), pager: byId("relayMachinesPager"), testPrefix: "relay-machines",
   emptyText: "No machines here yet. Create a token, or wait for a request.",
   fetchPage: async (page, size) => {
     const body = await api(`/api/relay/serving/machines?status=${machineFilter}&page=${page}&pageSize=${size}`);
@@ -316,7 +316,7 @@ function tokenRow(token) {
 }
 
 const tokens = createFittedList({
-  list: byId("relayTokensList"), pager: byId("relayTokensPager"), testPrefix: "relay-tokens",
+  scroll: true, list: byId("relayTokensList"), pager: byId("relayTokensPager"), testPrefix: "relay-tokens",
   emptyText: "No tokens yet.",
   fetchPage: async (page, size) => {
     const body = await api("/api/relay/serving/tokens");
@@ -354,7 +354,7 @@ async function createToken() {
 // ---- audit ----
 
 const audit = createFittedList({
-  list: byId("relayAuditList"), pager: byId("relayAuditPager"), testPrefix: "relay-audit",
+  scroll: true, list: byId("relayAuditList"), pager: byId("relayAuditPager"), testPrefix: "relay-audit",
   emptyText: "Nothing has happened on this relay yet.",
   fetchPage: async (page, size) => {
     const body = await api(`/api/relay/serving/audit?page=${page}&pageSize=${size}`);

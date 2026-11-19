@@ -102,27 +102,20 @@ async function signInAsAdmin(target: Page): Promise<void> {
   await target.getByText("Internal Assistant", { exact: true }).waitFor({ timeout: 30_000 });
 }
 
-/** Back to the project list's first page. */
+/** Back to the project list. */
 async function projectListStart(): Promise<void> {
   if (await page.getByTestId("file-sync-project-detail").isVisible()) await page.getByTestId("file-sync-detail-back").click();
-  const previous = page.getByTestId("file-sync-projects-page-previous");
-  while (await previous.isVisible() && await previous.isEnabled()) { await previous.click(); await settle(); }
 }
 
-/** Pages to the project's row, wherever the fitted page size put it. */
+/** The project's row in the one continuous list (an action on it scrolls it into view). */
 async function showRow(projectId: string) {
   await projectListStart();
   const row = page.locator(`[data-testid="file-sync-project-row"][data-project-id="${projectId}"]`);
-  await page.getByTestId("file-sync-project-row").first().waitFor();
-  for (let clicks = 0; !(await row.isVisible()); clicks += 1) {
-    assert.ok(clicks < projects.length, `${projectId} is on some page`);
-    await page.getByTestId("file-sync-projects-page-next").click();
-    await settle();
-  }
+  await row.waitFor({ state: "attached" });
   return row;
 }
 
-/** Pages to the project's row and opens its details. */
+/** Scrolls to the project's row and opens its details. */
 async function openDetails(projectId: string): Promise<void> {
   const row = await showRow(projectId);
   await row.getByTestId("file-sync-project-details").click();
@@ -154,10 +147,10 @@ test("signing in reaches the app", { timeout: 90_000 }, async () => {
   await signInAsAdmin(page);
 });
 
-test("the File sync tab sits next to Node and Resources and shows the engine and its machines", async () => {
+test("the File sync tab sits in Network after Relay and shows the engine and its machines", async () => {
   await page.getByTestId("settings-open-button").click();
   const tabs = await page.locator("[data-settings-tab]").evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset.settingsTab));
-  assert.deepEqual(tabs.slice(tabs.indexOf("node"), tabs.indexOf("node") + 3), ["node", "resources", "file-sync"], `File sync follows Node and Resources: ${tabs.join(", ")}`);
+  assert.deepEqual(tabs.slice(tabs.indexOf("cluster"), tabs.indexOf("cluster") + 3), ["cluster", "relay", "file-sync"], `File sync follows Cluster and Relay: ${tabs.join(", ")}`);
   await page.getByTestId("settings-tab-file-sync").click();
   await page.getByTestId("settings-panel-file-sync").waitFor({ state: "visible" });
   await page.getByTestId("file-sync-worker").filter({ hasText: "Running" }).waitFor();
@@ -177,29 +170,12 @@ test("the File sync tab sits next to Node and Resources and shows the engine and
   assert.doesNotMatch(await page.getByTestId("settings-panel-file-sync").innerText(), /syncthing/i);
 });
 
-test("the project list pages instead of scrolling at a short height", async () => {
+test("the project list is one continuous list with no pager", async () => {
   const list = page.getByTestId("file-sync-project-list");
   await settle();
-  const pager = page.getByTestId("file-sync-project-pager");
-  await pager.waitFor({ state: "visible" });
-  const label = page.getByTestId("file-sync-projects-page-label");
-  const names = new Set<string>();
-  const starts: number[] = [];
-  for (let clicks = 0; ; clicks += 1) {
-    assert.ok(clicks <= projects.length, "paging terminates");
-    const box = await list.evaluate((element) => ({ scroll: element.scrollHeight, client: element.clientHeight, rows: element.children.length }));
-    assert.ok(box.scroll <= box.client + 1, `the list never overflows its box: ${JSON.stringify(box)}`);
-    assert.ok(box.rows < projects.length, `a short window shows a page, not every project: ${box.rows}`);
-    for (const name of await list.getByTestId("file-sync-project-row").locator(".relay-row-name").allInnerTexts()) names.add(name);
-    starts.push(Number((await label.innerText()).split("–")[0]));
-    const next = page.getByTestId("file-sync-projects-page-next");
-    if (await next.isDisabled()) break;
-    await next.click();
-    await settle();
-  }
-  assert.deepEqual([...names].sort(), projects.map((project) => project.name), "every project is reachable with Next");
-  for (let index = 1; index < starts.length; index += 1) assert.ok(starts[index] > starts[index - 1], `Next advances: ${starts.join(", ")}`);
-  assert.match(await label.innerText(), /–14 of 14$/);
+  assert.equal(await page.getByTestId("file-sync-project-pager").isVisible(), false, "no pager");
+  const names = await list.getByTestId("file-sync-project-row").locator(".relay-row-name").allInnerTexts();
+  assert.deepEqual([...names].sort(), projects.map((project) => project.name), "every project is in the list");
 });
 
 test("a synced project says so, with how its files compare and nothing to move", async () => {
@@ -300,7 +276,7 @@ test("a check that is held says why and is not refreshed", { timeout: 40_000 }, 
   }
 });
 
-test("the differing files page, and Repair names the folder and the machine", async () => {
+test("the differing files scroll, and Repair names the folder and the machine", async () => {
   await page.getByTestId("file-sync-tab-differences").click();
   await page.getByTestId("file-sync-differences-section").waitFor({ state: "visible" });
   assert.equal(await page.getByTestId("file-sync-differences-count").innerText(), "30");
@@ -313,21 +289,10 @@ test("the differing files page, and Repair names the folder and the machine", as
   const items = page.getByTestId("file-sync-diff-items");
   await items.getByTestId("file-sync-diff-item").first().waitFor();
   await settle();
-  const pager = page.getByTestId("file-sync-diff-items-pager");
-  assert.equal(await pager.isVisible(), true, "thirty files do not fit: the list pages");
-  const paths = new Set<string>();
-  for (let clicks = 0; ; clicks += 1) {
-    assert.ok(clicks <= DIFFERING.length, "paging terminates");
-    const box = await items.evaluate((element) => ({ scroll: element.scrollHeight, client: element.clientHeight }));
-    assert.ok(box.scroll <= box.client + 1, `the list never overflows its box: ${JSON.stringify(box)}`);
-    for (const text of await items.getByTestId("file-sync-diff-path").allInnerTexts()) paths.add(text);
-    const next = page.getByTestId("file-sync-diff-items-page-next");
-    if (await next.isDisabled()) break;
-    await next.click();
-    await settle();
-  }
-  assert.deepEqual([...paths].sort(), DIFFERING, "every differing file is reachable with Next");
-  assert.ok(seen.filter((entry) => entry.path === "/api/file-sync/differences").length > 1, "each page is asked from the engine");
+  assert.equal(await page.getByTestId("file-sync-diff-items-pager").isVisible(), false, "no pager");
+  const paths = await items.getByTestId("file-sync-diff-path").allInnerTexts();
+  assert.deepEqual([...paths].sort(), DIFFERING, "every differing file is in the list");
+  assert.ok(seen.filter((entry) => entry.path === "/api/file-sync/differences").length >= 1, "the files are asked from the engine");
   const repaired = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/file-sync/repair");
   await page.getByTestId("file-sync-diff-repair").click();
   assert.deepEqual((await repaired).postDataJSON(), { share: "project:p01", peer: PEER });

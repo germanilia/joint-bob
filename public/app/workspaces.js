@@ -85,7 +85,8 @@ function workspaceRow(workspace) {
     control.addEventListener("click", onClick);
     return control;
   };
-  const buttons = [action("Secrets", "workspace-secrets-button", () => openSecretScope("workspace", workspace.id, workspace.label).catch((error) => toast.error(error.message)))];
+  const secrets = action("Secrets", "workspace-secrets-button", () => openSecretScope("workspace", workspace.id, workspace.label).catch((error) => toast.error(error.message)));
+  const buttons = [];
   if (!workspace.source) buttons.push(action("Share", "workspace-share-button", () => openWorkspaceSharing(workspace).catch((error) => toast.error(error.message))));
   if (isNodeAdmin() && !workspace.source) buttons.push(action("Budget", "workspace-budget-button", () => openBudgetDialog(workspaceBudgetTarget(workspace)).catch((error) => toast.error(error.message))));
   buttons.push(action("Delete", "workspace-delete-button", async () => {
@@ -105,9 +106,9 @@ function workspaceRow(workspace) {
       toast.error(error.message);
     }
   }, " danger"));
-  const { actions, more } = rowActions(buttons, `Actions for ${workspace.label}`);
+  const { controls, more } = rowActions(buttons, `Actions for ${workspace.label}`, secrets);
   more.dataset.testid = "workspace-more";
-  row.append(main, folder, actions, more);
+  row.append(main, folder, controls);
   return row;
 }
 

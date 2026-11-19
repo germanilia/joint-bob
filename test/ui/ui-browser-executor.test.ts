@@ -493,6 +493,7 @@ test("browser viewer UI", { timeout: 1_800_000 }, async (t) => {
         assert.equal(await team.getByTestId("browser-profile-directory-state").getAttribute("title"), "In use by another conversation");
         assert.match(await team.innerText(), /Read-only/);
         assert.equal(await team.getByTestId("browser-profile-share").count(), 0, "another machine's shared profile is read-only here");
+        await gmail.getByTestId("browser-profile-more").click();
         await gmail.getByTestId("browser-profile-share").click();
         const dialog = f.page.getByTestId("browser-profile-share-dialog");
         await dialog.waitFor();

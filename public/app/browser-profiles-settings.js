@@ -110,13 +110,15 @@ function profileRow(profile) {
     row.append(note);
     return row;
   }
-  const { actions, more } = rowActions([
+  // A profile in use is closed from here, the one thing to do with it; everything else is in the menu.
+  const closeThere = profile.holder ? button("Close there", "browser-profile-close", () => void closeProfile(profile)) : null;
+  const { controls, more } = rowActions([
     button("Share…", "browser-profile-share", () => void openShareDialog(profile).catch((error) => toast.error(error.message))),
     button("Rename", "browser-profile-rename", () => startRename(row, profile)),
-    profile.holder ? button("Close there", "browser-profile-close", () => void closeProfile(profile)) : button("Delete", "browser-profile-delete", () => void deleteProfile(profile), " danger"),
-  ], `Actions for ${profile.label}`);
+    ...(closeThere ? [] : [button("Delete", "browser-profile-delete", () => void deleteProfile(profile), " danger")]),
+  ], `Actions for ${profile.label}`, closeThere);
   more.dataset.testid = "browser-profile-more";
-  row.append(actions, more);
+  row.append(controls);
   return row;
 }
 
