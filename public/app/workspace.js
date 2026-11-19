@@ -239,6 +239,83 @@ byId("expandProjectsButton").addEventListener("click", () => {
 byId("collapseProjectsButton").addEventListener("click", () => { railOpened = false; queueMicrotask(syncRail); });
 window.addEventListener("project-selected", syncColumn);
 
+const sidebar = byId("workspaceSide");
+const sidebarToggle = byId("workspaceSidebarToggle");
+const sidebarResize = byId("workspaceSidebarResize");
+const shell = sidebar.parentElement;
+const SIDEBAR_WIDTH_KEY = "joint-bob-workspace-sidebar-width";
+const SIDEBAR_MIN = 232;
+const SIDEBAR_MAX = 560;
+const sidebarWidth = () => Math.round(sidebar.getBoundingClientRect().width);
+const sidebarCollapsed = () => body.classList.contains("projects-collapsed") || body.classList.contains("ws-auto-rail");
+function syncSidebarToggle() {
+  const collapsed = sidebarCollapsed();
+  const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  if (sidebarToggle.title === label) return;
+  sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+  sidebarToggle.setAttribute("aria-label", label);
+  sidebarToggle.title = label;
+}
+new MutationObserver(syncSidebarToggle).observe(body, { attributes: true, attributeFilter: ["class"] });
+sidebarToggle.addEventListener("click", () => {
+  byId(sidebarCollapsed() ? "expandProjectsButton" : "collapseProjectsButton").click();
+});
+
+function setSidebarWidth(width) {
+  shell.style.setProperty("--ws-side-preferred", `${Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, width))}px`);
+}
+function saveSidebarWidth() {
+  const width = sidebarWidth();
+  setSidebarWidth(width);
+  try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width)); } catch { /* resizing still works without storage */ }
+}
+try {
+  const savedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  if (Number.isFinite(savedWidth) && savedWidth > 0) setSidebarWidth(savedWidth);
+} catch { /* the default width works without storage */ }
+sidebarResize.setAttribute("aria-valuemin", String(SIDEBAR_MIN));
+sidebarResize.setAttribute("aria-valuemax", String(SIDEBAR_MAX));
+new ResizeObserver(() => {
+  if (!desktop.matches || sidebarCollapsed()) return;
+  const width = sidebarWidth();
+  sidebarResize.setAttribute("aria-valuenow", String(width));
+  sidebarResize.setAttribute("aria-valuetext", `${width} pixels`);
+}).observe(sidebar);
+
+let sidebarDrag;
+sidebarResize.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || sidebarDrag) return;
+  event.preventDefault();
+  sidebarResize.focus({ preventScroll: true });
+  sidebarResize.setPointerCapture(event.pointerId);
+  sidebarDrag = { id: event.pointerId, x: event.clientX, width: sidebarWidth(), previous: shell.style.getPropertyValue("--ws-side-preferred") };
+});
+sidebarResize.addEventListener("pointermove", (event) => {
+  if (event.pointerId === sidebarDrag?.id) setSidebarWidth(sidebarDrag.width + event.clientX - sidebarDrag.x);
+});
+sidebarResize.addEventListener("pointerup", (event) => {
+  if (event.pointerId !== sidebarDrag?.id) return;
+  if (sidebarWidth() !== sidebarDrag.width && sidebarResize.getClientRects().length) {
+    saveSidebarWidth();
+    sidebarDrag = undefined;
+  }
+});
+sidebarResize.addEventListener("lostpointercapture", (event) => {
+  if (event.pointerId !== sidebarDrag?.id) return;
+  shell.style.setProperty("--ws-side-preferred", sidebarDrag.previous);
+  sidebarDrag = undefined;
+});
+sidebarResize.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  event.preventDefault();
+  if (sidebarDrag) return;
+  const width = sidebarWidth();
+  const previous = shell.style.getPropertyValue("--ws-side-preferred");
+  setSidebarWidth(width + (event.key === "ArrowLeft" ? -16 : 16));
+  if (sidebarWidth() !== width) saveSidebarWidth();
+  else shell.style.setProperty("--ws-side-preferred", previous);
+});
+
 // The projects' own filter (clusters) folds behind a button beside the search box, as a project's filters do; the
 // button shows only when there is something to filter by, and counts what is chosen.
 const PROJECT_FILTERS_OPEN_KEY = "joint-bob-project-filters-open";
