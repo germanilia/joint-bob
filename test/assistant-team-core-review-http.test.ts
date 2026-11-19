@@ -25,7 +25,7 @@ import { openNodeDatabase } from "../src/node-database.js";
  const external=createServer(async(req,res)=>{
   let raw='';for await(const part of req)raw+=part;const body=JSON.parse(raw||'{}');
   if(req.url?.endsWith('/sendMessage')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ok:true,result:{message_id:++receipt}}));if(body.text==='qa: VERIFIED_RESULT')finalResolve();return;}
-  if(body.questions){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({answers:Object.fromEntries(Object.keys(body.questions).map(k=>[k,{type:'choice',choice:k==='subject'?'new':k==='request'?'separate':'none',confidence:.99}]))}));return;}
+  if(body.questions){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({answers:Object.fromEntries(Object.keys(body.questions).map(k=>[k,body.questions[k].type==='noul'?{noul:0.01}:{type:'choice',choice:k==='subject'?'new':k==='request'?'separate':'none',confidence:.99}]))}));return;}
   inputs.push(body);res.setHeader('Content-Type','text/event-stream');
   for(const [delta,finish] of [[{role:'assistant',content:'VERIFIED_RESULT'},null],[{},'stop']])res.write(`data: ${JSON.stringify({id:'regression',object:'chat.completion.chunk',model:'dev-model',choices:[{index:0,delta,finish_reason:finish}]})}\n\n`);
   res.end('data: [DONE]\n\n');
