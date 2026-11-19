@@ -350,7 +350,7 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
 const connectionState = ({ pool, profile }) => ({ poolName: pool?.name ?? "", nodeName: pool?.nodeName ?? "", clusterName: pool?.clusterName ?? "", profileLabel: profile.label });
 
 export function handleSocketPayload(payload, scrollOnReady = false) {
-  if (payload.type === "guardianReviews" || payload.type === "guardianBlocked") {
+  if (payload.type === "guardianReviews" || payload.type === "guardianWarning" || payload.type === "guardianBlocked") {
     document.dispatchEvent(new CustomEvent("guardian-event", { detail: payload }));
     return;
   }

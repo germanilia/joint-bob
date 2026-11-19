@@ -43,6 +43,7 @@ test("a relay's Jev rules reach a cluster's projects, are asked through the rela
   pinClusterPublicKey(local, relayId, identity.publicKey);
   registerOwnedResource(local, { kind: "project", id: project.id, ownerNodeId: manager }, manager);
   setResourceShares(local, manager, "project", project.id, [{ clusterId, projectId: null }]);
+  assert.equal(await productionGuard(project.id), "on", "shared projects inherit production checks before a manager customizes policy");
   setClusterAgentPolicy(local, manager, clusterId, { policy: agentPolicyBodySchema.parse({}), sourceRelayNodeId: relayId, sourceStatement: statement }, 1);
 
   assert.equal(await productionGuard(project.id), "on", "no warning below a relay that imposes the production rule");
@@ -59,7 +60,7 @@ test("a relay's Jev rules reach a cluster's projects, are asked through the rela
   // A second cluster that imposes nothing leaves the machine as a whole uncovered.
   const bare = randomUUID();
   createSharingCluster(local, { id: bare, name: "Bare" }, manager);
-  setClusterAgentPolicy(local, manager, bare, { policy: agentPolicyBodySchema.parse({}), sourceRelayNodeId: null }, 1);
+  setClusterAgentPolicy(local, manager, bare, { policy: agentPolicyBodySchema.parse({ guardian: null }), sourceRelayNodeId: null }, 1);
   assert.equal(await productionGuard(), "guardian-off");
   assert.equal(await productionGuard(project.id), "on", "the project's own cluster still imposes it");
 
@@ -86,7 +87,10 @@ test("a relay answers only its admitted machines, only while it imposes Jev rule
   db.prepare("INSERT INTO relay_serving(singleton,enabled,origin,updated_at) VALUES(1,1,'https://relay.example',?)").run(now);
   await assert.rejects(answerRelayGuardian(db, randomUUID(), "{}", signal, dependencies), refused(403), "a machine not admitted is refused");
   db.prepare("INSERT INTO relay_machines(node_id,public_key,name,status,created_at,updated_at) VALUES(?,?,?,?,?,?)").run(admittedMachine, "key", "member", "admitted", now, now);
-  await assert.rejects(answerRelayGuardian(db, admittedMachine, "{}", signal, dependencies), refused(403), "a relay that imposes no Jev rules refuses");
+  assert.equal((await answerRelayGuardian(db, admittedMachine, '{}', signal, dependencies)).status, 200, 'a fresh relay publishes the production rule by default');
+  seen.length = 0;
+  publishRelayPolicy(db, self, [], undefined, undefined, null);
+  await assert.rejects(answerRelayGuardian(db, admittedMachine, "{}", signal, dependencies), refused(403), "an explicitly disabled relay refuses");
   publishRelayPolicy(db, self, [], undefined, undefined, jevPolicy);
   await assert.rejects(answerRelayGuardian(db, admittedMachine, "{}", signal, { ...dependencies, key: () => { throw new Error("no key"); } }), refused(409), "a relay without a key says so");
   const answer = await answerRelayGuardian(db, admittedMachine, '{"state":"x"}', signal, dependencies);

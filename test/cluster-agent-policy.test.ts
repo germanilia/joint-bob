@@ -21,6 +21,17 @@ function setup() {
   return { db, manager, source, clusterId };
 }
 
+test('a second member inherits the shared project default and the manager opt-out without a node switch', () => {
+  const { db, manager, source: twin, clusterId } = setup();
+  try {
+    db.prepare('UPDATE cluster_node SET id=?').run(twin);
+    assert.equal(projectAgentPolicies(db, 'shared', true)[0].policy.guardian?.rules[0].id, 'production-or-destructive');
+    assert.deepEqual(projectAgentPolicies(db, 'private', true), []);
+    setClusterAgentPolicy(db, manager, clusterId, { sourceRelayNodeId: null, policy: agentPolicyBodySchema.parse({ guardian: null }) }, 1);
+    assert.equal(projectAgentPolicies(db, 'shared', true)[0].policy.guardian, null);
+  } finally { db.close(); }
+});
+
 test("cluster policy is project scoped, manager authorized and epoch checked", () => {
   const { db, manager, source, clusterId } = setup();
   try {

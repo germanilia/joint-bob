@@ -55,6 +55,7 @@ test("Guardian in a Pi session blocks a tool call, removes a secret from its out
       credentials: async () => ({ environment: {}, capabilityEnvironment: {}, credentialContext: "" }),
       resources: async () => ({ strictResourceIsolation: true, packagesFile: "", extensions: [], prompts: [], themes: [], agentsFiles: [], skillRoots: [], managedSkillRoot: path.join(root, "skills"), blockedSkillNames: [] }),
       guardian: async (_conversationId, request): Promise<GuardianVerdict> => {
+        if (request.kind === 'outgoing' && request.text === 'models unavailable') return { action: 'block', reason: 'No Guardian model available' };
         asked.push(request);
         if (request.kind === "tool" && String(request.input.command).startsWith("rm")) return { action: "block", reason: "GUARDIAN-BLOCKED-RM" };
         if (request.kind === "outgoing" && request.text.includes("AKIA")) return { action: "replace", text: request.text.replace(/AKIA\w+/, "[removed]") };
@@ -66,7 +67,11 @@ test("Guardian in a Pi session blocks a tool call, removes a secret from its out
       cwd, agentDir, sessionRoot: path.join(root, "sessions"), sessionId: "guardian-session",
       defaults: { provider: "fixture-provider", modelId: "fixture-model", thinkingLevel: "off" },
     }, hooks);
-    try { await handle.session.prompt("PROMPT-SECRET please clean up"); }
+    try {
+      await handle.session.prompt('models unavailable');
+      assert.equal(model.bodies.length, 0, 'a blocked turn does not start an agent request');
+      await handle.session.prompt("PROMPT-SECRET please clean up");
+    }
     finally { handle.dispose(); }
 
     assert.ok(existsSync(path.join(cwd, "keep.txt")), "the blocked command never ran");

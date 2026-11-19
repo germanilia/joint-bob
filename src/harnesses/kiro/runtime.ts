@@ -279,7 +279,7 @@ class KiroSession implements HarnessSession {
     const args = this.nativeEngine === "v3" ? ["acp", "--agent-engine=v3"] : ["acp", "--agent-engine", "v2", "--agent", profile, "--effort", this.model.reasoning];
     // With Guardian on, Kiro trusts no tool and asks before each call; serverRequest answers with
     // Guardian's decision. The profile already leaves out disabled tools.
-    this.guarded = await kiroChecksTools();
+    this.guarded = await kiroChecksTools(this.options.projectId);
     if (this.nativeEngine === "v2") {
       if (!this.guarded) args.push(this.trustedTools === undefined ? "--trust-all-tools" : `--trust-tools=${kiroTrustedTools(profile, this.trustedTools).join(",")}`);
       if (this.model.modelId !== "default") args.push("--model", this.model.modelId);

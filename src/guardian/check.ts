@@ -9,7 +9,7 @@ import type { HarnessId } from "../types.js";
 import { isGuardianExempt, runGuardianFix } from "./fix.js";
 import { localLayaUrl } from "./laya.js";
 import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } from "./model.js";
-import { announceGuardianBlock, guardianActionAllowed, requestGuardianReview } from "./reviews.js";
+import { announceGuardianBlock, announceGuardianWarning, guardianActionAllowed, requestGuardianReview } from "./reviews.js";
 import { guardianBypassed } from "./bypass.js";
 import { guardianCommandPolicy } from './commands.js';
 import { ruleApplies, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
@@ -44,15 +44,14 @@ function knownSecrets(projectId: string): string[] {
 
 /** A relay's Jev rules are asked through that relay, which holds the key. */
 function modelRoute(group: GuardianGroup, projectId: string): Promise<{ target: GuardianModelTarget; fetchImpl?: typeof fetch }> {
-  if (group.model === "jev" && group.relay) return Promise.resolve({ target: jevTarget(""), fetchImpl: fetchThroughRelay(group.relayNodeId!) });
+  if (group.model === "jev" && group.relayNodeId) return Promise.resolve({ target: jevTarget(""), fetchImpl: fetchThroughRelay(group.relayNodeId) });
   return modelTarget(group, projectId).then((target) => ({ target }));
 }
 
 async function modelTarget(group: GuardianGroup, projectId: string): Promise<GuardianModelTarget> {
-  const environment = genericSecretEnvironment(projectId);
   if (group.model === "jev") return jevTarget(systemDecisionKey("typesafe"));
   if (group.model === "laya-local") return layaTarget(await localLayaUrl(), undefined, true);
-  return layaTarget(group.layaUrl, environment.LAYA_API_KEY, false);
+  return layaTarget(group.layaUrl, genericSecretEnvironment(projectId).LAYA_API_KEY, false);
 }
 
 /** The state the model judges: the tool call with its arguments, or the content itself. */
@@ -68,14 +67,23 @@ async function evaluate(identity: GuardianIdentity, groups: GuardianGroup[], req
   const state = modelState(identity, request);
   const results = await Promise.all(groups.map(async (group) => {
     const rules = group.rules.filter((rule) => ruleApplies(rule, request));
-    if (!rules.length) return { findings: [] as Finding[] };
-    try {
-      const { target, fetchImpl } = await modelRoute(group, identity.projectId);
-      const answers = await askGuardianModel(target, state, Object.fromEntries(rules.map((rule) => [rule.id, rule.question])), fetchImpl);
-      return { findings: rules.map((rule) => ({ group, rule, probability: answers[rule.id], outcome: ruleOutcome(rule, answers[rule.id]), model: target.label })) };
-    } catch (error) {
-      return { findings: [] as Finding[], failure: `${group.relay ? `${group.source}: ` : ""}${(error as Error).message}` };
+    const startOfTurn = request.kind === 'outgoing' && request.source === "the user's message";
+    const probe = !rules.length && startOfTurn && group.rules.some(rule => rule.enabled);
+    if (!rules.length && !probe) return { findings: [] as Finding[] };
+    const questions = probe ? { ready: 'Does the state say ready?' } : Object.fromEntries(rules.map(rule => [rule.id, rule.question]));
+    const fallback = group.model === 'jev' ? (group.layaUrl ? 'laya-remote' : 'laya-local') : 'jev';
+    const errors: string[] = [];
+    for (const model of [group.model, fallback] as const) {
+      try {
+        const { target, fetchImpl } = await modelRoute({ ...group, model }, identity.projectId);
+        const answers = await askGuardianModel(target, probe ? 'ready' : state, questions, fetchImpl, group.relayNodeId ?? identity.projectId, !startOfTurn);
+        if (errors.length) announceGuardianWarning(identity.projectId, identity.conversationId, `${group.source}: ${errors[0]}. Using ${target.label} for this check.`);
+        return { findings: rules.map(rule => ({ group, rule, probability: answers[rule.id], outcome: ruleOutcome(rule, answers[rule.id]), model: target.label })) };
+      } catch (error) {
+        errors.push(`${model === 'jev' ? 'Jev' : 'Laya'} unavailable: ${(error as Error).message}`);
+      }
     }
+    return { findings: [] as Finding[], failure: `${group.source}: ${errors.join('; ')}` };
   }));
   const failure = results.map((result) => result.failure).filter(Boolean).join("; ");
   return { findings: results.flatMap((result) => result.findings), ...(failure ? { failure } : {}) };
@@ -129,17 +137,17 @@ async function applyFixes(identity: GuardianIdentity, request: GuardianRequest, 
  * applies is asked in one request per group. A block anywhere wins; user approval never overrides it.
  */
 export async function checkGuardian(identity: GuardianIdentity, original: GuardianRequest): Promise<GuardianVerdict> {
-  if (guardianBypassed(identity.projectId, identity.conversationId)) return { action: "continue" };
+  if (guardianBypassed(identity.projectId, identity.conversationId)) return { action: 'continue' };
   const commandPolicy = guardianCommandPolicy(original);
   if (commandPolicy === 'allow') return { action: 'continue' };
   const team = !!teamAssistantForConversation(identity.projectId, identity.conversationId);
   const effectCapable = original.kind === 'tool' && (original.category === 'commands' || original.category === 'file-changes');
   if (team && effectCapable && await productionGuard(identity.projectId) !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
-  const exempt = !team && (isGuardianExempt(identity.projectId, identity.conversationId));
+  const exempt = !team && isGuardianExempt(identity.projectId, identity.conversationId);
   const groups = (await guardianGroups(identity.projectId)).filter(group => group.relay || !exempt);
   // Team Pi retains write/edit without a shell. The mandatory production rule checks those effects too.
   if (team && effectCapable) for (const group of groups) group.rules = group.rules.map(rule => rule.id === PRODUCTION_RULE_ID ? { ...rule, check: 'all' } : rule);
-  if (!groups.some((group) => group.rules.some((rule) => ruleApplies(rule, original)))) return { action: "continue" };
+  if (!(original.kind === 'outgoing' && original.source === "the user's message") && !groups.some((group) => group.rules.some((rule) => ruleApplies(rule, original)))) return { action: "continue" };
   if (commandPolicy === 'block') return announced(identity, 'Guardian blocked deletion of a protected branch (dev, main, master or staging), or a deletion whose branch cannot be determined.');
   let request = original;
   for (let attempt = 0; ; attempt += 1) {

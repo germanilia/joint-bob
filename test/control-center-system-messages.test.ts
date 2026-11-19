@@ -36,7 +36,11 @@ test("Guardian off here says which projects a relay covers and which nothing cov
   const [message] = systemMessages({ ...healthy, guardian: "guardian-off", guardianCoveredBy: ["Contigos relay"], guardianUncovered: ["Notes", "Scratch"] });
   assert.equal(message.id, "guardian");
   assert.equal(message.short, "Not checked in 2 projects");
-  assert.match(message.why, /Contigos relay asks first in the projects it covers, but not in Notes, Scratch\./);
+  assert.match(message.why, /No production rule covers: Notes, Scratch/);
+  assert.match(message.why, /protected by Contigos relay/);
+  assert.equal(message.action?.open, 'settings-cluster');
+  const names = ['One', 'Two', 'Three', 'Four', 'Five', 'Six'];
+  assert.equal(systemMessages({ ...healthy, guardian: 'guardian-off', guardianUncovered: names })[0].where, names.join(', '));
   const [plain] = systemMessages({ ...healthy, guardian: "guardian-off" });
   assert.equal(plain.short, "Production and destructive steps are not checked");
   assert.doesNotMatch(plain.why, /asks first in the projects/);

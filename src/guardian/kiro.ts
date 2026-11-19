@@ -5,8 +5,8 @@ import { guardianGroups } from "./settings.js";
 type JsonObject = Record<string, unknown>;
 
 /** While any rule checks tool calls, Kiro must ask before every call instead of trusting its tools. */
-export async function kiroChecksTools(): Promise<boolean> {
-  return (await guardianGroups()).some((group) => group.rules.some((rule) => rule.enabled && rule.check !== "outgoing"));
+export async function kiroChecksTools(projectId?: string): Promise<boolean> {
+  return (await guardianGroups(projectId)).some((group) => group.rules.some((rule) => rule.enabled && rule.check !== "outgoing"));
 }
 
 /** The prompt Kiro may send, after Guardian; throws when Guardian withholds it. */

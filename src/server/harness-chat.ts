@@ -261,7 +261,7 @@ function publish(connection: HarnessChatConnection, event: Record<string, unknow
 // project hear that a conversation is waiting, so the person can find it.
 onGuardianEvent((event) => {
   const reviews = pendingGuardianReviews(event.projectId, event.conversationId);
-  const payload = event.type === "reviews" ? { type: "guardianReviews", reviews } : { type: "guardianBlocked", message: event.message };
+  const payload = event.type === "reviews" ? { type: "guardianReviews", reviews } : { type: event.type === 'warning' ? 'guardianWarning' : 'guardianBlocked', message: event.message };
   for (const connection of harnessChatConnections) {
     if (connection.project.id === event.projectId && connection.conversationId === event.conversationId) send(connection.socket, payload);
   }

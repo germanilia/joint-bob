@@ -40,13 +40,10 @@ export function guardianPiExtension(check: Check): InlineExtension {
     });
     // A person's message, before it reaches the model.
     pi.on("input", async (event) => {
-      if (!event.text.trim()) return { action: "continue" as const };
       const verdict = await verdictOf(check, { kind: "outgoing", source: "the user's message", text: event.text });
       if (verdict.action === "continue") return { action: "continue" as const };
-      const text = verdict.action === "block"
-        ? `[Guardian withheld the user's message before it reached you. ${verdict.reason}] Tell the user their message was withheld and why.`
-        : verdict.text ?? event.text;
-      return { action: "transform" as const, text };
+      if (verdict.action === 'block') return { action: 'handled' as const };
+      return { action: "transform" as const, text: verdict.text ?? event.text };
     });
   };
   return { name: "joint-bob-guardian", factory, hidden: true };

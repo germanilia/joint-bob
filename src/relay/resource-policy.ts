@@ -2,7 +2,8 @@ import { publishClusterPolicySource, cacheClusterPolicySource } from "../cluster
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { clusterPublicKeyFingerprint, signClusterMessage, verifyClusterMessage } from "../cluster-identity.js";
-import { listMemberships, type RelayMembership } from "./store.js";
+import { PRODUCTION_RULE } from '../guardian/production-rule.js';
+import { listMemberships, servingSettings, type RelayMembership } from "./store.js";
 import { summaryPolicySchema, type SummaryPolicy } from "../conversation-summary-policy.js";
 import { guardianRelayPolicySchema, type GuardianRelayPolicy } from "../guardian/rules.js";
 import { encodeControl, MAX_FRAME } from "./protocol.js";
@@ -36,7 +37,7 @@ const bodySchema = z.object({
   // Guardian rules every member must apply. Omitted when the relay imposes none.
   guardian: guardianRelayPolicySchema.optional(),
 }).strict();
-export const agentPolicyBodySchema = bodySchema.omit({ relayNodeId: true, version: true }).extend({ rules: relaySkillRulesSchema.default([]) });
+export const agentPolicyBodySchema = bodySchema.omit({ relayNodeId: true, version: true }).extend({ rules: relaySkillRulesSchema.default([]), guardian: guardianRelayPolicySchema.nullish() });
 export const signedRelaySkillPolicySchema = z.object({ body: bodySchema, signature: z.string().max(200) }).strict();
 export type RelaySkillRule = z.infer<typeof rule>;
 export type SignedRelaySkillPolicy = z.infer<typeof signedRelaySkillPolicySchema>;
@@ -56,6 +57,8 @@ function schema(db: DatabaseSync): void {
 export function publishedRelayPolicy(db: DatabaseSync, nodeId: string): SignedRelaySkillPolicy {
   schema(db);
   const row = db.prepare("SELECT version,rules,extra FROM relay_skill_policy WHERE singleton=1").get() as { version: number; rules: string; extra: string | null } | undefined;
+  // Publish at a new revision: never change the meaning of an already signed version zero.
+  if (!row && servingSettings(db).enabled) return publishRelayPolicy(db, nodeId, []);
   const extra = row?.extra ? JSON.parse(row.extra) as { settings?: unknown; enabled?: unknown; skillDigests?: Record<string, string>; summary?: SummaryPolicy | null; guardian?: GuardianRelayPolicy | null } : {};
   if (extra.skillDigests && !Object.keys(extra.skillDigests).length) delete extra.skillDigests;
   if (!extra.summary) delete extra.summary;
@@ -72,7 +75,9 @@ export function publishRelayPolicy(db: DatabaseSync, nodeId: string, rules: Rela
   const digests = resources?.skillDigests && Object.keys(resources.skillDigests).length ? resources.skillDigests : undefined;
   const published = current?.extra ? JSON.parse(current.extra) as { summary?: SummaryPolicy | null; guardian?: GuardianRelayPolicy | null } : {};
   const kept = summary === undefined ? published.summary ?? undefined : summary ?? undefined;
-  const keptGuardian = guardian === undefined ? published.guardian ?? undefined : guardian ?? undefined;
+  const keptGuardian = guardian === undefined
+    ? !current && servingSettings(db).enabled ? { model: 'jev', layaUrl: '', rules: [PRODUCTION_RULE] } : published.guardian ?? undefined
+    : guardian ?? undefined;
   const body = bodySchema.parse({ relayNodeId: nodeId, version: (current?.version ?? 0) + 1, rules, ...resources, skillDigests: digests, ...(kept ? { summary: kept } : {}), ...(keptGuardian ? { guardian: keptGuardian } : {}) });
   const statement = { body, signature: signClusterMessage(db, nodeId, "relay-skill-policy", JSON.stringify(body)) };
   if (encodeControl({ t: "skill-policy", statement }).byteLength > MAX_FRAME) throw new Error(`Relay skill policy exceeds the ${MAX_FRAME}-byte frame limit`);

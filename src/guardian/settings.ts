@@ -41,9 +41,9 @@ export interface GuardianGroup {
 export async function guardianGroups(projectId?: string): Promise<GuardianGroup[]> {
   const local = getGuardianSettings();
   const groups: GuardianGroup[] = local.enabled ? [{ source: "This machine", relay: false, model: local.model, layaUrl: local.layaUrl, rules: local.rules }] : [];
-  for (const layer of projectAgentPolicies(await clusterV2Database(), projectId)) {
+  for (const layer of projectAgentPolicies(await clusterV2Database(), projectId, true)) {
     const policy = layer.policy.guardian;
-    if (policy) groups.push({ source: layer.source, relay: true, model: policy.model, layaUrl: policy.layaUrl, rules: policy.rules, relayNodeId: layer.sourceNodeId });
+    if (policy) groups.push({ source: layer.source, relay: true, model: policy.model, layaUrl: policy.layaUrl || local.layaUrl, rules: policy.rules, relayNodeId: layer.relaySource ? layer.sourceNodeId : undefined });
   }
   return groups;
 }
@@ -67,7 +67,7 @@ export async function productionGuardCoverage(projects: Array<{ id: string; name
   const db = await clusterV2Database();
   const coveredBy = new Set<string>(), uncovered: string[] = [];
   for (const project of projects) {
-    const imposing = projectAgentPolicies(db, project.id).filter((layer) => layer.policy.guardian?.rules.some(actsOnProduction));
+    const imposing = projectAgentPolicies(db, project.id, true).filter((layer) => layer.policy.guardian?.rules.some(actsOnProduction));
     if (imposing.length) imposing.forEach((layer) => coveredBy.add(layer.source));
     else uncovered.push(project.name);
   }
@@ -83,7 +83,7 @@ export async function productionGuard(projectId?: string): Promise<ProductionGua
   const own = productionGuardStatus(getGuardianSettings());
   if (own === "on") return "on";
   const db = await clusterV2Database();
-  const clusters = projectId ? [projectAgentPolicies(db, projectId)] : allClusterAgentPolicies(db);
+  const clusters = projectId ? [projectAgentPolicies(db, projectId, true)] : allClusterAgentPolicies(db);
   const imposed = (layers: ReturnType<typeof projectAgentPolicies>) => layers.some((layer) => layer.policy.guardian?.rules.some(actsOnProduction));
   return clusters.length > 0 && clusters.every(imposed) ? "on" : own;
 }
