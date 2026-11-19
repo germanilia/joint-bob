@@ -924,6 +924,11 @@ body:is(.projects-collapsed, .ws-auto-rail) :is(.inbox-system, .ws-side > .contr
 .ws-page-item { display: flex; align-items: center; gap: 8px; }
 .ws-page-item > .ws-row { flex: 1; min-width: 0; }
 .ws-page-action { flex: none; }
+.ws-page-reply { min-height: 44px; padding-inline: 12px; }
+.inbox-reply-history { min-height: 72px; }
+.inbox-reply-input { width: 100%; font-size: 16px; resize: none; }
+.inbox-reply-actions { justify-content: space-between; }
+.inbox-reply-error { color: var(--danger); }
 
 /* Costs as a page beside the left column (app/usage-dashboard.js): the dialog opens without blocking the page and fills the middle. */
 @media (min-width: 701px) {

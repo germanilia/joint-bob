@@ -19,14 +19,28 @@ for (const normalize of [normalizeKeymap, normalizeKeymapPreference]) {
     // A keymap saved under the old per-command scheme describes shortcuts that no
     // longer exist, so its commands are rebuilt and only its base modifiers carry over.
     const old = normalize({ version: 3, base: ["ctrl"], commands: { notify: ["meta", "shift", "Y"], browser: null } });
-    assert.equal(old.version, 4);
+    assert.equal(old.version, DEFAULT_KEYMAP.version);
     assert.deepEqual(old.base, ["ctrl"]);
     assert.deepEqual(old.commands.notify, ["ctrl", "alt", "Y"]);
     assert.deepEqual(old.commands.browser, ["ctrl", "alt", "B"]);
-    // A keymap already on version 4 keeps every chord the account chose.
+    // A stored keymap keeps custom chords.
     const kept = normalize({ version: 4, base: ["meta", "shift"], commands: { notify: ["meta", "ctrl", "Y"], browser: null } });
     assert.deepEqual(kept.commands.notify, ["meta", "ctrl", "Y"]);
     assert.equal(kept.commands.browser, null);
+  });
+
+  test(`${normalize.name}: Ctrl+Alt+N opens the project picker and old N defaults migrate`, () => {
+    const previous = { version: 4, commands: { newPiChat: ["ctrl", "alt", "N"], newConversation: ["ctrl", "alt", "shift", "N"] } };
+    for (const keymap of [normalize({}), normalize(previous)]) {
+      assert.deepEqual(keymap.commands.newConversation, ["ctrl", "alt", "N"]);
+      assert.deepEqual(keymap.commands.newPiChat, ["ctrl", "alt", "shift", "N"]);
+    }
+    const custom = normalize({ version: 4, commands: { newPiChat: ["meta", "N"], newConversation: null } });
+    assert.deepEqual(custom.commands.newPiChat, ["meta", "N"]);
+    assert.equal(custom.commands.newConversation, null);
+    const reassigned = normalize({ version: 4, commands: { ...previous.commands, newConversation: null, activity: ["ctrl", "alt", "shift", "N"] } });
+    assert.deepEqual(reassigned.commands.activity, ["ctrl", "alt", "shift", "N"], "migration preserves a reassigned chord");
+    assert.equal(reassigned.commands.newConversation, null);
   });
 }
 
@@ -103,13 +117,13 @@ test("every command has a default chord, and the defaults never collide", () => 
     assert.notEqual(normalizeChord(defaults[command]), null, `${command}'s default is a valid chord`);
     // One modifier pair everywhere is what lets a button badge name the key alone.
     assert.deepEqual(defaults[command].slice(0, 2), ["ctrl", "alt"], `${command} rides Control+Option`);
-    assert.equal(defaults[command].length, ["costs", "sessionActions", "markDone", "autoRespond", "git", "explainConversation", "activity", "savedCommands", "newConversation"].includes(command) ? 4 : 3, `${command} is one chord, not a sequence`);
+    assert.equal(defaults[command].length, ["costs", "sessionActions", "markDone", "autoRespond", "git", "explainConversation", "activity", "savedCommands", "newPiChat"].includes(command) ? 4 : 3, `${command} is one chord, not a sequence`);
   }
   assert.deepEqual(defaults.costs, ["ctrl", "alt", "shift", "C"]);
   assert.deepEqual(defaults.markDone, ["ctrl", "alt", "shift", "D"]);
   assert.deepEqual(defaults.explainConversation, ["ctrl", "alt", "shift", "E"]);
   assert.deepEqual(defaults.activity, ["ctrl", "alt", "shift", "S"]);
-  assert.deepEqual(defaults.newConversation, ["ctrl", "alt", "shift", "N"]);
+  assert.deepEqual(defaults.newConversation, ["ctrl", "alt", "N"]);
   const ids = Object.values(defaults).map(chordId);
   assert.equal(new Set(ids).size, ids.length, "no two defaults share one chord");
   assert.deepEqual(defaults.browser, ["ctrl", "alt", "B"]);
