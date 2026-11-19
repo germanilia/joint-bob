@@ -3762,7 +3762,9 @@ body.file-view { overflow: auto; }
 .cluster-tab-count:empty { display: none; }
 .cluster-machine-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .cluster-machine-head h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
-.cluster-machine-head .cluster-member-who { justify-items: start; }
+/* One shrinkable column: a long address ends in an ellipsis inside the card, not across its edge. */
+.cluster-machine-head .cluster-member-who { justify-items: start; grid-template-columns: minmax(0, 1fr); flex: 1; }
+.cluster-machine-head .cluster-member-who small { max-width: 100%; }
 .cluster-avatar[data-large="true"] { width: 48px; height: 48px; font-size: 14px; }
 .cluster-member-open { min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
 .cluster-member-open:hover { color: var(--accent); }

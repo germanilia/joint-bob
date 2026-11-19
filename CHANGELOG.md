@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.335.2 — 2026-11-19
+
+- Fixed a long machine address running past the edge of its card in Settings › Cluster: it now ends in an ellipsis.
+
 ## 2.335.1 — 2026-11-19
 
 - Fixed a dropdown in Settings being cut off by the group below it. The open list now sits above the next group.
