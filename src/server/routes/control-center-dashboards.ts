@@ -18,7 +18,7 @@ const askSchema = z.object({ text: z.string().trim().min(1).max(8000) }).strict(
 /** The person's dashboards over everything they can see, for the control center's Dashboard view. */
 app.get("/api/control-center/dashboards/overview", dashboardRoute(async (request, _response, auth) => {
   z.object({}).strict().parse(request.query);
-  return { dashboards: listOverviewDashboards(auth) };
+  return { dashboards: listOverviewDashboards(auth), accountId: auth.accountId };
 }));
 
 /**

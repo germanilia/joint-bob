@@ -12,6 +12,7 @@ import { briefStatus, cardActionList } from "./control-cards.js";
 import { decideReview, markDone, openConversation, pushOn } from "./control-center.js";
 import { takeControl } from "./control-lease.js";
 import { chooseSnooze } from "./control-snooze.js";
+import { closeCustomizePopover, homeViewStateKey, initHomeSections, isActivityVisible, isCustomLayout, syncHomeSections, updateActivitySummary } from "./home-sections.js";
 import { drawChunked } from "./long-scroll.js";
 import { openNeedDetail } from "./needs-detail.js";
 import { elements } from "./elements.js";
@@ -398,6 +399,8 @@ function renderNeed() {
   host.scrollTop = scroll;
 }
 
+const CUSTOM_LIST_CAP = 5;
+
 function renderList(column, hostId, countId, empty) {
   const host = byId(hostId);
   const items = inColumn(column);
@@ -408,7 +411,7 @@ function renderList(column, hostId, countId, empty) {
     all.hidden = true;
     return;
   }
-  const size = fitCount(host, listRow(items[0]), 0);
+  const size = isCustomLayout() ? Math.min(items.length, CUSTOM_LIST_CAP) : fitCount(host, listRow(items[0]), 0);
   host.replaceChildren(...items.slice(0, size).map(listRow));
   host.closest("section").querySelector(".ws-home-all").hidden = items.length <= size;
 }
@@ -417,11 +420,15 @@ function render() {
   if (home.hidden) return;
   // Words being written for Push it on are not drawn away; closing the box draws Home again.
   if (home.querySelector(".ws-wait.pushing")) { shownFor = ""; return; }
+  home.classList.toggle("ws-home-custom", isCustomLayout());
   renderHead();
-  renderNeed();
-  renderList("running", "homeRunList", "homeRunCount", "Nothing is running.");
-  renderList("review", "homeReviewList", "homeReviewCount", "Nothing to review.");
-  home.querySelector('[data-group="needs-you"]').hidden = loaded && inColumn("needs-you").length === 0;
+  updateActivitySummary(cards, loaded);
+  if (isActivityVisible()) {
+    renderNeed();
+    renderList("running", "homeRunList", "homeRunCount", "Nothing is running.");
+    renderList("review", "homeReviewList", "homeReviewCount", "Nothing to review.");
+    home.querySelector('[data-group="needs-you"]').hidden = loaded && inColumn("needs-you").length === 0;
+  }
 }
 
 /* ---------- when Home is the middle ---------- */
@@ -441,18 +448,28 @@ function sync() {
   // Another conversation opened: it takes the middle.
   if (key !== lastActive) { lastActive = key; if (state.activeSessionId || state.activeSessionPath) requested = false; }
   const show = wanted();
-  if (body.classList.contains("ws-home") !== show) body.classList.toggle("ws-home", show);
+  const homeChanged = body.classList.contains("ws-home") !== show;
+  if (homeChanged) body.classList.toggle("ws-home", show);
   if (home.hidden === show) home.hidden = !show;
+  if (homeChanged) window.dispatchEvent(new CustomEvent("workspace-places-changed"));
   closeButton.hidden = !(show && requested && (state.activeSessionId || state.activeSessionPath));
   if (show) {
-    const drawing = JSON.stringify([cards.map((card) => [card.projectId, card.conversationId, card.column, card.title, card.updatedAt, card.activity, card.controlledBy, questionOf(card)]), loaded, spentToday, home.clientWidth, home.clientHeight, state.username]);
+    home.classList.toggle("ws-home-custom", isCustomLayout());
+    const drawing = JSON.stringify([
+      cards.map((card) => [card.projectId, card.conversationId, card.column, card.title, card.updatedAt, card.activity, card.controlledBy, questionOf(card)]),
+      loaded, spentToday, home.clientWidth, home.clientHeight, state.username, homeViewStateKey(),
+    ]);
     if (drawing !== shownFor) {
       shownFor = drawing;
       render();
     }
+    syncHomeSections({ visible: true });
     // Read when signed in, then every few minutes (a day without prices stays without the spend, not read again at once).
     if (state.authenticated && (!spentReadAt || Date.now() - spentReadAt > SPENT_REFRESH_MS)) void readSpent();
-  } else shownFor = "";
+  } else {
+    shownFor = "";
+    syncHomeSections({ visible: false });
+  }
 }
 
 let queued = false;
@@ -495,14 +512,19 @@ desktop.addEventListener("change", schedule);
 new MutationObserver(schedule).observe(body, { attributes: true, attributeFilter: ["class"] });
 new ResizeObserver(schedule).observe(home);
 
-// The brand (the mark and "Joint Bob") is the way Home, also over an open conversation, or from Bob's
-// page (only the person leaves it, and pressing Home is the person leaving). Inbox keeps bringing the open
-// conversation back, as it always has (workspace.js).
-byId("workspaceHomeButton").addEventListener("click", () => {
+// The brand (the mark and "Joint Bob") and the Home button above Inbox both open Home, also over an open
+// conversation, from Projects, or from Bob's page (only the person leaves it, and pressing Home is the person
+// leaving). Inbox keeps bringing the open conversation back, as it always has (workspace.js).
+function openHome() {
   requested = true;
   if (currentMobileView() === "control") setMobileView(state.activeSessionId || state.activeSessionPath ? "chat" : "sessions");
-  if (!body.classList.contains("ws-column-inbox")) byId("workspaceInboxButton").click();
+  if (!body.classList.contains("ws-column-inbox") || body.classList.contains("ws-page-open")) byId("workspaceInboxButton").click();
   schedule();
+}
+byId("workspaceHomeButton").addEventListener("click", openHome);
+byId("workspaceNavHomeButton")?.addEventListener("click", openHome);
+window.addEventListener("workspace-place", (event) => {
+  if (event.detail?.place === "home") openHome();
 });
 byId("workspaceInboxButton").addEventListener("click", (event) => {
   // Pressed by the person (not by Home itself): Inbox is the open conversation again.
@@ -516,7 +538,9 @@ function closeHome() {
 }
 closeButton.addEventListener("click", closeHome);
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape" || event.defaultPrevented || closeButton.hidden) return;
+  if (event.key !== "Escape" || event.defaultPrevented) return;
+  if (closeCustomizePopover()) { event.preventDefault(); return; }
+  if (closeButton.hidden) return;
   if (document.querySelector("dialog[open]") || event.target.closest?.("input, textarea, select")) return;
   closeHome();
 });
@@ -525,7 +549,13 @@ document.addEventListener("click", (event) => {
   if (event.target.closest?.(".ws-row") && requested) { requested = false; schedule(); }
 }, true);
 
-for (const all of home.querySelectorAll(".ws-home-all")) all.addEventListener("click", () => openGroupPage(all.dataset.group));
+for (const all of home.querySelectorAll(".ws-home-all[data-group]")) all.addEventListener("click", () => openGroupPage(all.dataset.group));
+initHomeSections({
+  onSelectionChange: () => {
+    shownFor = "";
+    schedule();
+  },
+});
 // The greeting follows the time of day, the Running times the clock.
 setInterval(() => { shownFor = ""; schedule(); }, 60_000);
 schedule();

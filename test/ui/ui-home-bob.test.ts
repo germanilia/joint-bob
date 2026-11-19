@@ -90,6 +90,183 @@ test("Home greets, counts, and shows Needs you as cards with their actions, then
   assert.ok(overflow <= 1, `Home does not scroll (${overflow})`);
 });
 
+test("Home nav button sits above Inbox and Home lets you pick Activity, Automations, Clusters, and Dashboards", async () => {
+  // Home button sits directly above Inbox in the left sidebar.
+  const homeNav = page.getByTestId("workspace-nav-home-button");
+  const inboxNav = page.getByTestId("workspace-inbox-button");
+  assert.equal(await homeNav.isVisible(), true);
+  const homeBox = (await homeNav.boundingBox())!;
+  const inboxBox = (await inboxNav.boundingBox())!;
+  assert.ok(homeBox.y + homeBox.height <= inboxBox.y + 2, `Home button (${homeBox.y}) sits above Inbox (${inboxBox.y})`);
+
+  // Pressing Home from Projects or Bob's page brings the user back to Home.
+  await page.getByTestId("workspace-projects-button").click();
+  await page.getByTestId("home-page").waitFor({ state: "hidden" });
+  await homeNav.click();
+  await page.getByTestId("home-page").waitFor({ state: "visible" });
+  assert.equal(await homeNav.getAttribute("aria-pressed"), "true");
+
+  // Mock Automations, Clusters, and Dashboards data to verify each selectable Home module.
+  const toggledAutomations: Array<{ url: string; body: unknown }> = [];
+  let nightBuildEnabled = true;
+  await page.route("**/api/control-center/automations", (route) => route.fulfill({
+    json: {
+      rows: [
+        {
+          id: "auto-1", kind: "schedule", name: "Nightly build", detail: "Runs tests", enabled: nightBuildEnabled, editable: true,
+          projectName: "Joint Bob", projectIds: ["p1"], nodeId: "node-local", nodeName: "Ilia's MacBook", when: "Daily at 03:00",
+          last: { state: nightBuildEnabled ? "failed" : "paused", at: new Date(Date.now() - 10 * 60_000).toISOString(), detail: "Exit code 1" },
+        },
+        {
+          id: "auto-2", kind: "bob", name: "Morning report", detail: "", enabled: true, editable: true,
+          projectName: "All projects", projectIds: [], nodeId: "node-local", nodeName: "Ilia's MacBook", when: "Daily at 08:00",
+          last: { state: "ok", at: new Date(Date.now() - 30 * 60_000).toISOString(), detail: "Sent" },
+        },
+      ],
+      projects: [{ id: "p1", name: "Joint Bob" }],
+      errors: [],
+      timezone: "UTC",
+    },
+  }));
+  await page.route("**/api/control-center/automations/*/*/enabled", async (route) => {
+    const body = route.request().postDataJSON() as { enabled: boolean };
+    nightBuildEnabled = body.enabled;
+    toggledAutomations.push({ url: route.request().url(), body });
+    await route.fulfill({ json: { row: { id: "auto-1", enabled: nightBuildEnabled } } });
+  });
+  await page.route("**/api/cluster/node", (route) => route.fulfill({
+    json: { node: { id: "node-local", name: "Ilia's MacBook", url: "https://macbook.tail.ts.net" } },
+  }));
+  await page.route("**/api/clusters", (route) => route.fulfill({
+    json: {
+      clusters: [{
+        id: "cluster-1", name: "Contigos Prod", managerNodeId: "node-local", autoShareProjects: true, pendingDeliveries: 0,
+        subscriptionPool: { name: "Team Pool" },
+        members: [
+          { nodeId: "node-local", name: "Ilia's MacBook", url: "https://macbook.tail.ts.net" },
+          { nodeId: "node-ec2", name: "Contigos EC2", url: "https://ec2.tail.ts.net" },
+        ],
+      }],
+    },
+  }));
+  await page.route("**/api/twins", (route) => route.fulfill({
+    json: { relationships: [{ relationshipId: "twin-1", status: "active", peer: { nodeId: "node-ec2", name: "Contigos EC2", url: "https://ec2.tail.ts.net" } }] },
+  }));
+  await page.route("**/api/relays", (route) => route.fulfill({
+    json: {
+      relays: [{ id: "relay-1", origin: "https://relay.example.com", name: "Home Relay", status: "admitted", connected: true, onlinePeers: 2 }],
+      local: null,
+    },
+  }));
+  await page.route("**/api/cluster/inventory", (route) => route.fulfill({
+    json: { local: { id: "node-local" }, remote: [{ peerId: "node-ec2", name: "Contigos EC2", url: "https://ec2.tail.ts.net", reachable: true }] },
+  }));
+  await page.route("**/api/control-center/dashboards/overview", (route) => route.fulfill({
+    json: {
+      accountId: "acct-1",
+      dashboards: [{ id: "ov-1", title: "Daily Pulse", status: "ready", isDefault: true, changing: false, hostProjectId: "p1" }],
+    },
+  }));
+  await page.route("**/api/dashboards?*", (route) => route.fulfill({
+    json: {
+      entity: { kind: "account", id: "acct-1" },
+      label: "All my projects",
+      hostProjectId: "p1",
+      displayedId: "ov-1",
+      dashboards: [{
+        id: "ov-1", title: "Daily Pulse", entity: { kind: "account", id: "acct-1" }, hostProjectId: "p1",
+        origin: "own", ownerNodeId: "node-local", canEdit: true, refreshMethod: "script", active: true, saved: true,
+        approved: true, definitionDigest: "abc", hasDraft: false, draftHasPage: true, draftVersion: 1,
+        lastRefresh: { ok: true, at: new Date(Date.now() - 5 * 60_000).toISOString() }, running: null,
+      }],
+    },
+  }));
+  await page.route("**/api/dashboards/ov-1?*", (route) => route.fulfill({
+    json: {
+      dashboard: {
+        id: "ov-1", title: "Daily Pulse", entity: { kind: "account", id: "acct-1" }, hostProjectId: "p1",
+        origin: "own", ownerNodeId: "node-local", canEdit: true, definitionDigest: "abc", saved: true, active: true,
+        approved: true, running: null, refreshMethod: "script", hasDraft: false, draftHasPage: true,
+        lastRefresh: { ok: true, at: new Date(Date.now() - 5 * 60_000).toISOString() },
+      },
+      messages: [],
+      runLog: "",
+    },
+  }));
+  await page.route("**/api/dashboards/ov-1/frame*", (route) => route.fulfill({
+    contentType: "text/html",
+    body: "<!doctype html><html><body><h1>Pulse OK</h1></body></html>",
+  }));
+  await page.route("**/api/control-center/dashboards", (route) => route.fulfill({
+    json: {
+      dashboards: [{
+        id: "proj-dash-1", title: "Release Health", group: "project", projectId: "p1", projectName: "Joint Bob",
+        hostProjectId: "p1", entity: { kind: "project", id: "p1" }, status: "ready", madeBy: "bob", refreshMethod: "script",
+        publishedAt: new Date(Date.now() - 12 * 60_000).toISOString(), origin: "own", approved: true, canChange: true,
+      }],
+    },
+  }));
+
+  // Option C Glance Strip shows live summaries across all 4 modules; Focus Tabs jump into each.
+  await page.getByTestId("home-glance-strip").waitFor({ state: "visible" });
+  await page.getByTestId("home-tab-automations").click();
+  await page.getByTestId("home-section-automations").waitFor({ state: "visible" });
+  await page.getByTestId("home-automations-list").waitFor();
+  assert.match(await page.getByTestId("home-section-automations").innerText(), /Nightly build[\s\S]*Failed/);
+  // Toggling an automation switch calls the enabled API and refreshes its status.
+  await page.getByTestId("home-automation-row").filter({ hasText: "Nightly build" }).getByTestId("home-automation-toggle").click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="home-automation-row"][data-id="auto-1"] [data-testid="home-automation-toggle"]')?.getAttribute("aria-checked") === "false");
+  assert.equal(toggledAutomations.length, 1);
+  assert.deepEqual(toggledAutomations[0].body, { enabled: false });
+
+  await page.getByTestId("home-glance-clusters").click();
+  await page.getByTestId("home-section-clusters").waitFor({ state: "visible" });
+  await page.getByTestId("home-cluster-card").waitFor();
+  assert.match(await page.getByTestId("home-section-clusters").innerText(), /Contigos Prod[\s\S]*Contigos EC2[\s\S]*Home Relay/);
+
+  await page.getByTestId("home-tab-dashboard").click();
+  await page.getByTestId("home-section-dashboard").waitFor({ state: "visible" });
+  await page.getByTestId("home-dashboard-frame").waitFor();
+  assert.match(await page.getByTestId("home-dashboard-cards").innerText(), /Release Health/);
+
+  // Editing the dashboard opens Joint Bob's interactive Dashboard Editor (creator mode).
+  await page.getByTestId("home-dashboard-edit").click();
+  await page.getByTestId("dashboard-creator").waitFor({ state: "visible" });
+  await page.locator("#dashboardClose").click();
+  await page.getByTestId("dashboard-creator").waitFor({ state: "hidden" });
+
+  // Customize Home popover selects which modules appear in "All selected" and persists across reload.
+  await page.getByTestId("home-customize-button").click();
+  await page.getByTestId("home-customize-popover").waitFor({ state: "visible" });
+  for (const id of ["automations", "clusters", "dashboard"]) await page.getByTestId(`home-toggle-${id}`).check();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("home-customize-popover").waitFor({ state: "hidden" });
+
+  // Home panel itself still does not overflow the viewport (inner section container scrolls).
+  const customOverflow = await page.getByTestId("home-page").evaluate((home) => home.scrollHeight - home.clientHeight);
+  assert.ok(customOverflow <= 1, `Home keeps outer overflow contained (${customOverflow})`);
+
+  // Selection persists across reload.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId("home-page").waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("home-tab-all").getAttribute("aria-selected"), "true");
+  await page.getByTestId("home-customize-button").click();
+  for (const id of ["activity", "automations", "clusters", "dashboard"]) {
+    assert.equal(await page.getByTestId(`home-toggle-${id}`).isChecked(), true, `${id} stays enabled after reload`);
+  }
+
+  // Deselecting everything shows the empty-selection prompt, and restoring Activity resets cleanly for later tests.
+  for (const id of ["activity", "automations", "clusters", "dashboard"]) await page.getByTestId(`home-toggle-${id}`).uncheck();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("home-empty-selection").waitFor({ state: "visible" });
+  await page.getByTestId("home-empty-enable-activity").click();
+  await page.getByTestId("home-empty-selection").waitFor({ state: "hidden" });
+  await page.getByTestId("home-section-activity").waitFor({ state: "visible" });
+  for (const route of ["**/api/control-center/automations", "**/api/control-center/automations/*/*/enabled", "**/api/cluster/node", "**/api/clusters", "**/api/twins", "**/api/relays", "**/api/cluster/inventory", "**/api/control-center/dashboards/overview", "**/api/dashboards?*", "**/api/dashboards/ov-1?*", "**/api/dashboards/ov-1/frame*", "**/api/control-center/dashboards"]) {
+    await page.unroute(route);
+  }
+});
+
 /** Waits until the account's preferences hold this view (saving is debounced). */
 async function savedView(view: string) {
   for (let attempt = 0; attempt < 50; attempt += 1) {
