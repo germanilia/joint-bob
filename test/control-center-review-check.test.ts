@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import {
-  GOAL_BLOCKED_BY, goalBlockedVerdict, latestRequest, MAX_PUSHES, nextStep, parseAgentVerdict, PUSH_PREFIX, pushesSoFar, readReviewCheck, reasonFromAnswer, REVIEW_QUESTION, reviewState, verdictOf, writeReviewCheck, type ReviewCheck,
+  GOAL_BLOCKED_BY, goalBlockedVerdict, latestRequest, MAX_PUSHES, nextStep, parseAgentVerdict, PUSH_PREFIX, pushesSoFar, readReviewCheck, reasonFromAnswer, REVIEW_INSTRUCTIONS, REVIEW_QUESTION, reviewState, verdictOf, writeReviewCheck, type ReviewCheck,
 } from "../src/control-center/review-check.js";
 
 const check = (overrides: Partial<ReviewCheck> = {}): ReviewCheck => ({
@@ -34,6 +34,15 @@ test("the decision model reads the request, the summary and the end of the answe
   assert.match(parsed.agent_last_message, /^….*Shall I continue with the migration\?$/s, "the start of the answer is cut, not the end");
   assert.equal(reviewState({ request: "r", summary: null, answer }, 100), null, "a budget too small for the answer is not used");
   assert.deepEqual(Object.keys(REVIEW_QUESTION.criteria).map(verdictOf), ["done", "continue", "needs-user"]);
+});
+
+test("both decision paths distinguish final review from a decision needed before remaining work", () => {
+  for (const prompt of [JSON.stringify(REVIEW_QUESTION), REVIEW_INSTRUCTIONS]) {
+    assert.match(prompt, /no further work/i);
+    assert.match(prompt, /mockup/i);
+    assert.match(prompt, /selection/i);
+    assert.match(prompt, /standalone/i);
+  }
 });
 
 test("Bob's agent's verdict is used only in the asked-for shape, and a reason is found when there is none", () => {
