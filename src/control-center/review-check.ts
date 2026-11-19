@@ -97,9 +97,9 @@ export function nextStep(verdict: ReviewVerdict, setting: Exclude<ReviewCheckSet
 // ── The question, for the decision model and for Bob's agent ──────────────────────────────────────────────
 
 const CRITERIA = {
-  done: "The agent finished what the user asked and says so; nothing is left but for the user to look at the result.",
+  done: "The entire requested task is complete, with no further work left. The user can review the final result and mark it done without making a decision for further work. A standalone mockup requested without subsequent implementation can be done.",
   continue: "The agent stopped with work still to do that it can carry on with by itself: it listed next steps it has not done, said it will go on, asked whether to continue the planned work, or stopped after a partial step or an error it can fix.",
-  needs_user: "The agent waits for something only the user can give: a decision about what they want, approval of a plan, credentials or access, or a go-ahead for a production or destructive step.",
+  needs_user: "The agent waits for something only the user can give: a decision about what they want, approval of a plan, credentials or access, or a go-ahead for a production or destructive step. If requested work remains and a user decision gates it, choose needs_user even if an interim deliverable is ready for review. For example, a mockup awaiting the user's palette selection before implementation needs_user, not done.",
 };
 
 export const REVIEW_QUESTION: SystemOneQuestion = {
