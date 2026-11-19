@@ -5,11 +5,34 @@ import { setTheme } from "./shell.js";
 const APPEARANCE_STORAGE_KEY = "jointBobAppearance";
 
 export const THEMES = [
-  { id: "light", label: "Light", base: "light" },
-  { id: "dark", label: "Dark", base: "dark" },
-  { id: "midnight", label: "Midnight", base: "dark" },
-  { id: "graphite", label: "Graphite", base: "dark" },
-  { id: "sepia", label: "Sepia", base: "light" },
+  // Built-in Paper · Editorial palettes
+  { id: "light", label: "Light", base: "light", group: "builtin", page: "#f2ebdf", card: "#fffbf4", accent: "#2f6b4f", color: "#f2ebdf" },
+  { id: "sepia", label: "Sepia", base: "light", group: "builtin", page: "#e4d8c1", card: "#fbf5e8", accent: "#2f6b4f", color: "#efe6d4" },
+  { id: "dark", label: "Dark", base: "dark", group: "builtin", page: "#171412", card: "#2e2925", accent: "#7fcf9f", color: "#171412" },
+  { id: "midnight", label: "Midnight", base: "dark", group: "builtin", page: "#0e1320", card: "#212b44", accent: "#7fcf9f", color: "#0e1320" },
+  { id: "graphite", label: "Graphite", base: "dark", group: "builtin", page: "#1a1a1b", card: "#313134", accent: "#7fcf9f", color: "#1a1a1b" },
+  // Classic Dark palettes (VS Code)
+  { id: "dracula", label: "Dracula", base: "dark", group: "dark", page: "#1e1f29", card: "#282a36", accent: "#bd93f9", color: "#1e1f29" },
+  { id: "tokyo-night", label: "Tokyo Night", base: "dark", group: "dark", page: "#16161e", card: "#1a1b26", accent: "#7aa2f7", color: "#16161e" },
+  { id: "catppuccin-mocha", label: "Catppuccin", base: "dark", group: "dark", page: "#181825", card: "#1e1e2e", accent: "#cba6f7", color: "#181825" },
+  { id: "nord", label: "Nord", base: "dark", group: "dark", page: "#242933", card: "#2e3440", accent: "#88c0d0", color: "#242933" },
+  { id: "one-dark-pro", label: "One Dark", base: "dark", group: "dark", page: "#21252b", card: "#282c34", accent: "#61afef", color: "#21252b" },
+  { id: "gruvbox-dark", label: "Gruvbox", base: "dark", group: "dark", page: "#1d2021", card: "#282828", accent: "#fabd2f", color: "#1d2021" },
+  { id: "monokai-pro", label: "Monokai", base: "dark", group: "dark", page: "#221f22", card: "#2d2a2e", accent: "#ffd866", color: "#221f22" },
+  { id: "solarized-dark", label: "Solarized", base: "dark", group: "dark", page: "#00212b", card: "#002b36", accent: "#2aa198", color: "#00212b" },
+  { id: "rose-pine", label: "Rosé Pine", base: "dark", group: "dark", page: "#191724", card: "#1f1d2e", accent: "#ebbcba", color: "#191724" },
+  { id: "kanagawa", label: "Kanagawa", base: "dark", group: "dark", page: "#16161d", card: "#1f1f28", accent: "#7e9cd8", color: "#16161d" },
+  // Classic Light palettes (VS Code)
+  { id: "catppuccin-latte", label: "Latte", base: "light", group: "light", page: "#e6e9ef", card: "#eff1f5", accent: "#8839ef", color: "#e6e9ef" },
+  { id: "solarized-light", label: "Solarized Lt", base: "light", group: "light", page: "#eee8d5", card: "#fdf6e3", accent: "#268bd2", color: "#eee8d5" },
+  { id: "github-light", label: "GitHub Lt", base: "light", group: "light", page: "#f6f8fa", card: "#ffffff", accent: "#0969da", color: "#f6f8fa" },
+  { id: "gruvbox-light", label: "Gruvbox Lt", base: "light", group: "light", page: "#ebdbb2", card: "#fbf1c7", accent: "#b57614", color: "#ebdbb2" },
+];
+
+const THEME_GROUPS = [
+  { id: "builtin", label: "Built-in" },
+  { id: "dark", label: "Classic Dark" },
+  { id: "light", label: "Classic Light" },
 ];
 
 // The ids stay as stored; on the desktop workspace "projects" sizes the left column (places, groups, the project picker),
@@ -83,6 +106,8 @@ function applyTheme() {
   setTheme(theme.base);
   if (theme.id === theme.base) delete document.documentElement.dataset.palette;
   else document.documentElement.dataset.palette = theme.id;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta && theme.color) meta.content = theme.color;
 }
 
 function currentThemeId() {
@@ -136,9 +161,28 @@ function sectionSlider(section) {
   return label;
 }
 
+function themeChoiceButton(label, testId, pressed, swatchBg, swatchAccent, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost appearance-theme-choice";
+  button.dataset.testid = testId;
+  button.setAttribute("aria-pressed", String(pressed));
+  const swatch = document.createElement("span");
+  swatch.className = "appearance-theme-swatch";
+  swatch.style.setProperty("--swatch-bg", swatchBg);
+  swatch.style.setProperty("--swatch-accent", swatchAccent);
+  swatch.setAttribute("aria-hidden", "true");
+  const name = document.createElement("span");
+  name.className = "appearance-theme-name";
+  name.textContent = label;
+  button.append(swatch, name);
+  button.addEventListener("click", onClick);
+  return button;
+}
+
 function renderThemes() {
   const active = currentThemeId();
-  // The same six choices as Settings › Account: System (no stored theme, follows the device) first.
+  // Grouped choices matching Settings › Appearance: Built-in (System first), Classic Dark, Classic Light.
   const choose = (id) => () => {
     settings.theme = id;
     applyTheme();
@@ -146,10 +190,31 @@ function renderThemes() {
     renderThemes();
     renderAccountAppearance();
   };
-  themeRow.replaceChildren(
-    choiceButton("System", "appearance-theme-system", !settings.theme, choose("")),
-    ...THEMES.map((theme) => choiceButton(theme.label, `appearance-theme-${theme.id}`, Boolean(settings.theme) && theme.id === active, choose(theme.id))),
-  );
+  themeRow.replaceChildren(...THEME_GROUPS.map((group) => {
+    const section = document.createElement("div");
+    section.className = "appearance-theme-group";
+    const heading = document.createElement("div");
+    heading.className = "appearance-theme-group-label";
+    heading.textContent = group.label;
+    const grid = document.createElement("div");
+    grid.className = "appearance-theme-grid";
+    const buttons = THEMES
+      .filter((theme) => theme.group === group.id)
+      .map((theme) => themeChoiceButton(
+        theme.label,
+        `appearance-theme-${theme.id}`,
+        Boolean(settings.theme) && theme.id === active,
+        theme.card,
+        theme.accent,
+        choose(theme.id),
+      ));
+    if (group.id === "builtin") {
+      buttons.unshift(themeChoiceButton("System", "appearance-theme-system", !settings.theme, "#fffbf4", "#211d1a", choose("")));
+    }
+    grid.append(...buttons);
+    section.append(heading, grid);
+    return section;
+  }));
 }
 
 function renderPresets() {
@@ -170,16 +235,12 @@ function render() {
   sectionList.replaceChildren(...SECTIONS.map(sectionSlider));
 }
 
-/* ---- Settings › Account › Appearance: the six themes as tiles that preview them, and text size. ---- */
+/* ---- Settings › Account › Appearance: theme preview tiles, and text size. ---- */
 
-/** Each tile shows the theme's page and card colours, as the mock does; System splits light and dark. */
+/** Each tile shows the theme's page, card and accent colours; System splits light and dark. */
 export const THEME_TILES = [
   { id: "", key: "system", label: "System", page: "#fffbf4", card: "#211d1a" },
-  { id: "light", key: "light", label: "Light", page: "#f2ebdf", card: "#fffbf4" },
-  { id: "sepia", key: "sepia", label: "Sepia", page: "#e4d8c1", card: "#fbf5e8" },
-  { id: "dark", key: "dark", label: "Dark", page: "#171412", card: "#2e2925" },
-  { id: "midnight", key: "midnight", label: "Midnight", page: "#0e1320", card: "#212b44" },
-  { id: "graphite", key: "graphite", label: "Graphite", page: "#1a1a1b", card: "#313134" },
+  ...THEMES.map(({ id, label, page, card, accent }) => ({ id, key: id, label, page, card, accent })),
 ];
 
 const accountTiles = document.querySelector("#settingsThemeTiles");
@@ -206,6 +267,7 @@ function themeTile(tile) {
   preview.className = "theme-tile-preview";
   preview.style.setProperty("--tile-page", tile.page);
   preview.style.setProperty("--tile-card", tile.card);
+  if (tile.accent) preview.style.setProperty("--tile-accent", tile.accent);
   preview.setAttribute("aria-hidden", "true");
   button.append(preview, tile.label);
   button.addEventListener("click", () => chooseTheme(tile.id));
