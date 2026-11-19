@@ -49,7 +49,7 @@ const readScript = `(() => {
 // Every element a sign-in step could use, whatever the page's structure. Typed values are never read.
 const candidatesScript = `(() => {
   const observe = () => ${browserLoginDetectionScript};
-  if (observe() === "challenge") return null;
+  if (["challenge", "mfa"].includes(observe())) return null;
   const modal = [...document.querySelectorAll("dialog:modal")].pop();
   const visible = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden" && getComputedStyle(e).opacity !== "0" && !e.closest('[aria-hidden="true"]') && (!modal || modal.contains(e));
   const text = value => (value || "").replace(/\\s+/g, " ").trim().slice(0, 80);
@@ -113,7 +113,8 @@ export async function readLoginStep(page: Page, requestId: string, choose?: Logi
     });
     if (!metadata) {
       await handle.dispose();
-      return { origin: new URL(page.url()).origin, stepId: null, fields: [], submitLabel: null, challenge: await page.evaluate(browserLoginDetectionScript) === "challenge" };
+      const observed = await page.evaluate(browserLoginDetectionScript);
+      return { origin: new URL(page.url()).origin, stepId: null, fields: [], submitLabel: null, challenge: observed === "challenge" || observed === "mfa", ...(observed === "mfa" ? { mfa: true } : {}) };
     }
     const id = randomUUID(); steps.set(page, { id, requestId, handle });
     return { ...metadata, stepId: id, challenge: false };
@@ -146,6 +147,13 @@ export async function submitLoginStep(page: Page, input: { requestId: string; st
         field.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }, { expectedOrigin: new URL(input.expectedOrigin).origin, values: input.values, sameWindowSource: SAME_WINDOW.source });
+    // Some sign-in dialogs reveal MFA in place after an asynchronous password check.
+    // Wait briefly for the old form to change, without resubmitting or reading any values.
+    if (await step.handle.evaluate(form => form?.types.includes("password")).catch(() => false)) {
+      const changed = await page.waitForFunction(form => !form || form.observe() !== form.observed || !form.button.isConnected
+        || form.fields.some(field => !field.isConnected || !field.getClientRects().length), step.handle, { timeout: 1500 }).catch(() => null);
+      await changed?.dispose();
+    }
   } catch {
     // Playwright call logs and website exceptions may contain entered credentials.
     throw new Error("Sign-in step changed or submission could not be confirmed. Check the current step; nothing will be retried automatically.");

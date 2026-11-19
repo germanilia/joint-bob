@@ -1,5 +1,5 @@
 // This card is UI only: never serialize it into transcript messages or save its inputs.
-export function createBrowserLoginCard(host, { api, session: initial, isCurrent, onSession, onTakeover, onDismiss }) {
+export function createBrowserLoginCard(host, { api, session: initial, isCurrent, onSession, onMfa, onTakeover, onDismiss }) {
   let session = initial, step = null, disposed = false, busy = false, completed = false, completionTimer;
   host.classList.add("browser-login-card");
   // Built as nodes, as everywhere in the app: no markup is ever parsed from a string.
@@ -85,7 +85,10 @@ export function createBrowserLoginCard(host, { api, session: initial, isCurrent,
       }
       if (!current()) return;
       const observation = await command({ action: "readLoginStep", ...target() });
-      if (current() && observation) renderStep(observation.result);
+      if (current() && observation) {
+        if (observation.result.mfa && onMfa) onMfa();
+        else renderStep(observation.result);
+      }
     } catch {
       if (current()) status.textContent = "Could not read sign-in. Refresh the step or open the browser; the agent remains paused.";
     } finally { if (current()) lock(false); }

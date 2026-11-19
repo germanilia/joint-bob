@@ -141,6 +141,8 @@
 .browser-login-inline:not(.browser-login-fullscreen) .browser-navigation,
 .browser-login-inline:not(.browser-login-fullscreen) [data-part="keyboard"] { display: none; }
 .browser-login-inline.browser-login-fullscreen .browser-body { padding: 8px 10px; }
+.browser-login-mfa-message:not(.browser-login-fullscreen) { flex: 0 0 auto; margin: 0; padding: 8px; border: 1px solid var(--line); background: var(--panel); }
+.browser-login-mfa-message:not(.browser-login-fullscreen) [data-part="keyboard"] { display: flex; }
 /* Cap the live page so the banner and the composer stay reachable without leaving the conversation. */
 .browser-login-inline .browser-stage { flex: 0 0 auto; max-height: 52vh; overflow: auto; justify-content: flex-start; }
 /* Sign-in shows the real page, not a browser app: origin banner, back/reload and Done only. */
@@ -157,12 +159,9 @@
    into the page. interactive-widget=resizes-content shrinks inset:0 above the keyboard. */
 .browser-login-inline.browser-login-fullscreen { position: fixed; inset: 0; z-index: 60; margin: 0; border: 0; border-radius: 0; }
 .browser-login-inline.browser-login-fullscreen .browser-stage { max-height: none; flex: 1 1 0; }
-/* A phone has no room for the inline halfway state: squeezed into the chat
-   column, the page overlaps the transcript and its actions scroll away behind
-   the composer. The sign-in is only ever the popup there, and its actions stay
-   pinned to the top of it. */
+/* Explicit takeover stays full screen on phones; inline MFA can still expand. */
 @media (max-width: 699px) {
-  .browser-login-mode [data-testid="browser-login-expand"] { display: none; }
+  .browser-login-mode:not(.browser-login-mfa-message) [data-testid="browser-login-expand"] { display: none; }
   .browser-login-inline.browser-login-fullscreen .browser-login-notice {
     position: sticky; top: 0; z-index: 1; background: var(--panel); padding: 8px 2px;
   }
@@ -171,6 +170,8 @@
   .browser-login-notice { grid-template-columns: minmax(0, 1fr) auto; }
   .browser-login-notice [data-part="login-context"], .browser-login-notice [data-part="login-help"] { grid-column: 1; }
   .browser-login-actions { grid-column: 2; grid-row: 1 / 5; }
+  .browser-login-mfa-message:not(.browser-login-fullscreen) .browser-login-notice { grid-template-columns: minmax(0, 1fr); }
+  .browser-login-mfa-message:not(.browser-login-fullscreen) .browser-login-actions { grid-column: 1; grid-row: auto; }
 }
 /* Modeless on narrow screens. Chat stays mounted and no socket is stopped. */
 body.browser-visible #browserPanel { position: fixed; z-index: 35; inset: 12% 8px calc(var(--nav-height) + 8px); box-shadow: var(--shadow); }

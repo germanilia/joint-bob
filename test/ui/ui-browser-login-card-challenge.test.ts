@@ -9,14 +9,16 @@ import { api, signIn } from "../dev-nodes.js";
 import { waitForAssertion } from "../async-assertion.js";
 
 for (const width of [412, 1280, 3437]) {
-  test(`real login card hands a challenge to the human viewer and back at ${width}px`, { timeout: 120_000 }, async t => {
+  test(`MFA opens as a live conversation message at ${width}px`, { timeout: 120_000 }, async t => {
     const website = http.createServer((req, res) => {
       res.setHeader("content-type", "text/html");
       if (req.url === "/ready") return void res.end("<h1 id=phase>Account ready</h1>");
-      if (req.url === "/challenge") return void res.end(`<h1 id="phase">Security check</h1>
+      const challenge = `<h1 id="phase">Security check</h1>
         <input aria-label="Synthetic challenge" autocomplete="one-time-code" style="position:absolute;left:20px;top:140px">
-        <button style="position:absolute;left:20px;top:70px;width:250px;height:50px" onclick="document.querySelector('#phase').textContent='Alternative verification';this.textContent='Approve synthetic challenge';this.onclick=()=>location.href='/ready'">Use another method</button>`);
-      res.end('<form action="/challenge" method="post"><label>Password<input type="password" autocomplete="current-password" name="password"></label><button>Sign in</button></form>');
+        <button style="position:absolute;left:20px;top:70px;width:250px;height:50px" onclick="document.querySelector('#phase').textContent='Alternative verification';this.textContent='Approve synthetic challenge';this.onclick=()=>location.href='/ready'">Use another method</button>`;
+      if (req.url === "/challenge") return void res.end(challenge);
+      const showChallenge = width === 1280 ? `onsubmit="event.preventDefault();setTimeout(()=>document.body.replaceChildren(document.querySelector('template').content.cloneNode(true)),350)"` : "";
+      res.end(`<form action="/challenge" method="post" ${showChallenge}><label>Password<input type="password" autocomplete="current-password" name="password"></label><button>Sign in</button></form><template>${challenge}</template>`);
     });
     website.listen(0, "127.0.0.1"); await once(website, "listening");
     t.after(() => { website.closeAllConnections(); website.close(); });
@@ -38,6 +40,8 @@ for (const width of [412, 1280, 3437]) {
     await page.locator("#sessionList .list-row").filter({ has: page.locator("strong", { hasText: "Short one" }) }).first().click();
     await page.locator("#sessionTitle").filter({ hasText: "Short one" }).waitFor();
     await page.setViewportSize({ width, height: 900 });
+    const collapseActivity = page.getByTestId("activity-panel-close");
+    if (await collapseActivity.isVisible()) await collapseActivity.click();
     const identity = await page.evaluate(async () => {
       const { state } = await import("/app/state.js");
       return { projectId: state.activeConversationProjectId || state.activeProjectId, engine: state.engine, conversationId: state.activeConversationId || state.activeSessionId, appNodeId: state.conversationLock?.nodeId || state.activeNodeId };
@@ -56,21 +60,24 @@ for (const width of [412, 1280, 3437]) {
       const panel = page.getByTestId("browser-login-panel");
       await panel.getByLabel("Password", { exact: true }).fill("SYNTHETIC-ONLY-PASSWORD");
       await panel.getByTestId("browser-login-submit").click();
-      await panel.getByTestId("browser-login-status").filter({ hasText: "This step needs the browser" }).waitFor();
-      assert.equal(await panel.locator("input").count(), 0, "challenge must not become a proxy field");
-      assert.equal(await panel.getByTestId("browser-login-done").isVisible(), false);
-      assert.equal(await panel.getByTestId("browser-screen").count(), 0, "takeover must be explicit");
+      const screen = panel.getByTestId("browser-screen");
+      await page.locator("#messages").getByTestId("browser-screen").waitFor({ state: "visible" });
+      assert.equal(await panel.evaluate(element => element.classList.contains("browser-login-fullscreen")), false);
       const pending = await session();
       assert.ok(pending.loginRequest); assert.equal(pending.owner, "human");
-
-      await panel.getByTestId("browser-login-takeover").click();
-      const screen = panel.getByTestId("browser-screen");
-      await screen.waitFor({ state: "visible" });
       await panel.locator('[data-testid="browser-login-done"]:enabled').waitFor();
       assert.equal(await panel.getByTestId("browser-login-form").count(), 0);
       await panel.getByTestId("browser-login-done").click();
       await panel.getByTestId("browser-error").filter({ hasText: "Login could not be verified" }).waitFor();
       assert.equal((await session()).loginRequest.id, pending.loginRequest.id, "premature Done must keep agent paused");
+      const challengeButtonPoint = async () => screen.evaluate(image => {
+        const scale = image.getBoundingClientRect().width / (image as HTMLImageElement).naturalWidth;
+        return { x: 145 * scale, y: 95 * scale };
+      });
+      // Act on the real challenge directly in the conversation, before using full screen.
+      await screen.click({ position: await challengeButtonPoint() });
+      await waitForAssertion(async () => assert.equal(await phase(), "Alternative verification"), 10_000);
+      assert.equal((await session()).loginRequest.id, pending.loginRequest.id);
       await panel.getByTestId("browser-login-back-to-card").click();
       await panel.getByTestId("browser-login-status").filter({ hasText: "This step needs the browser" }).waitFor();
       assert.equal(await panel.locator("input").count(), 0);
@@ -102,15 +109,7 @@ for (const width of [412, 1280, 3437]) {
         await panel.getByTestId("browser-login-expand").click();
         await waitForAssertion(assertFillsStage, 10_000);
       }
-      // Native viewer pointer events, not API clicks, act as the synthetic human.
-      const point = await screen.evaluate(image => {
-        const scale = image.getBoundingClientRect().width / (image as HTMLImageElement).naturalWidth;
-        return { x: 145 * scale, y: 95 * scale };
-      });
-      await screen.click({ position: point });
-      await waitForAssertion(async () => assert.equal(await phase(), "Alternative verification"), 10_000);
-      assert.equal((await session()).loginRequest.id, pending.loginRequest.id);
-      await screen.click({ position: point });
+      await screen.click({ position: await challengeButtonPoint() });
       await waitForAssertion(async () => assert.equal(await phase(), "Account ready"), 10_000);
       assert.deepEqual(viewerCommands.filter(action => action === "click"), ["click", "click"]);
       assert.equal(commands.filter(action => action === "submitLoginStep").length, 1, "only the credential step uses the proxy");
