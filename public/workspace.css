@@ -942,7 +942,8 @@ body:not(.focus-ui) .ws-state-heading {
 .ws-page-item > .ws-row { flex: 1; min-width: 0; }
 .ws-page-action { flex: none; }
 .ws-page-reply { min-height: 44px; padding-inline: 12px; }
-.inbox-reply-history { min-height: 72px; }
+/* The sheet's body has `flex: 1` (a zero basis) and the dialog is as tall as its content, so without this the messages shrank to a sliver. */
+.need-sheet-body.inbox-reply-history { flex: 1 1 auto; min-height: 120px; }
 .inbox-reply-input { width: 100%; font-size: 16px; resize: none; }
 .inbox-reply-actions { justify-content: space-between; }
 .inbox-reply-error { color: var(--danger); }

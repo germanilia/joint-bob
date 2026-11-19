@@ -205,7 +205,8 @@ test("Quick Reply shows the last four messages and sends without leaving the Inb
   const samples = ["First answer", "Follow-up question", "Second answer", "One more question"];
   const replies: unknown[] = [];
   await page.route("**/api/control-center/cards/detail?*", (route) => route.fulfill({ json: {
-    recentMessages: samples.map((text, index) => ({ text, role: index % 2 ? "user" : "assistant" })),
+    // Long answers, as real ones are: the history must scroll inside the dialog, not squeeze to nothing.
+    recentMessages: samples.map((text, index) => ({ text: `${text}\n\n${Array.from({ length: 12 }, (_, line) => `Line ${line} of ${text}.`).join("\n\n")}`, role: index % 2 ? "user" : "assistant" })),
   } }));
   await page.route("**/api/control-center/cards/reply", (route) => {
     replies.push(route.request().postDataJSON());
@@ -221,8 +222,10 @@ test("Quick Reply shows the last four messages and sends without leaving the Inb
   const dialog = page.getByRole("dialog", { name: "Mobile menu" });
   const input = dialog.getByRole("textbox", { name: "Reply" });
   assert.equal(await input.evaluate((element) => document.activeElement === element), true);
-  await dialog.getByText(samples.at(-1)!).waitFor();
-  assert.deepEqual(await dialog.getByTestId("inbox-reply-message").locator(".inbox-reply-text").allTextContents(), samples);
+  await dialog.getByText(samples.at(-1)!, { exact: true }).waitFor();
+  // The messages have room to be read: the history is not squeezed to a sliver between the title and the box.
+  assert.ok((await dialog.getByRole("region", { name: "Recent messages" }).boundingBox())!.height >= 120, "the history is tall enough to read");
+  assert.deepEqual((await dialog.getByTestId("inbox-reply-message").locator(".inbox-reply-text").allTextContents()).map((text) => samples.find((sample) => text.startsWith(sample))), samples);
   await input.fill("Please check the tablet layout too.");
   const send = dialog.getByRole("button", { name: "Send reply" });
   await send.click();
