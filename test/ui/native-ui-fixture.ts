@@ -34,7 +34,6 @@ export async function nativeUiFixture(t: TestContext, extraEnv: (root: string) =
   return { page, environment, node, server };
 }
 
-/** Bob's page opens with his chat folded into the "Ask Bob" button; tests that write to the chat open it first. */
 /** Bob's chat floats over the page: a test that uses the board and the chat together parks it at the bottom right, off the board's buttons. */
 export async function parkBobChat(page: Page) {
   await page.getByTestId("control-chat").evaluate((chat) => {
@@ -44,10 +43,10 @@ export async function parkBobChat(page: Page) {
   });
 }
 
-/** Bob's own page (the "live" view) shows his chat; his other pages fold it into the "Ask Bob" button, which opens it. */
+/** Open the contextual chat window without navigating away from the view under test. */
 export async function openBobChat(page: Page) {
   const visible = (testid: string) => `(() => { const node = document.querySelector('[data-testid="${testid}"]'); return Boolean(node && node.getClientRects().length && getComputedStyle(node).visibility !== "hidden"); })()`;
-  await page.waitForFunction(`${visible("control-chat-input")} || ${visible("bob-fab-chat")}`);
-  if (!await page.getByTestId("control-chat-input").isVisible()) await page.getByTestId("bob-fab-chat").click();
+  await page.waitForFunction(`${visible("control-chat-input")} || document.body.classList.contains("bob-chat-folded")`);
+  if (!await page.getByTestId("control-chat-input").isVisible()) await page.evaluate(() => window.dispatchEvent(new CustomEvent("bob-chat-wanted")));
   await page.getByTestId("control-chat-input").waitFor({ state: "visible" });
 }

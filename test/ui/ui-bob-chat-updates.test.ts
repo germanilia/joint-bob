@@ -29,10 +29,13 @@ test("Bob keeps background notices out of the chat and answers, whoever wrote th
     await page.getByTestId("login-password-input").fill(environment.password);
     await page.getByTestId("login-submit-button").click();
     await page.locator("#loginDialog[open]").waitFor({ state: "detached" });
+    await page.getByTestId("projects-open-control-center-button").click();
     await page.locator("body.view-control.bob-desk").waitFor();
+    await page.getByTestId("control-tab-my-dashboard").click();
+    await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
     const chat = page.locator("#controlChatMessages");
     const updates = page.locator("#controlChatUpdates");
-    await page.getByTestId("bob-fab-chat").click();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("bob-chat-wanted")));
     await chat.locator('[data-id="answer"]').waitFor();
     assert.equal(await chat.locator('[data-id="background"]').count(), 0);
     assert.equal(await updates.locator('[data-id="background"]').count(), 1);
@@ -81,8 +84,11 @@ test("Bob's window shows that a sent message is being worked on, then the answer
     await page.getByTestId("login-password-input").fill(environment.password);
     await page.getByTestId("login-submit-button").click();
     await page.locator("#loginDialog[open]").waitFor({ state: "detached" });
+    await page.getByTestId("projects-open-control-center-button").click();
     await page.locator("body.view-control.bob-desk").waitFor();
-    await page.getByTestId("bob-fab-chat").click();
+    await page.getByTestId("control-tab-my-dashboard").click();
+    await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("bob-chat-wanted")));
     await page.getByTestId("control-chat-input").fill(user.text);
     await page.getByTestId("control-chat-send").click();
     const pending = page.getByTestId("control-chat-pending");
@@ -92,8 +98,8 @@ test("Bob's window shows that a sent message is being worked on, then the answer
     await answer.waitFor({ state: "visible" });
     assert.equal(await pending.count(), 0, "the working line goes once Bob answered");
     const [chat, box] = [page.getByTestId("control-chat"), await answer.boundingBox()];
-    const window = await chat.boundingBox();
-    assert.ok(box && window && box.y >= window.y && box.y + box.height <= window.y + window.height, "the answer is inside the window, in view");
+    const windowBox = await chat.boundingBox();
+    assert.ok(box && windowBox && box.y >= windowBox.y && box.y + box.height <= windowBox.y + windowBox.height, "the answer is inside the window, in view");
     assert.equal(await page.getByTestId("control-chat-updates").isVisible(), false);
   } finally {
     await browser.close();
@@ -117,8 +123,11 @@ test("every scroll box in Bob's window has the thin styled scrollbar, and boxes 
     await page.getByTestId("login-password-input").fill(environment.password);
     await page.getByTestId("login-submit-button").click();
     await page.locator("#loginDialog[open]").waitFor({ state: "detached" });
+    await page.getByTestId("projects-open-control-center-button").click();
     await page.locator("body.view-control.bob-desk").waitFor();
-    await page.getByTestId("bob-fab-chat").click();
+    await page.getByTestId("control-tab-my-dashboard").click();
+    await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("bob-chat-wanted")));
     const bars = await page.evaluate(() => ["#controlChatMessages", "#controlChatInput", "#controlChatAttachments", "#controlTabs"].map((selector) => {
       const style = getComputedStyle(document.querySelector(selector)!);
       return { selector, width: style.scrollbarWidth, color: style.scrollbarColor };
@@ -151,9 +160,12 @@ test("a reloaded page still says Bob is working on a message, until he has answe
     await page.getByTestId("login-password-input").fill(environment.password);
     await page.getByTestId("login-submit-button").click();
     await page.locator("#loginDialog[open]").waitFor({ state: "detached" });
+    await page.getByTestId("projects-open-control-center-button").click();
     await page.locator("body.view-control.bob-desk").waitFor();
+    await page.getByTestId("control-tab-my-dashboard").click();
+    await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
     // The real server: send a message from the chat and, while it is answered, read the chat again as a reloaded page does.
-    await page.getByTestId("bob-fab-chat").click();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("bob-chat-wanted")));
     await page.getByTestId("control-chat-input").fill("how many conversations are running?");
     await page.getByTestId("control-chat-send").click();
     await page.getByTestId("control-chat-pending").waitFor({ state: "visible" });
@@ -189,8 +201,11 @@ test("the page shows the server's working line after a reload and drops it when 
     await page.getByTestId("login-password-input").fill(environment.password);
     await page.getByTestId("login-submit-button").click();
     await page.locator("#loginDialog[open]").waitFor({ state: "detached" });
+    await page.getByTestId("projects-open-control-center-button").click();
     await page.locator("body.view-control.bob-desk").waitFor();
-    await page.getByTestId("bob-fab-chat").click();
+    await page.getByTestId("control-tab-my-dashboard").click();
+    await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("bob-chat-wanted")));
     const line = page.getByTestId("control-chat-pending");
     await line.waitFor({ state: "visible" });
     assert.match(await line.innerText(), /Working on “start a conversation to fix the chat window”/);

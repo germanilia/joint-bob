@@ -329,21 +329,14 @@ test("Bob's page: his chat is his own place, the head carries his switch and set
   assert.equal(await page.getByTestId("control-chat-filters").isVisible(), false, "no item filters");
   if (process.env.BOB_PAGE_SHOT) await page.screenshot({ path: process.env.BOB_PAGE_SHOT });
 
-  // Another of his pages folds the chat into the "Ask Bob" button; the column and the place stay.
+  // Another of his pages hides the chat; the column and the place stay.
   await stage.getByTestId("control-tab-my-dashboard").click();
   await page.locator("#controlView-my-dashboard").waitFor({ state: "visible" });
   assert.equal(await stage.getByTestId("control-tab-my-dashboard").getAttribute("aria-selected"), "true");
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), false);
-  // The button is a round icon with no text at the page's bottom left; its name is for readers and the hover.
-  const fab = page.getByTestId("bob-fab-chat");
-  await fab.waitFor();
-  assert.doesNotMatch(await fab.innerText(), /Ask Bob/, "no words on the button");
-  assert.equal(await fab.getAttribute("aria-label"), "Ask Bob");
-  const round = (await fab.boundingBox())!;
-  assert.equal(round.width, round.height, "the button is round");
-  assert.ok(round.x < page.viewportSize()!.width / 2, `"Ask Bob" sits on the left of the page (${round.x})`);
-  // It opens the chat as a window that floats over the page, and folds it back.
-  await fab.click();
+  assert.equal(await page.getByTestId("bob-fab-chat").count(), 0, "no floating button");
+  // Contextual Ask Bob actions can still open a chat window.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("bob-chat-wanted")));
   assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
   assert.equal(await page.getByTestId("control-chat").evaluate((node) => getComputedStyle(node).position), "fixed");
   await page.getByTestId("control-chat-fold").click();
