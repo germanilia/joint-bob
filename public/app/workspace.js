@@ -73,7 +73,9 @@ function restoreAll() {
 }
 
 const PLACEMENTS = [
-  // The header's first line: Stop, Mark done, the details toggle and the ⋯ menu.
+  // The header's first line: Podcast playback (Listen), Stop, Mark done, the details toggle and the ⋯ menu.
+  // Files (#chatFilesButton) stays inside the ⋯ menu under Open instead of the details panel.
+  ["activityOverviewButton", "chatHeadActions"],
   ["abortButton", "chatHeadActions"],
   ["chatDoneButton", "chatHeadActions"],
   ["activityToggleButton", "chatHeadActions"],
@@ -81,13 +83,10 @@ const PLACEMENTS = [
   // Quiet meta at the end of the chip row.
   ["contextUsage", "chatMeta"],
   ["turnTimer", "chatMeta"],
-  // The details column opens today's full screens from its summaries.
-  ["chatFilesButton", "detailsFilesActions"],
+  // Full-view triggers sit quietly inside their unified desktop panes.
+  ["backgroundTasksButton", "activityTasksActions"],
   ["chatGitButton", "detailsGitActions"],
-  ["backgroundTasksButton", "detailsTasksActions"],
-  // Story and Activity overview live in More; btw stays in the tab strip.
-  ["activityStoryButton", "detailsMoreStory"],
-  ["activityOverviewButton", "detailsMoreOverview"],
+  ["activityStoryButton", "detailsStoryActions"],
 ];
 
 function applyPlacements() {

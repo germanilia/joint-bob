@@ -284,6 +284,18 @@ function renderStats() {
   const prompts = elements.messages.querySelectorAll(".message.user:not(.queued)").length;
   const running = state.lastTurnStartedAt ? Math.max(0, Date.now() - state.lastTurnStartedAt) : 0;
   const working = (state.conversationDurationMs || 0) + running;
+  const monitorTime = document.getElementById("activityMonitorTime");
+  const monitorSteps = document.getElementById("activityMonitorSteps");
+  const monitorFailed = document.getElementById("activityMonitorFailed");
+  if (monitorTime) {
+    monitorTime.textContent = state.activeConversationId && working ? formatDuration(working) : "—";
+    monitorTime.classList.toggle("is-live", Boolean(state.lastTurnStartedAt));
+  }
+  if (monitorSteps) monitorSteps.textContent = String(steps);
+  if (monitorFailed) {
+    monitorFailed.textContent = String(failed);
+    monitorFailed.classList.toggle("is-failed", failed > 0);
+  }
   elements.activityStatsStatus.textContent = state.activeConversationId ? `${steps} step${steps === 1 ? "" : "s"} · ${skills.size} skill${skills.size === 1 ? "" : "s"}` : "";
   if (!state.activeConversationId) {
     elements.activityStatsBody.replaceChildren(placeholder("Statistics appear once a conversation is open."));
