@@ -14,7 +14,7 @@
 // One state, any number of toolbars: a change in one is shown in the others.
 
 import { api } from "./api.js";
-import { isKept } from "./control-marks.js";
+import { deleteConversations, isKept } from "./control-marks.js";
 import { startMoving } from "./control-moves.js";
 import { createMultiSelect } from "./multi-select.js";
 import { confirmAction, toast } from "./shell.js";
@@ -150,7 +150,7 @@ async function markRead(cards, afterChange) {
   afterChange();
 }
 
-async function deleteChosen(cards, afterChange) {
+async function deleteChosen(cards, actions, afterConfirm) {
   const targets = cards.filter((card) => !isKept(card) && card.column !== "running" && !card.othersMachine);
   const skipped = cards.length - targets.length;
   if (!targets.length) { toast("Pinned, starred, running and other people's conversations are not deleted here."); return; }
@@ -160,11 +160,8 @@ async function deleteChosen(cards, afterChange) {
     confirmLabel: "Delete", destructive: true,
   });
   if (!confirmed) return;
-  const results = await Promise.allSettled(targets.map((card) => api(`/api/projects/${encodeURIComponent(card.projectId)}/sessions?${new URLSearchParams({ sessionId: card.sessionId, engine: card.harnessId })}`, { method: "DELETE" })));
-  const failed = results.filter((result) => result.status === "rejected");
-  if (failed.length) toast.error(`Could not delete ${failed.length} of ${targets.length}: ${failed[0].reason.message}`);
-  else toast(`Deleted ${plural(targets.length, "conversation")}`);
-  afterChange();
+  afterConfirm();
+  await deleteConversations(targets, actions);
 }
 
 /* ---------- the toolbar ---------- */
@@ -234,9 +231,10 @@ export const inChosenProjects = (cards) => cards.filter((card) => shownCard(card
 
 /**
  * `allCards()` is every conversation the Inbox knows (for the project list and for finding what is chosen), `visibleCards()` the
- * ones listed now (for "All shown"), `afterChange()` reads the board again after Mark read or Delete.
+ * ones listed now (for "All shown"), `afterChange()` reads the board again after Mark read or Delete, and `redraw()` draws the
+ * board without the conversations being deleted.
  */
-export function createInboxToolbar({ id, allCards, visibleCards, afterChange, folded = false }) {
+export function createInboxToolbar({ id, allCards, visibleCards, afterChange, redraw, folded = false }) {
   const root = document.createElement("div");
   root.className = "inbox-tools";
   root.dataset.testid = `${id}-tools`;
@@ -305,7 +303,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, fo
   });
   const deleteButton = button("inbox-bar-button danger", `${id}-delete`, "Delete", () => {
     const cards = chosen();
-    void deleteChosen(cards, () => { selected.clear(); selecting = false; emitView(); afterChange(); });
+    void deleteChosen(cards, { redraw, refresh: afterChange }, () => { selected.clear(); selecting = false; emitView(); });
   });
   const bar = document.createElement("div");
   bar.className = "inbox-tools-bar";

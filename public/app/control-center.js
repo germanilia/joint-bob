@@ -1,3 +1,4 @@
+import { hideUnlisted } from "./control-marks.js";
 import { api, savePreferencesInBackground } from "./api.js";
 import { elements } from "./elements.js";
 import { projectListing, selectProject } from "./project-selection.js";
@@ -161,8 +162,11 @@ export async function openConversation(card) {
       noteOpenTiming({ list: fromCard ? "card" : "fetched" });
       if (!session) { await listing; listing = null; session = listedSession(card); }
     }
+    if (!session) session = await olderSession(card);
     if (!session) {
       closeConversationPopup();
+      // A conversation the project does not list is not shown in the Inbox either.
+      hideUnlisted(card);
       showChatEmptyState("Not listed", "That conversation is no longer listed.");
       setStatus("Not listed");
       toast("That conversation is no longer listed");
@@ -192,6 +196,15 @@ export async function openConversation(card) {
 function listedSession(card) {
   return state.sessions.find((candidate) => (candidate.conversationId ?? candidate.id) === card.conversationId)
     ?? (card.path ? state.sessions.find((candidate) => candidate.path === card.path) : undefined);
+}
+
+/** The project's list keeps only its newest conversations while the Inbox lists all of them: an older one is asked for in the full list. */
+async function olderSession(card) {
+  const { sessions } = await api(`/api/projects/${encodeURIComponent(card.projectId)}/sessions?all=1`);
+  const found = sessions.find((candidate) => (candidate.conversationId ?? candidate.id) === card.conversationId);
+  // Opening it remembers it as a recent, which keeps it in the project's list from then on.
+  if (found && state.activeProjectId === card.projectId) state.sessions = [...state.sessions, found];
+  return found;
 }
 
 /** What a board card already says about its conversation, enough to open it. A card without a path waits for the list. */

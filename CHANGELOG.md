@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Deleting a conversation from the Inbox removes its row at once and finishes in the background, without opening the conversation. Older conversations no longer fail with "Session not found", opening one past the project's newest 50 works, and the Inbox refreshes when a cleanup, retention or another machine removes conversations.
+
 ## 2.327.2 — 2026-11-19
 
 - Removed four stray backup files that were published with the last release. Nothing in the app changed.

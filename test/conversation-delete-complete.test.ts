@@ -419,3 +419,20 @@ test("a credential sync pass that queues nothing writes no audit row", async () 
   for (let pass = 0; pass < 3; pass++) assert.equal(await enqueueSecretCredentialSync([peer]), 0);
   assert.equal(rows(), before, "a pass that changes nothing is not an audit event");
 });
+
+test("a conversation older than the newest fifty is found and deleted, as the Inbox lists it", { timeout: 120_000 }, async () => {
+  const f = await fixture();
+  const { clearHarnessSessionCache, listHarnessSessions } = await import("../src/harnesses.js");
+  const { deleteLocalConversation } = await import("../src/server/routes/sessions.js");
+  const oldest = await f.conversation();
+  // Fifty-five newer conversations push it past the fifty roots the project's own list keeps.
+  for (let index = 0; index < 55; index += 1) {
+    const id = randomUUID();
+    const when = new Date(Date.now() + (index + 1) * 1000).toISOString();
+    await writeFile(path.join(f.directory, `${id}.jsonl`), JSON.stringify({ type: "user", uuid: randomUUID(), sessionId: id, cwd: f.project.path, timestamp: when, message: { role: "user", content: `Newer ${index}` } }) + "\n");
+  }
+  clearHarnessSessionCache(f.project.id);
+  assert.equal((await listHarnessSessions(f.project)).some((session) => session.id === oldest.id), false, "the capped list does not reach it");
+  await deleteLocalConversation(f.project, "claude", oldest.id);
+  assert.deepEqual(await f.filesNaming(oldest.id), [], "its files are gone");
+});

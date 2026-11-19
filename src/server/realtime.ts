@@ -153,6 +153,7 @@ export function broadcastReplicationInvalidations(events: ReplicationBatch["even
   // Another machine saved the global AGENTS.md: open sessions read it before their next message.
   if (events.some((event) => event.entityType === "instructions.global")) markHarnessSessionsStale();
   for (const type of replicationInvalidations(events)) announceToAllClients({ type });
+  if (events.some((event) => event.entityType === "conversation.record" && event.operation === "delete")) announceToAllClients({ type: "conversationsRemoved" });
 }
 
 const REVIEW_NOTIFICATION_QUIET_MS = 10_000;

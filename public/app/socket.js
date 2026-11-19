@@ -811,6 +811,8 @@ const INVALIDATION_HANDLERS = {
     schedulePendingReviewsRefresh();
     scheduleRunningRefresh();
   },
+  // A cleanup, another machine or a delete removed conversations: the Inbox reads its Earlier list again at once.
+  conversationsRemoved: () => window.dispatchEvent(new CustomEvent("conversations-removed")),
   browserSessionsChanged: () => document.dispatchEvent(new Event("browserSessionsChanged")),
   takebackRequested: (payload) => document.dispatchEvent(new CustomEvent("takeback-requested", { detail: payload })),
   takebackClosed: (payload) => document.dispatchEvent(new CustomEvent("takeback-closed", { detail: payload.id })),

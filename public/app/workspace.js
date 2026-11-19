@@ -17,7 +17,7 @@ import { openAppearance, themeLabel } from "./appearance.js";
 import { currentControlView, showControlView } from "./control-views.js";
 import { cardActionList, projectActionList } from "./control-cards.js";
 import { isControlCenterOpen, openConversation, saveControlCenter } from "./control-center.js";
-import { folderOf, isPinned, isStarred, togglePin, toggleStar } from "./control-marks.js";
+import { deleteConversations, folderOf, isHidden, isPinned, isStarred, togglePin, toggleStar } from "./control-marks.js";
 import { endDrag, openMoveMenu, startDrag } from "./inbox-folders.js";
 import { byUrgency, drawByFolder, drawByProject, kidCount, kidDepth, kidsFolded, modeSignature, nestRows, toggleKids } from "./inbox-modes.js";
 import { openProjectMenu } from "./project-list.js";
@@ -39,7 +39,7 @@ import { createAutomationToggle, shownCard, createInboxToolbar, createProjectFil
 import { drawChunked } from "./long-scroll.js";
 import { openQuickNote } from "./quick-notes.js";
 import { openSpotlight } from "./spotlight.js";
-import { toast } from "./shell.js";
+import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
 
 const desktop = matchMedia("(min-width: 701px)");
@@ -418,7 +418,7 @@ const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
 /** A refresh of the board can be newer than the last read of the rest: what is on the board is not listed twice. */
 function syncEarlier() {
   const onBoard = new Set(cards.map(cardKey));
-  earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row))).map((row) => ({ ...row, column: row.scheduled ? "scheduled" : row.done ? "done" : "earlier" }));
+  earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row)) && !isHidden(row)).map((row) => ({ ...row, column: row.scheduled ? "scheduled" : row.done ? "done" : "earlier" }));
 }
 
 /** Marks span all folders and statuses; team and filing rules still apply to the status groups. */
@@ -596,7 +596,7 @@ function openCardMenu(card, anchor) {
   if (!card.othersMachine && !card.readOnly) {
     for (const action of SESSION_ACTIONS) {
       if (action.when && !action.when(card)) continue;
-      items.push({ label: action.label(card), icon: action.icon, testid: `inbox-row-${action.id}`, title: action.title, danger: action.danger, onSelect: () => openSessionAction(card, action.id, openConversation).then(refreshAfterChange).catch((error) => toast.error(error.message)) });
+      items.push({ label: action.label(card), icon: action.icon, testid: `inbox-row-${action.id}`, title: action.title, danger: action.danger, onSelect: () => (action.id === "delete" ? deleteFromRow(card) : openSessionAction(card, action.id, openConversation).then(refreshAfterChange)).catch((error) => toast.error(error.message)) });
     }
   }
   // Its project's dashboard, or asking Bob for one (control-dashboards.js); asking happens in Bob's chat, so his page opens first.
@@ -672,11 +672,24 @@ function openInboxProjectMenu(anchor, project) {
 /** After Mark read or Delete the board and the Earlier list are read again at once. */
 function refreshAfterChange() {
   earlierReadAt = 0;
-  scheduleGroupsRefresh(0);
+  return readBoard();
+}
+/** The board drawn again without the conversations being deleted (control-marks.js). */
+const redrawBoard = () => acceptCards(cards);
+/** Deleting from a row's menu: asked once, then the row goes at once and the server finishes behind it; the conversation is not opened. */
+async function deleteFromRow(card) {
+  const confirmed = await confirmAction({
+    eyebrow: "Delete conversation",
+    title: `Delete conversation “${card.title}”?`,
+    message: "The transcript is deleted from this node.",
+    confirmLabel: "Delete conversation",
+    destructive: true,
+  });
+  if (confirmed) await deleteConversations([card], { redraw: redrawBoard, refresh: refreshAfterChange });
 }
 // The phone's Home filters and selects above its groups (the desktop's column keeps every row; its Show all page has its own bar).
 const phoneToolbar = createInboxToolbar({
-  id: "inboxHome", allCards, afterChange: refreshAfterChange, folded: true,
+  id: "inboxHome", allCards, afterChange: refreshAfterChange, redraw: redrawBoard, folded: true,
   visibleCards: () => [...visiblePins(), ...GROUPS.filter((group) => group.id !== "needs-you").flatMap((group) => filterInbox(group.id, cardsIn(group.id).filter(unpinned)))],
 });
 phoneToolbar.root.classList.add("phone-only");
@@ -975,7 +988,7 @@ function acceptCards(next, updatedEarlier) {
   const nextKeys = new Set(next.map(cardKey));
   // A conversation left the board (finished, marked done): it now belongs to Earlier, which is read again at once.
   const left = cards.some((card) => !nextKeys.has(cardKey(card)));
-  cards = next;
+  cards = next.filter((card) => !isHidden(card));
   loaded = true;
   syncEarlier();
   if (left && !updatedEarlier && started) { earlierReadAt = 0; scheduleGroupsRefresh(0); }
@@ -999,6 +1012,8 @@ for (const name of ["running-refreshed", "control-center-changed", "conversation
 // The control center read its board: something changed. Its board leaves out other people's machines, which the Inbox lists,
 // so the Inbox reads its own instead of taking those cards.
 window.addEventListener("control-center-board-refreshed", () => scheduleGroupsRefresh());
+// Conversations were removed by a cleanup, another machine or a delete: Earlier is cached for a minute, so it is read again now.
+window.addEventListener("conversations-removed", () => { earlierReadAt = 0; scheduleGroupsRefresh(); });
 window.addEventListener("conversation-pins-changed", () => {
   renderGroups();
   if (!page.hidden) renderGroupPage();
@@ -1035,7 +1050,7 @@ function filteredOnPage(groupId) {
     return terms.every((term) => text.includes(term));
   });
 }
-const pageToolbar = createInboxToolbar({ id: "inboxPage", allCards, visibleCards: () => filteredOnPage(pageGroup), afterChange: refreshAfterChange });
+const pageToolbar = createInboxToolbar({ id: "inboxPage", allCards, visibleCards: () => filteredOnPage(pageGroup), afterChange: refreshAfterChange, redraw: redrawBoard });
 const pageSearch = document.createElement("input");
 pageSearch.type = "search";
 pageSearch.className = "inbox-search";

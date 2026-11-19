@@ -57,7 +57,8 @@ app.get("/api/projects/:projectId/sessions", async (request, response, next) => 
     // listing, so a slow machine no longer builds the same list several times at once.
     response.json({ sessions: temporary
       ? await listProjectSessionsWithReviewState(project, authSession.userId, authSession.accountId, undefined, temporary.sessionId)
-      : await sharedProjectSessions(project, authSession.userId, authSession.accountId, true) });
+      // `all=1` lifts the cap on the newest conversations: the Inbox lists every one, and opens an older one from this.
+      : await sharedProjectSessions(project, authSession.userId, authSession.accountId, true, request.query.all === "1" ? Infinity : undefined) });
   } catch (error) {
     next(error);
   }
@@ -930,7 +931,8 @@ export class ConversationDeleteError extends Error {
 
 export async function deleteLocalConversation(project: ProjectRecord, engine: ConversationEngine, sessionId: string): Promise<void> {
   await assertProjectEditable(project);
-  const sessions = await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id) });
+  // The Inbox lists every conversation (no cap on roots), so the lookup must not stop at the newest ones either.
+  const sessions = await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id) }, [], [], Infinity);
   const session = sessions.find((candidate) => candidate.id === sessionId && candidate.harnessId === engine);
   if (!session) throw new ConversationDeleteError(404, "Session not found");
   // What the list showed for this conversation must be a transcript of its own. A link, or anything else
@@ -968,6 +970,7 @@ export async function deleteOwnedConversation(project: ProjectRecord, engine: Co
   for (const conversationId of new Set([deleted.conversationId, ...deleted.segments.map((segment) => segment.sessionId)])) dropBrowserConversationGrants(project.id, conversationId);
   clearHarnessSessionCache(project.id);
   broadcastToProject(project.id, { type: "sessionsChanged" });
+  broadcastToProject(project.id, { type: "conversationsRemoved" });
 }
 
 /** Deletes a conversation where it lives: on this machine, or through the machine that owns it. Bob's delete runs it too. */
