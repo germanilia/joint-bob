@@ -27,7 +27,7 @@ const card = (id: string, column: string, extra: Record<string, unknown> = {}) =
   autoRespondActive: false, startedBy: "you", pendingReviews: [], autoRespondStop: null, controlledBy: null, reviewCheck: null, ...extra,
 });
 const cards = [
-  card("n1", "needs-you", { reviewCheck: { needsYou: true, reason: "Keep the ticket form link, or drop it?" } }),
+  card("n1", "needs-you", { summary: "**Goal** Ship the ticket form.\n\n**Current state** Waiting on the link decision.", reviewCheck: { needsYou: true, reason: "Keep the ticket form link, or drop it?" } }),
   card("n2", "needs-you", { pendingReviews: [{ id: "r1", title: "Deploy", subject: "npm run deploy", detail: "", expiresAt: new Date(Date.now() + 600_000).toISOString() }] }),
   card("r1", "running"),
   card("v1", "review", { summary: "**Current state** Twelve files changed, tests pass." }),
@@ -88,6 +88,32 @@ test("Home greets, counts, and shows Needs you as cards with their actions, then
   // Home fits the window: nothing in it scrolls.
   const overflow = await page.getByTestId("home-page").evaluate((home) => home.scrollHeight - home.clientHeight);
   assert.ok(overflow <= 1, `Home does not scroll (${overflow})`);
+});
+
+test("hovering a Needs you card swaps its question for the whole summary in place, scrolling when long", async () => {
+  const cardsShown = page.getByTestId("home-card");
+  const withSummary = cardsShown.filter({ hasText: "Conversation n1" });
+  const without = cardsShown.filter({ hasText: "Conversation n2" });
+  const summary = withSummary.locator(".ws-wait-summary");
+  const question = withSummary.locator(".ws-wait-question");
+  await page.mouse.move(0, 0);
+  assert.equal(await summary.isVisible(), false, "hidden until hovered");
+  assert.equal(await question.isVisible(), true);
+  await withSummary.getByTestId("home-card-done").hover();
+  await summary.waitFor();
+  assert.match(await summary.innerText(), /Ship the ticket form[\s\S]*Waiting on the link decision/);
+  assert.equal(await question.isVisible(), false, "the summary takes the question's place");
+  assert.equal(await withSummary.getByTestId("home-card-done").isVisible(), true, "the buttons stay");
+  // Long summaries stop at a height and scroll.
+  await summary.evaluate((node) => { node.append(...Array.from({ length: 40 }, (_, index) => Object.assign(document.createElement("p"), { textContent: `Line ${index}` }))); });
+  const [height, scrolls] = await summary.evaluate((node) => [node.clientHeight, node.scrollHeight > node.clientHeight] as const);
+  assert.ok(height <= 240 && scrolls, `capped (${height}) and scrollable`);
+  // A card without a summary keeps its question.
+  await without.hover();
+  assert.equal(await summary.isVisible(), false, "gone when the mouse leaves");
+  assert.equal(await without.locator(".ws-wait-question").isVisible(), true);
+  assert.equal(await without.locator(".ws-wait-summary").count(), 1);
+  assert.equal(await without.locator(".ws-wait-summary").isVisible(), false);
 });
 
 test("Home nav button sits above Inbox and Home lets you pick Activity, Automations, Clusters, and Dashboards", async () => {

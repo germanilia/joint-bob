@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock · Home card summary on hover</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #f2ebdf; --panel: #fffbf4; --field: #f6f0e5; --line: rgba(43,36,28,.09); --line-strong: rgba(43,36,28,.2);
+    --text: #2b241c; --muted: #6e6457; --heading: #2b241c; --accent: #2f6b4f; --amber: #9a5b00; --paper-raised: #ebe2d3;
+    --btn-bg: #2f6b4f; --btn-fg: #fff;
+    --shadow: 0 18px 50px rgba(60,45,25,.18); --shadow-soft: 0 1px 2px rgba(60,45,25,.06), 0 6px 20px rgba(60,45,25,.06);
+    --sans: "DM Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --serif: "Young Serif", "Iowan Old Style", Georgia, serif;
+  }
+  :root.dark {
+    --bg: #171412; --panel: #211d1a; --field: #2b2723; --line: rgba(255,244,230,.08); --line-strong: rgba(255,244,230,.18);
+    --text: #f2ede6; --muted: #b5aba0; --heading: #f7f2eb; --accent: #7fcf9f; --amber: #f0b45a; --paper-raised: #2e2925;
+    --btn-bg: #7fcf9f; --btn-fg: #10231a; --shadow: 0 20px 56px rgba(0,0,0,.5); --shadow-soft: 0 0 0 1px rgba(255,244,230,.06);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 40px 80px; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); }
+  header.page { display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px; }
+  h1 { margin: 0; font: 400 28px var(--serif); color: var(--heading); }
+  .intro { max-width: 820px; color: var(--muted); margin: 0 0 28px; }
+  .theme { margin-left: auto; }
+  button { font: inherit; cursor: pointer; }
+  .theme button { border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); border-radius: 10px; padding: 6px 12px; }
+
+  section.option { margin: 0 0 40px; padding: 24px 28px 28px; border-radius: 20px; background: var(--panel); }
+  section.option h2 { margin: 0 0 4px; font: 400 21px var(--serif); color: var(--heading); }
+  section.option h2 .tag { margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 600 11.5px var(--sans); vertical-align: middle; }
+  .why { margin: 0 0 6px; color: var(--muted); max-width: 900px; }
+  .pros { display: flex; gap: 28px; margin: 0 0 18px; font-size: 13px; color: var(--muted); }
+  .pros b { color: var(--text); }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 880px; }
+
+  /* The card as Home draws it today. */
+  .card { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 18px 20px 14px; border-radius: 16px; background: var(--field); }
+  .top { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); flex: none; }
+  .project { color: var(--text); opacity: .8; }
+  .top time { margin-left: auto; font-weight: 500; }
+  .title { overflow: hidden; color: var(--heading); font: 400 18px/1.3 var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+  .question { display: -webkit-box; min-height: 2.9em; margin: 0; overflow: hidden; color: var(--muted); font-size: 13.5px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .actions button { height: 30px; padding: 0 11px; border-radius: 10px; border: 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .actions .primary { background: var(--btn-bg); color: var(--btn-fg); }
+  .actions .soft { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); }
+  .actions .ghost { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .actions .open { margin-left: auto; background: transparent; color: var(--muted); }
+
+  /* Summary content, shared by every option. */
+  .sum h4 { margin: 10px 0 2px; color: var(--muted); font: 700 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; }
+  .sum h4:first-child { margin-top: 0; }
+  .sum p, .sum ul { margin: 0; font-size: 13.5px; line-height: 1.5; }
+  .sum ul { padding-left: 18px; }
+  .sum .updated { display: block; margin-top: 10px; color: var(--muted); font-size: 11.5px; }
+
+  /* A · Cover — what is built now. */
+  .a .sum { display: none; position: absolute; inset: 0 0 auto 0; z-index: 3; min-height: 100%; padding: 18px 20px 14px; border-radius: 16px; background: var(--field); box-shadow: var(--shadow-soft); pointer-events: none; }
+  .a .card:hover .sum { display: block; }
+
+  /* B · Popover beside the card, scrollable, with a pointer. */
+  .b .sum { position: absolute; top: 0; left: calc(100% + 12px); z-index: 3; width: 340px; max-height: 320px; overflow: auto; padding: 16px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); opacity: 0; transform: translateX(-4px); transition: opacity .12s, transform .12s; pointer-events: none; }
+  .b .card:nth-child(2n) .sum { left: auto; right: calc(100% + 12px); transform: translateX(4px); }
+  .b .card:hover .sum, .b .sum:hover { opacity: 1; transform: none; pointer-events: auto; transition-delay: .25s; }
+  .b .sum::before { content: ""; position: absolute; top: 24px; left: -7px; width: 12px; height: 12px; background: var(--panel); border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: rotate(45deg); }
+  .b .card:nth-child(2n) .sum::before { left: auto; right: -7px; transform: rotate(-135deg); }
+
+  /* C · Expand in place: the question gives way to the summary, buttons stay. */
+  .c .grid { align-items: start; }
+  .c .sum { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .18s ease; }
+  .c .sum > div { min-height: 0; max-height: 240px; overflow-y: auto; overscroll-behavior: contain; }
+  .c .card:hover .sum > div { padding-right: 4px; }
+  .c .card:hover .sum { grid-template-rows: 1fr; }
+  .c .card:hover .question { display: none; }
+  .c .card:hover { box-shadow: var(--shadow-soft); }
+
+  /* D · Peek: the card keeps its size; the question area becomes a scrollable summary with labelled rows. */
+  .d .peek { display: none; height: calc(2.9em + 44px); overflow: auto; margin: 0 -4px; padding: 0 4px; mask-image: linear-gradient(#000 80%, transparent); }
+  .d .card:hover .peek { display: block; }
+  .d .card:hover .question, .d .card:hover .title { display: none; }
+  .d .peek .row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .d .peek .row:last-child { border: 0; }
+  .d .peek .row span { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; padding-top: 2px; }
+
+  /* E · Summary pane: one shared panel under the cards follows the card the mouse is on. */
+  .e .wrap { max-width: 880px; }
+  .e .pane { margin-top: 12px; min-height: 150px; padding: 16px 20px; border-radius: 16px; border: 1px dashed var(--line-strong); }
+  .e .pane .empty { color: var(--muted); }
+  .e .pane .head { margin-bottom: 8px; font: 400 16px var(--serif); color: var(--heading); }
+  .e .card.on { box-shadow: inset 0 0 0 2px var(--accent); }
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>Home cards · summary on hover</h1>
+  <span class="theme"><button type="button" id="theme">Dark theme</button></span>
+</header>
+<p class="intro">Five ways to show a Needs you card's latest summary when the mouse is on it. Hover the cards in each option. All use the same summary (Goal, Done so far, Current state, Open questions) plus when it was last updated. Touch screens show none of them, because tapping a card already opens its detail sheet.</p>
+
+<template id="cards">
+  <article class="card">
+    <div class="top"><i class="dot"></i><span class="project">Joint Bob</span><time>14:32 · Claude</time></div>
+    <b class="title">Ticket form link on the support page</b>
+    <p class="question">Keep the ticket form link, or drop it?</p>
+    <div class="sum"><div>
+      <h4>Goal</h4><p>Move support requests to the new ticket form and retire the old email address.</p>
+      <h4>Done so far</h4><ul><li>New form wired to the tickets API</li><li>Email address removed from the footer</li><li>Tests updated, 48 pass</li></ul>
+      <h4>Current state</h4><p>Waiting on whether the old link in the help centre should stay as a redirect.</p>
+      <h4>Open questions</h4><p>Keep the ticket form link, or drop it?</p>
+      <small class="updated">Summary updated 3 min ago</small>
+    </div></div>
+    <div class="actions"><button class="primary">Answer</button><button class="soft">Push it on</button><button class="ghost">Snooze</button><button class="ghost">Done</button><button class="open">Open ›</button></div>
+  </article>
+  <article class="card">
+    <div class="top"><i class="dot"></i><span class="project">Contigos</span><time>13:05 · Pi</time></div>
+    <b class="title">Retry failed webhook deliveries</b>
+    <p class="question">Deploy: npm run deploy — allow it to run?</p>
+    <div class="sum"><div>
+      <h4>Goal</h4><p>Retry webhook deliveries that fail with a 5xx, with backoff, up to six times.</p>
+      <h4>Done so far</h4><ul><li>Backoff schedule and retry table</li><li>Dashboard shows pending retries</li></ul>
+      <h4>Current state</h4><p>Ready to deploy to staging; the deploy step is held for approval.</p>
+      <small class="updated">Summary updated 41 min ago</small>
+    </div></div>
+    <div class="actions"><button class="primary">Allow once</button><button class="soft">Block</button><button class="ghost">Snooze</button><button class="ghost">Done</button><button class="open">Open ›</button></div>
+  </article>
+</template>
+
+<section class="option a">
+  <h2>A · Cover the card <span class="tag">built now</span></h2>
+  <p class="why">The summary covers the whole card while hovered, and grows downward if it is longer. It is read-only: clicks pass through to the hidden buttons.</p>
+  <p class="pros"><span><b>+</b> No layout shift, nothing outside the card</span><span><b>−</b> Buttons are hidden while you read; it can't scroll</span></p>
+  <div class="grid"></div>
+</section>
+
+<section class="option b">
+  <h2>B · Popover beside the card <span class="tag">recommended</span></h2>
+  <p class="why">After a short delay (0.25 s), a floating panel opens next to the card: to the right for the left column and to the left for the right column. You can move the mouse into it to scroll a long summary. The card itself does not change.</p>
+  <p class="pros"><span><b>+</b> Buttons stay visible; long summaries scroll; it's what most apps do</span><span><b>−</b> Covers the neighbouring card while it's open</span></p>
+  <div class="grid"></div>
+</section>
+
+<section class="option c">
+  <h2>C · Expand in place</h2>
+  <p class="why">The card grows: the short question gives way to the full summary between the title and the buttons. The summary is capped at 240 px and scrolls when it is longer, so the card never gets taller than that. Cards in the same row stay where they are.</p>
+  <p class="pros"><span><b>+</b> Everything stays reachable; nothing floats; long summaries scroll</span><span><b>−</b> The grid moves under the mouse as the card grows</span></p>
+  <div class="grid"></div>
+</section>
+
+<section class="option d">
+  <h2>D · Peek inside the card</h2>
+  <p class="why">The card keeps its size. The title and question area turns into a compact, scrollable summary with labelled rows, and the buttons stay below it.</p>
+  <p class="pros"><span><b>+</b> No movement, buttons visible, wheel scrolls it</span><span><b>−</b> A small window: only about three rows show at once</span></p>
+  <div class="grid"></div>
+</section>
+
+<section class="option e">
+  <h2>E · Shared summary pane</h2>
+  <p class="why">One panel under Needs you shows the summary of whichever card the mouse is on, and keeps the last one until you hover another card.</p>
+  <p class="pros"><span><b>+</b> Calm; cards never change; room for long summaries</span><span><b>−</b> Takes space on Home all the time; your eye has to move away from the card</span></p>
+  <div class="wrap"><div class="grid"></div><div class="pane"><span class="empty">Hover a card to read its summary here.</span></div></div>
+</section>
+
+<script>
+  const template = document.getElementById("cards");
+  for (const grid of document.querySelectorAll(".grid")) grid.append(template.content.cloneNode(true));
+  // D shows the summary as labelled rows.
+  for (const card of document.querySelectorAll(".d .card")) {
+    const peek = document.createElement("div");
+    peek.className = "peek";
+    for (const heading of card.querySelectorAll(".sum h4")) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const label = document.createElement("span");
+      label.textContent = heading.textContent;
+      const text = document.createElement("div");
+      const next = heading.nextElementSibling;
+      text.textContent = next.tagName === "UL" ? [...next.children].map((item) => item.textContent).join(" · ") : next.textContent;
+      row.append(label, text);
+      peek.append(row);
+    }
+    card.querySelector(".sum").remove();
+    card.querySelector(".question").after(peek);
+  }
+  // E copies the hovered card's summary into the pane.
+  const pane = document.querySelector(".e .pane");
+  for (const card of document.querySelectorAll(".e .card")) {
+    const summary = card.querySelector(".sum");
+    summary.remove();
+    card.addEventListener("pointerenter", () => {
+      document.querySelectorAll(".e .card").forEach((other) => other.classList.toggle("on", other === card));
+      const head = document.createElement("div");
+      head.className = "head";
+      head.textContent = card.querySelector(".title").textContent;
+      const copy = summary.cloneNode(true);
+      copy.style.display = "block";
+      pane.replaceChildren(head, copy);
+    });
+  }
+  document.getElementById("theme").addEventListener("click", (event) => {
+    const dark = document.documentElement.classList.toggle("dark");
+    event.target.textContent = dark ? "Light theme" : "Dark theme";
+  });
+</script>
+</body>
+</html>
