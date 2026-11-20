@@ -82,7 +82,12 @@ if [ "${mode}" = --build-only ]; then
     export NPM_CONFIG_REGISTRY=https://registry.npmjs.org npm_config_registry=https://registry.npmjs.org
     "${NPM_BIN}" ci --registry=https://registry.npmjs.org --no-audit --no-fund
   )
-  "${NPM_BIN}" run build
+  # The compiler outgrows Node's default heap on a small machine (a 2 GB relay box stopped
+  # updating: "build failed with status 134"). A limit the caller set is kept.
+  case " ${NODE_OPTIONS:-} " in
+    *max-old-space-size*) "${NPM_BIN}" run build ;;
+    *) NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=3072" "${NPM_BIN}" run build ;;
+  esac
   # Pinned to playwright-core, so the detected chromium.executablePath() matches this release.
   if [ -z "${JOINT_BOB_BROWSER_EXECUTABLE:-}" ]; then
     "${REPO_ROOT}/node_modules/.bin/playwright-core" install --no-shell --no-progress chromium || echo "Warning: Playwright Chromium download failed; browsers need Chrome, Chromium, or JOINT_BOB_BROWSER_EXECUTABLE on this machine." >&2

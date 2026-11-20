@@ -407,7 +407,7 @@ anchorMenu(byId("workspaceNewMenu"), byId("workspaceNewButton"));
 anchorMenu(byId("workspaceMoreMenu"), byId("workspaceMoreButton"));
 
 const run = (action) => () => Promise.resolve().then(action).catch((error) => toast.error(error.message));
-byId("workspaceNewConversation").addEventListener("click", run(startGlobalConversation));
+byId("workspaceNewConversation").addEventListener("click", run(() => startGlobalConversation()));
 byId("workspaceNewNote").addEventListener("click", run(() => openQuickNote(null, { chooseProject: true })));
 byId("workspaceNewProject").addEventListener("click", () => elements.newProjectButton.click());
 byId("workspaceIssuesButton").addEventListener("click", () => document.querySelector("#allProjectIssuesButton").click());
@@ -423,18 +423,20 @@ function renderNewHarnesses() {
     item.className = "ws-menu-item";
     item.setAttribute("role", "menuitem");
     item.dataset.testid = `workspace-new-${source.dataset.harnessId}`;
-    item.disabled = source.disabled;
-    item.title = source.title;
+    // With no project open the agent still starts: the name dialog asks for the project.
+    const anyProject = !project && Boolean(state.projects?.length) && state.harnesses.some((harness) => harness.id === source.dataset.harnessId && harness.ready);
+    item.disabled = anyProject ? false : source.disabled;
+    item.title = anyProject ? "" : source.title;
     const icon = source.querySelector("svg, img")?.cloneNode(true);
     const label = document.createElement("span");
     const name = (source.getAttribute("aria-label") || "").replace(/^New /, "").replace(/ conversation$/, "");
     label.textContent = name;
     const where = document.createElement("small");
-    where.textContent = project ? `in ${project.name}` : "Choose a project first";
+    where.textContent = project ? `in ${project.name}` : anyProject ? "Any project" : state.projects?.length ? "Not signed in on this machine" : "Create a project first";
     label.append(where);
     if (icon) item.append(icon);
     item.append(label);
-    item.addEventListener("click", () => source.click());
+    item.addEventListener("click", anyProject ? run(() => startGlobalConversation(source.dataset.harnessId)) : () => source.click());
     return item;
   }));
   host.hidden = !sources.length;

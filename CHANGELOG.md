@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.335.6 — 2026-11-20
+
+- New: each signed-in agent can be started with no project open. It says "Any project" and the name dialog asks which one. Before, the agents were greyed out with "Choose a project first".
+- Updates no longer fail on a small machine: the installer's build gets a larger memory limit. A 2 GB relay had stopped updating for this reason, so it could not hand out relay passes.
+
 ## 2.335.5 — 2026-11-20
 
 - Fixed "Pending join conflict": a cluster join that never finished no longer blocks that cluster. A newer invitation replaces it.

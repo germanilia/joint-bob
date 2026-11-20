@@ -536,6 +536,29 @@ test("New › Conversation… offers the project picker", async () => {
   await page.getByTestId("new-session-name-cancel-button").click();
 });
 
+test("New offers each signed-in agent with no project open, and asks for the project", async () => {
+  // A machine that just joined its twins has projects and nothing open yet.
+  const opened = await page.evaluate(async () => {
+    const { state } = await import("/app/state.js");
+    const before = state.activeProjectId;
+    state.activeProjectId = null;
+    return before;
+  });
+  try {
+    await page.getByTestId("workspace-new-button").click();
+    const pi = page.getByTestId("workspace-new-pi");
+    assert.equal(await pi.isEnabled(), true, "the agent is not greyed out for want of a project");
+    assert.match(await pi.innerText(), /Any project/);
+    await pi.click();
+    await page.getByTestId("new-session-name-dialog").waitFor();
+    assert.equal(await visible("new-session-project-select"), true, "the dialog asks which project");
+    assert.equal(await page.getByTestId("new-session-harness-select").inputValue(), "pi");
+    await page.getByTestId("new-session-name-cancel-button").click();
+  } finally {
+    await page.evaluate(async (id) => { (await import("/app/state.js")).state.activeProjectId = id; }, opened);
+  }
+});
+
 test("New, ⋯ and the places reach every action the old panels had", async () => {
   await page.getByTestId("workspace-new-button").click();
   for (const id of ["workspace-new-conversation", "workspace-new-note", "workspace-new-project", "workspace-new-pi", "workspace-new-claude"]) assert.equal(await visible(id), true, `${id} is in New`);

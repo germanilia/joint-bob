@@ -231,11 +231,13 @@ async function loadNewSessionNodes() {
   renderNewSessionWorktrees(worktreeChosen ? elements.newSessionWorktreeSelect.value : null);
 }
 
-export async function startGlobalConversation() {
+/** The name dialog with a project picker. `harnessId` asks for that agent; without it, the one last used. */
+export async function startGlobalConversation(harnessId = null) {
   if (!state.projects.length) throw new Error("Create a project first");
   if (!state.harnesses.length) await loadHarnesses();
   const available = state.harnesses.filter(harness => harness.ready);
-  const harness = available.find(harness => harness.id === state.engine) || available[0];
+  if (typeof harnessId === "string" && !available.some(harness => harness.id === harnessId)) throw new Error("That agent is not installed and signed in on this node");
+  const harness = available.find(harness => harness.id === (typeof harnessId === "string" ? harnessId : state.engine)) || available[0];
   if (!harness) throw new Error("No agent is installed and signed in on this node");
   await openNewSessionNameDialog(harness.newSessionPath, `New ${harness.label} conversation`, true);
 }
