@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.335.5 — 2026-11-20
+
+- Fixed "Pending join conflict": a cluster join that never finished no longer blocks that cluster. A newer invitation replaces it.
+- Use a link now ends with one closing message and closes its form when every step went through. It stays open only when a step failed or waits for an approval.
+- A twin's administrator account is accepted when both machines' administrators use the same email. Before, each machine rejected the other's account.
+
 ## 2.335.4 — 2026-11-19
 
 - Default shared projects to production Guardian checks. Show uncovered projects, and warn when Guardian switches between Jev and Laya.

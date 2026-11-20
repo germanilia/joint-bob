@@ -157,6 +157,8 @@ async function executeJoinV2Membership(parsed: ReturnType<typeof parseV2Invitati
     try {
       joinRequest = prepareMembershipJoin(db, local, parsed.invitation, parsed.fingerprint, requestId, Date.now(), listDifficultyClassifiers().map(({ id }) => id));
       db.prepare("INSERT OR IGNORE INTO cluster_v2_membership_nodes VALUES(?,?,?,?,?,NULL)").run(joinRequest.clusterId, parsed.invitation.body.manager.nodeId, parsed.invitation.body.manager.name, parsed.invitation.body.manager.url, parsed.invitation.body.manager.publicKey);
+      // The attempt this one replaced is over: its request id must not resend the old request.
+      db.prepare("DELETE FROM cluster_v2_join_attempts WHERE cluster_id=? AND request_id<>?").run(joinRequest.clusterId, requestId);
       db.prepare("INSERT INTO cluster_v2_join_attempts VALUES(?,?,?,?,?)").run(requestId, joinRequest.invitationId, joinRequest.clusterId, hash, JSON.stringify(joinRequest));
       db.exec("RELEASE cluster_v2_prepare_join");
     } catch (error) { db.exec("ROLLBACK TO cluster_v2_prepare_join; RELEASE cluster_v2_prepare_join"); throw error; }

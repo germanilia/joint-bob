@@ -124,7 +124,7 @@ export function applyAccountSnapshot(db: DatabaseSync, local: string, sender: st
     const account = { ...stated, clusterIds: stated.clusterIds.filter((clusterId) => shared.has(clusterId)) };
     if (!twin && !account.clusterIds.length) continue; // Not kept: their record here is removed below.
     try {
-      upsertReplicatedUser({
+      const record = {
         username: account.username,
         email: account.email,
         passwordHash: Buffer.from(account.passwordHash, "hex"),
@@ -134,7 +134,14 @@ export function applyAccountSnapshot(db: DatabaseSync, local: string, sender: st
         mfaRequired: account.mfaRequired,
         mfaSecret: account.mfaSecret,
         clusterIds: account.clusterIds,
-      });
+      };
+      try { upsertReplicatedUser(record); }
+      catch (error) {
+        // A twin is the same person's other machine, so both administrators often carry one
+        // email. The address stays with this machine's account; the twin's is kept without it.
+        if (!twin || !(error instanceof Error) || !error.message.startsWith("Email conflict")) throw error;
+        upsertReplicatedUser({ ...record, email: null });
+      }
       applied.push(account.username.toLowerCase());
     } catch (error) {
       rejected.push(account.username);

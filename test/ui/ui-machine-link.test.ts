@@ -81,9 +81,10 @@ test("Add a twin makes one link, and Use a link on the other machine shows each 
     await newPage.getByTestId("confirm-accept-button").waitFor();
     assert.match(await newPage.locator("#confirmMessage").innerText(), /becomes a twin of MacBook/);
     await newPage.getByTestId("confirm-accept-button").click();
-    await waitForAssertion(async () => assert.equal(await newPage.getByTestId("machine-link-step").count(), 3), 60_000);
-    const steps = await newPage.getByTestId("machine-link-step").evaluateAll((items) => items.map((item) => [(item as HTMLElement).dataset.state, item.querySelector("strong")!.textContent]));
-    assert.deepEqual(steps, [["done", `Relay localhost:${relay.port}`], ["done", "Twin of MacBook"], ["done", "Cluster Home cluster"]]);
+    // Every step went through: one closing message, and the form puts itself away.
+    await newPage.locator(".toast", { hasText: "All done. This machine is now a twin of MacBook and in Home cluster." }).waitFor({ timeout: 60_000 });
+    await waitForAssertion(async () => assert.equal(await newPage.getByTestId("cluster-join-form").isVisible(), false));
+    assert.equal(await newPage.getByTestId("cluster-join-reveal").getAttribute("aria-expanded"), "false");
     await newPage.getByTestId("cluster-map-twin").first().waitFor();
     assert.match(await newPage.getByTestId("cluster-map-twin").first().innerText(), /MacBook/);
     await newPage.getByTestId("cluster-item").first().waitFor();
@@ -119,8 +120,9 @@ test("Add a twin makes one link, and Use a link on the other machine shows each 
     await freshPage.getByTestId("confirm-accept-button").waitFor({ timeout: 40_000 });
     assert.match(await freshPage.locator("#confirmMessage").innerText(), /becomes a twin of MacBook and HomeMac/);
     await freshPage.getByTestId("confirm-accept-button").click();
-    await waitForAssertion(async () => assert.equal(await freshPage.getByTestId("machine-link-step").count(), 3), 90_000);
-    assert.deepEqual(await freshPage.getByTestId("machine-link-step").evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset.state)), ["done", "done", "done"]);
+    await freshPage.locator(".toast", { hasText: "All done." }).waitFor({ timeout: 90_000 });
+    await waitForAssertion(async () => assert.equal(await freshPage.getByTestId("cluster-join-form").isVisible(), false));
+    await freshPage.getByTestId("cluster-map-twin").first().waitFor();
     assert.equal(await freshPage.getByTestId("settings-tab-cluster").getAttribute("aria-selected"), "true");
     // Signed in, the link field is gone from the sign-in form.
     assert.equal(await macPage.getByTestId("login-machine-link-input").isVisible(), false);

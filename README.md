@@ -308,7 +308,7 @@ The quickest way to bring in another machine is a link from a machine that is al
 
 On the other machine, open **Settings > Cluster > Use a link**, paste the link and select **Join**. A machine nobody has set up yet takes the same link on its welcome screen, next to the administrator's name and password.
 
-The other machine then joins the relays this machine can be reached on, becomes a twin, and joins the clusters, in that order, and lists each step with its result. A step that fails says why; use the link again after fixing it, and the steps already done are skipped. Only the node's administrator can create or use such a link.
+The other machine then joins the relays this machine can be reached on, becomes a twin, and joins the clusters, in that order, and says so when it is done. A step that fails or waits is listed with the reason, and a cluster join left unfinished earlier is replaced; use the link again after fixing it, and the steps already done are skipped. Only the node's administrator can create or use such a link.
 
 The link carries a one-time relay pass when the relay allows it (**Settings > Relay > Serving > Machines on this relay can bring in another machine**, on by default). A relay that runs an older Joint Bob, or has the switch off, gives no pass: the new machine then asks that relay for access and waits for its operator's approval. **Use a link** also accepts a plain cluster invitation, a twin link and a relay token link.
 

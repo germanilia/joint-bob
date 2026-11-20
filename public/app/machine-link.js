@@ -117,7 +117,10 @@ function renderSteps(steps) {
   stepsList.hidden = !steps.length;
 }
 
-/** Runs a machine link on this machine after the person agreed to what it does. Returns false when they declined. */
+/**
+ * Runs a machine link on this machine after the person agreed to what it does. Returns false
+ * when they declined, "done" when every step went through, "open" when a step failed or waits.
+ */
 export async function useMachineLink(link) {
   if (!isNodeAdmin()) throw new Error("Only this machine's administrator can add it to other machines");
   const seen = await api("/api/machine-links/inspect", { method: "POST", body: JSON.stringify({ link }) });
@@ -132,31 +135,45 @@ export async function useMachineLink(link) {
   renderSteps(done.steps);
   const failed = done.steps.filter((step) => step.status === "failed"), waiting = done.steps.filter((step) => step.status === "waiting");
   await options.afterChange();
-  if (failed.length) toast.error(`${failed[0].title}: ${failed[0].detail}`);
-  else if (waiting.length) toast(waiting[0].detail, 8000);
-  else toast(`This machine joined ${seen.summary.issuer}`);
-  return true;
+  if (failed.length) { toast.error(`${failed[0].title}: ${failed[0].detail}`); return "open"; }
+  if (waiting.length) { toast(waiting[0].detail, 8000); return "open"; }
+  // Everything went through: say so once and put the form away.
+  renderSteps([]);
+  toast(`All done. ${finishedSummary(seen.summary)}`, 8000);
+  return "done";
+}
+
+function finishedSummary(summary) {
+  const parts = [];
+  if (summary.twins.length) parts.push(`a twin of ${listNames(summary.twins)}`);
+  if (summary.clusters.length) parts.push(`in ${listNames(summary.clusters)}`);
+  return parts.length ? `This machine is now ${parts.join(" and ")}.` : `This machine joined ${summary.issuer}.`;
+}
+
+function listNames(names) {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0];
 }
 
 /**
- * Handles a pasted link that is not a plain cluster invitation. Returns true when it dealt
- * with the link (the caller then leaves the cluster join alone), false for a cluster link.
+ * Handles a pasted link that is not a plain cluster invitation. Returns false for a cluster
+ * link; otherwise "done" when it finished (the caller closes the form) or "open" when the
+ * form should stay: the person declined, a step failed, or one waits for an approval.
  */
 export async function useOtherLink(link) {
   const kind = linkKind(link);
-  if (kind === "machine") { await useMachineLink(link); return true; }
+  if (kind === "machine") return await useMachineLink(link) || "open";
   if (kind === "twin") {
-    if (!await confirmAction({ eyebrow: "Twin link", title: "Accept this twin link?", message: "The other machine becomes this machine's twin. Synchronization starts as soon as you accept.", confirmLabel: "Accept and pair" })) return true;
+    if (!await confirmAction({ eyebrow: "Twin link", title: "Accept this twin link?", message: "The other machine becomes this machine's twin. Synchronization starts as soon as you accept.", confirmLabel: "Accept and pair" })) return "open";
     await api("/api/twins/accept", { method: "POST", body: JSON.stringify({ link, confirmOwnedData: true }) });
     toast("Twin paired");
     await options.afterChange();
-    return true;
+    return "done";
   }
   if (kind === "relay") {
     await api("/api/relays", { method: "POST", body: JSON.stringify({ link }) });
     toast("Relay added");
     await options.afterChange();
-    return true;
+    return "done";
   }
   return false;
 }
@@ -173,8 +190,9 @@ export async function startWithMachineLink(link) {
   form.hidden = false;
   reveal.setAttribute("aria-expanded", "true");
   input.value = link;
-  try { await useMachineLink(link); }
-  catch (error) { toast.error(error.message); }
+  try {
+    if (await useMachineLink(link) === "done") { input.value = ""; form.hidden = true; reveal.setAttribute("aria-expanded", "false"); }
+  } catch (error) { toast.error(error.message); }
 }
 
 export function installMachineLinks(next) {

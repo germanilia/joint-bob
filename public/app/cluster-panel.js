@@ -531,7 +531,9 @@ async function joinCluster() {
   const link = elements.clusterJoinLinkInput.value.trim();
   if (!link) throw new Error("Paste a link first");
   // A link for adding this machine, a twin link or a relay pass goes its own way and reports there.
-  if (await useOtherLink(link)) return;
+  const other = await useOtherLink(link);
+  if (other === "done") { elements.clusterJoinLinkInput.value = ""; showForm(joinForm, joinReveal, false); }
+  if (other) return;
   if (pendingJoin.link !== link) pendingJoin = { link, requestId: crypto.randomUUID() };
   const current = panelRequestId;
   const result = await api("/api/clusters/join", { method: "POST", body: JSON.stringify(pendingJoin) });
