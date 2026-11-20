@@ -14,6 +14,7 @@ import { takeControl } from "./control-lease.js";
 import { chooseSnooze } from "./control-snooze.js";
 import { closeCustomizePopover, homeViewStateKey, initHomeSections, isActivityVisible, isCustomLayout, syncHomeSections, updateActivitySummary } from "./home-sections.js";
 import { drawChunked } from "./long-scroll.js";
+import { renderMarkdown } from "../markdown.js";
 import { openNeedDetail } from "./needs-detail.js";
 import { elements } from "./elements.js";
 import { menuIcon } from "./icons.js";
@@ -102,6 +103,9 @@ export function waitingCard(card, { compact = false } = {}) {
   const title = element("b", "ws-wait-title", card.title || "Conversation");
   const question = element("p", "ws-wait-question", questionOf(card));
   question.title = question.textContent;
+  // While a mouse is on the card, this replaces the question with the board's latest summary (home.css); it scrolls when long.
+  const summary = element("div", "ws-wait-summary markdown");
+  if (card.summary) { renderMarkdown(summary, card.summary); root.classList.add("has-summary"); }
   const actions = element("div", "ws-wait-actions");
   const run = (button, work) => {
     button.disabled = true;
@@ -143,7 +147,7 @@ export function waitingCard(card, { compact = false } = {}) {
   arrow.classList.add("ws-wait-open-chevron");
   open.append(arrow);
   actions.append(open);
-  root.append(top, title, question, actions);
+  root.append(top, title, question, summary, actions);
   // Looking at a card changes nothing; tapping it (not its buttons) shows what exactly it needs, over Home.
   root.tabIndex = 0;
   root.title = "Tap to see what it needs";
