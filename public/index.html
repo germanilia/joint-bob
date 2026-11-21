@@ -139,7 +139,7 @@
            phone hides these and keeps one panel at a time. public/workspace.css, app/workspace.js. -->
       <aside class="ws-side" id="workspaceSide" aria-label="Workspace" data-testid="workspace-side">
         <div class="ws-brand">
-          <button class="ws-home-button" id="workspaceHomeButton" type="button" title="Home: what needs you, what runs and what waits for review" aria-label="Home" data-testid="workspace-home-button"><span class="ws-mark" aria-hidden="true"><img src="/icon-mark.svg" alt="" width="26" height="26" /></span><strong class="ws-name">Joint Bob</strong></button>
+          <button class="ws-home-button" id="workspaceHomeButton" type="button" title="Home: what needs you, what runs and what waits for review" aria-label="Home" data-testid="workspace-home-button"><span class="ws-mark" aria-hidden="true"><img src="/icon-mark.svg" alt="" width="26" height="26" /></span><span class="ws-title"><strong class="ws-name">Joint Bob</strong><span class="ws-version" id="workspaceVersion" data-testid="workspace-version"></span></span></button>
           <button class="ghost icon-button ws-icon-button" id="workspaceMoreButton" type="button" popovertarget="workspaceMoreMenu" aria-haspopup="menu" aria-label="More: recent, running, reviews, notes, assistants" title="Recent, running, reviews, notes, issues, assistants" data-testid="workspace-more-button"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18.5" cy="12" r="1.5"/></svg></button>
           <button class="primary ws-new-button" id="workspaceNewButton" type="button" popovertarget="workspaceNewMenu" aria-haspopup="menu" title="New conversation, quick note or project" data-testid="workspace-new-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg>New</button>
           <button class="ghost icon-button ws-icon-button ws-sidebar-toggle" id="workspaceSidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" aria-controls="workspaceSide workspaceGroups projectsPanel workspaceFoot" title="Collapse sidebar" data-testid="workspace-sidebar-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M9 5v14m7-10-3 3 3 3"/></svg></button>
@@ -2671,7 +2671,7 @@
           <li><button type="button" class="wizard-step" data-step="3" data-testid="new-session-step-3">3 · Node</button></li>
         </ol>
         <section class="wizard-panel" data-step="1" data-testid="new-session-panel-1">
-          <div class="project-combobox-field" id="newSessionProjectLabel" hidden>
+          <div class="project-combobox-field" id="newSessionProjectLabel">
             <span class="field-label">Project</span>
             <div id="newSessionProjectPicker"></div>
           </div>

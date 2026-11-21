@@ -121,6 +121,9 @@
   .ws-mark { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--paper-raised); }
   .ws-mark img { width: 24px; height: 24px; }
   .ws-name { min-width: 0; flex: 1; overflow: hidden; font: 400 19px/1.1 var(--serif); color: var(--heading); white-space: nowrap; text-overflow: ellipsis; }
+  /* The name and the release number under it, centred on the mark together. */
+  .ws-title { display: grid; min-width: 0; flex: 1; }
+  .ws-version { overflow: hidden; color: var(--muted); font: 400 11px/1.2 var(--mono); white-space: nowrap; text-overflow: ellipsis; }
   .ws-icon-button { width: 28px; min-width: 28px; min-height: 32px; color: var(--muted); }
   .ws-icon-button svg { width: 18px; height: 18px; }
   .ws-new-button { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 11px 0 8px; border-radius: 10px; font-size: 13.5px; font-weight: 650; }
@@ -480,7 +483,7 @@
      conversations fold to a strip with theirs. */
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .shell { --ws-col-side: 64px; }
   body:not(.focus-ui).chats-collapsed .shell { --ws-col-list: 40px; }
-  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) :is(.ws-name, .ws-search, .ws-place-label, .ws-place-note, .ws-me-copy, .ws-me > svg, .ws-groups) { display: none !important; }
+  body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) :is(.ws-title, .ws-search, .ws-place-label, .ws-place-note, .ws-me-copy, .ws-me > svg, .ws-groups) { display: none !important; }
   .ws-search-rail { display: none; }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-search-rail { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 36px; margin: 0 auto; padding: 0; border: 0; border-radius: 12px; background: transparent; box-shadow: none; color: var(--muted); }
   body:not(.focus-ui):is(.projects-collapsed, .ws-auto-rail) .ws-search-rail:hover { background: var(--field); color: var(--text); }

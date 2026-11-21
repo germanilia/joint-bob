@@ -42,6 +42,9 @@ import { openSpotlight } from "./spotlight.js";
 import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
 
+// The release number sits under the brand's name, so the person can tell which build the page runs.
+api("/api/health").then(({ version }) => { elements.workspaceVersion.textContent = `v${version}`; });
+
 const desktop = matchMedia("(min-width: 701px)");
 const COLUMN_KEY = "joint-bob-workspace-column";
 const COLLAPSED_GROUPS_KEY = "joint-bob-inbox-collapsed-groups";

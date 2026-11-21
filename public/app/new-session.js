@@ -179,7 +179,6 @@ async function openNewSessionNameDialog(sessionPath, defaultTitle, global = fals
   worktreeChosen = preselectedWorktreeId !== null;
   state.newSessionDraft = { sessionPath, defaultTitle, projectId: projectId || state.projects[0]?.id, referenceDraft };
   // "Conversation…" is "any project", so it always offers the picker; the agent buttons keep it to focus-ui.
-  document.querySelector("#newSessionProjectLabel").hidden = !global && !document.body.classList.contains("focus-ui");
   projectPicker.setOptions(state.projects.map((project) => ({ value: project.id, label: project.name })));
   projectPicker.setValue(state.newSessionDraft.projectId || "");
   projectPicker.disabled = false;

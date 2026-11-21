@@ -64,6 +64,6 @@ test("focus actions work before choosing a project, on lists and in chat; classi
   for (const action of actions) assert.equal(await page.getByTestId(action).isVisible(), false);
   await page.getByTestId("session-create-button").click();
   await page.getByTestId("new-session-name-dialog").waitFor();
-  assert.equal(await page.getByTestId("new-session-project-select").isVisible(), false, "classic wizard has no focus-only project picker");
+  assert.equal(await page.getByTestId("new-session-project-select").isVisible(), true, "the classic wizard shows the project too");
   await page.getByTestId("new-session-name-cancel-button").click();
 });

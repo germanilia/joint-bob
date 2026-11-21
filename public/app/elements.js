@@ -277,6 +277,7 @@ export const elements = {
   projectResourcePluginsPaths: document.querySelector("#projectResourcePluginsPaths"),
   settingsProjectHomeBrowseButton: document.querySelector("#settingsProjectHomeBrowseButton"),
   workspaceList: document.querySelector("#workspaceList"),
+  workspaceVersion: document.querySelector("#workspaceVersion"),
   workspaceNameInput: document.querySelector("#workspaceNameInput"),
   workspaceAddButton: document.querySelector("#workspaceAddButton"),
   secretTypePicker: document.querySelector("#secretTypePicker"),

@@ -84,13 +84,7 @@ elements.controlCenterCloseButton.setAttribute("aria-label", "Exit the control c
 // Bob's settings live in Bob's chat header (#controlChatSettingsButton); the team context selector moves there too.
 const chatHead = elements.controlChat.querySelector(".control-chat-head");
 
-// The release number sits under the logo, so the person can tell which build the page runs.
-const version = element("span", "bob-head-version");
-version.dataset.testid = "bob-head-version";
-const brand = element("span", "bob-head-brand");
-brand.append(avatar, version);
-header.prepend(brand);
-api("/api/health").then(({ version: release }) => { version.textContent = `v${release}`; });
+header.prepend(avatar);
 heading.after(tag, watching, pause);
 
 /* ---------- folding: hide Bob's floating chat ---------- */
