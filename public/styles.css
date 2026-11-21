@@ -1677,14 +1677,14 @@ select.chat-toolbar-control {
 .message.assistant + .message-actions { flex-wrap: wrap; align-self: flex-start; justify-content: flex-start; max-width: calc(100% - 18px); margin-left: 9px; }
 .message-attribution { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: min(520px, calc(100vw - 100px)); height: 24px; padding: 0 7px; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--field) 62%, transparent); color: var(--muted); font-family: var(--mono); font-size: 10px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
 .message-attribution-icon { width: 12px; height: 12px; flex: none; color: var(--text); }
-.message-skills { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; max-width: 100%; min-height: 24px; padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--amber) 8%, transparent); color: var(--muted); font-family: var(--mono); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
-.message-skills-label { flex: none; color: var(--amber); }
+.message-skills { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; max-width: 100%; min-height: 24px; padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--muted); font-family: var(--mono); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.message-skills-label { flex: none; color: var(--accent); }
 .message-attribution-icon.pi { color: var(--accent); }
 .message-copy { display: inline-grid; place-items: center; min-width: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); opacity: 0.6; transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease; }
 .message-copy:hover, .message-copy:focus-visible { opacity: 1; color: var(--text); background: var(--field); }
 .message-copy.copied { opacity: 1; color: var(--accent); }
 .message-copy-icon { width: 15px; height: 15px; }
-.message.tool { align-self: center; color: var(--amber); font-family: var(--mono); font-size: 11px; padding: 6px 11px; border-radius: 999px; border-color: transparent; background: color-mix(in srgb, var(--amber) 10%, transparent); }
+.message.tool { align-self: center; color: var(--heading-soft); font-family: var(--mono); font-size: 11px; padding: 6px 11px; border-radius: 999px; border-color: transparent; background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .message.thinking { align-self: stretch; max-width: 100%; color: var(--muted); border-style: dashed; border-color: var(--line-strong); background: transparent; font-family: var(--mono); font-size: 12px; }
 .message.thinking .message-content::after {
   content: "";
@@ -1720,10 +1720,10 @@ select.chat-toolbar-control {
 .message.tool-output .tool-download-open { display: inline-block; margin-left: 2px; padding: 0 5px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 5px; color: var(--accent); font-weight: 600; text-decoration: none; }
 
 /* Messages newer than the previous review watermark stay visibly grouped after
-   opening a conversation from the review queue. */
-.message.pending-review { border-color: color-mix(in srgb, var(--amber) 52%, var(--line)); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--amber) 72%, transparent); }
-.message.assistant.pending-review, .message.tool-output.pending-review { background: color-mix(in srgb, var(--amber) 11%, var(--panel)); }
-.message.user.pending-review { background: color-mix(in srgb, var(--amber) 13%, var(--field)); }
+   opening a conversation from the review queue, using the active theme's accent. */
+.message.pending-review { border-color: color-mix(in srgb, var(--accent) 36%, var(--line)); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 70%, transparent); }
+.message.assistant.pending-review, .message.tool-output.pending-review { background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.message.user.pending-review { background: color-mix(in srgb, var(--accent) 10%, var(--paper-raised, var(--field))); }
 
 /* ---- Activity panel: tool calls and thinking beside the thread, not in it ---- */
 .messages-wrap.activity-open { flex-direction: row; }
@@ -5179,10 +5179,7 @@ body:not(.node-admin) [data-admin-only] { display: none !important; }
   --accent: #a4561f; --heading: #2b2118; --heading-soft: #8a4a1c;
 }
 
-/* The logo's teal follows the palette's accent: each rotation turns the logo's hue (166°) into the accent's. */
-:root[data-palette="midnight"] img[src^="/icon"] { filter: hue-rotate(50deg); }
-:root[data-palette="graphite"] img[src^="/icon"] { filter: hue-rotate(-132deg); }
-:root[data-palette="sepia"] img[src^="/icon"] { filter: hue-rotate(-141deg) saturate(.8); }
+/* Logo hue rotation per theme is controlled by --logo-filter in paper.css. */
 
 /* Guardian: rules in Settings → Guardian and the review card above the composer. */
 .guardian-settings { display: grid; gap: 12px; }

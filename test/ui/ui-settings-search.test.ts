@@ -177,11 +177,11 @@ test("the phone's Settings list names the theme, and Account opens on six theme 
   }));
   assert.deepEqual(tiles.map((tile) => tile.name), [
     "System", "Light", "Sepia", "Dark", "Midnight", "Graphite",
-    "Dracula", "Tokyo Night", "Catppuccin", "Nord", "One Dark", "Gruvbox", "Monokai", "Solarized", "Rosé Pine", "Kanagawa",
-    "Latte", "Solarized Lt", "GitHub Lt", "Gruvbox Lt",
+    "Dracula", "Tokyo Night", "Catppuccin", "Nord", "One Dark", "Dark+", "GitHub Dark", "Night Owl", "Palenight", "SynthWave", "Gruvbox", "Monokai", "Solarized", "Rosé Pine", "Kanagawa",
+    "Light+", "Latte", "Solarized Lt", "GitHub Lt", "Gruvbox Lt",
   ]);
   assert.equal(new Set(tiles.map((tile) => tile.left)).size, 3, "three tiles to a line");
-  assert.equal(new Set(tiles.map((tile) => tile.top)).size, 7, "seven lines for twenty palettes");
+  assert.equal(new Set(tiles.map((tile) => tile.top)).size, 9, "nine lines for twenty-six palettes");
   for (const tile of tiles.slice(0, 6)) assert.ok(tile.top > 0 && tile.bottom <= 844, `${tile.name} shows on the first screen: ${JSON.stringify(tile)}`);
   for (const tile of tiles) assert.ok(tile.width >= 88 && tile.height >= 44, `${tile.name} is large enough to tap: ${JSON.stringify(tile)}`);
   assert.deepEqual(tiles.filter((tile) => tile.chosen === "true").map((tile) => tile.name), ["System"], "the theme in use is marked");

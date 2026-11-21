@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.337.0 — 2026-11-21
+
+- Six more classic palettes in Account › Appearance: Dark+, GitHub Dark, Night Owl, Palenight, SynthWave and Light+. The logo now follows the theme's colour, highlighted messages use the theme's accent instead of a yellow tint, Gruvbox and Monokai use their own signature accents, and code blocks match each palette.
+
 ## 2.336.1 — 2026-11-21
 
 - Faster conversation opening on a busy machine: listing a project no longer re-reads every transcript folder to look for conversations whose transcript is on another machine. Contigos had 400–600 of them and Joint Bob has 124 worktree folders, so the Mac's server was busy and opening a conversation waited 10–16 s. The folder listing is now kept and read again only when a new transcript appears, or after a minute.

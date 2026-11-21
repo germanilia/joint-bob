@@ -32,6 +32,8 @@ test("a message goes to the display agent when the decision model says so, or it
   assert.equal(mayBeAboutDisplay("make the text bigger", null, 0.9), true);
   assert.equal(mayBeAboutDisplay("switch to dracula", null, 0.9), true);
   assert.equal(mayBeAboutDisplay("use tokyo night", null, 0.9), true);
+  assert.equal(mayBeAboutDisplay("try night owl", null, 0.9), true);
+  assert.equal(mayBeAboutDisplay("switch to synthwave", null, 0.9), true);
   assert.equal(mayBeAboutDisplay("what is running?", null, 0.9), false);
 });
 

@@ -17,16 +17,22 @@ export const THEMES = [
   { id: "catppuccin-mocha", label: "Catppuccin", base: "dark", group: "dark", page: "#181825", card: "#1e1e2e", accent: "#cba6f7", color: "#181825" },
   { id: "nord", label: "Nord", base: "dark", group: "dark", page: "#242933", card: "#2e3440", accent: "#88c0d0", color: "#242933" },
   { id: "one-dark-pro", label: "One Dark", base: "dark", group: "dark", page: "#21252b", card: "#282c34", accent: "#61afef", color: "#21252b" },
-  { id: "gruvbox-dark", label: "Gruvbox", base: "dark", group: "dark", page: "#1d2021", card: "#282828", accent: "#fabd2f", color: "#1d2021" },
-  { id: "monokai-pro", label: "Monokai", base: "dark", group: "dark", page: "#221f22", card: "#2d2a2e", accent: "#ffd866", color: "#221f22" },
+  { id: "vscode-dark", label: "Dark+", base: "dark", group: "dark", page: "#181818", card: "#1e1e1e", accent: "#3794ff", color: "#181818" },
+  { id: "github-dark", label: "GitHub Dark", base: "dark", group: "dark", page: "#010409", card: "#0d1117", accent: "#58a6ff", color: "#010409" },
+  { id: "night-owl", label: "Night Owl", base: "dark", group: "dark", page: "#01111d", card: "#011627", accent: "#82aaff", color: "#01111d" },
+  { id: "palenight", label: "Palenight", base: "dark", group: "dark", page: "#212432", card: "#292d3e", accent: "#c792ea", color: "#212432" },
+  { id: "synthwave", label: "SynthWave", base: "dark", group: "dark", page: "#1c1629", card: "#262335", accent: "#ff7edb", color: "#1c1629" },
+  { id: "gruvbox-dark", label: "Gruvbox", base: "dark", group: "dark", page: "#1d2021", card: "#282828", accent: "#fe8019", color: "#1d2021" },
+  { id: "monokai-pro", label: "Monokai", base: "dark", group: "dark", page: "#221f22", card: "#2d2a2e", accent: "#ff6188", color: "#221f22" },
   { id: "solarized-dark", label: "Solarized", base: "dark", group: "dark", page: "#00212b", card: "#002b36", accent: "#2aa198", color: "#00212b" },
   { id: "rose-pine", label: "Rosé Pine", base: "dark", group: "dark", page: "#191724", card: "#1f1d2e", accent: "#ebbcba", color: "#191724" },
   { id: "kanagawa", label: "Kanagawa", base: "dark", group: "dark", page: "#16161d", card: "#1f1f28", accent: "#7e9cd8", color: "#16161d" },
   // Classic Light palettes (VS Code)
+  { id: "vscode-light", label: "Light+", base: "light", group: "light", page: "#f3f3f3", card: "#ffffff", accent: "#0066b8", color: "#f3f3f3" },
   { id: "catppuccin-latte", label: "Latte", base: "light", group: "light", page: "#e6e9ef", card: "#eff1f5", accent: "#8839ef", color: "#e6e9ef" },
   { id: "solarized-light", label: "Solarized Lt", base: "light", group: "light", page: "#eee8d5", card: "#fdf6e3", accent: "#268bd2", color: "#eee8d5" },
   { id: "github-light", label: "GitHub Lt", base: "light", group: "light", page: "#f6f8fa", card: "#ffffff", accent: "#0969da", color: "#f6f8fa" },
-  { id: "gruvbox-light", label: "Gruvbox Lt", base: "light", group: "light", page: "#ebdbb2", card: "#fbf1c7", accent: "#b57614", color: "#ebdbb2" },
+  { id: "gruvbox-light", label: "Gruvbox Lt", base: "light", group: "light", page: "#ebdbb2", card: "#fbf1c7", accent: "#af3a03", color: "#ebdbb2" },
 ];
 
 const THEME_GROUPS = [

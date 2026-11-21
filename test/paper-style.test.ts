@@ -38,6 +38,11 @@ test("Paper sets the tokens for every theme", async () => {
     "catppuccin-mocha",
     "nord",
     "one-dark-pro",
+    "vscode-dark",
+    "github-dark",
+    "night-owl",
+    "palenight",
+    "synthwave",
     "gruvbox-dark",
     "monokai-pro",
     "solarized-dark",
@@ -46,6 +51,7 @@ test("Paper sets the tokens for every theme", async () => {
   ];
   const lightPalettes = [
     "sepia",
+    "vscode-light",
     "catppuccin-latte",
     "solarized-light",
     "github-light",
@@ -60,10 +66,12 @@ test("Paper sets the tokens for every theme", async () => {
   for (const selector of selectors) {
     const block = new RegExp(`(^|\\n)${selector.replace(/[[\]"]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(sheet);
     assert.ok(block, `no token block for ${selector}`);
-    for (const token of ["--bg", "--panel", "--header", "--surface", "--field", "--line", "--text", "--muted", "--accent", "--btn-bg", "--btn-fg"]) {
+    for (const token of ["--bg", "--panel", "--header", "--surface", "--field", "--line", "--text", "--muted", "--accent", "--btn-bg", "--btn-fg", "--logo-filter"]) {
       assert.match(block[2], new RegExp(`${token}:`), `${selector} does not set ${token}`);
     }
   }
+  const styles = await text("public/styles.css");
+  assert.doesNotMatch(styles, /\.message(?:\.(?:assistant|user|tool-output))?\.pending-review[^}]*--amber/, "pending-review messages use --accent, not yellowish --amber");
   for (const [base, palettes] of [["dark", darkPalettes], ["light", lightPalettes]] as const) {
     for (const id of palettes) {
       assert.ok(assistantSheet.includes(`:root[data-theme=${base}][data-palette=${id}]`), `assistant.css missing ${base}/${id}`);

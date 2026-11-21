@@ -64,6 +64,7 @@ test("the logo opens quick appearance settings that change theme and font size a
   assert.equal(await page.evaluate(() => document.documentElement.dataset.palette), "dracula");
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim()), "#1e1f29");
+  assert.match(await page.evaluate(() => getComputedStyle(document.querySelector('#brandMark img')!).filter), /hue-rotate/);
 
   await page.getByTestId("appearance-theme-catppuccin-latte").click();
   assert.equal(await page.evaluate(() => document.documentElement.dataset.palette), "catppuccin-latte");

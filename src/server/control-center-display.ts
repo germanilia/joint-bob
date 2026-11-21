@@ -60,7 +60,7 @@ export function appliedSettings(intent: Extract<DisplayIntent, { intent: "change
   return { theme: intent.theme ?? context.settings.theme, global: intent.global === undefined ? context.settings.global : snap(intent.global, context.scale), sections };
 }
 
-const DISPLAY_WORDS = /\b(themes?|dark|light|midnight|graphite|sepia|dracula|tokyo\s*night|catppuccin|latte|nord|one\s*dark|gruvbox|monokai|solarized|ros[eé]\s*pine|kanagawa|github\s*light|palette|appearance|display settings|font|text size|zoom|bigger|smaller|larger|tiny|huge)\b/i;
+const DISPLAY_WORDS = /\b(themes?|dark\+?|light\+?|midnight|graphite|sepia|dracula|tokyo\s*night|catppuccin|latte|nord|one\s*dark|vscode|vs\s*code|github\s*(?:dark|light)|night\s*owl|palenight|synthwave|gruvbox|monokai|solarized|ros[eé]\s*pine|kanagawa|palette|appearance|display settings|font|text size|zoom|bigger|smaller|larger|tiny|huge)\b/i;
 
 /** Whether a message may be about how the app looks: the decision model said so, or it is not surely something else and names it. */
 export function mayBeAboutDisplay(message: string, decision: BobDecision | null, threshold: number): boolean {
