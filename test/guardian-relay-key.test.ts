@@ -52,7 +52,7 @@ test("a relay's Jev rules reach a cluster's projects, are asked through the rela
   assert.deepEqual([covered.status, covered.uncovered], ["on", []], "a relay's rule covers its cluster's project");
   assert.equal((await guardianGroups(project.id))[0].relayNodeId, relayId);
   const verdict = await checkGuardian({ projectId: project.id, conversationId: "c", harness: "pi", cwd: process.cwd(), canReplaceTool: true },
-    { kind: "tool", tool: "bash", category: "commands", input: { command: "ls" } });
+    { kind: "tool", tool: "bash", category: "commands", input: { command: "make release" } });
   assert.equal(verdict.action, "block", "the relay cannot be reached here, so the check fails closed");
   assert.match((verdict as { reason: string }).reason, /Jev did not answer/, "the check went to the relay, which cannot be reached here");
   assert.doesNotMatch((verdict as { reason: string }).reason, /System AI|TypeSafe key/, "the member never looks for a key of its own");

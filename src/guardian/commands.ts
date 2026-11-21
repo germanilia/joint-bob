@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { defaultManagedHome, managedHomePaths } from '../managed-home.js';
 import type { GuardianRequest } from './rules.js';
 
 const cliVariables = new Set(['BROWSER', 'WORKTREE', 'TASK', 'SECRET', 'NTFY', 'WEBHOOK_TITLE', 'WEBHOOK_MEMORY', 'ASSISTANT_MEMORY', 'ASSISTANT_SETUP'].map(name => `JOINT_BOB_${name}_CLI`));
@@ -227,11 +229,66 @@ function targetDirValues(parsed: ParsedFlags): string[] {
   return [...(parsed.values.get('-t') ?? []), ...(parsed.values.get('--target-directory') ?? [])];
 }
 
+const readOnlyCommands = new Set(['ls', 'cat', 'head', 'tail', 'wc', 'diff', 'grep', 'rg', 'find']);
+const findActions = new Set(['-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls']);
+const projectScriptName = /^(?:test|typecheck|lint|build)(?::[a-z0-9-]+)?$/;
+const projectScriptFiles = new Set(['scripts/run-tests.mjs', 'scripts/ci-test.mjs']);
+const plainArgument = /^[\w@./:=,-]+$/;
+// One substitution, no `e` or `w` flag, so sed cannot run a command or write another file.
+const substitution = /^s([/|#,])((?:(?!\1)[^\\\n])*)\1((?:(?!\1)[^\\\n])*)\1[gI]*$/;
+
+/** Reading changes nothing. Paths stay in the allowed folders so secrets elsewhere are not read. */
+function readOnlyPolicy(cmd: string, args: string[], inside: (raw: string, allowRoot: boolean) => boolean): { decision?: 'allow' } {
+  if (args.some(arg => /^--(?:pre|hostname-bin)/.test(arg) || (cmd === 'find' && findActions.has(arg)))) return {};
+  const operands = args.filter(arg => !arg.startsWith('-'));
+  const paths = cmd === 'grep' || cmd === 'rg' ? operands.slice(1) : operands;
+  return paths.every(operand => inside(operand, true)) ? { decision: 'allow' } : {};
+}
+
+/** `sed -i 's/old/new/g' file` on files in the allowed folders. Any other sed script stays checked. */
+function sedPolicy(args: string[], inside: (raw: string, allowRoot: boolean) => boolean): { decision?: 'allow' } {
+  const parsed = parseFlags(args, { short: 'iEnr', long: ['--in-place', '--regexp-extended'], valueShort: 'e', valueLong: ['--expression'] });
+  if (!parsed) return {};
+  const positional = parsed.flags.has('-i') && parsed.positional[0] === '' ? parsed.positional.slice(1) : parsed.positional;
+  const scripts = [...(parsed.values.get('-e') ?? []), ...(parsed.values.get('--expression') ?? [])];
+  const files = scripts.length ? positional : positional.slice(1);
+  if (!scripts.length && positional.length) scripts.push(positional[0]);
+  if (!scripts.length || !files.length || !scripts.every(script => substitution.test(script))) return {};
+  return files.every(file => inside(file, false)) ? { decision: 'allow' } : {};
+}
+
+/** The project's own test, typecheck, lint and build scripts, run from inside the working directory. */
+function projectScriptPolicy(cmd: string, args: string[], rootCwd: string, activeCwd: string): { decision?: 'allow' } {
+  if (path.relative(rootCwd, activeCwd).split(path.sep)[0] === '..') return {};
+  const [first, ...rest] = args;
+  const scriptArgs = cmd === 'npm'
+    ? first === 'test' ? rest : first === 'run' && projectScriptName.test(rest[0] ?? '') ? rest.slice(1) : undefined
+    : cmd === 'node' && projectScriptFiles.has(first) ? rest : undefined;
+  return scriptArgs?.every(arg => arg === '--' || plainArgument.test(arg)) ? { decision: 'allow' } : {};
+}
+
+/** The working directory, scratch space and Joint Bob's worktrees: where file operations need no model check. */
+function allowedRoots(rootCwd: string): string[] {
+  const roots = [rootCwd, os.tmpdir(), '/tmp', managedHomePaths(defaultManagedHome()).worktrees];
+  return [...new Set(roots.flatMap(root => { try { return [root, realpathSync(root)]; } catch { return [root]; } }))];
+}
+
+/** Whether removing or moving this path would take the working directory with it. */
+function containsCwd(rootCwd: string, baseDir: string, rawPath: string): boolean {
+  return path.relative(path.resolve(baseDir, rawPath), path.resolve(rootCwd)).split(path.sep)[0] !== '..';
+}
+
 function workspaceFilePolicy(executable: string, args: string[], rootCwd: string, activeCwd: string): { decision?: 'allow'; nextCwd?: string } {
   const match = executable.match(standardBin);
   if (!match) return {};
   const cmd = match[1];
-  const inside = (raw: string, allowRoot: boolean) => insideDir(rootCwd, activeCwd, raw, allowRoot);
+  const roots = allowedRoots(rootCwd);
+  const insideAny = (baseDir: string, raw: string, allowRoot: boolean) =>
+    roots.some(root => insideDir(root, baseDir, raw, allowRoot)) && (allowRoot || !containsCwd(rootCwd, baseDir, raw));
+  const inside = (raw: string, allowRoot: boolean) => insideAny(activeCwd, raw, allowRoot);
+  if (readOnlyCommands.has(cmd)) return readOnlyPolicy(cmd, args, inside);
+  if (cmd === 'sed') return sedPolicy(args, inside);
+  if (cmd === 'npm' || cmd === 'node') return projectScriptPolicy(cmd, args, rootCwd, activeCwd);
 
   if (cmd === 'cd') {
     const rest = args[0] === '--' ? args.slice(1) : args;
@@ -325,7 +382,7 @@ function workspaceFilePolicy(executable: string, args: string[], rootCwd: string
     if (targetDirs.length === 1) {
       if (!parsed.positional.length || !inside(targetDirs[0], true)) return {};
       const linkBase = symbolic ? path.resolve(activeCwd, targetDirs[0]) : activeCwd;
-      return parsed.positional.every(t => insideDir(rootCwd, linkBase, t, false)) ? { decision: 'allow' } : {};
+      return parsed.positional.every(t => insideAny(linkBase, t, false)) ? { decision: 'allow' } : {};
     }
     if (parsed.positional.length !== 2) return {};
     const [target, link] = parsed.positional;
@@ -337,7 +394,7 @@ function workspaceFilePolicy(executable: string, args: string[], rootCwd: string
       try { isDir = lstatSync(resolvedLink).isDirectory(); } catch { /* not an existing directory */ }
       linkBase = isDir ? resolvedLink : path.dirname(resolvedLink);
     }
-    return insideDir(rootCwd, linkBase, target, false) ? { decision: 'allow' } : {};
+    return insideAny(linkBase, target, false) ? { decision: 'allow' } : {};
   }
 
   return {};
