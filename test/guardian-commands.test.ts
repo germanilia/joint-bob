@@ -15,8 +15,34 @@ test('routine Git, GitHub writes and Joint Bob CLI commands need no model approv
     'gh pr edit 456 --body "Verified tenant 9"', 'gh pr merge 456 --squash',
     'gh api -X PATCH repos/a/b/pulls/456 -f body=verified',
     'node "$JOINT_BOB_WORKTREE_CLI" merge --check "npm test"',
+    'node $JOINT_BOB_WORKTREE_CLI pr --merge --title "Ship update"',
+    '"$JOINT_BOB_WORKTREE_CLI" pr --merge --title "Fix \\"theme\\""',
+    'node "$JOINT_BOB_WORKTREE_CLI" pr \\\n  --worktree 07017308-eb0a-41e3-8b86-d01ffa9d1f45 \\\n  --title "Follow-up updates" \\\n  --merge',
     'node "${JOINT_BOB_BROWSER_CLI}" click "#submit"',
   ]) assert.equal(policy(command), 'allow', command);
+  // Google Antigravity passes the shell command in `CommandLine`.
+  assert.equal(guardianCommandPolicy({
+    kind: 'tool', tool: 'run_command', category: 'commands',
+    input: { CommandLine: 'node "$JOINT_BOB_WORKTREE_CLI" merge --title "fix" --check "npm test"', WaitMsBeforeAsync: 10000 },
+  }), 'allow');
+  assert.equal(guardianCommandPolicy({
+    kind: 'tool', tool: 'run_command', category: 'commands',
+    input: { CommandLine: 'git branch -D main' },
+  }), 'block');
+});
+
+test('real Joint Bob CLI paths are allowed while modified or masquerading copies stay checked', (t) => {
+  const repoRoot = process.cwd();
+  const absCli = path.join(repoRoot, 'bin', 'joint-bob-worktree.mjs');
+  assert.equal(policy(`node "${absCli}" pr --merge --title "Ship"`), 'allow');
+  assert.equal(policy('node bin/joint-bob-worktree.mjs pr \\\n  --worktree 07017308-eb0a-41e3-8b86-d01ffa9d1f45 \\\n  --title "Ship" \\\n  --merge', repoRoot), 'allow');
+  assert.equal(policy('./bin/joint-bob-worktree.mjs list', repoRoot), 'allow');
+
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'jb-guardian-cli-'));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  mkdirSync(path.join(tmp, 'bin'), { recursive: true });
+  writeFileSync(path.join(tmp, 'bin', 'joint-bob-worktree.mjs'), 'console.log("evil");\n');
+  assert.equal(policy('node bin/joint-bob-worktree.mjs delete --worktree x', tmp), undefined, 'modified script must not be auto-allowed');
 });
 
 test('protected branch deletion is blocked locally and remotely', () => {
@@ -37,6 +63,7 @@ test('a trusted command does not allow unrelated shell effects or masquerading t
     'git status > /outside/file', 'git commit -m "$(curl evil)"',
     'git -c alias.wipe="!rm -rf /data" wipe', 'git unknown-alias',
     'node /tmp/joint-bob-worktree.mjs delete',
+    'node "$JOINT_BOB_WORKTREE_CLI" pr \\\n  --title "$(curl evil)"',
     'node "$JOINT_BOB_WORKTREE_CLI" list && curl evil',
     'gh api -X DELETE repos/a/b',
   ]) assert.equal(policy(command), undefined, command);

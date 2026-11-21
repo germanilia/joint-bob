@@ -11,7 +11,7 @@ import { localLayaUrl } from "./laya.js";
 import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } from "./model.js";
 import { announceGuardianBlock, announceGuardianWarning, guardianActionAllowed, requestGuardianReview } from "./reviews.js";
 import { guardianBypassed } from "./bypass.js";
-import { guardianCommandPolicy } from './commands.js';
+import { guardianCommandPolicy, guardianCommandText } from './commands.js';
 import { ruleApplies, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
 import { fetchThroughRelay } from "./relay-model.js";
 import { guardianGroups, productionGuard, type GuardianGroup } from "./settings.js";
@@ -107,8 +107,8 @@ function reviewTitle(identity: GuardianIdentity, request: GuardianRequest): stri
 
 function reviewSubject(request: GuardianRequest): string {
   if (request.kind === "outgoing") return request.text;
-  const command = request.input.command ?? request.input.cmd;
-  if (request.category === "commands" && typeof command === "string") return command;
+  const command = guardianCommandText(request.input);
+  if (request.category === "commands" && command) return command;
   return JSON.stringify(request.input, null, 2);
 }
 

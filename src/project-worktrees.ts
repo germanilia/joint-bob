@@ -34,7 +34,22 @@ const linkedDirectories = new Set<string>(worktreeLinkedDirectories);
 const LOCAL_FILES_MARKER = path.join(".joint-bob", "worktree-local-files.json");
 
 export interface WorktreeCreator { engine: string; conversationId: string }
-export interface WorktreePullRequest { number: number; url: string; branch: string; base: string; baseCommit: string }
+export interface WorktreePullRequest {
+  number: number;
+  url: string;
+  branch: string;
+  base: string;
+  baseCommit: string;
+  headCommit?: string;
+  mergedCommit?: string;
+  snapshotFile?: string;
+}
+
+export interface WorktreeChangeSnapshot {
+  gitBase: string | null;
+  writes: WorktreeFileChange[];
+  deletes: string[];
+}
 
 export interface ProjectWorktree {
   id: string;
@@ -64,6 +79,8 @@ interface WorktreeMetadata {
   gitBaseRef?: string | null;
   createdBy?: WorktreeCreator | null;
   pullRequest?: WorktreePullRequest | null;
+  /** Last pull request from this worktree confirmed merged into its base branch, used as the 3-way merge base for follow-up PRs and merges. */
+  mergedPullRequest?: WorktreePullRequest | null;
 }
 
 export class ProjectWorktreeError extends Error {
@@ -670,11 +687,84 @@ export async function withoutGitIgnored(projectPath: string, changes: WorktreeCh
   };
 }
 
-export async function recordWorktreePullRequest(projectId: string, worktreeId: string, pullRequest: WorktreePullRequest, root = worktreeRoot()): Promise<ProjectWorktree> {
+interface PersistedPullRequestSnapshot {
+  version: 1;
+  gitBase: string | null;
+  writes: Array<{ path: string; executable: boolean; contentBase64: string }>;
+  deletes: string[];
+}
+
+function snapshotFilePath(worktree: string, relative: string): string | null {
+  if (!relative || path.isAbsolute(relative)) return null;
+  const metaRoot = path.resolve(worktree, WORKTREE_META_DIR);
+  const full = path.resolve(metaRoot, relative);
+  if (full !== metaRoot && !full.startsWith(`${metaRoot}${path.sep}`)) return null;
+  return full;
+}
+
+/** Saves the worktree's pre-rebase changes snapshot under `.joint-bob-worktree/` so follow-up PRs/merges across any node diff cleanly against the merged PR. */
+export async function saveWorktreePullRequestSnapshot(projectId: string, worktreeId: string, prNumber: number, changes: WorktreeChanges, root = worktreeRoot()): Promise<string> {
+  if (!Number.isSafeInteger(prNumber) || prNumber < 1) throw new ProjectWorktreeError(400, "Invalid pull request number");
+  const worktree = expectedWorktreePath(projectId, worktreeId, root);
+  const relative = `pr-snapshots/pr-${prNumber}.json`;
+  const target = snapshotFilePath(worktree, relative)!;
+  const payload: PersistedPullRequestSnapshot = {
+    version: 1,
+    gitBase: changes.gitBase,
+    writes: changes.writes.map((file) => ({ path: file.path, executable: file.executable, contentBase64: file.content.toString("base64") })),
+    deletes: [...changes.deletes],
+  };
+  await writeAtomic(target, `${JSON.stringify(payload)}\n`);
+  worktreeFilesChanged(projectId, target);
+  return relative;
+}
+
+export async function readWorktreePullRequestSnapshot(projectId: string, worktreeId: string, snapshotFile: string | undefined, root = worktreeRoot()): Promise<WorktreeChangeSnapshot | null> {
+  if (!snapshotFile) return null;
+  const worktree = expectedWorktreePath(projectId, worktreeId, root);
+  const target = snapshotFilePath(worktree, snapshotFile);
+  if (!target) return null;
+  try {
+    const parsed = JSON.parse(await fs.readFile(target, "utf8")) as Partial<PersistedPullRequestSnapshot>;
+    if (parsed.version !== 1 || !Array.isArray(parsed.writes) || !Array.isArray(parsed.deletes)) return null;
+    const writes: WorktreeFileChange[] = [];
+    for (const item of parsed.writes) {
+      if (!item || typeof item.path !== "string" || typeof item.contentBase64 !== "string") return null;
+      writes.push({ path: item.path, executable: Boolean(item.executable), content: Buffer.from(item.contentBase64, "base64") });
+    }
+    const deletes = parsed.deletes.filter((entry): entry is string => typeof entry === "string");
+    return { gitBase: typeof parsed.gitBase === "string" ? parsed.gitBase : null, writes, deletes };
+  } catch { return null; }
+}
+
+export async function readWorktreeMergedPullRequest(projectId: string, worktreeId: string, root = worktreeRoot()): Promise<WorktreePullRequest | null> {
+  const worktree = expectedWorktreePath(projectId, worktreeId, root);
+  const metadata = await readMetadata(worktree);
+  return metadata?.mergedPullRequest ?? null;
+}
+
+export async function recordWorktreeMergedPullRequest(projectId: string, worktreeId: string, mergedPullRequest: WorktreePullRequest, root = worktreeRoot()): Promise<ProjectWorktree> {
   const worktree = expectedWorktreePath(projectId, worktreeId, root);
   const metadata = await readMetadata(worktree);
   if (!metadata) throw new ProjectWorktreeError(404, "Worktree not found");
-  const next = { ...metadata, pullRequest };
+  const pullRequest = metadata.pullRequest?.number === mergedPullRequest.number
+    ? { ...metadata.pullRequest, ...mergedPullRequest }
+    : metadata.pullRequest ?? null;
+  const next: WorktreeMetadata = { ...metadata, pullRequest, mergedPullRequest, lastMergedAt: metadata.lastMergedAt ?? new Date().toISOString() };
+  await writeAtomic(metadataFile(worktree), `${JSON.stringify(next, null, 2)}\n`);
+  worktreeFilesChanged(projectId, metadataFile(worktree));
+  return view(projectId, worktree, next);
+}
+
+export async function recordWorktreePullRequest(projectId: string, worktreeId: string, pullRequest: WorktreePullRequest, root = worktreeRoot(), options?: { merged?: boolean }): Promise<ProjectWorktree> {
+  const worktree = expectedWorktreePath(projectId, worktreeId, root);
+  const metadata = await readMetadata(worktree);
+  if (!metadata) throw new ProjectWorktreeError(404, "Worktree not found");
+  const next: WorktreeMetadata = {
+    ...metadata,
+    pullRequest,
+    ...(options?.merged ? { mergedPullRequest: pullRequest, lastMergedAt: new Date().toISOString() } : {}),
+  };
   await writeAtomic(metadataFile(worktree), `${JSON.stringify(next, null, 2)}\n`);
   worktreeFilesChanged(projectId, metadataFile(worktree));
   return view(projectId, worktree, next);
