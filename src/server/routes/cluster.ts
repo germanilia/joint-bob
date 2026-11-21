@@ -13,7 +13,7 @@ import { announceConversationsChanged, broadcastReplicationInvalidations } from 
 import { clusterNodeSchema, pushSubscriptionBatchSchema, replicationBatchSchema, runtimeSnapshotSchema } from "../schemas.js";
 import { app } from "../state.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
-import { mayReplicateEvent, replicationPeers, signedPeerPost } from "../replication-v2.js";
+import { acceptableReplicationEvents, mayReplicateEvent, replicationPeers, signedPeerPost } from "../replication-v2.js";
 import { listTwinUpdateTargets } from "../../twin-updates.js";
 import { publishNodeDescriptor } from "../cluster-v2.js";
 import { setRelayNodeName } from "../../relay/index.js";
@@ -69,12 +69,12 @@ app.post(["/api/cluster/v2/events", "/api/cluster/v2/system-ai/events"], async (
     }
     const batch = replicationBatchSchema.parse(request.body) as ReplicationBatch;
     const db = await clusterV2Database(), local = await getClusterNode(), sender = response.locals.machineNodeId as string;
-    if (!replicationPeers(db, local.id).some((peer) => peer.nodeId === sender)
-      || batch.events.some((event) => event.originNodeId !== sender || !mayReplicateEvent(db, local.id, sender, event))) {
+    const accepted = acceptableReplicationEvents(db, local.id, sender, batch.events);
+    if (!accepted) {
       sendError(response, 403, "Replication event is outside the authenticated peer's sharing scope");
       return;
     }
-    const received = await receiveReplicationBatch(batch);
+    const received = await receiveReplicationBatch({ ...batch, events: accepted });
     const applied = batch.events.filter((event) => received.includes(event.id));
     await removeTranscriptsDeletedBy(applied);
     broadcastReplicationInvalidations(applied);

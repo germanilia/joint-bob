@@ -354,6 +354,10 @@ export async function flushReplicationOutbox(): Promise<void> {
         try {
           const receipt = replicationReceiptSchema.parse(await sendReplicationV2(peer, batch));
           await recordPeerReceipt(peer.nodeId, receipt.received);
+          // The peer took part of the batch. What it left backs off like any failure, so it
+          // does not head every later batch and hold back the events the peer does take.
+          const taken = new Set(receipt.received);
+          await recordPeerFailure(peer.nodeId, batch.filter((event) => !taken.has(event.id)).map((event) => event.id), "Peer did not take the event");
           settled(logKey);
         } catch (error) {
           const message = error instanceof Error ? error.message : "Peer replication failed";

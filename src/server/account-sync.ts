@@ -8,7 +8,10 @@ import { applyBlockNotice, ensureNodeBlockSchema, pendingBlockNotices, recordBlo
 import { accountSnapshotsDue, ensureAccountReplicationSchema, recordAccountSnapshotDelivered, removeReplicatedUsersFromNode } from "../user-replication.js";
 import { presentReplicationPeers, replicationPeers, signedPeerPost } from "./replication-v2.js";
 import { peerAway } from "../peer-presence.js";
-import { refreshLocalAccountIds } from "../auth.js";
+import { z } from "zod";
+import { adoptTwinAdministrator, refreshLocalAccountIds } from "../auth.js";
+import { adminAccountId } from "../ownership.js";
+import { invitedTwin } from "./twin-sharing.js";
 import { migrateAccountKeys, remapAccountKey } from "../account-keys.js";
 import { accountClusterIds } from "../cluster-accounts.js";
 import { ensureRelaySharingGroupSchema, relayPeerRequestAllowed } from "../relay/sharing-groups.js";
@@ -22,6 +25,57 @@ export async function syncLocalAccountIds(): Promise<void> {
   for (const change of changes) remapAccountKey(db, change.from, change.to);
 }
 
+const twinAdministratorSchema = z.object({
+  username: z.string().min(1).max(80), email: z.string().max(254).nullable(),
+  passwordHash: z.string().regex(/^[0-9a-f]+$/i).max(256), passwordSalt: z.string().regex(/^[0-9a-f]+$/i).max(256),
+}).strict();
+const ADOPT_RETRY_MS = 10 * 60_000;
+const adoptAskedAt = new Map<string, number>();
+
+/**
+ * A machine that accepted a twin invitation takes the inviting machine's administrator: its
+ * name and password. Twins are one person's machines and everything that person owns is
+ * keyed by one account; with two names there are two accounts, and each twin refuses the
+ * other's data as a stranger's. Asked once per twin relationship, so a password changed here
+ * later is not taken back.
+ */
+export async function adoptTwinAdministrators(): Promise<void> {
+  const db = await clusterV2Database(), local = await getClusterNode();
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cluster_v2_twin_relationships'").get()) return;
+  db.exec("CREATE TABLE IF NOT EXISTS twin_administrator_adopted (relationship_id TEXT PRIMARY KEY, adopted_at TEXT NOT NULL)");
+  const open = db.prepare(`SELECT relationship_id id, peer_node_id peer FROM cluster_v2_twin_relationships
+    WHERE local_node_id = ? AND status = 'active' AND relationship_id NOT IN (SELECT relationship_id FROM twin_administrator_adopted)`).all(local.id) as unknown as Array<{ id: string; peer: string }>;
+  if (!open.length) return;
+  const settle = (id: string): void => { db.prepare("INSERT OR IGNORE INTO twin_administrator_adopted VALUES (?, ?)").run(id, new Date().toISOString()); };
+  const twins = open.map((row) => row.peer);
+  for (const row of open) {
+    // The inviting machine keeps its administrator; the one that accepted asks.
+    if (!invitedTwin(db, row.id, local.id)) { settle(row.id); continue; }
+    if (!isTrustedTwin(db, local.id, row.peer) || Date.now() - (adoptAskedAt.get(row.id) ?? 0) < ADOPT_RETRY_MS) continue;
+    const peer = presentReplicationPeers(db, local.id).find((item) => item.nodeId === row.peer);
+    if (!peer) continue;
+    adoptAskedAt.set(row.id, Date.now());
+    try {
+      const theirs = twinAdministratorSchema.parse(await signedPeerPost(peer, "/api/cluster/v2/twins/administrator", { relationshipId: row.id }));
+      const before = adminAccountId(db);
+      const change = adoptTwinAdministrator({ username: theirs.username, email: theirs.email, passwordHash: Buffer.from(theirs.passwordHash, "hex"), passwordSalt: Buffer.from(theirs.passwordSalt, "hex"), twinNodeIds: twins });
+      const after = adminAccountId(db);
+      if (change && before && after && before !== after) {
+        // Events waiting to go out still name the old account; the twin would file them under nobody.
+        if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'replication_outbox'").get()) {
+          const old = `"username":"${before}"`;
+          db.prepare("UPDATE replication_outbox SET payload = replace(payload, ?, ?) WHERE origin_node_id = ? AND instr(payload, ?) > 0").run(old, `"username":"${after}"`, local.id, old);
+        }
+        console.log(`This machine's administrator ${change.from} is now ${change.to}, the same account as on its twin ${peer.name}`);
+      }
+      settle(row.id);
+    } catch (error) {
+      // A twin on an older release has no answer yet (404); asked again later.
+      console.warn(`Could not match the administrator with twin ${row.peer}: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  }
+}
+
 const ACCOUNT_SYNC_INTERVAL_MS = 15_000;
 let accountSyncAt = 0;
 let accountSyncRunning = false;
@@ -32,6 +86,7 @@ export async function flushAccountReplication(force = false): Promise<void> {
   accountSyncRunning = true;
   accountSyncAt = Date.now();
   try {
+    await adoptTwinAdministrators();
     await syncLocalAccountIds();
     const db = await clusterV2Database(), local = await getClusterNode();
     // A relay box shares only the relay's group with this node, and by design refuses accounts

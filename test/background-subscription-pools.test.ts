@@ -68,7 +68,7 @@ for (const runner of runners) for (const source of ["cluster", "conversation", "
       poolMemberCompatible, getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
     getSharingCluster: () => ({ name: "Contigos" }),
     getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Homeserver" }] } }),
-      clusterOfAssistantsProject: () => undefined, poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => source !== "conversation" && source !== "none" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
+      clusterOfAssistantsProject: () => undefined, memberClusterSubscriptionPools: () => [], poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => source !== "conversation" && source !== "none" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
       resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
         lookups.push({ account, provider, scope, usage });
         return source === "conversation" ? { kind: "pool", pool } : undefined;

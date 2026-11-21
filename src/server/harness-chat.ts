@@ -1,3 +1,4 @@
+import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { runWithAutomationProfile } from "./automation-profile.js";
 import { resourceOwner, ownerAsActor } from "../ownership.js";
@@ -19,7 +20,7 @@ import { getSharingCluster } from "../cluster-sharing-policy.js";
 import { clusterOfAssistantsProject } from "../cluster-assistants.js";
 import { clusterSubscriptionMissing } from "../provider-profiles/cluster-assistant-subscriptions.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
-import { poolMemberCompatible, projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscriptionPoolAssignment } from "../provider-profiles/pool-sharing.js";
+import { memberClusterSubscriptionPools, poolMemberCompatible, projectClusterIds, resolveClusterSubscriptionPools, type ClusterSubscriptionPoolAssignment } from "../provider-profiles/pool-sharing.js";
 import { automationFallbackPool, getSubscriptionPool, poolCandidates, resolveSubscriptionChoice } from "../provider-profiles/pools.js";
 import { projectProviderProfile } from "../provider-profiles/service.js";
 import { withPoolProfile, type PoolProfileContext } from "../provider-profiles/context.js";
@@ -318,6 +319,33 @@ interface SubscriptionPoolRequest {
   fixedProfile: boolean;
   poolId?: string | null;
 }
+/** A cluster's pool as the turn uses it; nothing when no member of it can run this agent. */
+function clusterTurnPool(db: DatabaseSync, localNodeId: string, assignment: ClusterSubscriptionPoolAssignment, engine: HarnessId): TurnSubscriptionPool | undefined {
+  if (!assignment.manifest) return undefined;
+  const members = assignment.manifest.members.filter((member) => poolMemberCompatible(engine, member.provider, assignment.poolOwnerNodeId === localNodeId));
+  if (!members.length) return undefined;
+  const host = getMembershipSnapshot(db, assignment.clusterId).body.members.find(member => member.nodeId === assignment.poolOwnerNodeId);
+  if (!host) throw new Error(`Missing verified member descriptor for ${assignment.poolOwnerNodeId}`);
+  return { id: assignment.poolId, name: assignment.manifest.name, nodeName: host.name, clusterName: getSharingCluster(db, assignment.clusterId).name, harnessId: engine, fallbackModels: assignment.manifest.fallbackModels, sameProviderOnly: engine === "claude" || engine === "antigravity",
+    candidates: members.map((member) => ({ profileId: member.profileId, provider: member.provider, label: member.label,
+      poolId: assignment.poolId, clusterId: assignment.clusterId, poolOwnerNodeId: assignment.poolOwnerNodeId })) };
+}
+/**
+ * The pool of a cluster or relay this machine belongs to, for a turn nothing else covers on
+ * a machine that is not signed in. The agent is already shown as ready there for this reason
+ * (routes/platform.ts); without this the turn then stopped with "authentication unavailable"
+ * unless its project happened to be shared through that cluster. A machine with its own
+ * sign-in keeps using it.
+ */
+async function memberPoolWithoutSignIn(db: DatabaseSync, localNodeId: string, engine: HarnessId, accountId: string | undefined): Promise<TurnSubscriptionPool | undefined> {
+  const pools = memberClusterSubscriptionPools(db, localNodeId, accountId);
+  if (!pools.length || !(await (await getHarnessRuntime(engine)).signInProblems()).length) return undefined;
+  for (const assignment of pools) {
+    try { const pool = clusterTurnPool(db, localNodeId, assignment, engine); if (pool) return pool; }
+    catch { /* A cluster whose host is not verified yet is passed over, not fatal: this is a fallback. */ }
+  }
+  return undefined;
+}
 export async function resolveSubscriptionPool(request: SubscriptionPoolRequest): Promise<TurnSubscriptionPool | undefined> {
   const { engine, accountId, usage } = request;
   // A cluster assistant's turn runs only on its cluster's subscriptions (provider-profiles/cluster-assistant-subscriptions.ts).
@@ -332,17 +360,12 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
     if (signatures.size > 1) throw new Error("This project has conflicting cluster subscription pools");
     const assignment = assignments[0];
     if (!assignment.manifest) throw new Error("The cluster pool manifest is unavailable");
-    const members = assignment.manifest.members.filter((member) => poolMemberCompatible(engine, member.provider, assignment.poolOwnerNodeId === local.id));
-    if (members.length) {
-      const host = getMembershipSnapshot(db, assignment.clusterId).body.members.find(member => member.nodeId === assignment.poolOwnerNodeId);
-      if (!host) throw new Error(`Missing verified member descriptor for ${assignment.poolOwnerNodeId}`);
-      return { id: assignment.poolId, name: assignment.manifest.name, nodeName: host.name, clusterName: getSharingCluster(db, assignment.clusterId).name, harnessId: engine, fallbackModels: assignment.manifest.fallbackModels, sameProviderOnly: engine === "claude" || engine === "antigravity",
-        candidates: members.map((member) => ({ profileId: member.profileId, provider: member.provider, label: member.label,
-          poolId: assignment.poolId, clusterId: assignment.clusterId, poolOwnerNodeId: assignment.poolOwnerNodeId })) };
-    }
+    const pool = clusterTurnPool(db, local.id, assignment, engine);
+    if (pool) return pool;
   }
   if (assistantCluster && (request.fixedProfile || !preferred || !accountId)) throw new Error(clusterSubscriptionMissing(db, assistantCluster));
-  if (request.fixedProfile || !preferred || !accountId) return undefined;
+  if (request.fixedProfile) return undefined;
+  if (!preferred || !accountId) return memberPoolWithoutSignIn(db, local.id, engine, accountId);
   const remotePoolClusters = engine === "antigravity"
     ? new Set(assignments.filter((assignment) => assignment.poolOwnerNodeId !== local.id).map((assignment) => assignment.clusterId))
     : undefined;
@@ -354,7 +377,8 @@ export async function resolveSubscriptionPool(request: SubscriptionPoolRequest):
   if (assistantCluster && (choice?.source !== "cluster" || choice.kind === "machine")) throw new Error(clusterSubscriptionMissing(db, assistantCluster));
   const pool = choice?.kind === "pool" ? choice.pool
     : !choice && usage === "automation" ? automationFallbackPool(engine === "pi" ? ["pi", preferred] : [preferred], scope) : undefined;
-  if (!pool) return undefined;
+  // Nothing was chosen for this turn: a machine with no sign-in of its own still has its cluster's pool.
+  if (!pool) return choice || assistantCluster ? undefined : memberPoolWithoutSignIn(db, local.id, engine, accountId);
   const profiles = poolCandidates(pool, preferred).filter((profile) => poolMemberCompatible(engine, profile.provider));
   if (!profiles.length) return undefined;
   return { id: pool.id, name: pool.name, nodeName: local.name, harnessId: engine, fallbackModels: pool.fallbackModels, sameProviderOnly: engine === "claude" || engine === "antigravity",

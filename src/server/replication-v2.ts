@@ -253,6 +253,19 @@ function eventMayPass(db: DatabaseSync, local: string, peer: string, event: Repl
   return projectSharedBetween(db, local, peer, project);
 }
 
+/**
+ * What this node takes from a batch `sender` offers. One event this node may not take used to
+ * refuse the whole batch, and since the sender offers its oldest events first, that one event
+ * stopped everything behind it for good: a new machine never received its owner's subscriptions.
+ * The events in scope are taken and named in the receipt; the rest stay with the sender.
+ * Nothing is taken from a node that is not a peer, or that offers another node's events.
+ */
+export function acceptableReplicationEvents(db: DatabaseSync, local: string, sender: string, events: ReplicationEvent[]): ReplicationEvent[] | undefined {
+  if (!replicationPeers(db, local).some((peer) => peer.nodeId === sender) || events.some((event) => event.originNodeId !== sender)) return undefined;
+  const accepted = events.filter((event) => mayReplicateEvent(db, local, sender, event));
+  return accepted.length || !events.length ? accepted : undefined;
+}
+
 /** A previous release rejects unknown event types as a whole batch. Keep system settings
  * on their own endpoint and retry queue so an older twin still receives ordinary events. */
 export function replicationDeliveryBatches(events: ReplicationEvent[]): ReplicationEvent[][] {

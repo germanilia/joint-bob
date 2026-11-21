@@ -21,7 +21,7 @@ test("automations without an explicit profile resolve the creator's inherited po
   const pool = { id: "pool", name: "inherited", fallbackModels: {} };
   const boundaries = new Proxy({
     getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}),
-    projectClusterIds: () => ["cluster"], clusterOfAssistantsProject: () => undefined, poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => [],
+    projectClusterIds: () => ["cluster"], clusterOfAssistantsProject: () => undefined, memberClusterSubscriptionPools: () => [], poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => [],
     resolveSubscriptionChoice: (account: string, provider: string, scope: any, usage: string) => {
       requests.push({ account, provider, scope, usage });
       return { kind: "pool", pool };
@@ -74,7 +74,7 @@ for (const scope of ["project", "workspace", "cluster", "none"] as const) {
       getClusterNode: async () => ({ id: "node" }), clusterV2Database: async () => ({}),
       getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Host" }] } }), getSharingCluster: () => ({ name: "Team" }),
       projectClusterIds: () => ["cluster"],
-      clusterOfAssistantsProject: () => undefined, poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => scope === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
+      clusterOfAssistantsProject: () => undefined, memberClusterSubscriptionPools: () => [], poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => scope === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
       resolveSubscriptionChoice: (_account: string, _provider: string, requestedScope: any) => {
         assert.equal(_account, "owner");
         lookups.push(requestedScope);

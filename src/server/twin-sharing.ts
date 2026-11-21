@@ -29,6 +29,12 @@ export function sharingTwin(db: DatabaseSync, local: string, relationshipId: str
   return row.peer_node_id;
 }
 
+/** Whether `nodeId` is the machine that accepted the invitation behind this twin relationship. */
+export function invitedTwin(db: DatabaseSync, relationshipId: string, nodeId: string): boolean {
+  const row = db.prepare("SELECT body FROM cluster_v2_twin_relationships WHERE relationship_id=?").get(relationshipId) as { body: string } | undefined;
+  try { return (JSON.parse(row?.body ?? "null") as { acceptor?: { nodeId?: string } } | null)?.acceptor?.nodeId === nodeId; } catch { return false; }
+}
+
 /** Only the admin's projects: a twin is the admin's own machine, not a member's. */
 export function adoptionInventory(db: DatabaseSync): AdoptionInventory {
   return (db.prepare(`SELECT p.id,o.owner_node_id ownerNodeId FROM projects p LEFT JOIN sharing_resource_owners o

@@ -45,7 +45,7 @@ function fixture(selection: "cluster" | "conversation" | "none", failure?: Error
     poolMemberCompatible, getClusterNode: async () => ({ id: "node", name: "Execution Mac" }), clusterV2Database: async () => ({}), projectClusterIds: () => ["cluster"],
     getSharingCluster: () => ({ name: "Contigos" }),
     getMembershipSnapshot: () => ({ body: { members: [{ nodeId: "node", name: "Homeserver" }] } }),
-    clusterOfAssistantsProject: () => undefined, poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => selection === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
+    clusterOfAssistantsProject: () => undefined, memberClusterSubscriptionPools: () => [], poolMemberCompatible: (engine: string, provider: string) => engine === "claude" ? provider === "claude" : engine === "pi", resolveClusterSubscriptionPools: () => selection === "cluster" ? [{ poolId: "pool", poolOwnerNodeId: "node", clusterId: "cluster", manifest: pool }] : [],
     resolveSubscriptionChoice: (accountId: string) => { lookups.push(accountId); return selection === "conversation" ? { kind: "pool", pool } : undefined; },
     poolCandidates: () => profiles,
     getAutoRespond: async () => undefined, getConversationGoal: async () => { goalReads++; return undefined; },

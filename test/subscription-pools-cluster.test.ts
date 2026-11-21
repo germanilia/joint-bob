@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { addSharingMember, createSharingCluster, ensureClusterSharingPolicySchema, registerOwnedResource, removeSharingMember, setResourceShares } from "../src/cluster-sharing-policy.js";
+import { memberClusterSubscriptionPools } from "../src/provider-profiles/pool-sharing.js";
 import { applyClusterSubscriptionPoolEvent, assignedClusterPoolsForOwner, clearClusterSubscriptionPool, clusterPoolProfileAuthorized, ensureClusterSubscriptionPoolSchema, getClusterSubscriptionPool, resolveClusterSubscriptionPools, setClusterSubscriptionPool, type ClusterSubscriptionPoolManifest } from "../src/provider-profiles/pool-sharing.js";
 import { ensureReplicationSchema } from "../src/replication.js";
 import { getOrCreateClusterIdentity } from "../src/cluster-identity.js";
@@ -196,4 +197,18 @@ test("cluster pool enforcement is independent of transport relay membership", ()
     assert.equal(assignedClusterPoolsForOwner(db, OWNER, POOL_ONE).length, 1);
     assert.equal(clusterPoolProfileAuthorized(db, CLUSTER, OWNER, MEMBER, POOL_ONE, manifest(POOL_ONE).members[0].profileId), true, "membership authorization is independent of the transport route");
   } finally { db.close(); }
+});
+
+test("a member finds its cluster's pool for a project that is not shared through the cluster", () => {
+  const db = setup();
+  setClusterSubscriptionPool(db, MANAGER, CLUSTER, OWNER, manifest(POOL_ONE), 1);
+  // The shared-project rule sees nothing for a private project; the member-wide lookup does.
+  assert.deepEqual(resolveClusterSubscriptionPools(db, MEMBER, "private-project"), []);
+  assert.deepEqual(memberClusterSubscriptionPools(db, MEMBER).map(({ clusterId, poolId }) => [clusterId, poolId]), [[CLUSTER, POOL_ONE]]);
+  assert.deepEqual(memberClusterSubscriptionPools(db, OTHER), [], "a machine outside the cluster finds none");
+  db.exec("CREATE TABLE provider_profiles (id TEXT, owner TEXT, deleted INTEGER); INSERT INTO provider_profiles VALUES ('p', 'someone', 0)");
+  assert.deepEqual(memberClusterSubscriptionPools(db, MEMBER, "someone"), [], "a person with a profile of their own keeps to it");
+  assert.equal(memberClusterSubscriptionPools(db, MEMBER, "nobody").length, 1);
+  removeSharingMember(db, CLUSTER, MANAGER, OWNER, 1);
+  assert.deepEqual(memberClusterSubscriptionPools(db, MEMBER), [], "a pool whose host left is passed over");
 });

@@ -249,6 +249,27 @@ export function resolveClusterSubscriptionPools(db: DatabaseSync, localNodeId: s
     });
 }
 
+/**
+ * The pools of every cluster and relay group this node belongs to, whatever the project. A
+ * machine with no sign-in of its own runs on the first of them (see resolveSubscriptionPool),
+ * so a machine added to a relay needs no credentials set up on it. An assignment whose
+ * manager or host changed is left out rather than stopping the turn: it is nobody's rule here.
+ * A person with a profile of their own gets none: their profiles and choices decide, as before.
+ */
+export function memberClusterSubscriptionPools(db: DatabaseSync, localNodeId: string, accountId?: string): ClusterSubscriptionPoolAssignment[] {
+  ensureClusterSubscriptionPoolSchema(db);
+  if (accountId && db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='provider_profiles'").get()
+    && db.prepare("SELECT 1 FROM provider_profiles WHERE owner=? AND deleted=0 LIMIT 1").get(accountId)) return [];
+  return listSharingMemberships(db, localNodeId, true).map(({ clusterId }) => getClusterSubscriptionPool(db, clusterId))
+    .filter((assignment): assignment is ClusterSubscriptionPoolAssignment => {
+      if (!assignment?.manifest) return false;
+      const state = getSharingCluster(db, assignment.clusterId);
+      return !state.closed && state.managerEpoch === assignment.managerEpoch && state.managerNodeId === assignment.originNodeId
+        && listSharingClusterMembers(db, assignment.clusterId).some(({ nodeId }) => nodeId === assignment.poolOwnerNodeId);
+    })
+    .sort((left, right) => left.clusterId.localeCompare(right.clusterId));
+}
+
 export function applyClusterSubscriptionPoolEvent(db: DatabaseSync, event: ReplicationEvent): boolean {
   ensureClusterSubscriptionPoolSchema(db);
   const parsed = assignmentEventSchema.safeParse(event.payload);

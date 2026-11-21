@@ -10,6 +10,7 @@ import { normalizeRelayOrigin } from "../relay/protocol.js";
 import { parseEnrollLink, type RelayRuntime } from "../relay/runtime.js";
 import { membershipByOrigin, type RelayMembership } from "../relay/store.js";
 import { listTwinUpdateTargets } from "../twin-updates.js";
+import { flushAccountReplication } from "./account-sync.js";
 import { localMembershipDescriptor, parseV2InvitationLink } from "./cluster-v2.js";
 import { isClusterOriginUrl } from "./http-auth.js";
 import { signedPeerPost } from "./replication-v2.js";
@@ -197,6 +198,9 @@ export async function useMachineLink(link: unknown, joinCluster: (link: string, 
       step("failed", reason(message(error)));
     }
   }
+
+  // Before any cluster is joined: the person joining is the twins' administrator from here on.
+  if (bundle.twins.length) await flushAccountReplication(true).catch((error) => console.warn(`Account sync after the link failed: ${message(error)}`));
 
   for (const cluster of bundle.clusters) {
     const step = (status: MachineLinkStepStatus, detail: string): void => { steps.push({ kind: "cluster", title: `Cluster ${cluster.name}`, status, detail }); };

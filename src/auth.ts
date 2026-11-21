@@ -1116,6 +1116,46 @@ export interface LocalAccountCredentials {
   updatedAt: string;
 }
 
+/**
+ * Twins are one person's machines, so they have one administrator. A machine that was set up
+ * on its own and became a twin afterwards keeps the administrator it was given, under another
+ * name: a different account, whose twin then refuses everything the person owns. This gives
+ * the local administrator the twin's name and password. Its sign-ins here stay, and so does
+ * everything it owns: the rows follow the account id (see `refreshLocalAccountIds`).
+ * Returns the old and new names, or nothing when the names already match.
+ */
+export function adoptTwinAdministrator(input: { username: string; email: string | null; passwordHash: Buffer; passwordSalt: Buffer; twinNodeIds: string[] }): { from: string; to: string } | undefined {
+  const db = authDatabase();
+  const admin = db.prepare("SELECT id, username FROM users WHERE role = 'admin' AND home_node_id IS NULL LIMIT 1").get() as { id: string; username: string } | undefined;
+  if (!admin || admin.username.toLowerCase() === input.username.toLowerCase()) return undefined;
+  // The twin's administrator may already be here as a visitor from that twin; it gives way.
+  const holder = db.prepare("SELECT id, home_node_id FROM users WHERE username = ? COLLATE NOCASE").get(input.username) as { id: string; home_node_id: string | null } | undefined;
+  if (holder && (holder.home_node_id === null || !input.twinNodeIds.includes(holder.home_node_id))) throw new Error(`Another account on this machine is already called ${input.username}`);
+  let ended: string[] = [];
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    if (holder) {
+      ended = (db.prepare("SELECT id FROM login_sessions WHERE user_id = ?").all(holder.id) as unknown as Array<{ id: string }>).map((session) => session.id);
+      db.prepare("DELETE FROM login_sessions WHERE user_id = ?").run(holder.id);
+      for (const table of ["user_mfa", "visitor_sign_in_proofs", "user_preferences"]) {
+        if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) db.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(holder.id);
+      }
+      // Only the sign-in record goes. What was kept for that account stays: it is this person's.
+      db.prepare("DELETE FROM users WHERE id = ?").run(holder.id);
+    }
+    const email = input.email && !emailTaken(db, input.email, admin.id) ? input.email : null;
+    db.prepare("UPDATE users SET username = ?, password_hash = ?, password_salt = ?, must_change_password = 0, email = COALESCE(?, email), updated_at = ? WHERE id = ?")
+      .run(input.username, input.passwordHash, input.passwordSalt, email, new Date().toISOString(), admin.id);
+    appendAuditEvent(db, { eventType: "auth.administrator.adopted", actorType: "system", entityType: "user", entityId: admin.id });
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  if (ended.length) authSessionEvents.emit("revoked", ended);
+  return { from: admin.username, to: input.username };
+}
+
 /** Only the home exports its accounts. The authenticated snapshot transport can include
     TOTP keys for offline verification; recovery codes and replay counters never travel. */
 export function localAccountsForReplication(includeMfa = false): LocalAccountCredentials[] {

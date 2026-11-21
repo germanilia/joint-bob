@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.336.0 — 2026-11-21
+
+- A machine that becomes a twin now takes the inviting machine's administrator: the same name and password. Before, a machine set up on its own kept a second administrator account, and each twin refused everything the other one owned, subscriptions included. Sign in on that machine with the inviting machine's name and password from then on.
+- One event a machine may not take no longer blocks the whole sync batch. The machine takes the rest, and the refused events wait at the sender.
+- A machine with no sign-in of its own now runs on the subscription pool of a cluster or relay it belongs to, for any project. Before, this worked only for projects shared through that cluster, and other turns stopped with "authentication unavailable".
+
 ## 2.335.6 — 2026-11-20
 
 - New: each signed-in agent can be started with no project open. It says "Any project" and the name dialog asks which one. Before, the agents were greyed out with "Choose a project first".

@@ -2,6 +2,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { actingAccount } from "../../account-context.js";
+import { accountIdForUser, localAccountsForReplication, type AuthSession } from "../../auth.js";
+import { adminAccountId } from "../../ownership.js";
 import { getClusterNode } from "../../cluster.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
 import { ClusterV2HttpError } from "../../cluster-v2-errors.js";
@@ -10,7 +12,7 @@ import { mapV2Error } from "../cluster-v2.js";
 import { sendError } from "../http-auth.js";
 import { createMachineLink, parseMachineLink, summarizeMachineLink, useMachineLink } from "../machine-link.js";
 import { app } from "../state.js";
-import { sharingTwin } from "../twin-sharing.js";
+import { invitedTwin, sharingTwin } from "../twin-sharing.js";
 import { createTwinHttpInvitation, ensureTwinHttpSchema } from "../twins.js";
 import { issueClusterInvitation, joinClusterByLink } from "./cluster-v2.js";
 
@@ -55,7 +57,9 @@ app.post("/api/machine-links/use", handler(async (request, response) => {
   const accountId = localPerson(response);
   const body = z.object({ link: z.string().max(65536), confirmOwnedData: z.boolean().optional() }).strict().parse(request.body);
   ownConfirmed(parseMachineLink(body.link).twins.length > 0, body.confirmOwnedData);
-  response.json(await useMachineLink(body.link, (link, requestId) => joinClusterByLink(link, requestId, accountId)));
+  // Becoming a twin may have given this person the twin's account; the clusters are joined as who they are by then.
+  const userId = (response.locals.authSession as AuthSession).userId;
+  response.json(await useMachineLink(body.link, (link, requestId) => joinClusterByLink(link, requestId, accountIdForUser(userId) ?? accountId)));
 }));
 
 /**
@@ -71,4 +75,21 @@ app.post("/api/cluster/v2/twins/vouch", handler(async (request, response) => {
   ensureTwinHttpSchema(db);
   if (sharingTwin(db, local.id, relationshipId) !== sender) throw new ClusterV2HttpError(403, "Forbidden");
   response.status(201).json({ link: (await createTwinHttpInvitation()).link });
+}));
+
+/**
+ * A machine that accepted this machine's twin invitation asks who the administrator is, to
+ * become the same account (see adoptTwinAdministrators). It is the sign-in record a twin is
+ * sent anyway, here marked as the administrator's, and only the invited side may ask.
+ */
+app.post("/api/cluster/v2/twins/administrator", handler(async (request, response) => {
+  if (response.locals.machineProtocol !== 2 || typeof response.locals.machineNodeId !== "string") throw new ClusterV2HttpError(401, "Unauthorized");
+  const sender = response.locals.machineNodeId as string;
+  const { relationshipId } = z.object({ relationshipId: uuid }).strict().parse(request.body);
+  const local = await getClusterNode(), db = await clusterV2Database();
+  ensureTwinHttpSchema(db);
+  if (sharingTwin(db, local.id, relationshipId) !== sender || !invitedTwin(db, relationshipId, sender)) throw new ClusterV2HttpError(403, "Forbidden");
+  const admin = adminAccountId(db), account = localAccountsForReplication().find((item) => item.accountId === admin);
+  if (!account) throw new ClusterV2HttpError(404, "Not found");
+  response.json({ username: account.username, email: account.email, passwordHash: account.passwordHash.toString("hex"), passwordSalt: account.passwordSalt.toString("hex") });
 }));
