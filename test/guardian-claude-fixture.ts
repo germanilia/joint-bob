@@ -55,7 +55,7 @@ if (/delete/i.test(prompt) && process.env.JOINT_BOB_GUARDIAN_URL) {
   const response = await fetch(process.env.JOINT_BOB_GUARDIAN_URL, {
     method: 'POST',
     headers: { authorization: 'Bearer ' + process.env.JOINT_BOB_GUARDIAN_TOKEN, 'content-type': 'application/json' },
-    body: JSON.stringify({ tool: 'Bash', input: { command: 'rm -rf exports/2023' } }),
+    body: JSON.stringify({ tool: 'Bash', input: { command: 'rm -rf /srv/exports/2023' } }),
   });
   verdict = (await response.json()).verdict ?? null;
 }

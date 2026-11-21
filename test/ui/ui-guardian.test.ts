@@ -124,7 +124,7 @@ test("a review on a new Claude conversation's first turn shows its card until it
 
     const card = page.getByTestId("guardian-review");
     await card.waitFor({ timeout: 30_000 });
-    assert.equal(await page.getByTestId("guardian-review-subject").textContent(), "rm -rf exports/2023");
+    assert.equal(await page.getByTestId("guardian-review-subject").textContent(), "rm -rf /srv/exports/2023");
     // A running turn refreshes the conversation list every few seconds, and each refresh redraws the
     // chat controls, which announce "activeConversationChanged". None of those may take the card away.
     const redrawn = await page.evaluate(`(async () => {
@@ -142,7 +142,7 @@ test("a review on a new Claude conversation's first turn shows its card until it
     // A reload while the review waits brings the card back with the conversation.
     await page.reload();
     await card.waitFor({ timeout: 30_000 });
-    assert.equal(await page.getByTestId("guardian-review-subject").textContent(), "rm -rf exports/2023");
+    assert.equal(await page.getByTestId("guardian-review-subject").textContent(), "rm -rf /srv/exports/2023");
 
     await page.getByTestId("guardian-review-block").click();
     await card.waitFor({ state: "detached" });

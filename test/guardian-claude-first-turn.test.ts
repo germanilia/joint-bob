@@ -55,7 +55,7 @@ test("a Guardian review raised on a new Claude conversation's first turn reaches
     await waitFor(page.frames, () => Boolean(openReviews(page.frames)?.length), 30_000);
     const [review] = openReviews(page.frames)!;
     assert.equal(review.conversationId, ready.conversationId, `the review is filed under the conversation the page has open (${String(ready.conversationId)}), not ${review.conversationId}`);
-    assert.equal(review.subject, "rm -rf exports/2023");
+    assert.equal(review.subject, "rm -rf /srv/exports/2023");
 
     // A reload while it waits, by the transcript path the page switched to when Claude reported it:
     // the new socket's ready message still carries the review.
