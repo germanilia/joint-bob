@@ -6,6 +6,7 @@ import { ensurePeerEndpointSchema } from "../src/cluster-peer-endpoints.js";
 import { ensureClusterSharingPolicySchema, setTrustedTwin } from "../src/cluster-sharing-policy.js";
 import { ensureTwinSchema } from "../src/cluster-twins.js";
 import type { ReplicationEvent } from "../src/replication.js";
+import { renameAccountInOutbox } from "../src/server/account-sync.js";
 import { acceptableReplicationEvents } from "../src/server/replication-v2.js";
 import { settingsDatabase } from "../src/settings-store.js";
 import { applyAccountSnapshot } from "../src/user-replication.js";
@@ -56,4 +57,17 @@ test("a batch with an event this node may not take still delivers the rest", asy
   assert.equal(acceptableReplicationEvents(db, LOCAL, TWIN, [theirs]), undefined, "nothing in scope is still refused");
   assert.equal(acceptableReplicationEvents(db, LOCAL, TWIN, [mine, { ...mine, id: "forged", originNodeId: randomUUID() }]), undefined, "another node's events are never taken");
   assert.equal(acceptableReplicationEvents(db, LOCAL, randomUUID(), [mine]), undefined, "a node that is not a peer is refused");
+});
+
+test("events waiting to go out are renamed in their key and their payload together", async () => {
+  const db = await settingsDatabase();
+  const { ensureReplicationSchema } = await import("../src/replication.js");
+  ensureReplicationSchema(db);
+  const from = "11".repeat(16), to = "22".repeat(16), key = `${from}:project:claude:session`;
+  db.prepare("INSERT INTO replication_outbox (event_id, origin_node_id, entity_type, entity_key, operation, payload, created_at) VALUES ('r1', ?, 'user.recent', ?, 'upsert', ?, '')").run(LOCAL, key, JSON.stringify({ username: from, accountId: from }));
+  db.prepare("INSERT INTO replication_outbox (event_id, origin_node_id, entity_type, entity_key, operation, payload, created_at) VALUES ('r2', ?, 'user.recent', ?, 'upsert', ?, '')").run(TWIN, key, JSON.stringify({ username: from }));
+  renameAccountInOutbox(db, LOCAL, from, to);
+  const rows = db.prepare("SELECT event_id id, entity_key, payload FROM replication_outbox WHERE event_id IN ('r1','r2') ORDER BY event_id").all() as Array<{ id: string; entity_key: string; payload: string }>;
+  assert.deepEqual([rows[0].entity_key, JSON.parse(rows[0].payload)], [`${to}:project:claude:session`, { username: to, accountId: to }]);
+  assert.equal(rows[1].entity_key, key, "another machine's events are left alone");
 });

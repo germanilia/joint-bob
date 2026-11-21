@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.337.3 — 2026-11-21
+
+- Fixed sync from a machine that had just taken its twin's administrator: its waiting events were renamed to the new account in their content but not in their keys, and the twin refused every batch that held one.
+
 ## 2.337.2 — 2026-11-21
 
 - Opening a conversation no longer makes the machine rebuild every project's conversation list. The opened conversation becomes a recent, and a recent or a pin now marks only its own project as changed. Before, every open page then rebuilt all projects on its next board read (300–540 list builds a minute on a Mac), which made the next open slow too.

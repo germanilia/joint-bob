@@ -29,6 +29,16 @@ const twinAdministratorSchema = z.object({
   username: z.string().min(1).max(80), email: z.string().max(254).nullable(),
   passwordHash: z.string().regex(/^[0-9a-f]+$/i).max(256), passwordSalt: z.string().regex(/^[0-9a-f]+$/i).max(256),
 }).strict();
+/**
+ * Events waiting to go out still name the old account; the twin would file them under nobody.
+ * The id is renamed in the key and the payload together: some events are checked for the two
+ * agreeing, and one that fails that check is refused with every event sent alongside it.
+ */
+export function renameAccountInOutbox(db: DatabaseSync, originNodeId: string, from: string, to: string): void {
+  db.prepare(`UPDATE replication_outbox SET entity_key = replace(entity_key, ?1, ?2), payload = replace(payload, ?1, ?2)
+    WHERE origin_node_id = ?3 AND (instr(entity_key, ?1) > 0 OR instr(payload, ?1) > 0)`).run(from, to, originNodeId);
+}
+
 const ADOPT_RETRY_MS = 10 * 60_000;
 const adoptAskedAt = new Map<string, number>();
 
@@ -61,11 +71,7 @@ export async function adoptTwinAdministrators(): Promise<void> {
       const change = adoptTwinAdministrator({ username: theirs.username, email: theirs.email, passwordHash: Buffer.from(theirs.passwordHash, "hex"), passwordSalt: Buffer.from(theirs.passwordSalt, "hex"), twinNodeIds: twins });
       const after = adminAccountId(db);
       if (change && before && after && before !== after) {
-        // Events waiting to go out still name the old account; the twin would file them under nobody.
-        if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'replication_outbox'").get()) {
-          const old = `"username":"${before}"`;
-          db.prepare("UPDATE replication_outbox SET payload = replace(payload, ?, ?) WHERE origin_node_id = ? AND instr(payload, ?) > 0").run(old, `"username":"${after}"`, local.id, old);
-        }
+        if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'replication_outbox'").get()) renameAccountInOutbox(db, local.id, before, after);
         console.log(`This machine's administrator ${change.from} is now ${change.to}, the same account as on its twin ${peer.name}`);
       }
       settle(row.id);
