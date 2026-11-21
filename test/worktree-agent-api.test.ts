@@ -142,6 +142,42 @@ test("merge commits a verified task through the CLI, scopes status and retries a
   assert.equal((await cliRun(creator.environment, "status", "--operation", operationId)).result.commit, result.commit);
 });
 
+test("merge succeeds after a worktree's earlier PR was merged and still blocks when a PR is open", async () => {
+  const projectPath = path.join(root, "pr-then-merge-project");
+  await mkdir(projectPath);
+  const git = (...args: string[]) => run("git", ["-C", projectPath, ...args]);
+  await git("init", "-b", "main"); await git("config", "user.name", "Fixture"); await git("config", "user.email", "fixture@example.test");
+  await writeFile(path.join(projectPath, "app.txt"), "line1\nline2\nline3\n"); await git("add", "."); await git("commit", "-qm", "base");
+  const baseCommit = (await git("rev-parse", "HEAD")).stdout.trim();
+  const { addProject } = await import("../src/store.js");
+  const { recordWorktreePullRequest, saveWorktreePullRequestSnapshot, worktreeChanges } = await import("../src/project-worktrees.js");
+  const project = await addProject("PR then merge fixture", projectPath, { writeInstructions: false });
+  const creator = await capability(randomUUID(), project.id);
+  const { worktree } = await cliRun(creator.environment, "create", "--name", "PR then local");
+
+  // Simulate PR #1 changes in worktree and landed on main.
+  await writeFile(path.join(worktree.path, "app.txt"), "line1\nline2\nPR1\n");
+  const changes1 = await worktreeChanges(project.id, worktree.id);
+  const snapshotFile = await saveWorktreePullRequestSnapshot(project.id, worktree.id, 10, changes1);
+  await writeFile(path.join(projectPath, "app.txt"), "line1\nline2\nPR1\n");
+  await git("add", "app.txt"); await git("commit", "-qm", "PR #1 merged");
+  const mergedCommit = (await git("rev-parse", "HEAD")).stdout.trim();
+
+  // While PR is recorded as open (not merged) and GitHub cannot be inspected, local merge is refused with 409.
+  const prMeta = { number: 10, url: "https://github.com/o/r/pull/10", branch: "joint-bob/pr-then-local", base: "main", baseCommit, snapshotFile };
+  await recordWorktreePullRequest(project.id, worktree.id, prMeta);
+  const blocked = await post(creator.token, { operation: "merge", worktreeId: worktree.id, operationId: randomUUID(), title: "feat: follow-up", check: "node -e 'process.exit(0)'" });
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.body.error, /pr --merge/);
+
+  // Once PR #1 is recorded as merged, follow-up edits on the same line merge locally with zero self-conflict.
+  await recordWorktreePullRequest(project.id, worktree.id, { ...prMeta, mergedCommit }, undefined, { merged: true });
+  await writeFile(path.join(worktree.path, "app.txt"), "line1\nline2\nPR2_FOLLOWUP\n");
+  const mergeResult = await cliRun(creator.environment, "merge", "--worktree", worktree.id, "--operation", randomUUID(), "--title", "feat: follow-up", "--check", "node -e 'process.exit(0)'");
+  assert.equal(mergeResult.status, "committed");
+  assert.equal((await git("show", "HEAD:app.txt")).stdout, "line1\nline2\nPR2_FOLLOWUP\n");
+});
+
 test("a token for a project this node does not have is refused", async () => {
   const { token } = await capability(randomUUID(), "missing_project");
   assert.equal((await post(token, { operation: "list" })).status, 404);

@@ -1,5 +1,5 @@
 import { isUtf8 } from "node:buffer";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import { GitReviewError } from "../git-review.js";
@@ -19,6 +19,12 @@ const MERGE_METHODS = ["merge", "squash", "rebase"] as const;
 const MERGE_ATTEMPTS = 3;
 const MERGE_RETRY_MS = 3_000;
 
+export interface MergedPullRequestRef {
+  pullRequest: WorktreePullRequest;
+  headCommit?: string;
+  mergedCommit?: string;
+}
+
 export interface WorktreePullRequestInput {
   projectPath: string;
   branchName: string;
@@ -27,10 +33,16 @@ export interface WorktreePullRequestInput {
   base?: string;
   changes: WorktreeChanges;
   previous: WorktreePullRequest | null;
+  /** Last pull request from this worktree already confirmed merged into its base branch, if any. */
+  mergedPrevious?: WorktreePullRequest | null;
   /** Replays the changes on the base branch as it is now; without it they are committed on the worktree's own base. */
-  rebase?: (base: string) => Promise<RebasedWorktreeChanges | null>;
+  rebase?: (base: string, merged?: MergedPullRequestRef | null) => Promise<RebasedWorktreeChanges | null>;
   /** Merge the pull request on GitHub once it is published. Only replayed changes are merged. */
   merge?: boolean;
+  /** Called when a previously recorded pull request is discovered to have been merged on GitHub. */
+  onMergedPrevious?: (merged: MergedPullRequestRef) => void | Promise<void>;
+  /** Called once the PR commit is published (and merged, if requested) with the GitHub commit SHAs. */
+  onPublished?: (info: { pullRequest: WorktreePullRequest; headCommit: string; mergedCommit?: string }) => void | Promise<void>;
 }
 
 export interface WorktreePullRequestResult {
@@ -145,27 +157,56 @@ export async function worktreePullRequestMerged(projectPath: string, pullRequest
   return true;
 }
 
+/** Read-only status check for a worktree's recorded pull request on GitHub. */
+export async function inspectWorktreePullRequest(projectPath: string, pullRequest: WorktreePullRequest, credentials: GithubCredentials, request: typeof fetch = fetch): Promise<{ state: string; merged: boolean; headCommit?: string; mergedCommit?: string }> {
+  const { owner, repo, host } = await githubRepository(projectPath, credentials, request);
+  const token = credentials.tokenFor({ owner, host });
+  if (!token) throw new GitReviewError(403, "Attach a GitHub account to inspect pull requests");
+  const pull = await githubRequest(`/repos/${owner}/${repo}`, token, request, `/pulls/${pullRequest.number}`) as { state?: string; merged?: boolean; head?: { sha?: string }; merge_commit_sha?: string };
+  return {
+    state: typeof pull.state === "string" ? pull.state : "unknown",
+    merged: pull.merged === true,
+    ...(COMMIT.test(pull.head?.sha ?? "") ? { headCommit: pull.head!.sha } : {}),
+    ...(COMMIT.test(pull.merge_commit_sha ?? "") ? { mergedCommit: pull.merge_commit_sha } : {}),
+  };
+}
+
 /** Commits the worktree's changes on a new branch through the GitHub API and opens (or updates) its pull
     request. Nothing touches the project's checkout: no local branch, index or working tree changes. */
 export async function openWorktreePullRequest(input: WorktreePullRequestInput, credentials: GithubCredentials, request: typeof fetch = fetch): Promise<WorktreePullRequestResult> {
   let { writes, deletes } = input.changes;
-  if (!writes.length && !deletes.length) throw new GitReviewError(409, "The worktree has no changes to put in a pull request");
+  if (!writes.length && !deletes.length && !input.previous && !input.mergedPrevious) throw new GitReviewError(409, "The worktree has no changes to put in a pull request");
   const maxFiles = nodeSettings().gitPullFileLimit;
-  if (writes.length + deletes.length > maxFiles) throw new GitReviewError(413, `A worktree pull request carries at most ${maxFiles} files`);
+  if (!input.rebase && writes.length + deletes.length > maxFiles) throw new GitReviewError(413, `A worktree pull request carries at most ${maxFiles} files`);
   const { owner, repo, host } = await githubRepository(input.projectPath, credentials, request);
   const token = credentials.tokenFor({ owner, host });
   if (!token) throw new GitReviewError(403, "Attach a GitHub account with write access to this project to open pull requests");
   const call = (route: string, method?: string, body?: object) => githubRequest(`/repos/${owner}/${repo}`, token, request, route, method, body);
 
   let previous = input.previous;
+  let mergedBase: MergedPullRequestRef | null = input.mergedPrevious
+    ? { pullRequest: input.mergedPrevious, headCommit: input.mergedPrevious.headCommit, mergedCommit: input.mergedPrevious.mergedCommit }
+    : null;
   if (previous) {
-    const pull = await call(`/pulls/${previous.number}`) as { state?: string };
+    const pull = await call(`/pulls/${previous.number}`) as { state?: string; merged?: boolean; head?: { sha?: string }; merge_commit_sha?: string };
     // A closed or merged pull request is finished: further changes open a new one on a new branch.
-    if (pull.state !== "open") previous = null;
+    if (pull.state !== "open") {
+      if (pull.merged === true) {
+        mergedBase = {
+          pullRequest: previous,
+          headCommit: COMMIT.test(pull.head?.sha ?? "") ? pull.head!.sha : previous.headCommit,
+          mergedCommit: COMMIT.test(pull.merge_commit_sha ?? "") ? pull.merge_commit_sha : previous.mergedCommit,
+        };
+        await input.onMergedPrevious?.(mergedBase);
+      }
+      previous = null;
+    }
   }
   const base = previous?.base ?? input.base ?? (await call("") as { default_branch: string }).default_branch;
   assertBranch(base, "Base branch");
-  const branch = previous?.branch ?? (input.previous ? `${input.branchName}-${Date.now().toString(36)}` : input.branchName);
+  const effectiveMerged = mergedBase && mergedBase.pullRequest.base === base ? mergedBase : null;
+  if (!writes.length && !deletes.length && !effectiveMerged) throw new GitReviewError(409, "The worktree has no changes to put in a pull request");
+  const branch = previous?.branch ?? (input.previous ? `${input.branchName}-${Date.now().toString(36)}-${randomBytes(2).toString("hex")}` : input.branchName);
   assertBranch(branch, "Pull request branch");
 
   const warnings: string[] = [];
@@ -179,7 +220,7 @@ export async function openWorktreePullRequest(input: WorktreePullRequestInput, c
   let conflicts: string[] = [];
   if (input.rebase) {
     try {
-      const result = await input.rebase(base);
+      const result = await input.rebase(base, effectiveMerged);
       if (result && "conflicts" in result) {
         conflicts = result.conflicts;
         warnings.push(`These files conflict with ${base} as it is now, so the pull request starts from the commit the worktree was created from: ${conflicts.join(", ")}. Resolve them before merging.`);
@@ -197,6 +238,8 @@ export async function openWorktreePullRequest(input: WorktreePullRequestInput, c
   if (input.merge && !rebased) throw new GitReviewError(409, conflicts.length
     ? `The worktree's changes conflict with ${base} as it is now in ${conflicts.join(", ")}: combine ${base}'s versions of those files into the worktree, run the checks again and retry. Nothing was published.`
     : `The worktree's changes could not be replayed on ${base} as it is now, so nothing was published or merged. Try again.`);
+  if (!writes.length && !deletes.length) throw new GitReviewError(409, "The worktree has no changes to put in a pull request");
+  if (writes.length + deletes.length > maxFiles) throw new GitReviewError(413, `A worktree pull request carries at most ${maxFiles} files`);
   // The files are whole copies relative to the worktree's base. Written on any other commit, they would undo what the branch gained since.
   if (!rebased && previous && input.changes.gitBase && previous.baseCommit !== input.changes.gitBase) {
     throw new GitReviewError(409, conflicts.length
@@ -256,6 +299,7 @@ export async function openWorktreePullRequest(input: WorktreePullRequestInput, c
     };
   }
   if (input.merge) Object.assign(result, await mergePullRequest(request, `/repos/${owner}/${repo}`, token, result.pullRequest.number, commit.sha));
+  await input.onPublished?.({ pullRequest: result.pullRequest, headCommit: commit.sha, mergedCommit: result.merged?.commit });
   return result;
 }
 

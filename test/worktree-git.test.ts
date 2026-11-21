@@ -240,3 +240,103 @@ test("conflicts open a new pull request on the worktree's base with a warning, a
   await assert.rejects(openWorktreePullRequest({ projectPath, branchName: "joint-bob/fix-1", title: "Fix", body: "", changes: stale, previous, rebase }, { tokenFor: () => "t" }, open.request), /conflict with main as it is now in app\.txt; pull request #21 was left as it is/);
   assert.equal(open.calls.some((call) => call.method === "POST"), false);
 });
+
+test("multiple pull requests from the same worktree replay only follow-up changes without self-conflicts", async (t) => {
+  const { other, project, worktrees } = await repositories(t);
+  await push(other, "app.txt", "line1\nline2\nline3\nline4\nline5\n", "multi-line base");
+  const worktree = await createProjectWorktree(project, { name: "Multi PR" }, worktrees);
+
+  // Someone else lands an unrelated edit on main while the worktree is active.
+  await push(other, "app.txt", "MAIN1\nline2\nline3\nline4\nline5\n", "unrelated main edit");
+  await push(other, "TASKS.md", "- [ ] first\n- [ ] second\n", "other file on main");
+
+  // PR #1 edits line 5 of app.txt and adds a new file theme.css.
+  await writeFile(path.join(worktree.path, "app.txt"), "line1\nline2\nline3\nline4\nPR1\n");
+  await writeFile(path.join(worktree.path, "theme.css"), "body { color: red; }\n");
+  const changes1 = await worktreeChanges(project.id, worktree.id, worktrees);
+  const rebased1 = await rebaseWorktreeChanges(project.path, {}, changes1, "main");
+  assert.ok(rebased1 && "writes" in rebased1);
+  assert.deepEqual(rebased1.writes.map((f) => [f.path, f.content.toString()]), [
+    ["app.txt", "MAIN1\nline2\nline3\nline4\nPR1\n"],
+    ["theme.css", "body { color: red; }\n"],
+  ]);
+
+  // Simulate PR #1 squash-merged onto origin/main.
+  for (const file of rebased1.writes) await writeFile(path.join(other, file.path), file.content);
+  git(other, "add", "-A");
+  git(other, "commit", "-q", "-m", "PR #1 squashed");
+  git(other, "push", "-q", "origin", "main");
+  const merged1 = git(other, "rev-parse", "HEAD");
+
+  // Follow-up edits in the SAME worktree modify the SAME line of app.txt AND the new file theme.css.
+  await writeFile(path.join(worktree.path, "app.txt"), "line1\nline2\nPR2_MID\nline4\nPR1_UPDATED\n");
+  await writeFile(path.join(worktree.path, "theme.css"), "body { color: blue; }\n");
+  const changes2 = await worktreeChanges(project.id, worktree.id, worktrees);
+  const rebased2 = await rebaseWorktreeChanges(project.path, {}, changes2, "main", {
+    snapshot: { writes: changes1.writes, deletes: changes1.deletes },
+    mergedCommit: merged1,
+  });
+  assert.ok(rebased2 && "writes" in rebased2, "PR #2 must not conflict with PR #1");
+  assert.equal(rebased2.baseCommit, merged1);
+  assert.deepEqual(rebased2.writes.map((f) => [f.path, f.content.toString()]), [
+    ["app.txt", "MAIN1\nline2\nPR2_MID\nline4\nPR1_UPDATED\n"],
+    ["theme.css", "body { color: blue; }\n"],
+  ]);
+  assert.deepEqual(rebased2.deletes, []);
+
+  // Simulate PR #2 merged onto origin/main, then PR #3 deletes theme.css and reverts app.txt line 5.
+  for (const file of rebased2.writes) await writeFile(path.join(other, file.path), file.content);
+  git(other, "add", "-A");
+  git(other, "commit", "-q", "-m", "PR #2 squashed");
+  git(other, "push", "-q", "origin", "main");
+  const merged2 = git(other, "rev-parse", "HEAD");
+
+  await rm(path.join(worktree.path, "theme.css"));
+  await writeFile(path.join(worktree.path, "app.txt"), "line1\nline2\nPR2_MID\nline4\nline5\n");
+  const changes3 = await worktreeChanges(project.id, worktree.id, worktrees);
+  const rebased3 = await rebaseWorktreeChanges(project.path, {}, changes3, "main", {
+    snapshot: { writes: changes2.writes, deletes: changes2.deletes },
+    mergedCommit: merged2,
+  });
+  assert.ok(rebased3 && "writes" in rebased3, "PR #3 must not conflict with PR #2");
+  assert.deepEqual(rebased3.writes.map((f) => [f.path, f.content.toString()]), [
+    ["app.txt", "MAIN1\nline2\nPR2_MID\nline4\nline5\n"],
+  ]);
+  assert.deepEqual(rebased3.deletes, ["theme.css"]);
+
+  // A real concurrent edit on main to the same line after PR #2 still reports a conflict.
+  await push(other, "app.txt", "MAIN1\nline2\nPR2_MID\nline4\nCOMPETING\n", "competing edit");
+  const clash = await rebaseWorktreeChanges(project.path, {}, changes3, "main", {
+    snapshot: { writes: changes2.writes, deletes: changes2.deletes },
+    mergedCommit: merged2,
+  });
+  assert.ok(clash && "conflicts" in clash);
+  assert.deepEqual(clash.conflicts, ["app.txt"]);
+});
+
+test("follow-up pull requests reconstruct merged PR state from git when no local snapshot exists", async (t) => {
+  const { other, project, worktrees } = await repositories(t);
+  await push(other, "app.txt", "line1\nline2\nline3\nline4\nline5\n", "base");
+  const worktree = await createProjectWorktree(project, { name: "Legacy PR" }, worktrees);
+  const baseOnMain = await push(other, "app.txt", "MAIN1\nline2\nline3\nline4\nline5\n", "main moved");
+
+  // Simulate PR #1 published as a commit on baseOnMain and merged onto main (no snapshot saved).
+  await writeFile(path.join(other, "app.txt"), "MAIN1\nline2\nline3\nline4\nPR1\n");
+  git(other, "add", "app.txt");
+  git(other, "commit", "-q", "-m", "PR #1 head");
+  const pr1Head = git(other, "rev-parse", "HEAD");
+  git(other, "push", "-q", "origin", "HEAD:refs/pull/1/head");
+  git(other, "push", "-q", "origin", "main");
+
+  // Follow-up edit in the same worktree changes line 5 from PR1 to PR2.
+  await writeFile(path.join(worktree.path, "app.txt"), "line1\nline2\nline3\nline4\nPR2\n");
+  const changes2 = await worktreeChanges(project.id, worktree.id, worktrees);
+  const rebased2 = await rebaseWorktreeChanges(project.path, {}, changes2, "main", {
+    pullRequest: { number: 1, baseCommit: baseOnMain, headCommit: pr1Head },
+    mergedCommit: pr1Head,
+  });
+  assert.ok(rebased2 && "writes" in rebased2);
+  assert.deepEqual(rebased2.writes.map((f) => [f.path, f.content.toString()]), [
+    ["app.txt", "MAIN1\nline2\nline3\nline4\nPR2\n"],
+  ]);
+});

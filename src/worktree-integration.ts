@@ -12,9 +12,9 @@ import { nodeSettings } from "./settings.js";
 import { spawn } from "./subprocess.js";
 import { captureBaseline, TICKET_BASELINE_DIR, TICKET_MERGE_DIR } from "./task-workspaces.js";
 import type { ProjectRecord } from "./types.js";
-import { exportWorktreeCommit, installLocalWorktreeCommit, prepareLocalWorktreeCommit, worktreeChangesDigest, type LocalWorktreeCandidate } from "./worktree-git.js";
+import { exportWorktreeCommit, installLocalWorktreeCommit, prepareLocalWorktreeCommit, worktreeChangesDigest, type LocalWorktreeCandidate, type MergedWorktreeBase } from "./worktree-git.js";
 
-export interface WorktreeIntegrationInput { operationId: string; title: string; check: string; resolutionTarget?: string; ownerId?: string; deferCleanup?: boolean }
+export interface WorktreeIntegrationInput { operationId: string; title: string; check: string; resolutionTarget?: string; ownerId?: string; deferCleanup?: boolean; mergedBase?: MergedWorktreeBase }
 export interface WorktreeIntegrationResult {
   operationId: string;
   status: "committed" | "verification-failed" | "conflict";
@@ -144,7 +144,7 @@ async function integrate(project: ProjectRecord, worktreeId: string, input: Work
   if (!receipt) {
     const changes = await withoutGitIgnored(project.path, await worktreeChanges(project.id, worktreeId, root));
     await unchangedWorktree(project, worktreeId, root, worktreeChangesDigest(changes));
-    const candidate = await prepareLocalWorktreeCommit(project.path, env, changes, input.title, input.resolutionTarget);
+    const candidate = await prepareLocalWorktreeCommit(project.path, env, changes, input.title, input.resolutionTarget, input.mergedBase);
     if (candidate.status === "conflict") return { operationId: input.operationId, status: "conflict", worktreeDeleted: false, conflicts: candidate.conflicts, targetCommit: candidate.targetCommit };
     receipt = { projectId: project.id, worktreeId, ownerId: input.ownerId, requestHash, candidate, phase: "verifying", result: null };
     const reserved = db().prepare("INSERT INTO worktree_integrations VALUES(?,?,?,?) ON CONFLICT(operation_id) DO NOTHING")

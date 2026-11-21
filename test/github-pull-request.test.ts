@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { openWorktreePullRequest } from "../src/server/github-pull-request.ts";
+import { inspectWorktreePullRequest, openWorktreePullRequest } from "../src/server/github-pull-request.ts";
 import { nodeSettings, updateSettings } from "../src/settings.ts";
 
 const BASE = "a".repeat(40);
@@ -284,5 +284,49 @@ test("pr --merge publishes nothing when the changes conflict with the base as it
     await assert.rejects(openWorktreePullRequest({ ...input, rebase: async () => null }, credentials, github.request), /could not be replayed/);
     await assert.rejects(openWorktreePullRequest(input, credentials, github.request), /could not be replayed/);
     assert.equal(github.calls.some((call) => call.method !== "GET"), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("merged previous PR is forwarded to rebase and callbacks, while closed-unmerged PR is not", async () => {
+  const { root, projectPath } = await repository();
+  const previous = { number: 12, url: "https://github.com/o/r/pull/12", branch: "joint-bob/fix-1", base: "main", baseCommit: BASE };
+  const HEAD = "d".repeat(40);
+  try {
+    const seen: unknown[] = [];
+    const mergedNotices: unknown[] = [];
+    const published: unknown[] = [];
+    const mergedGithub = fakeGitHub({
+      pull: { state: "closed", merged: true, head: { sha: HEAD }, merge_commit_sha: MERGED } as any,
+      merges: [[200, { merged: true, sha: MERGED }]],
+    });
+    const result = await openWorktreePullRequest({
+      projectPath, branchName: "joint-bob/fix-1", title: "Revert PR1", body: "",
+      // Empty raw changes (e.g. reverted PR #1 back to creation baseline) must still proceed through rebase.
+      changes: { gitBase: BASE, writes: [], deletes: [] },
+      previous,
+      rebase: async (base, merged) => { seen.push([base, merged]); return replayed(); },
+      onMergedPrevious: (info) => { mergedNotices.push(info); },
+      onPublished: (info) => { published.push(info); },
+      merge: true,
+    }, credentials, mergedGithub.request);
+    assert.equal(result.updated, false);
+    assert.equal(mergedNotices.length, 1);
+    assert.deepEqual(mergedNotices[0], { pullRequest: previous, headCommit: HEAD, mergedCommit: MERGED });
+    assert.deepEqual(seen, [["main", { pullRequest: previous, headCommit: HEAD, mergedCommit: MERGED }]]);
+    assert.deepEqual(published, [{ pullRequest: result.pullRequest, headCommit: "new-commit", mergedCommit: MERGED }]);
+
+    // Closed without merging must not pass a merged base.
+    const seenUnmerged: unknown[] = [];
+    const closedGithub = fakeGitHub({ pull: { state: "closed", merged: false } });
+    await openWorktreePullRequest({
+      projectPath, branchName: "joint-bob/fix-1", title: "Retry", body: "",
+      changes: changes(BASE), previous,
+      rebase: async (base, merged) => { seenUnmerged.push([base, merged]); return replayed(); },
+    }, credentials, closedGithub.request);
+    assert.deepEqual(seenUnmerged, [["main", null]]);
+
+    // inspectWorktreePullRequest reports state and merge commits cleanly.
+    const status = await inspectWorktreePullRequest(projectPath, previous, credentials, mergedGithub.request);
+    assert.deepEqual(status, { state: "closed", merged: true, headCommit: HEAD, mergedCommit: MERGED });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

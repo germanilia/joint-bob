@@ -1,11 +1,58 @@
-import { lstatSync, realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { GuardianRequest } from './rules.js';
 
 const cliVariables = new Set(['BROWSER', 'WORKTREE', 'TASK', 'SECRET', 'NTFY', 'WEBHOOK_TITLE', 'WEBHOOK_MEMORY', 'ASSISTANT_MEMORY', 'ASSISTANT_SETUP'].map(name => `JOINT_BOB_${name}_CLI`));
+const trustedBinDir = fileURLToPath(new URL('../../bin', import.meta.url));
+const selfContainedCliFiles = new Set([
+  'joint-bob-assistant-memory.mjs',
+  'joint-bob-assistant-setup.mjs',
+  'joint-bob-browser.mjs',
+  'joint-bob-ntfy.mjs',
+  'joint-bob-webhook-title.mjs',
+  'joint-bob-webhook.mjs',
+  'joint-bob-worktree.mjs',
+]);
+const trustedCliFiles = new Set([...selfContainedCliFiles, 'joint-bob-mcp.mjs', 'joint-bob-secret.mjs', 'joint-bob-task.mjs']);
+const trustedCliHashes = new Map<string, string>();
 const protectedBranch = /(?:^|\/)(?:dev|main|master|staging)$/;
 const gitCommands = new Set('status diff log show add rm mv commit push pull fetch merge rebase reset restore rev-parse rev-list ls-files ls-tree cat-file blame grep config remote tag describe cherry-pick revert apply am clone init clean for-each-ref show-ref symbolic-ref update-ref update-index hash-object diff-tree diff-index merge-base name-rev shortlog reflog gc count-objects var version help branch checkout switch worktree stash'.split(' '));
 const standardBin = /^(?:\/(?:usr\/)?bin\/)?([a-z]+)$/;
+
+function sha256File(file: string): string {
+  return createHash('sha256').update(readFileSync(file)).digest('hex');
+}
+
+function trustedCliHash(fileName: string): string | undefined {
+  if (trustedCliHashes.has(fileName)) return trustedCliHashes.get(fileName);
+  try {
+    const hash = sha256File(path.join(trustedBinDir, fileName));
+    trustedCliHashes.set(fileName, hash);
+    return hash;
+  } catch { return undefined; }
+}
+
+function isTrustedJointBobCli(arg: string | undefined, cwd?: string): boolean {
+  if (!arg) return false;
+  if (arg.startsWith('$') && cliVariables.has(arg.replace(/^\$\{?|\}$/g, ''))) return true;
+  const base = path.basename(arg);
+  if (!trustedCliFiles.has(base)) return false;
+  const resolved = path.isAbsolute(arg) ? path.resolve(arg) : cwd ? path.resolve(cwd, arg) : undefined;
+  if (!resolved) return false;
+  const trusted = path.join(trustedBinDir, base);
+  try {
+    if (realpathSync(resolved) === realpathSync(trusted)) return true;
+  } catch {}
+  // Self-contained CLIs only import node:* built-ins, so an exact byte match (e.g. inside a Joint Bob worktree) executes identical code.
+  if (!selfContainedCliFiles.has(base)) return false;
+  try {
+    if (!statSync(resolved).isFile()) return false;
+    const expected = trustedCliHash(base);
+    return Boolean(expected && sha256File(resolved) === expected);
+  } catch { return false; }
+}
 
 /** Only literal shell words and && chains qualify. Substitutions, redirects and scripts stay checked. */
 function literalCommands(command: string): string[][] | undefined {
@@ -21,10 +68,23 @@ function literalCommands(command: string): string[][] | undefined {
         if (!cli) return undefined;
         word = cli[0]; i += cli[0].length - 1; continue;
       }
-      if (quote === '"' && /[$`\\]/.test(c)) return undefined;
+      if (quote === '"' && c === '\\') {
+        const next = command[i + 1];
+        if (next === '\n') { i++; continue; }
+        if (next === '\r' && command[i + 2] === '\n') { i += 2; continue; }
+        if (next === '"' || next === '\\') { word += next; i++; continue; }
+        return undefined;
+      }
+      if (quote === '"' && /[$`]/.test(c)) return undefined;
       word += c;
     } else if (c === '"' || c === "'") { quote = c; started = true; }
-    else if (c === '&' && command[i + 1] === '&') {
+    else if (c === '\\' && (command[i + 1] === '\n' || (command[i + 1] === '\r' && command[i + 2] === '\n'))) {
+      i += command[i + 1] === '\r' ? 2 : 1;
+    } else if (c === '$' && word === '') {
+      const cli = command.slice(i).match(/^\$(?:\{JOINT_BOB_[A-Z_]+_CLI\}|JOINT_BOB_[A-Z_]+_CLI)(?=$|\s|&&)/);
+      if (!cli) return undefined;
+      word = cli[0]; started = true; i += cli[0].length - 1;
+    } else if (c === '&' && command[i + 1] === '&') {
       finish();
       if (!commands.at(-1)!.length) return undefined;
       commands.push([]); i++;
@@ -283,18 +343,23 @@ function workspaceFilePolicy(executable: string, args: string[], rootCwd: string
   return {};
 }
 
+export function guardianCommandText(input: Record<string, unknown>): string | undefined {
+  const command = input.command ?? input.cmd ?? input.CommandLine ?? input.commandLine;
+  return typeof command === 'string' ? command : undefined;
+}
+
 /** Deterministic defaults, before model rules. Never exempts an unrelated command in a shell chain. */
 export function guardianCommandPolicy(request: GuardianRequest, cwd?: string): 'allow' | 'block' | undefined {
   if (request.kind !== 'tool' || request.category !== 'commands') return undefined;
-  const command = request.input.command ?? request.input.cmd;
-  if (typeof command !== 'string') return undefined;
+  const command = guardianCommandText(request.input);
+  if (!command) return undefined;
   // These names are server-supplied CLI entry points, not arbitrary similarly named files.
   const commands = literalCommands(command);
   if (!commands) return undefined;
   let activeCwd = cwd && path.isAbsolute(cwd) ? path.resolve(cwd) : undefined;
   const decisions: Array<'allow' | 'block' | undefined> = [];
   for (const [executable, ...args] of commands) {
-    if (executable === 'node' && args[0]?.startsWith('$') && cliVariables.has(args[0].replace(/^\$\{?|\}$/g, ''))) {
+    if ((executable === 'node' && isTrustedJointBobCli(args[0], activeCwd ?? cwd)) || isTrustedJointBobCli(executable, activeCwd ?? cwd)) {
       decisions.push('allow');
     } else if (executable === 'git' || executable === '/usr/bin/git') {
       decisions.push(gitPolicy(args));

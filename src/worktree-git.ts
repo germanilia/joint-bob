@@ -26,6 +26,14 @@ type Git = (args: string[], options?: { input?: string | Buffer; env?: NodeJS.Pr
 
 export interface WorktreeFileChange { path: string; content: Buffer; executable: boolean }
 export interface WorktreeChanges { gitBase: string | null; writes: WorktreeFileChange[]; deletes: string[]; uncommittedPaths: string[] }
+export interface MergedWorktreeBase {
+  /** Snapshot of the raw worktree changes (relative to gitBase) already merged into the base branch. */
+  snapshot?: { writes: WorktreeFileChange[]; deletes: string[] };
+  /** Fallback for pre-existing worktrees without a saved snapshot: PR metadata to reconstruct the merged worktree state. */
+  pullRequest?: { number: number; baseCommit: string; headCommit?: string };
+  /** Commit on the base branch produced by merging the PR, when known. */
+  mergedCommit?: string;
+}
 
 /** git in the project's repository, as the account that owns it, never prompting. Exit statuses come back; a kill or timeout throws. */
 function projectGit(cwd: string, env: NodeJS.ProcessEnv): Git {
@@ -273,13 +281,54 @@ function validateLocalChanges(changes: WorktreeChanges, title: string): void {
   }
 }
 
+async function ensureCommitPresent(git: Git, commit: string, remoteRef?: string): Promise<boolean> {
+  const present = async () => (await git(["cat-file", "-e", `${commit}^{commit}`])).code === 0;
+  if (await present()) return true;
+  await git(["fetch", "--quiet", "--no-tags", "origin", remoteRef ?? commit], { timeout: FETCH_TIMEOUT_MS }).catch(() => null);
+  return present();
+}
+
+/**
+ * Resolves the synthetic worktree commit representing the state already merged by an earlier PR from this worktree.
+ * Using that commit as `--merge-base` lets follow-up PRs and local merges carry only the follow-up delta without
+ * self-conflicting against the earlier merged PR or reverting unrelated commits on the base branch.
+ */
+async function resolveMergedBaseCommit(projectPath: string, git: Git, gitBase: string, mergedBase: MergedWorktreeBase): Promise<string | null> {
+  if (mergedBase.snapshot) {
+    return commitChanges(projectPath, git, gitBase, {
+      gitBase, writes: mergedBase.snapshot.writes, deletes: mergedBase.snapshot.deletes, uncommittedPaths: [],
+    });
+  }
+  const pr = mergedBase.pullRequest;
+  if (!pr || !COMMIT.test(pr.baseCommit)) return null;
+  if (!await ensureCommitPresent(git, pr.baseCommit)) return null;
+  let headCommit = pr.headCommit && COMMIT.test(pr.headCommit) ? pr.headCommit : null;
+  if (headCommit) {
+    if (!await ensureCommitPresent(git, headCommit, `refs/pull/${pr.number}/head`)) headCommit = null;
+  }
+  if (!headCommit && Number.isSafeInteger(pr.number) && pr.number > 0) {
+    const fetched = await git(["fetch", "--quiet", "--no-tags", "origin", `refs/pull/${pr.number}/head`], { timeout: FETCH_TIMEOUT_MS }).catch(() => null);
+    if (fetched?.code === 0) {
+      const sha = (await git(["rev-parse", "--verify", "--quiet", "FETCH_HEAD^{commit}"])).stdout.toString().trim();
+      if (COMMIT.test(sha)) headCommit = sha;
+    }
+  }
+  if (!headCommit) return null;
+  if (pr.baseCommit === gitBase) return headCommit;
+  const reconstructed = await git(["merge-tree", "--write-tree", "-z", "--name-only", "--no-messages", `--merge-base=${pr.baseCommit}`, gitBase, headCommit]);
+  const [tree] = reconstructed.stdout.toString().split("\0");
+  if (reconstructed.code !== 0 || !COMMIT.test(tree)) return null;
+  return output(git, ["commit-tree", tree, "-p", gitBase, "-m", "Joint Bob merged PR base"], { env: IDENTITY });
+}
+
 /** Prepares a task-only commit without changing HEAD, the shared index, or working files. */
-export async function prepareLocalWorktreeCommit(projectPath: string, env: NodeJS.ProcessEnv, changes: WorktreeChanges, title: string, resolutionTarget?: string): Promise<LocalWorktreeCandidate | LocalWorktreeConflict> {
+export async function prepareLocalWorktreeCommit(projectPath: string, env: NodeJS.ProcessEnv, changes: WorktreeChanges, title: string, resolutionTarget?: string, mergedBase?: MergedWorktreeBase): Promise<LocalWorktreeCandidate | LocalWorktreeConflict> {
   validateLocalChanges(changes, title);
   const git = projectGit(projectPath, env);
   let targetCommit = await localMain(git, projectPath);
-  if (changes.gitBase && (await git(["merge-base", "--is-ancestor", changes.gitBase, targetCommit])).code !== 0) {
-    const reconciliation = await reconcileWorktreeMain(projectPath, env, changes.gitBase);
+  const requiredBase = mergedBase?.mergedCommit && COMMIT.test(mergedBase.mergedCommit) ? mergedBase.mergedCommit : changes.gitBase;
+  if (requiredBase && (await git(["merge-base", "--is-ancestor", requiredBase, targetCommit])).code !== 0) {
+    const reconciliation = await reconcileWorktreeMain(projectPath, env, requiredBase);
     if (reconciliation.status === "blocked") throw new Error(`Main reconciliation blocked: ${reconciliation.reason}.${reconciliation.conflicts.length ? ` Paths: ${reconciliation.conflicts.join(", ")}.` : ""} ${reconciliation.next ?? BLOCKED_MAIN_NEXT_STEP}`);
     targetCommit = await localMain(git, projectPath);
   }
@@ -287,8 +336,15 @@ export async function prepareLocalWorktreeCommit(projectPath: string, env: NodeJ
   const digest = worktreeChangesDigest(changes);
   const base = changes.gitBase!;
   if ((await git(["merge-base", "--is-ancestor", base, targetCommit])).code !== 0) throw new Error("Local main does not contain the worktree base; synchronize committed main before integrating");
+  if (requiredBase && requiredBase !== base && (await git(["merge-base", "--is-ancestor", requiredBase, targetCommit])).code !== 0) throw new Error("Local main does not yet contain the previously merged pull request; reconcile main or finish with pr --merge");
   const taskCommit = await commitChanges(projectPath, git, base, changes);
-  const merged = await git(["merge-tree", "--write-tree", "-z", "--name-only", "--no-messages", `--merge-base=${base}`, targetCommit, taskCommit]);
+  let mergeBase = base;
+  if (mergedBase) {
+    const resolved = await resolveMergedBaseCommit(projectPath, git, base, mergedBase);
+    if (!resolved) throw new Error("Could not reconstruct the previously merged pull request state for local integration; finish with pr --merge instead");
+    mergeBase = resolved;
+  }
+  const merged = await git(["merge-tree", "--write-tree", "-z", "--name-only", "--no-messages", `--merge-base=${mergeBase}`, targetCommit, taskCommit]);
   let [tree, ...conflicts] = merged.stdout.toString().split("\0");
   const paths = [...new Set(conflicts.filter(Boolean))].sort();
   if (merged.code === 1 && !resolutionTarget) return { status: "conflict", targetCommit, digest, conflicts: paths };
@@ -593,22 +649,25 @@ export type RebasedWorktreeChanges =
  * worktree's own edits. Conflicting files come back instead. Null when the repository cannot
  * provide both commits; the caller then publishes on the worktree's own base.
  */
-export async function rebaseWorktreeChanges(projectPath: string, env: NodeJS.ProcessEnv, changes: WorktreeChanges, base: string): Promise<RebasedWorktreeChanges | null> {
+export async function rebaseWorktreeChanges(projectPath: string, env: NodeJS.ProcessEnv, changes: WorktreeChanges, base: string, mergedBase?: MergedWorktreeBase): Promise<RebasedWorktreeChanges | null> {
   const gitBase = changes.gitBase;
   if (!gitBase || !COMMIT.test(gitBase) || !BRANCH.test(base)) return null;
   const git = projectGit(projectPath, env);
-  const { commit: onto } = await fetchBranch(git, "origin", base);
+  const { commit: onto, fetched } = await fetchBranch(git, "origin", base);
   if (!onto) return null;
-  const present = async () => (await git(["cat-file", "-e", `${gitBase}^{commit}`])).code === 0;
-  if (!await present()) {
-    await git(["fetch", "--quiet", "--no-tags", "origin", gitBase], { timeout: FETCH_TIMEOUT_MS }).catch(() => null);
-    if (!await present()) return null;
-  }
+  if (mergedBase && !fetched) return null;
+  if (!await ensureCommitPresent(git, gitBase)) return null;
   const commit = await commitChanges(projectPath, git, gitBase, changes);
+  let mergeBase = gitBase;
+  if (mergedBase) {
+    const resolved = await resolveMergedBaseCommit(projectPath, git, gitBase, mergedBase);
+    if (!resolved) return null;
+    mergeBase = resolved;
+  }
   let tree: string;
-  if (onto === gitBase) tree = await output(git, ["rev-parse", `${commit}^{tree}`]);
+  if (!mergedBase && onto === gitBase) tree = await output(git, ["rev-parse", `${commit}^{tree}`]);
   else {
-    const merged = await git(["merge-tree", "--write-tree", "-z", "--name-only", "--no-messages", `--merge-base=${gitBase}`, onto, commit]);
+    const merged = await git(["merge-tree", "--write-tree", "-z", "--name-only", "--no-messages", `--merge-base=${mergeBase}`, onto, commit]);
     const [written, ...conflicted] = merged.stdout.toString().split("\0");
     if (merged.code === 1) return { baseCommit: onto, conflicts: [...new Set(conflicted.filter(Boolean))].sort() };
     if (merged.code !== 0 || !COMMIT.test(written)) throw new Error(`git merge-tree failed: ${merged.stderr.trim() || `exit status ${merged.code}`}`);

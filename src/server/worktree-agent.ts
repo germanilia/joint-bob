@@ -11,16 +11,18 @@ import { ensureSessionTitle, setSessionDone } from "../names.js";
 import { integrateProjectWorktree, integrationStatus, hasVerifiedIntegration } from "../worktree-integration.js";
 import {
   createProjectWorktree, deleteProjectWorktree, getProjectWorktree, listProjectWorktrees, ProjectWorktreeError,
-  recordWorktreePullRequest, withoutGitIgnored, worktreeChanges, worktreeConversationIndex, type ProjectWorktree,
+  readWorktreeMergedPullRequest, readWorktreePullRequestSnapshot, recordWorktreeMergedPullRequest,
+  recordWorktreePullRequest, saveWorktreePullRequestSnapshot, withoutGitIgnored, worktreeChanges,
+  worktreeConversationIndex, type ProjectWorktree, type WorktreePullRequest,
 } from "../project-worktrees.js";
 import { conversationLeaseRunning } from "../conversation-runtime.js";
 import { conversationScopeId, genericSecretEnvironment, getScopeSecretAccounts, githubAccountsForProject, persistConversationSecretAccounts } from "../secrets.js";
 import { getProject } from "../store.js";
 import { isHarnessId, PROJECT_COLORS, type ProjectRecord } from "../types.js";
 import type { WorktreeAgentIdentity } from "../worktree-agent.js";
-import { rebaseWorktreeChanges, reconcileWorktreeMain } from "../worktree-git.js";
+import { rebaseWorktreeChanges, reconcileWorktreeMain, type MergedWorktreeBase } from "../worktree-git.js";
 import { queueConversationPrompt } from "./conversation-prompt.js";
-import { openWorktreePullRequest } from "./github-pull-request.js";
+import { inspectWorktreePullRequest, openWorktreePullRequest, type MergedPullRequestRef } from "./github-pull-request.js";
 import { findHarnessSession, harnessSessionBusy } from "./harness-sessions.js";
 import { assertProjectEditable } from "./projects.js";
 import { broadcastToProject } from "./realtime.js";
@@ -95,20 +97,60 @@ async function startConversation(identity: WorktreeAgentIdentity, project: Proje
   return { conversationId: sessionId, engine: identity.engine, worktreeId: worktree.id, secretAccounts: accountIds.length };
 }
 
-async function openPullRequest(identity: WorktreeAgentIdentity, project: ProjectRecord, worktree: ProjectWorktree, input: { title: string; body: string; base?: string; merge?: boolean }) {
+async function loadMergedBase(projectId: string, worktreeId: string, ref: MergedPullRequestRef): Promise<MergedWorktreeBase> {
+  const snapshot = await readWorktreePullRequestSnapshot(projectId, worktreeId, ref.pullRequest.snapshotFile);
+  return {
+    ...(snapshot ? { snapshot: { writes: snapshot.writes, deletes: snapshot.deletes } } : {}),
+    pullRequest: {
+      number: ref.pullRequest.number,
+      baseCommit: ref.pullRequest.baseCommit,
+      headCommit: ref.headCommit ?? ref.pullRequest.headCommit,
+    },
+    mergedCommit: ref.mergedCommit ?? ref.pullRequest.mergedCommit,
+  };
+}
+
+function githubCredentialsFor(projectId: string, identity: WorktreeAgentIdentity) {
   const conversation = { engine: identity.engine, sessionId: identity.sessionId };
-  const accounts = githubAccountsForProject(project.id, conversation);
-  const gitEnvironment = genericSecretEnvironment(project.id, conversation);
+  const accounts = githubAccountsForProject(projectId, conversation);
+  const gitEnvironment = genericSecretEnvironment(projectId, conversation);
   const fallback = gitEnvironment.GH_TOKEN ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+  return {
+    gitEnvironment,
+    credentials: {
+      tokenFor: (repository: { owner: string; host: string }) => githubAccountFor(accounts, repository)?.token ?? fallback,
+      sshHosts: accounts.filter((account) => account.sshKey).map((account) => account.sshHost),
+    },
+  };
+}
+
+async function openPullRequest(identity: WorktreeAgentIdentity, project: ProjectRecord, worktree: ProjectWorktree, input: { title: string; body: string; base?: string; merge?: boolean }) {
+  const { gitEnvironment, credentials } = githubCredentialsFor(project.id, identity);
   const changes = await withoutGitIgnored(project.path, await worktreeChanges(project.id, worktree.id));
+  const mergedPrevious = await readWorktreeMergedPullRequest(project.id, worktree.id);
+  let published: { headCommit: string; mergedCommit?: string } | undefined;
   const result = await openWorktreePullRequest({
     projectPath: project.path, branchName: pullRequestBranch(worktree), title: input.title, body: input.body, base: input.base, merge: input.merge,
-    changes, previous: worktree.pullRequest, rebase: (base) => rebaseWorktreeChanges(project.path, gitEnvironment, changes, base),
-  }, {
-    tokenFor: (repository) => githubAccountFor(accounts, repository)?.token ?? fallback,
-    sshHosts: accounts.filter((account) => account.sshKey).map((account) => account.sshHost),
-  });
-  await recordWorktreePullRequest(project.id, worktree.id, result.pullRequest);
+    changes, previous: worktree.pullRequest, mergedPrevious,
+    rebase: async (base, merged) => rebaseWorktreeChanges(project.path, gitEnvironment, changes, base, merged ? await loadMergedBase(project.id, worktree.id, merged) : undefined),
+    onMergedPrevious: async (merged) => {
+      const updated: WorktreePullRequest = {
+        ...merged.pullRequest,
+        ...(merged.headCommit ? { headCommit: merged.headCommit } : {}),
+        ...(merged.mergedCommit ? { mergedCommit: merged.mergedCommit } : {}),
+      };
+      await recordWorktreeMergedPullRequest(project.id, worktree.id, updated);
+    },
+    onPublished: (info) => { published = { headCommit: info.headCommit, mergedCommit: info.mergedCommit }; },
+  }, credentials);
+  const snapshotFile = await saveWorktreePullRequestSnapshot(project.id, worktree.id, result.pullRequest.number, changes);
+  const recorded: WorktreePullRequest = {
+    ...result.pullRequest,
+    ...(published?.headCommit ? { headCommit: published.headCommit } : {}),
+    ...(published?.mergedCommit ? { mergedCommit: published.mergedCommit } : {}),
+    snapshotFile,
+  };
+  await recordWorktreePullRequest(project.id, worktree.id, recorded, undefined, { merged: Boolean(result.merged) });
   broadcastToProject(project.id, { type: "worktreesChanged" });
   if (result.mergeError) throw new ProjectWorktreeError(409, `Pull request ${result.pullRequest.url} is open, but GitHub did not merge it: ${result.mergeError}. Tell the user, with the pull request link.`);
   return { worktreeId: worktree.id, ...result };
@@ -162,15 +204,44 @@ export async function worktreeAgentRequest(identity: WorktreeAgentIdentity, requ
       const previous = integrationStatus(project.id, request.operationId, identity.conversationId);
       const id = request.worktreeId ?? current?.id ?? previous?.worktreeId;
       if (!id) throw new ProjectWorktreeError(400, "This conversation does not run in a worktree; pass --worktree ID");
+      let mergedBase: MergedWorktreeBase | undefined;
       if (!previous) {
         const worktree = await localWorktree(project.id, id);
         if (worktree.id !== current?.id && !createdByCaller(worktree, identity)) throw new ProjectWorktreeError(403, "Only this worktree's conversation or creator may integrate it");
-        if (worktree.pullRequest) throw new ProjectWorktreeError(409, "This worktree uses the explicit PR finish path; it cannot also be merged locally");
+        let mergedPullRequest = await readWorktreeMergedPullRequest(project.id, worktree.id);
+        if (worktree.pullRequest && mergedPullRequest?.number !== worktree.pullRequest.number) {
+          const { credentials } = githubCredentialsFor(project.id, identity);
+          let status: Awaited<ReturnType<typeof inspectWorktreePullRequest>>;
+          try {
+            status = await inspectWorktreePullRequest(project.path, worktree.pullRequest, credentials);
+          } catch {
+            throw new ProjectWorktreeError(409, `Pull request #${worktree.pullRequest.number} (${worktree.pullRequest.url}) is recorded for this worktree and its status could not be checked on GitHub; finish with pr --merge instead of merging locally`);
+          }
+          if (status.state === "open") {
+            throw new ProjectWorktreeError(409, `Pull request #${worktree.pullRequest.number} (${worktree.pullRequest.url}) is still open for this worktree; update or merge it with pr --merge instead of merging locally`);
+          }
+          if (status.merged) {
+            const updated: WorktreePullRequest = {
+              ...worktree.pullRequest,
+              ...(status.headCommit ? { headCommit: status.headCommit } : {}),
+              ...(status.mergedCommit ? { mergedCommit: status.mergedCommit } : {}),
+            };
+            await recordWorktreeMergedPullRequest(project.id, worktree.id, updated);
+            mergedPullRequest = updated;
+          }
+        }
+        if (mergedPullRequest && mergedPullRequest.base === "main") {
+          mergedBase = await loadMergedBase(project.id, worktree.id, {
+            pullRequest: mergedPullRequest,
+            headCommit: mergedPullRequest.headCommit,
+            mergedCommit: mergedPullRequest.mergedCommit,
+          });
+        }
         const running = (await runningConversations(project.id, worktree)).filter(sessionId => ![identity.sessionId, identity.conversationId].includes(sessionId));
         if (running.length) throw new ProjectWorktreeError(409, `Worktree has other running conversations: ${running.join(", ")}`);
       }
       const allocation = integrationStatus(project.id, request.operationId, identity.conversationId) ? undefined : activeAllocationAttempt(project.id, identity.conversationId);
-      const result = await withProjectRuntime(project.id, () => integrateProjectWorktree(project, id, { ...request, ownerId: identity.conversationId, deferCleanup: id === current?.id }, undefined,
+      const result = await withProjectRuntime(project.id, () => integrateProjectWorktree(project, id, { ...request, ownerId: identity.conversationId, deferCleanup: id === current?.id, mergedBase }, undefined,
         genericSecretEnvironment(project.id, { engine: identity.engine, sessionId: identity.sessionId })));
       if (allocation) modelAllocationStore().verifyAttempt(allocation.ownerId, project.id, identity.conversationId, request.operationId, result.status, allocation.attempt.attemptId);
       if (result.status === "committed" && id === current?.id) {
