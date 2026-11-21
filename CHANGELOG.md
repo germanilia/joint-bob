@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.337.5 — 2026-11-21
+
+- Guardian blocks you less. Commands in /tmp and in Joint Bob worktrees, read-only commands (ls, cat, grep, rg, find, diff…), single sed substitutions and the project's own test, typecheck, lint and build scripts no longer wait for a model check.
+- A command that Guardian asked you about no longer fails with "fetch failed" after 5 minutes. The Claude hook now waits as long as the review is open, and retries for 30 seconds when Joint Bob is restarting.
+- The audit log now says how long a denied review waited and whether the timeout ended it.
+
 ## 2.337.4 — 2026-11-21
 
 - Opening a conversation is fast again. Opening one also takes control of it, and the page renews that every 20 seconds. Each take, renewal and release made the machine rebuild every project's conversation list, the same way recents did before 2.337.2: about 300 rebuilds a minute, and local conversations took 6–10 seconds to open. Taking control now only tells open pages, a renewal tells nobody, and a Guardian step no longer marks every list either.
