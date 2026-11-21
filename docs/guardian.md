@@ -52,7 +52,7 @@ Claude and Kiro read tool output before anything can check it. A local rule that
 
 ## Privacy and records
 
-The content being checked goes to the chosen model. The audit log records what was checked (tool name or source), the rules involved and the outcome, never the content itself. A review's outcome also records how long it waited and whether the timeout ended it, so a block nobody answered is told apart from one you chose. When Joint Bob cannot be reached (for example during an update), the Claude hook retries for 30 seconds before it blocks the call.
+The content being checked goes to the chosen model. The audit log records what was checked (tool name or source), the rules involved and the outcome, never the content itself. A review's outcome also records how long it waited and whether the timeout ended it, so a block nobody answered is told apart from one you chose. When Joint Bob cannot be reached (for example during an update), the Claude hook retries for 30 seconds before it blocks the call. The hook waits as long as a review is open (up to the 10-minute timeout); it no longer gives up after 5 minutes.
 
 ## Limits
 
