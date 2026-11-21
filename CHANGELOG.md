@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.337.2 — 2026-11-21
+
+- Opening a conversation no longer makes the machine rebuild every project's conversation list. The opened conversation becomes a recent, and a recent or a pin now marks only its own project as changed. Before, every open page then rebuilt all projects on its next board read (300–540 list builds a minute on a Mac), which made the next open slow too.
+
 ## 2.337.1 — 2026-11-21
 
 - Fixed the failing release check: the Guardian tests now delete a folder outside the project. Deleting inside the project stopped being reviewed in 2.336.0, so those tests waited for a review that never came and no release since 2.335.6 was published.

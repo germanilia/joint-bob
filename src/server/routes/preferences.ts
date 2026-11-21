@@ -22,7 +22,8 @@ import { isHarnessId } from "../../types.js";
 import { listUserPins, setUserPin } from "../../user-pins.js";
 import { assertManagedHomeChangeAllowed } from "../cluster-helpers.js";
 import { Feature, requireFeature, sendError } from "../http-auth.js";
-import { broadcastToAllClients, reloadSharedSkills } from "../realtime.js";
+import { announceToAllClients, reloadSharedSkills } from "../realtime.js";
+import { sessionListingChanged } from "../../session-listing-revisions.js";
 import { auditQuerySchema, labelIconRequestSchema, recentSessionIdentitySchema, recentSessionSchema, registeredHarnessIdSchema, resourcePathsSchema, runtimeCheckSchema, settingsSchema, userPinSchema, userPreferencesSchema } from "../schemas.js";
 import { generateLabelIcon } from "../label-icon.js";
 import { currentBackgroundAgent, forgetHarnessReadiness } from "../../background-agent.js";
@@ -64,6 +65,18 @@ app.get("/api/recents", async (_request, response, next) => {
   } catch (error) { next(error); }
 });
 
+/**
+ * A recent or a pin keeps a conversation in its own project's list past the row cap, so only
+ * that project's kept lists go stale. Marking every project, as a broadcast does, made each
+ * opened conversation (it becomes a recent) rebuild every project's list on the next board
+ * read of every open page: 300-540 builds a minute on the Mac on 2026-11-21, which in turn
+ * made the next open wait.
+ */
+function personalListChanged(type: "recentsChanged" | "pinsChanged", projectId: string, accountId: string): void {
+  sessionListingChanged(projectId);
+  announceToAllClients({ type }, accountId);
+}
+
 app.put("/api/recents", async (request, response, next) => {
   try {
     const session = response.locals.authSession as AuthSession;
@@ -73,7 +86,7 @@ app.put("/api/recents", async (request, response, next) => {
     const local = await getClusterNode();
     const { recentSessions, changed } = setUserRecentSession(session.accountId, { ...entry, projectId: project.id }, local.id);
     response.json({ recentSessions });
-    if (changed) broadcastToAllClients({ type: "recentsChanged" }, (response.locals.authSession as AuthSession).accountId);
+    if (changed) personalListChanged("recentsChanged", project.id, session.accountId);
   } catch (error) { next(error); }
 });
 
@@ -83,8 +96,9 @@ app.delete("/api/recents", async (request, response, next) => {
     const target = recentSessionIdentitySchema.parse(request.body);
     const project = await getProject(target.projectId);
     const local = await getClusterNode();
-    response.json({ recentSessions: removeUserRecentSession(session.accountId, { ...target, projectId: project?.id ?? target.projectId }, local.id) });
-    broadcastToAllClients({ type: "recentsChanged" }, (response.locals.authSession as AuthSession).accountId);
+    const projectId = project?.id ?? target.projectId;
+    response.json({ recentSessions: removeUserRecentSession(session.accountId, { ...target, projectId }, local.id) });
+    personalListChanged("recentsChanged", projectId, session.accountId);
   } catch (error) { next(error); }
 });
 
@@ -113,7 +127,7 @@ app.put("/api/pins", async (request, response, next) => {
       ? { kind: payload.kind, projectId } as const
       : { kind: payload.kind, projectId, engine: payload.engine, sessionId: payload.sessionId } as const;
     const pins = setUserPin(session.accountId, target, payload.pinned, local.id);
-    broadcastToAllClients({ type: "pinsChanged" }, (response.locals.authSession as AuthSession).accountId);
+    personalListChanged("pinsChanged", projectId, session.accountId);
     response.json(pins);
   } catch (error) {
     next(error);
