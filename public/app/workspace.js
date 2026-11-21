@@ -490,19 +490,33 @@ const MARK_GROUPS = [
   { id: "starred", title: "Starred", empty: "No starred conversations.", mark: isStarred },
 ];
 let cards = [];
+/** The board as the server last sent it; `cards` is it without the hidden ones and with the done marks being saved applied. */
+let boardCards = [];
 let loaded = false;
 /** The conversations that are not on the board, read at most once a minute (they change slowly and there can be thousands). */
 let earlierRead = [];
 let earlierRows = [];
 let earlierReadAt = 0;
 const EARLIER_EVERY_MS = 60_000;
+/**
+ * Done marks shown before the board says so, by card key: { done, row, confirmedAt }. Marking a conversation done (or not
+ * done) moves its row at once; a board read asked for after the save was confirmed takes over, so a read already in
+ * flight cannot put the row back. A refused save takes the mark off. See "conversation-done-changing" below.
+ */
+const doneChanges = new Map();
 
 const cardKey = (card) => `${card.projectId}:${card.conversationId}`;
 
 /** A refresh of the board can be newer than the last read of the rest: what is on the board is not listed twice. */
 function syncEarlier() {
   const onBoard = new Set(cards.map(cardKey));
-  earlierRows = earlierRead.filter((row) => !onBoard.has(cardKey(row)) && !isHidden(row)).map((row) => ({ ...row, column: row.scheduled ? "scheduled" : row.done ? "done" : "earlier" }));
+  const read = new Set(earlierRead.map(cardKey));
+  // A conversation just marked done that the last read of the rest does not hold yet is in Done meanwhile.
+  const justDone = [...doneChanges.values()].filter((change) => change.done && change.row && !read.has(cardKey(change.row))).map((change) => change.row);
+  earlierRows = [...justDone, ...earlierRead].filter((row) => !onBoard.has(cardKey(row)) && !isHidden(row)).map((row) => {
+    const done = doneChanges.get(cardKey(row))?.done ?? row.done;
+    return { ...row, done, column: row.scheduled ? "scheduled" : done ? "done" : "earlier" };
+  });
 }
 
 /** Marks span all folders and statuses; team and filing rules still apply to the status groups. */
@@ -759,7 +773,7 @@ function refreshAfterChange() {
   return readBoard();
 }
 /** The board drawn again without the conversations being deleted (control-marks.js). */
-const redrawBoard = () => acceptCards(cards);
+const redrawBoard = () => acceptCards(boardCards);
 /** Deleting from a row's menu: asked once, then the row goes at once and the server finishes behind it; the conversation is not opened. */
 async function deleteFromRow(card) {
   const confirmed = await confirmAction({
@@ -1079,6 +1093,7 @@ async function readBoard() {
     do {
       again = false;
       const wantEarlier = Date.now() - earlierReadAt > EARLIER_EVERY_MS;
+      const askedAt = performance.now();
       let board = await api(`/api/control-center/board?look=1${wantEarlier ? "&earlier=1" : ""}`);
       // Read the new home of a pin before removing its old row from the board.
       if (!board.earlier) {
@@ -1086,18 +1101,24 @@ async function readBoard() {
         if (cards.some((card) => isPinned(card) && !nextKeys.has(cardKey(card)))) board = await api("/api/control-center/board?look=1&earlier=1");
       }
       if (board.earlier) { earlierRead = board.earlier; earlierReadAt = Date.now(); }
-      acceptCards(board.cards || [], Boolean(board.earlier));
+      acceptCards(board.cards || [], Boolean(board.earlier), askedAt);
     } while (again);
     void refreshSystemStrip();
   })().catch((error) => console.warn("Could not read the workspace groups", error)).finally(() => { refreshing = null; });
   return refreshing;
 }
 
-function acceptCards(next, updatedEarlier) {
+/** `askedAt` is performance.now() when a read was asked for; a redraw of the kept board has none. */
+function acceptCards(next, updatedEarlier, askedAt) {
+  // A read with the rest, asked for after a done mark was saved, shows the mark itself: the overlay can go.
+  if (askedAt !== undefined && updatedEarlier) {
+    for (const [key, change] of doneChanges) if (change.confirmedAt !== undefined && change.confirmedAt <= askedAt) doneChanges.delete(key);
+  }
   const nextKeys = new Set(next.map(cardKey));
   // A conversation left the board (finished, marked done): it now belongs to Earlier, which is read again at once.
   const left = cards.some((card) => !nextKeys.has(cardKey(card)));
-  cards = next.filter((card) => !isHidden(card));
+  boardCards = next;
+  cards = next.filter((card) => !isHidden(card) && doneChanges.get(cardKey(card))?.done !== true);
   loaded = true;
   syncEarlier();
   if (left && !updatedEarlier && started) { earlierReadAt = 0; scheduleGroupsRefresh(0); }
@@ -1118,6 +1139,28 @@ export function scheduleGroupsRefresh(delay = 800) {
 for (const name of ["running-refreshed", "control-center-changed", "conversation-started", "pending-reviews-refreshed"]) {
   window.addEventListener(name, () => scheduleGroupsRefresh());
 }
+// Marked done or not done anywhere (the chat's menu, a row's menu, Home, the Needs you sheet; optimistic-sessions.js): the
+// row moves now, not after the next board read, which a busy node can take seconds to answer. Once the save is confirmed
+// the board and the rest are read again at once; a refused save puts the row back.
+window.addEventListener("conversation-done-changing", (event) => {
+  const { projectId, conversationId, done, settled } = event.detail;
+  const key = `${projectId}:${conversationId}`;
+  const row = [...boardCards, ...earlierRead].find((card) => cardKey(card) === key);
+  const change = { done, row: row && { ...row, done }, confirmedAt: undefined };
+  doneChanges.set(key, change);
+  // Before the board's first answer there is nothing to move; that answer applies the mark.
+  if (loaded) redrawBoard();
+  settled.then(() => {
+    if (doneChanges.get(key) !== change) return;
+    change.confirmedAt = performance.now();
+    earlierReadAt = 0;
+    scheduleGroupsRefresh(0);
+  }, () => {
+    if (doneChanges.get(key) !== change) return;
+    doneChanges.delete(key);
+    if (loaded) redrawBoard();
+  });
+});
 // The control center read its board: something changed. Its board leaves out other people's machines, which the Inbox lists,
 // so the Inbox reads its own instead of taking those cards.
 window.addEventListener("control-center-board-refreshed", () => scheduleGroupsRefresh());

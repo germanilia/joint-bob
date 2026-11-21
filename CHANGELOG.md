@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.336.1 — 2026-11-21
+
+- Faster conversation opening on a busy machine: listing a project no longer re-reads every transcript folder to look for conversations whose transcript is on another machine. Contigos had 400–600 of them and Joint Bob has 124 worktree folders, so the Mac's server was busy and opening a conversation waited 10–16 s. The folder listing is now kept and read again only when a new transcript appears, or after a minute.
+- Marking a conversation done, or not done, moves its row in the Inbox column and on Home at once. Before, the row waited for the next board read, which took seconds on a busy machine. If the save is refused, the row goes back.
+
 ## 2.336.0 — 2026-11-21
 
 - A machine that becomes a twin now takes the inviting machine's administrator: the same name and password. Before, a machine set up on its own kept a second administrator account, and each twin refused everything the other one owned, subscriptions included. Sign in on that machine with the inviting machine's name and password from then on.

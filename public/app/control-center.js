@@ -10,6 +10,7 @@ import { noteOpenTiming, startOpenTiming } from "./open-timing.js";
 import { state } from "./state.js";
 import { registerControlView } from "./control-views.js";
 import { chooseConversationFeedback } from "./conversation-feedback.js";
+import { announceDoneChange } from "./optimistic-sessions.js";
 import { registerCardAction } from "./control-cards.js";
 import { openQuickNote } from "./quick-notes.js";
 import { PROJECT_COLORS } from "./session-rows.js";
@@ -237,10 +238,14 @@ export function focusProject(projectId) {
 export async function markDone(card) {
   const feedback = await chooseConversationFeedback(card);
   if (!feedback) return false;
-  await api("/api/control-center/cards/done", {
+  const saving = api("/api/control-center/cards/done", {
     method: "POST", body: JSON.stringify({ projectId: card.projectId, conversationId: card.conversationId, feedback }),
   });
-  await refreshControlCenter();
+  // The Inbox column and Home move the card now; a refusal puts it back.
+  announceDoneChange(card.projectId, card.conversationId, true, saving);
+  await saving;
+  // Closed once saved: the board is read again behind it, without holding up the sheet that asked.
+  void refreshControlCenter().catch((error) => console.warn("Could not read the board after marking a conversation done", error));
   return true;
 }
 

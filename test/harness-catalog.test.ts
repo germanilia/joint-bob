@@ -58,6 +58,30 @@ test("recorded shared transcripts join the listing without replacing its cached 
   assert.equal(scans.mock.callCount(), 1, "record discovery must not evict the scope it was discovered from");
 });
 
+test("records without a transcript here do not walk the transcript folders on every listing", async (t) => {
+  const project = { id: randomUUID(), name: "Records elsewhere", path: path.join(os.homedir(), randomUUID()) };
+  const sessionId = randomUUID();
+  // Recorded here, its transcript elsewhere: it lists as a draft until a transcript arrives.
+  const piPath = path.join(os.homedir(), ".pi/agent/sessions", `${sessionId}.jsonl`);
+  await ensureConversationRecord(project.id, "pi", sessionId, "fixture-node");
+  t.after(async () => { clearHarnessSessionCache(project.id); await rm(piPath, { force: true }); });
+  const pi = listHarnesses().find((adapter) => adapter.id === "pi")!;
+  const walks = t.mock.method(pi.sessions, "files");
+  for (let listing = 0; listing < 3; listing++) {
+    assert.equal((await listHarnessSessions(project)).find((session) => session.id === sessionId)?.draft, true);
+  }
+  assert.equal(walks.mock.callCount(), 1, "the folders are read once while nothing new is reported");
+
+  // The transcript arrives and the watcher reports it: the next listing reads the folders again and finds it.
+  const timestamp = new Date().toISOString();
+  await mkdir(path.dirname(piPath), { recursive: true });
+  await writeFile(piPath, `${JSON.stringify({ type: "session", version: 3, id: sessionId, cwd: "/Users/twin/project", timestamp })}\n${JSON.stringify({ type: "message", id: `${sessionId}-message`, parentId: null, timestamp, message: { role: "user", content: [{ type: "text", text: "Arrived" }] } })}\n`);
+  await refreshHarnessSessions(project.id, [piPath]);
+  const listed = (await listHarnessSessions(project)).find((session) => session.id === sessionId);
+  assert.equal(listed?.path, piPath, "the reported transcript replaces the draft");
+  assert.equal(walks.mock.callCount(), 2);
+});
+
 test("direct lookup reads only the selected transcript", async (t) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "joint-bob-direct-session-"));
   t.after(() => rm(directory, { recursive: true, force: true }));

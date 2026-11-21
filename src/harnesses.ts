@@ -215,6 +215,7 @@ export function harnessForSessionPath(sessionPath: string): HarnessAdapter {
 }
 
 export function refreshHarnessSessions(projectId: string, changedFiles: string[]): Promise<void> {
+  forgetTranscriptFiles(projectId, changedFiles);
   // Marked once the catalog holds the change, so a listing computed meanwhile is not kept as current.
   return sessionCatalog.refresh(projectId, changedFiles).finally(() => sessionListingChanged(projectId));
 }
@@ -225,6 +226,7 @@ export function findHarnessSession(project: HarnessProject, harnessId: HarnessId
 
 export function clearHarnessSessionCache(projectId?: string): void {
   sessionCatalog.clear(projectId);
+  forgetTranscriptFiles(projectId);
   sessionListingChanged(projectId);
 }
 
@@ -278,15 +280,64 @@ function adapterFor(engine: HarnessId): HarnessAdapter {
   return adapter;
 }
 
+interface TranscriptFiles {
+  projectId: string;
+  harnessId: HarnessId;
+  readAt: number;
+  files: Promise<{ bySessionId: Map<string, string>; paths: Set<string> }>;
+}
+
+/**
+ * Where a project's transcripts are, per harness, kept between listings. A listing reads it
+ * whenever a recorded conversation has no transcript in the catalog, and some always have none
+ * here: drafts, and conversations whose transcript stays on another machine. On 2026-11-21
+ * Contigos had 400–600 such records and Joint Bob 20–50, so every listing walked the transcript
+ * folders of every worktree again (Joint Bob has 124), which kept the Mac's server busy and made
+ * opening a conversation wait 10 s and more. A kept answer is read again when a transcript it
+ * does not hold is reported, when the project's cache is cleared, or after a minute.
+ */
+const TRANSCRIPT_FILES_KEPT_MS = 60_000;
+const transcriptFileListings = new Map<string, TranscriptFiles>();
+
 /** A project's transcripts of one harness by session id, from directory listings alone. */
 async function transcriptFilesById(project: HarnessProject, engine: HarnessId): Promise<Map<string, string>> {
+  const key = projectCacheKey(project, engine);
+  const now = Date.now();
+  const kept = transcriptFileListings.get(key);
+  if (kept && now - kept.readAt < TRANSCRIPT_FILES_KEPT_MS) return (await kept.files).bySessionId;
+  for (const [candidate, entry] of transcriptFileListings) if (now - entry.readAt >= TRANSCRIPT_FILES_KEPT_MS) transcriptFileListings.delete(candidate);
   const adapter = adapterFor(engine);
-  const filesBySessionId = new Map<string, string>();
-  for (const filePath of await adapter.sessions.files(project)) {
-    const sessionId = adapter.paths.sessionId(filePath) ?? adapter.paths.sessionId(`${adapter.id}:${filePath}`);
-    if (sessionId) filesBySessionId.set(sessionId, filePath);
+  const files = adapter.sessions.files(project).then((filePaths) => {
+    const bySessionId = new Map<string, string>();
+    for (const filePath of filePaths) {
+      const sessionId = adapter.paths.sessionId(filePath) ?? adapter.paths.sessionId(`${adapter.id}:${filePath}`);
+      if (sessionId) bySessionId.set(sessionId, filePath);
+    }
+    return { bySessionId, paths: new Set(filePaths.map((filePath) => path.resolve(filePath))) };
+  });
+  const entry: TranscriptFiles = { projectId: project.id, harnessId: engine, readAt: now, files };
+  transcriptFileListings.set(key, entry);
+  files.catch(() => { if (transcriptFileListings.get(key) === entry) transcriptFileListings.delete(key); });
+  return (await files).bySessionId;
+}
+
+/**
+ * Drops kept transcript listings: all of a project's (or every project's) when no files are
+ * named, otherwise those missing one of the named transcripts. A transcript that changed but
+ * was already listed leaves its listing as it is, so a running conversation does not empty it.
+ */
+function forgetTranscriptFiles(projectId?: string, changedFiles: string[] = []): void {
+  for (const [key, entry] of transcriptFileListings) {
+    if (projectId && entry.projectId !== projectId) continue;
+    if (!changedFiles.length) { transcriptFileListings.delete(key); continue; }
+    const adapter = adapters.find((candidate) => candidate.id === entry.harnessId);
+    const owned = adapter ? changedFiles.filter((file) => adapter.paths.ownsTranscript(file)).map((file) => path.resolve(file)) : [];
+    if (!owned.length) continue;
+    // Checked once the listing is read, so one still being read when the file appeared is dropped too.
+    void entry.files.then(({ paths }) => {
+      if (owned.some((file) => !paths.has(file)) && transcriptFileListings.get(key) === entry) transcriptFileListings.delete(key);
+    }, () => undefined);
   }
-  return filesBySessionId;
 }
 
 /** Joint Bob's own fields for a transcript, kept on its conversation record. */

@@ -9,7 +9,7 @@ import { elements } from "./elements.js";
 import { agentIcon, sessionAgentId } from "./icons.js";
 import { conversationListView, filteredSessions, normalizedQuery, selectedProject, sessionDisplayState, sessionDisplayTitle, setMobileView, shortSessionTitle, updateChatFilterCounts } from "./layout.js";
 import { toggleSessionNtfy } from "./ntfy.js";
-import { changeSessionOptimistically } from "./optimistic-sessions.js";
+import { announceDoneChange, changeSessionOptimistically } from "./optimistic-sessions.js";
 import { keepListScroll } from "./list-scroll.js";
 import { drawChunked } from "./long-scroll.js";
 import { renderProjects } from "./project-list.js";
@@ -623,10 +623,13 @@ async function toggleSessionDone(session) {
       .catch((error) => console.warn("Could not store the review mark of a conversation marked done", error));
   }
   try {
-    await changeSessionOptimistically(session, { patch: { doneAt: done ? new Date().toISOString() : undefined, ...(reviews ? { reviewState: "reviewed" } : {}) } }, () => api(`/api/projects/${encodeURIComponent(projectId)}/sessions/done`, {
+    const saving = changeSessionOptimistically(session, { patch: { doneAt: done ? new Date().toISOString() : undefined, ...(reviews ? { reviewState: "reviewed" } : {}) } }, () => api(`/api/projects/${encodeURIComponent(projectId)}/sessions/done`, {
       method: "PUT",
       body: JSON.stringify({ sessionId: session.conversationId || session.id, engine, done, ...(feedback ? { feedback } : {}) }),
     }), renderSessions);
+    // The Inbox column and Home draw from the board, not this list: they move the row now too.
+    announceDoneChange(projectId, session.conversationId || session.id, done, saving);
+    await saving;
   } catch (error) {
     if (closeActive && state.activeProjectId === projectId && !state.activeSessionPath && !state.activeSessionId) {
       openListedSession(active, { keepView: document.body.classList.contains("view-control") });

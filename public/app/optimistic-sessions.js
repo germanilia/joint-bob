@@ -8,6 +8,15 @@ import { state } from "./state.js";
  */
 const changes = [];
 
+/**
+ * Tells the Inbox column (workspace.js) and Home at once that a conversation is being marked
+ * done or not done. They draw from the board, whose next read can take seconds on a busy node,
+ * so the row moves now and `settled` (the save) decides whether it stays moved.
+ */
+export function announceDoneChange(projectId, conversationId, done, settled) {
+  window.dispatchEvent(new CustomEvent("conversation-done-changing", { detail: { projectId, conversationId, done, settled: Promise.resolve(settled) } }));
+}
+
 /** A removed conversation can linger in lists for a while: one owned by another machine is
     deleted there, and this machine's copy goes only when that reaches it. */
 const REMOVAL_LINGER_MS = 30_000;
