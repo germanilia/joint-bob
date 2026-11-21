@@ -205,11 +205,11 @@ test("checkGuardian blocks, asks, fixes and continues by the rules", async (t) =
 
   assert.deepEqual(await checkGuardian(identity, { kind: "tool", tool: "bash", category: "commands", input: { command: "ls" } }), { action: "continue" });
 
-  const asked = checkGuardian(identity, { kind: "tool", tool: "bash", category: "commands", input: { command: "rm -rf /tmp/x" } });
+  const asked = checkGuardian(identity, { kind: "tool", tool: "bash", category: "commands", input: { command: "rm -rf /srv/x" } });
   await new Promise((resolve) => setTimeout(resolve, 50));
   const [review] = pendingGuardianReviews(project.id, "conversation");
   assert.equal(review.title, "Pi wants to run a command");
-  assert.equal(review.subject, "rm -rf /tmp/x");
+  assert.equal(review.subject, "rm -rf /srv/x");
   assert.match(review.detail, /Dangerous commands rule · 95% sure · Laya/);
   decideGuardianReview(project.id, "conversation", review.id, "block");
   const blocked = await asked;
@@ -232,7 +232,7 @@ test("allow always remembers only the exact action and scope, without overriding
   t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
   const project = await addProject("Remember action", mkdtempSync(path.join(os.tmpdir(), "guardian-remember-")), { writeInstructions: false });
   const identity: GuardianIdentity = { projectId: project.id, conversationId: "one", harness: "pi", cwd: "/tmp/one", canReplaceTool: true };
-  const action = { kind: "tool" as const, tool: "bash", category: "commands" as const, input: { command: "rm -rf /tmp/remember-action" } };
+  const action = { kind: "tool" as const, tool: "bash", category: "commands" as const, input: { command: "rm -rf /srv/remember-action" } };
   let questions = 0;
   const stop = onGuardianEvent(event => {
     if (event.type !== "reviews" || event.projectId !== identity.projectId) return;
@@ -247,7 +247,7 @@ test("allow always remembers only the exact action and scope, without overriding
   assert.equal(questions, 1, "the saved approval survives in the same conversation");
   assert.equal((await checkGuardian({ ...identity, conversationId: "two" }, action)).action, "block");
   assert.equal(questions, 2, "another conversation needs its own approval");
-  assert.equal((await checkGuardian(identity, { ...action, input: { command: "rm -rf /tmp/different" } })).action, "block");
+  assert.equal((await checkGuardian(identity, { ...action, input: { command: "rm -rf /srv/different" } })).action, "block");
   assert.equal((await checkGuardian({ ...identity, cwd: "/tmp/two" }, action)).action, "block");
   updateGuardianSettings({ ...getGuardianSettings(), rules: getGuardianSettings().rules.map(item => ({ ...item, ifYes: "block" })) });
   assert.equal((await checkGuardian(identity, action)).action, "block");
@@ -257,7 +257,7 @@ test("automation bypass lasts only for its turn and conversation, including on e
   const { withGuardianBypass } = await import("../src/guardian/bypass.js");
   updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: "http://127.0.0.1:9" });
   const identity: GuardianIdentity = { projectId: "bypass-test", conversationId: "c", harness: "pi", cwd: process.cwd(), canReplaceTool: true };
-  const action = { kind: "tool" as const, tool: "bash", category: "commands" as const, input: { command: "ls" } };
+  const action = { kind: "tool" as const, tool: "bash", category: "commands" as const, input: { command: "make release" } };
   try {
     await assert.rejects(withGuardianBypass(identity.projectId, identity.conversationId, true, async () => {
       assert.equal((await checkGuardian(identity, action)).action, "continue");
@@ -295,7 +295,7 @@ test('trusted commands and in-project file operations skip the model, outside op
   ]) {
     assert.deepEqual(await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command } }), { action: 'continue' }, command);
   }
-  const outside = await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command: 'rm -rf /tmp/outside' } });
+  const outside = await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command: 'rm -rf /srv/outside' } });
   assert.equal(outside.action, 'block', 'outside-folder delete still requires model check (fails closed when unreachable)');
   const verdict = await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command: 'git push origin --delete main' } });
   assert.equal(verdict.action, 'block');
@@ -307,7 +307,7 @@ test("a check that cannot reach its model blocks the action", async () => {
   updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: "http://127.0.0.1:9" });
   try {
     const verdict = await checkGuardian({ projectId: "guardian-test", conversationId: "c", harness: "pi", cwd: process.cwd(), canReplaceTool: true },
-      { kind: "tool", tool: "bash", category: "commands", input: { command: "ls" } });
+      { kind: "tool", tool: "bash", category: "commands", input: { command: "make release" } });
     assert.equal(verdict.action, "block");
     assert.match((verdict as { reason: string }).reason, /Guardian could not check this command, so it was blocked/);
   } finally {

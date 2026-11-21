@@ -9,7 +9,7 @@ import type { HarnessId } from "../types.js";
 import { isGuardianExempt, runGuardianFix } from "./fix.js";
 import { localLayaUrl } from "./laya.js";
 import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } from "./model.js";
-import { announceGuardianBlock, announceGuardianWarning, guardianActionAllowed, requestGuardianReview } from "./reviews.js";
+import { announceGuardianBlock, announceGuardianWarning, guardianActionAllowed, REVIEW_TIMEOUT_MS, requestGuardianReview } from "./reviews.js";
 import { guardianBypassed } from "./bypass.js";
 import { guardianCommandPolicy, guardianCommandText } from './commands.js';
 import { ruleApplies, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
@@ -112,11 +112,11 @@ function reviewSubject(request: GuardianRequest): string {
   return JSON.stringify(request.input, null, 2);
 }
 
-function audit(identity: GuardianIdentity, request: GuardianRequest, outcome: string, findings: Finding[]): void {
+function audit(identity: GuardianIdentity, request: GuardianRequest, outcome: string, findings: Finding[], waited?: { waitedSeconds: number; timedOut: boolean }): void {
   // Never the content itself: what Guardian caught is exactly what must not be stored.
   recordAuditEvent({
     eventType: `guardian.${outcome}`, actorType: "system", entityType: "conversation", entityId: identity.conversationId,
-    details: { projectId: identity.projectId, agent: identity.harness, checked: request.kind === "tool" ? request.tool : request.source, rules: findings.map(({ rule }) => rule.name).join(", ") || null },
+    details: { projectId: identity.projectId, agent: identity.harness, checked: request.kind === "tool" ? request.tool : request.source, rules: findings.map(({ rule }) => rule.name).join(", ") || null, ...waited },
   });
 }
 
@@ -173,13 +173,16 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
     const alwaysKey = !team && !reviewed.some(finding => finding.group.relay)
       ? createHash('sha256').update(JSON.stringify([identity.projectId, identity.conversationId, identity.harness, identity.cwd, request, groups])).digest('hex') : undefined;
     if (alwaysKey && guardianActionAllowed(alwaysKey)) return request === original ? { action: "continue" } : replaced(request);
+    const asked = Date.now();
     const decision = await requestGuardianReview({
       alwaysKey,
       projectId: identity.projectId, conversationId: identity.conversationId, title: reviewTitle(identity, request), subject: reviewSubject(request),
       operationKey: createHash('sha256').update(JSON.stringify(request)).digest('hex'),
       detail: reviewed.map((finding) => `${finding.rule.name} rule · ${percent(finding.probability)} sure · ${finding.model}${finding.group.relay ? ` · ${finding.group.source}` : ""}`).join("\n"),
     }, identity.signal);
-    audit(identity, request, decision === "block" ? "denied" : decision === "allow-always" ? "allowed-always" : "allowed", reviewed);
+    // Nobody answering blocks too, so the audit says whether this was the person or the timeout.
+    const waitedMs = Date.now() - asked;
+    audit(identity, request, decision === "block" ? "denied" : decision === "allow-always" ? "allowed-always" : "allowed", reviewed, { waitedSeconds: Math.round(waitedMs / 1000), timedOut: decision === "block" && waitedMs >= REVIEW_TIMEOUT_MS });
     if (decision === "block") return { action: "block", reason: `The user blocked this ${what(request)} after Guardian flagged it. Rule ${reviewed.map(describe).join("; ")}.` };
     return request === original ? { action: "continue" } : replaced(request);
   }
