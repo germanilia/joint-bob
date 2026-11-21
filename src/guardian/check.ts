@@ -138,7 +138,7 @@ async function applyFixes(identity: GuardianIdentity, request: GuardianRequest, 
  */
 export async function checkGuardian(identity: GuardianIdentity, original: GuardianRequest): Promise<GuardianVerdict> {
   if (guardianBypassed(identity.projectId, identity.conversationId)) return { action: 'continue' };
-  const commandPolicy = guardianCommandPolicy(original);
+  const commandPolicy = guardianCommandPolicy(original, identity.cwd);
   if (commandPolicy === 'allow') return { action: 'continue' };
   const team = !!teamAssistantForConversation(identity.projectId, identity.conversationId);
   const effectCapable = original.kind === 'tool' && (original.category === 'commands' || original.category === 'file-changes');
