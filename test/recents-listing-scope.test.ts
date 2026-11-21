@@ -4,12 +4,14 @@ import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { announceGuardianWarning } from "../src/guardian/reviews.js";
 import { projectListingRevision } from "../src/session-listing-revisions.js";
 
 // Opening a conversation makes it a recent. That used to mark every project's kept list
 // changed, so each open rebuilt every project's list on the next board read of every page
-// (300-540 builds a minute on the Mac, 2026-11-21). A recent or a pin changes its own project.
-test("a recent or a pin marks only its own project's conversation list changed", async (t) => {
+// (300-540 builds a minute on the Mac, 2026-11-21). A recent or a pin changes its own project. Opening one also takes
+// control of it, renewed every 20 s, and that marked every list too; the board reads leases and Guardian steps live.
+test("a recent or a pin marks only its own project's list, a control lease or a Guardian step none", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-recents-scope-"));
   const previous = { dataDir: process.env.PI_WEB_DATA_DIR, username: process.env.MASTER_BOB_ADMIN_USERNAME, password: process.env.MASTER_BOB_INITIAL_PASSWORD };
   process.env.PI_WEB_DATA_DIR = path.join(root, "data");
@@ -61,4 +63,10 @@ test("a recent or a pin marks only its own project's conversation list changed",
   assert.equal((await fetch(`${base}/api/pins`, { method: "PUT", headers, body: JSON.stringify({ kind: "project", projectId: opened, pinned: true }) })).status, 200);
   assert.notEqual(projectListingRevision(opened), afterRemoval.opened);
   assert.equal(projectListingRevision(other), afterRemoval.other, "a pin leaves other projects too");
+
+  const beforeLease = { opened: projectListingRevision(opened), other: projectListingRevision(other) };
+  const lease = (action: string) => fetch(`${base}/api/control-center/lease`, { method: "POST", headers, body: JSON.stringify({ projectId: opened, conversationId: sessionId, action }) });
+  for (const action of ["take", "take", "release"]) assert.equal((await lease(action)).status, 200, `lease ${action}`);
+  announceGuardianWarning(opened, sessionId, "Guardian looked at a command");
+  assert.deepEqual({ opened: projectListingRevision(opened), other: projectListingRevision(other) }, beforeLease, "taking, renewing and giving back control, and a Guardian step, mark no project's list changed");
 });

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.337.4 — 2026-11-21
+
+- Opening a conversation is fast again. Opening one also takes control of it, and the page renews that every 20 seconds. Each take, renewal and release made the machine rebuild every project's conversation list, the same way recents did before 2.337.2: about 300 rebuilds a minute, and local conversations took 6–10 seconds to open. Taking control now only tells open pages, a renewal tells nobody, and a Guardian step no longer marks every list either.
+
 ## 2.337.3 — 2026-11-21
 
 - Fixed sync from a machine that had just taken its twin's administrator: its waiting events were renamed to the new account in their content but not in their keys, and the twin refused every batch that held one.

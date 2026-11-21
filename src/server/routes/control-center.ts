@@ -5,9 +5,9 @@ import { getGuardianSettings, productionGuardCoverage, updateGuardianSettings } 
 import { productionGuardStatus, withProductionGuard } from "../../guardian/production-rule.js";
 import { allPendingGuardianReviews, decideGuardianReview } from "../../guardian/reviews.js";
 import { getProject, listProjects, projectVisible } from "../../store.js";
-import { isKeptOut, keepBobOut, loadKeptOut, releaseLease, takeLease } from "../../control-center/leases.js";
+import { isKeptOut, keepBobOut, leaseHolder, loadKeptOut, releaseLease, takeLease } from "../../control-center/leases.js";
 import { requireAdmin } from "../admin.js";
-import { broadcastToAllClients } from "../realtime.js";
+import { announceToAllClients, broadcastToAllClients } from "../realtime.js";
 import { sendError } from "../http-auth.js";
 import { actingAccountFromSession } from "../../account-context.js";
 import { bobDatabase, countBobMessages, rememberBobAccount, type BobMessage } from "../../control-center/bob-store.js";
@@ -173,21 +173,25 @@ app.post("/api/control-center/lease", async (request, response, next) => {
     const input = leaseSchema.parse(request.body);
     const session = response.locals.authSession as AuthSession;
     if (!await projectVisible(input.projectId)) { sendError(response, 404, "Project not found"); return; }
+    // Who holds a conversation shows only on the board, which asks the leases on every read (control-center-board.ts), so
+    // pages are told and no project's conversation list is marked changed. Marking them all made every open page rebuild
+    // every project's list on each open and each renewal (2026-11-21). A renewal changes nothing and tells nobody.
     if (input.action === "keep-out" || input.action === "let-in") {
       if (!keepBobOut(await bobDatabase(), input.projectId, input.conversationId, session.accountId, input.action === "keep-out")) { sendError(response, 409, "Someone else is in control of this conversation"); return; }
-      broadcastToAllClients({ type: "controlCenterChanged" });
+      announceToAllClients({ type: "controlCenterChanged" });
       response.json({ leased: true, keptOut: input.action === "keep-out" });
       return;
     }
     if (input.action === "release") {
       if (isKeptOut(input.projectId, input.conversationId)) keepBobOut(await bobDatabase(), input.projectId, input.conversationId, session.accountId, false);
       releaseLease(input.projectId, input.conversationId, session.accountId);
-      broadcastToAllClients({ type: "controlCenterChanged" });
+      announceToAllClients({ type: "controlCenterChanged" });
       response.json({ leased: false });
       return;
     }
+    const renewal = leaseHolder(input.projectId, input.conversationId) === session.accountId;
     if (!takeLease(input.projectId, input.conversationId, session.accountId)) { sendError(response, 409, "Someone else is in control of this conversation"); return; }
-    broadcastToAllClients({ type: "controlCenterChanged" });
+    if (!renewal) announceToAllClients({ type: "controlCenterChanged" });
     response.json({ leased: true, keptOut: isKeptOut(input.projectId, input.conversationId) });
   } catch (error) {
     if (error instanceof z.ZodError) { sendError(response, 400, "Invalid request"); return; }

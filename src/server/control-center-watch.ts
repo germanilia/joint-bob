@@ -9,7 +9,7 @@ import { sessionTitleOverrides } from "../names.js";
 import { getProject, projectVisible } from "../store.js";
 import { titleOf } from "./control-center-start.js";
 import { harnessSessions } from "./harness-sessions.js";
-import { broadcastToAllClients } from "./realtime.js";
+import { announceToAllClients, broadcastToAllClients } from "./realtime.js";
 
 /** The conversation as this machine has it open; undefined when it has not opened it. */
 function openConversation(projectId: string, conversationId: string) {
@@ -168,8 +168,10 @@ export function startControlCenterWatch(): void {
   // Open pages learn at once that Bob has something new, instead of asking on a timer.
   onBobMessage((accountId) => broadcastToAllClients({ type: "controlCenterChanged" }, accountId));
   onBobTimelineChanged((accountId) => broadcastToAllClients({ type: "controlCenterChanged" }, accountId));
+  // The board asks Guardian for its open reviews on every read, and the chat server marks the conversation's own project
+  // changed for a review (harness-chat.ts), so a Guardian step tells pages without marking every project's list changed.
   onGuardianEvent((event) => {
-    broadcastToAllClients({ type: "controlCenterChanged" });
+    announceToAllClients({ type: "controlCenterChanged" });
     if (event.type !== "reviews" || !allPendingGuardianReviews().some((review) => review.id === event.review.id)) return;
     void announceReview(event.review).catch((error) => console.warn("Bob could not announce a Guardian review", error instanceof Error ? error.message : error));
   });
