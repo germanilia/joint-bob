@@ -49,9 +49,13 @@ test("settings refuse a no value above the yes value and Laya without an address
 
 test('shipped dangerous-command questions upgrade without replacing custom rules', (t) => {
   t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
-  const legacy = 'Could this action delete data, or make a change to the system that cannot be undone?';
-  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [rule({ question: legacy })] });
-  assert.equal(getGuardianSettings().rules[0].question, DEFAULT_GUARDIAN_SETTINGS.rules[0].question);
+  for (const legacy of [
+    'Could this action delete data, or make a change to the system that cannot be undone?',
+    'Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Routine edits and cleanup within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.',
+  ]) {
+    updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [rule({ question: legacy })] });
+    assert.equal(getGuardianSettings().rules[0].question, DEFAULT_GUARDIAN_SETTINGS.rules[0].question);
+  }
   updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [rule({ question: 'My custom question?' })] });
   assert.equal(getGuardianSettings().rules[0].question, 'My custom question?');
 });
@@ -281,13 +285,18 @@ test("a later manual turn never inherits an automation still draining background
   assert.equal(guardianBypassed("overlap", "c"), false);
 });
 
-test('trusted commands skip the model, protected branch deletion does not', async (t) => {
+test('trusted commands and in-project file operations skip the model, outside operations and protected branch deletion do not', async (t) => {
   updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote', layaUrl: 'http://127.0.0.1:1' });
   t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
   const identity: GuardianIdentity = { projectId: 'command-policy', conversationId: 'c', harness: 'pi', cwd: '/workspace', canReplaceTool: true };
-  for (const command of ['git push origin main', 'gh pr edit 456 --body verified', 'node "$JOINT_BOB_WORKTREE_CLI" list']) {
-    assert.deepEqual(await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command } }), { action: 'continue' });
+  for (const command of [
+    'git push origin main', 'gh pr edit 456 --body verified', 'node "$JOINT_BOB_WORKTREE_CLI" list',
+    'rm -rf dist', 'mv src/old.ts src/new.ts', 'cp a.txt b.txt', 'mkdir -p src/new && touch src/new/index.ts',
+  ]) {
+    assert.deepEqual(await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command } }), { action: 'continue' }, command);
   }
+  const outside = await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command: 'rm -rf /tmp/outside' } });
+  assert.equal(outside.action, 'block', 'outside-folder delete still requires model check (fails closed when unreachable)');
   const verdict = await checkGuardian(identity, { kind: 'tool', tool: 'bash', category: 'commands', input: { command: 'git push origin --delete main' } });
   assert.equal(verdict.action, 'block');
   assert.match((verdict as { reason: string }).reason, /protected branch/);

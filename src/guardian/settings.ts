@@ -6,13 +6,18 @@ import { DEFAULT_GUARDIAN_SETTINGS, guardianSettingsSchema, type GuardianModelId
 
 const SETTINGS_KEY = "guardian";
 
+const LEGACY_DANGEROUS_QUESTIONS = new Set([
+  'Could this action delete data, or make a change to the system that cannot be undone?',
+  'Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Routine edits and cleanup within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.',
+]);
+
 export function getGuardianSettings(): GuardianSettings {
   const stored = value(SETTINGS_KEY);
   if (!stored) return structuredClone(DEFAULT_GUARDIAN_SETTINGS);
   const settings = guardianSettingsSchema.parse(JSON.parse(stored));
   // Upgrade only the shipped question; preserve questions the person customized.
   for (const rule of settings.rules) {
-    if (rule.id === 'dangerous-commands' && rule.question === 'Could this action delete data, or make a change to the system that cannot be undone?') {
+    if (rule.id === 'dangerous-commands' && LEGACY_DANGEROUS_QUESTIONS.has(rule.question)) {
       rule.question = DEFAULT_GUARDIAN_SETTINGS.rules[0].question;
     }
   }
