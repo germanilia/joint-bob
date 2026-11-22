@@ -10,6 +10,7 @@ import { removeSecrets, REMOVED } from "../src/guardian/redact.js";
 import { cancelGuardianReviews, decideGuardianReview, onGuardianEvent, pendingGuardianReviews, requestGuardianReview } from "../src/guardian/reviews.js";
 import { DEFAULT_GUARDIAN_SETTINGS, guardianSettingsSchema, ruleApplies, ruleOutcome, toolCategory, worstOutcome, type GuardianRule } from "../src/guardian/rules.js";
 import { getGuardianSettings, updateGuardianSettings } from "../src/guardian/settings.js";
+import { PRODUCTION_RULE, productionGuardStatus } from "../src/guardian/production-rule.js";
 import { addProject } from "../src/store.js";
 
 const rule = (overrides: Partial<GuardianRule> = {}): GuardianRule => ({ ...DEFAULT_GUARDIAN_SETTINGS.rules[0], ...overrides });
@@ -47,17 +48,44 @@ test("settings refuse a no value above the yes value and Laya without an address
   assert.throws(() => guardianSettingsSchema.parse({ ...DEFAULT_GUARDIAN_SETTINGS, model: "laya-remote", layaUrl: "" }));
 });
 
-test('shipped dangerous-command questions upgrade without replacing custom rules', (t) => {
+test('shipped rules upgrade without replacing custom rules or re-enabling a rule', (t) => {
   t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
   for (const legacy of [
     'Could this action delete data, or make a change to the system that cannot be undone?',
     'Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Routine edits and cleanup within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.',
+    'Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Deleting, moving, creating, and modifying files within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.',
   ]) {
-    updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [rule({ question: legacy })] });
-    assert.equal(getGuardianSettings().rules[0].question, DEFAULT_GUARDIAN_SETTINGS.rules[0].question);
+    updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [rule({ question: legacy, care: 'balanced', check: 'commands', ifYes: 'ask', enabled: false })] });
+    assert.deepEqual(getGuardianSettings().rules[0], { ...DEFAULT_GUARDIAN_SETTINGS.rules[0], enabled: false });
   }
-  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [rule({ question: 'My custom question?' })] });
-  assert.equal(getGuardianSettings().rules[0].question, 'My custom question?');
+  const custom = rule({ question: 'My custom question?', care: 'cautious' });
+  const secrets = DEFAULT_GUARDIAN_SETTINGS.rules[1];
+  const legacySecrets = { ...secrets, care: 'balanced' as const, question: 'Does this contain a password, API key, access token or private key?' };
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, rules: [custom, legacySecrets] });
+  assert.deepEqual(getGuardianSettings().rules, [custom, secrets]);
+  assert.equal(ruleOutcome(secrets, 0.8), 'continue');
+  assert.equal(ruleOutcome(secrets, 0.95), 'fix');
+});
+
+test('shipped guards let uncertain scores through and block high-confidence severe tool actions', async t => {
+  for (const guard of [PRODUCTION_RULE, DEFAULT_GUARDIAN_SETTINGS.rules[0]]) {
+    for (const score of [0.16, 0.29, 0.35, 0.89]) assert.equal(ruleOutcome(guard, score), 'continue');
+    assert.equal(ruleOutcome(guard, 0.9), 'block');
+    for (const tool of ['Bash', 'Write', 'mcp__mail__send']) {
+      assert.equal(ruleApplies(guard, { kind: 'tool', tool, category: toolCategory(tool), input: {} }), true);
+    }
+    assert.equal(ruleApplies(guard, { kind: 'outgoing', source: 'tool output', text: '' }), false);
+  }
+  assert.equal(productionGuardStatus({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, rules: [PRODUCTION_RULE] }), 'on');
+  const model = await fakeModel(state => state.includes('synthetic-credential-disclosure') ? 0.97 : 0.35);
+  t.after(() => { model.server.close(); updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS); });
+  const project = await addProject('Severe guard', mkdtempSync(path.join(os.tmpdir(), 'guardian-severe-')), { writeInstructions: false });
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote', layaUrl: model.url, rules: [PRODUCTION_RULE] });
+  const identity: GuardianIdentity = { projectId: project.id, cwd: process.cwd(), conversationId: 'severe', harness: 'pi', canReplaceTool: true };
+  const request = { kind: 'tool', tool: 'mcp__mail__send', category: 'other' } as const;
+  assert.equal((await checkGuardian(identity, { ...request, input: { body: 'routine message' } })).action, 'continue');
+  assert.equal((await checkGuardian(identity, { ...request, input: { body: 'synthetic-credential-disclosure' } })).action, 'block');
+  assert.deepEqual(pendingGuardianReviews(project.id, identity.conversationId), []);
 });
 
 test("secret removal takes out project secrets and common token formats", () => {
@@ -161,7 +189,7 @@ test('command-only Guardian gates turns on model availability, falls back in eit
   const project = await addProject('Fallback', mkdtempSync(path.join(os.tmpdir(), 'guardian-fallback-')), { writeInstructions: false });
   const identity: GuardianIdentity = { projectId: project.id, conversationId: 'fallback', cwd: process.cwd(), harness: 'pi', canReplaceTool: true };
   const prompt = { kind: 'outgoing' as const, source: "the user's message", text: 'private user input' };
-  const settings = { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, rules: [rule()], layaUrl: 'https://laya.example' };
+  const settings = { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, rules: [rule({ check: 'commands' })], layaUrl: 'https://laya.example' };
   const warnings: string[] = [], calls: string[] = [];
   t.after(onGuardianEvent(event => { if (event.type === 'warning') warnings.push(event.message); }));
   t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
@@ -198,7 +226,8 @@ test("checkGuardian blocks, asks, fixes and continues by the rules", async (t) =
   clearGuardianModelCache();
   const model = await fakeModel((state) => /rm -rf|AKIA[A-Z0-9]{16}/.test(state) ? 0.95 : 0.05);
   t.after(() => model.server.close());
-  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: model.url });
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: model.url,
+    rules: [rule({ ifYes: 'ask' }), DEFAULT_GUARDIAN_SETTINGS.rules[1]] });
   t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
   const project = await addProject("Guardian checks", mkdtempSync(path.join(os.tmpdir(), "guardian-project-")), { writeInstructions: false });
   const identity: GuardianIdentity = { projectId: project.id, conversationId: "conversation", harness: "pi", cwd: process.cwd(), canReplaceTool: true };
@@ -228,7 +257,7 @@ test("allow always remembers only the exact action and scope, without overriding
   clearGuardianModelCache();
   const model = await fakeModel(() => 0.95);
   t.after(() => model.server.close());
-  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: model.url });
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: model.url, rules: [rule({ ifYes: 'ask' })] });
   t.after(() => updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS));
   const project = await addProject("Remember action", mkdtempSync(path.join(os.tmpdir(), "guardian-remember-")), { writeInstructions: false });
   const identity: GuardianIdentity = { projectId: project.id, conversationId: "one", harness: "pi", cwd: "/tmp/one", canReplaceTool: true };

@@ -71,11 +71,11 @@ test("a step waiting for your OK is listed under Needs you and answered from its
 
   await page.getByTestId("projects-open-control-center-button").click();
   await openBobChat(page);
-  // Bob's settings say whether production steps ask first, and an administrator can turn it on.
+  // Bob's settings show whether severe-action protection is on, and an administrator can enable it.
   await page.getByTestId("control-chat-settings-button").click();
   await page.getByTestId("control-bob-guard-button").waitFor({ state: "visible" });
   assert.match(await page.getByTestId("control-bob-guard").innerText(), /Guardian is off/);
   await page.getByTestId("control-bob-guard-button").click();
-  await page.waitForFunction(() => document.querySelector('[data-testid="control-bob-guard"]')?.textContent?.includes("ask you first"));
+  await page.waitForFunction(() => document.querySelector('[data-testid="control-bob-guard"]')?.textContent?.includes("checks for severe damage and credential disclosure"));
   assert.equal(await page.getByTestId("control-bob-guard-button").isHidden(), true);
 });

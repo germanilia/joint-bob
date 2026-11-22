@@ -20,7 +20,7 @@ test("every problem found becomes one message, with its fix steps and the screen
   }
   assert.equal(messages[0].severity, "error", "something that does not work is an error");
   assert.match(messages[1].steps[0], /LAYA_API_KEY/, "the key to add depends on the chosen decision model");
-  assert.equal(messages[2].title, "Guardian's production rule is off");
+  assert.equal(messages[2].title, "Guardian's severe-action rule is off");
   assert.match(messages[3].short, /3 conversations run there/);
   assert.equal(messages[4].short, "It does not answer", "a machine with no conversations does not claim any");
 });
@@ -36,12 +36,12 @@ test("Guardian off here says which projects a relay covers and which nothing cov
   const [message] = systemMessages({ ...healthy, guardian: "guardian-off", guardianCoveredBy: ["Contigos relay"], guardianUncovered: ["Notes", "Scratch"] });
   assert.equal(message.id, "guardian");
   assert.equal(message.short, "Not checked in 2 projects");
-  assert.match(message.why, /No production rule covers: Notes, Scratch/);
+  assert.match(message.why, /No severe-action rule covers: Notes, Scratch/);
   assert.match(message.why, /protected by Contigos relay/);
   assert.equal(message.action?.open, 'settings-cluster');
   const names = ['One', 'Two', 'Three', 'Four', 'Five', 'Six'];
   assert.equal(systemMessages({ ...healthy, guardian: 'guardian-off', guardianUncovered: names })[0].where, names.join(', '));
   const [plain] = systemMessages({ ...healthy, guardian: "guardian-off" });
-  assert.equal(plain.short, "Production and destructive steps are not checked");
+  assert.equal(plain.short, "Severe damage or credential disclosure is not checked");
   assert.doesNotMatch(plain.why, /asks first in the projects/);
 });

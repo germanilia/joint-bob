@@ -615,10 +615,10 @@ async function saveSettings(change) {
 }
 
 const GUARD_TEXT = {
-  on: "🔒 Production or destructive steps ask you first (Guardian). Bob never answers them for you.",
-  "guardian-off": "Guardian is off on this machine, so production or destructive steps do not ask first.",
-  "rule-missing": "Guardian is on, but nothing asks before production or destructive steps.",
-  "rule-off": "The production rule in Guardian is off or does not ask.",
+  on: "🔒 Guardian checks for severe damage and credential disclosure.",
+  "guardian-off": "Guardian is off on this machine.",
+  "rule-missing": "Guardian is on, but the severe-action rule is missing.",
+  "rule-off": "The severe-action rule is off or does not stop risky actions.",
 };
 
 async function showGuard() {

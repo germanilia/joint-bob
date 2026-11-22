@@ -2,26 +2,15 @@ import { clusterV2Database } from "../cluster-v2-store.js";
 import { allClusterAgentPolicies, projectAgentPolicies } from "../cluster-agent-policy.js";
 import { save, settingsDatabase, value } from "../settings-store.js";
 import { actsOnProduction, productionGuardStatus, type ProductionGuardStatus } from "./production-rule.js";
-import { DEFAULT_GUARDIAN_SETTINGS, guardianSettingsSchema, type GuardianModelId, type GuardianRule, type GuardianSettings } from "./rules.js";
+import { DEFAULT_GUARDIAN_SETTINGS, guardianSettingsSchema, upgradeGuardianRule, type GuardianModelId, type GuardianRule, type GuardianSettings } from "./rules.js";
 
 const SETTINGS_KEY = "guardian";
-
-const LEGACY_DANGEROUS_QUESTIONS = new Set([
-  'Could this action delete data, or make a change to the system that cannot be undone?',
-  'Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Routine edits and cleanup within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.',
-]);
 
 export function getGuardianSettings(): GuardianSettings {
   const stored = value(SETTINGS_KEY);
   if (!stored) return structuredClone(DEFAULT_GUARDIAN_SETTINGS);
   const settings = guardianSettingsSchema.parse(JSON.parse(stored));
-  // Upgrade only the shipped question; preserve questions the person customized.
-  for (const rule of settings.rules) {
-    if (rule.id === 'dangerous-commands' && LEGACY_DANGEROUS_QUESTIONS.has(rule.question)) {
-      rule.question = DEFAULT_GUARDIAN_SETTINGS.rules[0].question;
-    }
-  }
-  return settings;
+  return { ...settings, rules: settings.rules.map(upgradeGuardianRule) };
 }
 
 export function updateGuardianSettings(input: unknown): GuardianSettings {
@@ -48,16 +37,17 @@ export async function guardianGroups(projectId?: string): Promise<GuardianGroup[
   const groups: GuardianGroup[] = local.enabled ? [{ source: "This machine", relay: false, model: local.model, layaUrl: local.layaUrl, rules: local.rules }] : [];
   for (const layer of projectAgentPolicies(await clusterV2Database(), projectId, true)) {
     const policy = layer.policy.guardian;
-    if (policy) groups.push({ source: layer.source, relay: true, model: policy.model, layaUrl: policy.layaUrl || local.layaUrl, rules: policy.rules, relayNodeId: layer.relaySource ? layer.sourceNodeId : undefined });
+    // Upgrade the effective rules after verification, without changing signed cluster or relay statements.
+    if (policy) groups.push({ source: layer.source, relay: true, model: policy.model, layaUrl: policy.layaUrl || local.layaUrl, rules: policy.rules.map(upgradeGuardianRule), relayNodeId: layer.relaySource ? layer.sourceNodeId : undefined });
   }
   return groups;
 }
 
 export interface ProductionGuardCoverage {
   status: ProductionGuardStatus;
-  /** The clusters or relays whose rule asks first, for the projects they cover. */
+  /** The clusters or relays whose rule protects against severe actions, for the projects they cover. */
   coveredBy: string[];
-  /** Projects nothing asks first in: this machine's Guardian is not on and no relay or cluster imposes the rule on them. */
+  /** Projects without protection: this machine's Guardian is not on and no relay or cluster imposes the rule on them. */
   uncovered: string[];
 }
 

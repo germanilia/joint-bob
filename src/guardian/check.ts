@@ -13,7 +13,7 @@ import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } fro
 import { announceGuardianBlock, announceGuardianWarning, guardianActionAllowed, REVIEW_TIMEOUT_MS, requestGuardianReview } from "./reviews.js";
 import { guardianBypassed } from "./bypass.js";
 import { guardianCommandPolicy, guardianCommandText } from './commands.js';
-import { ruleApplies, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
+import { ruleApplies, ruleChecksOutgoing, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
 import { fetchThroughRelay } from "./relay-model.js";
 import { guardianGroups, productionGuard, type GuardianGroup } from "./settings.js";
 
@@ -207,7 +207,7 @@ export async function guardianStartProblem(harness: HarnessId, projectId?: strin
   if (harness === "pi") return null;
   for (const group of await guardianGroups(projectId)) {
     if (!group.relay) continue;
-    const rule = group.rules.find((item) => item.enabled && (item.check === "outgoing" || item.check === "all"));
+    const rule = group.rules.find((item) => item.enabled && ruleChecksOutgoing(item));
     if (rule) return `${group.source} requires the Guardian rule "${rule.name}", which checks what is sent to the AI. ${getHarness(harness).label} reads tool output before Guardian can check it, so it cannot run here. Use Pi for this conversation.`;
   }
   return null;

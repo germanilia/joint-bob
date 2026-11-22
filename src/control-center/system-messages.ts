@@ -36,9 +36,9 @@ export interface SystemFacts {
 }
 
 const GUARDIAN: Record<Exclude<ProductionGuardStatus, "on">, { title: string; why: string }> = {
-  "guardian-off": { title: "Guardian is off", why: "With Guardian off, an agent can run a deploy or a delete without asking you first." },
-  "rule-off": { title: "Guardian's production rule is off", why: "Guardian is on, but its rule for production and destructive steps is switched off, so those steps run without asking you." },
-  "rule-missing": { title: "Guardian has no production rule", why: "Guardian is on, but it has no rule for production and destructive steps, so those steps run without asking you." },
+  "guardian-off": { title: "Guardian is off", why: "This machine does not check for severe damage or credential disclosure unless a shared policy covers the project." },
+  "rule-off": { title: "Guardian's severe-action rule is off", why: "Guardian is on, but the rule for severe damage and credential disclosure is off or does not stop risky actions." },
+  "rule-missing": { title: "Guardian has no severe-action rule", why: "Guardian is on, but its severe-action rule is missing." },
 };
 
 export function systemMessages(facts: SystemFacts): SystemMessage[] {
@@ -67,16 +67,16 @@ export function systemMessages(facts: SystemFacts): SystemMessage[] {
     if (uncovered.length) {
       const count = `${uncovered.length} project${uncovered.length === 1 ? '' : 's'}`;
       messages.push({
-        id: 'guardian', severity: 'warn', title: `Production checks missing in ${count}`, short: `Not checked in ${count}`, where: uncovered.join(', '),
-        why: `No production rule covers: ${uncovered.join(', ')}.${coveredBy.length ? ` Other projects are protected by ${coveredBy.join(', ')}.` : ''}`,
+        id: 'guardian', severity: 'warn', title: `Severe-action checks missing in ${count}`, short: `Not checked in ${count}`, where: uncovered.join(', '),
+        why: `No severe-action rule covers: ${uncovered.join(', ')}.${coveredBy.length ? ` Other projects are protected by ${coveredBy.join(', ')}.` : ''}`,
         steps: ['Check which cluster each listed project is shared with.', 'On the cluster manager, open `Settings → Cluster → Policy & pools` and check the Guardian rule or its inherited source.', 'For an unshared project, use `Settings → Guardian` on its machine.'],
         action: { label: 'Open cluster settings', open: 'settings-cluster' },
       });
     } else {
       messages.push({
-        id: "guardian", severity: "warn", title: found.title, short: "Production and destructive steps are not checked", where: "Settings → Guardian",
+        id: "guardian", severity: "warn", title: found.title, short: "Severe damage or credential disclosure is not checked", where: "Settings → Guardian",
         why: found.why,
-        steps: ["Open `Settings → Guardian`.", "Turn Guardian on and turn on the rule `Production or destructive steps`.", "Press Check again."],
+        steps: ["Open `Settings → Guardian`.", "Turn Guardian on and enable `Severe damage or credential disclosure`.", "Press Check again."],
         action: { label: "Open Guardian settings", open: "settings-guardian" },
       });
     }
