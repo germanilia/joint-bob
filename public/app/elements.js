@@ -70,6 +70,7 @@ export const elements = {
   turnTimer: document.querySelector("#turnTimer"),
   reconnectBanner: document.querySelector("#reconnectBanner"),
   reconnectBannerText: document.querySelector("#reconnectBannerText"),
+  reconnectTakeoverButton: document.querySelector("#reconnectTakeoverButton"),
   routingWarning: document.querySelector("#routingWarning"),
   contextUsage: document.querySelector("#contextUsage"),
   contextUsageFill: document.querySelector("#contextUsageFill"),

@@ -258,7 +258,8 @@ export async function loadSessionNodes(projectId, targetNodeId, { preserveSelect
   const previousNodeId = state.activeNodeId;
   const selected = state.sessionNodes.find((node) => node.id === state.activeNodeId && node.online && node.mapped)
     || state.sessionNodes.find((node) => node.local);
-  if (!preserveSelection) state.activeNodeId = selected?.id || null;
+  // A delayed machine list must not change the owner a conversation is connecting to.
+  if (!preserveSelection && !state.activeSessionId) state.activeNodeId = selected?.id || null;
   if (state.preferencesLoaded && state.activeNodeId !== previousNodeId) savePreferencesInBackground({ activeNodeId: state.activeNodeId });
   renderConversationLock();
   renderSessions();

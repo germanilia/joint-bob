@@ -300,8 +300,19 @@ export async function openListedSession(session, { keepView = false, timed = fal
   const local = owner && !owner.online
     ? state.sessionNodes.find((node) => node.local && node.online && node.mapped)
     : null;
-  // A conversation that already answered is reachable, whatever a late or stored presence answer says.
-  if (!local || activeConversationReady()) return;
+  // A presence timeout is not a failed conversation connection. Keep trying the owner;
+  // show the fallback in chat without interrupting it or the control center.
+  const stillOpeningOwner = () => state.activeProjectId === projectId && state.activeSessionId === session.id
+    && state.activeNodeId === session.executionNodeId && !activeConversationReady();
+  if (!local || !stillOpeningOwner()) return;
+  elements.reconnectTakeoverButton.onclick = () => {
+    if (stillOpeningOwner()) return takeOverOfflineSession({ projectId, session, title, owner, local, reviewHighlightAfter, stillOpeningOwner });
+  };
+  elements.reconnectTakeoverButton.hidden = false;
+  elements.reconnectBanner.hidden = false;
+}
+
+async function takeOverOfflineSession({ projectId, session, title, owner, local, reviewHighlightAfter, stillOpeningOwner }) {
   const transferKey = JSON.stringify([projectId, session.harnessId, session.id]);
   if (listedSessionTransfers.has(transferKey)) return;
   listedSessionTransfers.add(transferKey);
@@ -311,7 +322,7 @@ export async function openListedSession(session, { keepView = false, timed = fal
       message: `${owner.name} did not respond. This node will continue from its last synced history, which may be older.`,
       confirmLabel: "Take over here",
     });
-    if (!confirmed || state.activeProjectId !== projectId || state.activeSessionId !== session.id || activeConversationReady()) return;
+    if (!confirmed || !stillOpeningOwner()) return;
     const result = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions/take-ownership`, {
       method: "POST", body: JSON.stringify({ peerId: local.id, offlineOwnerNodeId: owner.id, sessionId: session.id, sessionPath: session.path, sessionName: title.slice(0, 120) }),
     });
