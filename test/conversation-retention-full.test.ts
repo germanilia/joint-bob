@@ -110,6 +110,33 @@ test("with 55 recent conversations in the list, the 10 old ones are out of today
   assert.deepEqual(await f.sweep(full), { deleted: 0, previewed: [] }, "nothing is left for a second pass");
 });
 
+test("automation transcripts have a 30 day minimum even with a shorter machine setting", async () => {
+  const f = await fixture();
+  const { updateSettings } = await import("../src/settings.js");
+  const { markCronConversation, setWebhookConversationHistory } = await import("../src/conversation-records.js");
+  const project = await f.project("automation-retention");
+  updateSettings({ conversationRetentionDays: 7 });
+  try {
+    const recentHook = await project.transcript(29 * DAY);
+    const recentSchedule = await project.transcript(29 * DAY);
+    const expired = await project.transcript(31 * DAY);
+    setWebhookConversationHistory(f.db, project.record.id, recentHook.id, randomUUID(), false, f.local.id);
+    setWebhookConversationHistory(f.db, project.record.id, expired.id, randomUUID(), false, f.local.id);
+    await markCronConversation(project.record.id, "claude", recentSchedule.id, randomUUID(), f.local.id);
+    const switches = { ...full, includeScheduled: true };
+    const preview = await f.retention.previewConversationRetention(off);
+    assert.ok(!preview.conversations.expired.includes(`claude:${recentHook.id}`), "the default sweep keeps a recent webhook transcript");
+    const sweep = await f.sweep(switches);
+    assert.ok(sweep.previewed.includes(`claude:${expired.id}`));
+    assert.equal(await exists(expired.file), false);
+    assert.equal(await exists(recentHook.file), true);
+    assert.equal(await exists(recentSchedule.file), true);
+    await f.retention.sweepConversationRetention(Date.now() + 2 * DAY, switches);
+    assert.equal(await exists(recentHook.file), false);
+    assert.equal(await exists(recentSchedule.file), false);
+  } finally { updateSettings({ conversationRetentionDays: 40 }); }
+});
+
 test("the full sweep keeps every exempt conversation, and each switch releases only its own kind", { timeout: 300_000 }, async () => {
   const f = await fixture();
   const { setUserPin } = await import("../src/user-pins.js");

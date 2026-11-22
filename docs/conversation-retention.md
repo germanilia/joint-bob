@@ -40,7 +40,10 @@ prompt waiting.
 | Remove Joint Bob's own background-run transcripts after 7 days | `backgroundRuns` | Transcripts of Joint Bob's own work: summaries, titles, checks, reviews. They are never listed. |
 
 With the first box ticked the age of a conversation is the time its newest transcript
-was last written on this node.
+was last written on this node. A scheduled or webhook run's transcript is kept for at least
+30 days, even when the machine's retention setting is shorter. Cleaning up a run's temporary
+worktree and generated files does not remove its messages; open them from the automation's
+History tab.
 
 ## What is never deleted
 

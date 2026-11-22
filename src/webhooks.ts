@@ -129,7 +129,7 @@ export interface Webhook {
   receivedCount: number;
 }
 
-export interface WebhookDelivery { at: string; status: "delivered" | "failed" | "refused"; detail: string; sender: string | null }
+export interface WebhookDelivery { at: string; status: "delivered" | "failed" | "refused"; detail: string; sender: string | null; sessionId: string | null }
 
 export class WebhookError extends Error {
   constructor(readonly statusCode: number, message: string) { super(message); }
@@ -159,7 +159,8 @@ export function ensureWebhookSchema(db: DatabaseSync): void {
     at TEXT NOT NULL,
     status TEXT NOT NULL,
     detail TEXT NOT NULL DEFAULT '',
-    sender TEXT);
+    sender TEXT,
+    session_id TEXT);
   CREATE INDEX IF NOT EXISTS webhook_deliveries_hook ON webhook_deliveries(webhook_id, id);`);
   const columns = db.prepare("PRAGMA table_info(webhooks)").all() as Array<{ name: string }>;
   if (!columns.some(column => column.name === "bypass_guardian")) db.exec("ALTER TABLE webhooks ADD COLUMN bypass_guardian INTEGER NOT NULL DEFAULT 0");
@@ -188,6 +189,7 @@ export function ensureWebhookSchema(db: DatabaseSync): void {
   if (!columns.some(column => column.name === "owner_node_id")) db.exec("ALTER TABLE webhooks ADD COLUMN owner_node_id TEXT");
   const deliveryColumns = db.prepare("PRAGMA table_info(webhook_deliveries)").all() as Array<{ name: string }>;
   if (!deliveryColumns.some((column) => column.name === "sender")) db.exec("ALTER TABLE webhook_deliveries ADD COLUMN sender TEXT");
+  if (!deliveryColumns.some((column) => column.name === "session_id")) db.exec("ALTER TABLE webhook_deliveries ADD COLUMN session_id TEXT");
   migrateScheduledTasks(db);
 }
 
@@ -390,10 +392,10 @@ export function deleteWebhook(db: DatabaseSync, id: string): boolean {
   return db.prepare("DELETE FROM webhooks WHERE id=?").run(id).changes > 0;
 }
 
-export function recordWebhookDelivery(db: DatabaseSync, id: string, status: WebhookDelivery["status"], detail: string, sender: string | null = null): void {
+export function recordWebhookDelivery(db: DatabaseSync, id: string, status: WebhookDelivery["status"], detail: string, sender: string | null = null, sessionId: string | null = null): void {
   ensureWebhookSchema(db);
   const at = new Date().toISOString();
-  db.prepare("INSERT INTO webhook_deliveries(webhook_id,at,status,detail,sender) VALUES(?,?,?,?,?)").run(id, at, status, detail.slice(0, 300), sender?.slice(0, 200) ?? null);
+  db.prepare("INSERT INTO webhook_deliveries(webhook_id,at,status,detail,sender,session_id) VALUES(?,?,?,?,?,?)").run(id, at, status, detail.slice(0, 300), sender?.slice(0, 200) ?? null, sessionId);
   db.prepare("UPDATE webhooks SET last_received_at=?,received_count=received_count+1 WHERE id=?").run(at, id);
   db.prepare(`DELETE FROM webhook_deliveries WHERE webhook_id=? AND id NOT IN
     (SELECT id FROM webhook_deliveries WHERE webhook_id=? ORDER BY id DESC LIMIT ${HISTORY_LIMIT})`).run(id, id);
@@ -401,10 +403,13 @@ export function recordWebhookDelivery(db: DatabaseSync, id: string, status: Webh
 
 export function webhookDeliveries(db: DatabaseSync, id: string): WebhookDelivery[] {
   ensureWebhookSchema(db);
-  return (db.prepare("SELECT at,status,detail,sender FROM webhook_deliveries WHERE webhook_id=? ORDER BY id DESC LIMIT ?").all(id, HISTORY_LIMIT) as Array<Record<string, unknown>>)
+  return (db.prepare("SELECT at,status,detail,sender,session_id FROM webhook_deliveries WHERE webhook_id=? ORDER BY id DESC LIMIT ?").all(id, HISTORY_LIMIT) as Array<Record<string, unknown>>)
     .map((row) => ({
       at: String(row.at), status: row.status === "failed" || row.status === "refused" ? row.status : "delivered", detail: String(row.detail),
       sender: typeof row.sender === "string" ? row.sender : null,
+      // Older successful calls only recorded the new conversation ID in their detail.
+      sessionId: typeof row.session_id === "string" ? row.session_id : row.status === "delivered"
+        ? /^Started conversation ([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?: with \d+ files?)?$/.exec(String(row.detail))?.[1] ?? null : null,
     }));
 }
 

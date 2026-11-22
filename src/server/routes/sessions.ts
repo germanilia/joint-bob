@@ -60,6 +60,12 @@ app.get("/api/projects/:projectId/sessions", async (request, response, next) => 
     }
     await touchProject(project.id);
     const authSession = response.locals.authSession as AuthSession;
+    const sessionId = z.string().min(1).max(240).optional().parse(request.query.sessionId);
+    if (sessionId) {
+      const sessions = await listProjectSessionsWithReviewState(project, authSession.userId, authSession.accountId, 0, undefined, Infinity, sessionId);
+      response.json({ sessions });
+      return;
+    }
     const token = typeof request.query.byTheWayToken === "string" ? request.query.byTheWayToken : undefined;
     const temporary = token ? await getByTheWayLeaseByToken(project.id, token) : undefined;
     // Every open page asks for this after each change and every two seconds while something

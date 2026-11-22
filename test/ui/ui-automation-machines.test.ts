@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -15,6 +15,11 @@ test("webhooks and schedules expose creation machines and transfer controls", { 
   try {
     const env = await seedDevEnvironment(root, 2);
     const [a, b] = env.nodes;
+    for (const project of b.projects) {
+      const skill = path.join(project.path, ".agents", "skills", "remote-review");
+      await mkdir(skill, { recursive: true });
+      await writeFile(path.join(skill, "SKILL.md"), "---\nname: remote-review\ndescription: Review remote references.\n---\n");
+    }
     for (const node of env.nodes) servers.push(await startDevNode(env, node));
     const auth = await signIn(env, a);
     await pairTwinNodes(env);
@@ -51,6 +56,15 @@ test("webhooks and schedules expose creation machines and transfer controls", { 
     assert.equal(await page.getByTestId("automation-setup-name").inputValue(), "Remote machine hook");
     await saveAutomation(page);
     await dismissAddress(page);
+    await editorTab(page, "context");
+    const inventory = page.waitForResponse(response => /\/skills\?inventory=/.test(response.url()));
+    await page.getByTestId("automation-context-segment-skills").click();
+    const result = await inventory;
+    assert.equal(result.status(), 200, await result.text());
+    assert.equal(new URL(result.url()).searchParams.get("nodeId"), b.nodeId);
+    await page.getByTestId("automation-skill-search-input").fill("remote-review");
+    await page.getByTestId("automation-skill-import-existing-button").click();
+    await page.getByTestId("automation-skill-available").getByText("Added", { exact: true }).waitFor();
     await transferTo();
     await page.getByTestId("automation-address").first().waitFor();
     await dismissAddress(page);

@@ -58,6 +58,7 @@ import { deleteOwnedConversation } from "./routes/sessions.js";
 import { projectAdditionalPaths } from "./session-scope.js";
 
 const DAY_MS = 86_400_000;
+const AUTOMATION_TRANSCRIPT_MIN_DAYS = 30;
 /** Joint Bob's own background runs are removed this long after their last activity. */
 export const BACKGROUND_RUN_RETENTION_MS = 7 * DAY_MS;
 /** Conversations one pass deletes at most; the rest wait for the next hourly pass. A wrong clock cannot empty a machine in one go. */
@@ -98,6 +99,7 @@ interface Candidate {
   unrecorded?: boolean;
   /** Chosen from the list, by the time of its last message. The others are chosen by the time their files were last written. */
   listed?: boolean;
+  automation?: boolean;
   /** The harness folder the files lie under, for a background run or a leftover. */
   root?: string;
 }
@@ -240,8 +242,9 @@ async function listedCandidates(project: ProjectRecord, plan: Plan, pinned: Set<
   const files = await plan.readings.forProject(project.id);
   for (const session of sessions) {
     if (temporary.has(session.id)) continue;
+    const automation = Boolean(session.cronTaskId || session.webhookHistory);
     const reason = retentionReason(session, {
-      now: plan.now, retentionDays: plan.retentionDays, pinned,
+      now: plan.now, retentionDays: automation ? Math.max(plan.retentionDays, AUTOMATION_TRANSCRIPT_MIN_DAYS) : plan.retentionDays, pinned,
       ownedLocally: (candidate) => {
         const owner = ownership.get(candidate);
         if (owner) return owner.ownerNodeId === plan.localId;
@@ -258,7 +261,7 @@ async function listedCandidates(project: ProjectRecord, plan: Plan, pinned: Set<
     // folders. One that lies in a folder the project does not list is shown as a draft, and is not empty.
     if (reason === "empty" && segments.some((segment) => hasTranscript(files, segment))) continue;
     plan.candidates.push({
-      category: reason, project, engine: session.harnessId, sessionId: session.id, conversationId: session.conversationId ?? session.id, segments, listed: true,
+      category: reason, project, engine: session.harnessId, sessionId: session.id, conversationId: session.conversationId ?? session.id, segments, listed: true, automation,
       pinKeys: [...pinKeysOf(session.segments?.[0]?.engine ?? session.harnessId, session.conversationId ?? session.id, segments, files), session.path, ...(session.segments ?? []).map((segment) => segment.path)],
     });
   }
@@ -284,7 +287,9 @@ async function recordedCandidates(project: ProjectRecord, plan: Plan, pinned: Se
     const written = await lastWritten(files, segments);
     const empty = written === 0;
     const age = plan.now - (empty ? Math.max(...records.map((record) => Date.parse(record.updatedAt) || 0)) : written);
-    if (empty ? age < EMPTY_CONVERSATION_GRACE_MS : written > plan.cutoff) continue;
+    const automation = records.some((record) => record.cronTaskId || record.webhookHistory);
+    const cutoff = automation ? Math.min(plan.cutoff, plan.now - AUTOMATION_TRANSCRIPT_MIN_DAYS * DAY_MS) : plan.cutoff;
+    if (empty ? age < EMPTY_CONVERSATION_GRACE_MS : written > cutoff) continue;
     const pinKeys = pinKeysOf(records[0].engine, conversationId, segments, files);
     if (pinKeys.some((key) => pinned.has(key))) { keep("pinned"); continue; }
     let owned = true;
@@ -295,8 +300,8 @@ async function recordedCandidates(project: ProjectRecord, plan: Plan, pinned: Se
     if (!owned) { keep("owned by another machine"); continue; }
     if (names.some((name) => assistants.has(name))) { keep("an assistant's conversation"); continue; }
     if (names.some((name) => targets.has(name))) { keep("the target of a scheduled task or webhook"); continue; }
-    if (records.some((record) => record.cronTaskId || record.webhookHistory) && !plan.switches.includeScheduled) { keep("made by a scheduled task or webhook"); continue; }
-    plan.candidates.push({ category: empty ? "empty" : "expired", project, engine: records[0].engine, sessionId: records[0].sessionId, conversationId, segments, pinKeys });
+    if (automation && !plan.switches.includeScheduled) { keep("made by a scheduled task or webhook"); continue; }
+    plan.candidates.push({ category: empty ? "empty" : "expired", project, engine: records[0].engine, sessionId: records[0].sessionId, conversationId, segments, pinKeys, automation });
   }
 }
 
@@ -424,8 +429,9 @@ async function mayDeleteNow(candidate: Candidate, plan: Plan, files: FilesByHarn
   // An empty conversation with a prompt waiting is about to start. An old one keeps a prompt that was queued since the cutoff.
   if (candidate.category === "empty" ? queued.length > 0 : queued.some((prompt) => !(Date.parse(prompt.createdAt) <= plan.cutoff))) return false;
   if (candidate.category === "empty") return !candidate.segments.some((segment) => hasTranscript(files, segment));
-  // Chosen by its files: nothing of it, a sub-agent's transcript included, was written since the cutoff.
-  return candidate.listed || await lastWritten(files, candidate.segments, true) <= plan.cutoff;
+  // Recheck the actual files for automations even when the list supplied the original age.
+  const cutoff = candidate.automation ? Math.min(plan.cutoff, plan.now - AUTOMATION_TRANSCRIPT_MIN_DAYS * DAY_MS) : plan.cutoff;
+  return (candidate.listed && !candidate.automation) || await lastWritten(files, candidate.segments, true) <= cutoff;
 }
 
 /** Whether a background run or a leftover may still go: nothing runs in it, it has no record, and a background run is still idle. */
