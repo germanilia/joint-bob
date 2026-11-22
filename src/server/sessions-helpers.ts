@@ -94,19 +94,21 @@ export function doneCoversActivity(doneAt: string | undefined, updatedAt: string
   return !updatedAt || Date.parse(updatedAt) <= Date.parse(doneAt);
 }
 
-export async function listProjectSessionsWithReviewState(project: ProjectRecord, userId: string, username: string, historyDays = getSettings().conversationHistoryDays, includeTemporarySessionId?: string, rootLimit = 50): Promise<SessionSummary[]> {
+export async function listProjectSessionsWithReviewState(project: ProjectRecord, userId: string, username: string, historyDays = getSettings().conversationHistoryDays, includeTemporarySessionId?: string, rootLimit = 50, lookupSessionId?: string): Promise<SessionSummary[]> {
   const scope = await measureOperation("sessions.review_scope", () => reviewScope(project, userId, username, historyDays));
   const searchProject = scope.project;
   sessionWatcher.ensureProject(searchProject);
   const temporarySessionIds = await listByTheWaySessionIds(project.id);
   const catalog = await measureOperation("sessions.transcript_catalog", () => listHarnessSessions(searchProject, scope.includedSessionPaths, scope.includedSessionIds, rootLimit));
-  const hiddenCronTaskIds = new Set(userId && catalog.some((session) => session.cronTaskId)
+  const hiddenCronTaskIds = new Set(!lookupSessionId && userId && catalog.some((session) => session.cronTaskId)
     ? (await listProjectAutomations(project.id)).automations.filter((automation) => automation.trigger === "schedule" && automation.hideFromHistory).map((automation) => automation.id)
     : []);
   // Viewer lists exclude hidden runs before review synchronization, badges, and notifications.
   // Internal snapshots still need them for scheduler readiness. Preserve review watermarks.
-  const sessions = catalog.filter((session) => (!userId || !session.webhookHistory?.hidden)
-    && (!session.cronTaskId || !hiddenCronTaskIds.has(session.cronTaskId))
+  // An explicit history link may open its run without unhiding it in conversation lists.
+  const sessions = catalog.filter((session) => (lookupSessionId
+    ? session.id === lookupSessionId || session.conversationId === lookupSessionId || session.segments?.some(segment => segment.sessionId === lookupSessionId)
+    : (!userId || !session.webhookHistory?.hidden) && (!session.cronTaskId || !hiddenCronTaskIds.has(session.cronTaskId)))
     && (!temporarySessionIds.has(session.id) || session.id === includeTemporarySessionId));
   await measureOperation("sessions.agent_dashboards", refreshConversationWork);
   const externalRunning = new Map<string, Set<string>>();

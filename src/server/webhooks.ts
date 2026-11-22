@@ -120,7 +120,7 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?
         const files = call.attachments?.length ? ` with ${call.attachments.length} file${call.attachments.length === 1 ? "" : "s"}` : "";
         void clusterV2Database().then(db => {
           transitionAutomationExecution(db, call.requestId!, "running", null, destination.sessionId, destination.engine);
-          recordWebhookDelivery(db, webhook.id, "delivered", `Routed through assistant ${assistantId}${files}`);
+          recordWebhookDelivery(db, webhook.id, "delivered", `Routed through assistant ${assistantId}${files}`, null, destination.sessionId);
         });
       },
     }).catch(async (error: unknown) => {
@@ -143,9 +143,10 @@ async function deliverWithProfile(webhook: Webhook, call: WebhookCall, worktree?
       call.started = true;
       const files = call.attachments?.length ? ` with ${call.attachments.length} file${call.attachments.length === 1 ? "" : "s"}` : "";
       const detail = webhook.target.kind === "project" ? `Started conversation ${activeSessionId}${files}` : `Added to the conversation${files}`;
+      const sessionId = activeSessionId;
       void clusterV2Database().then(db => {
-        transitionAutomationExecution(db, call.requestId!, "running", null, activeSessionId);
-        recordWebhookDelivery(db, webhook.id, "delivered", detail);
+        transitionAutomationExecution(db, call.requestId!, "running", null, sessionId);
+        recordWebhookDelivery(db, webhook.id, "delivered", detail, null, sessionId);
       });
     },
     // Apply settings when this turn starts, not while an existing conversation is busy.
@@ -212,7 +213,7 @@ export function acceptWebhookCall(webhook: Webhook, call: WebhookCall): void {
       const sessionId = await deliver(webhook, call);
       transitionAutomationExecution(db, requestId, "succeeded", null, sessionId);
       const files = call.attachments?.length ? ` with ${call.attachments.length} file${call.attachments.length === 1 ? "" : "s"}` : "";
-      if (!call.started) recordWebhookDelivery(await clusterV2Database(), webhook.id, "delivered", webhook.target.kind === "project" ? `Started conversation ${sessionId}${files}` : `Added to the conversation${files}`);
+      if (!call.started) recordWebhookDelivery(db, webhook.id, "delivered", webhook.target.kind === "project" ? `Started conversation ${sessionId}${files}` : `Added to the conversation${files}`, null, sessionId);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.warn(`Webhook ${webhook.id} delivery failed: ${detail}`);

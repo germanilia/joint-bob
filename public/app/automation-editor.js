@@ -9,8 +9,8 @@ import { createRunTab } from "./automation-run.js";
 import { createTriggerTab } from "./automation-trigger.js";
 import { selectProject } from "./project-selection.js";
 import { copyText, createFittedList, formatWhen, makeBadge, makeButton, makeNode, makeTwoStepButton, showStatus } from "./relay-ui.js";
+import { openListedSession } from "./reviews.js";
 import { toast } from "./shell.js";
-import { openSession } from "./socket.js";
 
 const TRIGGERS = {
   schedule: {
@@ -35,7 +35,7 @@ let afterClose = () => undefined;
 let active = null;
 
 const errorText = (error) => error?.message || "Something went wrong";
-const nodeQuery = (nodeId) => (nodeId ? `?nodeId=${encodeURIComponent(nodeId)}` : "");
+const nodeQuery = (nodeId, separator = "?") => (nodeId ? `${separator}nodeId=${encodeURIComponent(nodeId)}` : "");
 /** "" is this machine, whatever its real id. */
 const ownerKey = (owner) => (owner.local ? "" : owner.id);
 const pickInput = (item) => Object.fromEntries(INPUT_KEYS.map((key) => [key, item[key]]));
@@ -200,11 +200,10 @@ function createHistoryTab(ctx, { onAdopt }) {
 
   async function openConversation(item) {
     const { projectId } = state.item.target;
+    const { sessions: [session] } = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions?sessionId=${encodeURIComponent(item.sessionId)}`);
+    if (!session) throw new Error("That conversation is no longer available.");
     await selectProject(projectId);
-    const { sessions } = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions`);
-    const session = sessions.find((candidate) => candidate.id === item.sessionId);
-    if (!session) throw new Error("That conversation is not available on this machine.");
-    openSession(session.path, session.title || state.item.name);
+    await openListedSession(session);
   }
 
   function allowSender(sender) {
@@ -225,6 +224,7 @@ function createHistoryTab(ctx, { onAdopt }) {
   });
   const calls = section("Calls", "automation-calls", "No calls yet.", () => history.calls, (call) => {
     const cells = [makeNode("span", "automation-history-when", formatWhen(call.at)), badge(call.status), makeNode("span", "automation-history-detail", call.detail)];
+    if (call.sessionId) cells.push(makeButton("Open conversation", "automation-call-open", () => ctx.run(() => openConversation(call))));
     const senders = state.item.senders;
     if (call.status === "refused" && call.sender && senders && !senders.allowed.some(({ value }) => value === call.sender)) {
       cells.push(makeButton("Allow", "automation-call-allow", () => allowSender(call.sender)));
@@ -271,7 +271,7 @@ export async function openAutomationEditor({ item = null, projectId = null, node
 
   const say = (message, kind = "info") => showStatus(status, message, kind);
   const endpoint = (suffix = "") => `/api/automations${suffix}${nodeQuery(state.nodeId)}`;
-  const url = (suffix = "") => `/api/automations/${encodeURIComponent(state.item.id)}${suffix}${nodeQuery(state.nodeId)}`;
+  const url = (suffix = "") => `/api/automations/${encodeURIComponent(state.item.id)}${suffix}${nodeQuery(state.nodeId, suffix.includes("?") ? "&" : "?")}`;
   /** One guarded action at a time; an action asked for while another runs (or from inside it) is ignored. */
   function run(work) {
     if (busy) return undefined;
