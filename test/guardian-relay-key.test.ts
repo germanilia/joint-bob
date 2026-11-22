@@ -8,7 +8,7 @@ import test from "node:test";
 import { getClusterNode } from "../src/cluster.js";
 import { ensureMembershipSchema } from "../src/cluster-membership.js";
 import { agentPolicyBodySchema, setClusterAgentPolicy } from "../src/cluster-agent-policy.js";
-import { addSharingMember, createSharingCluster, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
+import { addSharingMember, createSharingCluster, recordRelaySharingHeartbeat, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
 import { getOrCreateClusterIdentity, pinClusterPublicKey } from "../src/cluster-identity.js";
 import { clusterV2Database } from "../src/cluster-v2-store.js";
 import { checkGuardian } from "../src/guardian/check.js";
@@ -96,4 +96,55 @@ test("a relay answers only its admitted machines, only while it imposes Jev rule
   const answer = await answerRelayGuardian(db, admittedMachine, '{"state":"x"}', signal, dependencies);
   assert.equal(answer.status, 200);
   assert.deepEqual(seen, [{ authorization: "Bearer relay-key", body: '{"state":"x"}' }], "Jev is asked with the relay's key, not the member's");
+});
+
+test("default cluster Jev rules borrow an admitted relay's decision model when this machine has no TypeSafe key", async (t) => {
+  const relay = new DatabaseSync(":memory:");
+  const relayId = randomUUID();
+  const identity = getOrCreateClusterIdentity(relay, relayId);
+  const local = await clusterV2Database();
+  const member = createMembership(local, "https://guardian-borrow.example", identity.fingerprint);
+  updateMembership(local, member.id, { status: "admitted", relayNodeId: relayId, fingerprint: identity.fingerprint });
+  t.after(() => {
+    local.prepare("DELETE FROM relay_skill_subscriptions WHERE membership_id=?").run(member.id);
+    local.prepare("DELETE FROM relay_memberships WHERE id=?").run(member.id);
+    relay.close();
+  });
+
+  ensureMembershipSchema(local);
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: false });
+  const project = await addProject("Cluster default guardian", mkdtempSync(path.join(os.tmpdir(), "guardian-borrow-")), { writeInstructions: false });
+  const manager = (await getClusterNode()).id, clusterId = randomUUID();
+  createSharingCluster(local, { id: clusterId, name: "contigos" }, manager);
+  addSharingMember(local, clusterId, manager, relayId, 1);
+  pinClusterPublicKey(local, relayId, identity.publicKey);
+  registerOwnedResource(local, { kind: "project", id: project.id, ownerNodeId: manager }, manager);
+  setResourceShares(local, manager, "project", project.id, [{ clusterId, projectId: null }]);
+
+  const groups = await guardianGroups(project.id);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].source, "contigos");
+  assert.equal(groups[0].relayNodeId, undefined, "a regular cluster's default rule has no relay policy source");
+
+  const verdict = await checkGuardian(
+    { projectId: project.id, conversationId: "c-borrow", harness: "claude", cwd: process.cwd(), canReplaceTool: true },
+    { kind: "outgoing", source: "the user's message", text: "hello" },
+  );
+  assert.equal(verdict.action, "block", "the relay cannot be reached in this unit test, so the check fails closed");
+  assert.match((verdict as { reason: string }).reason, /Jev did not answer/, "the check routed through the decision relay instead of failing on a missing local key");
+  assert.doesNotMatch((verdict as { reason: string }).reason, /No system TypeSafe key/, "the member borrows the relay's decision model");
+
+  // A relay sharing group that has not received a signed policy statement yet still points to its relay.
+  const relayGroupId = randomUUID();
+  createSharingCluster(local, { id: relayGroupId, name: "Relay: unsynced" }, relayId);
+  addSharingMember(local, relayGroupId, relayId, manager, 1);
+  local.prepare("INSERT INTO relay_sharing_groups(relay_node_id,cluster_id) VALUES(?,?)").run(relayId, relayGroupId);
+  recordRelaySharingHeartbeat(local, relayId, true);
+  t.after(() => { recordRelaySharingHeartbeat(local, relayId, false); local.prepare("DELETE FROM relay_sharing_groups WHERE cluster_id=?").run(relayGroupId); });
+  const relayProject = await addProject("Unsynced relay group", mkdtempSync(path.join(os.tmpdir(), "guardian-unsynced-")), { writeInstructions: false });
+  registerOwnedResource(local, { kind: "project", id: relayProject.id, ownerNodeId: manager }, manager);
+  setResourceShares(local, manager, "project", relayProject.id, [{ clusterId: relayGroupId, projectId: null }]);
+  const unsyncedGroups = await guardianGroups(relayProject.id);
+  assert.equal(unsyncedGroups.length, 1);
+  assert.equal(unsyncedGroups[0].relayNodeId, relayId, "unsynced relay group keeps its relay as the Jev source");
 });

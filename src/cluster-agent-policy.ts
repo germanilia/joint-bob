@@ -142,7 +142,8 @@ function clusterAgentPolicyLayers(db: DatabaseSync, clusterId: string, guardianD
     const relayId = relayGroup.relay_node_id;
     const localId = (db.prepare('SELECT id FROM cluster_node WHERE singleton=1').get() as { id: string }).id;
     const statement = relayId === localId ? publishedRelayPolicy(db, relayId) : relayPolicySubscriptions(db).find(item => item.relay.relayNodeId === relayId)?.statement;
-    if (statement) return [{ clusterId, source: cluster.name, sourceNodeId: relayId, relaySource: localId !== relayId, policy: { ...policy, guardian: statement.body.guardian } }];
+    const guardian = statement ? statement.body.guardian : { model: 'jev' as const, layaUrl: '', rules: [PRODUCTION_RULE] };
+    return [{ clusterId, source: cluster.name, sourceNodeId: relayId, relaySource: localId !== relayId, policy: { ...policy, guardian } }];
   }
   const effective = useDefault
     ? { ...policy, guardian: { model: 'jev' as const, layaUrl: '', rules: [PRODUCTION_RULE] } } : policy;

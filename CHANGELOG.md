@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.337.6 — 2026-11-22
+
+- Guardian now borrows an admitted relay's shared decision model when a machine has no local TypeSafe key (and keeps relay routing for relay groups before their signed policy arrives), so shared projects no longer block turns on machines without a local key.
+- Surface pending Guardian decisions in conversations, render Antigravity file citations, and show the version under the brand name and the project in new conversation windows.
+
 ## 2.337.5 — 2026-11-21
 
 - Guardian blocks you less. Commands in /tmp and in Joint Bob worktrees, read-only commands (ls, cat, grep, rg, find, diff…), single sed substitutions and the project's own test, typecheck, lint and build scripts no longer wait for a model check.

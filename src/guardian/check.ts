@@ -3,8 +3,9 @@ import { teamAssistantForConversation } from '../assistant-resources.js';
 import { PRODUCTION_RULE_ID } from './production-rule.js';
 import { recordAuditEvent } from "../audit.js";
 import { getHarness } from "../harnesses.js";
+import { systemOneFetch } from "../classifiers/relay-key.js";
+import { systemDecisionKeyOrRelay } from "../decision-relay-proxy.js";
 import { genericSecretEnvironment } from "../secrets.js";
-import { systemDecisionKey } from "../system-ai.js";
 import type { HarnessId } from "../types.js";
 import { isGuardianExempt, runGuardianFix } from "./fix.js";
 import { localLayaUrl } from "./laya.js";
@@ -42,14 +43,14 @@ function knownSecrets(projectId: string): string[] {
   return Object.values(genericSecretEnvironment(projectId)).filter((value): value is string => typeof value === "string" && !value.startsWith("/"));
 }
 
-/** A relay's Jev rules are asked through that relay, which holds the key. */
-function modelRoute(group: GuardianGroup, projectId: string): Promise<{ target: GuardianModelTarget; fetchImpl?: typeof fetch }> {
-  if (group.model === "jev" && group.relayNodeId) return Promise.resolve({ target: jevTarget(""), fetchImpl: fetchThroughRelay(group.relayNodeId) });
-  return modelTarget(group, projectId).then((target) => ({ target }));
+/** A relay's Jev rules are asked through that relay; other Jev checks borrow a relay's decision model when this machine has no key. */
+async function modelRoute(group: GuardianGroup, projectId: string): Promise<{ target: GuardianModelTarget; fetchImpl?: typeof fetch }> {
+  if (group.model === "jev" && group.relayNodeId) return { target: jevTarget(""), fetchImpl: fetchThroughRelay(group.relayNodeId) };
+  if (group.model === "jev") return { target: jevTarget(await systemDecisionKeyOrRelay("typesafe")), fetchImpl: systemOneFetch };
+  return { target: await modelTarget(group, projectId) };
 }
 
 async function modelTarget(group: GuardianGroup, projectId: string): Promise<GuardianModelTarget> {
-  if (group.model === "jev") return jevTarget(systemDecisionKey("typesafe"));
   if (group.model === "laya-local") return layaTarget(await localLayaUrl(), undefined, true);
   return layaTarget(group.layaUrl, genericSecretEnvironment(projectId).LAYA_API_KEY, false);
 }
