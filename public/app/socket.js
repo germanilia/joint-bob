@@ -800,7 +800,7 @@ function scheduleAgentRunPoll() {
   if (!state.activeProjectId || !hasActiveRun) return;
   state.agentRunPollTimer = setTimeout(() => {
     state.agentRunPollTimer = null;
-    refreshSessionsQuietly();
+    refreshSessionsQuietly({ poll: true });
   }, 2000);
 }
 
@@ -849,28 +849,37 @@ function handleInvalidation(payload) {
 
 let sessionsRefreshPending = false;
 let sessionsRefreshPromise;
+/** The version of the list last read for a project, which the two-second poll sends back. */
+let listedRevision = null;
 
-export async function refreshSessionsQuietly() {
+/** `poll` is the two-second check while something runs: when nothing changed, the server
+    says so instead of building the list again, and the list on screen stays as it is. */
+export async function refreshSessionsQuietly(options) {
+  const poll = options?.poll === true;
   const projectId = state.activeProjectId;
   if (!projectId) return;
   if (state.sessionsRefreshing) { sessionsRefreshPending = true; return sessionsRefreshPromise; }
   sessionsRefreshPending = false;
   state.sessionsRefreshing = true;
-  sessionsRefreshPromise = refreshSessionSnapshot(projectId);
+  sessionsRefreshPromise = refreshSessionSnapshot(projectId, poll);
   return sessionsRefreshPromise;
 }
 
-async function refreshSessionSnapshot(projectId) {
+async function refreshSessionSnapshot(projectId, poll = false) {
   const previousStates = new Map(state.sessions.map((session) => [session.path, session.reviewState]));
   const previouslyRunning = new Set(state.sessions.filter((session) => session.running).map((session) => session.path));
   const reviewablePaths = () => reviewableSessions().map((session) => session.path).sort().join("\n");
   const previouslyReviewable = reviewablePaths();
   try {
     const askedAt = performance.now();
-    const body = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions`);
+    const since = poll && listedRevision?.projectId === projectId && state.sessionsProjectId === projectId
+      ? `?since=${encodeURIComponent(listedRevision.revision)}` : "";
+    const body = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions${since}`);
     // The active project can change mid-request; a late response must not
     // overwrite the newly selected project's conversations.
     if (state.activeProjectId !== projectId) return;
+    if (body.unchanged) return;
+    listedRevision = body.revision ? { projectId, revision: body.revision } : null;
     const sessions = withPendingSessionChanges(projectId, body.sessions, askedAt);
     const newlyNeedsReview = sessions.some((session) => session.reviewState === "needs_review" && previousStates.get(session.path) !== "needs_review");
     state.sessions = sessions;

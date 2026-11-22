@@ -21,10 +21,18 @@ test("peer-reported running conversation returns to review without a dashboard o
     const id = state.sessions.find(session => session.title === 'Short one').id;
     const endpoint = '/api/projects/' + encodeURIComponent(state.activeProjectId) + '/sessions';
     const originalFetch = window.fetch;
-    window.__runningPollTest = { mode: 'turn', requests: 0 };
+    window.__runningPollTest = { mode: 'turn', requests: 0, polls: 0 };
     window.fetch = async (...args) => {
+      const url = new URL(String(args[0]), location.href);
+      if (url.pathname !== endpoint) return originalFetch(...args);
+      // The poll sends the version of the list it holds. This test plays the peer's run ending by
+      // rewriting the list, which the server cannot see, so the poll gets the whole list.
+      if (url.searchParams.has('since')) {
+        window.__runningPollTest.polls++;
+        url.searchParams.delete('since');
+        args[0] = url.pathname + url.search;
+      }
       const response = await originalFetch(...args);
-      if (new URL(String(args[0]), location.href).pathname !== endpoint) return response;
       const body = await response.json();
       window.__runningPollTest.requests++;
       for (const session of body.sessions) {
@@ -49,6 +57,6 @@ test("peer-reported running conversation returns to review without a dashboard o
   await page.waitForFunction(() => [...document.querySelectorAll("#sessionList .list-row")].find(row => /short one/i.test(row.textContent))?.querySelector(".chat-badge b").textContent === "Needs review");
   assert.equal(await page.evaluate(`(async () => {
     const { state } = await import('/app/state.js');
-    return window.__runningPollTest.requests >= 2 && state.agentRunPollTimer === null;
-  })()`), true, "completion is polled and polling stops when all conversations are idle");
+    return window.__runningPollTest.requests >= 2 && window.__runningPollTest.polls >= 1 && state.agentRunPollTimer === null;
+  })()`), true, "completion is polled with the list's version, and polling stops when all conversations are idle");
 });

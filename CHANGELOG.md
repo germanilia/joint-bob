@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.339.1 — 2026-11-23
+
+- Fixed the machine slowing down while a conversation runs: an open page's check every two seconds no longer rebuilds the whole conversation list when nothing changed, so opening conversations waits less.
+
 ## 2.339.0 — 2026-11-22
 
 - Fixed pages slowing down while another machine works: its usage records no longer make every open page reload all its lists about twenty times a minute. Cost badges catch up within 30 seconds, and a conversation update refreshes the worktree list at most every 15 seconds.

@@ -42,6 +42,16 @@ import { ownershipSchema, registeredHarnessIdSchema, routedSessionTakeOwnershipS
 import { stopConversationBackgroundTasks } from "../background-tasks.js";
 import { ConversationTransferError, listProjectSessionsWithReviewState, listReviewScopeSessions, requireLocalConversationOwner, noteUnannouncedRunChanges, sharedProjectSessions } from "../sessions-helpers.js";
 import { app } from "../state.js";
+import { projectListingRevision } from "../../session-listing-revisions.js";
+
+/* One page polling a project with something running rebuilt its whole list every 2.7 s (22 a
+   minute at about a second each on the Mac, 2026-11-22). The version a poll compares changes
+   whenever the project's list is marked changed, and every OPEN_LIST_POLL_MS anyway: a backstop
+   for what changes without being announced, as the kept lists have their age limit. */
+export const OPEN_LIST_POLL_MS = 15_000;
+function openListRevision(projectId: string, accountId: string, now = Date.now()): string {
+  return `${projectListingRevision(projectId)}:${accountId}:${Math.floor(now / OPEN_LIST_POLL_MS)}`;
+}
 
 app.use("/api/projects/:projectId/sessions", (request, response, next) => {
   const ids = [request.query.sessionId, request.body?.sessionId, request.body?.conversationId];
@@ -68,13 +78,21 @@ app.get("/api/projects/:projectId/sessions", async (request, response, next) => 
     }
     const token = typeof request.query.byTheWayToken === "string" ? request.query.byTheWayToken : undefined;
     const temporary = token ? await getByTheWayLeaseByToken(project.id, token) : undefined;
+    if (temporary) {
+      response.json({ sessions: await listProjectSessionsWithReviewState(project, authSession.userId, authSession.accountId, undefined, temporary.sessionId) });
+      return;
+    }
     // Every open page asks for this after each change and every two seconds while something
     // runs, alongside the running list and the review inbox. Requests that overlap share one
-    // listing, so a slow machine no longer builds the same list several times at once.
-    response.json({ sessions: temporary
-      ? await listProjectSessionsWithReviewState(project, authSession.userId, authSession.accountId, undefined, temporary.sessionId)
-      // `all=1` lifts the cap on the newest conversations: the Inbox lists every one, and opens an older one from this.
-      : await sharedProjectSessions(project, authSession.userId, authSession.accountId, true, request.query.all === "1" ? Infinity : undefined) });
+    // listing, so a slow machine no longer builds the same list several times at once. The
+    // two-second poll sends the version it holds (`since`): read once what changes unannounced,
+    // and when nothing is marked changed, it is told so instead of the list being built again.
+    const since = typeof request.query.since === "string" ? request.query.since : undefined;
+    if (since) await noteUnannouncedRunChanges();
+    const revision = openListRevision(project.id, authSession.accountId);
+    if (since === revision) { response.json({ unchanged: true, revision }); return; }
+    // `all=1` lifts the cap on the newest conversations: the Inbox lists every one, and opens an older one from this.
+    response.json({ sessions: await sharedProjectSessions(project, authSession.userId, authSession.accountId, true, request.query.all === "1" ? Infinity : undefined), revision });
   } catch (error) {
     next(error);
   }

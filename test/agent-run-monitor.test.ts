@@ -59,7 +59,7 @@ test("active agent runs refresh project sessions every two seconds", async () =>
   const app = await appSource();
 
   assert.match(app, /agentRunPollTimer: null/);
-  assert.match(app, /function scheduleAgentRunPoll\(\)[\s\S]*clearTimeout\(state\.agentRunPollTimer\)[\s\S]*\["queued", "running"\]\.includes\(run\.status\)[\s\S]*setTimeout\([\s\S]*refreshSessionsQuietly\(\)[\s\S]*2000\)/);
+  assert.match(app, /function scheduleAgentRunPoll\(\)[\s\S]*clearTimeout\(state\.agentRunPollTimer\)[\s\S]*\["queued", "running"\]\.includes\(run\.status\)[\s\S]*setTimeout\([\s\S]*refreshSessionsQuietly\(\{ poll: true \}\)[\s\S]*2000\)/);
   assert.match(app, /state\.sessionsRefreshing = false;\s*scheduleAgentRunPoll\(\);/);
 });
 
