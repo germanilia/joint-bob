@@ -1,3 +1,5 @@
+import { actingAccount } from "../../account-context.js";
+import { conversationPrivacy, keepConversationPrivate, privateConversationMayTravel, privateConversationVisible } from "../../conversation-privacy.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
 import { mayReplicateEvent } from "../replication-v2.js";
 import { conversationOfAnotherProject } from "./projects.js";
@@ -40,6 +42,14 @@ import { ownershipSchema, registeredHarnessIdSchema, routedSessionTakeOwnershipS
 import { stopConversationBackgroundTasks } from "../background-tasks.js";
 import { ConversationTransferError, listProjectSessionsWithReviewState, listReviewScopeSessions, requireLocalConversationOwner, noteUnannouncedRunChanges, sharedProjectSessions } from "../sessions-helpers.js";
 import { app } from "../state.js";
+
+app.use("/api/projects/:projectId/sessions", (request, response, next) => {
+  const ids = [request.query.sessionId, request.body?.sessionId, request.body?.conversationId];
+  if (ids.some(id => typeof id === "string" && !privateConversationVisible(id))) {
+    sendError(response, 404, "Conversation not found"); return;
+  }
+  next();
+});
 
 app.get("/api/projects/:projectId/sessions", async (request, response, next) => {
   try {
@@ -117,6 +127,35 @@ app.put("/api/projects/:projectId/sessions/ntfy", async (request, response, next
   } catch (error) {
     next(error);
   }
+});
+
+const privateStartSchema = z.object({ sessionId: z.string().uuid(), nodeId: z.string().uuid(), engine: registeredHarnessIdSchema, title: z.string().trim().min(1).max(120), secretAccountIds: z.array(z.string().uuid()).max(100) }).strict();
+
+app.post("/api/projects/:projectId/sessions/private-start", async (request, response, next) => {
+  try {
+    const project = await getProject(request.params.projectId);
+    if (!project) { sendError(response, 404, "Project not found"); return; }
+    const { nodeId, ...input } = privateStartSchema.parse(request.body);
+    const actor = actingAccount(), local = await getClusterNode(), db = await clusterV2Database();
+    const privacy = { sessionId: input.sessionId, homeNodeId: local.id, accountId: actor?.role === "admin" ? null : actor?.accountId ?? null };
+    if (!actor || actor.isRemoteLogin || actor.viaLiveRelay || !privateConversationMayTravel(db, local.id, nodeId, privacy)) {
+      sendError(response, 403, "Private conversations can only run on your own machines"); return;
+    }
+    if (await getConversationRecord(project.id, input.engine, input.sessionId) && !conversationPrivacy(input.sessionId, db)) {
+      sendError(response, 409, "Conversation visibility cannot change after creation"); return;
+    }
+    keepConversationPrivate(privacy, db);
+    if (nodeId !== local.id) {
+      const peer = await getRuntimePeer(nodeId);
+      if (!peer) { sendError(response, 409, "The selected twin is unavailable"); return; }
+      const prepared = await runtimeFetch(`${peer.url}/api/cluster/quick-notes/prepare`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...input, projectId: project.id, privateConversation: true }), signal: AbortSignal.timeout(15_000),
+      });
+      if (!prepared.ok) { sendError(response, 409, "The selected twin could not prepare a private conversation"); return; }
+    }
+    response.status(201).json({ visibility: "private" });
+  } catch (error) { next(error); }
 });
 
 const sessionForkSchema = z.object({ engine: registeredHarnessIdSchema, sessionId: z.string().min(1).max(240) }).strict();
@@ -644,10 +683,13 @@ async function shareTakeover(takeover: Takeover, caller?: AbortSignal): Promise<
 }
 
 export async function takeLocalSessionOwnership(project: ProjectRecord, payload: z.infer<typeof routedSessionTakeOwnershipSchema>, requireOnline = false, caller?: AbortSignal): Promise<TakeoverResult> {
-  const [local, sessions, peers] = await Promise.all([getClusterNode(), listProjectScopeSessions(project), listRuntimePeers(project.id)]);
+  const [local, sessions, projectPeers] = await Promise.all([getClusterNode(), listProjectScopeSessions(project), listRuntimePeers(project.id)]);
   if (payload.peerId !== local.id) throw new Error("Takeover destination is not this node");
   const matching = payload.sessionId ? sessions.find((session) => session.id === payload.sessionId) : sessions.find((session) => session.path === payload.sessionPath);
   if (!matching) throw new ConversationTransferError("Conversation was not found on the destination node");
+  const privacy = conversationPrivacy(matching.id);
+  const db = await clusterV2Database();
+  const peers = privacy ? projectPeers.filter(peer => privateConversationMayTravel(db, local.id, peer.id, privacy)) : projectPeers;
   if (payload.force && payload.offlineOwnerNodeId) throw new ConversationTransferError("Choose either force transfer or an offline takeover");
   if (payload.force && matching.draft) throw new ConversationTransferError("Wait for the conversation transcript to synchronize before forcing ownership");
   await assertDraftTakeoverReady(project, matching, local.id, peers);
@@ -914,7 +956,9 @@ app.post("/api/projects/:projectId/sessions/recover", async (request, response, 
     if (!adapter.sessions.recover) throw new Error(`${adapter.label} does not support transcript conflict recovery`);
     if (conversationSessionIsOpen(project.id, payload.engine, payload.sessionId, mapped.path)) throw new Error("Close the local conversation before recovery");
     await requireLocalConversationOwner(payload.engine, payload.sessionId);
-    const peers = await listRuntimePeers(project.id);
+    const privacy = conversationPrivacy(payload.sessionId);
+    const db = await clusterV2Database();
+    const peers = (await listRuntimePeers(project.id)).filter(peer => !privacy || privateConversationMayTravel(db, local.id, peer.id, privacy));
     const fenced = await beginConversationRecovery(payload.engine, payload.sessionId, local.id);
     await replicateExactOwnership(peers, fenced, local.id);
     if (conversationSessionIsOpen(project.id, payload.engine, payload.sessionId, mapped.path)) throw new Error("Conversation opened during recovery fencing");

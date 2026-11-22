@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { keepConversationPrivate, type PrivateConversation } from "./conversation-privacy.js";
 import { adminAccountId, newResourceOwner, personalAccount } from "./ownership.js";
 import { mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -12,6 +13,7 @@ import { resolveDataDirectory } from "./data-directory.js";
  * launched through the prompt queue. A dispatched note is consumed even if its
  * conversation fails. Failed runs remain visible separately, never as drafts.
  */
+export type ConversationVisibility = "public" | "private";
 export type QuickNoteStatus = "pending" | "starting" | "started" | "completed" | "failed";
 
 export interface QuickNoteImage {
@@ -29,6 +31,7 @@ export interface QuickNote {
   title: string;
   content: string;
   harnessId: string;
+  visibility?: ConversationVisibility;
   provider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
@@ -62,6 +65,7 @@ export interface QuickNoteInput {
   title: string;
   content: string;
   harnessId: string;
+  visibility?: ConversationVisibility;
   provider?: string | null;
   modelId?: string | null;
   thinkingLevel?: string | null;
@@ -80,6 +84,7 @@ interface QuickNoteRow {
   title: string;
   content: string;
   harness_id: string;
+  visibility: ConversationVisibility;
   provider: string | null;
   model_id: string | null;
   thinking_level: string | null;
@@ -130,6 +135,7 @@ function db(): DatabaseSync {
   const columns = (database.prepare("PRAGMA table_info(quick_notes)").all() as Array<{ name: string }>).map((column) => column.name);
   const migration: Array<[string, string]> = [
     ["position", "INTEGER NOT NULL DEFAULT 0"],
+    ["visibility", "TEXT NOT NULL DEFAULT 'public'"],
     ["node_id", "TEXT"],
     ["secret_account_ids", "TEXT NOT NULL DEFAULT '[]'"],
     ["scheduled_at", "TEXT"],
@@ -211,6 +217,7 @@ function fromRow(row: QuickNoteRow, tolerateMissing = false): QuickNote {
     title: row.title,
     content: row.content,
     harnessId: row.harness_id,
+    ...(row.visibility === "private" ? { visibility: row.visibility } : {}),
     provider: row.provider,
     modelId: row.model_id,
     thinkingLevel: row.thinking_level,
@@ -289,6 +296,7 @@ function insertNote(input: QuickNoteInput, id: string, now: string, status: Quic
     title: input.title.trim(),
     content: input.content,
     harness_id: input.harnessId,
+    visibility: input.visibility ?? "public",
     provider,
     model_id: modelId,
     thinking_level: input.thinkingLevel ?? null,
@@ -305,16 +313,18 @@ function insertNote(input: QuickNoteInput, id: string, now: string, status: Quic
     updated_at: now,
   };
   db().prepare(`INSERT INTO quick_notes
-    (id, project_id, title, content, harness_id, provider, model_id, thinking_level, node_id, secret_account_ids, scheduled_at, status, error, session_id, launch_request_id, created_at, updated_at, position)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(row.id, row.project_id, row.title, row.content, row.harness_id, row.provider, row.model_id, row.thinking_level, row.node_id, row.secret_account_ids, row.scheduled_at, row.status, row.error, row.session_id, row.launch_request_id, row.created_at, row.updated_at, row.position);
+    (id, project_id, title, content, harness_id, provider, model_id, thinking_level, node_id, secret_account_ids, scheduled_at, status, error, session_id, launch_request_id, created_at, updated_at, position, visibility)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(row.id, row.project_id, row.title, row.content, row.harness_id, row.provider, row.model_id, row.thinking_level, row.node_id, row.secret_account_ids, row.scheduled_at, row.status, row.error, row.session_id, row.launch_request_id, row.created_at, row.updated_at, row.position, row.visibility);
   return row;
 }
 
-export function createQuickNote(input: QuickNoteInput): QuickNote {
+export function createQuickNote(input: QuickNoteInput, privacy?: Omit<PrivateConversation, "sessionId">): QuickNote {
   const now = new Date().toISOString();
   input.images?.forEach(decodeImage);
-  const row = insertNote(input, nanoid(12), now, "pending");
+  const id = nanoid(12);
+  if (privacy) keepConversationPrivate({ ...privacy, sessionId: id }, db());
+  const row = insertNote(input, id, now, "pending");
   if (input.images?.length) storeImages(row.id, input.images);
   return fromRow(row);
 }

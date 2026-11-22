@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { conversationPrivacy, privateConversationVisible } from "../conversation-privacy.js";
 import { visibleTaskMessages } from "../background-task-messages.js";
 import WebSocket from "ws";
 import { accountIdForUser } from "../auth.js";
@@ -77,7 +78,12 @@ export function broadcastToProject(projectId: string, payload: unknown): void {
   for (const session of harnessSessions.values()) if (session.projectId === projectId) for (const client of session.clients) sockets.add(client);
   // A page rescans every project for a conversation notice that names none.
   const scoped = (payload as { type?: unknown }).type === "sessionsChanged" ? { ...(payload as object), projectId } : payload;
-  for (const socket of sockets) send(socket, scoped);
+  const conversationId = (payload as { conversationId?: string }).conversationId;
+  const privacy = conversationId && conversationPrivacy(conversationId);
+  for (const socket of sockets) {
+    const account = socketAccounts.get(socket);
+    if (!privacy || account && privateConversationVisible(privacy.sessionId, account)) send(socket, scoped);
+  }
 }
 /** `accountId` limits an event to one person's sockets: their pins, recents and shortcuts
     are nobody else's business, not even that they changed. */

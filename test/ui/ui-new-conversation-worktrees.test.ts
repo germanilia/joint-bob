@@ -41,6 +41,25 @@ test("the wizard defaults to a worktree but lets this conversation use the proje
   } finally { database.close(); }
 });
 
+test("the wizard defaults to Public and records Private before opening chat", { timeout: 90_000 }, async t => {
+  const { page, node } = await openWizard(t);
+  const visibility = page.getByTestId("new-session-visibility");
+  assert.equal(await visibility.inputValue(), "public");
+  await visibility.selectOption("private");
+  const worktreeToggle = page.locator("#newSessionNewWorktree");
+  if (await worktreeToggle.count()) await worktreeToggle.uncheck();
+  await page.getByTestId("new-session-next-button").click();
+  await page.getByTestId("new-session-next-button").click();
+  await page.getByTestId("new-session-worktree-select").selectOption("");
+  const connected = page.waitForEvent("websocket", { predicate: socket => new URL(socket.url()).searchParams.get("sessionPath") === "new" });
+  await page.getByTestId("new-session-name-start-button").click();
+  const sessionId = new URL((await connected).url()).searchParams.get("sessionId");
+  await page.getByText("Ready for your first message", { exact: true }).waitFor();
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
+  try { assert.ok(db.prepare("SELECT 1 FROM private_conversations WHERE session_id=?").get(sessionId)); }
+  finally { db.close(); }
+});
+
 test("typing starts right away while the default worktree is being created", { timeout: 90_000 }, async t => {
   const { page, project } = await openWizard(t);
   const { promise: worktreeGate, resolve: finishWorktree } = Promise.withResolvers<void>();

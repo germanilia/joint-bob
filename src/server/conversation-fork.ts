@@ -1,6 +1,7 @@
 import { confinedToRuntime, currentRuntime } from "../account-runtime.js";
 import { withProjectRuntime } from "../project-runtime.js";
 import { randomUUID } from "node:crypto";
+import { conversationPrivacy, keepConversationPrivate, privateConversationVisible } from "../conversation-privacy.js";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getClusterNode } from "../cluster.js";
@@ -43,7 +44,7 @@ async function forkInRuntime(sourceProject: ProjectRecord, engine: ConversationE
     throw error;
   });
   const source = sessions.find((session) => session.harnessId === engine && session.id === sessionId) ?? conflictSnapshot?.source;
-  if (!source) throw new HarnessForkError(404, "Conversation not found");
+  if (!source || !privateConversationVisible(sessionId)) throw new HarnessForkError(404, "Conversation not found");
   if (!conflictSnapshot && !source.readOnly) await requireLocalConversationOwner(engine, sessionId);
   const targets = source.segments ?? [{ engine, sessionId, path: source.path, draft: source.draft }];
   const queueKey = `${project.id}:${source.conversationId ?? source.id}`;
@@ -75,6 +76,8 @@ async function forkInRuntime(sourceProject: ProjectRecord, engine: ConversationE
     return { engine: target.engine, sessionId: id, path: result.sessionPath, ...(result.sessionPath.startsWith("draft:") ? { draft: true } : {}) };
   });
   const conversationId = copies[0].sessionId;
+  const privacy = conversationPrivacy(source.conversationId ?? source.id);
+  if (privacy) for (const copy of copies) keepConversationPrivate({ ...privacy, sessionId: copy.sessionId });
   const written: string[] = [];
   try {
     for (const file of files) {

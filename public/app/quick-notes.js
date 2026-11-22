@@ -14,6 +14,7 @@ const form = document.querySelector("#quickNoteForm");
 const projectPicker = createSearchableSelect({ id: "quickNoteProject", testid: "quick-note-project-select", listTestid: "quick-note-project-options", label: "Project", prompt: "Choose a project", placeholder: "Search projects", emptyText: "No projects found" });
 document.querySelector("#quickNoteProjectPicker").replaceWith(projectPicker.root);
 const titleInput = document.querySelector("#quickNoteTitle");
+const visibilitySelect = document.querySelector("#quickNoteVisibility");
 const contentInput = document.querySelector("#quickNoteContent");
 const harnessSelect = document.querySelector("#quickNoteHarness");
 const modelSelect = document.querySelector("#quickNoteModel");
@@ -377,6 +378,10 @@ function checkedSecretIds() {
 
 function renderDialogNodes(nodes, savedNodeId) {
   dialogNodes = nodes;
+  if (startingNow && visibilitySelect.value === "private") {
+    nodes = nodes.filter(node => node.local || node.twin);
+    if (!nodes.some(node => node.id === savedNodeId)) savedNodeId = null;
+  }
   const options = nodes.map((node) => new Option(node.local ? `${node.name} (this node)` : node.name, node.id));
   if (savedNodeId && !nodes.some((candidate) => candidate.id === savedNodeId)) {
     // A saved node the project no longer offers stays selected rather than silently switching.
@@ -496,7 +501,7 @@ dialog.addEventListener("close", () => {
 
 const WIZARD_STEPS = [
   { label: "Project", groups: [projectPicker.root.closest(".project-combobox-field")] },
-  { label: "Title & content", groups: [titleInput.closest("label"), contentInput.closest("label"), imageButton.closest(".field-group")] },
+  { label: "Title & content", groups: [titleInput.closest("label"), visibilitySelect.closest("label"), contentInput.closest("label"), imageButton.closest(".field-group")] },
   { label: "Agent", groups: [harnessSelect.closest(".quick-note-settings")] },
   { label: "Runs on", groups: [nodeSelect.closest(".quick-note-settings")] },
   { label: "Secrets", groups: [secretList.closest(".field-group")] },
@@ -652,6 +657,8 @@ export async function openQuickNote(note = null, { chooseProject = false, startN
   scheduleInput.closest("label").hidden = startingNow;
   const selectedProjectId = note?.projectId || defaultProjectId;
   setWizard(startingNow);
+  if (!startingNow) visibilitySelect.closest("label").hidden = true;
+  visibilitySelect.value = "public";
   projectPicker.setOptions(state.projects.map((project) => ({ value: project.id, label: project.name })));
   projectPicker.setValue(selectedProjectId || "");
   nameProjectStep();
@@ -695,6 +702,7 @@ function collectPayload() {
     secretAccountIds: [...new Set(checkedSecretIds())],
     images: dialogImages.map(({ id, kind, name, mimeType, data }) => ({ id, kind, name, mimeType, data })),
     scheduledAt: scheduleInput.value ? new Date(scheduleInput.value).toISOString() : null,
+    ...(startingNow ? { visibility: visibilitySelect.value } : {}),
   };
 }
 
@@ -788,6 +796,10 @@ projectPicker.onChange(() => {
   void loadDialogProjectOptions({ nodeId: nodeSelect.value, secretAccountIds: checkedSecretIds() });
 });
 nodeSelect.addEventListener("change", () => renderDialogSecrets(checkedSecretIds()));
+visibilitySelect.addEventListener("change", () => {
+  renderDialogNodes(dialogNodes, nodeSelect.value);
+  renderDialogSecrets(checkedSecretIds());
+});
 form.addEventListener("submit", saveNote);
 createButton.addEventListener("click", () => { void openQuickNote(); });
 mobileCreateButton.addEventListener("click", () => { void openQuickNote(); });

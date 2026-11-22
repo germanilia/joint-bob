@@ -2,6 +2,8 @@ import { z } from "zod";
 import { setTimeout as delay } from "node:timers/promises";
 import { readActiveConversationTaskIds, readBackgroundTaskIdentity, readBackgroundTasks, readPersistedBackgroundTask, type TaskCursor } from "../background-tasks.js";
 import { getClusterNode } from "../cluster.js";
+import { conversationPrivacy, privateConversationMayTravel, privateConversationVisible } from "../conversation-privacy.js";
+import { clusterV2Database } from "../cluster-v2-store.js";
 import { getRuntimePeer, listRuntimePeers, runtimeFetch } from "./runtime-peers.js";
 import { resolveDataDirectory } from "../data-directory.js";
 import { getProject, projectAliasIds } from "../store.js";
@@ -63,9 +65,11 @@ interface ListResult {
 
 async function projectScope(command: BackgroundTaskCommand, callerNodeId?: string): Promise<{ identities: string[]; projectId: string }> {
   const project = await getProject(command.projectId);
-  if (!project) throw new TaskRequestError(404, "Project not found");
+  if (!project || !privateConversationVisible(command.conversationId)) throw new TaskRequestError(404, "Conversation not found");
   if (callerNodeId) {
     const local = (await getClusterNode()).id;
+    const privacy = conversationPrivacy(command.conversationId);
+    if (privacy && !privateConversationMayTravel(await clusterV2Database(), local, callerNodeId, privacy)) throw new TaskRequestError(404, "Conversation not found");
     if (callerNodeId !== local && !(await clusterPeerMayAccessProject(callerNodeId, project.id))) {
       throw new TaskRequestError(403, "Project is not shared with this node");
     }

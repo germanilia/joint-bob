@@ -1,4 +1,7 @@
 import { revokeAgentCapabilities } from "../../agent-capabilities.js";
+import { privateConversationVisible } from "../../conversation-privacy.js";
+import { isTrustedTwin } from "../../cluster-sharing-policy.js";
+import { clusterV2Database } from "../../cluster-v2-store.js";
 import { NotFoundError } from "../../not-found.js";
 import path from "node:path";
 import { assertProjectFolderAllowed, projectHomeFor, withProjectRuntime } from "../../project-runtime.js";
@@ -241,6 +244,7 @@ app.put("/api/projects/:projectId/lock", async (request, response, next) => {
  * node, those are looked up in the projects the caller can't see.
  */
 export async function conversationOfAnotherProject(project: ProjectRecord, engine: HarnessId, sessionId: string): Promise<boolean> {
+  if (!privateConversationVisible(sessionId)) return true;
   if (await getConversationRecord(project.id, engine, sessionId)) return false;
   if (await conversationBelongsElsewhere(project.id, engine, sessionId)) return true;
   if (!actingAccount()) return false;
@@ -396,7 +400,10 @@ app.get("/api/projects/:projectId/session-nodes", async (request, response, next
     const targetNodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : undefined;
     // Only machines in a cluster this project is shared with may run its conversations.
     const peers = targetNodeId === local.id ? [] : (await listRuntimePeers(project.id)).filter(peer => !targetNodeId || peer.id === targetNodeId);
+    const db = await clusterV2Database();
+    const actor = actingAccount();
     const peerNodes = await Promise.all(peers.map(async (peer) => {
+      const twin = actor?.role === "admin" && !actor.isRemoteLogin && !actor.viaLiveRelay && isTrustedTwin(db, local.id, peer.id);
       try {
         // A peer that is slow or offline answers from what it last reported, marked offline.
         const presence=await peerSnapshot(`presence:${project.id}`,peer.id,async()=>{
@@ -405,9 +412,9 @@ app.get("/api/projects/:projectId/session-nodes", async (request, response, next
           return await reply.json() as {mapped:boolean;terminal?:boolean;runner?:boolean};
         },{waitMs:PRESENCE_LIMIT_MS});
         // A peer that predates the terminal or runner setting does not restrict it.
-        return {id:peer.id,name:peer.name,local:false,online:presence.fresh,mapped:presence.value.mapped,terminal:presence.value.terminal!==false,runner:presence.value.runner!==false};
+        return {id:peer.id,name:peer.name,local:false,twin,online:presence.fresh,mapped:presence.value.mapped,terminal:presence.value.terminal!==false,runner:presence.value.runner!==false};
       } catch {
-        return { id: peer.id, name: peer.name, local: false, online: false, mapped: false, terminal: false, runner: false };
+        return { id: peer.id, name: peer.name, local: false, twin, online: false, mapped: false, terminal: false, runner: false };
       }
     }));
     // The local terminal follows the admin's policy for the signed-in person.

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { actingAccount } from "../../account-context.js";
+import { clusterV2Database } from "../../cluster-v2-store.js";
+import { isTrustedTwin } from "../../cluster-sharing-policy.js";
+import { privateConversationVisible } from "../../conversation-privacy.js";
 import { authorizeQuickNotePeer, forwardQuickNote, listSharedQuickNotes, offeredQuickNotes, sharedQuickNote, syncSharedQuickNotes } from "../shared-quick-notes.js";
 import { mapV2Error } from "../cluster-v2.js";
 import { secretHiddenFromActor } from "../../secrets.js";
@@ -16,14 +20,14 @@ import { peerMayRunHere } from "../cluster-helpers.js";
     looked for on another node either. */
 async function visibleLocalNote(noteId: string): Promise<ReturnType<typeof getQuickNote>> {
   const note = getQuickNote(noteId);
-  if (note && !await projectVisible(note.projectId)) throw new NotFoundError("Quick note not found");
+  if (note && (!privateConversationVisible(note.id) || !await projectVisible(note.projectId))) throw new NotFoundError("Quick note not found");
   return note;
 }
 
-async function visibleNotes<T extends { projectId: string }>(notes: T[]): Promise<T[]> {
+async function visibleNotes<T extends { id: string; projectId: string }>(notes: T[]): Promise<T[]> {
   const visible = new Map<string, boolean>();
   for (const note of notes) if (!visible.has(note.projectId)) visible.set(note.projectId, await projectVisible(note.projectId));
-  return notes.filter((note) => visible.get(note.projectId));
+  return notes.filter((note) => visible.get(note.projectId) && privateConversationVisible(note.id));
 }
 
 const moveSchema = z.object({ targetId: z.string().min(1).max(120) }).strict();
@@ -48,7 +52,7 @@ app.get("/api/projects/:projectId/quick-notes", async (request, response, next) 
   try {
     const project = await getProject(request.params.projectId);
     if (!project) { sendError(response, 404, "Project not found"); return; }
-    response.json({ notes: [...listQuickNotes(project.id), ...await listSharedQuickNotes(project.id)].sort(noteOrder) });
+    response.json({ notes: [...listQuickNotes(project.id).filter(note => privateConversationVisible(note.id)), ...await listSharedQuickNotes(project.id)].sort(noteOrder) });
   } catch (error) {
     next(error);
   }
@@ -97,7 +101,13 @@ app.post("/api/quick-notes", async (request, response, next) => {
     if (!project) { sendError(response, 404, "Project not found"); return; }
     // A note carries only secrets its writer may use: the queue starts it later, as the node.
     if ((payload.secretAccountIds ?? []).some(secretHiddenFromActor)) { sendError(response, 404, "Secret account not found"); return; }
-    response.status(201).json({ note: createQuickNote({ ...payload, projectId: project.id }) });
+    const local = await getClusterNode();
+    const actor = actingAccount();
+    if (payload.visibility === "private" && (!actor || actor.isRemoteLogin || actor.viaLiveRelay || (payload.nodeId && payload.nodeId !== local.id && (actor.role !== "admin" || !isTrustedTwin(await clusterV2Database(), local.id, payload.nodeId))))) {
+      sendError(response, 403, "Private conversations can only run on your own machines");
+      return;
+    }
+    response.status(201).json({ note: createQuickNote({ ...payload, projectId: project.id }, payload.visibility === "private" && actor ? { homeNodeId: local.id, accountId: actor.role === "admin" ? null : actor.accountId } : undefined) });
   } catch (error) {
     next(error);
   }
@@ -112,6 +122,9 @@ app.patch("/api/quick-notes/:noteId", async (request, response, next) => {
     }
     if (existing.dispatchedAt) { sendError(response, 409, "This note was already dispatched; open its conversation instead"); return; }
     const payload = quickNoteSchema.parse(request.body);
+    if (payload.visibility && payload.visibility !== (existing.visibility ?? "public")) {
+      sendError(response, 409, "Conversation visibility cannot change after creation"); return;
+    }
     const project = await getProject(payload.projectId);
     if (!project) { sendError(response, 404, "Project not found"); return; }
     // A note carries only secrets its writer may use: the queue starts it later, as the node.
@@ -172,7 +185,7 @@ app.post("/api/cluster/v2/quick-notes/action", async (request, response, next) =
   try {
     const payload = z.object({ id: z.string().min(1).max(120), action: z.enum(["edit", "delete", "start", "move"]), input: z.union([quickNoteSchema, moveSchema]).optional() }).strict().parse(request.body);
     const note = getQuickNote(payload.id);
-    if (!note) { sendError(response, 404, "Quick note not found"); return; }
+    if (!note || note.visibility === "private") { sendError(response, 404, "Quick note not found"); return; }
     const peer = response.locals.machineNodeId as string;
     await authorizeQuickNotePeer(peer, note.projectId);
     if (getQuickNote(note.id)?.projectId !== note.projectId) { sendError(response, 409, "Quick note changed during authorization"); return; }
@@ -187,7 +200,7 @@ app.post("/api/cluster/v2/quick-notes/action", async (request, response, next) =
     } else if (payload.action === "move") {
       const { targetId } = moveSchema.parse(payload.input);
       const target = getQuickNote(targetId);
-      if (!target) { sendError(response, 409, "Target note is not in this queue"); return; }
+      if (!target || target.visibility === "private") { sendError(response, 409, "Target note is not in this queue"); return; }
       await authorizeQuickNotePeer(peer, target.projectId);
       if (getQuickNote(note.id)?.projectId !== note.projectId || getQuickNote(target.id)?.projectId !== target.projectId) {
         sendError(response, 409, "Quick note changed during authorization"); return;
@@ -216,7 +229,11 @@ app.post("/api/cluster/quick-notes/prepare", async (request, response, next) => 
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     if (!await peerMayRunHere(response.locals.machineNodeId, "conversations")) { sendError(response, 403, "This node does not accept runs from other nodes"); return; }
     const payload = quickNotePrepareSchema.parse(request.body);
-    await prepareQuickNoteConversation(payload);
+    const peer = response.locals.machineNodeId as string;
+    if (payload.privateConversation && !isTrustedTwin(await clusterV2Database(), (await getClusterNode()).id, peer)) {
+      sendError(response, 404, "Conversation not found"); return;
+    }
+    await prepareQuickNoteConversation(payload, payload.privateConversation ? peer : undefined);
     response.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Quick note preparation failed";

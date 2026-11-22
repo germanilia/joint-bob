@@ -2676,6 +2676,14 @@
             Name
             <input id="newSessionNameInput" name="name" autocomplete="off" placeholder="Feature review" data-testid="new-session-name-input" />
           </label>
+          <label>
+            Visibility
+            <select id="newSessionVisibility" name="visibility" data-testid="new-session-visibility" aria-describedby="newSessionVisibilityHint">
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+            <span class="muted" id="newSessionVisibilityHint">Public follows project sharing. Private stays on your machines and twins. Project files still follow project sharing.</span>
+          </label>
           <div class="field-group">
             <span class="field-label">Colour</span>
             <div class="color-swatches" id="newSessionColorSwatches" role="radiogroup" aria-label="Conversation colour" data-testid="new-session-color-swatches"></div>
@@ -2737,6 +2745,14 @@
         </div>
         <label>Title
           <input id="quickNoteTitle" name="title" maxlength="120" autocomplete="off" required placeholder="What needs attention?" data-testid="quick-note-title-input" />
+        </label>
+        <label class="field-group" hidden>
+          Visibility
+          <select id="quickNoteVisibility" name="visibility" data-testid="new-conversation-visibility" aria-describedby="quickNoteVisibilityHint">
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
+          <span class="muted" id="quickNoteVisibilityHint">Public follows project sharing. Private stays on your machines and twins. Project files still follow project sharing.</span>
         </label>
         <label>Content
           <textarea id="quickNoteContent" name="content" maxlength="100000" rows="8" placeholder="Capture context, links, or the next step." data-testid="quick-note-content-input"></textarea>

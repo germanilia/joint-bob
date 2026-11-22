@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { clusterV2Database } from "../cluster-v2-store.js";
+import { conversationPrivacy, keepConversationPrivate, privateConversationMayTravel } from "../conversation-privacy.js";
 import { actingAccount, runAsAccount } from "../account-context.js";
 import { listLocalUsers } from "../auth.js";
 import { encodeAuthor } from "../message-authors.js";
@@ -90,11 +92,12 @@ export async function runningConversationCounts(): Promise<Map<string, number>> 
 
 /** Ensures the conversation record, title, and credentials exist on the node that
     will run the note. Refuses projects the selected node has not been granted. */
-export async function prepareQuickNoteConversation(input: { projectId: string; engine: string; sessionId: string; title: string; secretAccountIds?: string[] }): Promise<void> {
+export async function prepareQuickNoteConversation(input: { projectId: string; engine: string; sessionId: string; title: string; secretAccountIds?: string[] }, privateHomeNodeId?: string): Promise<void> {
   const project = await getProject(input.projectId);
   if (!project) throw new Error("Project is not mapped on the execution node");
   const local = await getClusterNode();
   await validateLaunchContext(project.id, input.secretAccountIds ?? [], false);
+  if (privateHomeNodeId) keepConversationPrivate({ sessionId: input.sessionId, homeNodeId: privateHomeNodeId, accountId: null });
   await ensureConversationRecord(project.id, input.engine, input.sessionId, local.id);
   await ensureSessionTitle(input.sessionId, input.title.trim());
 }
@@ -121,6 +124,11 @@ async function resolveLaunchTarget(note: QuickNote, sessionId: string): Promise<
   if (!project) throw new QuickNoteLaunchError(404, "Quick note project not found");
   // The home node always knows the conversation; a peer needs it prepared and
   // granted there first, and a selected peer is never replaced by a fallback.
+  const privacy = conversationPrivacy(note.id);
+  if (privacy) {
+    if (!privateConversationMayTravel(await clusterV2Database(), local.id, targetNodeId, privacy)) throw new QuickNoteLaunchError(403, "Private conversations can only run on your own machines");
+    keepConversationPrivate({ ...privacy, sessionId });
+  }
   await ensureConversationRecord(project.id, note.harnessId, sessionId, local.id);
   await ensureSessionTitle(sessionId, note.title);
   if (targetNodeId === local.id) {
@@ -133,7 +141,7 @@ async function resolveLaunchTarget(note: QuickNote, sessionId: string): Promise<
   const reply = await runtimeFetch(`${peer.url}/api/cluster/quick-notes/prepare`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId: project.id, engine: note.harnessId, sessionId, title: note.title, secretAccountIds: note.secretAccountIds }),
+    body: JSON.stringify({ projectId: project.id, engine: note.harnessId, sessionId, title: note.title, secretAccountIds: note.secretAccountIds, ...(privacy ? { privateConversation: true } : {}) }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!reply.ok) {

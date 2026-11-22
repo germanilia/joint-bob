@@ -1,3 +1,4 @@
+import { conversationPrivacy, keepConversationPrivate, privateConversationMayTravel, privateAttachmentCwd, type PrivateConversation } from "../conversation-privacy.js";
 import { confinedToRuntime, currentRuntime } from "../account-runtime.js";
 import { withProjectRuntime } from "../project-runtime.js";
 import { projectAdditionalPaths } from "./session-scope.js";
@@ -5,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants, createReadStream, readFileSync, lstatSync } from "node:fs";
 import { forkLocalConversation } from "./conversation-fork.js";
 import { findHarnessSession, harnessSessionBusy } from "./harness-sessions.js";
-import { copyFile, lstat, mkdir, open, realpath, rename, rm, stat } from "node:fs/promises";
+import { copyFile, lstat, mkdir, open, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -29,7 +30,9 @@ import { fetchPeer, isPeerUnreachable, PeerUnreachableError, whilePeerOptional }
 import { onSessionListingChange, projectListingRevision } from "../session-listing-revisions.js";
 
 export const transcriptQuery=z.object({projectId:z.string().min(1).max(300),engine:z.string().min(1).max(80).optional(),sessionId:z.string().min(1).max(300).optional()}).strict();
-const entrySchema=z.object({engine:z.string().min(1).max(80),sessionId:z.string().min(1).max(300),relativePath:z.string().min(1).max(4096),size:z.number().int().min(0).max(1024*1024*1024),hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+export const privateAttachmentName=z.string().regex(/^\d+-[a-f0-9-]{36}-[a-zA-Z0-9._-]{1,240}$/);
+const attachmentSchema=z.object({name:privateAttachmentName,size:z.number().int().min(0).max(20*1024*1024),hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+const entrySchema=z.object({engine:z.string().min(1).max(80),sessionId:z.string().min(1).max(300),relativePath:z.string().min(1).max(4096),size:z.number().int().min(0).max(1024*1024*1024),hash:z.string().regex(/^[a-f0-9]{64}$/),privacy:z.object({sessionId:z.string().min(1).max(300),homeNodeId:z.string().uuid(),accountId:z.null()}).strict().optional(),attachmentSessionId:z.string().uuid().optional(),attachments:z.array(attachmentSchema).optional()}).strict();
 type Entry=z.infer<typeof entrySchema>;
 const inventorySchema=z.object({entries:z.array(entrySchema).max(10000)}).strict();
 function ensureSchema(db:DatabaseSync):void{
@@ -64,7 +67,7 @@ export async function sharedTranscriptProject(peer:string,id:string){
  if(!mayShareProject(db,local.id,peer,id))throw new ClusterV2HttpError(403,"Project is not shared with this node");
  const project=await getProject(id);if(!project)throw new ClusterV2HttpError(404,"Project not found");return project;
 }
-type SourceTranscript={engine:string;id:string;path:string;subagent?:boolean};
+type SourceTranscript={engine:string;id:string;path:string;subagent?:boolean;conversationId:string};
 /** A project's shareable transcripts are the same for every peer. A twin asks for the whole
     inventory, for one conversation's entry, and for single files, often several times a
     minute; each of those listed the project's whole history. The list is kept until the
@@ -89,7 +92,7 @@ async function sourceTranscript(peer:string,projectId:string,engine:string,sessi
 async function listSourceTranscripts(project:ProjectRecord):Promise<SourceTranscript[]>{
  const projectId=project.id,sessions=await listHarnessSessions({...project,additionalPaths:await projectAdditionalPaths(projectId)});
  const local=await getClusterNode();
- const entries:SourceTranscript[]=sessions.flatMap(session=>session.segments?.length?session.segments.map(segment=>({engine:segment.engine,id:segment.sessionId,path:segment.path})): [{engine:session.harnessId,id:session.id,path:session.path,subagent:Boolean(session.parentSessionPath)}]);
+ const entries:SourceTranscript[]=sessions.flatMap(session=>session.segments?.length?session.segments.map(segment=>({engine:segment.engine,id:segment.sessionId,path:segment.path,conversationId:session.conversationId??session.id})): [{engine:session.harnessId,id:session.id,path:session.path,subagent:Boolean(session.parentSessionPath),conversationId:session.conversationId??session.id.split('/',1)[0]}]);
  // A leftover copy of a conversation deleted on any node is never offered.
  const deleted=await deletedConversationKeys(projectId);
  const unique=[...new Map(entries.filter(entry=>!entry.path.startsWith('draft:')&&!deleted.has(`${entry.engine}:${entry.id}`)).map(entry=>[`${entry.engine}:${entry.id}`,entry])).values()];
@@ -97,13 +100,43 @@ async function listSourceTranscripts(project:ProjectRecord):Promise<SourceTransc
  for(const entry of unique)if(!entry.subagent)await ensureConversationRecord(projectId,entry.engine,entry.id,local.id);
  return unique;
 }
-export function sharedTranscriptFile(peer:string,projectId:string,engine:string,sessionId:string):Promise<string>{
- return withProjectRuntime(projectId,()=>sharedTranscriptFileNow(peer,projectId,engine,sessionId));
+async function transcriptPrivacy(peer:string,allowPrivate:boolean){
+ const db=await clusterV2Database(),local=await getClusterNode();
+ return (id:string):PrivateConversation | false | undefined=>{
+  const privacy=conversationPrivacy(id,db);
+  if(!privacy)return undefined;
+  return allowPrivate&&privateConversationMayTravel(db,local.id,peer,privacy)?privacy:false;
+ };
 }
-async function sharedTranscriptFileNow(peer:string,projectId:string,engine:string,sessionId:string):Promise<string>{
+export function sharedTranscriptFile(peer:string,projectId:string,engine:string,sessionId:string,allowPrivate=false):Promise<string>{
+ return withProjectRuntime(projectId,()=>sharedTranscriptFileNow(peer,projectId,engine,sessionId,allowPrivate));
+}
+async function sharedTranscriptFileNow(peer:string,projectId:string,engine:string,sessionId:string,allowPrivate:boolean):Promise<string>{
+ const permission=await transcriptPrivacy(peer,allowPrivate);
  const session=await sourceTranscript(peer,projectId,engine,sessionId);
- if(!session)throw new ClusterV2HttpError(404,"Conversation not found in shared project");
+ if(!session||permission(sessionId)===false)throw new ClusterV2HttpError(404,"Conversation not found in shared project");
  return localTranscriptFile(session);
+}
+function attachmentDirectory(id:string):string{
+ return path.join(privateAttachmentCwd(id),'.joint-bob-attachments');
+}
+async function privateAttachmentEntries(id:string):Promise<Array<z.infer<typeof attachmentSchema>>>{
+ const directory=attachmentDirectory(id);
+ const rows=await readdir(directory,{withFileTypes:true}).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return [];throw error;});
+ return Promise.all(rows.filter(row=>row.isFile()&&privateAttachmentName.safeParse(row.name).success).map(async row=>{
+  const file=path.join(directory,row.name),info=await stat(file);
+  return {name:row.name,size:info.size,hash:await fileHash(file,info)};
+ }));
+}
+export async function sharedPrivateAttachment(peer:string,projectId:string,engine:string,sessionId:string,name:string):Promise<string>{
+ await sharedTranscriptProject(peer,projectId);
+ const permission=await transcriptPrivacy(peer,true);
+ const session=await sourceTranscript(peer,projectId,engine,sessionId);
+ if(!session||!permission(sessionId)||!permission(session.conversationId))throw new ClusterV2HttpError(404,'Attachment not found');
+ const directory=attachmentDirectory(session.conversationId),file=path.join(directory,privateAttachmentName.parse(name));
+ const info=await lstat(file).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;});
+ if(!info?.isFile()||await realpath(file)!==path.join(await realpath(resolveDataDirectory()),path.relative(resolveDataDirectory(),file)))throw new ClusterV2HttpError(404,'Attachment not found');
+ return file;
 }
 async function localTranscriptFile(session:{engine:string;path:string}):Promise<string>{
  const adapter=getHarness(session.engine),file=adapter.paths.transcriptFile?.(session.path);
@@ -112,12 +145,12 @@ async function localTranscriptFile(session:{engine:string;path:string}):Promise<
  return file;
 }
 /** A peer catching up on one conversation names it, so only that transcript is hashed and sent. */
-export async function sharedTranscriptInventory(peer:string,projectId:string,only?:{engine:string;sessionId:string}):Promise<Entry[]>{
- const build=()=>withProjectRuntime(projectId,()=>sharedTranscriptInventoryNow(peer,projectId,only));
+export async function sharedTranscriptInventory(peer:string,projectId:string,only?:{engine:string;sessionId:string},allowPrivate=false):Promise<Entry[]>{
+ const build=()=>withProjectRuntime(projectId,()=>sharedTranscriptInventoryNow(peer,projectId,only,allowPrivate));
  if(only)return build();
  // Whether the project is still shared with this peer is settled on every request.
  await sharedTranscriptProject(peer,projectId);
- const key=`${peer}\n${projectId}`,revision=projectListingRevision(projectId),kept=inventories.get(key);
+ const key=`${peer}\n${projectId}\n${allowPrivate}`,revision=projectListingRevision(projectId),kept=inventories.get(key);
  if(kept&&kept.revision===revision&&Date.now()-kept.at<INVENTORY_MAX_AGE_MS)return kept.entries;
  const entry={revision,at:Date.now(),entries:build()};
  inventories.set(key,entry);
@@ -130,19 +163,23 @@ export async function sharedTranscriptInventory(peer:string,projectId:string,onl
 const INVENTORY_MAX_AGE_MS=120_000;
 const inventories=new Map<string,{revision:string;at:number;entries:Promise<Entry[]>}>();
 export function forgetSharedTranscriptInventories():void{inventories.clear();sourceLists.clear();}
-async function sharedTranscriptInventoryNow(peer:string,projectId:string,only?:{engine:string;sessionId:string}):Promise<Entry[]>{
+async function sharedTranscriptInventoryNow(peer:string,projectId:string,only:{engine:string;sessionId:string}|undefined,allowPrivate:boolean):Promise<Entry[]>{
  const entries:Entry[]=[];
+ const permission=await transcriptPrivacy(peer,allowPrivate);
  const sessions=only?[await sourceTranscript(peer,projectId,only.engine,only.sessionId)].filter((row):row is SourceTranscript=>Boolean(row)):await sourceTranscripts(peer,projectId);
  for(const session of sessions){
-  if(session.path.startsWith('draft:'))continue;
+  const privacy=permission(session.id);
+  if(privacy===false||session.path.startsWith('draft:'))continue;
   const adapter=getHarness(session.engine),file=await localTranscriptFile(session),info=await stat(file);
-  entries.push(entrySchema.parse({engine:session.engine,sessionId:session.id,relativePath:path.relative(adapter.sync.transcriptRoot(),file),size:info.size,hash:await fileHash(file,info)}));
+  const attachmentSessionId=privacy&&/^[0-9a-f-]{36}$/i.test(session.conversationId)?session.conversationId:undefined;
+  const attachments=attachmentSessionId?await privateAttachmentEntries(attachmentSessionId):undefined;
+  entries.push(entrySchema.parse({engine:session.engine,sessionId:session.id,relativePath:path.relative(adapter.sync.transcriptRoot(),file),size:info.size,hash:await fileHash(file,info),privacy,attachmentSessionId,attachments}));
  }
  return entries;
 }
 async function peerGet(peer:PeerEndpoint,target:string,headers:Record<string,string>={},signal:AbortSignal=AbortSignal.timeout(30000)):Promise<Response>{
  const db=await clusterV2Database(),local=await getClusterNode();
- const response=await fetchPeer(db,peer.nodeId,new URL(target,peer.url),{redirect:'error',signal,headers:{...headers,Authorization:signClusterRequest(db,local.id,peer.nodeId,'GET',target,Buffer.alloc(0))}});
+ const response=await fetchPeer(db,peer.nodeId,new URL(target,peer.url),{redirect:'error',signal,headers:{...headers,'X-Joint-Bob-Private-History':'1',Authorization:signClusterRequest(db,local.id,peer.nodeId,'GET',target,Buffer.alloc(0))}});
  if(!response.ok)throw new Error(`Transcript request rejected (${response.status})`);return response;
 }
 /** A transcript download is limited by how long it may go without receiving anything, not
@@ -253,11 +290,35 @@ function receiveTranscript(db:DatabaseSync,peer:PeerEndpoint,projectId:string,en
 function receiveTranscriptNow(db:DatabaseSync,peer:PeerEndpoint,projectId:string,entry:Entry,signal?:AbortSignal):Promise<void>{
  return withProjectRuntime(projectId,()=>receiveTranscriptInRuntime(db,peer,projectId,entry,signal));
 }
+async function syncPrivateAttachments(peer:PeerEndpoint,projectId:string,entry:Entry):Promise<void>{
+ if(!entry.privacy||!entry.attachmentSessionId||!entry.attachments?.length)return;
+ const directory=attachmentDirectory(entry.attachmentSessionId);
+ await mkdir(directory,{recursive:true,mode:0o700});
+ for(const attachment of entry.attachments){
+  const file=path.join(directory,attachment.name);
+  const existing=await lstat(file).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;});
+  if(existing?.isFile()&&existing.size===attachment.size&&await fileHash(file,existing)===attachment.hash)continue;
+  const query=new URLSearchParams({projectId,engine:entry.engine,sessionId:entry.sessionId,name:attachment.name});
+  const response=await peerGet(peer,`/api/cluster/v2/transcripts/private-attachment?${query}`);
+  const bytes=Buffer.from(await response.arrayBuffer());
+  if(bytes.length!==attachment.size||createHash('sha256').update(bytes).digest('hex')!==attachment.hash)throw new Error('Private attachment changed during transfer');
+  const temporary=`${file}.${randomUUID()}.tmp`;
+  try{await writeFile(temporary,bytes,{flag:'wx',mode:0o600});await rename(temporary,file);}
+  finally{await rm(temporary,{force:true});}
+ }
+}
 const refusedSeeds=new Set<string>();
 async function receiveTranscriptInRuntime(db:DatabaseSync,peer:PeerEndpoint,projectId:string,entry:Entry,signal?:AbortSignal):Promise<void>{
  signal?.throwIfAborted();
  const adapter=getHarness(entry.engine),root=path.resolve(adapter.sync.transcriptRoot()),destination=path.resolve(root,entry.relativePath);
  if(!within(root,destination)||!confinedToRuntime(currentRuntime(),destination)||!adapter.paths.ownsTranscript(destination)||(adapter.paths.sessionId(destination)??adapter.paths.sessionId(`${entry.engine}:${destination}`))!==entry.sessionId)throw new Error('Invalid shared transcript identity');
+ if(entry.privacy){
+  const local=await getClusterNode();
+  if(entry.privacy.sessionId!==entry.sessionId.split('/',1)[0]||!privateConversationMayTravel(db,local.id,peer.nodeId,entry.privacy))throw new Error('Private transcript is not shared with this node');
+  keepConversationPrivate(entry.privacy,db);
+  if(entry.attachmentSessionId)keepConversationPrivate({...entry.privacy,sessionId:entry.attachmentSessionId},db);
+  await syncPrivateAttachments(peer,projectId,entry);
+ }
  const receipt=db.prepare('SELECT path,hash FROM cluster_v2_transcript_receipts WHERE peer_id=? AND project_id=? AND engine=? AND session_id=?').get(peer.nodeId,projectId,entry.engine,entry.sessionId) as {path:string;hash:string}|undefined;
  const ownership=await getConversationOwnership(entry.engine,entry.sessionId);
  if(ownership&&ownership.ownerNodeId!==peer.nodeId){await clearConflict(db,peer.nodeId,projectId,entry.engine,entry.sessionId);return;}

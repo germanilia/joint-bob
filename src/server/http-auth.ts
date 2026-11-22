@@ -175,7 +175,7 @@ export async function requireHttpAuth(request: Request, response: Response, next
   if (response.locals.liveRelay && response.locals.authSession) {
     // Only a project's own routes; never the routes nodes and sign-ins use.
     if (!/^\/projects\/[^/]+(\/|$)/i.test(request.path)) { sendError(response, 404, "Not found"); return; }
-    runAsAccount(actingAccountFromSession(response.locals.authSession as AuthSession), next);
+    runAsAccount({ ...actingAccountFromSession(response.locals.authSession as AuthSession), viaLiveRelay: true }, next);
     return;
   }
   if (isClusterV2Url(`/api${request.path}`)) {

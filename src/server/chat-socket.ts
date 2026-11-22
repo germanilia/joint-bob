@@ -20,6 +20,7 @@ import { getRuntimePeer, runtimeSocketHeaders, signedSocketPeer, trackRuntimeSoc
 import { clusterPeerMayAccessProject, peerMayOpenTerminal, peerMayRunHere } from "./cluster-helpers.js";
 import { type ConversationEngine, getConversationOwnership } from "../conversation-ownership.js";
 import { ensureConversationRecord, getConversationRecord, listConversationSegments, parseConversationDraftPath, setConversationWorktree } from "../conversation-records.js";
+import { conversationPrivacy, privateConversationMayTravel, privateConversationVisible } from "../conversation-privacy.js";
 import { findConversation, findHarnessSession, harnessForSessionPath, listHarnesses, listHarnessSessions } from "../harnesses.js";
 import { getProjectLock } from "../project-locks.js";
 import { ensureWorktreeLocalFiles, getProjectWorktree, markWorktreeConversation, useProjectWorktree, worktreeConversationIndex, type ProjectWorktree } from "../project-worktrees.js";
@@ -267,10 +268,23 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
     socket.close(1008, webSocketCloseReason(error instanceof Error ? error.message : "Invalid conversation path"));
     return;
   }
+  const canOpen = async (id: string) => {
+    const privacy = conversationPrivacy(id);
+    if (!privacy) return true;
+    return signedPeer ? privateConversationMayTravel(await clusterV2Database(), local.id, signedPeer, privacy) && !author?.homeNodeId
+      : !url.searchParams.has("liveAccount") && privateConversationVisible(id);
+  };
+  if (requestedSessionId && !await canOpen(requestedSessionId)) {
+    socket.close(1008, "Conversation not found"); return;
+  }
   if (browserAuthenticated) {
     const ownership = requestedSessionId ? await getConversationOwnership(routingEngine, requestedSessionId) : undefined;
     const targetNodeId = requestedNodeId || ownership?.ownerNodeId;
     if (targetNodeId && targetNodeId !== local.id) {
+      const privacy = requestedSessionId && conversationPrivacy(requestedSessionId);
+      if (privacy && !privateConversationMayTravel(await clusterV2Database(), local.id, targetNodeId, privacy)) {
+        socket.close(1008, "Conversation not found"); return;
+      }
       const peer = await getRuntimePeer(targetNodeId);
       if (!peer) { socket.close(1011, "Execution node is unavailable"); return; }
       const ownerUrl = new URL("/ws", peer.url);
@@ -413,6 +427,7 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
   }
   const validRequestedSessionId = requestedSessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedSessionId) ? requestedSessionId : undefined;
   const ownershipSessionId = listedSession && !listedSession.draft ? listedSession.id : sessionRequest.draft?.sessionId ?? validRequestedSessionId ?? randomUUID();
+  if (!await canOpen(ownershipSessionId)) { socket.close(1008, "Conversation not found"); return; }
   const sessionReadOnly = listedSession?.readOnly === true;
   let foreignOwner: ForeignConversationOwner | null = null;
   if (!sessionReadOnly && !peerReadOnly) {

@@ -18,7 +18,7 @@ import { declareTwinLost, receiveSuccession, successionNoticeSchema } from "../s
 import { peerEndpoint, recordPeerEndpoint } from "../../cluster-peer-endpoints.js";
 import { disconnectRevokedRuntimeSockets } from '../runtime-peers.js';
 import { receiveScopedCredentials } from "../scoped-credentials.js";
-import { acceptOwnerTranscript, forkConflictedTranscript, sharedTranscriptFile, sharedTranscriptInventory, sharedTranscriptProject, sharedTranscriptsChanged, transcriptQuery } from "../shared-transcripts.js";
+import { acceptOwnerTranscript, forkConflictedTranscript, privateAttachmentName, sharedPrivateAttachment, sharedTranscriptFile, sharedTranscriptInventory, sharedTranscriptProject, sharedTranscriptsChanged, transcriptQuery } from "../shared-transcripts.js";
 import { receiveFileEnrollment } from "../sharing-files.js";
 import { isTrustedTwin } from "../../cluster-sharing-policy.js";
 import { receiveSecretCredentialEvents, type SecretCredentialEvent } from "../../secret-replication.js";
@@ -57,14 +57,19 @@ app.post("/api/cluster/v2/credentials/scoped",handler(async(request,response)=>{
 app.get("/api/cluster/v2/transcripts",handler(async(request,response)=>{
   const query=transcriptQuery.parse(request.query);
   const only=query.engine&&query.sessionId?{engine:query.engine,sessionId:query.sessionId}:undefined;
-  response.json({entries:await sharedTranscriptInventory(machineOnly(response),query.projectId,only)});
+  response.json({entries:await sharedTranscriptInventory(machineOnly(response),query.projectId,only,request.get('X-Joint-Bob-Private-History')==='1')});
 }));
 app.post("/api/cluster/v2/transcripts/changed",handler(async(request,response)=>{
   await sharedTranscriptsChanged(machineOnly(response),request.body);response.json({ok:true});
 }));
 app.get("/api/cluster/v2/transcripts/file",handler(async(request,response)=>{
   const query=transcriptQuery.required().parse(request.query);
-  response.sendFile(await sharedTranscriptFile(machineOnly(response),query.projectId,query.engine,query.sessionId));
+  response.sendFile(await sharedTranscriptFile(machineOnly(response),query.projectId,query.engine,query.sessionId,request.get('X-Joint-Bob-Private-History')==='1'));
+}));
+
+app.get("/api/cluster/v2/transcripts/private-attachment",handler(async(request,response)=>{
+  const query=transcriptQuery.required().extend({name:privateAttachmentName}).parse(request.query);
+  response.sendFile(await sharedPrivateAttachment(machineOnly(response),query.projectId,query.engine,query.sessionId,query.name));
 }));
 
 app.post("/api/cluster/v2/twins/credentials",handler(async(request,response)=>{

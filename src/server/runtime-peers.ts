@@ -6,6 +6,7 @@ import { getOrCreateClusterIdentity, pinClusterPublicKey } from "../cluster-iden
 import { machineRoutes } from "./state.js";
 import { isTrustedTwin } from "../cluster-sharing-policy.js";
 import type { DatabaseSync } from "node:sqlite";
+import { conversationPrivacy, privateConversationMayTravel } from "../conversation-privacy.js";
 import { ensureConversationRecordSchema } from "../conversation-records.js";
 import { mayShareProject, sharedProjectIds } from "./sharing-files.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
@@ -60,6 +61,8 @@ export async function runtimeFetch(input:string|URL,init:RequestInit={}):Promise
 
 function sessionShared(db:DatabaseSync,local:string,peer:string,engine:unknown,sessionId:unknown):boolean{
  if(typeof engine!=='string'||typeof sessionId!=='string')return false;
+ const privacy=conversationPrivacy(sessionId,db);
+ if(privacy&&!privateConversationMayTravel(db,local,peer,privacy))return false;
  ensureConversationRecordSchema(db);
  const rows=db.prepare('SELECT DISTINCT project_id FROM conversation_records WHERE engine=? AND session_id=?').all(engine,sessionId) as unknown as Array<{project_id:string}>;
  // A conversation this node does not know carries no project data; only a twin may ask about it.
@@ -67,7 +70,7 @@ function sessionShared(db:DatabaseSync,local:string,peer:string,engine:unknown,s
  return rows.length===1&&mayShareProject(db,local,peer,rows[0].project_id);
 }
 async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:string):Promise<boolean>{
- const body=request.body as {action?:unknown;projectId?:unknown;id?:unknown;input?:{projectId?:unknown};record?:{engine?:unknown;sessionId?:unknown};leases?:Array<{engine:unknown;sessionId:unknown}>}|undefined;
+ const body=request.body as {action?:unknown;projectId?:unknown;id?:unknown;sessionId?:unknown;conversationId?:unknown;input?:{projectId?:unknown};record?:{engine?:unknown;sessionId?:unknown};leases?:Array<{engine:unknown;sessionId:unknown}>}|undefined;
  if(request.path.startsWith('/browser/'))return request.path==='/browser/config'?isTrustedTwin(db,local,peer):true;
  if(request.path==='/background-tasks')return true;
  if(request.path==='/workspace-cleanup/admin')return isTrustedTwin(db,local,peer);
@@ -80,7 +83,11 @@ async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:
  if(request.path==='/sessions/ownership')return sessionShared(db,local,peer,request.query.engine,request.query.sessionId);
  if(request.path==='/sessions/ownership/apply')return sessionShared(db,local,peer,body?.record?.engine,body?.record?.sessionId);
  if(request.path==='/sessions/takeback'&&(body?.action==='notice'||body?.action==='close'||body?.action==='decline'))return isTrustedTwin(db,local,peer);
-  const id=typeof request.query.projectId==='string'?request.query.projectId:body?.projectId;
+ for(const key of [request.query.sessionId,request.query.conversationId,body?.sessionId,body?.conversationId,body?.record?.sessionId]){
+  const privacy=typeof key==='string'?conversationPrivacy(key,db):undefined;
+  if(privacy&&!privateConversationMayTravel(db,local,peer,privacy))return false;
+ }
+ const id=typeof request.query.projectId==='string'?request.query.projectId:body?.projectId;
  return typeof id==='string'&&mayShareProject(db,local,peer,id);
 }
 export function dispatchSignedRuntime(request:Request,response:Response,next:NextFunction):void{

@@ -23,6 +23,7 @@ const harnessSelect = document.querySelector("#newSessionHarnessSelect");
 let newSessionNodes = [];
 let preselectedWorktreeId = null;
 const NEW_WORKTREE = "new";
+const visibilitySelect = document.querySelector("#newSessionVisibility");
 // From Settings: the dialog picks New worktree unless the user chooses otherwise.
 let newWorktreeByDefault = false;
 let worktreeChosen = false;
@@ -186,6 +187,7 @@ async function openNewSessionNameDialog(sessionPath, defaultTitle, global = fals
   harnessSelect.replaceChildren(...state.harnesses.filter(harness => harness.runtimeConfigured).map(harnessOption));
   harnessSelect.value = state.harnesses.find(harness => harness.newSessionPath === sessionPath)?.id || "";
   elements.newSessionNameInput.value = "";
+  visibilitySelect.value = "public";
   newSessionNodes = [];
   elements.newSessionNodeSelect.replaceChildren();
   renderSessionColorSwatches(null, elements.newSessionColorSwatches);
@@ -220,15 +222,28 @@ async function loadNewSessionNodes() {
   const body = await api(`/api/projects/${encodeURIComponent(projectId)}/session-nodes`);
   if (state.newSessionDraft !== draft || draft.projectId !== projectId || !elements.newSessionNameDialog.open) return;
   newSessionNodes = body.nodes;
-  elements.newSessionNodeSelect.replaceChildren(...newSessionNodes.map(node => {
+  renderNewSessionNodes();
+  renderNewSessionSecrets([]);
+  renderNewSessionWorktrees(worktreeChosen ? elements.newSessionWorktreeSelect.value : null);
+}
+
+function renderNewSessionNodes() {
+  const select = elements.newSessionNodeSelect;
+  const selected = select.value;
+  const allowed = newSessionNodes.filter(node => visibilitySelect.value === "public" || node.local || node.twin);
+  select.replaceChildren(...allowed.map(node => {
     const option = new Option(node.name, node.id);
     option.disabled = !node.online || !node.mapped;
     return option;
   }));
-  elements.newSessionNodeSelect.value = (newSessionNodes.find(node => node.local && node.online && node.mapped) || newSessionNodes.find(node => node.online && node.mapped))?.id || "";
-  renderNewSessionSecrets([]);
-  renderNewSessionWorktrees(worktreeChosen ? elements.newSessionWorktreeSelect.value : null);
+  const usable = allowed.filter(node => node.online && node.mapped);
+  select.value = (usable.find(node => node.id === selected) || usable.find(node => node.local) || usable[0])?.id || "";
 }
+
+visibilitySelect.addEventListener("change", () => {
+  renderNewSessionNodes();
+  renderNewSessionSecrets();
+});
 
 /** The name dialog with a project picker. `harnessId` asks for that agent; without it, the one last used. */
 export async function startGlobalConversation(harnessId = null) {
@@ -395,6 +410,11 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
     const label = classification.value();
     const sessionId = crypto.randomUUID();
     const projectId = draft.projectId;
+    const privateConversation = visibilitySelect.value === "private";
+    if (privateConversation) await api(`/api/projects/${encodeURIComponent(projectId)}/sessions/private-start`, {
+      method: "POST",
+      body: JSON.stringify({ sessionId, nodeId: node.id, engine: harnessIdFromPath(state.harnesses, draft.sessionPath || "new"), title: title || draft.defaultTitle, secretAccountIds: secretIds }),
+    });
     if (label) await api(`/api/projects/${encodeURIComponent(projectId)}/sessions/classification`, {
       method: "PUT",
       body: JSON.stringify({ sessionId, engine: harnessIdFromPath(state.harnesses, draft.sessionPath || "new"), classification: label }),
@@ -406,7 +426,7 @@ elements.newSessionNameForm.addEventListener("submit", async (event) => {
       if (!elements.newSessionNameDialog.open || state.newSessionDraft !== draft || draft.projectId !== projectId) return;
     }
     const worktree = state.worktrees.find((candidate) => candidate.id === worktreeId);
-    if (worktreeId === NEW_WORKTREE && node.local) {
+    if (worktreeId === NEW_WORKTREE && node.local && !privateConversation) {
       const pending = {
         projectId, sessionPath: draft.sessionPath, title: title || draft.defaultTitle, color,
         nodeId: node.id, secretIds, prompts: [], worktree: null, error: null,
