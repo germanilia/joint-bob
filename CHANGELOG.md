@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.338.0 — 2026-11-22
+
+- Conversations whose transcript is written from outside, such as a CLI session or a copy from another machine, again show as waiting for review as soon as their turn ends. Only a turn running on the machine itself has its list refreshes spaced out to every 10 seconds.
+- New conversations can be Public or Private. A private conversation's history, queued messages and attachments stay with its owner and their twin machines; project files still sync as before.
+- A simpler, calmer mobile layout across Home, the Inbox filters, conversations, the remote browser, Bob, Projects and Settings.
+
 ## 2.337.8 — 2026-11-22
 
 - Faster conversation opening while agents work. Each write of a running conversation's transcript made the machine rebuild that project's whole conversation list for every open page, about 20 times a minute for a busy project, and list building took 45% of a Mac's server. Growth of a transcript the machine has already listed now refreshes its project at most every 10 seconds. A new conversation still appears at once, and a turn's start and end still update the list immediately.

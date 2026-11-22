@@ -14,14 +14,16 @@ const MAX_KNOWN_OWNERS = 5_000;
  * A running conversation writes its transcript every few seconds, and each refresh made every
  * open page rebuild the project's whole conversation list: 21 refreshes a minute for Joint Bob
  * on 2026-11-22, and list building was 45% of the Mac's CPU. A transcript this watcher already
- * announced refreshes its project at most this often. A new transcript (a new conversation) or
- * a folder change still refreshes after the debounce, and a turn's start and end announce
- * themselves (harness-sessions.ts).
+ * announced, written by a turn that announces its own end (`announcesItsEnd`: a turn running
+ * in this server, whose agent_end refreshes the list at once, harness-sessions.ts), refreshes
+ * its project at most this often. Anything else still refreshes after the debounce: a new
+ * transcript, a folder change, and a transcript written from outside (a CLI session, a copy
+ * from another machine), where the watcher is how a finished turn is noticed.
  */
 const KNOWN_REFRESH_MS = 10_000;
 const MAX_ANNOUNCED_FILES = 20_000;
 export type SessionChangeListener = (projectId: string, changedFiles: string[]) => void;
-export interface SessionWatcherOptions { knownRefreshMs?: number }
+export interface SessionWatcherOptions { knownRefreshMs?: number; announcesItsEnd?: (file: string) => boolean }
 interface WatchedProject { paths: SessionProjectPaths; directories: Set<string>; pendingFiles: Map<string, ReturnType<typeof listDiscoveredHarnesses>[number]>; needsFullRefresh: boolean; debounceTimer: NodeJS.Timeout | null; runtime: RuntimeAccount; lastFlushAt: number; }
 interface SharedWatch { watcher: FSWatcher; projects: Set<string>; openedAt: number; }
 
@@ -45,8 +47,10 @@ export class SessionWatcher {
   /** Transcripts already announced to their project: a later write of one is only growth. */
   private announced = new Set<string>();
   private readonly knownRefreshMs: number;
+  private readonly announcesItsEnd: (file: string) => boolean;
   constructor(private listener: SessionChangeListener, options: SessionWatcherOptions = {}) {
     this.knownRefreshMs = options.knownRefreshMs ?? KNOWN_REFRESH_MS;
+    this.announcesItsEnd = options.announcesItsEnd ?? (() => false);
     this.rescanTimer = setInterval(() => this.rescan(), RESCAN_MS); this.rescanTimer.unref();
   }
 
@@ -180,8 +184,9 @@ export class SessionWatcher {
       project.pendingFiles.set(canonicalFile, adapter);
     }
     if (this.projects.get(projectId) !== project) return;
-    const fresh = project.needsFullRefresh || [...project.pendingFiles.keys()].some((file) => !this.announced.has(file));
-    const wait = fresh ? DEBOUNCE_MS : Math.max(DEBOUNCE_MS, project.lastFlushAt + this.knownRefreshMs - Date.now());
+    const held = !project.needsFullRefresh && project.pendingFiles.size > 0
+      && [...project.pendingFiles.keys()].every((file) => this.announced.has(file) && this.announcesItsEnd(file));
+    const wait = held ? Math.max(DEBOUNCE_MS, project.lastFlushAt + this.knownRefreshMs - Date.now()) : DEBOUNCE_MS;
     if (project.debounceTimer) clearTimeout(project.debounceTimer);
     project.debounceTimer = setTimeout(() => {
       project.debounceTimer = null;

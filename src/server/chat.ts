@@ -7,9 +7,10 @@ import type { TaskAttachment } from "../types.js";
 import { SessionWatcher } from "../watcher.js";
 import { webSocketCloseReason } from "../websocket.js";
 import { harnessPromptQueueIsDraining } from "./harness-chat.js";
+import { liveHarnessTranscript } from "./harness-sessions.js";
 import { handleSessionChange } from "./realtime.js";
 
-export const sessionWatcher = new SessionWatcher(handleSessionChange);
+export const sessionWatcher = new SessionWatcher(handleSessionChange, { announcesItsEnd: liveHarnessTranscript });
 listProjects().then((projects) => {
   for (const project of projects) sessionWatcher.ensureProject(project);
 }).catch((error) => console.warn("Could not start session watchers", error));

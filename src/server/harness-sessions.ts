@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
+import path from "node:path";
 import WebSocket from "ws";
 import { runInRuntime } from "../account-runtime.js";
 import { bindToRuntime, runtimeForProject } from "../project-runtime.js";
@@ -64,6 +65,18 @@ export function findHarnessSession(projectId: string, engine: HarnessId, id: str
 
 export function harnessTurnBusy(shared: SharedHarnessSession): boolean {
   return shared.turnInFlight > 0 || shared.session.isBusy();
+}
+
+/** Whether a turn running in this server writes this transcript. Its end refreshes the list at once (agent_end below), so the session watcher may hold back its growth (watcher.ts). */
+export function liveHarnessTranscript(file: string): boolean {
+  const target = path.resolve(file);
+  for (const shared of harnessSessions.values()) {
+    const sessionFile = shared.session.file;
+    if (!sessionFile || !harnessTurnBusy(shared)) continue;
+    const transcript = getHarness(shared.engine).paths.transcriptFile?.(sessionFile) ?? sessionFile;
+    if (path.resolve(transcript) === target) return true;
+  }
+  return false;
 }
 
 /** Busy and not merely waiting on background tasks after its answer: the person has nothing to answer yet. */

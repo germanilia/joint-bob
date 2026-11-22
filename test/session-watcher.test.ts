@@ -308,8 +308,9 @@ test("a Claude transcript write is announced only to the project whose folder ho
 
 // A running conversation writes its transcript every few seconds, and each refresh rebuilt the
 // project's conversation list for every open page (2026-11-22). Growth of a transcript already
-// announced waits out the interval; a new conversation's transcript is announced at once.
-test("a growing transcript refreshes its project at most once per interval, a new one at once", async () => {
+// announced, by a turn that announces its own end, waits out the interval. A new conversation's
+// transcript, and one written from outside (where the watcher notices the turn ended), refresh at once.
+test("a live turn's growing transcript refreshes its project at most once per interval, others at once", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "session-watcher-claude-growth-"));
   const previousHome = process.env.HOME;
   const projectsRoot = path.join(home, ".claude/projects");
@@ -320,7 +321,8 @@ test("a growing transcript refreshes its project at most once per interval, a ne
     process.env.HOME = home;
     await mkdir(projectsRoot, { recursive: true });
     const refreshes: Array<{ at: number; files: string[] }> = [];
-    watcher = new SessionWatcher((_projectId, files) => refreshes.push({ at: Date.now(), files }), { knownRefreshMs: 4_000 });
+    const live = new Set<string>();
+    watcher = new SessionWatcher((_projectId, files) => refreshes.push({ at: Date.now(), files }), { knownRefreshMs: 4_000, announcesItsEnd: (file) => live.has(file) });
     watcher.ensureProject(project("growth", projectPath));
     const until = async (count: number, ms: number) => { const end = Date.now() + ms; while (refreshes.length < count && Date.now() < end) await sleep(20); return refreshes.length >= count; };
     assert.ok(await until(1, 4_000), "registering the project refreshes it once");
@@ -333,8 +335,9 @@ test("a growing transcript refreshes its project at most once per interval, a ne
     assert.ok(await until(2, 3_000), "a new transcript is announced after the debounce");
     assert.deepEqual(refreshes[1].files, [first]);
     const announcedAt = refreshes[1].at;
+    live.add(first);
 
-    // Growth inside the interval is held back.
+    // A live turn's growth inside the interval is held back.
     for (let i = 0; i < 3; i++) { await sleep(300); fs.appendFileSync(first, line); }
     await sleep(Math.max(0, announcedAt + 2_500 - Date.now()));
     assert.equal(refreshes.length, 2, "a growing transcript does not refresh its project inside the interval");
@@ -355,6 +358,14 @@ test("a growing transcript refreshes its project at most once per interval, a ne
     assert.ok(await until(4, 3_000), "a new transcript is announced at once, even inside the interval");
     assert.ok(refreshes[3].at - before < 2_500);
     assert.deepEqual([...refreshes[3].files].sort(), [first, second].sort());
+
+    // Once the turn is no longer running here, a write is announced at once: it may be the turn's end.
+    live.delete(first);
+    const external = Date.now();
+    fs.appendFileSync(first, line);
+    assert.ok(await until(5, 3_000), "a transcript no live turn here writes is announced after the debounce");
+    assert.ok(refreshes[4].at - external < 2_500, `not held for the interval (${refreshes[4].at - external} ms)`);
+    assert.deepEqual(refreshes[4].files, [first]);
   } finally {
     watcher?.close();
     if (previousHome === undefined) delete process.env.HOME;
