@@ -12,6 +12,7 @@ import { syncLocalSkills } from "../../agent-resources.js";
 import { listAuditEvents } from "../../audit.js";
 import type { AuthSession } from "../../auth.js";
 import { getClusterNode } from "../../cluster.js";
+import { getConversationRecord } from "../../conversation-records.js";
 import { clearHarnessSessionCache, harnessForSessionPath, listHarnessSessions } from "../../harnesses.js";
 import { ensureManagedHome } from "../../managed-home.js";
 import { getUserPreferences, normalizeKeymapPreference, readLegacyRecentSessions, type RecentSession, updateUserPreferences, type UserPreferences } from "../../preferences.js";
@@ -115,8 +116,15 @@ app.put("/api/pins", async (request, response, next) => {
     if (payload.pinned && !project) { sendError(response, 404, "Project not found"); return; }
     // Removing an account pin must work even when its transcript or project is gone.
     if (payload.pinned && project && payload.kind === "conversation") {
-      const sessions = await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id) });
-      if (!sessions.some((candidate) => candidate.id === payload.sessionId && candidate.harnessId === payload.engine)) {
+      // A pin names the conversation by its first segment's engine and its logical id, which is not the
+      // listed row's own id once the conversation switched harness. Its record proves it exists; the
+      // listing covers older conversations that never had one.
+      const sessions = await getConversationRecord(project.id, payload.engine, payload.sessionId)
+        ? undefined
+        : await listHarnessSessions({ ...project, additionalPaths: await projectAdditionalPaths(project.id) });
+      if (sessions && !sessions.some((candidate) => (candidate.id === payload.sessionId && candidate.harnessId === payload.engine)
+        || (candidate.conversationId === payload.sessionId && (candidate.segments?.[0]?.engine ?? candidate.harnessId) === payload.engine)
+        || candidate.segments?.some((segment) => segment.sessionId === payload.sessionId && segment.engine === payload.engine))) {
         sendError(response, 404, "Conversation not found");
         return;
       }

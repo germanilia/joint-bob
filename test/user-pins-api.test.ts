@@ -7,6 +7,7 @@ import test from "node:test";
 import { ensureUserPinSchema, type UserPins } from "../src/user-pins.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 import { openNodeDatabase } from "../src/node-database.js";
+import { ensureConversationRecordSchema } from "../src/conversation-records.js";
 
 test("stale pins can be removed without their conversation or project", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-stale-pins-"));
@@ -54,4 +55,34 @@ test("stale pins can be removed without their conversation or project", async (t
     });
   }
   assert.deepEqual((await api<UserPins>(node, session, "GET", "/pins")).body, { projectIds: [], conversations: [] });
+});
+
+test("a conversation that switched harness can be pinned by its first segment", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-switched-pins-"));
+  let server: ChildProcess | undefined;
+  t.after(async () => {
+    if (server) await stopDevNode(server);
+    await rm(root, { recursive: true, force: true });
+  });
+  const environment = await seedDevEnvironment(root, 1);
+  const node = environment.nodes[0];
+  const projectId = node.projects[0].id;
+  // The Inbox pins by the first segment's engine and the logical conversation id. The listed row is the
+  // newest segment, so its own id is the second one.
+  const db = openNodeDatabase(path.join(node.dataDir, "node.db"));
+  try {
+    ensureConversationRecordSchema(db);
+    const now = new Date().toISOString();
+    const insert = db.prepare("INSERT INTO conversation_records (project_id, engine, session_id, created_at, updated_at, origin_node_id, conversation_id, segment_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    insert.run(projectId, "claude", "first-segment", now, now, node.nodeId, "first-segment", 0);
+    insert.run(projectId, "pi", "second-segment", now, now, node.nodeId, "first-segment", 1);
+  } finally { db.close(); }
+  server = await startDevNode(environment, node);
+  const session = await signIn(environment, node);
+  const pin = { kind: "conversation", projectId, engine: "claude", sessionId: "first-segment", pinned: true } as const;
+  const pinned = await api<UserPins>(node, session, "PUT", "/pins", pin);
+  assert.equal(pinned.status, 200);
+  assert.deepEqual(pinned.body.conversations, [{ projectId, engine: "claude", sessionId: "first-segment" }]);
+  const unknown = await api(node, session, "PUT", "/pins", { ...pin, sessionId: "never-existed" });
+  assert.equal(unknown.status, 404);
 });

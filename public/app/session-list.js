@@ -405,7 +405,15 @@ function sessionMenuItems(session, sessionActive) {
   const name = shortSessionTitle(session);
   const runnerRefused = runnerRefusesThisMachine(session, sessionActive);
   const readOnly = runnerRefused || session.readOnly === true;
+  const pinned = isSessionPinned(session);
   return [
+    {
+      label: pinned ? "Unpin" : "Pin",
+      icon: "pin",
+      testid: "session-pin-menu-button",
+      title: "Pinned conversations stay on top and are never deleted automatically",
+      onSelect: () => togglePinnedSession(session),
+    },
     {
       label: "Budget…",
       icon: "sliders",
