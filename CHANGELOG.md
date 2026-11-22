@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.338.2 — 2026-11-22
+
+- 2.338.1 was not published: its release checks still expected Guardian to ask before a severe action, where it now blocks by default. Those checks now set up a rule that asks. Nothing else changed.
+
 ## 2.338.1 — 2026-11-22
 
 - 2.338.0 was not published: its release checks failed on tests that predated private conversations. Those tests now expect the new privacy checks, and a machine again sends a twin its ordinary updates before its settings changes.

@@ -13,7 +13,10 @@ import { beginPersonalAssistantTurn } from '../src/personal-assistants.js';
 import { promptStarted, promptEnded } from '../src/assistant-collaboration/bridge-tools.js';
 import { requestGuardianReview, pendingGuardianReviews, decideGuardianReview, cancelGuardianReviews } from '../src/guardian/reviews.js';
 import { getGuardianSettings, updateGuardianSettings } from '../src/guardian/settings.js';
-import { withProductionGuard, productionGuardStatus } from '../src/guardian/production-rule.js';
+import { withProductionGuard, productionGuardStatus, PRODUCTION_RULE } from '../src/guardian/production-rule.js';
+import { setClusterAgentPolicy } from '../src/cluster-agent-policy.js';
+import { getSharingCluster } from '../src/cluster-sharing-policy.js';
+import { agentPolicyBodySchema } from '../src/relay/resource-policy.js';
 import { enableAutoRespond, DEFAULT_AUTO_RESPOND_INSTRUCTIONS, DEFAULT_AUTO_RESPOND_STOP_INSTRUCTIONS } from '../src/conversation-auto-respond.js';
 import { autoRespondHeldBack } from '../src/server/control-center-watch.js';
 import { personalContinuationAllowed } from '../src/control-center/auto-respond.js';
@@ -80,7 +83,12 @@ test('real session/CSRF team approval endpoint carries a second human, never con
  const a=(await getTeamAssignment(initial.id))!,resolved=await teamAssignmentDestination(a);
  await beginPersonalAssistantTurn(f.team.executorAccountId,resolved.profile.id,a.requestId,`pi:${resolved.destination.sessionId}`,'guarded fixture','assistant');promptStarted(f.team.projectId,resolved.destination.sessionId,a.requestId);
  const settings=getGuardianSettings(),original=globalThis.fetch;let modelCalls=0;
- updateGuardianSettings({...withProductionGuard(settings),enabled:true,model:'laya-remote',layaUrl:'http://127.0.0.1:19009',rules:withProductionGuard(settings).rules.filter(r=>r.id==='production-or-destructive')});
+ // The shipped severe-action rule blocks (2.338.1). This test is about the approval a second person gives, so the
+ // machine's rule and the one the team's cluster hands down both ask instead.
+ const asking={...PRODUCTION_RULE,ifYes:'ask' as const},cluster=getSharingCluster(f.db,f.team.clusterId);
+ const clusterPolicy=(guardian?:unknown)=>setClusterAgentPolicy(f.db,cluster.managerNodeId!,f.team.clusterId,{policy:agentPolicyBodySchema.parse(guardian?{guardian}:{}),sourceRelayNodeId:null},cluster.managerEpoch);
+ clusterPolicy({model:'laya-remote',layaUrl:'http://127.0.0.1:19009',rules:[asking]});
+ updateGuardianSettings({...withProductionGuard(settings),enabled:true,model:'laya-remote',layaUrl:'http://127.0.0.1:19009',rules:withProductionGuard(settings).rules.filter(r=>r.id==='production-or-destructive').map(r=>({...r,ifYes:'ask' as const}))});
  globalThis.fetch=async(input,init)=>{
   if(String(input).startsWith('http://127.0.0.1:19009')){modelCalls++;const body=JSON.parse(String(init?.body));return Response.json({answers:Object.fromEntries(Object.keys(body.questions).map(id=>[id,{type:'noul',noul:.99}]))});}
   return original(input,init);
@@ -105,5 +113,5 @@ test('real session/CSRF team approval endpoint carries a second human, never con
   assert.equal((await fetch(routeUrl,{method:'POST',headers,body:JSON.stringify({kind:'new'})})).status,200);
   assert.ok((await getTeamAssignment(waiting.id))!.subjectId);
   assert.equal((await fetch(routeUrl,{method:'POST',headers,body:JSON.stringify({kind:'new'})})).status,409);
- }finally{cancelGuardianReviews(f.team.projectId,resolved.destination.sessionId);await pending;promptEnded(f.team.projectId,resolved.destination.sessionId,a.requestId);globalThis.fetch=original;updateGuardianSettings(settings);await new Promise<void>(resolve=>server.close(()=>resolve()));}
+ }finally{cancelGuardianReviews(f.team.projectId,resolved.destination.sessionId);await pending;promptEnded(f.team.projectId,resolved.destination.sessionId,a.requestId);globalThis.fetch=original;updateGuardianSettings(settings);clusterPolicy();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });

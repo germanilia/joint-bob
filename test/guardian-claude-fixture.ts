@@ -22,9 +22,12 @@ export function guardianDecisionModel(): Promise<Server> {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 
-/** Guardian on, asking that model, with secrets asked about rather than removed so a key pauses a turn too. */
+/**
+ * Guardian on, asking that model, with secrets asked about rather than removed so a key pauses a turn too.
+ * The shipped severe-action rule blocks (2.338.1); these tests cover the review a person answers, so it asks here.
+ */
 export function guardianAskSettings(model: Server): GuardianSettings {
-  const rules = DEFAULT_GUARDIAN_SETTINGS.rules.map((rule) => rule.id === "secrets" ? { ...rule, ifYes: "ask" as const } : rule);
+  const rules = DEFAULT_GUARDIAN_SETTINGS.rules.map((rule) => rule.id === "secrets" || rule.ifYes === "block" ? { ...rule, ifYes: "ask" as const } : rule);
   return { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: "laya-remote", layaUrl: `http://127.0.0.1:${(model.address() as { port: number }).port}`, rules };
 }
 
