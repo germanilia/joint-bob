@@ -85,6 +85,8 @@ function fixture(selection: Selection, failure?: string) {
   const shared: any = { engine: "claude", projectId: "project", conversationId: "conversation", session, turnInFlight: 0, clients: new Set() };
   const connection: any = { engine: "claude", project: { id: "project", type: "workspace" }, conversationId: "conversation", cwd: "/synthetic", shared, author: author("viewer"), socket: {}, readOnly: false };
   const dependencies: Record<string, any> = {
+    // An ordinary public conversation: nothing about it is kept private.
+    conversationPrivacy: () => undefined, keepConversationPrivate: () => {}, privateAttachmentCwd: (sessionId: string) => `/private/${sessionId}`,
     withGuardianBypass, flags: {}, onGuardianEvent: () => {}, actingAccount, asNode, runAsAccount, withPoolProfile, withoutAutomationProfile, automationProfileContext,
     runPoolAttempts, runOnModels, memberModelLadder, classifyPoolAttemptFailure, resolvePoolModelSettings, resolvePoolSwitchModel, ConversationOwnershipError,
     listHarnessModels: async () => [{ provider: "claude", id: "opus", thinkingLevels: ["high"] }],

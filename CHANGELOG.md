@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.338.1 — 2026-11-22
+
+- 2.338.0 was not published: its release checks failed on tests that predated private conversations. Those tests now expect the new privacy checks, and a machine again sends a twin its ordinary updates before its settings changes.
+- Guardian's default rules now block only actions that are very likely to cause severe damage or leak credentials. Custom rules, opt-outs and signed policies are unchanged.
+- A conversation that runs on another machine keeps trying that machine while it connects, instead of offering to take it over. Taking it over is offered only when you ask.
+
 ## 2.338.0 — 2026-11-22
 
 - Conversations whose transcript is written from outside, such as a CLI session or a copy from another machine, again show as waiting for review as soon as their turn ends. Only a turn running on the machine itself has its list refreshes spaced out to every 10 seconds.

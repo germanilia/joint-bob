@@ -57,6 +57,8 @@ interface SessionNode {
   id: string;
   name: string;
   local: boolean;
+  /** Remote machines say whether they are this node's twin (private conversations run only there). */
+  twin?: boolean;
   online: boolean;
   mapped: boolean;
   terminal: boolean;
@@ -96,7 +98,7 @@ test("session-node discovery scopes presence probes to the authorized target", {
     child = await startDevNode(environment, local);
     const session = await signIn(environment, local);
     const localResult: SessionNode = { id: local.nodeId, name: local.name, local: true, online: true, mapped: true, terminal: true, runner: true };
-    const selectedResult: SessionNode = { id: selected.nodeId, name: selected.name, local: false, online: true, mapped: true, terminal: false, runner: true };
+    const selectedResult: SessionNode = { id: selected.nodeId, name: selected.name, local: false, twin: false, online: true, mapped: true, terminal: false, runner: true };
     const counts = () => peers.map((peer) => peer.probes.length);
     const discover = async (nodeId?: string) => {
       for (const peer of peers) peer.probes.length = 0;
@@ -140,7 +142,7 @@ test("session-node discovery scopes presence probes to the authorized target", {
       assert.deepEqual(counts(), [1, 1, 0]);
       assert.equal(blackholed.probes[0].projectId, project.id);
       assert.deepEqual(nodes.sort((a, b) => a.id.localeCompare(b.id)), [localResult, selectedResult,
-        { id: blackholed.nodeId, name: blackholed.name, local: false, online: false, mapped: false, terminal: false, runner: false },
+        { id: blackholed.nodeId, name: blackholed.name, local: false, twin: false, online: false, mapped: false, terminal: false, runner: false },
       ].sort((a, b) => a.id.localeCompare(b.id)));
     });
   } finally {

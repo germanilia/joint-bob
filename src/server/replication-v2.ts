@@ -282,7 +282,8 @@ export function replicationDeliveryBatches(events: ReplicationEvent[], db?: Data
     batch.push(event);
     groups.set(group, batch);
   }
-  return [...groups.values()];
+  // Ordinary events go first, as before private batches existed; each batch is sent on its own.
+  return ["ordinary", "private", "system-ai"].flatMap(group => groups.has(group) ? [groups.get(group)!] : []);
 }
 
 export async function sendReplicationV2(peer: PeerEndpoint, events: ReplicationEvent[]): Promise<unknown> {

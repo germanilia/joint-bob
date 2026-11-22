@@ -106,6 +106,8 @@ function fixture(overrides: Record<string, any> = {}) {
     teamQueuedTurn: async () => undefined, teamConversation: async () => undefined,
     // Asking other assistants isn't part of attaching to a conversation.
     JOINT_BOB_AGENT_TOOL_NAMES: [], promptStarted: () => {}, promptEnded: () => {},
+    // An ordinary public conversation: nothing about it is kept private.
+    conversationPrivacy: () => undefined, keepConversationPrivate: () => {}, privateAttachmentCwd: (sessionId: string) => `/private/${sessionId}`,
     ...overrides,
   };
   const exports: any = {};
