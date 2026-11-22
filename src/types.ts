@@ -131,6 +131,8 @@ export interface SessionSummary {
   segments?: Array<{ engine: HarnessId; sessionId: string; path: string; draft?: boolean }>;
   /** True while the model itself is processing a turn. */
   turnRunning?: boolean;
+  /** Guardian is holding the turn for a decision. */
+  guardianPending?: boolean;
   /** True while child or external work continues independently of the model turn. */
   backgroundRunning?: boolean;
   /** Compatibility aggregate: either a model turn or background work is active. */

@@ -95,8 +95,10 @@ export function waitingCard(card, { compact = false } = {}) {
   const root = element("article", `ws-wait${compact ? " compact" : ""}`);
   root.dataset.testid = "home-card";
   root.dataset.key = `${card.projectId}:${card.conversationId}`;
+  const [review] = card.pendingReviews ?? [];
   const top = element("div", "ws-wait-top");
   top.append(element("i", "ws-dot need"), element("span", "ws-wait-project", card.projectName));
+  if (review) top.append(element("span", "chat-badge chat-badge-attention", "Attention required"));
   const when = element("time", "", [clock(card.updatedAt), card.agentLabel].filter(Boolean).join(" · "));
   if (card.updatedAt) when.dateTime = card.updatedAt;
   top.append(when);
@@ -122,7 +124,6 @@ export function waitingCard(card, { compact = false } = {}) {
     node.addEventListener("click", (event) => { event.stopPropagation(); run(node, work); });
     return node;
   };
-  const [review] = card.pendingReviews ?? [];
   if (review) {
     // A risky step held by Guardian is answered with its own two buttons.
     actions.append(

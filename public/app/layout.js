@@ -199,6 +199,7 @@ export function normalizedQuery(value) {
 }
 
 export function sessionDisplayState(session) {
+  if (session.guardianPending) return "attention";
   if (session.turnRunning || (!session.backgroundRunning && (session.running || session.reviewState === "running"))) return "active";
   // A finished turn waits for the person even while its background tasks run on.
   if (session.reviewState === "needs_review") return "review";
@@ -208,7 +209,7 @@ export function sessionDisplayState(session) {
 
 export function sessionChatState(session) {
   const display = sessionDisplayState(session);
-  return display === "background" ? "active" : display;
+  return display === "background" ? "active" : display === "attention" ? "review" : display;
 }
 
 /** A conversation the user closed out. Unrelated to the "done" status chip, which means reviewed. */
@@ -223,7 +224,7 @@ export function sessionIsVisible(session, projectId = state.activeProjectId) {
     ? { done: state.showDoneConversations, scheduled: state.showScheduledConversations }
     : state.projectConversationVisibility[projectId] || {};
   // Other projects' snapshots already exclude schedules hidden from history on the server.
-  return (visibility.done === true || !isDoneConversation(session))
+  return (session.guardianPending || visibility.done === true || !isDoneConversation(session))
     && (!session.cronTaskId || (visibility.scheduled === true
       && (!active || (state.knownCronTaskIds.has(session.cronTaskId) && !state.hiddenCronTaskIds.has(session.cronTaskId)))));
 }

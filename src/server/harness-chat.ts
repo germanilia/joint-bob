@@ -266,7 +266,7 @@ onGuardianEvent((event) => {
   for (const connection of harnessChatConnections) {
     if (connection.project.id === event.projectId && connection.conversationId === event.conversationId) send(connection.socket, payload);
   }
-  if (event.type === "reviews") broadcastToProject(event.projectId, { type: "guardianReviewsChanged", conversationId: event.conversationId, titles: reviews.map(({ title }) => title) });
+  if (event.type === "reviews") broadcastToProject(event.projectId, { type: "guardianReviewsChanged", projectId: event.projectId, conversationId: event.conversationId, titles: reviews.map(({ title }) => title) });
 });
 
 function publishGoal(connection: HarnessChatConnection, goal: ConversationGoal | undefined, announce = true): void {

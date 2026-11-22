@@ -568,6 +568,7 @@ function timeLabel(value) {
 
 /** What the row says under its title: the project, then what it is doing or what it did. */
 function cardLine(card) {
+  if (card.pendingReviews?.length) return `${card.projectName} · Attention required · Waiting for Guardian approval`;
   const what = card.activity || (card.summary ? card.summary.replace(/[#*_`>]/g, "").split("\n").map((line) => line.trim()).find(Boolean) : "")
     || [card.agentLabel, card.agentModel].filter(Boolean).join(" · ");
   // Another person's machine runs it: the row says whose, since nothing here can act on it.

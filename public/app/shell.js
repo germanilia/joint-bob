@@ -108,11 +108,11 @@ function dismissToast(node) {
   setTimeout(() => node.remove(), 400);
 }
 
-export function toast(message, duration = 3200, severity = "info") {
-  const existing = [...toastStack.children].find((node) => node.dataset.severity === severity && node.querySelector(".toast-message")?.textContent === message);
+export function toast(message, duration = 3200, severity = "info", action) {
+  const existing = [...toastStack.children].find((node) => node.dataset.severity === severity && node.dataset.action === action?.key && node.querySelector(".toast-message")?.textContent === message);
   if (existing) return existing;
   const node = document.createElement("div");
-  node.className = severity === "error" ? "toast toast-error" : "toast toast-success";
+  node.className = severity === "error" ? "toast toast-error" : severity === "warning" ? "toast toast-warning" : "toast toast-success";
   node.dataset.severity = severity;
   node.setAttribute("role", severity === "error" ? "alert" : "status");
   node.setAttribute("aria-live", severity === "error" ? "assertive" : "polite");
@@ -126,11 +126,25 @@ export function toast(message, duration = 3200, severity = "info") {
   close.setAttribute("aria-label", "Dismiss");
   close.setAttribute("data-testid", "toast-close-button");
   const timer = setTimeout(() => dismissToast(node), duration);
-  close.addEventListener("click", () => {
+  const dismiss = () => {
     clearTimeout(timer);
     dismissToast(node);
-  });
-  node.append(text, close);
+  };
+  close.addEventListener("click", dismiss);
+  node.append(text);
+  if (action) {
+    node.dataset.action = action.key;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toast-action";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      dismiss();
+      action.run();
+    });
+    node.append(button);
+  }
+  node.append(close);
   toastStack.append(node);
   placeToasts();
   return node;

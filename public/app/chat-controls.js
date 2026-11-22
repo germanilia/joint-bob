@@ -196,10 +196,14 @@ export function updateRoutingMode(routing) {
  * answer: the agent is idle then, but Stop must still end it and the thread must say so. */
 export function syncTurnBusy() {
   const deciding = Boolean(state.autoRespondDecision);
-  const turnBusy = state.harnessBusy || deciding;
+  const turnBusy = state.harnessBusy || deciding || state.guardianPending;
   state.sessionBusy = turnBusy;
   syncLiveActivity();
   elements.abortButton.disabled = !turnBusy;
+  if (state.guardianPending) {
+    setStatus("Attention required · Guardian is waiting for your decision", true);
+    return;
+  }
   setStatus(state.harnessBusy ? `${harnessLabel(state.harnesses, state.engine)} is working` : deciding ? "Auto respond is deciding" : state.backgroundRunning ? "Waiting for you · background tasks running" : "Connected", true, false, turnBusy, !turnBusy && state.backgroundRunning);
 }
 

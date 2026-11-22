@@ -56,6 +56,13 @@ test("a Guardian review raised on a new Claude conversation's first turn reaches
     const [review] = openReviews(page.frames)!;
     assert.equal(review.conversationId, ready.conversationId, `the review is filed under the conversation the page has open (${String(ready.conversationId)}), not ${review.conversationId}`);
     assert.equal(review.subject, "rm -rf /srv/exports/2023");
+    assert.ok(page.frames.some((frame) => frame.type === "guardianReviewsChanged" && frame.projectId === project.id && frame.conversationId === review.conversationId), "the notification identifies the conversation to open");
+    const listing = () => api<{ sessions: Array<{ conversationId: string; guardianPending?: boolean }> }>(node, session, "GET", `/projects/${project.id}/sessions?all=1`);
+    assert.equal((await listing()).body.sessions.find((entry) => entry.conversationId === review.conversationId)?.guardianPending, true);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(page.frames.some((frame) => frame.type === "agent_end"), false, "Claude has not finished the turn while Guardian waits");
+    const capturedWhileWaiting = await readFile(capture, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return ""; throw error; });
+    assert.equal(capturedWhileWaiting.split("\n").filter(Boolean).some((line) => JSON.parse(line).sessionId === sessionId), false, "the blocked tool call has not returned to Claude");
 
     // A reload while it waits, by the transcript path the page switched to when Claude reported it:
     // the new socket's ready message still carries the review.
@@ -72,6 +79,7 @@ test("a Guardian review raised on a new Claude conversation's first turn reaches
     await waitFor(page.frames, () => page.frames.some((frame) => frame.type === "agent_end"), 20_000);
     const runs = (await readFile(capture, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { sessionId: string; verdict: { action: string } | null });
     assert.equal(runs.at(-1)?.verdict?.action, "block", "the person's Block reaches Claude");
+    assert.notEqual((await listing()).body.sessions.find((entry) => entry.conversationId === review.conversationId)?.guardianPending, true, "answering clears the attention label");
 
     // A key in the first message of another new conversation, checked before Claude starts.
     const second = randomUUID();

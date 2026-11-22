@@ -96,8 +96,8 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
       // check), close it, or tell Bob to leave it. Opening it to look is not answering it.
       const checkedForYou = !working && Boolean(reviewCheck?.needsYou) && !movedOnSince(session.updatedAt, reviewCheck!.checkedAt);
       if (!running && !needsReview && !pendingReviews.length && !checkedForYou && !waitingToStart) continue;
-      // Marked done: leftover background tasks do not bring it back, only an agent working again does.
-      if (session.doneAt && !working) continue;
+      // Marked done: leftover background tasks do not bring it back, but a Guardian decision still needs a person.
+      if (session.doneAt && !working && !pendingReviews.length) continue;
       const needsYou = Boolean(pendingReviews.length || autoRespondStop || checkedForYou || waitingToStart);
       const snooze = needsYou ? sources.snoozeOf(project.projectId, conversationId) : null;
       const snoozed = snooze !== null && snoozeHolds(snooze, { running, updatedAt: session.updatedAt, reviewIds: pendingReviews.map((review) => review.id) }, now);
@@ -118,7 +118,7 @@ export function buildBoard(projects: BoardProject[], sources: BoardSources, now 
         turnRunning: Boolean(session.turnRunning),
         backgroundRunning: Boolean(session.backgroundRunning),
         summary: waitingToStart ? session.promptStartError ?? "Message queued; waiting to start." : sources.summaryOf(project.projectId, conversationId),
-        activity: running ? sources.activityOf(project.projectId, conversationId) : null,
+        activity: running && !pendingReviews.length ? sources.activityOf(project.projectId, conversationId) : null,
         autoRespondActive: sources.autoRespondActive(project.projectId, conversationId),
         startedBy: sources.startedByBob(project.projectId, session.id) || sources.startedByBob(project.projectId, conversationId) ? "bob" : "you",
         pendingReviews,

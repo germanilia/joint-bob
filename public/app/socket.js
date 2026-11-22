@@ -817,7 +817,10 @@ const INVALIDATION_HANDLERS = {
   browserSessionsChanged: () => document.dispatchEvent(new Event("browserSessionsChanged")),
   takebackRequested: (payload) => document.dispatchEvent(new CustomEvent("takeback-requested", { detail: payload })),
   takebackClosed: (payload) => document.dispatchEvent(new CustomEvent("takeback-closed", { detail: payload.id })),
-  guardianReviewsChanged: (payload) => document.dispatchEvent(new CustomEvent("guardian-elsewhere", { detail: payload })),
+  guardianReviewsChanged: (payload) => {
+    if (payload.projectId === state.activeProjectId) refreshSessionsQuietly();
+    document.dispatchEvent(new CustomEvent("guardian-elsewhere", { detail: payload }));
+  },
   instructionsChanged: () => document.dispatchEvent(new Event("instructions-changed")),
   projectsChanged: () => refreshProjectsQuietly(),
   pinsChanged: () => loadPins().catch((error) => console.warn(error)),

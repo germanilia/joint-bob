@@ -71,7 +71,7 @@ async function announceReview(review: GuardianReview): Promise<void> {
         { id: "guardian.allow", label: "Allow once", style: "warn", data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } },
         ...(review.alwaysKey ? [{ id: "guardian.allow-always", label: "Allow always", style: "warn" as const, data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } }] : []),
         { id: "guardian.block", label: "Block", data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } },
-        { id: "open", label: "Open", data: { open: { projectId: review.projectId, conversationId: review.conversationId, ...(title ? { title } : {}) } } },
+        { id: "open", label: "Open conversation", style: "primary", data: { open: { projectId: review.projectId, conversationId: review.conversationId, ...(title ? { title } : {}) } } },
       ],
     });
   }

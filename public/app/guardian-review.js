@@ -1,4 +1,5 @@
-import { sendSocket } from "./chat-controls.js";
+import { sendSocket, syncTurnBusy } from "./chat-controls.js";
+import { openConversation } from "./control-center.js";
 import { elements } from "./elements.js";
 import { toast } from "./shell.js";
 import { state } from "./state.js";
@@ -18,6 +19,11 @@ function unmount() {
 
 function show(reviews) {
   openReviews = reviews;
+  const pending = reviews.length > 0;
+  if (state.guardianPending !== pending) {
+    state.guardianPending = pending;
+    syncTurnBusy();
+  }
   for (const id of answered) if (!reviews.some((review) => review.id === id)) answered.delete(id);
   render();
 }
@@ -32,9 +38,12 @@ function render() {
   card.setAttribute("aria-label", "Guardian");
   const copy = document.createElement("div");
   copy.className = "conversation-lock-copy";
+  const attention = document.createElement("span");
+  attention.className = "chat-badge chat-badge-attention";
+  attention.textContent = "Attention required";
   const title = document.createElement("strong");
   title.textContent = review.title;
-  copy.append(title);
+  copy.append(attention, title);
   const subject = document.createElement("pre");
   subject.textContent = review.subject;
   subject.dataset.testid = "guardian-review-subject";
@@ -76,9 +85,13 @@ document.addEventListener("guardian-event", (event) => {
 
 // Another conversation of the project is waiting on the person; say so once, without taking over.
 document.addEventListener("guardian-elsewhere", (event) => {
-  const { conversationId, titles } = event.detail;
-  if (!titles?.length || conversationId === (state.activeConversationId || state.activeSessionId)) return;
-  toast(`Guardian is waiting for you in another conversation: ${titles[0]}`, 8000);
+  const { projectId, conversationId, titles } = event.detail;
+  if (!projectId || !titles.length || (projectId === state.activeConversationProjectId && conversationId === (state.activeConversationId || state.activeSessionId))) return;
+  toast(`Guardian is waiting for your decision: ${titles[0]}`, 12000, "warning", {
+    key: `${projectId}:${conversationId}`,
+    label: "Open conversation",
+    run: () => openConversation({ projectId, conversationId }).catch((error) => toast.error(error.message)),
+  });
 });
 
 // The chat controls announce "activeConversationChanged" on every redraw, which a running turn
@@ -87,7 +100,9 @@ document.addEventListener("guardian-elsewhere", (event) => {
 // reviews arrive with its ready message. A redraw that took the card out of the page puts it back.
 document.addEventListener("activeConversationChanged", () => {
   if (!openReviews.length) return;
-  if (openReviews[0].conversationId !== (state.activeConversationId || state.activeSessionId)) {
+  if (openReviews[0].projectId !== state.activeProjectId || openReviews[0].conversationId !== (state.activeConversationId || state.activeSessionId)) {
+    // The next socket's ready message will set the connection status.
+    state.guardianPending = false;
     openReviews = [];
     unmount();
     return;

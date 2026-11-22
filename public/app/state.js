@@ -97,6 +97,7 @@ export const state = {
   sessionBusy: false,
   // The agent's own turn, from its status; the conversation is also busy while auto respond decides.
   harnessBusy: false,
+  guardianPending: false,
   backgroundRunning: false,
   autoRespondDecision: null,
   harnesses: [],

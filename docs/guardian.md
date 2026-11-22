@@ -19,7 +19,7 @@ For other actions, rules are combined across this machine and every relay: a blo
 
 ## Reviews
 
-A paused action shows in its conversation, above the message box: what the agent wants to do, the command or content, the rule and how sure the model was. **Allow once** applies to that exact action only. **Allow always** remembers the exact action only within this conversation, agent, working directory and rule set, never another conversation. **Block** tells the agent why it was blocked. Stopping the turn blocks it too. Nobody answering within 10 minutes blocks it, so scheduled runs and webhooks never wait forever. Other windows of the project show a notice that a conversation is waiting.
+A paused action shows in its conversation, above the message box: what the agent wants to do, the command or content, the rule and how sure the model was. **Allow once** applies to that exact action only. **Allow always** remembers the exact action only within this conversation, agent, working directory and rule set, never another conversation. **Block** tells the agent why it was blocked. Stopping the turn blocks it too. Nobody answering within 10 minutes blocks it, so scheduled runs and webhooks never wait forever. Waiting conversations are marked **Attention required** and appear under **Needs you** in the Inbox. Other windows of the project show a notice with an **Open conversation** button so you can decide there.
 
 Blocks that need no review show as a notice in the conversation, and the agent is told the reason.
 
