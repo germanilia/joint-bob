@@ -175,6 +175,21 @@ export async function healStaleLocalClaim(engine: ConversationEngine, sessionId:
   throw new ConversationOwnershipError(result.current!);
 }
 
+/** Settles a split-brain record in favour of the node running the conversation: a
+    conflict fences both nodes until a higher epoch replaces it, so the running node
+    takes it at the next epoch. The compare-and-set against the exact conflict means a
+    takeover that replicated in after the caller's read wins instead of being overwritten. */
+export async function claimConflictForRunningNode(record: ConversationOwnership, nodeId: string): Promise<ConversationOwnership> {
+  if (record.status !== "conflict" || (record.ownerNodeId !== nodeId && record.transferToNodeId !== nodeId)) {
+    throw new Error("Only a node named in the conflict can claim it");
+  }
+  const claimed: ConversationOwnership = { ...record, ownerNodeId: nodeId, epoch: record.epoch + 1, status: "owned", transferToNodeId: null };
+  const result = await compareAndSetConversationOwnership(record, claimed, nodeId);
+  if (!result.accepted) return result.current!;
+  ownershipDiagnostic("conversation_ownership_conflict_claimed", claimed, nodeId, "the running node took the conflicted conversation");
+  return claimed;
+}
+
 export async function takeConversationOwnership(engine: ConversationEngine, sessionId: string, destinationNodeId: string): Promise<ConversationOwnership> {
   const db = await ownershipDatabase();
   return ownershipTransaction(db, () => {
