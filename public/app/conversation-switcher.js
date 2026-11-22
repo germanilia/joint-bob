@@ -136,7 +136,7 @@ function render() {
       if (status !== "done") {
         const badge = document.createElement("em");
         badge.className = `chat-badge chat-badge-${status}`;
-        badge.textContent = status === "active" ? "Running" : status === "background" ? "Background tasks" : "Needs review";
+        badge.textContent = status === "attention" ? "Attention required" : status === "active" ? "Running" : status === "background" ? "Background tasks" : "Needs review";
         project.append(badge);
       }
       const autoRespond = state.activeConversationProjectId === entry.projectId

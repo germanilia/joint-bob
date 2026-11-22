@@ -58,7 +58,7 @@ function renderLiveActivityTime(now = Date.now()) {
 /** Shows, updates or removes the working row from the running steps and the turn state. */
 export function syncLiveActivity() {
   const step = [...state.toolBubbles.values()].at(-1) ?? null;
-  if (!state.sessionBusy && !step) {
+  if (state.guardianPending || (!state.sessionBusy && !step)) {
     liveActivity?.remove();
     liveActivity = null;
     return;

@@ -1084,6 +1084,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--line-strong); bo
 .chat-badge b { font: inherit; }
 .chat-badge-active { color: var(--live); background: color-mix(in srgb, var(--live) 12%, transparent); }
 .chat-badge-background { color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.chat-badge-attention,
 .chat-badge-review { color: var(--amber); background: color-mix(in srgb, var(--amber) 13%, transparent); }
 .chat-badge-done { color: var(--muted); background: var(--field); }
 /* A closed-out conversation is still readable, just visibly retired. */
@@ -2967,7 +2968,9 @@ html:is([data-motion="playful"], [data-motion="calm"]) .toast.toast-leaving { an
   font-weight: 600;
 }
 .toast-success::before { content: "✓"; font-size: 18px; font-weight: 800; line-height: 1; }
+.toast-warning { border-color: var(--amber); }
 .toast-message { min-width: 0; flex: 1; }
+.toast-action { flex: 0 0 auto; min-height: 44px; align-self: center; }
 .toast-close {
   flex: 0 0 auto;
   min-height: 0;
@@ -5192,6 +5195,7 @@ body:not(.node-admin) [data-admin-only] { display: none !important; }
 .guardian-editor { display: grid; flex: 1 1 100%; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .guardian-rule > .guardian-editor:first-child { padding-top: 0; border-top: 0; }
 .guardian-review { display: grid; gap: 8px; margin: 0 var(--gap, 8px) 8px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--amber) 30%, var(--line)); border-radius: var(--radius-card); background: color-mix(in srgb, var(--amber) 8%, var(--header)); }
+.guardian-review .chat-badge-attention { justify-self: start; color: var(--amber); }
 .guardian-review pre { max-height: 40vh; margin: 0; padding: 10px 12px; overflow: auto; border-radius: var(--radius-ctl); background: var(--code-bg); color: var(--code-text); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .guardian-review-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .guardian-review-foot .settings-hint { flex: 1 1 200px; }

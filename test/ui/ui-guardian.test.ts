@@ -106,7 +106,8 @@ test("a review on a new Claude conversation's first turn shows its card until it
     const admin = await signIn(environment, node);
     assert.equal((await api(node, admin, "PUT", "/guardian", { settings: guardianAskSettings(model) })).status, 200);
     browser = await launchChrome({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, serviceWorkers: "block" });
+    const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, serviceWorkers: "block" });
+    const page = await context.newPage();
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(node.url);
@@ -115,12 +116,24 @@ test("a review on a new Claude conversation's first turn shows its card until it
     await page.getByTestId("login-submit-button").click();
     await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
 
+    const otherPage = await context.newPage();
+    await otherPage.goto(node.url);
+    await otherPage.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
+    await otherPage.waitForFunction(async () => (await import("/app/state.js" as string)).state.watchSocket?.readyState === WebSocket.OPEN);
+
     await page.getByTestId("session-create-claude-button").click();
     await page.getByTestId("new-session-name-input").fill("Release clean-up");
     await page.getByTestId("new-session-name-start-button").click();
     await page.locator("#messageInput:not([disabled])").waitFor();
+
     await page.locator("#messageInput").fill("Please delete the 2023 exports");
     await page.locator("#sendButton").click();
+    const open = otherPage.getByRole("button", { name: "Open conversation", exact: true }).and(otherPage.locator(".toast button"));
+    await open.click({ timeout: 30_000 });
+    const otherReview = otherPage.getByTestId("guardian-review");
+    await otherReview.getByText("Attention required", { exact: true }).waitFor();
+    assert.equal(await otherReview.getByTestId("guardian-review-subject").textContent(), "rm -rf /srv/exports/2023");
+    await otherPage.locator("#sessionList .session-card").filter({ hasText: "Release clean-up" }).getByText("Attention required", { exact: true }).waitFor();
 
     const card = page.getByTestId("guardian-review");
     await card.waitFor({ timeout: 30_000 });

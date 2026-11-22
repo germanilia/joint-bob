@@ -1,3 +1,4 @@
+import { allPendingGuardianReviews } from "../guardian/reviews.js";
 import { listQueuedPrompts } from "../prompt-queue.js";
 import { listTurnFailures } from "../turn-failures.js";
 import { worktreeConversations, type ProjectWorktree } from "../project-worktrees.js";
@@ -123,6 +124,7 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
     externalRunning.set(adapter.id, new Set((await runtime.externalRunning()).map((run) => run.sessionId)));
   })));
   const { listedSessions, reviewDetails } = await measureOperation("sessions.decoration_review", () => {
+    const waitingForGuardian = new Set(allPendingGuardianReviews().filter((review) => review.projectId === project.id).map((review) => review.conversationId));
     const listedSessions = applyConversationWork(sessions.map((session) => {
       const shared = findHarnessSession(project.id, session.harnessId, session.id);
       const queued = listQueuedPrompts(`${project.id}:${session.conversationId ?? session.id}`).filter((prompt) => !prompt.systemEventId);
@@ -145,6 +147,7 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
         ...(agentModel ? { agentModel } : {}),
         agentRuns: work.length ? work.map((entry) => entry.summary).sort((left, right) => left.runId.localeCompare(right.runId)) : undefined,
         turnRunning,
+        guardianPending: waitingForGuardian.has(session.conversationId ?? session.id),
         backgroundRunning,
         running: turnRunning || backgroundRunning,
         engine: session.harnessId,

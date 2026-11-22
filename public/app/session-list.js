@@ -229,7 +229,7 @@ function sessionCard(session, sessionActive, sessionPinned) {
   dot.className = "chat-status-dot";
   dot.setAttribute("aria-hidden", "true");
   const statusLabel = document.createElement("b");
-  statusLabel.textContent = displayState === "active" ? "Running" : displayState === "background" ? "Background tasks" : displayState === "review" ? "Needs review" : session.draft ? "Ready" : "Reviewed";
+  statusLabel.textContent = displayState === "attention" ? "Attention required" : displayState === "active" ? "Running" : displayState === "background" ? "Background tasks" : displayState === "review" ? "Needs review" : session.draft ? "Ready" : "Reviewed";
   badge.append(dot, statusLabel);
   meta.append(" ", badge);
   if (session.doneAt) {

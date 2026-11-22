@@ -101,18 +101,22 @@ test("a conversation waiting for the person's OK, or whose auto respond stopped 
   const review = { id: "r1", title: "Pi wants to run a command", subject: "aws ecs update-service", detail: "production or destructive · 98%", expiresAt: "2026-11-05T10:10:00Z" };
   const projects: BoardProject[] = [{ projectId: "p", projectName: "Julian", sessions: [
     session({ id: "asks", conversationId: "c-asks", running: true, turnRunning: true }),
+    session({ id: "closed-asks", conversationId: "c-closed-asks", doneAt: "2026-11-05T09:30:00Z" }),
     session({ id: "stopped", conversationId: "c-stopped", running: false, reviewState: "needs_review" }),
     session({ id: "old", conversationId: "c-old", running: false, reviewState: "reviewed" }),
     session({ id: "plain", conversationId: "c-plain", running: false, reviewState: "needs_review" }),
   ] }];
   const cards = buildBoard(projects, {
     ...sources,
-    pendingReviews: (_p, conversationId) => conversationId === "c-asks" ? [review] : [],
+    pendingReviews: (_p, conversationId) => ["c-asks", "c-closed-asks"].includes(conversationId) ? [review] : [],
+    activityOf: () => "Running a tool",
     autoRespondStop: (_p, conversationId) => conversationId === "c-stopped" || conversationId === "c-old" ? { kind: "stop-instruction", reason: "A plan waits for approval" } : null,
   });
   const byId = Object.fromEntries(cards.map((card) => [card.sessionId, card]));
   assert.equal(byId.asks.column, "needs-you");
+  assert.equal(byId.asks.activity, null, "a paused review does not show as running a tool");
   assert.deepEqual(byId.asks.pendingReviews, [review]);
+  assert.equal(byId["closed-asks"].column, "needs-you", "an earlier Done state cannot hide a pending Guardian review");
   assert.equal(byId.stopped.column, "needs-you");
   assert.equal(byId.stopped.autoRespondStop?.reason, "A plan waits for approval");
   assert.equal(byId.old, undefined, "a conversation the person already reviewed is not brought back");
