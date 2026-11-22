@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.337.7 — 2026-11-22
+
+- The server spends much less time on its own bookkeeping, which kept the homeserver's server 50–86% busy and dropped connections to conversations running there. On Node 22, every promise copied the request context of about a dozen stores: 15% of the homeserver's CPU, plus garbage collection. The server now runs on Node's context frames, which ran the same work 9 times faster. This release updates the supervisor, so machines install it as a maintenance activation.
+
 ## 2.337.6 — 2026-11-22
 
 - Guardian now borrows an admitted relay's shared decision model when a machine has no local TypeSafe key (and keeps relay routing for relay groups before their signed policy arrives), so shared projects no longer block turns on machines without a local key.

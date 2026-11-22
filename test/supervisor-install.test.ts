@@ -137,6 +137,10 @@ test("release specifications accept one commit field and detect changed supervis
   try {
     const spec = releaseAppSpec(f.app, f.app, f.state);
     assert.equal(spec.env.JOINT_BOB_RELEASE, "a".repeat(40));
+    // Node 22 runs the server on context frames; a Node that has them by default gets no flag it would refuse.
+    const frames = process.allowedNodeEnvironmentFlags.has("--experimental-async-context-frame");
+    assert.deepEqual(spec.args.slice(0, -1), frames ? ["--experimental-async-context-frame"] : []);
+    assert.match(spec.args.at(-1)!, /dist[\\/]server\.js$/);
     assert.equal(supervisorComponentsMatch(f.app, f.source), true);
     assertSupervisorCompatible(f.app, f.source);
     await appendFile(path.join(f.source, "scripts/supervisor-worker.mjs"), "\n// mismatch\n");

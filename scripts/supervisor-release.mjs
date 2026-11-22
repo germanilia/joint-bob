@@ -38,8 +38,18 @@ export function releaseAppSpec(installRoot, releaseRoot, dataDirectory) {
   for (const key of Object.keys(env)) if (key.startsWith("JOINT_BOB_UPDATE_") || key === "JOINT_BOB_TASK_TOKEN") delete env[key];
   Object.assign(env, { JOINT_BOB_INSTALL_ROOT: install, JOINT_BOB_DATA_DIR: dataDirectory, PI_WEB_DATA_DIR: dataDirectory, JOINT_BOB_RELEASE: commit, MASTER_BOB_RELEASE: commit,
     PATH: `${path.join(release, "node_modules/.bin")}${path.delimiter}${env.PATH ?? ""}` });
-  return { executable: process.execPath, args: [server], cwd: release, env };
+  return { executable: process.execPath, args: [...SERVER_NODE_FLAGS, server], cwd: release, env };
 }
+
+/*
+ * Node 22 keeps AsyncLocalStorage on async hooks: every new promise copies the stores of all
+ * of them (the server has about a dozen). On the homeserver that copying was 15% of the
+ * server's CPU, with more in garbage collection (profile of 2026-11-22). With context frames
+ * the same code ran 9 times faster. Node 24 and later use context frames by default and do
+ * not know the flag, so it is passed only where this Node accepts it.
+ */
+const CONTEXT_FRAMES = "--experimental-async-context-frame";
+const SERVER_NODE_FLAGS = process.allowedNodeEnvironmentFlags.has(CONTEXT_FRAMES) ? [CONTEXT_FRAMES] : [];
 
 /**
  * The supervisor process runs from the install root's scripts, not from the release
