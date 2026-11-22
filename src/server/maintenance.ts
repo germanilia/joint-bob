@@ -2,7 +2,7 @@ import { failStaleConversationWork, listUnfinishedConversationWork, refreshConve
 import { reconcileAgentResources } from "../agent-resources.js";
 import { consolidateAgentInstructions } from "../instruction-migration.js";
 import { getClusterNode } from "../cluster.js";
-import { getConversationOwnership } from "../conversation-ownership.js";
+import { claimConflictForRunningNode, getConversationOwnership } from "../conversation-ownership.js";
 import { abandonedShellReason, backgroundTaskConversationId, readActiveBackgroundTaskIdentities, readImplicitShellTasks } from "../background-tasks.js";
 import { resolveDataDirectory } from "../data-directory.js";
 import { latestConversationSegment } from "../conversation-records.js";
@@ -136,8 +136,14 @@ export async function buildRuntimeLeaseSnapshot(localNodeId: string): Promise<Ru
   const entries = new Map<string, RuntimeLeaseInput>();
   // Advertise only conversations this node is allowed to run: a stale in-flight
   // turn must not borrow the new owner's epoch after a transfer.
+  // A conflict this node is named in is claimed by this node, because it is running the
+  // conversation, unless the other node advertises a run too; then the person decides.
   const epochFor = async (engine: HarnessId, sessionId: string): Promise<number | null> => {
-    const ownership = await getConversationOwnership(engine, sessionId);
+    let ownership = await getConversationOwnership(engine, sessionId);
+    if (ownership?.status === "conflict" && (ownership.ownerNodeId === localNodeId || ownership.transferToNodeId === localNodeId)
+      && !conversationLeaseRunning(engine, sessionId, now)) {
+      ownership = await claimConflictForRunningNode(ownership, localNodeId);
+    }
     if (ownership && ownership.ownerNodeId !== localNodeId) return null;
     return ownership?.epoch ?? 1;
   };
