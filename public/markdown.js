@@ -37,6 +37,19 @@ function safeUrl(value) {
   }
 }
 
+// Agent citations use file URLs, which must go through the project API,
+// never directly into an anchor's href.
+function citationFilePath(value) {
+  if (!value.startsWith("file:///")) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "file:" || url.hostname) return null;
+    return decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+}
+
 const INLINE_RE =
   /(?<code>`+)(?<codeText>[\s\S]*?)\k<code>|(?<bold>\*\*)(?<boldText>[\s\S]+?)\*\*(?!\*)|(?<ital>\*)(?<italText>[^*]+?)\*(?!\*)|(?<strike>~~)(?<strikeText>[\s\S]+?)~~(?!~)|(?<link>\[(?<linkText>(?:[^\]\\]|\\.)+)\]\((?<url>[^)\s]+)\))/g;
 const FILE_PATH_RE = /(?:(?:\.{1,2}[\\/]|[\\/]|[A-Za-z]:\\)(?:[^\s"'`()\[\]{}<>:]+[\\/])*|(?:[^\s"'`()\[\]{}<>:]+[\\/])+)[^\s"'`()\[\]{}<>:]+\.[A-Za-z0-9]{1,12}/g;
@@ -148,6 +161,14 @@ function inlineNodes(text, resolveFileUrl) {
       del.append(...inlineNodes(groups.strikeText, resolveFileUrl));
       nodes.push(del);
     } else if (groups.link !== undefined) {
+      const citationPath = citationFilePath(groups.url);
+      if (citationPath) {
+        const label = document.createElement("span");
+        label.append(...inlineNodes(groups.linkText));
+        nodes.push(fileLink(citationPath, resolveFileUrl, label));
+        last = match.index + match[0].length;
+        continue;
+      }
       const linksToFile = Boolean(resolveFileUrl) && isFilePath(groups.url);
       const href = linksToFile ? resolveFileUrl(groups.url) : safeUrl(groups.url);
       if (!href) {
