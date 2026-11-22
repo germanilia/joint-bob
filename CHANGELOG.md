@@ -3,6 +3,7 @@
 ## 2.337.6 — 2026-11-22
 
 - Guardian now borrows an admitted relay's shared decision model when a machine has no local TypeSafe key (and keeps relay routing for relay groups before their signed policy arrives), so shared projects no longer block turns on machines without a local key.
+- Guardian's command allowlist now accepts escaped backticks and dollar signs inside double-quoted strings (such as PR bodies passed to the Joint Bob worktree CLI), and Guardian review cards disappear immediately after clicking Allow once, Allow always, or Block.
 - Surface pending Guardian decisions in conversations, render Antigravity file citations, and show the version under the brand name and the project in new conversation windows.
 
 ## 2.337.5 — 2026-11-21

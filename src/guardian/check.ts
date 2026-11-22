@@ -77,7 +77,7 @@ async function evaluate(identity: GuardianIdentity, groups: GuardianGroup[], req
     for (const model of [group.model, fallback] as const) {
       try {
         const { target, fetchImpl } = await modelRoute({ ...group, model }, identity.projectId);
-        const answers = await askGuardianModel(target, probe ? 'ready' : state, questions, fetchImpl, group.relayNodeId ?? identity.projectId, !startOfTurn);
+        const answers = await askGuardianModel(target, probe ? 'ready' : state, questions, fetchImpl, `${group.relayNodeId ?? identity.projectId}:${group.source}`, !startOfTurn);
         if (errors.length) announceGuardianWarning(identity.projectId, identity.conversationId, `${group.source}: ${errors[0]}. Using ${target.label} for this check.`);
         return { findings: rules.map(rule => ({ group, rule, probability: answers[rule.id], outcome: ruleOutcome(rule, answers[rule.id]), model: target.label })) };
       } catch (error) {

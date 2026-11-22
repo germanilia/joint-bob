@@ -74,7 +74,7 @@ function literalCommands(command: string): string[][] | undefined {
         const next = command[i + 1];
         if (next === '\n') { i++; continue; }
         if (next === '\r' && command[i + 2] === '\n') { i += 2; continue; }
-        if (next === '"' || next === '\\') { word += next; i++; continue; }
+        if (next === '"' || next === '\\' || next === '`' || next === '$') { word += next; i++; continue; }
         return undefined;
       }
       if (quote === '"' && /[$`]/.test(c)) return undefined;

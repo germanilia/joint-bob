@@ -9,8 +9,20 @@ import { state } from "./state.js";
 let card = null;
 /** The open reviews the conversation's socket last sent; the card shows the first one. */
 let openReviews = [];
-/** Reviews already answered from this page, whose buttons stay off until the socket drops them. */
+/** Reviews already answered from this page, hidden at once until the socket drops them. */
 const answered = new Set();
+
+function visibleReviews() {
+  return openReviews.filter((review) => !answered.has(review.id));
+}
+
+function syncPending() {
+  const pending = visibleReviews().length > 0;
+  if (state.guardianPending !== pending) {
+    state.guardianPending = pending;
+    syncTurnBusy();
+  }
+}
 
 function unmount() {
   card?.remove();
@@ -19,18 +31,15 @@ function unmount() {
 
 function show(reviews) {
   openReviews = reviews;
-  const pending = reviews.length > 0;
-  if (state.guardianPending !== pending) {
-    state.guardianPending = pending;
-    syncTurnBusy();
-  }
   for (const id of answered) if (!reviews.some((review) => review.id === id)) answered.delete(id);
+  syncPending();
   render();
 }
 
 function render() {
   unmount();
-  const review = openReviews[0];
+  const remaining = visibleReviews();
+  const review = remaining[0];
   if (!review) return;
   card = document.createElement("section");
   card.className = "guardian-review";
@@ -52,12 +61,13 @@ function render() {
   const detail = document.createElement("span");
   detail.className = "settings-hint";
   detail.dataset.testid = "guardian-review-detail";
-  const waiting = openReviews.length > 1 ? ` · ${openReviews.length - 1} more waiting` : "";
+  const waiting = remaining.length > 1 ? ` · ${remaining.length - 1} more waiting` : "";
   detail.textContent = state.conversationReadOnly ? "Only someone who can write in this conversation can answer." : `${review.detail.split("\n").join(" · ")}${waiting}`;
   const answer = (decision) => {
     if (!sendSocket({ type: "guardianDecision", reviewId: review.id, decision })) return;
     answered.add(review.id);
-    for (const control of foot.querySelectorAll("button")) control.disabled = true;
+    syncPending();
+    render();
   };
   const block = document.createElement("button");
   block.type = "button"; block.className = "ghost"; block.textContent = "Block"; block.dataset.testid = "guardian-review-block";
@@ -104,8 +114,9 @@ document.addEventListener("activeConversationChanged", () => {
     // The next socket's ready message will set the connection status.
     state.guardianPending = false;
     openReviews = [];
+    answered.clear();
     unmount();
     return;
   }
-  if (!card?.isConnected) render();
+  if (visibleReviews().length && !card?.isConnected) render();
 });

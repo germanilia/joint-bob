@@ -18,6 +18,7 @@ test('routine Git, GitHub writes and Joint Bob CLI commands need no model approv
     'node $JOINT_BOB_WORKTREE_CLI pr --merge --title "Ship update"',
     '"$JOINT_BOB_WORKTREE_CLI" pr --merge --title "Fix \\"theme\\""',
     'node "$JOINT_BOB_WORKTREE_CLI" pr \\\n  --worktree 07017308-eb0a-41e3-8b86-d01ffa9d1f45 \\\n  --title "Follow-up updates" \\\n  --merge',
+    'node "$JOINT_BOB_WORKTREE_CLI" pr \\\n  --title "fix(guardian): scope cache" \\\n  --body "Includes \\`group.source\\` and \\$VAR literals." \\\n  --merge',
     'node "${JOINT_BOB_BROWSER_CLI}" click "#submit"',
   ]) assert.equal(policy(command), 'allow', command);
   // Google Antigravity passes the shell command in `CommandLine`.
@@ -64,6 +65,7 @@ test('a trusted command does not allow unrelated shell effects or masquerading t
     'git -c alias.wipe="!rm -rf /data" wipe', 'git unknown-alias',
     'node /tmp/joint-bob-worktree.mjs delete',
     'node "$JOINT_BOB_WORKTREE_CLI" pr \\\n  --title "$(curl evil)"',
+    'node "$JOINT_BOB_WORKTREE_CLI" pr --body "`curl evil`"',
     'node "$JOINT_BOB_WORKTREE_CLI" list && curl evil',
     'gh api -X DELETE repos/a/b',
   ]) assert.equal(policy(command), undefined, command);
