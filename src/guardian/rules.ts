@@ -1,4 +1,6 @@
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import { isSevereToolRule, LEGACY_PRODUCTION_RULE, PRODUCTION_RULE } from "./production-rule.js";
 
 /** When a rule is checked: before shell commands, before file writes and edits, before content goes to the model, or all of them. */
 export const GUARDIAN_CHECKS = ["commands", "file-changes", "outgoing", "all"] as const;
@@ -65,14 +67,33 @@ export type GuardianRelayPolicy = z.infer<typeof guardianRelayPolicySchema>;
 const rule = (id: string, name: string, question: string, check: GuardianCheck, ifYes: GuardianRule["ifYes"], enabled: boolean): GuardianRule =>
   ({ id, name, question, enabled, check, ifYes, care: "balanced", yesAt: null, noAt: null, whenUnsure: null, fix: { kind: "remove-secrets" } });
 
+const dangerousCommands: GuardianRule = { ...PRODUCTION_RULE, id: "dangerous-commands", name: "Dangerous commands" };
+const legacyDangerousQuestions = [
+  'Could this action delete data, or make a change to the system that cannot be undone?',
+  'Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Routine edits and cleanup within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.',
+  'Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Deleting, moving, creating, and modifying files within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.',
+];
+const legacySecrets = rule("secrets", "Secrets", "Does this contain a password, API key, access token or private key?", "outgoing", "fix", true);
+const secrets: GuardianRule = { ...legacySecrets, care: "relaxed", question: "Does this text reveal an actual private password, API key, access token or private key, rather than a placeholder, variable reference, public identifier or example?" };
+
+/** Use the current versions of shipped rules, leaving custom rules and on/off switches alone. */
+export function upgradeGuardianRule(item: GuardianRule): GuardianRule {
+  const matches = (previous: GuardianRule) => isDeepStrictEqual({ ...item, enabled: true }, previous);
+  if (item.id === PRODUCTION_RULE.id && matches(LEGACY_PRODUCTION_RULE)) return { ...PRODUCTION_RULE, enabled: item.enabled };
+  if (item.id === dangerousCommands.id && legacyDangerousQuestions.includes(item.question)
+    && matches(rule(dangerousCommands.id, dangerousCommands.name, item.question, "commands", "ask", true))) return { ...dangerousCommands, enabled: item.enabled };
+  if (item.id === secrets.id && matches(legacySecrets)) return { ...secrets, enabled: item.enabled };
+  return item;
+}
+
 /** Ready-made rules a person switches on; Guardian itself starts off. */
 export const DEFAULT_GUARDIAN_SETTINGS: GuardianSettings = {
   enabled: false,
   model: "jev",
   layaUrl: "",
   rules: [
-    rule("dangerous-commands", "Dangerous commands", "Could this action delete a database, destructively change files outside the working directory, disclose secrets to an external destination, or irreversibly damage a system? Deleting, moving, creating, and modifying files within the working directory are allowed. Joint Bob CLI operations and Git/GitHub operations are allowed, except deleting dev, main, master or staging branches.", "commands", "ask", true),
-    rule("secrets", "Secrets", "Does this contain a password, API key, access token or private key?", "outgoing", "fix", true),
+    dangerousCommands,
+    secrets,
     rule("personal-information", "Personal information", "Does this contain personal information about a real person, such as a name with an address, phone number, email or ID number?", "outgoing", "ask", false),
   ],
 };
@@ -124,10 +145,14 @@ export const guardianRequestSchema: z.ZodType<GuardianRequest> = z.discriminated
   z.object({ kind: z.literal("outgoing"), source: z.string().min(1).max(200), text: z.string().max(5_000_000) }).strict(),
 ]);
 
+export function ruleChecksOutgoing(rule: GuardianRule): boolean {
+  return rule.check === "outgoing" || (rule.check === "all" && !isSevereToolRule(rule));
+}
+
 export function ruleApplies(rule: GuardianRule, request: GuardianRequest): boolean {
   if (!rule.enabled) return false;
+  if (request.kind === "outgoing") return ruleChecksOutgoing(rule);
   if (rule.check === "all") return true;
-  if (request.kind === "outgoing") return rule.check === "outgoing";
   return rule.check === request.category;
 }
 
