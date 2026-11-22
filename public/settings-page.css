@@ -308,22 +308,22 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
   #settingsForm[data-mobile-view="panel"] .settings-sidebar { display: none; }
   #settingsForm[data-mobile-view="menu"] .settings-panel { display: none; }
   #settingsForm .settings-search-input { min-height: 46px; font-size: 16px; }
-  /* Rows like a phone's own settings: icon, name, the value where there is one, a chevron. */
+  /* Minimalist hairline list directly on the Paper canvas: monochrome line icon, name, quiet value, chevron. */
   #settingsForm .settings-body { padding-left: 0; }
+  #settingsForm .settings-sidebar { padding: 0 18px; }
   #settingsForm .settings-nav-scroll { margin-right: 0; padding: 0 0 24px; }
-  #settingsForm .settings-group, #settingsForm .settings-group:first-child { margin: 12px 0 0; padding: 0; }
-  #settingsForm .settings-group-label { padding: 6px 8px 6px; font-size: 15px; }
+  #settingsForm .settings-group, #settingsForm .settings-group:first-child { margin: 16px 0 0; padding: 0; }
+  #settingsForm .settings-group-label { padding: 4px 2px 4px; font-size: 15px; }
   #settingsForm .settings-tab, #settingsForm .settings-appearance-link {
-    gap: 12px; min-height: 48px; padding: 0 14px; border-radius: 0; background: var(--panel); color: var(--text); font-size: 16px; font-weight: 500;
+    gap: 12px; min-height: 48px; padding: 0 2px; border-radius: 0; background: transparent; color: var(--heading); font-size: 15.5px; font-weight: 500;
   }
-  #settingsForm .settings-tab::after, #settingsForm .settings-appearance-link::after { content: ""; flex: none; width: 16px; height: 16px; margin-right: -4px; background: var(--set-chev) no-repeat center / 16px; }
-  #settingsForm .settings-tab:is([aria-selected="true"], :hover) { background: var(--panel); color: var(--text); }
-  #settingsForm .settings-tab:active, #settingsForm .settings-appearance-link:active { background: color-mix(in srgb, var(--panel) 88%, var(--text)); }
+  #settingsForm .settings-tab::after, #settingsForm .settings-appearance-link::after { content: ""; flex: none; width: 16px; height: 16px; margin-right: -2px; background: var(--set-chev) no-repeat center / 16px; }
+  #settingsForm .settings-tab:is([aria-selected="true"], :hover) { background: transparent; color: var(--heading); }
+  #settingsForm .settings-tab:active, #settingsForm .settings-appearance-link:active { background: color-mix(in srgb, var(--field) 60%, transparent); border-radius: 10px; }
   #settingsForm .settings-tab:not([hidden]):not([data-search-miss]) ~ .settings-tab { box-shadow: inset 0 1px 0 var(--line); }
-  /* The first and the last row that shows round the card's corners. */
-  #settingsForm .settings-tab:not([hidden]):not([data-search-miss]):not(:has(~ .settings-tab:not([hidden]):not([data-search-miss]))) { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
-  #settingsForm .settings-tab:not([hidden]):not([data-search-miss]):not(.settings-tab:not([hidden]):not([data-search-miss]) ~ .settings-tab) { border-top-left-radius: 16px; border-top-right-radius: 16px; }
-  #settingsForm .settings-appearance-link { display: flex; margin-top: 4px; border-radius: 16px; }
+  #settingsForm .settings-tab:not([hidden]):not([data-search-miss]):not(:has(~ .settings-tab:not([hidden]):not([data-search-miss]))) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  #settingsForm .settings-tab:not([hidden]):not([data-search-miss]):not(.settings-tab:not([hidden]):not([data-search-miss]) ~ .settings-tab) { border-top-left-radius: 0; border-top-right-radius: 0; }
+  #settingsForm .settings-appearance-link { display: flex; margin-top: 6px; border-radius: 0; box-shadow: inset 0 -1px 0 var(--line); }
   #settingsForm .settings-tab-icon { width: 20px; height: 20px; color: var(--muted); }
   #settingsForm .settings-tab-svg { width: 19px; height: 19px; }
   #settingsForm .settings-search-label { padding: 18px 8px 6px; font-size: 15px; }
@@ -824,7 +824,8 @@ dialog:not(#settingsDialog) .settings-section-head { display: none; }
 #settingsForm .label-icon-row { grid-template-columns: minmax(0, 1fr) 72px auto auto; }
 #settingsForm .label-icon-row > .label-icon-name { min-width: 0; }
 @media (max-width: 600px) {
-  #settingsForm .label-icon-row { grid-template-columns: minmax(0, 1fr) 72px; }
+  #settingsForm .label-icon-row { grid-template-columns: minmax(0, 1fr) auto; }
+  #settingsForm .label-icon-row > .label-icon-input { width: 72px; justify-self: end; }
   #settingsForm .label-icon-row > button { justify-self: start; }
 }
 #settingsForm #settingsLabelAdd { justify-self: start; margin-top: 8px; }

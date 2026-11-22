@@ -276,6 +276,12 @@ export function createBrowserViewer(root, { api: request, identity, sessionId, n
       : "Take control to interact. Viewing does not pause the agent.";
     const active = session?.tabs.find((tab) => tab.id === session.activePageId);
     get("blank-help").hidden = loginMode || !running() || active?.url !== "about:blank";
+    // On a phone, once a browser is live, fold the saved-profiles setup so the live page takes center stage.
+    const profileLibrary = get("profile-library");
+    if (profileLibrary && window.innerWidth <= 700 && running() && profileLibrary.dataset.autoCollapsed !== "1") {
+      profileLibrary.open = false;
+      profileLibrary.dataset.autoCollapsed = "1";
+    }
     if (document.activeElement !== get("url")) get("url").value = active?.url || "";
     const tabs = get("tabs");
     const signature = JSON.stringify([session?.tabs, session?.activePageId, canInput()]);

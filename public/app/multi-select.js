@@ -36,6 +36,7 @@ export function createMultiSelect({ id, testid, label, prompt, placeholder = "Se
   let options = [];
   let values = new Set();
   let active = -1;
+  let rendering = false;
   const listeners = [];
 
   function summary() {
@@ -75,27 +76,34 @@ export function createMultiSelect({ id, testid, label, prompt, placeholder = "Se
   }
 
   function render() {
-    const query = search.value.trim();
-    const matches = query
-      ? options.map((option) => ({ option, score: fuzzyMatch(query, option.label, option.detail) }))
-        .filter(({ score }) => score !== null).sort((left, right) => right.score - left.score).map(({ option }) => option)
-      : options;
-    list.replaceChildren(...matches.map((option, index) => {
-      const item = document.createElement("button");
-      item.type = "button"; item.role = "option"; item.id = `${id}Option${index}`; item.tabIndex = -1;
-      item.className = "searchable-select-option multi-select-option"; item.dataset.testid = `${testid}-option`; item.dataset.value = option.value;
-      item.setAttribute("aria-selected", String(values.has(option.value)));
-      const text = document.createElement("span"); text.className = "multi-select-option-label"; text.textContent = option.label;
-      item.append(text);
-      if (option.detail && option.detail !== option.label) {
-        const detail = document.createElement("span"); detail.className = "searchable-select-option-detail"; detail.textContent = option.detail; item.append(detail);
-      }
-      item.addEventListener("mousedown", (event) => event.preventDefault());
-      item.addEventListener("click", () => toggle(option.value));
-      return item;
-    }));
-    if (!matches.length) list.textContent = emptyText;
-    highlight(0);
+    const hadFocusInList = !popover.hidden && list.contains(document.activeElement);
+    rendering = true;
+    try {
+      const query = search.value.trim();
+      const matches = query
+        ? options.map((option) => ({ option, score: fuzzyMatch(query, option.label, option.detail) }))
+          .filter(({ score }) => score !== null).sort((left, right) => right.score - left.score).map(({ option }) => option)
+        : options;
+      list.replaceChildren(...matches.map((option, index) => {
+        const item = document.createElement("button");
+        item.type = "button"; item.role = "option"; item.id = `${id}Option${index}`; item.tabIndex = -1;
+        item.className = "searchable-select-option multi-select-option"; item.dataset.testid = `${testid}-option`; item.dataset.value = option.value;
+        item.setAttribute("aria-selected", String(values.has(option.value)));
+        const text = document.createElement("span"); text.className = "multi-select-option-label"; text.textContent = option.label;
+        item.append(text);
+        if (option.detail && option.detail !== option.label) {
+          const detail = document.createElement("span"); detail.className = "searchable-select-option-detail"; detail.textContent = option.detail; item.append(detail);
+        }
+        item.addEventListener("mousedown", (event) => event.preventDefault());
+        item.addEventListener("click", () => toggle(option.value));
+        return item;
+      }));
+      if (!matches.length) list.textContent = emptyText;
+      highlight(0);
+      if (hadFocusInList) (list.querySelector("[role='option']") || clear).focus();
+    } finally {
+      rendering = false;
+    }
   }
 
   function open() {
@@ -124,9 +132,17 @@ export function createMultiSelect({ id, testid, label, prompt, placeholder = "Se
       close({ focusTrigger: true });
     }
   });
+  // When an option tap re-renders the list, focus can leave the popover while it is still open:
+  // capture Escape so it closes only this dropdown and leaves any surrounding sheet or dialog open.
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !popover.hidden) {
+      event.preventDefault(); event.stopPropagation();
+      close({ focusTrigger: true });
+    }
+  }, true);
   clear.addEventListener("mousedown", (event) => event.preventDefault());
   clear.addEventListener("click", () => { values.clear(); render(); emit(); close({ focusTrigger: true }); });
-  root.addEventListener("focusout", (event) => { if (!root.contains(event.relatedTarget)) close(); });
+  root.addEventListener("focusout", (event) => { if (!rendering && !root.contains(event.relatedTarget)) close(); });
 
   showSummary();
   return {

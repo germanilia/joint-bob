@@ -169,6 +169,8 @@ test("the status and source filters narrow the groups", async () => {
   await page.getByTestId("inboxHome-sources-clear").tap();
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector('[data-testid="inboxHome-sources-trigger"]')!.textContent === "All sources");
+  await page.getByTestId("inboxHome-done").tap();
+  await page.getByTestId("inboxHome-filters").waitFor({ state: "hidden" });
 });
 
 test("Select turns the rows into a checklist that does not open them, and Cancel puts them back", async () => {
@@ -189,7 +191,10 @@ test("Select turns the rows into a checklist that does not open them, and Cancel
 });
 
 test("Mark read takes the chosen conversations out of To review", async () => {
+  await page.getByTestId("inboxHome-filter").tap();
   await page.getByTestId("inboxHome-range").selectOption("all");
+  await page.getByTestId("inboxHome-done").tap();
+  await page.getByTestId("inboxHome-filters").waitFor({ state: "hidden" });
   const before = await rows("review").count();
   assert.ok(before >= 1);
   await page.getByTestId("inboxHome-select").tap();
@@ -205,7 +210,10 @@ test("Mark read takes the chosen conversations out of To review", async () => {
 });
 
 test("Delete asks first, then removes the chosen conversations", async () => {
+  await page.getByTestId("inboxHome-filter").tap();
   await page.getByTestId("inboxHome-range").selectOption("all");
+  await page.getByTestId("inboxHome-done").tap();
+  await page.getByTestId("inboxHome-filters").waitFor({ state: "hidden" });
   const before = await rows("earlier").count();
   assert.ok(before >= 1);
   await page.getByTestId("inboxHome-select").tap();
