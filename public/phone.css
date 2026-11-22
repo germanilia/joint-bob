@@ -16,14 +16,14 @@
   .ph-tabs {
     position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); height: var(--ph-tabs-h);
     padding: 4px max(8px, env(safe-area-inset-right, 0px)) max(4px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
-    background: var(--panel); box-shadow: 0 -1px 0 var(--line);
+    background: var(--bg); box-shadow: 0 -1px 0 var(--line);
   }
   .ph-tabs button {
     position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; min-height: 56px;
-    padding: 0; border: 0; border-radius: 14px; background: transparent; box-shadow: none; color: var(--muted); font: 600 13px/1.1 var(--sans);
+    padding: 0; border: 0; border-radius: 14px; background: transparent; box-shadow: none; color: var(--muted); font: 500 13px/1.1 var(--sans);
   }
-  .ph-tabs button svg { width: 24px; height: 24px; flex: none; }
-  .ph-tabs button.on { color: var(--accent); }
+  .ph-tabs button svg { width: 22px; height: 22px; flex: none; }
+  .ph-tabs button.on { color: var(--accent); font-weight: 600; }
   /* The chosen tab is the green one. A ring around it after a tap read as a second selection and was cut by the screen edge. */
   .ph-tabs button:focus-visible { outline: none; background: var(--field); }
   .ph-tab-badge { position: absolute; top: 3px; left: calc(50% + 6px); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--ws-need-fill); color: #2a1700; font: 700 13px/20px var(--sans); text-align: center; }
@@ -32,32 +32,35 @@
   body.focus-ui:is(.view-projects, .view-sessions, .view-control) .shell { padding-bottom: var(--ph-tabs-h); }
   #settingsDialog:has(> .ph-tabs) #settingsForm[data-mobile-view="menu"] .settings-sidebar { padding-bottom: calc(var(--ph-tabs-h) + 8px); }
 
-  /* ---------- Home: the greeting, search and the groups ---------- */
+  /* ---------- Home: the greeting, quiet counts and the hairline groups ---------- */
   body.focus-ui.view-projects.ws-column-inbox .shell { display: flex; flex-direction: column; }
   body.focus-ui.view-projects.ws-column-inbox .shell > #projectsPanel { display: none; }
   body.focus-ui.view-projects.ws-column-inbox .shell > .ph-home { display: block; flex: none; }
   .ph-home { padding-top: env(safe-area-inset-top, 0px); }
-  .ph-home-top { display: flex; align-items: center; gap: 2px; height: 56px; padding: 0 8px 0 16px; }
-  .ph-mark { display: grid; flex: none; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--paper-raised); }
+  .ph-home-top { display: flex; align-items: center; gap: 2px; height: 52px; padding: 0 8px 0 18px; }
+  .ph-mark { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: transparent; }
   .ph-mark img { width: 26px; height: 26px; }
   .ph-spacer { flex: 1; }
-  .ph-icon-button { display: grid; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--muted); }
-  .ph-icon-button svg { width: 22px; height: 22px; }
+  .ph-icon-button { display: grid; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; box-shadow: none; color: var(--muted); }
+  .ph-icon-button svg { width: 21px; height: 21px; }
+  /* Leave a clean 48 px slot beside Search for the circular + New button in the top bar. */
+  .ph-home-top .ph-search-trigger { margin-right: 48px; }
+  .ph-home-top :is(#phoneThemeButton, #phoneAvatar) { display: none; }
   .ph-avatar {
     display: grid; place-items: center; width: 44px; height: 44px; padding: 4px; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--accent) 16%, transparent);
     background-clip: content-box; box-shadow: none; color: var(--heading); font: 700 13px/1 var(--sans);
   }
-  .ph-greeting { margin: 6px 20px 0; color: var(--heading); font: 400 clamp(28px, 9vw, 38px)/1.12 var(--serif); letter-spacing: -0.01em; overflow-wrap: anywhere; }
-  .ph-counts { min-height: 22px; margin: 8px 20px 14px; color: var(--muted); font-size: 15.5px; }
+  .ph-greeting { margin: 4px 20px 0; color: var(--heading); font: 400 clamp(26px, 7.6vw, 32px)/1.12 var(--serif); letter-spacing: -0.015em; overflow-wrap: anywhere; }
+  .ph-counts { min-height: 22px; margin: 6px 20px 8px; color: var(--muted); font-size: 14.5px; }
   .ph-counts b { color: var(--ws-need); font-weight: 650; }
-  /* Before the board has answered: a quiet bar where the counts will be, and the shape of the list under the search. */
+  /* Before the board has answered: a quiet bar where the counts will be, and the shape of the list under the greeting. */
   .ph-counts.loading::before, .ws-loading i {
     display: block; border-radius: 8px;
     background: linear-gradient(90deg, var(--field) 0, color-mix(in srgb, var(--text) 10%, var(--field)) 50%, var(--field) 100%) 0 0 / 640px 100%;
     animation: usage-shimmer 1.3s linear infinite;
   }
   .ph-counts.loading::before { content: ""; width: 62%; height: 14px; margin-top: 4px; }
-  .ws-loading { display: grid; gap: 10px; padding: 14px 8px 0; }
+  .ws-loading { display: grid; gap: 10px; padding: 14px 12px 0; }
   .ws-loading .ws-loading-label { width: 34%; height: 14px; margin: 6px 4px 2px; }
   .ws-loading .ws-loading-card { height: 132px; border-radius: 18px; }
   .ws-loading .ws-loading-row { height: 46px; border-radius: 12px; }
@@ -65,63 +68,87 @@
 
   /* The system messages and a running move, on Home above the filters (workspace.js places them here on the phone). */
   body.focus-ui .shell > :is(.inbox-system, .control-moves-job) { display: none; }
-  body.focus-ui.view-projects.ws-column-inbox .shell > .inbox-system:not([hidden]) { display: flex; flex: none; margin: 6px 16px 2px; }
-  body.focus-ui.view-projects.ws-column-inbox .shell > .control-moves-job:not([hidden]) { display: block; flex: none; margin: 6px 16px 2px; }
+  body.focus-ui.view-projects.ws-column-inbox .shell > .inbox-system:not([hidden]) { display: flex; flex: none; margin: 2px 16px 2px; }
+  body.focus-ui.view-projects.ws-column-inbox .shell > .control-moves-job:not([hidden]) { display: block; flex: none; margin: 2px 16px 2px; }
   .inbox-system-dialog { box-sizing: border-box; padding: 18px 18px 20px; }
-  /* Thumb-sized: 44 px targets and text of at least 13 px, as everywhere on the phone. */
-  body.focus-ui .inbox-system-line { min-height: 44px; font-size: 14px; }
-  /* The words stay in the text colour (readable on the tint in every theme); the edge and the tint carry the red. */
+  /* Quiet single-line editorial strip instead of a heavy red box; 44 px target and >= 13 px text. */
+  body.focus-ui .inbox-system-line { min-height: 44px; padding: 6px 10px; border-radius: 12px; background: color-mix(in srgb, var(--danger) 9%, transparent); box-shadow: none; font-size: 14px; }
   body.focus-ui :is(.inbox-system-fix, .inbox-system-line .control-sys-icon) { color: var(--heading); font-size: 13px; }
   body.focus-ui .inbox-system-dialog :is(.inbox-system-close, .control-sys-actions button) { box-sizing: border-box; height: 46px; min-height: 46px; font-size: 14px; }
   body.focus-ui .inbox-system-dialog :is(.control-sys-pill, .control-sys-hint, .control-list-meta) { font-size: 13px; }
 
-  /* Home's filters: one row (Filter, Select); Filter opens the four choices as a grid under it (inbox-filters.js). */
+  /* Home's mode switcher & filters: quiet underline State/Project/Folder tabs, quiet Filter + Select row, and a clean bottom sheet for Filter. */
   body.focus-ui.view-projects.ws-column-inbox .inbox-tools.phone-only[hidden] { display: none; }
-  .inbox-tools.folded { gap: 6px; }
-  .inbox-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 0; }
+  body.focus-ui.view-projects.ws-column-inbox .inbox-tools.phone-only { padding: 0 16px 4px; gap: 2px; margin: 0; }
+  .inbox-tools.folded { gap: 2px; }
+  body.focus-ui .ws-mode { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0; padding: 0; border-radius: 0; background: transparent; border-bottom: 1px solid var(--line); }
+  body.focus-ui .ws-mode button { min-height: 44px; padding: 0 8px; border-radius: 0; background: transparent; box-shadow: none; color: var(--muted); font: 550 14px var(--sans); }
+  body.focus-ui .ws-mode button[aria-pressed="true"] { background: transparent; color: var(--heading); font-weight: 650; box-shadow: inset 0 -2px 0 var(--accent); }
+  .inbox-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0; }
   .inbox-tools-head :is(.inbox-filter-toggle, .inbox-select-toggle) {
-    min-height: 44px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; box-shadow: none; color: var(--muted); font: 600 14px var(--sans);
+    min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; box-shadow: none; color: var(--muted); font: 550 14px var(--sans);
   }
-  .inbox-tools-head .inbox-filter-toggle::before { content: ""; display: inline-block; width: 14px; height: 10px; margin-right: 8px; background: linear-gradient(currentColor 0 0) 0 0 / 14px 1.8px, linear-gradient(currentColor 0 0) 50% 50% / 9px 1.8px, linear-gradient(currentColor 0 0) 50% 100% / 4px 1.8px; background-repeat: no-repeat; }
-  .inbox-tools-head .inbox-filter-toggle:is(.narrowing, [aria-expanded="true"]) { background: var(--field); color: var(--heading); }
+  .inbox-tools-head .inbox-filter-toggle::before { content: ""; display: inline-block; width: 14px; height: 10px; margin-right: 8px; background: linear-gradient(currentColor 0 0) 0 0 / 14px 1.6px, linear-gradient(currentColor 0 0) 50% 50% / 9px 1.6px, linear-gradient(currentColor 0 0) 50% 100% / 4px 1.6px; background-repeat: no-repeat; }
+  .inbox-tools-head .inbox-filter-toggle:is(.narrowing, [aria-expanded="true"]) { background: transparent; color: var(--heading); }
   .inbox-tools-head .inbox-filter-toggle.narrowing { color: var(--accent); }
   .inbox-tools-head .inbox-select-toggle[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
-  .inbox-tools.folded .inbox-tools-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .inbox-filter-scrim:not([hidden]) { position: fixed; inset: 0; z-index: 57; background: color-mix(in srgb, var(--ink) 42%, transparent); }
+  .inbox-filter-scrim[hidden] { display: none; }
+  .inbox-tools.folded .inbox-tools-filters {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 58;
+    display: flex; flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 8px;
+    max-height: calc(100dvh - 56px - env(safe-area-inset-top, 0px)); overflow-y: auto; overscroll-behavior: contain;
+    padding: 10px 20px calc(18px + env(safe-area-inset-bottom, 0px));
+    border-radius: 26px 26px 0 0; background: var(--panel);
+    box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.34), inset 0 1px 0 var(--line);
+  }
   .inbox-tools.folded .inbox-tools-filters[hidden] { display: none; }
-  .inbox-tools.folded .inbox-range { grid-column: 1 / -1; width: 100%; }
+  .inbox-tools.folded .inbox-sheet-grab { display: block; flex: none; width: 36px; height: 4px; margin: 0 auto 2px; border-radius: 99px; background: var(--line-strong); }
+  .inbox-tools.folded .inbox-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 4px; }
+  .inbox-tools.folded .inbox-sheet-head strong { color: var(--heading); font: 400 22px/1.2 var(--serif); }
+  .inbox-tools.folded .inbox-sheet-reset { min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; box-shadow: none; color: var(--accent); font: 600 14px var(--sans); }
+  .inbox-tools.folded .inbox-tools-filters > :is(.multi-select, .inbox-automation-toggle, .inbox-range) { flex: none; width: 100%; }
+  .inbox-tools.folded .inbox-tools-filters .multi-select-trigger,
+  .inbox-tools.folded .inbox-tools-filters .inbox-range {
+    min-height: 46px; padding: 0 32px 0 14px; border: 0; border-radius: 12px; background-color: var(--field); box-shadow: none;
+    color: var(--text); font: 500 15px var(--sans); text-align: left;
+  }
+  .inbox-tools.folded .inbox-tools-filters .searchable-select-popover { z-index: 62; }
+  .inbox-tools.folded .inbox-tools-filters .inbox-automation-toggle {
+    min-height: 46px; border: 0; border-radius: 12px; background: var(--field); box-shadow: none;
+    color: var(--text); font: 500 15px var(--sans); text-align: left;
+  }
+  .inbox-tools.folded .inbox-tools-filters .inbox-automation-toggle[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--field)); color: var(--accent); font-weight: 600; }
+  .inbox-tools.folded .inbox-sheet-done { flex: none; width: 100%; min-height: 48px; margin-top: 4px; border: 0; border-radius: 14px; background: var(--btn-bg); color: var(--btn-fg); font: 650 15.5px var(--sans); }
   /* Bob's chat: no empty "Background updates (0)" block under it. */
   body.focus-ui .control-chat-updates:has(> #controlChatUpdates:empty) { display: none; }
-  .ph-search { display: flex; align-items: center; gap: 10px; height: 48px; margin: 0 16px 4px; padding: 0 14px; border-radius: 14px; background: var(--field); color: var(--muted); }
-  .ph-search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
-  .ph-search svg { width: 18px; height: 18px; flex: none; }
-  .ph-search input { flex: 1; min-width: 0; height: 100%; min-height: 0; padding: 0; border: 0; outline: 0; background: transparent; box-shadow: none; color: var(--text); font-size: 16px; }
-  .ph-search input::-webkit-search-cancel-button { display: none; }
 
-  /* The groups fit the screen and page through Show all (workspace.js deals the rows that fit). The margin keeps the last
-     row clear of the New button; it is outside the box the rows are fitted into. */
+  /* The groups scroll cleanly over the tabs, with zero bottom FAB overlap. */
   body.focus-ui.view-projects.ws-column-inbox .shell > .ws-groups {
-    --ws-lab-height: 44px; --ws-empty-height: 30px;
-    display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; margin: 0 0 70px; padding: 0 8px;
+    --ws-lab-height: 42px; --ws-empty-height: 30px;
+    display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; margin: 0; padding: 0 16px 14px;
   }
   body.focus-ui .ws-groups .ws-group { display: block; flex: none; }
-  body.focus-ui .ws-lab { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 44px; padding: 8px 6px 0 12px; color: var(--muted); font: 400 16px/1.2 var(--serif); }
-  body.focus-ui .ws-lab i { color: var(--muted); font: 600 13px/1 var(--sans); font-style: normal; opacity: 0.85; }
-  body.focus-ui .ws-show-all { min-height: 40px; margin-left: auto; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; box-shadow: none; color: var(--accent); font: 600 14px var(--sans); }
-  body.focus-ui .ws-empty { box-sizing: border-box; height: 30px; margin: 0; padding: 4px 12px 0; color: var(--muted); font-size: 14px; }
+  body.focus-ui .ws-groups .ws-group + .ws-group { margin-top: 8px; }
+  body.focus-ui .ws-lab { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 42px; padding: 10px 2px 4px; color: var(--heading); font: 400 17px/1.2 var(--serif); }
+  body.focus-ui .ws-lab i { color: var(--muted); font: 500 13px/1 var(--sans); font-style: normal; }
+  body.focus-ui .ws-show-all { min-height: 40px; margin-left: auto; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; box-shadow: none; color: var(--accent); font: 600 14px var(--sans); }
+  body.focus-ui .ws-empty { box-sizing: border-box; height: 30px; margin: 0; padding: 4px 2px 0; color: var(--muted); font-size: 14px; }
   body.focus-ui .ws-row {
-    display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 64px; margin: 0; padding: 10px 12px; border: 0; border-radius: 14px;
+    display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 62px; margin: 0; padding: 12px 4px; border: 0; border-top: 1px solid var(--line); border-radius: 0;
     background: transparent; box-shadow: none; color: var(--text); text-align: left; cursor: pointer;
   }
-  body.focus-ui .ws-row:active, body.focus-ui .ws-row.sel { background: var(--panel); box-shadow: var(--shadow-soft); }
-  body.focus-ui .ws-dot { flex: none; width: 9px; height: 9px; margin-top: 9px; border-radius: 50%; background: var(--muted); }
+  body.focus-ui .ws-group > .ws-lab + .ws-row { border-top: 0; }
+  body.focus-ui .ws-row:active, body.focus-ui .ws-row.sel { background: color-mix(in srgb, var(--field) 65%, transparent); box-shadow: none; border-radius: 12px; }
+  body.focus-ui .ws-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--muted); }
   body.focus-ui .ws-dot.need { background: var(--ws-need-fill); }
-  body.focus-ui .ws-dot.run { background: var(--live, var(--ws-run)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live, var(--ws-run)) 28%, transparent); animation: ph-ring 1.8s ease-in-out infinite; }
+  body.focus-ui .ws-dot.run { background: var(--live, var(--ws-run)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live, var(--ws-run)) 26%, transparent); animation: ph-ring 1.8s ease-in-out infinite; }
   body.focus-ui .ws-dot.rev { background: var(--ws-rev); }
   body.focus-ui .ws-row-copy { display: grid; flex: 1; gap: 3px; min-width: 0; }
   body.focus-ui .ws-row-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-  body.focus-ui .ws-row-top b { flex: 1; min-width: 0; overflow: hidden; color: var(--heading); font: 400 18px/1.3 var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+  body.focus-ui .ws-row-top b { flex: 1; min-width: 0; overflow: hidden; color: var(--heading); font: 550 15.5px/1.3 var(--sans); text-overflow: ellipsis; white-space: nowrap; }
   body.focus-ui .ws-row-top time { flex: none; color: var(--muted); font-size: 13px; }
-  body.focus-ui .ws-row-line { overflow: hidden; color: var(--muted); font-size: 14.5px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+  body.focus-ui .ws-row-line { overflow: hidden; color: var(--muted); font-size: 13.5px; line-height: 1.38; text-overflow: ellipsis; white-space: nowrap; }
 
   /* Show all: one group as a screen of its own, one long scroll. */
   body.focus-ui #workspaceGroupPage:not([hidden]) {
@@ -156,13 +183,18 @@
   body.focus-ui #attachButton { min-width: 44px; min-height: 44px; }
   body.focus-ui #contextUsageText { font-size: 13px; }
 
-  /* ---------- New: the desktop's New menu, as a sheet ---------- */
+  /* ---------- New: compact circular + button in the top bar (nothing floats over list rows) ---------- */
   body.focus-ui.view-projects .ph-fab { display: inline-flex; }
   .ph-fab {
-    position: fixed; z-index: 49; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(var(--ph-tabs-h) + 14px); align-items: center; gap: 6px;
-    height: 52px; padding: 0 20px 0 16px; border: 0; border-radius: 26px; background: var(--btn-bg); box-shadow: var(--shadow); color: var(--btn-fg); font: 650 16px var(--sans);
+    position: fixed; z-index: 49; top: calc(4px + env(safe-area-inset-top, 0px)); right: calc(54px + env(safe-area-inset-right, 0px)); bottom: auto;
+    align-items: center; justify-content: center; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 5px;
+    border: 0; border-radius: 50%; background: var(--btn-bg); background-clip: content-box; box-shadow: none; color: var(--btn-fg); font: 650 14px var(--sans);
   }
-  .ph-fab svg { width: 20px; height: 20px; }
+  .ph-fab svg { width: 18px; height: 18px; }
+  /* Reserve space beside ⋯ on Projects & Sessions top bars so titles never sit behind the circular + button. */
+  body.focus-ui #projectsPanel > .panel-bar > .brand { display: none; }
+  body.focus-ui :is(#projectsPanel, #chatsPanel) > .panel-bar > .panel-title { flex: 1 1 auto; min-width: 0; padding-right: 52px; }
+  body.focus-ui :is(#projectsPanel, #chatsPanel) > .panel-bar > .panel-title > :is(h1, h2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The menus live in the desktop column; on the phone only they are shown, from their own buttons. */
   body.focus-ui .ws-side { display: contents; }
   body.focus-ui .ws-side > :not(.ws-menu) { display: none !important; }
@@ -185,12 +217,14 @@
 
   /* ---------- the ⋯ handle at the end of every top bar ---------- */
   body.focus-ui #focusControlsButton {
-    position: relative; inset: auto; display: grid; flex: none; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px;
+    position: relative; inset: auto; display: grid; flex: none; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%;
     background: transparent; box-shadow: none; color: var(--text); cursor: pointer; touch-action: manipulation; user-select: none;
   }
   body.focus-ui #focusControlsButton[hidden] { display: none; }
-  body.focus-ui #focusControlsButton .focus-more-icon { display: block; width: 22px; height: 22px; pointer-events: none; }
-  body.focus-ui #focusControlsButton .focus-pending-badge { top: 1px; right: 0; min-width: 20px; height: 20px; font-size: 13px; }
+  body.focus-ui #focusControlsButton .focus-more-icon { display: block; width: 20px; height: 20px; pointer-events: none; }
+  body.focus-ui #focusControlsButton .focus-pending-badge { top: 2px; right: 2px; min-width: 20px; height: 20px; border-width: 1.5px; font-size: 13px; }
+  /* Inside a conversation, ⋯ is this conversation's details sheet — never show the global review counter on it. */
+  body.focus-ui.view-chat #focusControlsButton .focus-pending-badge { display: none; }
   body.focus-ui #focusControlsButton:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
   /* ---------- the sheet: a conversation's details, or a screen's actions ---------- */
@@ -258,27 +292,47 @@
   .focus-controls .focus-dock #focusMarkDone svg { color: currentColor; }
   .focus-dock .focus-state, .focus-more .focus-state { display: none; }
 
-  /* ---------- a conversation: back, title and state, the chips, messages, composer ---------- */
-  body.focus-ui .chat-topbar { min-height: 60px; gap: 4px; padding: calc(6px + env(safe-area-inset-top, 0px)) 6px 6px; border-bottom: 0; }
+  /* ---------- a conversation: back, title and state, quiet inline model bar, messages, pill composer ---------- */
+  body.focus-ui .chat-topbar { min-height: 56px; gap: 4px; padding: calc(6px + env(safe-area-inset-top, 0px)) 6px 6px; border-bottom: 1px solid var(--line); background: var(--bg); }
   body.focus-ui .chat-topbar .icon-button, body.focus-ui .chat-topbar .back-button { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
-  body.focus-ui .chat-topbar .back-button { font-size: 30px; line-height: 1; }
+  body.focus-ui .chat-topbar .back-button { font-size: 28px; line-height: 1; }
   /* Two lines at most: the title, then the worktree, project and timer side by side. */
   body.focus-ui .chat-title-block { display: grid; flex: 1; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 1px 8px; min-width: 0; }
-  body.focus-ui .chat-topbar .chat-title-block > h2 { grid-column: 1 / 4; grid-row: 1; overflow: hidden; font: 650 17px/1.25 var(--sans); text-overflow: ellipsis; white-space: nowrap; }
+  body.focus-ui .chat-topbar .chat-title-block > h2 { grid-column: 1 / 4; grid-row: 1; overflow: hidden; font: 600 16px/1.25 var(--sans); text-overflow: ellipsis; white-space: nowrap; }
   body.focus-ui .chat-title-meta { display: contents; }
-  body.focus-ui .chat-title-block > #conversationWorktreeIndicator { grid-column: 1; grid-row: 2; max-width: 46vw; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-  body.focus-ui .chat-title-meta > .chat-project-name { display: block; grid-column: 2; grid-row: 2; max-width: none; overflow: hidden; color: var(--muted); font: 500 13px/1.3 var(--sans); letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
-  body.focus-ui .chat-title-meta > .turn-timer { grid-column: 3; grid-row: 2; font-size: 13px; }
+  body.focus-ui .chat-title-block > #conversationWorktreeIndicator { grid-column: 1; grid-row: 2; max-width: 42vw; padding: 0 6px; border: 0; border-radius: 6px; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+  body.focus-ui .chat-title-meta > .chat-project-name { display: block; grid-column: 2; grid-row: 2; max-width: none; overflow: hidden; color: var(--muted); font: 400 13px/1.3 var(--sans); letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
+  body.focus-ui .chat-title-meta > .turn-timer { grid-column: 3; grid-row: 2; font-size: 13px; color: var(--muted); }
   body.focus-ui .chat-title-meta > .chat-actions { grid-column: 4; grid-row: 1 / span 2; }
-  body.focus-ui.view-chat .ph-chips { display: flex; flex: none; gap: 8px; min-width: 0; padding: 8px 14px; overflow-x: auto; scrollbar-width: none; }
+  /* Minimalist borderless inline context bar (replaces 4 bulky 44 px outlined oval pills). */
+  body.focus-ui.view-chat .ph-chips { display: flex; flex: none; align-items: center; gap: 0; min-width: 0; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--bg); overflow-x: auto; scrollbar-width: none; }
   body.focus-ui.view-chat .ph-chips::-webkit-scrollbar { display: none; }
-  /* Each chip keeps its whole words; the row scrolls sideways when they do not all fit. */
-  .ph-chips .searchable-select { flex: none; max-width: 58vw; }
+  .ph-chips .searchable-select { flex: none; max-width: 56vw; display: inline-flex; align-items: center; }
+  .ph-chips .searchable-select + .searchable-select::before { content: "·"; color: var(--muted); opacity: 0.6; font-size: 14px; padding: 0 1px; }
   .ph-chips .searchable-select-trigger {
-    min-height: 44px; height: 44px; max-width: 100%; overflow: hidden; padding: 0 28px 0 14px; border: 0; border-radius: 22px; text-overflow: ellipsis; white-space: nowrap; background-color: transparent; background-position: right 11px center;
-    box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); font: 600 14px/44px var(--sans);
+    min-width: 44px; min-height: 44px; height: 44px; max-width: 100%; overflow: hidden; padding: 0 22px 0 8px; border: 0; border-radius: 10px; text-overflow: ellipsis; white-space: nowrap; background-color: transparent; background-position: right 6px center;
+    box-shadow: none; color: var(--muted); font: 500 13.5px/44px var(--sans);
   }
-  body.focus-ui.view-chat #chatPanel .composer { border-top: 0; }
+  /* Minimalist single-line pill composer: one cohesive Paper surface. */
+  body.focus-ui.view-chat #chatPanel .composer { border-top: 0; background: var(--bg); padding: 8px 12px max(12px, env(safe-area-inset-bottom, 0px)); }
+  body.focus-ui.view-chat #chatPanel .composer-row {
+    align-items: center; gap: 2px; padding: 3px 4px; border-radius: 26px;
+    background: var(--panel); box-shadow: 0 0 0 1px var(--line-strong);
+  }
+  body.focus-ui.view-chat #chatPanel .composer-row:focus-within { box-shadow: 0 0 0 1.5px var(--accent); }
+  body.focus-ui.view-chat #chatPanel :is(#attachButton, #savedCommandsButton) {
+    flex: 0 0 44px; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0;
+    border: 0; border-radius: 50%; background: transparent; box-shadow: none; color: var(--muted);
+  }
+  body.focus-ui.view-chat #chatPanel #messageInput {
+    min-height: 44px; padding: 10px 6px; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 16px;
+  }
+  body.focus-ui.view-chat #chatPanel #sendButton {
+    flex: 0 0 44px; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0;
+    border-radius: 50%; box-shadow: none;
+  }
+  /* Quiet skills chip instead of a harsh green terminal box. */
+  body.focus-ui .message-skills { border: 0; border-radius: 10px; background: var(--field); padding: 4px 10px; font-family: var(--sans); font-size: 12px; color: var(--muted); }
 
   /* ---------- Bob: the control center as a phone page, over the tabs ---------- */
   body.focus-ui.view-control .shell > #controlCenterPanel { height: 100%; }

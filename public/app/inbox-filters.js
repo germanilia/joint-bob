@@ -273,16 +273,59 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, re
   const filters = document.createElement("div");
   filters.className = "inbox-tools-filters";
   filters.dataset.testid = `${id}-filters`;
-  filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, labelSelect.root, worktreeSelect.root, createAutomationToggle(`${id}-automations`), rangeSelect);
-  // Folded (the phone's Home): one row with Filter and Select; Filter opens the choices under it.
+  const scrim = document.createElement("div");
+  scrim.className = "inbox-filter-scrim";
+  scrim.hidden = true;
+  const closeSheet = () => {
+    if (filters.hidden) return;
+    filters.hidden = true;
+    scrim.hidden = true;
+    update();
+  };
+  if (folded) {
+    const grab = document.createElement("span");
+    grab.className = "inbox-sheet-grab";
+    grab.setAttribute("aria-hidden", "true");
+    const sheetHead = document.createElement("div");
+    sheetHead.className = "inbox-sheet-head";
+    const sheetTitle = document.createElement("strong");
+    sheetTitle.textContent = "Filter inbox";
+    const resetButton = button("inbox-sheet-reset", `${id}-reset`, "Reset", () => {
+      chooseProjects(new Set());
+      sources = new Set();
+      statuses = new Set();
+      labels = new Set();
+      worktrees = new Set();
+      range = RANGES[0];
+      try { localStorage.setItem(RANGE_KEY, range.id); } catch { /* private mode */ }
+      setAutomationsHidden(false);
+      emitView();
+    });
+    sheetHead.append(sheetTitle, resetButton);
+    const doneButton = button("primary inbox-sheet-done", `${id}-done`, "Done", closeSheet);
+    filters.append(grab, sheetHead, projectSelect.root, sourceSelect.root, statusSelect.root, labelSelect.root, worktreeSelect.root, createAutomationToggle(`${id}-automations`), rangeSelect, doneButton);
+    scrim.addEventListener("click", closeSheet);
+    document.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented) return;
+      if (event.key === "Escape" && !filters.hidden && !document.querySelector(".searchable-select-popover:not([hidden])")) {
+        event.preventDefault();
+        closeSheet();
+      }
+    });
+  } else {
+    filters.append(projectSelect.root, sourceSelect.root, statusSelect.root, labelSelect.root, worktreeSelect.root, createAutomationToggle(`${id}-automations`), rangeSelect);
+  }
+  // Folded (the phone's Home): one quiet row with Filter and Select; Filter opens the choices in a bottom sheet.
   const filterButton = button("inbox-filter-toggle", `${id}-filter`, "Filter", () => {
     filters.hidden = !filters.hidden;
+    scrim.hidden = filters.hidden;
     update();
   });
   const head = document.createElement("div");
   head.className = "inbox-tools-head";
   if (folded) {
     filters.hidden = true;
+    scrim.hidden = true;
     head.append(filterButton, selectButton);
   } else filters.append(selectButton);
 
@@ -316,7 +359,7 @@ export function createInboxToolbar({ id, allCards, visibleCards, afterChange, re
   moveButton.title = "Move the chosen conversations to another machine together";
   bar.append(count, allShown, markReadButton, moveButton, deleteButton);
   if (folded) root.classList.add("folded");
-  root.append(...(folded ? [head] : []), filters, bar);
+  root.append(...(folded ? [head, scrim] : []), filters, bar);
 
   const drawProjects = projectOptions(projectSelect, allCards);
   let sourcesDrawn = "";

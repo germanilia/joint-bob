@@ -56,21 +56,7 @@ setInterval(syncGreeting, 10 * 60_000);
 /* ---------- search: the workspace search, which also asks Bob ---------- */
 
 const search = byId("phoneSearchInput");
-search.addEventListener("input", () => {
-  const typed = search.value;
-  search.value = "";
-  openSpotlight(typed);
-});
-search.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter") return;
-  event.preventDefault();
-  openSpotlight(search.value);
-});
-// A tap opens the search dialog at once; its own box takes the keyboard there.
-search.addEventListener("pointerdown", (event) => {
-  event.preventDefault();
-  openSpotlight("");
-});
+search.addEventListener("click", () => openSpotlight(""));
 
 /* ---------- the tabs ---------- */
 
