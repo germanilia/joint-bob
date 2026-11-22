@@ -114,6 +114,12 @@ test("pending browser login popup preserves ownership through failure, dismissal
     else if (url.pathname === "/api/browser/profiles") result = { profiles: [] };
     await route.fulfill({ json: result });
   });
+  // A background sign-in notice names its conversation from that project's list (2b87f5b43). The
+  // background project exists only in this test, so its list is served here.
+  const backgroundTitle = "Background sign-in conversation";
+  await page.route(`**/api/projects/${backgroundProjectId}/sessions*`, route => route.fulfill({ json: { sessions: [{
+    id: backgroundConversationId, conversationId: backgroundConversationId, harnessId: "kiro", title: backgroundTitle, path: `kiro:${backgroundConversationId}`,
+  }] } }));
   await page.routeWebSocket(/\/ws\?mode=browser/, ws => {
     const url = new URL(ws.url()); assert.equal(url.searchParams.get("browserSessionId"), sessionId); assert.equal(url.searchParams.get("nodeId"), ownerNodeId);
     sockets.push(url); liveSockets.add(ws);
@@ -134,7 +140,8 @@ test("pending browser login popup preserves ownership through failure, dismissal
     // A request another conversation owns announces itself; it never takes over the open screen.
     const notice = page.locator(".toast-message").filter({ hasText: "Sign-in needed" });
     await notice.waitFor();
-    await notice.filter({ hasText: backgroundProjectId }).filter({ hasText: backgroundConversationId }).waitFor();
+    await notice.filter({ hasText: new RegExp(backgroundTitle, "i") }).waitFor();
+    assert.ok(!(await notice.innerText()).includes(backgroundConversationId), "the notice names the conversation, not its id");
     assert.equal(await dialog.count(), 0, "a background conversation's sign-in must not mount here");
     assert.deepEqual(await page.evaluate(() => import("/app/state.js").then(({ state }) => [state.activeProjectId, state.activeConversationId, state.activeSessionId])), [null, null, null], "background discovery must not select a conversation");
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.339.2 — 2026-11-23
+
+- Fixed an open conversation asking every machine for browser sign-ins about once a second while its agent worked; it now looks again only when you switch conversations or a browser starts, and a browser that starts during a look is no longer missed.
+
 ## 2.339.1 — 2026-11-23
 
 - Fixed the machine slowing down while a conversation runs: an open page's check every two seconds no longer rebuilds the whole conversation list when nothing changed, so opening conversations waits less.

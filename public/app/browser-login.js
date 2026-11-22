@@ -31,7 +31,7 @@ function markAnnounced(key) {
   try { localStorage.setItem(ANNOUNCEMENT_PREFIX + key, "1"); }
   catch { /* Storage may be unavailable; still announce only once for this page. */ }
 }
-let popup = null, discovering = false, discoveryOutage = false, timer = null;
+let popup = null, discovering = false, discoverAgain = false, discoveryOutage = false, timer = null;
 // Every open page asked for the browser list every two seconds, and each answer asks every
 // browser machine in turn. While no browser is running anywhere there is no sign-in to find,
 // so the page then asks four times a minute. A browser that starts announces itself
@@ -143,7 +143,9 @@ function mount(session) {
 async function discover() {
   const currentIdentityKey = identityKey(identity());
   if (popup && (!state.authenticated || popup.identityKey !== currentIdentityKey || !popup.host.isConnected)) close(popup, false);
-  if (discovering || popup || !state.authenticated || window.top !== window || document.hidden) return;
+  // A browser announced while a look is under way may not be in its answer: look once more after it.
+  if (discovering) { discoverAgain = true; return; }
+  if (popup || !state.authenticated || window.top !== window || document.hidden) return;
   discovering = true;
   try {
     const result = await api("/api/browser/sessions");
@@ -188,15 +190,26 @@ async function discover() {
     if (!discoveryOutage) toast.error("Could not check for browser sign-in requests. Check your connection.");
     discoveryOutage = true;
   }
-  finally { discovering = false; }
+  finally {
+    discovering = false;
+    if (discoverAgain) { discoverAgain = false; void discover(); }
+  }
 }
 
 function schedule() { void discover(); }
-function poll() { if (Date.now() >= quietUntil) schedule(); }
+// The poll only starts a look; an announcement during one asks for another (above).
+function poll() { if (!discovering && Date.now() >= quietUntil) schedule(); }
 // Selecting another conversation must take its sign-in away immediately, not on the next poll.
-// The signal arrives as a DOM event so chat rendering never has to import this module.
+// The signal arrives as a DOM event so chat rendering never has to import this module. It is
+// announced on every redraw of the chat controls, about once a second while an agent works, and
+// each look asks every browser machine (31 a minute on the Mac, 2026-11-22): only another
+// conversation needs a look of its own. A browser that starts announces itself.
+let lookedFor;
 function syncBrowserLogin() {
-  if (popup && identityKey(identity()) !== popup.identityKey) close(popup, false);
+  const current = identityKey(identity());
+  if (popup && current !== popup.identityKey) close(popup, false);
+  if (current === lookedFor) return;
+  lookedFor = current;
   schedule();
 }
 document.addEventListener("activeConversationChanged", syncBrowserLogin);

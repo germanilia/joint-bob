@@ -42,12 +42,15 @@ test("background sign-in notices do not repeat after reload, but new requests an
   await page.goto(node.url);
   const notice = page.locator(".toast", { hasText: "Sign-in needed for Background fixture" });
   await notice.waitFor();
-  assert.equal(await notice.count(), 1);
-  assert.ok((await notice.innerText()).includes(title), "notice names the actual conversation");
-  assert.ok(!(await notice.innerText()).includes(conversationId), "notice does not expose raw conversation IDs");
-  assert.ok(!(await notice.innerText()).includes(projectId), "notice does not expose raw project IDs");
-  assert.equal(await notice.getByRole("button", { name: "Open conversation", exact: true }).count(), 1);
-  await notice.getByTestId("toast-close-button").click();
+  // The notice leaves by itself after eight seconds: read it once, then close it.
+  const [count, text, openButtons] = await Promise.all([notice.count(), notice.innerText(), notice.getByRole("button", { name: "Open conversation", exact: true }).count()]);
+  await notice.getByTestId("toast-close-button").click({ timeout: 3_000 }).catch(() => undefined);
+  await notice.waitFor({ state: "detached" });
+  assert.equal(count, 1);
+  assert.ok(text.includes(title), "notice names the actual conversation");
+  assert.ok(!text.includes(conversationId), "notice does not expose raw conversation IDs");
+  assert.ok(!text.includes(projectId), "notice does not expose raw project IDs");
+  assert.equal(openButtons, 1);
   await discover();
   assert.equal(await notice.count(), 0, "rediscovery must not repeat a notice");
 

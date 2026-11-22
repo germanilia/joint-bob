@@ -38,7 +38,8 @@ for (const width of [412, 1440]) {
       return { projectId: state.activeConversationProjectId || state.activeProjectId, engine: state.engine, conversationId: state.activeConversationId || state.activeSessionId, appNodeId: state.conversationLock?.nodeId || state.activeNodeId };
     });
     Object.assign(session, identity);
-    await page.evaluate(() => document.dispatchEvent(new Event("activeConversationChanged")));
+    // A browser that starts announces itself; the open conversation did not change.
+    await page.evaluate(() => document.dispatchEvent(new Event("browserSessionsChanged")));
     const panel = page.getByTestId("browser-login-panel"), form = panel.getByTestId("browser-login-form");
     await form.waitFor();
     assert.equal(await page.locator(".browser-login-fullscreen").count(), 0);
