@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.339.0 — 2026-11-22
+
+- Fixed pages slowing down while another machine works: its usage records no longer make every open page reload all its lists about twenty times a minute. Cost badges catch up within 30 seconds, and a conversation update refreshes the worktree list at most every 15 seconds.
+- Fixed a conversation that two machines both claimed: the machine running it now takes ownership, and you decide only when both are running it.
+- Fixed the page header showing over a conversation opened from the Inbox.
+- Fixed pinning conversations that switched agent, and added Pin and Unpin to the conversation menu and a menu button to the phone's conversation header.
+- Added Open conversation to automation history, kept automation transcripts for at least 30 days, and fixed skills for automations owned by another machine.
+
 ## 2.338.2 — 2026-11-22
 
 - 2.338.1 was not published: its release checks still expected Guardian to ask before a severe action, where it now blocks by default. Those checks now set up a rule that asks. Nothing else changed.
