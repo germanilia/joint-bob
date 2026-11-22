@@ -6,6 +6,7 @@ import { ensurePeerEndpointSchema, type PeerEndpoint } from "../cluster-peer-end
 import { signClusterRequest } from "../cluster-protocol.js";
 import { ensureResourceSharingSchema } from "../cluster-sharing.js";
 import { enqueueSecretCredentialSync, secretCredentialEventsForPeer, recordSecretCredentialReceipt, recordSecretCredentialFailure } from "../secret-replication.js";
+import { conversationEventPrivacy, privateConversationMayTravel } from "../conversation-privacy.js";
 import { asOneLookup, isTrustedTwin, mayReceiveResource, untilWriteOrLeaseEnd } from "../cluster-sharing-policy.js";
 import { ClusterV2HttpError } from '../cluster-v2-errors.js';
 import { clusterV2Database } from "../cluster-v2-store.js";
@@ -232,6 +233,11 @@ function eventMayPass(db: DatabaseSync, local: string, peer: string, event: Repl
   if (!peerUnderstands(db, peer, event.entityType)) return false;
   // A block between any two of the three nodes involved stops the event, relays included.
   if (blockedOnRoute(db, local, peer, event.originNodeId)) return false;
+  const privacy = conversationEventPrivacy(db, event);
+  if (privacy) {
+    const project = replicationEventProject(db, event);
+    return privateConversationMayTravel(db, local, peer, privacy) && (!project || projectSharedBetween(db, local, peer, project));
+  }
   if (scope === "twins-only") return isTrustedTwin(db, local, peer) && twinHoldsAccount(db, event);
   if (scope === "account" || scope === "twins") return isTrustedTwin(db, local, peer) ? twinHoldsAccount(db, event) : visitorEventRoute(db, local, peer, event);
   if (scope === "cluster") {
@@ -268,11 +274,25 @@ export function acceptableReplicationEvents(db: DatabaseSync, local: string, sen
 
 /** A previous release rejects unknown event types as a whole batch. Keep system settings
  * on their own endpoint and retry queue so an older twin still receives ordinary events. */
-export function replicationDeliveryBatches(events: ReplicationEvent[]): ReplicationEvent[][] {
-  return [events.filter(event => event.entityType !== "system.ai"), events.filter(event => event.entityType === "system.ai")].filter(batch => batch.length);
+export function replicationDeliveryBatches(events: ReplicationEvent[], db?: DatabaseSync): ReplicationEvent[][] {
+  const groups = new Map<string, ReplicationEvent[]>();
+  for (const event of events) {
+    const group = db && conversationEventPrivacy(db, event) ? "private" : event.entityType === "system.ai" ? "system-ai" : "ordinary";
+    const batch = groups.get(group) ?? [];
+    batch.push(event);
+    groups.set(group, batch);
+  }
+  return [...groups.values()];
 }
 
 export async function sendReplicationV2(peer: PeerEndpoint, events: ReplicationEvent[]): Promise<unknown> {
+  const db = await clusterV2Database();
+  const markers = events.flatMap(event => conversationEventPrivacy(db, event) ?? []);
+  if (markers.length) {
+    if (markers.length !== events.length) throw new Error("Private replication events require a separate batch");
+    const privacy = [...new Map(markers.map(marker => [marker.sessionId, marker])).values()];
+    return signedPeerPost(peer, "/api/cluster/v2/private-conversations/events", { events, privacy });
+  }
   const target = events[0].entityType === "system.ai" ? "/api/cluster/v2/system-ai/events" : "/api/cluster/v2/events";
   return signedPeerPost(peer, target, { events });
 }

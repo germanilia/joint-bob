@@ -16,6 +16,8 @@ export interface ActingAccount {
   /** Signed in here, but at home on another node. */
   isRemoteLogin: boolean;
   homeNodeId: string | null;
+  /** At home in the API, but the response is relayed to a visited machine. */
+  viaLiveRelay?: boolean;
 }
 
 const storage = new AsyncLocalStorage<ActingAccount>();

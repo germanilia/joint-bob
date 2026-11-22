@@ -221,6 +221,7 @@ export const quickNoteSchema = z.object({
   secretAccountIds: z.array(z.string().uuid()).max(100).optional(),
   images: z.array(quickNoteImageSchema).max(4).optional(),
   scheduledAt: z.string().datetime().nullable().optional(),
+  visibility: z.enum(["public", "private"]).optional(),
 }).strict().refine((value) => Boolean(value.provider) === Boolean(value.modelId), {
   message: "Provider and model must be selected together",
   path: ["modelId"],
@@ -237,6 +238,7 @@ export const quickNotePrepareSchema = z.object({
   sessionId: z.string().uuid(),
   title: z.string().trim().min(1).max(120),
   secretAccountIds: z.array(z.string().uuid()).max(100).optional(),
+  privateConversation: z.literal(true).optional(),
 }).strict();
 export const fileAttachmentSchema = z.object({
   name: z.string().trim().min(1).max(240),

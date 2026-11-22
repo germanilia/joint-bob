@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
+import { conversationPrivacy, keepConversationPrivate, privateAttachmentCwd } from "../conversation-privacy.js";
 import { runWithAutomationProfile } from "./automation-profile.js";
 import { resourceOwner, ownerAsActor } from "../ownership.js";
 import { actingAccount, runAsAccount, type ActingAccount } from "../account-context.js";
@@ -557,9 +558,14 @@ function editedPrompt(queued: QueuedPrompt, message: string): { promptText: stri
   return { promptText: [message, promptSuffix].filter(Boolean).join("\n\n"), displayText: [message, displayIndex >= 0 ? queued.displayText.slice(displayIndex) : ""].filter(Boolean).join("\n\n") };
 }
 
+function attachmentCwd(connection: HarnessChatConnection): string {
+  return conversationPrivacy(connection.conversationId) ? privateAttachmentCwd(connection.conversationId) : connection.cwd;
+}
+
 /** The queued prompt with the images and files pasted while editing it added to the ones it already had. */
 async function editedPromptWithNewAttachments(connection: HarnessChatConnection, queued: QueuedPrompt, message: string, images: Array<{ name: string; mimeType: string; data: string }>, files: Array<{ name: string; mimeType: string; data: string }>) {
-  const saved = (await persistTaskAttachments(connection.cwd, images, files)).map((attachment) => ({ ...attachment, path: path.resolve(connection.cwd, attachment.path) }));
+  const cwd = attachmentCwd(connection);
+  const saved = (await persistTaskAttachments(cwd, images, files)).map((attachment) => ({ ...attachment, path: path.resolve(cwd, attachment.path) }));
   const imageMimeTypes = new Map(queued.images.map(({ path: imagePath, mimeType }) => [imagePath, mimeType]));
   // A stored attachment is named `<time>-<uuid>-<name>`; the prompt shows the name it was attached with.
   const kept = queued.attachmentPaths.map((attachmentPath) => ({ kind: imageMimeTypes.has(attachmentPath) ? "image" : "file", mimeType: imageMimeTypes.get(attachmentPath), name: path.basename(attachmentPath).replace(/^\d+-[0-9a-f-]{36}-/, ""), path: attachmentPath }));
@@ -582,7 +588,7 @@ function attachmentList(prompt: Pick<QueuedPrompt, "attachmentPaths" | "images">
 }
 
 async function removeAttachments(connection: HarnessChatConnection, attachmentPaths: string[]): Promise<void> {
-  const root = path.resolve(connection.cwd, ".joint-bob-attachments");
+  const root = path.resolve(attachmentCwd(connection), ".joint-bob-attachments");
   for (const stored of attachmentPaths) {
     const candidate = path.resolve(stored);
     if (path.dirname(candidate) !== root) throw new Error("Queued attachment path is invalid");
@@ -601,8 +607,9 @@ async function enqueue(connection: HarnessChatConnection, message: string, image
     await resetAutoRespondCount(connection.project.id, connection.conversationId);
   }
   if (settings) await (await getHarnessRuntime(selectedHarness(settings))).validateSettings(runtimeSettings(settings));
-  const saved = await persistTaskAttachments(connection.cwd, images, files);
-  const absolute = saved.map((attachment) => ({ ...attachment, path: path.resolve(connection.cwd, attachment.path) }));
+  const cwd = attachmentCwd(connection);
+  const saved = await persistTaskAttachments(cwd, images, files);
+  const absolute = saved.map((attachment) => ({ ...attachment, path: path.resolve(cwd, attachment.path) }));
   const imageAttachments = absolute.filter((attachment) => attachment.kind === "image");
   const fileAttachments = absolute.filter((attachment) => attachment.kind === "file");
   const promptText = promptTextWithAttachments(message, imageAttachments, fileAttachments);
@@ -857,7 +864,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
     await writable(connection);
     await catchUpProjectGit(connection);
     if (!pool) await connection.shared.session.preflight();
-    const attachments = await queuedAttachments(connection.cwd, queued, getSettings().digestAttachments ? describeImage : undefined);
+    const attachments = await queuedAttachments(attachmentCwd(connection), queued, getSettings().digestAttachments ? describeImage : undefined);
     await writable(connection);
     const latest = listQueuedPrompts(queueKey(connection)).find(({ id }) => id === queued.id);
     if (promptQueuePaused(queueKey(connection)) || !latest || latest.revision !== queued.revision || !beginQueuedPrompt(queued.id, queued.revision)) return;
@@ -1262,6 +1269,8 @@ async function switchHarness(connection: HarnessChatConnection, engine: HarnessI
   }
   const transcript = await conversationTranscriptPayload(connection.project.id, connection.engine, old.session.id, await listHarnessSessions(connection.project), old.session.messages);
   const id = randomUUID();
+  const privacy = conversationPrivacy(connection.conversationId);
+  if (privacy) keepConversationPrivate({ ...privacy, sessionId: id });
   const { accountIds } = await getScopeSecretAccounts("conversation", conversationScopeId(connection.engine, old.session.id));
   const shared = await openHarnessSession(engine, { projectId: connection.project.id, cwd: connection.cwd, sessionId: id, conversationId: connection.conversationId, accountIds });
   if (internal) {

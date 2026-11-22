@@ -4,6 +4,8 @@ import os from "node:os";
 import { isInternalSession } from "./internal-sessions.js";
 import { titleCase } from "./session-title.js";
 import { sessionClassificationOverrides, sessionColorOverrides, sessionDoneOverrides, sessionFeedbackOverrides, sessionTitleOverrides } from "./names.js";
+import { privateConversationVisible } from "./conversation-privacy.js";
+import { actingAccount } from "./account-context.js";
 import { conversationDraftPath, deletedConversationKeys, listConversationRecords, listConversationSegments, parseConversationDraftPath, type ConversationRecord } from "./conversation-records.js";
 import { listDiscoveredHarnesses, resolveHarnessForSessionPath } from "./harnesses/registry.js";
 import type { HarnessAdapter, HarnessProject } from "./harnesses/contract.js";
@@ -432,7 +434,7 @@ export async function findConversation(project: HarnessProject, opened: { engine
     listConversationSegments(project.id, conversationId),
     sessionCatalog.find(project, opened.engine, opened.sessionPath, opened.sessionId),
   ]);
-  if (!openedSession) return undefined;
+  if (!openedSession || !privateConversationVisible(conversationId)) return undefined;
   const isOpened = (record: ConversationRecord) => record.engine === opened.engine && record.sessionId === opened.sessionId;
   const others = records.filter((record) => !isOpened(record) && !isInternalSession(record.sessionId));
   const filesByEngine = new Map(await Promise.all([...new Set(others.map((record) => record.engine))]
@@ -525,7 +527,9 @@ export async function listHarnessSessions(project: HarnessProject, pinnedSession
     // segment pin, or any segment path keeps the group pinned.
     || pinnedIds.has(`${session.segments?.[0]?.engine ?? session.harnessId}:${session.conversationId ?? session.id}`)
     || Boolean(session.segments?.some((segment) => pinnedPaths.has(segment.path) || pinnedIds.has(`${segment.engine}:${segment.sessionId}`)));
+  const viewer = actingAccount();
   const flat = sessions.filter((session) => {
+    if (viewer && !privateConversationVisible(session.id, viewer)) return false;
     if (isInternalSession(session.id, session.firstMessage) || !session.path || seen.has(session.path)) return false;
     // A deleted conversation is gone from the list at once. Its file, or a sub-agent's, can still be
     // on disk: the delete removes files after the tombstone is written, and may be interrupted.

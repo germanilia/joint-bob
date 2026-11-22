@@ -1,3 +1,5 @@
+import { conversationPrivacy } from "../conversation-privacy.js";
+import { randomUUID } from "node:crypto";
 import { getClusterNode } from "../cluster.js";
 import { ensureConversationRecord, getConversationRecord, setConversationWorktree } from "../conversation-records.js";
 import type { ConversationEngine } from "../conversation-ownership.js";
@@ -36,7 +38,7 @@ async function createConversationWorktree(project: ProjectRecord, engine: Conver
     return undefined;
   }
   const title = (await sessionTitleOverrides())[sessionId] || "Conversation";
-  const name = `${title.replace(/\s+/g, " ").trim().slice(0, 65)} ${sessionId.slice(0, 8)}`;
+  const name = conversationPrivacy(sessionId) ? `Worktree ${randomUUID().slice(0, 8)}` : `${title.replace(/\s+/g, " ").trim().slice(0, 65)} ${sessionId.slice(0, 8)}`;
   const worktree = await createProjectWorktree(project, { name, gitEnvironment: genericSecretEnvironment(project.id) });
   await markWorktreeConversation(project.id, worktree.id, engine, sessionId);
   await setConversationWorktree(project.id, engine, sessionId, worktree, local.id);

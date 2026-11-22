@@ -13,6 +13,8 @@ import { announceConversationsChanged, broadcastReplicationInvalidations } from 
 import { clusterNodeSchema, pushSubscriptionBatchSchema, replicationBatchSchema, runtimeSnapshotSchema } from "../schemas.js";
 import { app } from "../state.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
+import { z } from "zod";
+import { conversationEventPrivacy, keepConversationPrivate, privateConversationMayTravel } from "../../conversation-privacy.js";
 import { acceptableReplicationEvents, mayReplicateEvent, replicationPeers, signedPeerPost } from "../replication-v2.js";
 import { listTwinUpdateTargets } from "../../twin-updates.js";
 import { publishNodeDescriptor } from "../cluster-v2.js";
@@ -61,15 +63,24 @@ app.get("/api/cluster/inventory", async (_request, response, next) => {
   }
 });
 
-app.post(["/api/cluster/v2/events", "/api/cluster/v2/system-ai/events"], async (request, response, next) => {
+const privateBatchSchema = replicationBatchSchema.extend({ privacy: z.array(z.object({ sessionId: z.string().min(1).max(300), homeNodeId: z.string().uuid(), accountId: z.null() }).strict()).min(1).max(1000) });
+
+app.post(["/api/cluster/v2/events", "/api/cluster/v2/system-ai/events", "/api/cluster/v2/private-conversations/events"], async (request, response, next) => {
   try {
     if (!response.locals.machineAuth) {
       sendError(response, 401, "Unauthorized");
       return;
     }
-    const batch = replicationBatchSchema.parse(request.body) as ReplicationBatch;
     const db = await clusterV2Database(), local = await getClusterNode(), sender = response.locals.machineNodeId as string;
-    const accepted = acceptableReplicationEvents(db, local.id, sender, batch.events);
+    const privateBatch = request.path.endsWith("/private-conversations/events") ? privateBatchSchema.parse(request.body) : undefined;
+    const batch = (privateBatch ?? replicationBatchSchema.parse(request.body)) as ReplicationBatch;
+    if (privateBatch) {
+      if (batch.events.some(event => event.originNodeId !== sender) || privateBatch.privacy.some(marker => !privateConversationMayTravel(db, local.id, sender, marker))) {
+        sendError(response, 403, "Private conversations are not shared with this node"); return;
+      }
+      for (const marker of privateBatch.privacy) keepConversationPrivate(marker, db);
+    }
+    const accepted = acceptableReplicationEvents(db, local.id, sender, batch.events)?.filter(event => Boolean(conversationEventPrivacy(db, event)) === Boolean(privateBatch));
     if (!accepted) {
       sendError(response, 403, "Replication event is outside the authenticated peer's sharing scope");
       return;

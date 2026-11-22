@@ -22,6 +22,7 @@ import { signedPost } from "./cluster-v2.js";
 import { peerAway } from "../peer-presence.js";
 import { settled, warnOnChange } from "./quiet-log.js";
 import { broadcastReplicationInvalidations } from "./realtime.js";
+import { conversationEventPrivacy } from "../conversation-privacy.js";
 import { EVENT_SCOPES, mayReplicateEvent, replicationEventProject } from "./replication-v2.js";
 import { replicationReceiptSchema } from "./schemas.js";
 
@@ -85,6 +86,7 @@ function logEnvelope(db: DatabaseSync, clusterId: string, envelope: RelayEnvelop
 }
 
 function queueForCluster(db: DatabaseSync, local: string, clusterId: string, event: ReplicationEvent, now: string): void {
+  if (conversationEventPrivacy(db, event)) return;
   logEnvelope(db, clusterId, { event, signature: signClusterMessage(db, local, "replication-event", canonical(event)) }, local);
   const slots = otherMembers(db, clusterId, local).length > 1 ? ["low", "high"] : ["low"];
   for (const slot of slots) db.prepare("INSERT OR IGNORE INTO cluster_v2_hub_queue(event_id,cluster_id,slot,next_attempt_at) VALUES(?,?,?,?)").run(event.id, clusterId, slot, now);

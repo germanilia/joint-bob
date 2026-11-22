@@ -188,5 +188,7 @@ export async function authorizeQuickNotePeer(peer: string, projectId: string): P
 
 export async function offeredQuickNotes(peer: string, projectId: string): Promise<QuickNote[]> {
   await authorizeQuickNotePeer(peer, projectId);
-  return listQuickNotes(projectId);
+  // These drafts carry the complete first prompt and attachments. The private
+  // transcript sync is separate; never include private launch drafts here.
+  return listQuickNotes(projectId).filter(note => note.visibility !== "private");
 }

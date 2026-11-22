@@ -349,7 +349,7 @@ export async function flushReplicationOutbox(): Promise<void> {
       if (accounts && !accounts.length) continue;
       const events = await eventsForPeer(peer.nodeId, new Date(), (event) => event.originNodeId === local.id && (twin || visitorEventRoute(db, local.id, peer.nodeId, event)) && mayReplicateEvent(db, local.id, peer.nodeId, event), accounts);
       if (!events.length) continue;
-      for (const batch of replicationDeliveryBatches(events)) {
+      for (const batch of replicationDeliveryBatches(events, db)) {
         const logKey = `replication:${peer.nodeId}:${batch[0].entityType === "system.ai" ? "system-ai" : "events"}`;
         try {
           const receipt = replicationReceiptSchema.parse(await sendReplicationV2(peer, batch));

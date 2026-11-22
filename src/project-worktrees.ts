@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs, type Stats } from "node:fs";
 import path from "node:path";
 import { getClusterNode } from "./cluster.js";
+import { conversationPrivacy } from "./conversation-privacy.js";
 import { syncConversationWorktrees } from "./conversation-records.js";
 import { managedHomePaths } from "./managed-home.js";
 import { applyMergeTransaction, recordMergeTransaction, rollbackMergeTransaction, type MergeOp } from "./merge-journal.js";
@@ -465,6 +466,7 @@ function conversationMarker(worktree: string, engine: string, sessionId: string)
 
 export async function markWorktreeConversation(projectId: string, worktreeId: string, engine: string, sessionId: string, root = worktreeRoot()): Promise<void> {
   assertNoCleanupClaim(projectId, worktreeId);
+  if (conversationPrivacy(sessionId)) return; // The placement lives on the private conversation record.
   const file = conversationMarker(expectedWorktreePath(projectId, worktreeId, root), engine, sessionId);
   try { await fs.access(file); return; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
