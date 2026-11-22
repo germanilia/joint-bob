@@ -42,11 +42,11 @@ test("peer-reported running conversation returns to review without a dashboard o
     if (state.sessions.some(session => session.agentRuns?.length)) throw Error('Test must not have dashboard records');
     return true;
   })()`), true);
-  await page.waitForFunction(() => [...document.querySelectorAll("#sessionList .list-row")].find(row => row.textContent.includes("Short one"))?.querySelector(".chat-badge b").textContent === "Running");
+  await page.waitForFunction(() => [...document.querySelectorAll("#sessionList .list-row")].find(row => /short one/i.test(row.textContent))?.querySelector(".chat-badge b").textContent === "Running");
   await page.evaluate('window.__runningPollTest.mode = "background"');
-  await page.waitForFunction(() => [...document.querySelectorAll("#sessionList .list-row")].find(row => row.textContent.includes("Short one"))?.querySelector(".chat-badge b").textContent === "Background tasks");
+  await page.waitForFunction(() => [...document.querySelectorAll("#sessionList .list-row")].find(row => /short one/i.test(row.textContent))?.querySelector(".chat-badge b").textContent === "Background tasks");
   await page.evaluate('window.__runningPollTest.mode = "done"');
-  await page.waitForFunction(() => [...document.querySelectorAll("#sessionList .list-row")].find(row => row.textContent.includes("Short one"))?.querySelector(".chat-badge b").textContent === "Needs review");
+  await page.waitForFunction(() => [...document.querySelectorAll("#sessionList .list-row")].find(row => /short one/i.test(row.textContent))?.querySelector(".chat-badge b").textContent === "Needs review");
   assert.equal(await page.evaluate(`(async () => {
     const { state } = await import('/app/state.js');
     return window.__runningPollTest.requests >= 2 && state.agentRunPollTimer === null;

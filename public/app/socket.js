@@ -1,6 +1,6 @@
 import { reloadTravellingPreferences } from "./roaming.js";
 import { isTranscriptConflict, reconcileTranscriptConflict } from "./transcript-conflict.js";
-import { loadWorktrees } from "./worktrees.js";
+import { loadWorktrees, refreshWorktreesSoon } from "./worktrees.js";
 import { harnessIdFromPath, harnessLabel } from "../harness-metadata.js";
 import { api, loadPins, savePreferencesInBackground } from "./api.js";
 import { clearAttachments } from "./attachments.js";
@@ -813,7 +813,7 @@ const INVALIDATION_HANDLERS = {
   sessionsChanged: (payload) => {
     refreshSessionsQuietly();
     // A worktree that arrived by sync has no notice of its own; the list refresh picks it up.
-    loadWorktrees().catch((error) => console.warn(error));
+    refreshWorktreesSoon();
     // The two scans below list every project, and a running conversation sends a notice
     // about its own project every second. That project's list refresh reruns them itself
     // when its running or review set changes, so only other notices start them here.

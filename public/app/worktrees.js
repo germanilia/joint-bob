@@ -22,9 +22,28 @@ function worktreesUrl(projectId, suffix = "") {
   return `/api/projects/${encodeURIComponent(projectId)}/worktrees${suffix}`;
 }
 
+const NOTICE_REFRESH_MS = 15_000;
+let lastLoadAt = 0;
+let noticeRefresh = null;
+
+/**
+ * For conversation notices: a worktree that arrived by file sync has no notice of its own, so
+ * they refresh the worktrees too. They come several times a minute while anything runs, and each
+ * listing reads every worktree folder (28 a minute at 2 s each on the homeserver, 2026-11-22), so
+ * they refresh at most once per interval. Meanwhile the conversation rows name a new worktree.
+ */
+export function refreshWorktreesSoon() {
+  if (noticeRefresh) return;
+  noticeRefresh = setTimeout(() => {
+    noticeRefresh = null;
+    loadWorktrees().catch((error) => console.warn(error));
+  }, Math.max(0, lastLoadAt + NOTICE_REFRESH_MS - Date.now()));
+}
+
 export async function loadWorktrees() {
   const projectId = state.activeProjectId;
   if (!projectId) return;
+  lastLoadAt = Date.now();
   const generation = ++loadGeneration;
   // Listing must stay fast even when checking finished worktrees takes seconds.
   const { worktrees: listed } = await api(worktreesUrl(projectId));

@@ -21,6 +21,7 @@ import { flags, server, socketAccounts, watchClients, webSocketServer } from "./
 let updateRestartTimer: NodeJS.Timeout | undefined;
 server.on("close", () => {
   clearTimeout(updateRestartTimer);
+  clearTimeout(usageAnnouncement);
   for (const shared of [...harnessSessions.values()]) if (!harnessSessionBusy(shared)) disposeHarnessSession(shared);
 });
 
@@ -158,8 +159,33 @@ export function broadcastReplicationInvalidations(events: ReplicationBatch["even
   }
   // Another machine saved the global AGENTS.md: open sessions read it before their next message.
   if (events.some((event) => event.entityType === "instructions.global")) markHarnessSessionsStale();
-  for (const type of replicationInvalidations(events)) announceToAllClients({ type });
+  const usage = events.filter((event) => USAGE_EVENTS.has(event.entityType));
+  const immediate = replicationInvalidations(events.filter((event) => !USAGE_EVENTS.has(event.entityType)));
+  for (const type of immediate) { announceToAllClients({ type }); deferredUsageInvalidations.delete(type); }
+  deferUsageInvalidations(replicationInvalidations(usage).filter((type) => !immediate.includes(type)));
   if (events.some((event) => event.entityType === "conversation.record" && event.operation === "delete")) announceToAllClients({ type: "conversationsRemoved" });
+}
+
+/* A twin replicates a usage record for every model call, about twenty batches a minute while
+   anything runs, and each one told every open page that its projects and conversations changed:
+   every page then fetched its project list, its conversation list, its worktrees, the running
+   list and the review inbox again, only to update cost badges. Usage alone is announced at most
+   once per interval; whatever else a batch carries is still announced at once, and covers the
+   usage waiting for the same notice. */
+const USAGE_EVENTS = new Set(["model.usage", "usage.difficulty"]);
+export const USAGE_ANNOUNCE_MS = 30_000;
+const deferredUsageInvalidations = new Set<string>();
+let usageAnnouncement: NodeJS.Timeout | undefined;
+function deferUsageInvalidations(types: string[]): void {
+  for (const type of types) deferredUsageInvalidations.add(type);
+  if (!deferredUsageInvalidations.size || usageAnnouncement) return;
+  usageAnnouncement = setTimeout(() => {
+    usageAnnouncement = undefined;
+    const pending = [...deferredUsageInvalidations];
+    deferredUsageInvalidations.clear();
+    for (const type of pending) announceToAllClients({ type });
+  }, USAGE_ANNOUNCE_MS);
+  usageAnnouncement.unref?.();
 }
 
 const REVIEW_NOTIFICATION_QUIET_MS = 10_000;

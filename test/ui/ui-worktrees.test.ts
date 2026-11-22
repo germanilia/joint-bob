@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import test, { after, before } from "node:test";
 import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
+import { multiSelect } from "./multi-select.js";
 import { projectNamed, seedDevEnvironment, startDevNode, stopDevNode, type DevEnvironment, type SeededNode } from "../dev-nodes.js";
 
 const WORKTREE_NAME = "audit-suppressed-ticket-confirmation-loop-20261008";
@@ -167,18 +168,15 @@ test("worktree filtering keeps one pinned-first list and includes project-folder
   assert.equal(await page.locator("#sessionList .list-row").first().getAttribute("data-session-path"), await row.getAttribute("data-session-path"));
   const total = await page.locator("#sessionList .list-row").count();
   assert.ok(total > 1, "the fixture includes project-folder and worktree conversations");
-  await page.getByTestId("conversation-worktree-filter-trigger").click();
-  await page.getByTestId("conversation-worktree-filter-option").filter({ hasText: WORKTREE_NAME }).click();
+  // The dropdown stays open after a choice (public/app/multi-select.js); the helper opens and closes it.
+  const worktreeFilter = multiSelect(page, "conversation-worktree-filter");
+  await worktreeFilter.choose(WORKTREE_NAME);
   assert.equal(await page.locator("#sessionList .list-row").count(), 1);
   assert.equal(await row.isVisible(), true);
-  await page.getByTestId("conversation-worktree-filter-trigger").click();
-  await page.getByTestId("conversation-worktree-filter-clear").click();
-  await page.getByTestId("conversation-worktree-filter-trigger").click();
-  await page.getByTestId("conversation-worktree-filter-option").filter({ hasText: "Project folder" }).click();
+  await worktreeFilter.choose("Project folder");
   assert.equal(await page.locator("#sessionList .list-row").count(), total - 1);
   assert.equal(await row.count(), 0);
-  await page.getByTestId("conversation-worktree-filter-trigger").click();
-  await page.getByTestId("conversation-worktree-filter-clear").click();
+  await worktreeFilter.choose();
   await row.getByTestId("session-pin-button").click();
 });
 
@@ -226,11 +224,10 @@ test("conversation badges and filters work while the worktree listing is pending
     const row = page.locator("#sessionList .list-row", { hasText: CONVERSATION_NAME });
     await row.getByTestId("session-worktree-badge").waitFor();
     assert.equal(await page.locator("#sessionList > [data-testid='worktree-section']").count(), 0);
-    await page.getByTestId("conversation-worktree-filter-trigger").click();
-    await page.getByTestId("conversation-worktree-filter-option").filter({ hasText: WORKTREE_NAME }).click();
+    const worktreeFilter = multiSelect(page, "conversation-worktree-filter");
+    await worktreeFilter.choose(WORKTREE_NAME);
     assert.equal(await page.locator("#sessionList .list-row").count(), 1);
-    await page.getByTestId("conversation-worktree-filter-trigger").click();
-    await page.getByTestId("conversation-worktree-filter-clear").click();
+    await worktreeFilter.choose();
   } finally {
     release();
     await page.unrouteAll({ behavior: "wait" });
@@ -537,11 +534,10 @@ test("a conversation whose worktree has not synced has a badge and filter, witho
   await row.waitFor({ timeout: 20_000 });
   assert.equal((await row.getByTestId("session-worktree-badge").innerText()).trim(), REMOTE.name);
   assert.equal(await page.getByTestId("worktree-section").filter({ hasText: REMOTE.name }).count(), 0);
-  await page.getByTestId("conversation-worktree-filter-trigger").click();
-  await page.getByTestId("conversation-worktree-filter-option").filter({ hasText: REMOTE.name }).click();
+  const worktreeFilter = multiSelect(page, "conversation-worktree-filter");
+  await worktreeFilter.choose(REMOTE.name);
   assert.equal(await page.locator("#sessionList .list-row").count(), 1);
-  await page.getByTestId("conversation-worktree-filter-trigger").click();
-  await page.getByTestId("conversation-worktree-filter-clear").click();
+  await worktreeFilter.choose();
   // The picker for a new conversation offers only worktrees whose files are here.
   assert.equal(await page.evaluate(async (id) => (await import("/app/state.js")).state.worktrees.some((worktree: { id: string }) => worktree.id === id), REMOTE.id), false);
 
