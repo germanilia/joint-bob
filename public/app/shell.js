@@ -303,7 +303,7 @@ async function loadAppMenuDetails() {
 // indicator has to be a single toggled element rather than an appended block.
 export function setConnecting(active, text = "Connecting…") {
   elements.reconnectBannerText.textContent = text;
-  elements.reconnectBanner.hidden = !active;
+  elements.reconnectBanner.hidden = !active && elements.reconnectTakeoverButton.hidden;
 }
 
 export function setListLoading(listName, loading) {

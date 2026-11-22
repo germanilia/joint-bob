@@ -78,7 +78,13 @@ export function showConversationOpening(title) {
   markOpenStep("shown");
 }
 
-export function closeSocket() {
+function clearOfflineTakeover() {
+  elements.reconnectTakeoverButton.hidden = true;
+  elements.reconnectTakeoverButton.onclick = null;
+}
+
+export function closeSocket(preserveChat = false) {
+  if (!preserveChat) clearOfflineTakeover();
   connectionGeneration += 1;
   if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
   state.reconnectTimer = null;
@@ -225,7 +231,7 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
     state.conversationReadOnly = false;
     state.conversationReadOnlyReason = null;
   }
-  closeSocket();
+  closeSocket(preserveChat);
   if (!preserveChat) {
     refusedCloses = 0;
     state.reviewHighlightAfter = reviewHighlightAfter;
@@ -312,6 +318,7 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
     stopHeartbeat();
     if (isTranscriptConflict(event.reason)) {
       setStatus("History needs reconciliation", false);
+      clearOfflineTakeover();
       setConnecting(false);
       setComposerEnabled(false);
       if (elements.messages.querySelector(".empty-state")) showChatEmptyState("Two conversation histories", "Choose how to reconcile them, then reopen this conversation. Both versions are kept until you decide.");
@@ -341,6 +348,8 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
     handleSocketPayload(payload, !preserveChat);
     if (payload.type === "ready") {
       conversationReady = true;
+      clearOfflineTakeover();
+      setConnecting(false);
       finishOpenTiming(payload);
     }
   });

@@ -22,14 +22,17 @@ function client({ presence = async () => {}, ready = () => false, confirm = asyn
   const requests: Array<{ body: { peerId: string; sessionId: string; sessionPath: string; sessionName: string }; reply: ReturnType<typeof deferred> }> = [];
   const messages: string[] = [], errors: string[] = [], keptView: boolean[] = [], opened: Array<{ path: string; node: unknown }> = [];
   const control = { addEventListener() {} };
+  const offer = { hidden: true, onclick: null as (() => Promise<void> | undefined) | null };
   const { openListedSession } = runInNewContext(`${source}\n({ openListedSession })`, {
     state, console,
-    elements: { markAllReviewedButton: control, markAllPendingReviewedButton: control, closePendingReviewsButton: control },
+    elements: { markAllReviewedButton: control, markAllPendingReviewedButton: control, closePendingReviewsButton: control, reconnectTakeoverButton: offer, reconnectBanner: { hidden: true } },
     document: { querySelectorAll: () => [] }, attachDigitShortcuts() {},
     loadSessionNodes: presence, rememberRecentSession() {},
     activeConversationReady: ready, startOpenTiming() {}, noteOpenTiming() {},
     sessionDisplayTitle: (item: typeof session) => item.title,
     openSession: (sessionPath: string, ...rest: unknown[]) => {
+      offer.hidden = true;
+      offer.onclick = null;
       state.activeSessionPath = sessionPath; keptView.push(rest[3] === true);
       opened.push({ path: sessionPath, node: (state as { activeNodeId?: unknown }).activeNodeId });
     },
@@ -43,7 +46,7 @@ function client({ presence = async () => {}, ready = () => false, confirm = asyn
       return reply.promise;
     },
   });
-  return { state, requests, messages, errors, keptView, opened, open: openListedSession as (item: typeof session, options?: { keepView: boolean }) => Promise<void> };
+  return { state, requests, messages, errors, keptView, opened, offer, open: openListedSession as (item: typeof session, options?: { keepView: boolean }) => Promise<void> };
 }
 
 function complete(request: ReturnType<typeof client>["requests"][number], sessionPath = session.path) {
@@ -54,23 +57,25 @@ test("an offline conversation does not move unless the person confirms", async (
   const decision = deferred();
   let prompts = 0;
   const page = client({ confirm: async () => { prompts++; return await decision.promise as boolean; } });
-  const opening = page.open(session);
-  await setImmediate();
   await page.open(session);
-  assert.equal(prompts, 1);
+  assert.equal(page.offer.hidden, false);
+  assert.equal(prompts, 0);
   assert.equal(page.requests.length, 0);
-  assert.deepEqual(page.opened.map(({ node }) => node), ["remote", "remote"]);
+  assert.deepEqual(page.opened.map(({ node }) => node), ["remote"]);
+  const transfer = page.offer.onclick!();
+  assert.equal(prompts, 1);
   decision.resolve(false);
-  await opening;
+  await transfer;
   assert.equal(page.requests.length, 0);
 });
 
 test("reopening a conversation during confirmed takeover sends only one transfer", async () => {
   const page = client();
-  const first = page.open(session);
+  await page.open(session);
+  const first = page.offer.onclick!();
   await setImmediate();
-  const repeated = page.open(session);
-  await setImmediate();
+  await page.open(session);
+  const repeated = page.offer.onclick!();
   assert.equal(page.requests.length, 1, "a repeated opening must not send the duplicate request that gets a 409");
   assert.deepEqual(page.requests[0].body, { peerId: "local", offlineOwnerNodeId: "remote", sessionId: "conversation", sessionPath: "pi:conversation", sessionName: "Conversation" });
   complete(page.requests[0]);
@@ -79,7 +84,8 @@ test("reopening a conversation during confirmed takeover sends only one transfer
   assert.deepEqual(page.messages, ["Switched to this node"]);
   assert.equal(page.state.activeSessionPath, session.path);
 
-  const later = page.open(session);
+  await page.open(session);
+  const later = page.offer.onclick!();
   await setImmediate();
   assert.equal(page.requests.length, 2, "a completed transfer must not block a later explicit opening");
   complete(page.requests[1]);
@@ -88,17 +94,18 @@ test("reopening a conversation during confirmed takeover sends only one transfer
 
 test("a failed takeover remains visible once and allows a later retry", async () => {
   const page = client();
-  const first = page.open(session);
+  await page.open(session);
+  const first = page.offer.onclick!();
   await setImmediate();
-  const repeated = page.open(session);
-  await setImmediate();
+  await page.open(session);
+  const repeated = page.offer.onclick!();
   assert.equal(page.requests.length, 1);
   page.requests[0].reply.reject(new Error("History differs between machines"));
   await Promise.all([first, repeated]);
   assert.deepEqual(page.errors, ["History differs between machines"]);
   assert.deepEqual(page.messages, []);
 
-  const retry = page.open(session);
+  const retry = page.offer.onclick!();
   await setImmediate();
   assert.equal(page.requests.length, 2, "a failed transfer must release its in-flight guard");
   complete(page.requests[1]);
@@ -109,13 +116,15 @@ test("a failed takeover remains visible once and allows a later retry", async ()
 test("in-flight transfers do not block other conversations or returning to the first", async () => {
   const page = client();
   const other = { ...session, id: "other", path: "pi:other" };
-  const first = page.open(session);
+  await page.open(session);
+  const first = page.offer.onclick!();
   await setImmediate();
-  const second = page.open(other);
+  await page.open(other);
+  const second = page.offer.onclick!();
   await setImmediate();
   assert.equal(page.requests.length, 2);
-  const returning = page.open(session);
-  await setImmediate();
+  await page.open(session);
+  const returning = page.offer.onclick!();
   assert.equal(page.requests.length, 2, "returning to a pending conversation reuses its transfer");
   assert.equal(page.state.activeSessionId, session.id);
   assert.equal(page.state.activeSessionPath, session.path);
@@ -130,13 +139,16 @@ test("in-flight transfers do not block other conversations or returning to the f
 
 test("a conversation reopened on page load stays behind the view, through the takeover from an offline machine", async () => {
   const page = client();
-  const restored = page.open(session, { keepView: true });
+  await page.open(session, { keepView: true });
+  assert.equal(page.requests.length, 0);
+  const restored = page.offer.onclick!();
   await setImmediate();
   complete(page.requests[0]);
   await restored;
   assert.deepEqual(page.messages, ["Switched to this node"]);
   assert.deepEqual(page.keptView, [true, true], "neither restore nor reopening after confirmation may switch to the chat");
-  const clicked = page.open(session);
+  await page.open(session);
+  const clicked = page.offer.onclick!();
   await setImmediate();
   complete(page.requests[1]);
   await clicked;
@@ -150,10 +162,12 @@ test("a conversation on another machine is asked for before that machine's prese
   await setImmediate();
   assert.deepEqual(page.opened, [{ path: session.path, node: "remote" }], "the socket goes to the owner without waiting for the check");
   answer.resolve(undefined);
-  await setImmediate();
-  assert.deepEqual(page.opened.map(({ node }) => node), ["remote"], "do not route locally before ownership is confirmed");
-  complete(page.requests[0]);
   await opening;
+  assert.deepEqual(page.opened.map(({ node }) => node), ["remote"], "do not route locally before ownership is confirmed");
+  const transfer = page.offer.onclick!();
+  await setImmediate();
+  complete(page.requests[0]);
+  await transfer;
   assert.deepEqual(page.opened.map(({ node }) => node), ["remote", "local"]);
   assert.deepEqual(page.messages, ["Switched to this node"]);
 });
@@ -162,6 +176,7 @@ test("a conversation that already answered is not taken over on a late offline a
   const page = client({ ready: () => true });
   await page.open(session);
   assert.deepEqual(page.opened.map(({ node }) => node), ["remote"]);
+  assert.equal(page.offer.hidden, true);
   assert.equal(page.requests.length, 0, "a stored or late presence answer must not move a reachable conversation");
   assert.deepEqual(page.messages, []);
 });

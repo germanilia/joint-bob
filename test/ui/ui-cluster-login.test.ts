@@ -63,8 +63,8 @@ async function waitForApplication(page: Page): Promise<void> {
   });
 }
 
-async function waitForOwner(sessionId: string, ownerNodeId: string): Promise<void> {
-  const deadline = Date.now() + 10_000;
+async function waitForOwner(sessionId: string, ownerNodeId: string, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const settled = environment.nodes.every((node) => {
       const database = new DatabaseSync(path.join(node.dataDir, "node.db"), { readOnly: true });
@@ -137,7 +137,7 @@ test("the cluster settings list says which nodes are connected", async () => {
   await macPage.getByTestId("settings-dialog").waitFor({ state: "hidden" });
 });
 
-test("an open remote conversation can switch locally and take ownership", async () => {
+test("an open remote conversation can switch locally and take ownership", { timeout: 120_000 }, async () => {
   const [mac, homeserver] = environment.nodes;
   const [macPage, homeserverPage] = pages;
 
@@ -148,8 +148,43 @@ test("an open remote conversation can switch locally and take ownership", async 
 
   await homeserverPage.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
   await homeserverPage.getByTestId("chat-node-select").selectOption(mac.nodeId);
-  await homeserverPage.locator(".session-card", { hasText: "Thread-Based Agent Builder" }).first().click();
-  await homeserverPage.locator("#messages .message", { hasText: "We keep re-threading" }).waitFor({ timeout: 30_000 });
+  const presenceRoute = /\/api\/projects\/[^/]+\/session-nodes(?:\?|$)/;
+  await homeserverPage.route(presenceRoute, async route => {
+    const response = await route.fetch();
+    const { nodes } = await response.json();
+    await route.fulfill({ response, json: { nodes: nodes.map(node => node.id === mac.nodeId ? { ...node, online: false } : node) } });
+  });
+  let releaseReady!: () => void;
+  const readyGate = new Promise<void>(resolve => { releaseReady = resolve; });
+  await homeserverPage.routeWebSocket(url => url.searchParams.get("nodeId") === mac.nodeId, socket => {
+    const server = socket.connectToServer();
+    server.onMessage(message => { void readyGate.then(() => socket.send(message)); });
+  });
+  try {
+    await homeserverPage.locator(".session-card", { hasText: "Thread-Based Agent Builder" }).first().click();
+    const offer = homeserverPage.getByTestId("chat-takeover-offer");
+    await offer.waitFor({ timeout: 30_000 });
+    assert.equal(await homeserverPage.locator("#confirmDialog[open]").count(), 0, "slow owner must not interrupt the open");
+    const selected = await homeserverPage.evaluate(async () => {
+      const { state } = await import("/app/state.js");
+      const { loadSessionNodes } = await import("/app/chat-controls.js");
+      await loadSessionNodes(state.activeProjectId);
+      return state.activeNodeId;
+    });
+    assert.equal(selected, mac.nodeId, "a late whole-project presence check must not change the retry target");
+    releaseReady();
+    await homeserverPage.locator("#messages .message", { hasText: "We keep re-threading" }).waitFor({ timeout: 30_000 });
+    await offer.waitFor({ state: "hidden" });
+    await waitForOwner("thread-based-agent-builder", mac.nodeId);
+  } finally {
+    releaseReady();
+    await homeserverPage.unroute(presenceRoute);
+  }
+  await homeserverPage.evaluate(async () => {
+    const { state } = await import("/app/state.js");
+    const { loadSessionNodes } = await import("/app/chat-controls.js");
+    await loadSessionNodes(state.activeProjectId);
+  });
 
   const nodeSelect = homeserverPage.getByTestId("chat-node-select");
   assert.equal(await nodeSelect.isEnabled(), true, "the node selector remains usable for an open conversation");
@@ -194,13 +229,14 @@ test("an open remote conversation can switch locally and take ownership", async 
   });
   await forceButton.click();
   await homeserverPage.locator("#confirmDialog[open]").waitFor();
-  assert.match(await homeserverPage.locator("#confirmMessage").innerText(), /unreachable machine may keep running/);
+  assert.match(await homeserverPage.locator("#confirmMessage").innerText(), /unreachable node may keep running/);
   await homeserverPage.locator("#confirmCancelButton").click();
   assert.deepEqual(forcedRequests, [], "cancel sends no force request");
   await waitForOwner("thread-based-agent-builder", homeserver.nodeId);
   await forceButton.click();
   await homeserverPage.locator("#confirmAcceptButton").click();
-  await waitForOwner("thread-based-agent-builder", mac.nodeId);
+  // Force transfer gives reachable owners 30 seconds to decline.
+  await waitForOwner("thread-based-agent-builder", mac.nodeId, 50_000);
   await homeserverPage.locator("#conversationLock").waitFor({ state: "hidden", timeout: 30_000 });
   assert.equal(forcedRequests.length, 1, "one explicit confirmation sends one request");
   assert.equal((forcedRequests[0] as { force: boolean }).force, true);
@@ -213,6 +249,11 @@ test("switching an empty conversation moves ownership without prompting", async 
 
   await macPage.getByTestId("session-create-button").click();
   await macPage.getByTestId("new-session-name-input").fill(title);
+  await waitInPage(macPage, (nodeId) => {
+    const nodePicker = document.querySelector<HTMLSelectElement>("#newSessionNodeSelect")!;
+    const folderPicker = document.querySelector<HTMLSelectElement>("#newSessionWorktreeSelect")!;
+    return nodePicker.value === nodeId && folderPicker.options.length > 0;
+  }, mac.nodeId);
   await macPage.getByTestId("new-session-name-start-button").click();
   await macPage.getByText("Ready for your first message", { exact: true }).waitFor({ timeout: 30_000 });
   const sessionPath = await macPage.locator(".list-row", { hasText: title }).getAttribute("data-session-path");
@@ -226,7 +267,7 @@ test("switching an empty conversation moves ownership without prompting", async 
   assert.equal(await macPage.getByTestId("conversation-lock-notice").isHidden(), true, "empty conversation never shows the ownership prompt");
 });
 
-test("opening a conversation owned by an offline node automatically takes it over locally", { timeout: 90_000 }, async () => {
+test("an offline conversation can be taken over locally only after confirmation", { timeout: 90_000 }, async () => {
   const [mac, homeserver] = environment.nodes;
   const homeserverPage = pages[1];
   const sessionId = "thread-based-agent-builder";
@@ -244,10 +285,11 @@ test("opening a conversation owned by an offline node automatically takes it ove
   }
   await stopDevNode(servers[0]);
   try {
-    // Reloading restores the last open conversation. Its owner is now unreachable,
-    // so opening it must pick this node and take ownership without a button click.
+    // Reload restores the last open conversation without changing ownership.
     await homeserverPage.reload({ waitUntil: "domcontentloaded" });
-    await homeserverPage.locator(".project-card", { hasText: "Internal Assistant" }).first().waitFor({ timeout: 30_000 });
+    await homeserverPage.getByTestId("chat-takeover-offer").click({ timeout: 30_000 });
+    await waitForOwner(sessionId, mac.nodeId);
+    await homeserverPage.getByRole("button", { name: "Take over here" }).click();
     await homeserverPage.locator("#messages .message", { hasText: "We keep re-threading" }).waitFor({ timeout: 30_000 });
     await homeserverPage.locator("#conversationLock").waitFor({ state: "hidden", timeout: 30_000 });
     await homeserverPage.locator("#messageInput:not(:disabled)").waitFor({ timeout: 30_000 });
