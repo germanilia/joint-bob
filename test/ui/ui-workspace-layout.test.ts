@@ -621,6 +621,21 @@ test("New, ⋯ and the places reach every action the old panels had", async () =
   await page.getByTestId("appearance-close-button").click();
 });
 
+test("the Automations page header hides while an Inbox conversation is open", async () => {
+  await page.getByTestId("workspace-automations-button").click();
+  const heading = page.getByRole("heading", { name: "Automations", exact: true, level: 1 });
+  await heading.waitFor();
+
+  const row = page.getByTestId("workspace-group-review").getByTestId("workspace-group-row").first();
+  await row.click();
+  const close = page.getByTestId("control-popup-close");
+  await close.waitFor();
+  assert.equal(await heading.isVisible(), false, "the underlying Automations header must not show above the conversation");
+
+  await close.click();
+  await heading.waitFor();
+});
+
 test("the workspace search opens with what was typed, and can hand it to Bob", async () => {
   await page.getByTestId("workspace-search-input").pressSequentially("terra");
   await page.getByTestId("spotlight-dialog").waitFor();
