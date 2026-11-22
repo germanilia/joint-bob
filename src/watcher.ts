@@ -10,8 +10,19 @@ const RESCAN_MS = 15_000;
 /** The longest a directory whose watcher keeps failing is left unwatched. */
 const MAX_RETRY_MS = 10 * 60_000;
 const MAX_KNOWN_OWNERS = 5_000;
+/*
+ * A running conversation writes its transcript every few seconds, and each refresh made every
+ * open page rebuild the project's whole conversation list: 21 refreshes a minute for Joint Bob
+ * on 2026-11-22, and list building was 45% of the Mac's CPU. A transcript this watcher already
+ * announced refreshes its project at most this often. A new transcript (a new conversation) or
+ * a folder change still refreshes after the debounce, and a turn's start and end announce
+ * themselves (harness-sessions.ts).
+ */
+const KNOWN_REFRESH_MS = 10_000;
+const MAX_ANNOUNCED_FILES = 20_000;
 export type SessionChangeListener = (projectId: string, changedFiles: string[]) => void;
-interface WatchedProject { paths: SessionProjectPaths; directories: Set<string>; pendingFiles: Map<string, ReturnType<typeof listDiscoveredHarnesses>[number]>; needsFullRefresh: boolean; debounceTimer: NodeJS.Timeout | null; runtime: RuntimeAccount; }
+export interface SessionWatcherOptions { knownRefreshMs?: number }
+interface WatchedProject { paths: SessionProjectPaths; directories: Set<string>; pendingFiles: Map<string, ReturnType<typeof listDiscoveredHarnesses>[number]>; needsFullRefresh: boolean; debounceTimer: NodeJS.Timeout | null; runtime: RuntimeAccount; lastFlushAt: number; }
 interface SharedWatch { watcher: FSWatcher; projects: Set<string>; openedAt: number; }
 
 export function sessionWatchDirs(project: SessionProjectPaths): string[] {
@@ -31,13 +42,19 @@ export class SessionWatcher {
   // root asks for it on every write.
   private owners = new Map<string, string>();
   private rescanTimer: NodeJS.Timeout;
-  constructor(private listener: SessionChangeListener) { this.rescanTimer = setInterval(() => this.rescan(), RESCAN_MS); this.rescanTimer.unref(); }
+  /** Transcripts already announced to their project: a later write of one is only growth. */
+  private announced = new Set<string>();
+  private readonly knownRefreshMs: number;
+  constructor(private listener: SessionChangeListener, options: SessionWatcherOptions = {}) {
+    this.knownRefreshMs = options.knownRefreshMs ?? KNOWN_REFRESH_MS;
+    this.rescanTimer = setInterval(() => this.rescan(), RESCAN_MS); this.rescanTimer.unref();
+  }
 
   ensureProject(project: ProjectRecord): void {
     const watched = this.projects.get(project.id);
     const paths = { path: project.path, macPath: project.macPath, locations: project.locations, additionalPaths: "additionalPaths" in project ? project.additionalPaths as string[] | undefined : undefined };
     if (watched) watched.paths = paths;
-    else this.projects.set(project.id, { paths, directories: new Set(), pendingFiles: new Map(), needsFullRefresh: false, debounceTimer: null, runtime: serviceRuntime() });
+    else this.projects.set(project.id, { paths, directories: new Set(), pendingFiles: new Map(), needsFullRefresh: false, debounceTimer: null, runtime: serviceRuntime(), lastFlushAt: 0 });
     if (!multiUserEnabled()) { this.watchDirs(project.id); return; }
     // In multi-user mode a project's transcripts are in its runtime account's home.
     void import("./project-runtime.js").then(({ runtimeForProject }) => runtimeForProject(project.id)).then((runtime) => {
@@ -56,6 +73,7 @@ export class SessionWatcher {
     for (const projectId of this.projects.keys()) this.removeProject(projectId);
     this.ownerReads.clear();
     this.owners.clear();
+    this.announced.clear();
   }
   private unsubscribe(projectId: string, dir: string): void {
     const shared = this.directories.get(dir)!;
@@ -133,6 +151,7 @@ export class SessionWatcher {
   private async flushPending(projectId: string, project: WatchedProject): Promise<void> {
     const fullRefresh = project.needsFullRefresh;
     const pending = [...project.pendingFiles];
+    project.lastFlushAt = Date.now();
     project.needsFullRefresh = false;
     project.pendingFiles.clear();
     // A create event can precede the first header write. Read ownership after debounce.
@@ -142,6 +161,8 @@ export class SessionWatcher {
     }));
     if (this.projects.get(projectId) !== project) return;
     const files = resolved.filter((file): file is string => file !== null);
+    if (this.announced.size + files.length > MAX_ANNOUNCED_FILES) this.announced.clear();
+    for (const file of files) this.announced.add(file);
     if (fullRefresh || files.length) this.listener(projectId, fullRefresh ? [] : files);
   }
 
@@ -159,10 +180,12 @@ export class SessionWatcher {
       project.pendingFiles.set(canonicalFile, adapter);
     }
     if (this.projects.get(projectId) !== project) return;
+    const fresh = project.needsFullRefresh || [...project.pendingFiles.keys()].some((file) => !this.announced.has(file));
+    const wait = fresh ? DEBOUNCE_MS : Math.max(DEBOUNCE_MS, project.lastFlushAt + this.knownRefreshMs - Date.now());
     if (project.debounceTimer) clearTimeout(project.debounceTimer);
     project.debounceTimer = setTimeout(() => {
       project.debounceTimer = null;
       void this.flush(projectId, project).catch(error => console.error(`Session watcher refresh failed for ${projectId}:`, error));
-    }, DEBOUNCE_MS);
+    }, wait);
   }
 }

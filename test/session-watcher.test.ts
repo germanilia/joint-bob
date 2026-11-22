@@ -306,6 +306,63 @@ test("a Claude transcript write is announced only to the project whose folder ho
   }
 });
 
+// A running conversation writes its transcript every few seconds, and each refresh rebuilt the
+// project's conversation list for every open page (2026-11-22). Growth of a transcript already
+// announced waits out the interval; a new conversation's transcript is announced at once.
+test("a growing transcript refreshes its project at most once per interval, a new one at once", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "session-watcher-claude-growth-"));
+  const previousHome = process.env.HOME;
+  const projectsRoot = path.join(home, ".claude/projects");
+  const projectPath = path.join(home, "project");
+  let watcher: SessionWatcher | undefined;
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  try {
+    process.env.HOME = home;
+    await mkdir(projectsRoot, { recursive: true });
+    const refreshes: Array<{ at: number; files: string[] }> = [];
+    watcher = new SessionWatcher((_projectId, files) => refreshes.push({ at: Date.now(), files }), { knownRefreshMs: 4_000 });
+    watcher.ensureProject(project("growth", projectPath));
+    const until = async (count: number, ms: number) => { const end = Date.now() + ms; while (refreshes.length < count && Date.now() < end) await sleep(20); return refreshes.length >= count; };
+    assert.ok(await until(1, 4_000), "registering the project refreshes it once");
+
+    const transcriptDir = claudeProjectDir(projectPath, projectsRoot);
+    await mkdir(transcriptDir, { recursive: true });
+    const first = path.join(transcriptDir, "first.jsonl");
+    const line = `${JSON.stringify({ type: "user", cwd: projectPath })}\n`;
+    await writeFile(first, line);
+    assert.ok(await until(2, 3_000), "a new transcript is announced after the debounce");
+    assert.deepEqual(refreshes[1].files, [first]);
+    const announcedAt = refreshes[1].at;
+
+    // Growth inside the interval is held back.
+    for (let i = 0; i < 3; i++) { await sleep(300); fs.appendFileSync(first, line); }
+    await sleep(Math.max(0, announcedAt + 2_500 - Date.now()));
+    assert.equal(refreshes.length, 2, "a growing transcript does not refresh its project inside the interval");
+
+    // ...and arrives once, when the interval is over.
+    assert.ok(await until(3, 4_000), "the growth is announced once the interval is over");
+    assert.ok(refreshes[2].at - announcedAt >= 3_900, `held for the interval (${refreshes[2].at - announcedAt} ms)`);
+    assert.deepEqual(refreshes[2].files, [first]);
+    await sleep(1_000);
+    assert.equal(refreshes.length, 3, "held writes are announced together");
+
+    // A new conversation's transcript inside a fresh interval is not held back.
+    fs.appendFileSync(first, line);
+    await sleep(200);
+    const second = path.join(transcriptDir, "second.jsonl");
+    const before = Date.now();
+    await writeFile(second, line);
+    assert.ok(await until(4, 3_000), "a new transcript is announced at once, even inside the interval");
+    assert.ok(refreshes[3].at - before < 2_500);
+    assert.deepEqual([...refreshes[3].files].sort(), [first, second].sort());
+  } finally {
+    watcher?.close();
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("shared flat Pi session watcher notifies only the transcript project", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "session-watcher-"));
   const previousHome = process.env.HOME;

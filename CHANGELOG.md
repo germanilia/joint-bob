@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.337.8 — 2026-11-22
+
+- Faster conversation opening while agents work. Each write of a running conversation's transcript made the machine rebuild that project's whole conversation list for every open page, about 20 times a minute for a busy project, and list building took 45% of a Mac's server. Growth of a transcript the machine has already listed now refreshes its project at most every 10 seconds. A new conversation still appears at once, and a turn's start and end still update the list immediately.
+- People an automation is shared with can edit it again.
+
 ## 2.337.7 — 2026-11-22
 
 - The server spends much less time on its own bookkeeping, which kept the homeserver's server 50–86% busy and dropped connections to conversations running there. On Node 22, every promise copied the request context of about a dozen stores: 15% of the homeserver's CPU, plus garbage collection. The server now runs on Node's context frames, which ran the same work 9 times faster. This release updates the supervisor, so machines install it as a maintenance activation.
