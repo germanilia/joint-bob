@@ -31,13 +31,17 @@ export async function fetchThroughDecisionRelay(init: RequestInit): Promise<Resp
   const { signedFetch } = await import("./server/cluster-v2.js");
   const db = await clusterV2Database(), local = await getClusterNode();
   let last: Response | undefined;
+  let lastError: unknown;
   for (const target of await relayTargets()) {
-    const answer = await signedFetch(db, local.id, target.relayNodeId, target.clusterId, DECISION_ASK_PATH, { body: String(init.body) }, init.signal!);
-    if (answer.ok) return answer;
-    last = answer;
+    try {
+      const answer = await signedFetch(db, local.id, target.relayNodeId, target.clusterId, DECISION_ASK_PATH, { body: String(init.body) }, init.signal!);
+      if (answer.ok) return answer;
+      last = answer;
+    } catch (error) { lastError = error; }
   }
-  if (!last) throw new Error("No relay lends its decision model to this machine");
-  return last;
+  if (last) return last;
+  if (lastError) throw lastError;
+  throw new Error("No relay lends its decision model to this machine");
 }
 
 /** On the relay: one admitted machine's Jev request, asked with this relay's own key while it shares its decision model. */
