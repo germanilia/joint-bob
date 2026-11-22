@@ -11,7 +11,7 @@ import type { CronRun } from "../src/cron.js";
 import { handleBobAutomation, parseIntent } from "../src/server/control-center-automation-chat.js";
 import { createAutomation, getWebhook, updateAutomation, webhookInputSchema } from "../src/webhooks.js";
 
-const context: RowContext & { nodeId: string } = { projectName: (id) => ({ p1: "Joint Bob", p2: "Contigos" })[id] ?? id, nodeName: (id) => (id === "n1" ? "Homeserver" : null), accountId: "ilia", nodeId: "n1" };
+const context: RowContext & { nodeId: string } = { projectName: (id) => ({ p1: "Joint Bob", p2: "Contigos" })[id] ?? id, nodeName: (id) => (id === "n1" ? "Homeserver" : null), nodeId: "n1" };
 
 const noTags = { managedTagIds: [], manualTags: [] };
 
@@ -66,7 +66,7 @@ test("only schedules the compact editor can rewrite without loss are editable th
   assert.equal(isSimpleSchedule({ ...base, frequency: "daily", quietStart: "22:00", quietEnd: "06:00" }), false);
 });
 
-test("a scheduled task becomes a row with its last result, and is the creator's to change", () => {
+test("a scheduled task becomes an editable row with its last result", () => {
   const never = scheduleRow(task(), context);
   assert.deepEqual([never.kind, never.name, never.projectName, never.nodeName, never.when, never.last.state, never.editable], ["schedule", "Nightly release check", "Joint Bob", "Homeserver", "Daily 02:00", "never", true]);
   assert.equal(never.detail, "Run the release gate, report only", "the second line is one line");
@@ -79,7 +79,7 @@ test("a scheduled task becomes a row with its last result, and is the creator's 
   assert.equal(scheduleRow(task({ enabled: false }), context).last.state, "paused");
   assert.equal(scheduleRow(task({ enabled: false, lastRun: { ...run, status: "succeeded", error: null, finishedAt: 1 } }), context).last.state, "paused", "a paused task reads as paused, whatever it did last");
 
-  assert.equal(scheduleRow(task({ creatorAccountId: "someone-else" }), context).editable, false);
+  assert.equal(scheduleRow(task({ creatorAccountId: "someone-else" }), context).editable, true);
   assert.equal(scheduleRow(task({ creatorAccountId: null }), context).editable, true, "a task from before accounts belongs to whoever sees it");
   const minutely = scheduleRow(task({ schedule: { frequency: "minutely", intervalMinutes: 5, hour: 0, minute: 0, weekday: 1, timezone: "UTC" } }), context);
   assert.equal((minutely.edit as { simple: boolean }).simple, false);
@@ -96,7 +96,7 @@ test("a webhook becomes a row: where its calls go, who may call, and how the las
   assert.deepEqual(row({ lastReceivedAt: "2026-11-05T10:00:00Z" }, { at: "2026-11-05T10:00:00Z", status: "failed", detail: "No agent", sender: null }).last, { state: "failed", at: "2026-11-05T10:00:00Z", detail: "No agent" });
   assert.equal(row({}, { at: "2026-11-05T10:00:00Z", status: "refused", detail: "Refused sender", sender: null }).last.state, "refused");
   assert.equal(row({ enabled: false, lastReceivedAt: "2026-11-05T10:00:00Z" }).last.state, "paused");
-  assert.equal(row({ creatorAccountId: "someone-else" }).editable, false);
+  assert.equal(row({ creatorAccountId: "someone-else" }).editable, true);
   assert.deepEqual(fresh.edit, { kind: "webhook", context: "Triage the issue" });
 });
 

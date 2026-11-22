@@ -31,7 +31,7 @@ export interface AutomationRow {
   nodeName: string | null;
   when: string;
   last: AutomationLast;
-  /** Only the person who made a task or webhook may change it; anyone who sees its project may delete it. */
+  /** Anyone who can see the automation may edit it. Bob's reports are listed only to their owner. */
   editable: boolean;
   /** What the compact editor starts from. */
   edit: AutomationEdit;
@@ -104,8 +104,6 @@ function lastOfTask(task: Pick<AutomationItem, "enabled" | "lastRun">): Automati
 export interface RowContext {
   projectName(projectId: string): string;
   nodeName(nodeId: string): string | null;
-  /** Who is asking: tasks and webhooks made by someone else are shown but not editable. */
-  accountId: string;
 }
 
 export function scheduleRow(task: AutomationItem, context: RowContext & { nodeId: string }): AutomationRow {
@@ -115,7 +113,7 @@ export function scheduleRow(task: AutomationItem, context: RowContext & { nodeId
     kind: "schedule", id: task.id, name: task.name, detail: task.context.replace(/\s+/g, " ").trim().slice(0, 140), enabled: task.enabled,
     projectId, projectName: context.projectName(projectId), projectIds: [projectId],
     nodeId: context.nodeId, nodeName: context.nodeName(context.nodeId), when: describeSchedule(schedule), last: lastOfTask(task),
-    editable: !task.creatorAccountId || task.creatorAccountId === context.accountId,
+    editable: true,
     edit: {
       kind: "schedule", prompt: task.context, frequency: schedule.frequency === "minutely" ? "daily" : schedule.frequency,
       time: clock(schedule.startHour ?? schedule.hour, schedule.minute), weekday: schedule.weekday, timezone: schedule.timezone,
@@ -139,7 +137,7 @@ export function webhookRow(hook: AutomationItem, context: RowContext & { nodeId:
     kind: "webhook", id: hook.id, name: hook.name, detail: hook.context.replace(/\s+/g, " ").trim().slice(0, 140), enabled: hook.enabled,
     projectId: hook.target.projectId, projectName: context.projectName(hook.target.projectId), projectIds: [hook.target.projectId],
     nodeId: context.nodeId, nodeName: context.nodeName(context.nodeId), when: `${targetText(hook)} · ${senders}`, last,
-    editable: !hook.creatorAccountId || hook.creatorAccountId === context.accountId,
+    editable: true,
     edit: { kind: "webhook", context: hook.context },
   };
 }

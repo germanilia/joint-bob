@@ -42,7 +42,12 @@ test("automation saves reject unavailable profiles, ignore forged creators, and 
       db.prepare("UPDATE webhooks SET creator_account_id=? WHERE id=?").run("different-creator", hook.body.automation.id);
       db.prepare("UPDATE webhooks SET creator_account_id=? WHERE id=?").run("different-creator", task.body.automation.id);
     } finally { db.close(); }
-    // Anyone may edit an automation (cluster members, 7387f55a), but an edit never moves it to the editor: the creator stays,
+    const list = await api<{ rows: Array<{ id: string; editable: boolean }> }>(node, auth, "GET", "/control-center/automations");
+    assert.equal(list.status, 200);
+    for (const id of [hook.body.automation.id, task.body.automation.id]) {
+      assert.equal(list.body.rows.find(row => row.id === id)?.editable, true, "the table enables Edit for visible automations made by someone else");
+    }
+    // Anyone may edit a visible automation, but an edit never moves it to the editor: the creator stays,
     // and clearing the profile leaves it on the node's defaults rather than on the creator's current profile.
     type Saved = { automation: { creatorAccountId: string; providerProfileId: string | null; context: string } };
     const rewrittenHook = await api<Saved>(node, auth, "PUT", `/automations/${hook.body.automation.id}`, { ...base, context: "Edited by another person", providerProfileId: null });
