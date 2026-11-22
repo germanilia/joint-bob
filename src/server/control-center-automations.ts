@@ -35,7 +35,7 @@ export async function collectAutomations(session: AuthSession): Promise<Collecte
     const [projects, local, peers] = await Promise.all([projectsWithSharedNames({ includeSyncStatus: false, includeUsage: false }), getClusterNode(), listRuntimePeers()]);
     const projectNames = new Map(projects.map((project) => [project.id, project.name]));
     const nodeNames = new Map([[local.id, local.name], ...peers.map((peer) => [peer.id, peer.name] as const)]);
-    const context: RowContext = { projectName: (id) => projectNames.get(id) ?? id, nodeName: (id) => nodeNames.get(id) ?? null, accountId: session.accountId };
+    const context: RowContext = { projectName: (id) => projectNames.get(id) ?? id, nodeName: (id) => nodeNames.get(id) ?? null };
     const errors: string[] = [];
     const entries: Entry[] = [];
     const seen = new Set<string>();
