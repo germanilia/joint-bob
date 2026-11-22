@@ -504,13 +504,12 @@ dialog.addEventListener("close", () => {
   watchAfterClose({ ...view.target, projectId: hostProjectId() }, view.currentId, label);
 });
 
-/** The open conversation's dashboard: from the chat header, and from the chat's more menu (Tools on a phone). */
+/** The open conversation's dashboard, from the chat's more menu (Tools on a phone). */
 function openConversationDashboard() {
   const conversationId = state.activeConversationId || state.activeSessionId;
   if (!conversationId || !state.activeProjectId) { toast("Open a conversation first"); return; }
   openDashboardMode({ kind: "conversation", id: conversationId, projectId: state.activeProjectId }).catch((error) => toast.error(error.message));
 }
-document.querySelector("#chatDashboardButton").addEventListener("click", openConversationDashboard);
 document.querySelector("#chatMoreDashboardButton").addEventListener("click", () => {
   document.querySelector("#chatMoreMenu").open = false;
   openConversationDashboard();
