@@ -10,6 +10,7 @@ import { app } from '../state.js';
 import { requireClusterMember, requirePeerClusterMember, requireTeamMember, teamMemberFromCluster, teamMembershipRevision, type ClusterMember, type TeamMember } from '../../assistant-teams/access.js';
 import { createTeam, deleteTeam, getTeam, getTeamAssignment, listTeamAgents, listTeams, prepareTeamProject, resolveTeamExecutor, saveTeamSettings, announceTeamChange, onTeamChange, teamDatabase, TeamError } from '../../assistant-teams/store.js';
 import { runBrowserTeamAssignment, confirmTeamInquiry, wakeTeamWork, resolveTeamApproval, teamWorkStatus, routeTeamAssignment, listTeamRequests, startTeamRequest, cancelTeamRequest, retryTeamRequest } from '../../assistant-teams/assignments.js';
+import { decideTeamProposal, listAssistantAttachedSecrets, listTeamProposals } from '../../assistant-teams/proposals.js';
 import { teamAgentReadiness } from '../../assistant-teams/runtime.js';
 import { assistantLoginProfileIds, getPersonalAssistantById, listPersonalAssistants, personalAssistantDatabase, type PersonalAssistant } from '../../personal-assistants.js';
 import { listWebhookSkills } from '../../webhook-skills.js';
@@ -34,6 +35,8 @@ const operations = {
   assign: z.object({ teamId: id, role: z.string().regex(TEAM_ROLE_PATTERN).nullable(), message: z.string().trim().min(1).max(20000), requestId: z.string().uuid() }).strict(),
   cancel: z.object({ teamId: id, ref: z.string().max(64).nullable() }).strict(),
   retry: z.object({ teamId: id, ref: z.string().max(64).nullable() }).strict(),
+  proposals: z.object({ teamId: id, limit: z.number().int().min(1).max(200).optional() }).strict(),
+  decide_proposal: z.object({ teamId: id, proposalId: z.string().uuid(), decision: z.enum(['approve', 'reject']) }).strict(),
   delete: z.object({ teamId: id }).strict(),
 };
 export type Operation = keyof typeof operations;
@@ -77,6 +80,11 @@ export async function operate(member: ClusterMember, operation: Operation, body:
     const retried = await retryTeamRequest(actor, operations.retry.parse(input).ref);
     await watchTeamRequest(actor, target.teamId, retried.request.id);
     return { ...retried, snapshotRevision };
+  }
+  if (operation === 'proposals') return { proposals: await listTeamProposals(target.teamId, operations.proposals.parse(input).limit), snapshotRevision };
+  if (operation === 'decide_proposal') {
+    const parsed = operations.decide_proposal.parse(input);
+    return { proposal: await decideTeamProposal(actor, parsed.proposalId, parsed.decision), snapshotRevision };
   }
   const update = operations.settings.parse(input);
   return { team: await saveTeamSettings(actor, update.settings, update.expectedRevision), snapshotRevision };
@@ -125,11 +133,13 @@ const roleSchema = z.string().regex(TEAM_ROLE_PATTERN);
 async function assistantUses(profile: PersonalAssistant): Promise<string[]> {
   const db = await personalAssistantDatabase();
   const skills = listWebhookSkills(db, profile.id).length, logins = (await assistantLoginProfileIds(profile.id)).length;
+  const secrets = (await listAssistantAttachedSecrets(profile)).length;
   return [
     profile.executionSettings ? `${profile.executionSettings.harnessId} · ${profile.executionSettings.modelId}` : `${profile.engine}`,
     profile.mcpServerNames === null ? 'all its MCP servers' : profile.mcpServerNames.length ? `MCP: ${profile.mcpServerNames.join(', ')}` : '',
     profile.allowBrowser ? `browser${logins ? ` with ${logins} saved login${logins === 1 ? '' : 's'}` : ''}` : '',
     profile.allowTerminal ? 'terminal' : '',
+    secrets ? `${secrets} secret${secrets === 1 ? '' : 's'}` : '',
     skills ? `${skills} skill${skills === 1 ? '' : 's'}` : '',
   ].filter(Boolean);
 }
@@ -215,6 +225,17 @@ app.post('/api/assistant-teams/:id/inquiries/:inquiryId/confirm', route(async (r
   const body = z.object({ decision: z.enum(['confirm', 'dismiss']) }).strict().parse(request.body);
   await confirmTeamInquiry(member, id.parse(request.params.inquiryId), body.decision);
   wakeTeamWork(member.teamId); return { ok: true };
+}));
+app.get('/api/assistant-teams/:id/proposals', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const p = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }).strict().parse(request.query);
+  return { proposals: await listTeamProposals(member.teamId, p.limit) };
+}));
+app.post('/api/assistant-teams/:id/proposals/:proposalId/decide', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const body = z.object({ decision: z.enum(['approve', 'reject']) }).strict().parse(request.body);
+  const proposal = await decideTeamProposal(member, z.string().uuid().parse(request.params.proposalId), body.decision);
+  return { proposal };
 }));
 
 const memoryPage = z.object({ offset: z.coerce.number().int().nonnegative().default(0), limit: z.coerce.number().int().min(1).max(100).default(50) }).strict();

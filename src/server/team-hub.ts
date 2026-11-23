@@ -4,6 +4,7 @@ import { getSharingCluster } from '../cluster-sharing-policy.js';
 import { requireClusterMember, type ClusterMember } from '../assistant-teams/access.js';
 import { TeamError } from '../assistant-teams/store.js';
 import type { TeamRequestView } from '../assistant-teams/assignments.js';
+import type { TeamProposal } from '../assistant-teams/proposals.js';
 import { signedMachinePost } from './machine-post.js';
 import { operate, type Operation } from './routes/assistant-teams.js';
 import { peers } from './saved-commands.js';
@@ -111,6 +112,16 @@ export async function hubCancel(session: AuthSession, teamId: string, ref: strin
 export async function hubRetry(session: AuthSession, teamId: string, ref: string | null): Promise<{ previous: TeamRequestView; request: TeamRequestView }> {
   const { team, member } = await teamFor(session, teamId);
   return call(member, team.hostNodeId, 'retry', { teamId, ref });
+}
+export async function hubProposals(session: AuthSession, teamId: string, limit?: number): Promise<TeamProposal[]> {
+  const { team, member } = await teamFor(session, teamId);
+  return (await call<{ proposals: TeamProposal[] }>(member, team.hostNodeId, 'proposals', { teamId, ...(limit ? { limit } : {}) })).proposals;
+}
+export async function hubDecideProposal(session: AuthSession, teamId: string, proposalId: string, decision: 'approve' | 'reject'): Promise<{ proposal: TeamProposal }> {
+  const { team, member } = await teamFor(session, teamId);
+  const result = await call<{ proposal: TeamProposal }>(member, team.hostNodeId, 'decide_proposal', { teamId, proposalId, decision });
+  held.clear();
+  return result;
 }
 /** Deletes a team on its host. Everyone's cached overview is dropped, so no picker keeps offering it. */
 export async function hubDelete(session: AuthSession, teamId: string): Promise<{ deleted: string }> {

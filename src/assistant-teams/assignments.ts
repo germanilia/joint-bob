@@ -11,12 +11,24 @@ import { decideTeamMessage, listTeamDecisions } from './decisions.js';
 import { runTeamTurn, teamAssignmentDestination, teamAgentReadiness } from './runtime.js';
 import { getPersonalAssistantById, getPersonalAssistantTurn } from '../personal-assistants.js';
 import { runningPromptRequestId } from '../assistant-collaboration/bridge-tools.js';
+import {
+ cancelPendingProposalsForRoot,
+ decideTeamProposal,
+ decodeProposalCallbackId,
+ formatTraceForReview,
+ hasPendingTeamProposalForAssignment,
+ listTeamProposals,
+ proposalDatabase,
+ readAssignmentTrace,
+ type TeamProposal,
+} from './proposals.js';
 
 interface Root { id:string; teamId:string; source:TeamMessage; browser:boolean; subjectId:string|null }
 export interface TeamWork { originalMaterial?:string; assignmentId:string; phase:'queued'|'dispatched'|'done'|'held'; message:string; result:string|null; conversationId:string|null; consumed:boolean; reason:string|null }
 export interface TeamInquiry { id:string; teamId:string; source:TeamMessage; roles:TeamRole[]; route:TeamRoute; state:'pending'|'confirmed'|'dismissed'; approvedBy?:string }
 export async function assignmentDatabase() {
  const db=await deliveryDatabase();
+ await proposalDatabase();
  db.exec(`CREATE TABLE IF NOT EXISTS assistant_team_failures (id TEXT PRIMARY KEY,team_id TEXT NOT NULL,code TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS assistant_team_roots (id TEXT PRIMARY KEY,team_id TEXT NOT NULL,record TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS assistant_team_work (assignment_id TEXT PRIMARY KEY,phase TEXT NOT NULL,record TEXT NOT NULL);
@@ -46,14 +58,20 @@ export async function teamWorkStatus(member:TeamMember) {
   inquiries:db.prepare('SELECT state,record FROM assistant_team_inquiries WHERE team_id=?').all(member.teamId).map(row=>({...JSON.parse(row.record as string),state:row.state})),
   inbox:db.prepare('SELECT i.id,i.message_id messageId,i.state,i.error,c.state claimState FROM assistant_team_inbox i LEFT JOIN assistant_team_inbox_claims c ON c.event_id=i.id WHERE i.team_id=? ORDER BY i.rowid DESC LIMIT 1000').all(member.teamId),
   approvals:db.prepare('SELECT p.state,p.record FROM assistant_team_approvals p JOIN assistant_team_assignments a ON a.id=p.assignment_id WHERE a.team_id=?').all(member.teamId).map(row=>({...JSON.parse(row.record as string),state:row.state})),
+  proposals:await listTeamProposals(member.teamId,100),
  };
 }
 const coordinatorOf=(db:DatabaseSync,teamId:string)=>teamRolesSync(db,teamId).coordinator??'team';
 /** Group-facing notes are signed by the coordinator; the text names it, e.g. "lead: accepted". */
 const say=(db:DatabaseSync,teamId:string,text:string)=>`${coordinatorOf(db,teamId)}: ${text}`;
-function output(db:DatabaseSync,r:Root,id:string,kind:'ack'|'inquiry'|'clarify'|'result',text:string,assignmentId:string|null=null,role:TeamRole=coordinatorOf(db,r.teamId)) {
+function output(db:DatabaseSync,r:Root,id:string,kind:'ack'|'inquiry'|'clarify'|'result'|'proposal',text:string,assignmentId:string|null=null,role:TeamRole=coordinatorOf(db,r.teamId)) {
  if(r.browser)return;
  enqueueTeamOutput(db,{id,teamId:r.teamId,rootId:r.id,kind,text,assignmentId,role,subjectId:r.subjectId,chatId:r.source.chatId,threadId:r.source.threadId,replyTo:r.source.telegramMessageId,requestedBy:r.source.accountId});
+}
+/** Called inside the proposal creation transaction to route approval to Telegram when the conversation lives there. */
+export function enqueueProposalApprovalOutput(db:DatabaseSync,proposal:TeamProposal,text:string):void {
+ const r=root(db,proposal.rootId);
+ output(db,r,`${proposal.id}:proposal`,'proposal',text,proposal.assignmentId,proposal.proposedByRole);
 }
 async function canonical(member:TeamMember,message:TeamMessage):Promise<StoredTeamMessage> {
  await recheckTeamActor(member);if(member.teamId!==message.teamId)throw new TeamError('Wrong team',403);
@@ -187,26 +205,38 @@ export async function confirmTeamInquiry(member:TeamMember,inquiryId:string,deci
  scheduleTeamChange(member.teamId);
  for(const a of accepted)await routeTeamAssignment(a.id,inquiry.route);
 }
-/** Callback data is a locator, not authority: bind the enrolled human to the actual sent question. */
+/** Callback data is a locator, not authority: bind the enrolled human to the actual sent question or proposal. */
 export async function consumeTeamCallback(teamId:string,input:unknown):Promise<void> {
  const callback=input as {data?:unknown;from?:{id?:unknown;is_bot?:boolean};message?:{message_id?:unknown;message_thread_id?:unknown;chat?:{id?:unknown;type?:string}}};
- const match=typeof callback?.data==='string'?/^t([cd]):([A-Za-z0-9_-]{43})$/.exec(callback.data):null;
+ const inquiryMatch=typeof callback?.data==='string'?/^t([cd]):([A-Za-z0-9_-]{43})$/.exec(callback.data):null;
+ const proposalMatch=typeof callback?.data==='string'?/^p([ar]):([A-Za-z0-9_-]{22})$/.exec(callback.data):null;
  const message=callback?.message;
- if(!match||callback.from?.is_bot||!Number.isSafeInteger(callback.from?.id)||!Number.isSafeInteger(message?.message_id)||!Number.isSafeInteger(message?.chat?.id)||!['group','supergroup'].includes(message?.chat?.type??''))throw new TeamError('Invalid inquiry callback',400);
+ if((!inquiryMatch&&!proposalMatch)||callback.from?.is_bot||!Number.isSafeInteger(callback.from?.id)||!Number.isSafeInteger(message?.message_id)||!Number.isSafeInteger(message?.chat?.id)||!['group','supergroup'].includes(message?.chat?.type??''))throw new TeamError('Invalid inquiry callback',400);
  const member=await authorizeTeamTelegram(teamId,String(message!.chat!.id),String(callback.from!.id));
- const inquiryId=Buffer.from(match[2],'base64url').toString('hex');
+ if(proposalMatch){
+  const proposalId=decodeProposalCallbackId(proposalMatch[2]);
+  if(!proposalId)throw new TeamError('Invalid proposal callback',400);
+  const sent=(await listTeamOutbox(teamId)).find(row=>row.id===`${proposalId}:proposal:0`&&row.kind==='proposal'&&row.state==='sent'&&row.receiptId===message!.message_id&&row.chatId===String(message!.chat!.id)&&row.threadId===(message!.message_thread_id??null));
+  if(!sent)throw new TeamError('Callback does not match a delivered proposal',400);
+  await decideTeamProposal(member,proposalId,proposalMatch[1]==='a'?'approve':'reject');wakeTeamWork(teamId);
+  return;
+ }
+ const inquiryId=Buffer.from(inquiryMatch![2],'base64url').toString('hex');
  const sent=(await listTeamOutbox(teamId)).find(row=>row.id===`${inquiryId}:question:0`&&row.kind==='inquiry'&&row.state==='sent'&&row.receiptId===message!.message_id&&row.chatId===String(message!.chat!.id)&&row.threadId===(message!.message_thread_id??null));
  if(!sent)throw new TeamError('Callback does not match a delivered inquiry',400);
- await confirmTeamInquiry(member,inquiryId,match[1]==='c'?'confirm':'dismiss');wakeTeamWork(teamId);
+ await confirmTeamInquiry(member,inquiryId,inquiryMatch![1]==='c'?'confirm':'dismiss');wakeTeamWork(teamId);
 }
 export async function consumeTeamConfirmation(input:StoredTeamMessage):Promise<boolean> {
  const message=await getTeamMessage(input.teamId,input.id);
- if(!message||message.output||!message.replyToMessageId||! /^(yes|confirm|no|dismiss)[.!]?$/i.test(message.text.trim()))return false;
+ if(!message||message.output||!message.replyToMessageId||! /^(yes|confirm|approve|no|dismiss|reject)[.!]?$/i.test(message.text.trim()))return false;
  const member=await authorizeTeamTelegram(message.teamId,message.chatId,message.telegramUserId);
  if(message.accountId!==member.accountId)throw new TeamError('Human confirmation required',403);
- const sent=(await listTeamOutbox(message.teamId)).find(r=>r.kind==='inquiry'&&r.state==='sent'&&r.chatId===message.chatId&&r.threadId===message.threadId&&r.receiptId===message.replyToMessageId);
+ const sent=(await listTeamOutbox(message.teamId)).find(r=>(r.kind==='inquiry'||r.kind==='proposal')&&r.state==='sent'&&r.chatId===message.chatId&&r.threadId===message.threadId&&r.receiptId===message.replyToMessageId);
  if(!sent)return false;
- await confirmTeamInquiry(member,sent.id.split(':')[0],/^(yes|confirm)/i.test(message.text.trim())?'confirm':'dismiss');return true;
+ const positive=/^(yes|confirm|approve)/i.test(message.text.trim());
+ if(sent.kind==='proposal'){await decideTeamProposal(member,sent.id.split(':')[0],positive?'approve':'reject');wakeTeamWork(message.teamId);return true;}
+ if(!/^(yes|confirm|no|dismiss)[.!]?$/i.test(message.text.trim()))return false;
+ await confirmTeamInquiry(member,sent.id.split(':')[0],positive?'confirm':'dismiss');return true;
 }
 /** The running request and real runtime receipt are both required, even for direct internal callers. */
 export async function requireLiveTeamBob(parentId:string) {
@@ -265,10 +295,88 @@ async function dispatch(a:TeamAssignment):Promise<void> {
   throw error;
  }finally{executing.delete(a.id);}
 }
+/**
+ * Immediately queues a coordinator review whenever direct specialist work in this team finishes.
+ * The coordinator reviews the answer + execution trace, can prompt the specialist back via team_delegate
+ * or propose permanent assistant/team upgrades via team_propose_changes, and publishes the final vetted result.
+ */
+async function ensureCoordinatorReview(teamId:string,rootId:string):Promise<void> {
+ const db=await assignmentDatabase();
+ const {roles,coordinator}=teamRolesSync(db,teamId);
+ if(!coordinator||!roles.includes(coordinator))return;
+ const all=assignments(db,teamId).filter(a=>a.rootId===rootId);
+ const directSpecialists=all.filter(a=>!a.parentId&&a.role!==coordinator);
+ if(!directSpecialists.length)return;
+ // Already has a coordinator root assignment on this root.
+ if(all.some(a=>!a.parentId&&a.role===coordinator))return;
+ // Wait until every direct specialist on this root finishes cleanly before waking the coordinator once.
+ if(!directSpecialists.every(a=>a.state==='completed'&&work(db,a.id)?.phase==='done'))return;
+ const r=root(db,rootId);
+ const parts:string[]=[];
+ for(const spec of directSpecialists){
+  const sw=work(db,spec.id)!;
+  const trace=formatTraceForReview(await readAssignmentTrace(teamId,spec,sw.conversationId));
+  parts.push(`${spec.role} (${spec.id}):${trace?` ${trace}\n`:' '}${sw.result??'(No text result)'}`);
+ }
+ const reviewId=key(rootId,'coordinator-review',coordinator);
+ const reviewMessage=[
+  'Review the completed direct specialist work immediately before answering the user.',
+  `Original request: ${r.source.text}`,
+  ...parts,
+  'Review instructions: check both the answer and how it was done (trace, errors, tools/secrets used). If the work is incomplete, unverified, or not good enough, call team_delegate to prompt the specialist back with specific feedback. If the assistant (or team) needs permanent changes (secrets from team_node_catalog, tools/MCP/skills, instructions, model/harness, or removing an unused role), call team_propose_changes (bundling related changes). Otherwise publish the final vetted answer clearly, attributing the specialist.',
+ ].join('\n');
+ transaction(db,()=>{
+  const latest=assignments(db,teamId).filter(a=>a.rootId===rootId);
+  if(latest.some(a=>a.id===reviewId||(!a.parentId&&a.role===coordinator)))return;
+  const first=directSpecialists[0];
+  const reviewAssignment:TeamAssignment={
+   id:reviewId,teamId,rootId,parentId:null,subjectId:first.subjectId,role:coordinator,
+   requestedBy:first.requestedBy,sourceMessageId:first.sourceMessageId,destination:first.destination,
+   state:first.subjectId?'queued':'accepted',requestId:randomUUID(),
+  };
+  db.prepare('INSERT INTO assistant_team_assignments VALUES(?,?,?,?)').run(reviewId,teamId,reviewAssignment.requestId,JSON.stringify(reviewAssignment));
+  saveWork(db,{assignmentId:reviewId,phase:'queued',message:reviewMessage.slice(0,19500),result:null,conversationId:null,consumed:false,reason:null});
+  for(const spec of directSpecialists){const sw=work(db,spec.id);if(sw){sw.consumed=true;saveWork(db,sw);}}
+ });
+}
+/** Resumes the paused coordinator assignment right after a team member approves or rejects a proposal. */
+export async function resumeAssignmentAfterProposal(proposal:TeamProposal):Promise<void> {
+ const db=await assignmentDatabase(),a=await getTeamAssignment(proposal.assignmentId);
+ if(!a||a.state==='cancelled')return;
+ const w=work(db,a.id);if(!w)return;
+ const r=root(db,a.rootId);
+ const statusLine=proposal.state==='applied'
+  ? `${proposal.proposedByRole}: approved and applied (${proposal.summary}). Continuing the task…`
+  : proposal.state==='failed'
+   ? `${proposal.proposedByRole}: could not apply approved changes (${proposal.error??'unknown error'}).`
+   : `${proposal.proposedByRole}: proposal rejected (${proposal.summary}).`;
+ const continuation=proposal.state==='applied'
+  ? `Your change proposal "${proposal.summary}" was APPROVED and applied live immediately:\n- ${(proposal.appliedSummary??[]).join('\n- ')}\nContinue the original request now using the updated assistant/team configuration (re-delegate or act directly as needed).\nOriginal request: ${r.source.text}`
+  : proposal.state==='failed'
+   ? `Your change proposal "${proposal.summary}" was approved, but applying it failed: ${proposal.error??'unknown error'}. Explain the problem or continue without those changes.\nOriginal request: ${r.source.text}`
+   : `Your change proposal "${proposal.summary}" was REJECTED by a team member. Continue the original request without those changes, or explain clearly what remains blocked.\nOriginal request: ${r.source.text}`;
+ transaction(db,()=>{
+  output(db,r,`${proposal.id}:decision`,'clarify',statusLine,a.id,proposal.proposedByRole);
+  if(hasPendingTeamProposalForAssignment(db,a.id))return;
+  delete w.originalMaterial;
+  a.requestId=randomUUID();a.state='queued';
+  w.phase='queued';w.result=null;w.reason=null;w.message=continuation.slice(0,19500);
+  saveAssignment(db,a);saveWork(db,w);
+ });
+ await deliverTeamOutbox(proposal.teamId);
+ wakeTeamWork(proposal.teamId);
+}
 async function advanceParent(a:TeamAssignment):Promise<void> {
  const db=await assignmentDatabase(),w=work(db,a.id)!;
- const children=assignments(db,a.teamId).filter(c=>c.parentId===a.id),unread=children.filter(c=>!work(db,c.id)?.consumed);
  if(w.phase!=='done')return;
+ if(hasPendingTeamProposalForAssignment(db,a.id)){
+  if(a.state!=='waiting_for_human'||w.reason!=='awaiting_proposal_approval'){
+   a.state='waiting_for_human';w.reason='awaiting_proposal_approval';
+   transaction(db,()=>{saveAssignment(db,a);saveWork(db,w);});
+  }
+  return;
+ }
+ const children=assignments(db,a.teamId).filter(c=>c.parentId===a.id),unread=children.filter(c=>!work(db,c.id)?.consumed);
  if(w.reason!=='delegation_limit') {
   if(!unread.length)return;
   if(unread.some(c=>work(db,c.id)?.phase!=='done')) {
@@ -276,11 +384,19 @@ async function advanceParent(a:TeamAssignment):Promise<void> {
    transaction(db,()=>{saveAssignment(db,a);saveWork(db,w);});return;
   }
  }
+ const childBlocks:string[]=[];
+ if(w.reason!=='delegation_limit'){
+  for(const c of unread){
+   const cw=work(db,c.id)!;
+   const trace=formatTraceForReview(await readAssignmentTrace(a.teamId,c,cw.conversationId));
+   childBlocks.push(`${c.role} (${c.id}):${trace?` ${trace}\n`:' '}${cw.result}`);
+  }
+ }
  transaction(db,()=>{
   if(w.reason==='delegation_limit'){a.state='waiting_for_human';w.phase='held';output(db,root(db,a.rootId),`${a.rootId}:limit`,'clarify',say(db,a.teamId,'ten delegated turns reached. Please give a new explicit request to continue.'));}
   else {
    delete w.originalMaterial;
-   w.message=`Continue the original request using these stored INTERNAL ONLY child results. Do not repeat completed delegations.\nOriginal request: ${root(db,a.rootId).source.text}\n${unread.map(c=>`${c.role} (${c.id}): ${work(db,c.id)!.result}`).join('\n')}`;
+   w.message=`Continue the original request using these stored INTERNAL ONLY child results. Review both the results and execution traces immediately: if an assistant's work is not good enough, prompt it back via team_delegate with specific feedback; if permanent changes (secrets, tools, skills, instructions, model/harness, roster) are needed, call team_propose_changes. Do not repeat completed delegations unnecessarily.\nOriginal request: ${root(db,a.rootId).source.text}\n${childBlocks.join('\n')}`;
    if(w.message.length>20000){a.state='waiting_for_human';w.phase='held';w.reason='child_results_exceed_context';}
    else {a.requestId=randomUUID();a.state='queued';w.phase='queued';w.result=null;w.reason=null;for(const c of unread){const child=work(db,c.id)!;child.consumed=true;saveWork(db,child);}}
   }
@@ -290,6 +406,10 @@ async function advanceParent(a:TeamAssignment):Promise<void> {
 export async function publishTeamResult(assignmentId:string):Promise<void> {
  const db=await assignmentDatabase(),a=await getTeamAssignment(assignmentId);if(!a||a.destination.kind!=='group')return;
  const w=work(db,a.id);if(!w||w.phase!=='done'||a.state!=='completed')return;
+ if(hasPendingTeamProposalForAssignment(db,a.id))return;
+ const {roles,coordinator}=teamRolesSync(db,a.teamId);
+ // Direct specialist work is reviewed immediately by the team coordinator before group publication.
+ if(coordinator&&roles.includes(coordinator)&&a.role!==coordinator)return;
  if(assignments(db,a.teamId).some(c=>c.parentId===a.id&&(!work(db,c.id)?.consumed||work(db,c.id)?.phase!=='done')))return;
  try{await requireTeamExecution(a.teamId,a.requestedBy);}catch{w.reason='membership_removed_before_publication';saveWork(db,w);return;}
  const r=root(db,a.rootId);if(r.browser)return;
@@ -320,7 +440,17 @@ async function recoverTeamWorkOnce(teamId:string):Promise<void> {
    if(receipt?.status==='completed')await complete(a,receipt.response??'',receipt.topicId.slice(receipt.topicId.indexOf(':')+1));
    else{a.state='uncertain';w.phase='held';w.reason='dispatch_outcome_unknown';transaction(db,()=>{saveAssignment(db,a);saveWork(db,w);reportStopped(db,a);});await deliverTeamOutbox(teamId);continue;}
   }
-  a=(await getTeamAssignment(a.id))!;if(a.role===teamRolesSync(db,teamId).coordinator)await advanceParent(a);
+  a=(await getTeamAssignment(a.id))!;
+  const coordinator=teamRolesSync(db,teamId).coordinator;
+  if(a.role===coordinator)await advanceParent(a);
+  else if(!a.parentId&&a.state==='completed'&&work(db,a.id)?.phase==='done'){
+   await ensureCoordinatorReview(teamId,a.rootId);
+   // Dispatch any newly queued coordinator review assignment on the same wake pass.
+   const review=assignments(db,teamId).find(item=>item.rootId===a.rootId&&!item.parentId&&item.role===coordinator&&item.state==='queued'&&item.subjectId&&work(db,item.id)?.phase==='queued');
+   if(review&&!executing.has(review.id)){
+    void dispatch(review).catch(()=>{}).finally(()=>{if(work(db,review.id)?.phase==='done')wakeTeamWork(teamId);});
+   }
+  }
   a=(await getTeamAssignment(a.id))!;
   if(a.state==='queued'&&a.subjectId&&work(db,a.id)?.phase==='queued') {
    // Do not wait here: Bob may be running while his child is queued. Completion wakes the durable ledger.
@@ -355,9 +485,9 @@ async function processInbox(teamId:string) {
   try {
    const member=await authorizeTeamTelegram(teamId,message.chatId,message.telegramUserId);
    if(await consumeTeamConfirmation(message))continue;
-   if(/^(yes|no|confirm|dismiss)[.!]?$/i.test(message.text.trim())){
+   if(/^(yes|no|confirm|dismiss|approve|reject)[.!]?$/i.test(message.text.trim())){
     const r:Root={id:rootKey(message),teamId,source:message,browser:false,subjectId:null};
-    output(db,r,`${r.id}:clarify`,'clarify',say(db,teamId,'please reply to the exact inquiry question or use its Confirm / Dismiss buttons.'));continue;
+    output(db,r,`${r.id}:clarify`,'clarify',say(db,teamId,'please reply to the exact question or approval card, or use its buttons.'));continue;
    }
    const targets=await directTeamTargets(message);
    const emptyCall=/^(?:\s*[/@][\w]+(?:@[\w]+)?\s*)+$/.test(message.text);
@@ -486,14 +616,17 @@ function requestStateOf(states:AssignmentState[]):TeamRequestState {
 }
 /** Newest first. */
 function requestViews(db:DatabaseSync,teamId:string):TeamRequestView[] {
- const all=assignments(db,teamId);
+ const all=assignments(db,teamId),{coordinator}=teamRolesSync(db,teamId);
  return db.prepare('SELECT record FROM assistant_team_roots WHERE team_id=? ORDER BY rowid DESC').all(teamId).map(row=>JSON.parse(row.record as string) as Root).flatMap(r=>{
   const mine=all.filter(a=>a.rootId===r.id);
   if(!mine.length)return [];
+  const hasCoordinatorRoot=Boolean(coordinator&&mine.some(a=>!a.parentId&&a.role===coordinator));
   return [{id:r.id,shortId:r.id.slice(0,6),text:r.source.text,requestedBy:r.source.accountId,chatId:r.source.chatId,createdAt:r.source.createdAt,browser:r.browser,state:requestStateOf(mine.map(a=>a.state)),
-   assignments:mine.map(a=>{const w=work(db,a.id);return {role:a.role,state:a.state,delegated:Boolean(a.parentId),reason:w?.reason??null,conversationId:w?.conversationId??null,
-    // What a member answered is read; delegated parts stay internal to the coordinator, who writes the answer.
-    result:!a.parentId&&w?.phase==='done'?(w.result??'').slice(0,6000):null};})}];
+   assignments:mine.map(a=>{const w=work(db,a.id);
+    const isFinalPublisher=!a.parentId&&(!hasCoordinatorRoot||a.role===coordinator);
+    return {role:a.role,state:a.state,delegated:Boolean(a.parentId),reason:w?.reason??null,conversationId:w?.conversationId??null,
+     // Delegated work and pre-review specialist drafts stay internal; the coordinator's vetted answer is published.
+     result:isFinalPublisher&&w?.phase==='done'?(w.result??'').slice(0,6000):null};})}];
  });
 }
 /** One request as people see it, or undefined when it is not (or no longer) the team's. */
@@ -533,6 +666,7 @@ export async function cancelTeamRequest(member:TeamMember,ref:string|null,chatId
    a.state='cancelled';saveAssignment(db,a);
    const w=work(db,a.id);if(w&&w.phase!=='done'){w.phase='held';w.reason='cancelled_by_human';saveWork(db,w);}
   }
+  cancelPendingProposalsForRoot(db,member.teamId,request.id);
  });
  let stopFailures=0;
  for(const {role,turn} of running){
@@ -551,7 +685,9 @@ export async function retryTeamRequest(member:TeamMember,ref:string|null,chatId?
  const db=await assignmentDatabase(),previous=pickRequest(db,member.teamId,requestViews(db,member.teamId),ref,['stopped','needs_you','cancelled'],chatId);
  const old=root(db,previous.id),stored=old.browser?null:await getTeamMessage(member.teamId,old.source.id);
  const material=stored?mediaText([await (await import('./telegram-media.js')).prepareTeamMessageMedia(stored)]):old.source.text;
- const roles=[...new Set(assignments(db,member.teamId).filter(a=>a.rootId===old.id&&!a.parentId).map(a=>a.role))].filter(role=>teamRolesSync(db,member.teamId).roles.includes(role));
+ const {roles:knownRoles,coordinator}=teamRolesSync(db,member.teamId);
+ const reviewId=coordinator?key(old.id,'coordinator-review',coordinator):null;
+ const roles=[...new Set(assignments(db,member.teamId).filter(a=>a.rootId===old.id&&!a.parentId&&a.id!==reviewId).map(a=>a.role))].filter(role=>knownRoles.includes(role));
  if(!roles.length)throw new TeamError('None of the members that request was for is in the team any more',409);
  const fresh:Root={...old,id:key(old.id,'retry',randomUUID())};
  const created=transaction(db,()=>{

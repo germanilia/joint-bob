@@ -17,6 +17,7 @@ const REASONS: Record<string, string> = {
   delegation_limit: 'ten delegated turns were used up',
   subject_clarification_required: 'it is not clear which subject this belongs to',
   routing_or_access_refused: 'the message could not be routed',
+  awaiting_proposal_approval: 'waiting for a team member to approve proposed assistant changes',
   cancelled_by_human: 'cancelled',
 };
 export const teamReasonText = (reason: string | null): string => reason ? (REASONS[reason] ?? reason.split('\n')[0].slice(0, 120)) : '';

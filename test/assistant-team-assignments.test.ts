@@ -36,14 +36,23 @@ test('durable acceptance, one acknowledgment, scoped final receipts and unknown 
  }
  await f.message('yes',{message_thread_id:99});
  await recoverTeamWork(f.team.id);
- assert.equal(sends.length,4);
+ // Direct specialist work queues an immediate coordinator review before group publication.
+ const reviewAssignment=(f.db.prepare('SELECT record FROM assistant_team_assignments WHERE team_id=?').all(f.team.id) as Array<{record:string}>)
+  .map(r=>JSON.parse(r.record)).find(a=>a.rootId===assignments[0].rootId&&a.role==='bob')!;
+ assert.ok(reviewAssignment,'coordinator review assignment queued for direct specialist work');
+ const reviewDest=await teamAssignmentDestination(reviewAssignment);
+ await beginPersonalAssistantTurn(f.team.executorAccountId,reviewDest.profile.id,reviewAssignment.requestId,`pi:${reviewDest.destination.sessionId}`,'review','assistant');
+ await finishPersonalAssistantTurn(f.team.executorAccountId,reviewDest.profile.id,reviewAssignment.requestId,'Reviewed qa and product results');
+ f.db.prepare('UPDATE assistant_team_work SET phase=? WHERE assignment_id=?').run('dispatched',reviewAssignment.id);
+ await recoverTeamWork(f.team.id);
+ const sendCountAfterReview=sends.length;
  const originalReplies=sends.filter(send=>send.message_thread_id===23);
- assert.equal(originalReplies.length,3);assert.match(originalReplies[1].text,/qa/i);assert.match(originalReplies[2].text,/product/i);
+ assert.ok(originalReplies.some(send=>/bob: Reviewed qa and product results/i.test(send.text)));
  const clarification=sends.find(send=>send.message_thread_id===99);assert.match(clarification.text,/reply.*question/i);
  for(const send of originalReplies){assert.equal(send.chat_id,'-1');assert.equal(send.reply_parameters.message_id,source.telegramMessageId);}
- await recoverTeamWork(f.team.id);assert.equal(sends.length,4);
+ await recoverTeamWork(f.team.id);assert.equal(sends.length,sendCountAfterReview);
  assert.ok((await listTeamOutbox(f.team.id)).every(row=>row.state==='sent'&&row.receiptId!>0));
- const [finalInitial]=await acceptTeamAssignment(f.member,await f.message('/qa final timeout'),['qa'],null);
+ const [finalInitial]=await acceptTeamAssignment(f.member,await f.message('/bob final timeout'),['bob'],null);
  await deliverTeamOutbox(f.team.id);await routeTeamAssignment(finalInitial.id,{kind:'new'});
  const finalAssignment=(await getTeamAssignment(finalInitial.id))!,finalDestination=await teamAssignmentDestination(finalAssignment);
  await beginPersonalAssistantTurn(f.team.executorAccountId,finalDestination.profile.id,finalAssignment.requestId,`pi:${finalDestination.destination.sessionId}`,'fixture final','assistant');
@@ -52,13 +61,15 @@ test('durable acceptance, one acknowledgment, scoped final receipts and unknown 
  f.db.prepare('UPDATE assistant_team_work SET phase=? WHERE assignment_id=?').run('dispatched',finalAssignment.id);
  fail=true;await recoverTeamWork(f.team.id);fail=false;
  const failedFinal=(await listTeamOutbox(f.team.id)).find(row=>row.assignmentId===finalAssignment.id&&row.kind==='result')!;
- assert.equal(failedFinal.state,'uncertain');assert.equal(sends.length,6);
- await recoverTeamWork(f.team.id);assert.equal(sends.length,6,'unknown final is not resent or rerun');
+ assert.equal(failedFinal.state,'uncertain');
+ const sendsAfterFail=sends.length;
+ await recoverTeamWork(f.team.id);assert.equal(sends.length,sendsAfterFail,'unknown final is not resent or rerun');
  assert.equal((await readTeamWork(f.team.id)).find(w=>w.assignmentId===finalAssignment.id)!.result,finalText);
- const uncertain=await acceptTeamAssignment(f.member,await f.message('/qa timeout'),['qa'],null);fail=true;
+ const uncertain=await acceptTeamAssignment(f.member,await f.message('/bob timeout'),['bob'],null);fail=true;
  await deliverTeamOutbox(f.team.id); assert.equal((await listTeamOutbox(f.team.id)).at(-1)!.state,'uncertain');
- fail=false;await recoverTeamWork(f.team.id);assert.equal(sends.length,7,'uncertain acknowledgment never resent');
- await publishTeamResult(uncertain[0].id);assert.equal(sends.length,7);
+ const sendsAfterUncertainAck=sends.length;
+ fail=false;await recoverTeamWork(f.team.id);assert.equal(sends.length,sendsAfterUncertainAck,'uncertain acknowledgment never resent');
+ await publishTeamResult(uncertain[0].id);assert.equal(sends.length,sendsAfterUncertainAck);
  }finally{globalThis.fetch=original;}
 });
 
@@ -80,7 +91,7 @@ test('exact inquiry reply and current membership; delegated receipts are interna
  await beginPersonalAssistantTurn(f.team.executorAccountId,resolved.profile.id,parent.requestId,`pi:${resolved.destination.sessionId}`,'fixture','assistant');
  promptStarted(f.team.projectId,resolved.destination.sessionId,parent.requestId);
  const identity={account:{accountId:f.member.accountId,username:f.member.username,role:null,homeNodeId:f.member.homeNodeId,isRemoteLogin:false},projectId:f.team.projectId,conversationId:resolved.destination.sessionId,engine:'pi' as const};
- assert.deepEqual((await listTeamTools(identity)).map(t=>t.name),['team_list_agents','team_delegate','team_read_assignment','team_memory_read','team_memory_list','team_memory_write']);
+ assert.deepEqual((await listTeamTools(identity)).map(t=>t.name),['team_list_agents','team_inspect_agent','team_node_catalog','team_delegate','team_read_assignment','team_propose_changes','team_memory_read','team_memory_list','team_memory_write']);
  const child=await delegateTeamAssignment(parent.id,'qa','Check it');
  assert.deepEqual(await delegateTeamAssignment(parent.id,'qa','Check it'),child);
  assert.equal(child.destination.kind,'bob');assert.match((await readTeamWork(f.team.id)).find(w=>w.assignmentId===child.id)!.message,/INTERNAL ONLY/);

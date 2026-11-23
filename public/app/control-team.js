@@ -137,6 +137,7 @@ async function refresh(force = false) {
       const data = await api(`${url}/${endpoint}?offset=${key === 'assignments' ? 0 : offset}&limit=100`);
       if (mine !== request || !current(generationAtRender, url) || !section.isConnected) return;
       const activity = key === 'assignments' ? [
+        ...(data.proposals ?? []).filter(p => p.state === 'pending').map(value => ({ kind: 'proposal', value })),
         ...data.inquiries.filter(i => i.state === 'pending').map(value => ({ kind: 'inquiry', value })),
         ...data.approvals.filter(a => a.state === 'pending').map(value => ({ kind: 'approval', value })),
         ...data.assignments.map(value => ({ kind: 'assignment', value }))
@@ -144,6 +145,18 @@ async function refresh(force = false) {
       const rows = key === 'assignments' ? activity.slice(offset) : data[key] ?? []; list.replaceChildren();
       if (key === 'topics') list.append(button('New topic', 'team-memory-new', () => editMemory(url, list, '', 0)));
       if (key === 'assignments') {
+        for (const entry of rows.filter(r => r.kind === 'proposal')) {
+          const proposal = entry.value;
+          const item = makeNode('article', 'team-record');
+          item.append(makeNode('h4', '', `${proposal.proposedByRole} proposes: ${proposal.summary}`), makeNode('p', '', proposal.rationale));
+          for (const preview of proposal.previews ?? []) {
+            const details = makeNode('details');
+            details.append(makeNode('summary', '', preview.headline), makeNode('pre', 'team-memory-read', preview.detail));
+            item.append(details);
+          }
+          for (const decision of ['approve', 'reject']) item.append(button(decision === 'approve' ? 'Approve' : 'Reject', `team-proposal-${decision}`, async () => { await api(`${url}/proposals/${proposal.id}/decide`, { method: 'POST', body: { decision } }); await show(); await refresh(true); }));
+          list.append(item);
+        }
         for (const entry of rows.filter(r => r.kind === 'inquiry')) {
           const inquiry = entry.value;
           const item = makeNode('article', 'team-record', inquiry.source.text);
