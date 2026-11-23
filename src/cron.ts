@@ -188,8 +188,9 @@ export class CronStore {
     } catch (error) { this.db.exec("ROLLBACK"); throw error; }
     finally { if (this.db.isTransaction) this.db.exec("COMMIT"); }
   }
-  target(id: string, sessionId: string): void {
+  target(id: string, sessionId: string, engine: string): void {
     this.db.prepare("UPDATE cron_runs SET session_id = ? WHERE id = ?").run(sessionId, id);
+    this.db.prepare("UPDATE automation_executions SET session_id = ?, engine = ? WHERE request_id = ?").run(sessionId, engine, id);
   }
   started(id: string, sessionId: string): void {
     this.db.prepare("UPDATE cron_runs SET status = 'running', session_id = ? WHERE id = ?").run(sessionId, id);

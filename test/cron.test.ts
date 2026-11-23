@@ -160,6 +160,27 @@ test("SQLite claims are owner-only, unique, non-overlapping and survive reopen; 
   } finally { db.close(); }
 });
 
+test("a scheduled run that fails before prompt start keeps the same target in History and the execution report", async () => {
+  const { CronStore } = await import("../src/cron.js");
+  const { automationExecutions, transitionAutomationExecution } = await import("../src/automation-executions.js");
+  const db = new DatabaseSync(":memory:");
+  try {
+    const store = new CronStore(db);
+    const task = store.create({ ...input(), sessionId: randomUUID() }, 0);
+    const run = store.claim(task.id, task.ownerNodeId, task.nextRun, [], "personal")!;
+    const selectedSessionId = randomUUID();
+    store.target(run.id, selectedSessionId, "pi");
+    transitionAutomationExecution(db, run.id, "failed", "Model not found");
+    store.finish(run.id, "failed", "Model not found");
+
+    const [execution] = automationExecutions(db, "personal");
+    assert.equal(store.history(task.id)[0].sessionId, selectedSessionId);
+    assert.equal(execution.sessionId, selectedSessionId);
+    assert.equal(execution.engine, "pi");
+    assert.equal(execution.startedAt, null);
+  } finally { db.close(); }
+});
+
 test("scheduled run history keeps the tag snapshot claimed for that run", async () => {
   const { CronStore } = await import("../src/cron.js");
   const db = new DatabaseSync(":memory:");
@@ -204,7 +225,7 @@ test("interrupted runs settle on restart without replay; only pause-on-failure s
     for (const pauseOnFailure of [false, true]) {
       const task = store.create({ ...data, pauseOnFailure }, Date.parse("2026-03-03T13:00:00Z"));
       const run = store.claim(task.id, data.ownerNodeId, task.nextRun)!;
-      store.target(run.id, "conversation");
+      store.target(run.id, "conversation", data.engine);
       assert.equal(store.taskForRun(run.id, "conversation")?.id, task.id);
       assert.equal(store.taskForRun(run.id, "another-conversation"), null);
       store.recover(task.nextRun + 1000);
