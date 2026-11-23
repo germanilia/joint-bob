@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.340.5 — 2026-11-23
+
+- **Assistant teams:** Fixed paused (`waiting_for_human`) proposal assignments and stale pending inquiries (>30 min) silently swallowing new group messages via `openRequests()`, clarified unaddressed imperative requests in `TEAM_ATTENTION_QUESTION`, logged unexpected inbox processing errors, and hardened subject summary updates.
+
 ## 2.340.4 — 2026-11-23
 
 - **Assistant teams:** Included team replies and pending proposals in decision history and execution evidence, auto-updated subject summaries, preserved subject continuity on follow-ups, and stopped asking Confirm/Dismiss on active back-and-forth replies right after the coordinator spoke.
