@@ -38,6 +38,12 @@ test("conversation actions stay inside the card when sub-agent tasks extend the 
     assert.equal(await toggle.getAttribute("aria-expanded"), "false");
     assert.equal(await row.getByTestId("agent-run-task").count(), 0, "sub-agent lines start hidden");
     const foldedHeight = await row.evaluate((element) => element.getBoundingClientRect().height);
+    // The folded summary must not squeeze the card's date, agent and status line (the "Running" badge was clipped away).
+    const metaClipped = await row.evaluate((element) => {
+      const meta = element.querySelector(".session-card > span")!;
+      return meta.scrollWidth > meta.clientWidth;
+    });
+    assert.equal(metaClipped, false, "folded sub-agent summary clips the status line of the conversation");
 
     await toggle.click();
     await row.getByTestId("agent-run-task").first().waitFor();
