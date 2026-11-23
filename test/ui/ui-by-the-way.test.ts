@@ -210,3 +210,56 @@ test("side-chat queues follow-ups, keeps them across reload, and updates automat
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("pasting an image into Ask attaches it, sends it with the question and lists it in history", { timeout: 120_000 }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-ui-chat-paste-"));
+  const environment = await seedDevEnvironment(root, 1);
+  const node = environment.nodes[0];
+  const detailLog = path.join(root, "engine-detail.log");
+  const server = await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log"), JOINT_BOB_TEST_ENGINE_DETAIL_LOG: detailLog });
+  let browser;
+  try {
+    browser = await launchChrome({ headless: true });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(node.url);
+    await page.getByTestId("login-username-input").fill(environment.username);
+    await page.getByTestId("login-password-input").fill(environment.password);
+    await page.getByTestId("login-submit-button").click();
+    await page.getByText("Internal Assistant", { exact: true }).click();
+    await page.getByText(/^short one$/i).first().click();
+    await page.getByTestId("chat-message-input").fill("/bob-btw");
+    await page.locator("#composer").evaluate((form: HTMLFormElement) => form.requestSubmit());
+    await page.getByTestId("conversation-chat-input").waitFor({ timeout: 50_000 });
+    await page.waitForFunction(() => !(document.querySelector("#conversationChatSend") as HTMLButtonElement).disabled);
+    const paste = () => page.getByTestId("conversation-chat-input").evaluate((input) => {
+      const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (char) => char.charCodeAt(0));
+      const data = new DataTransfer();
+      data.items.add(new File([png], "pasted.png", { type: "image/png" }));
+      input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await paste();
+    const chips = page.getByTestId("conversation-chat-attachments").locator(".attachment-chip");
+    await chips.first().waitFor();
+    assert.equal(await chips.count(), 1);
+    await chips.first().getByTestId("attachment-remove-button").click();
+    assert.equal(await chips.count(), 0, "a pasted image can be removed before sending");
+    await paste();
+    await chips.first().waitFor();
+    await page.getByTestId("conversation-chat-settings-toggle").click();
+    await page.getByTestId("conversation-chat-harness").selectOption("claude");
+    await page.getByTestId("conversation-chat-input").fill("what is in this picture?");
+    await page.getByTestId("conversation-chat-send").click();
+    await page.getByTestId("conversation-chat-messages").getByText("Images: pasted.png", { exact: true }).waitFor();
+    await page.getByTestId("conversation-chat-messages").getByText("stubbed response", { exact: true }).waitFor();
+    assert.equal(await chips.count(), 0, "sending clears the attachments");
+    const prompts = (await readFile(detailLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { images: number });
+    assert.equal(prompts.at(-1)!.images, 1);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser?.close();
+    await stopDevNode(server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
