@@ -43,7 +43,7 @@ export const requestViewSchema = z.object({
 /** What Bob says in the chat when a request has ended: its answer, or why it stopped. Null when the person stopped it themselves. */
 export function endText(label: string, view: TeamRequestView): string | null {
   if (view.state === "cancelled") return null;
-  const part = view.assignments.find((entry) => !entry.delegated);
+  const part = view.assignments.find((entry) => !entry.delegated && entry.result) ?? view.assignments.find((entry) => !entry.delegated);
   if (view.state === "done") return `${label} answered:\n\n${(part?.result ?? "").trim().slice(0, ANSWER_CHARS) || "(an empty answer)"}`;
   // The reason may itself begin with "stopped without a result"; it is not said twice.
   const why = part?.reason ? teamReasonText(part.reason).replace(/^stopped without a result;\s*/, "") : "";
