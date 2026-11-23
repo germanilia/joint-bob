@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.340.0 — 2026-11-23
+
+- **Assistant teams:** Any team coordinator can now inspect the host node's attachable secrets (metadata only, never values), inspect teammates' full configs and usage, and propose bundled live changes to team assistants and roster (secrets, tools, MCP servers, skills, instructions, model/harness, logins, add/create/rename/remove) with approval in Telegram or the Web UI. Approved changes apply live immediately and automatically resume the task.
+- **Assistant teams:** Team coordinators now immediately review both delegated and direct `/role` specialist work (with execution traces) before publishing, and team conversations automatically inherit an assistant's attached secrets.
+
 ## 2.339.3 — 2026-11-23
 
 - **Model routing:** Simple coding on Claude now tries Sonnet before Haiku (Haiku stopped without verifying on 4 of 11 judged turns in the last 7 reports).
