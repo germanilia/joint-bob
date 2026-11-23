@@ -24,7 +24,7 @@ import { openNodeDatabase } from "../src/node-database.js";
  let finalResolve!:()=>void;const final=new Promise<void>(resolve=>{finalResolve=resolve;});
  const external=createServer(async(req,res)=>{
   let raw='';for await(const part of req)raw+=part;const body=JSON.parse(raw||'{}');
-  if(req.url?.endsWith('/sendMessage')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ok:true,result:{message_id:++receipt}}));if(body.text==='qa: VERIFIED_RESULT')finalResolve();return;}
+  if(req.url?.endsWith('/sendMessage')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ok:true,result:{message_id:++receipt}}));if(body.text==='bob: VERIFIED_RESULT')finalResolve();return;}
   if(body.questions){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({answers:Object.fromEntries(Object.keys(body.questions).map(k=>[k,body.questions[k].type==='noul'?{noul:0.01}:{type:'choice',choice:k==='subject'?'new':k==='request'?'separate':'none',confidence:.99}]))}));return;}
   inputs.push(body);res.setHeader('Content-Type','text/event-stream');
   for(const [delta,finish] of [[{role:'assistant',content:'VERIFIED_RESULT'},null],[{},'stop']])res.write(`data: ${JSON.stringify({id:'regression',object:'chat.completion.chunk',model:'dev-model',choices:[{index:0,delta,finish_reason:finish}]})}\n\n`);
@@ -84,9 +84,9 @@ import { openNodeDatabase } from "../src/node-database.js";
  const hook=(id:number,text:string)=>fetch(`${node.url}/hooks/teamtelegram-${team.id}`,{method:'POST',headers:{'Content-Type':'application/json','x-telegram-bot-api-secret-token':'fixture-secret'},body:JSON.stringify({update_id:id,message:{message_id:id,date:1,from:{id:8},chat:{id:-1,type:'supergroup'},text,reply_to_message:{message_id:1}}})});
  assert.equal((await hook(3,'/qa investigate that')).status,200);
  await final;
- assert.equal(inputs.length,1);const sent=JSON.stringify(inputs[0].messages);
+ assert.equal(inputs.length,2,'qa direct turn plus immediate bob coordinator review');const sent=JSON.stringify(inputs[0].messages);
  assert.match(sent,/QUIET_FAILURE/,'real provider receives preceding discussion');assert.match(sent,new RegExp(member.accountId));assert.doesNotMatch(sent,/OTHER_TOPIC_DO_NOT_LEAK|Scroll reference turn/);
- const listing=await api<any>(node,remote,'GET',`/projects/${team.projectId}/sessions`);assert.equal(listing.status,200);const conversation=String(db.prepare('SELECT conversation_id FROM assistant_team_conversations WHERE team_id=?').get(team.id)!.conversation_id);const actual=listing.body.sessions.find((s:any)=>s.id===conversation);assert.ok(actual,'ordinary list includes dispatched role conversation');
+ const listing=await api<any>(node,remote,'GET',`/projects/${team.projectId}/sessions`);assert.equal(listing.status,200);const conversation=String(db.prepare('SELECT conversation_id FROM assistant_team_conversations WHERE team_id=? AND assistant_id=?').get(team.id,picked.qa.id)!.conversation_id);const actual=listing.body.sessions.find((s:any)=>s.id===conversation);assert.ok(actual,'ordinary list includes dispatched role conversation');
  const url=new URL('/ws',node.url.replace(/^http/,'ws'));url.searchParams.set('projectId',team.projectId);url.searchParams.set('sessionPath',actual.path);
  const socket=new WebSocket(url,{headers:{Cookie:remote.cookie,Origin:node.url}});
  sockets.push(socket);
