@@ -57,6 +57,30 @@ test("caught API failures identify the request in the alert and survive in clien
   assert.doesNotMatch(logs, /private-query|private-body/);
 });
 
+test("an error alert offers its report: the failed request, its answer, no query or body", { timeout: 120_000 }, async (t) => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  await signIn(page, node.url, environment.username, environment.password);
+  await page.route("**/api/preferences?diagnostic=*", (route) => route.fulfill({ status: 409, json: { error: "Takeback request is no longer available" } }));
+  await page.evaluate(`(async () => {
+    const { api } = await import("/app/api.js");
+    const { toast } = await import("/app/shell.js");
+    try { await api("/api/preferences?diagnostic=private-query", { method: "PUT", body: JSON.stringify({ privateBody: "private-body" }) }); }
+    catch (error) { toast.error(error.message); }
+  })()`);
+  const alert = page.locator('.toast[role="alert"]').filter({ hasText: "PUT /api/preferences" });
+  await alert.waitFor();
+  const download = page.waitForEvent("download");
+  await alert.getByTestId("toast-download-details").click();
+  const file = await (await download).createReadStream();
+  let text = "";
+  for await (const chunk of file) text += chunk;
+  const report = JSON.parse(text);
+  assert.match(report.message, /PUT \/api\/preferences/);
+  assert.equal(report.recentFailedRequests.at(-1).status, 409);
+  assert.match(report.recentFailedRequests.at(-1).reason, /Takeback request is no longer available/);
+  assert.doesNotMatch(text, /private-query|private-body/);
+});
+
 test("agent switch waits for server confirmation before changing conversation identity", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment.username, environment.password);

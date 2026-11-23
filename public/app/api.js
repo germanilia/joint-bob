@@ -3,6 +3,7 @@ import { elements } from "./elements.js";
 import { renderProjects } from "./project-list.js";
 import { renderRecentSessionsDialog } from "./recents.js";
 import { renderSessions } from "./session-list.js";
+import { recordFailure } from "./error-report.js";
 import { state } from "./state.js";
 
 function headers() {
@@ -30,6 +31,7 @@ function requestFailure(error, path, options, status) {
   });
   // Most callers catch and toast only the message, so record diagnostics here.
   // Never log request headers, bodies or query values.
+  if (!cancelled) recordFailure({ method, path: requestPath, status, name: cause.name, message: cause.message, reason, details: cause.details, cancelled, uncertainWrite });
   if (!cancelled) console.warn("API request failed", { method, path: requestPath, status, name: cause.name, message: reason });
   return failure;
 }
