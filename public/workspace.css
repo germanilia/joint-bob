@@ -450,14 +450,9 @@
   /* A conversation's sub-agent conversations open from the count at the end of its row; it never moves. */
   body:not(.focus-ui) #sessionList .session-children-toggle { right: 4px; width: 30px; min-width: 30px; padding: 0; opacity: 1; color: var(--muted); font: 600 10.5px/1 var(--mono); }
   body:not(.focus-ui) #sessionList .list-row[data-session-depth="1"] .session-card { min-height: 0; }
-  /* Its sub-agent steps are a quiet line at the end of the row's second line, so every folded row has the same
-     height; opened, the steps list under the row. */
-  body:not(.focus-ui) #sessionList .list-row:has(> .agent-run-toggle[aria-expanded="false"]) .session-card > span { margin-right: 56%; }
-  body:not(.focus-ui) #sessionList .agent-run-toggle[aria-expanded="false"] {
-    position: absolute; right: 8px; bottom: 7px; z-index: 1; max-width: 54%; height: 18px; min-height: 0; margin: 0; padding: 0 2px; overflow: hidden; border: 0; background: transparent;
-    font-size: 11px; line-height: 18px; text-align: right; text-overflow: ellipsis; white-space: nowrap;
-  }
-  body:not(.focus-ui) #sessionList .list-row.has-children > .agent-run-toggle[aria-expanded="false"] { right: 40px; }
+  /* Its sub-agent steps are a line of their own under the card, so the card's second line (date, agent, status such as
+     Running) is never shortened to make room for them. */
+  body:not(.focus-ui) #sessionList .agent-run-toggle[aria-expanded="false"] { margin-left: 12px; }
   body:not(.focus-ui) #sessionList .agent-run-toggle[aria-expanded="true"] { margin-left: 10px; }
   body:not(.focus-ui) #sessionList .agent-run-list { margin-left: 10px; }
   /* Notes: the queue's explanation is one line until the pointer or the focus is on the queue, so the notes keep the column. */
