@@ -70,7 +70,6 @@ async function repliedOutput(message:TeamMessage){return (await conversationData
 export async function directTeamTargets(message:TeamMessage):Promise<TeamRole[]> {
  const stored=decode((await conversationDatabase()).prepare('SELECT record FROM assistant_team_messages WHERE id=? AND team_id=?').get(message.id,message.teamId));
  if(!stored||stored.output)return [];
- const reply=await repliedOutput(stored);if(reply)return [reply.role];
  const known=await teamTelegramConnection(message.teamId), targets:TeamRole[]=[];
  // Commands come from the member list; the bot's own name addresses the coordinator.
  const {roles,coordinator}=teamRolesSync(await conversationDatabase(),message.teamId);
@@ -89,6 +88,8 @@ export async function directTeamTargets(message:TeamMessage):Promise<TeamRole[]>
  for(const entity of stored.entities){
   if(entity.type==='mention'&&!blocked(entity.offset,entity.offset+entity.length)&&stored.text.slice(entity.offset,entity.offset+entity.length).toLowerCase()===`@${known?.bot_username.toLowerCase()}`&&coordinator&&!targets.includes(coordinator))targets.push(coordinator);
  }
+ if(targets.length)return targets;
+ const reply=await repliedOutput(stored);if(reply)return [reply.role];
  return targets;
 }
 export async function saveTeamSubject(subject:TeamSubject,chatId:string,threadId:number|null):Promise<void>{
