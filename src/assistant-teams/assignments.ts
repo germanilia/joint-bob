@@ -616,12 +616,15 @@ function requestStateOf(states:AssignmentState[]):TeamRequestState {
 }
 /** Newest first. */
 function requestViews(db:DatabaseSync,teamId:string):TeamRequestView[] {
- const all=assignments(db,teamId),{coordinator}=teamRolesSync(db,teamId);
+ const all=assignments(db,teamId),{roles,coordinator}=teamRolesSync(db,teamId);
  return db.prepare('SELECT record FROM assistant_team_roots WHERE team_id=? ORDER BY rowid DESC').all(teamId).map(row=>JSON.parse(row.record as string) as Root).flatMap(r=>{
   const mine=all.filter(a=>a.rootId===r.id);
   if(!mine.length)return [];
   const hasCoordinatorRoot=Boolean(coordinator&&mine.some(a=>!a.parentId&&a.role===coordinator));
-  return [{id:r.id,shortId:r.id.slice(0,6),text:r.source.text,requestedBy:r.source.accountId,chatId:r.source.chatId,createdAt:r.source.createdAt,browser:r.browser,state:requestStateOf(mine.map(a=>a.state)),
+  const rawState=requestStateOf(mine.map(a=>a.state));
+  // Direct specialist work is not done until the coordinator has also reviewed and completed it.
+  const awaitingReview=rawState==='done'&&Boolean(coordinator&&roles.includes(coordinator)&&!hasCoordinatorRoot&&mine.some(a=>!a.parentId&&a.role!==coordinator));
+  return [{id:r.id,shortId:r.id.slice(0,6),text:r.source.text,requestedBy:r.source.accountId,chatId:r.source.chatId,createdAt:r.source.createdAt,browser:r.browser,state:awaitingReview?'queued':rawState,
    assignments:mine.map(a=>{const w=work(db,a.id);
     const isFinalPublisher=!a.parentId&&(!hasCoordinatorRoot||a.role===coordinator);
     return {role:a.role,state:a.state,delegated:Boolean(a.parentId),reason:w?.reason??null,conversationId:w?.conversationId??null,
