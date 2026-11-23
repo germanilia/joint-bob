@@ -29,7 +29,8 @@ test('a cluster member steers a team hosted on another machine: sees it, sends i
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.equal(view?.state, 'done', JSON.stringify(view));
-    assert.equal(view.assignments[0].result, 'HUB_TEAM_ANSWER');
+    const finalPart = view.assignments.find((entry: any) => !entry.delegated && entry.result);
+    assert.equal(finalPart?.result, 'HUB_TEAM_ANSWER');
     assert.match(JSON.stringify(requests), /Check the sign-in page/, 'the member ran on the host with the person\'s words');
 
     // The team's conversation is in the member's own project list, named for who did what rather than for the assistant's instructions.
