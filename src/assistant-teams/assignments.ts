@@ -152,16 +152,22 @@ export async function createTeamInquiry(member:TeamMember,message:TeamMessage,ro
  });
 }
 export interface OpenTeamRequest { id:string; subjectId:string|null; text:string; accountId:string; messageId:string }
+function inquiryIsRecent(currentCreatedAt:string,priorCreatedAt:string,windowMs=30*60_000):boolean {
+ const currentTs=Date.parse(currentCreatedAt),priorTs=Date.parse(priorCreatedAt);
+ if(!Number.isFinite(priorTs)||!Number.isFinite(currentTs))return true;
+ return currentTs>=priorTs ? currentTs-priorTs<=windowMs : true;
+}
 function openRequests(db:DatabaseSync,message:TeamMessage):OpenTeamRequest[] {
  const all=assignments(db,message.teamId),result:OpenTeamRequest[]=[];
  const scoped=(source:TeamMessage)=>source.chatId===message.chatId&&source.threadId===message.threadId;
  for(const row of db.prepare("SELECT record FROM assistant_team_inquiries WHERE team_id=? AND state='pending'").all(message.teamId)){
   const q=JSON.parse(row.record as string) as TeamInquiry;
-  if(scoped(q.source))result.push({id:rootKey(q.source),subjectId:q.route.kind==='continue'?q.route.subjectId:null,text:q.source.text,accountId:q.source.accountId,messageId:q.source.id});
+  if(scoped(q.source)&&inquiryIsRecent(message.createdAt,q.source.createdAt))result.push({id:rootKey(q.source),subjectId:q.route.kind==='continue'?q.route.subjectId:null,text:q.source.text,accountId:q.source.accountId,messageId:q.source.id});
  }
  for(const row of db.prepare('SELECT record FROM assistant_team_roots WHERE team_id=?').all(message.teamId)){
   const r=JSON.parse(row.record as string) as Root;
-  if(!r.browser&&r.subjectId&&scoped(r.source)&&all.some(a=>a.rootId===r.id&&!['completed','failed','cancelled'].includes(a.state))&&!result.some(q=>q.id===r.id))result.push({id:r.id,subjectId:r.subjectId,text:r.source.text,accountId:r.source.accountId,messageId:r.source.id});
+  // Only actively accepted/queued/running work can absorb additional evidence; paused (waiting_for_human) or uncertain work must never swallow new messages.
+  if(!r.browser&&r.subjectId&&scoped(r.source)&&all.some(a=>a.rootId===r.id&&['accepted','queued','running'].includes(a.state))&&!result.some(q=>q.id===r.id))result.push({id:r.id,subjectId:r.subjectId,text:r.source.text,accountId:r.source.accountId,messageId:r.source.id});
  }
  return result;
 }
@@ -533,7 +539,9 @@ async function processInbox(teamId:string) {
    }
    if(!accepted.length)accepted=await acceptTeamAssignment(member,message,decision.targets,null);
    for(const a of accepted){const w=work(db,a.id)!;w.message=enriched;saveWork(db,w);await routeTeamAssignment(a.id,decision.route);}
-  }catch{transaction(db,()=>{
+  }catch(error){
+   console.warn('Team inbox processing refused:',error instanceof Error?error.message:error);
+   transaction(db,()=>{
    db.prepare("UPDATE assistant_team_inbox_claims SET state='held' WHERE event_id=?").run(event.id);
    db.prepare("UPDATE assistant_team_inbox SET error='team_processing_refused' WHERE id=?").run(event.id);
    for(const a of assignments(db,teamId).filter(a=>a.rootId===rootKey(message!)&&a.state==='accepted')){a.state='waiting_for_human';const w=work(db,a.id)!;w.reason='routing_or_access_refused';saveAssignment(db,a);saveWork(db,w);}

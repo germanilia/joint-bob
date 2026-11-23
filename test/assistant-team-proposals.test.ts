@@ -342,6 +342,21 @@ test('coordinator sees pending proposals in execution evidence, lists/supersedes
     assert.equal(newProposal.state, 'pending');
 
     promptEnded(f.team.projectId, resolvedBob.destination.sessionId, liveBob.requestId);
+
+    // 5. Paused waiting_for_human proposal assignments and stale pending inquiries (>30m) must NEVER swallow new requests via openTeamRequests.
+    await finishPersonalAssistantTurn(f.team.executorAccountId, resolvedBob.profile.id, liveBob.requestId, 'Waiting for approval.');
+    f.db.prepare('UPDATE assistant_team_work SET phase=? WHERE assignment_id=?').run('dispatched', liveBob.id);
+    await recoverTeamWork(f.team.id);
+    assert.equal((await getTeamAssignment(liveBob.id))!.state, 'waiting_for_human');
+
+    const { openTeamRequests, createTeamInquiry } = await import('../src/assistant-teams/assignments.js');
+    const oldInquiryMsg = await f.message('Old ignored request', { date: Math.floor((Date.now() - 2 * 3600_000) / 1000) });
+    await createTeamInquiry(f.member, oldInquiryMsg, ['bob'], { kind: 'new' });
+
+    const laterMsg = await f.message('check the status of the recent ci pipelines', { date: Math.floor(Date.now() / 1000) });
+    const open = await openTeamRequests(laterMsg);
+    assert.equal(open.some(r => r.id === liveBob.rootId), false, 'waiting_for_human proposal assignment must not swallow new messages');
+    assert.equal(open.some(r => r.messageId === oldInquiryMsg.id), false, 'stale pending inquiry (>30m) must not swallow new messages');
   } finally {
     globalThis.fetch = originalFetch;
   }
