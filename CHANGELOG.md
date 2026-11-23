@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.340.4 — 2026-11-23
+
+- **Assistant teams:** Included team replies and pending proposals in decision history and execution evidence, auto-updated subject summaries, preserved subject continuity on follow-ups, and stopped asking Confirm/Dismiss on active back-and-forth replies right after the coordinator spoke.
+- **Assistant teams:** Added `team_list_proposals` and `supersedeProposalId` on `team_propose_changes` (with explicit per-field schemas) so coordinators can see and revise pending proposals, enforced explicit `team_memory_write` for "remember ..." requests while stripping duplicate YAML frontmatter, and enforced/surfaced cross-node secret usability (`unusableSecrets` / `usableInTeamProject`).
+- **Error reports & UI:** Added copy/download report actions on error alerts and fixed side-chat header wrapping so the machine chip clears Listen.
+
 ## 2.340.3 — 2026-11-23
 
 - Fixed the machine staying busy while the control center or Inbox is open: every project's conversation lists were rebuilt each minute even when nothing had changed (about 50 rebuilds a minute on a machine with 27 projects). A list is now kept until something changes, rechecked at most every five minutes.
