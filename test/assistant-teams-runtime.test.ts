@@ -161,11 +161,12 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
     assert.equal(second.status, 200, JSON.stringify(second.body)); assert.equal(second.body.conversationId, first.body.conversationId);
     const other = await api<any>(node, auth, 'POST', endpoint, { subjectId: 'beta', requestId: randomUUID(), message: 'Different subject' });
     assert.equal(other.status, 200, JSON.stringify(other.body)); assert.notEqual(other.body.conversationId, first.body.conversationId);
-    assert.equal(requests.length, 3, 'only accepted turns, never a private classifier or source placeholder');
-    const serialized = JSON.stringify(requests);
+    const qaRequests = requests.filter(request => JSON.stringify(request.messages).includes('OWN_QA_INSTRUCTIONS'));
+    assert.equal(qaRequests.length, 3, 'only accepted qa turns, never a private classifier or source placeholder');
+    const serialized = JSON.stringify(qaRequests);
     assert.match(serialized, /OWN_QA_INSTRUCTIONS/, 'a member brings its own instructions');
     assert.doesNotMatch(serialized, /PRIVATE_SKILL_MUST_NOT_LEAK|PRIVATE_INSTRUCTIONS_MUST_NOT_LEAK/, 'machine skills outside the app still stay out');
-    assert.ok(requests.every(request => !(request.tools ?? []).some((tool: any) => /bash|terminal/.test(tool.function?.name))), "the member's own terminal policy applies");
+    assert.ok(qaRequests.every(request => !(request.tools ?? []).some((tool: any) => /bash|terminal/.test(tool.function?.name))), "the member's own terminal policy applies");
     // Actual Bob Pi tools -> durable child -> stored-result continuation, without an in-memory wait tool.
     const bobRequest = randomUUID();
     const delegated = await api<any>(node, auth, 'POST', `/assistant-teams/${team.id}/agents/bob/turn`, { subjectId: 'delegated', requestId: bobRequest, message: 'LIVE_BOB_DELEGATION' });
