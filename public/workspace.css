@@ -696,7 +696,9 @@
      details column is docked beside the conversation (it takes about 360 px of the panel). The panel's width decides,
      never the header's own content, so a model name that changes while an agent works cannot re-flow the header. */
   body:not(.focus-ui) #chatPanel .chat-topbar > .chat-title-block { flex: 0 1 auto; }
-  body:not(.focus-ui) #chatPanel .chat-topbar > .chat-toolbar { order: 0; flex: 1 3 auto; min-width: 0; padding: 0 0 0 16px; }
+  /* A header crowded by the worktree and assistant chips squeezes this row below its chips: clip it so the machine chip
+     ends at the row's edge instead of running under Listen and Mark done. */
+  body:not(.focus-ui) #chatPanel .chat-topbar > .chat-toolbar { order: 0; flex: 1 3 auto; min-width: 0; padding: 0 0 0 16px; overflow: clip; overflow-clip-margin: 4px; }
   @container chatpanel (max-width: 1549px) {
     body:not(.focus-ui) #chatPanel .chat-topbar { flex-wrap: wrap; row-gap: 0; }
     body:not(.focus-ui) #chatPanel .chat-topbar > .chat-title-block { flex: 1 1 0; }

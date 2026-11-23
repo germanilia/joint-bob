@@ -33,6 +33,12 @@ test("side-chat API authorizes conversations, stores defaults and survives serve
     assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
     const answered = await completedChat(node, auth, url);
     assert.deepEqual(answered.messages.map(({ role, text }) => ({ role, text })), [{ role: "user", text: "What happened?" }, { role: "assistant", text: "stubbed response" }]);
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const withImage = await api(node, auth, "POST", url, { question: "", model: defaults.model, images: [{ name: "shot.png", mimeType: "image/png", data: png }] });
+    assert.equal(withImage.status, 202, JSON.stringify(withImage.body));
+    assert.doesNotMatch(JSON.stringify(withImage.body), new RegExp(png.slice(0, 20)), "image bytes never go back to the client");
+    const withImageAnswered = await completedChat(node, auth, url);
+    assert.deepEqual(withImageAnswered.messages[2].images, ["shot.png"]);
     assert.equal(await readFile(source.path, "utf8"), original);
     await stopDevNode(server);
     server = await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log") });
@@ -135,7 +141,7 @@ for (const maxPromptBytes of [70_000, 20_000]) test(`long Claude context is sear
 
 async function completedChat(node: Parameters<typeof api>[0], auth: Parameters<typeof api>[1], url: string) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    const result = await api<{ busy: boolean; messages: Array<{ role: string; text: string }>; queue: unknown[] }>(node, auth, "GET", url);
+    const result = await api<{ busy: boolean; messages: Array<{ role: string; text: string; images?: string[] }>; queue: unknown[] }>(node, auth, "GET", url);
     if (!result.body.busy) return result.body;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }

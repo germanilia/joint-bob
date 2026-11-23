@@ -1,19 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AuthSession } from "../../auth.js";
-import { chatDefaults, chatDefaultsSchema, chatModelSchema, chatState, clearChatHistory, saveChatDefaults, saveChatState, type ChatScope } from "../../conversation-chat.js";
+import { chatDefaults, chatDefaultsSchema, chatModelSchema, chatSnapshot, chatState, clearChatHistory, saveChatDefaults, saveChatState, type ChatScope } from "../../conversation-chat.js";
 import { Feature, hasFeature } from "../../features.js";
 import { validateProjectSecretAccounts } from "../../secrets.js";
 import { getProject, projectVisible } from "../../store.js";
 import { chatChanged, chatRunning, chatStream, startChatQueue } from "../conversation-chat-runner.js";
 import { GitReviewRunError, reviewAccountIds } from "../git-review-run.js";
 import { sendError } from "../http-auth.js";
-import { registeredHarnessIdSchema } from "../schemas.js";
+import { imageAttachmentSchema, registeredHarnessIdSchema } from "../schemas.js";
 import { listReviewScopeSessions } from "../sessions-helpers.js";
 import { app } from "../state.js";
 
 const modelSchema = chatModelSchema.extend({ harnessId: registeredHarnessIdSchema });
-const questionSchema = z.object({ id: z.string().uuid().optional(), question: z.string().trim().min(1).max(40_000), model: modelSchema.nullable(), readOnly: z.boolean().optional() }).strict();
+const questionSchema = z.object({
+  id: z.string().uuid().optional(), question: z.string().trim().max(40_000), model: modelSchema.nullable(), readOnly: z.boolean().optional(),
+  images: z.array(imageAttachmentSchema).max(4).optional(),
+}).strict().refine((value) => value.question.length > 0 || Boolean(value.images?.length), { message: "Ask a question or paste an image", path: ["question"] });
 const modeSchema = z.union([
   z.object({ readOnly: z.boolean() }).strict(),
   z.object({ accountIds: z.array(z.string().uuid()).max(1000) }).strict(),
@@ -62,7 +65,7 @@ for (const method of ["get", "post", "patch", "delete"] as const) {
       }
       if (method === "get") {
         startChatQueue(project, scope, auth.accountId);
-        response.json({ ...chatState(scope), defaults: chatDefaults(auth.userId), busy: chatRunning(scope), stream: chatStream(scope) });
+        response.json({ ...chatSnapshot(scope), defaults: chatDefaults(auth.userId), busy: chatRunning(scope), stream: chatStream(scope) });
         return;
       }
       if (method === "patch") {
@@ -77,7 +80,7 @@ for (const method of ["get", "post", "patch", "delete"] as const) {
         } else state.readOnly = change.readOnly;
         saveChatState(scope, state);
         chatChanged(scope, auth.accountId);
-        response.json(state);
+        response.json(chatSnapshot(scope));
         return;
       }
       if (method === "delete") {
@@ -89,20 +92,20 @@ for (const method of ["get", "post", "patch", "delete"] as const) {
         cleared.accountIds = accountIds;
         saveChatState(scope, cleared);
         chatChanged(scope, auth.accountId);
-        response.json(chatState(scope));
+        response.json(chatSnapshot(scope));
         return;
       }
       const payload = questionSchema.parse(request.body);
       const id = payload.id ?? randomUUID();
       state = chatState(scope);
       if (!state.queue.some((question) => question.id === id) && !state.messages.some((message) => message.id === id)) {
-        state.queue.push({ id, question: payload.question, model: payload.model, readOnly: payload.readOnly ?? state.readOnly });
+        state.queue.push({ id, question: payload.question, model: payload.model, readOnly: payload.readOnly ?? state.readOnly, ...(payload.images?.length ? { images: payload.images } : {}) });
         state.model = payload.model;
         saveChatState(scope, state);
       }
       startChatQueue(project, scope, auth.accountId);
       chatChanged(scope, auth.accountId);
-      response.status(202).json({ ...chatState(scope), busy: chatRunning(scope) });
+      response.status(202).json({ ...chatSnapshot(scope), busy: chatRunning(scope) });
     } catch (error) {
       if (error instanceof GitReviewRunError) sendError(response, error.status, error.message);
       else next(error);

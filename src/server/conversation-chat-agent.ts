@@ -17,6 +17,7 @@ interface ChatAgentInput {
   agent?: ChatAgent;
   accountIds: string[];
   prompt: string;
+  images?: Array<{ type: "image"; data: string; mimeType: string }>;
   onText: (text: string) => void;
   onAgent: (agent: ChatAgent) => void;
   beforeStart: () => Promise<void>;
@@ -62,7 +63,7 @@ export async function runChatAgent(input: ChatAgentInput) {
       }, 5 * 60_000);
       timer.unref();
     });
-    await Promise.race([turn.prompt({ text: input.prompt, beforeStart: input.beforeStart }), timeout]);
+    await Promise.race([turn.prompt({ text: input.prompt, ...(input.images?.length ? { images: input.images } : {}), beforeStart: input.beforeStart }), timeout]);
     if (!text.trim()) throw new Error("Activity Chat produced no answer");
     saveAgent();
     const status = session.status();
