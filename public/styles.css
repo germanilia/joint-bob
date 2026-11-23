@@ -1933,6 +1933,10 @@ textarea.activity-rule-text { min-height: 54px; }
 .conversation-lock-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-inline-start: auto; max-width: 100%; }
 .conversation-lock-actions:not(:has(button:not([hidden]))) { display: none; }
 .conversation-lock-copy { display: grid; gap: 2px; min-width: 0; }
+.done-conversation-notice { flex-wrap: wrap; }
+.done-conversation-notice .conversation-lock-copy { flex: 1 1 260px; }
+.done-conversation-notice .conversation-lock-actions { flex: 0 0 auto; }
+#conversationTakeBackButton { white-space: nowrap; border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .conversation-lock-copy strong { color: var(--amber); font-size: 12px; font-weight: 600; }
 .done-conversation-notice { background: color-mix(in srgb, var(--accent) 8%, var(--header)); }
 .done-conversation-notice .conversation-lock-copy strong { color: var(--accent); }
