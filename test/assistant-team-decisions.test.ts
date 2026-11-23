@@ -83,3 +83,61 @@ test('central batched decisions, deterministic replies, scoped evidence and dura
  assert.equal(await decideTeamMessage(team,await message('/qa missing credential')),null);assert.equal((await listTeamDecisions(team.id))[0].failure?.code,'credentials_unavailable');
  }finally{globalThis.fetch=originalFetch;save(settingsDatabase(),'systemAI',JSON.stringify(systemAiDefaults()));}
 });
+
+test('decision history includes team outputs, active follow-ups avoid confirmation spam and keep subject continuity', async () => {
+  const db = await teamDatabase(), host = await getClusterNode();
+  const accountId = localAccountIdForUsername('decision') ?? (() => { createAdministrator('decision', 'Synthetic-password-123!', false); return localAccountIdForUsername('decision')!; })();
+  const session: AuthSession = { id: randomUUID(), userId: randomUUID(), accountId, username: 'decision', homeNodeId: null, isRemoteLogin: false, email: null, role: 'admin', csrfToken: 'fixture', mustChangePassword: false };
+  const clusterId = randomUUID();
+  createMembershipCluster(db, { nodeId: host.id, name: 'host', url: 'http://127.0.0.1:19002' }, { id: clusterId, name: 'continuity' });
+  addClusterLocalMember(db, clusterId, accountId);
+  const actor = await requireClusterMember(session, clusterId);
+  const team = await createTeam(actor, { projectId: await prepareTeamProject(actor), executorAccountId: accountId });
+  await (await import('./team-members-fixture.js')).seedTeamMembers(team);
+  await telegramDatabase();
+  saveTeamTelegramConnection(db, { teamId: team.id, botId: '2', botUsername: 'continuity_bot', tokenAccountId: 'fixture', headerSecret: 'secret', readsAllGroupMessages: true });
+  db.prepare('INSERT INTO assistant_team_telegram_members VALUES(?,?,?,?)').run(team.id, accountId, '17', 'human');
+  db.prepare('INSERT INTO assistant_team_telegram_groups VALUES(?,?)').run(team.id, '-2');
+  const secret = await saveSecretAccount({ label: 'continuity central', provider: 'typesafe', variables: [{ name: 'TYPESAFE_AI_API_KEY', kind: 'value', value: 'synthetic-continuity-key' }] });
+  const config = systemAiDefaults(); config.decision.typesafeAccountId = secret.id; save(settingsDatabase(), 'systemAI', JSON.stringify(config));
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const sendMsg = async (id: number, text: string) => (await ingestTeamTelegramUpdate(team.id, { update_id: id, message: { message_id: id, chat: { id: -2, type: 'supergroup' }, from: { id: 17 }, date: nowSec + id, text } }))!.message;
+  await saveTeamSubject({ id: 'dev-agent-subject', teamId: team.id, title: 'Add developer agent', summary: '' }, '-2', null);
+  const m1 = await sendMsg(1, 'We should add a developer agent for CI');
+  await bindTeamMessageSubject(team.id, m1.id, 'dev-agent-subject');
+  await recordTeamOutput({ teamId: team.id, chatId: '-2', threadId: null, telegramMessageId: 2, role: 'bob', subjectId: 'dev-agent-subject', assignmentId: 'asg-1', text: 'bob: approval requested — Add /developer using gpt-6-sol' });
+
+  const originalFetch = globalThis.fetch;
+  let lastState: any;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    lastState = JSON.parse(body.state);
+    return Response.json({
+      answers: {
+        attention: { type: 'choice', choice: 'act', confidence: 0.88 },
+        subject: { type: 'choice', choice: 'clarify', confidence: 0.7 },
+        memory: { type: 'choice', choice: 'none', confidence: 0.9 },
+      },
+    });
+  };
+  try {
+    const followUp = await sendMsg(3, 'this new agent will be using sol 6.1 not 6 and should have aws and gh access');
+    const decision = await decideTeamMessage(team, followUp);
+    assert.ok(decision);
+    const teamEntry = lastState.history.find((h: any) => h.sender === 'team');
+    assert.ok(teamEntry, 'history must include prior team replies');
+    assert.equal(teamEntry.role, 'bob');
+    assert.equal(teamEntry.subjectId, 'dev-agent-subject');
+    assert.match(teamEntry.text, /Add \/developer/);
+    assert.match(lastState.subjects[0].summary, /developer agent/i);
+    assert.match(lastState.subjects[0].summary, /bob:/);
+    const audit = (await listTeamDecisions(team.id))[0];
+    assert.ok(!audit.evidenceMessageIds.includes(teamEntry.id));
+    assert.equal(decision.attention, 'act');
+    assert.deepEqual(decision.route, { kind: 'continue', subjectId: 'dev-agent-subject' });
+  } finally {
+    globalThis.fetch = originalFetch;
+    save(settingsDatabase(), 'systemAI', JSON.stringify(systemAiDefaults()));
+  }
+});

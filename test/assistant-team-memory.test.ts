@@ -218,3 +218,26 @@ test('memory has an owner: the team or one member, so each member carries only w
  assert.match(readFileSync(path.join(path.dirname(teamMemoryRoot(f.team.id)),'member-memory','qa','playbook.md'),'utf8'),/QA_ONLY_LESSON/,'member notes are kept in their own folder');
  await assert.rejects(writeTeamMemory(f.member,{topic:'x',expectedRevision:0,description:'d',body:'b',sourceMessageIds:[],scope:'member'}),/need a team member/);
 });
+
+test('team memory strips nested YAML frontmatter on write and returns clean body on read', async () => {
+  const f = await fixture();
+  const { readTeamMemoryTopic } = await import('../src/assistant-teams/memory.js');
+  await writeTeamMemory(f.member, { topic: 'playbook', expectedRevision: 0, description: 'GitHub rules', body: '- For GitHub queries, use the iliagerman account.', sourceMessageIds: [] });
+  const firstRead = await readTeamMemoryTopic(f.member, 'playbook');
+  assert.equal(firstRead.revision, 1);
+  assert.equal(firstRead.description, 'GitHub rules');
+  assert.equal(firstRead.body, '- For GitHub queries, use the iliagerman account.');
+  await writeTeamMemory(f.member, {
+    topic: 'playbook',
+    expectedRevision: 1,
+    description: 'GitHub rules',
+    body: `${firstRead.text}\n- For CI checks, run gh run list.`,
+    sourceMessageIds: [],
+  });
+  const secondRead = await readTeamMemoryTopic(f.member, 'playbook');
+  assert.equal(secondRead.revision, 2);
+  assert.equal((secondRead.text.match(/^---$/gm) ?? []).length, 2, 'must have exactly one frontmatter block (two --- fences)');
+  assert.doesNotMatch(secondRead.body, /^---/);
+  assert.match(secondRead.body, /iliagerman/);
+  assert.match(secondRead.body, /gh run list/);
+});

@@ -4,7 +4,7 @@ import { asNode } from '../account-context.js';
 import { recheckTeamActor, requireTeamExecution, type TeamMember } from './access.js';
 import { scheduleTeamChange, getTeam, getTeamAssignment, listTeamAgents, teamRolesSync, TeamError, type AssignmentState, type TeamAssignment, type TeamMessage, type TeamRole, type TeamRoute } from './store.js';
 import { TEAM_COMMANDS, formatTeamRequest, formatTeamStatus, teamHelp, teamRequestStateLabel, type TeamCommand } from './control-text.js';
-import { teamExecutionEvidence, bindTeamMessageSubject, saveTeamSubject, directTeamTargets, getTeamMessage, listPendingTeamEvents, onTeamInbox, type StoredTeamMessage } from './conversations.js';
+import { teamExecutionEvidence, bindTeamMessageSubject, saveTeamSubject, updateTeamSubjectSummary, directTeamTargets, getTeamMessage, listPendingTeamEvents, onTeamInbox, type StoredTeamMessage } from './conversations.js';
 import { authorizeTeamTelegram } from './telegram.js';
 import { acknowledgmentConfirmed, bindTeamOutputSubject, deliverTeamOutbox, deliveryDatabase, enqueueTeamOutput, listTeamOutbox } from './delivery.js';
 import { decideTeamMessage, listTeamDecisions } from './decisions.js';
@@ -123,6 +123,7 @@ export async function routeTeamAssignment(assignmentId:string,route:TeamRoute):P
   for(const target of assignments(db,a.teamId).filter(t=>t.rootId===a.rootId&&!t.parentId&&['accepted','waiting_for_human'].includes(t.state))){target.subjectId=r.subjectId;target.state='queued';saveAssignment(db,target);}
  });
  if(r.subjectId){
+  if(!r.browser&&r.source.text.trim())await updateTeamSubjectSummary(a.teamId,r.subjectId,'human',r.source.text);
   await bindTeamOutputSubject(a.teamId,r.id,r.subjectId,a.id);
   for(const target of assignments(db,a.teamId).filter(t=>t.rootId===a.rootId&&!t.parentId&&t.state==='queued')){
    const w=work(db,target.id)!;w.originalMaterial??=w.message;w.message=await teamExecutionEvidence(target,w.originalMaterial);saveWork(db,w);

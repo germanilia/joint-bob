@@ -87,13 +87,23 @@ async function commit(member:TeamMember,topic:string,expectedRevision:number,tex
  try{applyTopicText(memoryRoot(member.teamId,role),topic,text);}catch{throw new TeamError('Memory committed; file application waiting for replay',503);}
  return {revision};
 }
+function stripFrontmatter(text:string):string {
+ let out=text.replace(/\r\n/g,'\n').trim();
+ while(/^---\n[\s\S]*?\n---\n*/.test(out)){
+  const next=out.replace(/^---\n[\s\S]*?\n---\n*/,'').trim();
+  if(!next||next===out)break;
+  out=next;
+ }
+ return out;
+}
 async function write(member:TeamMember,raw:WriteInput,learned?:StoredTeamMessage,role:string|null=null){
  const input=teamMemoryWriteSchema.parse(raw);await memberCheck(member);
  if(input.scope==='member'&&role===null)throw new TeamError('Member notes need a team member',400);
  const owner=input.scope==='member'?role:null;
  const evidence=await sources(member.teamId,input.sourceMessageIds);const redact=await teamMemoryRedactor();
  if(redact(input.topic)!==input.topic)throw new TeamError('Topic name contains credential material',400);
- let text:string;try{text=topicText(cleanTopic(input.topic,{description:redact(input.description),body:redact(input.body)+(evidence.lines.length?'\n\n## Sources\n'+evidence.lines.join('\n'):'')}));}
+ const cleanBody=stripFrontmatter(redact(input.body));
+ let text:string;try{text=topicText(cleanTopic(input.topic,{description:redact(input.description),body:cleanBody+(evidence.lines.length?'\n\n## Sources\n'+evidence.lines.join('\n'):'')}));}
  catch(error){if(error instanceof MemoryError)throw new TeamError(error.message,error.status);throw error;}
  return commit(member,input.topic,input.expectedRevision,text,input.sourceMessageIds,learned,owner);
 }
@@ -116,7 +126,10 @@ export async function teamMemoryDigest(teamId:string,role:string):Promise<string
 }
 export async function readTeamMemoryTopic(member:TeamMember,topic:string,role:string|null=null){
  await memberCheck(member);if(!TOPIC_NAME.test(topic))throw new TeamError('Invalid topic',400);
- const row=await current(member.teamId,topic,role);return {text:row?.after_text??'',revision:row?.revision??0};
+ const row=await current(member.teamId,topic,role);
+ const text=row?.after_text??'';
+ const parsed=text?parseTopic(topic,text):null;
+ return {text,revision:row?.revision??0,description:parsed?.description??'',body:parsed?stripFrontmatter(parsed.body):''};
 }
 function page(offset:number,limit:number){if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new TeamError('Invalid memory page (limit 1–100)',400);}
 export async function listTeamMemoryTopics(member:TeamMember,offset=0,limit=50,role:string|null=null){
@@ -156,7 +169,12 @@ export function learnTeamMessage(teamId:string,messageId:string):Promise<void>{r
   stored ??= (await listTeamDecisions(teamId,1000)).find(d=>d.messageId===messageId&&d.messageRevision===m.revision&&d.status==='decided');
   const selected=systemAiSettings().operations.knowledge;if(!selected){status('writer_unavailable');return;}
   const redact=await teamMemoryRedactor();
-  const evidence=await sources(teamId,[messageId,...(stored?.evidenceMessageIds??[]).filter(id=>id!==messageId).slice(-8)]);
+  const humanEvidenceIds:string[]=[];
+  for(const id of (stored?.evidenceMessageIds??[]).filter(id=>id!==messageId).slice(-8)){
+   const prior=await getTeamMessage(teamId,id);
+   if(prior&&!prior.output)humanEvidenceIds.push(id);
+  }
+  const evidence=await sources(teamId,[messageId,...humanEvidenceIds]);
   const history=evidence.evidence.filter(e=>e.id!==messageId&&e.chatId===m.chatId&&e.threadId===m.threadId).map(e=>({id:e.id,accountId:e.accountId,text:redact(e.text).slice(0,1000)}));
   const topics=await listTeamMemoryTopics(member,0,100);const shown:typeof topics=[];let room=16000;
   for(const topic of topics){const size=JSON.stringify(topic).length;if(size<=room){shown.push(topic);room-=size;}}

@@ -25,6 +25,7 @@ import { resourceInventory } from '../resource-inventory.js';
 import {
   conversationScopeId,
   getScopeSecretAccounts,
+  isSecretAccountAllowedForProject,
   listSecretAccounts,
   setScopeSecretAccounts,
   type SecretAccount,
@@ -138,6 +139,7 @@ export const teamProposalChangeSchema = z.discriminatedUnion('kind', [
 export const teamProposalInputSchema = z.object({
   summary: z.string().trim().min(1).max(300),
   rationale: z.string().trim().min(1).max(2000),
+  supersedeProposalId: z.string().uuid().optional(),
   changes: z.array(teamProposalChangeSchema).min(1).max(20),
 }).strict();
 
@@ -215,17 +217,39 @@ function secretSummary(account: SecretAccount): SecretMetadataSummary {
   };
 }
 
-/** Metadata-only view of all secrets available on this host node that can be attached to team assistants. Never includes values. */
-export async function listNodeAttachableSecrets(teamId: string): Promise<SecretMetadataSummary[]> {
+const UNUSABLE_SECRET_REASON = 'Present on this host node, but not shared/granted with its origin node for this team project. Grant it to this machine in Settings → Secrets on its origin machine (in a cluster shared by both nodes), or create a local secret on this host.';
+
+export interface UnusableSecretMetadataSummary extends SecretMetadataSummary {
+  reason: string;
+}
+
+export interface AttachedSecretMetadataSummary extends SecretMetadataSummary {
+  usableInTeamProject?: boolean;
+  unusableReason?: string;
+}
+
+/** Metadata-only view of secrets on this host node split into usable vs blocked for this team's project. Never includes values. */
+export async function listNodeSecretCatalog(teamId: string): Promise<{ secrets: SecretMetadataSummary[]; unusableSecrets: UnusableSecretMetadataSummary[] }> {
   const team = await getTeam(teamId);
   const all = await asNode(() => listSecretAccounts());
-  return all
-    .filter(account => !account.projectId || account.projectId === team.projectId)
-    .map(secretSummary);
+  const secrets: SecretMetadataSummary[] = [];
+  const unusableSecrets: UnusableSecretMetadataSummary[] = [];
+  for (const account of all) {
+    if (account.projectId && account.projectId !== team.projectId) continue;
+    const allowed = await asNode(() => isSecretAccountAllowedForProject(account.id, team.projectId));
+    if (allowed) secrets.push(secretSummary(account));
+    else unusableSecrets.push({ ...secretSummary(account), reason: UNUSABLE_SECRET_REASON });
+  }
+  return { secrets, unusableSecrets };
+}
+
+/** Metadata-only view of all secrets available on this host node that can be attached and resolved in this team's project. Never includes values. */
+export async function listNodeAttachableSecrets(teamId: string): Promise<SecretMetadataSummary[]> {
+  return (await listNodeSecretCatalog(teamId)).secrets;
 }
 
 /** Metadata-only list of secrets currently attached to an assistant (from its source conversation). */
-export async function listAssistantAttachedSecrets(profile: PersonalAssistant): Promise<SecretMetadataSummary[]> {
+export async function listAssistantAttachedSecrets(profile: PersonalAssistant, teamProjectId?: string): Promise<AttachedSecretMetadataSummary[]> {
   if (!isHarnessId(profile.engine)) return [];
   const attached = await asNode(async () => {
     const scope = conversationScopeId(profile.engine, profile.sessionId);
@@ -234,7 +258,14 @@ export async function listAssistantAttachedSecrets(profile: PersonalAssistant): 
     const byId = new Map((await listSecretAccounts()).map(account => [account.id, account]));
     return accountIds.flatMap(id => {
       const account = byId.get(id);
-      return account ? [secretSummary(account)] : [];
+      if (!account) return [];
+      const summary: AttachedSecretMetadataSummary = secretSummary(account);
+      if (teamProjectId) {
+        const usable = isSecretAccountAllowedForProject(account.id, teamProjectId);
+        summary.usableInTeamProject = usable;
+        if (!usable) summary.unusableReason = UNUSABLE_SECRET_REASON;
+      }
+      return [summary];
     });
   });
   return attached;
@@ -375,7 +406,7 @@ export async function listTeamAgentSummaries(teamId: string) {
     }
     const [readinessProblems, attachedSecrets, prefs, logins] = await Promise.all([
       asNode(() => teamAgentReadiness(profile)),
-      listAssistantAttachedSecrets(profile),
+      listAssistantAttachedSecrets(profile, team.projectId),
       resourcePreferencesOf(profile.id),
       assistantLoginProfileIds(profile.id),
     ]);
@@ -429,7 +460,7 @@ export async function inspectTeamAgent(teamId: string, role: string) {
   const { teamAgentReadiness } = await import('./runtime.js');
   const [readinessProblems, attachedSecrets, prefs, logins, files, usage] = await Promise.all([
     asNode(() => teamAgentReadiness(profile)),
-    listAssistantAttachedSecrets(profile),
+    listAssistantAttachedSecrets(profile, team.projectId),
     resourcePreferencesOf(profile.id),
     assistantLoginProfileIds(profile.id),
     listAssistantFiles(profile.id).catch(() => []),
@@ -478,7 +509,7 @@ export async function inspectTeamAgent(teamId: string, role: string) {
 export async function readTeamNodeCatalog(teamId: string) {
   const team = await getTeam(teamId);
   const project = await asNode(() => getProject(team.projectId));
-  const secrets = await listNodeAttachableSecrets(teamId);
+  const { secrets, unusableSecrets } = await listNodeSecretCatalog(teamId);
   const inventory = await asNode(() => resourceInventory({ projectPath: project?.path, projectId: team.projectId, ignoreAssistantPreferences: true })).catch(() => ({ skills: [], plugins: [], mcpServers: [] }));
   const harnesses = await Promise.all(listHarnesses().filter(adapter => adapter.runtime).map(async adapter => {
     try {
@@ -512,6 +543,7 @@ export async function readTeamNodeCatalog(teamId: string) {
     }));
   return {
     secrets,
+    unusableSecrets,
     mcpServers: [...new Map(inventory.mcpServers.map(s => [s.name, { name: s.name, source: s.source }])).values()],
     skills: inventory.skills.slice(0, 100).map(s => ({ name: s.name, description: s.description, origin: s.origin, harnesses: s.harnesses })),
     plugins: inventory.plugins.slice(0, 100).map(p => ({ name: p.name, source: p.source, harnesses: p.harnesses })),
@@ -627,7 +659,9 @@ async function validateAndPreviewChanges(teamId: string, changes: TeamProposalCh
   const team = await getTeam(teamId);
   const coordinator = await teamCoordinator(team);
   const members = await listTeamAgents(teamId);
-  const secrets = new Map((await listNodeAttachableSecrets(teamId)).map(s => [s.id, s]));
+  const { secrets: usableSecrets, unusableSecrets } = await listNodeSecretCatalog(teamId);
+  const secrets = new Map(usableSecrets.map(s => [s.id, s]));
+  const unusableById = new Map(unusableSecrets.map(s => [s.id, s]));
   const simulatedRoles = new Map<string, { assistantId: string | null; profile: PersonalAssistant | null }>();
   for (const m of members) {
     simulatedRoles.set(m.role, { assistantId: m.assistantId, profile: (await getPersonalAssistantById(m.assistantId)) ?? null });
@@ -639,7 +673,10 @@ async function validateAndPreviewChanges(teamId: string, changes: TeamProposalCh
       if (simulatedRoles.has(change.role)) throw new TeamError(`Role "${change.role}" already exists in this team`, 409);
       if (change.executionSettings) await validateExecutionSettingsChoice(change.executionSettings);
       for (const secretId of change.secretAccountIds ?? []) {
-        if (!secrets.has(secretId)) throw new TeamError(`Secret ${secretId} is not available in this node's attachable pool`, 404);
+        if (!secrets.has(secretId)) {
+          const blocked = unusableById.get(secretId);
+          throw new TeamError(blocked ? `Secret "${blocked.label}" (${secretId}) cannot be used in this team project: ${blocked.reason}` : `Secret ${secretId} is not available in this node's attachable pool`, blocked ? 403 : 404);
+        }
       }
       const skillNames: string[] = [];
       for (const skill of change.skills ?? []) skillNames.push(validateSkillFiles(skill.files).name);
@@ -687,8 +724,11 @@ async function validateAndPreviewChanges(teamId: string, changes: TeamProposalCh
       continue;
     }
     if (change.kind === 'attach_secret' || change.kind === 'detach_secret') {
-      const secret = secrets.get(change.secretAccountId);
-      if (!secret) throw new TeamError(`Secret ${change.secretAccountId} is not available in this node's attachable pool`, 404);
+      const secret = secrets.get(change.secretAccountId) ?? (change.kind === 'detach_secret' ? unusableById.get(change.secretAccountId) : undefined);
+      if (!secret) {
+        const blocked = unusableById.get(change.secretAccountId);
+        throw new TeamError(blocked ? `Secret "${blocked.label}" (${change.secretAccountId}) cannot be used in this team project: ${blocked.reason}` : `Secret ${change.secretAccountId} is not available in this node's attachable pool`, blocked ? 403 : 404);
+      }
       const vars = secret.variables.map(v => v.name).join(', ');
       previews.push({
         kind: change.kind,
@@ -816,6 +856,30 @@ export async function createTeamProposal(assignmentId: string, rawInput: unknown
   const db = await proposalDatabase();
   db.exec('BEGIN IMMEDIATE');
   try {
+    if (input.supersedeProposalId) {
+      const priorRow = db.prepare("SELECT state, record FROM assistant_team_proposals WHERE id=? AND team_id=?").get(input.supersedeProposalId, team.id) as { state: TeamProposalState; record: string } | undefined;
+      if (!priorRow) throw new TeamError(`Proposal ${input.supersedeProposalId} not found in this team`, 404);
+      if (priorRow.state !== 'pending') throw new TeamError(`Proposal ${input.supersedeProposalId} is already ${priorRow.state} and cannot be superseded`, 409);
+      const prior = JSON.parse(priorRow.record) as TeamProposal;
+      const cancelled: TeamProposal = { ...prior, state: 'cancelled', decidedAt: new Date().toISOString(), error: `Superseded by revised proposal ${proposal.id}` };
+      db.prepare("UPDATE assistant_team_proposals SET state='cancelled', record=? WHERE id=? AND team_id=? AND state='pending'").run(JSON.stringify(cancelled), prior.id, team.id);
+      if (prior.assignmentId !== assignment.id && !hasPendingTeamProposalForAssignment(db, prior.assignmentId)) {
+        const oldRow = db.prepare('SELECT record FROM assistant_team_assignments WHERE id=? AND team_id=?').get(prior.assignmentId, team.id) as { record: string } | undefined;
+        if (oldRow) {
+          const oldAssignment = JSON.parse(oldRow.record) as TeamAssignment;
+          if (oldAssignment.state === 'waiting_for_human') {
+            oldAssignment.state = 'completed';
+            db.prepare('UPDATE assistant_team_assignments SET record=? WHERE id=?').run(JSON.stringify(oldAssignment), oldAssignment.id);
+            const oldWorkRow = db.prepare('SELECT record FROM assistant_team_work WHERE assignment_id=?').get(oldAssignment.id) as { record: string } | undefined;
+            if (oldWorkRow) {
+              const oldWork = JSON.parse(oldWorkRow.record) as { reason?: string | null };
+              oldWork.reason = 'proposal_superseded';
+              db.prepare('UPDATE assistant_team_work SET record=? WHERE assignment_id=?').run(JSON.stringify(oldWork), oldAssignment.id);
+            }
+          }
+        }
+      }
+    }
     db.prepare('INSERT INTO assistant_team_proposals (id, team_id, assignment_id, root_id, state, record) VALUES (?, ?, ?, ?, ?, ?)')
       .run(proposal.id, proposal.teamId, proposal.assignmentId, proposal.rootId, proposal.state, JSON.stringify(proposal));
     enqueueProposalApprovalOutput(db, proposal, formatProposalForTelegram(proposal));
@@ -866,7 +930,9 @@ async function applyProposalChanges(teamId: string, changes: TeamProposalChange[
     });
   };
   let rosterChanged = false;
-  const secrets = new Map((await listNodeAttachableSecrets(teamId)).map(s => [s.id, s]));
+  const { secrets: usableSecrets, unusableSecrets } = await listNodeSecretCatalog(teamId);
+  const secrets = new Map(usableSecrets.map(s => [s.id, s]));
+  const unusableById = new Map(unusableSecrets.map(s => [s.id, s]));
 
   const resolveMemberProfile = async (role: string): Promise<PersonalAssistant> => {
     const member = (await listTeamAgents(teamId)).find(m => m.role === role);
@@ -954,7 +1020,7 @@ async function applyProposalChanges(teamId: string, changes: TeamProposalChange[
     const profile = await resolveMemberProfile(change.role);
 
     if (change.kind === 'attach_secret' || change.kind === 'detach_secret') {
-      const secret = secrets.get(change.secretAccountId);
+      const secret = secrets.get(change.secretAccountId) ?? (change.kind === 'detach_secret' ? unusableById.get(change.secretAccountId) : undefined);
       if (!secret) throw new TeamError(`Secret ${change.secretAccountId} is unavailable on this node`, 404);
       await attachOrDetachAssistantSecret(profile, change.secretAccountId, change.kind === 'attach_secret' ? 'attach' : 'detach');
       markTouched(profile, false, false);

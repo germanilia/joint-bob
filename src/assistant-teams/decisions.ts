@@ -44,17 +44,49 @@ async function authorized(message: StoredTeamMessage): Promise<boolean> {
   try { return (await authorizeTeamTelegram(message.teamId, message.chatId, message.telegramUserId)).accountId === message.accountId; }
   catch { return false; }
 }
+interface DecisionHistoryItem {
+  message: StoredTeamMessage;
+  sender: 'human' | 'team';
+  role?: TeamRole;
+  subjectId?: string;
+}
+interface PendingProposalBrief {
+  id: string;
+  summary: string;
+  proposedByRole: TeamRole;
+  createdAt: string;
+}
 // Projection only: the full source and edit versions remain in the conversation ledger.
 /** Who the team is, so the model can tell a message meant for the team from talk between people. */
 interface TeamIdentity { coordinator: TeamRole | null; roles: TeamRole[]; botName: string | null }
-function evidence(message: StoredTeamMessage, history: StoredTeamMessage[], candidates: TeamSubject[], budget: number, redact: (text: string) => string, team: TeamIdentity) {
-  const project = (m: StoredTeamMessage) => ({ id: m.id, revision: m.revision, accountId: m.accountId, text: redact(m.text).slice(0, 6000), attachments: m.attachments.slice(0, 10).map(a => ({ text: redact(a.extractedText ?? '').slice(0, 2000), problem: a.problem ? redact(a.problem) : undefined })) });
-  const state = { team, message: project(message), history: history.map(project), subjects: candidates.map(s => ({ ...s, title: redact(s.title).slice(0, 160), summary: redact(s.summary).slice(0, 600) })) };
+function evidence(message: StoredTeamMessage, history: DecisionHistoryItem[], candidates: TeamSubject[], pendingProposals: PendingProposalBrief[], budget: number, redact: (text: string) => string, team: TeamIdentity) {
+  const projectMessage = (m: StoredTeamMessage, extra?: { sender: 'human' | 'team'; role?: TeamRole; subjectId?: string }) => ({
+    id: m.id, revision: m.revision, accountId: m.accountId,
+    ...(extra ? { sender: extra.sender, ...(extra.role ? { role: extra.role } : {}), ...(extra.subjectId ? { subjectId: extra.subjectId } : {}) } : { sender: 'human' as const }),
+    text: redact(m.text).slice(0, 6000),
+    attachments: m.attachments.slice(0, 10).map(a => ({ text: redact(a.extractedText ?? '').slice(0, 2000), problem: a.problem ? redact(a.problem) : undefined })),
+  });
+  const state = {
+    team,
+    message: projectMessage(message),
+    history: history.map(item => projectMessage(item.message, { sender: item.sender, role: item.role, subjectId: item.subjectId })),
+    subjects: candidates.map(s => ({ ...s, title: redact(s.title).slice(0, 160), summary: redact(s.summary).slice(0, 600) })),
+    ...(pendingProposals.length ? { pendingProposals: pendingProposals.map(p => ({ ...p, summary: redact(p.summary).slice(0, 200) })) } : {}),
+  };
   while (JSON.stringify(state).length > budget && state.history.length) state.history.shift();
   while (JSON.stringify(state).length > budget && state.subjects.length) state.subjects.pop();
+  while (JSON.stringify(state).length > budget && state.pendingProposals?.length) state.pendingProposals.pop();
   while (JSON.stringify(state).length > budget && state.message.attachments.length) state.message.attachments.pop();
   while (JSON.stringify(state).length > budget && state.message.text.length) state.message.text = state.message.text.slice(0, Math.floor(state.message.text.length / 2));
   return { state: JSON.stringify(state), messages: [state.message, ...state.history], subjects: state.subjects };
+}
+function isWithinWindow(currentCreatedAt: string, priorCreatedAt: string, windowMs: number): boolean {
+  const currentTs = Date.parse(currentCreatedAt);
+  const priorTs = Date.parse(priorCreatedAt);
+  if (!Number.isFinite(priorTs)) return false;
+  if (Number.isFinite(currentTs) && currentTs >= priorTs) return currentTs - priorTs <= windowMs;
+  // Synthetic test fixtures may use epoch timestamps on inbound updates while team outputs use wall-clock time.
+  return Math.abs(Date.now() - priorTs) <= windowMs;
 }
 function safeTarget(target: SystemOneTarget): SystemOneTarget {
   const url = new URL(target.endpoint); url.username = ''; url.password = ''; url.search = ''; url.hash = '';
@@ -82,17 +114,31 @@ export async function decideTeamMessage(team: AssistantTeam, input: TeamMessage)
     const selected = await decisionModelTarget(model, key); if (!selected) throw new Error();
     record.target = safeTarget(selected.target);
     stage = 'evidence_unavailable';
-    const history: StoredTeamMessage[] = [];
+    const db = await conversationDatabase();
+    const history: DecisionHistoryItem[] = [];
     for (const prior of await listTeamHistory(team.id, message.chatId, message.threadId, 20)) {
-      if (prior.telegramMessageId < message.telegramMessageId && await authorized(prior)) history.push(prior);
+      if (prior.telegramMessageId >= message.telegramMessageId) continue;
+      if (prior.output) {
+        const out = db.prepare('SELECT role, subject_id subjectId FROM assistant_team_outputs WHERE team_id=? AND chat_id=? AND thread_id IS ? AND message_id=?').get(team.id, prior.chatId, prior.threadId, prior.telegramMessageId) as { role: TeamRole; subjectId: string } | undefined;
+        history.push({ message: prior, sender: 'team', role: out?.role, subjectId: out?.subjectId });
+      } else if (await authorized(prior)) {
+        const bound = db.prepare('SELECT subject_id subjectId FROM assistant_team_message_subjects WHERE team_id=? AND message_id=?').get(team.id, prior.id) as { subjectId: string } | undefined;
+        history.push({ message: prior, sender: 'human', subjectId: bound?.subjectId });
+      }
     }
     const candidates = reply ? [] : await teamSubjectCandidates(team.id, message);
+    const pendingProposals: PendingProposalBrief[] = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assistant_team_proposals'").get()
+      ? (await (await import('./proposals.js')).listTeamProposals(team.id, 10))
+          .filter(p => p.state === 'pending')
+          .map(p => ({ id: p.id, summary: p.summary, proposedByRole: p.proposedByRole, createdAt: p.createdAt }))
+      : [];
     const redact = await (await import('./memory.js')).teamMemoryRedactor();
-    const identity = teamRolesSync(await conversationDatabase(), team.id);
-    const bounded = evidence(message, history, candidates, Math.min(selected.target.stateCharacters, 24000), redact, { ...identity, botName: (await teamTelegramConnection(team.id))?.bot_username ?? null });
+    const identity = teamRolesSync(db, team.id);
+    const bounded = evidence(message, history, candidates, pendingProposals, Math.min(selected.target.stateCharacters, 24000), redact, { ...identity, botName: (await teamTelegramConnection(team.id))?.bot_username ?? null });
     if (bounded.state.length > selected.target.stateCharacters) throw new Error();
-    record.evidenceMessageIds = bounded.messages.map(m => m.id);
-    record.evidenceRevisions = Object.fromEntries(bounded.messages.map(m => [m.id, m.revision]));
+    const humanMessages = bounded.messages.filter(m => m.sender !== 'team');
+    record.evidenceMessageIds = humanMessages.map(m => m.id);
+    record.evidenceRevisions = Object.fromEntries(humanMessages.map(m => [m.id, m.revision]));
     record.subjectIds = bounded.subjects.map(s => s.id);
     const requests: import('./assignments.js').OpenTeamRequest[] = [];
     for (const candidate of (await (await import('./assignments.js')).openTeamRequests(message)).filter(r => r.messageId !== message.id).slice(-20)) {
@@ -115,9 +161,21 @@ export async function decideTeamMessage(team: AssistantTeam, input: TeamMessage)
     if ((await getTeam(team.id)).revision !== record.settingsRevision || (await getTeamMessage(team.id, message.id))?.revision !== message.revision) throw new Error();
     stage = 'access_denied'; if (!await authorized(message)) throw new Error();
     const picked: TeamRoute = reply ?? (answers.subject.choice === 'new' ? { kind: 'new' } : answers.subject.choice === 'clarify' ? { kind: 'clarify' } : { kind: 'continue', subjectId: bounded.subjects[Number(answers.subject.choice.slice('subject_'.length))].id });
-    const attention = targets.length ? 'direct' : proactiveDisposition(answers.attention.choice as 'act' | 'none', answers.attention.confidence, currentTeam.settings);
-    // A message the team acts on is the subject itself: asking "which subject?" instead of answering helps nobody.
-    const route: TeamRoute = !reply && picked.kind === 'clarify' && attention !== 'silent' ? { kind: 'new' } : picked;
+    const baseAttention = targets.length ? 'direct' : proactiveDisposition(answers.attention.choice as 'act' | 'none', answers.attention.confidence, currentTeam.settings);
+    // In an active back-and-forth right after a team reply or while a proposal is pending, promote high-interest 'ask' (> askThreshold) to 'act' to avoid nagging on every turn.
+    const latestHistory = history.at(-1);
+    const activeTeamExchange = Boolean(
+      (latestHistory?.sender === 'team' && isWithinWindow(message.createdAt, latestHistory.message.createdAt, 10 * 60_000))
+      || (pendingProposals.length && [...history].reverse().some(item => item.sender === 'team' && isWithinWindow(message.createdAt, item.message.createdAt, 30 * 60_000))),
+    );
+    const attention = baseAttention === 'ask' && activeTeamExchange ? 'act' : baseAttention;
+    // When the classifier says clarify on a message the team acts on, prefer continuing the recently active subject over spawning a blank conversation.
+    const recentActiveSubjectId = !reply && picked.kind === 'clarify' && attention !== 'silent'
+      ? [...history].reverse().find(item => item.subjectId && bounded.subjects.some(s => s.id === item.subjectId) && isWithinWindow(message.createdAt, item.message.createdAt, 30 * 60_000))?.subjectId
+      : undefined;
+    const route: TeamRoute = !reply && picked.kind === 'clarify' && attention !== 'silent'
+      ? (recentActiveSubjectId ? { kind: 'continue', subjectId: recentActiveSubjectId } : { kind: 'new' })
+      : picked;
     const requestId = requests.length && answers.request.choice !== 'separate' ? requests[Number(answers.request.choice.slice('request_'.length))].id : undefined;
     const coordinator = await teamCoordinator(currentTeam);
     record.result = { ...(requestId ? { requestId } : {}), attention, targets: targets.length ? targets : attention === 'silent' || !coordinator ? [] : [coordinator], route, learn: answers.memory.choice === 'learn' };
