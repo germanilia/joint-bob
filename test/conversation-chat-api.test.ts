@@ -10,7 +10,8 @@ test("side-chat API authorizes conversations, stores defaults and survives serve
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-chat-api-"));
   const environment = await seedDevEnvironment(root, 1);
   const node = environment.nodes[0];
-  let server = await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log") });
+  const detailLog = path.join(root, "engine-detail.log");
+  let server = await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log"), JOINT_BOB_TEST_ENGINE_DETAIL_LOG: detailLog });
   try {
     let auth = await signIn(environment, node);
     const project = node.projects[0];
@@ -39,9 +40,12 @@ test("side-chat API authorizes conversations, stores defaults and survives serve
     assert.doesNotMatch(JSON.stringify(withImage.body), new RegExp(png.slice(0, 20)), "image bytes never go back to the client");
     const withImageAnswered = await completedChat(node, auth, url);
     assert.deepEqual(withImageAnswered.messages[2].images, ["shot.png"]);
+    const prompts = (await readFile(detailLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { images: number });
+    assert.equal(prompts.at(-1)!.images, 1, "the pasted image reaches the side agent");
+    assert.equal(prompts[0].images, 0);
     assert.equal(await readFile(source.path, "utf8"), original);
     await stopDevNode(server);
-    server = await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log") });
+    server = await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log"), JOINT_BOB_TEST_ENGINE_DETAIL_LOG: detailLog });
     auth = await signIn(environment, node);
     const restored = await api<{ messages: unknown[]; defaults: unknown }>(node, auth, "GET", url);
     // The image question and its answer were saved after `answered`; a restart keeps all of them.

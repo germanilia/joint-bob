@@ -696,15 +696,17 @@
      details column is docked beside the conversation (it takes about 360 px of the panel). The panel's width decides,
      never the header's own content, so a model name that changes while an agent works cannot re-flow the header. */
   body:not(.focus-ui) #chatPanel .chat-topbar > .chat-title-block { flex: 0 1 auto; }
+  /* The one-line header needs 150 px more than first measured once a worktree chip and an assistant chip sit beside a long
+     title (the machine chip ran under Listen just above the old limits), so the limits above are 150 px higher. */
   /* A header crowded by the worktree and assistant chips squeezes this row below its chips: clip it so the machine chip
      ends at the row's edge instead of running under Listen and Mark done. */
   body:not(.focus-ui) #chatPanel .chat-topbar > .chat-toolbar { order: 0; flex: 1 3 auto; min-width: 0; padding: 0 0 0 16px; overflow: clip; overflow-clip-margin: 4px; }
-  @container chatpanel (max-width: 1549px) {
+  @container chatpanel (max-width: 1699px) {
     body:not(.focus-ui) #chatPanel .chat-topbar { flex-wrap: wrap; row-gap: 0; }
     body:not(.focus-ui) #chatPanel .chat-topbar > .chat-title-block { flex: 1 1 0; }
     body:not(.focus-ui) #chatPanel .chat-topbar > .chat-toolbar { order: 1; flex: 0 0 100%; padding: 12px 0 14px; }
   }
-  @container chatpanel (max-width: 1899px) {
+  @container chatpanel (max-width: 2049px) {
     body:not(.focus-ui):not(.ws-details-tucked) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])) .chat-topbar { flex-wrap: wrap; row-gap: 0; }
     body:not(.focus-ui):not(.ws-details-tucked) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])) .chat-topbar > .chat-title-block { flex: 1 1 0; }
     body:not(.focus-ui):not(.ws-details-tucked) #chatPanel:has(> .messages-wrap > #activityPanel:not([hidden])) .chat-topbar > .chat-toolbar { order: 1; flex: 0 0 100%; padding: 12px 0 14px; }
