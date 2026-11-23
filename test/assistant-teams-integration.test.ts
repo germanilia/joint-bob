@@ -157,12 +157,13 @@ test('loopback Telegram HTTP → durable queue → Pi tools: four private specia
   const lastUser=JSON.stringify([...input.messages].reverse().find((m:any)=>m.role==='user')?.content??'');
   const last=input.messages.at(-1);
   const isBob=input.tools?.some((t:any)=>t.function.name==='mcp__joint_bob__team_delegate');
+  const isDirectReview=isBob&&lastUser.includes('Review the completed direct specialist work');
   let role:string|undefined;
-  if(isBob&&last.role!=='tool'){
+  if(isBob&&!isDirectReview&&last.role!=='tool'){
    const previous=roles.filter(r=>JSON.stringify(input.messages).includes(`PRIVATE_${r}_RESULT`));role=roles[previous.length];
   }
   const delta=role?{role:'assistant',tool_calls:[{index:0,id:randomUUID(),type:'function',function:{name:'mcp__joint_bob__team_delegate',arguments:JSON.stringify({role,message:`WORK_${role}`})}}]}:
-   {role:'assistant',content:!(input.tools??[]).length?JSON.stringify({topic:'quiet-decision',expectedRevision:0,description:'Synthetic agreed decision',body:'Team agreed to preserve the test fixture. [[testing]]'}):isBob?(last.role==='tool'?'INTERMEDIATE_NOT_PUBLIC':'FINAL_BOB_ONLY'):(roles.some(r=>lastUser.includes(`WORK_${r}`))?`PRIVATE_${roles.find(r=>lastUser.includes(`WORK_${r}`))}_RESULT`:'DIRECT_QA_RESULT')};
+   {role:'assistant',content:!(input.tools??[]).length?JSON.stringify({topic:'quiet-decision',expectedRevision:0,description:'Synthetic agreed decision',body:'Team agreed to preserve the test fixture. [[testing]]'}):isDirectReview?'REVIEWED_DIRECT_QA_RESULT':isBob?(last.role==='tool'?'INTERMEDIATE_NOT_PUBLIC':'FINAL_BOB_ONLY'):(roles.some(r=>lastUser.includes(`WORK_${r}`))?`PRIVATE_${roles.find(r=>lastUser.includes(`WORK_${r}`))}_RESULT`:'DIRECT_QA_RESULT')};
   const chunk=(delta:unknown,finish:string|null)=>`data: ${JSON.stringify({id:'integrated',object:'chat.completion.chunk',created:0,model:'dev-model',choices:[{index:0,delta,finish_reason:finish}]})}\n\n`;
   res.writeHead(200,{'Content-Type':'text/event-stream'});res.end(chunk(delta,null)+chunk({},role?'tool_calls':'stop')+'data: [DONE]\n\n');
  });
@@ -240,14 +241,14 @@ test('loopback Telegram HTTP → durable queue → Pi tools: four private specia
   assert.equal(db.prepare('SELECT COUNT(*) n FROM assistant_team_conversations WHERE team_id=?').get(team.id)!.n,5);
   const directText='/qa direct verification '+ 'evidence '.repeat(2400)+' END_OF_FULL_INPUT';
   assert.equal((await hook(message(4,directText))).status,200);
-  const qa=await waitSend(body=>body.text==='qa: DIRECT_QA_RESULT');assert.equal(qa.reply_parameters.message_id,4);
+  const qa=await waitSend(body=>body.text==='bob: REVIEWED_DIRECT_QA_RESULT');assert.equal(qa.reply_parameters.message_id,4);
   assert.ok(requests.some(request=>JSON.stringify(request.messages).includes(directText)),'actual provider receives the full input beyond 20k');
   assert.equal((await api(node,auth,'GET',`${base}/assignments`)).status,200);
-  const output=db.prepare('SELECT role FROM assistant_team_outputs WHERE team_id=? AND message_id=?').get(team.id,qa.receipt);assert.equal(output!.role,'qa');
+  const output=db.prepare('SELECT role FROM assistant_team_outputs WHERE team_id=? AND message_id=?').get(team.id,qa.receipt);assert.equal(output!.role,'bob');
   const firstQa=JSON.parse(String(db.prepare("SELECT record FROM assistant_team_assignments WHERE team_id=? AND json_extract(record,'$.role')='qa' AND json_extract(record,'$.parentId') IS NULL").get(team.id)!.record));
-  await Promise.all([hook(message(5,'Follow up from second member',{from:{id:8},reply_to_message:{message_id:qa.receipt}})),hook(message(6,'/qa distinct simultaneous subject',{message_thread_id:43}))]);
-  const followup=await waitSend(body=>body.text==='qa: DIRECT_QA_RESULT'&&body.reply_parameters.message_id===5);
-  const distinct=await waitSend(body=>body.text==='qa: DIRECT_QA_RESULT'&&body.reply_parameters.message_id===6);
+  await Promise.all([hook(message(5,'/qa Follow up from second member',{from:{id:8},reply_to_message:{message_id:qa.receipt}})),hook(message(6,'/qa distinct simultaneous subject',{message_thread_id:43}))]);
+  const followup=await waitSend(body=>body.text==='bob: REVIEWED_DIRECT_QA_RESULT'&&body.reply_parameters.message_id===5);
+  const distinct=await waitSend(body=>body.text==='bob: REVIEWED_DIRECT_QA_RESULT'&&body.reply_parameters.message_id===6);
   assert.equal(followup.message_thread_id,42);assert.equal(distinct.message_thread_id,43);
   await api(node,auth,'GET',`${base}/assignments`);
   const roots=db.prepare("SELECT record FROM assistant_team_assignments WHERE team_id=? AND json_extract(record,'$.role')='qa' AND json_extract(record,'$.parentId') IS NULL ORDER BY rowid").all(team.id).map(r=>JSON.parse(String(r.record)));
@@ -255,7 +256,7 @@ test('loopback Telegram HTTP → durable queue → Pi tools: four private specia
   assert.equal(remote.subjectId,firstQa.subjectId);assert.notEqual(roots.find(a=>a.id!==firstQa.id&&a.id!==remote.id)!.subjectId,firstQa.subjectId);
   const workRows=db.prepare('SELECT record FROM assistant_team_work').all().map(r=>JSON.parse(String(r.record)));
   assert.equal(workRows.find(w=>w.assignmentId===remote.id).conversationId,workRows.find(w=>w.assignmentId===firstQa.id).conversationId);
-  assert.equal(requests.length,17,'one writer, nine Bob completions including tool returns, four children, three direct QA turns');
+  assert.equal(requests.length,20,'one writer, nine Bob completions including tool returns, four children, three direct QA turns, three Bob direct reviews');
   assert.equal(sends.length,9,'one inquiry and four root acknowledgment/result pairs; no child publications');
   const count=requests.length,sendCount=sends.length;
   await stopDevNode(child);child=undefined;child=await startDevNode(env,node,extra);
