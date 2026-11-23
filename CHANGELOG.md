@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.340.3 — 2026-11-23
+
+- Fixed the machine staying busy while the control center or Inbox is open: every project's conversation lists were rebuilt each minute even when nothing had changed (about 50 rebuilds a minute on a machine with 27 projects). A list is now kept until something changes, rechecked at most every five minutes.
+
 ## 2.340.2 — 2026-11-23
 
 - Fixed a team coordinator reviewing a direct specialist answer without seeing it when the request was long: a request over about 19,000 characters pushed the answer and the review instructions out of the review, so the coordinator answered without them. The request is now shortened in the review instead.

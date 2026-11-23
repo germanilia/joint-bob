@@ -6,12 +6,14 @@
  * A project's answer is kept here until something is announced for that project, or for all
  * of them, and requests that arrive together share one computation. Callers pass what they
  * read of the state that changes unannounced (see unannouncedRunState), so the age limit is
- * only a backstop for a change nobody thought to announce. It is as long as the pages' own
- * poll: at ten seconds, pages asking every fifteen still recomputed every project each time.
+ * only a backstop for a change nobody thought to announce. At ten seconds, pages asking every
+ * fifteen recomputed every project each time; at a minute, an open board and Inbox still rebuilt
+ * every project's two lists each minute (50 of 78 rebuilds on the Mac, 2026-11-23, with almost
+ * nothing announced), so it is five minutes.
  *
  * This module imports nothing, so anything that announces a change can mark it here.
  */
-const MAX_AGE_MS = 60_000;
+export const SHARED_LISTING_MAX_AGE_MS = 5 * 60_000;
 const MAX_ENTRIES = 2_000;
 
 const changeListeners = new Set<(projectId?: string) => void>();
@@ -73,7 +75,7 @@ export function projectListingRevision(projectId: string): string { return revis
  */
 export function sharedProjectListing<T>(projectId: string, key: string, compute: () => Promise<T>, state = "", now = Date.now(), onlyInFlight = false): Promise<T> {
   const current = `${revision(projectId)}:${state}`;
-  const fresh = (entry: Held | undefined): entry is Held => Boolean(entry) && entry!.revision === current && now - entry!.startedAt < MAX_AGE_MS;
+  const fresh = (entry: Held | undefined): entry is Held => Boolean(entry) && entry!.revision === current && now - entry!.startedAt < SHARED_LISTING_MAX_AGE_MS;
   const existing = held.get(key);
   // `onlyInFlight` is for the open project's own list: a person looks at it right after acting,
   // and much of what it shows changes unannounced. It joins a listing being built now, never
