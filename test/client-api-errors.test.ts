@@ -10,7 +10,7 @@ function client(fetch: (...args: any[]) => any) {
   let signedOut = false;
   const requests = runInNewContext(`${source}\n({ api, apiBlob, apiLines })`, {
     fetch, Error, console: { warn: (...args: unknown[]) => logs.push(args) },
-    state: { csrfToken: "synthetic-csrf" }, showSignedOut: () => { signedOut = true; }, TextDecoderStream,
+    state: { csrfToken: "synthetic-csrf" }, showSignedOut: () => { signedOut = true; }, recordFailure: () => {}, TextDecoderStream,
   });
   return { ...requests, logs, signedOut: () => signedOut };
 }
