@@ -58,6 +58,8 @@
 .automation-history-row { flex: none; display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .automation-history-when { flex: none; min-width: 120px; color: var(--muted); }
 .automation-history-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.automation-history-open { display: grid; justify-items: end; }
+.automation-history-open .automation-status { min-height: 0; max-width: 28ch; overflow-wrap: anywhere; text-align: right; }
 .automation-editor .cluster-badge.bad { color: var(--danger, #ef6b6b); }
 
 /* save bar */

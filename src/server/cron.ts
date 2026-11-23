@@ -105,7 +105,7 @@ async function executeCronRun(task: CronTask, run: CronRun): Promise<void> {
           bypassGuardian: task.bypassGuardian,
           worktreeId: worktree?.id, label: "Scheduled", origin: "scheduled", automationProfile: automationProfileContext(task), scheduledAutoRespond: task.autoRespond ?? undefined,
           prepare: async destination => {
-            cronStore().target(run.id, destination.sessionId);
+            cronStore().target(run.id, destination.sessionId, destination.engine);
             if (destination.isNew) await markCronConversation(task.projectId, destination.engine, destination.sessionId, task.id, task.ownerNodeId);
             await attachAutomationSecrets(task, task.projectId, destination.engine, destination.sessionId);
             await bindAutomationConversation(task.id, task.projectId, destination.sessionId, destination.isNew);
@@ -118,13 +118,13 @@ async function executeCronRun(task: CronTask, run: CronRun): Promise<void> {
         const [engine, ...sessionParts] = turn.topicId.split(":");
         const sessionId = sessionParts.join(":");
         if (!engine || !sessionId) throw new Error("Assistant scheduled turn has no conversation target");
-        cronStore().target(run.id, sessionId);
+        cronStore().target(run.id, sessionId, engine);
         return;
       }
       const sessionId = await prepareConversation(task);
       await ensureConversationRecord(task.projectId, task.engine, sessionId, task.ownerNodeId);
       await markCronConversation(task.projectId, task.engine, sessionId, task.id, task.ownerNodeId);
-      cronStore().target(run.id, sessionId);
+      cronStore().target(run.id, sessionId, task.engine);
       await attachAutomationSecrets(task, task.projectId, task.engine, sessionId);
       await bindAutomationConversation(task.id, task.projectId, sessionId, !task.sessionId);
       await queuedCronPrompt(task, run, sessionId, worktree?.id);

@@ -8,6 +8,7 @@ import { createContextTab } from "./automation-context.js";
 import { createRunTab } from "./automation-run.js";
 import { createTriggerTab } from "./automation-trigger.js";
 import { selectProject } from "./project-selection.js";
+import { state as appState } from "./state.js";
 import { copyText, createFittedList, formatWhen, makeBadge, makeButton, makeNode, makeTwoStepButton, showStatus } from "./relay-ui.js";
 import { openListedSession } from "./reviews.js";
 import { toast } from "./shell.js";
@@ -179,6 +180,8 @@ function createHistoryTab(ctx, { onAdopt }) {
   const { state } = ctx;
   const element = makeNode("div", "automation-panel");
   let history = { runs: [], calls: [] };
+  // The fitted list can redraw a row while its conversation is opening.
+  const conversationActions = new WeakMap();
 
   const section = (title, testPrefix, emptyText, rows, renderItem) => {
     const box = card(title);
@@ -198,12 +201,32 @@ function createHistoryTab(ctx, { onAdopt }) {
   };
   const badge = (status) => makeBadge(status, BADGE_TONES[status] ?? "");
 
-  async function openConversation(item) {
-    const { projectId } = state.item.target;
-    const { sessions: [session] } = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions?sessionId=${encodeURIComponent(item.sessionId)}`);
-    if (!session) throw new Error("That conversation is no longer available.");
-    await selectProject(projectId);
-    await openListedSession(session);
+  function conversationAction(item, testId) {
+    const existing = conversationActions.get(item);
+    if (existing) return existing;
+    const action = makeNode("div", "automation-history-open");
+    const status = makeNode("span", "automation-status");
+    status.setAttribute("role", "status");
+    const button = makeButton("Open conversation", testId, () => ctx.run(async () => {
+      button.disabled = true;
+      button.textContent = "Opening…";
+      showStatus(status, "");
+      try {
+        const { projectId } = state.item.target;
+        const { sessions: [session] } = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions?sessionId=${encodeURIComponent(item.sessionId)}`);
+        if (!session) throw new Error("That conversation is no longer available.");
+        if (appState.activeProjectId !== projectId) void selectProject(projectId).catch(error => toast.error(errorText(error)));
+        await openListedSession(session);
+      } catch (error) {
+        showStatus(status, errorText(error), "error");
+      } finally {
+        button.disabled = false;
+        button.textContent = "Open conversation";
+      }
+    }));
+    action.append(button, status);
+    conversationActions.set(item, action);
+    return action;
   }
 
   function allowSender(sender) {
@@ -219,12 +242,12 @@ function createHistoryTab(ctx, { onAdopt }) {
 
   const runs = section("Runs", "automation-runs", "No runs yet.", () => history.runs, (item) => {
     const cells = [makeNode("span", "automation-history-when", formatWhen(item.dueAt)), badge(item.status), makeNode("span", "automation-history-detail", item.error ?? "")];
-    if (item.sessionId) cells.push(makeButton("Open conversation", "automation-run-open", () => ctx.run(() => openConversation(item))));
+    if (item.sessionId) cells.push(conversationAction(item, "automation-run-open"));
     return row(...cells);
   });
   const calls = section("Calls", "automation-calls", "No calls yet.", () => history.calls, (call) => {
     const cells = [makeNode("span", "automation-history-when", formatWhen(call.at)), badge(call.status), makeNode("span", "automation-history-detail", call.detail)];
-    if (call.sessionId) cells.push(makeButton("Open conversation", "automation-call-open", () => ctx.run(() => openConversation(call))));
+    if (call.sessionId) cells.push(conversationAction(call, "automation-call-open"));
     const senders = state.item.senders;
     if (call.status === "refused" && call.sender && senders && !senders.allowed.some(({ value }) => value === call.sender)) {
       cells.push(makeButton("Allow", "automation-call-allow", () => allowSender(call.sender)));
