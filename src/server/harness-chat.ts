@@ -892,7 +892,10 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
       if (assistantSettings) {
         const available = connection.shared.session.tools();
         const active = available.filter(tool => tool.active).map(tool => tool.name);
-        const baseline = await personalAssistantToolBaseline(assistantAccountId!, assistantSettings.id, connection.engine, connection.shared.session.id, active);
+        // Team members follow their live assistant policy directly, so toggling terminal/browser/MCP takes effect on the next turn.
+        const baseline = teamTurn
+          ? available.map(tool => tool.name)
+          : await personalAssistantToolBaseline(assistantAccountId!, assistantSettings.id, connection.engine, connection.shared.session.id, active);
         // A topic's baseline may predate Joint Bob's own tools; they are always offered when the session has them.
         const builtIn = JOINT_BOB_AGENT_TOOL_NAMES.filter(name => !baseline.includes(name) && available.some(tool => tool.name === name));
         const allowed = filterPersonalAssistantTools([...baseline, ...builtIn], assistantSettings);

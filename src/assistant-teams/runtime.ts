@@ -10,6 +10,7 @@ import { getHarnessRuntime, listHarnessModels } from '../harnesses.js';
 import { addPersonalAssistantTopic, getPersonalAssistantById, getPersonalAssistantTurn, personalAssistantDatabase, type PersonalAssistant } from '../personal-assistants.js';
 import { requireTeamExecution } from './access.js';
 import { getTeam, getTeamAssignment, listTeamAgents, teamDatabase, TeamError, type TeamAssignment, type TeamRole } from './store.js';
+import { syncAssistantSecretsToConversation } from './proposals.js';
 
 // Ephemeral, tool-less knowledge sessions are not assistant turns or personal conversations.
 const memorySessions = new Set<string>();
@@ -104,11 +105,18 @@ export async function teamAgentReadiness(profile: PersonalAssistant): Promise<st
 export async function teamAssignmentDestination(assignment: TeamAssignment) {
   const validated = await validateTeamAssignment(assignment);
   const { team, profile } = validated; const db = await database();
+  const desiredEngine = profile.executionSettings?.harnessId ?? profile.engine;
   let row = db.prepare('SELECT project_id projectId,engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { projectId: string; engine: string; sessionId: string } | undefined;
-  if (!row) {
-    const engine = profile.executionSettings?.harnessId ?? profile.engine;
+  if (!row || row.engine !== desiredEngine) {
+    const engine = desiredEngine;
+    const nextSessionId = randomUUID();
     // Team work lives in the team's shared project, so every member can read it; the assistant brings its own resources.
-    db.prepare('INSERT OR IGNORE INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(team.id, assignment.subjectId!, profile.id, team.projectId, engine, randomUUID());
+    if (!row) {
+      db.prepare('INSERT OR IGNORE INTO assistant_team_conversations VALUES(?,?,?,?,?,?)').run(team.id, assignment.subjectId!, profile.id, team.projectId, engine, nextSessionId);
+    } else {
+      // The assistant's harness changed live; switch this subject's conversation to the new harness immediately.
+      db.prepare('UPDATE assistant_team_conversations SET engine=?, conversation_id=? WHERE team_id=? AND subject_id=? AND assistant_id=?').run(engine, nextSessionId, team.id, assignment.subjectId!, profile.id);
+    }
     row = db.prepare('SELECT project_id projectId,engine,conversation_id sessionId FROM assistant_team_conversations WHERE team_id=? AND subject_id=? AND assistant_id=?').get(team.id, assignment.subjectId!, profile.id) as { projectId: string; engine: string; sessionId: string };
     // What people see in the conversation list: who works on what, not the assistant's instructions its first message starts with.
     const subject = (await (await import('./conversations.js')).conversationDatabase()).prepare('SELECT record FROM assistant_team_subjects WHERE team_id=? AND id=?').get(team.id, assignment.subjectId!) as { record: string } | undefined;
@@ -119,6 +127,7 @@ export async function teamAssignmentDestination(assignment: TeamAssignment) {
   if (ownership && ownership.ownerNodeId !== team.hostNodeId) throw new TeamError('Team conversation is on another execution node', 409);
   await ensureConversationRecord(row.projectId, row.engine, row.sessionId, team.hostNodeId);
   await addPersonalAssistantTopic(profile.accountId, profile.id, { projectId: row.projectId, engine: row.engine, sessionId: row.sessionId, source: false });
+  await syncAssistantSecretsToConversation(profile, row.engine, row.sessionId);
   return { ...validated, destination: { engine: row.engine, sessionId: row.sessionId } };
 }
 export async function runTeamTurn(input: { assignment: TeamAssignment; message: string }): Promise<{ text: string; conversationId: string }> {
