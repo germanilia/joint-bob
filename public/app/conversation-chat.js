@@ -2,6 +2,7 @@ import { harnessOption } from "../harness-metadata.js";
 import { renderMarkdown } from "../markdown.js";
 import { setActivityPanelOpen } from "./activity-panel.js";
 import { api } from "./api.js";
+import { attachmentsFromFiles, renderAttachmentChips } from "./attachments.js";
 import { fillModelOptions, fillThinkingOptions, selectedModel } from "./git-reviewer-options.js";
 import { openSecretScope } from "./secrets.js";
 import { toast } from "./shell.js";
@@ -20,6 +21,8 @@ const send = byId("conversationChatSend");
 const clear = byId("conversationChatClear");
 const secrets = byId("conversationChatSecrets");
 const status = byId("conversationChatStatus");
+const attachmentList = byId("conversationChatAttachments");
+let attachments = [];
 const settingsThinking = document.createElement("select");
 let savingMode = false;
 const submitting = new Map();
@@ -64,6 +67,13 @@ function fillModels(harness, model, preferred) {
 
 function modelChoice(harness, model) {
   return harness.value ? { harnessId: harness.value, ...selectedModel(model), ...(harness === harnessSelect ? { thinkingLevel: effortSelect.value } : {}) } : null;
+}
+
+function renderAttachments() {
+  renderAttachmentChips(attachmentList, attachments, (id) => {
+    attachments = attachments.filter((item) => item.id !== id);
+    renderAttachments();
+  });
 }
 
 function setBusy(value) {
@@ -142,6 +152,12 @@ function renderMessages(messages) {
     if (message.role === "assistant") renderMarkdown(text, message.text);
     else { text.textContent = message.text; text.style.whiteSpace = "pre-wrap"; }
     entry.append(text);
+    if (message.images?.length) {
+      const images = document.createElement("p");
+      images.className = "settings-hint";
+      images.textContent = `Images: ${message.images.join(", ")}`;
+      entry.append(images);
+    }
     if (message.error) {
       const error = document.createElement("p");
       error.className = "settings-hint";
@@ -161,7 +177,7 @@ function acceptSnapshot(body) {
 
 function renderChat() {
   const historyIds = new Set(snapshot.messages.map((item) => item.id));
-  const queued = snapshot.queue.filter((item) => !historyIds.has(item.id)).map((item) => ({ id: item.id, role: "user", text: item.question, queued: item.id !== streaming?.questionId }));
+  const queued = snapshot.queue.filter((item) => !historyIds.has(item.id)).map((item) => ({ id: item.id, role: "user", text: item.question, images: item.images, queued: item.id !== streaming?.questionId }));
   const known = new Set([...snapshot.messages, ...queued].map((item) => item.id));
   const pending = [...submitting.values()].filter((item) => !known.has(item.id));
   const active = [...queued, ...pending].filter((item) => item.id === streaming?.questionId);
@@ -290,14 +306,18 @@ byId("conversationChatForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const question = input.value.trim();
   const url = loadedUrl;
-  if (!question || !url || savingMode || url !== conversationUrl()) return;
+  if ((!question && !attachments.length) || !url || savingMode || url !== conversationUrl()) return;
   const id = crypto.randomUUID();
   const model = modelChoice(harnessSelect, modelSelect);
-  submitting.set(id, { id, role: "user", text: question, queued: busy });
+  const sent = attachments;
+  const images = sent.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
+  submitting.set(id, { id, role: "user", text: question, images: sent.map((item) => item.name), queued: busy });
   input.value = "";
+  attachments = [];
+  renderAttachments();
   renderChat();
   try {
-    await api(url, { method: "POST", body: JSON.stringify({ id, question, model, readOnly: readOnly.checked }) });
+    await api(url, { method: "POST", body: JSON.stringify({ id, question, model, readOnly: readOnly.checked, ...(images.length ? { images } : {}) }) });
     submitting.delete(id);
     if (url === conversationUrl() && url === loadedUrl) await refreshChat();
   } catch (error) {
@@ -305,9 +325,19 @@ byId("conversationChatForm").addEventListener("submit", async (event) => {
     if (url === conversationUrl() && url === loadedUrl) {
       await refreshChat();
       if (!input.value) input.value = question;
+      if (!attachments.length) { attachments = sent; renderAttachments(); }
       status.textContent = error.message;
     }
   }
+});
+input.addEventListener("paste", async (event) => {
+  const images = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
+  if (!images.length) return;
+  if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+  try {
+    attachments = await attachmentsFromFiles(images, attachments);
+    renderAttachments();
+  } catch (error) { toast.error(error.message); }
 });
 input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -365,6 +395,8 @@ document.addEventListener("activity-conversation-changed", () => {
   streaming = null;
   snapshot = { messages: [], queue: [], busy: false };
   input.value = "";
+  attachments = [];
+  renderAttachments();
   renderMessages([]);
   setBusy(false);
   showTab(false);

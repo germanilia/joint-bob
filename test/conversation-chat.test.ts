@@ -32,3 +32,15 @@ test("history is durable, isolated by user/project/conversation, and only explic
   assert.deepEqual(chatState(scope).queue, []);
   assert.deepEqual(chatState(scope).model, state.model);
 });
+
+test("a queued question's pasted images reach clients by name only", async () => {
+  const { chatSnapshot, chatState, saveChatState } = await import("../src/conversation-chat.js");
+  const scope = { userId: "carol", projectId: "p", conversationId: "images" };
+  const state = chatState(scope);
+  state.queue.push({ id: "with-image", question: "what is this?", model: null, images: [{ name: "shot.png", mimeType: "image/png", data: "SECRET-BYTES" }] });
+  saveChatState(scope, state);
+  assert.equal(chatState(scope).queue[0].images![0].data, "SECRET-BYTES");
+  const sent = chatSnapshot(scope);
+  assert.deepEqual(sent.queue[0].images, ["shot.png"]);
+  assert.doesNotMatch(JSON.stringify(sent), /SECRET-BYTES/);
+});

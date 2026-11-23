@@ -70,10 +70,12 @@ async function answerQuestion(project: ProjectRecord, scope: ChatScope, payload:
     "Transcripts are native harness records, usually JSON lines. Search for relevant phrases, then read surrounding records, including tool results. If evidence is missing, say so. Answer in the user's language.",
     // A changed harness starts its own native session, so it receives the earlier side discussion once.
     state.agent?.harnessId === model.harnessId && state.agent.cwd === cwd ? "" : `Earlier side-chat exchanges: ${JSON.stringify(state.messages.filter(message => message.id !== payload.id).map(({ role, text }) => ({ role, text })))}`,
+    payload.images?.length ? `The user attached ${payload.images.length} image(s) to this request: ${JSON.stringify(payload.images.map(image => image.name))}. They are part of this message.` : "",
     `Current request: ${JSON.stringify(payload.question)}`,
   ].filter(Boolean).join("\n\n");
   return runChatAgent({ projectId: project.id, conversationId: scope.conversationId, cwd, model, readOnly, agent: state.agent,
     accountIds: readOnly ? [] : state.accountIds!, prompt, beforeStart,
+    images: (payload.images ?? []).map(({ mimeType, data }) => ({ type: "image" as const, mimeType, data })),
     onText: text => onText(text, false),
     onAgent: agent => { const latest = chatState(scope); latest.agent = agent; saveChatState(scope, latest); },
   });
@@ -83,7 +85,7 @@ async function drainQueue(project: ProjectRecord, scope: ChatScope, accountId: s
   while (chatState(scope).queue.length) {
     const state = chatState(scope);
     const question = state.queue.shift()!;
-    state.messages.push({ id: question.id, role: "user", text: question.question });
+    state.messages.push({ id: question.id, role: "user", text: question.question, ...(question.images?.length ? { images: question.images.map(image => image.name) } : {}) });
     saveChatState(scope, state);
     chatChanged(scope, accountId);
     let firstChunk = true;

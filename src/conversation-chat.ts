@@ -7,8 +7,10 @@ export const chatModelSchema = z.object({
 }).strict();
 export const chatDefaultsSchema = z.object({ showSelectors: z.boolean(), model: chatModelSchema.nullable() }).strict();
 export type ChatModel = z.infer<typeof chatModelSchema>;
-export interface ChatMessage { role: "user" | "assistant"; text: string; id?: string; error?: string; contextCompacted?: boolean }
-export interface ChatQuestion { id: string; question: string; model: ChatModel | null; readOnly?: boolean }
+export interface ChatImage { name: string; mimeType: string; data: string }
+/** History keeps only the names of pasted images; the bytes live in the queue until the question is answered. */
+export interface ChatMessage { role: "user" | "assistant"; text: string; id?: string; error?: string; contextCompacted?: boolean; images?: string[] }
+export interface ChatQuestion { id: string; question: string; model: ChatModel | null; readOnly?: boolean; images?: ChatImage[] }
 export interface ChatScope { userId: string; projectId: string; conversationId: string }
 export interface ChatAgent { harnessId: string; sessionId: string; sessionPath: string; cwd: string; actionTools?: string[] }
 export interface ChatState { messages: ChatMessage[]; model: ChatModel | null; queue: ChatQuestion[]; readOnly: boolean; accountIds?: string[]; agent?: ChatAgent }
@@ -20,6 +22,12 @@ export function chatScopeKey(scope: ChatScope): string {
 export function chatState(scope: ChatScope): ChatState {
   const stored = storedTranscriptSummary<ChatState>("conversation-chat", chatScopeKey(scope));
   return stored ? { ...stored, readOnly: stored.readOnly ?? true, queue: stored.queue ?? [] } : { messages: [], model: null, queue: [], readOnly: true };
+}
+
+/** What clients receive: queued questions list their image names, never the image bytes. */
+export function chatSnapshot(scope: ChatScope): Omit<ChatState, "queue"> & { queue: Array<Omit<ChatQuestion, "images"> & { images?: string[] }> } {
+  const state = chatState(scope);
+  return { ...state, queue: state.queue.map(({ images, ...question }) => ({ ...question, ...(images?.length ? { images: images.map((image) => image.name) } : {}) })) };
 }
 
 export function saveChatState(scope: ChatScope, state: ChatState): void {
