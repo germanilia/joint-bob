@@ -820,7 +820,7 @@ async function dispatchWithProfile(connection: HarnessChatConnection, queued: Qu
   const previousInternalTurn = shared.internalTurn;
   shared.internalTurn = Boolean(queued.systemEventId);
   shared.turnInFlight += 1;
-  shared.turnAccountId = actingAccount()?.accountId ?? null;
+  shared.turnAccountId = queued.automationProfile?.accountId ?? actingAccount()?.accountId ?? null;
   markHarnessInput(shared);
   const preparationStartedAt = new Date().toISOString();
   let enteredPrompt = false;

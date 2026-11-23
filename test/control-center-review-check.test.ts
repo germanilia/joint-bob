@@ -74,6 +74,7 @@ test("the answer is judged against what the person asked last, not the conversat
   assert.equal(latestRequest(messages), "Now add the control center");
   assert.equal(latestRequest(messages.slice(0, 2)), "Make sure the code is from main and pull it");
   assert.equal(latestRequest([{ role: "user", text: `${PUSH_PREFIX}.` }]), `${PUSH_PREFIX}.`, "only Bob's push: it is what there is");
+  assert.equal(latestRequest([{ role: "user", text: "[Joint Bob scheduled task]\nRun the nightly check" }]), "Run the nightly check", "scheduled prompt marker is stripped");
   assert.equal(latestRequest([]), "");
 });
 

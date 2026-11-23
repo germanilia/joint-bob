@@ -265,7 +265,6 @@ export function startReviewChecks(): void {
   started = true;
   onConversationMessage((shared) => {
     if (shared.internalTurn) return;
-    if (shared.scheduledTurn) return skip(shared, "scheduled runs are not checked");
     // Read now: the turn's person is forgotten once it ends.
     const turnAccountId = shared.turnAccountId ?? null;
     schedule(shared, turnAccountId, Date.now(), 0);

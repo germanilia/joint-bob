@@ -205,3 +205,78 @@ test("a conversation that stops before its task is done is told to go on, one th
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Bob monitors webhook and scheduled automation runs and pushes unfinished ones on", { timeout: 180_000 }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-review-check-auto-"));
+  const verdictsByPrompt = new Map<string, number>();
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const parsed = JSON.parse(body) as { state: string; questions: Record<string, { criteria: Record<string, string> }> };
+      const state = JSON.parse(parsed.state) as { user_request?: string };
+      const key = state.user_request ?? "";
+      const seen = verdictsByPrompt.get(key) ?? 0;
+      verdictsByPrompt.set(key, seen + 1);
+      const verdict = seen === 0 ? "continue" : "done";
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ answers: { verdict: { type: "choice", choice: verdict, confidence: 0.97 } } }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1/systemone`;
+  let child: ChildProcess | undefined;
+  try {
+    const environment = await seedDevEnvironment(root, 1);
+    const node = environment.nodes[0];
+    await mkdir(path.join(root, "stubs"), { recursive: true });
+    await mkdir(path.join(root, "holds"));
+    for (const engine of ["claude", "pi"]) await writeFile(path.join(root, "holds", `${engine}.release`), "");
+    child = await startNode(environment, node, root, endpoint);
+    const auth = await signIn(environment, node);
+    const project = projectNamed(node, "Joint Bob");
+    const account = await api<{ account: { id: string } }>(node, auth, "POST", "/secrets/accounts", { label: "decision", provider: "custom", variables: [{ name: "TYPESAFE_AI_API_KEY", kind: "value", value: "test-key" }] });
+    assert.equal((await api(node, auth, "PUT", `/secrets/scopes/project/${project.id}`, { accountIds: [account.body.account.id] })).status, 200);
+    // Register the signed-in user as a Bob user with reviewCheck="push".
+    assert.equal((await api(node, auth, "PUT", "/control-center/bob/settings", { reviewCheck: "push" })).status, 200);
+
+    const prompts = async () => (await readFile(path.join(root, "prompts.log"), "utf8").catch(() => "")).split("\n").filter(Boolean).map((line) => (JSON.parse(line) as { prompt: string }).prompt);
+    const timeline = async () => (await api<{ messages: BobMessage[] }>(node, auth, "GET", "/control-center/bob/messages")).body.messages;
+
+    // 1. Webhook automation triggered over public POST /hooks/<secret> (no session cookie / actingAccount).
+    const webhook = await api<{ automation: { id: string }; secret: string }>(node, auth, "POST", "/automations", {
+      name: "Prod log error",
+      target: { kind: "project", projectId: project.id, engine: "pi" },
+      context: "Fix the production log error and merge the PR",
+      trigger: "webhook",
+      runInWorktree: false,
+    });
+    assert.equal(webhook.status, 201, JSON.stringify(webhook.body));
+    const hookResponse = await fetch(`${node.url}/hooks/${webhook.body.secret}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: "hidden summary failed" }),
+    });
+    assert.equal(hookResponse.status, 202);
+    await eventually(async () => (await timeline()).find((message) => /"Prod log error" stopped before it was done, so I told it to go on \(1 of 3\)/.test(message.text)), "Bob pushed the unfinished webhook run");
+    await eventually(async () => (await prompts()).filter((prompt) => prompt.startsWith("Continue with the task")).length >= 1 || undefined, "webhook continuation prompt sent");
+
+    // 2. Scheduled automation triggered via run-now.
+    const scheduled = await api<{ automation: { id: string } }>(node, auth, "POST", "/automations", {
+      name: "Nightly audit",
+      target: { kind: "project", projectId: project.id, engine: "pi" },
+      context: "Fix all failing checks from the nightly audit",
+      trigger: "schedule",
+      schedule: { frequency: "daily", hour: 9, minute: 0, weekday: 1, timezone: "UTC" },
+      runInWorktree: false,
+    });
+    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body));
+    assert.equal((await api(node, auth, "POST", `/automations/${scheduled.body.automation.id}/run`)).status, 200);
+    await eventually(async () => (await timeline()).find((message) => /"Nightly audit" stopped before it was done, so I told it to go on \(1 of 3\)/.test(message.text)), "Bob pushed the unfinished scheduled run");
+    await eventually(async () => (await prompts()).filter((prompt) => prompt.startsWith("Continue with the task")).length >= 2 || undefined, "scheduled continuation prompt sent");
+  } finally {
+    if (child) await stopDevNode(child);
+    server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
