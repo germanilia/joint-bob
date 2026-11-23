@@ -44,7 +44,8 @@ test("side-chat API authorizes conversations, stores defaults and survives serve
     server = await startDevNode(environment, node, { JOINT_BOB_TEST_ENGINE_LOG: path.join(root, "engine.log") });
     auth = await signIn(environment, node);
     const restored = await api<{ messages: unknown[]; defaults: unknown }>(node, auth, "GET", url);
-    assert.deepEqual(restored.body.messages, answered.messages);
+    // The image question and its answer were saved after `answered`; a restart keeps all of them.
+    assert.deepEqual(restored.body.messages, withImageAnswered.messages);
     assert.deepEqual(restored.body.defaults, defaults);
     const cleared = await api<{ messages: unknown[] }>(node, auth, "DELETE", url);
     assert.deepEqual(cleared.body.messages, []);
