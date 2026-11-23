@@ -163,7 +163,7 @@ test('loopback Telegram HTTP → durable queue → Pi tools: four private specia
    const previous=roles.filter(r=>JSON.stringify(input.messages).includes(`PRIVATE_${r}_RESULT`));role=roles[previous.length];
   }
   const delta=role?{role:'assistant',tool_calls:[{index:0,id:randomUUID(),type:'function',function:{name:'mcp__joint_bob__team_delegate',arguments:JSON.stringify({role,message:`WORK_${role}`})}}]}:
-   {role:'assistant',content:!(input.tools??[]).length?JSON.stringify({topic:'quiet-decision',expectedRevision:0,description:'Synthetic agreed decision',body:'Team agreed to preserve the test fixture. [[testing]]'}):isDirectReview?'REVIEWED_DIRECT_QA_RESULT':isBob?(last.role==='tool'?'INTERMEDIATE_NOT_PUBLIC':'FINAL_BOB_ONLY'):(roles.some(r=>lastUser.includes(`WORK_${r}`))?`PRIVATE_${roles.find(r=>lastUser.includes(`WORK_${r}`))}_RESULT`:'DIRECT_QA_RESULT')};
+   {role:'assistant',content:!(input.tools??[]).length?JSON.stringify({topic:'quiet-decision',expectedRevision:0,description:'Synthetic agreed decision',body:'Team agreed to preserve the test fixture. [[testing]]'}):isDirectReview?(lastUser.includes('DIRECT_QA_RESULT')?'REVIEWED_DIRECT_QA_RESULT':'REVIEW_WITHOUT_THE_WORK'):isBob?(last.role==='tool'?'INTERMEDIATE_NOT_PUBLIC':'FINAL_BOB_ONLY'):(roles.some(r=>lastUser.includes(`WORK_${r}`))?`PRIVATE_${roles.find(r=>lastUser.includes(`WORK_${r}`))}_RESULT`:'DIRECT_QA_RESULT')};
   const chunk=(delta:unknown,finish:string|null)=>`data: ${JSON.stringify({id:'integrated',object:'chat.completion.chunk',created:0,model:'dev-model',choices:[{index:0,delta,finish_reason:finish}]})}\n\n`;
   res.writeHead(200,{'Content-Type':'text/event-stream'});res.end(chunk(delta,null)+chunk({},role?'tool_calls':'stop')+'data: [DONE]\n\n');
  });

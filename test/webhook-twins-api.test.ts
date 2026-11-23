@@ -38,7 +38,10 @@ test("webhooks have one chosen twin owner, route management there, and never fal
     });
     assert.equal(credential.status, 201);
     input.secretAccountIds = [credential.body.account.id];
-    const options = await api<{ secretAccounts: Array<{ id: string; label: string }> }>(a, authA, "GET", `/automations/options${suffix}`);
+    // The twin's first options answer lists every agent's models. On a loaded runner it has missed the 10 s
+    // forwarding window (503) while every other call passed, so a timed-out first ask is asked again.
+    let options = await api<{ secretAccounts: Array<{ id: string; label: string }> }>(a, authA, "GET", `/automations/options${suffix}`);
+    for (let attempt = 0; options.status === 503 && attempt < 2; attempt++) options = await api<{ secretAccounts: Array<{ id: string; label: string }> }>(a, authA, "GET", `/automations/options${suffix}`);
     assert.equal(options.status, 200);
     assert.ok(options.body.secretAccounts.some(account => account.id === credential.body.account.id));
     assert.equal(JSON.stringify(options.body).includes("synthetic-webhook-key"), false, "options never contain credential values");

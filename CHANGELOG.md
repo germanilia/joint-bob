@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.340.2 — 2026-11-23
+
+- Fixed a team coordinator reviewing a direct specialist answer without seeing it when the request was long: a request over about 19,000 characters pushed the answer and the review instructions out of the review, so the coordinator answered without them. The request is now shortened in the review instead.
+
 ## 2.340.1 — 2026-11-23
 
 - Fixed the machine slowing down while it catalogued a project's conversations, such as a newly shared one: each new conversation made it recompute the cost of every conversation in that project, about 100 a second. It now recomputes only the conversation that changed, looks the counts up through an index, and no longer re-checks every project's conversation files on each list refresh when nothing changed.

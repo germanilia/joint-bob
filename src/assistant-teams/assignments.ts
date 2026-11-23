@@ -319,12 +319,13 @@ async function ensureCoordinatorReview(teamId:string,rootId:string):Promise<void
   parts.push(`${spec.role} (${spec.id}):${trace?` ${trace}\n`:' '}${sw.result??'(No text result)'}`);
  }
  const reviewId=key(rootId,'coordinator-review',coordinator);
- const reviewMessage=[
-  'Review the completed direct specialist work immediately before answering the user.',
-  `Original request: ${r.source.text}`,
-  ...parts,
-  'Review instructions: check both the answer and how it was done (trace, errors, tools/secrets used). If the work is incomplete, unverified, or not good enough, call team_delegate to prompt the specialist back with specific feedback. If the assistant (or team) needs permanent changes (secrets from team_node_catalog, tools/MCP/skills, instructions, model/harness, or removing an unused role), call team_propose_changes (bundling related changes). Otherwise publish the final vetted answer clearly, attributing the specialist.',
- ].join('\n');
+ const reviewHead='Review the completed direct specialist work immediately before answering the user.';
+ const reviewInstructions='Review instructions: check both the answer and how it was done (trace, errors, tools/secrets used). If the work is incomplete, unverified, or not good enough, call team_delegate to prompt the specialist back with specific feedback. If the assistant (or team) needs permanent changes (secrets from team_node_catalog, tools/MCP/skills, instructions, model/harness, or removing an unused role), call team_propose_changes (bundling related changes). Otherwise publish the final vetted answer clearly, attributing the specialist.';
+ // The stored message is capped at 19,500 characters; a long request must not push the work under review,
+ // or these instructions, out of it.
+ const requestBudget=Math.max(500,19500-[reviewHead,...parts,reviewInstructions].join('\n').length-80);
+ const requestText=r.source.text.length>requestBudget?`${r.source.text.slice(0,requestBudget)}… (shortened here; the full request is in the team thread)`:r.source.text;
+ const reviewMessage=[reviewHead,`Original request: ${requestText}`,...parts,reviewInstructions].join('\n');
  transaction(db,()=>{
   const latest=assignments(db,teamId).filter(a=>a.rootId===rootId);
   if(latest.some(a=>a.id===reviewId||(!a.parentId&&a.role===coordinator)))return;
