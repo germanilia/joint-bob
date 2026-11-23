@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.340.1 — 2026-11-23
+
+- Fixed the machine slowing down while it catalogued a project's conversations, such as a newly shared one: each new conversation made it recompute the cost of every conversation in that project, about 100 a second. It now recomputes only the conversation that changed, looks the counts up through an index, and no longer re-checks every project's conversation files on each list refresh when nothing changed.
+
 ## 2.340.0 — 2026-11-23
 
 - **Assistant teams:** Any team coordinator can now inspect the host node's attachable secrets (metadata only, never values), inspect teammates' full configs and usage, and propose bundled live changes to team assistants and roster (secrets, tools, MCP servers, skills, instructions, model/harness, logins, add/create/rename/remove) with approval in Telegram or the Web UI. Approved changes apply live immediately and automatically resume the task.

@@ -99,11 +99,37 @@ export async function ingestUsageSessions(project: ProjectRecord, sessions: Sess
  * request is a listing too. One import runs at a time, a file at a time, with the latest
  * listing of each project.
  */
-const scheduled = new Map<string, { project: ProjectRecord; sessions: SessionSummary[]; records: ConversationRecord[] }>();
+type IngestJob = { project: ProjectRecord; sessions: SessionSummary[]; records: ConversationRecord[] };
+const scheduled = new Map<string, IngestJob>();
 let draining: Promise<void> | undefined;
 
+/**
+ * Every list and board pass lists every project, and each pass re-walked all of a project's
+ * transcripts (27 projects about 32 times a minute each on 2026-11-23). A changed transcript is
+ * re-read at most once per USAGE_REIMPORT_INTERVAL_MS anyway, so an unchanged listing waits this
+ * long after its last import. New, renamed, or re-linked sessions still import at once.
+ */
+export const USAGE_RESCHEDULE_MS = 30_000;
+const lastJobs = new Map<string, IngestJob & { finishedAt?: number }>();
+const SESSION_FIELDS = ["id", "path", "harnessId", "draft", "readOnly", "parentSessionPath", "title", "classification", "conversationId", "createdAt"] as const;
+function sameJob(previous: IngestJob, next: IngestJob): boolean {
+  return previous.project.createdAt === next.project.createdAt
+    && previous.sessions.length === next.sessions.length
+    && previous.sessions.every((session, index) => session === next.sessions[index] || SESSION_FIELDS.every((field) => session[field] === next.sessions[index][field]))
+    && previous.records.length === next.records.length
+    && previous.records.every((record, index) => {
+      const other = next.records[index];
+      return record === other || (record.engine === other.engine && record.sessionId === other.sessionId && record.conversationId === other.conversationId && record.segmentIndex === other.segmentIndex);
+    });
+}
+
 export function scheduleUsageIngest(project: ProjectRecord, sessions: SessionSummary[], records: ConversationRecord[]): void {
-  scheduled.set(project.id, { project, sessions, records });
+  const job = { project, sessions, records };
+  const last = lastJobs.get(project.id);
+  // A queued or recent import of the same listing covers this one; a forced refresh never waits.
+  if (!forcedRefreshes && last && (last.finishedAt === undefined || Date.now() - last.finishedAt < USAGE_RESCHEDULE_MS) && sameJob(last, job)) return;
+  lastJobs.set(project.id, job);
+  scheduled.set(project.id, job);
   if (!draining) startDrain();
 }
 
@@ -113,6 +139,10 @@ function startDrain(): void {
       scheduled.delete(id);
       try { await ingestUsageSessions(job.project, job.sessions, job.records, 1); }
       catch (error) { console.warn(`Usage import for project ${id} failed`, error); }
+      finally {
+        const last = lastJobs.get(id);
+        if (last === job) last.finishedAt = Date.now();
+      }
     }
   })().finally(() => { draining = undefined; if (scheduled.size) startDrain(); });
 }

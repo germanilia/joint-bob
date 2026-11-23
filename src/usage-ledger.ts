@@ -29,6 +29,7 @@ CREATE INDEX IF NOT EXISTS usage_difficulty_scope ON usage_difficulty(project_id
 CREATE INDEX IF NOT EXISTS usage_difficulty_interval ON usage_difficulty(project_id,conversation_id,occurred_at DESC);
 CREATE INDEX IF NOT EXISTS usage_difficulty_session ON usage_difficulty(session_id,engine);
 CREATE TABLE IF NOT EXISTS usage_inventory(project_id TEXT NOT NULL,conversation_id TEXT NOT NULL,session_id TEXT NOT NULL,engine TEXT NOT NULL,title TEXT NOT NULL,classification TEXT,usage_status TEXT NOT NULL,PRIMARY KEY(project_id,engine,session_id));
+CREATE INDEX IF NOT EXISTS usage_inventory_conversation ON usage_inventory(project_id,conversation_id);
 CREATE TABLE IF NOT EXISTS subscription_plans(id TEXT PRIMARY KEY,owner TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS subscription_owner ON subscription_plans(owner);
 CREATE TABLE IF NOT EXISTS usage_ingest_files(file_key TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,status TEXT NOT NULL);`);
 }
@@ -558,12 +559,20 @@ export function usageInventoryCoverage(projectIds?: string[]): { projects: numbe
   return { projects: Number(row.projects), sessions: Number(row.sessions), missing: Number(row.missing ?? 0) };
 }
 export function upsertUsageInventory(value: { projectId: string; conversationId: string; sessionId: string; engine: string; title: string; classification: string | null; usageStatus: string }): void {
+  const db = usageDatabase();
+  const previous = db.prepare("SELECT conversation_id conversationId FROM usage_inventory WHERE project_id=? AND engine=? AND session_id=?")
+    .get(value.projectId, value.engine, value.sessionId) as { conversationId: string } | undefined;
   // Every listing re-reports every session; an unchanged row must not rewrite the database.
-  const { changes } = usageDatabase().prepare(`INSERT INTO usage_inventory(project_id,conversation_id,session_id,engine,title,classification,usage_status) VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id,engine,session_id) DO UPDATE SET conversation_id=excluded.conversation_id,title=excluded.title,classification=excluded.classification,usage_status=excluded.usage_status
+  const { changes } = db.prepare(`INSERT INTO usage_inventory(project_id,conversation_id,session_id,engine,title,classification,usage_status) VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id,engine,session_id) DO UPDATE SET conversation_id=excluded.conversation_id,title=excluded.title,classification=excluded.classification,usage_status=excluded.usage_status
     WHERE conversation_id IS NOT excluded.conversation_id OR title IS NOT excluded.title OR classification IS NOT excluded.classification OR usage_status IS NOT excluded.usage_status`)
     .run(value.projectId, value.conversationId, value.sessionId, value.engine, value.title, value.classification, value.usageStatus);
-  // The row may have moved between conversations, so drop the whole project's session totals.
-  if (Number(changes)) invalidateTotals([{ projectId: value.projectId, sessionId: value.sessionId, engine: value.engine }]);
+  if (!Number(changes)) return;
+  // Only the conversations the row left and joined count it. Dropping the whole project's totals
+  // on each new row recomputed every conversation in it, about 100 a second on 2026-11-23 while a
+  // shared project's 860 conversations were catalogued.
+  const scope = { projectId: value.projectId, sessionId: value.sessionId, engine: value.engine };
+  invalidateTotals([{ ...scope, conversationId: value.conversationId },
+    ...(previous && previous.conversationId !== value.conversationId ? [{ ...scope, conversationId: previous.conversationId }] : [])]);
 }
 /** The costliest conversations in a scope with when they ran and what they cost, for grouping by title. */
 export function usageConversationSummaries(filters: UsageFilters, limit: number): Array<{ projectId: string; conversationId: string; costUsd: number | null; requests: number; firstAt: string; lastAt: string }> {
