@@ -1,6 +1,7 @@
 import { api, savePreferencesInBackground } from "./api.js";
 import { sendSocket } from "./chat-controls.js";
 import { elements } from "./elements.js";
+import { copyErrorReport, downloadErrorReport } from "./error-report.js";
 import { topmostOpenDialog } from "./focus-input.js";
 import { openSettings } from "./settings.js";
 import { state } from "./state.js";
@@ -150,7 +151,26 @@ export function toast(message, duration = 3200, severity = "info", action) {
   return node;
 }
 
-toast.error = (message) => toast(message, 8000, "error");
+/** Every error carries its report: the failed calls, their answers and what the page was showing, to send to whoever helps. */
+toast.error = (message) => {
+  const node = toast(message, 8000, "error");
+  if (node.querySelector(".toast-report")) return node;
+  const report = document.createElement("span");
+  report.className = "toast-report";
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.textContent = "Copy details";
+  copy.setAttribute("data-testid", "toast-copy-details");
+  copy.addEventListener("click", () => copyErrorReport(message).then(() => { copy.textContent = "Copied"; }, () => { copy.textContent = "Copy failed: use Download"; }));
+  const save = document.createElement("button");
+  save.type = "button";
+  save.textContent = "Download";
+  save.setAttribute("data-testid", "toast-download-details");
+  save.addEventListener("click", () => downloadErrorReport(message));
+  report.append(copy, save);
+  node.querySelector(".toast-message").after(report);
+  return node;
+};
 
 export function setTheme(theme) {
   document.documentElement.dataset.theme = theme;

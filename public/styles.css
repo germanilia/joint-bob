@@ -2974,6 +2974,8 @@ html:is([data-motion="playful"], [data-motion="calm"]) .toast.toast-leaving { an
 .toast-success::before { content: "✓"; font-size: 18px; font-weight: 800; line-height: 1; }
 .toast-warning { border-color: var(--amber); }
 .toast-message { min-width: 0; flex: 1; }
+.toast-report { display: flex; flex-direction: column; gap: 6px; align-self: center; }
+.toast-report button { min-height: 32px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
 .toast-action { flex: 0 0 auto; min-height: 44px; align-self: center; }
 .toast-close {
   flex: 0 0 auto;
