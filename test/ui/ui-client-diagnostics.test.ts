@@ -69,6 +69,12 @@ test("an error alert offers its report: the failed request, its answer, no query
   })()`);
   const alert = page.locator('.toast[role="alert"]').filter({ hasText: "PUT /api/preferences" });
   await alert.waitFor();
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await alert.getByTestId("toast-copy-details").click();
+  await alert.getByText("Copied").waitFor();
+  const copied = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+  assert.equal(copied.recentFailedRequests.at(-1).status, 409);
+  assert.doesNotMatch(JSON.stringify(copied), /private-query|private-body/);
   const download = page.waitForEvent("download");
   await alert.getByTestId("toast-download-details").click();
   const file = await (await download).createReadStream();
