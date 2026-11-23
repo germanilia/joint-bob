@@ -255,3 +255,94 @@ test('direct specialist work triggers immediate coordinator review for any coord
     globalThis.fetch = originalFetch;
   }
 });
+
+test('coordinator sees pending proposals in execution evidence, lists/supersedes them, and detects unusable cross-node secrets', async () => {
+  const f = await fixture();
+  const originalFetch = globalThis.fetch;
+  let seq = 7000;
+  globalThis.fetch = async () => Response.json({ ok: true, result: { message_id: ++seq } });
+  try {
+    // Seed a foreign-origin secret on this node without any grant/scope for this team project.
+    const blockedSecret = await saveSecretAccount({
+      label: 'Blocked Shared GitHub',
+      provider: 'github',
+      replicate: false,
+      variables: [{ name: 'GH_TOKEN', kind: 'value', value: 'ghp_blocked_secret_never_exposed' }],
+    });
+    f.db.prepare('UPDATE secret_accounts SET origin_node_id = ? WHERE id = ?').run(randomUUID(), blockedSecret.id);
+
+    const source = await f.message('Add a developer agent');
+    const [bobAssignment] = await acceptTeamAssignment(f.member, source, ['bob'], null);
+    await deliverTeamOutbox(f.team.id);
+    await routeTeamAssignment(bobAssignment.id, { kind: 'new' });
+    const liveBob = (await getTeamAssignment(bobAssignment.id))!;
+    const resolvedBob = await teamAssignmentDestination(liveBob);
+    await beginPersonalAssistantTurn(f.team.executorAccountId, resolvedBob.profile.id, liveBob.requestId, `pi:${resolvedBob.destination.sessionId}`, 'fixture', 'assistant');
+    promptStarted(f.team.projectId, resolvedBob.destination.sessionId, liveBob.requestId);
+    const bobIdentity = {
+      account: { accountId: f.member.accountId, username: f.member.username, role: null, homeNodeId: f.member.homeNodeId, isRemoteLogin: false },
+      projectId: f.team.projectId,
+      conversationId: resolvedBob.destination.sessionId,
+      engine: 'pi' as const,
+    };
+
+    // 1. team_node_catalog separates unusableSecrets from usable secrets and explains why.
+    const catalogRes = await callTeamTool(bobIdentity, 'team_node_catalog', {});
+    assert.equal(catalogRes.isError, undefined);
+    const catalog = JSON.parse((catalogRes.content[0] as { text: string }).text);
+    assert.equal(catalog.secrets.some((s: any) => s.id === blockedSecret.id), false, 'blocked foreign secret must not be advertised as usable');
+    const unusable = catalog.unusableSecrets.find((s: any) => s.id === blockedSecret.id);
+    assert.ok(unusable, 'blocked foreign secret is surfaced in unusableSecrets');
+    assert.match(unusable.reason, /Settings → Secrets/);
+
+    // 2. Attempting to attach the unusable secret returns a clear actionable error.
+    const badAttach = await callTeamTool(bobIdentity, 'team_propose_changes', {
+      summary: 'Attach blocked secret',
+      rationale: 'Test guard',
+      changes: [{ kind: 'attach_secret', role: 'bob', secretAccountId: blockedSecret.id }],
+    });
+    assert.equal(badAttach.isError, true);
+    assert.match((badAttach.content[0] as { text: string }).text, /Settings → Secrets/);
+
+    // 3. Create a pending proposal, then check team_list_proposals and teamExecutionEvidence.
+    const firstRes = await callTeamTool(bobIdentity, 'team_propose_changes', {
+      summary: 'Create /developer v1',
+      rationale: 'Initial proposal',
+      changes: [{ kind: 'create_member', role: 'developer', name: 'Developer v1', instructions: 'Initial instructions' }],
+    });
+    assert.equal(firstRes.isError, undefined);
+    const firstProposalId = JSON.parse((firstRes.content[0] as { text: string }).text).proposalId as string;
+
+    const listPendingRes = await callTeamTool(bobIdentity, 'team_list_proposals', { state: 'pending' });
+    assert.equal(listPendingRes.isError, undefined);
+    const pendingList = JSON.parse((listPendingRes.content[0] as { text: string }).text);
+    assert.equal(pendingList.length, 1);
+    assert.equal(pendingList[0].id, firstProposalId);
+
+    const { teamExecutionEvidence } = await import('../src/assistant-teams/conversations.js');
+    const evidence = await teamExecutionEvidence(liveBob, 'make it v2');
+    assert.match(evidence, new RegExp(firstProposalId));
+    assert.match(evidence, /Create \/developer v1/);
+    assert.match(evidence, /supersedeProposalId/);
+
+    // 4. Supersede the pending proposal with a revised v2 proposal.
+    const revisedRes = await callTeamTool(bobIdentity, 'team_propose_changes', {
+      summary: 'Create /developer v2',
+      rationale: 'User requested v2 instructions',
+      supersedeProposalId: firstProposalId,
+      changes: [{ kind: 'create_member', role: 'developer', name: 'Developer v2', instructions: 'Updated v2 instructions' }],
+    });
+    assert.equal(revisedRes.isError, undefined);
+    const revisedProposalId = JSON.parse((revisedRes.content[0] as { text: string }).text).proposalId as string;
+
+    const oldProposal = (await getTeamProposal(firstProposalId))!;
+    assert.equal(oldProposal.state, 'cancelled');
+    assert.match(oldProposal.error ?? '', new RegExp(revisedProposalId));
+    const newProposal = (await getTeamProposal(revisedProposalId))!;
+    assert.equal(newProposal.state, 'pending');
+
+    promptEnded(f.team.projectId, resolvedBob.destination.sessionId, liveBob.requestId);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

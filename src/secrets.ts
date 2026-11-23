@@ -392,6 +392,15 @@ function accountAllowedForProject(accountId: string, projectId: string): boolean
   return copy ? (JSON.parse(copy.scopes) as Array<{ projectIds: string[] }>).some(scope => scope.projectIds.includes(projectId)) : Boolean(replicate);
 }
 
+/** Whether an account can actually resolve for a given project under cluster/grant/scope rules. */
+export function isSecretAccountAllowedForProject(accountId: string, projectId: string): boolean {
+  try {
+    return accountAllowedForProject(accountId, canonicalScopeId("project", projectId));
+  } catch {
+    return false;
+  }
+}
+
 /** Broadest first: workspace, then project, then conversation. Callers apply them in this
     order so the most specific value of a given variable name is written last. */
 function resolved(project: string, conversation?: SecretConversation): ResolvedAccount[] {
