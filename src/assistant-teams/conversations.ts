@@ -57,9 +57,10 @@ export async function updateTeamSubjectSummary(teamId:string,subjectId:string,sp
  if(!row)return;
  const redact=await (await import('./memory.js')).teamMemoryRedactor();
  const subject=JSON.parse(row.record) as TeamSubject;
+ const currentSummary=typeof subject.summary==='string'?subject.summary:'';
  const entry=`${speaker}: ${redact(snippet).slice(0,220)}`;
- if(subject.summary.endsWith(entry))return;
- const combined=subject.summary?`${subject.summary} | ${entry}`:entry;
+ if(currentSummary.endsWith(entry))return;
+ const combined=currentSummary?`${currentSummary} | ${entry}`:entry;
  subject.summary=combined.length>600?combined.slice(-600):combined;
  db.prepare('UPDATE assistant_team_subjects SET record=? WHERE team_id=? AND id=?').run(JSON.stringify(subject),teamId,subjectId);
 }
