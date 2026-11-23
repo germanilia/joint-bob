@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.339.3 — 2026-11-23
+
+- **Model routing:** Simple coding on Claude now tries Sonnet before Haiku (Haiku stopped without verifying on 4 of 11 judged turns in the last 7 reports).
+
 ## 2.339.2 — 2026-11-23
 
 - Fixed an open conversation asking every machine for browser sign-ins about once a second while its agent worked; it now looks again only when you switch conversations or a browser starts, and a browser that starts during a look is no longer missed.

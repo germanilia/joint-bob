@@ -1,6 +1,6 @@
 {
-  "reviewedAt": "2026-11-18",
-  "notes": "Scores 0-100 per level from public evals; routing tries models at or above a level's minimum, subscription before API, then cheapest. Pi uses only its Codex and Z.ai subscriptions. Kiro and Antigravity route the thinking level on their default model until their model IDs are listed on a signed-in machine (Kiro offers Claude, GPT-5.6 and GLM models [s12]; Antigravity offers Gemini 4 Carbon/Argon and 3.8 Flash [s14]). On 2026-11-18 Pi's Codex picks moved to GPT-6.2 Sol and GPT-6.2 Astra, which replace GPT-6.1 Sol and GPT-6 Astra.",
+  "reviewedAt": "2026-11-23",
+  "notes": "Claude level 4 (simple coding) now tries Sonnet before Haiku: Haiku stopped unverified on 4 of 11 judged turns in the last 7 reports, and Sonnet is the default for everyday coding [Haiku 5.5 vs Sonnet 5.5 comparisons]. No other change: remaining underpowered verdicts came from troubleshooting turns misclassified as level 1, and nothing newly listed warranted a move.",
   "sources": [
     {
       "id": "s1",
@@ -369,7 +369,7 @@
             "thinkingLevel": "medium"
           },
           "4": {
-            "score": 68,
+            "score": 60,
             "thinkingLevel": "medium"
           },
           "6": {
@@ -385,7 +385,7 @@
             "thinkingLevel": "high"
           }
         },
-        "evidence": "Haiku 5.5: Terminal-Bench 4.0 36.4% [s1], 39.2% vendor [s3]."
+        "evidence": "Haiku 5.5: Terminal-Bench 4.0 36.4% [s1], 39.2% vendor [s3]. Underpowered on 4 of 11 judged simple-coding turns in the 11-17..11-23 reports (stopped before verifying; Sonnet re-prompted)."
       },
       {
         "provider": "claude",
