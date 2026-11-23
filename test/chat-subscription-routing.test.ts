@@ -187,10 +187,17 @@ for (const selection of ["profile", "pool", "relay-pool"] as const) {
       if (origin === "remote-human") f.queued.author = author("remote-writer", "remote-node");
       if (origin.startsWith("automation")) f.queued.automationProfile = { accountId: "creator", profileId: origin === "automation-explicit" ? "pinned-profile" : null, nodeId: "node" };
       if (origin === "internal-completion") f.queued.systemEventId = "completion";
+      const seenTurnAccounts: Array<string | null | undefined> = [];
+      const originalPrompt = f.shared.session.prompt;
+      f.shared.session.prompt = async (input: any) => {
+        seenTurnAccounts.push(f.shared.turnAccountId);
+        return originalPrompt(input);
+      };
       await runAsAccount(actor("unrelated-viewer"), () => withAutomationProfile({ accountId: "unrelated-job", profileId: "wrong-profile" }, () => f.exports.dispatch(f.connection, f.queued)));
       const account = origin.startsWith("automation") ? "creator" : origin === "remote-human" ? "project-owner" : writer;
       const pooled = selection === "relay-pool" || (selection === "pool" && origin !== "automation-explicit");
       assert.deepEqual(f.calls.map(call => call.account), pooled ? [account, account] : [account]);
+      assert.ok(seenTurnAccounts.length > 0 && seenTurnAccounts.every(seen => seen === account), `expected turnAccountId=${account} during ${origin} turn, saw ${JSON.stringify(seenTurnAccounts)}`);
       assert.deepEqual(f.calls.map(call => call.profile), pooled ? ["first", "second"] : [origin === "automation-explicit" ? "pinned-profile" : `${account}-profile`]);
       assert.equal(f.restored(), pooled ? 1 : 0);
       assert.equal(f.shared.turnInFlight, 0);

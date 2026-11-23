@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { SystemOneQuestion } from "../classifiers/typesafe.js";
 import { classifyGoalResponse } from "../conversation-goals.js";
+import { stripScheduledPromptMarker } from "../scheduled-prompt.js";
 
 /**
  * When a conversation's turn ends and it waits for review, Bob checks whether the task is really done. Not done with work the
@@ -123,7 +124,8 @@ export function isBobPrompt(text: string): boolean {
  */
 export function latestRequest(messages: ReadonlyArray<{ role: string; text?: string }>): string {
   const asked = messages.filter((message) => message.role === "user" && message.text?.trim());
-  return [...asked].reverse().find((message) => !message.text!.startsWith(PUSH_PREFIX))?.text ?? asked.at(-1)?.text ?? "";
+  const text = [...asked].reverse().find((message) => !message.text!.startsWith(PUSH_PREFIX))?.text ?? asked.at(-1)?.text ?? "";
+  return stripScheduledPromptMarker(text);
 }
 
 export const verdictOf = (choice: string): ReviewVerdict | null => choice === "done" ? "done" : choice === "continue" ? "continue" : choice === "needs_user" ? "needs-user" : null;
