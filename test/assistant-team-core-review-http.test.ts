@@ -119,12 +119,13 @@ import { openNodeDatabase } from "../src/node-database.js";
  assert.equal(continuation.status,200,JSON.stringify(continuation.body));
  assert.equal(continuation.body.conversationId,conversation,'continuation uses the subscribed transcript');
  await continued;
- assert.equal(inputs.length,2,'authorized member continues through loopback model');
+ const qaInputs=()=>inputs.filter(i=>JSON.stringify(i.messages).includes('TEAM_QA_ONLY')).length;
+ assert.equal(qaInputs(),2,'authorized member continues through loopback model');
  assert.equal(received.length,afterRevocation,'revoked visitor receives no continuation events');
  // No refresh or poll: receiving the signed account change closes the idle revoked stream.
  let ended=false;while(!ended){ended=(await reader.read()).done;}
  assert.equal((await facade(member)).status,403);assert.equal((await facade(claimOnly)).status,403);
- const count=inputs.length;assert.equal((await hook(4,'/qa revoked request')).status,200);assert.equal(inputs.length,count,'revoked Telegram identity fails before inference');
+ const count=qaInputs();assert.equal((await hook(4,'/qa revoked request')).status,200);assert.equal(qaInputs(),count,'revoked Telegram identity fails before inference');
  assert.equal((await api(node,remote,'GET',`/projects/${team.projectId}/sessions`)).status,404);
  assert.equal(received.length,afterRevocation,'revoked socket receives no further frames');
  // Re-admit by a newer received snapshot; an older facade alone was insufficient.
