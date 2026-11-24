@@ -12,7 +12,7 @@ import { stopProcessGroup } from "../process-lifecycle.js";
 import type { HarnessEvent, HarnessModelSettings, HarnessOpenOptions, HarnessPrompt, HarnessRuntime, HarnessSession, HarnessTool } from "../runtime.js";
 import { antigravityConfigOptions, antigravityThinkingLevels, applyAntigravitySettings, checkAntigravityExecutable, probeAntigravity } from "./models.js";
 import { appendAntigravityRecord, initializeAntigravitySession, readAntigravitySession } from "./storage.js";
-import { createAntigravityConnection } from "./transport.js";
+import { AntigravityRpcError, createAntigravityConnection } from "./transport.js";
 import { spawnAntigravity, antigravityEnvironment } from "./process.js";
 import { antigravityLogins } from "./login.js";
 import { projectProviderProfile } from "../../provider-profiles/service.js";
@@ -271,18 +271,26 @@ class AntigravitySession implements HarnessSession {
       protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: "joint-bob", version: "1" },
     }), "initialize response");
     if (initialized.protocolVersion !== 1) throw new Error(`Unsupported Antigravity ACP protocol version: ${String(initialized.protocolVersion)}`);
-    const method = this.nativeSessionId ? "session/load" : "session/new";
-    const params = this.nativeSessionId
-      ? { sessionId: this.nativeSessionId, cwd: this.options.cwd, mcpServers: [] }
-      : { cwd: this.options.cwd, mcpServers: [] };
-    this.replaying = method === "session/load";
-    let response: JsonObject;
-    try { response = object(await this.connection!.request(method, params), "session response"); }
-    finally { this.replaying = false; }
-    this.nativeSessionId ??= requiredString(response.sessionId, "session ID");
-    const options = await applyAntigravitySettings(this.connection!, this.nativeSessionId, response.configOptions, this.config);
+    const params = { cwd: this.options.cwd, mcpServers: [] };
+    const savedId = this.nativeSessionId;
+    let loaded: JsonObject | undefined;
+    if (savedId) {
+      this.replaying = true;
+      try {
+        loaded = object(await this.connection!.request("session/load", { ...params, sessionId: savedId }), "session response");
+      } catch (error) {
+        if (!(error instanceof AntigravityRpcError && error.code === -32002 && error.rpcMessage === `Session not found: ${savedId}`)) throw error;
+        this.nativeSessionId = null;
+        this.handoffPending = this.transcript.length > 0;
+      } finally { this.replaying = false; }
+    }
+    this.throwIfCancelled();
+    const response = loaded ?? object(await this.connection!.request("session/new", params), "session response");
+    const nativeId = this.nativeSessionId ?? requiredString(response.sessionId, "session ID");
+    const options = await applyAntigravitySettings(this.connection!, nativeId, response.configOptions, this.config);
+    this.nativeSessionId = nativeId;
     this.applyConfiguration(options);
-    if (method === "session/new") {
+    if (!loaded) {
       if (!this.aliasFile) this.aliasFile = await initializeAntigravitySession(this.options, this.settings());
       this.nativeProfileId = this.profile?.id ?? null;
       this.queueRecord({ type: "native-session", id: this.nativeSessionId, profileId: this.nativeProfileId, handoffPending: this.handoffPending, timestamp: new Date().toISOString() });

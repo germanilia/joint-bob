@@ -13,12 +13,18 @@ function record(value: unknown): RecordValue {
   return result;
 }
 
-function rpcError(value: unknown): Error {
+export class AntigravityRpcError extends Error {
+  constructor(readonly code: number, readonly rpcMessage: string, detail: string) {
+    super(`ACP error ${code}: ${rpcMessage}${detail}`);
+  }
+}
+
+function rpcError(value: unknown): AntigravityRpcError {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Antigravity ACP JSON-RPC error");
   const error = value as RecordValue;
   if (typeof error.code !== "number" || typeof error.message !== "string") throw new Error("Invalid Antigravity ACP JSON-RPC error");
   const detail = typeof error.data === "string" && error.data.trim() ? `: ${error.data.trim()}` : "";
-  return new Error(`ACP error ${error.code}: ${error.message}${detail}`);
+  return new AntigravityRpcError(error.code, error.message, detail);
 }
 
 class AntigravityConnection {
