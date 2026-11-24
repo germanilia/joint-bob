@@ -35,16 +35,17 @@ export function assertClusterResourcesPresent(projectId: string | undefined, har
     }
   }
 }
-export function assertClusterResourceSupport(projectId: string | undefined, harness: HarnessId): void {
+export function assertClusterResourceSupport(projectId: string | undefined): void {
   const restricted = projectAgentPolicies(settingsDatabase(), projectId).some(layer => layer.policy.rules.length || Object.values(layer.policy.settings).some(toggle => toggle.enforce || !toggle.allowOthers));
   if (!restricted) return;
-  if (harness === "antigravity") throw new Error("Antigravity cannot enforce this cluster's agent resource policy; choose another harness");
   if (!getSettings().strictResourceIsolation) throw new Error("Cluster agent resource policy requires strict resource isolation on this machine");
 }
 export async function prepareClusterPolicySkills(projectId: string | undefined, harness: HarnessId): Promise<void> {
-  assertClusterResourceSupport(projectId, harness);
+  assertClusterResourceSupport(projectId);
+  const required = requiredSkills(projectId, harness);
+  if (!required.length) return;
   const local = await getClusterNode(), db = settingsDatabase();
-  for (const item of requiredSkills(projectId, harness)) {
+  for (const item of required) {
     if (!existsSync(item.root)) {
       let bundle: unknown;
       if (item.sourceNodeId === local.id) bundle = (await buildSkillBundle(path.join(agentResourcePaths().sharedSkills, item.name), item.name)).bundle;

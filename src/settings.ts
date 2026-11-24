@@ -12,6 +12,7 @@ import { conversationDefaultsSchema, type ConversationDefault } from "./harnesse
 import { listDiscoveredHarnesses } from "./harnesses/registry.js";
 import { configuredRuntime, detectExecutable, runtimeOverrides } from "./harnesses/runtime-configuration.js";
 import type { HarnessAdapter } from "./harnesses/contract.js";
+import type { HarnessId } from "./types.js";
 import { decrypt, save, setting, settingsDatabase, value } from "./settings-store.js";
 import { untilNextWrite } from "./sqlite-generation.js";
 import { knownReadyHarnesses } from "./harness-readiness.js";
@@ -450,7 +451,7 @@ export function getProjectResourcePaths(projectId: string): ResourcePaths {
 }
 
 /** Skills shared to this project's workspace or to this conversation load with the project's own. */
-export function getScopedResourcePaths(projectId?: string, conversationId?: string, harness?: "pi" | "claude" | "kiro"): ScopedResourcePaths & { skillScope: { projectId?: string; conversationId?: string } } {
+export function getScopedResourcePaths(projectId?: string, conversationId?: string, harness?: HarnessId): ScopedResourcePaths & { skillScope: { projectId?: string; conversationId?: string } } {
   const project = projectId ? getProjectResourcePaths(projectId) : emptyResourcePaths();
   const scoped = scopedSkillRoots(projectId, conversationId, harness);
   return { global: getSettings().resources, project: scoped.length ? { ...project, skills: [...project.skills, ...scoped] } : project, skillScope: { projectId, conversationId } };

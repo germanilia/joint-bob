@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +11,14 @@ import { createProviderProfile, setProviderProfileSelection } from "../src/provi
 import { antigravityProfileHome } from "../src/antigravity-profiles/native.js";
 import runtime from "../src/harnesses/antigravity/runtime.js";
 import { readAntigravitySession } from "../src/harnesses/antigravity/storage.js";
+import { managedMcpStore } from "../src/mcp/agent.js";
+import { agentPolicyBodySchema, setClusterAgentPolicy } from "../src/cluster-agent-policy.js";
+import { getClusterNode } from "../src/cluster.js";
+import { clusterV2Database } from "../src/cluster-v2-store.js";
+import { createSharingCluster, setResourceShares } from "../src/cluster-sharing-policy.js";
+import { agentResourcePaths } from "../src/agent-resources.js";
+import { buildSkillBundle } from "../src/skill-sharing.js";
+import { authorizeMcpServer } from "../src/server/routes/managed-mcp.js";
 
 const fixture = `#!/usr/bin/env node
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
@@ -18,7 +27,7 @@ for(const name of ['AGY_ADC_AUTH','GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_APPL
 assert.ok(process.env.SSH_CONNECTION,'SSH_CONNECTION must be set to bypass OS keyring');
 if(args[0]==='--version'){process.stdout.write('agy 1.0.0\\n');process.exit(0);}
 if(args[0]==='acp'&&args[1]==='--help'){process.stdout.write('agy acp\\n');process.exit(0);}
-assert.deepEqual(args,['acp']);
+assert.ok(args[0]==='acp');
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 const config=()=>[
 {id:'model',name:'Model',type:'select',currentValue:model,options:[{value:'model-a',name:'Model A'},{value:'model-b',name:'Model B'}]},
@@ -37,6 +46,10 @@ return send({jsonrpc:'2.0',id:promptId,result:{stopReason:'end_turn'}});
 }
 if(request.method==='initialize')return reply({protocolVersion:1,agentCapabilities:{loadSession:true}});
 if(request.method==='session/new'||request.method==='session/load'){
+if(fs.existsSync(path.join(request.params.cwd,'resource-fixture'))){
+const servers=request.params.mcpServers.map(({name,command,args,env,type,url,headers})=>({name,command,args,env,type,url,headers}));
+fs.writeFileSync(path.join(request.params.cwd,'observed-resources'),JSON.stringify({args,method:request.method,servers,broker:Boolean(process.env.JOINT_BOB_MCP_TOKEN)}));
+}
 if(process.env.AGY_FIXTURE_UNAUTHENTICATED==='1'||process.env.AGY_FIXTURE_REQUIRE_LOGIN==='1'&&!fs.existsSync(path.join(process.env.HOME,'signed-in')))return send({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:'Authentication required'}});
 const replacement=fs.existsSync(path.join(request.params.cwd,'missing-native-session'));
 if(request.method==='session/load'&&replacement&&request.params.sessionId!==sessionId+'-replacement')return send({jsonrpc:'2.0',id:request.id,error:{code:-32002,message:'Session not found: '+request.params.sessionId}});
@@ -63,9 +76,13 @@ for(const name of ['JOINT_BOB_BROWSER_CLI','JOINT_BOB_SECRET_CLI','JOINT_BOB_WOR
 assert.ok(process.env[name],name+' is missing from the runtime environment');
 assert.ok(blocks[0].text.includes(name),name+' is missing from the ACP instructions');
 }
-assert.ok(!blocks[0].text.includes('Joint Bob supplies configured MCP tools automatically'));
+assert.match(blocks[0].text,/# Joint Bob MCP/);
 assert.equal(blocks[1].text,text);
 if(text==='hello')assert.deepEqual(blocks[2],{type:'image',data:'Zml4dHVyZQ==',mimeType:'image/png'});
+}
+if(text==='test resource policy'){
+assert.match(blocks[0].text,/policy-required-test-skill/);
+assert.doesNotMatch(blocks[0].text,/policy-blocked-test-skill/);
 }
 if(text.endsWith('after the move')){
 assert.match(text,/Context handoff:/);
@@ -144,6 +161,78 @@ test("Google Antigravity ACP readiness, model selection, native session and tran
     if (session?.isBusy()) await session.stopForUpdate();
     session?.dispose();
     updateSettings({ runtimes: previous.runtimes });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Antigravity passes approved MCP servers on new and resumed turns and enforces cluster resources at launch", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "antigravity-policy-")), previous = getSettings();
+  const account = { accountId: "antigravity-resource-test", username: "fixture", role: "admin" as const, isRemoteLogin: false, homeNodeId: null };
+  const required = "policy-required-test-skill", blocked = "policy-blocked-test-skill";
+  const requiredRoot = path.join(agentResourcePaths().sharedSkills, required);
+  const sessionId = "antigravity-policy-fixture";
+  const store = managedMcpStore(account.accountId);
+  let session: Awaited<ReturnType<typeof runtime.open>> | undefined;
+  try {
+    const executable = path.join(root, "agy");
+    await writeFile(executable, fixture, { mode: 0o700 });
+    await writeFile(path.join(root, "resource-fixture"), "");
+    updateSettings({ strictResourceIsolation: true, runtimes: { ...previous.runtimes, antigravity: { executable, configPath: path.join(root, ".gemini"), sessionPath: path.join(root, "sessions") } } });
+    const project = await addProject("Antigravity policy fixture", root, { writeInstructions: false });
+    const db = await clusterV2Database(), manager = (await getClusterNode()).id, clusterId = randomUUID();
+    createSharingCluster(db, { id: clusterId, name: "Antigravity policy fixture" }, manager);
+    setResourceShares(db, manager, "project", project.id, [{ clusterId, projectId: null }]);
+    for (const skill of [requiredRoot, path.join(root, ".agents", "skills", blocked)]) {
+      await mkdir(skill, { recursive: true });
+      await writeFile(path.join(skill, "SKILL.md"), `---\nname: ${path.basename(skill)}\ndescription: Test skill\n---\nSynthetic instructions\n`);
+    }
+    const config = await buildSkillBundle(requiredRoot, required);
+    const policy = agentPolicyBodySchema.parse({ guardian: null });
+    policy.rules = [{ harness: "all", action: "block", name: blocked }];
+    policy.enabled.skills.antigravity = [required];
+    policy.skillDigests = { [required]: config.digest };
+    policy.settings.skills.enforce = true;
+    policy.enabled.mcp.antigravity = ["approved", "node-stdio", "node-http"];
+    policy.settings.mcp = { enforce: true, allowOthers: false };
+    const shared = agentResourcePaths().mcpConfig;
+    await mkdir(path.dirname(shared), { recursive: true });
+    await writeFile(shared, JSON.stringify({ mcpServers: {
+      "node-stdio": { command: "synthetic", args: ["--fixture"], env: { FIXTURE: "safe" } },
+      "node-http": { type: "streamable-http", url: "https://fixture.invalid/mcp", headers: { "X-Fixture": "safe" } },
+      "node-hidden": { command: "hidden" },
+    } }));
+    setClusterAgentPolicy(db, manager, clusterId, { policy, sourceRelayNodeId: null }, 1);
+    store.install({ approved: { url: "https://approved.invalid/mcp" }, blocked: { url: "https://blocked.invalid/mcp" } });
+    const profile = createProviderProfile(account.accountId, { provider: "antigravity", label: "Policy fixture" });
+    setProviderProfileSelection(account.accountId, { provider: "antigravity", scope: "default", scopeId: "", profileId: profile.id });
+    const home = antigravityProfileHome(profile);
+    await mkdir(home, { recursive: true });
+    await writeFile(path.join(home, "signed-in"), "fixture");
+    const identity = { account, projectId: project.id, conversationId: sessionId, engine: "antigravity" as const };
+    assert.equal(await authorizeMcpServer(identity, "blocked"), false);
+    assert.equal(await authorizeMcpServer(identity, "approved"), true);
+    session = await runAsAccount(account, () => runtime.open({ projectId: project.id, cwd: root, sessionId }));
+    for (const method of ["session/new", "session/load"]) {
+      await runAsAccount(account, () => session!.prompt({ text: "test resource policy" }));
+      const observed = JSON.parse(await readFile(path.join(root, "observed-resources"), "utf8"));
+      assert.deepEqual(observed.args, ["acp", "--include-default-customizations=false"]);
+      assert.equal(observed.method, method);
+      assert.equal(observed.broker, true);
+      assert.deepEqual(observed.servers.map((server: { name: string }) => server.name), ["node-stdio", "node-http", "approved"]);
+      assert.deepEqual(observed.servers[0], { name: "node-stdio", command: "synthetic", args: ["--fixture"], env: [{ name: "FIXTURE", value: "safe" }] });
+      assert.deepEqual(observed.servers[1], { name: "node-http", type: "http", url: "https://fixture.invalid/mcp", headers: [{ name: "X-Fixture", value: "safe" }] });
+      assert.match(observed.servers[2].args[0], /joint-bob-mcp\.mjs$/);
+      assert.deepEqual(observed.servers[2].env, []);
+    }
+    store.remove("approved");
+    await assert.rejects(runAsAccount(account, () => session!.prompt({ text: "must not start" })), /requires unavailable mcp resource approved/);
+    updateSettings({ strictResourceIsolation: false });
+    await assert.rejects(runAsAccount(account, () => session!.prompt({ text: "must not start" })), /requires strict resource isolation/);
+  } finally {
+    session?.dispose();
+    updateSettings({ runtimes: previous.runtimes, strictResourceIsolation: previous.strictResourceIsolation });
+    await rm(requiredRoot, { recursive: true, force: true });
+    await rm(agentResourcePaths().mcpConfig, { force: true });
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -14,7 +14,6 @@ import { activeMcpServers } from "../../resource-activation.js";
 import type { ManagedMcpServer } from "../../mcp/store.js";
 import { managedMcpStore, nativeMcpServerConfigs, type McpAgentIdentity } from "../../mcp/agent.js";
 import { parseMcpServers } from "../../mcp/store.js";
-import { activationDecision } from "../../resource-activation.js";
 import { personalAssistantSettings } from "../../personal-assistants.js";
 import { getProject } from "../../store.js";
 import { app } from "../state.js";
@@ -132,11 +131,11 @@ app.post("/api/resources/mcp/native/auth/sign-out", async (request, response) =>
 const agentSchema = z.object({ server: nameSchema, action: z.enum(["tools", "call"]), tool: z.string().min(1).max(300).optional(), arguments: z.record(z.string(), z.unknown()).optional() }).strict();
 export async function authorizeMcpServer(identity: McpAgentIdentity, name: string): Promise<boolean> {
   if (!await getProject(identity.projectId)) return false;
-  // Joint Bob's own tools decide for themselves who may use them.
+  if (!Object.hasOwn(activeMcpServers(identity.engine, { [name]: true }, identity.projectId), name)) return false;
+  // Joint Bob's own tools also decide for themselves who may use them.
   if (name === JOINT_BOB_TOOL_SERVER) return true;
   const server = managedMcpStore(identity.account.accountId).servers()[name];
   if (!server || server.authMode === "native") return false;
-  if (!activationDecision("mcp", name, identity.engine, false).enabled) return false;
   const policy = await personalAssistantSettings(identity.account.accountId, identity.projectId, identity.engine, identity.conversationId);
   return !policy || policy.mcpServerNames === null || policy.mcpServerNames.includes(name);
 }

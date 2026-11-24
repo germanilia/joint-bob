@@ -16,7 +16,7 @@ import { actingAccount } from "./account-context.js";
 import { managedMcpStore } from "./mcp/agent.js";
 
 /** Harnesses that also load legacy native MCP configuration. Pi uses the managed client. */
-const MCP_HARNESSES: HarnessId[] = ["claude", "kiro"];
+const MCP_HARNESSES: HarnessId[] = ["claude", "kiro", "antigravity"];
 
 export type SkillOrigin = "shared" | "scoped" | "user" | "project";
 

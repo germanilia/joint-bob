@@ -840,7 +840,7 @@ export function claudeAgentResourceArgs(root?: string, scoped?: ScopedResourcePa
 
 function claudeAgentResourceArgsNow(root?: string, scoped?: ScopedResourcePaths, extraInstructions?: string, cwd?: string): string[] {
   const strict = getSettings().strictResourceIsolation;
-  assertClusterResourceSupport(skillScopeContext(scoped).projectId, "claude");
+  assertClusterResourceSupport(skillScopeContext(scoped).projectId);
   // Strict launches load no setting source, so the CLI discovers no skill by itself and the app's copy is the only one.
   if (cwd && !strict) assertNoBlockedNativeSkills("claude", cwd, [path.join(getSettings().claude.configPath, "skills"), path.join(os.homedir(), ".agents/skills")], skillScopeContext(scoped));
   if (!strict && blockedSkillNames("claude", skillScopeContext(scoped)).length) throw new Error("Cannot safely enforce blocked Claude skills while native resource discovery is enabled. Turn on strict resource isolation or remove the skill block.");

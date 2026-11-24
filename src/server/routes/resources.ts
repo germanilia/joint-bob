@@ -36,9 +36,9 @@ import "./managed-mcp.js";
 registerSkillSharingRoutes();
 registerGitResourceRoutes();
 
-const activationSchema = z.object({ kind: z.enum(["skill", "plugin", "mcp"]), name: z.string().min(1).max(200), harness: z.enum(["pi", "claude", "kiro"]), enabled: z.boolean().nullable(), projectId: z.string().min(1).max(200).optional(), conversationId: z.string().min(1).max(300).optional() }).strict();
+const activationSchema = z.object({ kind: z.enum(["skill", "plugin", "mcp"]), name: z.string().min(1).max(200), harness: z.enum(["pi", "claude", "kiro", "antigravity"]), enabled: z.boolean().nullable(), projectId: z.string().min(1).max(200).optional(), conversationId: z.string().min(1).max(300).optional() }).strict();
 const bulkActivationSchema = activationSchema.omit({ name: true, harness: true }).extend({ enabled: z.boolean(), items: z.array(activationSchema.pick({ name: true, harness: true })).min(1).max(1000) }).strict();
-function activationError(inventory: ResourceInventory, kind: "skill" | "plugin" | "mcp", name: string, harness: "pi" | "claude" | "kiro", projectId?: string): { status: number; message: string } | null {
+function activationError(inventory: ResourceInventory, kind: "skill" | "plugin" | "mcp", name: string, harness: z.infer<typeof activationSchema>["harness"], projectId?: string): { status: number; message: string } | null {
   const available = kind === "skill" ? inventory.skills : kind === "mcp" ? inventory.mcpServers : inventory.plugins;
   const matching = available.filter((item) => item.name === name && item.harnesses.includes(harness));
   const restricted = matching.find((item) => item.activationRestrictions?.[harness]);

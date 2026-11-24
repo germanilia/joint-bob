@@ -10,12 +10,13 @@ import { encodeControl, MAX_FRAME } from "./protocol.js";
 import type { HarnessId } from "../types.js";
 import { readOncePerPass } from "../resource-pass.js";
 
-const rule = z.object({ action: z.enum(["enable", "block"]), name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/), harness: z.enum(["all", "pi", "claude", "kiro"]) }).strict();
+const rule = z.object({ action: z.enum(["enable", "block"]), name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/), harness: z.enum(["all", "pi", "claude", "kiro", "antigravity"]) }).strict();
 export const relaySkillRulesSchema = z.array(rule).max(512).refine((rules) => new Set(rules.map((item) => `${item.name}\0${item.harness}\0${item.action}`)).size === rules.length, "Duplicate relay rule");
 export type RelayResourceKind = "skills" | "mcp" | "plugins";
 const toggles = z.object({ allowOthers: z.boolean(), enforce: z.boolean() }).strict();
 const names = z.array(z.string().max(220)).max(512);
-const enabledNames = z.object({ pi: names, claude: names, kiro: names }).strict();
+// Leave the key absent on older policies: parsed bodies must retain their signed representation.
+const enabledNames = z.object({ pi: names, claude: names, kiro: names, antigravity: names.optional() }).strict();
 const defaultToggles = () => ({ allowOthers: true, enforce: false });
 const defaultNames = () => ({ pi: [], claude: [], kiro: [] });
 /** allowOthers=false blocks resources the relay has not enabled; enforce=true enables the relay's enabled resources even over a local disable. */

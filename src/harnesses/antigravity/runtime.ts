@@ -15,6 +15,8 @@ import { appendAntigravityRecord, initializeAntigravitySession, readAntigravityS
 import { AntigravityRpcError, createAntigravityConnection } from "./transport.js";
 import { spawnAntigravity, antigravityEnvironment } from "./process.js";
 import { antigravityLogins } from "./login.js";
+import { antigravityResources, type AntigravityMcpServer } from "./resources.js";
+import { assertClusterResourceSupport } from "../../cluster-agent-resources.js";
 import { projectProviderProfile } from "../../provider-profiles/service.js";
 import { useProviderProfile } from "../../provider-profiles/execution.js";
 import type { ProviderProfile } from "../../provider-profiles/store.js";
@@ -204,8 +206,7 @@ class AntigravitySession implements HarnessSession {
   }
 
   private async checkReady(): Promise<void> {
-    const { assertClusterResourceSupport } = await import("../../cluster-agent-resources.js");
-    assertClusterResourceSupport(this.options.projectId, "antigravity");
+    assertClusterResourceSupport(this.options.projectId);
     const environment = await this.environment(), home = this.profile ? environment.HOME : undefined;
     await checkAntigravityExecutable(this.options.cwd, environment, home);
     try { await probeAntigravity(this.options.cwd, environment, home); }
@@ -226,13 +227,15 @@ class AntigravitySession implements HarnessSession {
     this.emit({ type: "agent_start" });
     let failure: unknown;
     try {
+      const resources = await antigravityResources(this.options);
+      this.throwIfCancelled();
       await this.startProcess();
-      await this.initializeNativeSession();
+      await this.initializeNativeSession(resources.mcpServers);
       const text = await guardAntigravityPrompt(this.identity(), input.text);
       const expanded = this.handoffPending ? `${buildHandoffContext(this.transcript)}${text}` : text;
       await input.beforeStart?.();
       this.throwIfCancelled();
-      const response = object(await this.connection!.request("session/prompt", { sessionId: this.nativeSessionId, prompt: this.promptContent(expanded, input) }), "prompt response");
+      const response = object(await this.connection!.request("session/prompt", { sessionId: this.nativeSessionId, prompt: this.promptContent(expanded, input, resources.instructions) }), "prompt response");
       await this.finishPrompt(response);
     } catch (error) {
       this.persistAssistant();
@@ -249,11 +252,10 @@ class AntigravitySession implements HarnessSession {
     if (failure !== undefined) throw failure;
   }
 
-  private promptContent(text: string, input: HarnessPrompt): JsonObject[] {
-    const instructions = agentCapabilityInstructionFiles(this.options.projectId, this.options.conversationId ?? this.id, "antigravity");
-    // ACP has no system-instruction field; keep app context separate from the user's text and attachments.
+  private promptContent(text: string, input: HarnessPrompt, resourceInstructions: string[]): JsonObject[] {
+    const instructions = agentCapabilityInstructionFiles(this.options.projectId, this.options.conversationId ?? this.id);
     const prompt: JsonObject[] = [
-      { type: "text", text: `${instructions.map((file) => file.content).join("\n\n")}\n\n` },
+      { type: "text", text: `${[...resourceInstructions, ...instructions.map((file) => file.content)].join("\n\n")}\n\n` },
       { type: "text", text },
     ];
     for (const image of input.images ?? []) prompt.push({ type: "image", data: image.data, mimeType: image.mimeType });
@@ -267,16 +269,18 @@ class AntigravitySession implements HarnessSession {
       this.nativeSessionId = null;
       this.handoffPending = this.transcript.length > 0;
     }
-    this.child = spawnAntigravity(this.options.cwd, ["acp"], env, this.profile ? env.HOME : undefined);
+    assertClusterResourceSupport(this.options.projectId);
+    const args = getSettings().strictResourceIsolation ? ["acp", "--include-default-customizations=false"] : ["acp"];
+    this.child = spawnAntigravity(this.options.cwd, args, env, this.profile ? env.HOME : undefined);
     this.connection = createAntigravityConnection(this.child, (method, params) => this.notification(method, params), (method, params) => this.serverRequest(method, params));
   }
 
-  private async initializeNativeSession(): Promise<void> {
+  private async initializeNativeSession(mcpServers: AntigravityMcpServer[]): Promise<void> {
     const initialized = object(await this.connection!.request("initialize", {
       protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: "joint-bob", version: "1" },
     }), "initialize response");
     if (initialized.protocolVersion !== 1) throw new Error(`Unsupported Antigravity ACP protocol version: ${String(initialized.protocolVersion)}`);
-    const params = { cwd: this.options.cwd, mcpServers: [] };
+    const params = { cwd: this.options.cwd, mcpServers };
     const savedId = this.nativeSessionId;
     let loaded: JsonObject | undefined;
     if (savedId) {

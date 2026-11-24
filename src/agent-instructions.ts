@@ -60,7 +60,7 @@ function scopedRules(cwd: string, sources: ProjectInstructionSource[]): Instruct
  * themselves, so a project's AGENTS.md, CLAUDE.md files, `.claude/rules` and Kiro steering reach
  * every harness only from here.
  */
-export function agentInstructionFiles(paths: AgentResourcePaths, harness: "pi" | "claude" | "kiro", options: { cwd?: string; rules?: string[]; memory?: string } = {}): InstructionFile[] {
+export function agentInstructionFiles(paths: AgentResourcePaths, harness: "pi" | "claude" | "kiro" | "antigravity", options: { cwd?: string; rules?: string[]; memory?: string } = {}): InstructionFile[] {
   const read = (file: string, label: string): InstructionFile => ({ path: file, label, content: readFileSync(file, "utf8") });
   const global = globalInstructionsPath(paths);
   const files = isFile(global) ? [read(global, "Global instructions (AGENTS.md)")] : [];

@@ -84,7 +84,7 @@ export async function applyAntigravitySettings(connection: Rpc, sessionId: strin
 }
 
 async function openCatalogSession(cwd: string, environment: NodeJS.ProcessEnv, home?: string) {
-  const child = spawnAntigravity(cwd, ["acp"], environment, home);
+  const child = spawnAntigravity(cwd, ["acp", "--include-default-customizations=false"], environment, home);
   const connection = createAntigravityConnection(child, () => {}, async (method) => { throw new Error(`Unexpected Antigravity ACP request during model discovery: ${method}`); });
   const deadline = setTimeout(() => child.kill(), 30_000);
   deadline.unref();
