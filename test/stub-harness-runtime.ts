@@ -163,7 +163,9 @@ function wrapSession(engine: "pi" | "claude", session: HarnessSession, options: 
 function wrapRuntime(engine: "pi" | "claude", runtime: HarnessRuntime): void {
   const open = runtime.open.bind(runtime);
   const readiness = runtime.readiness.bind(runtime);
+  const signInProblems = runtime.signInProblems.bind(runtime);
   runtime.readiness = (cwd, env) => enabled() ? Promise.resolve([]) : readiness(cwd, env);
+  runtime.signInProblems = () => enabled() ? Promise.resolve([]) : signInProblems();
   runtime.open = async (options) => wrapSession(engine, await open(options), options);
 }
 
