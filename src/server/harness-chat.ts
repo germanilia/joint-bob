@@ -1447,7 +1447,10 @@ async function controls(connection: HarnessChatConnection, message: ReturnType<t
     }
     const provider = message.provider ?? getHarness(connection.engine).configuration?.fixedProvider;
     if (!provider || !message.modelId) throw new Error("Model is required");
-    const settings = { ...connection.shared.session.settings(), provider, modelId: message.modelId, ...(message.level ? { reasoning: message.level } : {}) };
+    const current = connection.shared.session.settings();
+    let settings = { ...current, provider, modelId: message.modelId };
+    if (message.level) settings.reasoning = message.level;
+    else if (connection.engine === "pi") settings = await offeredReasoning(settings, current);
     await (await getHarnessRuntime(connection.engine)).validateSettings(settings);
     await connection.shared.session.configure(settings);
     recordQueueSettings(queueKey(connection), currentSettings(connection));
