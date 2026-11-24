@@ -91,6 +91,26 @@ test("twins exchange project locations, with or without an old machine's device 
     assert.equal((await signedNodeRequest(environment, b, a, "POST", ENROLL, { projects: [project.id], locations: [] })).status, 200);
     await until("the stored error to clear", async () => (await api<{ state: string }>(a, session, "GET", sharing)).body.state === "ready");
 
+    // A missing policy on the twin causes a 403 on location enrollment; repairing from the app re-delivers policies and clears it.
+    const twinDb = openNodeDatabase(path.join(b.dataDir, "node.db"));
+    try {
+      twinDb.exec("PRAGMA busy_timeout = 5000");
+      twinDb.prepare("DELETE FROM cluster_v2_resource_contexts WHERE kind = 'project' AND resource_id = ?").run(project.id);
+      twinDb.prepare("DELETE FROM cluster_v2_resource_policy WHERE kind = 'project' AND resource_id = ?").run(project.id);
+    } finally { twinDb.close(); }
+    const rejected = await signedNodeRequest(environment, a, b, "POST", ENROLL, { projects: [project.id], locations: [{ projectId: project.id, path: own.path }] });
+    assert.equal(rejected.status, 403, "missing policy on twin rejects enrollment with 403");
+    const errDb = openNodeDatabase(path.join(a.dataDir, "node.db"));
+    try {
+      errDb.exec("PRAGMA busy_timeout = 5000");
+      errDb.prepare("INSERT OR REPLACE INTO cluster_v2_file_errors VALUES(?,?)").run(b.nodeId, "Project locations were not accepted (403)");
+    } finally { errDb.close(); }
+    assert.deepEqual((await api<{ state: string; error?: string }>(a, session, "GET", sharing)).body.error, "Project locations were not accepted (403)");
+    const repaired = await api<{ state: string; error?: string }>(a, session, "POST", `/twins/${relationshipId}/repair`, {});
+    assert.equal(repaired.status, 200, JSON.stringify(repaired.body));
+    assert.equal(repaired.body.error, undefined, "repair clears the 403 error");
+    await until("twin to return to ready after repair", async () => (await api<{ state: string }>(a, session, "GET", sharing)).body.state === "ready");
+
     // A shared project whose folder is not on this machine yet gets it with the exchange, so file sync can take the
     // project over. Once this machine has taken it over, a folder that goes missing is never made again: an empty
     // one would read as every file deleted.
@@ -122,4 +142,37 @@ test("file status for a peer is ready with nothing shared and reports a stored e
     assert.deepEqual(await sharingFilesStatus(db, "local-node", "peer-node"), { ready: false, error: "Project locations were not accepted (500)" });
     assert.deepEqual(await sharingFilesStatus(db, "local-node", "another-peer"), { ready: true }, "one peer's error is not another's");
   } finally { db.close(); }
+});
+
+test("requeuePeerPolicyDeliveries re-queues active and deleted owned project policies for a twin", async () => {
+  const { randomUUID } = await import("node:crypto");
+  const { getOrCreateClusterIdentity } = await import("../src/cluster-identity.js");
+  const { ensureTwinSchema, createTwinInvitation, prepareTwinAcceptance, confirmTwinAcceptance, applyTwinCertificate } = await import("../src/cluster-twins.js");
+  const {
+    deleteSharedResource, ensureResourceSharingSchema, listResourcePolicyDeliveries,
+    registerLocalSharingResource, requeuePeerPolicyDeliveries,
+  } = await import("../src/cluster-sharing.js");
+  const a = new DatabaseSync(":memory:"), b = new DatabaseSync(":memory:");
+  try {
+    const idA = randomUUID(), idB = randomUUID();
+    getOrCreateClusterIdentity(a, idA); getOrCreateClusterIdentity(b, idB);
+    ensureTwinSchema(a); ensureTwinSchema(b);
+    ensureResourceSharingSchema(a); ensureResourceSharingSchema(b);
+    const invite = createTwinInvitation(a, idA);
+    const acceptance = prepareTwinAcceptance(b, idB, invite, invite.body.inviter.fingerprint);
+    const cert = confirmTwinAcceptance(a, idA, acceptance, invite.secret);
+    applyTwinCertificate(a, idA, cert);
+    registerLocalSharingResource(a, idA, { kind: "project", id: "proj-active" });
+    registerLocalSharingResource(a, idA, { kind: "project", id: "proj-deleted" });
+    deleteSharedResource(a, idA, "project", "proj-deleted", 1);
+    // Simulate deliveries having been acknowledged/lost so outbox is empty.
+    a.exec("DELETE FROM cluster_v2_resource_deliveries");
+    assert.equal(listResourcePolicyDeliveries(a).length, 0);
+
+    requeuePeerPolicyDeliveries(a, idA, idB);
+    const deliveries = listResourcePolicyDeliveries(a);
+    const byProject = new Map(deliveries.map((d) => [d.statement.body.resourceId, d.statement.body.operation]));
+    assert.equal(byProject.get("proj-active"), "upsert", "active owned project is re-queued");
+    assert.equal(byProject.get("proj-deleted"), "delete", "deleted owned project tombstone is re-queued");
+  } finally { a.close(); b.close(); }
 });

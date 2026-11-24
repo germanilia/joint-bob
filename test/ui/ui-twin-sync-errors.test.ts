@@ -30,9 +30,14 @@ test("twin failures are readable in the member list, node inspector and machine 
     const pageErrors: string[] = [];
     page.on("pageerror", error => pageErrors.push(error.message));
     let error: string | undefined = "Conversation history sync failed:\nContigos: aborted\nDak-Live: Cluster peer is unreachable";
-    let readError = false, reads = 0, mutations = 0;
+    let readError = false, reads = 0, mutations = 0, repairs = 0;
     let conflicts: Array<Record<string, string>> = [], remoteConflicts: Array<Record<string, string>> = [];
     const accepted: unknown[] = [], acceptedRemote: unknown[] = [];
+    await page.route(`**/api/twins/${relationshipId}/repair`, async route => {
+      repairs++;
+      error = undefined;
+      await route.fulfill({ status: 200, json: { initialized: true, state: "ready", projectCount: 3, pendingDeliveries: 0, ownerNodeId: local.nodeId } });
+    });
     await page.route(`**/api/twins/${relationshipId}/transcript-conflicts/accept-on-twin`, async route => {
       acceptedRemote.push(route.request().postDataJSON());
       remoteConflicts = []; error = "Conversation history sync failed:\nDak-Live: Cluster peer is unreachable";
@@ -128,10 +133,14 @@ test("twin failures are readable in the member list, node inspector and machine 
     readError = true;
     await problem.getByRole("button", { name: "Check again" }).click();
     await problem.getByText(/^Could not check synchronization: .*Peer status unavailable$/).waitFor();
-    readError = false; error = undefined;
+    assert.equal(await problem.getByTestId("twin-sync-repair").count(), 0, "repair is hidden when status itself could not be read");
+    readError = false; error = "Project locations were not accepted (403)";
     await problem.getByRole("button", { name: "Check again" }).click();
+    await problem.getByText("Project locations were not accepted (403)", { exact: true }).waitFor();
+    await problem.getByTestId("twin-sync-repair").click();
     await member.getByTestId(`cluster-member-sync-${peer.nodeId}`).getByText("Up to date", { exact: true }).waitFor();
-    assert.equal(await problem.count(), 0, "the error explanation disappears after recovery");
+    assert.equal(await problem.count(), 0, "the error explanation disappears after repair");
+    assert.equal(repairs, 1, "repair calls the twin repair endpoint");
     assert.equal(mutations, 0);
     assert.deepEqual(pageErrors, []);
   } finally {

@@ -1539,15 +1539,6 @@ select.chat-toolbar-control {
 
 .reconnect-banner { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 7px 12px; border-top: 1px solid var(--line); color: var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); font-size: 12px; font-weight: 550; }
 .reconnect-banner[hidden] { display: none; }
-.reconnect-takeover { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 14px; border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); border-radius: 999px; background: transparent; color: var(--amber); font: inherit; font-weight: 600; white-space: nowrap; }
-.reconnect-takeover[hidden] { display: none; }
-.reconnect-takeover:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 12%, transparent); }
-.reconnect-takeover:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
-.reconnect-takeover:disabled { cursor: wait; opacity: 0.8; }
-.reconnect-takeover[aria-busy="true"]::before { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: takeover-spin 0.8s linear infinite; }
-@keyframes takeover-spin { to { transform: rotate(360deg); } }
-@media (max-width: 480px) { .reconnect-banner { flex-wrap: wrap; } }
-@media (prefers-reduced-motion: reduce) { .reconnect-takeover[aria-busy="true"]::before { animation: none; } }
 .reconnect-dots { display: inline-flex; gap: 4px; }
 .reconnect-dots i { width: 5px; height: 5px; border-radius: 999px; background: currentColor; animation: reconnect-dot 1.05s ease-in-out infinite; }
 .reconnect-dots i:nth-child(2) { animation-delay: 0.15s; }
@@ -3885,6 +3876,7 @@ body:not(.node-admin) :is(#machineAddReveal, #machineInviteReveal) { display: no
 .cluster-sync-problem { display: grid; grid-column: 1 / -1; flex-basis: 100%; gap: 6px; min-width: 0; padding: 8px 10px; border-left: 2px solid var(--danger); background: color-mix(in srgb, var(--danger) 6%, var(--panel)); font-size: 12px; overflow-wrap: anywhere; }
 .cluster-sync-problem p { margin: 0; white-space: pre-wrap; }
 .cluster-sync-problem button { justify-self: start; }
+.cluster-sync-problem-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cluster-sync-conflicts { display: grid; gap: 4px; }
 .cluster-sync-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .cluster-twin-link { margin-top: 8px; }

@@ -3,18 +3,20 @@ import { z } from "zod";
 import { getClusterNode } from "../cluster.js";
 import { peerEndpoint } from "../cluster-peer-endpoints.js";
 import { signClusterRequest } from "../cluster-protocol.js";
-import { registerLocalSharingResource } from "../cluster-sharing.js";
+import { registerLocalSharingResource, requeuePeerPolicyDeliveries } from "../cluster-sharing.js";
 import { isTrustedTwin, mayReceiveResource, registerOwnedResource } from "../cluster-sharing-policy.js";
 import { ClusterV2HttpError } from "../cluster-v2-errors.js";
 import { ownedByAdmin } from "../ownership.js";
 import { clusterV2Database } from "../cluster-v2-store.js";
-import { sharingFilesStatus, sharedProjectIds } from "./sharing-files.js";
+import { flushSharingFiles, sharingFilesStatus, sharedProjectIds } from "./sharing-files.js";
 import { flushSharedTranscripts, sharedTranscriptStatus, transcriptConflictSchema } from "./shared-transcripts.js";
 import { mayReplicateEvent, signedPeerPost } from "./replication-v2.js";
 import { pendingEventsForPeer } from "../replication.js";
 import { listProjectMetadataDeliveries } from "../cluster-project-metadata.js";
 import { sessionTitleOverrides } from "../names.js";
-import { ensureTwinHttpSchema, pendingTwinDeliveries, bootstrapOwnedTwinPolicies } from "./twins.js";
+import { ensureTwinHttpSchema, pendingTwinDeliveries, bootstrapOwnedTwinPolicies, flushTwinDeliveries } from "./twins.js";
+import { flushResourcePolicyDeliveries } from "./resource-policy.js";
+import { flushProjectMetadataDeliveries } from "./project-metadata.js";
 import { peerSnapshot, staleSnapshotReason } from "./peer-snapshots.js";
 import { peerFetch } from "../relay/transport.js";
 
@@ -172,4 +174,71 @@ export async function flushTwinSharing(relationshipId?:string):Promise<void> {
     try{await completeTwinSharing(job.relationship_id);}
     catch(error){db.prepare('UPDATE cluster_v2_twin_sharing_jobs SET error=? WHERE relationship_id=?').run(error instanceof Error?error.message:'Twin adoption failed',job.relationship_id);}
   }
+}
+
+const peerRepairSchema = z.object({ ok: z.literal(true), sharedProjectIds: z.array(z.string().min(1).max(300)).max(10000) }).strict();
+
+function describeMismatchedProjects(db: DatabaseSync, ids: string[]): Array<{ projectId: string; name: string; ownerNodeId: string | null }> {
+  const projectLookup = db.prepare("SELECT name FROM projects WHERE id=?");
+  const ownerLookup = db.prepare("SELECT owner_node_id FROM cluster_v2_resource_policy WHERE kind='project' AND resource_id=?");
+  return ids.map((projectId) => {
+    const project = projectLookup.get(projectId) as { name?: string } | undefined;
+    const owner = ownerLookup.get(projectId) as { owner_node_id: string } | undefined;
+    return { projectId, name: project?.name || projectId, ownerNodeId: owner?.owner_node_id ?? null };
+  });
+}
+
+export async function localRepairTwinSync(db: DatabaseSync, local: string, relationshipId: string): Promise<{ sharedProjectIds: string[] }> {
+  const peer = sharingTwin(db, local, relationshipId);
+  requeuePeerPolicyDeliveries(db, local, peer);
+  await flushResourcePolicyDeliveries(peer);
+  await flushProjectMetadataDeliveries(peer);
+  await flushSharingFiles(peer);
+  return { sharedProjectIds: sharedProjectIds(db, local, peer) };
+}
+
+export async function repairTwinSync(relationshipId: string) {
+  const db = await clusterV2Database(), local = await getClusterNode(), peer = sharingTwin(db, local.id, relationshipId);
+  const initialized = Boolean(
+    db.prepare("SELECT 1 FROM cluster_v2_twin_sharing WHERE relationship_id=?").get(relationshipId)
+    || db.prepare("SELECT 1 FROM cluster_v2_twin_sharing_jobs WHERE relationship_id=?").get(relationshipId),
+  );
+  if (initialized) await completeTwinSharing(relationshipId);
+  requeuePeerPolicyDeliveries(db, local.id, peer);
+  await flushTwinDeliveries();
+  await flushResourcePolicyDeliveries(peer);
+  await flushProjectMetadataDeliveries(peer);
+  let remoteShared: string[] | undefined;
+  try {
+    const endpoint = peerEndpoint(db, "twin", relationshipId, peer);
+    const reply = await signedPeerPost(endpoint, "/api/cluster/v2/twins/repair", { relationshipId });
+    remoteShared = peerRepairSchema.parse(reply).sharedProjectIds;
+  } catch (error) {
+    // Older twins without the repair endpoint still benefit from local policy & file-location flush.
+    if (!(error instanceof ClusterV2HttpError && error.statusCode === 404)) throw error;
+  }
+  await flushResourcePolicyDeliveries(peer);
+  await flushProjectMetadataDeliveries(peer);
+  await flushSharingFiles(peer);
+  let mismatchedProjects: Array<{ projectId: string; name: string; ownerNodeId: string | null }> = [];
+  if (remoteShared) {
+    const fileError = db.prepare("SELECT error FROM cluster_v2_file_errors WHERE peer_id=?").get(peer) as { error: string } | undefined;
+    if (fileError && /\(403\)/.test(fileError.error)) {
+      const remoteSet = new Set(remoteShared);
+      const onlyLocal = sharedProjectIds(db, local.id, peer).filter((id) => !remoteSet.has(id));
+      if (onlyLocal.length) {
+        mismatchedProjects = describeMismatchedProjects(db, onlyLocal);
+        const names = mismatchedProjects.slice(0, 5).map((item) => item.name).join(", ");
+        const extra = mismatchedProjects.length > 5 ? ` (+${mismatchedProjects.length - 5} more)` : "";
+        const thirdParty = mismatchedProjects.some((item) => item.ownerNodeId && item.ownerNodeId !== local.id && item.ownerNodeId !== peer);
+        const hint = thirdParty ? " Bring the owning cluster node online so both twins receive the same sharing policy." : "";
+        db.prepare("INSERT OR REPLACE INTO cluster_v2_file_errors VALUES(?,?)").run(
+          peer,
+          `Project locations were not accepted (403) — twin does not share: ${names}${extra}.${hint}`,
+        );
+      }
+    }
+  }
+  const status = await twinSharingStatus(db, local.id, relationshipId);
+  return mismatchedProjects.length ? { ...status, mismatchedProjects } : status;
 }

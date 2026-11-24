@@ -24,7 +24,7 @@ import { isTrustedTwin } from "../../cluster-sharing-policy.js";
 import { receiveSecretCredentialEvents, type SecretCredentialEvent } from "../../secret-replication.js";
 import { secretCredentialBatchSchema } from "../schemas.js";
 import { acceptTwinRequest, declineTwinRequest, listTwinRequests, receiveTwinRequest, receiveTwinRequestDecline, requestTwin } from "../twin-requests.js";
-import { adoptionInventory, adoptionInventorySchema, adoptTwinProjects, completeTwinSharing, localTwinSharingStatus, scheduleTwinSharing, sharingTwin, twinSharingStatus } from "../twin-sharing.js";
+import { adoptionInventory, adoptionInventorySchema, adoptTwinProjects, completeTwinSharing, localRepairTwinSync, localTwinSharingStatus, repairTwinSync, scheduleTwinSharing, sharingTwin, twinSharingStatus } from "../twin-sharing.js";
 
 const uuid = z.string().uuid().regex(/^[0-9a-f-]+$/);
 function localOnly(response:Response):void { if(!response.locals.authSession) throw new ClusterV2HttpError(401,"Unauthorized"); }
@@ -48,6 +48,12 @@ app.post("/api/cluster/v2/twins/sharing-status",handler(async(request,response)=
   const payload=z.object({relationshipId:uuid}).strict().parse(request.body),sender=machineOnly(response),local=await getClusterNode(),db=await clusterV2Database();
   if(sharingTwin(db,local.id,payload.relationshipId)!==sender)throw new ClusterV2HttpError(403,'Forbidden');
   response.json(await localTwinSharingStatus(db,local.id,payload.relationshipId));
+}));
+
+app.post("/api/cluster/v2/twins/repair",handler(async(request,response)=>{
+  const payload=z.object({relationshipId:uuid}).strict().parse(request.body),sender=machineOnly(response),local=await getClusterNode(),db=await clusterV2Database();
+  if(sharingTwin(db,local.id,payload.relationshipId)!==sender)throw new ClusterV2HttpError(403,'Forbidden');
+  response.json({ok:true,...await localRepairTwinSync(db,local.id,payload.relationshipId)});
 }));
 
 app.post("/api/cluster/v2/credentials/scoped",handler(async(request,response)=>{
@@ -92,6 +98,11 @@ app.post("/api/twins/:relationshipId/sharing",handler(async(request,response)=>{
   localOnly(response);
   const payload=z.object({ownerNodeId:uuid,confirmOwnedData:z.literal(true)}).strict().parse(request.body);
   response.json(await completeTwinSharing(uuid.parse(request.params.relationshipId),payload.ownerNodeId));
+}));
+app.post("/api/twins/:relationshipId/repair",handler(async(request,response)=>{
+  localOnly(response);
+  z.object({}).strict().parse(request.body);
+  response.json(await repairTwinSync(uuid.parse(request.params.relationshipId)));
 }));
 app.post("/api/twins/:relationshipId/transcript-conflicts/fork",handler(async(request,response)=>{
   localOnly(response);

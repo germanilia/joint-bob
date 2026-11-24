@@ -92,11 +92,13 @@ function exchangeState(db:DatabaseSync,projects:string[]):string{
  return JSON.stringify(projects.map(id=>lookup.get(id)));
 }
 
-export async function flushSharingFiles():Promise<void>{
+export async function flushSharingFiles(peerId?:string):Promise<void>{
  const db=await clusterV2Database(),local=await getClusterNode();ensureSchema(db);
  const peers=replicationPeers(db,local.id),now=Date.now();
- for(const known of [exchanged,retries])for(const peerId of known.keys())if(!peers.some(peer=>peer.nodeId===peerId))known.delete(peerId);
- const due=peers.filter(peer=>!peerAway(peer.nodeId)).flatMap(peer=>{
+ for(const known of [exchanged,retries])for(const knownPeer of known.keys())if(!peers.some(peer=>peer.nodeId===knownPeer))known.delete(knownPeer);
+ if(peerId){exchanged.delete(peerId);retries.delete(peerId);}
+ const candidates=peerId?peers.filter(peer=>peer.nodeId===peerId):peers.filter(peer=>!peerAway(peer.nodeId));
+ const due=candidates.flatMap(peer=>{
   const projects=sharedProjectIds(db,local.id,peer.nodeId),state=exchangeState(db,projects),retry=retries.get(peer.nodeId);
   return exchanged.get(peer.nodeId)===state||(retry?.state===state&&retry.at>now)?[]:[{peer,projects,state}];
  });

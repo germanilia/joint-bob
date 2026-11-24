@@ -88,9 +88,18 @@ export function twinSyncProblem(status, onChange) {
   box.dataset.testid = "twin-sync-problem"; box.setAttribute("role", "status");
   const reason = status.readError ? `Could not check synchronization: ${status.readError}`
     : status.error || "The twin reported a synchronization error without details. Check its sync status for more information.";
+  const actions = document.createElement("div"); actions.className = "cluster-sync-problem-actions";
+  if (status.relationshipId && !status.readError && status.initialized) {
+    actions.append(button("Repair sync", "twin-sync-repair", "primary compact", async () => {
+      const result = await api(`/api/twins/${status.relationshipId}/repair`, { method: "POST", body: "{}" });
+      toast(result.state === "ready" ? "Twin synchronization repaired" : result.state === "pending" ? "Synchronization restarted" : "Sync retried — see details below");
+      await onChange({ projects: true });
+    }));
+  }
+  actions.append(button("Check again", "twin-sync-check", "ghost compact", () => onChange()));
   box.append(text("strong", "Synchronization needs attention"), text("p", reason), ...transcriptConflicts(status, onChange),
     text("p", "Sync retries automatically. Keep both nodes online. Conflicting histories are kept for review; unpairing does not repair them.", "cluster-muted"),
-    button("Check again", "twin-sync-check", "ghost compact", () => onChange()));
+    actions);
   return box;
 }
 
