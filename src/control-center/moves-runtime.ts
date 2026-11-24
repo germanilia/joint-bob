@@ -178,10 +178,10 @@ export function createMoveEnvironment(session: AuthSession): MoveEnvironment {
       });
     },
 
-    async takeOwnership(conversation, target) {
+    async takeOwnership(conversation, target, offlineOwnerNodeId) {
       const project = await getProject(conversation.projectId);
       if (!project) throw new Error("The project is not set up on this machine");
-      const payload = { projectId: project.id, peerId: target.id, sessionId: conversation.sessionId, sessionPath: conversation.path, sessionName: conversation.title.slice(0, 120) };
+      const payload = { projectId: project.id, peerId: target.id, sessionId: conversation.sessionId, sessionPath: conversation.path, sessionName: conversation.title.slice(0, 120), offlineOwnerNodeId };
       // The same routing as "Runs on": the machine that will own the conversation performs the takeover.
       if (target.local) await takeLocalSessionOwnership(project, payload);
       else {

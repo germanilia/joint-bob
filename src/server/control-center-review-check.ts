@@ -102,16 +102,30 @@ async function push(actor: ActingAccount, conversation: Conversation, reason: st
   }));
 }
 
-/** The person's reply goes to the current owner, without moving it, and answers once that machine queues it. */
-async function pushForPerson(session: AuthSession, conversation: Conversation, reason: string, instructions: string, verbatim?: string): Promise<void> {
+/** Send to the owner, or move an offline conversation only on a confirmed card reply. */
+async function sendForPerson(session: AuthSession, ref: { projectId: string; conversationId: string }, text: string, reply?: { offlineOwnerNodeId?: string }): Promise<void> {
   await runAsAccount(actingAccountFromSession(session), async () => {
-    if (!await personalContinuationAllowed(conversation.projectId, conversation.conversationId)) throw new Error('Team continuation requires an explicit assignment');
+    if (!await personalContinuationAllowed(ref.projectId, ref.conversationId)) throw new Error('Team continuation requires an explicit assignment');
     const env = createMoveEnvironment(session);
-    const found = await env.resolve(conversation);
+    const found = await env.resolve(ref);
     if (!found) throw new NotFoundError("Conversation not found");
-    const owner = (await env.nodes()).find((node) => node.id === found.ownerNodeId);
-    if (!owner || !owner.online) throw new BobActionError(409, "The machine that owns this conversation is offline. Bring it online to send your answer.");
-    await env.sendMessage(found, owner, verbatim ?? personPushText(reason, instructions));
+    const nodes = await env.nodes();
+    const owner = nodes.find((node) => node.id === found.ownerNodeId);
+    const local = nodes.find((node) => node.local)!;
+    if (reply?.offlineOwnerNodeId) {
+      if (reply.offlineOwnerNodeId !== found.ownerNodeId || owner?.online) {
+        throw new BobActionError(409, "The owner changed or is reachable again. Send your answer without taking over.");
+      }
+      if (found.fixedReason) throw new BobActionError(409, found.fixedReason);
+      await env.takeOwnership(found, local, reply.offlineOwnerNodeId);
+      await env.sendMessage(found, local, text);
+      return;
+    }
+    if (!owner?.online) {
+      const details = reply && owner && !found.fixedReason ? { offlineOwner: { id: owner.id, name: owner.name }, takeoverNodeName: local.name } : undefined;
+      throw new BobActionError(409, "The machine that owns this conversation is offline. Bring it online to send your answer.", details);
+    }
+    await env.sendMessage(found, owner, text);
   });
 }
 
@@ -277,7 +291,7 @@ registerBobAction("review.push", async ({ db, session, action, note }) => {
   const conversation = conversationData.parse(action.data);
   if (isLeased(conversation.projectId, conversation.conversationId)) return [bobSays(db, session, `You are in "${conversation.title}" now, so I left it to you.`, { projectId: conversation.projectId, projectName: conversation.projectName })];
   const previous = readReviewCheck(db, conversation.projectId, conversation.conversationId);
-  await pushForPerson(session, conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
+  await sendForPerson(session, conversation, personPushText(previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note));
   // Instructions are a message from the person: Bob's count of pushes in a row starts again.
   if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
   return [bobSays(db, session, note ? `Told "${conversation.title}" to go on, with your instructions.` : `Told "${conversation.title}" to go on.`, { importance: "done", projectId: conversation.projectId, projectName: conversation.projectName, via: "Review check · you pressed the button" })];
@@ -325,12 +339,9 @@ export async function closeFromBoard(session: AuthSession, ref: { projectId: str
  */
 export async function pushFromBoard(session: AuthSession, ref: { projectId: string; conversationId: string }, note: string): Promise<void> {
   if (isLeased(ref.projectId, ref.conversationId)) throw new BobActionError(409, "You are in this conversation now, so it is left to you");
-  const found = await createMoveEnvironment(session).resolve(ref);
-  if (!found) throw new NotFoundError("Conversation not found");
-  const conversation: Conversation = { projectId: ref.projectId, projectName: found.projectName, conversationId: ref.conversationId, engine: found.harnessId, sessionId: found.sessionId, title: found.title };
   const db = await bobDatabase();
   const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
-  await pushForPerson(session, conversation, previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note);
+  await sendForPerson(session, ref, personPushText(previous && previous.by !== TAKEN_OVER_BY ? previous.reason : "", note));
   if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), pushes: note ? 1 : previous.pushes + 1, pushPending: true, needsYou: false });
   broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
   askBobRecheck(session.accountId);
@@ -340,14 +351,11 @@ export async function pushFromBoard(session: AuthSession, ref: { projectId: stri
  * The person's own answer to a card, written on the card: sent to the conversation as it is (no push wording added), as when they
  * type it in the conversation. Bob's check of what it was waiting on ends, and he judges the turn that follows afresh.
  */
-export async function replyFromBoard(session: AuthSession, ref: { projectId: string; conversationId: string }, message: string): Promise<void> {
+export async function replyFromBoard(session: AuthSession, ref: { projectId: string; conversationId: string }, message: string, offlineOwnerNodeId?: string): Promise<void> {
   if (isLeased(ref.projectId, ref.conversationId)) throw new BobActionError(409, "You are in this conversation now, so it is left to you");
-  const found = await createMoveEnvironment(session).resolve(ref);
-  if (!found) throw new NotFoundError("Conversation not found");
-  const conversation: Conversation = { projectId: ref.projectId, projectName: found.projectName, conversationId: ref.conversationId, engine: found.harnessId, sessionId: found.sessionId, title: found.title };
   const db = await bobDatabase();
   const previous = readReviewCheck(db, ref.projectId, ref.conversationId);
-  await pushForPerson(session, conversation, "", "", message);
+  await sendForPerson(session, ref, message, { offlineOwnerNodeId });
   if (previous) writeReviewCheck(db, { ...previous, ...(previous.by === TAKEN_OVER_BY ? { by: "you" } : {}), verdict: "done", reason: "You answered it.", pushes: 0, pushPending: false, needsYou: false });
   broadcastToAllClients({ type: "controlCenterChanged" }, session.accountId);
   askBobRecheck(session.accountId);

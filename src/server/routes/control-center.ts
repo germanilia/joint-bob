@@ -21,7 +21,7 @@ import { storedDigest } from "../../conversation-digest.js";
 import { gitCommitHistory, gitStatus } from "../../git-review.js";
 import { knowledgeDirectory, readSubjects } from "../../project-knowledge.js";
 import { projectsWithSharedNames } from "../projects.js";
-import { sharedProjectSessions } from "../sessions-helpers.js";
+import { ConversationTransferError, sharedProjectSessions } from "../sessions-helpers.js";
 import { startMemorySync } from "../../control-center/memory-sync.js";
 import { loadBoard, loadPast } from "../control-center-board.js";
 import { loadSystemMessages } from "../control-center-system.js";
@@ -232,18 +232,19 @@ app.post("/api/control-center/cards/push", async (request, response, next) => {
   }
 });
 
-const cardReplySchema = z.object({ projectId: z.string().min(1).max(200), conversationId: z.string().min(1).max(300), message: z.string().trim().min(1).max(8_000) }).strict();
+const cardReplySchema = z.object({ projectId: z.string().min(1).max(200), conversationId: z.string().min(1).max(300), message: z.string().trim().min(1).max(8_000), offlineOwnerNodeId: z.uuid().optional() }).strict();
 
 /** Answer on a card: the person's words go to the conversation as written, without opening it. */
 app.post("/api/control-center/cards/reply", async (request, response, next) => {
   try {
     const input = cardReplySchema.parse(request.body);
     if (!await projectVisible(input.projectId)) { sendError(response, 404, "Project not found"); return; }
-    await replyFromBoard(response.locals.authSession as AuthSession, input, input.message);
+    await replyFromBoard(response.locals.authSession as AuthSession, input, input.message, input.offlineOwnerNodeId);
     response.json({ ok: true });
   } catch (error) {
     if (error instanceof z.ZodError) { sendError(response, 400, "Invalid request"); return; }
-    if (error instanceof BobActionError) { sendError(response, error.status, error.message); return; }
+    if (error instanceof BobActionError) { response.status(error.status).json({ error: error.message, details: error.details }); return; }
+    if (error instanceof ConversationTransferError) { sendError(response, 409, error.message); return; }
     if (error instanceof NotFoundError) { sendError(response, 404, error.message); return; }
     if (error instanceof Error && /not writable on this node|Team continuation/.test(error.message)) { sendError(response, 409, error.message); return; }
     next(error);

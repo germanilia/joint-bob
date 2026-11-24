@@ -5,6 +5,7 @@
 // Answer opens a reply box here (`POST /api/control-center/cards/reply`), Push it on a box for instructions.
 
 import { api } from "./api.js";
+import { sendCardReply } from "./card-reply.js";
 import { decideReview, markDone, openConversation, pushOn } from "./control-center.js";
 import { chooseSnooze } from "./control-snooze.js";
 import { renderMarkdown } from "../markdown.js";
@@ -114,17 +115,30 @@ export function openNeedDetail(card, { ask, open, onChange = () => {} }) {
   cancel.addEventListener("click", hideBox);
   text.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); box.requestSubmit(); }
-    else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); hideBox(); }
+    else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!send.disabled) hideBox(); }
   });
-  box.addEventListener("submit", (event) => {
+  box.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (send.disabled) return;
     const message = text.value.trim();
-    if (mode === "reply" && !message) { text.focus(); return; }
-    send.disabled = true;
-    const work = mode === "reply"
-      ? api("/api/control-center/cards/reply", { method: "POST", body: JSON.stringify({ projectId: card.projectId, conversationId: card.conversationId, message }) }).then(() => toast(`Answered “${card.title}”`))
-      : pushOn(card, message).then(() => toast(`Told “${card.title}” to go on`));
-    work.then(() => { onChange(); dialog.close(); }).catch((error) => { toast.error(error.message); send.disabled = false; });
+    const answering = mode === "reply";
+    if (answering && !message) { text.focus(); return; }
+    send.disabled = cancel.disabled = text.readOnly = true;
+    try {
+      if (answering) {
+        if (!await sendCardReply({ projectId: card.projectId, conversationId: card.conversationId }, message, dialog)) return;
+        toast(`Answered “${card.title}”`);
+      } else {
+        await pushOn(card, message);
+        toast(`Told “${card.title}” to go on`);
+      }
+      onChange();
+      dialog.close();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      send.disabled = cancel.disabled = text.readOnly = false;
+    }
   });
 
   const actions = element("div", "need-sheet-actions");
