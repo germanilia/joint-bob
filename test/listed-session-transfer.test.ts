@@ -22,7 +22,7 @@ function client({ presence = async () => {}, ready = () => false, confirm = asyn
   const requests: Array<{ body: { peerId: string; sessionId: string; sessionPath: string; sessionName: string }; reply: ReturnType<typeof deferred> }> = [];
   const messages: string[] = [], errors: string[] = [], keptView: boolean[] = [], opened: Array<{ path: string; node: unknown }> = [];
   const control = { addEventListener() {} };
-  const offer = { hidden: true, onclick: null as (() => Promise<void> | undefined) | null };
+  const offer = { hidden: true, disabled: false, textContent: "Take over here", attributes: {} as Record<string, string>, setAttribute(name: string, value: string) { this.attributes[name] = value; }, onclick: null as (() => Promise<void> | undefined) | null };
   const { openListedSession } = runInNewContext(`${source}\n({ openListedSession })`, {
     state, console,
     elements: { markAllReviewedButton: control, markAllPendingReviewedButton: control, closePendingReviewsButton: control, reconnectTakeoverButton: offer, reconnectBanner: { hidden: true } },
@@ -76,6 +76,9 @@ test("reopening a conversation during confirmed takeover sends only one transfer
   await setImmediate();
   await page.open(session);
   const repeated = page.offer.onclick!();
+  assert.equal(page.offer.disabled, true);
+  assert.equal(page.offer.textContent, "Taking over…");
+  assert.equal(page.offer.attributes["aria-busy"], "true");
   assert.equal(page.requests.length, 1, "a repeated opening must not send the duplicate request that gets a 409");
   assert.deepEqual(page.requests[0].body, { peerId: "local", offlineOwnerNodeId: "remote", sessionId: "conversation", sessionPath: "pi:conversation", sessionName: "Conversation" });
   complete(page.requests[0]);
@@ -104,6 +107,9 @@ test("a failed takeover remains visible once and allows a later retry", async ()
   await Promise.all([first, repeated]);
   assert.deepEqual(page.errors, ["History differs between machines"]);
   assert.deepEqual(page.messages, []);
+  assert.equal(page.offer.disabled, false);
+  assert.equal(page.offer.textContent, "Take over here");
+  assert.equal(page.offer.attributes["aria-busy"], "false");
 
   const retry = page.offer.onclick!();
   await setImmediate();
