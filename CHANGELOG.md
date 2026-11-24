@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.340.9 — 2026-11-24
+
+- Added configured MCP servers to Antigravity, using the same managed sign-ins on the execution machine.
+- Made Antigravity follow cluster resource restrictions in strict isolation, including approved skills and MCP servers.
+
 ## 2.340.8 — 2026-11-24
 
 - Fixed Antigravity not receiving Joint Bob's instructions for built-in tools such as the browser, secrets, worktrees, and tasks.
