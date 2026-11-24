@@ -227,3 +227,24 @@ test("a Claude member tries its other models when one is rate-limited; other pro
   await assert.rejects(runOnModels(["claude-fable-5", "claude-opus-5-5"], async (model) => { all.push(model); throw rateLimited; }, async () => {}), (error) => error === rateLimited);
   assert.deepEqual(all, ["claude-fable-5", "claude-opus-5-5"]);
 });
+
+test("a stale relay proxy token retries the same member once, continuing a started turn", async () => {
+  const stale = () => new PoolAttemptFailure("auth", true, "Failed to authenticate. API Error: 401 Unknown or expired relay proxy token");
+  const attempts: Array<{ id: string; continuing: boolean }> = [];
+  const result = await runPoolAttempts([candidates[0]], "claude", async (candidate, continuing) => {
+    attempts.push({ id: candidate.id, continuing });
+    if (attempts.length === 1) throw stale();
+    return "done";
+  }, async () => async () => {});
+  assert.equal(result, "done");
+  assert.deepEqual(attempts, [{ id: "a", continuing: false }, { id: "a", continuing: true }]);
+});
+
+test("a stale relay proxy token that persists after the retry fails the turn instead of looping", async () => {
+  let attempted = 0;
+  await assert.rejects(runPoolAttempts([candidates[0]], "claude", async () => {
+    attempted += 1;
+    throw new PoolAttemptFailure("auth", false, "401 Unknown or expired relay proxy token");
+  }, async () => async () => {}), /relay proxy token/);
+  assert.equal(attempted, 2);
+});
