@@ -954,3 +954,48 @@ export function acknowledgeResourcePolicyDelivery(
   db.prepare("DELETE FROM cluster_v2_resource_deliveries WHERE operation_id=? AND peer_id=?")
     .run(uuid.parse(operationId), uuid.parse(peerId));
 }
+
+/** Re-queues every current owned policy statement (active, unshared, or deleted) for `peerInput`
+    and reconciles owned resources in open clusters shared with `peerInput`. */
+export function requeuePeerPolicyDeliveries(
+  db: DatabaseSync, localInput: string, peerInput: string,
+): void {
+  ensureResourceSharingSchema(db);
+  const local = uuid.parse(localInput);
+  const peer = uuid.parse(peerInput);
+  transaction(db, () => {
+    const active = db.prepare(`
+      SELECT kind,resource_id FROM cluster_v2_resource_policy
+      WHERE owner_node_id=? AND deleted=0
+    `).all(local) as unknown as Array<{ kind: PolicyKind; resource_id: string }>;
+    for (const row of active) queueResourcePolicyBootstrap(db, local, row.kind, row.resource_id);
+    const sharedClusters = db.prepare(`
+      SELECT c.id FROM sharing_clusters c
+      JOIN sharing_memberships a ON a.cluster_id=c.id AND a.node_id=?
+      JOIN sharing_memberships b ON b.cluster_id=c.id AND b.node_id=?
+      WHERE c.closed=0
+    `).all(local, peer) as unknown as Array<{ id: string }>;
+    for (const cluster of sharedClusters) reconcileOwnedResourceTopology(db, local, cluster.id);
+    const terminal = db.prepare(`
+      SELECT kind,resource_id,context_kind,context_id,generation,statement
+      FROM cluster_v2_resource_contexts
+      WHERE recipient_id=? AND json_extract(statement,'$.body.ownerNodeId')=?
+        AND json_extract(statement,'$.body.operation') IN ('delete','unshare')
+    `).all(peer, local) as unknown as Array<{
+      kind: PolicyKind; resource_id: string; context_kind: "cluster" | "twin";
+      context_id: string; generation: number; statement: string;
+    }>;
+    for (const row of terminal) {
+      const statement = signedSchema.parse(JSON.parse(row.statement));
+      if (!resourcePolicyDeliveryIsCurrent(db, local, statement)) continue;
+      db.prepare(`
+        INSERT OR IGNORE INTO cluster_v2_resource_deliveries
+          (operation_id,peer_id,kind,resource_id,context_kind,context_id,generation,statement)
+        VALUES (?,?,?,?,?,?,?,?)
+      `).run(
+        statement.body.operationId, peer, row.kind, row.resource_id,
+        row.context_kind, row.context_id, row.generation, row.statement,
+      );
+    }
+  });
+}
