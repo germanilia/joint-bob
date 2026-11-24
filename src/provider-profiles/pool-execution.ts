@@ -79,6 +79,9 @@ function handsOver(failure: PoolAttemptFailure): boolean {
   return failure.started ? failure.reason === "quota" || failure.reason === "auth" : ["quota", "auth", "unavailable"].includes(failure.reason);
 }
 
+/** The relay proxy's answer to a placeholder token it no longer knows (relay-proxy.ts). */
+const STALE_RELAY_TOKEN = /unknown or expired relay proxy token/i;
+
 /**
  * Runs a turn on each pool member in turn until one finishes it. A member that fails before
  * starting is rolled back to the last checkpoint and the next one gets the same prompt. A member
@@ -96,16 +99,23 @@ export async function runPoolAttempts<T, C extends { provider: ProfileProvider }
   if (!ordered.length) throw new Error("No compatible subscription profile is available in this pool");
   let restore = await checkpoint();
   let continuing = false;
+  let staleTokenRetried = -1;
   for (let index = 0; index < ordered.length; index += 1) {
     try { return await attempt(ordered[index], continuing); }
     catch (error) {
       const failure = classifyPoolAttemptFailure(error, false);
       if (!failure || !handsOver(failure)) throw error;
-      if (index === ordered.length - 1) throw failure;
+      // A service restart wipes the relay proxy's placeholder tokens; the member itself is fine, so its next attempt mints a new one.
+      const staleToken = STALE_RELAY_TOKEN.test(failure.message) && staleTokenRetried !== index;
+      if (index === ordered.length - 1 && !staleToken) throw failure;
       if (failure.started) {
         continuing = true;
         restore = await checkpoint();
       } else await restore();
+      if (staleToken) {
+        staleTokenRetried = index;
+        index -= 1;
+      }
     }
   }
   throw new Error("Subscription pool attempts ended unexpectedly");
