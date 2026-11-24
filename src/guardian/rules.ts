@@ -76,6 +76,12 @@ const legacyDangerousQuestions = [
 const legacySecrets = rule("secrets", "Secrets", "Does this contain a password, API key, access token or private key?", "outgoing", "fix", true);
 const secrets: GuardianRule = { ...legacySecrets, care: "relaxed", question: "Does this text reveal an actual private password, API key, access token or private key, rather than a placeholder, variable reference, public identifier or example?" };
 
+/** A custom question or fix remains a model rule. */
+export function usesSecretPatterns(rule: GuardianRule): boolean {
+  return rule.id === secrets.id && rule.fix.kind === "remove-secrets"
+    && (rule.question === secrets.question || rule.question === legacySecrets.question);
+}
+
 /** Use the current versions of shipped rules, leaving custom rules and on/off switches alone. */
 export function upgradeGuardianRule(item: GuardianRule): GuardianRule {
   const matches = (previous: GuardianRule) => isDeepStrictEqual({ ...item, enabled: true }, previous);

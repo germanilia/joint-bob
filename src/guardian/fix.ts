@@ -1,5 +1,6 @@
 import { prepareBackgroundTurn } from "../server/background-turn.js";
 import { spawn } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
 import { getHarnessRuntime } from "../harnesses.js";
 import { internalSessionId } from "../internal-sessions.js";
 import type { HarnessId } from "../types.js";
@@ -91,13 +92,18 @@ async function runHelperAgent(instructions: string, input: string, context: FixC
   }
 }
 
+export function redactRequest(request: GuardianRequest, secrets: string[]): GuardianRequest {
+  if (request.kind === "outgoing") {
+    const text = removeSecrets(request.text, secrets);
+    return text === request.text ? request : { ...request, text };
+  }
+  const input = removeSecretsFromValue(request.input, secrets) as Record<string, unknown>;
+  return isDeepStrictEqual(input, request.input) ? request : { ...request, input };
+}
+
 /** The request with one rule's fix applied. The result is checked again before anything goes ahead. */
 export async function runGuardianFix(fix: GuardianFix, request: GuardianRequest, context: FixContext): Promise<GuardianRequest> {
-  if (fix.kind === "remove-secrets") {
-    return request.kind === "outgoing"
-      ? { ...request, text: removeSecrets(request.text, context.secrets) }
-      : { ...request, input: removeSecretsFromValue(request.input, context.secrets) as Record<string, unknown> };
-  }
+  if (fix.kind === "remove-secrets") return redactRequest(request, context.secrets);
   const input = material(request);
   const output = fix.kind === "script" ? await runScript(fix.command, input, context.cwd) : await runHelperAgent(fix.instructions, input, context);
   return fromMaterial(request, output);
