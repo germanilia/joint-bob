@@ -21,7 +21,10 @@ before(async () => {
   updateSettings({ pi: { executable: "", configPath: path.join(root, "pi"), sessionPath: path.join(root, "pi", "sessions") }, claude: { executable: "", configPath: path.join(root, "claude"), sessionPath: path.join(root, "claude", "projects") } });
   ({ server, baseUrl } = await startServer());
   fixture = await configure(baseUrl, root, "");
-  await signInPiApp({ anthropic: { type: "api_key", key: "test-only-not-a-real-key" } });
+  await signInPiApp({
+    anthropic: { type: "api_key", key: "test-only-not-a-real-key" },
+    zai: { type: "api_key", key: "test-only-not-a-real-key" },
+  });
   watch = openChat(baseUrl, fixture.cookie, fixture.projectId, "watch");
   sockets.push(watch.socket);
   await waitFor(watch.messages, () => watch.messages.some(({ type }) => type === "watchReady"));
@@ -118,6 +121,32 @@ test("reopening a Pi conversation ignores saved tools unavailable on this node",
   const { id, file } = await savedConversation(["read", "bash", "remote-only-tool"]);
   const opened = await connect(file, id);
   assert.deepEqual(new Set(opened.shared.session.settings().enabledTools), new Set(["read", "bash"]));
+  await disconnect(opened);
+});
+
+test("picking GLM in a Pi chat adapts inherited reasoning but rejects an explicit unsupported level", async () => {
+  const { id, file } = await savedConversation();
+  const opened = await connect(file, id);
+  const pick = { type: "setModel", provider: "zai", modelId: "glm-5.3-flash" };
+  const sendControl = async (message: Record<string, unknown>) => {
+    const start = opened.messages.length;
+    opened.socket.send(JSON.stringify(message));
+    await waitFor(opened.messages, () => opened.messages.slice(start).some(({ type }) => type === "status" || type === "error"));
+    return opened.messages.slice(start).find(({ type }) => type === "error");
+  };
+  assert.equal(await sendControl({ type: "setThinking", level: "medium" }), undefined);
+  assert.equal(opened.shared.session.settings().reasoning, "medium");
+  const rejection = await sendControl({ ...pick, level: "medium" });
+  assert.match(String(rejection?.error), /Pi reasoning level is not supported/);
+  assert.equal(opened.shared.session.settings().provider, "anthropic");
+  assert.equal(await sendControl(pick), undefined);
+  assert.equal(opened.shared.session.settings().modelId, "glm-5.3-flash");
+  assert.equal(opened.shared.session.settings().reasoning, "high");
+
+  assert.equal(await sendControl({ type: "setThinking", level: "low" }), undefined);
+  assert.equal(await sendControl({ ...pick, modelId: "glm-5.3" }), undefined);
+  assert.equal(opened.shared.session.settings().modelId, "glm-5.3");
+  assert.equal(opened.shared.session.settings().reasoning, "low");
   await disconnect(opened);
 });
 
