@@ -23,8 +23,8 @@ BUCKET="$(output BucketName)"
 DISTRIBUTION="$(output DistributionId)"
 
 # A browser asks again for the page and its code on every visit, and keeps a film for an hour.
-# CloudFront keeps everything until the invalidation below.
-cloud s3 sync "$HERE/media" "s3://$BUCKET/media" --delete --exclude ".DS_Store" \
+# CloudFront keeps everything until the invalidation below. A checkout may omit rendered films.
+cloud s3 sync "$HERE/media" "s3://$BUCKET/media" --exclude ".DS_Store" \
   --cache-control "public, max-age=3600, s-maxage=31536000"
 for entry in "index.html:text/html" "landing.css:text/css" "features.js:text/javascript" "fleet.js:text/javascript" "landing.js:text/javascript"; do
   cloud s3 cp "$HERE/${entry%%:*}" "s3://$BUCKET/${entry%%:*}" \
