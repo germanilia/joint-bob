@@ -17,7 +17,7 @@ test("automation saves reject unavailable profiles, ignore forged creators, and 
     const profile = await api<{ profile: { id: string; owner: string } }>(node, auth, "POST", "/provider-profiles", { label: "Synthetic", provider: "claude" });
     assert.equal(profile.status, 201);
     const providerProfileId = profile.body.profile.id;
-    const base = { trigger: "webhook", creatorAccountId: "forged-account", providerProfileId, name: "Test", target: { kind: "project", projectId: node.projects[0].id }, enabled: false };
+    const base = { trigger: "webhook", creatorAccountId: "forged-account", providerProfileId, name: "Test", target: { kind: "project", projectId: node.projects[0].id, engine: "claude" }, enabled: false };
     const invalid = await api(node, auth, "POST", "/automations", { ...base, providerProfileId: randomUUID() });
     assert.ok(invalid.status >= 400, "unknown node-local profile must not save");
     const hook = await api<{ automation: { id: string; creatorAccountId: string; providerProfileId: string | null } }>(node, auth, "POST", "/automations", base);

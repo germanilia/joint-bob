@@ -18,6 +18,15 @@ test("one automation is created, run, switched between a schedule and a webhook,
     const session = await signIn(environment, node);
     const projectId = node.projects[0].id;
     const target = { kind: "project", projectId, engine: "claude" };
+    const options = await api<{ harnesses: Array<{ id: string }> }>(node, session, "GET", "/automations/options");
+    assert.equal(options.body.harnesses.some(harness => harness.id === "antigravity"), false);
+    for (const trigger of ["schedule", "webhook"]) {
+      const unavailable = await api(node, session, "POST", "/automations", { name: "Unavailable agent", target: { ...target, engine: "antigravity" }, context: "Check", trigger, ...(trigger === "schedule" ? { schedule } : {}) });
+      assert.equal(unavailable.status, 400, JSON.stringify(unavailable.body));
+    }
+
+    const missingModel = await api(node, session, "POST", "/automations", { name: "Missing model", target, model: { provider: "claude", modelId: "nonexistent-model" }, trigger: "webhook" });
+    assert.equal(missingModel.status, 400, JSON.stringify(missingModel.body));
 
     // A scheduled automation has no address and a next run.
     const created = await api<{ automation: Item; secret: string | null; bases: unknown[] }>(node, session, "POST", "/automations", { name: "Nightly check [date]", target, context: "Check the build", trigger: "schedule", schedule });
@@ -27,6 +36,8 @@ test("one automation is created, run, switched between a schedule and a webhook,
     assert.equal(created.body.automation.ownerNodeId, node.nodeId);
     assert.ok((created.body.automation.nextRun ?? 0) > Date.now());
     const id = created.body.automation.id;
+    const unavailableUpdate = await api(node, session, "PUT", `/automations/${id}`, { name: "Nightly check [date]", target: { ...target, engine: "antigravity" }, context: "Check the build", trigger: "schedule", schedule });
+    assert.equal(unavailableUpdate.status, 400, JSON.stringify(unavailableUpdate.body));
 
     // A webhook automation has an address, shown once.
     const hook = await api<{ automation: Item; secret: string }>(node, session, "POST", "/automations", { name: "GitHub issues", target, context: "Triage it", trigger: "webhook" });

@@ -48,6 +48,7 @@ import { readWebhookMemory, writeWebhookMemory, setWebhookMemoryEnabled } from "
 import { webhookMemoryEnabled } from "../../webhook-resources.js";
 import { listWebhookSkills, listSelectableWebhookSkills, uploadWebhookSkill, importExistingWebhookSkill, discoverWebhookGitSkills, importWebhookGitSkill, removeWebhookSkill } from "../../webhook-skills.js";
 import { urlBases } from "./webhooks.js";
+import { harnessProblems } from "../harness-readiness.js";
 
 function handle(work: (request: Request, response: Response) => Promise<void>) {
   return async (request: Request, response: Response, next: NextFunction): Promise<void> => {
@@ -68,10 +69,18 @@ async function checkTarget(input: WebhookInput): Promise<void> {
     catch { throw new WebhookError(400, "Selected secret accounts are unavailable for this project or conflict"); }
   }
   if (input.reply) throw new WebhookError(400, "Connect Telegram from the assistant's Resources");
+  let selectedEngine = input.target.kind === "assistant" ? defaultAutomationEngine() : input.target.engine ?? defaultAutomationEngine();
   if (input.target.kind === "assistant") {
     const assistant = input.creatorAccountId ? await getPersonalAssistant(input.creatorAccountId, input.target.assistantId) : undefined;
     if (!assistant || assistant.projectId !== project.id || assistant.nodeId && assistant.nodeId !== (await getClusterNode()).id) throw new WebhookError(404, "Assistant not found on this machine");
-    return;
+    selectedEngine = assistant.executionSettings?.harnessId ?? defaultAutomationEngine();
+  }
+  const problems = await harnessProblems(selectedEngine as HarnessId, project.path);
+  if (problems.length) throw new WebhookError(400, problems.join("\n"));
+  const selectedModel = input.model;
+  if (selectedModel) {
+    const models = await listHarnessModels(selectedEngine as HarnessId);
+    if (!models.some(model => model.provider === selectedModel.provider && model.id === selectedModel.modelId)) throw new WebhookError(400, "Selected model is unavailable on this machine");
   }
   if (input.target.kind !== "conversation") return;
   const { sessionId, engine } = input.target;
@@ -230,7 +239,9 @@ async function manage(command: Command, scope?: AutomationPeerScope): Promise<un
     return { ready: await cronConversationReady(command.projectId, command.sessionId, command.engine) };
   }
   if (command.action === "options") {
-    const adapters = listHarnesses().filter(({ runtime }) => runtime);
+    const installed = listHarnesses().filter(({ runtime }) => runtime);
+    const available = await Promise.all(installed.map(async adapter => ({ adapter, problems: await harnessProblems(adapter.id) })));
+    const adapters = available.filter(({ problems }) => !problems.length).map(({ adapter }) => adapter);
     return {
       secretAccounts: (await listSecretAccounts()).filter(account => !scope || scope.secrets.has(account.id)).map(({ id, label, provider, projectId }) => ({ id, label, provider, projectId })),
       harnesses: adapters.map(({ id, label, configuration }) => ({ id, label, thinkingLevels: configuration?.thinkingLevels ?? [] })),
