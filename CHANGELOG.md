@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.340.8 — 2026-11-24
+
+- Fixed Antigravity not receiving Joint Bob's instructions for built-in tools such as the browser, secrets, worktrees, and tasks.
+
 ## 2.340.7 — 2026-11-24
 
 - Starting a conversation in a new worktree now survives connection blips: the creation is retried, and a retry adopts the worktree the first attempt already created instead of failing with "already exists".
