@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeUiFixture } from "./native-ui-fixture.js";
 
-type WidthReport = { width: number; wrapped: boolean; clipped: number; moved: string[] };
+type WidthReport = { width: number; wrapped: boolean; clipped: number; moved: string[]; statusOverlap: number };
 
 /**
  * The toolbar used to size itself from its labels, so a model name, a task count or
@@ -70,7 +70,11 @@ const MEASURE_LABEL_CHANGES = `(async () => {
   const bar = toolbar.getBoundingClientRect();
   const chips = [...toolbar.querySelectorAll('.chat-toolbar-control')].filter((chip) => chip.getClientRects().length).map((chip) => chip.getBoundingClientRect());
   const tops = chips.map((chip) => Math.round(chip.top));
-  return { wrapped: tops.some((top) => Math.abs(top - tops[0]) > 2), clipped: Math.max(0, ...chips.map((chip) => Math.round(chip.right - bar.right))), moved };
+  // The long state ("Waiting for you · background tasks running") must give way, not run under Listen and Mark done.
+  setStatus('Waiting for you · background tasks running', true, false, false, true);
+  const statusOverlap = Math.round(status.getBoundingClientRect().right - actions.getBoundingClientRect().left);
+  restore();
+  return { statusOverlap, wrapped: tops.some((top) => Math.abs(top - tops[0]) > 2), clipped: Math.max(0, ...chips.map((chip) => Math.round(chip.right - bar.right))), moved };
 })()`;
 
 test("the chat toolbar holds still while its labels change", { timeout: 180_000 }, async (t) => {
@@ -105,6 +109,9 @@ test("the chat toolbar holds still while its labels change", { timeout: 180_000 
   assert.deepEqual(clipped.map((report) => `${report.width}px: ${report.clipped}px`), [], "the chips run past the conversation's edge");
 
   // The chips are one row at every width: a row that wraps on a name is a row that can re-wrap while an agent works.
+  const overlapping = reports.filter((report) => report.statusOverlap > 0);
+  assert.deepEqual(overlapping.map((report) => `${report.width}px: ${report.statusOverlap}px`), [], "the state runs under the header's actions");
+
   const wrapped = reports.filter((report) => report.wrapped);
   assert.deepEqual(wrapped.map((report) => report.width), [], "the chips stay on one line");
 });
