@@ -42,7 +42,7 @@ export interface MoveEnvironment {
   /** Ends the running turn on the machine that owns the conversation. */
   stopTurn(conversation: MoveConversation, owner: MoveNode | null): Promise<void>;
   /** The existing ownership transfer, run on `target`. Throws with the reason when it is refused. */
-  takeOwnership(conversation: MoveConversation, target: MoveNode): Promise<void>;
+  takeOwnership(conversation: MoveConversation, target: MoveNode, offlineOwnerNodeId?: string): Promise<void>;
   /** Queues one message in the conversation on `target`, once. Never retried. */
   sendMessage(conversation: MoveConversation, target: MoveNode, text: string): Promise<void>;
   sleep(ms: number): Promise<void>;

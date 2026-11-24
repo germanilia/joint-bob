@@ -481,3 +481,40 @@ test("the phone's Needs you deck: every card is one swipe away, swiping does not
   assert.deepEqual(answers, [{ projectId: "p1", conversationId: "d2", message: "Go with plan B" }]);
   await page.setViewportSize({ width: 1440, height: 900 });
 });
+
+test("Answer keeps its draft and asks before taking over an offline conversation", async () => {
+  const waiting = card("offline", "needs-you", { title: "Offline question", reviewCheck: { needsYou: true, reason: "Which plan?" } });
+  const answers: unknown[] = [];
+  await page.route("**/api/control-center/board*", (route) => route.fulfill({ json: { cards: [waiting], projects: [{ id: "p1", name: "Joint Bob", color: null }] } }));
+  await page.route("**/api/control-center/cards/detail*", (route) => route.fulfill({ json: { answer: "Which plan?" } }));
+  await page.route("**/api/control-center/cards/reply", async (route) => {
+    const reply = route.request().postDataJSON();
+    answers.push(reply);
+    if (!reply.offlineOwnerNodeId) {
+      await route.fulfill({ status: 409, json: { error: "The owner is offline", details: { offlineOwner: { id: "mac", name: "MacBook" }, takeoverNodeName: "Homeserver" } } });
+    } else await route.fulfill({ json: { ok: true } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId("phone-tab-inbox").click();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("control-center-changed")));
+  await page.getByTestId("needs-deck").getByText("Offline question", { exact: true }).click();
+  const sheet = page.getByTestId("need-sheet");
+  await sheet.getByTestId("need-sheet-answer").click();
+  const draft = sheet.getByRole("textbox", { name: "Your answer" });
+  await draft.fill("Go with plan B");
+  const send = sheet.getByTestId("need-sheet-send");
+  await send.click();
+  const confirm = page.locator("#confirmDialog");
+  await confirm.waitFor();
+  assert.match(await confirm.innerText(), /MacBook[\s\S]*Homeserver[\s\S]*older/);
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  assert.equal(await draft.inputValue(), "Go with plan B");
+  assert.equal(answers.length, 1, "cancelling does not retry the reply");
+  await send.click();
+  await confirm.getByRole("button", { name: "Take over and send" }).click();
+  await sheet.waitFor({ state: "detached" });
+  const reply = { projectId: "p1", conversationId: "offline", message: "Go with plan B" };
+  assert.deepEqual(answers, [reply, reply, { ...reply, offlineOwnerNodeId: "mac" }]);
+  assert.equal(await page.locator("body.view-chat").count(), 0, "answering stays in the inbox");
+  await page.setViewportSize({ width: 1440, height: 900 });
+});

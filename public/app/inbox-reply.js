@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { sendCardReply } from "./card-reply.js";
 import { toast } from "./shell.js";
 import { renderMarkdown } from "../markdown.js";
 
@@ -67,17 +68,18 @@ function wireSend({ form, input, error, send, dialog, ref, onSent }) {
     error.hidden = true;
     send.textContent = "Sending…";
     try {
-      await api("/api/control-center/cards/reply", { method: "POST", body: JSON.stringify({ ...ref, message }) });
+      if (!await sendCardReply(ref, message, dialog)) return;
     } catch (failure) {
       error.textContent = failure.cause?.message || failure.message;
       if (!failure.status || failure.status === 408 || failure.status === 504) error.textContent = failure.message;
       error.hidden = false;
+      if (!dialog.open) toast.error(failure.message);
+      return;
+    } finally {
       input.readOnly = false;
       sending = false;
       send.textContent = "Send reply";
       update();
-      if (!dialog.open) toast.error(failure.message);
-      return;
     }
     dialog.close();
     toast("Reply sent");

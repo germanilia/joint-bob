@@ -23,7 +23,7 @@ export function registerBobAction(id: string, handler: BobActionHandler): void {
 }
 
 export class BobActionError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  constructor(readonly status: number, message: string, readonly details?: Record<string, unknown>) { super(message); }
 }
 
 /** Runs a press on the machine that wrote the message: its Guardian review, report or conversation lives there. */
