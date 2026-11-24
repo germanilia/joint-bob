@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.340.6 — 2026-11-24
+
+- Fixed Antigravity conversations getting stuck with "Session not found" after moving to another machine. Joint Bob keeps the conversation and uses its recent history to start a replacement session before sending the queued message.
+- Removed the duplicate conversation menu button on phones.
+- Showed progress while taking over a conversation from an offline machine and prevented repeat clicks during the transfer.
+
 ## 2.340.5 — 2026-11-23
 
 - **Assistant teams:** Fixed paused (`waiting_for_human`) proposal assignments and stale pending inquiries (>30 min) silently swallowing new group messages via `openRequests()`, clarified unaddressed imperative requests in `TEAM_ATTENTION_QUESTION`, logged unexpected inbox processing errors, and hardened subject summary updates.
