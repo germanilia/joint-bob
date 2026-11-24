@@ -183,7 +183,7 @@ function newRule() {
 
 function rulesFieldset() {
   const fieldset = el("fieldset", "phase-settings");
-  fieldset.append(el("legend", "", "Rules"));
+  fieldset.append(el("legend", "", "Rules"), el("p", "settings-hint", "The built-in Secrets rule checks for known secret values and common key formats locally. Model confidence settings do not apply unless you customize its question or fix."));
   const rows = [
     ...view.relays.flatMap(({ source, rules }) => rules.map((rule) => ({ rule, source }))),
     ...view.settings.rules.map((rule) => ({ rule })),

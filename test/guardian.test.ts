@@ -222,6 +222,47 @@ test('command-only Guardian gates turns on model availability, falls back in eit
   assert.deepEqual(calls, []);
 });
 
+test('the built-in Secrets rule detects private SSH keys locally and leaves public keys alone', async t => {
+  const model = await fakeModel(() => 0.05);
+  t.after(() => { model.server.close(); updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS); });
+  const secrets = DEFAULT_GUARDIAN_SETTINGS.rules[1];
+  const settings = { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote' as const, layaUrl: model.url, rules: [secrets] };
+  updateGuardianSettings(settings);
+  const project = await addProject('Local key detection', mkdtempSync(path.join(os.tmpdir(), 'guardian-patterns-')), { writeInstructions: false });
+  const identity: GuardianIdentity = { projectId: project.id, conversationId: 'local-secrets', cwd: process.cwd(), harness: 'pi', canReplaceTool: true };
+  const message = { kind: 'outgoing', source: "the user's message" } as const;
+  const privateKey = '-----BEGIN OPENSSH PRIVATE KEY-----\nZml4dHVyZQ==\n-----END OPENSSH PRIVATE KEY-----';
+  assert.deepEqual(await checkGuardian(identity, { ...message, text: `SSH key:\n${privateKey}` }), { action: 'replace', text: `SSH key:\n${REMOVED}` });
+  assert.deepEqual(await checkGuardian(identity, { ...message, text: 'ssh-ed25519 Zml4dHVyZQ== test@fixture' }), { action: 'continue' });
+  updateGuardianSettings({ ...settings, rules: [{ ...secrets, ifYes: 'block' }] });
+  assert.equal((await checkGuardian(identity, { ...message, text: privateKey })).action, 'block');
+  assert.equal(model.requests.length, 0, 'a pattern-only rule never contacts a decision model');
+});
+
+test('other Guardian rules see redacted input and approving their review keeps the redaction', async t => {
+  const model = await fakeModel(() => 0.97);
+  t.after(() => { model.server.close(); updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS); });
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote', layaUrl: model.url,
+    rules: [DEFAULT_GUARDIAN_SETTINGS.rules[1], { ...DEFAULT_GUARDIAN_SETTINGS.rules[2], enabled: true }] });
+  const project = await addProject('Redaction before review', mkdtempSync(path.join(os.tmpdir(), 'guardian-patterns-review-')), { writeInstructions: false });
+  const identity: GuardianIdentity = { projectId: project.id, conversationId: 'redacted-review', cwd: process.cwd(), harness: 'pi', canReplaceTool: true };
+  const token = 'ghp_' + 'a'.repeat(36);
+  const subjects: string[] = [];
+  t.after(onGuardianEvent(event => {
+    if (event.type !== 'reviews' || event.projectId !== project.id) return;
+    const [review] = pendingGuardianReviews(project.id, identity.conversationId);
+    if (!review) return;
+    subjects.push(review.subject);
+    decideGuardianReview(project.id, identity.conversationId, review.id, 'allow');
+  }));
+  assert.deepEqual(await checkGuardian(identity, { kind: 'outgoing', source: "the user's message", text: `Token: ${token}` }),
+    { action: 'replace', text: `Token: ${REMOVED}` });
+  assert.deepEqual(subjects, [`Token: ${REMOVED}`]);
+  assert.equal(model.requests.length, 1);
+  assert.deepEqual(Object.keys(model.requests[0].questions as object), ['personal-information']);
+  assert.equal(JSON.parse(String(model.requests[0].state)).content, `Token: ${REMOVED}`);
+});
+
 test("checkGuardian blocks, asks, fixes and continues by the rules", async (t) => {
   clearGuardianModelCache();
   const model = await fakeModel((state) => /rm -rf|AKIA[A-Z0-9]{16}/.test(state) ? 0.95 : 0.05);

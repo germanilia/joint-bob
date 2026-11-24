@@ -7,13 +7,13 @@ import { systemOneFetch } from "../classifiers/relay-key.js";
 import { systemDecisionKeyOrRelay } from "../decision-relay-proxy.js";
 import { genericSecretEnvironment } from "../secrets.js";
 import type { HarnessId } from "../types.js";
-import { isGuardianExempt, runGuardianFix } from "./fix.js";
+import { isGuardianExempt, redactRequest, runGuardianFix } from "./fix.js";
 import { localLayaUrl } from "./laya.js";
 import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } from "./model.js";
 import { announceGuardianBlock, announceGuardianWarning, guardianActionAllowed, REVIEW_TIMEOUT_MS, requestGuardianReview } from "./reviews.js";
 import { guardianBypassed } from "./bypass.js";
 import { guardianCommandPolicy, guardianCommandText } from './commands.js';
-import { ruleApplies, ruleChecksOutgoing, ruleOutcome, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
+import { ruleApplies, ruleChecksOutgoing, ruleOutcome, usesSecretPatterns, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
 import { fetchThroughRelay } from "./relay-model.js";
 import { guardianGroups, productionGuard, type GuardianGroup } from "./settings.js";
 
@@ -36,7 +36,7 @@ export type GuardianVerdict =
 
 const MAX_FIX_ATTEMPTS = 2;
 
-interface Finding { group: GuardianGroup; rule: GuardianRule; probability: number; outcome: RuleOutcome; model: string }
+interface Finding { group: GuardianGroup; rule: GuardianRule; probability: number; outcome: RuleOutcome; model: string | null }
 
 function knownSecrets(projectId: string): string[] {
   // File-backed variables hold a path, not the secret.
@@ -63,13 +63,21 @@ function modelState(identity: GuardianIdentity, request: GuardianRequest): strin
     : JSON.stringify({ about: `Content about to be sent to an AI model: ${request.source}`, content: request.text });
 }
 
-/** Every applicable rule's answer. A model that cannot answer blocks the action. */
+function checkSecretPatterns(identity: GuardianIdentity, groups: GuardianGroup[], request: GuardianRequest) {
+  const rules = groups.flatMap(group => group.rules.filter(rule => usesSecretPatterns(rule) && ruleApplies(rule, request)).map(rule => ({ group, rule })));
+  const redacted = rules.length ? redactRequest(request, knownSecrets(identity.projectId)) : request;
+  const findings: Finding[] = redacted === request ? [] : rules.map(match => ({ ...match, probability: 1, outcome: match.rule.ifYes, model: null }));
+  return { redacted, findings };
+}
+
+/** Every applicable model rule's answer. A model that cannot answer blocks the action. */
 async function evaluate(identity: GuardianIdentity, groups: GuardianGroup[], request: GuardianRequest): Promise<{ findings: Finding[]; failure?: string }> {
   const state = modelState(identity, request);
   const results = await Promise.all(groups.map(async (group) => {
-    const rules = group.rules.filter((rule) => ruleApplies(rule, request));
+    const modelRules = group.rules.filter(rule => rule.enabled && !usesSecretPatterns(rule));
+    const rules = modelRules.filter(rule => ruleApplies(rule, request));
     const startOfTurn = request.kind === 'outgoing' && request.source === "the user's message";
-    const probe = !rules.length && startOfTurn && group.rules.some(rule => rule.enabled);
+    const probe = !rules.length && startOfTurn && modelRules.length > 0;
     if (!rules.length && !probe) return { findings: [] as Finding[] };
     const questions = probe ? { ready: 'Does the state say ready?' } : Object.fromEntries(rules.map(rule => [rule.id, rule.question]));
     const fallback = group.model === 'jev' ? (group.layaUrl ? 'laya-remote' : 'laya-local') : 'jev';
@@ -96,7 +104,7 @@ function what(request: GuardianRequest): string {
 }
 
 const percent = (probability: number) => `${Math.round(probability * 100)}%`;
-const describe = (finding: Finding) => `"${finding.rule.name}"${finding.group.relay ? ` (${finding.group.source})` : ""}: ${finding.rule.question} ${finding.model} answered yes at ${percent(finding.probability)}`;
+const describe = (finding: Finding) => `"${finding.rule.name}"${finding.group.relay ? ` (${finding.group.source})` : ""}: ${finding.model ? `${finding.rule.question} ${finding.model} answered yes at ${percent(finding.probability)}` : "matched a secret locally"}`;
 
 function reviewTitle(identity: GuardianIdentity, request: GuardianRequest): string {
   const agent = getHarness(identity.harness).label;
@@ -152,18 +160,26 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
   if (commandPolicy === 'block') return announced(identity, 'Guardian blocked deletion of a protected branch (dev, main, master or staging), or a deletion whose branch cannot be determined.');
   let request = original;
   for (let attempt = 0; ; attempt += 1) {
-    const { findings, failure } = await evaluate(identity, groups, request);
-    if (failure) {
-      audit(identity, request, "failed", findings);
-      return announced(identity, `Guardian could not check this ${what(request)}, so it was blocked. ${failure}`);
+    const { redacted, findings: local } = checkSecretPatterns(identity, groups, request);
+    const localBlocks = local.filter(finding => finding.outcome === "block");
+    if (localBlocks.length) return blocked(identity, request, localBlocks);
+
+    const evaluation = await evaluate(identity, groups, redacted);
+    if (evaluation.failure) {
+      audit(identity, request, "failed", evaluation.findings);
+      return announced(identity, `Guardian could not check this ${what(request)}, so it was blocked. ${evaluation.failure}`);
     }
+    // Keep local redaction even if a different rule asks for approval and the person allows it.
+    const redactions = request.kind === "outgoing" || identity.canReplaceTool ? local.filter(finding => finding.outcome === "fix") : [];
+    const findings = [...local.filter(finding => !redactions.includes(finding)), ...evaluation.findings];
     const outcome = worstOutcome(findings.map((finding) => finding.outcome));
     const acting = findings.filter((finding) => finding.outcome === outcome);
-    if (outcome === "continue") return request === original ? { action: "continue" } : replaced(request);
-    if (outcome === "block") {
-      audit(identity, request, "blocked", acting);
-      return announced(identity, `Guardian blocked this ${what(request)}. Rule ${acting.map(describe).join("; ")}.`);
+    if (outcome === "block") return blocked(identity, request, acting);
+    if (redactions.length) {
+      audit(identity, request, "fixed", redactions);
+      request = redacted;
     }
+    if (outcome === "continue") return request === original ? { action: "continue" } : replaced(request);
     if (!team && outcome === "fix" && attempt < MAX_FIX_ATTEMPTS) {
       const fixed = await applyFixes(identity, request, acting);
       if (fixed) { audit(identity, request, "fixed", acting); request = fixed; continue; }
@@ -177,9 +193,9 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
     const asked = Date.now();
     const decision = await requestGuardianReview({
       alwaysKey,
-      projectId: identity.projectId, conversationId: identity.conversationId, title: reviewTitle(identity, request), subject: reviewSubject(request),
+      projectId: identity.projectId, conversationId: identity.conversationId, title: reviewTitle(identity, request), subject: reviewSubject(redacted),
       operationKey: createHash('sha256').update(JSON.stringify(request)).digest('hex'),
-      detail: reviewed.map((finding) => `${finding.rule.name} rule · ${percent(finding.probability)} sure · ${finding.model}${finding.group.relay ? ` · ${finding.group.source}` : ""}`).join("\n"),
+      detail: reviewed.map((finding) => `${finding.rule.name} rule · ${finding.model ? `${percent(finding.probability)} sure · ${finding.model}` : "matched a secret locally"}${finding.group.relay ? ` · ${finding.group.source}` : ""}`).join("\n"),
     }, identity.signal);
     // Nobody answering blocks too, so the audit says whether this was the person or the timeout.
     const waitedMs = Date.now() - asked;
@@ -187,6 +203,11 @@ export async function checkGuardian(identity: GuardianIdentity, original: Guardi
     if (decision === "block") return { action: "block", reason: `The user blocked this ${what(request)} after Guardian flagged it. Rule ${reviewed.map(describe).join("; ")}.` };
     return request === original ? { action: "continue" } : replaced(request);
   }
+}
+
+function blocked(identity: GuardianIdentity, request: GuardianRequest, findings: Finding[]): GuardianVerdict {
+  audit(identity, request, "blocked", findings);
+  return announced(identity, `Guardian blocked this ${what(request)}. Rule ${findings.map(describe).join("; ")}.`);
 }
 
 function announced(identity: GuardianIdentity, reason: string): GuardianVerdict {
