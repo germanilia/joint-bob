@@ -38,6 +38,9 @@ return send({jsonrpc:'2.0',id:promptId,result:{stopReason:'end_turn'}});
 if(request.method==='initialize')return reply({protocolVersion:1,agentCapabilities:{loadSession:true}});
 if(request.method==='session/new'||request.method==='session/load'){
 if(process.env.AGY_FIXTURE_UNAUTHENTICATED==='1'||process.env.AGY_FIXTURE_REQUIRE_LOGIN==='1'&&!fs.existsSync(path.join(process.env.HOME,'signed-in')))return send({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:'Authentication required'}});
+const replacement=fs.existsSync(path.join(request.params.cwd,'missing-native-session'));
+if(request.method==='session/load'&&replacement&&request.params.sessionId!==sessionId+'-replacement')return send({jsonrpc:'2.0',id:request.id,error:{code:-32002,message:'Session not found: '+request.params.sessionId}});
+if(replacement)sessionId+='-replacement';
 if(request.method==='session/load'){
 assert.equal(request.params.sessionId,sessionId);
 send({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'Replayed old reply'}}}});
@@ -52,7 +55,14 @@ return reply({configOptions:config()});
 }
 if(request.method==='session/prompt'){
 promptId=request.id;
-if(request.params.prompt[0].text==='tool'){
+const text=request.params.prompt[0].text;
+if(text.endsWith('after the move')){
+assert.match(text,/Context handoff:/);
+assert.ok(text.includes('user: hello'));
+assert.ok(text.includes('assistant: Antigravity reply'));
+}
+if(text==='missing during prompt')return send({jsonrpc:'2.0',id:request.id,error:{code:-32002,message:'Session not found: '+sessionId}});
+if(text==='tool'){
 send({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'tool_call',toolCallId:'tool-1',title:'Run command',kind:'execute',rawInput:{command:'echo fixture'}}}});
 return send({jsonrpc:'2.0',id:'permission',method:'session/request_permission',params:{sessionId,toolCall:{toolCallId:'tool-1',title:'Run command',kind:'execute',rawInput:{command:'echo fixture'}},options:[{optionId:'allow',kind:'allow_once'},{optionId:'reject',kind:'reject_once'}]}});
 }
@@ -99,6 +109,26 @@ test("Google Antigravity ACP readiness, model selection, native session and tran
       { role: "user", text: "hello" }, { role: "assistant", text: "Antigravity reply" },
       { role: "user", text: "continue" }, { role: "assistant", text: "Antigravity reply" },
     ]);
+
+    await writeFile(path.join(root, "missing-native-session"), "");
+    let starts = 0;
+    await session.prompt({ text: "after the move", beforeStart: async () => { starts++; } });
+    const recovered = await readAntigravitySession(session.file!.replace(/^antigravity:/, ""));
+    assert.equal(session.file, sessionPath);
+    assert.equal(starts, 1);
+    assert.equal(recovered.nativeSessionId, "native-antigravity-1-replacement");
+    assert.equal(recovered.handoffPending, false);
+    assert.deepEqual(recovered.messages.map(({ role, text }) => ({ role, text })), [
+      ...resumed.messages.map(({ role, text }) => ({ role, text })),
+      { role: "user", text: "after the move" }, { role: "assistant", text: "Antigravity reply" },
+    ]);
+
+    session.dispose();
+    session = await runtime.open({ projectId: project.id, cwd: root, sessionId: "antigravity-test", sessionPath });
+    starts = 0;
+    await assert.rejects(session.prompt({ text: "missing during prompt", beforeStart: async () => { starts++; } }), /Session not found: native-antigravity-1-replacement/);
+    assert.equal(starts, 1);
+    assert.deepEqual(await readAntigravitySession(session.file!.replace(/^antigravity:/, "")), recovered);
   } finally {
     if (session?.isBusy()) await session.stopForUpdate();
     session?.dispose();
