@@ -17,8 +17,10 @@ test("the phone conversation header has a menu button that holds Dashboard and P
   await page.waitForFunction(() => !document.querySelector<HTMLTextAreaElement>("#messageInput")!.disabled);
 
   // The header shows a menu (⋯) button, not the old dashboard shortcut.
-  const menuButton = page.getByTestId("chat-menu-button");
+  const menuButton = page.getByTestId("focus-controls-button");
   await menuButton.waitFor();
+  assert.equal(await page.locator("#chatTopbar #focusControlsButton").count(), 1, "the shared menu handle lives in the conversation header");
+  assert.equal(await page.getByTestId("chat-menu-button").count(), 0, "no duplicate conversation menu button");
   assert.equal(await page.getByTestId("chat-dashboard-button").count(), 0);
   assert.equal(await menuButton.locator("circle").count(), 3, "the button is the three-dot menu icon");
 

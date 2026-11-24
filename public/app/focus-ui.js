@@ -369,8 +369,6 @@ export function initializeFocusUi({ openSettings, startConversation, createNote,
   }
   // Tools is listed in the sheet now; its old button scrolls there for anyone who still reaches it.
   actionButtons.focusTools.onclick = (event) => { event.stopPropagation(); syncMenuLayout(); toolsList.scrollIntoView({ block: "start" }); };
-  // The conversation header's menu button opens the same sheet as the floating ⋯ handle.
-  document.querySelector("#chatMenuButton").onclick = () => showMenu(true);
   document.querySelector("#focusBack").onclick = backToControls;
   scrim.addEventListener("click", () => showMenu(false));
   for (const [id, action] of [["focusNewNote", createNote], ["focusRecents", openRecentSessions], ["focusReviews", inspectReviews], ["focusRunning", inspectRunning]]) {
