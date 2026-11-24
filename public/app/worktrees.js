@@ -71,15 +71,41 @@ function cleanupFinishedWorktrees(projectId) {
     .finally(() => cleanupAfter.set(projectId, Date.now() + 60_000));
 }
 
-/** Creates a worktree of the open project named after a conversation, numbering the name when it is taken. */
-export async function createConversationWorktree(projectId, title) {
-  const base = title.replace(/\s+/g, " ").trim().slice(0, 74) || "Conversation";
-  const taken = new Set(state.worktrees.map((worktree) => worktree.name.toLowerCase()));
+function numberedName(base, worktrees) {
+  const taken = new Set(worktrees.map((worktree) => worktree.name.toLowerCase()));
   let name = base;
   for (let suffix = 2; taken.has(name.toLowerCase()); suffix += 1) name = `${base} ${suffix}`;
-  const { worktree } = await api(worktreesUrl(projectId), { method: "POST", body: JSON.stringify({ name, color: nextColor() }) });
-  await loadWorktrees();
-  return worktree;
+  return name;
+}
+
+/** Creates a worktree of the open project named after a conversation, numbering the name when it is taken.
+    Sends a client-chosen id, so a retry after a lost response adopts the worktree the first attempt created
+    instead of failing with "already exists". Flaky connections retry a few times before giving up. */
+export async function createConversationWorktree(projectId, title) {
+  const base = title.replace(/\s+/g, " ").trim().slice(0, 74) || "Conversation";
+  const id = crypto.randomUUID();
+  let name = numberedName(base, state.worktrees);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const { worktree } = await api(worktreesUrl(projectId), { method: "POST", body: JSON.stringify({ id, name, color: nextColor() }) });
+      await loadWorktrees();
+      return worktree;
+    } catch (error) {
+      if (attempt >= 4) throw error;
+      if (error.status === 409) {
+        // Our list missed a worktree holding this name. If it is ours (an older server replaying our id
+        // as a conflict), adopt it; otherwise renumber from the server's list and try again.
+        const { worktrees } = await api(worktreesUrl(projectId));
+        const replayed = worktrees.find((worktree) => worktree.id === id);
+        if (replayed) { await loadWorktrees(); return replayed; }
+        name = numberedName(base, worktrees);
+        continue;
+      }
+      if (error.status >= 400) throw error; // The server answered: the same request cannot succeed.
+      // No response reached us: the id makes repeating the request safe once the connection recovers.
+      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+    }
+  }
 }
 
 /** The badge that marks a conversation running inside a worktree, in that worktree's colour. */

@@ -13,7 +13,7 @@ import { broadcastToProject } from "../realtime.js";
 import { app } from "../state.js";
 import { worktreeAgentRequest, worktreeAgentRequestSchema } from "../worktree-agent.js";
 
-const createSchema = z.object({ name: z.string().max(200), color: z.enum(PROJECT_COLORS).optional() }).strict();
+const createSchema = z.object({ id: z.string().regex(/^[0-9a-f-]{36}$/i).optional(), name: z.string().max(200), color: z.enum(PROJECT_COLORS).optional() }).strict();
 const updateSchema = z.object({ name: z.string().max(200).optional(), color: z.enum(PROJECT_COLORS).optional() }).strict();
 const worktreeId = z.string().regex(/^[0-9a-f-]{36}$/i);
 

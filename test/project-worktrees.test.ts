@@ -88,6 +88,11 @@ test("a worktree copies only code and text and lists with its name and color", a
     for (const local of [WORKTREE_META_DIR, "node_modules", ".venv", ".env"]) assert.equal(manifest.includes(`"${local}`), false, `${local} must stay out of the baseline`);
 
     await assert.rejects(createProjectWorktree(project, { name: "slice 4" }, worktrees), /already exists/);
+    // A retry whose first response was lost replays the same id and adopts the worktree already created.
+    const replayed = await createProjectWorktree(project, { id: worktree.id, name: "Slice 4" }, worktrees);
+    assert.equal(replayed.id, worktree.id);
+    assert.equal((await listProjectWorktrees(project.id, worktrees)).length, 1);
+    await assert.rejects(createProjectWorktree(project, { id: "not-a-uuid", name: "Bad id" }, worktrees), /Invalid worktree id/);
     const second = await createProjectWorktree(project, { name: "Other", color: "red" }, worktrees);
     assert.equal(second.color, "red");
     assert.notEqual(worktree.color, second.color);

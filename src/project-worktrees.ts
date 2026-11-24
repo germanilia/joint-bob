@@ -378,15 +378,24 @@ async function copyRemoteBase(source: string, staging: string, gitEnvironment: N
   return { gitBase: base.commit, gitBaseRef: base.ref };
 }
 
-export async function createProjectWorktree(project: ProjectRecord, input: { name: unknown; color?: unknown; createdBy?: WorktreeCreator; gitEnvironment?: NodeJS.ProcessEnv; localMain?: boolean; originMain?: boolean; restore?: { beforeBaseline(staging: string): Promise<void>; afterBaseline(staging: string): Promise<void> } }, root = worktreeRoot()): Promise<ProjectWorktree> {
+function normalizeId(value: unknown): string {
+  if (value === undefined) return randomUUID();
+  if (typeof value !== "string" || !WORKTREE_ID.test(value)) throw new ProjectWorktreeError(400, "Invalid worktree id");
+  return value;
+}
+
+export async function createProjectWorktree(project: ProjectRecord, input: { id?: unknown; name: unknown; color?: unknown; createdBy?: WorktreeCreator; gitEnvironment?: NodeJS.ProcessEnv; localMain?: boolean; originMain?: boolean; restore?: { beforeBaseline(staging: string): Promise<void>; afterBaseline(staging: string): Promise<void> } }, root = worktreeRoot()): Promise<ProjectWorktree> {
   const name = normalizeName(input.name);
+  const id = normalizeId(input.id);
   const existing = await listProjectWorktrees(project.id, root);
+  // A caller-supplied id makes a retry after a lost response safe: the first attempt's worktree is returned as-is.
+  const replayed = existing.find((worktree) => worktree.id === id);
+  if (replayed) return replayed;
   if (existing.some((worktree) => worktree.name.toLowerCase() === name.toLowerCase())) throw new ProjectWorktreeError(409, "A worktree with this name already exists");
   const used = new Set(existing.map((worktree) => worktree.color));
   const color = normalizeColor(input.color, DEFAULT_COLOR_ORDER.find((candidate) => !used.has(candidate)) ?? DEFAULT_COLOR_ORDER[existing.length % DEFAULT_COLOR_ORDER.length]);
   const source = path.resolve(project.path);
   if (!(await fs.stat(source).catch(() => null))?.isDirectory()) throw new ProjectWorktreeError(409, "Project folder is not available on this node");
-  const id = randomUUID();
   const worktree = expectedWorktreePath(project.id, id, root);
   await fs.mkdir(path.dirname(worktree), { recursive: true });
   const node = await getClusterNode();

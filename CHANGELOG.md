@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Starting a conversation in a new worktree now survives connection blips: the creation is retried, and a retry adopts the worktree the first attempt already created instead of failing with "already exists".
+
 ## 2.340.6 — 2026-11-24
 
 - Fixed Antigravity conversations getting stuck with "Session not found" after moving to another machine. Joint Bob keeps the conversation and uses its recent history to start a replacement session before sending the queued message.
