@@ -6,11 +6,43 @@ import { WebSocketServer } from "ws";
 import { getClusterNode } from "../src/cluster.js";
 import { ensureConversationRecord } from "../src/conversation-records.js";
 import { cronStore } from "../src/cron.js";
-import { queuedCronPrompt } from "../src/server/cron.js";
+import { executeCronRun, queuedCronPrompt } from "../src/server/cron.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { addProject, removeProject } from "../src/store.js";
+import { listTurnFailures, withTurnFailures } from "../src/turn-failures.js";
 import { server } from "../src/server/state.js";
 import { sessionTitleOverrides, setSessionTitle } from "../src/names.js";
 import { webhookConversationTitle } from "../src/webhook-title.js";
 import { cronInputSchema } from "../src/cron.js";
+
+test("scheduled startup errors appear inside an otherwise empty conversation", async context => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cron-failed-conversation-"));
+  const project = await addProject("Failed automation", root);
+  const endpoint = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(endpoint, "listening");
+  context.mock.method(server, "address", () => endpoint.address());
+  endpoint.on("connection", socket => socket.send(JSON.stringify({ type: "error", error: "Synthetic sign-in required" })));
+  try {
+    const node = await getClusterNode();
+    const task = cronStore().create({ projectId: project.id, name: "Failed startup", prompt: "Check", engine: "pi", sessionId: null, ownerNodeId: node.id, enabled: true, runInWorktree: false, schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" } });
+    const run = cronStore().claim(task.id, node.id, task.nextRun)!;
+    await executeCronRun(task, run);
+    const finished = cronStore().history(task.id)[0];
+    assert.equal(finished.status, "failed");
+    assert.ok(finished.sessionId);
+    const failures = listTurnFailures("pi", finished.sessionId);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].error, "Synthetic sign-in required");
+    assert.deepEqual(withTurnFailures([], failures).map(message => ({ role: message.role, text: message.text })), [{ role: "error", text: "Synthetic sign-in required" }]);
+  } finally {
+    for (const socket of endpoint.clients) socket.terminate();
+    await new Promise<void>(resolve => endpoint.close(() => resolve()));
+    await removeProject(project.id);
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 const responderConfig = { harnessId: "pi", provider: "test", modelId: "reviewer", thinkingLevel: "high" as const, instructions: "Drive until verified", stopInstructions: "All checks pass", maxResponses: 7, useTools: true };
 
