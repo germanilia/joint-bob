@@ -263,6 +263,13 @@ function openPendingReviewsDialog() {
 
 const listedSessionTransfers = new Set();
 
+function renderTakeoverProgress(pending) {
+  const button = elements.reconnectTakeoverButton;
+  button.disabled = pending;
+  button.setAttribute("aria-busy", String(pending));
+  button.textContent = pending ? "Taking over…" : "Take over here";
+}
+
 /**
  * `keepView` opens it without showing it: the startup restore leaves the person in the view they were in, the control center too.
  * Opening it does not review it: it waits for review until it is marked done.
@@ -308,6 +315,7 @@ export async function openListedSession(session, { keepView = false, timed = fal
   elements.reconnectTakeoverButton.onclick = () => {
     if (stillOpeningOwner()) return takeOverOfflineSession({ projectId, session, title, owner, local, reviewHighlightAfter, stillOpeningOwner });
   };
+  renderTakeoverProgress(listedSessionTransfers.has(JSON.stringify([projectId, session.harnessId, session.id])));
   elements.reconnectTakeoverButton.hidden = false;
   elements.reconnectBanner.hidden = false;
 }
@@ -323,6 +331,7 @@ async function takeOverOfflineSession({ projectId, session, title, owner, local,
       confirmLabel: "Take over here",
     });
     if (!confirmed || !stillOpeningOwner()) return;
+    renderTakeoverProgress(true);
     const result = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions/take-ownership`, {
       method: "POST", body: JSON.stringify({ peerId: local.id, offlineOwnerNodeId: owner.id, sessionId: session.id, sessionPath: session.path, sessionName: title.slice(0, 120) }),
     });
@@ -337,6 +346,7 @@ async function takeOverOfflineSession({ projectId, session, title, owner, local,
       && !await reconcileTranscriptConflict(error, { projectId, engine: session.harnessId, sessionId: session.id })) toast.error(error.message);
   } finally {
     listedSessionTransfers.delete(transferKey);
+    if (state.activeProjectId === projectId && state.activeSessionId === session.id) renderTakeoverProgress(false);
   }
 }
 
