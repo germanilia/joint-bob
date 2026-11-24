@@ -1,7 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { agentCapabilityEnvironment } from "../../agent-capabilities.js";
+import { agentCapabilityEnvironment, agentCapabilityInstructionFiles } from "../../agent-capabilities.js";
 import { agentEnvironment, persistConversationSecretAccounts } from "../../secrets.js";
 import { buildHandoffContext, stripHandoffEnvelope } from "../../handoff-context.js";
 import { getSettings } from "../../settings.js";
@@ -250,7 +250,12 @@ class AntigravitySession implements HarnessSession {
   }
 
   private promptContent(text: string, input: HarnessPrompt): JsonObject[] {
-    const prompt: JsonObject[] = [{ type: "text", text }];
+    const instructions = agentCapabilityInstructionFiles(this.options.projectId, this.options.conversationId ?? this.id, "antigravity");
+    // ACP has no system-instruction field; keep app context separate from the user's text and attachments.
+    const prompt: JsonObject[] = [
+      { type: "text", text: `${instructions.map((file) => file.content).join("\n\n")}\n\n` },
+      { type: "text", text },
+    ];
     for (const image of input.images ?? []) prompt.push({ type: "image", data: image.data, mimeType: image.mimeType });
     return prompt;
   }

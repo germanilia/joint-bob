@@ -55,7 +55,18 @@ return reply({configOptions:config()});
 }
 if(request.method==='session/prompt'){
 promptId=request.id;
-const text=request.params.prompt[0].text;
+const blocks=request.params.prompt;
+const text=blocks.filter(block=>block.type==='text').at(-1).text;
+if(text==='hello'||text==='continue'||text.endsWith('after the move')){
+assert.equal(blocks[0].type,'text');
+for(const name of ['JOINT_BOB_BROWSER_CLI','JOINT_BOB_SECRET_CLI','JOINT_BOB_WORKTREE_CLI','JOINT_BOB_TASK_CLI']){
+assert.ok(process.env[name],name+' is missing from the runtime environment');
+assert.ok(blocks[0].text.includes(name),name+' is missing from the ACP instructions');
+}
+assert.ok(!blocks[0].text.includes('Joint Bob supplies configured MCP tools automatically'));
+assert.equal(blocks[1].text,text);
+if(text==='hello')assert.deepEqual(blocks[2],{type:'image',data:'Zml4dHVyZQ==',mimeType:'image/png'});
+}
 if(text.endsWith('after the move')){
 assert.match(text,/Context handoff:/);
 assert.ok(text.includes('user: hello'));
@@ -66,7 +77,7 @@ if(text==='tool'){
 send({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'tool_call',toolCallId:'tool-1',title:'Run command',kind:'execute',rawInput:{command:'echo fixture'}}}});
 return send({jsonrpc:'2.0',id:'permission',method:'session/request_permission',params:{sessionId,toolCall:{toolCallId:'tool-1',title:'Run command',kind:'execute',rawInput:{command:'echo fixture'}},options:[{optionId:'allow',kind:'allow_once'},{optionId:'reject',kind:'reject_once'}]}});
 }
-if(request.params.prompt[0].text==='wait')return send({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'Waiting'}}}});
+if(text==='wait')return send({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'Waiting'}}}});
 send({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'Antigravity reply'}}}});
 return send({jsonrpc:'2.0',id:promptId,result:{stopReason:'end_turn'}});
 }
@@ -90,7 +101,7 @@ test("Google Antigravity ACP readiness, model selection, native session and tran
     await session.configure({ provider: "antigravity", modelId: "model-b", reasoning: "high" });
     const deltas: string[] = [];
     session.subscribe((event) => { if (event.type === "textDelta") deltas.push(String(event.text)); });
-    await session.prompt({ text: "hello" });
+    await session.prompt({ text: "hello", images: [{ data: "Zml4dHVyZQ==", mimeType: "image/png" }] });
 
     assert.deepEqual(deltas, ["Antigravity reply"]);
     assert.deepEqual(session.status().model, { provider: "antigravity", id: "model-b", label: "Model B" });

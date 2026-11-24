@@ -23,6 +23,7 @@ Harness executable, path and machine-level sign-in controls are restricted to lo
 - Streaming replies and thinking, model selection, tool events and cancellation.
 - Native session resume on the execution node, without duplicating ACP replay messages in the transcript.
 - Joint Bob-owned JSONL history, persisted model settings, tool categories and titles.
+- Joint Bob's built-in CLI instructions (browser, secrets, worktrees, tasks and more) on both new and resumed turns. They do not appear in the Joint Bob transcript. Configured MCP tools are not passed to Antigravity.
 - Guardian outgoing checks and checks for ACP tool permission requests. Tool categories apply to those permission requests; they do not sandbox the CLI or intercept tools it executes without requesting permission.
 
 Compaction through Joint Bob is unsupported. Only Joint Bob-owned transcripts are listed; existing native CLI sessions are not imported. Transcripts can synchronize between nodes, but native Antigravity session state and authentication are not synchronized. Switching profiles starts a separate native session while keeping the visible conversation history. Do not assume a transcript can resume on a different execution node.

@@ -33,6 +33,7 @@ export interface AgentCapability {
   environment: (identity: AgentCapabilityIdentity) => NodeJS.ProcessEnv;
   /** Only an assistant's topic conversations get these instructions. */
   assistantTopicsOnly?: boolean;
+  requiresMcp?: boolean;
 }
 
 const goalInstructions = `# Joint Bob goals
@@ -183,6 +184,7 @@ Attachments can change during a turn. New shell commands use current attached en
     id: "mcp",
     instructions: { path: "/virtual/JOINT_BOB_MCP.md", content: "# Joint Bob MCP\n\nJoint Bob supplies configured MCP tools automatically. MCP sign-ins belong to the current user on this machine and work across Claude, Pi and Kiro. If a server requires sign-in, ask the user to open Settings → Resources → MCP servers on the execution machine. Never read or print MCP capability tokens or OAuth credentials. Do not retry an uncertain mutation." },
     environment: ({ projectId, engine, conversationId }) => mcpAgentEnvironment(projectId, engine, conversationId),
+    requiresMcp: true,
   },
   {
     // The tools come through the MCP capability's bridge; this adds only how to use them.
@@ -190,6 +192,7 @@ Attachments can change during a turn. New shell commands use current attached en
     instructions: { path: "/virtual/JOINT_BOB_ASSISTANTS.md", content: assistantCollaborationInstructions },
     environment: () => ({}),
     assistantTopicsOnly: true,
+    requiresMcp: true,
   },
   {
     id: "background-tasks",
@@ -220,7 +223,9 @@ export function revokeAgentCapabilities(projectId: string, conversationId?: stri
 }
 
 /** `sessionId` is the conversation's session here; an assistant's topics also get the instructions only they can use. */
-export function agentCapabilityInstructionFiles(projectId?: string, sessionId?: string): Array<{ path: string; content: string }> {
+export function agentCapabilityInstructionFiles(projectId?: string, sessionId?: string, engine?: HarnessId): Array<{ path: string; content: string }> {
   const assistantTopic = assistantIdForConversation(projectId, sessionId) !== null;
-  return agentCapabilities.filter((capability) => assistantTopic || !capability.assistantTopicsOnly).map((capability) => capability.instructions);
+  return agentCapabilities
+    .filter((capability) => (assistantTopic || !capability.assistantTopicsOnly) && (engine !== "antigravity" || !capability.requiresMcp))
+    .map((capability) => capability.instructions);
 }
