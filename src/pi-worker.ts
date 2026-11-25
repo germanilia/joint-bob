@@ -9,7 +9,7 @@ import type { AgentSession, AgentSessionEvent, readStoredCredential } from "@ear
 import { ModelRuntime } from "./pi-sdk.js";
 import { createSessionModelRuntime } from "./provider-profiles/pi.js";
 import { createPiProviderCatalog, type PiProviderCatalog } from "./harnesses/pi/provider-catalog.js";
-import { createCoreSession, rewindPiTranscript, type PiCoreHooks, type PiCoreInputs, type PiCredentials, type PiSessionHandle } from "./pi-session-core.js";
+import { createCoreSession, rewindPiTranscript, selectPiSessionModel, type PiCoreHooks, type PiCoreInputs, type PiCredentials, type PiSessionHandle } from "./pi-session-core.js";
 
 const sessions = new Map<string, PiSessionHandle>();
 const hookReplies = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -130,11 +130,7 @@ async function call(key: string, op: string, args: unknown[]): Promise<unknown> 
     }
     case "setModel": {
       const [provider, modelId] = args as [string, string];
-      const models = handle.session.modelRuntime;
-      await models.getAvailable();
-      const model = models.getModel(provider, modelId);
-      if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
-      await session.setModel(model);
+      await selectPiSessionModel(session, provider, modelId);
       break;
     }
     case "getAuth": {

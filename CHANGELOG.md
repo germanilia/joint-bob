@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.340.12 — 2026-11-25
+
+- Pi now discovers profile-specific chat models from installed provider extensions such as Experiential Labs and lets you select and resume them in Joint Bob.
+
 ## 2.340.11 — 2026-11-25
 
 - Guardian's Personal information rule now looks for real private details (home address, phone, ID number, date of birth, financial or medical data) and no longer fires on names, emails, usernames, hostnames or file paths alone.

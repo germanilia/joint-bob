@@ -266,7 +266,8 @@ export class RemoteAgentSession {
     const credentials = this.credentials ? await this.credentials() : undefined;
     await this.call("prompt", text, options?.images ?? [], credentials);
   }
-  async setModel(model: { provider: string; id: string }): Promise<void> { await this.call("setModel", model.provider, model.id); }
+  async setModel(model: { provider: string; id: string }): Promise<void> { await this.setModelById(model.provider, model.id); }
+  async setModelById(provider: string, modelId: string): Promise<void> { await this.call("setModel", provider, modelId); }
   setThinkingLevel(level: AgentSession["thinkingLevel"]): void { this.state = { ...this.state, thinkingLevel: level }; void this.call("setThinkingLevel", level); }
   setActiveToolsByName(names: string[]): void { this.state = { ...this.state, activeTools: names }; void this.call("setActiveToolsByName", names); }
   setSessionName(name: string): void { this.state = { ...this.state, sessionName: name }; void this.call("setSessionName", name); }

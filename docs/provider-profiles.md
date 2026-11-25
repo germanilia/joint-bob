@@ -6,6 +6,8 @@ Joint Bob supports multiple node-local Claude subscription logins, ChatGPT login
 
 Open Settings → Connections. It has three tabs: **Profiles**, **Pools**, and **Assignments**. On **Profiles**, pick the provider tab (Claude, ChatGPT, Pi, or Kiro), name the profile, add it, then sign in. A Kiro profile also needs its IAM Identity Center start URL and AWS region. The OAuth flow opens the provider's sign-in page or shows a device code. Complete it in the browser, then return to Joint Bob. Logins never go through the relay.
 
+For Experiential Labs, install `npm:pi-experientiallabs` with `pi install` on the execution node, using the Pi configuration folder shown in **Settings → Harnesses → Pi**. Then add a **Pi** profile in Connections, choose **Experiential Labs**, and enter your API key in the sign-in prompt. Joint Bob discovers the chat models available to that profile; search for `explabs` in the Pi model picker. Install the extension and sign in separately on each execution node.
+
 Kiro profiles are private and stay on the node where they were signed in. They cannot be shared for automation or join a pool.
 
 Each profile card shows its sign-in state: **Signed in on this node**, **Using the sign-in on <twin>**, **Not signed in**, or **Sign-in unavailable**. The state is checked when the card is shown and again with **Check status**.
