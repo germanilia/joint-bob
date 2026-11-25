@@ -29,7 +29,7 @@ import { withProjectFolderResources } from "./project-folder-resources.js";
 import { activeSkillRoot, blockedSkillNames } from "./resource-activation.js";
 import type { ChatMessage, ContextUsage, ModelSummary, SessionStatus, SessionSummary, ToolTarget } from "./types.js";
 import { toolTarget } from "./tool-target.js";
-import { createCoreSession, type PiCoreHooks, type PiCoreInputs, type PiCredentials, type PiSessionHandle } from "./pi-session-core.js";
+import { createCoreSession, selectPiSessionModel, type PiCoreHooks, type PiCoreInputs, type PiCredentials, type PiSessionHandle } from "./pi-session-core.js";
 import { currentRuntime, runInRuntime, serviceRuntime } from "./account-runtime.js";
 import { managedMcpBridgeConfigs, nativeMcpServerConfigs } from "./mcp/agent.js";
 import { actingAccount, runAsAccount } from "./account-context.js";
@@ -181,7 +181,7 @@ export function usageModelPricing(provider: string, modelId: string): import("./
 
 export function summarizeModel(model: AvailableModel | undefined): ModelSummary | undefined {
   if (!model) return undefined;
-  const pricing = usageModelPricing(String(model.provider), String(model.id));
+  const pricing = model.cost ? modelCostToPricing(model.provider, model.cost) : usageModelPricing(model.provider, model.id);
   return {
     provider: String(model.provider),
     id: String(model.id),
@@ -333,7 +333,7 @@ async function availableModelsWithProfiles() {
   return available;
 }
 
-export async function listAvailableModels(): Promise<ModelSummary[]> {
+export async function listAvailableModels(): Promise<Array<ModelSummary & { thinkingLevels: string[] }>> {
   const available = await availableModelsWithProfiles();
   const preferred = preferredModel(available);
   return available
@@ -343,21 +343,22 @@ export async function listAvailableModels(): Promise<ModelSummary[]> {
       if (preferred && right.provider === preferred.provider && right.id === preferred.id) return 1;
       return `${left.provider}/${left.id}`.localeCompare(`${right.provider}/${right.id}`);
     })
-    .map((model) => summarizeModel(model))
-    .filter((model): model is ModelSummary => Boolean(model))
-    .map((model) => ({ ...model, thinkingLevels: modelThinkingLevels(model.provider, model.id) }));
+    .map((model) => ({ ...summarizeModel(model)!, thinkingLevels: thinkingLevels(model) }));
 }
 
 /** Whether settings may name this model: every model its provider can run here, including the
     families listAvailableModels keeps out of pickers. Settings saved before a family was retired
     still name them, and a turn interrupted by an update resumes on the model it was using. */
 export async function modelIsRunnable(provider: string, modelId: string): Promise<boolean> {
-  return (await availableModelsWithProfiles()).some((model) => model.provider === provider && model.id === modelId);
+  return Boolean(await runnablePiModel(provider, modelId));
 }
 
-export function modelThinkingLevels(provider: string, modelId: string): string[] {
-  const model = modelRuntime.getModel(provider, modelId);
-  if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
+export async function runnablePiModel(provider: string, modelId: string) {
+  const model = (await availableModelsWithProfiles()).find((model) => model.provider === provider && model.id === modelId);
+  return model && { ...summarizeModel(model)!, thinkingLevels: thinkingLevels(model) };
+}
+
+function thinkingLevels(model: AvailableModel): string[] {
   if (!model.reasoning) return ["off"];
   return ["off", "minimal", "low", "medium", "high", "xhigh", "max"].filter((level) => {
     const mapped = model.thinkingLevelMap?.[level as keyof NonNullable<typeof model.thinkingLevelMap>];
@@ -366,15 +367,16 @@ export function modelThinkingLevels(provider: string, modelId: string): string[]
 }
 
 /** A model from the catalog a switch reads, signed in or not. */
-export function catalogModelSummary(provider: string, modelId: string): ModelSummary | undefined {
-  return summarizeModel(modelRuntime.getModel(provider, modelId));
+export async function catalogModelSummary(provider: string, modelId: string) {
+  await ensurePiProviderCatalog();
+  if (modelRuntime.getRegisteredNativeProvider(provider)?.refreshModels) return runnablePiModel(provider, modelId);
+  const model = modelRuntime.getModel(provider, modelId);
+  return model && { ...summarizeModel(model)!, thinkingLevels: thinkingLevels(model) };
 }
 
 export async function setSessionModel(session: AgentSession, provider: string, modelId: string): Promise<ModelSummary> {
-  await ensurePiProviderCatalog();
-  const model = modelRuntime.getModel(provider, modelId);
-  if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
-  await session.setModel(model);
+  if ("setModelById" in session && typeof session.setModelById === "function") await session.setModelById(provider, modelId);
+  else await selectPiSessionModel(session, provider, modelId);
   const summary = summarizeModel(session.model);
   if (!summary) throw new Error("Model switch failed");
   return summary;
@@ -814,12 +816,19 @@ export async function createPiSession(options: PiSessionOptions): Promise<PiSess
     return [...entries.filter((entry) => entry.providerId !== providerId), { providerId, type: "oauth" }];
   };
   selected = await profiles.bootstrapPiProfile(options.projectId, conversationId);
+  const defaults = piSessionDefaults();
+  if (!selected && modelRuntime.getRegisteredProviderIds().some((id) => modelRuntime.getRegisteredNativeProvider(id)?.refreshModels)) {
+    const initial = options.sessionPath ? SessionManager.open(options.sessionPath, piSessionPath(), options.cwd).buildSessionContext().model : defaults;
+    if (initial && modelRuntime.getRegisteredNativeProvider(initial.provider)?.refreshModels && !await hooks.modelFromPool()) {
+      selected = await profiles.projectProviderProfile(options.projectId, conversationId, initial.provider, "pi");
+    }
+  }
   const runtime = currentRuntime();
   const handle = runtime.name
-    ? await (await import("./harnesses/pi/remote.js")).createRemotePiSession(options, runtime, hooks, piSessionDefaults())
+    ? await (await import("./harnesses/pi/remote.js")).createRemotePiSession(options, runtime, hooks, defaults)
     : await createCoreSession(await createSessionModelRuntime(hooks.modelCredential, hooks.modelCredentialList, hooks.modelProfileIsolated), {
       cwd: options.cwd, agentDir: getAgentDir(), sessionRoot: piSessionPath(), sessionPath: options.sessionPath,
-      sessionId: options.sessionId, safeguardsEnabled: options.safeguardsEnabled, defaults: piSessionDefaults(),
+      sessionId: options.sessionId, safeguardsEnabled: options.safeguardsEnabled, defaults,
     }, hooks);
   selected = undefined;
   handle.modelFromPool = hooks.modelFromPool;

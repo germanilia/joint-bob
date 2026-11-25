@@ -183,9 +183,9 @@ export class PiSession implements HarnessSession {
     const switching = !currentModel || currentModel.provider !== settings.provider || currentModel.id !== settings.modelId;
     if (switching && !poolProfileContext() && await this.handle.modelFromPool?.()) {
       // The catalog a switch reads (setSessionModel); a pool member's sign-in, not this node's, decides whether it runs.
-      const model = service.catalogModelSummary(settings.provider, settings.modelId);
+      const model = await service.catalogModelSummary(settings.provider, settings.modelId);
       if (!model) throw new Error(`Model not found: ${settings.provider}/${settings.modelId}`);
-      const levels = service.modelThinkingLevels(settings.provider, settings.modelId);
+      const levels = model.thinkingLevels;
       if (!levels.includes(settings.reasoning)) throw new Error("Pi reasoning level is not supported");
       this.poolPick = { model, reasoning: settings.reasoning, levels };
       if (settings.enabledTools !== undefined) {
@@ -335,10 +335,9 @@ const runtime: HarnessRuntime = {
   },
 
   async validateSettings(settings) {
-    if (!await service.modelIsRunnable(settings.provider, settings.modelId)) {
-      throw new Error(`Model not found: ${settings.provider}/${settings.modelId}`);
-    }
-    if (!service.modelThinkingLevels(settings.provider, settings.modelId).includes(settings.reasoning)) {
+    const model = await service.runnablePiModel(settings.provider, settings.modelId);
+    if (!model) throw new Error(`Model not found: ${settings.provider}/${settings.modelId}`);
+    if (!model.thinkingLevels.includes(settings.reasoning)) {
       throw new Error("Pi reasoning level is not supported");
     }
     await service.reloadPiAuth();

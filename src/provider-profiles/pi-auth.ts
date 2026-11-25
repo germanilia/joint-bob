@@ -9,6 +9,7 @@ export async function protectPiProfileRuntime(runtime: ModelRuntime, isolated: I
   const authority = await ModelRuntime.create({ ...storage, modelsPath: null, refreshOnCreate: false });
   const registrations = new Map<string, unknown>();
   const guarded = new WeakSet<object>();
+  const discovered = new WeakMap<object, { key: string | undefined; pending: Promise<boolean> }>();
   async function syncProviders() {
     let changed = false;
     const registered = new Set(runtime.getRegisteredProviderIds());
@@ -58,6 +59,31 @@ export async function protectPiProfileRuntime(runtime: ModelRuntime, isolated: I
     // Registration schedules availability passes. Finish them before returning the guarded snapshot.
     if (changed) await authority.refresh({ allowNetwork: false });
   }
+  // Discover through the in-memory authority, never Pi's shared on-disk catalog or ambient auth.
+  async function discoverModels(provider?: string) {
+    const credentials = await authority.listCredentials();
+    const ids = credentials.map(({ providerId }) => providerId).filter((id) =>
+      (!provider || id === provider) && runtime.getRegisteredNativeProvider(id)?.refreshModels);
+    const unavailable = new Set<string>();
+    await Promise.all(ids.map(async (id) => {
+      const native = runtime.getRegisteredNativeProvider(id)!;
+      const auth = await authority.getAuth(id);
+      if (!auth) { unavailable.add(id); return; }
+      const key = auth.auth.apiKey;
+      let refresh = discovered.get(native);
+      if (!refresh || refresh.key !== key) {
+        const pending = authority.refresh({ providers: [id], allowNetwork: true }).then(({ aborted, errors }) => !aborted && !errors.has(id));
+        refresh = { key, pending };
+        discovered.set(native, refresh);
+      }
+      if (!await refresh.pending) {
+        if (discovered.get(native) === refresh) discovered.delete(native);
+        console.warn(`Pi could not discover models for ${id}`);
+        unavailable.add(id);
+      }
+    }));
+    return unavailable;
+  }
   const auth = runtime.getAuth.bind(runtime);
   runtime.getAuth = async (provider: string | Parameters<ModelRuntime["getAuth"]>[0], options?: Parameters<ModelRuntime["getAuth"]>[1]) => {
     if (!await isolated()) return typeof provider === "string" ? auth(provider, options) : auth(provider, options);
@@ -72,6 +98,8 @@ export async function protectPiProfileRuntime(runtime: ModelRuntime, isolated: I
   const available = runtime.getAvailable.bind(runtime);
   runtime.getAvailable = async (provider, options) => {
     if (!await isolated()) return available(provider, options);
-    await syncProviders(); return authority.getAvailable(provider, options);
+    await syncProviders();
+    const unavailable = await discoverModels(provider);
+    return (await authority.getAvailable(provider, options)).filter((model) => !unavailable.has(model.provider));
   };
 }

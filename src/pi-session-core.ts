@@ -157,6 +157,15 @@ function bindCredentials(session: AgentSession, current: () => PiCredentials, re
   return unsubscribe;
 }
 
+export async function selectPiSessionModel(session: AgentSession, provider: string, modelId: string): Promise<void> {
+  const runtime = session.modelRuntime;
+  const model = runtime.getRegisteredNativeProvider(provider)?.refreshModels
+    ? (await runtime.getAvailable(provider)).find((model) => model.id === modelId)
+    : runtime.getModel(provider, modelId);
+  if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
+  await session.setModel(model);
+}
+
 export async function createCoreSession(modelRuntime: ModelRuntime, inputs: PiCoreInputs, hooks: PiCoreHooks): Promise<PiSessionHandle> {
   await modelRuntime.getAvailable();
   const sessionManager = inputs.sessionPath
@@ -222,9 +231,12 @@ export async function createCoreSession(modelRuntime: ModelRuntime, inputs: PiCo
   const unsubscribeCredentials = bindCredentials(session, () => credentials, hooks.credentialsNow ? () => { credentials = hooks.credentialsNow!(sessionId, conversationId); } : undefined);
   try {
     if ("bindExtensions" in session && typeof session.bindExtensions === "function") await session.bindExtensions({});
-    await modelRuntime.getAvailable();
+    const available = await modelRuntime.getAvailable();
     if (desiredModel) {
-      const selectedModel = modelRuntime.getModel(desiredModel.provider, desiredModel.modelId);
+      const { provider, modelId } = desiredModel;
+      const selectedModel = modelRuntime.getRegisteredNativeProvider(provider)?.refreshModels
+        ? available.find((model) => model.provider === provider && model.id === modelId)
+        : modelRuntime.getModel(provider, modelId);
       // A transcript with messages keeps whatever model the SDK restored when its saved model is gone.
       if (!selectedModel && !restoredBySdk) throw new Error(`Model not found: ${desiredModel.provider}/${desiredModel.modelId}`);
       if (selectedModel && (session.model?.provider !== selectedModel.provider || session.model.id !== selectedModel.id)) {
