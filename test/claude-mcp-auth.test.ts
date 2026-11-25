@@ -39,7 +39,8 @@ process.stdin.on("data", (chunk) => {
       if (request.serverName === "slow") reply(id, { requiresUserAction: false });
       else reply(id, { authUrl: "https://auth.example/authorize?state=s1", requiresUserAction: true, callbackExpected: true, redirectScheme: "localhost", callbackPort: 4321 });
     } else if (request.subtype === "mcp_oauth_callback_url") {
-      if (/code=good/.test(request.callbackUrl) && /state=s1/.test(request.callbackUrl)) { fs.writeFileSync(token, "t"); reply(id, {}); }
+      if (fs.existsSync(token) || fs.existsSync(dir + "/flow-ended")) fail(id, "No active OAuth flow for server: " + request.serverName);
+      else if (/code=good/.test(request.callbackUrl) && /state=s1/.test(request.callbackUrl)) { fs.writeFileSync(token, "t"); reply(id, {}); }
       else fail(id, "Callback URL not accepted: OAuth state mismatch");
     } else if (request.subtype === "mcp_reconnect") reply(id, {});
     else if (request.subtype === "mcp_clear_auth") { fs.rmSync(token, { force: true }); reply(id, {}); }
@@ -110,6 +111,28 @@ test("sign-in finished by the node's own listener needs no paste; sign-out clear
     assert.equal(existsSync(path.join(root, "token")), false);
     assert.ok((await requests()).some((entry) => entry.subtype === "mcp_clear_auth" && entry.serverName === "remote"));
     assert.deepEqual((await auth.status(alice)).find((server) => server.name === "remote"), { name: "remote", status: "needs-auth" });
+  } finally { auth.closeAll(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("a pasted callback after the localhost listener finished still reports a connected server", async () => {
+  const { root, auth } = await fixture();
+  try {
+    const started = await auth.start({ cwd: root, ownerKey: "alice" }, "remote");
+    await writeFile(path.join(root, "token"), "t");
+    assert.deepEqual(await auth.finish(started.flowId, "alice", "http://localhost:4321/callback?code=good&state=s1"), { name: "remote", status: "connected" });
+    assert.equal(auth.openFlows(), 0);
+  } finally { auth.closeAll(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("a pasted callback for an ended sign-in tells the person to start again", async () => {
+  const { root, auth } = await fixture();
+  try {
+    const started = await auth.start({ cwd: root, ownerKey: "alice" }, "remote");
+    await writeFile(path.join(root, "flow-ended"), "");
+    await assert.rejects(auth.finish(started.flowId, "alice", "http://localhost:4321/callback?code=good&state=s1"), {
+      statusCode: 404, message: "This sign-in has ended; start it again",
+    });
+    assert.equal(auth.openFlows(), 0);
   } finally { auth.closeAll(); await rm(root, { recursive: true, force: true }); }
 });
 
