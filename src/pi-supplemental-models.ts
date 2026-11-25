@@ -15,6 +15,12 @@ export const SUPPLEMENTAL_MODELS: ReadonlyArray<{ provider: string; model: Recor
     cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5, tiers: [{ inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }] } } },
   { provider: "openai-codex", model: { ...CODEX, id: "gpt-6.2-astra", name: "GPT-6.2 Astra", contextWindow: 272000,
     cost: { input: 8, output: 40, cacheRead: 0.8, cacheWrite: 10, tiers: [{ inputTokensAbove: 272000, input: 16, output: 60, cacheRead: 1.6, cacheWrite: 20 }] } } },
+  // Z.ai offers GLM-5.4 on the Coding Plan, not the metered Model API.
+  { provider: "zai", model: { id: "glm-5.4", name: "GLM-5.4", api: "openai-completions", baseUrl: "https://api.z.ai/api/coding/paas/v4",
+    reasoning: true, input: ["text", "image"], contextWindow: 1000000, maxTokens: 131072,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" },
+    compat: { supportsStore: false, supportsReasoningEffort: true, maxTokensField: "max_tokens", thinkingFormat: "zai", supportsStrictMode: true, zaiToolStream: true } } },
 ];
 
 const noCredentials = { read: async () => undefined, list: async () => [], modify: async () => undefined, delete: async () => {} };

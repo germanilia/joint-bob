@@ -19,8 +19,8 @@ test("webhook transfer preserves settings, resources, memory and calls on the ch
     for (const node of env.nodes) servers.push(await startDevNode(env, node));
     const auth = await signIn(env, a);
     await pairTwinNodes(env);
-    const created = await api<{ automation: Webhook; secret: string }>(a, auth, "POST", "/automations", { name: "Move me", target: { kind: "project", projectId: a.projects[0].id }, context: "Keep these instructions", senders: { fields: ["sender"], allowed: [] } });
-    assert.equal(created.status, 201);
+    const created = await api<{ automation: Webhook; secret: string }>(a, auth, "POST", "/automations", { name: "Move me", target: { kind: "project", projectId: a.projects[0].id, engine: "claude" }, context: "Keep these instructions", senders: { fields: ["sender"], allowed: [] } });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
     const id = created.body.automation.id;
     const url = `/automations/${id}`;
     assert.equal((await api(a, auth, "POST", `${url}/transfer`, { nodeId: randomUUID() })).status, 403);
@@ -28,7 +28,7 @@ test("webhook transfer preserves settings, resources, memory and calls on the ch
     const runId = randomUUID();
     try {
       database.exec("PRAGMA busy_timeout=5000");
-      createAutomationExecution(database, { id: runId, sourceKind: "webhook", sourceId: id, sourceName: "Move me", workspaceId: null, projectId: a.projects[0].id, ownerNodeId: a.nodeId, engine: "pi", requestId: runId, sessionId: null, tags: [], status: "running", error: null, acceptedAt: new Date().toISOString(), startedAt: null, finishedAt: null });
+      createAutomationExecution(database, { id: runId, sourceKind: "webhook", sourceId: id, sourceName: "Move me", workspaceId: null, projectId: a.projects[0].id, ownerNodeId: a.nodeId, engine: "claude", requestId: runId, sessionId: null, tags: [], status: "running", error: null, acceptedAt: new Date().toISOString(), startedAt: null, finishedAt: null });
       assert.equal((await api(a, auth, "POST", `${url}/transfer`, { nodeId: b.nodeId })).status, 409, "running webhook cannot move");
       assert.equal(database.prepare("SELECT enabled FROM webhooks WHERE id=?").get(id)!.enabled, 1, "rejected transfer leaves source enabled");
       database.prepare("DELETE FROM automation_executions WHERE id=?").run(runId);

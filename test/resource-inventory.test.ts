@@ -239,7 +239,7 @@ test("the inventory merges harnesses per skill and lists MCP servers without arg
 
     const byName = Object.fromEntries(inventory.mcpServers.map((server) => [server.name, server]));
     assert.deepEqual([byName.docs.source, byName.docs.transport, byName.docs.target], ["shared", "http", "https://docs.example.com"]);
-    assert.deepEqual([...byName.docs.harnesses].sort(), ["claude", "kiro"]);
+    assert.deepEqual([...byName.docs.harnesses].sort(), ["antigravity", "claude", "kiro"]);
     assert.deepEqual([byName.personal.source, byName.personal.target, byName.personal.enabled], ["user", "personal-mcp", false]);
     assert.deepEqual([byName.approved.enabled, byName.pending.enabled, byName.rejected.enabled], [true, false, false]);
     assert.doesNotMatch(JSON.stringify(inventory), /secret/);

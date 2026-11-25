@@ -196,7 +196,7 @@ test("relay-only machines share exactly what their clusters allow, and the relay
 
     // Webhooks need no phone sign-in: the relay hands the call to A on a webhook-only channel.
     const hook = await api<{ automation: { id: string }; secret: string; bases: Array<{ id: string; base: string }> }>(a, localSession, "POST", "/automations", {
-      trigger: "webhook", name: "Relay hook", target: { kind: "project", projectId: forX.id }, context: "Triage this.",
+      trigger: "webhook", name: "Relay hook", target: { kind: "project", projectId: forX.id, engine: "claude" }, context: "Triage this.",
     });
     assert.equal(hook.status, 201, JSON.stringify(hook.body));
     assert.match(hook.body.secret, /^[A-Za-z0-9_-]{43}$/, "the secret is 256 random bits");

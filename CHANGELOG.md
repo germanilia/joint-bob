@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.340.10 — 2026-11-25
+
+- Added GLM-5.4 to the Pi model picker for signed-in Z.ai Coding Plan profiles.
+- Included the missing card reply module in the offline app shell.
+
 ## 2.340.9 — 2026-11-24
 
 - Added configured MCP servers to Antigravity, using the same managed sign-ins on the execution machine.

@@ -17,7 +17,7 @@ test("signed-in Claude and ChatGPT profiles both offer their Pi models when the 
   const { runAsAccount } = await import("../src/account-context.js");
   const { createProviderProfile } = await import("../src/provider-profiles/store.js");
   const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
-  const { listAvailableModels } = await import("../src/pi-service.js");
+  const { listAvailableModels, modelIsRunnable } = await import("../src/pi-service.js");
   const account = { accountId: "pi-profile-models-owner", username: "fixture", role: "member" as const, isRemoteLogin: false, homeNodeId: null };
   const offered = async (provider: string) => (await runAsAccount(account, listAvailableModels)).filter((model) => model.provider === provider);
 
@@ -33,12 +33,16 @@ test("signed-in Claude and ChatGPT profiles both offer their Pi models when the 
   const anthropic = await offered("anthropic");
   assert.ok(anthropic.some((model) => model.id.startsWith("claude-")), "a signed-in Claude profile offers Pi's Claude models");
   assert.ok((await offered("openai-codex")).length > 0, "Codex models stay offered alongside Claude models");
+  assert.deepEqual(await offered("zai"), [], "a Z.ai Coding Plan model needs an app sign-in");
   const pi = createProviderProfile(account.accountId, { label: "Pi API keys", provider: "pi" });
   await mkdir(path.dirname(openAIAuthPath(pi)), { recursive: true, mode: 0o700 });
   await writeFile(openAIAuthPath(pi), JSON.stringify({ zai: { type: "api_key", key: "fixture-zai" }, openai: { type: "api_key", key: "fixture-openai" } }), { mode: 0o600 });
   const { profileModelRuntime } = await import("../src/provider-profiles/service.js");
   const catalog = await profileModelRuntime(pi);
   assert.ok((await offered("zai")).length > 0, `a Pi profile offers z.ai models with its API key; known=${catalog.getModels("zai").map((model) => model.id)}, available=${(await catalog.getAvailable("zai")).map((model) => model.id)}`);
+  const glm = (await offered("zai")).find((model) => model.id === "glm-5.4");
+  assert.equal(glm?.label, "GLM-5.4", "a signed-in Z.ai profile offers GLM-5.4 in the picker");
+  assert.equal(await runAsAccount(account, () => modelIsRunnable("zai", "glm-5.4")), true);
   assert.ok((await offered("openai")).length > 0, "the same Pi profile also offers OpenAI API-key models");
   const all = await runAsAccount(account, listAvailableModels);
   assert.equal(new Set(all.map((model) => `${model.provider}/${model.id}`)).size, all.length, "model catalog has no duplicates");
