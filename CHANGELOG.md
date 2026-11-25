@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.340.11 — 2026-11-25
+
+- Guardian's Personal information rule now looks for real private details (home address, phone, ID number, date of birth, financial or medical data) and no longer fires on names, emails, usernames, hostnames or file paths alone.
+- Added "Also check attached images" to Guardian settings (off by default). Off, attachment lines are ignored; on, a vision model reads each attached image and Guardian checks what it shows.
+- Joint Bob's own background runs (summaries, reviews, sync fixers) are no longer checked as a person's message.
+
 ## 2.340.10 — 2026-11-25
 
 - Added GLM-5.4 to the Pi model picker for signed-in Z.ai Coding Plan profiles.
