@@ -204,12 +204,21 @@ export function createClaudeMcpAuth(spawnControl: ControlSpawner, options: { set
     /** Completes a sign-in: with the pasted redirect URL, or after the browser reached the node's own listener. */
     async finish(flowId: string, ownerKey: string, callbackUrl?: string): Promise<McpServerAuthState> {
       const flow = ownFlow(flowId, ownerKey);
-      if (callbackUrl) await flow.control.request("mcp_oauth_callback_url", { serverName: flow.serverName, callbackUrl }, 60_000);
-      // The flow saved the token; a reconnect makes this process prove it works.
+      let callbackFlowEnded = false;
+      if (callbackUrl) {
+        try {
+          await flow.control.request("mcp_oauth_callback_url", { serverName: flow.serverName, callbackUrl }, 60_000);
+        } catch (error) {
+          if (!(error instanceof McpAuthError) || error.message !== `No active OAuth flow for server: ${flow.serverName}`) throw error;
+          // The localhost listener can consume the callback before the person pastes it.
+          callbackFlowEnded = true;
+        }
+      }
+      // A reconnect checks whether the token was saved and works.
       await flow.control.request("mcp_reconnect", { serverName: flow.serverName }).catch(() => undefined);
       const state = (await settledStatus(flow.control, settleMs)).find((entry) => entry.name === flow.serverName) ?? { name: flow.serverName, status: "unknown" };
-      // An unfinished browser step leaves the flow open, so the person can still paste the URL.
-      if (state.status === "connected") endFlow(flow);
+      if (state.status === "connected" || callbackFlowEnded) endFlow(flow);
+      if (callbackFlowEnded && state.status !== "connected") throw new McpAuthError(404, "This sign-in has ended; start it again");
       return state;
     },
 
