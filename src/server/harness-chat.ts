@@ -68,6 +68,7 @@ import { broadcastToProject, chatErrorMessage, send } from "./realtime.js";
 import { autoRespondHeldBack } from "./control-center-watch.js";
 import { withGuardianBypass } from "../guardian/bypass.js";
 import { cancelGuardianReviews, decideGuardianReview, onGuardianEvent, pendingGuardianReviews } from "../guardian/reviews.js";
+import { isInternalSession } from "../internal-sessions.js";
 import { conversationLiveModel, requestDigestQuietly, summaryPolicyNow, summaryPolicyView } from "./conversation-digest-runner.js";
 import { storedDigest } from "../conversation-digest.js";
 import { attachHarnessClient, compactHarnessSession, detachHarnessClient, disposeHarnessSession, findHarnessSession, harnessSessionBusy, harnessTurnBusy, historyBeforeLiveTurn, markHarnessInput, openHarnessSession, sendHarnessStatus, type SharedHarnessSession, type TurnConnectionView } from "./harness-sessions.js";
@@ -267,7 +268,11 @@ onGuardianEvent((event) => {
   for (const connection of harnessChatConnections) {
     if (connection.project.id === event.projectId && connection.conversationId === event.conversationId) send(connection.socket, payload);
   }
-  if (event.type === "reviews") broadcastToProject(event.projectId, { type: "guardianReviewsChanged", projectId: event.projectId, conversationId: event.conversationId, titles: reviews.map(({ title }) => title) });
+  if (event.type === "reviews") {
+    const backgroundReview = isInternalSession(event.conversationId) ? reviews.find((review) => !review.team) : undefined;
+    broadcastToProject(event.projectId, { type: "guardianReviewsChanged", projectId: event.projectId, conversationId: event.conversationId,
+      titles: reviews.map(({ title }) => title), ...(backgroundReview ? { backgroundReviewId: backgroundReview.id } : {}) });
+  }
 });
 
 function publishGoal(connection: HarnessChatConnection, goal: ConversationGoal | undefined, announce = true): void {

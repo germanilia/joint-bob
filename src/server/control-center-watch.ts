@@ -5,6 +5,8 @@ import { appendBobMessage, bobDatabase, listBobAccounts, onBobMessage, onBobTime
 import { disableAutoRespond, enableAutoRespond, getAutoRespond, onAutoRespondStopped, type AutoRespondState } from "../conversation-auto-respond.js";
 import { allPendingGuardianReviews, decideGuardianReview, onGuardianEvent, type GuardianReview } from "../guardian/reviews.js";
 import { isLeased } from "../control-center/leases.js";
+import { isInternalSession } from "../internal-sessions.js";
+import { privateConversationVisible } from "../conversation-privacy.js";
 import { sessionTitleOverrides } from "../names.js";
 import { getProject, projectVisible } from "../store.js";
 import { titleOf } from "./control-center-start.js";
@@ -63,6 +65,7 @@ async function announceReview(review: GuardianReview): Promise<void> {
   const title = await conversationTitle(review.projectId, review.conversationId);
   const db = await bobDatabase();
   for (const actor of await watchers(review.projectId)) {
+    if (!privateConversationVisible(review.conversationId, actor)) continue;
     appendBobMessage(db, actor.accountId, {
       role: "system", importance: "needs-ok", projectId: review.projectId, projectName: project?.name ?? null,
       text: `${title ? `"${title}": ` : ""}${review.title}\n${review.subject}\n${review.detail}`,
@@ -71,7 +74,7 @@ async function announceReview(review: GuardianReview): Promise<void> {
         { id: "guardian.allow", label: "Allow once", style: "warn", data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } },
         ...(review.alwaysKey ? [{ id: "guardian.allow-always", label: "Allow always", style: "warn" as const, data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } }] : []),
         { id: "guardian.block", label: "Block", data: { projectId: review.projectId, conversationId: review.conversationId, reviewId: review.id } },
-        { id: "open", label: "Open conversation", style: "primary", data: { open: { projectId: review.projectId, conversationId: review.conversationId, ...(title ? { title } : {}) } } },
+        ...(!isInternalSession(review.conversationId) ? [{ id: "open", label: "Open conversation", style: "primary" as const, data: { open: { projectId: review.projectId, conversationId: review.conversationId, ...(title ? { title } : {}) } } }] : []),
       ],
     });
   }

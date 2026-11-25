@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +10,8 @@ import { launchChrome } from "./launch-chrome.js";
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "../dev-nodes.js";
 import { guardianAskSettings, guardianDecisionModel, installGuardianClaude } from "../guardian-claude-fixture.js";
 import { waitInPage } from "./wait-in-page.js";
+import { internalSessionId } from "../../src/internal-sessions.js";
+import { nativeUiFixture } from "./native-ui-fixture.js";
 
 async function choose(page: Page, testid: string, text: string): Promise<void> {
   await page.getByTestId(testid).click();
@@ -39,7 +43,7 @@ test("Guardian rules are switched, edited with searchable dropdowns and reviewed
     const rows = page.getByTestId("guardian-rule");
     await rows.first().waitFor();
     assert.deepEqual(await rows.locator(".guardian-rule-copy strong").allTextContents(), ["Dangerous commands", "Secrets", "Personal information"]);
-    assert.equal(await rows.nth(0).locator(".guardian-rule-copy span").textContent(), "Before commands · ask me");
+    assert.equal(await rows.nth(0).locator(".guardian-rule-copy span").textContent(), "Before every action · block");
 
     await page.getByTestId("guardian-enabled").check();
     await waitInPage(page, async () => (await (await fetch("/api/guardian")).json()).settings.enabled === true);
@@ -95,6 +99,67 @@ test("Guardian rules are switched, edited with searchable dropdowns and reviewed
     await stopDevNode(server);
     if (!process.env.KEEP_GUARDIAN_UI) await rm(root, { recursive: true, force: true });
   }
+});
+
+test("Guardian's background-run notification opens the approval without looking for a conversation", { timeout: 120_000 }, async (t) => {
+  const model = await guardianDecisionModel();
+  t.after(() => { model.close(); });
+  const { page, environment, node } = await nativeUiFixture(t);
+  const project = node.projects[0];
+  const admin = await signIn(environment, node);
+  assert.equal((await api(node, admin, "PUT", "/guardian", { settings: guardianAskSettings(model) })).status, 200);
+  assert.equal((await api(node, admin, "PUT", "/control-center/bob/settings", { monitoring: true })).status, 200);
+  await page.goto(node.url);
+  await page.getByTestId("login-username-input").fill(environment.username);
+  await page.getByTestId("login-password-input").fill(environment.password);
+  await page.getByTestId("login-submit-button").click();
+  await page.waitForFunction(() => !document.body.classList.contains("booting"));
+  await page.evaluate(async (id) => {
+    const { selectProject } = await import("/app/project-selection.js" as string);
+    await selectProject(id);
+  }, project.id);
+  await page.waitForFunction(async (projectId) => {
+    const { state } = await import("/app/state.js" as string);
+    return state.watchProjectId === projectId && state.watchSocket?.readyState === WebSocket.OPEN;
+  }, project.id);
+
+  // A background run uses the same hook as a conversation but has no history row.
+  const stop = new AbortController();
+  t.after(() => stop.abort());
+  const verdict = promisify(execFile)(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
+    import { guardianHookEnvironment } from './src/guardian/agent-token.ts';
+    const hook = guardianHookEnvironment(...process.argv.slice(1));
+    const response = await fetch(hook.JOINT_BOB_GUARDIAN_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + hook.JOINT_BOB_GUARDIAN_TOKEN },
+      body: JSON.stringify({ tool: 'Bash', input: { command: 'rm -rf /srv/exports/2023' } }),
+    });
+    process.stdout.write(JSON.stringify({ status: response.status, body: await response.json() }));
+  `, project.id, internalSessionId(), project.path], {
+    signal: stop.signal,
+    env: { PATH: process.env.PATH, HOME: environment.home, PI_WEB_DATA_DIR: node.dataDir, PORT: new URL(node.url).port },
+  }).then(({ stdout }) => JSON.parse(stdout));
+  const notice = page.locator(".toast", { hasText: "Guardian is waiting for your decision" });
+  const action = notice.locator(".toast-action");
+  await Promise.race([action.waitFor({ state: "attached" }), verdict.then((response) => assert.fail(`Hook returned early: ${JSON.stringify(response)}`))]);
+  assert.deepEqual(await notice.locator(".toast-action").allTextContents(), ["Review request"], "a background run has no conversation to open");
+  await notice.getByRole("button", { name: "Review request" }).click();
+  const dialog = page.locator("#choiceDialog[open]");
+  await dialog.getByText("rm -rf /srv/exports/2023", { exact: false }).waitFor();
+  const { body } = await api<{ messages: Array<{ via?: string; actions: Array<{ id: string; data: { projectId: string; conversationId: string; reviewId: string } }> }> }>(node, admin, "GET", "/control-center/bob/messages");
+  const bobNotice = body.messages.find((message) => message.via?.startsWith("Guardian"));
+  assert.deepEqual(bobNotice?.actions.map((action) => action.id), ["guardian.allow", "guardian.allow-always", "guardian.block"], "Bob's notification offers the decisions and no broken link");
+  const target = bobNotice!.actions[0].data;
+  const endpoint = "/control-center/guardian/background-review";
+  const wrongProject = new URLSearchParams({ ...target, projectId: node.projects[1].id });
+  assert.equal((await api(node, admin, "GET", `${endpoint}?${wrongProject}`)).status, 404);
+
+  await dialog.getByRole("radio", { name: "Block" }).check();
+  await dialog.getByRole("button", { name: "Apply decision" }).click();
+  const response = await verdict;
+  assert.equal(response.status, 200);
+  assert.equal(response.body.verdict.action, "block");
+  assert.equal(await page.locator("#messages .empty-state", { hasText: "Not listed" }).count(), 0);
+  assert.equal((await api(node, admin, "GET", `${endpoint}?${new URLSearchParams(target)}`)).status, 404, "an answered request cannot be reopened");
 });
 
 test("a review on a new Claude conversation's first turn shows its card until it is answered", { timeout: 240_000 }, async () => {
