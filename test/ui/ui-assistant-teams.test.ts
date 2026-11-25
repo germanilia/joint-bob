@@ -95,7 +95,7 @@ test('team control center shows picked members with free roles and persists orde
   // On a wide screen the personal Assistants tab gives way to a rail; in a team the tab stays, as the member roster.
   await page.setViewportSize({ width: 1800, height: 900 });
   assert.equal(await page.getByTestId('control-tab-assistants').isVisible(), true, 'member roster reachable on wide screens');
-  assert.match(await page.getByTestId('control-tab-assistants').innerText(), /Team members/);
+  assert.match(await page.getByTestId('control-tab-assistants').innerText(), /Assistants/);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId('projects-open-control-center-button').click();
   await page.getByTestId('team-live-view').waitFor({ state: 'visible' });

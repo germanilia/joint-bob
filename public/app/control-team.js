@@ -13,7 +13,7 @@ const panels = Object.fromEntries(['assistants', 'live', 'memory'].map(id => {
   panel.dataset.testid = `team-${id}-view`;
   panel.setAttribute('role', 'tabpanel');
   document.querySelector('#controlViews').append(panel);
-  registerContextView(id, panel, id === 'assistants' ? 'Team members' : undefined);
+  registerContextView(id, panel);
   return [id, panel];
 }));
 const settingsPanel = document.querySelector('#settingsPanel-account');
@@ -27,6 +27,13 @@ const newTeamButtons = makeNode('span', 'team-new-buttons');
 contextLabel.append(select, newTeamButtons);
 document.querySelector('#controlTabs').before(contextLabel);
 const button = (text, id, fn) => makeButton(text, id, () => Promise.resolve().then(fn).catch(fail));
+const backToAssistants = button('Back to Assistants', 'team-back-to-assistants', () => {
+  select.value = '';
+  select.dispatchEvent(new Event('change'));
+  showControlView('assistants');
+});
+backToAssistants.hidden = true;
+document.querySelector('#controlViews').prepend(backToAssistants);
 const mobileEntry = button('Shared team', 'team-phone-open', async () => { await loadTeams(); showControlView('assistants'); });
 mobileEntry.classList.add('team-phone-entry');
 document.querySelector('.control-chat-head')?.append(mobileEntry);
@@ -106,7 +113,7 @@ async function refresh(force = false) {
   for (const panel of Object.values(panels)) panel.replaceChildren();
   if (work) { work.setMembers(agents.agents.map(agent => ({ role: agent.role, name: agent.profile?.name ?? null, coordinator: agent.coordinator, ready: !agent.readiness.length }))); panels.live.append(work.node); }
   settings.replaceChildren(makeNode('h2', '', 'Shared team settings · personal Bob is separate'), error, saved);
-  panels.assistants.append(makeNode('h2', '', 'Shared team assistants'), makeNode('p', '', `Host: ${readiness.host.name}`), tagged(makeNode('p', '', 'Pick your assistants on this machine and give each a role. A member brings everything it has: instructions, skills, MCP servers, browser logins and tools. Its role is its Telegram command.'), 'team-runtime'));
+  panels.assistants.append(makeNode('h2', '', 'Team members'), makeNode('p', '', `Host: ${readiness.host.name}`), tagged(makeNode('p', '', 'Pick your assistants on this machine and give each a role. A member brings everything it has: instructions, skills, MCP servers, browser logins and tools. Its role is its Telegram command.'), 'team-runtime'));
   const decision = makeNode('p', '', `Central AI decision: ${readiness.decision.model ?? 'not selected'} · ${readiness.decision.ready ? 'ready' : 'unavailable'}. Configure in Settings → System AI.`);
   decision.append(button('System AI settings', 'team-decision-settings', async () => (await import('./settings.js')).openSettings('system-ai')));
   panels.assistants.append(decision);
@@ -302,6 +309,7 @@ select.addEventListener('change', () => {
   work?.stop(); work = undefined;
   syncMobile();
   document.body.classList.toggle('team-context-active', Boolean(select.value));
+  backToAssistants.hidden = !select.value;
   for (const panel of Object.values(panels)) panel.replaceChildren();
   settings.replaceChildren(error, saved);
   setControlContext(select.value);

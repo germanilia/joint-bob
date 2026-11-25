@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { nativeUiFixture } from './native-ui-fixture.js';
+import { nativeUiFixture, openBobChat } from './native-ui-fixture.js';
 import { api, signIn } from '../dev-nodes.js';
 import { DEFAULT_GUARDIAN_SETTINGS } from '../../src/guardian/rules.js';
 import { PRODUCTION_RULE } from '../../src/guardian/production-rule.js';
@@ -16,6 +16,33 @@ async function openTeams(page: any, environment: any, node: any) {
   await page.getByTestId('control-tab-assistants').click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="team-select"] option').length > 0);
 }
+
+test('Back to Assistants exits a team without deleting it and keeps navigation stable', { timeout: 120_000 }, async t => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  const auth = await signIn(environment, node);
+  const cluster = await api<any>(node, auth, 'POST', '/clusters', { name: 'Exit team' });
+  const created = await api<any>(node, auth, 'POST', '/assistant-teams', { clusterId: cluster.body.snapshot.body.clusterId });
+  assert.equal(created.status, 201);
+  await openTeams(page, environment, node);
+  await openBobChat(page);
+  const tab = page.getByTestId('control-tab-assistants');
+  const icon = await tab.locator('svg').innerHTML();
+  await page.getByTestId('team-select').selectOption(created.body.team.id);
+  await page.getByTestId('team-assistants-view').getByRole('heading', { name: 'Team members', exact: true }).waitFor();
+  assert.equal((await tab.innerText()).trim(), 'Assistants');
+  assert.equal(await tab.locator('svg').innerHTML(), icon);
+  await page.getByRole('button', { name: 'Back to Assistants', exact: true }).click();
+  assert.equal(await page.getByTestId('team-select').inputValue(), '');
+  assert.equal(await page.getByTestId('team-assistants-view').isVisible(), false);
+  assert.equal(await page.locator('body').evaluate(body => body.classList.contains('team-context-active')), false);
+  assert.equal(await page.getByRole('button', { name: 'Back to Assistants', exact: true }).isVisible(), false);
+  assert.equal((await api(node, auth, 'GET', `/assistant-teams/${created.body.team.id}`)).status, 200, 'closing does not delete the team');
+  await openBobChat(page);
+  await page.getByTestId('team-select').selectOption(created.body.team.id);
+  await page.getByTestId('team-assistants-view').getByRole('heading', { name: 'Team members', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Back to Assistants', exact: true }).click();
+  assert.equal(await page.getByTestId('team-select').inputValue(), '');
+});
 
 test('a team on this machine takes work from the app: send it, stop a request, run it again', { timeout: 240_000 }, async t => {
   const { page, environment, node } = await nativeUiFixture(t);
