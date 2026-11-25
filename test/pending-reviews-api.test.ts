@@ -75,12 +75,14 @@ async function createFixture(node: TestNode, headers: Record<string, string>): P
   assert.equal(projectResponse.status, 201);
   const { project } = await projectResponse.json() as { project: { id: string } };
   const claudeRoot = path.join(node.root, "claude-sessions");
+  const claudeExecutable = path.join(node.root, "claude");
+  await writeFile(claudeExecutable, '#!/bin/sh\ncase "$1" in\n  --version) echo 0.0.0-fixture ;;\n  auth) echo \'{"loggedIn":true}\' ;;\n  *) exit 1 ;;\nesac\n', { mode: 0o700 });
   const settings = await fetch(`${node.baseUrl}/api/settings`, {
     method: "PUT",
     headers,
     body: JSON.stringify({
       pi: { executable: "", configPath: "", sessionPath: "" },
-      claude: { executable: "", configPath: "", sessionPath: claudeRoot },
+      claude: { executable: claudeExecutable, configPath: node.root, sessionPath: claudeRoot },
     }),
   });
   assert.equal(settings.status, 200);
@@ -140,7 +142,7 @@ test("the pending reviews endpoint groups conversations needing review across pr
     const created = await fetch(`${node.baseUrl}/api/automations?nodeId=${owner.id}`, {
       method: "POST", headers, body: JSON.stringify(input),
     });
-    assert.equal(created.status, 201);
+    assert.equal(created.status, 201, created.ok ? undefined : await created.text());
     const { automation: task } = await created.json() as { automation: { id: string } };
     assert.deepEqual(await pending(), [], "hiding a schedule removes already-pending reviews even with markForReview enabled");
     const hiddenList = await fetch(`${node.baseUrl}/api/projects/${fixture.projectId}/sessions`, { headers: { Cookie: cookie } });

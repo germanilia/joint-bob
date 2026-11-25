@@ -65,7 +65,7 @@ test("a saved command is available on its twin without a sharing action", async 
 
 test("a webhook created from a twin exists only on its selected owner", async () => {
   const created = await api<{ automation: { id: string }; secret: string }>(nodeA, sessionA, "POST", `/automations?nodeId=${nodeB.nodeId}`, {
-    trigger: "webhook", name: "Owned by B", target: { kind: "project", projectId: nodeA.projects[0].id }, enabled: false,
+    trigger: "webhook", name: "Owned by B", target: { kind: "project", projectId: nodeA.projects[0].id, engine: "claude" }, enabled: false,
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const [local, remote] = await Promise.all([

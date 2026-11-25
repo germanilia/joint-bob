@@ -147,6 +147,10 @@ test("picking GLM in a Pi chat adapts inherited reasoning but rejects an explici
   assert.equal(await sendControl({ ...pick, modelId: "glm-5.3" }), undefined);
   assert.equal(opened.shared.session.settings().modelId, "glm-5.3");
   assert.equal(opened.shared.session.settings().reasoning, "low");
+
+  assert.equal(await sendControl({ ...pick, modelId: "glm-5.4" }), undefined);
+  assert.equal(opened.shared.session.settings().modelId, "glm-5.4");
+  assert.equal(opened.shared.session.settings().reasoning, "low");
   await disconnect(opened);
 });
 

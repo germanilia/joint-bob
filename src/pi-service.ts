@@ -40,6 +40,7 @@ import { mcpAgentEnvironment } from './mcp/agent.js';
 import type { ManagedMcpServer } from "./mcp/store.js";
 import { activeMcpServers, activationDecision } from "./resource-activation.js";
 import { createSessionModelRuntime } from "./provider-profiles/pi.js";
+import { SUPPLEMENTAL_MODELS } from "./pi-supplemental-models.js";
 
 export type { PiSessionHandle } from "./pi-session-core.js";
 
@@ -315,7 +316,16 @@ async function availableModelsWithProfiles() {
   const { profileModelRuntime } = await import("./provider-profiles/service.js");
   const seen = new Set(available.map((model) => `${model.provider}/${model.id}`));
   for (const profile of profiles.filter((item) => item.provider === "pi")) {
-    for (const model of await (await profileModelRuntime(profile)).getAvailable()) {
+    const signedInModels = [...await (await profileModelRuntime(profile)).getAvailable()];
+    // The isolated profile runtime checks sign-in without loading local model configuration.
+    // Offer supplements from the execution catalog only for providers with an authenticated profile.
+    const signedInProviders = new Set(signedInModels.map((model) => model.provider));
+    for (const { provider, model } of SUPPLEMENTAL_MODELS) {
+      if (!signedInProviders.has(provider)) continue;
+      const configured = modelRuntime.getModel(provider, model.id);
+      if (configured) signedInModels.push(configured);
+    }
+    for (const model of signedInModels) {
       const key = `${model.provider}/${model.id}`;
       if (!seen.has(key)) { seen.add(key); available.push(model); }
     }
