@@ -405,7 +405,7 @@ export async function listTeamAgentSummaries(teamId: string) {
       };
     }
     const [readinessProblems, attachedSecrets, prefs, logins] = await Promise.all([
-      asNode(() => teamAgentReadiness(profile)),
+      asNode(() => teamAgentReadiness(profile, team.projectId)),
       listAssistantAttachedSecrets(profile, team.projectId),
       resourcePreferencesOf(profile.id),
       assistantLoginProfileIds(profile.id),
@@ -459,7 +459,7 @@ export async function inspectTeamAgent(teamId: string, role: string) {
   const db = await personalAssistantDatabase();
   const { teamAgentReadiness } = await import('./runtime.js');
   const [readinessProblems, attachedSecrets, prefs, logins, files, usage] = await Promise.all([
-    asNode(() => teamAgentReadiness(profile)),
+    asNode(() => teamAgentReadiness(profile, team.projectId)),
     listAssistantAttachedSecrets(profile, team.projectId),
     resourcePreferencesOf(profile.id),
     assistantLoginProfileIds(profile.id),

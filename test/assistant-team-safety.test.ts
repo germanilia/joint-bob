@@ -13,9 +13,10 @@ import { beginPersonalAssistantTurn } from '../src/personal-assistants.js';
 import { promptStarted, promptEnded } from '../src/assistant-collaboration/bridge-tools.js';
 import { requestGuardianReview, pendingGuardianReviews, decideGuardianReview, cancelGuardianReviews } from '../src/guardian/reviews.js';
 import { getGuardianSettings, updateGuardianSettings } from '../src/guardian/settings.js';
+import { DEFAULT_GUARDIAN_SETTINGS } from '../src/guardian/rules.js';
 import { withProductionGuard, productionGuardStatus, PRODUCTION_RULE } from '../src/guardian/production-rule.js';
 import { setClusterAgentPolicy } from '../src/cluster-agent-policy.js';
-import { getSharingCluster } from '../src/cluster-sharing-policy.js';
+import { createSharingCluster, getSharingCluster } from '../src/cluster-sharing-policy.js';
 import { agentPolicyBodySchema } from '../src/relay/resource-policy.js';
 import { enableAutoRespond, DEFAULT_AUTO_RESPOND_INSTRUCTIONS, DEFAULT_AUTO_RESPOND_STOP_INSTRUCTIONS } from '../src/conversation-auto-respond.js';
 import { autoRespondHeldBack } from '../src/server/control-center-watch.js';
@@ -114,4 +115,27 @@ test('real session/CSRF team approval endpoint carries a second human, never con
   assert.ok((await getTeamAssignment(waiting.id))!.subjectId);
   assert.equal((await fetch(routeUrl,{method:'POST',headers,body:JSON.stringify({kind:'new'})})).status,409);
  }finally{cancelGuardianReviews(f.team.projectId,resolved.destination.sessionId);await pending;promptEnded(f.team.projectId,resolved.destination.sessionId,a.requestId);globalThis.fetch=original;updateGuardianSettings(settings);clusterPolicy();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});
+
+test('team readiness accepts default dangerous-commands Guardian rule and team cluster Guardian policy',async()=>{
+ const f=await fixture();
+ const [initial]=await acceptTeamAssignment(f.member,await f.message('/qa check readiness'),['qa'],null);
+ await routeTeamAssignment(initial.id,{kind:'new'});
+ const a=(await getTeamAssignment(initial.id))!,resolved=await teamAssignmentDestination(a);
+ const settings=getGuardianSettings(),cluster=getSharingCluster(f.db,f.team.clusterId);
+ const otherClusterId=randomUUID();
+ try{
+  // Enabling Guardian with its shipped default rules (id: dangerous-commands) satisfies team readiness.
+  updateGuardianSettings({...DEFAULT_GUARDIAN_SETTINGS,enabled:true});
+  assert.doesNotMatch((await teamAgentReadiness(resolved.profile,f.team.projectId)).join(' '),/production.*guard/i);
+  // With local Guardian off and another cluster imposing no Guardian rule, this team's own cluster policy still covers it.
+  updateGuardianSettings({...DEFAULT_GUARDIAN_SETTINGS,enabled:false});
+  createSharingCluster(f.db,{id:otherClusterId,name:'Unprotected cluster'},cluster.managerNodeId!);
+  setClusterAgentPolicy(f.db,cluster.managerNodeId!,otherClusterId,{policy:agentPolicyBodySchema.parse({guardian:null}),sourceRelayNodeId:null},1);
+  setClusterAgentPolicy(f.db,cluster.managerNodeId!,f.team.clusterId,{policy:agentPolicyBodySchema.parse({guardian:{model:'jev',layaUrl:'',rules:[PRODUCTION_RULE]}}),sourceRelayNodeId:null},cluster.managerEpoch);
+  assert.doesNotMatch((await teamAgentReadiness(resolved.profile,f.team.projectId)).join(' '),/production.*guard/i);
+ }finally{
+  updateGuardianSettings(settings);
+  setClusterAgentPolicy(f.db,cluster.managerNodeId!,f.team.clusterId,{policy:agentPolicyBodySchema.parse({}),sourceRelayNodeId:null},cluster.managerEpoch);
+ }
 });
