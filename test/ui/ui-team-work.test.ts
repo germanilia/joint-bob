@@ -65,7 +65,7 @@ test('a team hosted on another machine is in the picker and takes work from here
   await openTeams(page, environment, node);
   const options = await page.getByTestId('team-select').locator('option').allInnerTexts();
   assert.ok(options.includes('Contigos — on Contigos EC2'), options.join(' | '));
-  assert.ok(!options.some(option => /create team on this host/.test(option)), 'the cluster already has a team, on another machine');
+  assert.equal(await page.getByTestId('team-new').count(), 0, 'the cluster already has a team, on another machine');
   await page.getByTestId('team-select').selectOption('remote:remote-team');
   await page.getByTestId('team-assistants-view').getByText(/Hosted on Contigos EC2/).waitFor();
   assert.match(await page.getByTestId('team-assistants-view').innerText(), /coordinator \(lead\) — Bob/);
@@ -93,12 +93,12 @@ test('no second team is offered for a cluster whose machines could not all be re
   await page.route('**/api/team-hub', route => route.fulfill({ json: { teams: [], unreachable } }));
   await openTeams(page, environment, node);
   const options = await page.getByTestId('team-select').locator('option').allInnerTexts();
-  assert.ok(!options.some(option => /create team on this host/.test(option)), options.join(' | '));
+  assert.equal(await page.getByTestId('team-new').count(), 0, options.join(' | '));
   unreachable = [];
   await page.reload();
   await page.waitForFunction(() => !document.body.classList.contains('booting'));
   // The control center comes back by itself after a reload, and the team list fills again.
-  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="team-select"] option')].some(option => /create team on this host/.test(option.textContent ?? '')));
+  await page.getByTestId('team-new').waitFor({ state: 'attached' });
 });
 
 // A team's conversations live in the team's own folder in the Inbox, not mixed into Needs you, Running and To review.
@@ -147,4 +147,17 @@ test('a team\'s conversations are in its own Inbox folder, which opens to all of
     return { folder: m.folderOf(card), names: m.folderNames([card]) };
   }, teamCards[0]);
   assert.deepEqual(marks, { folder: 'Folder team team', names: ['Folder team team'] });
+});
+
+// A team is made by its own button, not by choosing an entry in the Context selector.
+test('a team is created with the New team button, and the selector has no create entry', { timeout: 240_000 }, async t => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  const auth = await signIn(environment, node);
+  await api<any>(node, auth, 'POST', '/clusters', { name: 'Button team' });
+  await openTeams(page, environment, node);
+  assert.deepEqual(await page.getByTestId('team-select').locator('option').allInnerTexts(), ['Select a team']);
+  await page.getByTestId('team-new').click();
+  await page.getByTestId('confirm-accept-button').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="team-select"]')?.selectedOptions[0]?.textContent === 'Button team');
+  assert.equal(await page.getByTestId('team-new').count(), 0, 'the cluster has its team now');
 });

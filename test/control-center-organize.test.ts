@@ -15,6 +15,7 @@ const world: OrganizeWorld = {
   ],
   accounts: [{ id: "gh", label: "GitHub work", provider: "github", projectId: null }, { id: "jb-only", label: "Joint Bob deploy", provider: "custom", projectId: "jb" }],
   agents: [{ id: "pi", label: "Pi" }, { id: "claude", label: "Claude Code" }],
+  assistants: [{ id: "a1", name: "Nordecai" }, { id: "a2", name: "Gmail" }],
 };
 const decision = (kind: BobDecision["kind"]): BobDecision => ({ kind, size: "short", projectId: null, autoRespond: false, confidence: 0.95 });
 const proposal = (intent: Parameters<typeof propose>[0]) => {
@@ -172,4 +173,13 @@ test("work is handed to Bob, new or a conversation the person names, each after 
   assert.equal(started.button, "Start and delegate");
   assert.deepEqual(started.operation, { op: "start-conversation", projectId: "jb", message: "build the menu", delegated: true });
   assert.equal(proposal({ intent: "start-conversation", projectId: "jb", message: "build the menu" }).button, "Start it", "a conversation the person keeps is started as before");
+});
+
+test("renaming an assistant changes the assistant, not a conversation, and refuses a name another assistant has", () => {
+  const found = proposal({ intent: "rename-assistant", assistant: "a1", name: "Mordecai" });
+  assert.deepEqual(found.operation, { op: "rename-assistant", assistantId: "a1", name: "Mordecai" });
+  assert.match(found.text, /Rename the assistant "Nordecai" to "Mordecai"/);
+  assert.match(propose({ intent: "rename-assistant", assistant: "made-up", name: "x" }, world) as string, /could not find/);
+  assert.match(propose({ intent: "rename-assistant", assistant: "a1", name: "gmail" }, world) as string, /already have an assistant/);
+  assert.deepEqual(parseOrganizeIntent('{"intent":"rename-assistant","assistant":"a1","name":"Mordecai"}'), { intent: "rename-assistant", assistant: "a1", name: "Mordecai" });
 });

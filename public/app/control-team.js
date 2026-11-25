@@ -23,7 +23,8 @@ select.setAttribute('aria-label', 'Shared team');
 const error = tagged(makeNode('p'), 'team-error'); error.setAttribute('role', 'alert');
 const saved = makeNode('p'); saved.setAttribute('role', 'status');
 const contextLabel = makeNode('label', 'team-context-label', 'Context ');
-contextLabel.append(select);
+const newTeamButtons = makeNode('span', 'team-new-buttons');
+contextLabel.append(select, newTeamButtons);
 document.querySelector('#controlTabs').before(contextLabel);
 const button = (text, id, fn) => makeButton(text, id, () => Promise.resolve().then(fn).catch(fail));
 const mobileEntry = button('Shared team', 'team-phone-open', async () => { await loadTeams(); showControlView('assistants'); });
@@ -67,6 +68,13 @@ const deleteButton = (teamId, name) => button('Delete team', 'team-delete', asyn
   await api(`/api/team-hub/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
   select.replaceChildren(); await loadTeams(); select.value = ''; select.dispatchEvent(new Event('change'));
 });
+// A team is made by its own button, never by picking an entry in the selector. It is hosted on this machine.
+async function createTeam(cluster) {
+  if (!await confirmAction({ eyebrow: 'Shared team', title: `Create a team for ${cluster.name}?`, message: 'It is hosted on this machine. Add your assistants to it afterwards, each with a role.', confirmLabel: 'Create team' })) return;
+  const result = await api('/api/assistant-teams', { method: 'POST', body: { clusterId: cluster.id } });
+  select.replaceChildren(); await loadTeams();
+  select.value = result.team.id; select.dispatchEvent(new Event('change')); showControlView('assistants');
+}
 async function loadTeams() {
   if (select.options.length) return;
   // Built aside and put in at once: a failed load leaves the list empty, so the next opening tries again.
@@ -74,11 +82,13 @@ async function loadTeams() {
   const [{ clusters }, { teams, unreachable }] = await Promise.all([api('/api/clusters'), api('/api/team-hub')]);
   hubTeams = new Map(teams.map(item => [item.id, item]));
   const options = [new Option(teams.length || clusters.length ? 'Select a team' : 'No cluster yet: create one under Clusters', '')];
+  const creatable = [];
   for (const item of teams) options.push(new Option(item.local ? item.clusterName : `${item.clusterName} — on ${item.hostName}`, item.local ? item.id : `remote:${item.id}`));
   // A team is made on this host only for a cluster that has none anywhere; one whose machines could not all be reached may have one.
-  for (const cluster of clusters) if (!teams.some(item => item.clusterId === cluster.id) && !unreachable.includes(cluster.id)) options.push(new Option(`${cluster.name} — create team on this host`, `create:${cluster.id}`));
+  for (const cluster of clusters) if (!teams.some(item => item.clusterId === cluster.id) && !unreachable.includes(cluster.id)) creatable.push(cluster);
   if (select.options.length) return;
   select.replaceChildren(...options);
+  newTeamButtons.replaceChildren(...creatable.map(cluster => button(`New team for ${cluster.name}`, 'team-new', () => createTeam(cluster))));
   syncMobile();
 }
 async function refresh(force = false) {
@@ -296,14 +306,6 @@ select.addEventListener('change', () => {
   settings.replaceChildren(error, saved);
   setControlContext(select.value);
   if (!select.value) return;
-  if (select.value.startsWith('create:')) {
-    const clusterId = select.value.slice(7);
-    const mine = generation;
-    api('/api/assistant-teams', { method: 'POST', body: { clusterId } }).then(async result => {
-      if (mine !== generation) return;
-      select.replaceChildren(); await loadTeams(); if (mine !== generation) return; select.value = result.team.id; select.dispatchEvent(new Event('change')); showControlView('assistants');
-    }).catch(fail); return;
-  }
   if (select.value.startsWith('remote:')) {
     // A team on another machine: its work is steered from here; its members, Telegram and memory are managed on its host.
     const remote = hubTeams.get(select.value.slice(7)), mine = generation;
