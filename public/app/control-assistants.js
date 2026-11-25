@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { createControlViewElement, currentControlView, registerControlView, showControlView } from "./control-views.js";
 import { openAssistantChat, syncAssistantChat } from "./control-assistants-chat.js";
-import { toast } from "./shell.js";
+import { confirmAction, toast } from "./shell.js";
 
 /*
  * The control center's Assistants: the person's own assistants on every machine of their cluster, as cards. Bob asks them
@@ -59,6 +59,21 @@ async function setMayAsk(card, enabled) {
 
 const handlers = { setMayAsk };
 
+/** Deletes one local assistant after confirmation, then refreshes the cards. */
+async function deleteAssistant(card) {
+  if (!await confirmAction({
+    title: `Delete ${card.name}?`,
+    message: "This removes the assistant, disconnects its Telegram bot, and removes it from any team. Its conversations remain.",
+    confirmLabel: "Delete",
+    destructive: true,
+  })) return;
+  await api(`/api/personal-assistants/${encodeURIComponent(card.id)}`, { method: "DELETE" });
+  assistants = assistants.filter((candidate) => candidate.id !== card.id);
+  renderAll();
+  syncAssistantChat(assistants);
+  toast.info(`Deleted ${card.name}`);
+}
+
 // ── A card ──────────────────────────────────────────────────────────────────────────────────────────────
 
 function lastLine(card) {
@@ -104,6 +119,18 @@ function renderCard(card) {
     setMayAsk(card, !card.askable).catch((error) => toast.error(error.message));
   });
   head.append(el("span", "control-asst-face", card.name.trim().slice(0, 1).toUpperCase() || "?"), name, el("span", "control-spacer"), toggle);
+  if (card.local) {
+    const remove = el("button", "ghost compact control-asst-delete", "Delete");
+    remove.type = "button";
+    remove.dataset.testid = "control-assistant-delete";
+    remove.setAttribute("aria-label", `Delete ${card.name}`);
+    remove.title = `Delete ${card.name}`;
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteAssistant(card).catch((error) => toast.error(error.message));
+    });
+    head.append(remove);
+  }
 
   const has = el("div", "control-asst-has");
   has.dataset.testid = "control-assistant-has";
