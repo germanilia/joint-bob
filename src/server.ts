@@ -1,4 +1,6 @@
+import { configureNetworkDefaults } from "./network-defaults.js";
 import { installServiceLogging } from "./logging.js";
+configureNetworkDefaults();
 import { registerStoredSecretsForLogging } from "./secrets.js";
 // Composition root. Route modules register on the shared Express app when they
 // load, so they are imported here in the original registration order: the /api
