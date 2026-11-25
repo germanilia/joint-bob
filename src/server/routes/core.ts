@@ -14,7 +14,7 @@ import { authenticate, authenticationStatus, AuthError, type AuthSession, type M
 import { appVersion } from "../../changelog.js";
 import { captureClusterRawBody, clusterBodyParserError, rejectEncodedClusterBody, requestCookie, requireCsrf, requireHttpAuth, securityHeaders, sendError } from "../http-auth.js";
 import { emailSchema, loginSchema, passwordChangeSchema, setupSchema } from "../schemas.js";
-import { app, clusterWorkAllowed, codemirrorDir, flags, publicDir } from "../state.js";
+import { apiRateLimiter, app, clusterWorkAllowed, codemirrorDir, flags, publicDir } from "../state.js";
 import { receiveUserReplication, redeemV2Membership } from "../cluster-v2.js";
 import { receiveManagerCertificate } from "../cluster-manager.js";
 import { confirmTwinHttp } from "../twins.js";
@@ -43,7 +43,7 @@ app.use((request, response, next) => {
 });
 // Browsers request /favicon.ico regardless of the <link rel="icon"> tags; without
 // this the path falls through to the SPA and the tab gets HTML instead of an image.
-app.get("/favicon.ico", (_request, response) => {
+app.get("/favicon.ico", apiRateLimiter, (_request, response) => {
   response.type("image/png").sendFile(path.join(publicDir, "icon-192.png"));
 });
 /** Hashes the cached app shell, so changed files rename the cache even when the version stays the same. */
@@ -57,7 +57,7 @@ async function appShellDigest(source: string): Promise<string> {
   return hash.digest("hex").slice(0, 12);
 }
 
-app.get("/sw.js", async (_request, response, next) => {
+app.get("/sw.js", apiRateLimiter, async (_request, response, next) => {
   try {
     const source = await readFile(path.join(publicDir, "sw.js"), "utf8");
     const worker = source.replace(/^const CACHE_NAME = "[^"]+";/, `const CACHE_NAME = "joint-bob-${appVersion()}-${await appShellDigest(source)}";`);
@@ -79,11 +79,11 @@ app.use("/api/cluster", (_request, response, next) => {
 app.use("/api/cluster/v2", rejectEncodedClusterBody);
 app.use(express.json({ limit: "56mb", verify: captureClusterRawBody }));
 app.use(clusterBodyParserError);
-app.post("/api/cluster/v2/membership/redeem", redeemV2Membership);
-app.post("/api/cluster/v2/manager-transfer/certificate", receiveManagerCertificate);
+app.post("/api/cluster/v2/membership/redeem", apiRateLimiter, redeemV2Membership);
+app.post("/api/cluster/v2/manager-transfer/certificate", apiRateLimiter, receiveManagerCertificate);
 app.post("/api/cluster/v2/twins/confirm", confirmTwinHttp);
 
-app.get("/api/auth/status", (request, response) => {
+app.get("/api/auth/status", apiRateLimiter, (request, response) => {
   const session = sessionForId(requestCookie(request, sessionCookieNameFor(viaGateway(request))));
   // A phone session of another user counts as signed out once the owner closes phone sign-in to other users.
   const blocked = session?.isRemoteLogin && viaGateway(request) && !otherUsersMayUsePhone();
@@ -127,7 +127,7 @@ const mfaChallengeSchema = z.object({ challenge: z.string().regex(/^[A-Za-z0-9_-
 const mfaLoginSchema = mfaCodeSchema.extend(mfaChallengeSchema.shape);
 const mfaManagementSchema = mfaPasswordSchema.extend({ code: mfaCodeSchema.shape.code });
 
-app.post("/api/auth/setup", (request, response, next) => {
+app.post("/api/auth/setup", apiRateLimiter, (request, response, next) => {
   try {
     const payload = setupSchema.parse(request.body);
     if (!authenticationStatus().setupRequired) {
@@ -147,7 +147,7 @@ app.post("/api/auth/setup", (request, response, next) => {
   }
 });
 
-app.post("/api/auth/login", async (request, response, next) => {
+app.post("/api/auth/login", apiRateLimiter, async (request, response, next) => {
   try {
     const payload = loginSchema.parse(request.body);
     // Through a relay's phone gateway, MFA is required (D14) and attempts are throttled per
@@ -187,7 +187,7 @@ app.post("/api/auth/login/mfa/setup", (request, response, next) => {
     response.json(beginGatewayMfaSetup(mfaChallengeSchema.parse(request.body).challenge));
   } catch (error) { authError(error, request, response, next); }
 });
-app.post("/api/auth/login/mfa/confirm", (request, response, next) => {
+app.post("/api/auth/login/mfa/confirm", apiRateLimiter, (request, response, next) => {
   try {
     if (!viaGateway(request)) { sendError(response, 404, "Not found"); return; }
     const { challenge, code } = mfaLoginSchema.parse(request.body);
@@ -195,7 +195,7 @@ app.post("/api/auth/login/mfa/confirm", (request, response, next) => {
     sendLogin(request, response, session, recoveryCodes);
   } catch (error) { authError(error, request, response, next); }
 });
-app.post("/api/auth/login/mfa", async (request, response, next) => {
+app.post("/api/auth/login/mfa", apiRateLimiter, async (request, response, next) => {
   try {
     const payload = mfaLoginSchema.parse(request.body);
     const session = await completeMfaLogin(payload.challenge, payload.code, verifyRemoteMfa, authorizeRemoteSignIn);
@@ -210,7 +210,7 @@ app.post("/api/auth/login/mfa", async (request, response, next) => {
 
 // Older nodes still send their one home user here until they upgrade.
 app.post("/api/cluster/v2/user-replication", receiveUserReplication);
-app.use("/api", requireHttpAuth, requireCsrf, adminGate);
+app.use("/api", apiRateLimiter, requireHttpAuth, requireCsrf, adminGate);
 // A visitor's own projects at home travel live: requests about them go home (live-link.ts).
 app.use("/api", relayLiveRequests);
 // A project's routes resolve harness paths and start processes as the project's OS account
@@ -312,7 +312,7 @@ app.post("/api/auth/logout", (request, response) => {
   response.status(204).send();
 });
 
-app.get("/api/auth/sessions", (_request, response) => {
+app.get("/api/auth/sessions", apiRateLimiter, (_request, response) => {
   const session = response.locals.authSession as AuthSession;
   response.json({ currentSessionId: session.id, sessions: listLoginSessions(session.userId) });
 });

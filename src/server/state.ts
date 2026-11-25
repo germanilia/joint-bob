@@ -99,14 +99,14 @@ export const machineRoutes = new Set([
 ]);
 forwardAsyncRouteErrors();
 export const app = express();
-app.use(rateLimit({
+export const apiRateLimiter = rateLimit({
   windowMs: 60_000,
-  limit: 3000,
+  limit: 6000,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   validate: false,
   keyGenerator: (request) => request.ip || request.socket?.remoteAddress || "local",
-}));
+});
 app.use("/api", performanceDiagnostics.middleware);
 export function createApp(): express.Express {
   return app;

@@ -26,7 +26,7 @@ import { getProject } from "../../store.js";
 import { clusterPeerMayAccessProject } from "../cluster-helpers.js";
 import { sendError, requireFeature, Feature } from "../http-auth.js";
 import { listRuntimePeers, runtimeFetch } from "../runtime-peers.js";
-import { app } from "../state.js";
+import { apiRateLimiter, app } from "../state.js";
 import { peerSnapshot, staleSnapshotReason } from "../peer-snapshots.js";
 import { registerGitResourceRoutes } from "../git-resources.js";
 import { registerSkillSharingRoutes } from "../skill-sharing.js";
@@ -304,7 +304,7 @@ function mcpAuthFailure(error: unknown, response: Response, next: NextFunction, 
   next(error);
 }
 
-app.get("/api/resources/mcp/auth", async (request, response, next) => {
+app.get("/api/resources/mcp/auth", apiRateLimiter, async (request, response, next) => {
   try {
     const query = mcpAuthScopeSchema.parse(request.query);
     // Claude failing to start is an answer about this machine, not a failed request.
@@ -316,28 +316,28 @@ app.get("/api/resources/mcp/auth", async (request, response, next) => {
   } catch (error) { mcpAuthFailure(error, response, next, "Invalid MCP sign-in query"); }
 });
 
-app.post("/api/resources/mcp/auth/start", async (request, response, next) => {
+app.post("/api/resources/mcp/auth/start", apiRateLimiter, async (request, response, next) => {
   try {
     const body = mcpAuthServerSchema.parse(request.body);
     response.json(await inMcpAuthScope(body.projectId, (context) => mcpAuth.start(context, body.serverName)));
   } catch (error) { mcpAuthFailure(error, response, next, "Invalid MCP sign-in request"); }
 });
 
-app.post("/api/resources/mcp/auth/finish", async (request, response, next) => {
+app.post("/api/resources/mcp/auth/finish", apiRateLimiter, async (request, response, next) => {
   try {
     const body = mcpAuthFinishSchema.parse(request.body);
     response.json({ server: await mcpAuth.finish(body.flowId, mcpAuthOwner(), body.callbackUrl) });
   } catch (error) { mcpAuthFailure(error, response, next, "Invalid MCP sign-in completion"); }
 });
 
-app.post("/api/resources/mcp/auth/cancel", (request, response, next) => {
+app.post("/api/resources/mcp/auth/cancel", apiRateLimiter, (request, response, next) => {
   try {
     mcpAuth.cancel(mcpAuthCancelSchema.parse(request.body).flowId, mcpAuthOwner());
     response.json({ ok: true });
   } catch (error) { mcpAuthFailure(error, response, next, "Invalid MCP sign-in cancel"); }
 });
 
-app.post("/api/resources/mcp/auth/sign-out", async (request, response, next) => {
+app.post("/api/resources/mcp/auth/sign-out", apiRateLimiter, async (request, response, next) => {
   try {
     const body = mcpAuthServerSchema.parse(request.body);
     await inMcpAuthScope(body.projectId, (context) => mcpAuth.signOut(context, body.serverName));

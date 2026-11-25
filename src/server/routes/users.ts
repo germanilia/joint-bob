@@ -11,7 +11,7 @@ import { createAccountRuntime, deleteAccountRuntime, enableMultiUser, MultiUserS
 import { helperInstalled, multiUserTurnedOn, osNameFor } from "../../account-runtime.js";
 import { sendError } from "../http-auth.js";
 import { forgetAllRoaming } from "../roaming.js";
-import { app } from "../state.js";
+import { apiRateLimiter, app } from "../state.js";
 
 const userId = z.string().min(1).max(64);
 const createSchema = z.object({ username: z.string().trim().min(1).max(28), email: z.string().trim().min(1).max(254) }).strict();
@@ -36,7 +36,7 @@ app.get("/api/users", (_request, response) => {
 });
 
 // Admin-only: the node's Claude subscription for people's accounts. Saved, never shown again.
-app.put("/api/multi-user/claude-token", (request, response, next) => {
+app.put("/api/multi-user/claude-token", apiRateLimiter, (request, response, next) => {
   try {
     const { token } = z.object({ token: z.string().trim().regex(/^\S{20,500}$/, "Paste the token `claude setup-token` printed").nullable() }).strict().parse(request.body);
     const db = settingsDatabase();
@@ -59,7 +59,7 @@ app.post("/api/multi-user/enable", async (_request, response, next) => {
   }
 });
 
-app.post("/api/users", async (request, response, next) => {
+app.post("/api/users", apiRateLimiter, async (request, response, next) => {
   try {
     const session = response.locals.authSession as AuthSession;
     if (!canAddPeople()) { sendError(response, 409, "Set up multi-user mode before adding people"); return; }
@@ -77,7 +77,7 @@ app.post("/api/users", async (request, response, next) => {
   } catch (error) { authFailure(error, response, next); }
 });
 
-app.put("/api/users/:userId", (request, response, next) => {
+app.put("/api/users/:userId", apiRateLimiter, (request, response, next) => {
   try {
     const session = response.locals.authSession as AuthSession;
     const { disabled } = updateSchema.parse(request.body);
@@ -85,7 +85,7 @@ app.put("/api/users/:userId", (request, response, next) => {
   } catch (error) { authFailure(error, response, next); }
 });
 
-app.delete("/api/users/admin-transfer", (_request, response, next) => {
+app.delete("/api/users/admin-transfer", apiRateLimiter, (_request, response, next) => {
   try {
     cancelAdminTransfer((response.locals.authSession as AuthSession).userId);
     response.status(204).send();
@@ -93,7 +93,7 @@ app.delete("/api/users/admin-transfer", (_request, response, next) => {
 });
 
 /** Deleting a person deletes everything they had here. It is typed out, never clicked. */
-app.delete("/api/users/:userId", async (request, response, next) => {
+app.delete("/api/users/:userId", apiRateLimiter, async (request, response, next) => {
   try {
     const session = response.locals.authSession as AuthSession;
     const user = localUser(userId.parse(request.params.userId));
@@ -110,7 +110,7 @@ app.delete("/api/users/:userId", async (request, response, next) => {
   } catch (error) { authFailure(error, response, next); }
 });
 
-app.post("/api/users/:userId/admin-transfer", (request, response, next) => {
+app.post("/api/users/:userId/admin-transfer", apiRateLimiter, (request, response, next) => {
   try {
     offerAdminTransfer(userId.parse(request.params.userId), (response.locals.authSession as AuthSession).userId);
     response.json({ adminTransfer: pendingAdminTransfer() ?? null });
@@ -123,7 +123,7 @@ app.get("/api/account/admin-transfer", (_request, response) => {
   response.json({ offered: !session.isRemoteLogin && pendingAdminTransfer()?.toUserId === session.userId });
 });
 
-app.post("/api/account/admin-transfer/accept", async (_request, response, next) => {
+app.post("/api/account/admin-transfer/accept", apiRateLimiter, async (_request, response, next) => {
   try {
     const session = response.locals.authSession as AuthSession;
     const db = await clusterV2Database();

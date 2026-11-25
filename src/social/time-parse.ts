@@ -116,11 +116,17 @@ function parseDuration(text: string): number | undefined {
 
 function parseTitle(original: string): string | undefined {
   const lead = /\b(?:for|about|to discuss)\s+(?:(?:the|a|an|our)\s+)?/gi;
-  const stop = /\s+(?:on|at|next|this|tomorrow|today|for)\b|[?.!,;]/i;
+  const stopWord = /\b(?:on|at|next|this|tomorrow|today|for)\b/gi;
   for (const match of original.matchAll(lead)) {
     const rest = original.slice(match.index + match[0].length);
-    const end = rest.search(stop);
-    const title = (end === -1 ? rest : rest.slice(0, end)).trim();
+    let end = rest.search(/[?.!,;]/);
+    if (end === -1) end = rest.length;
+    stopWord.lastIndex = 0;
+    let kw: RegExpExecArray | null;
+    while ((kw = stopWord.exec(rest)) !== null && kw.index < end) {
+      if (kw.index > 0 && /\s/.test(rest[kw.index - 1])) { end = kw.index; break; }
+    }
+    const title = rest.slice(0, end).trim();
     if (!title || /^\d/.test(title) || /^(minutes?|mins?|hours?|an?\s+hour|half|quarter|a\s+(?:few|couple))\b/i.test(title)) continue;
     return (title[0].toUpperCase() + title.slice(1)).slice(0, 80);
   }

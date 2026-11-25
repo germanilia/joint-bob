@@ -11,7 +11,7 @@ import { conversationScopeId, getScopeSecretAccounts, persistConversationSecretA
 import { WebhookResourceError } from "../../webhook-resources.js";
 import { listWebhookSkills, uploadWebhookSkill, WEBHOOK_SKILL_MAX_FILES } from "../../webhook-skills.js";
 import { broadcastToAllClients } from "../realtime.js";
-import { app } from "../state.js";
+import { apiRateLimiter, app } from "../state.js";
 import { sendError } from "../http-auth.js";
 import { syncAssistantLoginGrants } from "./assistant-resources.js";
 
@@ -70,7 +70,7 @@ async function askForSecret(assistant: PersonalAssistant, input: { label: string
   return request;
 }
 
-app.post("/api/assistant-agent/setup", async (request, response, next) => {
+app.post("/api/assistant-agent/setup", apiRateLimiter, async (request, response, next) => {
   try {
     const assistantId = response.locals.assistantSetupAgent as string | undefined;
     const assistant = assistantId ? await getPersonalAssistantById(assistantId) : undefined;

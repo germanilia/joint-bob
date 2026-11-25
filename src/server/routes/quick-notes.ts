@@ -13,7 +13,7 @@ import { createQuickNote, deleteQuickNote, getQuickNote, getQuickNoteQueue, list
 import { launchQuickNote, prepareQuickNoteConversation, QuickNoteLaunchError } from "../quick-note-dispatch.js";
 import { sendError } from "../http-auth.js";
 import { quickNotePrepareSchema, quickNoteQueueSchema, quickNoteSchema } from "../schemas.js";
-import { app } from "../state.js";
+import { apiRateLimiter, app } from "../state.js";
 import { peerMayRunHere } from "../cluster-helpers.js";
 
 /** A note in a project the caller can't see is answered as if it didn't exist, and is never
@@ -181,7 +181,7 @@ app.post("/api/cluster/v2/quick-notes/changed", async (request, response, next) 
   } catch (error) { mapV2Error(error, response, next); }
 });
 
-app.post("/api/cluster/v2/quick-notes/action", async (request, response, next) => {
+app.post("/api/cluster/v2/quick-notes/action", apiRateLimiter, async (request, response, next) => {
   try {
     const payload = z.object({ id: z.string().min(1).max(120), action: z.enum(["edit", "delete", "start", "move"]), input: z.union([quickNoteSchema, moveSchema]).optional() }).strict().parse(request.body);
     const note = getQuickNote(payload.id);

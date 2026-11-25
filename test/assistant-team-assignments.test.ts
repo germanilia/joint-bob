@@ -14,9 +14,14 @@ import { promptStarted, promptEnded } from '../src/assistant-collaboration/bridg
 import { saveSecretAccount } from '../src/secrets.js';
 import { systemAiDefaults } from '../src/system-ai-config.js';
 import { save, settingsDatabase } from '../src/settings-store.js';
+import { getClusterNode } from '../src/cluster.js';
+import { setClusterAgentPolicy } from '../src/cluster-agent-policy.js';
+import { agentPolicyBodySchema } from '../src/relay/resource-policy.js';
 
 test('durable acceptance, one acknowledgment, scoped final receipts and unknown delivery holds',async()=>{
  const f=await fixture(); const original=globalThis.fetch; const sends:any[]=[]; let fail=false;
+ // Opt out of default cluster Guardian so background dispatch does not race with simulated turn recovery below.
+ setClusterAgentPolicy(f.db,(await getClusterNode()).id,f.team.clusterId,{policy:agentPolicyBodySchema.parse({guardian:null}),sourceRelayNodeId:null},1);
  globalThis.fetch=async(_url,init)=>{const body=JSON.parse(String(init?.body)); sends.push(body); if(fail)throw new Error('timeout after send'); return Response.json({ok:true,result:{message_id:1000+sends.length}});};
  try {
  const source=await f.message('/qa /product inspect',{message_thread_id:23});
