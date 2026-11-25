@@ -148,7 +148,7 @@ async function teamRoster(teamId: string) {
   const team = await getTeam(teamId), coordinator = await teamCoordinator(team), host = await (await import('../../cluster.js')).getClusterNode();
   return { host: { id: host.id, name: host.name }, coordinatorRole: coordinator, members: await Promise.all((await listTeamAgents(teamId)).map(async item => {
     const profile = await getPersonalAssistantById(item.assistantId);
-    return { role: item.role, name: profile?.name ?? null, coordinator: item.role === coordinator, ready: profile ? !(await asNode(() => teamAgentReadiness(profile))).length : false, uses: profile ? await assistantUses(profile) : [] };
+    return { role: item.role, name: profile?.name ?? null, coordinator: item.role === coordinator, ready: profile ? !(await asNode(() => teamAgentReadiness(profile, team.projectId))).length : false, uses: profile ? await assistantUses(profile) : [] };
   })) };
 }
 const memberSummary = async (profile: PersonalAssistant) => ({ id: profile.id, name: profile.name, ownerAccountId: profile.accountId, uses: await assistantUses(profile) });
@@ -158,7 +158,7 @@ app.get('/api/assistant-teams/:id/agents', route(async (request, response) => {
   return { revision: team.revision, coordinatorRole: coordinator, agents: await Promise.all((await listTeamAgents(teamId)).map(async item => {
     const profile = await getPersonalAssistantById(item.assistantId);
     if (!profile) return { ...item, coordinator: item.role === coordinator, profile: null, readiness: ['This assistant was deleted'] };
-    return { ...item, coordinator: item.role === coordinator, profile: await memberSummary(profile), readiness: await asNode(() => teamAgentReadiness(profile)) };
+    return { ...item, coordinator: item.role === coordinator, profile: await memberSummary(profile), readiness: await asNode(() => teamAgentReadiness(profile, team.projectId)) };
   })) };
 }));
 // For now members come from the team's own machine: the assistants you own there.

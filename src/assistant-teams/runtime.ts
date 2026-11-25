@@ -83,10 +83,10 @@ export async function teamQueuedTurn(projectId: string, conversationId: string, 
   if (!turn || turn.status !== 'running' || turn.message !== message) throw new TeamError('Team queue requires the server-issued running turn', 403);
   return validated;
 }
-export async function teamAgentReadiness(profile: PersonalAssistant): Promise<string[]> {
+export async function teamAgentReadiness(profile: PersonalAssistant, teamProjectId?: string): Promise<string[]> {
   // Pi's built-in write/edit tools are effect-capable even when the terminal is disabled.
   const { productionGuard } = await import('../guardian/settings.js');
-  if (await productionGuard() !== 'on') return ['Production-capable team work is blocked: enable the production Guardian guard'];
+  if (await productionGuard(teamProjectId) !== 'on') return ['Production-capable team work is blocked: enable the production Guardian guard'];
   if (profile.nodeId !== (await getClusterNode()).id) return ['This assistant is on another machine'];
   if (!listLocalUsers().some(user => user.accountId === profile.accountId && !user.disabled)) return ["The assistant's owner account is unavailable"];
   if (!profile.executionSettings) return ['Select a local runtime and model'];

@@ -283,7 +283,7 @@ async function dispatch(a:TeamAssignment):Promise<void> {
  try {
   const db=await assignmentDatabase(),w=work(db,a.id);if(!w||w.phase!=='queued'||!a.subjectId)return;
   try {await requireTeamExecution(a.teamId,a.requestedBy);}catch{a.state='cancelled';w.phase='held';w.reason='membership_removed_before_dispatch';transaction(db,()=>{saveAssignment(db,a);saveWork(db,w);});return;}
-  const resolved=await teamAssignmentDestination(a),problems=await asNode(()=>teamAgentReadiness(resolved.profile));
+  const resolved=await teamAssignmentDestination(a),problems=await asNode(()=>teamAgentReadiness(resolved.profile,resolved.team.projectId));
   if(problems.length){w.reason=problems.join('\n');saveWork(db,w);throw new TeamError(w.reason,503);}
   if(!a.parentId){w.originalMaterial??=w.message;w.message=await teamExecutionEvidence(a,w.originalMaterial);}
   a.state='running';w.phase='dispatched';w.reason=null;

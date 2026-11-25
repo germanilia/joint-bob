@@ -34,18 +34,24 @@ export function isSevereToolRule(rule: GuardianRule): boolean {
 
 export type ProductionGuardStatus = "on" | "guardian-off" | "rule-off" | "rule-missing";
 
+/** Whether a rule is one of the shipped production/severe-action guard rules. */
+function isProductionGuardRule(rule: GuardianRule): boolean {
+  return rule.id === PRODUCTION_RULE_ID || isSevereToolRule(rule);
+}
+
 /** Whether an enabled production rule acts on commands. Preserve coverage for customized legacy rules. */
 export function actsOnProduction(rule: GuardianRule): boolean {
-  return rule.id === PRODUCTION_RULE_ID && rule.enabled && (rule.ifYes === "ask" || rule.ifYes === "block")
-    && (rule.check === "commands" || rule.check === "all") && (isSevereToolRule(rule) || rule.question === LEGACY_PRODUCTION_RULE.question);
+  return rule.enabled && (rule.ifYes === "ask" || rule.ifYes === "block")
+    && (rule.check === "commands" || rule.check === "all")
+    && (isSevereToolRule(rule) || (rule.id === PRODUCTION_RULE_ID && rule.question === LEGACY_PRODUCTION_RULE.question));
 }
 
 /** Whether Guardian protects against severe tool actions on this machine. */
 export function productionGuardStatus(settings: GuardianSettings): ProductionGuardStatus {
   if (!settings.enabled) return "guardian-off";
-  const rule = settings.rules.find((candidate) => candidate.id === PRODUCTION_RULE_ID);
-  if (!rule) return "rule-missing";
-  return actsOnProduction(rule) ? "on" : "rule-off";
+  const rules = settings.rules.filter(isProductionGuardRule);
+  if (!rules.length) return "rule-missing";
+  return rules.some(actsOnProduction) ? "on" : "rule-off";
 }
 
 /** Turn on Guardian with its shipped severe-action rule. Leave the other settings alone. */

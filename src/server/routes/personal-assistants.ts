@@ -253,7 +253,7 @@ async function processAssistantTurn(accountId: string, entry: AssistantEntry, se
     if (options?.team) {
       const { team, member, profile, destination } = await teamAssignmentDestination(options.team.assignment);
       if (profile.id !== entry.id || profile.accountId !== accountId || input.requestId !== options.team.assignment.requestId) throw new Error('Team assignment does not match assistant turn');
-      const problems = await teamAgentReadiness(profile);
+      const problems = await teamAgentReadiness(profile, team.projectId);
       if (problems.length) throw new TeamError(problems.join('\n'), 503);
       if (profile.executionSettings) await validateExecutionSettings(profile.executionSettings);
       // Team work runs in the assistant's own project.
