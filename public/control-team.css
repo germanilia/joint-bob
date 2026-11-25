@@ -41,3 +41,5 @@
 .team-work-list { display: flex; flex-direction: column; gap: 8px; }
 .team-work-row { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .team-work-row[data-state="stopped"] { border-color: var(--danger, currentColor); }
+
+.team-new-buttons { display: flex; flex-wrap: wrap; gap: 6px; }

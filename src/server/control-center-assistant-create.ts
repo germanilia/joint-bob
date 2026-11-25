@@ -20,14 +20,14 @@ import { enableAutoRespond, onAutoRespondStopped } from "../conversation-auto-re
 import { ensureConversationRecord } from "../conversation-records.js";
 import { ensureSessionTitle } from "../names.js";
 import { resourceOwner } from "../ownership.js";
-import { listPersonalAssistants, personalAssistantDatabase, savePersonalAssistant } from "../personal-assistants.js";
+import { getPersonalAssistant, listPersonalAssistants, personalAssistantDatabase, savePersonalAssistant } from "../personal-assistants.js";
 import { listWorkspaces } from "../store.js";
 import type { HarnessId, ProjectRecord } from "../types.js";
 import { delegatedBrief } from "./control-center-start.js";
 import { queueConversationPrompt } from "./conversation-prompt.js";
 import { iconHarnessId } from "./label-icon.js";
 import { projectsWithSharedNames } from "./projects.js";
-import { createProjectAsActor } from "./routes/projects.js";
+import { createProjectAsActor, renameConversationAsActor } from "./routes/projects.js";
 
 /** The project every assistant Bob creates lives in. It is the person's own, made the first time they ask for an assistant. */
 export const ASSISTANTS_PROJECT = "Assistants";
@@ -89,6 +89,17 @@ export async function createAssistantWithSetup(session: AuthSession, settings: B
   await queueConversationPrompt({ projectId: project.id, engine: harnessId, sessionId, message: delegatedBrief(assistantSetupBrief(name, purpose)), requestId: randomUUID(), label: "Bob", until: "started" });
   announceAssistantChanges();
   return { project, assistantId: assistant.id };
+}
+
+/** Gives an assistant a new name, and its first conversation, which carries the name, the same one. Names stay unique among the person's assistants. */
+export async function renameAssistantAsActor(accountId: string, assistantId: string, name: string): Promise<{ name: string; projectId: string }> {
+  const assistant = await getPersonalAssistant(accountId, assistantId);
+  if (!assistant) throw new Error("That assistant is no longer here");
+  if ((await listPersonalAssistants(accountId)).some((other) => other.id !== assistant.id && other.name.toLowerCase() === name.toLowerCase())) throw new Error(`You already have an assistant called "${name}"`);
+  const saved = await savePersonalAssistant(accountId, { ...assistant, name }, assistant.id);
+  await renameConversationAsActor(assistant.projectId, { engine: assistant.engine, sessionId: assistant.sessionId, title: name });
+  announceAssistantChanges();
+  return { name: saved.name, projectId: saved.projectId };
 }
 
 // The setup ends when Bob finds the assistant ready for review: from then on its agent can no longer change the assistant.

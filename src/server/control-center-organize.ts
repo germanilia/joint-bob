@@ -38,7 +38,8 @@ import { listDiscoveredHarnesses } from "../harnesses/registry.js";
 import { listSecretAccounts } from "../secrets.js";
 import { runGitReview } from "./git-review-run.js";
 import { iconHarnessId } from "./label-icon.js";
-import { ASSISTANTS_PROJECT, createAssistantWithSetup } from "./control-center-assistant-create.js";
+import { ASSISTANTS_PROJECT, createAssistantWithSetup, renameAssistantAsActor } from "./control-center-assistant-create.js";
+import { listPersonalAssistants } from "../personal-assistants.js";
 import { agentFor } from "../background-agent.js";
 import { projectsWithSharedNames } from "./projects.js";
 import { createProjectAsActor, deleteProjectAsActor, markConversationDoneAsActor, renameConversationAsActor, updateProjectAsActor } from "./routes/projects.js";
@@ -69,6 +70,7 @@ export const organizeIntentSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("delete-conversation"), conversation: id }),
   z.object({ intent: z.literal("delegate-conversation"), conversation: id, message: z.string().trim().min(1).max(20_000).nullable() }),
   z.object({ intent: z.literal("summarize-conversations"), conversations: z.array(id).min(1).max(10) }),
+  z.object({ intent: z.literal("rename-assistant"), assistant: id, name: z.string().trim().min(1).max(60) }),
   z.object({ intent: z.literal("create-assistant"), name: z.string().trim().min(1).max(60), purpose: z.string().trim().min(1).max(8000), cluster: id.nullable().optional() }),
   ...operateIntentShapes,
   ...teamIntentShapes,
@@ -95,6 +97,8 @@ export interface OrganizeWorld {
   /** The secret accounts the person may attach (a project's own only in that project), and the agents this machine runs. */
   accounts: Array<{ id: string; label: string; provider: string; projectId: string | null }>;
   agents: Array<{ id: string; label: string }>;
+  /** The person's own assistants, which Bob can rename. */
+  assistants?: Array<{ id: string; name: string }>;
   /** The clusters the person joined on this machine, which a new assistant can be made for. */
   clusters?: Array<{ id: string; name: string }>;
   /** The teams of those clusters, on whichever machine hosts each: Bob may send them work. */
@@ -119,6 +123,7 @@ const INSTRUCTIONS = [
   '{"intent":"delete-conversation","conversation":"<key>"} to delete it for good.',
   '{"intent":"delegate-conversation","conversation":"<key>","message":"what the user wants done in it, in their words, or null"} when the user hands one of their conversations over to you to drive to the end ("delegate it to Bob", "take full control", "see it through and bring it back for review"). Use message-conversation instead when they only want it asked or told something.',
   '{"intent":"summarize-conversations","conversations":["<key>", ...]} to write or bring up to date the summary of one or more listed conversations (at most 10), when the user asks for their summaries or to update them. A question about why a summary is missing is not a request to write one.',
+  '{"intent":"rename-assistant","assistant":"<assistant id>","name":"..."} when the user wants one of the assistants listed to be called something else. An assistant is not a conversation: "he should be called X" about an assistant is this, not rename-conversation.',
   '{"intent":"create-assistant","name":"a short name for it, such as \\"LinkedIn poster\\"","purpose":"what the user wants it to be able to do, in their words"} when the user asks you to create, make or set up a new assistant (a long-lived helper with its own sign-ins and skills) for some job. Add "cluster":"<cluster id>" only when the user says the assistant is for one of the clusters listed (for the team, for everyone in it); leave it out for an assistant of their own. A request for work to be done once is start-conversation, not this.',
   ...OPERATE_INSTRUCTIONS,
   ...TEAM_INSTRUCTIONS,
@@ -132,6 +137,7 @@ function context(world: OrganizeWorld, message: string, recentChat: string[]): s
     "", "Projects (id | name | workspace id):", ...(world.projects.length ? world.projects.map((project) => `- ${project.id} | ${project.name} | ${project.workspaceId}`) : ["- none"]),
     "", "Conversations (key | project | agent | title):", ...(world.conversations.length ? world.conversations.map((entry) => `- ${entry.key} | ${entry.projectName} | ${entry.engine} | ${entry.title}`) : ["- none"]),
     "", "Agents (id | name):", ...(world.agents.length ? world.agents.map((agent) => `- ${agent.id} | ${agent.label}`) : ["- none"]),
+    ...(world.assistants?.length ? ["", "Assistants (id | name):", ...world.assistants.map((assistant) => `- ${assistant.id} | ${assistant.name}`)] : []),
     ...(world.clusters?.length ? ["", "Clusters (id | name):", ...world.clusters.map((cluster) => `- ${cluster.id} | ${cluster.name}`)] : []),
     ...(world.teams?.length ? ["", "Teams (team id | cluster | machine | members, the first being the coordinator):", ...world.teams.map((team) => `- ${team.id} | ${team.name} | ${team.host} | ${[team.coordinator, ...team.roles.filter((role) => role !== team.coordinator)].filter(Boolean).join(", ")}`)] : []),
     "", "Secret accounts (id | label | kind):", ...(world.accounts.length ? world.accounts.map((account) => `- ${account.id} | ${account.label} | ${account.provider}`) : ["- none"]),
@@ -263,6 +269,7 @@ async function worldFor(session: AuthSession, message: string, teams: TeamWorld[
       conversations: listed.map((entry, index) => ({ key: `conversation_${index + 1}`, ...entry })),
       accounts: accounts.map((account) => ({ id: account.id, label: account.label, provider: account.provider, projectId: account.projectId ?? null })),
       agents: listDiscoveredHarnesses().filter((adapter) => adapter.runtime).map((adapter) => ({ id: adapter.id, label: adapter.label })),
+      assistants: (await listPersonalAssistants(session.accountId)).map((assistant) => ({ id: assistant.id, name: assistant.name })),
       clusters: await joinedClusters(session.accountId),
       teams,
     };
@@ -306,6 +313,7 @@ const operationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("close-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, title: z.string() }),
   messageOperation,
   z.object({ op: z.literal("delete-conversation"), projectId: id, engine: z.string().min(1), sessionId: id, title: z.string() }),
+  z.object({ op: z.literal("rename-assistant"), assistantId: id, name: z.string().min(1).max(60) }),
   z.object({ op: z.literal("create-assistant"), name: z.string().min(1).max(60), purpose: z.string().min(1).max(8000), clusterId: id.optional(), clusterName: z.string().optional() }),
 ]);
 type Operation = z.infer<typeof operationSchema>;
@@ -387,6 +395,12 @@ export function propose(intent: Exclude<OrganizeIntent, { intent: "none" | "summ
       const found = conversation(intent.conversation);
       if (!found) return "I could not find that conversation.";
       return { text: `Delete the conversation "${found.title}" in ${found.projectName}? Its whole history goes, and it cannot be brought back.`, button: "Delete it", danger: true, operation: { op: "delete-conversation", projectId: found.projectId, engine: found.engine, sessionId: found.sessionId, title: found.title }, project: { id: found.projectId, name: found.projectName } };
+    }
+    case "rename-assistant": {
+      const found = world.assistants?.find((entry) => entry.id === intent.assistant);
+      if (!found) return "I could not find that assistant.";
+      if (world.assistants?.some((entry) => entry.id !== found.id && entry.name.toLowerCase() === intent.name.toLowerCase())) return `You already have an assistant called "${intent.name}".`;
+      return { text: `Rename the assistant "${found.name}" to "${intent.name}"?`, button: "Rename it", danger: false, operation: { op: "rename-assistant", assistantId: found.id, name: intent.name }, project: null };
     }
     case "create-assistant": {
       const cluster = intent.cluster ? world.clusters?.find((entry) => entry.id === intent.cluster) : undefined;
@@ -633,6 +647,10 @@ async function run(session: AuthSession, settings: BobSettings, operation: Opera
         ? `"${operation.title}" is mine to drive now. I'll bring it back when it is ready for review, or when it needs something only you can give.`
         : `Sent to "${operation.title}". I'll bring you its answer here when it is done.`;
       return { text, project: { id: project.id, name: project.name } };
+    }
+    case "rename-assistant": {
+      const assistant = await renameAssistantAsActor(session.accountId, operation.assistantId, operation.name);
+      return { text: `Renamed the assistant to "${assistant.name}".`, project: { id: assistant.projectId, name: (await getProject(assistant.projectId))?.name ?? "" } };
     }
     case "create-assistant": {
       const { project } = await createAssistantWithSetup(session, settings, operation.name, operation.purpose, operation.clusterId);
