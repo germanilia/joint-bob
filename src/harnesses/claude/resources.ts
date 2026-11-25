@@ -97,17 +97,25 @@ export function claudeEnterpriseMcpPath(): string {
 export function claudePluginMcpServers(plugin: string, cwd: string): Record<string, unknown> {
   if (plugin.endsWith(".zip")) throw new Error("Strict isolation cannot load zipped Claude plugins; unpack the managed plugin first");
   const manifest = json(path.join(plugin, ".claude-plugin/plugin.json"));
-  const agentRoots = [path.join(plugin, "agents"), ...[manifest.agents].flat().filter((value): value is string => typeof value === "string").map((value) => path.resolve(plugin, value))];
+  const pluginBase = path.resolve(plugin);
+  const insidePlugin = (candidate: string): string => {
+    const resolved = path.resolve(pluginBase, candidate);
+    if (resolved !== pluginBase && !resolved.startsWith(`${pluginBase}${path.sep}`)) throw new Error(`Plugin path escapes plugin root: ${candidate}`);
+    return resolved;
+  };
+  const agentRoots = [path.join(pluginBase, "agents"), ...[manifest.agents].flat().filter((value): value is string => typeof value === "string").map((value) => insidePlugin(value))];
   for (const root of agentRoots) for (const file of managedMarkdownFiles(root)) {
-    const frontmatter = fs.readFileSync(file, "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    const resolvedFile = path.resolve(file);
+    if (!resolvedFile.startsWith(`${pluginBase}${path.sep}`)) continue;
+    const frontmatter = fs.readFileSync(resolvedFile, "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (frontmatter && object(parseYaml(frontmatter[1])).mcpServers !== undefined) throw new Error(`Strict isolation does not support agent frontmatter mcpServers: ${file}. Move these servers to the managed plugin MCP config.`);
   }
   const load = (file: string): Record<string, unknown> => { const config = json(file); return object(config.mcpServers ?? config); };
-  const servers = load(path.join(plugin, ".mcp.json"));
+  const servers = load(path.join(pluginBase, ".mcp.json"));
   for (const source of [manifest.mcpServers ?? []].flat()) {
     if (typeof source === "string") {
       if (/\.mcpb$|:\/\//i.test(source)) throw new Error(`Strict isolation does not support MCP bundles: ${plugin}`);
-      Object.assign(servers, load(path.resolve(plugin, source)));
+      Object.assign(servers, load(insidePlugin(source)));
     } else Object.assign(servers, object(source));
   }
   if (!Object.keys(servers).length) return {};

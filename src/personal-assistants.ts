@@ -135,7 +135,12 @@ export async function savePersonalAssistant(accountId: string, input: { projectI
 export async function deletePersonalAssistant(accountId: string, id: string): Promise<boolean> {
   const db = await database();
   const result = db.prepare("DELETE FROM personal_assistants WHERE account_id = ? AND id = ?").run(accountId, id);
-  if (result.changes) rmSync(path.join(resolveDataDirectory(), "personal-assistant-images", id), { recursive: true, force: true });
+  if (result.changes) {
+    const base = path.resolve(resolveDataDirectory(), "personal-assistant-images");
+    const target = path.resolve(base, id);
+    if (!target.startsWith(`${base}${path.sep}`)) throw new Error("Invalid assistant id");
+    rmSync(target, { recursive: true, force: true });
+  }
   return Boolean(result.changes);
 }
 export async function listPersonalAssistantTopics(accountId: string, assistantId: string): Promise<PersonalAssistantTopic[] | undefined> {
@@ -255,10 +260,16 @@ export async function saveItem(accountId: string, assistantId: string, input: { 
     return { name: `${index}.${extension}`, bytes };
   });
   if (decoded.reduce((total, image) => total + image.bytes.length, 0) > 20 * 1024 * 1024) throw new Error("Images exceed 20 MiB");
-  const directory = imagesPath(assistantId, id);
+  const base = path.resolve(resolveDataDirectory(), "personal-assistant-images");
+  const directory = path.resolve(imagesPath(assistantId, id));
+  if (!directory.startsWith(`${base}${path.sep}`)) throw new Error("Invalid assistant image path");
   try {
     if (decoded.length) mkdirSync(directory, { recursive: true, mode: 0o700 });
-    for (const image of decoded) writeFileSync(path.join(directory, image.name), image.bytes, { mode: 0o600 });
+    for (const image of decoded) {
+      const target = path.resolve(directory, image.name);
+      if (!target.startsWith(`${directory}${path.sep}`)) throw new Error("Invalid assistant image path");
+      writeFileSync(target, image.bytes, { mode: 0o600 });
+    }
     db.prepare("INSERT INTO personal_assistant_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(id, assistantId, input.collection, input.title, input.url, input.note, JSON.stringify(decoded.map(image => image.name)), new Date().toISOString());
   } catch (error) { rmSync(directory, { recursive: true, force: true }); throw error; }
   return (await listSavedItems(accountId, assistantId))!.find(entry => entry.id === id);
@@ -267,14 +278,22 @@ export async function deleteItem(accountId: string, assistantId: string, itemId:
   if (!await getPersonalAssistant(accountId, assistantId)) return false;
   const db = await database();
   const result = db.prepare("DELETE FROM personal_assistant_items WHERE id = ? AND assistant_id = ?").run(itemId, assistantId);
-  if (result.changes) rmSync(imagesPath(assistantId, itemId), { recursive: true, force: true });
+  if (result.changes) {
+    const base = path.resolve(resolveDataDirectory(), "personal-assistant-images");
+    const target = path.resolve(imagesPath(assistantId, itemId));
+    if (!target.startsWith(`${base}${path.sep}`)) throw new Error("Invalid assistant image path");
+    rmSync(target, { recursive: true, force: true });
+  }
   return Boolean(result.changes);
 }
 export async function savedImage(accountId: string, assistantId: string, itemId: string, name: string): Promise<{ bytes: Buffer; mimeType: string } | undefined> {
   const item = (await listSavedItems(accountId, assistantId))?.find(entry => entry.id === itemId);
   if (!item?.imageNames.includes(name)) return undefined;
   const mimeType = name.endsWith(".png") ? "image/png" : name.endsWith(".jpg") ? "image/jpeg" : "image/webp";
-  return { bytes: readFileSync(path.join(imagesPath(assistantId, itemId), name)), mimeType };
+  const base = path.resolve(resolveDataDirectory(), "personal-assistant-images");
+  const target = path.resolve(imagesPath(assistantId, itemId), name);
+  if (!target.startsWith(`${base}${path.sep}`)) return undefined;
+  return { bytes: readFileSync(target), mimeType };
 }
 
 export async function personalAssistantToolBaseline(accountId: string, assistantId: string, engine: string, sessionId: string, currentTools: string[]): Promise<string[]> {

@@ -133,7 +133,8 @@ export async function sharedPrivateAttachment(peer:string,projectId:string,engin
  const permission=await transcriptPrivacy(peer,true);
  const session=await sourceTranscript(peer,projectId,engine,sessionId);
  if(!session||!permission(sessionId)||!permission(session.conversationId))throw new ClusterV2HttpError(404,'Attachment not found');
- const directory=attachmentDirectory(session.conversationId),file=path.join(directory,privateAttachmentName.parse(name));
+ const directory=path.resolve(attachmentDirectory(session.conversationId)),file=path.resolve(directory,privateAttachmentName.parse(name));
+ if(!file.startsWith(`${directory}${path.sep}`))throw new ClusterV2HttpError(404,'Attachment not found');
  const info=await lstat(file).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;});
  if(!info?.isFile()||await realpath(file)!==path.join(await realpath(resolveDataDirectory()),path.relative(resolveDataDirectory(),file)))throw new ClusterV2HttpError(404,'Attachment not found');
  return file;
@@ -539,7 +540,9 @@ async function acceptOwnerTranscriptNow(db:DatabaseSync,peerId:string,projectId:
   await clearConflict(db,peerId,projectId,engine,sessionId);
   throw new ClusterV2HttpError(409,'The other machine\'s copy is being fetched again; check again shortly');
  }
- const saved=conflictFile(peerId,engine,sessionId,`.local-${new Date().toISOString().replace(/[:.]/g,'-')}`),temporary=`${row.path}.${randomUUID()}.tmp`;
+ const saved=path.resolve(conflictFile(peerId,engine,sessionId,`.local-${new Date().toISOString().replace(/[:.]/g,'-')}`)),temporary=`${row.path}.${randomUUID()}.tmp`;
+ const dataRoot=path.resolve(resolveDataDirectory());
+ if(!saved.startsWith(`${dataRoot}${path.sep}`))throw new ClusterV2HttpError(400,'Invalid conflict backup path');
  await copyFile(row.path,saved,constants.COPYFILE_EXCL);
  try{
   await copyFile(row.artifact,temporary,constants.COPYFILE_EXCL);

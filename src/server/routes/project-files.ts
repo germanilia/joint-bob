@@ -13,7 +13,7 @@ import { getRuntimePeer, runtimeFetch } from "../runtime-peers.js";
 import { ConversationOwnershipError } from "../../conversation-ownership.js";
 import { listHarnessSessions } from "../../harnesses.js";
 import { getProject } from "../../store.js";
-import { projectWorktreeRoot } from "../../project-worktrees.js";
+import { projectWorktreeRoot, worktreeRoot } from "../../project-worktrees.js";
 import { TICKET_BASELINE_DIR, TICKET_MERGE_DIR } from "../../task-workspaces.js";
 import type { ProjectRecord } from "../../types.js";
 import { sendError } from "../http-auth.js";
@@ -95,8 +95,11 @@ async function searchProjectFile(projectRoot: string, requestedPath: string): Pr
 
 /** The project's worktree folder that holds `file`, or null when it is in none of them. */
 async function worktreeContaining(projectId: string, file: string): Promise<string | null> {
+  const base = path.resolve(worktreeRoot());
+  const projectWorktrees = path.resolve(projectWorktreeRoot(projectId));
+  if (!projectWorktrees.startsWith(`${base}${path.sep}`)) return null;
   let root: string;
-  try { root = await realpath(projectWorktreeRoot(projectId)); }
+  try { root = await realpath(projectWorktrees); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -516,8 +519,10 @@ async function resolveProjectDirectory(projectId: string, requestedDir: string):
   if (dirValue.length > 2000) throw new ProjectFileError(400, "Directory path is too long");
   if (portablePathParts(dirValue).includes("..")) throw new ProjectFileError(403, "Directory is outside the project directory");
   const projectRoot = await resolutionRoot(projectId, project.path);
+  const candidate = path.resolve(projectRoot, dirValue.replace(/\\/g, path.sep) || ".");
+  if (candidate !== projectRoot && !candidate.startsWith(`${projectRoot}${path.sep}`)) throw new ProjectFileError(403, "Directory is outside the project directory");
   let resolved: string;
-  try { resolved = await realpath(path.resolve(projectRoot, dirValue.replace(/\\/g, path.sep) || ".")); }
+  try { resolved = await realpath(candidate); }
   catch (error) {
     if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw new ProjectFileError(404, "Directory not found");
     throw error;

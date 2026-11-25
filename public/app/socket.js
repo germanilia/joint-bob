@@ -841,9 +841,8 @@ const INVALIDATION_HANDLERS = {
 
 /** Runs the loader for an invalidation notice; false when the payload is not one. */
 function handleInvalidation(payload) {
-  const handler = INVALIDATION_HANDLERS[payload.type];
-  if (!handler) return false;
-  handler(payload);
+  if (!Object.hasOwn(INVALIDATION_HANDLERS, payload.type)) return false;
+  INVALIDATION_HANDLERS[payload.type](payload);
   return true;
 }
 

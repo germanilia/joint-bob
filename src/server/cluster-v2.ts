@@ -181,7 +181,9 @@ export function mapV2Error(error: unknown, response: Response, next: NextFunctio
   if (!(error instanceof Error)) { next(error); return; }
   const message = error.message;
   if (/expired|already used/i.test(message)) { sendError(response, 410, message); return; }
-  if (/invalid .*?(secret|proof|fingerprint|signature)/i.test(message)) { sendError(response, 401, "Unauthorized"); return; }
+  const lowerMessage = message.toLowerCase();
+  const invalidAt = lowerMessage.indexOf("invalid ");
+  if (invalidAt !== -1 && /(?:secret|proof|fingerprint|signature)/.test(lowerMessage.slice(invalidAt + 8))) { sendError(response, 401, "Unauthorized"); return; }
   if (/Unknown manager transfer/i.test(message)) { sendError(response, 404, "Unknown manager transfer"); return; }
   if (/Unknown (cluster|membership snapshot)/i.test(message)) { sendError(response, 404, "Unknown cluster"); return; }
   if (/not found/i.test(message)) { sendError(response, 404, message); return; }

@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import express from "express";
+import { rateLimit } from "express-rate-limit";
 import WebSocket, { WebSocketServer } from "ws";
 import { performanceDiagnostics } from "./performance-diagnostics.js";
 import { forwardAsyncRouteErrors } from "./error-capture.js";
@@ -98,6 +99,14 @@ export const machineRoutes = new Set([
 ]);
 forwardAsyncRouteErrors();
 export const app = express();
+app.use(rateLimit({
+  windowMs: 60_000,
+  limit: 3000,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  validate: false,
+  keyGenerator: (request) => request.ip || request.socket?.remoteAddress || "local",
+}));
 app.use("/api", performanceDiagnostics.middleware);
 export function createApp(): express.Express {
   return app;

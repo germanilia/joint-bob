@@ -140,9 +140,15 @@ function publicWebhookSkill(skill: Awaited<ReturnType<typeof uploadWebhookSkill>
   return metadata;
 }
 
+function stripTrailingEquals(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 61) end -= 1;
+  return value.slice(0, end);
+}
+
 function decodeResourceData(data: string): Buffer {
   const decoded = Buffer.from(data, "base64");
-  if (decoded.toString("base64").replace(/=+$/, "") !== data.replace(/=+$/, "")) throw new WebhookError(400, "Resource data is not valid base64");
+  if (stripTrailingEquals(decoded.toString("base64")) !== stripTrailingEquals(data)) throw new WebhookError(400, "Resource data is not valid base64");
   return decoded;
 }
 

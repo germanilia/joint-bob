@@ -157,7 +157,7 @@ app.use((error: unknown, request: Request, response: Response, _next: NextFuncti
     return;
   }
   if (response.headersSent) {
-    console.error(`${request.method} ${request.path} failed after its response started`, error);
+    console.error("%s %s failed after its response started", request.method, request.path, error);
     response.end();
     return;
   }
@@ -184,6 +184,6 @@ app.use((error: unknown, request: Request, response: Response, _next: NextFuncti
     return;
   }
   const conflict = error instanceof ConversationTransferError || error instanceof TaskWorkspaceError || error instanceof ProjectDirectoryImportError || error instanceof ProjectLockedError;
-  if (!conflict) console.error(`Unhandled ${request.method} ${request.path} error`, error);
+  if (!conflict) console.error("Unhandled %s %s error", request.method, request.path, error);
   sendError(response, conflict ? 409 : 500, message);
 });

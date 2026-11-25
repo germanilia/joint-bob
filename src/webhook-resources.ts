@@ -66,8 +66,10 @@ function resourceRoot(webhookId: string, options: WebhookResourceOptions): strin
 }
 
 export async function ensureWebhookResourceDirectory(webhookId: string, options: WebhookResourceOptions = {}): Promise<string> {
-  const root = resourceRoot(webhookId, options);
-  const parent = path.dirname(root);
+  const base = path.resolve(options.root ?? resolveDataDirectory(), "webhook-resources");
+  const root = path.resolve(resourceRoot(webhookId, options));
+  if (!root.startsWith(`${base}${path.sep}`)) throw new WebhookResourceError("Webhook not found", 404);
+  const parent = base;
   await mkdir(parent, { recursive: true, mode: 0o700 });
   const parentInfo = await lstat(parent);
   if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw new WebhookResourceError("Webhook resource directory is a link");
@@ -119,10 +121,11 @@ export async function saveWebhookResource(db: DatabaseSync, webhookId: string, i
   if (!existing && activeRows(db, webhookId, input.kind).length >= MAX_RESOURCES[input.kind]) throw new WebhookResourceError(`A webhook can have at most ${MAX_RESOURCES[input.kind]} ${input.kind} resources`);
   const id = existing ? String(existing.id) : randomUUID();
   const versionId = randomUUID();
-  const directory = await ensureWebhookResourceDirectory(webhookId, options);
+  const directory = path.resolve(await ensureWebhookResourceDirectory(webhookId, options));
   const fileName = `${versionId}-${input.name.replace(/[^A-Za-z0-9._-]/g, "_")}`;
-  const target = path.join(directory, fileName);
-  const temporary = `${target}.tmp`;
+  const target = path.resolve(directory, fileName);
+  const temporary = path.resolve(directory, `${fileName}.tmp`);
+  if (!target.startsWith(`${directory}${path.sep}`) || !temporary.startsWith(`${directory}${path.sep}`)) throw new WebhookResourceError("Enter a safe resource name");
   await writeFile(temporary, input.bytes, { flag: "wx", mode: 0o600 });
   try {
     await rename(temporary, target);

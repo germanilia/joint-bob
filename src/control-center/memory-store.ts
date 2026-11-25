@@ -83,25 +83,39 @@ export function topicLinks(body: string): string[] {
   return names;
 }
 
-function topicFile(root: string, name: string): string { return path.join(root, `${name}.md`); }
+function topicFile(root: string, name: string): string {
+  if (!TOPIC_NAME.test(name)) throw new Error("Invalid memory topic name");
+  const base = path.resolve(root);
+  const resolved = path.resolve(base, `${name}.md`);
+  if (!resolved.startsWith(`${base}${path.sep}`)) throw new Error("Invalid memory topic path");
+  return resolved;
+}
 
-function writeAtomically(file: string, content: string): void {
-  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
-  try { writeFileSync(temporary, content, { flag: "wx", mode: 0o600 }); renameSync(temporary, file); }
+function writeAtomically(root: string, file: string, content: string): void {
+  const base = path.resolve(root);
+  const target = path.resolve(file);
+  if (!target.startsWith(`${base}${path.sep}`)) throw new Error("Invalid memory file path");
+  mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+  const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
+  try { writeFileSync(temporary, content, { flag: "wx", mode: 0o600 }); renameSync(temporary, target); }
   finally { rmSync(temporary, { force: true }); }
 }
 
-function readText(file: string): string | null {
-  try { return readFileSync(file, "utf8"); }
+function readText(root: string, file: string): string | null {
+  const base = path.resolve(root);
+  const target = path.resolve(file);
+  if (!target.startsWith(`${base}${path.sep}`)) throw new Error("Invalid memory file path");
+  try { return readFileSync(target, "utf8"); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
 }
 
-export function readTopicText(root: string, name: string): string | null { return readText(topicFile(root, name)); }
+export function readTopicText(root: string, name: string): string | null { return readText(root, topicFile(root, name)); }
 
 export function readTopic(root: string, name: string): StoredTopic | null {
-  const file = topicFile(root, name);
-  const text = readText(file);
+  const base = path.resolve(root);
+  const file = topicFile(base, name);
+  if (!file.startsWith(`${base}${path.sep}`)) throw new Error("Invalid memory topic path");
+  const text = readText(base, file);
   return text === null ? null : { ...parseTopic(name, text), updatedAt: statSync(file).mtime.toISOString() };
 }
 
@@ -123,13 +137,16 @@ export function listTopics(root: string): StoredTopic[] {
 /** One line per topic, rebuilt from the topic files after every write so a bad hand edit heals itself. */
 function rebuildIndex(root: string): void {
   const lines = listTopics(root).sort((a, b) => a.name.localeCompare(b.name)).map((topic) => `- [[${topic.name}]] — ${topic.description}`);
-  writeAtomically(path.join(root, INDEX_FILE), `# Bob's memory\n\n${lines.join("\n")}${lines.length ? "\n" : ""}`);
+  writeAtomically(root, path.join(root, INDEX_FILE), `# Bob's memory\n\n${lines.join("\n")}${lines.length ? "\n" : ""}`);
 }
 
 /** Writes or removes one topic file and rebuilds the index. Used directly when a topic arrives from another machine. */
 export function applyTopicText(root: string, name: string, text: string | null): void {
-  if (text === null) rmSync(topicFile(root, name), { force: true }); else writeAtomically(topicFile(root, name), text);
-  rebuildIndex(root);
+  const base = path.resolve(root);
+  const file = topicFile(base, name);
+  if (!file.startsWith(`${base}${path.sep}`)) throw new Error("Invalid memory topic path");
+  if (text === null) rmSync(file, { force: true }); else writeAtomically(base, file, text);
+  rebuildIndex(base);
 }
 
 const appliedListeners = new Set<(accountId: string, name: string, text: string | null) => void>();

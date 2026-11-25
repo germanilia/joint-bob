@@ -131,26 +131,40 @@ export function worktreeRoot(): string {
 
 export function projectWorktreeRoot(projectId: string, root = worktreeRoot()): string {
   assertSegment(projectId, "Project ID");
-  return path.join(root, projectId);
+  const base = path.resolve(root);
+  const target = path.resolve(base, projectId);
+  if (!target.startsWith(`${base}${path.sep}`)) throw new ProjectWorktreeError(400, "Project ID is invalid");
+  return target;
 }
 
 export function expectedWorktreePath(projectId: string, worktreeId: string, root = worktreeRoot()): string {
   assertSegment(worktreeId, "Worktree ID");
-  return path.join(projectWorktreeRoot(projectId, root), worktreeId);
+  const base = projectWorktreeRoot(projectId, root);
+  const target = path.resolve(base, worktreeId);
+  if (!target.startsWith(`${base}${path.sep}`)) throw new ProjectWorktreeError(400, "Worktree ID is invalid");
+  return target;
 }
 
 function metadataFile(worktree: string): string { return path.join(worktree, WORKTREE_META_DIR, "worktree.json"); }
 
-async function writeAtomic(file: string, content: string): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${randomUUID()}.tmp`;
+async function writeAtomic(file: string, content: string, container = path.dirname(file)): Promise<void> {
+  const base = path.resolve(container);
+  const target = path.resolve(file);
+  if (!target.startsWith(`${base}${path.sep}`)) throw new ProjectWorktreeError(400, "Invalid worktree file path");
+  const dir = path.dirname(target);
+  await fs.mkdir(dir, { recursive: true });
+  const temporary = path.resolve(dir, `${path.basename(target)}.${randomUUID()}.tmp`);
+  if (!temporary.startsWith(`${dir}${path.sep}`)) throw new ProjectWorktreeError(400, "Invalid temporary file path");
   await fs.writeFile(temporary, content, { mode: 0o644 });
-  await fs.rename(temporary, file);
+  await fs.rename(temporary, target);
 }
 
 async function readMetadata(worktree: string): Promise<WorktreeMetadata | undefined> {
   try {
-    const value = JSON.parse(await fs.readFile(metadataFile(worktree), "utf8")) as Partial<WorktreeMetadata>;
+    const base = path.resolve(worktree);
+    const file = path.resolve(metadataFile(base));
+    if (!file.startsWith(`${base}${path.sep}`)) return undefined;
+    const value = JSON.parse(await fs.readFile(file, "utf8")) as Partial<WorktreeMetadata>;
     if (value.version !== 1 || typeof value.id !== "string" || value.id !== path.basename(worktree) || typeof value.name !== "string"
       || typeof value.createdAt !== "string" || typeof value.createdByNodeId !== "string" || typeof value.baselineDigest !== "string") return undefined;
     const color = PROJECT_COLORS.includes(value.color as ProjectColor) ? value.color as ProjectColor : "teal";
@@ -179,11 +193,13 @@ function normalizeColor(color: unknown, fallback: ProjectColor): ProjectColor {
 
 /** Records where this node keeps the worktree, so peers can find the conversations it runs there. */
 async function registerLocalPath(worktree: string, nodeId: string): Promise<void> {
-  const file = path.join(worktree, WORKTREE_META_DIR, "nodes", `${nodeId}.json`);
+  const base = path.resolve(worktree);
+  const file = path.resolve(base, WORKTREE_META_DIR, "nodes", `${nodeId}.json`);
+  if (!file.startsWith(`${base}${path.sep}`)) throw new ProjectWorktreeError(400, "Invalid node ID");
   const content = `${JSON.stringify({ path: worktree })}\n`;
   try { if (await fs.readFile(file, "utf8") === content) return; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  await writeAtomic(file, content);
+  await writeAtomic(file, content, base);
   worktreeFilesChanged(path.basename(path.dirname(worktree)), file);
 }
 
@@ -450,18 +466,22 @@ export async function updateProjectWorktree(projectId: string, worktreeId: strin
 /** Nodes still waiting for the worktree's files list its conversations from their records, so the records follow it. */
 async function carryToConversationRecords(projectId: string, worktreeId: string, next: { id: string; name: string; color: ProjectColor } | null): Promise<void> {
   try { await syncConversationWorktrees(projectId, worktreeId, next, (await getClusterNode()).id); }
-  catch (error) { console.warn(`Could not update conversation records for worktree ${worktreeId}`, error); }
+  catch (error) { console.warn("Could not update conversation records for worktree %s", worktreeId, error); }
 }
 
 /** Deleting the folder is the deletion: file sync removes it from every node sharing the project. */
 export async function deleteProjectWorktree(projectId: string, worktreeId: string, root = worktreeRoot(), options: { preserveSessionPaths?: boolean } = {}): Promise<void> {
+  const projectRoot = projectWorktreeRoot(projectId, root);
   const worktree = expectedWorktreePath(projectId, worktreeId, root);
+  if (!worktree.startsWith(`${projectRoot}${path.sep}`)) throw new ProjectWorktreeError(400, "Worktree ID is invalid");
   if (!await readMetadata(worktree)) throw new ProjectWorktreeError(404, "Worktree not found");
-  const retired = path.join(projectWorktreeRoot(projectId, root), ".retired", `${worktreeId}.json`);
+  const retired = path.resolve(projectRoot, ".retired", `${worktreeId}.json`);
+  if (!retired.startsWith(`${projectRoot}${path.sep}`)) throw new ProjectWorktreeError(400, "Worktree ID is invalid");
   const paths = options.preserveSessionPaths === false ? [] : (await worktreeSessionPaths(projectId, root)).filter(directory => path.basename(directory) === worktreeId);
-  await writeAtomic(retired, `${JSON.stringify(paths)}\n`);
+  await writeAtomic(retired, `${JSON.stringify(paths)}\n`, projectRoot);
   worktreeFilesChanged(projectId, retired);
-  await fs.rm(metadataFile(worktree), { force: true });
+  const metadata = path.resolve(metadataFile(worktree));
+  if (metadata.startsWith(`${worktree}${path.sep}`)) await fs.rm(metadata, { force: true });
   await fs.rm(worktree, { recursive: true, force: true });
   worktreeFilesChanged(projectId, worktree);
   await carryToConversationRecords(projectId, worktreeId, null);
@@ -565,6 +585,8 @@ async function mergeLocked(project: ProjectRecord, worktreeId: string, root: str
   // Built-in sync: newer files of the worktree still on their way would leave this merge working from an older copy (design §6.5).
   if (await worktreeHasPendingFiles(project.id, worktreeId)) throw new ProjectWorktreeError(409, "Files of this worktree are still arriving from another machine; merge again in a moment");
   const projectRoot = await fs.realpath(project.path).catch(() => { throw new ProjectWorktreeError(409, "Project folder is not available on this node"); });
+  const baseRoot = path.resolve(root);
+  if (!worktree.startsWith(`${baseRoot}${path.sep}`)) throw new ProjectWorktreeError(400, "Worktree ID is invalid");
   const workspace = await fs.realpath(worktree);
   try {
     const prepared = await prepareTicketMerge(projectRoot, workspace, metadata.baselineDigest, { workspaceOnlyDirs: [WORKTREE_META_DIR], allowed: worktreePathAllowed });
@@ -617,7 +639,9 @@ export type { WorktreeChanges, WorktreeFileChange };
 
 /** Reads the base.patch file if it exists and returns the paths that had uncommitted changes. */
 async function readUncommittedPaths(worktree: string): Promise<Set<string>> {
-  const patchFile = path.join(worktree, WORKTREE_META_DIR, "base.patch");
+  const base = path.resolve(worktree);
+  const patchFile = path.resolve(base, WORKTREE_META_DIR, "base.patch");
+  if (!patchFile.startsWith(`${base}${path.sep}`)) return new Set();
   try {
     const patch = await fs.readFile(patchFile, "utf8");
     return new Set(parseDiffPaths(patch));

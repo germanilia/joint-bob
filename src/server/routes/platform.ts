@@ -90,7 +90,10 @@ app.put("/api/ntfy/services/:id", async (request, response, next) => {
     const payload = ntfyServiceSchema.partial().parse(request.body);
     const current = getNtfyService(request.params.id);
     if (!current) { sendError(response, 404, "ntfy service not found"); return; }
-    const account = payload.token ? await checkNtfyToken({ url: (payload.url ?? current.url).replace(/\/+$/, ""), token: payload.token }) : undefined;
+    const rawUrl = payload.url ?? current.url;
+    let urlEnd = rawUrl.length;
+    while (urlEnd > 0 && rawUrl.charCodeAt(urlEnd - 1) === 47) urlEnd -= 1;
+    const account = payload.token ? await checkNtfyToken({ url: rawUrl.slice(0, urlEnd), token: payload.token }) : undefined;
     if (account?.status === "rejected") { sendError(response, 400, "The ntfy server does not recognize this token (HTTP 401), so it was not saved. Create it on the server with `ntfy token add <admin user>`."); return; }
     const service = updateNtfyService(request.params.id, payload);
     if (!service) { sendError(response, 404, "ntfy service not found"); return; }

@@ -61,9 +61,15 @@ export function getNtfyService(id: string): NtfyService | undefined {
   return readConfig().services.find((service) => service.id === id);
 }
 
+function stripTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url.charCodeAt(end - 1) === 47) end -= 1;
+  return url.slice(0, end);
+}
+
 export function addNtfyService(name: string, url: string, token: string): NtfyServiceView {
   const config = readConfig();
-  const service: NtfyService = { id: randomUUID(), name, url: url.replace(/\/+$/, ""), token, updatedAt: Date.now() };
+  const service: NtfyService = { id: randomUUID(), name, url: stripTrailingSlashes(url), token, updatedAt: Date.now() };
   const defaultServiceId = config.defaultServiceId ?? service.id;
   writeConfig({ services: [...config.services, service], defaultServiceId });
   return view(service, defaultServiceId);
@@ -72,7 +78,7 @@ export function addNtfyService(name: string, url: string, token: string): NtfySe
 /** A push is always fresh; a pulled copy carries the sender's updatedAt, so use importNewerNtfyService for pulls. */
 export function importNtfyService(service: NtfyService): NtfyServiceView {
   const config = readConfig();
-  const imported = { ...service, url: service.url.replace(/\/+$/, ""), updatedAt: service.updatedAt ?? Date.now() };
+  const imported = { ...service, url: stripTrailingSlashes(service.url), updatedAt: service.updatedAt ?? Date.now() };
   const services = [...config.services.filter(({ id }) => id !== service.id), imported];
   const defaultServiceId = config.defaultServiceId ?? service.id;
   writeConfig({ services, defaultServiceId });
@@ -92,7 +98,7 @@ export function updateNtfyService(id: string, changes: { name?: string; url?: st
   const config = readConfig();
   const current = config.services.find((service) => service.id === id);
   if (!current) return undefined;
-  const updated: NtfyService = { ...current, ...(changes.name === undefined ? {} : { name: changes.name }), ...(changes.url === undefined ? {} : { url: changes.url.replace(/\/+$/, "") }), ...(changes.token === undefined ? {} : { token: changes.token }), updatedAt: Date.now() };
+  const updated: NtfyService = { ...current, ...(changes.name === undefined ? {} : { name: changes.name }), ...(changes.url === undefined ? {} : { url: stripTrailingSlashes(changes.url) }), ...(changes.token === undefined ? {} : { token: changes.token }), updatedAt: Date.now() };
   writeConfig({ ...config, services: config.services.map((service) => service.id === id ? updated : service) });
   return view(updated, config.defaultServiceId);
 }

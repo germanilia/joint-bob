@@ -1,12 +1,12 @@
 {
   "name": "joint-bob",
-  "version": "2.340.3",
+  "version": "2.340.12",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "joint-bob",
-      "version": "2.340.3",
+      "version": "2.340.12",
       "license": "MIT",
       "dependencies": {
         "@anthropic-ai/claude-code": "2.1.327",
@@ -14,6 +14,7 @@
         "@modelcontextprotocol/sdk": "1.32.2",
         "codemirror": "5.65.16",
         "express": "^4.22.3",
+        "express-rate-limit": "^8.7.5",
         "nanoid": "^6.0.2",
         "node-diff3": "^3.2.1",
         "node-pty": "^1.2.0-beta.15",
@@ -99,9 +100,6 @@
       "cpu": [
         "arm64"
       ],
-      "libc": [
-        "glibc"
-      ],
       "license": "SEE LICENSE IN LICENSE.md",
       "optional": true,
       "os": [
@@ -114,9 +112,6 @@
       "integrity": "sha512-zVRKZ1IdMOvm7M4Y0FIuJY1g3BWnpGVUOv8Fu8kGHYk0WbkES1BkuJG0O/6Jzd+LhkadEmBypz0odbGqvoqD+w==",
       "cpu": [
         "arm64"
-      ],
-      "libc": [
-        "musl"
       ],
       "license": "SEE LICENSE IN LICENSE.md",
       "optional": true,
@@ -131,9 +126,6 @@
       "cpu": [
         "x64"
       ],
-      "libc": [
-        "glibc"
-      ],
       "license": "SEE LICENSE IN LICENSE.md",
       "optional": true,
       "os": [
@@ -146,9 +138,6 @@
       "integrity": "sha512-GhxvaKxZSNSFOyGP3Dwm+QoHz2h5TMmONN+GXb4xH4tbWT5AnvoCT6P62r342fTdGoonVEigEH1bnkcALNzLOw==",
       "cpu": [
         "x64"
-      ],
-      "libc": [
-        "musl"
       ],
       "license": "SEE LICENSE IN LICENSE.md",
       "optional": true,
@@ -2612,9 +2601,9 @@
       }
     },
     "node_modules/express-rate-limit": {
-      "version": "8.7.2",
-      "resolved": "https://registry.npmjs.org/express-rate-limit/-/express-rate-limit-8.7.2.tgz",
-      "integrity": "sha512-U1ScocxDD9WI09LaBVypvNkOtNR5yWAmZLkuKJdAzIchA4YKFYF6GT5IKER7epG58oXtjvGlV0/6ii0F83EyZg==",
+      "version": "8.7.5",
+      "resolved": "https://registry.npmjs.org/express-rate-limit/-/express-rate-limit-8.7.5.tgz",
+      "integrity": "sha512-wi+v38cx2EqD0JnhE/e74o5tFqKWUOAPFJIgyEiqJ8v2MNpoOAA3kI2hXYOI+YM+HE5yqbdAlVxm2GqOIeYOgA==",
       "license": "MIT",
       "dependencies": {
         "debug": "^4.4.3",

@@ -363,7 +363,7 @@ function workspaceFilePolicy(executable: string, args: string[], rootCwd: string
     const parsed = parseFlags(args, { short: 'Rvcf', long: ['--recursive', '--verbose', '--changes', '--silent', '--quiet'] });
     if (!parsed || parsed.positional.length < 2) return {};
     const [mode, ...files] = parsed.positional;
-    if (!/^(?:[0-7]{3,4}|[ugoa]*[+-=][rwxXst]+(?:,[ugoa]*[+-=][rwxXst]+)*)$/.test(mode)) return {};
+    if (!/^(?:[0-7]{3,4}|[ugoa]*[+\-=][rwxXst]+(?:,[ugoa]*[+\-=][rwxXst]+)*)$/.test(mode)) return {};
     return files.every(p => inside(p, false)) ? { decision: 'allow' } : {};
   }
 

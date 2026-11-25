@@ -1,4 +1,6 @@
+import path from "node:path";
 import type { NextFunction, Request, Response } from "express";
+import { resolveDataDirectory } from "../../data-directory.js";
 import { z } from "zod";
 import { getClusterNode } from "../../cluster.js";
 import { getConversationOwnership } from "../../conversation-ownership.js";
@@ -75,7 +77,10 @@ app.get("/api/cluster/v2/transcripts/file",handler(async(request,response)=>{
 
 app.get("/api/cluster/v2/transcripts/private-attachment",handler(async(request,response)=>{
   const query=transcriptQuery.required().extend({name:privateAttachmentName}).parse(request.query);
-  response.sendFile(await sharedPrivateAttachment(machineOnly(response),query.projectId,query.engine,query.sessionId,query.name));
+  const file=path.resolve(await sharedPrivateAttachment(machineOnly(response),query.projectId,query.engine,query.sessionId,query.name));
+  const dataRoot=path.resolve(resolveDataDirectory());
+  if(!file.startsWith(`${dataRoot}${path.sep}`)) throw new ClusterV2HttpError(404,"Attachment not found");
+  response.sendFile(file);
 }));
 
 app.post("/api/cluster/v2/twins/credentials",handler(async(request,response)=>{

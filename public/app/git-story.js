@@ -1049,7 +1049,7 @@ function renderPicker(container) {
 
 export function storyMarkdown(saved) {
   const { story: written, facts } = saved;
-  const cell = (text) => String(text).replace(/\|/g, "\\|").replace(/\n/g, " ");
+  const cell = (text) => String(text).replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ");
   const code = (text) => text.includes("`") ? `\`\` ${text} \`\`` : `\`${text}\``;
   const quoted = (text) => `"${text.replace(/"/g, "'")}"`;
   const nodeId = (id) => `n_${id.replace(/[^A-Za-z0-9_]/g, "_")}`;

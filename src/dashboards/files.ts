@@ -36,11 +36,15 @@ function assertRelativePath(relative: string): void {
 }
 
 function readFolder(directory: string, prefix = ""): DefinitionFile[] {
+  const base = path.resolve(resolveDataDirectory(), "dashboards");
+  const resolvedDirectory = path.resolve(directory);
+  if (!resolvedDirectory.startsWith(`${base}${path.sep}`)) throw new Error("Invalid dashboard folder path");
   const files: DefinitionFile[] = [];
-  for (const name of readdirSync(directory).sort()) {
+  for (const name of readdirSync(resolvedDirectory).sort()) {
     const relative = prefix ? `${prefix}/${name}` : name;
     assertRelativePath(relative);
-    const absolute = path.join(directory, name);
+    const absolute = path.resolve(resolvedDirectory, name);
+    if (!absolute.startsWith(`${resolvedDirectory}${path.sep}`)) throw new Error(`Invalid definition file path: ${relative}`);
     const stat = lstatSync(absolute);
     if (stat.isSymbolicLink()) throw new Error(`Definition files cannot be links: ${relative}`);
     if (stat.isDirectory()) files.push(...readFolder(absolute, relative));
@@ -84,30 +88,40 @@ function checkDefinition(files: DefinitionFile[]): DashboardManifest {
 function installVersion(id: string, files: DefinitionFile[]): { digest: string; manifest: DashboardManifest } {
   const manifest = checkDefinition(files);
   const digest = digestOf(files);
-  const root = dashboardRoot(id);
-  const target = versionPath(id, digest);
+  const base = path.resolve(resolveDataDirectory(), "dashboards");
+  const root = path.resolve(dashboardRoot(id));
+  const versionsDir = path.resolve(root, "versions");
+  const target = path.resolve(versionPath(id, digest));
+  if (!root.startsWith(`${base}${path.sep}`) || !target.startsWith(`${versionsDir}${path.sep}`)) throw new Error("Invalid dashboard version path");
   if (!existsSync(target)) {
-    mkdirSync(path.join(root, "versions"), { recursive: true, mode: 0o700 });
-    const staging = mkdtempSync(path.join(root, "versions", ".staging-"));
+    mkdirSync(versionsDir, { recursive: true, mode: 0o700 });
+    const staging = mkdtempSync(path.join(versionsDir, ".staging-"));
     for (const file of files) {
-      mkdirSync(path.dirname(path.join(staging, file.path)), { recursive: true });
-      writeFileSync(path.join(staging, file.path), file.content);
+      const destination = path.resolve(staging, file.path);
+      if (!destination.startsWith(`${staging}${path.sep}`)) throw new Error(`Invalid definition file path: ${file.path}`);
+      mkdirSync(path.dirname(destination), { recursive: true });
+      writeFileSync(destination, file.content);
     }
     renameSync(staging, target);
   }
   const previous = currentDigest(id);
-  const pointer = path.join(root, `.current-${process.pid}-${Date.now()}`);
+  const pointer = path.resolve(root, `.current-${process.pid}-${Date.now()}`);
+  const currentFile = path.resolve(root, "current");
+  if (!pointer.startsWith(`${root}${path.sep}`) || !currentFile.startsWith(`${root}${path.sep}`)) throw new Error("Invalid dashboard pointer path");
   writeFileSync(pointer, digest);
-  renameSync(pointer, path.join(root, "current"));
+  renameSync(pointer, currentFile);
   // The previous version stays one generation, for a refresh that started before the save.
-  for (const name of readdirSync(path.join(root, "versions"))) {
-    if (name !== digest && name !== previous) rmSync(path.join(root, "versions", name), { recursive: true, force: true });
+  for (const name of readdirSync(versionsDir)) {
+    const oldVersion = path.resolve(versionsDir, name);
+    if (name !== digest && name !== previous && oldVersion.startsWith(`${versionsDir}${path.sep}`)) rmSync(oldVersion, { recursive: true, force: true });
   }
   return { digest, manifest };
 }
 
 function currentDigest(id: string): string | undefined {
-  const pointer = path.join(dashboardRoot(id), "current");
+  const base = path.resolve(resolveDataDirectory(), "dashboards");
+  const pointer = path.resolve(dashboardRoot(id), "current");
+  if (!pointer.startsWith(`${base}${path.sep}`)) throw new Error("Invalid dashboard path");
   return existsSync(pointer) ? readFileSync(pointer, "utf8").trim() : undefined;
 }
 
@@ -215,7 +229,9 @@ export function payloadPath(id: string, target: PayloadTarget = "live"): string 
 }
 
 export function readPayload(id: string, target: PayloadTarget = "live"): DashboardPayload | undefined {
-  const file = payloadPath(id, target);
+  const base = path.resolve(resolveDataDirectory(), "dashboards");
+  const file = path.resolve(payloadPath(id, target));
+  if (!file.startsWith(`${base}${path.sep}`)) throw new Error("Invalid dashboard payload path");
   return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) as DashboardPayload : undefined;
 }
 

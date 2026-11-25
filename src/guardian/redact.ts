@@ -3,7 +3,6 @@ export const REMOVED = "[removed by Guardian]";
 // Formats with a recognisable shape. Values that look like any other string are only found
 // when they are one of the project's own secrets, which are matched exactly.
 const PATTERNS: RegExp[] = [
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
   /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
   /\bgh[pousr]_[A-Za-z0-9]{36,}\b/g,
   /\bgithub_pat_[A-Za-z0-9_]{40,}\b/g,
@@ -22,6 +21,42 @@ const NAMED = /\b([A-Za-z0-9_]*(?:SECRET|PASSWORD|PASSWD|TOKEN|API_?KEY|PRIVATE_
 // This marker has no spaces or quotes, so NAMED takes it in whole, with anything around it.
 const MARK = "\uE000removed\uE000";
 
+function replacePemPrivateKeys(text: string, replacement: string): string {
+  const beginMarker = "-----BEGIN ";
+  const endMarker = "-----END ";
+  const suffix = "PRIVATE KEY-----";
+  let out = "";
+  let pos = 0;
+  while (pos < text.length) {
+    const start = text.indexOf(beginMarker, pos);
+    if (start === -1) return out + text.slice(pos);
+    const headerEnd = text.indexOf(suffix, start + beginMarker.length);
+    if (headerEnd === -1) return out + text.slice(pos);
+    if (!/^[A-Z ]*$/.test(text.slice(start + beginMarker.length, headerEnd))) {
+      out += text.slice(pos, start + beginMarker.length);
+      pos = start + beginMarker.length;
+      continue;
+    }
+    let search = headerEnd + suffix.length;
+    let footerEnd = -1;
+    while (search < text.length) {
+      const endStart = text.indexOf(endMarker, search);
+      if (endStart === -1) break;
+      const endSuffix = text.indexOf(suffix, endStart + endMarker.length);
+      if (endSuffix === -1) break;
+      if (/^[A-Z ]*$/.test(text.slice(endStart + endMarker.length, endSuffix))) {
+        footerEnd = endSuffix + suffix.length;
+        break;
+      }
+      search = endStart + endMarker.length;
+    }
+    if (footerEnd === -1) return out + text.slice(pos);
+    out += text.slice(pos, start) + replacement;
+    pos = footerEnd;
+  }
+  return out;
+}
+
 /** Removes known secret values and common credential formats from text. */
 export function removeSecrets(text: string, knownSecrets: string[]): string {
   // Content a fix already went over can come back for a second pass.
@@ -30,6 +65,7 @@ export function removeSecrets(text: string, knownSecrets: string[]): string {
   for (const secret of [...new Set(knownSecrets)].filter((value) => value.length >= 8).sort((left, right) => right.length - left.length)) {
     result = result.split(secret).join(MARK);
   }
+  result = replacePemPrivateKeys(result, MARK);
   for (const pattern of PATTERNS) result = result.replace(pattern, MARK);
   result = result.replace(NAMED, (_match, name: string, separator: string, quote: string) => `${name}${separator}${quote}${MARK}${quote}`);
   return result.split(MARK).join(REMOVED);

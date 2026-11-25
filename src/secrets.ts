@@ -315,7 +315,10 @@ function publicAccount(row: AccountRow): SecretAccount {
 }
 
 export function clearSecretAccountFiles(id: string): void {
-  rmSync(path.join(dataDir, "secret-files", id), { recursive: true, force: true });
+  const base = path.resolve(dataDir, "secret-files");
+  const target = path.resolve(base, id);
+  if (!target.startsWith(`${base}${path.sep}`)) throw new Error("Invalid secret account id");
+  rmSync(target, { recursive: true, force: true });
 }
 
 function hasTable(name: string): boolean {
