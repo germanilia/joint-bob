@@ -74,15 +74,17 @@ export function renderProjects() {
 /** Remembered for this page view only — preferences live on the server and Web Storage is banned here. */
 const collapsedProjectGroups = new Set();
 
-/** A shared workspace names the node it comes from, as in the workspace picker. */
+/** A shared workspace names its source node, as in the workspace picker. */
 function groupLabel(workspace, typeId) {
   if (!workspace) return typeId;
-  return workspace.source ? `${workspace.label} · ${workspace.source.name}` : workspace.label;
-}
-
-/** "Team 12d29f48-668c-4a1b-9f3e-… · Contigos EC2": the id is cut in the middle, the node's name stays. */
-export function friendlyGroupLabel(label) {
-  return label.replace(/\b([0-9a-f]{8})-[0-9a-f-]{8,}?([0-9a-f]{4})\b/gi, "$1…$2");
+  let label = workspace.label;
+  // Team workspaces are created with a generated label and shared with their team's cluster.
+  if (/^Team [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{6}$/.test(label)) {
+    const clusterIds = new Set(state.projects.filter((project) => project.type === typeId).flatMap((project) => project.clusterIds || []));
+    const cluster = clusterIds.size === 1 && state.clusters.find((entry) => clusterIds.has(entry.id));
+    label = cluster ? (/\bteam$/i.test(cluster.name) ? cluster.name : `${cluster.name} team`) : "Assistant team";
+  }
+  return workspace.source ? `${label} · ${workspace.source.name}` : label;
 }
 
 /** Groups follow the order types are configured in Settings; anything unknown sorts last. */
@@ -140,7 +142,7 @@ function projectGroupElement(group) {
   summary.className = "project-group-summary";
   summary.dataset.testid = "project-group-toggle";
   const label = document.createElement("span");
-  label.textContent = friendlyGroupLabel(group.label);
+  label.textContent = group.label;
   // One line with an ellipsis: the full name is the tooltip.
   summary.title = group.label;
   const count = document.createElement("span");
