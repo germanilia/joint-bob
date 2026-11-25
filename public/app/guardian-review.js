@@ -1,7 +1,8 @@
+import { api } from "./api.js";
 import { sendSocket, syncTurnBusy } from "./chat-controls.js";
 import { openConversation } from "./control-center.js";
 import { elements } from "./elements.js";
-import { toast } from "./shell.js";
+import { chooseOption, toast } from "./shell.js";
 import { state } from "./state.js";
 
 // A paused agent action, shown in its own conversation directly above the composer, like the
@@ -93,14 +94,30 @@ document.addEventListener("guardian-event", (event) => {
   if (payload.type === "guardianBlocked") toast.error(payload.message);
 });
 
-// Another conversation of the project is waiting on the person; say so once, without taking over.
+async function reviewBackgroundRun(target) {
+  const review = await api(`/api/control-center/guardian/background-review?${new URLSearchParams(target)}`);
+  const decision = await chooseOption({
+    eyebrow: "Guardian · Background run", title: review.title, message: `${review.subject}\n\n${review.detail}`,
+    confirmLabel: "Apply decision", options: [
+      { value: "block", label: "Block" },
+      { value: "allow", label: "Allow once" },
+      ...(review.allowAlways ? [{ value: "allow-always", label: "Allow always", hint: "Remember this exact action only in this run and working directory" }] : []),
+    ],
+  });
+  if (!decision) return;
+  await api("/api/control-center/guardian/decide", { method: "POST", body: JSON.stringify({ ...target, decision }) });
+}
+
+// Let the person open the conversation, or answer directly when the run has no chat.
 document.addEventListener("guardian-elsewhere", (event) => {
-  const { projectId, conversationId, titles } = event.detail;
+  const { projectId, conversationId, titles, backgroundReviewId } = event.detail;
   if (!projectId || !titles.length || (projectId === state.activeConversationProjectId && conversationId === (state.activeConversationId || state.activeSessionId))) return;
   toast(`Guardian is waiting for your decision: ${titles[0]}`, 12000, "warning", {
-    key: `${projectId}:${conversationId}`,
-    label: "Open conversation",
-    run: () => openConversation({ projectId, conversationId }).catch((error) => toast.error(error.message)),
+    key: `${projectId}:${conversationId}:${backgroundReviewId ?? ""}`,
+    label: backgroundReviewId ? "Review request" : "Open conversation",
+    run: () => (backgroundReviewId
+      ? reviewBackgroundRun({ projectId, conversationId, reviewId: backgroundReviewId })
+      : openConversation({ projectId, conversationId })).catch((error) => toast.error(error.message)),
   });
 });
 

@@ -3,7 +3,9 @@ import { z } from "zod";
 import type { AuthSession } from "../../auth.js";
 import { getGuardianSettings, productionGuardCoverage, updateGuardianSettings } from "../../guardian/settings.js";
 import { productionGuardStatus, withProductionGuard } from "../../guardian/production-rule.js";
-import { allPendingGuardianReviews, decideGuardianReview } from "../../guardian/reviews.js";
+import { allPendingGuardianReviews, decideGuardianReview, pendingGuardianReviews } from "../../guardian/reviews.js";
+import { privateConversationVisible } from "../../conversation-privacy.js";
+import { isInternalSession } from "../../internal-sessions.js";
 import { getProject, listProjects, projectVisible } from "../../store.js";
 import { isKeptOut, keepBobOut, leaseHolder, loadKeptOut, releaseLease, takeLease } from "../../control-center/leases.js";
 import { requireAdmin } from "../admin.js";
@@ -125,19 +127,37 @@ app.post("/api/control-center/snooze", async (request, response, next) => {
   }
 });
 
-const decisionSchema = z.object({
+const reviewTargetSchema = z.object({
   projectId: z.string().min(1).max(200),
   conversationId: z.string().min(1).max(200),
   reviewId: z.string().min(1).max(100),
-  decision: z.enum(["allow", "allow-always", "block"]),
 }).strict();
+const decisionSchema = reviewTargetSchema.extend({ decision: z.enum(["allow", "allow-always", "block"]) });
+const reviewGone = "That review was already answered, or it timed out and was blocked";
+
+/** Background runs have no chat. Fetch the pending step only when the person opens the notice. */
+app.get("/api/control-center/guardian/background-review", async (request, response, next) => {
+  try {
+    const { projectId, conversationId, reviewId } = reviewTargetSchema.parse(request.query);
+    if (!isInternalSession(conversationId) || !privateConversationVisible(conversationId) || !await projectVisible(projectId)) {
+      sendError(response, 404, reviewGone);
+      return;
+    }
+    const review = pendingGuardianReviews(projectId, conversationId).find((entry) => entry.id === reviewId && !entry.team);
+    if (!review) { sendError(response, 404, reviewGone); return; }
+    response.json({ title: review.title, subject: review.subject, detail: review.detail, allowAlways: Boolean(review.alwaysKey) });
+  } catch (error) {
+    if (error instanceof z.ZodError) { sendError(response, 400, "Invalid review"); return; }
+    next(error);
+  }
+});
 
 /** The person's answer to a Guardian review, from the board. Only a project they can see can be answered. */
 app.post("/api/control-center/guardian/decide", async (request, response, next) => {
   try {
     const input = decisionSchema.parse(request.body);
-    if (!await projectVisible(input.projectId) || !decideGuardianReview(input.projectId, input.conversationId, input.reviewId, input.decision)) {
-      sendError(response, 404, "That review was already answered, or it timed out and was blocked");
+    if (!privateConversationVisible(input.conversationId) || !await projectVisible(input.projectId) || !decideGuardianReview(input.projectId, input.conversationId, input.reviewId, input.decision)) {
+      sendError(response, 404, reviewGone);
       return;
     }
     response.json({ ok: true });
