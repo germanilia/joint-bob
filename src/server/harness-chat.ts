@@ -195,10 +195,11 @@ export async function autoCompactBetweenTurns(shared: SharedHarnessSession, thre
   }
 }
 
-async function withPromptProfile<T>(connection: HarnessChatConnection, prompt: Pick<QueuedPrompt, "author" | "automationProfile">, work: () => Promise<T>): Promise<T> {
+export async function withPromptProfile<T>(connection: Pick<HarnessChatConnection, "project" | "author">, prompt: Pick<QueuedPrompt, "author" | "automationProfile">, work: () => Promise<T>): Promise<T> {
   if (prompt.automationProfile) {
     if (prompt.automationProfile.nodeId !== (await getClusterNode()).id) throw new Error("Automation profile belongs to another execution node");
-    return runWithAutomationProfile({ creatorAccountId: prompt.automationProfile.accountId, providerProfileId: prompt.automationProfile.profileId, providerPoolId: prompt.automationProfile.poolId }, work);
+    const actor = ownerAsActor(prompt.automationProfile.accountId ?? undefined);
+    return runAsAccount(actor, () => runWithAutomationProfile({ creatorAccountId: prompt.automationProfile!.accountId, providerProfileId: prompt.automationProfile!.profileId, providerPoolId: prompt.automationProfile!.poolId }, work));
   }
   return withoutAutomationProfile(() => runAsAccount(turnActor(connection, prompt.author ?? connection.author), work));
 }
