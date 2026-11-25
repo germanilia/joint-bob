@@ -14,7 +14,7 @@ import { getProject, projectVisible } from "../../store.js";
 import { browserWebUrlSchema, type BrowserActor, type BrowserSessionView } from "../../browser-types.js";
 import { browserOperation, browserRuntime } from "../browser.js";
 import { sendError } from "../http-auth.js";
-import { app } from "../state.js";
+import { apiRateLimiter, app } from "../state.js";
 import { announceAssistantChanges } from "../../assistant-collaboration/twin-sync.js";
 
 const resourceNameList = z.array(z.string().min(1).max(200).regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/)).max(1000);
@@ -107,7 +107,7 @@ async function loginView(profileId: string, entry: PersonalAssistant) {
   return { profileId, label: profile.label, sites: profile.sites ?? [], state, sessionId: session?.id ?? null, sourceConversation: holder?.conversationId === entry.sessionId };
 }
 
-app.get("/api/personal-assistants/:id/resources", async (request, response, next) => {
+app.get("/api/personal-assistants/:id/resources", apiRateLimiter, async (request, response, next) => {
   try {
     const entry = await visibleAssistant(response, request.params.id);
     if (!entry) { sendError(response, 404, "Assistant not found"); return; }
@@ -148,7 +148,7 @@ app.put("/api/personal-assistants/:id/resources", async (request, response, next
 });
 
 /** New sign-in: a new persistent profile on the execution machine, opened for the person to sign in. */
-app.post("/api/personal-assistants/:id/logins", async (request, response, next) => {
+app.post("/api/personal-assistants/:id/logins", apiRateLimiter, async (request, response, next) => {
   try {
     const entry = await visibleAssistant(response, request.params.id);
     if (!entry) { sendError(response, 404, "Assistant not found"); return; }
@@ -167,7 +167,7 @@ app.post("/api/personal-assistants/:id/logins", async (request, response, next) 
 });
 
 /** Sign in again: open the attached profile for the person, on its own machine. */
-app.post("/api/personal-assistants/:id/logins/:profileId/open", async (request, response, next) => {
+app.post("/api/personal-assistants/:id/logins/:profileId/open", apiRateLimiter, async (request, response, next) => {
   try {
     const entry = await visibleAssistant(response, request.params.id);
     if (!entry) { sendError(response, 404, "Assistant not found"); return; }
@@ -181,7 +181,7 @@ app.post("/api/personal-assistants/:id/logins/:profileId/open", async (request, 
   } catch (error) { next(error); }
 });
 
-app.post("/api/personal-assistants/:id/logins/attach", async (request, response, next) => {
+app.post("/api/personal-assistants/:id/logins/attach", apiRateLimiter, async (request, response, next) => {
   try {
     const entry = await visibleAssistant(response, request.params.id);
     if (!entry) { sendError(response, 404, "Assistant not found"); return; }
@@ -198,7 +198,7 @@ app.post("/api/personal-assistants/:id/logins/attach", async (request, response,
   } catch (error) { if (error instanceof z.ZodError) { sendError(response, 400, "Invalid login"); return; } next(error); }
 });
 
-app.delete("/api/personal-assistants/:id/logins/:profileId", async (request, response, next) => {
+app.delete("/api/personal-assistants/:id/logins/:profileId", apiRateLimiter, async (request, response, next) => {
   try {
     const entry = await visibleAssistant(response, request.params.id);
     if (!entry) { sendError(response, 404, "Assistant not found"); return; }

@@ -30,17 +30,37 @@ app.post("/api/cluster/v2/social/groups/changed", socialMachineRoute((body, send
 app.post("/api/cluster/v2/social/invitations/deliver", socialMachineRoute((body, sender) => memberOps.deliver(body, sender)));
 app.post("/api/cluster/v2/social/invitations/changed", socialMachineRoute((body, sender) => memberOps.invitationChanged(body, sender)));
 app.post("/api/cluster/v2/social/threads/changed", socialMachineRoute((body, sender) => threadMemberOps.changed(body, sender)));
-const hostOpHandlers = new Map<string, (body: unknown, sender: string) => Promise<unknown>>(Object.entries(hostOps));
-const threadHostOpHandlers = new Map<string, (body: unknown, sender: string) => Promise<unknown>>(Object.entries(threadHostOps));
+function dispatchHostOp(operation: string, body: unknown, sender: string): Promise<unknown> | undefined {
+  switch (operation) {
+    case "invite": return hostOps.invite(body, sender);
+    case "respond": return hostOps.respond(body, sender);
+    case "revoke": return hostOps.revoke(body, sender);
+    case "send": return hostOps.send(body, sender);
+    case "messages": return hostOps.messages(body, sender);
+    case "members": return hostOps.members(body, sender);
+    case "leave": return hostOps.leave(body, sender);
+    case "remove": return hostOps.remove(body, sender);
+    case "close": return hostOps.close(body, sender);
+    default: return undefined;
+  }
+}
+function dispatchThreadHostOp(operation: string, body: unknown, sender: string): Promise<unknown> | undefined {
+  switch (operation) {
+    case "open": return threadHostOps.open(body, sender);
+    case "send": return threadHostOps.send(body, sender);
+    case "list": return threadHostOps.list(body, sender);
+    default: return undefined;
+  }
+}
 app.post("/api/cluster/v2/social/groups/:operation", (request, response, next) => {
-  const handler = hostOpHandlers.get(request.params.operation);
-  if (!handler) { sendError(response, 404, "Not found"); return; }
-  socialMachineRoute((body, sender) => handler(body, sender))(request, response, next);
+  const operation = request.params.operation;
+  if (!Object.hasOwn(hostOps, operation)) { sendError(response, 404, "Not found"); return; }
+  socialMachineRoute((body, sender) => dispatchHostOp(operation, body, sender)!)(request, response, next);
 });
 app.post("/api/cluster/v2/social/threads/:operation", (request, response, next) => {
-  const handler = threadHostOpHandlers.get(request.params.operation);
-  if (!handler) { sendError(response, 404, "Not found"); return; }
-  socialMachineRoute((body, sender) => handler(body, sender))(request, response, next);
+  const operation = request.params.operation;
+  if (!Object.hasOwn(threadHostOps, operation)) { sendError(response, 404, "Not found"); return; }
+  socialMachineRoute((body, sender) => dispatchThreadHostOp(operation, body, sender)!)(request, response, next);
 });
 
 // ---- The signed-in person. ----

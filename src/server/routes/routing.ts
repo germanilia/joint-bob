@@ -11,7 +11,7 @@ import { clusterV2Database } from "../../cluster-v2-store.js";
 import { sendError } from "../http-auth.js";
 import { flushRoutingConfigDeliveries } from "../maintenance.js";
 import { broadcastRoutingMode } from "../harness-chat.js";
-import { app } from "../state.js";
+import { apiRateLimiter, app } from "../state.js";
 import { answerRelayAsk, DECISION_ASK_PATH, decisionAskSchema } from "../../decision-relay-proxy.js";
 import { answerRelayDecision, DECISION_RELAY_PATH, decisionRelayRequestSchema, RelayDecisionRefused } from "../../routing-decision-relay.js";
 
@@ -72,7 +72,7 @@ async function distribute(event: RoutingConfigEvent): Promise<Array<{ nodeId: st
   return results;
 }
 
-app.get("/api/routing-configs", async (_request, response, next) => {
+app.get("/api/routing-configs", apiRateLimiter, async (_request, response, next) => {
   try {
     localAuth(response);
     const local = await getClusterNode();
@@ -97,7 +97,7 @@ app.get("/api/routing-configs", async (_request, response, next) => {
   }
 });
 
-app.post("/api/routing-configs", async (request, response, next) => {
+app.post("/api/routing-configs", apiRateLimiter, async (request, response, next) => {
   try {
     localAuth(response);
     const input = configBodySchema.parse(request.body);
@@ -112,7 +112,7 @@ app.post("/api/routing-configs", async (request, response, next) => {
 });
 
 // Registered before the :id routes: "selection" is not a UUID, so the order decides which handler runs.
-app.put("/api/routing-configs/selection", async (request, response, next) => {
+app.put("/api/routing-configs/selection", apiRateLimiter, async (request, response, next) => {
   try {
     localAuth(response);
     const input = selectionSchema.parse(request.body);
@@ -127,7 +127,7 @@ app.put("/api/routing-configs/selection", async (request, response, next) => {
   }
 });
 
-app.put("/api/routing-configs/:id", async (request, response, next) => {
+app.put("/api/routing-configs/:id", apiRateLimiter, async (request, response, next) => {
   try {
     localAuth(response);
     const id = uuid.parse(request.params.id);
@@ -152,7 +152,7 @@ app.put("/api/routing-configs/:id", async (request, response, next) => {
   }
 });
 
-app.delete("/api/routing-configs/:id", async (request, response, next) => {
+app.delete("/api/routing-configs/:id", apiRateLimiter, async (request, response, next) => {
   try {
     localAuth(response);
     const id = uuid.parse(request.params.id);
@@ -173,7 +173,7 @@ app.delete("/api/routing-configs/:id", async (request, response, next) => {
   }
 });
 
-app.post("/api/routing-configs/:id/share", async (request, response, next) => {
+app.post("/api/routing-configs/:id/share", apiRateLimiter, async (request, response, next) => {
   try {
     localAuth(response);
     const id = uuid.parse(request.params.id);

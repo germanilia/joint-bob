@@ -130,6 +130,9 @@ test('real team HTTP to queue to synthetic provider: subject continuity, isolati
     assert.equal(cluster.status, 201);
     const created = await api<any>(node, auth, 'POST', '/assistant-teams', { clusterId: cluster.body.snapshot.body.clusterId });
     assert.equal(created.status, 201, JSON.stringify(created.body)); const team = created.body.team;
+    // Clusters inherit the default production Guardian rule unless the manager opts out; opt out here to verify the unguarded readiness check.
+    const optOut = await api<any>(node, auth, 'PUT', `/clusters/${team.clusterId}/agent-policy`, { expectedEpoch: 1, sourceRelayNodeId: null, policy: { guardian: null } });
+    assert.equal(optOut.status, 200, JSON.stringify(optOut.body));
     const membershipDb = openNodeDatabase(path.join(node.dataDir, 'node.db'));
     try { addClusterLocalMember(membershipDb, team.clusterId, human.accountId); } finally { membershipDb.close(); }
     const humanAuth = await signIn({ ...env, username: 'teamhuman', password: 'Synthetic-member-password-123!' }, node);

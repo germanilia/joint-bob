@@ -47,7 +47,7 @@ export async function resolveGitRepository(root: string, repository?: string): P
     const base = await realpath(root);
     const candidate = path.resolve(base, repository);
     if (candidate !== base && !candidate.startsWith(`${base}${path.sep}`)) throw new GitReviewError(400, "Repository path escapes project");
-    const selected = await realpath(candidate);
+    const selected = candidate === base ? base : await realpath(candidate);
     if (selected !== base && !selected.startsWith(`${base}${path.sep}`)) throw new GitReviewError(400, "Repository path escapes project");
     if (await realpath(await gitRepositoryRoot(selected)) !== selected) throw new GitReviewError(400, "Select an exact Git repository root");
     return selected;

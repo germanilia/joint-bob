@@ -34,7 +34,7 @@ import { NotFoundError } from "../../not-found.js";
 import { closeoutFeedbackSchema } from "../../conversation-closeout.js";
 import { startBobRecheck } from "../control-center-recheck.js";
 import { startBobSync } from "../../control-center/bob-sync.js";
-import { app } from "../state.js";
+import { apiRateLimiter, app } from "../state.js";
 
 /** What the control center board shows: running conversations and finished ones waiting for review, across every project the caller can see. */
 startControlCenterWatch();
@@ -293,7 +293,7 @@ app.get("/api/control-center/cards/detail", async (request, response, next) => {
 });
 
 /** One project at a glance: its conversations as headlines, what changed recently, and what its knowledge holds. */
-app.get("/api/control-center/overview", async (request, response, next) => {
+app.get("/api/control-center/overview", apiRateLimiter, async (request, response, next) => {
   try {
     const { project: projectId } = z.object({ project: z.string().min(1).max(200) }).strict().parse(request.query);
     const session = response.locals.authSession as AuthSession;

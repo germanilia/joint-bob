@@ -92,7 +92,7 @@ function installVersion(id: string, files: DefinitionFile[]): { digest: string; 
   const root = path.resolve(dashboardRoot(id));
   const versionsDir = path.resolve(root, "versions");
   const target = path.resolve(versionPath(id, digest));
-  if (!root.startsWith(`${base}${path.sep}`) || !target.startsWith(`${versionsDir}${path.sep}`)) throw new Error("Invalid dashboard version path");
+  if (!root.startsWith(`${base}${path.sep}`) || !versionsDir.startsWith(`${base}${path.sep}`) || !target.startsWith(`${versionsDir}${path.sep}`)) throw new Error("Invalid dashboard version path");
   if (!existsSync(target)) {
     mkdirSync(versionsDir, { recursive: true, mode: 0o700 });
     const staging = mkdtempSync(path.join(versionsDir, ".staging-"));

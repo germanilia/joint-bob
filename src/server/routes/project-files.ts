@@ -58,7 +58,7 @@ function matchingPathSuffix(candidateParts: string[], requestedParts: string[]):
 
 async function verifiedProjectFile(projectRoot: string, candidate: string): Promise<{ resolved: string; info: Awaited<ReturnType<typeof stat>> } | null> {
   let resolved: string;
-  try { resolved = await realpath(candidate); }
+  try { resolved = candidate === projectRoot ? projectRoot : await realpath(candidate); }
   catch (error) {
     if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
     throw error;
@@ -522,7 +522,7 @@ async function resolveProjectDirectory(projectId: string, requestedDir: string):
   const candidate = path.resolve(projectRoot, dirValue.replace(/\\/g, path.sep) || ".");
   if (candidate !== projectRoot && !candidate.startsWith(`${projectRoot}${path.sep}`)) throw new ProjectFileError(403, "Directory is outside the project directory");
   let resolved: string;
-  try { resolved = await realpath(candidate); }
+  try { resolved = candidate === projectRoot ? projectRoot : await realpath(candidate); }
   catch (error) {
     if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw new ProjectFileError(404, "Directory not found");
     throw error;
