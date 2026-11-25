@@ -44,6 +44,8 @@ export type GuardianRule = z.infer<typeof guardianRuleSchema>;
 
 export const guardianSettingsSchema = z.object({
   enabled: z.boolean(),
+  /** Whether the attachment lines of a message (image and file paths) are checked. Off, Guardian ignores them. */
+  checkAttachments: z.boolean().default(false),
   model: z.enum(GUARDIAN_MODELS),
   /** The Laya server for `laya-remote`, for example http://gpu-box:8000. */
   layaUrl: z.string().trim().max(500).refine((value) => value === "" || /^https?:\/\/[^\s/]+/.test(value), "Use an http:// or https:// address"),
@@ -76,6 +78,9 @@ const legacyDangerousQuestions = [
 const legacySecrets = rule("secrets", "Secrets", "Does this contain a password, API key, access token or private key?", "outgoing", "fix", true);
 const secrets: GuardianRule = { ...legacySecrets, care: "relaxed", question: "Does this text reveal an actual private password, API key, access token or private key, rather than a placeholder, variable reference, public identifier or example?" };
 
+const legacyPersonalQuestion = "Does this contain personal information about a real person, such as a name with an address, phone number, email or ID number?";
+const personalInformation: GuardianRule = { ...rule("personal-information", "Personal information", "Does this contain private personal details about an individual, such as a home address, phone number, national ID number, date of birth, or financial or medical information? Names, email addresses, usernames, machine names, hostnames and file paths on their own are not private personal details.", "outgoing", "ask", false) };
+
 /** A custom question or fix remains a model rule. */
 export function usesSecretPatterns(rule: GuardianRule): boolean {
   return rule.id === secrets.id && rule.fix.kind === "remove-secrets"
@@ -88,6 +93,8 @@ export function upgradeGuardianRule(item: GuardianRule): GuardianRule {
   if (item.id === PRODUCTION_RULE.id && matches(LEGACY_PRODUCTION_RULE)) return { ...PRODUCTION_RULE, enabled: item.enabled };
   if (item.id === dangerousCommands.id && legacyDangerousQuestions.includes(item.question)
     && matches(rule(dangerousCommands.id, dangerousCommands.name, item.question, "commands", "ask", true))) return { ...dangerousCommands, enabled: item.enabled };
+  if (item.id === personalInformation.id && item.question === legacyPersonalQuestion
+    && matches(rule(personalInformation.id, personalInformation.name, legacyPersonalQuestion, "outgoing", "ask", true))) return { ...personalInformation, enabled: item.enabled };
   if (item.id === secrets.id && matches(legacySecrets)) return { ...secrets, enabled: item.enabled };
   return item;
 }
@@ -95,12 +102,13 @@ export function upgradeGuardianRule(item: GuardianRule): GuardianRule {
 /** Ready-made rules a person switches on; Guardian itself starts off. */
 export const DEFAULT_GUARDIAN_SETTINGS: GuardianSettings = {
   enabled: false,
+  checkAttachments: false,
   model: "jev",
   layaUrl: "",
   rules: [
     dangerousCommands,
     secrets,
-    rule("personal-information", "Personal information", "Does this contain personal information about a real person, such as a name with an address, phone number, email or ID number?", "outgoing", "ask", false),
+    personalInformation,
   ],
 };
 
@@ -171,4 +179,10 @@ export function toolCategory(tool: string): ToolCategory {
   if (COMMAND_TOOLS.has(name)) return "commands";
   if (FILE_TOOLS.has(name)) return "file-changes";
   return "other";
+}
+
+/** Where the attachment lines the app appends to a message ("Image attachments:" or "File attachments:" and their paths) start, or -1. */
+export function attachmentIndexStart(text: string): number {
+  const starts = ["Image attachments:\n", "File attachments:\n"].map((marker) => text.indexOf(marker)).filter((index) => index >= 0);
+  return starts.length ? Math.min(...starts) : -1;
 }

@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { isInternalSession } from "../../internal-sessions.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { currentRuntime, runtimeExec, spawnInRuntime, usingServiceRuntime } from "../../account-runtime.js";
 import { execFile, spawn } from "../../subprocess.js";
@@ -598,7 +599,7 @@ class KiroSession implements HarnessSession {
   }
 
   private guardianIdentity(): GuardianIdentity {
-    return { projectId: this.options.projectId, conversationId: this.options.conversationId ?? this.id, harness: "kiro", cwd: this.options.cwd, canReplaceTool: false };
+    return { projectId: this.options.projectId, conversationId: isInternalSession(this.id) ? this.id : this.options.conversationId ?? this.id, harness: "kiro", cwd: this.options.cwd, canReplaceTool: false };
   }
 
   private async serverRequest(method: string, params: unknown): Promise<unknown> {

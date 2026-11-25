@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { isInternalSession } from "../../internal-sessions.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { agentCapabilityEnvironment, agentCapabilityInstructionFiles } from "../../agent-capabilities.js";
@@ -137,7 +138,7 @@ class AntigravitySession implements HarnessSession {
   private emit(event: HarnessEvent): void { for (const listener of this.listeners) listener(event); }
 
   private identity(): GuardianIdentity {
-    return { projectId: this.options.projectId, conversationId: this.options.conversationId ?? this.id, harness: "antigravity", cwd: this.options.cwd, canReplaceTool: false };
+    return { projectId: this.options.projectId, conversationId: isInternalSession(this.id) ? this.id : this.options.conversationId ?? this.id, harness: "antigravity", cwd: this.options.cwd, canReplaceTool: false };
   }
 
   private async withProfile<T>(work: () => Promise<T>): Promise<T> {

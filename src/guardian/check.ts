@@ -7,15 +7,17 @@ import { systemOneFetch } from "../classifiers/relay-key.js";
 import { systemDecisionKeyOrRelay } from "../decision-relay-proxy.js";
 import { genericSecretEnvironment } from "../secrets.js";
 import type { HarnessId } from "../types.js";
+import { IMAGE_CONTENTS_MARKER, imageContents } from "./attachments.js";
+import { isInternalSession } from "../internal-sessions.js";
 import { isGuardianExempt, redactRequest, runGuardianFix } from "./fix.js";
 import { localLayaUrl } from "./laya.js";
 import { askGuardianModel, jevTarget, layaTarget, type GuardianModelTarget } from "./model.js";
 import { announceGuardianBlock, announceGuardianWarning, guardianActionAllowed, REVIEW_TIMEOUT_MS, requestGuardianReview } from "./reviews.js";
 import { guardianBypassed } from "./bypass.js";
 import { guardianCommandPolicy, guardianCommandText } from './commands.js';
-import { ruleApplies, ruleChecksOutgoing, ruleOutcome, usesSecretPatterns, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
+import { ruleApplies, ruleChecksOutgoing, ruleOutcome, usesSecretPatterns, attachmentIndexStart, worstOutcome, type GuardianRequest, type GuardianRule, type RuleOutcome } from "./rules.js";
 import { fetchThroughRelay } from "./relay-model.js";
-import { guardianGroups, productionGuard, type GuardianGroup } from "./settings.js";
+import { getGuardianSettings, guardianGroups, productionGuard, type GuardianGroup } from "./settings.js";
 
 export interface GuardianIdentity {
   projectId: string;
@@ -146,13 +148,35 @@ async function applyFixes(identity: GuardianIdentity, request: GuardianRequest, 
  * applies is asked in one request per group. A block anywhere wins; user approval never overrides it.
  */
 export async function checkGuardian(identity: GuardianIdentity, original: GuardianRequest): Promise<GuardianVerdict> {
+  if (original.kind !== 'outgoing' || original.source !== "the user's message") return checkRequest(identity, original);
+  const attachments = attachmentIndexStart(original.text);
+  if (attachments < 0) return checkRequest(identity, original);
+  // Off, the attachment lines are left out of the check and put back afterwards.
+  const settings = getGuardianSettings();
+  if (!settings.checkAttachments || !settings.enabled) {
+    const verdict = await checkRequest(identity, { ...original, text: original.text.slice(0, attachments) });
+    return verdict.action === 'replace' && verdict.text !== undefined ? { ...verdict, text: verdict.text + original.text.slice(attachments) } : verdict;
+  }
+  // On (and Guardian is on), what the pictures show is checked with the message, and is never sent on as part of it.
+  let contents: string;
+  try { contents = await imageContents(original.text); }
+  catch (error) { return announced(identity, `Guardian could not read the attached images, so the message was withheld. ${(error as Error).message} Turn off "Also check image and file attachments" in Settings to send it without checking them.`); }
+  if (!contents) return checkRequest(identity, original);
+  const verdict = await checkRequest(identity, { ...original, text: original.text + IMAGE_CONTENTS_MARKER + contents });
+  if (verdict.action !== 'replace' || verdict.text === undefined) return verdict;
+  const cut = verdict.text.lastIndexOf(IMAGE_CONTENTS_MARKER);
+  return { ...verdict, text: cut < 0 ? verdict.text : verdict.text.slice(0, cut) };
+}
+
+async function checkRequest(identity: GuardianIdentity, original: GuardianRequest): Promise<GuardianVerdict> {
   if (guardianBypassed(identity.projectId, identity.conversationId)) return { action: 'continue' };
   const commandPolicy = guardianCommandPolicy(original, identity.cwd);
   if (commandPolicy === 'allow') return { action: 'continue' };
   const team = !!teamAssistantForConversation(identity.projectId, identity.conversationId);
   const effectCapable = original.kind === 'tool' && (original.category === 'commands' || original.category === 'file-changes');
   if (team && effectCapable && await productionGuard(identity.projectId) !== 'on') return announced(identity, 'Production-capable team operation blocked: production Guardian guard is unavailable.');
-  const exempt = !team && isGuardianExempt(identity.projectId, identity.conversationId);
+  // Joint Bob's own background runs (summaries, reviews, fixers) are not a person's message.
+  const exempt = !team && (isInternalSession(identity.conversationId) || isGuardianExempt(identity.projectId, identity.conversationId));
   const groups = (await guardianGroups(identity.projectId)).filter(group => group.relay || !exempt);
   // Team Pi retains write/edit without a shell. The mandatory production rule checks those effects too.
   if (team && effectCapable) for (const group of groups) group.rules = group.rules.map(rule => rule.id === PRODUCTION_RULE_ID ? { ...rule, check: 'all' } : rule);

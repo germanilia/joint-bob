@@ -234,9 +234,13 @@ function render() {
   const box = el("input"); box.type = "checkbox"; box.checked = view.settings.enabled; box.dataset.testid = "guardian-enabled";
   box.addEventListener("change", () => save({ ...view.settings, enabled: box.checked }));
   enabled.append(box, " Apply local Guardian rules on this machine");
+  const attachments = el("label", "checkbox-row");
+  const attachmentsBox = el("input"); attachmentsBox.type = "checkbox"; attachmentsBox.checked = view.settings.checkAttachments; attachmentsBox.dataset.testid = "guardian-check-attachments";
+  attachmentsBox.addEventListener("change", () => save({ ...view.settings, checkAttachments: attachmentsBox.checked }));
+  attachments.append(attachmentsBox, " Also check attached images (a vision model reads each picture and Guardian checks what it shows)");
   host.replaceChildren(
     el("p", "", "Guardian looks at what agents are about to do and stops them, or asks you, when something looks risky. Shared projects inherit their cluster or relay rules even when local rules are off."),
-    enabled, rulesFieldset(), modelLine(), ...relayControl(), limits(),
+    enabled, attachments, rulesFieldset(), modelLine(), ...relayControl(), limits(),
   );
   renderModels();
 }
