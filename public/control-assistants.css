@@ -34,6 +34,8 @@
 .control-asst-switch[aria-checked="true"]::after { left: 14px; background: #06201a; }
 .control-asst-switch:disabled { cursor: not-allowed; opacity: .6; }
 .control-asst-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.control-asst-delete { flex: none; padding: 2px 6px; font-size: 11px; color: var(--muted); }
+.control-asst-delete:hover { color: #ff8e8e; border-color: rgba(255, 142, 142, .45); }
 .control-asst-has { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; max-height: 22px; overflow: hidden; }
 .control-asst-has span { font-size: 10.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .control-asst-has span.none { border-style: dashed; }
