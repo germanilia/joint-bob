@@ -126,8 +126,12 @@ export function remapResourceOwners(from: string, to: string, db: DatabaseSync =
 /** Acts as a resource's owner, for work the node does on their behalf (an agent's request,
     a scheduled run). The node's own resources act as the admin. */
 export function ownerAsActor(accountId: string | undefined, db: DatabaseSync = ownershipDatabase()): ActingAccount | undefined {
-  const admin = adminAccountId(db);
-  const id = accountId ?? admin;
+  const home = canonicalLocalHome(db);
+  const users = home && db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()
+    ? db.prepare("SELECT username, role FROM users WHERE home_node_id IS NULL").all() as Array<{ username: string; role: string | null }>
+    : [];
+  const user = accountId ? users.find(({ username }) => accountIdFor(home, username) === accountId) : users.find(({ role }) => role === "admin");
+  const id = accountId ?? (user && accountIdFor(home, user.username));
   if (!id) return undefined;
-  return { accountId: id, username: "", role: id === admin ? "admin" : "member", isRemoteLogin: false, homeNodeId: null };
+  return { accountId: id, username: user?.username ?? "", role: user?.role === "admin" ? "admin" : "member", isRemoteLogin: false, homeNodeId: null };
 }
