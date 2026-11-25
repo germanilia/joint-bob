@@ -628,7 +628,7 @@ async function sendStory(request: Request, response: Response, run: (onProgress?
       ...(request.body.harnessId ? [`Reviewer: ${request.body.harnessId} / ${request.body.modelId}`] : []),
     ].join("\n");
     const failure = { type: "error", status, error: message, details };
-    console.error(`Change story failed\n${details}`, error);
+    console.error("Change story failed\n%s", details, error);
     if (streaming) send(failure);
     else response.status(status).json(failure);
   }

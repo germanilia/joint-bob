@@ -19,12 +19,17 @@ export function managedHomePaths(homePath: string): ManagedHomePaths {
   return { tickets: path.join(path.resolve(homePath), "tickets"), worktrees: path.join(path.resolve(homePath), "worktrees") };
 }
 
+function trimEdges(value: string, chars: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && chars.includes(value[start])) start += 1;
+  while (end > start && chars.includes(value[end - 1])) end -= 1;
+  return value.slice(start, end);
+}
+
 /** Workspace ids and project names both become single path segments, so neither can escape the home. */
 function managedFolderName(value: string, fallback: string): string {
-  return value.trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "_")
-    .replace(/^[._-]+|[._-]+$/g, "") || fallback;
+  return trimEdges(value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "_"), "._-") || fallback;
 }
 
 /** A member's workspace id carries their name ("noam--personal"); its folder doesn't, since

@@ -73,8 +73,13 @@ export function isModelRoute(provider: ProxiedProvider, path: string, origin = P
 /** On the relay: one member request sent on to the provider with the relay's own sign-in. */
 export async function forwardToProvider(provider: ProxiedProvider, access: string, request: RelayProxiedRequest, signal: AbortSignal,
   origin = PROVIDER_ROUTES[provider].origin): Promise<Response> {
-  if (!isModelRoute(provider, request.path, origin)) throw new RelayRouteRefused(`${request.path} is not a model route the relay sends on`);
-  const target = new URL(request.path, origin);
+  const parsed = new URL(request.path, origin);
+  const allowedPath = parsed.origin === new URL(origin).origin
+    ? PROVIDER_ROUTES[provider].paths.find((path) => path === parsed.pathname)
+    : undefined;
+  if (!allowedPath) throw new RelayRouteRefused(`${request.path} is not a model route the relay sends on`);
+  const target = new URL(allowedPath, origin);
+  target.search = parsed.search;
   const headers = { ...forwardedHeaders(Object.entries(request.headers)), authorization: `Bearer ${access}`,
     ...(provider === "openai-codex" ? { "chatgpt-account-id": codexAccountId(access) } : {}) };
   return fetch(target, { method: "POST", headers, body: Buffer.from(request.body, "base64"), redirect: "error", signal });

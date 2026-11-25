@@ -18,8 +18,8 @@ import { grantExistingProject } from "../project-runtime.js";
 
 const execFileAsync = promisify(execFile);
 
-async function inRuntime(runtime: RuntimeAccount, script: string, timeout = 20_000): Promise<{ ok: boolean; stdout: string }> {
-  const { command, args } = runtimeCommand(runtime, runtime.home, "/bin/sh", ["-c", script]);
+async function inRuntime(runtime: RuntimeAccount, script: string, scriptArgs: string[] = [], timeout = 20_000): Promise<{ ok: boolean; stdout: string }> {
+  const { command, args } = runtimeCommand(runtime, runtime.home, "/bin/sh", ["-c", script, "_", ...scriptArgs]);
   try {
     const { stdout } = await execFileAsync(command, args, { timeout, cwd: runtime.home, env: { ...process.env, HOME: runtime.home } });
     return { ok: true, stdout };
@@ -46,9 +46,9 @@ export async function runSelfTest(): Promise<{ passed: boolean; failures: string
     b.home = await ensureOsAccount(b);
     const dataDir = resolveDataDirectory();
     await inRuntime(b, `printf private-b > "$HOME/probe"`);
-    if ((await inRuntime(a, `cat "${b.home}/probe"`)).ok) failures.push("One account can read another's home");
+    if ((await inRuntime(a, `cat "$1"`, [path.join(b.home, "probe")])).ok) failures.push("One account can read another's home");
     for (const file of ["node.db", "secret.key", "supervisor.db", "file-sync.db"]) {
-      if ((await inRuntime(a, `cat "${path.join(dataDir, file)}" >/dev/null`)).ok) failures.push(`An account can read the service's ${file}`);
+      if ((await inRuntime(a, `cat "$1" >/dev/null`, [path.join(dataDir, file)])).ok) failures.push(`An account can read the service's ${file}`);
     }
     await inRuntime(a, `printf from-a > "$HOME/out"`);
     try { if ((await readFile(path.join(a.home, "out"), "utf8")) !== "from-a") failures.push("The service can't read what an account writes"); }
@@ -57,7 +57,7 @@ export async function runSelfTest(): Promise<{ passed: boolean; failures: string
     if ((await inRuntime(a, `cat "$HOME/in"`)).stdout !== "from-service") failures.push("An account can't read what the service writes into its home");
 
     const marker = `jb-selftest-marker-${process.pid}`;
-    const sleeper = runtimeCommand(b, b.home, "/bin/sh", ["-c", `sleep 15; : ${marker}`]);
+    const sleeper = runtimeCommand(b, b.home, "/bin/sh", ["-c", `sleep 15; : "$1"`, "_", marker]);
     const background = execFile(sleeper.command, sleeper.args, { cwd: b.home, env: { ...process.env, HOME: b.home } });
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const ps = await inRuntime(a, "ps -A -o args 2>/dev/null || ps -eo args");
@@ -67,7 +67,7 @@ export async function runSelfTest(): Promise<{ passed: boolean; failures: string
     const listener = runtimeCommand(b, b.home, process.execPath, ["-e", `require("net").createServer((s)=>s.end("b")).listen(${port},"127.0.0.1");setTimeout(()=>process.exit(0),12000)`]);
     const listening = execFile(listener.command, listener.args, { cwd: b.home, env: { ...process.env, HOME: b.home } });
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    const probe = await inRuntime(a, `"${process.execPath}" -e 'const s=require("net").connect(${port},"127.0.0.1");s.setTimeout(2000,()=>{process.stdout.write("closed");process.exit(0)});s.on("data",()=>{process.stdout.write("open");process.exit(0)});s.on("error",()=>{process.stdout.write("closed");process.exit(0)})'`);
+    const probe = await inRuntime(a, `"$1" -e 'const s=require("net").connect(Number(process.argv[1]),"127.0.0.1");s.setTimeout(2000,()=>{process.stdout.write("closed");process.exit(0)});s.on("data",()=>{process.stdout.write("open");process.exit(0)});s.on("error",()=>{process.stdout.write("closed");process.exit(0)})' "$2"`, [process.execPath, String(port)]);
     if (probe.stdout.includes("open")) (process.platform === "linux" ? failures : warnings).push("One account can reach a local port another listens on");
     background.kill(); listening.kill();
   } catch (error) {

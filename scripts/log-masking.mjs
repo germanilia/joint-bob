@@ -78,10 +78,45 @@ function secretIndex() {
   return byFirstCharacter;
 }
 
+function replacePemPrivateKeys(text, replacement) {
+  const beginMarker = "-----BEGIN ";
+  const endMarker = "-----END ";
+  const suffix = "PRIVATE KEY-----";
+  let out = "";
+  let pos = 0;
+  while (pos < text.length) {
+    const start = text.indexOf(beginMarker, pos);
+    if (start === -1) return out + text.slice(pos);
+    const headerEnd = text.indexOf(suffix, start + beginMarker.length);
+    if (headerEnd === -1) return out + text.slice(pos);
+    if (!/^[A-Z ]*$/.test(text.slice(start + beginMarker.length, headerEnd))) {
+      out += text.slice(pos, start + beginMarker.length);
+      pos = start + beginMarker.length;
+      continue;
+    }
+    let search = headerEnd + suffix.length;
+    let footerEnd = -1;
+    while (search < text.length) {
+      const endStart = text.indexOf(endMarker, search);
+      if (endStart === -1) break;
+      const endSuffix = text.indexOf(suffix, endStart + endMarker.length);
+      if (endSuffix === -1) break;
+      if (/^[A-Z ]*$/.test(text.slice(endStart + endMarker.length, endSuffix))) {
+        footerEnd = endSuffix + suffix.length;
+        break;
+      }
+      search = endStart + endMarker.length;
+    }
+    if (footerEnd === -1) return out + text.slice(pos);
+    out += text.slice(pos, start) + replacement;
+    pos = footerEnd;
+  }
+  return out;
+}
+
 /** Shape matching also covers credentials not saved in Joint Bob. */
 function maskCredentialFields(text) {
-  return text
-    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "***")
+  return replacePemPrivateKeys(text, "***")
     .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\b(?:gh[pousr]_|github_pat_|glpat-|xox[abprs]-|sk-(?:ant-|proj-)?)[A-Za-z0-9_-]{20,}\b/g, "***")
     .replace(/\b(Bearer|Basic)\s+[^\s"',}]+/gi, "$1 ***")
     .replace(/(\b[\w-]*(?:secret|password|passwd|token|api_?key|private_key)["']?\s*[=:]\s*)("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|[^\s,;}\[\]{}]+)/gi, (_match, prefix, value) => {

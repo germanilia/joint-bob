@@ -59,6 +59,7 @@ export async function saveAssistantFile(assistantId: string, name: string, bytes
 export async function assistantFilePath(assistantId: string, relative: string): Promise<string> {
   const root = await assistantFilesDirectory(assistantId);
   const target = path.resolve(root, relative);
+  if (!target.startsWith(`${root}${path.sep}`)) throw new WebhookResourceError("File not found", 404);
   try {
     const info = await lstat(target);
     const real = await realpath(target);
@@ -94,6 +95,11 @@ export async function removeAssistantCapabilities(db: DatabaseSync, assistantId:
   ensureWebhookResourceSchema(db);
   for (const skill of listWebhookSkills(db, assistantId)) await removeWebhookSkill(db, assistantId, skill.id);
   db.prepare("DELETE FROM webhook_memory_settings WHERE webhook_id=?").run(assistantId);
-  await rm(filesRoot(assistantId), { recursive: true, force: true });
-  await rm(path.join(resolveDataDirectory(), "webhook-resources", assistantId), { recursive: true, force: true });
+  const dataDir = path.resolve(resolveDataDirectory());
+  const assistantDir = path.resolve(filesRoot(assistantId));
+  if (!assistantDir.startsWith(`${path.join(dataDir, "assistant-files")}${path.sep}`)) throw new WebhookResourceError("Assistant not found", 404);
+  const webhookDir = path.resolve(dataDir, "webhook-resources", assistantId);
+  if (!webhookDir.startsWith(`${path.join(dataDir, "webhook-resources")}${path.sep}`)) throw new WebhookResourceError("Assistant not found", 404);
+  await rm(assistantDir, { recursive: true, force: true });
+  await rm(webhookDir, { recursive: true, force: true });
 }

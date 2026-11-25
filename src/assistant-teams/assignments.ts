@@ -498,7 +498,7 @@ async function processInbox(teamId:string) {
     output(db,r,`${r.id}:clarify`,'clarify',say(db,teamId,'please reply to the exact question or approval card, or use its buttons.'));continue;
    }
    const targets=await directTeamTargets(message);
-   const emptyCall=/^(?:\s*[/@][\w]+(?:@[\w]+)?\s*)+$/.test(message.text);
+   const emptyCall=/^\s*(?:[/@]\w+(?:@\w+)?\s*)+$/.test(message.text);
    const { teamTelegramConnection }=await import('./telegram-store.js');
    const bot=(await teamTelegramConnection(teamId))?.bot_username.toLowerCase();
    const command=teamCommandOf(message.text,bot);

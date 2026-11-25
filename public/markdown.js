@@ -52,7 +52,7 @@ function citationFilePath(value) {
 
 const INLINE_RE =
   /(?<code>`+)(?<codeText>[\s\S]*?)\k<code>|(?<bold>\*\*)(?<boldText>[\s\S]+?)\*\*(?!\*)|(?<ital>\*)(?<italText>[^*]+?)\*(?!\*)|(?<strike>~~)(?<strikeText>[\s\S]+?)~~(?!~)|(?<link>\[(?<linkText>(?:[^\]\\]|\\.)+)\]\((?<url>[^)\s]+)\))/g;
-const FILE_PATH_RE = /(?:(?:\.{1,2}[\\/]|[\\/]|[A-Za-z]:\\)(?:[^\s"'`()\[\]{}<>:]+[\\/])*|(?:[^\s"'`()\[\]{}<>:]+[\\/])+)[^\s"'`()\[\]{}<>:]+\.[A-Za-z0-9]{1,12}/g;
+const FILE_PATH_RE = /(?:(?:\.{1,2}[\\/]|[\\/]|[A-Za-z]:\\)(?:[^\s"'`()\[\]{}<>:\\/]+[\\/])*|(?:[^\s"'`()\[\]{}<>:\\/]+[\\/])+)[^\s"'`()\[\]{}<>:\\/]+\.[A-Za-z0-9]{1,12}/g;
 const FILE_NAME_RE = /^[^\s"'`()\[\]{}<>:\\/]+\.[A-Za-z0-9]{1,12}$/;
 
 function isFilePath(value) {
@@ -398,12 +398,16 @@ function nextBlock(ctx) {
     ctx.i += 1;
     const codeLines = [];
     while (ctx.i < lines.length) {
-      const close = new RegExp(`^ {0,3}(${marker}{${minLen},})\\s*$`).exec(lines[ctx.i]);
-      if (close) {
+      const candidate = lines[ctx.i];
+      let index = 0;
+      while (index < 3 && index < candidate.length && candidate[index] === " ") index += 1;
+      let count = 0;
+      while (index < candidate.length && candidate[index] === marker) { index += 1; count += 1; }
+      if (count >= minLen && candidate.slice(index).trim() === "") {
         ctx.i += 1;
         return buildCodeBlock(language, codeLines.join("\n"));
       }
-      codeLines.push(lines[ctx.i].replace(/^ {0,3}/, ""));
+      codeLines.push(candidate.replace(/^ {0,3}/, ""));
       ctx.i += 1;
     }
     return buildCodeBlock(language, codeLines.join("\n"));

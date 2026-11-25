@@ -103,8 +103,10 @@ export function securityHeaders(request: Request, response: Response, next: Next
 }
 
 function bearerToken(request: Request): string | undefined {
-  const match = /^Bearer\s+(.+)$/i.exec(request.header("authorization") ?? "");
-  return match?.[1];
+  const header = request.header("authorization") ?? "";
+  if (!/^Bearer\s/i.test(header)) return undefined;
+  const token = header.slice(6).replace(/^\s+/, "");
+  return token || undefined;
 }
 
 export function requestCookie(request: Request, name: string): string | undefined {

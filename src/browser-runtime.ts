@@ -466,9 +466,16 @@ export class BrowserRuntime {
       // Validate scope before touching the filesystem: the native login directory
       // must survive a delete request the store is about to refuse.
       this.store.assertProfileDeletable(id, projectId);
-      if (profileLeases.has(profileDirectory(id))) throw new Error("Browser profile in use");
-      await rm(await profileLocation(id, await profileRuntime(this.store.profile(id).projectId)), { recursive: true, force: true });
-      await rm(profileDirectory(id), { recursive: true, force: true });
+      const serviceRoot = path.resolve(resolveDataDirectory(), "browser", "profiles");
+      const serviceProfile = path.resolve(profileDirectory(id));
+      if (!serviceProfile.startsWith(`${serviceRoot}${path.sep}`)) throw new Error("Invalid browser profile ID");
+      if (profileLeases.has(serviceProfile)) throw new Error("Browser profile in use");
+      const runtime = await profileRuntime(this.store.profile(id).projectId);
+      const locationRoot = runtime.name ? path.resolve(runtime.home, ".joint-bob-browser", "profiles") : serviceRoot;
+      const location = path.resolve(await profileLocation(id, runtime));
+      if (!location.startsWith(`${locationRoot}${path.sep}`)) throw new Error("Invalid browser profile path");
+      await rm(location, { recursive: true, force: true });
+      await rm(serviceProfile, { recursive: true, force: true });
       this.store.deleteProfile(id, projectId);
     });
     this.creates = job.catch(() => {});
@@ -482,8 +489,11 @@ export class BrowserRuntime {
     void this.ready();
     const job = this.creates.then(async () => {
       if (this.sessions.has(id) || this.recoveries.has(id)) throw new Error("Close the browser before removing its session");
+      const root = path.resolve(this.root);
+      const sessionDir = path.resolve(root, id);
+      if (!sessionDir.startsWith(`${root}${path.sep}`)) throw new Error("Invalid browser session ID");
       this.store.forget(id);
-      await rm(path.join(this.root, id), { recursive: true, force: true });
+      await rm(sessionDir, { recursive: true, force: true });
     });
     this.creates = job.catch(() => {});
     return job;
@@ -494,7 +504,9 @@ export class BrowserRuntime {
     this.store.get(id);
     const download = this.store.downloads(id).find(item => item.id === downloadId);
     if (!download?.ready) throw new Error(download?.error || "Browser download not found or not ready");
-    const file = path.join(this.root, id, "downloads", download.id);
+    const root = path.resolve(this.root);
+    const file = path.resolve(root, id, "downloads", download.id);
+    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Invalid browser download path");
     await access(file);
     return { path: file, name: download.name };
   }
@@ -899,7 +911,7 @@ export class BrowserRuntime {
     let current: URL;
     try { current = new URL(page.url()); } catch { return; }
     // A credential for Google's sign-in origin or for Gmail itself lets the agent sign in.
-    if (session.skipLoginPause || current.origin !== "https://accounts.google.com" || session.credentialOrigins.includes(current.origin) || session.credentialOrigins.includes("https://mail.google.com")) return;
+    if (session.skipLoginPause || current.origin !== "https://accounts.google.com" || session.credentialOrigins.some(origin => origin === current.origin || origin === "https://mail.google.com")) return;
     let gmail = false;
     try { gmail = new URL(this.store.get(session.id).url ?? "about:blank").origin === "https://mail.google.com"; } catch {}
     if (!gmail) try { gmail = new URL(current.searchParams.get("continue") ?? "about:blank").origin === "https://mail.google.com"; } catch {}

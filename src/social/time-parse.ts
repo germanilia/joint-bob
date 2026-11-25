@@ -115,9 +115,12 @@ function parseDuration(text: string): number | undefined {
 }
 
 function parseTitle(original: string): string | undefined {
-  const pattern = /\b(?:for|about|to discuss)\s+(?:the|a|an|our)?\s*([^?.!,;]+?)(?=\s+(?:on|at|next|this|tomorrow|today|for)\b|[?.!,;]|$)/gi;
-  for (const match of original.matchAll(pattern)) {
-    const title = match[1]?.trim();
+  const lead = /\b(?:for|about|to discuss)\s+(?:(?:the|a|an|our)\s+)?/gi;
+  const stop = /\s+(?:on|at|next|this|tomorrow|today|for)\b|[?.!,;]/i;
+  for (const match of original.matchAll(lead)) {
+    const rest = original.slice(match.index + match[0].length);
+    const end = rest.search(stop);
+    const title = (end === -1 ? rest : rest.slice(0, end)).trim();
     if (!title || /^\d/.test(title) || /^(minutes?|mins?|hours?|an?\s+hour|half|quarter|a\s+(?:few|couple))\b/i.test(title)) continue;
     return (title[0].toUpperCase() + title.slice(1)).slice(0, 80);
   }

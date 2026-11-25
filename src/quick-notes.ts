@@ -180,18 +180,25 @@ function decodeImage(input: QuickNoteImageInput): { id: string; name: string; mi
 }
 
 function storeImages(noteId: string, inputs: QuickNoteImageInput[]): QuickNoteImage[] {
-  const directory = path.join(imagesDirectory(), noteId);
+  const base = path.resolve(imagesDirectory());
+  const directory = path.resolve(base, noteId);
+  if (!directory.startsWith(`${base}${path.sep}`)) throw new Error("Invalid note id");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const decoded = inputs.map(decodeImage);
   // The incoming set fully replaces whatever the note held before.
   const keep = new Set(decoded.map((image) => image.id));
   for (const existing of readdirSync(directory)) {
-    if (!keep.has(existing)) { try { unlinkSync(path.join(directory, existing)); } catch { /* already gone */ } }
+    if (!keep.has(existing)) {
+      const target = path.resolve(directory, existing);
+      if (target.startsWith(`${directory}${path.sep}`)) { try { unlinkSync(target); } catch { /* already gone */ } }
+    }
   }
   const rows = db().prepare("SELECT id, note_id, name, mime_type FROM quick_note_images WHERE note_id = ?").all(noteId) as unknown as QuickNoteImageRow[];
   for (const row of rows) if (!keep.has(row.id)) db().prepare("DELETE FROM quick_note_images WHERE note_id = ? AND id = ?").run(noteId, row.id);
   for (const image of decoded) {
-    writeFileSync(path.join(directory, image.id), image.bytes, { mode: 0o600 });
+    const target = path.resolve(directory, image.id);
+    if (!target.startsWith(`${directory}${path.sep}`)) throw new Error("Invalid image id");
+    writeFileSync(target, image.bytes, { mode: 0o600 });
     db().prepare(`INSERT INTO quick_note_images (id, note_id, name, mime_type) VALUES (?, ?, ?, ?)
       ON CONFLICT(note_id, id) DO UPDATE SET name = excluded.name, mime_type = excluded.mime_type`).run(image.id, noteId, image.name, image.mimeType);
   }
@@ -350,7 +357,11 @@ export function updateQuickNote(id: string, input: QuickNoteInput): QuickNote | 
 
 export function deleteQuickNote(id: string): boolean {
   const changed = db().prepare("DELETE FROM quick_notes WHERE id = ?").run(id).changes > 0;
-  if (changed) { try { rmSync(path.join(imagesDirectory(), id), { recursive: true, force: true }); } catch { /* already gone */ } }
+  if (changed) {
+    const base = path.resolve(imagesDirectory());
+    const target = path.resolve(base, id);
+    if (target.startsWith(`${base}${path.sep}`)) { try { rmSync(target, { recursive: true, force: true }); } catch { /* already gone */ } }
+  }
   return changed;
 }
 

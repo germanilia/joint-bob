@@ -32,7 +32,7 @@ function closeNotice(id: string): void {
 }
 
 function showNotice(notice: Notice, ownerId: string, waitMs: number): void {
-  if (notices.has(notice.id) || waitMs <= 0) return;
+  if (notices.has(notice.id) || !Number.isFinite(waitMs) || waitMs <= 0 || waitMs > TAKEBACK_WINDOW_MS) return;
   notices.set(notice.id, { notice, ownerId, deadline: Date.now() + waitMs, closeTimer: setTimeout(() => closeNotice(notice.id), waitMs).unref() });
   announceToNodeAdmins({ type: "takebackRequested", ...notice, waitMs });
 }

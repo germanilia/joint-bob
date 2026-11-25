@@ -71,8 +71,16 @@ let database: DatabaseSync | null = null;
 let databaseInitialization: Promise<DatabaseSync> | null = null;
 let localNodeId = "";
 
+function trimEdgeChars(value: string, chars: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && chars.includes(value[start])) start += 1;
+  while (end > start && chars.includes(value[end - 1])) end -= 1;
+  return value.slice(start, end);
+}
+
 function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
+  return trimEdgeChars(value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), "-") || "project";
 }
 
 function generatedSyncFolderId(project: Pick<ProjectRecord, "id" | "name">): string {
@@ -971,7 +979,7 @@ export async function touchProject(projectId: string): Promise<void> {
 }
 
 export function workspaceIdFromLabel(label: string): string {
-  return label.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-._]+|[-._]+$/g, "");
+  return trimEdgeChars(label.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), "-._");
 }
 
 export async function listWorkspaces(): Promise<WorkspaceRecord[]> {

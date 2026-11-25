@@ -128,7 +128,9 @@ function readJson<T>(file: string): T | null {
 }
 
 export function readSubject(root: string, slug: string): KnowledgeSubject | null {
-  const file = subjectFile(root, slug);
+  const base = path.resolve(knowledgeDirectory(root));
+  const file = path.resolve(subjectFile(root, slug));
+  if (!file.startsWith(`${base}${path.sep}`)) throw new KnowledgeError(400, "Invalid knowledge subject");
   return existsSync(file) ? parseSubject(slug, readFileSync(file, "utf8")) : null;
 }
 
@@ -209,7 +211,9 @@ function validProposal(value: Partial<KnowledgeProposal> | null): KnowledgePropo
 }
 
 export function readProposal(root: string, id: string): KnowledgeProposal | null {
-  const file = proposalPath(root, id);
+  const base = path.resolve(knowledgeDirectory(root), "proposals");
+  const file = path.resolve(proposalPath(root, id));
+  if (!file.startsWith(`${base}${path.sep}`)) throw new KnowledgeError(400, "Invalid proposal id");
   return existsSync(file) ? validProposal(readJson<Partial<KnowledgeProposal>>(file)) : null;
 }
 
