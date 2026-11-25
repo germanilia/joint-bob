@@ -44,6 +44,10 @@ test("Guardian rules are switched, edited with searchable dropdowns and reviewed
     await page.getByTestId("guardian-enabled").check();
     await waitInPage(page, async () => (await (await fetch("/api/guardian")).json()).settings.enabled === true);
 
+    assert.equal(await page.getByTestId("guardian-check-attachments").isChecked(), false, "attachment checking starts off");
+    await page.getByTestId("guardian-check-attachments").check();
+    await waitInPage(page, async () => (await (await fetch("/api/guardian")).json()).settings.checkAttachments === true);
+
     await rows.nth(1).getByTestId("guardian-rule-edit").click();
     await page.getByTestId("guardian-rule-editor").waitFor();
     await choose(page, "guardian-if-yes", "Block");

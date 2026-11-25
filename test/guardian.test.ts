@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +11,7 @@ import { cancelGuardianReviews, decideGuardianReview, onGuardianEvent, pendingGu
 import { DEFAULT_GUARDIAN_SETTINGS, guardianSettingsSchema, ruleApplies, ruleOutcome, toolCategory, worstOutcome, type GuardianRule } from "../src/guardian/rules.js";
 import { getGuardianSettings, updateGuardianSettings } from "../src/guardian/settings.js";
 import { PRODUCTION_RULE, productionGuardStatus } from "../src/guardian/production-rule.js";
+import { internalSessionId } from "../src/internal-sessions.js";
 import { addProject } from "../src/store.js";
 
 const rule = (overrides: Partial<GuardianRule> = {}): GuardianRule => ({ ...DEFAULT_GUARDIAN_SETTINGS.rules[0], ...overrides });
@@ -411,4 +412,50 @@ test("the Laya classifier routes by difficulty through the saved Laya server, wi
   assert.equal(bodies[0].model, "multilingual");
   assert.ok(bodies[0].state.endsWith("fix the typo") && bodies[0].state.length === 3_500, "the newest part of the prompt is what Laya reads");
   assert.equal(layaClassifier.keyOptional, true);
+});
+
+test("attached images are ignored unless attachment checking is on, then what they show is checked and never sent on", async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "guardian-attachments-"));
+  const attachments = path.join(root, ".joint-bob-attachments");
+  mkdirSync(attachments);
+  const image = path.join(attachments, "shot.png");
+  writeFileSync(image, "not really a png");
+  const describer = path.join(root, "describer.mjs");
+  writeFileSync(describer, "export default async () => 'A screenshot showing the text SECRET-SCREEN-TEXT';\n");
+  const previousDescriber = process.env.JOINT_BOB_IMAGE_DESCRIBER;
+  process.env.JOINT_BOB_IMAGE_DESCRIBER = describer;
+  const model = await fakeModel(() => 0.1);
+  t.after(() => {
+    model.server.close(); updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS);
+    if (previousDescriber === undefined) delete process.env.JOINT_BOB_IMAGE_DESCRIBER; else process.env.JOINT_BOB_IMAGE_DESCRIBER = previousDescriber;
+  });
+  const personal = { ...DEFAULT_GUARDIAN_SETTINGS.rules.find(item => item.id === 'personal-information')!, enabled: true };
+  const project = await addProject("Guardian attachments", root, { writeInstructions: false });
+  const identity: GuardianIdentity = { projectId: project.id, conversationId: 'attachments', cwd: root, harness: 'pi', canReplaceTool: true };
+  const text = `hello\n\nImage attachments:\n- shot.png: ${image}\nAnalyze them alongside the request.`;
+  const message = { kind: 'outgoing' as const, source: "the user's message", text };
+  const settings = { ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote' as const, layaUrl: model.url, rules: [personal] };
+  updateGuardianSettings(settings);
+  assert.deepEqual(await checkGuardian(identity, message), { action: 'continue' });
+  assert.ok(model.requests.length && model.requests.every(request => !String(request.state).includes(attachments) && !String(request.state).includes('SECRET-SCREEN-TEXT')), 'off: the model sees neither the paths nor the pictures');
+  model.requests.length = 0;
+  updateGuardianSettings({ ...settings, checkAttachments: true });
+  assert.deepEqual(await checkGuardian(identity, message), { action: 'continue' }, 'the message is sent as written');
+  assert.ok(model.requests.some(request => String(request.state).includes('SECRET-SCREEN-TEXT')), 'on: the model is asked about what the picture shows');
+  const outside = path.join(root, "elsewhere.png");
+  writeFileSync(outside, "x");
+  const refused = await checkGuardian(identity, { ...message, text: `hi\n\nImage attachments:\n- elsewhere.png: ${outside}\nAnalyze them alongside the request.` });
+  assert.equal(refused.action, 'block', 'a file that is not a saved attachment is never read');
+});
+
+test("Joint Bob's own background sessions are not checked as a person's message", async (t) => {
+  const model = await fakeModel(() => 0.95);
+  t.after(() => { model.server.close(); updateGuardianSettings(DEFAULT_GUARDIAN_SETTINGS); });
+  const personal = { ...DEFAULT_GUARDIAN_SETTINGS.rules.find(item => item.id === 'personal-information')!, enabled: true, ifYes: 'block' as const };
+  updateGuardianSettings({ ...DEFAULT_GUARDIAN_SETTINGS, enabled: true, model: 'laya-remote', layaUrl: model.url, rules: [personal] });
+  const project = await addProject("Guardian internal", mkdtempSync(path.join(os.tmpdir(), "guardian-internal-")), { writeInstructions: false });
+  const message = { kind: 'outgoing' as const, source: "the user's message", text: 'Summarize this conversation' };
+  const identity = (conversationId: string): GuardianIdentity => ({ projectId: project.id, conversationId, cwd: process.cwd(), harness: 'antigravity', canReplaceTool: false });
+  assert.equal((await checkGuardian(identity(internalSessionId()), message)).action, 'continue');
+  assert.equal((await checkGuardian(identity('a-real-conversation'), message)).action, 'block');
 });
