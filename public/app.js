@@ -22,7 +22,6 @@ import { confirmAction, SERVICE_WORKER_UPDATE_MS, setTheme, syncNotifyButton, to
 import { state } from "./app/state.js";
 import { openUsageDashboard } from "./app/usage-dashboard.js";
 import "./app/state.js";
-import "./app/error-reporting.js";
 import "./app/dialog-layout.js";
 import "./app/elements.js";
 import "./app/project-files.js";
@@ -185,5 +184,5 @@ initializeApplication()
     if (action !== "automation") throw new Error("Unknown assistant automation");
     await openNewAutomation({ projectId, nodeId: assistant.nodeId, target: { kind: "assistant", projectId, assistantId: assistant.id } });
   })
-  .catch((error) => toast(error.message))
+  .catch((error) => toast.error(error.message))
   .finally(revealApplication);

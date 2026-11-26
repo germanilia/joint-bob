@@ -153,7 +153,7 @@ export function toast(message, duration = 3200, severity = "info", action) {
 }
 
 /** Every error carries its report: the failed calls, their answers and what the page was showing, to send to whoever helps. */
-toast.error = (message) => {
+toast.error = (message, { kind = "toast", detail = message } = {}) => {
   const node = toast(message, 8000, "error");
   if (node.querySelector(".toast-report")) return node;
   const report = document.createElement("span");
@@ -162,15 +162,15 @@ toast.error = (message) => {
   copy.type = "button";
   copy.textContent = "Copy details";
   copy.setAttribute("data-testid", "toast-copy-details");
-  copy.addEventListener("click", () => copyErrorReport(message).then(() => { copy.textContent = "Copied"; }, () => { copy.textContent = "Copy failed: use Download"; }));
+  copy.addEventListener("click", () => copyErrorReport(detail).then(() => { copy.textContent = "Copied"; }, () => { copy.textContent = "Copy failed: use Download"; }));
   const save = document.createElement("button");
   save.type = "button";
   save.textContent = "Download";
   save.setAttribute("data-testid", "toast-download-details");
-  save.addEventListener("click", () => downloadErrorReport(message));
+  save.addEventListener("click", () => downloadErrorReport(detail));
   report.append(copy, save);
   node.querySelector(".toast-message").after(report);
-  void reportClientError("toast", message).then((result) => {
+  void reportClientError(kind, detail).then((result) => {
     if (!result?.offerWebhookSetup || !node.isConnected) return;
     const setup = document.createElement("button");
     setup.type = "button";
@@ -181,6 +181,12 @@ toast.error = (message) => {
   });
   return node;
 };
+
+window.addEventListener("joint-bob-client-error", (event) => {
+  const { kind, message } = event.detail;
+  const summary = kind === "toast" ? message : message.trimStart().split("\n", 1)[0].slice(0, 1000);
+  if (summary) toast.error(summary, { kind, detail: message });
+});
 
 export function setTheme(theme) {
   document.documentElement.dataset.theme = theme;

@@ -33,7 +33,3 @@ export async function reportClientError(kind, message) {
   } catch { return null; }
 }
 
-window.addEventListener("joint-bob-client-error", (event) => {
-  const { kind, message } = event.detail;
-  void reportClientError(kind, message);
-});
