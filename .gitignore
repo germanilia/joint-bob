@@ -56,9 +56,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Sync tooling and conflict artifacts
-.stfolder/
-.stignore
+# Conflict artifacts
 *.sync-conflict-*
 
 .claude/settings.local.json

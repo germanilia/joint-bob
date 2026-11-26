@@ -3,7 +3,7 @@
 Approved by GPT-5.6 Sol review, rounds 1–12. Status: **implemented** (see
 "Implementation status" at the end for shipped scope and deviations).
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of the old sync tool in this document describe the earlier design.
 
 ## 1. Problem
 
@@ -16,7 +16,7 @@ Approved by GPT-5.6 Sol review, rounds 1–12. Status: **implemented** (see
 ## 2. Decision
 
 Manifest 3-way merge over fs.cp workspaces, no git dependency. Git worktrees
-rejected: single-node worktrees, 8 MiB bundle handoff cap, `.git`+Syncthing
+rejected: single-node worktrees, 8 MiB bundle handoff cap, `.git`+the old sync tool
 corruption, requires git on every node and clean `main`. Git appears only as
 manual post-merge commit, never in the mechanism. New dependency: `node-diff3`.
 
@@ -26,7 +26,7 @@ Untrusted: everything inside the workspace.
 
 ## 3. State layout and trust model
 
-Syncthing ignores `.joint-bob/` at every depth but not longer names
+the old sync tool ignores `.joint-bob/` at every depth but not longer names
 (`.joint-bob-attachments/` syncs). Inside the workspace (syncs, untrusted):
 
 - `.joint-bob-baseline/` — baseline CONTENT tree + `manifest.json`
@@ -258,7 +258,7 @@ deterministic barriers), membership/fence races (updateClusterNode included).
 Crash matrix: every journal boundary, mid-cleanup commit+rollback. Cluster:
 two-node merge owner-only, artifacts arrive before finalize allowed, fences
 cross-node (filesystem delivery simulated explicitly — harness runs no real
-Syncthing). Browser: board merge states, conflict panel, resume/discard.
+the old sync tool). Browser: board merge states, conflict panel, resume/discard.
 Restart matrix: hard restart mid pi/claude merge run, graceful update abort.
 
 ## 16. Deferred

@@ -5,7 +5,7 @@ Status: implemented. The current behaviour, API, and upgrade notes are in [docs/
 - There is no member limit, and one mode: the legacy bearer-token pairing, its migration workflow (§8), and the selective-sharing switch were removed rather than migrated.
 - Project events inside a cluster travel through two hubs with origin signatures and catch-up pulls instead of from the origin to every member.
 - A manager that its twin declares lost is replaced by the most senior remaining member (§2 said no failover).
-- Files are moved by built-in file sync, not Syncthing (§6 said to reuse Syncthing). Removed in the release after 2.256.3 (2026-11-10).
+- Files are moved by built-in file sync, not the old sync tool (§6 said to reuse the old sync tool). Removed in the release after 2.256.3 (2026-11-10).
 
 ## 1. Product behavior
 
@@ -93,7 +93,7 @@ The initiating owner immediately stores its revocation, stops authorizing new re
 
 Show two distinct states: locally removed, and confirmed removed from all known replicas. Offline or unreachable replicas remain visibly pending. Never report global immediate revocation or deletion of previously copied data. Older statements cannot resurrect a revoked generation. A reconnecting app must reconcile policy before re-enabling its managed sync exports.
 
-Syncthing can run independently of the app, so a previously authorized disconnected replica may still have old folder configuration until reconciliation. This is part of the visible pending-revocation state, not a hidden security guarantee. For deployments requiring immediate centrally enforced revocation of every byte, direct peer filesystem replication would need to be replaced; that stronger guarantee is not promised here.
+The old sync tool can run independently of the app, so a previously authorized disconnected replica may still have old folder configuration until reconciliation. This is part of the visible pending-revocation state, not a hidden security guarantee. For deployments requiring immediate centrally enforced revocation of every byte, direct peer filesystem replication would need to be replaced; that stronger guarantee is not promised here.
 
 Preserve a peer's resource sync path if another cluster or a twin still grants access. Do not globally remove the peer or rotate unrelated credentials on a single-cluster leave.
 
@@ -101,13 +101,13 @@ A running message retains its credential snapshot, as today. New messages, queue
 
 ## 6. File and transcript strategy
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. This section describes the earlier design. Its decision "Do not build a replacement bidirectional file-sync engine" was superseded by `FILE-SYNC-PLAN.md`. Other mentions of Syncthing in this document are from that design too.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. This section describes the earlier design. Its decision "Do not build a replacement bidirectional file-sync engine" was superseded by `FILE-SYNC-PLAN.md`. Other mentions of the old sync tool in this document are from that design too.
 
 ### Decision
 
-Reuse Syncthing with per-resource folders and filesystem-owned transcript exports. Do not build a replacement bidirectional file-sync engine, put file bytes in SQLite, or rely on per-peer ignore rules to isolate resources in a common root.
+Reuse the old sync tool with per-resource folders and filesystem-owned transcript exports. Do not build a replacement bidirectional file-sync engine, put file bytes in SQLite, or rely on per-peer ignore rules to isolate resources in a common root.
 
-- Project repository: retain its canonical resource identity, but isolate Syncthing folders by original sharing context. Do not put devices from different clusters or a twin link in one shared folder. The original owner publishes a filesystem export for each authorized context; a recipient cannot enroll another context. Received content may synchronize within its original context only. Context-specific exports remain filesystem-owned, and conflicts return through the existing authorized writer/merge flow rather than creating new ownership.
+- Project repository: retain its canonical resource identity, but isolate the old sync tool folders by original sharing context. Do not put devices from different clusters or a twin link in one shared folder. The original owner publishes a filesystem export for each authorized context; a recipient cannot enroll another context. Received content may synchronize within its original context only. Context-specific exports remain filesystem-owned, and conflicts return through the existing authorized writer/merge flow rather than creating new ownership.
 - Ticket workspace: use one deterministic folder ID per ticket and original sharing context, rooted in its project-owned workspace or a context-specific filesystem export. Every ticket's eligible members come from its parent project's share, never a separate selection. Remove device sharing from the old global ticket root before enabling these folders; no concurrently active parent/child sync folders.
 - Git-backed task worktrees: retain `exportTaskBranchBundle` and `prepareTaskWorktreeFromBundle` for handoff. Project sharing remains a prerequisite for project-backed tasks.
 - Transcripts: export each logical conversation into a filesystem directory per original sharing context under the managed home, including its ordered native transcript segments and explicitly referenced attachments. Use `listConversationSegments(projectId, conversationId)` and the harness's `paths.transcriptFile` rather than copying an entire Pi/Claude/Kiro transcript root.
@@ -115,7 +115,7 @@ Reuse Syncthing with per-resource folders and filesystem-owned transcript export
 - Agent resources: twin-only, using the existing dedicated agent-resources folder. They are not silently published to ordinary clusters.
 - Secret files: travel only as explicitly authorized encrypted-at-rest secret account payloads, never by copying a node's `secret-files` materialization directory.
 
-File authorization checks must bind the authenticated node to the requested resource and its recorded Syncthing device ID. Do not accept an arbitrary device ID supplied by a peer as a destination. Reject unmanaged folder IDs. Resolve filesystem roots from server-owned project/ticket/conversation records, never a caller-provided absolute root. Do not follow symlinks outside the authorized root. Preserve existing project ignore rules for node-local credentials and generated files; complete ticket sharing means all of the existing sanitized ticket workspace, baseline, merge state, and attachments, not a new copy of excluded source secrets.
+File authorization checks must bind the authenticated node to the requested resource and its recorded the old sync tool device ID. Do not accept an arbitrary device ID supplied by a peer as a destination. Reject unmanaged folder IDs. Resolve filesystem roots from server-owned project/ticket/conversation records, never a caller-provided absolute root. Do not follow symlinks outside the authorized root. Preserve existing project ignore rules for node-local credentials and generated files; complete ticket sharing means all of the existing sanitized ticket workspace, baseline, merge state, and attachments, not a new copy of excluded source secrets.
 
 Twin replication uses these same per-resource boundaries with automatic eligibility, not broad mixed-owner roots. This is the necessary correction to the earlier suggestion that twins could always retain whole-root replication.
 
@@ -141,7 +141,7 @@ Use an explicit coordinated upgrade, not independent automatic ownership guessin
 3. Establish the legacy creator and admission order from verified historical records. If those are missing or ambiguous, require explicit confirmation in the adoption preview rather than guessing from timestamps on replicated files. The original node starts as the sole cluster-membership-manager and most senior member; assign the confirmed remaining admission order once. It creates and distributes the single new cluster ID. All existing nodes must acknowledge the migration transaction. Offline/incompatible nodes leave adoption pending; they are not silently granted v2 access.
 4. Existing asymmetric project grants remain explicit migration restrictions. Do not convert their union into cluster-wide access. The preview requires the resource owner to select a uniform new cluster share or keep that resource private. Existing legacy resource identity with ambiguous ownership requires explicit adoption confirmation; do not guess from local folder presence.
 5. The user explicitly requested that Mac and Homeserver be twins for rollout. Complete and verify that adoption on both machines using their actual node IDs and reciprocal active certificates, with the same two-sided consent, all-owned-secret warning, and data-conflict preview as a new twin pair. Automated inter-node rollout must remain disabled until that verification succeeds. A protocol-bootstrap installation on an older node is a separate controlled per-node migration step, not permission for legacy fleet updates. Adopt existing identical resources once using verified IDs/folder mappings. Differing secret values or divergent transcript histories require conflict resolution before enabling overwriting replication. Never print those secret values in the preview.
-6. Snapshot each node's SQLite and Syncthing configuration before cutover. Stop affected exports, apply ownership/policy and folder changes, invalidate old invitation links and broad machine credentials, then bootstrap authorized replicas. Do not expose a partially converted node as ready.
+6. Snapshot each node's SQLite and the old sync tool configuration before cutover. Stop affected exports, apply ownership/policy and folder changes, invalidate old invitation links and broad machine credentials, then bootstrap authorized replicas. Do not expose a partially converted node as ready.
 7. If preparation fails, keep old mode and report the failed step. Once v2 cutover has revoked access, rollback must not automatically restore the broader legacy trust or overwrite newer user data. Prefer repair-forward. Restoring a backup is a separately confirmed maintenance action.
 
 Migration is a UI/API workflow delivered with the feature, not a requirement to ask the user to enumerate all production ownership now. Implementation and isolated tests can proceed without production credentials or changes.
@@ -235,20 +235,20 @@ Tests: extend `test/cluster-project-sharing.test.ts`, `test/cluster-inventory-ap
 
 ### D. Resource-scoped filesystem replication
 
-New planned `src/conversation-sync.ts` handles native transcript exports/imports and manifests. Modify `src/syncthing.ts`, `src/task-workspaces.ts`, `src/server/maintenance.ts`, `src/server/routes/cluster-tasks.ts`, and harness contracts/adapters for transcript artifact enumeration.
+New planned `src/conversation-sync.ts` handles native transcript exports/imports and manifests. Modify `src/old-sync.ts`, `src/task-workspaces.ts`, `src/server/maintenance.ts`, `src/server/routes/cluster-tasks.ts`, and harness contracts/adapters for transcript artifact enumeration.
 
 Verified anchors:
 ```ts
 export function expectedTaskWorkspacePath(projectId: string, taskId: string, root = ticketWorkspaceRoot()): string
-export async function removeSyncthingDevices(deviceIds: string[], folderIds: string[]): Promise<void>
-export async function ensureSyncthingFolder(folderId: string, label: string, folderPath: string, peerDeviceId?: string): Promise<void>
+export async function removethe old sync toolDevices(deviceIds: string[], folderIds: string[]): Promise<void>
+export async function ensurethe old sync toolFolder(folderId: string, label: string, folderPath: string, peerDeviceId?: string): Promise<void>
 export async function listConversationSegments(projectId: string, conversationId: string): Promise<ConversationRecord[]>
 export async function exportTaskBranchBundle(projectPath: string, worktreePath: string, branch: string): Promise<TaskBranchBundle>
 ```
 
 Use dedicated ticket/conversation folders, verified device identity, no broad native transcript roots, and conflict-preserving native imports. Shared file data remains filesystem-owned.
 
-Tests: new `test/cluster-resource-files.test.ts`, `test/conversation-sync.test.ts`; extend handoff/cluster tests. Include a real isolated Syncthing integration run where available and explicit required test prerequisites instead of silent skipping. Verify a denied resource's bytes, names, and attachments never arrive at the unrelated node.
+Tests: new `test/cluster-resource-files.test.ts`, `test/conversation-sync.test.ts`; extend handoff/cluster tests. Include a real isolated the old sync tool integration run where available and explicit required test prerequisites instead of silent skipping. Verify a denied resource's bytes, names, and attachments never arrive at the unrelated node.
 
 ### E. Legacy adoption and twin conversion
 

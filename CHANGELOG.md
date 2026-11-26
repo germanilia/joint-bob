@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.1 — 2026-11-26
+
+- **Housekeeping:** Removed every remaining mention of the old sync tool from the repository's tests, ignore file and documents. Nothing changes for users.
+
 ## 2.343.0 — 2026-11-26
 
 - **Learning:** Every conversation marked done is learned from again, with no approval step. Good and Bad ratings guide the review. "Not important" now means Bob decides whether the conversation went well or badly, and still learns from it.
@@ -10,7 +14,7 @@
 
 ## 2.342.0 — 2026-11-26
 
-- **File sync:** Removed the last Syncthing code. The one-time cleanup that took Syncthing off each machine is gone, and so are the ignore rules for Syncthing's own files (`.stfolder`, `.stignore`, `.stversions` and its half-downloaded temp files). A machine that skipped 2.341.0 keeps whatever Syncthing setup it had; delete it by hand.
+- **File sync:** Removed the last of the old sync tool's code, and the cleanup that took it off each machine. The built-in ignore rules no longer name its bookkeeping files, so machines on 2.341.1 or older stop exchanging files with this release until they update. A machine that skipped 2.341.0 keeps whatever the old sync tool setup it had; delete it by hand.
 - **File sync:** The built-in ignore rules changed, so machines on 2.341.1 or older stop exchanging files with this release until they update, which they do on their own. Update every machine of a cluster together.
 
 ## 2.341.1 — 2026-11-26
@@ -19,9 +23,9 @@
 
 ## 2.341.0 — 2026-11-26
 
-- **File sync:** Joint Bob now removes what earlier releases set up for Syncthing, once per machine and by itself. After its own `joint-bob-*` folders have left the local Syncthing, it stops and removes the Syncthing service an earlier installer created (`joint-bob-syncthing.service` or `com.joint-bob.syncthing`), deletes the copy of Syncthing it downloaded, takes the machines it added out of a Syncthing that stays once they share no folder, forgets the saved connection, and deletes the `.stignore` files and `.stfolder` markers in its folders. The text of the deleted ignore files is kept in `removed-sync-ignore-files.txt` in the data folder.
-- **File sync:** A Syncthing you installed yourself, your own folders in it, and the files in every folder are left alone. A service Joint Bob installed that still syncs a folder of yours keeps running, and the log says so.
-- **File sync:** Removed the last of the choice between Syncthing and built-in sync per project: the engine records, the phases of moving a project between the two, the relay's Syncthing channel and the old `syncthing` settings field. Machines on 2.259.0 or later keep syncing with this release. A machine on an older release syncs its projects again once it updates.
+- **File sync:** Joint Bob now removes what earlier releases set up for the old sync tool, once per machine and by itself: its service, the copy it downloaded, the machines it added, the saved connection, and its marker and ignore files in project folders. The text of the deleted ignore files is kept in `removed-sync-ignore-files.txt` in the data folder.
+- **File sync:** A the old sync tool you installed yourself, your own folders in it, and the files in every folder are left alone. A service Joint Bob installed that still syncs a folder of yours keeps running, and the log says so.
+- **File sync:** Removed the last of the choice between the old sync tool and built-in sync per project: the engine records, the phases of moving a project between the two, the relay's the old sync tool channel and the old `old-sync` settings field. Machines on 2.259.0 or later keep syncing with this release. A machine on an older release syncs its projects again once it updates.
 
 ## 2.340.15 — 2026-11-26
 
@@ -1265,8 +1269,8 @@ Every deployment is a version. The newest section must always match the
 
 ## 2.259.0 — 2026-11-10
 
-- Syncthing is no longer part of Joint Bob. Every project shared with another machine is copied by Joint Bob's own file sync; there is no engine to choose, nothing to move between, and nothing extra to install. The Syncthing settings, the "Move to built-in sync" controls and the installer step are gone.
-- After this update each machine removes the folders Joint Bob created in its Syncthing (those named `joint-bob-…`), once. Your files stay where they are, and Syncthing itself and any folders you set up yourself are left alone. A project that was still on Syncthing is checked against the other machines and then synced by Joint Bob; nothing is deleted by that check.
+- The old sync tool is no longer part of Joint Bob. Every project shared with another machine is copied by Joint Bob's own file sync; there is no engine to choose, nothing to move between, and nothing extra to install. The the old sync tool settings, the "Move to built-in sync" controls and the installer step are gone.
+- After this update each machine removes the folders Joint Bob created in the old sync tool (those named `joint-bob-…`), once. Your files stay where they are, and the old sync tool itself and any folders you set up yourself are left alone. A project that was still on the old sync tool is checked against the other machines and then synced by Joint Bob; nothing is deleted by that check.
 - Until every machine that shares a project runs this version, a machine on an older version does not receive that project's changes, and the two machines show a file sharing error for each other. Both clear when the older machine updates.
 - A project that is not shared with another machine now reads "Not shared" instead of "Unavailable". A machine that joins with many projects takes them over one at a time instead of scanning all at once.
 
@@ -1314,7 +1318,7 @@ Every deployment is a version. The newest section must always match the
 
 ## 2.255.0 — 2026-11-10
 
-- Projects still on Syncthing moved to built-in sync as soon as the move is safe, instead of waiting 24 hours for their files to match. Files that differ are kept in both versions, a file a machine lacks is never treated as deleted, and a machine that is away no longer holds the move back. A project held on Syncthing by hand moves too. A move still waits while a machine cannot take part, ignore rules differ, a task or merge is running, or Syncthing does not answer.
+- Projects still on the old sync tool moved to built-in sync as soon as the move is safe, instead of waiting 24 hours for their files to match. Files that differ are kept in both versions, a file a machine lacks is never treated as deleted, and a machine that is away no longer holds the move back. A project held on the old sync tool by hand moves too. A move still waits while a machine cannot take part, ignore rules differ, a task or merge is running, or the old sync tool does not answer.
 - Worktrees now download their files only on the machines that use them, so every machine no longer fills up with copies of every worktree. Each worktree is still listed everywhere. A conversation opening in a worktree waits up to 20 seconds for its files, and is refused while more than 50 are still arriving. Deleted worktree folders no longer reappear, and their leftovers are cleaned up.
 - Conversation history is pulled from peers only when it changes, and shared skills and scoped credentials are sent only when they change, which cuts background load on every machine. Shared skills with a name conflict are refused before they download.
 - Usage events older than 14 days are no longer copied between machines; each machine keeps all of its own usage history.
@@ -1527,7 +1531,7 @@ Every deployment is a version. The newest section must always match the
 - A finished conversation whose learning step failed now tries again after an hour, waiting twice as long each time up to a week, or a day at a time when no decision-model key applies. It no longer retries every hour without end, and the same error is no longer written and sent to your other machines each time. A summary or learning run on a model that does not offer the agent's default effort now uses the nearest effort that model offers.
 - Agents start with less work on the server, which stays responsive while they run. Fewer files are read for each launch, a git check runs only when the repository changed, secret files are written only when they changed, and GitHub App tokens are refreshed in the background before they expire.
 - On a Mac, the server's own log files are trimmed every hour instead of growing without limit.
-- Joint Bob no longer installs its own Syncthing beside one you already run. The two used to fight over the same folder, and the loser restarted every 5 seconds for days.
+- Joint Bob no longer installs its own the old sync tool beside one you already run. The two used to fight over the same folder, and the loser restarted every 5 seconds for days.
 - Bob can now send a message to a conversation on the board even before its transcript appears in the list.
 
 ## 2.236.0 — 2026-11-08
@@ -2283,11 +2287,11 @@ Every deployment is a version. The newest section must always match the
 ## 2.160.2 — 2026-10-26
 
 - Fixed received projects showing as empty and being skipped by file sync when their files already synced into another folder; they now use that folder, while projects that hold files keep their own.
-- Added a check that stops a project moving to built-in file sync while its Syncthing folder sits at another path on that machine, so its files are not left behind.
+- Added a check that stops a project moving to built-in file sync while the old sync tool folder sits at another path on that machine, so its files are not left behind.
 
 ## 2.160.1 — 2026-10-26
 
-- Fixed a project moved back to Syncthing showing a missing-folder error; for up to 10 minutes it now shows "Moving back to Syncthing" while Syncthing adds the folder back.
+- Fixed a project moved back to the old sync tool showing a missing-folder error; for up to 10 minutes it now shows "Moving back to the old sync tool" while the old sync tool adds the folder back.
 
 ## 2.160.0 — 2026-10-26
 
@@ -2295,9 +2299,9 @@ Every deployment is a version. The newest section must always match the
 - Changed file sync to be on by default and to compare every shared project, unless an admin picked a list; projects not yet read are indexed one at a time, smallest first, while the machine is quiet.
 - Changed the 24-hour wait so a machine being away or a copy still in transit does not restart it; checks repeat only on relevant changes, and a failing full check retries with longer waits, up to 30 minutes.
 - Changed machines to follow a project's move, and a machine that was offline catches up the next time it connects.
-- Changed a project moved back to Syncthing by hand to stay there until someone clicks the new "Allow automatic move" action; an automatic move back restarts the 24-hour wait.
-- Changed turning file sync off on a machine to move its built-in projects back to Syncthing first, with the owner or owning machine doing it while the engine keeps their files moving; peers hear the switch at once.
-- Changed the handover between the two sync engines so a project is never written by both at once: built-in sync stops writing a project as soon as a Syncthing folder is added or resumed over it, and old shared folders are paused right away.
+- Changed a project moved back to the old sync tool by hand to stay there until someone clicks the new "Allow automatic move" action; an automatic move back restarts the 24-hour wait.
+- Changed turning file sync off on a machine to move its built-in projects back to the old sync tool first, with the owner or owning machine doing it while the engine keeps their files moving; peers hear the switch at once.
+- Changed the handover between the two sync engines so a project is never written by both at once: built-in sync stops writing a project as soon as the old sync tool folder is added or resumed over it, and old shared folders are paused right away.
 - Added waiting reasons for each project in the File sync settings, naming the machine holding it up, plus a "Compare these projects: All / Chosen…" choice and first-index progress.
 
 ## 2.159.2 — 2026-10-26
@@ -2311,8 +2315,8 @@ Every deployment is a version. The newest section must always match the
 
 ## 2.159.0 — 2026-10-26
 
-- Added a File sync tab in Settings for admins that shows each machine and project, whether Joint Bob's built-in sync or Syncthing moves it, what is left to copy, any problems, and the differences between machines.
-- Added switches in that tab to move a project to built-in file sync and back; files stay on disk, and only that project's Joint Bob folders are removed from Syncthing on every machine sharing it.
+- Added a File sync tab in Settings for admins that shows each machine and project, whether Joint Bob's built-in sync or the old sync tool moves it, what is left to copy, any problems, and the differences between machines.
+- Added switches in that tab to move a project to built-in file sync and back; files stay on disk, and only that project's Joint Bob folders are removed from the old sync tool on every machine sharing it.
 - Changed projects on built-in sync to get their status, rescans, handoff readiness, merge waits and worktree sweeps from the built-in engine.
 - Added checks that block a move while a peer runs an older release, the project is nested in another project, or a folder Joint Bob does not own is in the way.
 
@@ -2346,7 +2350,7 @@ Every deployment is a version. The newest section must always match the
 
 ## 2.155.1 — 2026-10-25
 
-- Fixed the built-in file sync engine to skip the files that each of your machines' Syncthing ignores, so secrets and temporary files no longer show up as differences between machines.
+- Fixed the built-in file sync engine to skip the files that each of your machines' the old sync tool ignores, so secrets and temporary files no longer show up as differences between machines.
 
 ## 2.155.0 — 2026-10-25
 
@@ -2359,10 +2363,10 @@ Every deployment is a version. The newest section must always match the
 
 ## 2.153.0 — 2026-10-25
 
-- Fixed nodes whose Syncthing is stopped or missing being held back from starting; they now start straight away, can create projects and tickets, and sync again once Syncthing is running.
-- Changed startup so it no longer waits for Syncthing's ignore-rule check, which now runs in the background.
-- Fixed a failed Syncthing folder setup blocking project creation; the project is still created.
-- Changed the legacy skill-sync pause check: a stopped or missing Syncthing no longer fails startup or blocks skill sharing; only a running Syncthing that cannot confirm the pause still blocks skill changes.
+- Fixed nodes whose the old sync tool is stopped or missing being held back from starting; they now start straight away, can create projects and tickets, and sync again once the old sync tool is running.
+- Changed startup so it no longer waits for the old sync tool's ignore-rule check, which now runs in the background.
+- Fixed a failed the old sync tool folder setup blocking project creation; the project is still created.
+- Changed the legacy skill-sync pause check: a stopped or missing the old sync tool no longer fails startup or blocks skill sharing; only a running the old sync tool that cannot confirm the pause still blocks skill changes.
 - Changed ticket creation to no longer use the old global ticket folder.
 - Fixed half-written files and node-local worktree folders being synced between your machines.
 - Fixed a startup race where setting a worktree folder's download order could remove a machine that had just been added to it.
@@ -3343,14 +3347,14 @@ Every deployment is a version. The newest section must always match the
 ## 2.48.0 — 2026-10-07
 
 - Agents can now read ntfy topic messages and, with an admin token, list, create, update and delete topics (access grants) and users through the ntfy CLI.
-- Project reconciliation now skips folders that haven't been created in Syncthing, allowing automatic recovery when sync folders are missing.
+- Project reconciliation now skips folders that haven't been created in the old sync tool, allowing automatic recovery when sync folders are missing.
 
 ## 2.47.6 — 2026-10-07
 
-- Fixed project reconciliation failing when Syncthing folders that don't exist are excluded from the update.
+- Fixed project reconciliation failing when the old sync tool folders that don't exist are excluded from the update.
 ## 2.47.2 — 2026-10-06
 
-- Fixed project reconciliation failing when sync folders haven't been created in Syncthing.
+- Fixed project reconciliation failing when sync folders haven't been created in the old sync tool.
 
 ## 2.47.1 — 2026-10-06
 
@@ -3483,7 +3487,7 @@ Every deployment is a version. The newest section must always match the
 
 ## 2.28.0 — 2026-10-01
 
-- Git projects now keep local HEAD in sync with pushed commits from other nodes before each turn, so you don't see all files as edited after Syncthing copies them.
+- Git projects now keep local HEAD in sync with pushed commits from other nodes before each turn, so you don't see all files as edited after the old sync tool copies them.
 
 ## 2.27.0 — 2026-10-01
 
@@ -3773,7 +3777,7 @@ Every deployment is a version. The newest section must always match the
 - Browser sign-in handoffs now follow a conversation when it moves between app nodes.
 - Settings and project conversations open without waiting for slower optional or shared data, while background status refreshes share in-flight scans.
 - Internal sync-repair runs stay out of conversation lists, and new conversations avoid unnecessary transcript discovery and setup-command titles.
-- Fixed Syncthing folder deletions blocked by generated files and stale conflict copies inside node-local `.git` folders.
+- Fixed the old sync tool folder deletions blocked by generated files and stale conflict copies inside node-local `.git` folders.
 - Added private, rotating performance logs for slow requests, session loading, CPU, memory, and event-loop stalls without recording private request or conversation data.
 - Service-worker caches now refresh from current shell files instead of retaining stale assets under an unchanged cache name.
 
@@ -3788,7 +3792,7 @@ Every deployment is a version. The newest section must always match the
 
 ## 2.9.0 — 2026-09-28
 
-- Background sync automatically cleans up Syncthing conflicts and fixes folder errors, running every five minutes by default.
+- Background sync automatically cleans up the old sync tool conflicts and fixes folder errors, running every five minutes by default.
 - Conversations stuck showing running after their agent stopped now clear on their own and move to needs review.
 - Background sync can be customized in Settings to use a different harness or turn off automatic checking.
 
@@ -3969,7 +3973,7 @@ Every deployment is a version. The newest section must always match the
 
 ## 1.95.1 — 2026-09-26
 
-- Fixed native synchronization tests to support the Syncthing version supplied by Ubuntu, retaining isolated test configurations and loopback networking.
+- Fixed native synchronization tests to support the old sync tool version supplied by Ubuntu, retaining isolated test configurations and loopback networking.
 
 ## 1.95.0 — 2026-09-26
 
@@ -4519,7 +4523,7 @@ Every deployment is a version. The newest section must always match the
 ## 1.36.1 — 2026-09-16
 
 - API responses now prevent browser cache retention, ensuring stale conversation data doesn't persist across sessions.
-- Syncthing no longer syncs per-clone metadata across cluster nodes, reducing churn on shared folders.
+- The old sync tool no longer syncs per-clone metadata across cluster nodes, reducing churn on shared folders.
 
 ## 1.36.0 — 2026-09-16
 
@@ -4906,7 +4910,7 @@ Every deployment is a version. The newest section must always match the
 - Header buttons show their assigned shortcut, and digits 1–9 and 0 select the first ten rows in picker dialogs.
 - Shortcuts can use two-stroke sequences such as Control-Space followed by Backslash, without allowing prefix conflicts.
 - Queued Claude messages can be edited or cancelled before they run; cancelled message attachments are removed.
-- Leaving a cluster now requires reachable peers and removes their devices from Joint Bob's Syncthing folders.
+- Leaving a cluster now requires reachable peers and removes their devices from Joint Bob's the old sync tool folders.
 - Settings adds secret-provider filters, separate Pi and Claude path tabs, resource folder pickers, and password changes.
 - The project header gives its controls a separate row and puts Board beside the global conversation controls.
 - Test processes reject production data paths, including symlinks to `~/.joint-bob`.
@@ -4961,7 +4965,7 @@ Every deployment is a version. The newest section must always match the
 
 - Symlinked skill directories are now discovered and loaded alongside regular directories
 - Ticket handoffs now wait visibly for both nodes to finish synchronizing and continue automatically when ready
-- Volatile test artifacts no longer enter ticket workspaces or Syncthing scans
+- Volatile test artifacts no longer enter ticket workspaces or the old sync tool scans
 - Notifications now stay above the mobile composer and duplicate messages no longer stack
 
 ## 1.4.0 — 2026-09-05
@@ -4987,7 +4991,7 @@ Every deployment is a version. The newest section must always match the
 - Ticket management is now consolidated into projects
 - Conversation titles now correctly persist in chat headers after renaming
 - App automatically refreshes when deployed while the browser window is open
-- Server stability improved with better database lock handling and Syncthing startup retry logic
+- Server stability improved with better database lock handling and the old sync tool startup retry logic
 
 ## 1.2.1 — 2026-09-03
 
@@ -5007,7 +5011,7 @@ Every deployment is a version. The newest section must always match the
 - Secret accounts marked for replication now sync immediately when saved
 - Chat header keeps conversation names renamed in Joint Bob instead of reverting to auto-generated names, panel headers are consistently sized, and skill descriptions display correctly
 - Recent conversations now appear once in the recents dialog even when resumed on different nodes
-- Database locks no longer crash the node, node startup no longer gets stuck when Syncthing's API port binding is delayed, and deleted conversations no longer cause crashes when reconnected
+- Database locks no longer crash the node, node startup no longer gets stuck when the old sync tool's API port binding is delayed, and deleted conversations no longer cause crashes when reconnected
 
 ## 1.1.1 — 2026-09-02
 

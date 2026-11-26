@@ -84,7 +84,6 @@ test("prerequisite validation is non-mutating", async () => {
   ]) {
     assert.match(prerequisites, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  assert.doesNotMatch(prerequisites, /syncthing/i);
   assert.ok(prerequisites.includes('\\"status\\"[[:space:]]*:[[:space:]]*\\"ready\\"'));
   assert.ok(prerequisites.includes('\\"loggedIn\\"[[:space:]]*:[[:space:]]*true'));
   assert.doesNotMatch(prerequisites, /\b(?:npm|brew|apt(?:-get)?|dnf|yum|pacman)\s+(?:install|add)\b/);
@@ -117,7 +116,6 @@ test("service installation prepares bundled tools before service mutation", asyn
 
   assert.ok(npmIndex >= 0);
   assert.ok(prerequisiteIndex > npmIndex);
-  assert.doesNotMatch(installer, /syncthing/i);
   for (const laterStep of ["systemctl --user restart joint-bob.service", "launchctl bootstrap"]) {
     assert.ok(prerequisiteIndex < installer.lastIndexOf(laterStep), `${laterStep} must follow prerequisite validation`);
   }

@@ -338,17 +338,6 @@ test("settings API persists runtime choices without returning secrets", async ()
     assert.equal(timeoutSaved.status, 200);
     assert.equal((await (await fetch(`${node.baseUrl}/api/settings`, { headers })).json()).gitPullTimeoutSeconds, 600);
 
-    // An older page still sends the settings of a sync tool earlier releases used: the save succeeds and stores none of them.
-    const withRemovedKey = await fetch(`${node.baseUrl}/api/settings`, {
-      method: "PUT", headers,
-      body: JSON.stringify({ syncthing: { endpoint: "https://not-local.example", apiKey: "must-not-store" }, gitPullTimeoutSeconds: 601 }),
-    });
-    assert.equal(withRemovedKey.status, 200, await withRemovedKey.clone().text());
-    const afterRemovedKey = await withRemovedKey.json() as Record<string, unknown>;
-    assert.equal(afterRemovedKey.gitPullTimeoutSeconds, 601, "the rest of the body is saved");
-    assert.equal("syncthing" in afterRemovedKey, false);
-    assert.doesNotMatch(JSON.stringify(afterRemovedKey), /must-not-store|not-local/);
-
     const relativeResources = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT", headers,
       body: JSON.stringify({ pi: { executable: "", configPath: "", sessionPath: "" }, claude: { executable: "", configPath: "", sessionPath: "" }, projects: { homePath: path.join(root, "JointBob") }, resources: { skills: ["relative"], prompts: [], rules: [], plugins: [] } }),

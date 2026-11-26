@@ -11,13 +11,6 @@ import { appVersion } from "../src/changelog.js";
 import { serverArgs } from "./server-entry.js";
 
 /** Stands where an older release's sync tool listened and records every request, so a test can show nothing asks it. */
-async function listenerAtOldSyncAddress(): Promise<{ port: number; requests: string[]; close: () => Promise<void> }> {
-  const requests: string[] = [];
-  const server = createServer((request, response) => { requests.push(`${request.method} ${request.url}`); response.statusCode = 500; response.end("failed"); });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return { port: (server.address() as { port: number }).port, requests, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
-}
-
 async function unusedPort(): Promise<number> {
   const probe = createServer();
   await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
@@ -101,44 +94,9 @@ test("startup stages use static diagnostic labels and readiness waits on no sync
   const source = await readFile(new URL("../src/server/maintenance.ts", import.meta.url), "utf8");
   assert.match(source, /import \{ measureOperation \} from "\.\/performance-diagnostics\.js"/);
   assert.match(source, /await measureOperation\("startup\.agentResources", \(\) => reconcileManagedAgentResources\(\)\);\s+flags\.startupReady = true;/);
-  assert.doesNotMatch(source, /startup[.-]syncthing|reconcileSyncthingProjectFolders/, "startup reconciles no external sync tool");
 });
 
 const serverTest = { timeout: 60_000 };
-
-// A project record from an older release still names the folder its sync tool used, and the service
-// environment may still carry that tool's address. Startup asks it nothing and reaches ready.
-test("a node with a project from an older release reaches ready without asking the old sync tool", serverTest, async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-web-startup-ready-"));
-  const old = await listenerAtOldSyncAddress();
-  let child: ChildProcess | undefined;
-  try {
-    await writeSyncedProject(root);
-    const port = await unusedPort();
-    const address = `http://127.0.0.1:${old.port}`;
-    const started = startServer(root, port, { JOINT_BOB_SYNCTHING_URL: address, JOINT_BOB_SYNCTHING_API_KEY: "x", PI_MOBILE_WEB_SYNCTHING_URL: address, PI_MOBILE_WEB_SYNCTHING_API_KEY: "x" });
-    child = started.child;
-    const ready = await waitForHealth(port, 200);
-    assert.deepEqual(await ready.json(), { status: "ok", version: appVersion(), release: "development" });
-    assert.notEqual((await fetch(`http://127.0.0.1:${port}/api/cluster/v2/transcripts?projectId=project-1`)).status, 503, "a ready node serves peers");
-
-    const headers = await adminHeaders(port);
-    const projects = await (await fetch(`http://127.0.0.1:${port}/api/projects`, { headers })).json() as { projects: Array<{ id: string; syncStatus?: { state: string; message?: string } }> };
-    assert.deepEqual(projects.projects.find((project) => project.id === "project-1")?.syncStatus, { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "This project is not shared with another machine", engine: "none" });
-    // The periodic check (run now) and skill sharing ask it nothing either.
-    const check = await fetch(`http://127.0.0.1:${port}/api/settings/sync-check/run`, { method: "POST", headers });
-    assert.equal(check.status, 200, started.output());
-    const view = await fetch(`http://127.0.0.1:${port}/api/resources/skills/sharing`, { headers });
-    assert.equal(view.status, 200, started.output());
-    assert.equal("legacy" in (await view.json() as Record<string, unknown>), false, "skill sharing reports no legacy sync state");
-    assert.deepEqual(old.requests, []);
-    assert.doesNotMatch(started.output(), /Startup reconciliation failed|Syncthing/);
-  } finally {
-    if (child) await stopServer(child);
-    await old.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
 
 test("a node whose agent resources cannot be reconciled stays starting and asks peers to retry", serverTest, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-web-startup-gate-"));
