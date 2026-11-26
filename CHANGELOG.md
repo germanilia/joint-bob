@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.7 — 2026-11-26
+
+- **Files:** Opening a file that lives on another machine while that machine is not answering now says so and suggests trying again, instead of failing with "fetch failed" and sending an error report.
+
 ## 2.343.6 — 2026-11-26
 
 - **Error reports:** A turn that an update stops, or a queued message held back while an update is being prepared, no longer sends a backend error report. The interrupted work still resumes after the restart.
