@@ -1,7 +1,9 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { isInternalSession } from "../../internal-sessions.js";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { agentCapabilityEnvironment, agentCapabilityInstructionFiles } from "../../agent-capabilities.js";
 import { agentEnvironment, persistConversationSecretAccounts } from "../../secrets.js";
 import { buildHandoffContext, stripHandoffEnvelope } from "../../handoff-context.js";
@@ -31,6 +33,8 @@ type JsonObject = Record<string, unknown>;
 type Connection = ReturnType<typeof createAntigravityConnection>;
 type ToolCall = { title: string; toolName: string; rawInput: unknown; startedAt: number };
 const toolCategories = ["commands", "file-changes", "other"];
+// agy flattens ACP text blocks and clips at 192,000 bytes. Leave room for its own turn framing.
+const promptTextBudget = 188_000;
 
 function object(value: unknown, label: string): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Invalid Antigravity ACP ${label}`);
@@ -227,6 +231,7 @@ class AntigravitySession implements HarnessSession {
     this.toolCalls.clear();
     this.emit({ type: "agent_start" });
     let failure: unknown;
+    let instructionDir: string | undefined;
     try {
       const resources = await antigravityResources(this.options);
       this.throwIfCancelled();
@@ -234,15 +239,32 @@ class AntigravitySession implements HarnessSession {
       await this.initializeNativeSession(resources.mcpServers);
       const text = await guardAntigravityPrompt(this.identity(), input.text);
       const expanded = this.handoffPending ? `${buildHandoffContext(this.transcript)}${text}` : text;
+      const bytes = Buffer.byteLength(expanded);
+      const tooLarge = () => new Error("Google Antigravity prompt is too large to send intact. Shorten it or attach the long text as a file.");
+      if (bytes > promptTextBudget) throw tooLarge();
+      const capabilities = agentCapabilityInstructionFiles(this.options.projectId, this.options.conversationId ?? this.id);
+      let instructions = `${[...resources.instructions, ...capabilities.map((file) => file.content)].join("\n\n")}\n\n`;
+      if (bytes + Buffer.byteLength(instructions) > promptTextBudget) {
+        instructionDir = await mkdtemp(path.join(os.tmpdir(), "joint-bob-agy-"));
+        const file = path.join(instructionDir, "instructions.md");
+        await writeFile(file, instructions, { mode: 0o600 });
+        instructions = `Read the complete Joint Bob instructions from ${JSON.stringify(file)} before acting on the request below. Read in ranges if needed. If you cannot read the entire file, stop and report why.\n\n`;
+        if (bytes + Buffer.byteLength(instructions) > promptTextBudget) throw tooLarge();
+      }
       await input.beforeStart?.();
       this.throwIfCancelled();
-      const response = object(await this.connection!.request("session/prompt", { sessionId: this.nativeSessionId, prompt: this.promptContent(expanded, input, resources.instructions) }), "prompt response");
+      const response = object(await this.connection!.request("session/prompt", { sessionId: this.nativeSessionId, prompt: this.promptContent(expanded, input, instructions) }), "prompt response");
       await this.finishPrompt(response);
     } catch (error) {
       this.persistAssistant();
       failure = this.cancelRequested ? new Error("Google Antigravity turn cancelled") : new Error(loginProblem(error, this.profile) ?? (error instanceof Error ? error.message : String(error)));
     }
-    for (const finish of [() => this.finishWrites(), () => this.cleanup()]) {
+    const finishers = [() => this.finishWrites(), () => this.cleanup()];
+    if (instructionDir) {
+      const dir = instructionDir;
+      finishers.push(() => rm(dir, { recursive: true, force: true }));
+    }
+    for (const finish of finishers) {
       try { await finish(); }
       catch (error) { failure = failure === undefined ? error : new AggregateError([failure, error], "Google Antigravity prompt and cleanup failed"); }
     }
@@ -253,12 +275,8 @@ class AntigravitySession implements HarnessSession {
     if (failure !== undefined) throw failure;
   }
 
-  private promptContent(text: string, input: HarnessPrompt, resourceInstructions: string[]): JsonObject[] {
-    const instructions = agentCapabilityInstructionFiles(this.options.projectId, this.options.conversationId ?? this.id);
-    const prompt: JsonObject[] = [
-      { type: "text", text: `${[...resourceInstructions, ...instructions.map((file) => file.content)].join("\n\n")}\n\n` },
-      { type: "text", text },
-    ];
+  private promptContent(text: string, input: HarnessPrompt, instructions: string): JsonObject[] {
+    const prompt: JsonObject[] = [{ type: "text", text: instructions }, { type: "text", text }];
     for (const image of input.images ?? []) prompt.push({ type: "image", data: image.data, mimeType: image.mimeType });
     return prompt;
   }

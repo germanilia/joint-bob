@@ -80,6 +80,16 @@ assert.match(blocks[0].text,/# Joint Bob MCP/);
 assert.equal(blocks[1].text,text);
 if(text==='hello')assert.deepEqual(blocks[2],{type:'image',data:'Zml4dHVyZQ==',mimeType:'image/png'});
 }
+if(text==='check the instruction tail'){
+const modelInput=Buffer.from(blocks.filter(block=>block.type==='text').map(block=>block.text).join('')).subarray(0,192000).toString('utf8');
+assert.ok(modelInput.includes(text),'Antigravity would discard the actual request');
+const file=JSON.parse(modelInput.match(/Read the complete Joint Bob instructions from ("[^"\\n]+")/)[1]);
+const instructions=fs.readFileSync(file,'utf8');
+assert.ok(instructions.includes(fs.readFileSync(path.join(process.cwd(),'AGENTS.md'),'utf8').trim()));
+assert.match(instructions,/# Joint Bob MCP/);
+assert.equal(fs.statSync(file).mode & 0o777,0o600);
+fs.writeFileSync(path.join(process.cwd(),'observed-instructions-path'),file);
+}
 if(text==='test resource policy'){
 assert.match(blocks[0].text,/policy-required-test-skill/);
 assert.doesNotMatch(blocks[0].text,/policy-blocked-test-skill/);
@@ -157,6 +167,33 @@ test("Google Antigravity ACP readiness, model selection, native session and tran
     await assert.rejects(session.prompt({ text: "missing during prompt", beforeStart: async () => { starts++; } }), /Session not found: native-antigravity-1-replacement/);
     assert.equal(starts, 1);
     assert.deepEqual(await readAntigravitySession(session.file!.replace(/^antigravity:/, "")), recovered);
+  } finally {
+    if (session?.isBusy()) await session.stopForUpdate();
+    session?.dispose();
+    updateSettings({ runtimes: previous.runtimes });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Antigravity keeps the request and complete instructions when inline context would exceed its byte limit", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "antigravity-long-context-")), previous = getSettings();
+  let session: Awaited<ReturnType<typeof runtime.open>> | undefined;
+  try {
+    const executable = path.join(root, "agy");
+    await writeFile(executable, fixture, { mode: 0o700 });
+    updateSettings({ runtimes: { ...previous.runtimes, antigravity: { executable, configPath: path.join(root, ".gemini"), sessionPath: path.join(root, "sessions") } } });
+    const project = await addProject("Antigravity long instructions fixture", root, { writeInstructions: false });
+    await writeFile(path.join(root, "AGENTS.md"), `${"étiquette de vérification\n".repeat(7_500)}Verify the instruction tail.\n`);
+    session = await runtime.open({ projectId: project.id, cwd: root, sessionId: "antigravity-long-context" });
+    await session.prompt({ text: "check the instruction tail" });
+    const file = await readFile(path.join(root, "observed-instructions-path"), "utf8");
+    await assert.rejects(readFile(file), { code: "ENOENT" });
+    const stored = await readAntigravitySession(session.file!.replace(/^antigravity:/, ""));
+    assert.equal(stored.messages[0].text, "check the instruction tail");
+
+    let starting = false;
+    await assert.rejects(session.prompt({ text: "é".repeat(96_000), beforeStart: async () => { starting = true; } }), /Antigravity.*too large.*attach/i);
+    assert.equal(starting, false);
   } finally {
     if (session?.isBusy()) await session.stopForUpdate();
     session?.dispose();

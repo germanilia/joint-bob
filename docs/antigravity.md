@@ -28,6 +28,8 @@ Harness executable, path and machine-level sign-in controls are restricted to lo
 - With strict resource isolation, native customization discovery is disabled. Joint Bob supplies project rules and the approved skill catalog, including verified copies of cluster-required skills. Cluster rules and allowlists apply to skills and MCP. Antigravity does not load Joint Bob-managed plugins; if a cluster requires one, the turn is refused instead of bypassing the requirement. Cluster resource restrictions require strict isolation. Use the optional `antigravity` list in Advanced cluster policy to enable resources for this harness; update cluster nodes before publishing policies that use it.
 - Guardian outgoing checks and checks for ACP tool permission requests. Tool categories apply to those permission requests; they do not sandbox the CLI or intercept tools it executes without requesting permission.
 
+Antigravity's CLI can clip a single message before it reaches the model, even when the model has room in its context. When the combined instructions and request approach that limit, Joint Bob puts the full instructions in a private temporary file for Antigravity to read during the turn. If the request still cannot fit, Joint Bob rejects it before sending. Shorten the request or attach the long text as a file.
+
 Compaction through Joint Bob is unsupported. Only Joint Bob-owned transcripts are listed; existing native CLI sessions are not imported. Transcripts can synchronize between nodes, but native Antigravity session state and authentication are not synchronized. Switching profiles starts a separate native session while keeping the visible conversation history. Do not assume a transcript can resume on a different execution node.
 
 ## Verification
