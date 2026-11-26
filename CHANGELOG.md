@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.4 — 2026-11-26
+
+- **Performance:** Checking whether a project's worktree folders changed costs about half as much. After 2.343.10 that check was the largest single cost left on a server with many worktrees; it now looks at the folders in one go (about 3 ms for 165 worktrees) instead of as 500 separate requests.
+
 ## 2.344.3 — 2026-11-26
 
 - **Chat:** Brings back fixes that 2.344.0 undid by mistake. A Pi chat again lists only the models its connections offer, and a subscription pool again starts with a profile that offers the chosen model. Switching Pi models adapts the reasoning level again. A server update no longer reports "Prompt queue failed … This operation was aborted" for each turn it stops. A Guardian review requested by a background run opens that request directly again. Team agents still default to Auto mode.
