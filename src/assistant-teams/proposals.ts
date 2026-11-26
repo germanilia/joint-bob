@@ -313,7 +313,7 @@ async function allAssistantConversations(profile: PersonalAssistant): Promise<Ar
   return list;
 }
 
-async function attachOrDetachAssistantSecret(profile: PersonalAssistant, secretAccountId: string, mode: 'attach' | 'detach'): Promise<void> {
+export async function attachOrDetachAssistantSecret(profile: PersonalAssistant, secretAccountId: string, mode: 'attach' | 'detach'): Promise<void> {
   const conversations = await allAssistantConversations(profile);
   await asNode(async () => {
     for (const conv of conversations) {
@@ -329,7 +329,7 @@ async function attachOrDetachAssistantSecret(profile: PersonalAssistant, secretA
   });
 }
 
-async function invalidateAssistantLiveSessions(profile: PersonalAssistant, resetToolBaseline: boolean, disposeIdleSessions: boolean): Promise<void> {
+export async function invalidateAssistantLiveSessions(profile: PersonalAssistant, resetToolBaseline: boolean, disposeIdleSessions: boolean): Promise<void> {
   if (resetToolBaseline) {
     const db = await personalAssistantDatabase();
     db.prepare('UPDATE personal_assistant_topics SET baseline_tools=NULL WHERE assistant_id=?').run(profile.id);
@@ -610,6 +610,98 @@ export async function readAssignmentTrace(teamId: string, assignment: TeamAssign
     };
   } catch {
     return null;
+  }
+}
+
+export interface AssignmentExecutionDetail {
+  assignmentId: string;
+  rootId: string;
+  role: string;
+  state: string;
+  delegated: boolean;
+  prompt: string;
+  result: string | null;
+  reason: string | null;
+  projectId: string;
+  conversationId: string | null;
+  engine: string | null;
+  attribution?: { harnessId: string; provider: string; modelId: string; reasoning: string };
+  messageCount: number;
+  toolCallCount: number;
+  toolErrorCount: number;
+  toolCalls: Array<{ toolName: string; target?: string; isError?: boolean; durationMs?: number; excerpt?: string }>;
+}
+
+/** Detailed redacted execution trace for one assignment, shown in the in-context Execution Detail modal. */
+export async function readAssignmentExecutionDetail(teamId: string, assignmentId: string): Promise<AssignmentExecutionDetail> {
+  const { getTeamAssignment } = await import('./store.js');
+  const { readTeamWork } = await import('./assignments.js');
+  const { teamMemoryRedactor } = await import('./memory.js');
+  const team = await getTeam(teamId);
+  const assignment = await getTeamAssignment(assignmentId);
+  if (!assignment || assignment.teamId !== teamId) throw new TeamError('Assignment not found', 404);
+  const work = (await readTeamWork(teamId)).find(item => item.assignmentId === assignmentId);
+  const redact = await teamMemoryRedactor();
+  const base: AssignmentExecutionDetail = {
+    assignmentId: assignment.id,
+    rootId: assignment.rootId,
+    role: assignment.role,
+    state: assignment.state,
+    delegated: Boolean(assignment.parentId),
+    prompt: redact(work?.message ?? '').slice(0, 6000),
+    result: work?.result ? redact(work.result).slice(0, 8000) : null,
+    reason: work?.reason ?? null,
+    projectId: team.projectId,
+    conversationId: work?.conversationId ?? null,
+    engine: null,
+    messageCount: 0,
+    toolCallCount: 0,
+    toolErrorCount: 0,
+    toolCalls: [],
+  };
+  if (!work?.conversationId) return base;
+  try {
+    const project = await asNode(() => getProject(team.projectId));
+    if (!project) return base;
+    const db = await proposalDatabase();
+    const row = db.prepare('SELECT engine FROM assistant_team_conversations WHERE team_id=? AND conversation_id=?').get(teamId, work.conversationId) as { engine: string } | undefined;
+    const engine = row?.engine;
+    if (!engine || !isHarnessId(engine)) return base;
+    base.engine = engine;
+    const sessions = await listHarnessSessions(project, [], [work.conversationId], 200);
+    const summary = sessions.find(s => s.harnessId === engine && s.id === work.conversationId)
+      ?? sessions.find(s => s.segments?.some(seg => seg.engine === engine && seg.sessionId === work.conversationId));
+    const sessionPath = summary && summary.harnessId === engine && summary.id === work.conversationId
+      ? summary.path
+      : summary?.segments?.find(seg => seg.engine === engine && seg.sessionId === work.conversationId)?.path;
+    if (!sessionPath) return base;
+    const messages = await getHarness(engine).sessions.loadMessages(project, sessionPath);
+    let lastUserIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { lastUserIndex = i; break; }
+    }
+    const turnMessages = lastUserIndex >= 0 ? messages.slice(lastUserIndex + 1) : messages.slice(-40);
+    const toolCalls = turnMessages
+      .filter(m => m.toolName || m.role === 'tool' || m.role === 'toolResult')
+      .slice(0, 40)
+      .map(m => ({
+        toolName: m.toolName ?? m.role,
+        ...(m.toolTarget?.target ? { target: redact(m.toolTarget.target).slice(0, 200) } : m.toolTarget?.skill ? { target: `skill:${m.toolTarget.skill}` } : {}),
+        ...(m.isError ? { isError: true } : {}),
+        ...(m.durationMs !== undefined ? { durationMs: m.durationMs } : {}),
+        ...(m.text ? { excerpt: redact(m.text).slice(0, 600) } : {}),
+      }));
+    const attribution = [...turnMessages].reverse().find(m => m.attribution)?.attribution;
+    return {
+      ...base,
+      ...(attribution ? { attribution } : {}),
+      messageCount: turnMessages.length,
+      toolCallCount: toolCalls.length,
+      toolErrorCount: toolCalls.filter(t => t.isError).length,
+      toolCalls,
+    };
+  } catch {
+    return base;
   }
 }
 

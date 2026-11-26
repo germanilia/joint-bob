@@ -19,8 +19,14 @@ export type TeamRole = string;
 export const TEAM_ROLE_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
 /** The group's own commands (/status, /cancel …) are not available as role names. */
 export const isReservedTeamRole = (role: string): boolean => (TEAM_COMMANDS as readonly string[]).includes(role);
-export interface TeamSettings { askThreshold: number; actThreshold: number }
-export interface AssistantTeam { id: string; clusterId: string; hostNodeId: string; projectId: string; executorAccountId: string; settings: TeamSettings; revision: number; coordinatorRole: string | null }
+export interface TeamSettings {
+  askThreshold: number;
+  actThreshold: number;
+  allowBob?: boolean;
+  voiceProvider?: 'kokoro' | 'elevenlabs';
+  kokoroVoice?: string;
+}
+export interface AssistantTeam { id: string; clusterId: string; hostNodeId: string; projectId: string; executorAccountId: string; name: string | null; settings: TeamSettings; revision: number; coordinatorRole: string | null }
 export interface TeamAgent { teamId: string; role: TeamRole; assistantId: string }
 export interface TeamMessage { id: string; teamId: string; accountId: string; chatId: string; telegramMessageId: number; threadId: number | null; replyToMessageId: number | null; text: string; revision: number; createdAt: string }
 export interface TeamSubject { id: string; teamId: string; title: string; summary: string }
@@ -48,10 +54,13 @@ export function teamDatabase(): Promise<DatabaseSync> {
       // Teams from the fixed six-role model keep Bob as their coordinator.
       db.exec("UPDATE assistant_teams SET coordinator_role='bob' WHERE id IN (SELECT team_id FROM assistant_team_agents WHERE role='bob')");
     }
+    if (!columns.includes('name')) {
+      db.exec('ALTER TABLE assistant_teams ADD COLUMN name TEXT');
+    }
     return db;
   }).catch(error => { prepared = undefined; throw error; });
 }
-const teamColumns = 'id, cluster_id clusterId, host_node_id hostNodeId, project_id projectId, executor_account_id executorAccountId, settings, revision, coordinator_role coordinatorRole';
+const teamColumns = 'id, cluster_id clusterId, host_node_id hostNodeId, project_id projectId, executor_account_id executorAccountId, name, settings, revision, coordinator_role coordinatorRole';
 function decode(row: unknown): AssistantTeam { const value = row as Omit<AssistantTeam, 'settings'> & { settings: string }; return { ...value, settings: JSON.parse(value.settings) }; }
 export async function getTeam(id: string): Promise<AssistantTeam> {
   const row = (await teamDatabase()).prepare(`SELECT ${teamColumns} FROM assistant_teams WHERE id=?`).get(id);
@@ -159,14 +168,16 @@ export async function prepareTeamProject(member: ClusterMember): Promise<string>
   });
   return project.id;
 }
-export async function createTeam(member: ClusterMember, input: { projectId: string; executorAccountId: string }): Promise<AssistantTeam> {
+export async function createTeam(member: ClusterMember, input: { projectId: string; executorAccountId: string; name?: string | null; allowBob?: boolean }): Promise<AssistantTeam> {
   await recheckTeamActor(member);
   const db = await teamDatabase(); const host = (await getClusterNode()).id;
   if (input.executorAccountId !== await resolveTeamExecutor()) throw new TeamError('Invalid host execution identity', 403);
   const dedicated = db.prepare('SELECT 1 FROM assistant_team_projects WHERE project_id=? AND cluster_id=? AND executor_account_id=?').get(input.projectId, member.clusterId, input.executorAccountId);
   if (!dedicated) throw new TeamError('A new dedicated team project is required', 409);
-  const team: AssistantTeam = { id: randomUUID(), clusterId: member.clusterId, hostNodeId: host, ...input, settings: { askThreshold: .8, actThreshold: .95 }, revision: 1, coordinatorRole: null };
-  try { db.prepare('INSERT INTO assistant_teams (id,cluster_id,host_node_id,project_id,executor_account_id,settings,revision,coordinator_role) VALUES(?,?,?,?,?,?,?,NULL)').run(team.id, team.clusterId, host, team.projectId, team.executorAccountId, JSON.stringify(team.settings), 1); }
+  const cleanName = input.name?.trim() ? input.name.trim().slice(0, 80) : null;
+  const settings: TeamSettings = { askThreshold: .8, actThreshold: .95, ...(input.allowBob !== undefined ? { allowBob: input.allowBob } : {}) };
+  const team: AssistantTeam = { id: randomUUID(), clusterId: member.clusterId, hostNodeId: host, projectId: input.projectId, executorAccountId: input.executorAccountId, name: cleanName, settings, revision: 1, coordinatorRole: null };
+  try { db.prepare('INSERT INTO assistant_teams (id,cluster_id,host_node_id,project_id,executor_account_id,name,settings,revision,coordinator_role) VALUES(?,?,?,?,?,?,?,?,NULL)').run(team.id, team.clusterId, host, team.projectId, team.executorAccountId, cleanName, JSON.stringify(team.settings), 1); }
   catch (error) { if (String(error).includes('UNIQUE')) throw new TeamError('Team already exists for this cluster and host', 409); throw error; }
   announceTeamChange(team.id); return team;
 }
@@ -199,13 +210,15 @@ export async function deleteTeam(member: TeamMember): Promise<AssistantTeam> {
   announceTeamChange(team.id);
   return team;
 }
-export async function saveTeamSettings(member: TeamMember, settings: TeamSettings, expectedRevision: number): Promise<AssistantTeam> {
+export async function saveTeamSettings(member: TeamMember, settings: TeamSettings, expectedRevision: number, name?: string | null): Promise<AssistantTeam> {
   await recheckTeamActor(member);
   const team = await getTeam(member.teamId);
   if (team.clusterId !== member.clusterId) throw new TeamError('Wrong cluster', 403);
   if (!Number.isFinite(settings.askThreshold) || !Number.isFinite(settings.actThreshold) || settings.askThreshold < 0 || settings.askThreshold >= settings.actThreshold || settings.actThreshold > 1 || !Number.isSafeInteger(expectedRevision)) throw new TeamError('Invalid thresholds or revision', 400);
+  const merged: TeamSettings = { ...team.settings, ...settings };
+  const nextName = name === undefined ? team.name : (name?.trim() ? name.trim().slice(0, 80) : null);
   const db = await teamDatabase();
-  if (!db.prepare('UPDATE assistant_teams SET settings=?, revision=revision+1 WHERE id=? AND revision=?').run(JSON.stringify(settings), team.id, expectedRevision).changes) throw new TeamError('Stale team revision', 409);
+  if (!db.prepare('UPDATE assistant_teams SET settings=?, name=?, revision=revision+1 WHERE id=? AND revision=?').run(JSON.stringify(merged), nextName, team.id, expectedRevision).changes) throw new TeamError('Stale team revision', 409);
   announceTeamChange(team.id); return getTeam(team.id);
 }
 /** Base persistence only: dispatch and transitions belong to the assignment service. */

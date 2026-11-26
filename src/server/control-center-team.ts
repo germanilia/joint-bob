@@ -31,7 +31,9 @@ export const TEAM_INSTRUCTIONS = [
 
 /** The teams Bob may name, as the agent that reads the message sees them. */
 export interface TeamWorld { id: string; name: string; host: string; roles: string[]; coordinator: string | null }
-export const teamWorldOf = (teams: HubTeam[]): TeamWorld[] => teams.map((team) => ({ id: team.id, name: team.clusterName, host: team.hostName, roles: team.members.map((member) => member.role), coordinator: team.coordinatorRole }));
+export const teamWorldOf = (teams: HubTeam[]): TeamWorld[] => teams
+  .filter((team) => team.allowBob !== false)
+  .map((team) => ({ id: team.id, name: team.name || team.clusterName, host: team.hostName, roles: team.members.map((member) => member.role), coordinator: team.coordinatorRole }));
 
 export const teamOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("team-assign"), teamId: id, teamName: z.string(), role: z.string().max(40).nullable(), roleLabel: z.string(), message: z.string().min(1).max(20_000) }),
@@ -44,7 +46,7 @@ export type TeamOperation = z.infer<typeof teamOperationSchema>;
 export type TeamOffer = { text: string } & ({ ask: true; button: string; operation: TeamOperation } | { ask: false });
 const answer = (text: string): TeamOffer => ({ ask: false, text });
 const problem = (error: unknown): string => error instanceof Error ? error.message.slice(0, 200) : String(error);
-const place = (team: HubTeam): string => `the ${team.clusterName} team${team.local ? "" : ` (hosted on ${team.hostName})`}`;
+const place = (team: HubTeam): string => `the ${team.name || team.clusterName} team${team.local ? "" : ` (hosted on ${team.hostName})`}`;
 
 async function find(session: AuthSession, teamId: string): Promise<HubTeam | string> {
   const team = (await hubTeams(session)).find((candidate) => candidate.id === teamId);
@@ -70,12 +72,12 @@ export async function offerTeam(session: AuthSession, intent: TeamIntent): Promi
     if (!member) return answer(intent.role ? `${place(team)} has no member called ${intent.role}. Its members are ${team.members.map((entry) => entry.role).join(", ") || "none yet"}.` : `${place(team)} has no members yet.`);
     if (!member.ready) return answer(`${member.role} is not ready on ${team.hostName}, so work sent now would not start. Check it in the team's settings on that machine.`);
     const text = `Send this to ${member.role}${member.coordinator && !intent.role ? " (the coordinator)" : ""} on ${place(team)}? It runs on ${team.hostName} as you, with the sign-ins and tools that assistant holds. I'll bring its answer here when it is done.\n${intent.message.slice(0, 600)}`;
-    return { ask: true, text, button: "Send it", operation: { op: "team-assign", teamId: team.id, teamName: team.clusterName, role: member.role, roleLabel: member.role, message: intent.message } };
+    return { ask: true, text, button: "Send it", operation: { op: "team-assign", teamId: team.id, teamName: team.name || team.clusterName, role: member.role, roleLabel: member.role, message: intent.message } };
   }
   const retrying = intent.intent === "team-retry";
   const ref = intent.request;
   return { ask: true, text: `${retrying ? "Run again" : "Stop"} ${ref ? `request ${ref}` : retrying ? "the latest stopped request" : "the latest unfinished request"} of ${place(team)}?${retrying ? " It starts again as a new request; the old one is retired." : " A running turn is told to stop and waiting work is dropped."}`,
-    button: retrying ? "Run it again" : "Stop it", operation: { op: retrying ? "team-retry" : "team-cancel", teamId: team.id, teamName: team.clusterName, request: ref } };
+    button: retrying ? "Run it again" : "Stop it", operation: { op: retrying ? "team-retry" : "team-cancel", teamId: team.id, teamName: team.name || team.clusterName, request: ref } };
 }
 
 export async function runTeamOperation(session: AuthSession, operation: TeamOperation): Promise<string> {

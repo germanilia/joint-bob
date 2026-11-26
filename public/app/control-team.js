@@ -1,12 +1,18 @@
-// Shared host team context. Personal Bob's views and settings are deliberately untouched.
+// Shared host team workspace: first-class Teams sidebar, Chief Chat & Activity, Members & Work, Memory CRUD, Channels & Settings.
 import { api as request } from './api.js';
-const api = (path, options = {}) => request(path, { ...options, ...(options.body ? { body: JSON.stringify(options.body) } : {}) });
 import { makeNode, makeButton } from './relay-ui.js';
-import { registerContextView, setControlContext, showControlView } from './control-views.js';
+import { currentControlView, registerContextView, setControlContext, showControlView } from './control-views.js';
 import { renderTeamTelegram } from './control-team-telegram.js';
 import { createTeamWork } from './control-team-work.js';
+import { openExecutionDetailModal, openMemberConnectionsModal } from './control-team-modals.js';
+import { openNewTeamWizard } from './control-team-wizard.js';
 import { openConversation } from './control-center.js';
-import { confirmAction } from './shell.js';
+import { confirmAction, toast } from './shell.js';
+import { setMobileView } from './layout.js';
+
+const api = (path, options = {}) => request(path, { ...options, ...(options.body ? { body: JSON.stringify(options.body) } : {}) });
+const tagged = (node, id) => { node.dataset.testid = id; return node; };
+const clip = (s, n) => (!s ? '' : s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 const panels = Object.fromEntries(['assistants', 'live', 'memory'].map(id => {
   const panel = makeNode('section', 'control-view team-control');
@@ -16,326 +22,797 @@ const panels = Object.fromEntries(['assistants', 'live', 'memory'].map(id => {
   registerContextView(id, panel);
   return [id, panel];
 }));
+const settingsWorkspacePanel = makeNode('section', 'control-view team-control team-settings-workspace');
+settingsWorkspacePanel.dataset.testid = 'team-settings-view';
+settingsWorkspacePanel.hidden = true;
+document.querySelector('#controlViews').append(settingsWorkspacePanel);
+
 const settingsPanel = document.querySelector('#settingsPanel-account');
-const tagged = (node, id) => { node.dataset.testid = id; return node; };
 const select = tagged(makeNode('select'), 'team-select');
 select.setAttribute('aria-label', 'Shared team');
-const error = tagged(makeNode('p'), 'team-error'); error.setAttribute('role', 'alert');
-const saved = makeNode('p'); saved.setAttribute('role', 'status');
+const error = tagged(makeNode('p', 'team-error-inline'), 'team-error'); error.setAttribute('role', 'alert');
+const saved = makeNode('p', 'team-status-inline'); saved.setAttribute('role', 'status');
+
+// Legacy top selector kept hidden on desktop (bob-page.css) & synced for mobile/tests.
 const contextLabel = makeNode('label', 'team-context-label', 'Context ');
 const newTeamButtons = makeNode('span', 'team-new-buttons');
 contextLabel.append(select, newTeamButtons);
 document.querySelector('#controlTabs').before(contextLabel);
+
+// First-class Teams section for desktop sidebar (moved into #workspaceSide by bob-page.js).
+const sidebarSection = makeNode('section', 'team-sidebar-section');
+sidebarSection.dataset.testid = 'team-sidebar-section';
+const sidebarHead = makeNode('div', 'team-sidebar-head');
+sidebarHead.append(makeNode('span', 'team-sidebar-title', 'TEAMS'));
+const sidebarList = makeNode('div', 'team-sidebar-list');
+sidebarList.dataset.testid = 'team-sidebar-list';
+const sidebarNewBtn = makeButton('+ New team with Chief…', 'team-sidebar-new', () => launchWizard());
+sidebarNewBtn.className = 'ghost compact team-sidebar-new';
+sidebarSection.append(sidebarHead, sidebarList, sidebarNewBtn);
+document.querySelector('#controlTabs').before(sidebarSection);
+
+// Persistent 4-tab bar inside the Team Workspace (always visible when a team is selected).
+const workspaceBar = makeNode('nav', 'team-workspace-tabs');
+workspaceBar.dataset.testid = 'team-workspace-tabs';
+workspaceBar.hidden = true;
+const TAB_DEFS = [
+  ['live', 'Chief Chat & Activity'],
+  ['assistants', 'Members & Work'],
+  ['memory', 'Memory'],
+  ['settings', 'Channels & Settings'],
+];
+let activeTeamTab = 'live';
+const tabButtons = new Map();
+for (const [id, label] of TAB_DEFS) {
+  const btn = makeNode('button', 'team-ws-tab', label);
+  btn.type = 'button';
+  btn.dataset.testid = `team-tab-${id}`;
+  const badge = makeNode('span', 'team-tab-badge');
+  badge.hidden = true;
+  btn.append(badge);
+  btn.addEventListener('click', () => switchTeamTab(id));
+  tabButtons.set(id, { btn, badge });
+  workspaceBar.append(btn);
+}
+document.querySelector('#controlViews').prepend(workspaceBar);
+
 const button = (text, id, fn) => makeButton(text, id, () => Promise.resolve().then(fn).catch(fail));
-const backToAssistants = button('Back to Assistants', 'team-back-to-assistants', () => {
-  select.value = '';
-  select.dispatchEvent(new Event('change'));
-  showControlView('assistants');
-});
+const backToAssistants = button('← Back to Personal Bob', 'team-back-to-assistants', () => exitTeamContext());
+backToAssistants.className = 'ghost compact team-back-btn';
 backToAssistants.hidden = true;
-document.querySelector('#controlViews').prepend(backToAssistants);
-const mobileEntry = button('Shared team', 'team-phone-open', async () => { await loadTeams(); showControlView('assistants'); });
+workspaceBar.append(backToAssistants);
+
+const mobileEntry = button('Teams', 'team-phone-open', async () => { await loadTeams(true); showControlView('assistants'); });
 mobileEntry.classList.add('team-phone-entry');
 document.querySelector('.control-chat-head')?.append(mobileEntry);
-window.addEventListener('control-view-changed', event => document.body.classList.toggle('team-phone-live', event.detail.id === 'live'));
-const phoneNav = makeNode('nav', 'team-phone-nav');
-for (const [view, label] of [['assistants', 'Roles'], ['live', 'Activity'], ['memory', 'Memory']]) phoneNav.append(button(label, `team-phone-${view}`, () => showControlView(view)));
-document.querySelector('#controlViews').prepend(phoneNav);
+window.addEventListener('control-view-changed', event => {
+  document.body.classList.toggle('team-phone-live', event.detail.id === 'live');
+  if (select.value && ['live', 'assistants', 'memory'].includes(event.detail.id) && activeTeamTab !== 'settings') {
+    activeTeamTab = event.detail.id;
+    syncWorkspaceTabUi();
+  }
+});
 const mobileSelect = tagged(makeNode('select'), 'team-phone-select');
 mobileSelect.setAttribute('aria-label', 'Shared team on phone');
 mobileSelect.addEventListener('change', () => { select.value = mobileSelect.value; select.dispatchEvent(new Event('change')); });
-const mobileContext = makeNode('label', 'team-phone-context', 'Shared team '); mobileContext.append(mobileSelect);
+const mobileContext = makeNode('label', 'team-phone-context', 'Team '); mobileContext.append(mobileSelect);
 document.querySelector('#controlViews').prepend(mobileContext);
-const syncMobile = () => { mobileSelect.replaceChildren(...[...select.options].map(option => new Option(option.text, option.value))); mobileSelect.value = select.value; };
-const settings = makeNode('section', 'team-control team-settings-area');
-settings.append(makeNode('h2', '', 'Shared team settings · personal Bob is separate'), error, saved);
-settingsPanel.append(settings);
-let team, stream, work, hubTeams = new Map(), generation = 0, refreshGeneration = 0, editingSettings = false;
-const current = (mine, url) => mine === generation && select.value && base() === url;
-const updateRevision = async (url, mine) => {
-  const record = await api(url);
-  if (current(mine, url) && team) team.revision = record.team.revision;
-};
+
+const settingsMirror = makeNode('section', 'team-control team-settings-area');
+settingsMirror.append(makeNode('h2', '', 'Shared team settings · personal Bob is separate'));
+settingsPanel.append(settingsMirror);
+
+let team, stream, work, hubTeams = new Map(), knownClusters = [], knownUnreachable = [];
+let generation = 0, refreshGeneration = 0, editingSettings = false;
+let latestAgents = null, latestRequests = [], selectedMemberRole = null;
+let selectedMemoryKey = null, memoryDirty = false;
+
 const base = () => `/api/assistant-teams/${encodeURIComponent(select.value)}`;
+const current = (mine, url) => mine === generation && select.value && base() === url;
 const fail = e => {
   error.textContent = e.message;
-  if (!settingsPanel.closest('dialog')?.open && select.value) {
-    const visible = Object.values(panels).find(panel => !panel.hidden);
-    if (visible) visible.prepend(error);
-  }
+  toast.error(e.message);
 };
+
+function syncWorkspaceTabUi() {
+  const inTeam = Boolean(select.value);
+  workspaceBar.hidden = !inTeam;
+  backToAssistants.hidden = !inTeam;
+  settingsWorkspacePanel.hidden = !inTeam || activeTeamTab !== 'settings';
+  if (inTeam && activeTeamTab === 'settings') {
+    for (const panel of Object.values(panels)) panel.hidden = true;
+  }
+  for (const [id, { btn }] of tabButtons) {
+    btn.classList.toggle('active', activeTeamTab === id);
+    btn.setAttribute('aria-selected', String(activeTeamTab === id));
+  }
+}
+
+function switchTeamTab(id) {
+  activeTeamTab = id;
+  if (id === 'settings') {
+    syncWorkspaceTabUi();
+  } else {
+    settingsWorkspacePanel.hidden = true;
+    showControlView(id);
+    syncWorkspaceTabUi();
+  }
+}
+
+function exitTeamContext() {
+  if (!select.value) return;
+  select.value = '';
+  select.dispatchEvent(new Event('change'));
+}
+
+function selectTeamById(teamId, preferredTab = 'live') {
+  const item = hubTeams.get(teamId);
+  const val = item ? (item.local ? item.id : `remote:${item.id}`) : teamId;
+  if (!document.body.classList.contains('view-control')) setMobileView('control');
+  if (select.value !== val) {
+    select.value = val;
+    select.dispatchEvent(new Event('change'));
+  }
+  switchTeamTab(preferredTab);
+}
+
+function renderSidebarTeams() {
+  sidebarList.replaceChildren();
+  const activeId = select.value.startsWith('remote:') ? select.value.slice(7) : select.value;
+  if (!hubTeams.size) {
+    sidebarList.append(makeNode('p', 'team-sidebar-empty', 'No teams yet'));
+    return;
+  }
+  for (const item of hubTeams.values()) {
+    const pill = makeNode('button', `team-sidebar-pill${activeId === item.id ? ' active' : ''}`);
+    pill.type = 'button';
+    pill.dataset.testid = `team-sidebar-item-${item.id}`;
+    const dot = makeNode('span', 'team-live-dot');
+    const copy = makeNode('span', 'team-sidebar-copy');
+    const chief = item.members.find(m => m.coordinator);
+    copy.append(
+      makeNode('strong', '', item.name || item.clusterName),
+      makeNode('small', '', chief ? `Chief: ${chief.name || `/${chief.role}`}${item.local ? '' : ` · ${item.hostName}`}` : (item.local ? item.hostName : `on ${item.hostName}`)),
+    );
+    pill.append(dot, copy);
+    pill.addEventListener('click', () => selectTeamById(item.id, activeId === item.id ? activeTeamTab : 'live'));
+    sidebarList.append(pill);
+  }
+}
+
+const syncMobile = () => {
+  mobileSelect.replaceChildren(...[...select.options].map(option => new Option(option.text, option.value)));
+  mobileSelect.value = select.value;
+  renderSidebarTeams();
+};
+
 function input(parent, label, id, value, type = 'text') {
-  const wrapper = makeNode('label', 'team-field', label), field = tagged(makeNode(type === 'textarea' ? 'textarea' : 'input'), id);
+  const wrapper = makeNode('label', 'team-field');
+  wrapper.append(makeNode('span', '', label));
+  const field = tagged(makeNode(type === 'textarea' ? 'textarea' : 'input'), id);
   if (type !== 'textarea') field.type = type;
-  field.value = value ?? ''; wrapper.append(field); parent.append(wrapper); return field;
+  field.value = value ?? '';
+  wrapper.append(field);
+  parent.append(wrapper);
+  return field;
 }
-// Removes the team on whichever machine hosts it, with its project and conversations. The host refuses one still on Telegram or busy.
-const deleteButton = (teamId, name) => button('Delete team', 'team-delete', async () => {
-  if (!await confirmAction({ eyebrow: 'Shared team', title: `Delete the ${name} team?`, message: "Its members stay as your assistants; the team's conversations, memory and requests are removed.", confirmLabel: 'Delete team', destructive: true })) return;
-  await api(`/api/team-hub/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
-  select.replaceChildren(); await loadTeams(); select.value = ''; select.dispatchEvent(new Event('change'));
-});
-// A team is made by its own button, never by picking an entry in the selector. It is hosted on this machine.
-async function createTeam(cluster) {
-  if (!await confirmAction({ eyebrow: 'Shared team', title: `Create a team for ${cluster.name}?`, message: 'It is hosted on this machine. Add your assistants to it afterwards, each with a role.', confirmLabel: 'Create team' })) return;
-  const result = await api('/api/assistant-teams', { method: 'POST', body: { clusterId: cluster.id } });
-  select.replaceChildren(); await loadTeams();
-  select.value = result.team.id; select.dispatchEvent(new Event('change')); showControlView('assistants');
+
+const deleteButton = (teamId, name) => {
+  const btn = button('Delete team', 'team-delete', async () => {
+    if (!await confirmAction({ eyebrow: 'Assistant team', title: `Delete "${name}"?`, message: "Its members stay as assistants; the team's conversations, memory and requests are removed.", confirmLabel: 'Delete team', destructive: true })) return;
+    await api(`/api/team-hub/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
+    await loadTeams(true);
+    exitTeamContext();
+    toast.info(`Deleted ${name}`);
+  });
+  btn.className = 'ghost compact danger';
+  return btn;
+};
+
+async function launchWizard() {
+  await loadTeams(true);
+  openNewTeamWizard({
+    clusters: knownClusters,
+    teams: [...hubTeams.values()],
+    unreachable: knownUnreachable,
+    onTeamCreated: () => { void loadTeams(true); },
+    onLaunch: async newTeamId => {
+      await loadTeams(true);
+      if (newTeamId) selectTeamById(newTeamId, 'live');
+    },
+  });
 }
-async function loadTeams() {
-  if (select.options.length) return;
-  // Built aside and put in at once: a failed load leaves the list empty, so the next opening tries again.
-  // The teams of every cluster the person joined, on whichever machine hosts each; a team on another machine is steered from here.
-  const [{ clusters }, { teams, unreachable }] = await Promise.all([api('/api/clusters'), api('/api/team-hub')]);
-  hubTeams = new Map(teams.map(item => [item.id, item]));
-  const options = [new Option(teams.length || clusters.length ? 'Select a team' : 'No cluster yet: create one under Clusters', '')];
-  const creatable = [];
-  for (const item of teams) options.push(new Option(item.local ? item.clusterName : `${item.clusterName} — on ${item.hostName}`, item.local ? item.id : `remote:${item.id}`));
-  // A team is made on this host only for a cluster that has none anywhere; one whose machines could not all be reached may have one.
-  for (const cluster of clusters) if (!teams.some(item => item.clusterId === cluster.id) && !unreachable.includes(cluster.id)) creatable.push(cluster);
-  if (select.options.length) return;
+
+async function loadTeams(force = false) {
+  if (!force && select.options.length) return;
+  const previous = select.value;
+  const [{ clusters }, { teams, unreachable }] = await Promise.all([api('/api/clusters'), api('/api/team-hub?fresh=1')]);
+  knownClusters = clusters ?? [];
+  knownUnreachable = unreachable ?? [];
+  hubTeams = new Map((teams ?? []).map(item => [item.id, item]));
+  const options = [new Option(teams.length || clusters.length ? 'Select a team' : 'No cluster yet', '')];
+  for (const item of teams) {
+    const label = item.name || item.clusterName;
+    options.push(new Option(item.local ? label : `${label} — on ${item.hostName}`, item.local ? item.id : `remote:${item.id}`));
+  }
   select.replaceChildren(...options);
-  newTeamButtons.replaceChildren(...creatable.map(cluster => button(`New team for ${cluster.name}`, 'team-new', () => createTeam(cluster))));
+  if (previous && [...select.options].some(o => o.value === previous)) select.value = previous;
+  const creatable = clusters.filter(cluster => !teams.some(item => item.clusterId === cluster.id) && !unreachable.includes(cluster.id));
+  newTeamButtons.replaceChildren(...creatable.map(cluster => button(`+ New team (${cluster.name})`, 'team-new', () => launchWizard())));
   syncMobile();
 }
-async function refresh(force = false) {
-  const mine = generation;
-  if (!force && (document.querySelector('.team-editor') || editingSettings || document.querySelector('#settingsDialog')?.open || (settings.contains(document.activeElement) && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)))) return;
-  const refreshRequest = ++refreshGeneration;
-  if (!select.value) { team = undefined; for (const panel of Object.values(panels)) panel.replaceChildren(); settings.replaceChildren(error, saved); return; }
-  const url = base();
-  const [record, agents, readiness] = await Promise.all([api(url), api(`${url}/agents`), api(`${url}/readiness`)]);
-  if (mine !== generation || refreshRequest !== refreshGeneration) return;
-  // Do not destroy a member's in-progress editor when another member changes the team.
-  if (!force && (document.querySelector('.team-editor') || editingSettings || document.querySelector('#settingsDialog')?.open || (settings.contains(document.activeElement) && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)))) return;
-  team = record.team;
-  const openSections = [...document.querySelectorAll('.team-control details[open]')].map(node => node.firstChild.textContent);
-  for (const panel of Object.values(panels)) panel.replaceChildren();
-  if (work) { work.setMembers(agents.agents.map(agent => ({ role: agent.role, name: agent.profile?.name ?? null, coordinator: agent.coordinator, ready: !agent.readiness.length }))); panels.live.append(work.node); }
-  settings.replaceChildren(makeNode('h2', '', 'Shared team settings · personal Bob is separate'), error, saved);
-  panels.assistants.append(makeNode('h2', '', 'Team members'), makeNode('p', '', `Host: ${readiness.host.name}`), tagged(makeNode('p', '', 'Pick your assistants on this machine and give each a role. A member brings everything it has: instructions, skills, MCP servers, browser logins and tools. Its role is its Telegram command.'), 'team-runtime'));
-  const decision = makeNode('p', '', `Central AI decision: ${readiness.decision.model ?? 'not selected'} · ${readiness.decision.ready ? 'ready' : 'unavailable'}. Configure in Settings → System AI.`);
-  decision.append(button('System AI settings', 'team-decision-settings', async () => (await import('./settings.js')).openSettings('system-ai')));
-  panels.assistants.append(decision);
-  panels.assistants.append(button('Team settings and Telegram', 'team-open-settings', async () => (await import('./settings.js')).openSettings('account')));
-  panels.assistants.append(deleteButton(team.id, hubTeams.get(team.id)?.clusterName ?? 'this'));
-  const thresholds = makeNode('div', 'team-settings');
-  const ask = input(thresholds, 'Ask (%)', 'team-ask', team.settings.askThreshold * 100, 'number');
-  const act = input(thresholds, 'Act (%)', 'team-act', team.settings.actThreshold * 100, 'number');
-  for (const field of [ask, act]) { field.min = '0'; field.max = '100'; field.step = 'any'; field.addEventListener('input', () => { editingSettings = true; }); }
-  thresholds.append(button('Save thresholds', 'team-settings-save', async () => {
-    const a = Number(ask.value), b = Number(act.value);
-    if (!ask.value || !act.value || !Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b > 100 || a >= b) throw new Error('Ask must be below Act (0–100%).');
-    await api(`${url}/settings`, { method: 'PUT', body: { expectedRevision: team.revision, settings: { askThreshold: a / 100, actThreshold: b / 100 } } });
-    team = (await api(url)).team;
-    editingSettings = false; error.textContent = ''; saved.dataset.testid = 'team-saved'; saved.textContent = 'Saved';
-  })); settings.append(thresholds);
-  await renderMembers(panels.assistants, url, agents);
-  const telegram = makeNode('details'); telegram.append(tagged(makeNode('summary', '', 'Telegram enrollment and group'), 'team-telegram-toggle'));
-  if (openSections.includes('Telegram enrollment and group')) telegram.open = true;
-  settings.append(telegram); await renderTeamTelegram(telegram, url, fail, () => refresh(true));
-  if (!current(mine, url) || refreshRequest !== refreshGeneration) return;
-  const learning = tagged(makeNode('div', 'team-learning'), 'team-learning');
-  panels.memory.append(learning);
-  const status = await api(`${url}/memory/status`);
-  if (!current(mine, url) || refreshRequest !== refreshGeneration) return;
-  const attention = status.learning.filter(entry => ['waiting', 'decision_unavailable', 'writer_unavailable', 'memory_failed', 'file_pending'].includes(entry.status));
-  learning.textContent = attention.length ? `Memory learning: ${attention.map(entry => `${entry.message_id}: ${entry.status.replaceAll('_', ' ')}`).join(' · ')}` : 'Memory learning: no pending or failed messages';
-  for (const [name, endpoint, key] of [['Activity', 'assignments', 'assignments'], ['Messages', 'messages', 'messages'], ['Decisions', 'decisions', 'decisions'], ['Memory topics', 'memory/topics', 'topics'], ['Memory changes', 'memory/changes', 'changes']]) {
-    const section = makeNode('details'); section.append(tagged(makeNode('summary', '', name), `team-${key}-toggle`));
-    if (openSections.includes(name)) section.open = true;
-    const list = tagged(makeNode('div', 'team-page'), `team-${key}`);
-    const pager = makeNode('nav', 'team-pager'); section.append(list, pager); (key === 'topics' || key === 'changes' ? panels.memory : panels.live).append(section);
-    let offset = 0, pageSize = 1, request = 0;
-    const generationAtRender = mine;
-    const show = async () => {
-      const mine = ++request;
-      // Fetch one lookahead page; the visible count is determined by actual row geometry below.
-      const data = await api(`${url}/${endpoint}?offset=${key === 'assignments' ? 0 : offset}&limit=100`);
-      if (mine !== request || !current(generationAtRender, url) || !section.isConnected) return;
-      const activity = key === 'assignments' ? [
-        ...(data.proposals ?? []).filter(p => p.state === 'pending').map(value => ({ kind: 'proposal', value })),
-        ...data.inquiries.filter(i => i.state === 'pending').map(value => ({ kind: 'inquiry', value })),
-        ...data.approvals.filter(a => a.state === 'pending').map(value => ({ kind: 'approval', value })),
-        ...data.assignments.map(value => ({ kind: 'assignment', value }))
-      ] : [];
-      const rows = key === 'assignments' ? activity.slice(offset) : data[key] ?? []; list.replaceChildren();
-      if (key === 'topics') list.append(button('New topic', 'team-memory-new', () => editMemory(url, list, '', 0)));
-      if (key === 'assignments') {
-        for (const entry of rows.filter(r => r.kind === 'proposal')) {
-          const proposal = entry.value;
-          const item = makeNode('article', 'team-record');
-          item.append(makeNode('h4', '', `${proposal.proposedByRole} proposes: ${proposal.summary}`), makeNode('p', '', proposal.rationale));
-          for (const preview of proposal.previews ?? []) {
-            const details = makeNode('details');
-            details.append(makeNode('summary', '', preview.headline), makeNode('pre', 'team-memory-read', preview.detail));
-            item.append(details);
-          }
-          for (const decision of ['approve', 'reject']) item.append(button(decision === 'approve' ? 'Approve' : 'Reject', `team-proposal-${decision}`, async () => { await api(`${url}/proposals/${proposal.id}/decide`, { method: 'POST', body: { decision } }); await show(); await refresh(true); }));
-          list.append(item);
-        }
-        for (const entry of rows.filter(r => r.kind === 'inquiry')) {
-          const inquiry = entry.value;
-          const item = makeNode('article', 'team-record', inquiry.source.text);
-          for (const choice of ['confirm', 'dismiss']) item.append(button(choice, `team-inquiry-${choice}`, async () => { await api(`${url}/inquiries/${inquiry.id}/confirm`, { method: 'POST', body: { decision: choice } }); await show(); }));
-          list.append(item);
-        }
-        for (const entry of rows.filter(r => r.kind === 'approval')) {
-          const approval = entry.value;
-          const item = makeNode('article', 'team-record', approval.reason ?? 'Guardian approval required');
-          for (const allow of [false, true]) item.append(button(allow ? 'Allow' : 'Deny', `team-approval-${allow}`, async () => { await api(`${url}/assignments/${approval.team.assignmentId}/reviews/${approval.id}`, { method: 'POST', body: { allow } }); await show(); }));
-          list.append(item);
-        }
-      }
-      for (const entry of rows.filter(r => key !== 'assignments' || r.kind === 'assignment')) {
-        const row = key === 'assignments' ? entry.value : entry;
-        const item = makeNode('article', 'team-record');
-        item.append(makeNode('h4', '', row.role ?? row.name ?? row.topic ?? row.title ?? row.status ?? 'Message'));
-        item.append(makeNode('p', '', row.text ?? row.description ?? row.failure?.message ?? row.state ?? ''));
-        if (key === 'assignments') {
-          const work = data.work.find(w => w.assignmentId === row.id);
-          item.append(makeNode('p', '', `${row.parentId ? 'Delegated' : 'Direct'} · ${work?.reason ?? ''}`));
-          if (work?.result) item.append(makeNode('p', '', work.result));
-          if (work?.conversationId) item.append(button('Conversation', 'team-conversation', () => openConversation({ projectId: team.projectId, conversationId: work.conversationId, engine: 'pi' })));
-          if (!row.subjectId && ['accepted', 'waiting_for_human'].includes(row.state)) item.append(button('Confirm new subject', 'team-route-new', () => api(`${url}/assignments/${row.id}/route`, { method: 'POST', body: { kind: 'new' } })));
-          for (const delivery of data.deliveries.filter(d => d.assignmentId === row.id)) item.append(makeNode('p', '', `Delivery: ${delivery.state}${delivery.state === 'uncertain' ? ' — outcome unknown; do not blindly retry' : ''}`));
-        }
-        if (key === 'topics') {
-          for (const link of row.links ?? []) item.append(button(`[[${link}]]`, 'team-memory-link', () => editMemory(url, item, link, 0)));
-          item.append(button('Read / edit', 'team-memory-edit', () => editMemory(url, item, row.name ?? row.topic, row.revision)));
-        }
-        if (key === 'changes') {
-          item.append(makeNode('p', '', `Revision ${row.revision} · ${row.actor} · ${row.created_at}`));
-          item.append(button('Revert this revision', 'team-memory-revert', () => api(`${url}/memory/changes/${row.id}/revert`, { method: 'POST', body: { expectedRevision: row.revision } })));
-          for (const source of JSON.parse(row.sources || '[]')) item.append(button('Source', 'team-memory-source', async () => { const { message } = await api(`${url}/messages/${source}`); item.append(makeNode('p', '', message.text)); }));
-        }
-        if (key === 'decisions') item.append(makeNode('p', '', `Decision ${row.status} · ${row.model ?? 'unavailable'} · ${row.waitingReason ?? row.result?.attention ?? ''}`));
-        const sourceId = row.sourceMessageId ?? row.messageId;
-        if (sourceId) item.append(button('Original source', 'team-source', async () => {
-          const { message } = await api(`${url}/messages/${encodeURIComponent(sourceId)}`);
-          item.append(makeNode('p', '', message.text));
-        }));
-        list.append(item);
-      }
-      // Keep only complete rows within the measured list height; do not make a hidden scroll region.
-      const records = [...list.querySelectorAll('.team-record')];
-      pageSize = Math.max(1, records.length);
-      while (pageSize > 1 && list.scrollHeight > list.clientHeight + 1) records[--pageSize].remove();
-      if (pageSize === 1 && list.scrollHeight > list.clientHeight + 1) records[0]?.classList.add('team-record-tall');
-      const prev = button('Previous', `team-${key}-prev`, () => { offset = Math.max(0, offset - pageSize); return show(); }); prev.disabled = offset === 0;
-      const next = button('Next', `team-${key}-next`, () => { offset += pageSize; return show(); }); next.disabled = rows.length <= pageSize;
-      pager.replaceChildren(prev, makeNode('span', '', `${offset + 1}–${offset + pageSize}`), next);
-    };
-    new ResizeObserver(() => { if (section.open && section.isConnected && !list.querySelector('input, textarea')) show().catch(fail); }).observe(list);
-    section.addEventListener('toggle', () => { if (section.open) show().catch(fail); });
+
+function updateLiveBadges() {
+  const runningRoles = new Set();
+  for (const req of latestRequests) {
+    if (['running', 'queued'].includes(req.state)) {
+      for (const a of req.assignments) if (['running', 'queued', 'accepted'].includes(a.state)) runningRoles.add(a.role);
+    }
+  }
+  const mBadge = tabButtons.get('assistants')?.badge;
+  if (mBadge) {
+    mBadge.textContent = runningRoles.size ? `${runningRoles.size} live` : String(latestAgents?.agents?.length ?? 0);
+    mBadge.classList.toggle('is-live', runningRoles.size > 0);
+    mBadge.hidden = !latestAgents?.agents?.length && !runningRoles.size;
   }
 }
-/** Members are picked assistants with a free role name; one of them coordinates. */
-async function renderMembers(parent, url, agents) {
+
+function memberWorkGroups(role) {
+  const active = [];
+  const past = [];
+  for (const req of latestRequests) {
+    for (const part of req.assignments) {
+      if (part.role !== role) continue;
+      const entry = { req, part };
+      if (['running', 'queued', 'accepted', 'waiting_for_human'].includes(part.state)) active.push(entry);
+      else past.push(entry);
+    }
+  }
+  return { active, past };
+}
+
+async function renderMembersWorkspace(url, agents, readiness) {
   const mine = generation;
   const { assistants } = await api(`${url}/available-assistants`);
   if (!current(mine, url)) return;
-  const rows = agents.agents.map(agent => ({ role: agent.role, assistantId: agent.assistantId, profile: agent.profile, readiness: agent.readiness }));
+  const rows = agents.agents.map(agent => ({ role: agent.role, assistantId: agent.assistantId, profile: agent.profile, readiness: agent.readiness, coordinator: agent.coordinator }));
+  if (!selectedMemberRole || !rows.some(r => r.role === selectedMemberRole)) selectedMemberRole = rows.find(r => r.coordinator)?.role ?? rows[0]?.role ?? null;
+
+  panels.assistants.replaceChildren();
+  const split = makeNode('div', 'team-split');
+  const rail = makeNode('aside', 'team-rail');
+  const detail = makeNode('div', 'team-detail');
+
+  rail.append(makeNode('p', 'team-rail-hint', 'Select a member to inspect live work, past tasks & service connections:'));
+  for (const row of rows) {
+    const { active, past } = memberWorkGroups(row.role);
+    const btn = makeNode('button', `team-member-item${selectedMemberRole === row.role ? ' selected' : ''}`);
+    btn.type = 'button';
+    btn.dataset.testid = `team-member-select-${row.role}`;
+    const top = makeNode('div', 'team-member-item-top');
+    top.append(
+      makeNode('span', `team-live-dot${active.length ? ' working' : ''}`),
+      makeNode('strong', '', row.profile?.name ?? row.role),
+      makeNode('code', '', `/${row.role}`),
+      ...(row.coordinator ? [makeNode('span', 'team-pill state-done', 'Chief')] : []),
+    );
+    const statusText = active.length
+      ? `Working: ${clip(active[0].part.prompt || active[0].req.text, 64)}`
+      : `Idle · ${past.length} past task${past.length === 1 ? '' : 's'} · ${row.readiness.length ? 'needs attention' : 'ready'}`;
+    btn.append(top, makeNode('small', active.length ? 'team-working-line' : 'team-muted', statusText));
+    btn.addEventListener('click', () => { selectedMemberRole = row.role; drawMemberDetail(detail, url, rows, readiness); for (const el of rail.querySelectorAll('.team-member-item')) el.classList.toggle('selected', el === btn); });
+    rail.append(btn);
+  }
+
+  drawMemberDetail(detail, url, rows, readiness);
+  split.append(rail, detail);
+  panels.assistants.append(split);
+
+  // Collapsible Roster Management (keeps existing add/remove/rename/coordinator flows).
+  const rosterDetails = makeNode('details', 'team-roster-manage');
+  rosterDetails.append(makeNode('summary', '', `Manage Roster (${rows.length} members)`));
   let coordinator = agents.coordinatorRole;
-  const list = tagged(makeNode('div', 'team-cards'), 'team-members');
-  const save = async () => {
+  const saveRoster = async () => {
     const result = await api(`${url}/members`, { method: 'PUT', body: { expectedRevision: team.revision, coordinatorRole: rows.some(row => row.role === coordinator) ? coordinator : null, members: rows.map(({ role, assistantId }) => ({ role, assistantId })) } });
     team.revision = result.revision; error.textContent = ''; await refresh(true);
   };
+  const cards = tagged(makeNode('div', 'team-cards'), 'team-members');
   for (const row of rows) {
     const card = tagged(makeNode('article', 'team-card'), 'team-agent-card'); card.dataset.role = row.role;
-    card.append(makeNode('h3', '', `/${row.role} · ${row.profile?.name ?? 'deleted assistant'}${row.role === coordinator ? ' · coordinator' : ''}`));
-    card.append(tagged(makeNode('p', '', row.profile ? `Uses: ${row.profile.uses.join(', ') || 'no extra resources'}` : ''), 'team-member-uses'));
-    card.append(makeNode('p', '', row.readiness.join(' · ') || 'Ready'));
-    const role = input(card, 'Role (Telegram command)', 'team-member-role', row.role);
-    role.addEventListener('change', () => { if (coordinator === row.role) coordinator = role.value.trim(); row.role = role.value.trim(); });
-    if (row.role !== coordinator) card.append(button('Make coordinator', 'team-member-coordinator', () => { coordinator = row.role; return save(); }));
-    card.append(button('Remove', 'team-member-remove', () => { rows.splice(rows.indexOf(row), 1); return save(); }));
-    list.append(card);
+    card.append(makeNode('h4', '', `/${row.role} · ${row.profile?.name ?? 'deleted assistant'}${row.role === coordinator ? ' · Chief' : ''}`));
+    const roleField = input(card, 'Role (Telegram command)', 'team-member-role', row.role);
+    roleField.addEventListener('change', () => { if (coordinator === row.role) coordinator = roleField.value.trim(); row.role = roleField.value.trim(); });
+    const actions = makeNode('div', 'team-row-actions');
+    if (row.role !== coordinator) actions.append(button('Make Chief', 'team-member-coordinator', () => { coordinator = row.role; return saveRoster(); }));
+    actions.append(button('Remove', 'team-member-remove', () => { rows.splice(rows.indexOf(row), 1); return saveRoster(); }));
+    card.append(actions);
+    cards.append(card);
   }
-  parent.append(list);
   const add = makeNode('div', 'team-settings');
   const choices = assistants.filter(item => !item.inTeam);
   const pick = tagged(makeNode('select'), 'team-member-pick'); pick.setAttribute('aria-label', 'Assistant to add');
-  pick.replaceChildren(...(choices.length ? choices.map(item => new Option(`${item.name} — ${item.uses.join(', ') || 'no extra resources'}`, item.id)) : [new Option('No other assistants of yours on this machine', '')]));
+  pick.replaceChildren(...(choices.length ? choices.map(item => new Option(`${item.name} — ${item.uses.join(', ') || 'no extra resources'}`, item.id)) : [new Option('No other assistants on this host', '')]));
   const newRole = input(add, 'Role', 'team-member-new-role', '');
   add.prepend(pick);
   add.append(button('Add to team', 'team-member-add', () => {
-    if (!pick.value) throw new Error('Create an assistant on this machine first.');
-    if (!newRole.value.trim()) throw new Error('Give the new member a role, for example qa.');
+    if (!pick.value) throw new Error('Create an assistant on this host first.');
+    if (!newRole.value.trim()) throw new Error('Give the new member a role, for example finance.');
     rows.push({ role: newRole.value.trim(), assistantId: pick.value });
-    return save();
-  }));
-  add.append(button('Save roles', 'team-members-save', save));
-  parent.append(add);
+    return saveRoster();
+  }), button('Save roles', 'team-members-save', saveRoster));
+  rosterDetails.append(cards, add);
+  panels.assistants.append(rosterDetails);
 }
-async function editMemory(url, parent, topic, revision) {
-  const mine = generation;
-  const current = topic ? await api(`${url}/memory/topics/${encodeURIComponent(topic)}`) : { text: '', revision: 0 };
-  if (!select.value || mine !== generation || base() !== url) return;
-  panels.memory.querySelector('.team-memory-editor-pane')?.remove();
-  const pane = tagged(makeNode('section', 'team-memory-editor-pane'), 'team-memory-editor-pane');
-  panels.memory.prepend(pane);
-  const editor = makeNode('div', 'team-editor');
-  if (current.text) {
-    const read = tagged(makeNode('div', 'team-memory-read'), 'team-memory-read');
-    for (const part of current.text.split(/(\[\[[a-z0-9-]+\]\]|\[message [^\]]+\]\([^)]*\/messages\/[^)]*\)|\[conversation [^\]]+\]\(\/\?[^)]*\))/g)) {
-      const topicLink = /^\[\[([a-z0-9-]+)\]\]$/.exec(part);
-      const sourceLink = /^\[message ([^\]]+)\]\([^)]*\/messages\/[^)]*\)$/.exec(part);
-      const conversationLink = /^\[conversation ([^\]]+)\]\(\/\?([^)]*)\)$/.exec(part);
-      if (topicLink) read.append(button(topicLink[1], 'team-memory-link', () => editMemory(url, editor, topicLink[1], 0)));
-      else if (sourceLink) read.append(button(`Source ${sourceLink[1]}`, 'team-memory-source', async () => { const { message } = await api(`${url}/messages/${encodeURIComponent(sourceLink[1])}`); read.append(makeNode('p', '', message.text)); }));
-      else if (conversationLink) read.append(button(`Conversation ${conversationLink[1]}`, 'team-memory-conversation', () => { const params = new URLSearchParams(conversationLink[2]); return openConversation({ projectId: params.get('project'), conversationId: params.get('conversation'), engine: 'pi' }); }));
-      else read.append(document.createTextNode(part));
-    }
-    editor.append(read);
+
+function drawMemberDetail(container, url, rows, readiness) {
+  container.replaceChildren();
+  const member = rows.find(r => r.role === selectedMemberRole);
+  if (!member) { container.append(makeNode('p', 'team-muted', 'No members in this team yet. Use Manage Roster or run the Chief Setup Wizard.')); return; }
+
+  const { active, past } = memberWorkGroups(member.role);
+  const head = makeNode('div', 'team-detail-head');
+  const headCopy = makeNode('div', '');
+  const titleRow = makeNode('div', 'team-detail-title-row');
+  titleRow.append(makeNode('h2', '', member.profile?.name ?? member.role), makeNode('code', 'team-inline-code', `/${member.role}`), ...(member.coordinator ? [makeNode('span', 'team-pill state-done', 'Chief')] : []));
+  headCopy.append(titleRow, makeNode('p', 'team-muted', `${(member.profile?.uses ?? []).join(' · ') || 'No extra services attached'} · Host: ${readiness.host.name}`));
+  const memBtn = makeButton(`View /${member.role} memory →`, `team-member-view-memory-${member.role}`, () => {
+    selectedMemoryKey = `member:${member.role}:playbook`;
+    switchTeamTab('memory');
+  });
+  memBtn.className = 'ghost compact';
+  head.append(headCopy, memBtn);
+  container.append(head);
+
+  if (member.readiness.length) {
+    container.append(makeNode('p', 'team-error-inline', `Readiness: ${member.readiness.join(' · ')}`));
   }
-  const name = input(editor, 'Topic name', 'team-memory-name', topic); name.disabled = Boolean(topic);
-  const parts = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(current.text);
-  const description = input(editor, 'Description', 'team-memory-description', parts?.[1].match(/^description: (.*)$/m)?.[1] || topic || 'Shared team knowledge');
-  const body = input(editor, 'Memory text', 'team-memory-body', parts ? parts[2].trim() : current.text, 'textarea');
-  const sources = input(editor, 'Source message IDs (comma separated, from this team)', 'team-memory-sources', '');
-  editor.append(button('Save memory', 'team-memory-save', async () => {
-    if (mine !== generation || base() !== url) return;
-    await api(`${url}/memory/topics/${encodeURIComponent(name.value)}`, { method: 'PUT', body: { expectedRevision: current.revision, description: description.value, body: body.value, sourceMessageIds: sources.value.split(',').map(value => value.trim()).filter(Boolean) } });
-    if (mine !== generation || base() !== url) return;
-    pane.remove(); await refresh();
-  }), button('Cancel', 'team-memory-cancel', () => pane.remove()));
-  pane.append(editor);
-  pane.scrollIntoView({ block: 'nearest' });
+
+  // Currently Working On
+  const activeSec = makeNode('section', 'team-detail-section');
+  activeSec.append(makeNode('span', 'team-section-eyebrow', 'CURRENTLY WORKING ON'));
+  if (!active.length) {
+    activeSec.append(makeNode('div', 'team-empty-box', 'Idle — no task running right now.'));
+  } else {
+    for (const { req, part } of active) {
+      const box = makeNode('article', 'team-work-card is-active');
+      const top = makeNode('div', 'team-row-head');
+      top.append(makeNode('span', `team-pill state-${part.state}`, part.state.replaceAll('_', ' ')), makeNode('code', 'team-short-id', `#${req.shortId}`));
+      const actions = makeNode('div', 'team-row-actions');
+      if (part.id) {
+        const inspect = makeButton('Inspect live execution →', `team-member-inspect-${part.id}`, () => void openExecutionDetailModal(team.id, part.id, { openConversation }));
+        inspect.className = 'primary compact';
+        actions.append(inspect);
+      }
+      const stopBtn = makeButton('Stop', `team-member-stop-${req.shortId}`, async () => {
+        await api(`/api/team-hub/${encodeURIComponent(team.id)}/cancel`, { method: 'POST', body: { ref: req.shortId } });
+        await work?.refresh();
+      });
+      stopBtn.className = 'ghost compact';
+      actions.append(stopBtn);
+      top.append(actions);
+      box.append(top, makeNode('p', '', clip(part.prompt || req.text, 300)));
+      activeSec.append(box);
+    }
+  }
+  container.append(activeSec);
+
+  // Service Connections (stays inside team!)
+  const connSec = makeNode('section', 'team-detail-section');
+  connSec.append(makeNode('span', 'team-section-eyebrow', `SERVICE CONNECTIONS (STAYS INSIDE ${team.name || 'THIS TEAM'})`));
+  const connBox = makeNode('div', 'team-conn-row');
+  const connInfo = makeNode('div', '');
+  connInfo.append(makeNode('strong', '', 'Secrets, MCP Servers, Skills & Live Browser Logins'), makeNode('p', 'team-muted', (member.profile?.uses ?? []).join(' · ') || 'No services connected yet'));
+  const connBtn = makeButton('Connect / Configure', `team-member-connect-${member.role}`, () => {
+    void openMemberConnectionsModal(team.id, member.role, { onSaved: () => void refresh(true) });
+  });
+  connBtn.className = 'primary compact';
+  connBox.append(connInfo, connBtn);
+  connSec.append(connBox);
+  container.append(connSec);
+
+  // Past Work
+  const pastSec = makeNode('section', 'team-detail-section');
+  pastSec.append(makeNode('span', 'team-section-eyebrow', `PAST WORK (${past.length})`));
+  if (!past.length) {
+    pastSec.append(makeNode('div', 'team-empty-box', 'No completed tasks yet for this role.'));
+  } else {
+    for (const { req, part } of past.slice(0, 15)) {
+      const card = makeNode('article', 'team-work-card');
+      const top = makeNode('div', 'team-row-head');
+      const meta = makeNode('div', 'team-row-meta');
+      meta.append(makeNode('code', 'team-short-id', `#${req.shortId}`), makeNode('span', `team-pill state-${part.state}`, part.state), ...(part.delegated ? [makeNode('span', 'team-muted', 'from Chief')] : []));
+      top.append(meta);
+      if (part.id) {
+        const inspect = makeButton('Inspect execution →', `team-member-past-inspect-${part.id}`, () => void openExecutionDetailModal(team.id, part.id, { openConversation }));
+        inspect.className = 'ghost compact';
+        top.append(inspect);
+      }
+      card.append(top, makeNode('p', 'team-work-prompt', clip(part.prompt || req.text, 220)));
+      if (part.result) card.append(makeNode('p', 'team-muted', clip(part.result, 240)));
+      pastSec.append(card);
+    }
+  }
+  container.append(pastSec);
 }
-select.addEventListener('change', () => {
-  ++generation; stream?.close(); stream = undefined; team = undefined; editingSettings = false; error.textContent = '';
-  work?.stop(); work = undefined;
-  syncMobile();
-  document.body.classList.toggle('team-context-active', Boolean(select.value));
-  backToAssistants.hidden = !select.value;
-  for (const panel of Object.values(panels)) panel.replaceChildren();
-  settings.replaceChildren(error, saved);
-  setControlContext(select.value);
-  if (!select.value) return;
-  if (select.value.startsWith('remote:')) {
-    // A team on another machine: its work is steered from here; its members, Telegram and memory are managed on its host.
-    const remote = hubTeams.get(select.value.slice(7)), mine = generation;
-    const intro = makeNode('section', 'team-card');
-    intro.append(makeNode('h2', '', `${remote.clusterName} team`), makeNode('p', '', `Hosted on ${remote.hostName}. Send it work and read its answers here; its members, Telegram and memory are managed on that machine.`),
-      makeNode('ul', '', undefined));
-    for (const member of remote.members) intro.lastChild.append(makeNode('li', '', `${member.coordinator ? 'coordinator' : member.role}${member.coordinator ? ` (${member.role})` : ''}${member.name ? ` — ${member.name}` : ''}${member.ready ? '' : ' · not ready on its machine'}${member.uses.length ? ` · uses ${member.uses.join(', ')}` : ''}`));
-    intro.append(deleteButton(remote.id, remote.clusterName));
-    panels.assistants.append(intro);
-    work = createTeamWork(remote.id, remote.members, { isCurrent: () => mine === generation, fail });
-    panels.live.append(work.node);
+
+async function renderMemoryWorkspace(url, agents) {
+  const mine = generation;
+  const [topicsRes, changesRes, statusRes] = await Promise.all([
+    api(`${url}/memory/topics?scope=all&limit=100`),
+    api(`${url}/memory/changes?limit=40`),
+    api(`${url}/memory/status`),
+  ]);
+  if (!current(mine, url)) return;
+
+  const topics = topicsRes.topics ?? [];
+  const changes = changesRes.changes ?? [];
+  const badge = tabButtons.get('memory')?.badge;
+  if (badge) { badge.textContent = String(topics.length); badge.hidden = !topics.length; }
+
+  panels.memory.replaceChildren();
+  const collective = topics.filter(t => t.scope === 'team');
+  const memberTopics = topics.filter(t => t.scope === 'member');
+  const roles = (agents?.agents ?? []).map(a => a.role);
+
+  const split = makeNode('div', 'team-split');
+  const rail = makeNode('aside', 'team-rail');
+  const editorPane = makeNode('div', 'team-detail');
+
+  const railTop = makeNode('div', 'team-row-head');
+  railTop.append(makeNode('strong', '', 'Memory Topics'));
+  const newBtn = makeButton('+ New topic', 'team-memory-new', () => openMemoryEditor(editorPane, url, null, roles));
+  newBtn.className = 'primary compact';
+  railTop.append(newBtn);
+  rail.append(railTop);
+
+  const keyOf = t => `${t.scope}:${t.role ?? ''}:${t.name}`;
+  if (!selectedMemoryKey || (!topics.some(t => keyOf(t) === selectedMemoryKey) && !selectedMemoryKey.startsWith('new:'))) {
+    selectedMemoryKey = topics[0] ? keyOf(topics[0]) : null;
+  }
+
+  const addGroup = (title, items) => {
+    rail.append(makeNode('span', 'team-section-eyebrow', title));
+    if (!items.length) { rail.append(makeNode('p', 'team-muted', 'None yet')); return; }
+    for (const item of items) {
+      const k = keyOf(item);
+      const btn = makeNode('button', `team-member-item${selectedMemoryKey === k ? ' selected' : ''}`);
+      btn.type = 'button';
+      btn.dataset.testid = `team-memory-item-${item.name}`;
+      const top = makeNode('div', 'team-member-item-top');
+      top.append(makeNode('strong', '', item.name), ...(item.role ? [makeNode('code', '', `/${item.role}`)] : [makeNode('span', 'team-pill', 'team')]), makeNode('span', 'team-muted', `v${item.revision}`));
+      btn.append(top, makeNode('small', 'team-muted', clip(item.description, 80)));
+      btn.addEventListener('click', () => {
+        selectedMemoryKey = k;
+        for (const el of rail.querySelectorAll('.team-member-item')) el.classList.toggle('selected', el === btn);
+        void openMemoryEditor(editorPane, url, item, roles);
+      });
+      rail.append(btn);
+    }
+  };
+
+  addGroup(`TEAM COLLECTIVE MEMORY (${collective.length})`, collective);
+  addGroup(`MEMBER MEMORY BY ROLE (${memberTopics.length})`, memberTopics);
+
+  const chosen = topics.find(t => keyOf(t) === selectedMemoryKey) ?? null;
+  if (chosen) void openMemoryEditor(editorPane, url, chosen, roles);
+  else editorPane.append(makeNode('div', 'team-empty-box', 'Select a memory topic on the left, or click + New topic to create collective team memory or role-specific memory.'));
+
+  split.append(rail, editorPane);
+  panels.memory.append(split);
+
+  const attention = (statusRes.learning ?? []).filter(entry => ['waiting', 'decision_unavailable', 'writer_unavailable', 'memory_failed', 'file_pending'].includes(entry.status));
+  const learning = tagged(makeNode('p', 'team-muted team-learning-line'), 'team-learning');
+  learning.textContent = attention.length ? `Memory learning: ${attention.map(e => `${e.message_id}: ${e.status.replaceAll('_', ' ')}`).join(' · ')}` : 'Memory learning: Chief updates collective team memory on reviews; specialists maintain their own role memory.';
+  panels.memory.append(learning);
+
+  const changesDet = makeNode('details', 'team-changes-details');
+  changesDet.append(tagged(makeNode('summary', '', `Recent Memory Changes (${changes.length})`), 'team-changes-toggle'));
+  const changesList = makeNode('div', 'team-work-list');
+  for (const ch of changes.slice(0, 25)) {
+    const rec = makeNode('article', 'team-record');
+    const top = makeNode('div', 'team-row-head');
+    const action = ch.after_text === null ? 'deleted' : ch.before_text === null ? 'created' : 'updated';
+    top.append(makeNode('strong', '', `${ch.topic} ${ch.role ? `(/${ch.role})` : '(team)'} · ${action} v${ch.revision}`), makeNode('span', 'team-muted', `${ch.actor} · ${ch.created_at}`));
+    const revBtn = button('Revert', `team-memory-revert-${ch.id}`, async () => {
+      await api(`${url}/memory/changes/${ch.id}/revert`, { method: 'POST', body: { expectedRevision: ch.revision } });
+      toast.info(`Reverted ${ch.topic}`);
+      await renderMemoryWorkspace(url, agents);
+    });
+    revBtn.className = 'ghost compact';
+    rec.append(top, revBtn);
+    changesList.append(rec);
+  }
+  changesDet.append(changesList);
+  panels.memory.append(changesDet);
+}
+
+async function openMemoryEditor(pane, url, topicItem, roles) {
+  memoryDirty = false;
+  pane.replaceChildren(makeNode('p', 'team-muted', 'Loading topic…'));
+  let loaded = { text: '', revision: 0, description: '', body: '' };
+  if (topicItem) {
+    const qs = topicItem.role ? `?role=${encodeURIComponent(topicItem.role)}` : '';
+    loaded = await api(`${url}/memory/topics/${encodeURIComponent(topicItem.name)}${qs}`);
+  }
+  const editor = makeNode('div', 'team-editor team-memory-crud');
+  const isNew = !topicItem;
+  editor.append(makeNode('h3', '', isNew ? 'New Memory Topic' : `${topicItem.name} ${topicItem.role ? `(/${topicItem.role})` : '(Team Collective)'} · rev ${loaded.revision}`));
+
+  const scopeWrap = makeNode('label', 'team-field');
+  scopeWrap.append(makeNode('span', '', 'Scope'));
+  const scopeSelect = document.createElement('select');
+  scopeSelect.dataset.testid = 'team-memory-scope';
+  scopeSelect.append(new Option('Team Collective Memory (shared by all roles)', 'team:'));
+  for (const role of roles) scopeSelect.append(new Option(`Member Memory · /${role} only`, `member:${role}`));
+  scopeSelect.value = topicItem?.role ? `member:${topicItem.role}` : 'team:';
+  scopeSelect.disabled = !isNew;
+  scopeWrap.append(scopeSelect);
+  editor.append(scopeWrap);
+
+  const name = input(editor, 'Topic slug (lowercase letters, digits, hyphens)', 'team-memory-name', topicItem?.name ?? '');
+  name.disabled = !isNew;
+  const description = input(editor, 'Description', 'team-memory-description', loaded.description || (isNew ? '' : topicItem.name));
+  const body = input(editor, 'Markdown body', 'team-memory-body', loaded.body || '', 'textarea');
+  body.rows = 12;
+  for (const el of [name, description, body]) el.addEventListener('input', () => { memoryDirty = true; });
+
+  const actions = makeNode('div', 'team-row-actions');
+  const saveBtn = button('Save memory', 'team-memory-save', async () => {
+    const [scope, role] = scopeSelect.value.split(':');
+    const slug = name.value.trim().toLowerCase();
+    if (!slug) throw new Error('Enter a topic slug, e.g. playbook or billing-rules.');
+    await api(`${url}/memory/topics/${encodeURIComponent(slug)}`, {
+      method: 'PUT',
+      body: {
+        expectedRevision: loaded.revision,
+        description: description.value.trim() || slug,
+        body: body.value.trim(),
+        sourceMessageIds: [],
+        scope,
+        ...(scope === 'member' ? { role } : {}),
+      },
+    });
+    memoryDirty = false;
+    selectedMemoryKey = `${scope}:${role || ''}:${slug}`;
+    toast.info(`Saved memory topic "${slug}"`);
+    await renderMemoryWorkspace(url, latestAgents);
+  });
+  saveBtn.className = 'primary compact';
+  actions.append(saveBtn);
+
+  if (!isNew) {
+    const delBtn = button('Delete topic', 'team-memory-delete', async () => {
+      if (!await confirmAction({ eyebrow: 'Team memory', title: `Delete "${topicItem.name}"?`, message: 'The topic file will be removed, and the deletion is recorded in Recent Memory Changes so you can revert it later.', confirmLabel: 'Delete topic', destructive: true })) return;
+      await api(`${url}/memory/topics/${encodeURIComponent(topicItem.name)}`, {
+        method: 'DELETE',
+        body: { expectedRevision: loaded.revision, ...(topicItem.role ? { role: topicItem.role } : {}) },
+      });
+      memoryDirty = false;
+      selectedMemoryKey = null;
+      toast.info(`Deleted "${topicItem.name}"`);
+      await renderMemoryWorkspace(url, latestAgents);
+    });
+    delBtn.className = 'ghost compact danger';
+    actions.append(delBtn);
+  }
+  editor.append(actions);
+  pane.replaceChildren(editor);
+}
+
+async function renderSettingsWorkspace(url, readiness) {
+  const mine = generation;
+  let catalogRes = null;
+  try { catalogRes = await api(`${url}/catalog`); } catch { /* optional */ }
+  if (!current(mine, url)) return;
+
+  settingsWorkspacePanel.replaceChildren();
+  const wrap = makeNode('div', 'team-settings-stack');
+  wrap.append(makeNode('h2', '', 'Channels & Team Settings'), error, saved);
+
+  // Core Team Settings + Personal Bob Integration + Voice Engine
+  const coreCard = makeNode('section', 'team-card');
+  coreCard.append(makeNode('h3', '', 'Identity, Bob Integration & Thresholds'));
+  const nameField = input(coreCard, 'Team Name', 'team-name-input', team.name || hubTeams.get(team.id)?.clusterName || '');
+  const bobRow = makeNode('label', 'team-check-row');
+  const bobBox = document.createElement('input');
+  bobBox.type = 'checkbox';
+  bobBox.checked = team.settings.allowBob !== false;
+  bobBox.dataset.testid = 'team-allow-bob';
+  bobRow.append(bobBox, makeNode('span', '', `Allow Personal Bob on ${readiness.host.name} to interact with this team's Chief`));
+  coreCard.append(bobRow);
+
+  const thresholds = makeNode('div', 'team-settings');
+  const ask = input(thresholds, 'Ask (%)', 'team-ask', Math.round(team.settings.askThreshold * 100), 'number');
+  const act = input(thresholds, 'Act (%)', 'team-act', Math.round(team.settings.actThreshold * 100), 'number');
+  for (const field of [nameField, ask, act]) field.addEventListener('input', () => { editingSettings = true; });
+  coreCard.append(thresholds);
+
+  // Voice Briefs Engine (Kokoro vs ElevenLabs)
+  coreCard.append(makeNode('h4', '', 'Voice Briefs Engine'));
+  const voiceBar = makeNode('div', 'team-inline-bar');
+  const voiceProvider = document.createElement('select');
+  voiceProvider.dataset.testid = 'team-voice-provider';
+  voiceProvider.append(
+    new Option(`Joint Bob Local Voice (Kokoro)${catalogRes?.voice?.local?.installed ? ' · Ready' : ''}`, 'kokoro'),
+    new Option('ElevenLabs (cloud voice)', 'elevenlabs'),
+  );
+  voiceProvider.value = team.settings.voiceProvider || 'kokoro';
+  const kokoroVoice = document.createElement('select');
+  kokoroVoice.dataset.testid = 'team-kokoro-voice';
+  for (const v of catalogRes?.voice?.kokoroVoices ?? [{ id: 'af_heart', label: 'Heart · American, female' }]) {
+    kokoroVoice.append(new Option(v.label, v.id));
+  }
+  kokoroVoice.value = team.settings.kokoroVoice || 'af_heart';
+  const syncVoice = () => { kokoroVoice.hidden = voiceProvider.value !== 'kokoro'; };
+  voiceProvider.addEventListener('change', () => { editingSettings = true; syncVoice(); });
+  syncVoice();
+  voiceBar.append(voiceProvider, kokoroVoice);
+  coreCard.append(voiceBar);
+
+  const saveBtn = button('Save team settings', 'team-settings-save', async () => {
+    const a = Number(ask.value), b = Number(act.value);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b > 100 || a >= b) throw new Error('Ask must be below Act (0–100%).');
+    const updated = await api(`${url}/settings`, {
+      method: 'PUT',
+      body: {
+        expectedRevision: team.revision,
+        name: nameField.value.trim() || null,
+        settings: {
+          askThreshold: a / 100,
+          actThreshold: b / 100,
+          allowBob: bobBox.checked,
+          voiceProvider: voiceProvider.value,
+          kokoroVoice: kokoroVoice.value,
+        },
+      },
+    });
+    team = updated.team;
+    editingSettings = false;
+    document.body.dataset.teamName = team.name || hubTeams.get(team.id)?.clusterName || 'Assistant Team';
+    window.dispatchEvent(new CustomEvent('team-context-changed'));
+    saved.dataset.testid = 'team-saved';
+    saved.textContent = 'Saved';
+    toast.info('Team settings saved');
+    await loadTeams(true);
+  });
+  saveBtn.className = 'primary compact';
+  coreCard.append(saveBtn);
+  wrap.append(coreCard);
+
+  // Channels: Joint Bob UI + Telegram Group
+  const channelsCard = makeNode('section', 'team-card');
+  channelsCard.append(makeNode('h3', '', 'Channels'));
+  const uiRow = makeNode('div', 'team-conn-row');
+  uiRow.append(makeNode('span', '', 'Joint Bob UI · Desktop & mobile workspace'), makeNode('span', 'team-pill state-done', 'Active'));
+  channelsCard.append(uiRow);
+  const tgHost = makeNode('div', 'team-telegram-host');
+  channelsCard.append(makeNode('h4', '', 'Telegram Group Pairing'), tgHost);
+  wrap.append(channelsCard);
+  void renderTeamTelegram(tgHost, url, fail, () => refresh(true));
+
+  // System AI & Danger Zone
+  const sysCard = makeNode('section', 'team-card');
+  sysCard.append(makeNode('h3', '', 'Host & Danger Zone'), makeNode('p', 'team-muted', `Host: ${readiness.host.name} · Decision model: ${readiness.decision.model ?? 'not selected'} (${readiness.decision.ready ? 'ready' : 'unavailable'})`));
+  const rowActions = makeNode('div', 'team-row-actions');
+  rowActions.append(
+    button('System AI settings', 'team-decision-settings', async () => (await import('./settings.js')).openSettings('system-ai')),
+    deleteButton(team.id, team.name || hubTeams.get(team.id)?.clusterName || 'this team'),
+  );
+  sysCard.append(rowActions);
+  wrap.append(sysCard);
+
+  settingsWorkspacePanel.append(wrap);
+  settingsMirror.replaceChildren(makeNode('h2', '', 'Shared team settings · open the Channels & Settings tab inside your Team Workspace.'));
+}
+
+async function refresh(force = false) {
+  const mine = generation;
+  if (!force && (memoryDirty || editingSettings || document.querySelector('.team-modal-dialog[open]'))) return;
+  const refreshRequest = ++refreshGeneration;
+  if (!select.value) {
+    team = undefined; latestAgents = null; latestRequests = [];
+    for (const panel of Object.values(panels)) panel.replaceChildren();
+    settingsWorkspacePanel.replaceChildren();
     return;
   }
+  const url = base();
+  const [record, agents, readiness] = await Promise.all([api(url), api(`${url}/agents`), api(`${url}/readiness`)]);
+  if (mine !== generation || refreshRequest !== refreshGeneration) return;
+  team = record.team;
+  latestAgents = agents;
+  const displayName = team.name || hubTeams.get(team.id)?.clusterName || 'Assistant Team';
+  document.body.dataset.teamName = displayName;
+  document.body.dataset.teamSubtitle = `${agents.agents.length} member${agents.agents.length === 1 ? '' : 's'} · Host: ${readiness.host.name}`;
+  window.dispatchEvent(new CustomEvent('team-context-changed'));
+
+  if (work) {
+    work.setMembers(agents.agents.map(agent => ({ role: agent.role, name: agent.profile?.name ?? null, coordinator: agent.coordinator, ready: !agent.readiness.length })));
+    if (!panels.live.contains(work.node)) panels.live.replaceChildren(work.node);
+  }
+  updateLiveBadges();
+  await Promise.all([
+    renderMembersWorkspace(url, agents, readiness),
+    renderMemoryWorkspace(url, agents),
+    renderSettingsWorkspace(url, readiness),
+  ]);
+  syncWorkspaceTabUi();
+}
+
+select.addEventListener('change', () => {
+  ++generation; stream?.close(); stream = undefined; team = undefined; latestAgents = null; latestRequests = [];
+  editingSettings = false; memoryDirty = false; error.textContent = '';
+  work?.stop(); work = undefined;
+  syncMobile();
+  const inTeam = Boolean(select.value);
+  document.body.classList.toggle('team-context-active', inTeam);
+  if (!inTeam) {
+    delete document.body.dataset.teamName;
+    delete document.body.dataset.teamSubtitle;
+  }
+  for (const panel of Object.values(panels)) panel.replaceChildren();
+  settingsWorkspacePanel.replaceChildren();
+  setControlContext(select.value);
+  window.dispatchEvent(new CustomEvent('team-context-changed'));
+  if (!inTeam) { syncWorkspaceTabUi(); return; }
+
+  activeTeamTab = 'live';
+  if (select.value.startsWith('remote:')) {
+    const remote = hubTeams.get(select.value.slice(7)), mine = generation;
+    document.body.dataset.teamName = remote.name || remote.clusterName;
+    document.body.dataset.teamSubtitle = `Hosted on ${remote.hostName}`;
+    window.dispatchEvent(new CustomEvent('team-context-changed'));
+    const intro = makeNode('section', 'team-card');
+    intro.append(makeNode('h2', '', `${remote.name || remote.clusterName}`), makeNode('p', 'team-muted', `Hosted on ${remote.hostName}. Send it work and read its answers here; member connections and memory are managed on ${remote.hostName}.`));
+    const ul = makeNode('ul', '');
+    for (const member of remote.members) ul.append(makeNode('li', '', `/${member.role}${member.coordinator ? ' (Chief)' : ''}${member.name ? ` — ${member.name}` : ''}${member.ready ? '' : ' · not ready'}`));
+    intro.append(ul, deleteButton(remote.id, remote.name || remote.clusterName));
+    panels.assistants.append(intro);
+    work = createTeamWork(remote.id, remote.members, { isCurrent: () => mine === generation, fail, isLocal: false, openConversation });
+    panels.live.append(work.node);
+    switchTeamTab('live');
+    return;
+  }
+
   const here = generation;
-  work = createTeamWork(select.value, hubTeams.get(select.value)?.members ?? [], { isCurrent: () => here === generation, fail });
+  work = createTeamWork(select.value, hubTeams.get(select.value)?.members ?? [], {
+    isCurrent: () => here === generation,
+    fail,
+    isLocal: true,
+    openConversation,
+    onRequestsUpdated: reqs => {
+      latestRequests = reqs;
+      updateLiveBadges();
+      if (activeTeamTab === 'assistants' && latestAgents && team) {
+        const detail = panels.assistants.querySelector('.team-detail');
+        if (detail && !document.querySelector('.team-modal-dialog[open]')) {
+          const rows = latestAgents.agents.map(a => ({ role: a.role, assistantId: a.assistantId, profile: a.profile, readiness: a.readiness, coordinator: a.coordinator }));
+          drawMemberDetail(detail, base(), rows, { host: { name: hubTeams.get(team.id)?.hostName ?? 'Host' } });
+        }
+      }
+    },
+    onProposalDecided: () => void refresh(true),
+  });
+  panels.live.append(work.node);
+  switchTeamTab('live');
+
   const connection = new EventSource(`${base()}/events`);
   stream = connection;
-  connection.onmessage = () => { if (stream === connection) refresh(Boolean(!settings.querySelector('details') || (settings.querySelector('details[open]') && !editingSettings && !document.querySelector('.team-editor')))).catch(fail); };
-  connection.onerror = () => { if (stream !== connection) return; ++generation; team = undefined; stream = undefined; for (const panel of Object.values(panels)) panel.replaceChildren(); settings.replaceChildren(saved); error.textContent = 'Team updates disconnected. Access may have changed. Reselect the team to reconnect.'; (Object.values(panels).find(panel => !panel.hidden) ?? panels.assistants).append(error); stream?.close(); };
+  connection.onmessage = () => { if (stream === connection) refresh(false).catch(fail); };
+  connection.onerror = () => {
+    if (stream !== connection) return;
+    ++generation; team = undefined; stream = undefined;
+    error.textContent = 'Team updates disconnected. Reselect the team to reconnect.';
+    connection.close();
+  };
   refresh(true).catch(fail);
 });
+
+window.addEventListener('open-team-workspace', async event => {
+  await loadTeams(true);
+  if (event.detail?.teamId) selectTeamById(event.detail.teamId, 'live');
+});
+window.addEventListener('exit-team-context', () => exitTeamContext());
 window.addEventListener('pagehide', () => { ++generation; stream?.close(); stream = undefined; });
-// However the control center opens (its button, the shortcut, a reload that restores it), the team list is filled.
 window.addEventListener('control-center-activated', () => loadTeams().catch(fail));
-document.querySelector('#openControlCenterButton').addEventListener('click', () => loadTeams().catch(fail));
+document.querySelector('#openControlCenterButton')?.addEventListener('click', () => loadTeams().catch(fail));
+void loadTeams().catch(() => undefined);

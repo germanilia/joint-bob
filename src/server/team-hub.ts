@@ -15,15 +15,17 @@ import { peers } from './saved-commands.js';
 
 export interface HubMember { role: string; name: string | null; coordinator: boolean; ready: boolean; uses: string[] }
 export interface HubTeam {
-  id: string; clusterId: string; clusterName: string; hostNodeId: string; hostName: string; local: boolean;
+  id: string; name: string; clusterId: string; clusterName: string; hostNodeId: string; hostName: string; local: boolean;
   /** The team's shared project, where its conversations are: the same project on every machine of the cluster. */
   projectId: string;
+  allowBob: boolean;
   coordinatorRole: string | null; members: HubMember[];
 }
 const TARGET = (operation: Operation): string => `/api/cluster/v2/assistant-teams/${operation}`;
 const PEER_TIMEOUT_MS = 8_000;
 const CACHE_MS = 20_000;
 const held = new Map<string, { at: number; teams: HubTeam[]; unreachable: string[] }>();
+export function invalidateTeamHubCache(): void { held.clear(); }
 
 /** Runs one team operation on the team's host: here, or on the machine that hosts it. */
 async function call<T>(member: ClusterMember, hostNodeId: string, operation: Operation, body: Record<string, unknown>): Promise<T> {
@@ -39,10 +41,15 @@ async function call<T>(member: ClusterMember, hostNodeId: string, operation: Ope
 }
 
 async function teamsOn(member: ClusterMember, hostNodeId: string, clusterName: string, hostName: string): Promise<HubTeam[]> {
-  const { teams } = await call<{ teams: Array<{ id: string; hostNodeId: string; projectId: string }> }>(member, hostNodeId, 'list', {});
+  const { teams } = await call<{ teams: Array<{ id: string; hostNodeId: string; projectId: string; name?: string | null; settings?: { allowBob?: boolean } }> }>(member, hostNodeId, 'list', {});
   return Promise.all(teams.filter(team => team.hostNodeId === hostNodeId).map(async team => {
     const roster = await call<{ host: { name: string }; coordinatorRole: string | null; members: HubMember[] }>(member, hostNodeId, 'roster', { teamId: team.id });
-    return { id: team.id, projectId: team.projectId, clusterId: member.clusterId, clusterName, hostNodeId, hostName: roster.host.name || hostName, local: hostNodeId === (await getClusterNode()).id, coordinatorRole: roster.coordinatorRole, members: roster.members };
+    return {
+      id: team.id, name: team.name?.trim() || clusterName, projectId: team.projectId, clusterId: member.clusterId, clusterName, hostNodeId,
+      hostName: roster.host.name || hostName, local: hostNodeId === (await getClusterNode()).id,
+      allowBob: team.settings?.allowBob !== false,
+      coordinatorRole: roster.coordinatorRole, members: roster.members,
+    };
   }));
 }
 

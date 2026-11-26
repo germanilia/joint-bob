@@ -35,8 +35,9 @@ export const requestViewSchema = z.object({
   id: z.string().max(100), shortId: z.string().max(20), text: z.string().max(25_000), requestedBy: z.string().max(100), chatId: z.string().max(100), createdAt: z.string().max(40), browser: z.boolean(),
   state: z.enum(["running", "queued", "needs_you", "stopped", "done", "cancelled"]),
   assignments: z.array(z.object({
+    id: z.string().max(120).optional(),
     role: z.string().max(40), state: z.enum(["accepted", "queued", "running", "waiting_for_human", "completed", "failed", "cancelled", "uncertain"]), delegated: z.boolean(),
-    reason: z.string().max(500).nullable(), conversationId: z.string().max(100).nullable(), result: z.string().max(10_000).nullable(),
+    reason: z.string().max(500).nullable(), conversationId: z.string().max(100).nullable(), prompt: z.string().max(1500).nullable().optional(), result: z.string().max(10_000).nullable(),
   }).strict()).max(50),
 }).strict();
 
@@ -67,7 +68,10 @@ async function settle(follow: Follow, view: TeamRequestView): Promise<boolean> {
   const db = await database();
   if (!db.prepare("UPDATE bob_team_follows SET state='done' WHERE account_id=? AND request_id=? AND state='following'").run(follow.account_id, follow.request_id).changes) return false;
   const text = endText(follow.label, view);
-  if (text) appendBobMessage(db, follow.account_id, { role: "bob", text, importance: view.state === "done" ? "report" : "needs-you", via: "Team · its answer" });
+  if (text) appendBobMessage(db, follow.account_id, {
+    role: "bob", text, importance: view.state === "done" ? "report" : "needs-you", via: "Team · its answer",
+    actions: [{ id: "team.open", label: "Inspect in team →", data: { teamId: follow.team_id, requestId: follow.request_id } }],
+  });
   changed(follow.account_id);
   return true;
 }
@@ -125,7 +129,9 @@ const refreshing = new Set<string>();
 
 async function refreshKnownTeams(session: AuthSession): Promise<KnownTeam[]> {
   const { teams } = await hubOverview(session, true);
-  const known = teams.map((team) => ({ id: team.id, name: team.clusterName, host: team.hostName, projectId: team.projectId, roles: team.members.map((member) => member.role) }));
+  const known = teams
+    .filter((team) => team.allowBob !== false)
+    .map((team) => ({ id: team.id, name: team.name || team.clusterName, host: team.hostName, projectId: team.projectId, roles: team.members.map((member) => member.role) }));
   (await database()).prepare("INSERT INTO bob_team_hints VALUES (?,?,?) ON CONFLICT(account_id) DO UPDATE SET teams=excluded.teams, updated_at=excluded.updated_at").run(session.accountId, JSON.stringify(known), new Date().toISOString());
   return known;
 }

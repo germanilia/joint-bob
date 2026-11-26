@@ -91,6 +91,12 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk.view-control:not(.costs-page) .ws-places > #controlTabs .control-tab.active { color: var(--text); background: var(--paper-raised); }
   body.bob-desk .ws-places > #controlTabs .control-tab-badge { margin-left: auto; }
   body.bob-desk .ws-places > #controlTabs .control-tab:is([data-view="live"], [data-view="automations"], [data-view="memory"]) { display: none; }
+  /* In team context, hide Bob's head pills/pause switch and keep the team workspace stage full-width. */
+  body.bob-desk.team-context-active :is(.bob-head-state, .bob-head-pause) { display: none; }
+  body.bob-desk.team-context-active .ws-side > .ws-place-bob.on { background: transparent; box-shadow: none; }
+  /* First-class Teams section in the desktop sidebar, right under Bob. */
+  body.bob-desk .ws-side > .team-sidebar-section { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 6px; padding: 8px 6px 6px; border-top: 1px solid var(--line); }
+  body.bob-desk:is(.projects-collapsed, .ws-auto-rail) .ws-side > .team-sidebar-section { display: none; }
   body.bob-desk:not(.view-control) #controlTabs .control-tab.active .bob-tab-icon, body.bob-desk.costs-page #controlTabs .control-tab.active .bob-tab-icon { stroke: currentColor; }
   /* Bob as a conversation: the app's mark where a row has its dot, his name, and what he does under it. */
   body.bob-desk .ws-side > .ws-place-bob {
@@ -128,10 +134,9 @@ body:not(.focus-ui) .bob-settings-head { display: none; }
   body.bob-desk .control-chat-head { padding: 12px 16px; }
   body.bob-desk .control-chat-head > div > b { font: 400 19px/1.2 var(--serif); color: var(--heading); }
   body.bob-desk .control-chat-head small { display: none; }
-  /* The head of the page has Bob's switch; Bob's settings and the team context are in this header. */
+  /* The head of the page has Bob's switch; Bob's settings stay in this header. */
   body.bob-desk #controlChatMonitor { display: none; }
-  body.bob-desk .control-chat-head .team-context-label { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 0; color: var(--muted); font-size: 13px; }
-  body.bob-desk .control-chat-head .team-context-label select { width: 150px; max-width: 150px; min-height: 30px; height: 30px; padding-block: 0; font-size: 13px; text-overflow: ellipsis; }
+  body.bob-desk #controlCenterPanel > .team-context-label { display: none; }
   body.bob-desk #controlChat .bob-fold { display: inline-flex; flex: none; min-width: 28px; justify-content: center; color: var(--muted); }
   /* Bob's window is the conversation only: the items (background updates, their filters) live on the board in the stage. */
   body.bob-desk :is(.control-chat-updates, .control-chat-filters) { display: none; }

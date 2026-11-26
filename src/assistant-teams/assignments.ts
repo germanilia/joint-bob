@@ -327,7 +327,7 @@ async function ensureCoordinatorReview(teamId:string,rootId:string):Promise<void
  }
  const reviewId=key(rootId,'coordinator-review',coordinator);
  const reviewHead='Review the completed direct specialist work immediately before answering the user.';
- const reviewInstructions='Review instructions: check both the answer and how it was done (trace, errors, tools/secrets used). If the work is incomplete, unverified, or not good enough, call team_delegate to prompt the specialist back with specific feedback. If the assistant (or team) needs permanent changes (secrets from team_node_catalog, tools/MCP/skills, instructions, model/harness, or removing an unused role), call team_propose_changes (bundling related changes). Otherwise publish the final vetted answer clearly, attributing the specialist.';
+ const reviewInstructions='Review instructions: check both the answer and how it was done (trace, errors, tools/secrets used). If the work is incomplete, unverified, or not good enough, call team_delegate to prompt the specialist back with specific feedback. If the review reveals a durable team rule, routing convention, or workflow lesson, update collective team memory (scope "team") with team_memory_write. If the assistant (or team) needs permanent changes (secrets from team_node_catalog, tools/MCP/skills, instructions, model/harness, or removing an unused role), call team_propose_changes (bundling related changes). Otherwise publish the final vetted answer clearly, attributing the specialist.';
  // The stored message is capped at 19,500 characters; a long request must not push the work under review,
  // or these instructions, out of it.
  const requestBudget=Math.max(500,19500-[reviewHead,...parts,reviewInstructions].join('\n').length-80);
@@ -404,7 +404,7 @@ async function advanceParent(a:TeamAssignment):Promise<void> {
   if(w.reason==='delegation_limit'){a.state='waiting_for_human';w.phase='held';output(db,root(db,a.rootId),`${a.rootId}:limit`,'clarify',say(db,a.teamId,'ten delegated turns reached. Please give a new explicit request to continue.'));}
   else {
    delete w.originalMaterial;
-   w.message=`Continue the original request using these stored INTERNAL ONLY child results. Review both the results and execution traces immediately: if an assistant's work is not good enough, prompt it back via team_delegate with specific feedback; if permanent changes (secrets, tools, skills, instructions, model/harness, roster) are needed, call team_propose_changes. Do not repeat completed delegations unnecessarily.\nOriginal request: ${root(db,a.rootId).source.text}\n${childBlocks.join('\n')}`;
+   w.message=`Continue the original request using these stored INTERNAL ONLY child results. Review both the results and execution traces immediately: if an assistant's work is not good enough, prompt it back via team_delegate with specific feedback; if this review surfaces a durable team rule or workflow lesson, update collective team memory (scope "team") with team_memory_write; if permanent changes (secrets, tools, skills, instructions, model/harness, roster) are needed, call team_propose_changes. Do not repeat completed delegations unnecessarily.\nOriginal request: ${root(db,a.rootId).source.text}\n${childBlocks.join('\n')}`;
    if(w.message.length>20000){a.state='waiting_for_human';w.phase='held';w.reason='child_results_exceed_context';}
    else {a.requestId=randomUUID();a.state='queued';w.phase='queued';w.result=null;w.reason=null;for(const c of unread){const child=work(db,c.id)!;child.consumed=true;saveWork(db,child);}}
   }
@@ -617,7 +617,7 @@ export async function runBrowserTeamAssignment(member:TeamMember,role:TeamRole,s
 /* ---- Steering the team: status, cancel and retry. Telegram's /status /cancel /retry and the app's Bob share these. ---- */
 export type TeamRequestState='running'|'queued'|'needs_you'|'stopped'|'done'|'cancelled';
 /** What a person sees of one request: its members' parts, including anything delegated. */
-export interface TeamRequestView { id:string; shortId:string; text:string; requestedBy:string; chatId:string; createdAt:string; browser:boolean; state:TeamRequestState; assignments:{ role:TeamRole; state:AssignmentState; delegated:boolean; reason:string|null; conversationId:string|null; result:string|null }[] }
+export interface TeamRequestView { id:string; shortId:string; text:string; requestedBy:string; chatId:string; createdAt:string; browser:boolean; state:TeamRequestState; assignments:{ id?:string; role:TeamRole; state:AssignmentState; delegated:boolean; reason:string|null; conversationId:string|null; prompt?:string|null; result:string|null }[] }
 function requestStateOf(states:AssignmentState[]):TeamRequestState {
  if(states.includes('running'))return 'running';
  if(states.some(state=>state==='queued'||state==='accepted'))return 'queued';
@@ -638,7 +638,8 @@ function requestViews(db:DatabaseSync,teamId:string):TeamRequestView[] {
   return [{id:r.id,shortId:r.id.slice(0,6),text:r.source.text,requestedBy:r.source.accountId,chatId:r.source.chatId,createdAt:r.source.createdAt,browser:r.browser,state:awaitingReview?'queued':rawState,
    assignments:mine.map(a=>{const w=work(db,a.id);
     const isFinalPublisher=!a.parentId&&(!hasCoordinatorRoot||a.role===coordinator);
-    return {role:a.role,state:a.state,delegated:Boolean(a.parentId),reason:w?.reason??null,conversationId:w?.conversationId??null,
+    return {id:a.id,role:a.role,state:a.state,delegated:Boolean(a.parentId),reason:w?.reason??null,conversationId:w?.conversationId??null,
+     prompt:w?.message?w.message.slice(0,1200):null,
      // Delegated work and pre-review specialist drafts stay internal; the coordinator's vetted answer is published.
      result:isFinalPublisher&&w?.phase==='done'?(w.result??'').slice(0,6000):null};})}];
  });

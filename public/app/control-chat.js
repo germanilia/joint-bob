@@ -481,6 +481,7 @@ async function runAction(message, action, note = "") {
   // Opening a conversation, undoing a display change and the New conversation form happen in the page; every other button is
   // answered by the server.
   if (action.data?.open) { openFrom(message, action.data.open).catch((error) => toast.error(error.message)); return; }
+  if (action.id === "team.open" && action.data?.teamId) { window.dispatchEvent(new CustomEvent("open-team-workspace", { detail: { teamId: action.data.teamId, requestId: action.data.requestId ?? null } })); return; }
   if (action.data?.appearance) { applyAppearance(action.data.appearance); toast("Display settings put back"); return; }
   if (action.data?.create) { newConversation(action.data.create.content).catch((error) => toast.error(error.message)); return; }
   // A secret an assistant's setup asks for is entered in its own box, never through the chat.

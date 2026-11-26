@@ -24,6 +24,7 @@ export const TEAM_MEMORY_TOOLS:Tool[]=[
  {name:'team_memory_read',description:'Read a memory topic and its revision. Scope "team" (default) is shared by every member; scope "member" is your own notes.',inputSchema:{type:'object',properties:{topic:{type:'string'},scope:{type:'string',enum:['team','member']}},required:['topic'],additionalProperties:false}},
  {name:'team_memory_list',description:'Page memory topics: the team\u2019s and your own notes, each marked with its scope (offset, limit up to 100).',inputSchema:{type:'object',properties:{offset:{type:'integer'},limit:{type:'integer'}},additionalProperties:false}},
  {name:'team_memory_write',description:'Write memory through the serialized revision writer. Scope "team" (default) is read by every member, so use it only for what all of them need; scope "member" is your own notes, read only by you. Preserve proposals and disagreements and cite authorized source message IDs. Stale revisions conflict.',inputSchema:{type:'object',properties:{topic:{type:'string'},expectedRevision:{type:'integer'},description:{type:'string'},body:{type:'string'},sourceMessageIds:{type:'array',items:{type:'string'}},scope:{type:'string',enum:['team','member']}},required:['topic','expectedRevision','description','body','sourceMessageIds'],additionalProperties:false}},
+ {name:'team_memory_delete',description:'Delete an obsolete memory topic through the serialized revision writer (logged in change history and reversible). Pass expectedRevision from team_memory_read.',inputSchema:{type:'object',properties:{topic:{type:'string'},expectedRevision:{type:'integer'},scope:{type:'string',enum:['team','member']}},required:['topic','expectedRevision'],additionalProperties:false}},
 ];
 export const TEAM_AGENT_TOOL_NAMES=[...TEAM_TOOLS,...TEAM_MEMORY_TOOLS].map(t=>`mcp__joint_bob__${t.name}`);
 async function context(identity:McpAgentIdentity,live:boolean):Promise<TeamAssignment> {
@@ -49,6 +50,7 @@ export async function callTeamTool(identity:McpAgentIdentity,name:string,args:un
   if(name==='team_memory_read'){const {topic,scope}=z.object({topic:z.string(),scope:z.enum(['team','member']).default('team')}).strict().parse(args);result=await memory.readTeamMemoryTopic(member,topic,scope==='member'?a.role:null);}
   else if(name==='team_memory_list'){const p=z.object({offset:z.number().int().nonnegative().default(0),limit:z.number().int().min(1).max(100).default(50)}).strict().parse(args);result=await memory.listTeamMemoryTopics(member,p.offset,p.limit,a.role);}
   else if(name==='team_memory_write')result=await memory.writeTeamMemory(member,memory.teamMemoryWriteSchema.parse(args),a.role);
+  else if(name==='team_memory_delete'){const p=memory.teamMemoryDeleteSchema.parse(args);result=await memory.deleteTeamMemory(member,p.topic,p.expectedRevision,p.scope==='member'?a.role:null);}
   else throw new TeamError('Unknown team memory tool',400);
  }
  else if(name==='team_list_agents'){z.object({}).strict().parse(args);result=await listTeamAgentSummaries(a.teamId);}
