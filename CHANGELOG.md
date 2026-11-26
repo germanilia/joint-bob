@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.9 — 2026-11-26
+
+- **Error reports:** The browser notice "ResizeObserver loop completed with undelivered notifications" no longer shows an error alert or sends an error report. It is harmless, so it is kept as a warning in the client logs.
+
 ## 2.343.8 — 2026-11-26
 
 - **Conversations:** Marking a conversation Done no longer fails with "learning failed: Unrecognized key" when the drafted lessons carry an extra field. The extra field is ignored, and the lessons are still reviewed and learned.
