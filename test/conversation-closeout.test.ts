@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sessionDoneSchema } from "../src/server/schemas.js";
 import { closeoutAssessment, inactiveConversation, type CloseoutDeps } from "../src/conversation-closeout.js";
+import { draftSchema } from "../src/server/closeout-models.js";
 
 const deps = (calls: string[]): CloseoutDeps => ({
   classify: async () => { calls.push("classify"); return "bad"; },
@@ -52,6 +53,13 @@ test("decision failure is surfaced instead of saving unreviewed rules", async ()
   const boundary = deps([]);
   boundary.select = async () => { throw new Error("Decision model unavailable"); };
   await assert.rejects(closeoutAssessment({ rating: "bad", description: "" }, boundary), /Decision model unavailable/);
+});
+
+test("a lesson draft with keys the model added is accepted without them", () => {
+  const rule = { scope: "general", subject: "verification", text: "Run the tests before reporting done.", evidence: "Reported done with failing tests" };
+  const draft = draftSchema.parse({ description: "Tests failed.", note: "extra", rules: [{ ...rule, scope_note: "holds in any project" }] });
+  assert.deepEqual(draft, { description: "Tests failed.", rules: [rule] });
+  assert.throws(() => draftSchema.parse({ description: "Tests failed.", rules: [{ ...rule, scope: "team" }] }));
 });
 
 test("inactivity uses message timestamps, strictly more than four days, and excludes busy and done", () => {
