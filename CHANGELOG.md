@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.6 — 2026-11-26
+
+- **Error reports:** A turn that an update stops, or a queued message held back while an update is being prepared, no longer sends a backend error report. The interrupted work still resumes after the restart.
+
 ## 2.343.5 — 2026-11-26
 
 - **Error reports:** A background task supervisor answer that arrives late because the server itself was busy no longer sends a backend error report. It stays in the local log as a warning; failed supervisor requests are still reported.
