@@ -27,7 +27,7 @@ Machines in a cluster can talk to each other without Tailscale or any other extr
 - **Cluster invitations are links on the manager's origin**: `https://<manager-origin>/join#v2.<fingerprint>.<payload>` (`src/server/cluster-v2.ts:65`). The signed body carries the manager's URL.
 - **Cross-node proxying already exists.** A node's UI shows conversations and browsers owned by other nodes by proxying to the owner (`src/server/chat-socket.ts:184`). A phone that reaches **one** machine can already work with the whole cluster.
 - **Browser sessions are host-only cookies.** The session cookie has no `Domain` attribute and is `SameSite=Strict` (`src/auth.ts:513`). Chat WebSockets require the `Origin` host to equal the `Host` header (`src/server/chat-socket.ts:95`). Sign-in supports TOTP MFA (`src/auth.ts`).
-- **Syncthing devices use `addresses: ["dynamic"]`** (`src/syncthing.ts:362`). That turns on global discovery, the public Syncthing relay pool and LAN discovery.
+- **the old sync tool devices use `addresses: ["dynamic"]`** (`src/old-sync.ts:362`). That turns on global discovery, the public the old sync tool relay pool and LAN discovery.
 - **There is one HTTP server** (`createServer(app)` in `src/server/state.ts:100`). Incoming relay streams can be handed to it with `server.emit("connection", stream)`.
 - **Node 22's `node:crypto` has every primitive needed for a Noise handshake.** X25519, ChaCha20-Poly1305, SHA-256, HKDF and BLAKE2b were all checked on this machine.
 
@@ -136,25 +136,25 @@ All of this runs in the same Joint Bob server process, with endpoints under `/ap
 
 ### 4.9 File sync between machines without a direct URL
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. This section describes the earlier design. The Syncthing tunnels are gone: files now travel over the same relay channels as other requests between machines, and Syncthing's public relays are never used. Other mentions of Syncthing in this document (D7, sections 9 and 10) are from that design too.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. This section describes the earlier design. The the old sync tool tunnels are gone: files now travel over the same relay channels as other requests between machines, and the old sync tool's public relays are never used. Other mentions of the old sync tool in this document (D7, sections 9 and 10) are from that design too.
 
-Every machine is a working machine and its files always sync. When two machines share a relay, their files go **through that relay**. Syncthing's public relays are used only when there is no other path (D7).
+Every machine is a working machine and its files always sync. When two machines share a relay, their files go **through that relay**. The old sync tool's public relays are used only when there is no other path (D7).
 
 Path order for each pair of machines:
 
 1. **Direct**, when the peer has a direct URL this machine can reach. This is today's behaviour, unchanged.
 2. **Our relay**, when both machines are on a relay the cluster allows.
-   - Joint Bob opens a loopback port on each machine for that peer, and adds `tcp://127.0.0.1:<port>` to the peer's Syncthing addresses.
-   - Syncthing's traffic then flows through our encrypted channel to the peer's Syncthing.
+   - Joint Bob opens a loopback port on each machine for that peer, and adds `tcp://127.0.0.1:<port>` to the peer's the old sync tool addresses.
+   - The old sync tool's traffic then flows through our encrypted channel to the peer's the old sync tool.
    - Only Joint Bob is needed. The relay host runs nothing extra.
-3. **Syncthing's public relays** (part of today's `dynamic` setting), only when neither of the above is available, for example when our relay is down.
+3. **the old sync tool's public relays** (part of today's `dynamic` setting), only when neither of the above is available, for example when our relay is down.
 
 How the order is enforced:
 
-- Syncthing ranks connections by type, and relay connections rank last. The loopback tunnel address counts as a LAN connection, so Syncthing prefers it to public relays without extra settings. It also moves to the tunnel automatically once the tunnel is back.
+- The old sync tool ranks connections by type, and relay connections rank last. The loopback tunnel address counts as a LAN connection, so the old sync tool prefers it to public relays without extra settings. It also moves to the tunnel automatically once the tunnel is back.
 - Joint Bob adds the tunnel address only for peers it reaches through a relay (4.6). Machines that reach each other directly keep plain `dynamic`, as today.
 - The test suite checks this order (section 9).
-- Which folders go to which devices is still decided by the existing sharing code (`src/server/sharing-files.ts`). The relay only changes the address Syncthing dials.
+- Which folders go to which devices is still decided by the existing sharing code (`src/server/sharing-files.ts`). The relay only changes the address the old sync tool dials.
 
 ### 4.10 Sharing and access rules stay unchanged
 
@@ -199,7 +199,7 @@ Every phase must keep the existing sharing tests and the sharing-invariance suit
 3. **Relay serving.** The Relay tab, tokens, access requests with pairing codes, relay names, admission, presence and channel pairing. Tests use two machines and a loopback relay.
 4. **Machine client.** Relays section, persistent connection, `peerFetch` and `peerSocket`, moving every call site over, transport choice.
 5. **Cluster flows over relays.** Invitations and joins, the twin handshake, replication, chat and browser-viewer proxying, presence-driven outbox flush.
-6. **File sync over relay.** Loopback tunnels for Syncthing, with public relays only as the last resort (4.9).
+6. **File sync over relay.** Loopback tunnels for the old sync tool, with public relays only as the last resort (4.9).
 7. **Phone gateway (M2).** Wildcard routing, per-machine switch, sign-in rules (section 6).
 8. **Hosting guide for AWS** (section 8) and release.
 
@@ -253,7 +253,7 @@ Phones on Tailscale keep opening a machine's Tailscale URL. Nothing in this plan
 | D4 | Relay routing scope | Any admitted machine to any admitted machine. Cluster rules decide what a request may do. Per-relay groups can come later. |
 | D5 | Trusting a relay on "Request access" | Pin the fingerprint on first contact, with the fingerprint and pairing code shown on both sides. Token links carry the fingerprint. |
 | D6 | Direct vs relay when both exist | Prefer direct, then the relay that last worked for that peer, then any other relay reporting it. No manual relay choice. |
-| D7 | File sync path | Direct when reachable, otherwise through our relay. Syncthing's public relays only when there is no other path. |
+| D7 | File sync path | Direct when reachable, otherwise through our relay. The old sync tool's public relays only when there is no other path. |
 | D8 | Relay node | Always a working machine. The relay role gives no access to clusters it isn't a member of. |
 | D9 | Join link plus relay admission | Separate steps in v1 |
 | D10 | Relay TLS | Caddy in front, with a wildcard certificate through DNS-01 |
@@ -283,7 +283,7 @@ Follow `TESTING.md`:
   - stream flow control under a large transfer;
   - transport fallback (direct down, so the relay is used);
   - mixed old and new peers reading `url` and `addresses`.
-- **File sync path.** Syncthing uses the direct path when reachable and the relay tunnel when not. It falls back to public relays only when the tunnel is down, and returns to the tunnel once it's back.
+- **File sync path.** the old sync tool uses the direct path when reachable and the relay tunnel when not. It falls back to public relays only when the tunnel is down, and returns to the tunnel once it's back.
 - **Cluster suite.** Extend `test/cluster-sanity.test.ts` with a cluster whose members have no direct URL: join, replication, chat proxying and file sync.
 - **Sharing invariance.**
   - Run the existing sharing suites twice: once over direct URLs, and once with every machine reachable only through a loopback relay. The results must be identical. The suites are:
@@ -306,7 +306,7 @@ Follow `TESTING.md`:
 
 ## 10. Implementation notes
 
-The code lives in `src/relay/` (protocol, Noise, streams, relay server, machine runtime, transport, Syncthing tunnels), `src/server/routes/relay.ts` (settings API) and `public/app/` (settings UI). Where it differs from the design above:
+The code lives in `src/relay/` (protocol, Noise, streams, relay server, machine runtime, transport, old-sync tunnels), `src/server/routes/relay.ts` (settings API) and `public/app/` (settings UI). Where it differs from the design above:
 
 - **Addresses (4.5).** Relay addresses are not carried in the cluster protocol. A machine without a direct URL advertises `https://<node-id>.relay.invalid`, a name that never resolves, and peers find it through relay presence: each machine asks its relays to report the peers in its own cluster and twin records. Membership snapshots, twin records and invitations keep their single `url` field, so no protocol or schema change was needed and older peers are unaffected. A machine with a direct URL keeps advertising it and is reached through a shared relay only after a direct connection fails.
 - **Invitation links (4.5).** A relay-only manager's link uses its `.relay.invalid` origin. The joiner must already be on a relay the manager uses; the link does not name the relay.
@@ -344,7 +344,7 @@ Two independent reviews (security, and correctness and regressions) found these 
   - Machines that stop reading are cut off at 8 MB of queued data.
   - Unauthenticated connections are capped per address, and bodies stay small until a machine authenticates.
   - Signed requests on the four endpoints that verify their own signature must also match the channel's machine.
-  - Changes to clusters, twins and file shares re-plan Syncthing tunnels and presence watching.
+  - Changes to clusters, twins and file shares re-plan the old sync tool tunnels and presence watching.
 - **Permission changes reach open connections** (from a later review of automatic relay choice, phone access and the owner switches):
   - Turning off other users' phone sign-in closes their open phone sockets at once, not only their next request.
   - Removing a twin disconnects it from a relay that serves only its owner's machines.
@@ -353,7 +353,7 @@ Two independent reviews (security, and correctness and regressions) found these 
 ### Tests
 
 - `test/relay-noise.test.ts`: the cacophony and snow vectors for `Noise_XX_25519_ChaChaPoly_SHA256`, byte for byte, and tampering, ordering and size checks.
-- `test/relay-transport.test.ts`: a relay and several machines in one process. It covers tokens, unique names, access requests and pairing codes, ciphertext-only routing, flow control under a 2.5 MB response, unpinned peers, the phone gateway, revocation and name reservation, fallback from a dead direct URL, a Syncthing tunnel, and long-polling in both directions.
+- `test/relay-transport.test.ts`: a relay and several machines in one process. It covers tokens, unique names, access requests and pairing codes, ciphertext-only routing, flow control under a 2.5 MB response, unpinned peers, the phone gateway, revocation and name reservation, fallback from a dead direct URL, the old sync tool tunnel, and long-polling in both directions.
 - `test/relay-sharing-rules.test.ts`: channel identity must match the request signature, machine requests are refused on the gateway, agent tokens are refused through relays, and through the real app a machine channel reaches only machine routes while the gateway reaches only the UI.
 - `test/relay-cluster.test.ts`: real nodes. Three relay-only machines and a relay run the `multi-cluster` isolation checks; the relay machine gets nothing; live node-to-node calls go through the relay; the phone gateway enforces MFA and the per-relay switch.
 - `test/qr-code.test.ts`: QR codes match matrices produced by CoreImage, pick the smallest version, and carry version information from version 7.

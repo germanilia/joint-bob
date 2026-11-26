@@ -1,10 +1,10 @@
 # Twin skill synchronization
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of the old sync tool in this document describe the earlier design.
 
 ## User-approved behavior
 
-- Twins synchronize skill additions, content changes and deletions automatically in both directions, similar to Syncthing.
+- Twins synchronize skill additions, content changes and deletions automatically in both directions, similar to the old sync tool.
 - The Mac is authoritative for the initial synchronization to Homeserver. Do not merge their initial inventories.
 - Initial reconciliation adds missing skills, replaces differing skills and removes extra removable skills on Homeserver.
 - Deletions from either twin, including bulk deletion, propagate to the other twin.
@@ -18,7 +18,7 @@ Activation preferences remain node-local in this change. Content equality is not
 
 ## Architecture decision
 
-Use a new opt-in synchronization channel scoped to a direct, active trusted-twin relationship. Keep existing selective cluster sharing intact and keep the legacy Syncthing agent-resource folder paused. Reuse authenticated node transport and validated skill bundles, not arbitrary file paths or shell commands.
+Use a new opt-in synchronization channel scoped to a direct, active trusted-twin relationship. Keep existing selective cluster sharing intact and keep the legacy the old sync tool agent-resource folder paused. Reuse authenticated node transport and validated skill bundles, not arbitrary file paths or shell commands.
 
 Store relationship initialization state, per-skill versioned records, durable deletion tombstones, received acknowledgments and sync status in SQLite. Use causal versions rather than wall-clock timestamps. Persist conflict copies and removal backups outside discovered skill directories. File installation uses validated staging and atomic replacement; recover interrupted work from a durable application journal before publishing new state.
 

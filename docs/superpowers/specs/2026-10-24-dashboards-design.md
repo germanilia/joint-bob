@@ -1,6 +1,6 @@
 # Dashboards
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of the old sync tool in this document describe the earlier design.
 
 ## Intent
 
@@ -58,7 +58,7 @@ These are my calls unless marked as the user's; the user may redirect any of the
 
 - Records live in the node's SQLite (`node.db`), like other app data: id, entity kind + id, owner node, origin (own or received-from), refresh method, created/updated, definition digest, active flag per entity.
 - Files live in the node's app data directory, one folder per dashboard: the definition files, a node-local `state/` folder the script may use to keep history between runs (for example daily counts after the source data has expired), the last payload, and the last run log.
-- Not in the project folder. Project files sync through Syncthing to every node sharing the project, and `.joint-bob/` is excluded from sync, so neither place fits node-local dashboards with selective sharing.
+- Not in the project folder. Project files sync through the old sync tool to every node sharing the project, and `.joint-bob/` is excluded from sync, so neither place fits node-local dashboards with selective sharing.
 
 ### The creator agent
 

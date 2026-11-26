@@ -1,6 +1,6 @@
 # Webhook files, tools, skills, and memory
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of the old sync tool in this document describe the earlier design.
 
 ## Intent
 
@@ -28,7 +28,7 @@ These are builder choices, not additional user requests.
 
 Keep resources on the webhook owner, matching existing node-local webhooks. Management through an active twin routes to the owner; an unavailable owner fails visibly without a local substitute.
 
-Store under `<node data>/webhook-resources/<webhook UUID>/`, outside project folders, global skill directories, and Syncthing resource trees. Resolve through the existing runtime/account data-directory conventions so the execution account can read resources. Use server-assigned IDs and immutable version directories for static files, tools, and skills. Original names are metadata, never trusted storage paths.
+Store under `<node data>/webhook-resources/<webhook UUID>/`, outside project folders, global skill directories, and the old sync tool resource trees. Resolve through the existing runtime/account data-directory conventions so the execution account can read resources. Use server-assigned IDs and immutable version directories for static files, tools, and skills. Original names are metadata, never trusted storage paths.
 
 Use database metadata for file descriptions, script usage, skill source/provenance, and enabled memory. The canonical memory is `MEMORY.md` on disk; all supported writes use a revision-checked owner API. Do not put file contents in webhook list responses.
 

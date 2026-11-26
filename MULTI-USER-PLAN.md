@@ -2,7 +2,7 @@
 
 Status: **draft, not implemented.** Mockups: [mockups/multi-user.html](mockups/multi-user.html). Open it in a browser and use "View as" to compare the admin, a member, and the same member signed in on another node.
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Where this plan mentions Syncthing (the admin-only Syncthing settings, the daemon running as the service account, per-project Syncthing folders), it describes the earlier design. Read those points as applying to built-in file sync, which runs inside the Joint Bob server.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Where this plan mentions the old sync tool (the admin-only the old sync tool settings, the daemon running as the service account, per-project the old sync tool folders), it describes the earlier design. Read those points as applying to built-in file sync, which runs inside the Joint Bob server.
 
 ## 1. Goal
 
@@ -48,15 +48,15 @@ Hiding things in the UI is therefore not isolation. **The wall needs a separate 
 - Password reset: see open question 3.
 
 ### 3.3 Admin features are invisible to members
-- `GET /api/auth/status` returns `role`. The client renders admin pages and menu entries only when `role === "admin"`. Members see no Users tab, node settings, updates, restart, audit log, twins, Syncthing, runtime paths, limits or terminal policy, not even as disabled or read-only entries.
-- **The server is the real gate.** Admin routes answer non-admins with **404**, the same as an unknown route. This covers settings writes, users, updates, deploy, twins, node identity, Syncthing, the audit log and terminal policy.
+- `GET /api/auth/status` returns `role`. The client renders admin pages and menu entries only when `role === "admin"`. Members see no Users tab, node settings, updates, restart, audit log, twins, the old sync tool, runtime paths, limits or terminal policy, not even as disabled or read-only entries.
+- **The server is the real gate.** Admin routes answer non-admins with **404**, the same as an unknown route. This covers settings writes, users, updates, deploy, twins, node identity, the old sync tool, the audit log and terminal policy.
 - Node-wide events are neutral for members. An update restart shows "Joint Bob is restarting, reconnecting…". A member is never told about pending updates, other users, or who the admin is.
 - Admin-only settings:
   - users and the terminal policy
   - per-user limits
   - harness executables and config/session paths
   - `projects.homePath` and global resource paths
-  - Syncthing
+  - The old sync tool
   - auto-update and deploy
   - `shellCommandTimeoutSeconds`, `subprocessMaxLifetimeMinutes` and `conversationRetentionDays`
   - `remoteTerminal`
@@ -117,7 +117,7 @@ Users signed in from other nodes get the same wall on the node they visit.
 - Supervisor and browser CLIs reach the server through its HTTP API with the existing scoped tokens. The raw supervisor socket stays service-only. `JOINT_BOB_TASK_DATA_DIR` is no longer exported to agents.
 - **Processes.** Linux mounts `/proc` with `hidepid=2` (set by the installer), so users can't list each other's processes. macOS already hides other users' process arguments and environments. Secrets and prompts are never passed in argv.
 - **Local ports.** A user's processes can't connect to ports opened by another user's processes, such as dev servers or debug ports. Linux uses `nftables` rules matching the socket owner (`meta skuid`). macOS uses `pf` rules with `user`. The Joint Bob server port stays reachable and is authenticated anyway.
-- **Syncthing** runs as the service account. It syncs users' project folders through the same group permissions, and its UI and folder list are admin-only.
+- **the old sync tool** runs as the service account. It syncs users' project folders through the same group permissions, and its UI and folder list are admin-only.
 - **Self-test.** "Add user" stays disabled until a self-test passes. The self-test creates two throwaway accounts and confirms each can't read the other's home, `node.db` or `secret.key`, can't see the other's process arguments, and can't connect to the other's local port. It then deletes both accounts.
 
 **Entering multi-user mode** happens once, when the admin installs the helper. The admin's agent runtime moves from the service account into `jb-<admin>`:
@@ -265,7 +265,7 @@ Signed in on another node, you see all your own projects, not only the shared on
   - the visited node is in one of your clusters
   - neither node blocks the other
   - your account has signed in there
-- **Nothing is stored on the visited node.** Your unshared projects create no replication events and no Syncthing folders. Responses aren't written to disk or put in any cache, and file downloads stream straight to your browser. When you sign out, the visited node has nothing of them left.
+- **Nothing is stored on the visited node.** Your unshared projects create no replication events and no the old sync tool folders. Responses aren't written to disk or put in any cache, and file downloads stream straight to your browser. When you sign out, the visited node has nothing of them left.
 - **Everything runs at home.** Conversations, agents, files, git and tasks all run on your home node, under your account, with your skills, MCP and secrets, using the node's model subscription. The visited node never runs anything for these projects. As before, you get no terminal on another node.
 - **Your control:**
   - **Show my projects on other nodes** in My settings, on by default.
