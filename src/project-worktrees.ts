@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { promises as fs, type Stats } from "node:fs";
+import { promises as fs, statSync, type Stats } from "node:fs";
 import path from "node:path";
 import { getClusterNode } from "./cluster.js";
 import { mapWithConcurrency } from "./concurrency.js";
@@ -225,9 +225,11 @@ interface ScannedWorktree { worktree: ProjectWorktree; conversations: string[]; 
 interface WorktreeScan { stamp: string; quiet: boolean; readAt: number; worktrees: ScannedWorktree[]; retired: { paths: string[] } | { error: unknown } }
 interface WorktreeFolders { stamp: string; newest: number; ids: string[]; archives: string[] | { error: unknown } }
 interface ScanSlot { kept?: WorktreeScan; running?: Promise<WorktreeScan>; next?: Promise<WorktreeScan> }
-/** Looking costs no open file, reading holds one (and a worktree reads a few at a time): bounded well under the usual limit of open files. */
-const SCAN_STATS_AT_ONCE = 256;
+/** Reading holds an open file (and a worktree reads a few at a time): bounded well under the usual limit of open files. */
 const SCAN_READS_AT_ONCE = 48;
+/** Looking never holds the thread longer than this at a time, checked every so many files. */
+const SCAN_HOLD_MS = 4;
+const SCAN_STATS_PER_CHECK = 64;
 const SCAN_SAME_MOMENT_MS = 2_000;
 const SCAN_MAX_AGE_MS = 60_000;
 const MAX_SCAN_SLOTS = 500;
@@ -253,9 +255,10 @@ async function worktreeFolders(directory: string): Promise<WorktreeFolders | und
   try { archives = (await fs.readdir(retired)).filter((file) => file.endsWith(".json") && WORKTREE_ID.test(file.slice(0, -5))); }
   catch (error) { archives = (error as NodeJS.ErrnoException).code === "ENOENT" ? [] : { error }; }
   let newest = 0;
-  const mark = async (file: string): Promise<string> => {
+  const mark = (file: string): string => {
     try {
-      const info = await fs.stat(file);
+      const info = statSync(file, { throwIfNoEntry: false });
+      if (!info) return "!ENOENT";
       if (info.mtimeMs > newest) newest = info.mtimeMs;
       return `${info.mtimeMs}:${info.size}:${info.ino}`;
     } catch (error) { return `!${(error as NodeJS.ErrnoException).code ?? "error"}`; }
@@ -264,7 +267,18 @@ async function worktreeFolders(directory: string): Promise<WorktreeFolders | und
     ...ids.flatMap((id) => [metadataFile(path.join(directory, id)), path.join(directory, id, WORKTREE_META_DIR, "nodes"), path.join(directory, id, WORKTREE_META_DIR, "conversations")]),
     ...(Array.isArray(archives) ? archives.map((file) => path.join(retired, file)) : []),
   ];
-  const marks = await mapWithConcurrency(files, SCAN_STATS_AT_ONCE, mark);
+  // Looked at without leaving the thread: 500 files take about a millisecond this way and ten times
+  // that as 500 separate requests, and this runs on every listing and every opened conversation. On
+  // a slow disk the thread is handed back every few milliseconds.
+  const marks: string[] = [];
+  let heldSince = performance.now();
+  for (const file of files) {
+    marks.push(mark(file));
+    if (marks.length % SCAN_STATS_PER_CHECK === 0 && performance.now() - heldSince > SCAN_HOLD_MS) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      heldSince = performance.now();
+    }
+  }
   return { stamp: JSON.stringify([ids, Array.isArray(archives) ? archives : "unreadable", marks]), newest, ids, archives };
 }
 
