@@ -57,6 +57,39 @@ test("caught API failures identify the request in the alert and survive in clien
   assert.doesNotMatch(logs, /private-query|private-body/);
 });
 
+test("silent client errors show as alerts without duplicating failures or showing cancellations", { timeout: 120_000 }, async (t) => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  await signIn(page, node.url, environment.username, environment.password);
+  await page.route("**/api/preferences?background=fixture", (route) => route.fulfill({ status: 429, json: { error: "Fixture rate limit" } }));
+
+  const requests = page.waitForResponse((response) => response.url().endsWith("/api/client-errors") && response.request().postData()?.includes("Fixture rate limit") === true);
+  await page.evaluate(`(async () => {
+    const { api } = await import("/app/api.js");
+    await api("/api/preferences?background=fixture").catch(() => {});
+  })()`);
+  await page.getByRole("alert").filter({ hasText: "Fixture rate limit" }).waitFor({ timeout: 4_000 });
+  await page.evaluate(`(async () => {
+    const { api } = await import("/app/api.js");
+    const { toast } = await import("/app/shell.js");
+    await api("/api/preferences?background=fixture").catch((error) => toast.error(error.message));
+    const controller = new AbortController();
+    controller.abort();
+    await api("/api/preferences?cancelled=fixture", { signal: controller.signal }).catch(() => {});
+    console.error("Fixture console failure");
+    console.error("Fixture console failure");
+    window.dispatchEvent(new ErrorEvent("error", { error: new Error("Fixture uncaught failure") }));
+    window.dispatchEvent(new PromiseRejectionEvent("unhandledrejection", { promise: Promise.resolve(), reason: new Error("Fixture rejected promise") }));
+  })()`);
+
+  for (const text of ["Fixture rate limit", "Fixture console failure", "Fixture uncaught failure", "Fixture rejected promise"]) {
+    const alert = page.locator('.toast[role="alert"]').filter({ hasText: text });
+    await alert.getByTestId("toast-copy-details").waitFor({ timeout: 4_000 });
+    assert.equal(await alert.count(), 1, text);
+  }
+  assert.equal(await page.getByRole("alert").filter({ hasText: "The request was cancelled" }).count(), 0);
+  assert.equal((await requests).status(), 202);
+});
+
 test("an error alert offers its report: the failed request, its answer, no query or body", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment.username, environment.password);

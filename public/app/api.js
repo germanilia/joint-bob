@@ -31,8 +31,11 @@ function requestFailure(error, path, options, status) {
   });
   // Most callers catch and toast only the message, so record diagnostics here.
   // Never log request headers, bodies or query values.
-  if (!cancelled) recordFailure({ method, path: requestPath, status, name: cause.name, message: cause.message, reason, details: cause.details, cancelled, uncertainWrite });
-  if (!cancelled) console.warn("API request failed", { method, path: requestPath, status, name: cause.name, message: reason });
+  if (!cancelled) {
+    recordFailure({ method, path: requestPath, status, name: cause.name, message: cause.message, reason, details: cause.details, cancelled, uncertainWrite });
+    console.warn("API request failed", { method, path: requestPath, status, name: cause.name, message: reason });
+    window.dispatchEvent(new CustomEvent("joint-bob-client-error", { detail: { kind: "toast", message } }));
+  }
   return failure;
 }
 

@@ -7,12 +7,15 @@ const source = (await readFile("public/app/api.js", "utf8")).replace(/^import .*
 
 function client(fetch: (...args: any[]) => any) {
   const logs: unknown[][] = [];
+  const alerts: Array<{ kind: string; message: string }> = [];
+  const window = new EventTarget();
+  window.addEventListener("joint-bob-client-error", (event) => alerts.push((event as CustomEvent).detail));
   let signedOut = false;
   const requests = runInNewContext(`${source}\n({ api, apiBlob, apiLines })`, {
-    fetch, Error, console: { warn: (...args: unknown[]) => logs.push(args) },
+    fetch, Error, window, CustomEvent, console: { warn: (...args: unknown[]) => logs.push(args) },
     state: { csrfToken: "synthetic-csrf" }, showSignedOut: () => { signedOut = true; }, recordFailure: () => {}, TextDecoderStream,
   });
-  return { ...requests, logs, signedOut: () => signedOut };
+  return { ...requests, logs, alerts, signedOut: () => signedOut };
 }
 
 test("an unexplained fetch abort names the request and is not treated as user cancellation", async () => {
@@ -31,7 +34,9 @@ test("an unexplained fetch abort names the request and is not treated as user ca
   });
   assert.equal(request.logs.length, 1, "caught failures must still reach Settings logs");
   assert.match(JSON.stringify(request.logs), /GET.*\/api\/projects/);
-  assert.doesNotMatch(JSON.stringify(request.logs), /private-query|private-fragment|synthetic-csrf/);
+  assert.match(request.alerts[0]?.message ?? "", /GET \/api\/projects/);
+  assert.equal(request.alerts.length, 1);
+  assert.doesNotMatch(JSON.stringify([request.logs, request.alerts]), /private-query|private-fragment|synthetic-csrf/);
 });
 
 test("a server-side abort identifies the write and warns that its outcome is unknown", async () => {
@@ -64,6 +69,7 @@ test("only a confirmed caller cancellation is quiet", async () => {
     return true;
   });
   assert.equal(request.logs.length, 0);
+  assert.deepEqual(request.alerts, []);
 });
 
 test("an aborted signal does not hide an unrelated failure", async () => {
