@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { DefaultResourceLoader, SettingsManager } from "../../pi-sdk.js";
+
+const experientialLabsExtension = fileURLToPath(new URL("./src/index.ts", import.meta.resolve("pi-experientiallabs/package.json")));
 
 type LoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0] & { agentDir: string };
 
@@ -80,7 +83,8 @@ export function createPiResourceLoader(options: LoaderOptions, strict: boolean, 
     if (failure) throw new Error(`Pi package ${failure.path}: ${failure.warning}`);
     return options.extensionsOverride ? options.extensionsOverride(result) : result;
   };
-  if (!strict) return new DefaultResourceLoader({ ...options, extensionsOverride });
+  const additionalExtensionPaths = [...(options.additionalExtensionPaths ?? []), experientialLabsExtension];
+  if (!strict) return new DefaultResourceLoader({ ...options, additionalExtensionPaths, extensionsOverride });
   // Validate before SDK storage; it tolerates read errors by falling back to defaults.
   if (!isolatedTeam) globalResourceSettings(packagesFile, options.agentDir);
   const settingsManager = SettingsManager.fromStorage({
@@ -90,6 +94,7 @@ export function createPiResourceLoader(options: LoaderOptions, strict: boolean, 
   }, { projectTrusted: false });
   return new DefaultResourceLoader({
     ...options,
+    additionalExtensionPaths,
     extensionsOverride,
     settingsManager,
     systemPrompt: "",

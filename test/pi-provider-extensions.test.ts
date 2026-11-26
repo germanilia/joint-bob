@@ -6,6 +6,23 @@ import path from "node:path";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import test from "node:test";
 import { createCoreSession, type PiCoreHooks } from "../src/pi-session-core.js";
+import { createPiProviderCatalog } from "../src/harnesses/pi/provider-catalog.js";
+import { createSessionModelRuntime } from "../src/provider-profiles/pi.js";
+
+test("Joint Bob exposes Experiential Labs API key sign-in without a Pi package install", async (t) => {
+  const agentDir = await mkdtemp(path.join(os.tmpdir(), "joint-bob-bundled-pi-provider-"));
+  t.after(() => rm(agentDir, { recursive: true, force: true }));
+  for (const strictResourceIsolation of [true, false]) {
+    const runtime = await createSessionModelRuntime(async () => undefined, async () => []);
+    const catalog = await createPiProviderCatalog(runtime, { agentDir, strictResourceIsolation, extensionPaths: [] });
+    try {
+      const provider = runtime.getProvider("explabs");
+      assert.equal(provider?.name, "Experiential Labs");
+      assert.equal(typeof provider.auth.apiKey?.login, "function");
+      assert.deepEqual(await runtime.getAvailable("explabs"), []);
+    } finally { catalog.dispose(); }
+  }
+});
 
 async function startProviderServer(): Promise<{ server: Server; url: string }> {
   const server = createServer((request, response) => {
