@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.2 — 2026-11-26
+
+- **Performance:** The home page no longer freezes the server for up to half a minute when it reads today's spend. The total was read from every request ever saved instead of only today's (44 s for 609,000 requests on a busy server, now 31 ms). While it ran, every other page and connected machine waited and requests timed out.
+
 ## 2.344.1 — 2026-11-26
 
 - **Files:** A file link in a conversation that runs in a worktree now opens the worktree's file. A file the agent created there and the project folder does not have yet used to answer "File not found" and send an error report, and a file both folders have opened the project folder's copy. When the worktree has been removed, links open the project folder's copy as before.
