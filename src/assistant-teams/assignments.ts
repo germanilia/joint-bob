@@ -11,6 +11,7 @@ import { decideTeamMessage, listTeamDecisions } from './decisions.js';
 import { runTeamTurn, teamAssignmentDestination, teamAgentReadiness } from './runtime.js';
 import { getPersonalAssistantById, getPersonalAssistantTurn } from '../personal-assistants.js';
 import { runningPromptRequestId } from '../assistant-collaboration/bridge-tools.js';
+import { formatPendingAutomationRequestsForChief, listPendingAutomationRequestsForRoot } from './automations.js';
 import {
  cancelPendingProposalsForRoot,
  decideTeamProposal,
@@ -126,7 +127,11 @@ export async function routeTeamAssignment(assignmentId:string,route:TeamRoute):P
   if(!r.browser&&r.source.text.trim())await updateTeamSubjectSummary(a.teamId,r.subjectId,'human',r.source.text);
   await bindTeamOutputSubject(a.teamId,r.id,r.subjectId,a.id);
   for(const target of assignments(db,a.teamId).filter(t=>t.rootId===a.rootId&&!t.parentId&&t.state==='queued')){
-   const w=work(db,target.id)!;w.originalMaterial??=w.message;w.message=await teamExecutionEvidence(target,w.originalMaterial);saveWork(db,w);
+   const w=work(db,target.id)!;
+   const original=w.originalMaterial??w.message;
+   const evidence=await teamExecutionEvidence(target,original);
+   const fresh=work(db,target.id);
+   if(fresh&&fresh.phase==='queued'){fresh.originalMaterial??=original;fresh.message=evidence;saveWork(db,fresh);}
   }
  }
 }
@@ -325,14 +330,16 @@ async function ensureCoordinatorReview(teamId:string,rootId:string):Promise<void
   const trace=formatTraceForReview(await readAssignmentTrace(teamId,spec,sw.conversationId));
   parts.push(`${spec.role} (${spec.id}):${trace?` ${trace}\n`:' '}${sw.result??'(No text result)'}`);
  }
+ const pendingAutomations = formatPendingAutomationRequestsForChief(await listPendingAutomationRequestsForRoot(teamId, rootId));
  const reviewId=key(rootId,'coordinator-review',coordinator);
  const reviewHead='Review the completed direct specialist work immediately before answering the user.';
- const reviewInstructions='Review instructions: check both the answer and how it was done (trace, errors, tools/secrets used). If the work is incomplete, unverified, or not good enough, call team_delegate to prompt the specialist back with specific feedback. If the review reveals a durable team rule, routing convention, or workflow lesson, update collective team memory (scope "team") with team_memory_write. If the assistant (or team) needs permanent changes (secrets from team_node_catalog, tools/MCP/skills, instructions, model/harness, or removing an unused role), call team_propose_changes (bundling related changes). Otherwise publish the final vetted answer clearly, attributing the specialist.';
+ const reviewInstructions='Review instructions: check both the answer and how it was done (trace, errors, tools/secrets used). If the specialist proposed an automation or scheduled task below, decide it immediately with team_decide_automation. If the work is incomplete, unverified, or not good enough, call team_delegate to prompt the specialist back with specific feedback. If the review reveals a durable team rule, routing convention, or workflow lesson, update collective team memory (scope "team") with team_memory_write. If the assistant (or team) needs permanent changes (secrets from team_node_catalog, tools/MCP/skills, instructions, model/harness, or splitting/adding/updating/removing a role), call team_propose_changes (bundling related changes). Otherwise publish the final vetted answer clearly, attributing the specialist.';
  // The stored message is capped at 19,500 characters; a long request must not push the work under review,
  // or these instructions, out of it.
- const requestBudget=Math.max(500,19500-[reviewHead,...parts,reviewInstructions].join('\n').length-80);
+ const reviewExtras = [...parts, ...(pendingAutomations ? [pendingAutomations] : [])];
+ const requestBudget=Math.max(500,19500-[reviewHead,...reviewExtras,reviewInstructions].join('\n').length-80);
  const requestText=r.source.text.length>requestBudget?`${r.source.text.slice(0,requestBudget)}… (shortened here; the full request is in the team thread)`:r.source.text;
- const reviewMessage=[reviewHead,`Original request: ${requestText}`,...parts,reviewInstructions].join('\n');
+ const reviewMessage=[reviewHead,`Original request: ${requestText}`,...reviewExtras,reviewInstructions].join('\n');
  transaction(db,()=>{
   const latest=assignments(db,teamId).filter(a=>a.rootId===rootId);
   if(latest.some(a=>a.id===reviewId||(!a.parentId&&a.role===coordinator)))return;
@@ -400,11 +407,12 @@ async function advanceParent(a:TeamAssignment):Promise<void> {
    childBlocks.push(`${c.role} (${c.id}):${trace?` ${trace}\n`:' '}${cw.result}`);
   }
  }
+ const pendingAutomations = formatPendingAutomationRequestsForChief(await listPendingAutomationRequestsForRoot(a.teamId, a.rootId));
  transaction(db,()=>{
   if(w.reason==='delegation_limit'){a.state='waiting_for_human';w.phase='held';output(db,root(db,a.rootId),`${a.rootId}:limit`,'clarify',say(db,a.teamId,'ten delegated turns reached. Please give a new explicit request to continue.'));}
   else {
    delete w.originalMaterial;
-   w.message=`Continue the original request using these stored INTERNAL ONLY child results. Review both the results and execution traces immediately: if an assistant's work is not good enough, prompt it back via team_delegate with specific feedback; if this review surfaces a durable team rule or workflow lesson, update collective team memory (scope "team") with team_memory_write; if permanent changes (secrets, tools, skills, instructions, model/harness, roster) are needed, call team_propose_changes. Do not repeat completed delegations unnecessarily.\nOriginal request: ${root(db,a.rootId).source.text}\n${childBlocks.join('\n')}`;
+   w.message=`Continue the original request using these stored INTERNAL ONLY child results. Review both the results and execution traces immediately: if a specialist proposed an automation or scheduled task below, decide it with team_decide_automation; if an assistant's work is not good enough, prompt it back via team_delegate with specific feedback; if this review surfaces a durable team rule or workflow lesson, update collective team memory (scope "team") with team_memory_write; if permanent changes (secrets, tools, skills, instructions, model/harness, or splitting/adding/updating/removing roster members) are needed, call team_propose_changes. Do not repeat completed delegations unnecessarily.\nOriginal request: ${root(db,a.rootId).source.text}\n${childBlocks.join('\n')}${pendingAutomations ? `\n${pendingAutomations}` : ''}`;
    if(w.message.length>20000){a.state='waiting_for_human';w.phase='held';w.reason='child_results_exceed_context';}
    else {a.requestId=randomUUID();a.state='queued';w.phase='queued';w.result=null;w.reason=null;for(const c of unread){const child=work(db,c.id)!;child.consumed=true;saveWork(db,child);}}
   }

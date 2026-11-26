@@ -74,7 +74,7 @@ export const teamProposalChangeSchema = z.discriminatedUnion('kind', [
     allowTerminal: z.boolean().optional(),
     allowBrowser: z.boolean().optional(),
     mcpServerNames: z.array(z.string().min(1).max(200)).max(100).nullable().optional(),
-    executionSettings: executionSettingsSchema.optional(),
+    executionSettings: executionSettingsSchema.nullable().optional(),
     disabledSkills: resourceNameList.optional(),
     disabledPlugins: resourceNameList.optional(),
   }).strict(),
@@ -116,9 +116,37 @@ export const teamProposalChangeSchema = z.discriminatedUnion('kind', [
     allowTerminal: z.boolean().optional(),
     allowBrowser: z.boolean().optional(),
     mcpServerNames: z.array(z.string().min(1).max(200)).max(100).nullable().optional(),
-    executionSettings: executionSettingsSchema.optional(),
+    executionSettings: executionSettingsSchema.nullable().optional(),
     secretAccountIds: z.array(z.string().uuid()).max(20).optional(),
     skills: z.array(z.object({ files: z.array(skillFileSchema).min(1).max(WEBHOOK_SKILL_MAX_FILES) }).strict()).max(10).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('split_member'),
+    role: roleSchema,
+    keepSource: z.boolean().default(false),
+    sourceUpdates: z.object({
+      name: z.string().trim().min(1).max(100).optional(),
+      instructions: z.string().max(20_000).optional(),
+      allowTerminal: z.boolean().optional(),
+      allowBrowser: z.boolean().optional(),
+      mcpServerNames: z.array(z.string().min(1).max(200)).max(100).nullable().optional(),
+      executionSettings: executionSettingsSchema.nullable().optional(),
+    }).strict().optional(),
+    newMembers: z.array(z.object({
+      role: roleSchema,
+      name: z.string().trim().min(1).max(100),
+      instructions: z.string().max(20_000),
+      allowTerminal: z.boolean().optional(),
+      allowBrowser: z.boolean().optional(),
+      mcpServerNames: z.array(z.string().min(1).max(200)).max(100).nullable().optional(),
+      executionSettings: executionSettingsSchema.nullable().optional(),
+      inheritSecrets: z.boolean().optional(),
+      inheritLogins: z.boolean().optional(),
+      inheritSkills: z.boolean().optional(),
+      secretAccountIds: z.array(z.string().uuid()).max(20).optional(),
+      loginProfileIds: z.array(z.string().uuid()).max(20).optional(),
+      skills: z.array(z.object({ files: z.array(skillFileSchema).min(1).max(WEBHOOK_SKILL_MAX_FILES) }).strict()).max(10).optional(),
+    }).strict()).min(1).max(6),
   }).strict(),
   z.object({
     kind: z.literal('add_member'),
@@ -775,7 +803,7 @@ async function validateAndPreviewChanges(teamId: string, changes: TeamProposalCh
       simulatedRoles.set(change.role, { assistantId: null, profile: null });
       const parts = [
         `Create assistant "${change.name}" as /${change.role}`,
-        change.executionSettings ? `${change.executionSettings.harnessId} · ${change.executionSettings.modelId} (${change.executionSettings.reasoning})` : null,
+        change.executionSettings ? `${change.executionSettings.harnessId} · ${change.executionSettings.modelId} (${change.executionSettings.reasoning})` : 'mode=Auto',
         change.allowTerminal !== undefined ? `terminal=${change.allowTerminal ? 'on' : 'off'}` : null,
         change.allowBrowser !== undefined ? `browser=${change.allowBrowser ? 'on' : 'off'}` : null,
         change.secretAccountIds?.length ? `secrets: ${change.secretAccountIds.map(id => secrets.get(id)!.label).join(', ')}` : null,
@@ -801,6 +829,42 @@ async function validateAndPreviewChanges(teamId: string, changes: TeamProposalCh
     }
     const target = simulatedRoles.get(change.role);
     if (!target) throw new TeamError(`Unknown team role: ${change.role}`, 404);
+    if (change.kind === 'split_member') {
+      if (!change.keepSource && change.role === coordinator) throw new TeamError('Cannot remove the team coordinator when splitting; set keepSource: true to spin off new specialists', 400);
+      if (!change.keepSource && change.newMembers.length < 2) throw new TeamError('Splitting and removing a role requires at least 2 newMembers (or set keepSource: true)', 400);
+      if (change.sourceUpdates?.executionSettings) await validateExecutionSettingsChoice(change.sourceUpdates.executionSettings);
+      const seenNew = new Set<string>();
+      const memberLines: string[] = [];
+      for (const nm of change.newMembers) {
+        if (isReservedTeamRole(nm.role)) throw new TeamError(`Role "${nm.role}" is a reserved team command`, 400);
+        if (nm.role === change.role || simulatedRoles.has(nm.role) || seenNew.has(nm.role)) throw new TeamError(`Role "${nm.role}" already exists or is duplicated in split`, 409);
+        seenNew.add(nm.role);
+        if (nm.executionSettings) await validateExecutionSettingsChoice(nm.executionSettings);
+        for (const secretId of nm.secretAccountIds ?? []) {
+          if (!secrets.has(secretId)) {
+            const blocked = unusableById.get(secretId);
+            throw new TeamError(blocked ? `Secret "${blocked.label}" (${secretId}) cannot be used in this team project: ${blocked.reason}` : `Secret ${secretId} is not available in this node's attachable pool`, blocked ? 403 : 404);
+          }
+        }
+        for (const skill of nm.skills ?? []) validateSkillFiles(skill.files);
+        const modeLabel = nm.executionSettings ? `${nm.executionSettings.harnessId}:${nm.executionSettings.modelId} (${nm.executionSettings.reasoning})` : 'Auto';
+        const inherited = [nm.inheritSecrets ? 'secrets' : null, nm.inheritLogins ? 'logins' : null, nm.inheritSkills ? 'skills' : null].filter(Boolean);
+        memberLines.push(`/${nm.role} ("${nm.name}", ${modeLabel}${inherited.length ? `, inherits ${inherited.join('/')}` : ''}): ${clip(nm.instructions, 300)}`);
+      }
+      if (!change.keepSource) simulatedRoles.delete(change.role);
+      for (const nm of change.newMembers) simulatedRoles.set(nm.role, { assistantId: null, profile: null });
+      const newRolesText = change.newMembers.map(nm => `/${nm.role}`).join(', ');
+      previews.push({
+        kind: change.kind,
+        role: change.role,
+        headline: change.keepSource
+          ? `Split /${change.role} (kept${change.sourceUpdates ? ' & updated' : ''}) + create ${newRolesText}`
+          : `Split /${change.role} → ${newRolesText} (removing /${change.role})`,
+        detail: memberLines.join('\n'),
+      });
+      continue;
+    }
+
     if (change.kind === 'remove_member') {
       if (change.role === coordinator) throw new TeamError('Cannot remove the team coordinator', 400);
       simulatedRoles.delete(change.role);
@@ -883,9 +947,9 @@ async function validateAndPreviewChanges(teamId: string, changes: TeamProposalCh
     }
     if (change.executionSettings !== undefined) {
       const es = change.executionSettings;
-      const before = current?.executionSettings ? `${current.executionSettings.harnessId}/${current.executionSettings.provider}/${current.executionSettings.modelId} (${current.executionSettings.reasoning})` : (current?.engine ?? 'default');
-      const after = `${es.harnessId}/${es.provider}/${es.modelId} (${es.reasoning})`;
-      summaryParts.push(`model=${es.harnessId}:${es.modelId} (${es.reasoning})`);
+      const before = current?.executionSettings ? `${current.executionSettings.harnessId}/${current.executionSettings.provider}/${current.executionSettings.modelId} (${current.executionSettings.reasoning})` : `${current?.engine ?? 'default'} (Auto)`;
+      const after = es ? `${es.harnessId}/${es.provider}/${es.modelId} (${es.reasoning})` : 'Auto (Bob routing)';
+      summaryParts.push(es ? `model=${es.harnessId}:${es.modelId} (${es.reasoning})` : 'model=Auto');
       detailLines.push(`Runtime/Model: ${before} → ${after}`);
     }
     if (change.disabledSkills !== undefined) {
@@ -1084,6 +1148,91 @@ async function applyProposalChanges(teamId: string, changes: TeamProposalChange[
       continue;
     }
 
+    if (change.kind === 'split_member') {
+      const team = await getTeam(teamId);
+      const coordinator = await teamCoordinator(team);
+      if (!change.keepSource && change.role === coordinator) throw new TeamError('Cannot remove the team coordinator when splitting', 400);
+      const sourceProfile = await resolveMemberProfile(change.role);
+      const localNodeId = (await getClusterNode()).id;
+      const db = await personalAssistantDatabase();
+      const sourceSecrets = (await listAssistantAttachedSecrets(sourceProfile, team.projectId)).filter(s => s.usableInTeamProject !== false).map(s => s.id);
+      const sourceLogins = await assistantLoginProfileIds(sourceProfile.id);
+      const sourceSkills = listWebhookSkills(db, sourceProfile.id);
+      const createdRosterEntries: Array<{ role: string; assistantId: string }> = [];
+      for (const nm of change.newMembers) {
+        if (nm.executionSettings) await validateExecutionSettingsChoice(nm.executionSettings);
+        const engine = nm.executionSettings?.harnessId ?? sourceProfile.executionSettings?.harnessId ?? sourceProfile.engine;
+        const sessionId = randomUUID();
+        await asNode(async () => {
+          await ensureConversationRecord(team.projectId, engine, sessionId, localNodeId);
+          await ensureSessionTitle(sessionId, nm.name);
+        });
+        const created = await savePersonalAssistant(team.executorAccountId, {
+          projectId: team.projectId,
+          engine,
+          sessionId,
+          nodeId: localNodeId,
+          name: nm.name,
+          instructions: nm.instructions,
+          allowTerminal: nm.allowTerminal ?? sourceProfile.allowTerminal,
+          allowBrowser: nm.allowBrowser ?? sourceProfile.allowBrowser,
+          mcpServerNames: nm.mcpServerNames !== undefined ? nm.mcpServerNames : sourceProfile.mcpServerNames,
+          executionSettings: nm.executionSettings ?? null,
+        });
+        const secretIds = [...new Set([...(nm.inheritSecrets ? sourceSecrets : []), ...(nm.secretAccountIds ?? [])])];
+        for (const secretId of secretIds) {
+          if (secrets.has(secretId)) await attachOrDetachAssistantSecret(created, secretId, 'attach');
+        }
+        const loginIds = [...new Set([...(nm.inheritLogins ? sourceLogins : []), ...(nm.loginProfileIds ?? [])])];
+        if (loginIds.length) {
+          const { syncAssistantLoginGrants } = await import('../server/routes/assistant-resources.js');
+          for (const profileId of loginIds) {
+            db.prepare('INSERT OR IGNORE INTO personal_assistant_logins (assistant_id, profile_id, created_at) VALUES (?,?,?)').run(created.id, profileId, new Date().toISOString());
+          }
+          await syncAssistantLoginGrants(created.id, created.accountId);
+        }
+        if (nm.inheritSkills) {
+          for (const skill of sourceSkills) {
+            const relFiles = await listSkillFolderFiles(skill.path);
+            const loaded = await Promise.all(relFiles.map(async relativePath => ({ relativePath, data: await readFile(path.join(skill.path, relativePath)) })));
+            if (loaded.some(f => f.relativePath === 'SKILL.md')) await uploadWebhookSkill(db, created.id, loaded);
+          }
+        }
+        for (const skill of nm.skills ?? []) {
+          await uploadWebhookSkill(db, created.id, skill.files.map(f => ({ relativePath: f.relativePath, data: Buffer.from(f.content, 'utf8') })));
+        }
+        createdRosterEntries.push({ role: nm.role, assistantId: created.id });
+      }
+      if (change.keepSource && change.sourceUpdates) {
+        const su = change.sourceUpdates;
+        if (su.executionSettings) await validateExecutionSettingsChoice(su.executionSettings);
+        const updatedSource = await savePersonalAssistant(sourceProfile.accountId, {
+          projectId: sourceProfile.projectId,
+          engine: sourceProfile.engine,
+          sessionId: sourceProfile.sessionId,
+          name: su.name ?? sourceProfile.name,
+          instructions: su.instructions ?? sourceProfile.instructions,
+          classifierId: sourceProfile.classifierId,
+          allowBrowser: su.allowBrowser ?? sourceProfile.allowBrowser,
+          allowTerminal: su.allowTerminal ?? sourceProfile.allowTerminal,
+          mcpServerNames: su.mcpServerNames === undefined ? sourceProfile.mcpServerNames : su.mcpServerNames,
+          executionSettings: su.executionSettings === undefined ? sourceProfile.executionSettings : su.executionSettings,
+        }, sourceProfile.id);
+        const toolsChanged = su.allowTerminal !== undefined || su.allowBrowser !== undefined || su.mcpServerNames !== undefined;
+        const harnessChanged = Boolean(su.executionSettings && su.executionSettings.harnessId !== (sourceProfile.executionSettings?.harnessId ?? sourceProfile.engine));
+        markTouched(updatedSource, toolsChanged, toolsChanged || harnessChanged);
+      }
+      const currentMembers = await listTeamAgents(teamId);
+      const currentTeam = await getTeam(teamId);
+      const baseMembers = (change.keepSource ? currentMembers : currentMembers.filter(m => m.role !== change.role))
+        .map(m => ({ role: m.role, assistantId: m.assistantId }));
+      await saveTeamMembers(teamId, [...baseMembers, ...createdRosterEntries], currentTeam.coordinatorRole, currentTeam.revision);
+      rosterChanged = true;
+      const newRolesText = createdRosterEntries.map(e => `/${e.role}`).join(', ');
+      applied.push(change.keepSource ? `Split /${change.role} (kept) + created ${newRolesText}` : `Split /${change.role} → ${newRolesText}`);
+      continue;
+    }
+
     if (change.kind === 'remove_member') {
       const team = await getTeam(teamId);
       const coordinator = await teamCoordinator(team);
@@ -1185,7 +1334,7 @@ async function applyProposalChanges(teamId: string, changes: TeamProposalChange[
       });
     }
     const toolsChanged = change.allowTerminal !== undefined || change.allowBrowser !== undefined || change.mcpServerNames !== undefined;
-    const harnessChanged = change.executionSettings !== undefined && change.executionSettings.harnessId !== (profile.executionSettings?.harnessId ?? profile.engine);
+    const harnessChanged = Boolean(change.executionSettings && change.executionSettings.harnessId !== (profile.executionSettings?.harnessId ?? profile.engine));
     markTouched(updated, toolsChanged, toolsChanged || harnessChanged);
     applied.push(`Updated /${change.role}`);
   }

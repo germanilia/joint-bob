@@ -7,6 +7,7 @@ import { ensureConversationRecord } from '../conversation-records.js';
 import { getConversationOwnership } from '../conversation-ownership.js';
 import { ensureSessionTitle } from '../names.js';
 import { getHarnessRuntime, listHarnessModels } from '../harnesses.js';
+import { isHarnessId } from '../types.js';
 import { addPersonalAssistantTopic, getPersonalAssistantById, getPersonalAssistantTurn, personalAssistantDatabase, type PersonalAssistant } from '../personal-assistants.js';
 import { requireTeamExecution } from './access.js';
 import { getTeam, getTeamAssignment, listTeamAgents, teamDatabase, TeamError, type TeamAssignment, type TeamRole } from './store.js';
@@ -89,7 +90,19 @@ export async function teamAgentReadiness(profile: PersonalAssistant, teamProject
   if (await productionGuard(teamProjectId) !== 'on') return ['Production-capable team work is blocked: enable the production Guardian guard'];
   if (profile.nodeId !== (await getClusterNode()).id) return ['This assistant is on another machine'];
   if (!listLocalUsers().some(user => user.accountId === profile.accountId && !user.disabled)) return ["The assistant's owner account is unavailable"];
-  if (!profile.executionSettings) return ['Select a local runtime and model'];
+  if (!profile.executionSettings) {
+    // Auto mode (default): let Bob difficulty routing pick the model on this assistant's harness.
+    if (!isHarnessId(profile.engine)) return [`Unknown harness "${profile.engine}"`];
+    try {
+      const runtime = await getHarnessRuntime(profile.engine);
+      const problems = await runtime.readiness(process.cwd());
+      if (problems.length) return problems;
+      if (!(await listHarnessModels(profile.engine)).length) return ['No models available for Auto mode on this host'];
+      return [];
+    } catch (error) {
+      return [error instanceof Error ? error.message : 'Local runtime unavailable'];
+    }
+  }
   try {
     const settings = profile.executionSettings;
     const runtime = await getHarnessRuntime(settings.harnessId);

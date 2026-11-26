@@ -21,6 +21,7 @@ import {
   readAssignmentExecutionDetail,
   readTeamNodeCatalog,
 } from '../../assistant-teams/proposals.js';
+import { decideTeamAutomationRequest, listTeamAutomations } from '../../assistant-teams/automations.js';
 import { announceTeamChange, getTeam, listTeamAgents, saveTeamMembers, TEAM_ROLE_PATTERN, TeamError } from '../../assistant-teams/store.js';
 import { WebhookResourceError } from '../../webhook-resources.js';
 import { announceAssistantChanges } from '../../assistant-collaboration/twin-sync.js';
@@ -103,7 +104,7 @@ async function syncMemberLoginGrants(profile: PersonalAssistant, teamProjectId: 
 }
 
 const DEFAULT_CHIEF_INSTRUCTIONS =
-  'You are the Chief (user-facing coordinator) of this Assistant Team. You are the single point of contact for the user: design and refine specialist roles with team_node_catalog and team_propose_changes, delegate specialist tasks via team_delegate, review every completed specialist result and execution trace immediately, and update collective team memory (scope "team") when durable rules or workflows emerge.';
+  'You are the Chief (user-facing coordinator) of this Assistant Team. You are the single point of contact for the user: design, split, add, update, or remove specialist roles with team_node_catalog and team_propose_changes (with human approval), keep agents in Auto mode unless a specific model is requested, delegate specialist tasks via team_delegate, review every completed specialist result and execution trace immediately, review and approve/reject specialist automation and scheduled task requests with team_decide_automation, and update collective team memory (scope "team") when durable rules or workflows emerge.';
 
 const chiefSetupSchema = z.discriminatedUnion('mode', [
   z.object({
@@ -426,5 +427,24 @@ export function registerAssistantTeamUxRoutes(): void {
     announceAssistantChanges();
     announceTeamChange(teamId);
     return { ok: true };
+  }));
+
+  // List live team automations/schedules and specialist automation requests awaiting Chief approval.
+  app.get('/api/assistant-teams/:id/automations', teamRoute(async (request, response) => {
+    const auth = authSession(response);
+    const teamId = teamIdSchema.parse(request.params.id);
+    await requireTeamMember(auth, teamId);
+    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) }).strict().parse(request.query);
+    return listTeamAutomations(teamId, limit);
+  }));
+
+  // Human team member can also approve or reject a specialist automation request directly from Team UI.
+  app.post('/api/assistant-teams/:id/automations/requests/:requestId/decide', teamRoute(async (request, response) => {
+    const auth = authSession(response);
+    const teamId = teamIdSchema.parse(request.params.id);
+    const member = await requireTeamMember(auth, teamId);
+    const requestId = z.string().uuid().parse(request.params.requestId);
+    const body = z.object({ decision: z.enum(['approve', 'reject']), note: z.string().max(500).optional() }).strict().parse(request.body);
+    return { request: await decideTeamAutomationRequest(teamId, requestId, body.decision, { kind: 'human', accountId: member.accountId }, body.note) };
   }));
 }

@@ -5,7 +5,7 @@ import { createLocalUser } from '../src/auth.js';
 import { fixture } from './assistant-team-fixture.js';
 import { addClusterLocalMember, removeClusterLocalMember } from '../src/cluster-accounts.js';
 import { getTeamAssignment } from '../src/assistant-teams/store.js';
-import { acceptTeamAssignment, routeTeamAssignment, recoverTeamWork, publishTeamResult, createTeamInquiry, confirmTeamInquiry, consumeTeamConfirmation, delegateTeamAssignment, assignmentDatabase, readTeamWork } from '../src/assistant-teams/assignments.js';
+import { acceptTeamAssignment, routeTeamAssignment, recoverTeamWork, publishTeamResult, createTeamInquiry, confirmTeamInquiry, consumeTeamConfirmation, delegateTeamAssignment, assignmentDatabase, readTeamWork, teamDispatchActive } from '../src/assistant-teams/assignments.js';
 import { deliverTeamOutbox, listTeamOutbox } from '../src/assistant-teams/delivery.js';
 import { teamAssignmentDestination } from '../src/assistant-teams/runtime.js';
 import { beginPersonalAssistantTurn, finishPersonalAssistantTurn } from '../src/personal-assistants.js';
@@ -45,10 +45,14 @@ test('durable acceptance, one acknowledgment, scoped final receipts and unknown 
  const reviewAssignment=(f.db.prepare('SELECT record FROM assistant_team_assignments WHERE team_id=?').all(f.team.id) as Array<{record:string}>)
   .map(r=>JSON.parse(r.record)).find(a=>a.rootId===assignments[0].rootId&&a.role==='bob')!;
  assert.ok(reviewAssignment,'coordinator review assignment queued for direct specialist work');
- const reviewDest=await teamAssignmentDestination(reviewAssignment);
- await beginPersonalAssistantTurn(f.team.executorAccountId,reviewDest.profile.id,reviewAssignment.requestId,`pi:${reviewDest.destination.sessionId}`,'review','assistant');
- await finishPersonalAssistantTurn(f.team.executorAccountId,reviewDest.profile.id,reviewAssignment.requestId,'Reviewed qa and product results');
- f.db.prepare('UPDATE assistant_team_work SET phase=? WHERE assignment_id=?').run('dispatched',reviewAssignment.id);
+ // Wait for background readiness check (blocked by Guardian=null above) to finish executing before simulating crash recovery.
+ for(let i=0;i<100;i++){const w=(await readTeamWork(f.team.id)).find(item=>item.assignmentId===reviewAssignment.id);if(w?.phase==='held'&&!teamDispatchActive(reviewAssignment.id))break;await new Promise(r=>setTimeout(r,10));}
+ const activeReview={...(await getTeamAssignment(reviewAssignment.id))!,state:'running' as const};
+ f.db.prepare('UPDATE assistant_team_assignments SET record=? WHERE id=?').run(JSON.stringify(activeReview),activeReview.id);
+ const reviewDest=await teamAssignmentDestination(activeReview);
+ await beginPersonalAssistantTurn(f.team.executorAccountId,reviewDest.profile.id,activeReview.requestId,`pi:${reviewDest.destination.sessionId}`,'review','assistant');
+ await finishPersonalAssistantTurn(f.team.executorAccountId,reviewDest.profile.id,activeReview.requestId,'Reviewed qa and product results');
+ f.db.prepare('UPDATE assistant_team_work SET phase=? WHERE assignment_id=?').run('dispatched',activeReview.id);
  await recoverTeamWork(f.team.id);
  const sendCountAfterReview=sends.length;
  const originalReplies=sends.filter(send=>send.message_thread_id===23);
@@ -96,7 +100,7 @@ test('exact inquiry reply and current membership; delegated receipts are interna
  await beginPersonalAssistantTurn(f.team.executorAccountId,resolved.profile.id,parent.requestId,`pi:${resolved.destination.sessionId}`,'fixture','assistant');
  promptStarted(f.team.projectId,resolved.destination.sessionId,parent.requestId);
  const identity={account:{accountId:f.member.accountId,username:f.member.username,role:null,homeNodeId:f.member.homeNodeId,isRemoteLogin:false},projectId:f.team.projectId,conversationId:resolved.destination.sessionId,engine:'pi' as const};
- assert.deepEqual((await listTeamTools(identity)).map(t=>t.name),['team_list_agents','team_inspect_agent','team_node_catalog','team_list_proposals','team_delegate','team_read_assignment','team_propose_changes','team_memory_read','team_memory_list','team_memory_write','team_memory_delete']);
+ assert.deepEqual((await listTeamTools(identity)).map(t=>t.name),['team_list_agents','team_inspect_agent','team_node_catalog','team_list_proposals','team_delegate','team_read_assignment','team_propose_changes','team_decide_automation','team_list_automations','team_propose_automation','team_memory_read','team_memory_list','team_memory_write','team_memory_delete']);
  const child=await delegateTeamAssignment(parent.id,'qa','Check it');
  assert.deepEqual(await delegateTeamAssignment(parent.id,'qa','Check it'),child);
  assert.equal(child.destination.kind,'bob');assert.match((await readTeamWork(f.team.id)).find(w=>w.assignmentId===child.id)!.message,/INTERNAL ONLY/);

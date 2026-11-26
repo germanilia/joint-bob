@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fixture } from './assistant-team-fixture.js';
-import { recoverTeamWork, readTeamWork, assignmentDatabase, listTeamRequests } from '../src/assistant-teams/assignments.js';
+import { recoverTeamWork, readTeamWork, assignmentDatabase, listTeamRequests, teamDispatchActive } from '../src/assistant-teams/assignments.js';
 import { saveTeamMembers, listTeamAgents, getTeam, TeamError } from '../src/assistant-teams/store.js';
 
 /** Telegram's send API answers; every other fetch (the decision model) is down. */
@@ -60,6 +60,7 @@ test('the group can ask what the team is doing, stop a request, and run a stoppe
     assert.match(sends[mark].text, /No request or role is called zzzzzz/);
     mark = await say(`/retry ${oldest.shortId}`);
     assert.match(sends.slice(mark).map(send => send.text).join('\n'), /running \w{6} again as \w{6}/, 'a cancelled request may be run again on purpose');
+    await settle(() => sends.slice(mark).some(send => /runtime is unavailable/.test(send.text)));
   } finally { restore(); }
 });
 
@@ -82,6 +83,7 @@ test('a request that stopped with an unknown outcome is reported, never silently
     const db = await assignmentDatabase();
     // Make it look as if the host restarted while the member was working.
     const row = db.prepare('SELECT id, record FROM assistant_team_assignments WHERE team_id=?').get(f.team.id) as { id: string; record: string };
+    await settle(() => !teamDispatchActive(row.id));
     const assignment = { ...JSON.parse(row.record), state: 'running' };
     db.prepare('UPDATE assistant_team_assignments SET record=? WHERE id=?').run(JSON.stringify(assignment), row.id);
     const work = JSON.parse((db.prepare('SELECT record FROM assistant_team_work WHERE assignment_id=?').get(row.id) as { record: string }).record);

@@ -148,7 +148,7 @@ async function assistantUses(profile: PersonalAssistant): Promise<string[]> {
   const skills = listWebhookSkills(db, profile.id).length, logins = (await assistantLoginProfileIds(profile.id)).length;
   const secrets = (await listAssistantAttachedSecrets(profile)).length;
   return [
-    profile.executionSettings ? `${profile.executionSettings.harnessId} · ${profile.executionSettings.modelId}` : `${profile.engine}`,
+    profile.executionSettings ? `${profile.executionSettings.harnessId} · ${profile.executionSettings.modelId}` : `${profile.engine} · Auto`,
     profile.mcpServerNames === null ? 'all its MCP servers' : profile.mcpServerNames.length ? `MCP: ${profile.mcpServerNames.join(', ')}` : '',
     profile.allowBrowser ? `browser${logins ? ` with ${logins} saved login${logins === 1 ? '' : 's'}` : ''}` : '',
     profile.allowTerminal ? 'terminal' : '',

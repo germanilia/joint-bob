@@ -30,6 +30,8 @@ export function createTeamWork(teamId, members, { isCurrent, fail, isLocal = tru
   const text = makeNode('textarea'); text.dataset.testid = 'team-work-message'; text.rows = 3; text.placeholder = 'Ask Chief to coordinate work, or address a specific role…';
   const proposalsHeading = makeNode('h3', 'team-section-title', 'Pending Chief proposals');
   const proposalsList = makeNode('div', 'team-work-proposals'); proposalsList.dataset.testid = 'team-work-proposals';
+  const automationsHeading = makeNode('h3', 'team-section-title', 'Team Automations & Schedules');
+  const automationsList = makeNode('div', 'team-work-automations'); automationsList.dataset.testid = 'team-work-automations';
   const list = makeNode('div', 'team-work-list'); list.dataset.testid = 'team-work-requests';
   let timer;
   let lastRequests = [];
@@ -71,11 +73,41 @@ export function createTeamWork(teamId, members, { isCurrent, fail, isLocal = tru
     return item;
   }
 
+  const decideAutomation = (requestId, decision) => run(async () => {
+    await api(`/api/assistant-teams/${encodeURIComponent(teamId)}/automations/requests/${encodeURIComponent(requestId)}/decide`, { method: 'POST', body: { decision } });
+    await refresh();
+  });
+
+  function automationCard(entry, isRequest) {
+    const item = makeNode('article', 'team-record team-proposal-card');
+    const head = makeNode('div', 'team-row-head');
+    const label = isRequest
+      ? `/${entry.requestedByRole} requests ${entry.trigger}: ${entry.name}`
+      : `${entry.trigger === 'schedule' ? 'Schedule' : 'Webhook'}: ${entry.name}`;
+    const stateLabel = isRequest ? entry.state.replaceAll('_', ' ') : (entry.enabled ? 'active' : 'paused');
+    head.append(makeNode('strong', '', label), makeNode('span', `team-pill state-${isRequest ? entry.state : (entry.enabled ? 'done' : 'stopped')}`, stateLabel));
+    item.append(head);
+    const meta = [entry.targetRole ? `/${entry.targetRole}` : null, entry.scheduleSummary || (entry.trigger === 'webhook' ? 'Webhook trigger' : null)].filter(Boolean).join(' · ');
+    if (meta) item.append(makeNode('p', 'team-muted', meta));
+    if (isRequest && entry.rationale) item.append(makeNode('p', 'team-muted', entry.rationale));
+    if (isRequest && entry.state === 'pending_chief') {
+      const actions = makeNode('div', 'team-row-actions');
+      const approve = makeButton('Approve', `team-auto-approve-${entry.id}`, decideAutomation(entry.id, 'approve'));
+      approve.className = 'primary compact';
+      const reject = makeButton('Reject', `team-auto-reject-${entry.id}`, decideAutomation(entry.id, 'reject'));
+      reject.className = 'ghost compact';
+      actions.append(approve, reject);
+      item.append(actions);
+    }
+    return item;
+  }
+
   const refresh = async () => {
     if (!isCurrent()) { stop(); return; }
-    const [{ requests }, proposalsRes] = await Promise.all([
+    const [{ requests }, proposalsRes, automationsRes] = await Promise.all([
       api(`/api/team-hub/${encodeURIComponent(teamId)}/requests`),
       api(`/api/team-hub/${encodeURIComponent(teamId)}/proposals`).catch(() => ({ proposals: [] })),
+      isLocal ? api(`/api/assistant-teams/${encodeURIComponent(teamId)}/automations`).catch(() => ({ automations: [], requests: [] })) : Promise.resolve({ automations: [], requests: [] }),
     ]);
     if (!isCurrent()) return;
     lastRequests = requests ?? [];
@@ -84,6 +116,15 @@ export function createTeamWork(teamId, members, { isCurrent, fail, isLocal = tru
     proposalsHeading.hidden = !pending.length;
     proposalsList.hidden = !pending.length;
     proposalsList.replaceChildren(...pending.map(proposalRow));
+    const pendingAutoReqs = (automationsRes.requests ?? []).filter(r => r.state === 'pending_chief');
+    const liveAutos = automationsRes.automations ?? [];
+    const hasAutos = pendingAutoReqs.length > 0 || liveAutos.length > 0;
+    automationsHeading.hidden = !hasAutos;
+    automationsList.hidden = !hasAutos;
+    automationsList.replaceChildren(
+      ...pendingAutoReqs.map(r => automationCard(r, true)),
+      ...liveAutos.map(a => automationCard(a, false)),
+    );
     list.replaceChildren(...(lastRequests.length ? lastRequests.slice(0, 30).map(row) : [makeNode('p', 'team-muted', 'No requests yet. Ask Chief above to start coordinating work.')]));
   };
 
@@ -174,7 +215,9 @@ export function createTeamWork(teamId, members, { isCurrent, fail, isLocal = tru
 
   proposalsHeading.hidden = true;
   proposalsList.hidden = true;
-  node.append(makeNode('h3', 'team-section-title', 'Chief Chat & Dispatch'), form, proposalsHeading, proposalsList, makeNode('h3', 'team-section-title', 'Team Activity'), list);
+  automationsHeading.hidden = true;
+  automationsList.hidden = true;
+  node.append(makeNode('h3', 'team-section-title', 'Chief Chat & Dispatch'), form, proposalsHeading, proposalsList, automationsHeading, automationsList, makeNode('h3', 'team-section-title', 'Team Activity'), list);
   refresh().catch(fail);
   timer = setInterval(() => refresh().catch(fail), 4000);
   function stop() { clearInterval(timer); }
