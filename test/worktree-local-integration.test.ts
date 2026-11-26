@@ -415,6 +415,25 @@ test("failed verification never commits or deletes a worktree", async t => {
   assert.equal(await readFile(path.join(worktree.path, "app.txt"), "utf8"), "failing change\n");
 });
 
+test("integration into a main that cannot be reconciled is a 409 conflict, not a server error", async t => {
+  const { root, base } = await fixture(t);
+  await writeFile(path.join(root, "app.txt"), "upstream\n");
+  git(root, "add", "."); git(root, "commit", "-qm", "upstream");
+  upstreamFixture(root);
+  const worktreeRoot = await mkdtemp(path.join(os.tmpdir(), "jb-integration-blocked-"));
+  t.after(() => rm(worktreeRoot, { recursive: true, force: true }));
+  const project = { id: path.basename(root), path: root, name: "Fixture" } as ProjectRecord;
+  const worktree = await worktrees.createProjectWorktree(project, { name: "Blocked task" }, worktreeRoot);
+  await writeFile(path.join(worktree.path, "other.txt"), "task\n");
+  git(root, "reset", "--mixed", base);
+  await writeFile(path.join(root, "app.txt"), "local work\n");
+  await assert.rejects(worktrees.integrateProjectWorktree(project, worktree.id, {
+    operationId: "66666666-6666-4666-8666-666666666666", title: "feat: blocked task", check: "node -e 'process.exit(0)'",
+  }, worktreeRoot), (error: unknown) => error instanceof worktrees.ProjectWorktreeError && error.status === 409 && /Main reconciliation blocked.*app\.txt.*pr --merge/.test(error.message));
+  assert.equal(git(root, "rev-parse", "HEAD"), base);
+  assert.equal(await readFile(path.join(worktree.path, "other.txt"), "utf8"), "task\n");
+});
+
 test("one operation ID cannot launch verification for two projects concurrently", async t => {
   const roots = [await fixture(t), await fixture(t)];
   const worktreeRoot = await mkdtemp(path.join(os.tmpdir(), "jb-integration-identity-"));

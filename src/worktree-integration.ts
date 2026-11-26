@@ -145,6 +145,7 @@ async function integrate(project: ProjectRecord, worktreeId: string, input: Work
     const changes = await withoutGitIgnored(project.path, await worktreeChanges(project.id, worktreeId, root));
     await unchangedWorktree(project, worktreeId, root, worktreeChangesDigest(changes));
     const candidate = await prepareLocalWorktreeCommit(project.path, env, changes, input.title, input.resolutionTarget, input.mergedBase);
+    if (candidate.status === "blocked") throw new ProjectWorktreeError(409, candidate.message);
     if (candidate.status === "conflict") return { operationId: input.operationId, status: "conflict", worktreeDeleted: false, conflicts: candidate.conflicts, targetCommit: candidate.targetCommit };
     receipt = { projectId: project.id, worktreeId, ownerId: input.ownerId, requestHash, candidate, phase: "verifying", result: null };
     const reserved = db().prepare("INSERT INTO worktree_integrations VALUES(?,?,?,?) ON CONFLICT(operation_id) DO NOTHING")

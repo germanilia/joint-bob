@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.4 — 2026-11-26
+
+- **Worktrees:** When local main cannot take a worktree's changes, merge now answers with a conflict telling the agent to finish with a pull request, instead of a server error that sent an error report.
+
 ## 2.343.3 — 2026-11-26
 
 - **Pi:** A subscription pool tries a profile that offers the selected model before moving to a different model.
