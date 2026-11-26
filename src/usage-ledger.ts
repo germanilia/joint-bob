@@ -230,7 +230,11 @@ function source(db: DatabaseSync, filters: UsageFilters, dimension?: UsageDimens
   const difficultyProject = canonicalProject(db, "x");
   const inventory = !hasNames(db) && (Boolean(filters.classification) || dimension === "classification");
   const difficulty = Boolean(filters.difficulty) || dimension === "difficulty";
-  return `model_usage_events e${inventory ? ` LEFT JOIN usage_inventory i ON ${canonicalProject(db, "i")}=${eventProject} AND i.engine=e.engine AND i.session_id=e.session_id` : ""}${difficulty ? `
+  // node.db has no ANALYZE statistics, so SQLite read a date window across every project through the
+  // project index: every saved request. The home page's spend for today blocked the server 28 s on the
+  // homeserver's 609k requests (2026-11-26); read by time it takes 31 ms.
+  const byTime = Boolean(filters.from || filters.to) && !filters.projectId && !filters.conversationId && !filters.sessionId;
+  return `model_usage_events e${byTime ? " INDEXED BY usage_events_time" : ""}${inventory ? ` LEFT JOIN usage_inventory i ON ${canonicalProject(db, "i")}=${eventProject} AND i.engine=e.engine AND i.session_id=e.session_id` : ""}${difficulty ? `
     LEFT JOIN usage_difficulty d ON d.turn_id=(SELECT x.turn_id FROM usage_difficulty x WHERE ${difficultyProject}=${eventProject} AND x.conversation_id=e.conversation_id AND x.session_id=e.session_id AND x.engine=e.engine AND json_extract(x.payload,'$.endedAt') IS NOT NULL AND json_extract(x.payload,'$.status') IN ('classified','inherited') AND e.occurred_at>=json_extract(x.payload,'$.startedAt') AND e.occurred_at<=json_extract(x.payload,'$.endedAt') ORDER BY json_extract(x.payload,'$.startedAt') DESC LIMIT 1)` : ""}`;
 }
 function unavailableInventory(db: DatabaseSync, filters: UsageFilters): number {

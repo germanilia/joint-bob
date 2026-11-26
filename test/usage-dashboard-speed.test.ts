@@ -80,3 +80,18 @@ test("a read-only conversation's usage is looked up by its session, not by scann
   const totals = usageTotals({ projectIds: ["project"], projectId: "project", sessionId: "mine" });
   assert.equal(totals.input, 10);
 });
+
+// Without ANALYZE statistics SQLite read a date window across all projects through the project
+// index, every saved request: the home page's spend for today blocked the homeserver for 28 s.
+test("a date window across every project is read by time, and counts only that window", () => {
+  saveUsageEvent(event("before", 1), "node");
+  saveUsageEvent(event("inside", 3), "node");
+  saveUsageEvent(event("other-project", 4, { projectId: "other" }), "node");
+  saveUsageEvent(event("after", 9), "node");
+  const window = { projectIds: ["project", "other"], from: "2026-03-01T10:02:00.000Z", to: "2026-03-01T10:05:00.000Z" };
+
+  const plan = usageBreakdownPlan(window, "day");
+  assert.ok(plan.some((step) => /USING INDEX usage_events_time/.test(step)), plan.join(" | "));
+  assert.equal(usageTotals(window).requests, 2);
+  assert.equal(usageTotals({ ...window, projectIds: ["project"] }).requests, 1);
+});
