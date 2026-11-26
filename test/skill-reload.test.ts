@@ -40,7 +40,7 @@ test("real Pi sessions reload shared and configured skills without losing sessio
     assert.equal(handle.session.resourceLoader.getSkills().skills.find((skill) => skill.name === "review")?.description, "shared second");
     assert.match(handle.session.systemPrompt, /shared second/);
     assert.equal(handle.session.sessionId, initial.sessionId);
-    assert.equal(handle.session.model, initial.model);
+    assert.deepEqual(handle.session.model, initial.model);
     assert.deepEqual(handle.session.messages, initial.messages);
     assert.deepEqual(handle.session.getActiveToolNames(), ["read"]);
 
