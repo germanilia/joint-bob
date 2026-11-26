@@ -29,10 +29,11 @@ export const CLOSEOUT_RULE_QUESTION: SystemOneQuestion = {
     skip: "Unsupported inference, secret, one-off detail, project-specific detail marked general, or not a useful reusable lesson.",
   },
 };
-const draftSchema = z.object({
+/** The generation model's answer. Extra keys it adds (such as a "scope_note") are dropped, not fatal. */
+export const draftSchema = z.object({
   description: z.string().trim().min(1).max(1000),
-  rules: z.array(z.object({ scope: z.enum(["project", "general"]), subject: z.string().refine(isKnowledgeSlug), text: z.string().trim().min(1).max(320), evidence: z.string().trim().min(1).max(240) }).strict()).max(3),
-}).strict();
+  rules: z.array(z.object({ scope: z.enum(["project", "general"]), subject: z.string().refine(isKnowledgeSlug), text: z.string().trim().min(1).max(320), evidence: z.string().trim().min(1).max(240) })).max(3),
+});
 
 /** A closeout that cannot succeed until Settings change (no decision model, no key for it), or
     ever (too long for it). Retrying it every sweep only repeated the same failure. */
