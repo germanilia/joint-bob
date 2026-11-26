@@ -82,7 +82,7 @@ async function runtimeAllowed(request:Request,db:DatabaseSync,local:string,peer:
  if(request.path==='/sessions/runtime-snapshot')return Array.isArray(body?.leases)&&body.leases.every((lease:{engine:unknown;sessionId:unknown})=>sessionShared(db,local,peer,lease.engine,lease.sessionId));
  if(request.path==='/sessions/ownership')return sessionShared(db,local,peer,request.query.engine,request.query.sessionId);
  if(request.path==='/sessions/ownership/apply')return sessionShared(db,local,peer,body?.record?.engine,body?.record?.sessionId);
- if(request.path==='/sessions/takeback'&&(body?.action==='notice'||body?.action==='close'||body?.action==='decline'))return isTrustedTwin(db,local,peer);
+ if(request.path==='/sessions/takeback'&&(body?.action==='notice'||body?.action==='close'||body?.action==='decline'||body?.action==='accept'))return isTrustedTwin(db,local,peer);
  for(const key of [request.query.sessionId,request.query.conversationId,body?.sessionId,body?.conversationId,body?.record?.sessionId]){
   const privacy=typeof key==='string'?conversationPrivacy(key,db):undefined;
   if(privacy&&!privateConversationMayTravel(db,local,peer,privacy))return false;
