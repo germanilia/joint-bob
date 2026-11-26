@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.1 — 2026-11-26
+
+- **Files:** A file link in a conversation that runs in a worktree now opens the worktree's file. A file the agent created there and the project folder does not have yet used to answer "File not found" and send an error report, and a file both folders have opened the project folder's copy. When the worktree has been removed, links open the project folder's copy as before.
+
 ## 2.344.0 — 2026-11-26
 
 - **Assistant Teams:** Team agents now run in Auto mode by default so Bob picks the right model for each step unless a specific model is pinned.
