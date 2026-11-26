@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.5 — 2026-11-26
+
+- **Error reports:** A background task supervisor answer that arrives late because the server itself was busy no longer sends a backend error report. It stays in the local log as a warning; failed supervisor requests are still reported.
+
 ## 2.343.4 — 2026-11-26
 
 - **Worktrees:** When local main cannot take a worktree's changes, merge now answers with a conflict telling the agent to finish with a pull request, instead of a server error that sent an error report.

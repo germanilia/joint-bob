@@ -73,7 +73,9 @@ export function requestSupervisor(socketPath, token, body, timeoutMs = 15000) {
       const chunks = []; let size = 0;
       response.on("data", chunk => { size += chunk.length; if (size > 1024 * 1024) request.destroy(new Error("Supervisor response exceeds 1 MiB")); else chunks.push(chunk); });
       response.on("end", () => {
-        if (Date.now() - startedAt > 3000) console.error(`[supervisor-client] ${action} responded ${response.statusCode} after ${Date.now() - startedAt}ms on a ${reusedSocket ? "reused" : "fresh"} socket`);
+        // A warning, not an error: the time includes this process's own event-loop stalls,
+        // and the supervisor traces its side. A console.error would be sent as an error report.
+        if (Date.now() - startedAt > 3000) console.warn(`[supervisor-client] ${action} responded ${response.statusCode} after ${Date.now() - startedAt}ms on a ${reusedSocket ? "reused" : "fresh"} socket`);
         let value;
         try { value = JSON.parse(Buffer.concat(chunks).toString()); } catch { reject(new Error("Malformed supervisor response")); return; }
         if (!value || typeof value !== "object" || (!("result" in value) && typeof value.error !== "string")) { reject(new Error("Malformed supervisor response")); return; }
