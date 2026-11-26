@@ -615,6 +615,7 @@ for (const stage of ["turn", "preflight"] as const) {
     }
     const log = process.env.JOINT_BOB_TEST_ENGINE_LOG;
     delete process.env.JOINT_BOB_TEST_ENGINE_LOG;
+    const errors = context.mock.method(console, "error");
     try {
       opened.socket.send(JSON.stringify({ type: "prompt", message: "first" }));
       await started;
@@ -625,6 +626,7 @@ for (const stage of ["turn", "preflight"] as const) {
       await waitFor(opened.messages, () => !harnessPromptQueueIsDraining(`${fixture.projectId}:${sessionId}`));
       assert.equal(prompt.mock.callCount(), stage === "turn" ? 1 : 0, "no new turn may start behind the update fence");
       assert.equal(listQueuedPrompts(`${fixture.projectId}:${sessionId}`).length, 1, "undispatched prompt stays durable for restart");
+      assert.deepEqual(errors.mock.calls.map((call) => String(call.arguments[0])).filter((line) => line.includes("failed in")), [], "the update fence is not a chat failure");
     } finally {
       release(); flags.updatePreparing = false; process.env.JOINT_BOB_TEST_ENGINE_LOG = log;
       clearQueuedPrompts(`${fixture.projectId}:${sessionId}`);

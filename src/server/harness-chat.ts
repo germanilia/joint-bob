@@ -1273,7 +1273,9 @@ export function drainHarnessPromptQueue(connection: HarnessChatConnection): Prom
   drainStops.set(key, stop);
   const drain = relayWaitsEndOn(stop.signal, () => drainLoop(connection)).catch(async error => {
     if (error instanceof ConversationOwnershipError) throw error;
-    if (promptQueuePaused(key)) return;
+    // An update stopped the turn or fenced the next one; update recovery resumes the queue after the restart.
+    // fix: "Prompt queue failed ... This operation was aborted" was reported for each turn an update stopped (Mac, 2026-11-26).
+    if (promptQueuePaused(key) || flags.updatePreparing) return;
     const state = await getAutoRespond(connection.project.id, connection.conversationId);
     if (state?.status !== "active") throw error;
     await retryAutoResponse(connection, error);
