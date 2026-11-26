@@ -68,6 +68,7 @@ import { broadcastToProject, chatErrorMessage, send } from "./realtime.js";
 import { autoRespondHeldBack } from "./control-center-watch.js";
 import { withGuardianBypass } from "../guardian/bypass.js";
 import { cancelGuardianReviews, decideGuardianReview, onGuardianEvent, pendingGuardianReviews } from "../guardian/reviews.js";
+import { isInternalSession } from "../internal-sessions.js";
 import { conversationLiveModel, requestDigestQuietly, summaryPolicyNow, summaryPolicyView } from "./conversation-digest-runner.js";
 import { storedDigest } from "../conversation-digest.js";
 import { attachHarnessClient, compactHarnessSession, detachHarnessClient, disposeHarnessSession, findHarnessSession, harnessSessionBusy, harnessTurnBusy, historyBeforeLiveTurn, markHarnessInput, openHarnessSession, sendHarnessStatus, type SharedHarnessSession, type TurnConnectionView } from "./harness-sessions.js";
@@ -268,7 +269,11 @@ onGuardianEvent((event) => {
   for (const connection of harnessChatConnections) {
     if (connection.project.id === event.projectId && connection.conversationId === event.conversationId) send(connection.socket, payload);
   }
-  if (event.type === "reviews") broadcastToProject(event.projectId, { type: "guardianReviewsChanged", projectId: event.projectId, conversationId: event.conversationId, titles: reviews.map(({ title }) => title) });
+  if (event.type === "reviews") {
+    const backgroundReview = isInternalSession(event.conversationId) ? reviews.find((review) => !review.team) : undefined;
+    broadcastToProject(event.projectId, { type: "guardianReviewsChanged", projectId: event.projectId, conversationId: event.conversationId,
+      titles: reviews.map(({ title }) => title), ...(backgroundReview ? { backgroundReviewId: backgroundReview.id } : {}) });
+  }
 });
 
 function publishGoal(connection: HarnessChatConnection, goal: ConversationGoal | undefined, announce = true): void {
@@ -440,6 +445,19 @@ async function preparePoolSwitch(session: HarnessSession, pool: TurnSubscription
   }
 }
 
+async function preferPiProfilesWithModel(pool: TurnSubscriptionPool, { provider, modelId }: HarnessModelSettings): Promise<PoolProfileContext[]> {
+  if (pool.harnessId !== "pi" || profileProviderForRuntime(provider) !== "pi") return pool.candidates;
+  const { piProfileModelKeys } = await import("../pi-service.js");
+  const { localProviderProfile } = await import("../provider-profiles/store.js");
+  const local = await getClusterNode();
+  const matches = await Promise.all(pool.candidates.map(async (candidate) => {
+    if (candidate.provider !== "pi" || candidate.poolOwnerNodeId && candidate.poolOwnerNodeId !== local.id) return false;
+    const profile = candidate.profile ?? localProviderProfile(candidate.profileId);
+    return profile ? (await piProfileModelKeys(profile)).has(`${provider}/${modelId}`) : false;
+  }));
+  return [...pool.candidates.filter((_, i) => matches[i]), ...pool.candidates.filter((_, i) => !matches[i])];
+}
+
 /**
  * Runs one prompt on a subscription pool, member by member (see runPoolAttempts). A member taking
  * over mid-turn gets a continuation prompt instead of the original, which already ran.
@@ -447,8 +465,9 @@ async function preparePoolSwitch(session: HarnessSession, pool: TurnSubscription
 export async function promptOnSubscriptionPool(session: HarnessSession, pool: TurnSubscriptionPool, initial: HarnessModelSettings,
   settingsFor: (candidate: PoolProfileContext) => HarnessModelSettings, input: HarnessPrompt, announce: (candidate: PoolProfileContext) => void): Promise<void> {
   if (!session.checkpointPoolAttempt || !session.restorePoolAttempt) throw new Error("This harness cannot safely retry a subscription pool attempt");
+  const candidates = await preferPiProfilesWithModel(pool, initial);
   let attempts = 0;
-  await runPoolAttempts(pool.candidates, profileProviderForRuntime(initial.provider), async (candidate, continuing) => {
+  await runPoolAttempts(candidates, profileProviderForRuntime(initial.provider), async (candidate, continuing) => {
     const switching = attempts++ > 0 || candidate.provider !== "pi" && candidate.provider !== profileProviderForRuntime(initial.provider);
     let started = false;
     const unsubscribe = session.subscribe((event) => {
@@ -1255,7 +1274,9 @@ export function drainHarnessPromptQueue(connection: HarnessChatConnection): Prom
   drainStops.set(key, stop);
   const drain = relayWaitsEndOn(stop.signal, () => drainLoop(connection)).catch(async error => {
     if (error instanceof ConversationOwnershipError) throw error;
-    if (promptQueuePaused(key)) return;
+    // An update stopped the turn or fenced the next one; update recovery resumes the queue after the restart.
+    // fix: "Prompt queue failed ... This operation was aborted" was reported for each turn an update stopped (Mac, 2026-11-26).
+    if (promptQueuePaused(key) || flags.updatePreparing) return;
     const state = await getAutoRespond(connection.project.id, connection.conversationId);
     if (state?.status !== "active") throw error;
     await retryAutoResponse(connection, error);
@@ -1339,8 +1360,56 @@ function markRoutingManual(connection: HarnessChatConnection): void {
   publishRoutingMode(connection);
 }
 
+export async function listConversationPiModels(request: Omit<SubscriptionPoolRequest, "engine" | "provider">) {
+  const models = await listHarnessModels("pi");
+  const { piProfileModelKeys } = await import("../pi-service.js");
+  const { localProviderProfile } = await import("../provider-profiles/store.js");
+  const local = await getClusterNode();
+  const catalogs = new Map<string, ReturnType<typeof piProfileModelKeys>>();
+  const catalogFor = (profile: import("../provider-profiles/store.js").ProviderProfile) => {
+    let catalog = catalogs.get(profile.id);
+    if (!catalog) { catalog = piProfileModelKeys(profile); catalogs.set(profile.id, catalog); }
+    return catalog;
+  };
+  const providers = [...new Set(models.map((model) => model.provider))];
+  const allowed = await Promise.all(providers.map(async (provider) => {
+    const preferred = profileProviderForRuntime(provider);
+    const pool = await resolveSubscriptionPool({ ...request, engine: "pi", provider });
+    const offered = models.filter((model) => model.provider === provider);
+    if (!pool) {
+      const profile = await projectProviderProfile(request.projectId, request.conversationId, provider, "pi", { allowMissingSignIn: true });
+      const keys = profile && await catalogFor(profile);
+      return offered.filter((model) => keys?.has(`${provider}/${model.id}`));
+    }
+    const keys = new Set<string>();
+    for (const candidate of pool.candidates) {
+      if (candidate.provider !== preferred && candidate.provider !== "pi") continue;
+      // Remote subscription hosts can serve their own provider; Pi profiles never run remotely.
+      if (candidate.poolOwnerNodeId && candidate.poolOwnerNodeId !== local.id) {
+        if (candidate.provider !== "pi") return offered;
+        continue;
+      }
+      const profile = candidate.profile ?? localProviderProfile(candidate.profileId);
+      if (profile) for (const key of await catalogFor(profile)) keys.add(key);
+    }
+    return offered.filter((model) => keys.has(`${provider}/${model.id}`));
+  }));
+  const visible = new Set(allowed.flat());
+  return models.filter((model) => visible.has(model));
+}
+
+function chatPiModels(connection: HarnessChatConnection) {
+  return withPromptProfile(connection, connection, () => listConversationPiModels({
+    projectId: connection.project.id, workspaceId: connection.project.type!, conversationId: connection.conversationId,
+    accountId: actingAccount()?.accountId, usage: "interactive", fixedProfile: false,
+  }));
+}
+
 async function models(connection: HarnessChatConnection): Promise<void> {
-  const groups = await Promise.all(listHarnesses().filter((adapter) => adapter.models).map(async (adapter) => (await listHarnessModels(adapter.id)).map((model) => ({ ...model, harnessId: adapter.id }))));
+  const groups = await Promise.all(listHarnesses().filter((adapter) => adapter.models).map(async (adapter) => {
+    const listed = adapter.id === "pi" ? await chatPiModels(connection) : await listHarnessModels(adapter.id);
+    return listed.map((model) => ({ ...model, harnessId: adapter.id }));
+  }));
   send(connection.socket, { type: "models", models: groups.flat() });
 }
 
@@ -1449,7 +1518,13 @@ async function controls(connection: HarnessChatConnection, message: ReturnType<t
     }
     const provider = message.provider ?? getHarness(connection.engine).configuration?.fixedProvider;
     if (!provider || !message.modelId) throw new Error("Model is required");
-    const settings = { ...connection.shared.session.settings(), provider, modelId: message.modelId, ...(message.level ? { reasoning: message.level } : {}) };
+    if (connection.engine === "pi" && !(await chatPiModels(connection)).some((model) => model.provider === provider && model.id === message.modelId)) {
+      throw new Error(`Model is not available with this conversation's connections: ${provider}/${message.modelId}`);
+    }
+    const current = connection.shared.session.settings();
+    let settings = { ...current, provider, modelId: message.modelId };
+    if (message.level) settings.reasoning = message.level;
+    else if (connection.engine === "pi") settings = await offeredReasoning(settings, current);
     await (await getHarnessRuntime(connection.engine)).validateSettings(settings);
     await connection.shared.session.configure(settings);
     recordQueueSettings(queueKey(connection), currentSettings(connection));
@@ -1466,7 +1541,7 @@ async function controls(connection: HarnessChatConnection, message: ReturnType<t
     recordQueueSettings(queueKey(connection), currentSettings(connection)); markRoutingManual(connection); sendHarnessStatus(connection.shared); return true;
   }
   if (message.type === "cycleModel") {
-    const available = await listHarnessModels(connection.engine);
+    const available = connection.engine === "pi" ? await chatPiModels(connection) : await listHarnessModels(connection.engine);
     if (!available.length) throw new Error("No models are available");
     const settings = connection.shared.session.settings();
     const index = available.findIndex((model) => model.provider === settings.provider && model.id === settings.modelId);
