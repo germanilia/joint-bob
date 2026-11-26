@@ -14,7 +14,7 @@ import { getRuntimePeer, runtimeFetch } from "../runtime-peers.js";
 import { ConversationOwnershipError } from "../../conversation-ownership.js";
 import { listHarnessSessions } from "../../harnesses.js";
 import { getProject } from "../../store.js";
-import { projectWorktreeRoot, worktreeRoot } from "../../project-worktrees.js";
+import { expectedWorktreePath, projectWorktreeRoot, ProjectWorktreeError, worktreeRoot } from "../../project-worktrees.js";
 import { TICKET_BASELINE_DIR, TICKET_MERGE_DIR } from "../../task-workspaces.js";
 import type { ProjectRecord } from "../../types.js";
 import { sendError } from "../http-auth.js";
@@ -159,8 +159,36 @@ export async function resolutionRoot(projectId: string, projectPath: string): Pr
   return await realpath(projectPath);
 }
 
-async function projectFileResolution(projectId: string, requestedPath: string): Promise<{ path: string }> {
+async function projectFileResolution(projectId: string, requestedPath: string, worktreeId: string): Promise<{ path: string }> {
+  const pathValue = requestedPath.trim();
+  if (worktreeId && pathValue && !path.isAbsolute(pathValue) && !portablePathParts(pathValue).includes("..")) {
+    const inWorktree = await worktreeFileResolution(projectId, pathValue, worktreeId);
+    if (inWorktree) return inWorktree;
+  }
   return { path: (await resolveProjectFile(projectId, requestedPath)).relativePath };
+}
+
+/**
+ * A conversation in a worktree names files relative to that worktree, which can hold files the project folder
+ * lacks. The absolute path is returned so the file links open it through the worktree branch of resolveProjectFile.
+ * Null sends the caller back to the project folder: the worktree is gone (removed after its run) or lacks the file.
+ */
+async function worktreeFileResolution(projectId: string, requestedPath: string, worktreeId: string): Promise<{ path: string } | null> {
+  if (!await getProject(projectId)) throw new ProjectFileError(404, "Project not found");
+  let root: string;
+  try { root = await realpath(expectedWorktreePath(projectId, worktreeId)); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  try {
+    const direct = await verifiedProjectFile(root, path.resolve(root, requestedPath.replace(/\\/g, path.sep)));
+    return { path: (direct ?? await searchProjectFile(root, requestedPath)).resolved };
+  } catch (error) {
+    // Not found here, or a link out of the worktree (its node_modules points at the project folder's).
+    if (error instanceof ProjectFileError && [403, 404].includes(error.status)) return null;
+    throw error;
+  }
 }
 
 function projectFileLinks(projectId: string, relativePath: string, nodeId?: string): ProjectFileResolution {
@@ -369,10 +397,11 @@ async function updateProjectFileContent(projectId: string, requestedPath: string
   return { path: relativePath, version: fileVersion(nextBytes) };
 }
 
-async function proxyProjectFileResolution(peer: ClusterPeer, projectId: string, requestedPath: string): Promise<{ path: string }> {
+async function proxyProjectFileResolution(peer: ClusterPeer, projectId: string, requestedPath: string, worktreeId: string): Promise<{ path: string }> {
   const url = new URL("/api/cluster/project-file-resolution", peer.url);
   url.searchParams.set("projectId", projectId);
   url.searchParams.set("path", requestedPath);
+  if (worktreeId) url.searchParams.set("worktreeId", worktreeId);
   // A peer that drops off the network is a 503 the person can act on, not a 500 "fetch failed".
   const routed = await runtimeFetch(url, { signal: AbortSignal.timeout(30_000) }).catch((error: unknown) => {
     if (isPeerUnreachable(error)) throw new ProjectFileError(503, "The machine holding this file did not answer; try again when it is back");
@@ -410,9 +439,10 @@ app.get("/api/cluster/project-file-resolution", async (request, response, next) 
     if (!response.locals.machineAuth) { sendError(response, 401, "Unauthorized"); return; }
     const projectId = typeof request.query.projectId === "string" ? request.query.projectId : "";
     const requestedPath = typeof request.query.path === "string" ? request.query.path : "";
-    response.json(await projectFileResolution(projectId, requestedPath));
+    const worktreeId = typeof request.query.worktreeId === "string" ? request.query.worktreeId : "";
+    response.json(await projectFileResolution(projectId, requestedPath, worktreeId));
   } catch (error) {
-    if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
+    if (error instanceof ProjectFileError || error instanceof ProjectWorktreeError) { sendError(response, error.status, error.message); return; }
     next(error);
   }
 });
@@ -430,18 +460,20 @@ app.get("/api/projects/:projectId/file-resolution", async (request, response, ne
   try {
     const requestedPath = typeof request.query.path === "string" ? request.query.path : "";
     const requestedNodeId = typeof request.query.nodeId === "string" ? request.query.nodeId : "";
+    // The conversation's worktree, when it runs in one: its agent names files relative to that folder.
+    const worktreeId = typeof request.query.worktreeId === "string" ? request.query.worktreeId : "";
     const local = await getClusterNode();
     if (requestedNodeId && requestedNodeId !== local.id) {
       const peer = await getRuntimePeer(requestedNodeId);
       if (!peer) { sendError(response, 404, "File node not found"); return; }
-      const resolution = await proxyProjectFileResolution(peer, request.params.projectId, requestedPath);
+      const resolution = await proxyProjectFileResolution(peer, request.params.projectId, requestedPath, worktreeId);
       response.json(projectFileLinks(request.params.projectId, resolution.path, requestedNodeId));
       return;
     }
-    const resolution = await projectFileResolution(request.params.projectId, requestedPath);
+    const resolution = await projectFileResolution(request.params.projectId, requestedPath, worktreeId);
     response.json(projectFileLinks(request.params.projectId, resolution.path, undefined));
   } catch (error) {
-    if (error instanceof ProjectFileError) { sendError(response, error.status, error.message); return; }
+    if (error instanceof ProjectFileError || error instanceof ProjectWorktreeError) { sendError(response, error.status, error.message); return; }
     next(error);
   }
 });
