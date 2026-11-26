@@ -244,6 +244,11 @@ export interface LocalWorktreeConflict {
   digest: string;
   conflicts: string[];
 }
+/** Local main cannot take the task; the message says why and what to do instead. */
+export interface LocalMainBlocked {
+  status: "blocked";
+  message: string;
+}
 
 /** A stable identifier for the exact task contribution, including modes and deletions. */
 export function worktreeChangesDigest(changes: WorktreeChanges): string {
@@ -322,14 +327,14 @@ async function resolveMergedBaseCommit(projectPath: string, git: Git, gitBase: s
 }
 
 /** Prepares a task-only commit without changing HEAD, the shared index, or working files. */
-export async function prepareLocalWorktreeCommit(projectPath: string, env: NodeJS.ProcessEnv, changes: WorktreeChanges, title: string, resolutionTarget?: string, mergedBase?: MergedWorktreeBase): Promise<LocalWorktreeCandidate | LocalWorktreeConflict> {
+export async function prepareLocalWorktreeCommit(projectPath: string, env: NodeJS.ProcessEnv, changes: WorktreeChanges, title: string, resolutionTarget?: string, mergedBase?: MergedWorktreeBase): Promise<LocalWorktreeCandidate | LocalWorktreeConflict | LocalMainBlocked> {
   validateLocalChanges(changes, title);
   const git = projectGit(projectPath, env);
   let targetCommit = await localMain(git, projectPath);
   const requiredBase = mergedBase?.mergedCommit && COMMIT.test(mergedBase.mergedCommit) ? mergedBase.mergedCommit : changes.gitBase;
   if (requiredBase && (await git(["merge-base", "--is-ancestor", requiredBase, targetCommit])).code !== 0) {
     const reconciliation = await reconcileWorktreeMain(projectPath, env, requiredBase);
-    if (reconciliation.status === "blocked") throw new Error(`Main reconciliation blocked: ${reconciliation.reason}.${reconciliation.conflicts.length ? ` Paths: ${reconciliation.conflicts.join(", ")}.` : ""} ${reconciliation.next ?? BLOCKED_MAIN_NEXT_STEP}`);
+    if (reconciliation.status === "blocked") return { status: "blocked", message: `Main reconciliation blocked: ${reconciliation.reason}.${reconciliation.conflicts.length ? ` Paths: ${reconciliation.conflicts.join(", ")}.` : ""} ${reconciliation.next ?? BLOCKED_MAIN_NEXT_STEP}` };
     targetCommit = await localMain(git, projectPath);
   }
   if (resolutionTarget !== undefined && resolutionTarget !== targetCommit) throw new Error("Main changed since conflict resolution; inspect the new revision before retrying");
