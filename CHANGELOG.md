@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.343.0 — 2026-11-26
 
 - **Learning:** Every conversation marked done is learned from again, with no approval step. Good and Bad ratings guide the review. "Not important" now means Bob decides whether the conversation went well or badly, and still learns from it.
 - **Learning:** Lessons are installed straight away instead of waiting in Rule suggestions. Project lessons go to the project's `.agents/knowledge/`. General lessons go to Joint Bob's `general-knowledge/` folder, ship with the next release, and reach every agent in every project. Each rule names the conversation it came from, so it can be reviewed and removed.
