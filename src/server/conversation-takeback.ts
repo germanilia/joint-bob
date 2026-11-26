@@ -51,9 +51,9 @@ function notifyTwin(peer: ClusterPeer, body: object): void {
   }).catch(error => console.warn(`Could not update takeback notice on ${peer.name}:`, error));
 }
 
-function decline(id: string): boolean {
+function decide(id: string, action: "accept" | "decline"): boolean {
   const request = requests.get(id);
-  if (!request?.window.decline()) return false;
+  if (!request || !request.window[action]()) return false;
   closeNotice(id);
   for (const twin of request.twins) notifyTwin(twin, { action: "close", id });
   return true;
@@ -63,7 +63,16 @@ export async function waitForOwnerTakeback(projectId: string, record: Conversati
   const begin = await peerRequest(owner, { action: "begin", projectId, record, title }, signal);
   if (!begin.ok) throw new ConversationTransferError(`Could not notify ${owner.name}: ${(await begin.json()).error ?? begin.status}`);
   const { id, waitMs } = z.object({ id: z.string().uuid(), waitMs: z.number().int().min(0).max(TAKEBACK_WINDOW_MS) }).parse(await begin.json());
-  await delay(waitMs, undefined, { signal });
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    await delay(Math.min(1000, deadline - Date.now()), undefined, { signal });
+    const status = await peerRequest(owner, { action: "status", projectId, id }, signal);
+    if (!status.ok) {
+      await delay(Math.max(0, deadline - Date.now()), undefined, { signal });
+      break;
+    }
+    if ((await status.json()).result !== "pending") break;
+  }
   const finish = await peerRequest(owner, { action: "finish", projectId, id }, signal);
   if (!finish.ok) throw new ConversationTransferError(`Takeback did not complete: ${(await finish.json()).error ?? finish.status}`);
 }
@@ -72,9 +81,11 @@ const id = z.string().uuid();
 const machineRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("begin"), projectId: z.string().min(1), record: ownershipSchema, title: z.string().max(120) }),
   z.object({ action: z.literal("finish"), projectId: z.string().min(1), id }),
+  z.object({ action: z.literal("status"), projectId: z.string().min(1), id }),
   z.object({ action: z.literal("notice"), notice: noticeSchema, waitMs: z.number().int().min(0).max(TAKEBACK_WINDOW_MS) }),
   z.object({ action: z.literal("close"), id }),
   z.object({ action: z.literal("decline"), id }),
+  z.object({ action: z.literal("accept"), id }),
 ]);
 
 async function beginTakeback(payload: Extract<z.infer<typeof machineRequest>, { action: "begin" }>, sender: string) {
@@ -103,11 +114,12 @@ app.post(route, async (request, response, next) => {
     const sender = response.locals.machineNodeId as string;
     const payload = machineRequest.parse(request.body);
     if (payload.action === "begin") { response.json(await beginTakeback(payload, sender)); return; }
-    if (payload.action === "finish") {
+    if (payload.action === "finish" || payload.action === "status") {
       const pending = requests.get(payload.id);
       if (!pending || pending.projectId !== payload.projectId || pending.destinationId !== sender) { sendError(response, 409, "Takeback request is no longer available"); return; }
-      const current = await getConversationOwnership(pending.record.engine, pending.record.sessionId);
       const result = pending.window.result();
+      if (payload.action === "status") { response.json({ result }); return; }
+      const current = await getConversationOwnership(pending.record.engine, pending.record.sessionId);
       if (result !== "elapsed" || !sameConversationOwnership(current, pending.record)) {
         sendError(response, 409, result === "declined" ? "The controlling node declined the request" : "Takeback is still pending or ownership changed"); return;
       }
@@ -119,7 +131,7 @@ app.post(route, async (request, response, next) => {
       if (notices.get(payload.id)?.ownerId === sender) closeNotice(payload.id);
       response.json({ ok: true }); return;
     }
-    if (!requests.get(payload.id)?.twins.some(twin => twin.id === sender) || !decline(payload.id)) {
+    if (!requests.get(payload.id)?.twins.some(twin => twin.id === sender) || !decide(payload.id, payload.action)) {
       sendError(response, 409, "Takeback request is no longer pending"); return;
     }
     response.json({ ok: true });
@@ -134,17 +146,18 @@ app.get("/api/conversation-takebacks", requireAdmin, (_request, response) => {
     .map(({ notice, deadline }) => ({ ...notice, waitMs: Math.max(0, deadline - Date.now()) })) });
 });
 
-app.post("/api/conversation-takebacks/:id/decline", requireAdmin, async (request, response, next) => {
+app.post("/api/conversation-takebacks/:id/:action", requireAdmin, async (request, response, next) => {
   try {
     const requestId = id.parse(request.params.id);
+    const action = z.enum(["accept", "decline"]).parse(request.params.action);
     const entry = notices.get(requestId);
     if (!entry) { sendError(response, 409, "Takeback request is no longer pending"); return; }
     if (entry.ownerId === (await getClusterNode()).id) {
-      if (!decline(requestId)) { sendError(response, 409, "Takeback request is no longer pending"); return; }
+      if (!decide(requestId, action)) { sendError(response, 409, "Takeback request is no longer pending"); return; }
     } else {
       const owner = await getRuntimePeer(entry.ownerId);
       if (!owner) { sendError(response, 409, "The controlling node is unavailable"); return; }
-      const reply = await peerRequest(owner, { action: "decline", id: requestId });
+      const reply = await peerRequest(owner, { action, id: requestId });
       if (!reply.ok) { sendError(response, reply.status, (await reply.json()).error); return; }
       closeNotice(requestId);
     }

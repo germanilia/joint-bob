@@ -127,9 +127,14 @@ test("the owning node and its twin can veto takeback; silence transfers ownershi
     assert.match(rejected.body.error!, /declined/);
     await waitForOwnershipOn(environment, homeserver, mac, "lock-session", homeserver.nodeId);
 
-    const unanswered = requestTakeback();
-    await Promise.all([ownerNext("takebackRequested"), twinNext("takebackRequested")]);
-    const completed = await unanswered;
+    const accepted = requestTakeback();
+    const [, acceptNotice] = await Promise.all([ownerNext("takebackRequested"), twinNext("takebackRequested")]);
+    const started = Date.now();
+    const approval = await api(twin, twinAccount, "POST", `/conversation-takebacks/${acceptNotice.id}/accept`);
+    assert.equal(approval.status, 200, JSON.stringify(approval.body));
+    assert.equal((await ownerNext("takebackClosed")).id, acceptNotice.id);
+    const completed = await accepted;
+    assert.ok(Date.now() - started < 15_000, "acceptance should not wait for the 30-second window");
     assert.equal(completed.status, 200, JSON.stringify(completed.body));
     assert.equal(completed.body.ownership?.ownerNodeId, mac.nodeId);
     await waitForOwnershipOn(environment, mac, homeserver, "lock-session", mac.nodeId);
