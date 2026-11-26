@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { DEFAULT_SUMMARY_INSTRUCTIONS, coveredMessages, digestIsStale, digestMaterial, digestMessages, digestPrompt, parseDigestAnswer, parseDigestReply, turnCount, type ConversationDigest, type DigestKnowledge, type DigestMessage } from "../src/conversation-digest.js";
-import { listProposals, normalizedRuleText, readNotes } from "../src/project-knowledge.js";
+import { listProposals, readNotes, readSubjects } from "../src/project-knowledge.js";
 import { routedSummaryModel } from "../src/conversation-summary-routing.js";
 import { claudeProjectDir } from "../src/session-paths.js";
 import { api, projectNamed, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
@@ -65,12 +65,12 @@ test("the prompt folds new messages into the current summary and keeps the panel
   assert.equal(parseDigestAnswer("  plain  "), "plain");
 });
 
-test("rule prompts use remaining capacity, reject generic advice and include proposal history", () => {
-  const knowledge: DigestKnowledge = { subjects: [], otherNotes: [], pending: ["a", "b", "c", "d"], previouslySuggested: ["Use the staging tunnel"], ownProblems: [] };
-  assert.match(digestPrompt(undefined, knowledge), /Write at most 1 rule lines/);
-  knowledge.pending.push("e");
+// Rules are installed without a person, so old proposals waiting for one no longer use up the writer's rule lines.
+test("rule prompts say rules install directly, reject generic advice and include proposal history", () => {
+  const knowledge: DigestKnowledge = { subjects: [], otherNotes: [], pending: ["a", "b", "c", "d", "e"], previouslySuggested: ["Use the staging tunnel"], ownProblems: [] };
   const prompt = digestPrompt(undefined, knowledge);
-  assert.match(prompt, /Write at most 0 rule lines/);
+  assert.match(prompt, /Write at most 3 rule lines/);
+  assert.match(prompt, /installed without a person reviewing it/);
   assert.match(prompt, /Skip generic engineering advice/);
   assert.match(prompt, /including paraphrases:\n- Use the staging tunnel/);
 });
@@ -171,9 +171,9 @@ test("the digest route folds new messages into the summary and follows the node'
     assert.doesNotMatch(firstCall.instructions, /Current summary:/);
     assert.match(firstCall.instructions, /No rules are waiting\./);
     assert.deepEqual(readNotes(project.path).map((note) => [note.conversationId, note.problems]), [[conversationId, [{ subject: "certs", text: "rotation hit a stale lock" }]]], "the problem is recorded in the project's folder");
-    const proposals = listProposals(project.path);
-    assert.deepEqual(proposals.map((proposal) => [proposal.action, proposal.subject, proposal.text, proposal.source]), [["add", "certs", "Remove the stale lock before rotating", conversationId]]);
-    assert.equal(normalizedRuleText(proposals[0].text), "remove the stale lock before rotating");
+    const learned = () => readSubjects(project.path).flatMap((subject) => subject.rules.map((rule) => [subject.slug, rule.text, rule.evidence]));
+    assert.deepEqual(learned(), [["certs", "Remove the stale lock before rotating", `two conversations hit it (conversation ${conversationId})`]], "the rule is installed without a person");
+    assert.deepEqual(listProposals(project.path), []);
     assert.deepEqual(firstCall.run, { ...sonnet, thinkingLevel: "", source: "conversation" });
 
     assert.equal((await api<DigestResponse>(node, auth, "GET", endpoint)).body.stale, false);
@@ -228,17 +228,13 @@ test("the digest route folds new messages into the summary and follows the node'
     assert.deepEqual([unstarted.status, unstarted.body.digest, unstarted.body.stale, unstarted.body.turns], [200, null, false, 0], "a conversation with no transcript yet simply has no summary");
     assert.equal((await api(node, auth, "POST", `/projects/${project.id}/conversations/00000000-0000-4000-8000-000000000000/digest`, {})).status, 404);
 
-    // Unimportant closes without a learning call, and subsequent summaries do not request or persist lessons.
-    const beforeClose = (await callsMade()).length;
+    // Not important is still learned from: later summaries keep asking for lessons, and a known rule is not installed twice.
     const closed = await api(node, auth, "PUT", `/projects/${project.id}/sessions/done`, { sessionId: conversationId, engine: "claude", done: true, feedback: { rating: "unimportant" } });
     assert.equal(closed.status, 200);
-    assert.equal((await callsMade()).length, beforeClose);
-    const notesBefore = readNotes(project.path);
     await append([record("user", 12, [{ type: "text", text: "One last status" }]), record("assistant", 13, [{ type: "text", text: "All rotated." }])]);
     await api(node, auth, "POST", endpoint, {});
-    assert.doesNotMatch((await callsMade()).at(-1).instructions, /@@knowledge/);
-    assert.deepEqual(readNotes(project.path), notesBefore);
-    assert.equal(listProposals(project.path).length, proposals.length);
+    assert.match((await callsMade()).at(-1).instructions, /@@knowledge/);
+    assert.equal(learned().length, 1);
 
     // A model that fails leaves the stored summary in place and says why.
     await append([record("user", 8, [{ type: "text", text: "FAIL please" }]), record("assistant", 9, [{ type: "text", text: "Trying." }])]);

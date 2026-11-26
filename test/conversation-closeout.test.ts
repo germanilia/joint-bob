@@ -5,7 +5,7 @@ import { closeoutAssessment, inactiveConversation, type CloseoutDeps } from "../
 
 const deps = (calls: string[]): CloseoutDeps => ({
   classify: async () => { calls.push("classify"); return "bad"; },
-  describe: async (rating, description) => { calls.push(`describe:${rating}:${description}`); return { description: description || "The agent missed a requirement.", rules: [{ subject: "requirements", text: "Check every stated requirement.", evidence: "Missed a requirement" }] }; },
+  describe: async (rating, description) => { calls.push(`describe:${rating}:${description}`); return { description: description || "The agent missed a requirement.", rules: [{ scope: "project", subject: "requirements", text: "Check every stated requirement.", evidence: "Missed a requirement" }] }; },
   select: async () => { calls.push("select"); return [0]; },
 });
 
@@ -16,10 +16,12 @@ test("Done accepts optional feedback for both ratings, and rejects invalid input
   assert.equal(sessionDoneSchema.safeParse({ sessionId: "x", engine: "pi", done: true, feedback: { rating: "bad", description: "x".repeat(1001) } }).success, false);
 });
 
-test("unimportant does not call either model", async () => {
+test("not important is still reviewed: the decision model rates it and lessons follow", async () => {
   const calls: string[] = [];
-  assert.deepEqual(await closeoutAssessment({ rating: "unimportant", description: "" }, deps(calls)), { rating: "unimportant", description: "", rules: [] });
-  assert.deepEqual(calls, []);
+  const result = await closeoutAssessment({ rating: "unimportant", description: "" }, deps(calls));
+  assert.equal(result.rating, "bad");
+  assert.equal(result.rules.length, 1);
+  assert.deepEqual(calls, ["classify", "describe:bad:", "select"]);
 });
 
 test("manual negative feedback is not reclassified and its description wins", async () => {
@@ -38,12 +40,12 @@ test("blank positive feedback gets an agent description and decision-model revie
   assert.deepEqual(calls, ["describe:good:", "select"]);
 });
 
-test("automatic classification precedes learning and skips it for unimportant", async () => {
+test("automatic classification precedes learning", async () => {
   const calls: string[] = [];
   const automatic = deps(calls);
-  automatic.classify = async () => { calls.push("classify"); return "unimportant"; };
-  assert.equal((await closeoutAssessment(null, automatic)).rules.length, 0);
-  assert.deepEqual(calls, ["classify"]);
+  automatic.classify = async () => { calls.push("classify"); return "good"; };
+  assert.equal((await closeoutAssessment(null, automatic)).rating, "good");
+  assert.deepEqual(calls, ["classify", "describe:good:", "select"]);
 });
 
 test("decision failure is surfaced instead of saving unreviewed rules", async () => {

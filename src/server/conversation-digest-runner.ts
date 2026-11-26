@@ -9,14 +9,12 @@ import { resourceOwner } from "../ownership.js";
 import { projectAgentPolicies } from "../cluster-agent-policy.js";
 import { activeRoutingConfig, routingConfigDatabase } from "../routing-configs.js";
 import { type RoutingMapping } from "../routing-policy.js";
-import { type ConversationNote, type KnowledgeProblem, listProposals, normalizedRuleText, proposalHistory, readNotes, readSubjects, writeNote, writeProposal } from "../project-knowledge.js";
+import { addRule, type ConversationNote, type KnowledgeProblem, listProposals, knowledgeDirectory, normalizedRuleText, proposalHistory, readNotes, readSubjects, removedRules, writeNote } from "../project-knowledge.js";
 import { withSystemAiProfile } from "../system-ai.js";
 import { systemDecisionKeyOrRelay } from "../decision-relay-proxy.js";
 import { systemAiSettings } from "../system-ai-config.js";
 import { getSettings } from "../settings.js";
-import { sessionFeedbackOverrides } from "../names.js";
 import { getProject } from "../store.js";
-import { randomUUID } from "node:crypto";
 import type { ChatMessage, HarnessId, ProjectRecord } from "../types.js";
 import { loadConversationMessages } from "./conversation-turns.js";
 import { runGitReview } from "./git-review-run.js";
@@ -124,7 +122,7 @@ function digestKnowledge(project: ProjectRecord, conversationId: string): Digest
       subjects: readSubjects(project.path).map((subject) => ({ slug: subject.slug, description: subject.description, rules: subject.rules.map((rule) => rule.text) })),
       otherNotes: notes.filter((note) => note.conversationId !== conversationId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map((note) => ({ conversationId: note.conversationId, problems: note.problems })),
       pending: listProposals(project.path).map((proposal) => proposal.text),
-      previouslySuggested: proposalHistory(project.path).map((proposal) => proposal.text),
+      previouslySuggested: [...proposalHistory(project.path).map((proposal) => proposal.text), ...removedRules(knowledgeDirectory(project.path))],
       ownProblems: notes.find((note) => note.conversationId === conversationId)?.problems ?? [],
     };
   } catch (error) {
@@ -133,19 +131,18 @@ function digestKnowledge(project: ProjectRecord, conversationId: string): Digest
   }
 }
 
-/** Records the writer's problems and files its rules as proposals, unless a rule or proposal already says the same or a person dismissed it. */
+/** Records the writer's problems and installs its rules, unless a rule or proposal already says the same or a person dismissed it. */
 async function recordKnowledge(project: ProjectRecord, conversationId: string, knowledge: DigestKnowledge, reply: { problems?: KnowledgeProblem[]; rules?: ProposedRule[] }): Promise<void> {
   if (!reply.problems && !reply.rules) return;
   try {
-    if ((await sessionFeedbackOverrides())[conversationId]?.feedback?.rating === "unimportant") return;
     const previous = readNotes(project.path).find((note) => note.conversationId === conversationId);
     const note: ConversationNote = { conversationId, updatedAt: new Date().toISOString(), problems: (reply.problems ?? previous?.problems ?? []).slice(-NOTE_PROBLEM_LIMIT), dismissed: previous?.dismissed ?? [] };
     if (reply.problems) writeNote(project.path, note);
-    const known = new Set([...knowledge.pending, ...knowledge.subjects.flatMap((subject) => subject.rules), ...note.dismissed].map(normalizedRuleText));
+    const known = new Set([...knowledge.pending, ...knowledge.subjects.flatMap((subject) => subject.rules), ...note.dismissed, ...removedRules(knowledgeDirectory(project.path))].map(normalizedRuleText));
     for (const rule of reply.rules ?? []) {
       if (known.has(normalizedRuleText(rule.text))) continue;
       known.add(normalizedRuleText(rule.text));
-      writeProposal(project.path, { id: randomUUID(), action: "add", subject: rule.subject, text: rule.text, evidence: rule.evidence, created: new Date().toISOString(), source: conversationId });
+      addRule(project.path, { subject: rule.subject, text: rule.text, evidence: `${rule.evidence} (conversation ${conversationId})` });
     }
   } catch (error) {
     console.warn("Recording project knowledge failed", error instanceof Error ? error.message.slice(0, 200) : "unknown error");
@@ -162,8 +159,7 @@ async function writeDigest(project: ProjectRecord, conversationId: string, live:
   }
   const material = digestMaterial(said, coveredMessages(previous, said));
   onWriting();
-  const unimportant = (await sessionFeedbackOverrides())[conversationId]?.feedback?.rating === "unimportant";
-  const knowledge = unimportant ? undefined : digestKnowledge(project, conversationId);
+  const knowledge = digestKnowledge(project, conversationId);
   const instructions = digestPrompt(previous?.summary, knowledge, nodeSummaryInstructions());
   const run = await summaryRun(await summaryPolicyNow(project.id), project, live, messages, lastHarness, material);
   const model: DigestModel = { harnessId: run.harnessId, provider: run.provider, modelId: run.modelId, source: run.source };
@@ -187,7 +183,7 @@ async function writeDigest(project: ProjectRecord, conversationId: string, live:
   saveDigest(project.id, conversationId, digest);
   // The control center's cards show this summary as their live line.
   broadcastToAllClients({ type: "controlCenterChanged" });
-  if (knowledge) await recordKnowledge(project, conversationId, knowledge, reply);
+  await recordKnowledge(project, conversationId, knowledge, reply);
   return digest;
 }
 

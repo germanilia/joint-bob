@@ -326,22 +326,38 @@ export function activityStatsChanged() {
   statsFrame = requestAnimationFrame(renderStats);
 }
 
-/** The project's pending rule proposals; they live in the project's knowledge folder, so every machine sharing it sees them. */
-const rules = { proposals: [], requestId: 0 };
+/**
+ * The project's pending rule proposals and every rule learning installed: the project's own and Joint Bob's general
+ * ones. They live in knowledge folders, so every machine sharing the project sees the same.
+ */
+const rules = { proposals: [], learned: [], generalRemovable: false, requestId: 0 };
+
+/** Newest first, so what learning just added is on top. */
+function learnedRules(body) {
+  const flatten = (subjects, scope) => subjects.flatMap((subject) => subject.rules.map((rule) => ({ ...rule, subject: subject.slug, scope })));
+  return [...flatten(body.subjects, "project"), ...flatten(body.general, "general")].sort((left, right) => (right.added || "").localeCompare(left.added || ""));
+}
+
+function showKnowledge(body) {
+  rules.proposals = body.proposals;
+  rules.learned = learnedRules(body);
+  rules.generalRemovable = body.generalRemovable;
+}
 
 async function loadRules() {
   const requestId = ++rules.requestId;
   if (!state.activeProjectId || !state.activeConversationId) {
     rules.proposals = [];
+    rules.learned = [];
     renderRules();
     return;
   }
   try {
     const body = await api(`/api/projects/${encodeURIComponent(state.activeProjectId)}/knowledge`);
-    if (requestId === rules.requestId) rules.proposals = body.proposals;
+    if (requestId === rules.requestId) showKnowledge(body);
   } catch (error) {
-    console.warn("Rule suggestions unavailable", error.message);
-    if (requestId === rules.requestId) rules.proposals = [];
+    console.warn("Rules unavailable", error.message);
+    if (requestId === rules.requestId) { rules.proposals = []; rules.learned = []; }
   }
   if (requestId === rules.requestId) renderRules();
 }
@@ -349,11 +365,60 @@ async function loadRules() {
 async function answerRule(proposal, verb, edits = {}) {
   try {
     const body = await api(`/api/projects/${encodeURIComponent(state.activeProjectId)}/knowledge/proposals/${encodeURIComponent(proposal.id)}/${verb}`, { method: "POST", body: JSON.stringify(edits) });
-    rules.proposals = body.proposals;
+    showKnowledge(body);
   } catch (error) {
     toast.error(error.message || "Could not update the rule suggestion");
   }
   renderRules();
+}
+
+async function removeLearned(rule) {
+  try {
+    const body = await api(`/api/projects/${encodeURIComponent(state.activeProjectId)}/knowledge/rules/remove`, { method: "POST", body: JSON.stringify({ scope: rule.scope, subject: rule.subject, ruleId: rule.id }) });
+    showKnowledge(body);
+    toast("Rule removed; it will not be learned again");
+  } catch (error) {
+    toast.error(error.message || "Could not remove the rule");
+  }
+  renderRules();
+}
+
+/** A rule learning installed: what it says, where it came from, and Remove to undo it. */
+function learnedCard(rule) {
+  const card = document.createElement("div");
+  card.className = "activity-rule activity-rule-learned";
+  card.dataset.testid = "activity-learned-rule";
+  const head = document.createElement("div");
+  head.className = "activity-rule-head";
+  const badge = document.createElement("span");
+  badge.className = `activity-rule-kind ${rule.scope}`;
+  badge.textContent = rule.scope === "general" ? "General" : "Project";
+  badge.title = rule.scope === "general" ? "Applies in every project; ships with Joint Bob" : "Applies in this project";
+  const subject = document.createElement("span");
+  subject.className = "activity-rule-subject";
+  subject.textContent = rule.subject;
+  subject.title = rule.subject;
+  head.append(badge, subject);
+  const text = document.createElement("p");
+  text.className = "activity-rule-text";
+  text.textContent = rule.text;
+  const evidence = document.createElement("p");
+  evidence.className = "activity-rule-evidence";
+  evidence.textContent = [rule.evidence, rule.added ? `Added ${rule.added}` : ""].filter(Boolean).join(" · ");
+  card.append(head, text, evidence);
+  if (rule.scope === "project" || rules.generalRemovable) {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ghost";
+    remove.dataset.testid = "activity-learned-remove";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => void removeLearned(rule));
+    const actions = document.createElement("div");
+    actions.className = "activity-rule-actions";
+    actions.append(remove);
+    card.append(actions);
+  }
+  return card;
 }
 
 const RULE_BADGES = { add: "Add", remove: "Remove", merge: "Merge" };
@@ -399,11 +464,12 @@ function ruleCard(proposal) {
 
 function renderRules() {
   elements.activityRulesStatus.textContent = rules.proposals.length ? String(rules.proposals.length) : "";
-  if (!rules.proposals.length) {
-    elements.activityRulesBody.replaceChildren(placeholder(state.activeConversationId ? "No rule suggestions for this project." : "Rule suggestions appear once a conversation is open."));
+  if (!rules.proposals.length && !rules.learned.length) {
+    elements.activityRulesBody.replaceChildren(placeholder(state.activeConversationId ? "Nothing learned in this project yet." : "Rules appear once a conversation is open."));
     return;
   }
-  elements.activityRulesBody.replaceChildren(...rules.proposals.map(ruleCard));
+  const learned = rules.learned.length ? [Object.assign(document.createElement("p"), { className: "activity-rules-heading", textContent: `Learned (${rules.learned.length})` }), ...rules.learned.map(learnedCard)] : [];
+  elements.activityRulesBody.replaceChildren(...rules.proposals.map(ruleCard), ...learned);
 }
 
 /** The open group, if the main thread has not moved past its marker. */
@@ -696,6 +762,7 @@ export function activityConversationChanged() {
   summary.writing = false;
   renderSummary();
   rules.proposals = [];
+  rules.learned = [];
   rules.requestId += 1;
   renderRules();
   instructionsRequest += 1;

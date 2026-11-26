@@ -7,6 +7,7 @@ import { writeTextAtomically } from "./global-instructions.js";
  * A project's knowledge base: rules agents learned, grouped by subject, in `.agents/knowledge/`
  * of the project so they are committed with it. The folder also holds each conversation's
  * problem notes, rule proposals waiting for a person, and the log of what cleanup did.
+ * Joint Bob's general knowledge (src/general-knowledge.ts) uses the same subject files in another folder.
  */
 export interface KnowledgeRule { id: string; text: string; evidence: string; /** YYYY-MM-DD */ added: string }
 export interface KnowledgeSubject { slug: string; description: string; rules: KnowledgeRule[] }
@@ -56,6 +57,13 @@ export function knowledgeDirectory(root: string): string {
   return path.join(root, ".agents", "knowledge");
 }
 
+/** A folder of subject files and the index derived from them. */
+export interface KnowledgeShelf { directory: string; title: string; intro: string }
+
+export function projectShelf(root: string): KnowledgeShelf {
+  return { directory: knowledgeDirectory(root), title: "Project knowledge", intro: "Rules agents learned in this project. Read a subject's file when the task touches it." };
+}
+
 export function isKnowledgeSlug(value: string): boolean {
   return SLUG.test(value);
 }
@@ -74,8 +82,8 @@ export function normalizedRuleText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!?;:,\s]+$/, "");
 }
 
-function subjectFile(root: string, slug: string): string {
-  return path.join(knowledgeDirectory(root), `${slugged(slug)}.md`);
+function subjectFile(directory: string, slug: string): string {
+  return path.join(directory, `${slugged(slug)}.md`);
 }
 
 function parseSubject(slug: string, content: string): KnowledgeSubject {
@@ -128,14 +136,21 @@ function readJson<T>(file: string): T | null {
 }
 
 export function readSubject(root: string, slug: string): KnowledgeSubject | null {
-  const base = path.resolve(knowledgeDirectory(root));
-  const file = path.resolve(subjectFile(root, slug));
+  return readSubjectIn(knowledgeDirectory(root), slug);
+}
+
+function readSubjectIn(directory: string, slug: string): KnowledgeSubject | null {
+  const base = path.resolve(directory);
+  const file = path.resolve(subjectFile(directory, slug));
   if (!file.startsWith(`${base}${path.sep}`)) throw new KnowledgeError(400, "Invalid knowledge subject");
   return existsSync(file) ? parseSubject(slug, readFileSync(file, "utf8")) : null;
 }
 
 export function readSubjects(root: string): KnowledgeSubject[] {
-  const directory = knowledgeDirectory(root);
+  return readSubjectsIn(knowledgeDirectory(root));
+}
+
+export function readSubjectsIn(directory: string): KnowledgeSubject[] {
   if (!existsSync(directory)) return [];
   return readdirSync(directory)
     .filter((name) => name.endsWith(".md") && SLUG.test(name.slice(0, -3)) && statSync(path.join(directory, name)).isFile())
@@ -146,32 +161,61 @@ export function readSubjects(root: string): KnowledgeSubject[] {
 
 /** The index is derived from the subject files, so a hand-edited or broken one heals on the next write. */
 export function rebuildIndex(root: string): void {
-  const subjects = readSubjects(root).filter((subject) => subject.rules.length);
+  rebuildIndexIn(projectShelf(root));
+}
+
+function rebuildIndexIn(shelf: KnowledgeShelf): void {
+  const subjects = readSubjectsIn(shelf.directory).filter((subject) => subject.rules.length);
   const lines = subjects.map((subject) => `- [${subject.slug}](${subject.slug}.md) — ${subject.description || subject.slug} (${subject.rules.length} ${subject.rules.length === 1 ? "rule" : "rules"})`);
-  writeTextAtomically(path.join(knowledgeDirectory(root), INDEX), [
-    "# Project knowledge", "", "Rules agents learned in this project. Read a subject's file when the task touches it.", "", ...lines,
-  ].join("\n") + "\n");
+  writeTextAtomically(path.join(shelf.directory, INDEX), [`# ${shelf.title}`, "", shelf.intro, "", ...lines].join("\n") + "\n");
 }
 
 export function addRule(root: string, input: { subject: string; description?: string; text: string; evidence: string }, today = new Date().toISOString().slice(0, 10)): KnowledgeRule {
+  return addRuleIn(projectShelf(root), input, today);
+}
+
+export function addRuleIn(shelf: KnowledgeShelf, input: { subject: string; description?: string; text: string; evidence: string }, today = new Date().toISOString().slice(0, 10)): KnowledgeRule {
   const slug = slugged(input.subject);
-  const existing = readSubject(root, slug);
+  const existing = readSubjectIn(shelf.directory, slug);
   const rule: KnowledgeRule = { id: `r-${newRuleId()}`, text: input.text.trim(), evidence: input.evidence.trim(), added: today };
   const subject: KnowledgeSubject = existing ?? { slug, description: input.description?.trim() ?? "", rules: [] };
   if (existing && !existing.description && input.description?.trim()) subject.description = input.description.trim();
   subject.rules.push(rule);
-  writeTextAtomically(subjectFile(root, slug), renderSubject(subject));
-  rebuildIndex(root);
+  writeTextAtomically(subjectFile(shelf.directory, slug), renderSubject(subject));
+  rebuildIndexIn(shelf);
   return rule;
 }
 
 export function removeRule(root: string, slug: string, ruleId: string): boolean {
-  const subject = readSubject(root, slug);
-  if (!subject?.rules.some((rule) => rule.id === ruleId)) return false;
+  return removeRuleIn(projectShelf(root), slug, ruleId) !== null;
+}
+
+/** Removes one rule and returns it; null when the subject has no such rule. */
+function removeRuleIn(shelf: KnowledgeShelf, slug: string, ruleId: string): KnowledgeRule | null {
+  const subject = readSubjectIn(shelf.directory, slug);
+  const removed = subject?.rules.find((rule) => rule.id === ruleId);
+  if (!subject || !removed) return null;
   subject.rules = subject.rules.filter((rule) => rule.id !== ruleId);
-  if (subject.rules.length) writeTextAtomically(subjectFile(root, slug), renderSubject(subject));
-  else rmSync(subjectFile(root, slug), { force: true });
-  rebuildIndex(root);
+  if (subject.rules.length) writeTextAtomically(subjectFile(shelf.directory, slug), renderSubject(subject));
+  else rmSync(subjectFile(shelf.directory, slug), { force: true });
+  rebuildIndexIn(shelf);
+  return removed;
+}
+
+const REMOVED = "removed-rules.json";
+
+/** Normalized texts of rules a person removed after they were learned: learning never writes them again. */
+export function removedRules(directory: string): string[] {
+  const file = path.join(directory, REMOVED);
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) as string[] : [];
+}
+
+/** A person's removal of a learned rule, remembered so the same lesson is not learned again. */
+export function forgetRule(shelf: KnowledgeShelf, slug: string, ruleId: string): boolean {
+  const removed = removeRuleIn(shelf, slug, ruleId);
+  if (!removed) return false;
+  const texts = new Set([...removedRules(shelf.directory), normalizedRuleText(removed.text)]);
+  writeTextAtomically(path.join(shelf.directory, REMOVED), `${JSON.stringify([...texts], null, 2)}\n`);
   return true;
 }
 

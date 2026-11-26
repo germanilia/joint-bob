@@ -253,6 +253,12 @@ export async function sessionFeedbackOverrides(): Promise<Readonly<Record<string
     .map(([id, value]) => [id, frozenCloseout(closeoutRecordSchema.parse(JSON.parse(value)))])) as Record<string, Readonly<CloseoutRecord>>));
 }
 
+/** The machine that last wrote each closeout record. It finishes or retries that review, so two machines never run the same one. */
+export async function sessionFeedbackWriters(): Promise<Record<string, string>> {
+  const rows = (await namesDatabase()).prepare("SELECT key, origin_node_id FROM name_overrides WHERE scope = 'session_feedback'").all() as unknown as Array<{ key: string; origin_node_id: string }>;
+  return Object.fromEntries(rows.map((row) => [row.key, row.origin_node_id]));
+}
+
 export async function setSessionFeedback(conversationId: string, feedback: CloseoutRecord | null): Promise<void> {
   await setEntry("session_feedback", conversationId, feedback ? JSON.stringify(closeoutRecordSchema.parse(feedback)) : "");
 }

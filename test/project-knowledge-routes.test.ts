@@ -20,7 +20,8 @@ test("knowledge routes list, accept and dismiss proposals", { timeout: 120_000 }
   const proposal = (id: string, fields: Partial<KnowledgeProposal>): KnowledgeProposal => ({ id, action: "add", subject: "database-access", text: `Rule ${id}`, evidence: "two conversations", created: new Date().toISOString(), source: "conv-1", ...fields });
   try {
     const empty = await api<Knowledge>(node, auth, "GET", base);
-    assert.deepEqual([empty.status, empty.body], [200, { subjects: [], proposals: [] }], "a project without the folder has nothing");
+    assert.deepEqual([empty.status, empty.body.subjects, empty.body.proposals], [200, [], []], "a project without the folder has nothing");
+    assert.equal((empty.body as Knowledge & { generalRemovable: boolean }).generalRemovable, false, "a seeded node holds no Joint Bob source");
 
     writeProposal(project.path, proposal("p1", {}));
     writeProposal(project.path, proposal("p2", { text: "Dismiss me" }));
@@ -59,6 +60,15 @@ test("knowledge routes list, accept and dismiss proposals", { timeout: 120_000 }
     writeProposal(project.path, proposal("p9", {}));
     assert.equal((await api(node, auth, "POST", `${base}/proposals/p9/accept`, { subject: "Bad Slug" })).status, 400);
     assert.equal((await api(node, auth, "GET", "/projects/not-a-project/knowledge")).status, 404);
+
+    // A learned rule can be removed, and the removal is remembered so learning does not add it again.
+    const learned = addRule(project.path, { subject: "deploys", text: "Wait for the lock before deploying.", evidence: "two hung deploys (conversation c1)" });
+    const unlearned = await api<Knowledge>(node, auth, "POST", `${base}/rules/remove`, { scope: "project", subject: "deploys", ruleId: learned.id });
+    assert.equal(unlearned.status, 200, JSON.stringify(unlearned.body));
+    assert.equal(unlearned.body.subjects.some((subject) => subject.slug === "deploys"), false);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(knowledgeDirectory(project.path), "removed-rules.json"), "utf8")), ["wait for the lock before deploying"]);
+    assert.equal((await api(node, auth, "POST", `${base}/rules/remove`, { scope: "project", subject: "deploys", ruleId: learned.id })).status, 404);
+    assert.equal((await api(node, auth, "POST", `${base}/rules/remove`, { scope: "general", subject: "deploys", ruleId: learned.id })).status, 409, "general rules are removed where Joint Bob's source is");
   } finally {
     await stopDevNode(server);
     await rm(root, { recursive: true, force: true });

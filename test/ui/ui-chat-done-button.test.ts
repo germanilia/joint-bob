@@ -61,7 +61,7 @@ test("the chat More menu closes a conversation out without a nested menu", { tim
     await doneButton.click();
     await page.getByTestId("conversation-feedback-submit").click();
     await page.locator(".toast-message").first().waitFor();
-    assert.equal(await page.locator(".toast-message").first().innerText(), "Conversation marked done");
+    assert.equal(await page.locator(".toast-message").first().innerText(), "Conversation marked done; learning from it in the background");
 
     assert.equal(await page.locator("body").evaluate(body => body.classList.contains("view-sessions")), true, "Done returns to the conversation list on mobile");
     assert.equal(await page.locator("#sessionTitle").textContent(), "Select a conversation", "Done closes the chat");

@@ -38,8 +38,8 @@ export function chooseConversationFeedback(session) {
     detail.hidden = rating() === "unimportant";
     prompt.textContent = rating() === "bad" ? "What went badly?" : "What went well?";
     hint.textContent = rating() === "unimportant"
-      ? "Mark done without including this conversation in feedback-driven reviews."
-      : "Your rating and comments are saved as written for later review.";
+      ? "Bob still reviews this conversation, decides whether it went well, and learns from it."
+      : "Bob learns from this conversation; your rating and comments guide what it learns.";
   };
   choices.addEventListener("change", sync);
   const actions = document.createElement("div");
