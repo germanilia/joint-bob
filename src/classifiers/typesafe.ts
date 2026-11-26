@@ -75,7 +75,7 @@ function normalizedOptions(context: string | DifficultyClassifierContext): Array
 function questionFor(context: string | DifficultyClassifierContext): Record<string, unknown> {
   const options = normalizedOptions(context);
   const instructions = options.length
-    ? "Classify the work requested by the latest User message, reading earlier messages for context. A short reply (yes, an option letter, 'do both', 'continue') asks for the work the previous Assistant message proposed or asked about. Which configured option best fits? Choose `none` only when none fits."
+    ? "Classify the work requested by the latest User message, reading earlier messages for context. A short reply (yes, an option letter, 'do both', 'continue') asks for the work the previous Assistant message proposed or asked about. Approving or narrowing a plan the Assistant already wrote asks for carrying it out, not for more planning. A message saying a problem is still there or an earlier answer was wrong, or asking why something fails or is missing, asks for debugging however short it is. Which configured option best fits? Choose `none` only when none fits."
     : "How complex is this software development request for a coding agent to execute, based on the work it describes?";
   if (!options.length) return { type: "score", instructions, criteria: DIFFICULTY_RUBRIC };
   const criteria = Object.fromEntries(options.map(({ level, description }) => [`level_${level}`, description]));

@@ -134,7 +134,7 @@ test("classifyWithTypesafe offers only configured levels and an escape choice", 
   assert.equal(classification?.level, 6);
   const question = (captured as { questions: { complexity: { type: string; instructions: string; criteria: Record<string, unknown> } } }).questions.complexity;
   assert.equal(question.type, "choice");
-  assert.equal(question.instructions, "Classify the work requested by the latest User message, reading earlier messages for context. A short reply (yes, an option letter, 'do both', 'continue') asks for the work the previous Assistant message proposed or asked about. Which configured option best fits? Choose `none` only when none fits.");
+  assert.equal(question.instructions, "Classify the work requested by the latest User message, reading earlier messages for context. A short reply (yes, an option letter, 'do both', 'continue') asks for the work the previous Assistant message proposed or asked about. Approving or narrowing a plan the Assistant already wrote asks for carrying it out, not for more planning. A message saying a problem is still there or an earlier answer was wrong, or asking why something fails or is missing, asks for debugging however short it is. Which configured option best fits? Choose `none` only when none fits.");
   assert.deepEqual(question.criteria, {
     level_2: "Tiny obvious fix",
     level_3: "Localized routine edit",

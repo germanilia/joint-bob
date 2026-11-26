@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.340.15 — 2026-11-26
+
+- **Model routing:** The classifier now treats a follow-up saying a problem is still there, or asking why something fails or is missing, as troubleshooting even when it is short, and treats approving a plan already written as carrying it out rather than planning again.
+
 ## 2.340.14 — 2026-11-26
 
 - **Speed:** Conversation lists no longer re-read every Google Antigravity transcript on the machine each time they are built; each file is read again only after it changes. On the homeserver that was 31 MB read and parsed about 17 times a minute.
