@@ -50,7 +50,7 @@ test("twins move a new project's files with built-in file sync and stop when the
   for(const [node,session,peer]of[[left,sa,right.nodeId],[right,sb,left.nodeId]]as const){
    let shares=shareWith(await fileSync(node,session),peer);const phaseDeadline=Date.now()+60000;
    while(!(shares.length&&shares.every(share=>share.phase==='builtin'))&&Date.now()<phaseDeadline){await new Promise(r=>setTimeout(r,250));shares=shareWith(await fileSync(node,session),peer);}
-   assert.ok(shares.length&&shares.every(share=>share.phase==='builtin'&&share.engine==='builtin'),JSON.stringify(shares.map(share=>({kind:share.kind,phase:share.phase,engine:share.engine,state:share.state}))));
+   assert.ok(shares.length&&shares.every(share=>share.phase==='builtin'),JSON.stringify(shares.map(share=>({kind:share.kind,phase:share.phase,state:share.state}))));
   }
   const note=await api<{note:{id:string}}>(left,sa,'POST','/quick-notes',{projectId:created.body.project.id,title:'Execute on twin',content:'Synthetic twin prompt',harnessId:'pi',nodeId:right.nodeId,scheduledAt:'2099-01-01T00:00:00.000Z',images:[],secretAccountIds:[]});
   assert.equal(note.status,201,JSON.stringify(note.body));

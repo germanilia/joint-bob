@@ -149,14 +149,16 @@ test("shares answers and hello capability parts", () => {
     fileSync: { protocol: 1, minProtocol: 1, enabled: true },
     nodeId: NODE, hostId: "host-1", origins: ["http://100.64.0.2:22700"],
     shares: [{ projectId: "p", kind: "project", indexId: "i", maxSeq: 1, digest: DIGEST, rulesHash: DIGEST, state: "idle", builtinSince: null, prunedBelow: 0, rootDev: 16777230, rootIno: 123456 }],
-    engines: [{ projectId: "p", mode: "builtin", generation: 2, updatedAt: "2026-10-25T10:00:00.000Z", origin: NODE }],
     settings: [{ key: "project:p", value: { disabledBuiltins: [], userRules: ["*.log"], removedUserRules: [], gitignore: false, importedFrom: [NODE] }, updatedAt: "2026-10-25T10:00:00.000Z", origin: NODE }],
   };
   assert.deepEqual(sharesAnswerSchema.parse({ ...answer, later: true }), answer);
+  // A release that still chose a sync engine per project sends its choices along: whatever they say, they are dropped.
+  for (const engines of [[], [{ projectId: "p", mode: "builtin", generation: 2, updatedAt: answer.settings[0].updatedAt, origin: NODE }], [{ mode: "rsync" }], "none"]) {
+    assert.deepEqual(sharesAnswerSchema.parse({ ...answer, engines }), answer);
+  }
   for (const origin of ["http://100.64.0.2:22700/path", "ftp://x:1", "not a url"]) {
     assert.equal(sharesAnswerSchema.safeParse({ ...answer, origins: [origin] }).success, false, origin);
   }
-  assert.equal(sharesAnswerSchema.safeParse({ ...answer, engines: [{ ...answer.engines[0], mode: "rsync" }] }).success, false);
   assert.equal(sharesAnswerSchema.safeParse({ ...answer, settings: [{ ...answer.settings[0], key: "user:x" }] }).success, false);
   assert.deepEqual(helloBodySchema.parse({ protocol: 1, origins: [] }), { protocol: 1, origins: [] });
   assert.equal(helloAnswerSchema.safeParse({ protocol: 1, origins: [] }).success, false, "the answer carries minProtocol");

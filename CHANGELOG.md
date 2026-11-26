@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.341.0 — 2026-11-26
+
+- **File sync:** Joint Bob now removes what earlier releases set up for Syncthing, once per machine and by itself. After its own `joint-bob-*` folders have left the local Syncthing, it stops and removes the Syncthing service an earlier installer created (`joint-bob-syncthing.service` or `com.joint-bob.syncthing`), deletes the copy of Syncthing it downloaded, takes the machines it added out of a Syncthing that stays once they share no folder, forgets the saved connection, and deletes the `.stignore` files and `.stfolder` markers in its folders. The text of the deleted ignore files is kept in `removed-sync-ignore-files.txt` in the data folder.
+- **File sync:** A Syncthing you installed yourself, your own folders in it, and the files in every folder are left alone. A service Joint Bob installed that still syncs a folder of yours keeps running, and the log says so.
+- **File sync:** Removed the last of the choice between Syncthing and built-in sync per project: the engine records, the phases of moving a project between the two, the relay's Syncthing channel and the old `syncthing` settings field. Machines on 2.259.0 or later keep syncing with this release. A machine on an older release syncs its projects again once it updates.
+
 ## 2.340.15 — 2026-11-26
 
 - **Model routing:** The classifier now treats a follow-up saying a problem is still there, or asking why something fails or is missing, as troubleshooting even when it is short, and treats approving a plan already written as carrying it out rather than planning again.

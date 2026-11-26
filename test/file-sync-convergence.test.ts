@@ -12,7 +12,7 @@ import { detectEngine, runSeed, seedList, type SeedResult } from "./file-sync-ha
    apply's renames, FILE_SYNC_RACES_INNER=<p> for writers inside its section, FILE_SYNC_PERTURB=<p> for
    edits while it prepares (each 0 turns its default off), FILE_SYNC_VERBOSE=1 to print the operations,
    FILE_SYNC_TRACE=<path regexp> and FILE_SYNC_TRACE_HASH=<sha256 prefix> to follow one path's rows or
-   one content through a replay. Every fourth 3-node seed runs its third node on Syncthing (shadow): its
+   one content through a replay. Every fourth 3-node seed runs its third node in shadow: its
    tree is never written, and the builtin nodes still agree. */
 
 const SEEDS = seedList(300);
@@ -45,7 +45,7 @@ for (const nodes of NODES) {
     const results: SeedResult[] = [];
     const failures: SeedResult[] = [];
     for (const seed of seeds) {
-      const phases: Phase[] | undefined = nodes === 3 && seed % 4 === 0 ? ["builtin", "builtin", "syncthing"] : undefined;
+      const phases: Phase[] | undefined = nodes === 3 && seed % 4 === 0 ? ["builtin", "builtin", "shadow"] : undefined;
       const result = await runSeed({ seed, nodes, largeFiles: true, verbose: VERBOSE, ...(phases ? { phases } : {}) });
       results.push(result);
       if (result.problems.length) {

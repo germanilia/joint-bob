@@ -14,7 +14,7 @@ When a project is shared, its files, worktrees, and ticket workspaces go only to
 
 There is one network path. Every cluster node needs a stable, mutually reachable private HTTPS origin for Joint Bob, or a relay it has joined.
 
-A machine upgraded from an earlier release may still run Syncthing. Joint Bob takes its own `joint-bob-*` folders out of that Syncthing once and does not use it afterwards. It does not stop or remove the daemon. Leave it alone unless the human asks: they may use it for their own folders.
+A machine upgraded from an earlier release may still run a Syncthing its owner installed. Joint Bob does not use it. Once, by itself, Joint Bob takes its own `joint-bob-*` folders out of it and removes what an earlier installer set up: its Syncthing service, the copy it downloaded, and the `.stignore` files in Joint Bob's folders. It never stops a Syncthing that still syncs the person's own folders. Leave such a Syncthing alone unless the human asks.
 
 ## Present the deployment options
 

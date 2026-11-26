@@ -16,7 +16,7 @@ import { PROJECT_COLORS, type ProjectColor, type ProjectRecord } from "./types.j
 import { exportWorktreeBase, ignoredPaths, type WorktreeChanges, type WorktreeFileChange } from "./worktree-git.js";
 import { WORKTREE_META_DIR, worktreeBinaryExtensions, worktreeHeavyDirectories, worktreeHeavyFiles, worktreeLinkedDirectories } from "./worktree-filters.js";
 
-export { projectWorktreeSyncFolderId, WORKTREE_META_DIR } from "./worktree-filters.js";
+export { WORKTREE_META_DIR } from "./worktree-filters.js";
 export { integrateProjectWorktree } from "./worktree-integration.js";
 const binaryExtensions = new Set(worktreeBinaryExtensions.map((extension) => `.${extension}`));
 const heavyDirectories = new Set<string>([...worktreeHeavyDirectories, WORKTREE_META_DIR, TICKET_MERGE_DIR]);

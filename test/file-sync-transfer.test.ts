@@ -246,9 +246,9 @@ function setup(t: TestContext) {
     });
     net.cores.set(id, core);
     await core.call("configure", {
-      enabled: true, hostId: `host-${id}`, records: { engines: [], settings: [] },
+      enabled: true, hostId: `host-${id}`, records: { settings: [] },
       peers: [{ nodeId: peer, publicKey: "unused", origins: [], present: true }],
-      shares: [{ key: SHARE, projectId: "p1", kind: "project", root, phase: id === "b" ? "builtin" : "syncthing", rules: {}, peers: [peer] }],
+      shares: [{ key: SHARE, projectId: "p1", kind: "project", root, phase: id === "b" ? "builtin" : "shadow", rules: {}, peers: [peer] }],
     });
     const result: Node = { id, root, core, events, scan: () => core.call("scan", { share: SHARE, scope: "full", reason: "test" }) };
     nodes.push(result);
@@ -579,7 +579,7 @@ test("revocation wins: bytes from a peer that left the share are neither written
       body: (async function* () {
         // The share's peer set changes while the answer is on its way.
         await s.b.core.call("configure", {
-          enabled: true, hostId: "host-b", records: { engines: [], settings: [] }, peers: [{ nodeId: "a", publicKey: "unused", origins: [], present: true }],
+          enabled: true, hostId: "host-b", records: { settings: [] }, peers: [{ nodeId: "a", publicKey: "unused", origins: [], present: true }],
           shares: [{ key: SHARE, projectId: "p1", kind: "project", root: s.b.root, phase: "builtin", rules: {}, peers: [] }],
         });
         yield* body;

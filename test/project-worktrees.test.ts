@@ -10,7 +10,6 @@ import {
   listProjectWorktrees,
   markWorktreeConversation,
   mergeProjectWorktree,
-  projectWorktreeSyncFolderId,
   recordWorktreePullRequest,
   updateProjectWorktree,
   WORKTREE_META_DIR,
@@ -100,7 +99,6 @@ test("a worktree copies only code and text and lists with its name and color", a
     const renamed = await updateProjectWorktree(project.id, worktree.id, { name: "Slice four", color: "amber" }, worktrees);
     assert.deepEqual([renamed.name, renamed.color], ["Slice four", "amber"]);
     assert.deepEqual((await listProjectWorktrees(project.id, worktrees)).map((entry) => entry.name), ["Slice four", "Other"]);
-    assert.match(projectWorktreeSyncFolderId(project.id), /^joint-bob-worktrees-[0-9a-f]{64}$/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

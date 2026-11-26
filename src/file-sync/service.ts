@@ -6,7 +6,7 @@ import { ZodError } from "zod";
 import type { FileSyncDb, LocalEntry } from "./db.js";
 import { FRAME_LIMITS, FrameWriter, type FrameErrorKind, type FrameLimits } from "./frames.js";
 import { joinInside } from "./paths.js";
-import { FILE_SYNC_MIN_PROTOCOL, FILE_SYNC_PROTOCOL, type ConfigureArgs, type FilesEndpoint, type ServeAnswer, type ShareSpec } from "./protocol.js";
+import { FILE_SYNC_MIN_PROTOCOL, FILE_SYNC_PROTOCOL, LEGACY_SHARES_FIELDS, type ConfigureArgs, type FilesEndpoint, type ServeAnswer, type ShareSpec } from "./protocol.js";
 import { FILE, shareKey, type Clock, type ShareKind, type ShareState } from "./types.js";
 import {
   changedBodySchema, fetchBodySchema, fileBodySchema, indexIdSchema, indexQuerySchema, INDEX_CONTENT_TYPE, NOT_SHARED_ERROR, statusBodySchema, toWire,
@@ -164,12 +164,11 @@ export function createFilesService(deps: ServiceDeps): FilesService {
         }];
       }),
       // Records about projects the caller shares, and this node's own all-projects rules once it shares anything.
-      engines: (config?.records.engines ?? []).filter((record) => projects.has(record.projectId)),
       settings: (config?.records.settings ?? []).filter((record) => record.key.startsWith("project:")
         ? projects.has(record.key.slice("project:".length))
         : record.key === `global:${deps.nodeId}` && projects.size > 0),
     };
-    return json(200, answer);
+    return json(200, { ...answer, ...LEGACY_SHARES_FIELDS });
   }
 
   async function index(peer: string, query: Record<string, string>): Promise<ServeAnswer> {

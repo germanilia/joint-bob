@@ -233,7 +233,7 @@ To take it down: empty the bucket, then delete the stack.
 - In `secrets` and in the `handoff` take the team's cluster is made through the API before recording.
   In `team` it is made on screen. That take runs without the twin pairing, because a twin with no
   file synchronization showed as "Twin · error" on the cluster map when the takes were made. This has
-  not been rechecked since Syncthing was removed (2026-11-10).
+  not been rechecked since file sync became part of Joint Bob (2026-11-10).
 - "Runs on" is a native menu, which a headless page does not draw: the pointer goes to it and
   the choice appears.
 - Headless frames carry no pointer, so the page draws one that follows the real mouse events.

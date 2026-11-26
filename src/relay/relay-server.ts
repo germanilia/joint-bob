@@ -548,7 +548,7 @@ export class RelayServer {
         return;
       case "open": {
         const refuse = (error: string): void => session.deliver(encodeControl({ t: "open-failed", ref: message.ref, error }));
-        if (typeof message.ref !== "number" || !["peer", "syncthing"].includes(message.kind)) { refuse("Invalid request"); return; }
+        if (typeof message.ref !== "number" || message.kind !== "peer") { refuse("Invalid request"); return; }
         const target = typeof message.to === "string" ? this.sessions.get(message.to) : undefined;
         if (!target || target === session || target.kind === "gateway") { refuse("That machine is not connected to this relay"); return; }
         if (!this.servesMachine(session.nodeId) || !this.servesMachine(target.nodeId)) { refuse("This relay serves only its owner's machines"); return; }

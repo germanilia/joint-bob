@@ -307,8 +307,8 @@ async function liveCore(t: TestContext): Promise<Live> {
   const close = async () => { if (!closed) { closed = true; await core.close(); } };
   t.after(async () => { await close(); rmSync(dir, { recursive: true, force: true }); });
   await core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
-    shares: [{ key: "project:p1", projectId: "p1", kind: "project", root, phase: "syncthing", rules: {}, peers: [] }],
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
+    shares: [{ key: "project:p1", projectId: "p1", kind: "project", root, phase: "shadow", rules: {}, peers: [] }],
   });
   await waitFor(events, (status) => status.liveFiles === 1 && status.state === "idle", 10_000);
   return { root, events, close, core };
@@ -360,8 +360,8 @@ test("a core whose watchers were never closed lets the process exit", { timeout:
     import { createWorkerCore } from ${JSON.stringify(pathToFileURL(path.resolve(import.meta.dirname, "../src/file-sync/core.ts")).href)};
     import { systemClock } from ${JSON.stringify(pathToFileURL(path.resolve(import.meta.dirname, "../src/file-sync/types.ts")).href)};
     const core = createWorkerCore({ nodeId: "node-a", dataDir: ${JSON.stringify(path.join(dir, "data"))}, clock: systemClock, random: Math.random, watch: true, emit: () => undefined });
-    await core.call("configure", { enabled: true, hostId: "h", peers: [], records: { engines: [], settings: [] },
-      shares: [{ key: "project:p1", projectId: "p1", kind: "project", root: ${JSON.stringify(path.join(dir, "root"))}, phase: "syncthing", rules: {}, peers: [] }] });
+    await core.call("configure", { enabled: true, hostId: "h", peers: [], records: { settings: [] },
+      shares: [{ key: "project:p1", projectId: "p1", kind: "project", root: ${JSON.stringify(path.join(dir, "root"))}, phase: "shadow", rules: {}, peers: [] }] });
     const result = await core.call("flush", { share: "project:p1" });
     console.log("scanned", result.files);
   `);
@@ -407,8 +407,8 @@ test("the worker thread answers ops, sends events and ends after stop", { timeou
     return answers.get(id)!;
   };
   const configured = await ask(1, "configure", {
-    enabled: true, hostId: "h", peers: [], records: { engines: [], settings: [] },
-    shares: [{ key: "project:p1", projectId: "p1", kind: "project", root: path.join(dir, "root"), phase: "syncthing", rules: {}, peers: [] }],
+    enabled: true, hostId: "h", peers: [], records: { settings: [] },
+    shares: [{ key: "project:p1", projectId: "p1", kind: "project", root: path.join(dir, "root"), phase: "shadow", rules: {}, peers: [] }],
   });
   assert.equal(configured.ok, true, JSON.stringify(configured));
   const scanned = await ask(2, "scan", { share: "project:p1", scope: "full", reason: "test" });
@@ -448,7 +448,7 @@ test("a file written into folders a download made is indexed, where each folder 
   t.after(async () => { await core.close(); rmSync(dir, { recursive: true, force: true }); });
   const key = "project:p1";
   await core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
     shares: [{ key, projectId: "p1", kind: "project", root, phase: "builtin", rules: {}, peers: ["node-b"] }],
   });
   await waitFor(events, (status) => status.state === "idle" && status.watch === "watching", 10_000);

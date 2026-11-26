@@ -47,9 +47,9 @@ async function setup(t: TestContext, options: Partial<CoreDeps> = {}): Promise<F
     rmSync(dir, { recursive: true, force: true });
   });
   const configure = (overrides: Partial<OpArgs["configure"]["shares"][number]> = {}) => core.call("configure", {
-    enabled: true, hostId: "host-a", records: { engines: [], settings: [] },
+    enabled: true, hostId: "host-a", records: { settings: [] },
     peers: [{ nodeId: "b", publicKey: "unused", origins: [], present: false }],
-    shares: [{ key: SHARE, projectId: "p1", kind: "project", root, phase: "syncthing", rules: {}, peers: ["b"], ...overrides }],
+    shares: [{ key: SHARE, projectId: "p1", kind: "project", root, phase: "shadow", rules: {}, peers: ["b"], ...overrides }],
   });
   await configure();
   return { root, outside, core, configure, scan: () => core.call("scan", { share: SHARE, scope: "full", reason: "test" }) };

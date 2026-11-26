@@ -274,7 +274,7 @@ class Core implements WorkerCore {
     const scanner = runtime.scanner;
     return {
       key, kind: runtime.spec.kind, root: scanner.context.root, fsNames: scanner.fsNames,
-      get phase() { return runtime.closed ? "syncthing" : runtime.spec.phase; },
+      get phase() { return runtime.closed ? "shadow" : runtime.spec.phase; },
       peers: () => runtime.spec.peers.filter((peer) => !this.sync?.isExcluded(key, peer)),
       ignoreClass: (relative, isDirectory) => scanner.ignoreClass(relative, isDirectory),
     };
@@ -406,9 +406,9 @@ class Core implements WorkerCore {
         matcher: compileRules(effectiveRules(spec.kind, spec.rules)), peers: spec.peers,
       };
       this.ensureShareRow(spec, context.root);
-      // cutover-engine (P5): back on Syncthing (or on the way), this node's rows are Syncthing's again: a later switch must
-      // decide them as such, so the builtin_since served to peers goes until the next bootstrap sets it.
-      if ((spec.phase === "syncthing" || spec.phase === "restoring") && this.db.share(spec.key)?.builtinSince != null) {
+      // Not taken over (any more): a later take-over must decide this node's rows afresh, so the builtin_since served to
+      // peers goes until the next bootstrap sets it.
+      if (spec.phase === "shadow" && this.db.share(spec.key)?.builtinSince != null) {
         this.db.writeTx(() => this.db.updateShare(spec.key, { builtinSince: null }));
       }
       const existing = this.shares.get(spec.key);
@@ -618,7 +618,7 @@ class Core implements WorkerCore {
     const share = this.db.share(key);
     const now = this.deps.clock.now();
     if (!full && (!share?.fullScanAt || now - share.fullScanAt > FULL_SCAN_MAX_AGE_MS)) {
-      // Syncthing's hourly safety net, triggered by the event instead of a timer; a turn walks only its subtree.
+      // An hourly safety net, triggered by the event instead of a timer; a turn walks only its subtree.
       const relative = share?.fullScanAt ? this.subtreeKey(runtime, subtree) : undefined;
       if (relative === undefined) full = true;
       else if (now - (runtime.subtreeScans.get(relative) ?? share!.fullScanAt!) > FULL_SCAN_MAX_AGE_MS) {

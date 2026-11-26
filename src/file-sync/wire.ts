@@ -144,7 +144,6 @@ export function filesTarget(endpoint: FilesEndpoint, query?: Record<string, stri
 
 const decimal = (min: number, max: number) => z.string().regex(/^(0|[1-9][0-9]{0,15})$/).transform(Number).pipe(z.number().int().min(min).max(max));
 
-const engineRecordSchema = z.object({ projectId: projectIdSchema, mode: z.enum(["syncthing", "builtin"]), generation: safeInt, updatedAt: z.string().datetime({ offset: true }), origin: nodeIdSchema });
 const ruleList = z.array(z.string().max(1000)).max(1000);
 const settingsRecordSchema = z.object({
   key: z.string().regex(/^(project|global):.{1,240}$/),
@@ -177,7 +176,6 @@ export const sharesAnswerSchema = z.object({
     rootDev: z.number().finite().min(0).nullable(),
     rootIno: z.number().finite().min(0).nullable(),
   })).max(30_000),
-  engines: z.array(engineRecordSchema).max(10_000),
   settings: z.array(settingsRecordSchema).max(20_000),
 });
 

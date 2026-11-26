@@ -197,7 +197,7 @@ test("with no direct origin answering, the request goes through the worker's rel
   const configured = await worker.call("configure", {
     enabled: true, hostId: "host", signingKey: selfKeys.privateKey, listen: { addresses: ["127.0.0.1"], port }, shares: [],
     // Away: the core's own sync layer leaves the peer alone, so only this test's requests are relayed.
-    peers: [{ nodeId: PEER, publicKey: pem(peerKeys.publicKey), origins: [closed], present: false }], records: { engines: [], settings: [] },
+    peers: [{ nodeId: PEER, publicKey: pem(peerKeys.publicKey), origins: [closed], present: false }], records: { settings: [] },
   });
   assert.equal(configured.origins.length, 1, "configure reports the listener's origin");
   assert.ok(Number(new URL(configured.origins[0]).port) >= port);

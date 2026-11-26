@@ -444,7 +444,7 @@ function engineNotRunning(fetched: Fetched): boolean {
 }
 
 function recordsText(answer: SharesAnswer): string | undefined {
-  return answer.engines.length || answer.settings.length ? JSON.stringify([answer.engines, answer.settings]) : undefined;
+  return answer.settings.length ? JSON.stringify(answer.settings) : undefined;
 }
 
 export class SyncLayer {
@@ -883,7 +883,7 @@ export class SyncLayer {
     const trustedText = recordsText(trusted);
     if (trustedText === undefined || trustedText === state.lastRecords) return;
     state.lastRecords = trustedText;
-    this.deps.emit({ event: "records", fromPeer: state.id, engines: trusted.engines, settings: trusted.settings });
+    this.deps.emit({ event: "records", fromPeer: state.id, settings: trusted.settings });
   }
 
   private applyShares(state: PeerState, answer: SharesAnswer): void {

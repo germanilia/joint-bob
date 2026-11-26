@@ -200,25 +200,25 @@ test("worktree readiness excludes sibling errors and rescans but keeps its own p
 test("each project is answered from its phase here: shared with nobody, being taken over, or built-in", async () => {
   const stand = standIn();
   const db = await controlDatabase();
-  const unshared = record("mixed-unshared"), builtin = record("mixed-builtin"), moving = record("mixed-moving");
-  // Phases an older release left behind are take-overs still to finish.
-  const older = (["syncthing", "releasing", "restoring"] as const).map((phase) => ({ phase, project: record(`mixed-${phase}`) }));
+  const unshared = record("mixed-unshared"), builtin = record("mixed-builtin"), moving = record("mixed-moving"), back = record("mixed-back");
   setPhase(db, builtin.id, "builtin");
   setPhase(db, moving.id, "bootstrapping");
-  for (const { phase, project } of older) setPhase(db, project.id, phase);
+  // Taken over once and put back to shadow: no phase is recorded, as for a project nobody shares.
+  setPhase(db, back.id, "builtin");
+  setPhase(db, back.id, "shadow");
   stand.views.set(builtin.id, view(builtin.id, {}, [share(builtin.id, "project", { need: { files: 2, bytes: 2048 } })]));
   const asked: string[][] = [];
   const views = stand.engine.fileSyncProjectViews;
   stand.engine.fileSyncProjectViews = async (ids) => { asked.push([...ids]); return views(ids); };
-  const statuses = await projectSyncStatuses([unshared, builtin, moving, ...older.map(({ project }) => project)]);
+  const statuses = await projectSyncStatuses([unshared, builtin, moving, back]);
   assert.deepEqual(statuses[unshared.id], { state: "unavailable", remainingFiles: 0, remainingBytes: 0, message: "This project is not shared with another machine", engine: "none" });
   assert.deepEqual(statuses[builtin.id], { state: "syncing", remainingFiles: 2, remainingBytes: 2048, message: "Copying 2 files (2.0 KB) from homeserver", engine: "builtin" });
   const taking = { state: "syncing", remainingFiles: 0, remainingBytes: 0, message: "Checking both machines' files", engine: "moving" };
   assert.deepEqual(statuses[moving.id], taking);
-  for (const { phase, project } of older) assert.deepEqual(statuses[project.id], taking, phase);
+  assert.deepEqual(statuses[back.id], statuses[unshared.id]);
   assert.deepEqual(asked, [[builtin.id]], "the engine is asked only about projects it writes here");
-  assert.deepEqual(await projectFilesEngines([unshared.id, builtin.id, moving.id, older[0].project.id]),
-    new Map([[unshared.id, "none"], [builtin.id, "builtin"], [moving.id, "moving"], [older[0].project.id, "moving"]]));
+  assert.deepEqual(await projectFilesEngines([unshared.id, builtin.id, moving.id, back.id]),
+    new Map([[unshared.id, "none"], [builtin.id, "builtin"], [moving.id, "moving"], [back.id, "none"]]));
   // With nothing built-in the engine is not asked at all.
   asked.length = 0;
   await projectSyncStatuses([unshared, moving]);

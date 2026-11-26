@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { HarnessSessionCatalog, conversationSyncFolderId, defineHarness, harnessForSessionPath, listHarnesses, listHarnessSyncFolders } from "../src/harnesses.js";
+import { HarnessSessionCatalog, defineHarness, harnessForSessionPath, listHarnesses } from "../src/harnesses.js";
 import { discoverHarnesses, resolveHarnessForSessionPath } from "../src/harnesses/registry.js";
 import type { HarnessProject } from "../src/harnesses.js";
 import type { SessionSummary } from "../src/types.js";
@@ -41,10 +41,6 @@ test("harness registry exposes adapters instead of UI-specific engine checks", (
   assert.equal(harnessForSessionPath("/tmp/123e4567-e89b-42d3-a456-426614174000.jsonl").paths.sessionId("/tmp/123e4567-e89b-42d3-a456-426614174000.jsonl"), "123e4567-e89b-42d3-a456-426614174000");
   assert.equal(harnessForSessionPath("claude:/tmp/root/id.jsonl").paths.sessionId("claude:/tmp/root/id.jsonl"), "id");
   assert.equal(harnessForSessionPath("kiro:/tmp/root/id.jsonl").paths.sessionId("kiro:/tmp/root/id.jsonl"), "id");
-  assert.deepEqual(listHarnessSyncFolders().map(({ id }) => id), ["joint-bob-conversations-pi", "joint-bob-conversations-claude", "joint-bob-conversations-kiro", "joint-bob-conversations-antigravity"]);
-  assert.equal(conversationSyncFolderId("pi"), "joint-bob-conversations-pi");
-  assert.equal(conversationSyncFolderId("kiro"), "joint-bob-conversations-kiro");
-  assert.equal(conversationSyncFolderId("antigravity"), "joint-bob-conversations-antigravity");
 });
 
 function fixtureAdapter(id: string, ownsSession = 'value === "fake:session"'): string {

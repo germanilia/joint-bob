@@ -1,9 +1,9 @@
 import type { ShareKind } from "./types.js";
 
-/* The built-in ignore rules, ported line by line from Syncthing's managed lists (src/syncthing.ts
-   projectIgnorePatterns and the worktree construction over src/worktree-filters.ts). Patterns keep
-   Syncthing syntax so the same table can still be written into a node's .stignore while projects
-   move engines. Order matters only for that Syncthing list: the engine decides by class (ignore.ts). */
+/* The built-in ignore rules: the project list, and the worktree additions built over
+   src/worktree-filters.ts. Patterns are written as a person writes a rule ("(?d)" marks what may be
+   deleted along with its directory). Order does not matter: the engine decides by class (ignore.ts).
+   Peers compare a hash of these rules, so a pattern here changes only with care. */
 
 /** `local` is never synced and never deleted for a peer; `regenerable` goes with its directory. */
 export type RuleClass = "local" | "regenerable";
@@ -16,16 +16,16 @@ export type RuleGroup =
 export interface BuiltinRule {
   /** The pattern without "(?d)": what `disabledBuiltins` names. */
   id: string;
-  /** Syncthing syntax as written to .stignore. */
+  /** The rule as written, with its "(?d)" where it has one. */
   pattern: string;
   /** "(?d)" lines are regenerable, every other line is local. */
   class: RuleClass;
   group: RuleGroup;
-  /** Cannot be switched off: the engine or Syncthing would sync its own bookkeeping. */
+  /** Cannot be switched off: a sync tool would sync its own bookkeeping. */
   locked?: true;
   /** Share kinds the rule applies to; every kind when absent. */
   kinds?: readonly ShareKind[];
-  /** Not part of Syncthing's managed list (Syncthing already skips these names itself). */
+  /** Not one of the project rules: bookkeeping of another sync tool. */
   engineOnly?: true;
 }
 
@@ -60,8 +60,7 @@ function rules(group: RuleGroup, patterns: readonly string[], extra: Partial<Pic
   return patterns.map((pattern) => ({ id: withoutDeletable(pattern), pattern, class: pattern.startsWith(DELETABLE) ? "regenerable" : "local", group, ...extra }));
 }
 
-/* Every line of projectIgnorePatterns, in its order. The comments there explain each addition; the
-   ones that matter for classification are repeated here. */
+/* The project rules. */
 const projectRules: BuiltinRule[] = [
   // D10: .git stays node-local; git-catch-up moves HEAD.
   ...rules("sync-internal", [".git", ".git/**", "**/.git", "**/.git/**"], { locked: true }),
@@ -107,8 +106,8 @@ const projectRules: BuiltinRule[] = [
   ]),
 ];
 
-/* Syncthing's folder marker, ignore file and versions, and its temp files: Syncthing skips them on its
-   own, but the engine runs beside it in shadow mode and must not index them either. */
+/* A person may run Syncthing on a folder Joint Bob also syncs: its folder marker, ignore file, versions
+   and download temps are its own bookkeeping, and must never travel to another machine. */
 const engineOnlyRules: BuiltinRule[] = [
   ...rules("sync-internal", [".stfolder", ".stignore", ".stversions", "(?d).syncthing.*.tmp", "(?d)~syncthing~*.tmp"], { locked: true, engineOnly: true }),
 ];
@@ -135,13 +134,13 @@ export const WORKTREE_BINARY_EXTENSIONS = [
 /* Worktrees are disposable copies: on top of the project rules (all regenerable there), heavy trees,
    linked dependency folders (symlinks with absolute targets into the project, which must never
    travel), the merge journal and binaries stay out. A pattern the project rules already have is
-   not repeated, exactly as Syncthing's Set dedup does. */
+   not repeated. */
 function worktreeOnlyRules(): BuiltinRule[] {
   const seen = new Set(projectRules.map((rule) => rule.class === "regenerable" ? rule.pattern : `${DELETABLE}${rule.pattern}`));
   const fresh = (pattern: string) => !seen.has(pattern) && Boolean(seen.add(pattern));
   const heavy: readonly string[] = WORKTREE_HEAVY_DIRECTORIES;
   const groups: Array<[RuleGroup, string[]]> = [
-    // Syncthing's own folder files are engine-only rules below every kind.
+    // Another sync tool's folder files are engine-only rules below every kind.
     ["worktree-heavy", heavy.filter((name) => !name.startsWith(".st")).map((name) => `${DELETABLE}${name}`)],
     ["worktree-linked", WORKTREE_LINKED_DIRECTORIES.filter((name) => !heavy.includes(name)).map((name) => `${DELETABLE}${name}`)],
     ["worktree-merge", [`${DELETABLE}.joint-bob-merge`]],
@@ -167,6 +166,8 @@ export function builtinRulesFor(kind: ShareKind): BuiltinRule[] {
    temp is never protected: one for a conflict copy carries ".sync-conflict-" in its name, and indexing
    it would send half a download to every peer and leave it there. */
 const SYNC_TEMP = /^(?:\.joint-bob-sync\..*\.tmp|\.syncthing\..*\.tmp|~syncthing~.*\.tmp)$/s;
+/** Half-downloaded files Syncthing left in a folder it synced before. */
+export const OTHER_TOOL_TEMP = /^(?:\.syncthing\..*\.tmp|~syncthing~.*\.tmp)$/s;
 
 export function isNeverIgnored(name: string, kind: ShareKind): boolean {
   if (name.startsWith(".joint-bob-")) {

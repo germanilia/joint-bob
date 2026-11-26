@@ -47,19 +47,20 @@ export interface IndexEntry {
   seq: number;
 }
 
-export type EngineMode = "syncthing" | "builtin";
-/** Node-local progress of a project between engines (FILE-SYNC design §7). Only `builtin` lets the engine write. */
-export type Phase = "syncthing" | "releasing" | "bootstrapping" | "builtin" | "restoring";
-
-export interface EngineRecord { projectId: string; mode: EngineMode; generation: number; updatedAt: string; origin: string }
+/**
+ * Node-local progress of a project's take-over (adoption.ts). "shadow": not taken over yet, so its
+ * folders are indexed and compared and nothing is written; it is what a project without a recorded
+ * phase has. "bootstrapping": the take-over runs. Only "builtin" lets the engine write.
+ */
+export type Phase = "shadow" | "bootstrapping" | "builtin";
 
 export interface RuleSettings {
   disabledBuiltins: string[];
   userRules: string[];
-  /** A user rule is removed from a node's Syncthing ignores only when listed here, never because it is absent. */
+  /** A user rule stops applying on a node only when listed here, never because it is absent. */
   removedUserRules: string[];
   gitignore: boolean;
-  /** Nodes whose node-local .stignore user rules are already merged in. */
+  /** Nodes whose own hand-written ignore rules an earlier release merged in. */
   importedFrom: string[];
 }
 

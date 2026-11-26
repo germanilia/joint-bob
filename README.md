@@ -335,11 +335,14 @@ Joint Bob moves files between machines itself. File sync is part of the Joint Bo
 
 A project shared with no other machine is not synchronized. When a project is first shared, both machines compare their files before changes flow. Until that finishes the project shows "Checking both machines' files". **Settings > File sync** shows the state of every share, its errors, and the ignore rules.
 
-Earlier releases used Syncthing for project files. Joint Bob no longer installs, starts, or configures Syncthing. On a machine that was installed with an earlier release:
+Earlier releases used Syncthing for project files. Joint Bob no longer installs, starts, or configures Syncthing. On a machine that was installed with an earlier release, Joint Bob removes what it put there, once and by itself:
 
-- Joint Bob removes its own `joint-bob-*` folders from the local Syncthing configuration once. Other Syncthing folders are not touched.
-- The Syncthing daemon keeps running. Joint Bob does not stop or remove it, including a `joint-bob-syncthing.service` or `com.joint-bob.syncthing` unit that an earlier installer created. Remove it yourself if you do not use Syncthing for anything else.
-- `.stfolder` and `.stignore` files stay in project folders. They are not synchronized and can be deleted.
+- Its own `joint-bob-*` folders leave the local Syncthing configuration. Folders you added yourself are not touched, and no file in any folder is deleted.
+- The Syncthing service an earlier installer created (`joint-bob-syncthing.service` or `com.joint-bob.syncthing`) is stopped and removed, and the copy of Syncthing it downloaded is deleted. A service that still syncs a folder of your own is left running, and the log says so.
+- Machines that Joint Bob added to a Syncthing you keep are removed from it once they share no folder.
+- The `.stignore` files and `.stfolder` markers in Joint Bob's folders are deleted. The text of the ignore files is kept in `removed-sync-ignore-files.txt` in Joint Bob's data folder.
+
+A Syncthing you installed yourself keeps running with your own folders. Joint Bob does not use it; uninstall it if you use it for nothing else.
 
 What travels how:
 

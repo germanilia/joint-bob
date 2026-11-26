@@ -478,9 +478,9 @@ test("a peer whose direct URL is down is reached through a shared relay", async 
   assert.equal(b.requests.at(-1)?.transport, "peer", "the request arrived on a relay channel");
 });
 
-// A machine on an older release may still ask for a tunnel to its peer's Syncthing. There is nothing
-// to connect it to, so the channel is refused; a peer channel between the same two machines works.
-test("a channel of the old file tunnel kind from a pinned peer is refused", async () => {
+// A machine on an older release may still ask for a tunnel for the sync tool it used. The relay knows no
+// such channel, so it is refused; a peer channel between the same two machines works.
+test("a channel of a kind the relay does not know is refused, even from a pinned peer", async () => {
   const g = await machine("tunnel-source", () => []);
   const h = await machine("tunnel-target", () => []);
   for (const item of [g, h]) item.runtime.addWithToken(token(item.name));
@@ -490,12 +490,12 @@ test("a channel of the old file tunnel kind from a pinned peer is refused", asyn
   g.runtime.ensureWatched(h.nodeId);
   await eventually(() => assert.ok(g.runtime.hasRoute(h.nodeId)));
 
-  const tunnel = g.runtime.openStream(h.nodeId, "syncthing");
+  const tunnel = g.runtime.openStream(h.nodeId, "tunnel" as "peer");
   const outcome = await new Promise<string>((resolve) => {
     tunnel.once("relay-ready", () => resolve("opened"));
     tunnel.once("error", (error: Error) => resolve(error.message));
   });
-  assert.match(outcome, /shares no files with that peer/);
+  assert.match(outcome, /Invalid request/);
   assert.equal(h.requests.length, 0, "nothing of the refused channel reaches the machine's HTTP server");
 
   const peer = g.runtime.openStream(h.nodeId, "peer");

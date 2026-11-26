@@ -25,7 +25,7 @@ export const MAX_FRAME = 64 * 1024 + 64;
 export const CONNECT_PATH = "/api/relay/v1/connect";
 export const VIRTUAL_RELAY_SUFFIX = ".relay.invalid";
 
-export type ChannelKind = "peer" | "syncthing" | "gateway";
+export type ChannelKind = "peer" | "gateway";
 
 /** Why a relay refused a machine. Only "unavailable" is worth retrying on its own. */
 export type DeniedCode = "not-admitted" | "revoked" | "suspended" | "declined" | "invalid-token" | "full" | "requests-off" | "rate-limited" | "key-mismatch" | "owner-only" | "unavailable";

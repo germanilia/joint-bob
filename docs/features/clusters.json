@@ -162,7 +162,7 @@
             "Legacy bearer-token pairing is removed. A node that still has a legacy pairing loses it and must join through a cluster invitation or pair as a twin.",
             "A node older than 1.59.0 must first upgrade to a release between 1.59.0 and 1.97.x.",
             "The retired pairing tables are dropped on start; the node keeps its identity.",
-            "Project files are moved by Joint Bob's built-in file sync. Syncthing is no longer installed or used. A machine upgraded from an earlier release keeps its Syncthing daemon running; Joint Bob removes only its own `joint-bob-*` folders from it, once, and leaves `.stfolder` and `.stignore` files on disk."
+            "Project files are moved by Joint Bob's built-in file sync. Syncthing is no longer installed or used. On a machine upgraded from an earlier release, Joint Bob removes what it put there, once: its own `joint-bob-*` folders in the local Syncthing, the Syncthing service and download an earlier installer set up, and the `.stignore` files and `.stfolder` markers in its folders. A Syncthing you installed yourself, and your own folders in it, are left alone."
           ]
         }
       ]

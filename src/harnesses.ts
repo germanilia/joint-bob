@@ -194,24 +194,6 @@ export function harnessForProvider(provider: string): HarnessAdapter {
   throw new Error(`Provider matches multiple configurable harnesses: ${provider}`);
 }
 
-export interface HarnessSyncFolder {
-  id: string;
-  label: string;
-  path: string;
-}
-
-export function conversationSyncFolderId(harnessId: HarnessId): string {
-  return `joint-bob-conversations-${harnessId}`;
-}
-
-function syncFolder(adapter: HarnessAdapter): HarnessSyncFolder {
-  return { id: conversationSyncFolderId(adapter.id), label: `${adapter.label} conversations`, path: path.resolve(adapter.sync.transcriptRoot()) };
-}
-
-export function listHarnessSyncFolders(): HarnessSyncFolder[] {
-  return adapters.map(syncFolder);
-}
-
 export function harnessForSessionPath(sessionPath: string): HarnessAdapter {
   return resolveHarnessForSessionPath(adapters, sessionPath);
 }

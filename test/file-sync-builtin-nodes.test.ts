@@ -213,7 +213,7 @@ async function runPair(t: TestContext): Promise<void> {
     // Every shared project is derived without anyone choosing it; builtin on both through the test-only route.
     for (const side of [a, b]) {
       const running = await until(() => status(side), (answer) => answer.worker === "running" && Boolean(projectShare(answer, projectId)), 30_000);
-      assert.deepEqual([running.worker, projectShare(running, projectId)?.engine], ["running", "builtin"], JSON.stringify(running));
+      assert.deepEqual([running.worker, projectShare(running, projectId)?.phase], ["running", "shadow"], JSON.stringify(running));
     }
     for (const side of [a, b]) await setPhase(side, projectId, "builtin");
 

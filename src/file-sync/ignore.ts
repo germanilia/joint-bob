@@ -5,12 +5,12 @@ import {
 } from "./builtin-rules.js";
 import type { RuleSettings, ShareKind } from "./types.js";
 
-/* The matcher every scan, event and need decision goes through. Syncthing pattern syntax (gobwas glob
-   with "/" as separator): an unanchored pattern matches at any depth, a leading "/" anchors it to the
-   share root, "*" and "?" stay within one name, "**" crosses "/", [...] and {a,b} as in Syncthing,
+/* The matcher every scan, event and need decision goes through. The pattern syntax is a glob with "/"
+   as separator: an unanchored pattern matches at any depth, a leading "/" anchors it to the share
+   root, "*" and "?" stay within one name, "**" crosses "/", [...] and {a,b} as in a shell,
    "(?i)" folds case, "(?d)" marks a user rule regenerable, "!" re-includes. A match on a directory
    covers its subtree, a trailing "/" matches directories only, a trailing "/**" only what is below.
-   Unlike Syncthing on macOS, matching is case-sensitive without "(?i)", so every node agrees. */
+   Matching is case-sensitive without "(?i)" on every platform, so every node agrees. */
 
 /** null from classify means synced. */
 export type IgnoreClass = "local" | "regenerable" | "user" | "user-regenerable";
@@ -107,7 +107,7 @@ function parsePattern(line: string): Pattern {
   if (line.length > MAX_RULE_LENGTH) throw new RuleSyntaxError(`Pattern is longer than ${MAX_RULE_LENGTH} characters`);
   let rest = line;
   let negate = false, foldCase = false, deletable = false;
-  // Syncthing accepts the prefixes in any order, each once.
+  // The prefixes come in any order, each once.
   for (;;) {
     if (!negate && rest.startsWith("!")) { negate = true; rest = rest.slice(1); }
     else if (!foldCase && rest.startsWith("(?i)")) { foldCase = true; rest = rest.slice(4); }
@@ -129,7 +129,7 @@ function levelRegExp(pattern: Pattern): RegExp {
   return new RegExp(`${pattern.anchored ? "^" : "^(?:.*/)?"}${pattern.source}${pattern.childrenOnly ? "/.*" : ""}$`, regExpFlags(pattern.foldCase));
 }
 
-/** Comments ("//" as in Syncthing, "#" as in .gitignore) and blank lines are dropped; duplicates keep their first position. */
+/** Comments ("//", or "#" as in .gitignore) and blank lines are dropped; duplicates keep their first position. */
 export function parseUserRules(lines: readonly string[]): ParsedUserRules {
   const parsed: ParsedUserRules = { rules: [], unsupported: [], errors: [] };
   const seen = new Set<string>();

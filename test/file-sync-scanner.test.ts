@@ -78,7 +78,7 @@ function setup(t: TestContext, options: { kind?: ShareKind; phase?: Phase; rules
   let generations = 1;
   const context = (overrides: Partial<ShareContext> & { rules?: Partial<RuleSettings> } = {}): ShareContext => {
     const { rules, ...rest } = overrides;
-    return { key, projectId: "p1", kind, root, phase: options.phase ?? "syncthing", matcher: compileRules(effectiveRules(kind, rules ?? options.rules)), peers: [], ...rest };
+    return { key, projectId: "p1", kind, root, phase: options.phase ?? "shadow", matcher: compileRules(effectiveRules(kind, rules ?? options.rules)), peers: [], ...rest };
   };
   const scanner = new ShareScanner({
     db, nodeId: NODE, clock, emit: (event) => events.push(event), slicer: options.slicer ?? new Slicer(),
@@ -449,7 +449,7 @@ test("in shadow mode a deleted folder that comes back is live whatever it holds"
   rmSync(path.join(s.root, "d"), { recursive: true });
   await s.scanner.scan({ paths: ["d"] });
   assert.equal(s.row("d")!.deleted, true);
-  // Syncthing creates a folder that holds only ignored files on the other node empty: both trees have it.
+  // A folder that holds only ignored files exists empty on the other node (whatever copied it there): both trees have it.
   s.write("d/.DS_Store", "finder");
   await s.scanner.scan("full");
   assert.equal(s.row("d")!.deleted, false);
@@ -694,7 +694,7 @@ test("each scan reports a metric with counts", async (t) => {
 });
 
 test("stale engine temps are removed in builtin mode and left alone in shadow mode", async (t) => {
-  const shadow = setup(t, { phase: "syncthing" });
+  const shadow = setup(t, { phase: "shadow" });
   const temp = ".joint-bob-sync.file.0123456789abcdef.tmp";
   shadow.write(temp, "partial");
   const old = new Date(Date.now() - 2 * 3_600_000);
@@ -720,7 +720,7 @@ test("builtin mode keeps engine temps out of git status", async (t) => {
 
 test("shadow mode never touches .git/info/exclude", async (t) => {
   if (spawnSync("git", ["--version"]).status !== 0) { t.skip("git is not installed"); return; }
-  const s = setup(t, { phase: "syncthing" });
+  const s = setup(t, { phase: "shadow" });
   assert.equal(spawnSync("git", ["init", "-q"], { cwd: s.root }).status, 0);
   const exclude = path.join(s.root, ".git", "info", "exclude");
   const before = existsSync(exclude) ? readFileSync(exclude, "utf8") : null;

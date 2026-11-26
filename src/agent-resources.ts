@@ -19,8 +19,6 @@ import { projectFolderResources, withProjectFolderResources } from "./project-fo
 import { assertClusterResourceSupport, assertClusterResourcesPresent, clusterPolicySkillPaths } from "./cluster-agent-resources.js";
 import { withResourcePass } from "./resource-pass.js";
 
-export const AGENT_RESOURCES_FOLDER_ID = "joint-bob-agent-resources";
-export const AGENT_RESOURCES_FOLDER_LABEL = "Joint Bob agent resources";
 export const CLAUDE_RESOURCE_PLUGIN_NAME = "joint-bob-resources";
 /** 2: commands and agents are copied, because Claude skips linked ones. */
 const RESOURCE_PLUGIN_LAYOUT = 2;

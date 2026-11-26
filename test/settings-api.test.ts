@@ -338,10 +338,10 @@ test("settings API persists runtime choices without returning secrets", async ()
     assert.equal(timeoutSaved.status, 200);
     assert.equal((await (await fetch(`${node.baseUrl}/api/settings`, { headers })).json()).gitPullTimeoutSeconds, 600);
 
-    // An older page still sends the removed Syncthing fields: the save succeeds and stores none of them.
-    const { legacySyncthingConnection } = await import("../src/settings.js");
+    // An older page still sends the settings of the sync tool earlier releases used: the save succeeds and stores none of them.
+    const { savedConnection, forgetSavedConnection } = await import("../src/file-sync/syncthing-removal.js");
     const { save, settingsDatabase } = await import("../src/settings-store.js");
-    assert.deepEqual(legacySyncthingConnection(), {}, "a node that never used Syncthing has no stored connection");
+    assert.deepEqual(await savedConnection(), {}, "a node that never used it has no stored connection");
     const withRemovedKey = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT", headers,
       body: JSON.stringify({ syncthing: { endpoint: "https://not-local.example", apiKey: "must-not-store" }, gitPullTimeoutSeconds: 601 }),
@@ -350,18 +350,20 @@ test("settings API persists runtime choices without returning secrets", async ()
     const afterRemovedKey = await withRemovedKey.json() as Record<string, unknown>;
     assert.equal(afterRemovedKey.gitPullTimeoutSeconds, 601, "the rest of the body is saved");
     assert.equal("syncthing" in afterRemovedKey, false);
-    assert.deepEqual(legacySyncthingConnection(), {});
+    assert.deepEqual(await savedConnection(), {});
 
-    // What an older release stored stays readable for taking Joint Bob's folders out of Syncthing, and is never returned.
+    // What an older release stored stays readable until that tool is removed from the machine, is never returned, and is then forgotten.
     save(settingsDatabase(), "syncthing.endpoint", "http://127.0.0.1:8384");
-    assert.deepEqual(legacySyncthingConnection(), { endpoint: "http://127.0.0.1:8384" });
+    assert.deepEqual(await savedConnection(), { endpoint: "http://127.0.0.1:8384" });
     save(settingsDatabase(), "syncthing.apiKey", "stored-api-key", true);
-    assert.deepEqual(legacySyncthingConnection(), { endpoint: "http://127.0.0.1:8384", apiKey: "stored-api-key" });
+    assert.deepEqual(await savedConnection(), { endpoint: "http://127.0.0.1:8384", apiKey: "stored-api-key" });
     const withOldRows = await (await fetch(`${node.baseUrl}/api/settings`, { headers })).text();
     assert.doesNotMatch(withOldRows, /syncthing|stored-api-key|8384/i);
     const savedOverOldRows = await fetch(`${node.baseUrl}/api/settings`, { method: "PUT", headers, body: JSON.stringify({ gitPullTimeoutSeconds: 600 }) });
     assert.equal(savedOverOldRows.status, 200);
-    assert.deepEqual(legacySyncthingConnection(), { endpoint: "http://127.0.0.1:8384", apiKey: "stored-api-key" }, "a later save leaves the old rows for the retirement to read");
+    assert.deepEqual(await savedConnection(), { endpoint: "http://127.0.0.1:8384", apiKey: "stored-api-key" }, "a later save leaves the old rows for the removal to read");
+    await forgetSavedConnection();
+    assert.deepEqual(await savedConnection(), {}, "once the tool is off the machine, its connection is forgotten");
 
     const relativeResources = await fetch(`${node.baseUrl}/api/settings`, {
       method: "PUT", headers,

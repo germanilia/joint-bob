@@ -9,8 +9,8 @@ import { WireError, type IndexPage } from "./wire.js";
 
 /* What peers' index rows mean for this node (FILE-SYNC design §5.4). In shadow mode pulled pages are
    stored, identical content merges version vectors (so every node ends up with the same version of a
-   path Syncthing already copied), and every other difference only lands in `diffs`, which is what the
-   switch to builtin mode is judged by. In the builtin phase the same decisions (decideGlobal over the
+   path whose content already matches), and every other difference only lands in `diffs`, which is what
+   Settings shows before a take-over. In the builtin phase the same decisions (decideGlobal over the
    local row and every eligible peer's row) also keep the need queue: one row per path holding the full
    target version, which the transfer loop takes in priority order and apply.ts writes to disk. */
 
@@ -133,7 +133,7 @@ export interface NeedDeps {
   db: FileSyncDb;
   nodeId: string;
   clock: Clock;
-  /** Differences younger than this are still settling (Syncthing has not copied them yet) and are not counted. */
+  /** Differences younger than this are still settling (the change is still on its way) and are not counted. */
   settleMs: number;
   share(key: string): NeedShare | undefined;
   /** Local rows changed outside a scan (merges): peers are told and the status goes out. */
@@ -1244,10 +1244,10 @@ export class NeedEngine {
   // ---- bootstrap (§7.3) ----
 
   /**
-   * The switch to builtin on this node (P5): every path is decided once with one extra rule. Entries a peer
+   * The take-over on this node (adoption.ts): every path is decided once with one extra rule. Entries a peer
    * wrote before it ran builtin (seq ≤ its builtinSince, or every entry of a peer not builtin yet) and every
-   * local entry were made while Syncthing copied files without telling this engine, so they never delete a
-   * live file, and never replace one with other content without keeping it:
+   * local entry were made while files could change without this engine being told (copied by hand, or by an
+   * earlier sync tool), so they never delete a live file, and never replace one with other content without keeping it:
    * - a weak tombstone that would delete a live local file raises the local version above it (peers fetch the file);
    * - a local tombstone that would delete a peer's live file leaves the index (as a prune does), so the file is fetched here;
    * - weak other content that would replace a live local file without a conflict makes the local version concurrent
@@ -1263,8 +1263,8 @@ export class NeedEngine {
     // Decisions against a partial index would raise or drop rows for files that are only not indexed yet.
     if (!this.indexComplete(start)) throw notReady(`File sync has not finished indexing ${key} under its current rules`);
     // The extra rule is applied once, to the rows stored now: a peer's rows still being paged in would arrive after the
-    // switch and be decided by the ordinary rule, where a Syncthing-era tombstone deletes a live file. So every peer's
-    // whole index must be here first (P5 runs the switch again once those pulls are done), and none may move meanwhile.
+    // take-over and be decided by the ordinary rule, where a tombstone from before it deletes a live file. So every peer's
+    // whole index must be here first (the take-over asks again once those pulls are done), and none may move meanwhile.
     const cursors = () => start.peers().map((peer) => { const cursor = db.cursor(key, peer); return `${peer}:${cursor?.indexId ?? ""}:${cursor?.seq ?? -1}:${cursor?.listed ? 1 : 0}`; }).join("\n");
     const behind = start.peers().filter((peer) => !peerCaughtUp(db.cursor(key, peer)));
     if (behind.length) throw notReady(`File sync has not pulled the whole index of ${behind.join(", ")} for ${key} yet`);
