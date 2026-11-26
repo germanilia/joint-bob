@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { type ChildProcess } from "node:child_process";
 import test from "node:test";
+import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
 
 function cookie(response: Response): string {
   const value = response.headers.get("set-cookie");
@@ -103,6 +105,32 @@ test("project file references resolve only within their project", async () => {
     if (previousDataDir === undefined) delete process.env.PI_WEB_DATA_DIR; else process.env.PI_WEB_DATA_DIR = previousDataDir;
     if (previousUsername === undefined) delete process.env.MASTER_BOB_ADMIN_USERNAME; else process.env.MASTER_BOB_ADMIN_USERNAME = previousUsername;
     if (previousPassword === undefined) delete process.env.MASTER_BOB_INITIAL_PASSWORD; else process.env.MASTER_BOB_INITIAL_PASSWORD = previousPassword;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a file on a machine that stopped answering resolves to a 503, not a 500", { timeout: 150_000 }, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-file-resolution-peer-"));
+  const servers: ChildProcess[] = [];
+  try {
+    const environment = await seedDevEnvironment(root, 2);
+    const [a, b] = environment.nodes;
+    for (const node of environment.nodes) servers.push(await startDevNode(environment, node));
+    await pairTwinNodes(environment);
+    const project = a.projects[0];
+    await writeFile(path.join(project.path, "held-by-a.txt"), "held by a\n");
+    const session = await signIn(environment, b);
+    const route = `/projects/${project.id}/file-resolution?path=held-by-a.txt&nodeId=${a.nodeId}`;
+    const reached = await api<{ path: string }>(b, session, "GET", route);
+    assert.equal(reached.status, 200, JSON.stringify(reached.body));
+    assert.equal(reached.body.path, "held-by-a.txt");
+
+    await stopDevNode(servers[0]);
+    const away = await api<{ error: string }>(b, session, "GET", route);
+    assert.equal(away.status, 503, JSON.stringify(away.body));
+    assert.equal(away.body.error, "The machine holding this file did not answer; try again when it is back");
+  } finally {
+    await Promise.all(servers.map(stopDevNode));
     await rm(root, { recursive: true, force: true });
   }
 });

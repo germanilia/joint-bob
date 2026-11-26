@@ -9,6 +9,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import WordExtractor from "word-extractor";
 import { type ClusterPeer, getClusterNode } from "../../cluster.js";
+import { isPeerUnreachable } from "../peer-availability.js";
 import { getRuntimePeer, runtimeFetch } from "../runtime-peers.js";
 import { ConversationOwnershipError } from "../../conversation-ownership.js";
 import { listHarnessSessions } from "../../harnesses.js";
@@ -372,7 +373,11 @@ async function proxyProjectFileResolution(peer: ClusterPeer, projectId: string, 
   const url = new URL("/api/cluster/project-file-resolution", peer.url);
   url.searchParams.set("projectId", projectId);
   url.searchParams.set("path", requestedPath);
-  const routed = await runtimeFetch(url, { signal: AbortSignal.timeout(30_000) });
+  // A peer that drops off the network is a 503 the person can act on, not a 500 "fetch failed".
+  const routed = await runtimeFetch(url, { signal: AbortSignal.timeout(30_000) }).catch((error: unknown) => {
+    if (isPeerUnreachable(error)) throw new ProjectFileError(503, "The machine holding this file did not answer; try again when it is back");
+    throw error;
+  });
   const body = await routed.json().catch(() => null) as { path?: unknown; error?: unknown } | null;
   if (!routed.ok) {
     if (typeof body?.error === "string") throw new ProjectFileError(routed.status, body.error);
