@@ -77,6 +77,7 @@ test("silent client errors show as alerts without duplicating failures or showin
     await api("/api/preferences?cancelled=fixture", { signal: controller.signal }).catch(() => {});
     console.error("Fixture console failure");
     console.error("Fixture console failure");
+    window.dispatchEvent(new ErrorEvent("error", { message: "ResizeObserver loop completed with undelivered notifications." }));
     window.dispatchEvent(new ErrorEvent("error", { error: new Error("Fixture uncaught failure") }));
     window.dispatchEvent(new PromiseRejectionEvent("unhandledrejection", { promise: Promise.resolve(), reason: new Error("Fixture rejected promise") }));
   })()`);
@@ -87,6 +88,7 @@ test("silent client errors show as alerts without duplicating failures or showin
     assert.equal(await alert.count(), 1, text);
   }
   assert.equal(await page.getByRole("alert").filter({ hasText: "The request was cancelled" }).count(), 0);
+  assert.equal(await page.getByRole("alert").filter({ hasText: "ResizeObserver loop" }).count(), 0);
   assert.equal((await requests).status(), 202);
 });
 

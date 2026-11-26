@@ -44,7 +44,11 @@
     const native = console[level].bind(console);
     console[level] = (...values) => { record(level, values); native(...values); };
   }
-  window.addEventListener("error", (event) => record("uncaught", [event.error || `${event.message} at ${event.filename}:${event.lineno}:${event.colno}`]));
+  window.addEventListener("error", (event) => {
+    // Browsers report resize notifications deferred to the next frame as an error; nothing failed.
+    const level = event.message.startsWith("ResizeObserver loop") ? "warn" : "uncaught";
+    record(level, [event.error || `${event.message} at ${event.filename}:${event.lineno}:${event.colno}`]);
+  });
   window.addEventListener("unhandledrejection", (event) => record("unhandled", [event.reason]));
   window.jointBobClientLogs = {
     entries: () => [...entries],
