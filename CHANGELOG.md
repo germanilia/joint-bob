@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.341.1 — 2026-11-26
+
+- **Google Antigravity:** Fixed requests disappearing when project instructions were too large. Joint Bob now supplies the full instructions separately and tells you if the request itself is too long.
+
 ## 2.341.0 — 2026-11-26
 
 - **File sync:** Joint Bob now removes what earlier releases set up for Syncthing, once per machine and by itself. After its own `joint-bob-*` folders have left the local Syncthing, it stops and removes the Syncthing service an earlier installer created (`joint-bob-syncthing.service` or `com.joint-bob.syncthing`), deletes the copy of Syncthing it downloaded, takes the machines it added out of a Syncthing that stays once they share no folder, forgets the saved connection, and deletes the `.stignore` files and `.stfolder` markers in its folders. The text of the deleted ignore files is kept in `removed-sync-ignore-files.txt` in the data folder.
