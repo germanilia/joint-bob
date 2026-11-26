@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.343.10 — 2026-11-26
+
+- **Performance:** Opening a conversation and listing conversations no longer get slower with every worktree a project has. A project's worktree folders were read one small file at a time on every listing and every open (about 870 reads in a row for a project with 165 worktrees: 17 s for one open on a busy server). They are now read side by side and kept until one of them changes (0.2 s in the same test).
+- **Performance:** A busy server does less work per listing. A project's folders are worked out once instead of once per transcript, folders that do not exist are no longer tried for watching each time, queued messages are looked up only for the conversations that can have some, and the browser session list reads profile, sign-in and download details once instead of once per session.
+
 ## 2.343.9 — 2026-11-26
 
 - **Error reports:** The browser notice "ResizeObserver loop completed with undelivered notifications" no longer shows an error alert or sends an error report. It is harmless, so it is kept as a warning in the client logs.
