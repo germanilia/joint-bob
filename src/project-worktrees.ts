@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs, type Stats } from "node:fs";
 import path from "node:path";
 import { getClusterNode } from "./cluster.js";
+import { mapWithConcurrency } from "./concurrency.js";
 import { conversationPrivacy } from "./conversation-privacy.js";
 import { syncConversationWorktrees } from "./conversation-records.js";
 import { managedHomePaths } from "./managed-home.js";
@@ -202,28 +203,139 @@ async function registerLocalPath(worktree: string, nodeId: string): Promise<void
   worktreeFilesChanged(path.basename(path.dirname(worktree)), file);
 }
 
-export async function listProjectWorktrees(projectId: string, root = worktreeRoot()): Promise<ProjectWorktree[]> {
-  const directory = projectWorktreeRoot(projectId, root);
+/* What the worktree folders of one project hold, read once for everything that asks: the list of
+   worktrees, the conversations started inside them, and the paths every node keeps them at.
+
+   Each of those used to read the folders itself, one small file after another: a listing or an
+   opened conversation of a project with 165 worktrees waited on about 870 reads in a row, and on
+   a busy server every one of them waits its turn (17 s for one open, measured). Now the folders
+   are read side by side, and what was read is kept for as long as the folders stand still.
+
+   "Stand still" is checked on every call, not assumed: the entries of the project's folder, each
+   worktree.json, each `nodes` and `conversations` folder and each retired record are looked at
+   again (one stat each, side by side), and anything that differs reads everything again. A file
+   replaced, added or removed moves one of those. Two things a stat can miss are covered apart:
+   a change made in the same moment as the reading (so what was read less than two seconds after
+   the newest change is read once more), and a node's path file rewritten in place, which no
+   folder notices (so nothing is kept longer than a minute).
+
+   A caller that arrives while the folders are being looked at does not take that answer, which may
+   have looked before the caller's own change: it waits for the next look, shared by all who wait. */
+interface ScannedWorktree { worktree: ProjectWorktree; conversations: string[]; nodePaths: string[] }
+interface WorktreeScan { stamp: string; quiet: boolean; readAt: number; worktrees: ScannedWorktree[]; retired: { paths: string[] } | { error: unknown } }
+interface WorktreeFolders { stamp: string; newest: number; ids: string[]; archives: string[] | { error: unknown } }
+interface ScanSlot { kept?: WorktreeScan; running?: Promise<WorktreeScan>; next?: Promise<WorktreeScan> }
+/** Looking costs no open file, reading holds one (and a worktree reads a few at a time): bounded well under the usual limit of open files. */
+const SCAN_STATS_AT_ONCE = 256;
+const SCAN_READS_AT_ONCE = 48;
+const SCAN_SAME_MOMENT_MS = 2_000;
+const SCAN_MAX_AGE_MS = 60_000;
+const MAX_SCAN_SLOTS = 500;
+const scanSlots = new Map<string, ScanSlot>();
+
+/** Tests: forget what was read of every project's worktree folders. */
+export function resetWorktreeScans(): void { scanSlots.clear(); }
+const scanUse = { looked: 0, read: 0 };
+/** How often the folders were looked at, and how often that led to reading them, since this process started. */
+export function worktreeScanUse(): { looked: number; read: number } { return { ...scanUse }; }
+
+async function worktreeFolders(directory: string): Promise<WorktreeFolders | undefined> {
   let entries: string[];
   try { entries = await fs.readdir(directory); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
-  const node = await getClusterNode();
-  const worktrees: ProjectWorktree[] = [];
-  for (const entry of entries.sort()) {
-    // Other entries can lie here (old sync markers), and a worktree being created is a hidden staging folder.
-    if (!WORKTREE_ID.test(entry)) continue;
-    const worktree = path.join(directory, entry);
+  // Other entries can lie here (old sync markers), and a worktree being created is a hidden staging folder.
+  const ids = entries.filter((entry) => WORKTREE_ID.test(entry)).sort();
+  const retired = path.join(directory, ".retired");
+  let archives: WorktreeFolders["archives"];
+  try { archives = (await fs.readdir(retired)).filter((file) => file.endsWith(".json") && WORKTREE_ID.test(file.slice(0, -5))); }
+  catch (error) { archives = (error as NodeJS.ErrnoException).code === "ENOENT" ? [] : { error }; }
+  let newest = 0;
+  const mark = async (file: string): Promise<string> => {
+    try {
+      const info = await fs.stat(file);
+      if (info.mtimeMs > newest) newest = info.mtimeMs;
+      return `${info.mtimeMs}:${info.size}:${info.ino}`;
+    } catch (error) { return `!${(error as NodeJS.ErrnoException).code ?? "error"}`; }
+  };
+  const files = [
+    ...ids.flatMap((id) => [metadataFile(path.join(directory, id)), path.join(directory, id, WORKTREE_META_DIR, "nodes"), path.join(directory, id, WORKTREE_META_DIR, "conversations")]),
+    ...(Array.isArray(archives) ? archives.map((file) => path.join(retired, file)) : []),
+  ];
+  const marks = await mapWithConcurrency(files, SCAN_STATS_AT_ONCE, mark);
+  return { stamp: JSON.stringify([ids, Array.isArray(archives) ? archives : "unreadable", marks]), newest, ids, archives };
+}
+
+async function readWorktreeFolders(projectId: string, directory: string, folders: WorktreeFolders): Promise<Pick<WorktreeScan, "worktrees" | "retired">> {
+  const read = await mapWithConcurrency(folders.ids, SCAN_READS_AT_ONCE, async (id): Promise<ScannedWorktree | undefined> => {
+    const worktree = path.join(directory, id);
     const metadata = await readMetadata(worktree);
-    if (!metadata) continue;
+    if (!metadata) return undefined;
     // Its path is registered when the worktree is used here (useProjectWorktree), not when it is listed: a
     // listing wrote one small synced file per worktree per node, and a write that landed after another
     // node's delete brought the deleted folder back.
-    worktrees.push(view(projectId, worktree, metadata));
+    const [conversations, nodeFiles] = await Promise.all([
+      fs.readdir(path.join(worktree, WORKTREE_META_DIR, "conversations")).catch(() => [] as string[]),
+      fs.readdir(path.join(worktree, WORKTREE_META_DIR, "nodes")).catch(() => [] as string[]),
+    ]);
+    const nodePaths = await Promise.all(nodeFiles.filter((file) => file.endsWith(".json")).map(async (file) => {
+      try {
+        const value = JSON.parse(await fs.readFile(path.join(worktree, WORKTREE_META_DIR, "nodes", file), "utf8")) as { path?: unknown };
+        return typeof value.path === "string" && path.isAbsolute(value.path) && path.basename(value.path) === id ? path.resolve(value.path) : undefined;
+      } catch { return undefined; }
+    }));
+    return { worktree: view(projectId, worktree, metadata), conversations, nodePaths: nodePaths.filter((value): value is string => value !== undefined) };
+  });
+  const worktrees = read.filter((entry): entry is ScannedWorktree => entry !== undefined)
+    .sort((left, right) => left.worktree.createdAt.localeCompare(right.worktree.createdAt));
+  if (!Array.isArray(folders.archives)) return { worktrees, retired: folders.archives };
+  // Every record is read; the first one that cannot be used, in the folder's order, is the failure reported.
+  const records = await mapWithConcurrency(folders.archives, SCAN_READS_AT_ONCE, async (file): Promise<{ paths: string[] } | { error: unknown }> => {
+    try {
+      const saved: unknown = JSON.parse(await fs.readFile(path.join(directory, ".retired", file), "utf8"));
+      if (!Array.isArray(saved) || saved.some(folder => typeof folder !== "string" || !path.isAbsolute(folder) || path.basename(folder) !== file.slice(0, -5))) throw new ProjectWorktreeError(409, `Invalid retired worktree paths: ${file}`);
+      return { paths: saved.length ? [...saved as string[], path.join(directory, file.slice(0, -5))] : [] };
+    } catch (error) { return { error }; }
+  });
+  const failed = records.find((record): record is { error: unknown } => "error" in record);
+  return { worktrees, retired: failed ?? { paths: records.flatMap((record) => "paths" in record ? record.paths : []) } };
+}
+
+async function lookAtWorktrees(projectId: string, directory: string, slot: ScanSlot): Promise<WorktreeScan> {
+  const lookedAt = Date.now();
+  scanUse.looked += 1;
+  const folders = await worktreeFolders(directory);
+  if (!folders) return slot.kept = { stamp: "", quiet: false, readAt: lookedAt, worktrees: [], retired: { paths: [] } };
+  const kept = slot.kept;
+  if (kept && kept.quiet && kept.stamp === folders.stamp && lookedAt - kept.readAt < SCAN_MAX_AGE_MS && lookedAt >= kept.readAt) return kept;
+  scanUse.read += 1;
+  const read = await readWorktreeFolders(projectId, directory, folders);
+  // The marks were taken before the reading: a change made during it differs from them at the next look.
+  return slot.kept = { ...read, stamp: folders.stamp, quiet: lookedAt - folders.newest > SCAN_SAME_MOMENT_MS, readAt: lookedAt };
+}
+
+function scanProjectWorktrees(projectId: string, root: string): Promise<WorktreeScan> {
+  const directory = projectWorktreeRoot(projectId, root);
+  let slot = scanSlots.get(directory);
+  if (!slot) {
+    if (scanSlots.size >= MAX_SCAN_SLOTS) for (const [key, other] of scanSlots) if (!other.running && !other.next) scanSlots.delete(key);
+    scanSlots.set(directory, slot = {});
   }
-  return worktrees.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const held = slot;
+  const start = (): Promise<WorktreeScan> => {
+    const run: Promise<WorktreeScan> = lookAtWorktrees(projectId, directory, held).finally(() => { if (held.running === run) held.running = undefined; });
+    return held.running = run;
+  };
+  if (!held.running) return start();
+  // The look in progress may have passed what this caller just changed: it takes the one after it.
+  return held.next ??= held.running.then(() => undefined, () => undefined).then(() => { held.next = undefined; return held.running ?? start(); });
+}
+
+export async function listProjectWorktrees(projectId: string, root = worktreeRoot()): Promise<ProjectWorktree[]> {
+  // Callers own what they get: the kept objects are never handed out.
+  return structuredClone((await scanProjectWorktrees(projectId, root)).worktrees.map((entry) => entry.worktree));
 }
 
 const cleanupClaims = new Map<string, ReturnType<typeof setTimeout>>();
@@ -509,46 +621,26 @@ export async function worktreeConversationIndex(projectId: string, root = worktr
 
 /** The project's worktrees whose files are on this node, and the same index of the conversations started inside them. */
 export async function worktreeConversations(projectId: string, root = worktreeRoot()): Promise<{ worktrees: ProjectWorktree[]; index: Map<string, ProjectWorktree> }> {
-  const worktrees = await listProjectWorktrees(projectId, root);
+  const scan = await scanProjectWorktrees(projectId, root);
+  const worktrees = structuredClone(scan.worktrees.map((entry) => entry.worktree));
   const index = new Map<string, ProjectWorktree>();
-  for (const worktree of worktrees) {
-    let files: string[];
-    try { files = await fs.readdir(path.join(worktree.path, WORKTREE_META_DIR, "conversations")); }
-    catch { continue; }
-    for (const file of files) {
+  scan.worktrees.forEach((entry, position) => {
+    for (const file of entry.conversations) {
       const match = /^([A-Za-z0-9._-]+?)--([A-Za-z0-9._-]+)\.json$/.exec(file);
-      if (match) index.set(`${match[1]}:${match[2]}`, worktree);
+      if (match) index.set(`${match[1]}:${match[2]}`, worktrees[position]);
     }
-  }
+  });
   return { worktrees, index };
 }
 
 /** Every path any node keeps a worktree of this project at: conversations are matched by working directory. */
 export async function worktreeSessionPaths(projectId: string, root = worktreeRoot()): Promise<string[]> {
-  const paths = new Set<string>();
-  const retired = path.join(projectWorktreeRoot(projectId, root), ".retired");
-  let archives: string[];
-  try { archives = await fs.readdir(retired); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; archives = []; }
-  for (const file of archives) {
-    if (!file.endsWith(".json") || !WORKTREE_ID.test(file.slice(0, -5))) continue;
-    const saved: unknown = JSON.parse(await fs.readFile(path.join(retired, file), "utf8"));
-    if (!Array.isArray(saved) || saved.some(directory => typeof directory !== "string" || !path.isAbsolute(directory) || path.basename(directory) !== file.slice(0, -5))) throw new ProjectWorktreeError(409, `Invalid retired worktree paths: ${file}`);
-    for (const directory of saved) paths.add(directory);
-    if (saved.length) paths.add(path.join(projectWorktreeRoot(projectId, root), file.slice(0, -5)));
-  }
-  for (const worktree of await listProjectWorktrees(projectId, root)) {
-    paths.add(worktree.path);
-    let files: string[];
-    try { files = await fs.readdir(path.join(worktree.path, WORKTREE_META_DIR, "nodes")); }
-    catch { continue; }
-    for (const file of files) {
-      if (!file.endsWith(".json")) continue;
-      try {
-        const value = JSON.parse(await fs.readFile(path.join(worktree.path, WORKTREE_META_DIR, "nodes", file), "utf8")) as { path?: unknown };
-        if (typeof value.path === "string" && path.isAbsolute(value.path) && path.basename(value.path) === worktree.id) paths.add(path.resolve(value.path));
-      } catch {}
-    }
+  const scan = await scanProjectWorktrees(projectId, root);
+  if ("error" in scan.retired) throw scan.retired.error;
+  const paths = new Set<string>(scan.retired.paths);
+  for (const entry of scan.worktrees) {
+    paths.add(entry.worktree.path);
+    for (const nodePath of entry.nodePaths) paths.add(nodePath);
   }
   return [...paths];
 }

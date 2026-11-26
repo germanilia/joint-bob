@@ -513,6 +513,16 @@ export class BrowserStore {
       .run(item.id, sessionId, item.name, item.ready ? 1 : 0, item.error ?? null);
   }
 
+  /** The sessions that have a login request, so a listing asks only those for it. */
+  sessionsWithLoginRequest(): Set<string> {
+    return new Set((this.db.prepare("SELECT id FROM browser_sessions WHERE loginRequest IS NOT NULL").all() as unknown as Array<{ id: string }>).map(row => row.id));
+  }
+
+  /** The sessions that have downloads, so a listing asks only those for them. */
+  sessionsWithDownloads(): Set<string> {
+    return new Set((this.db.prepare("SELECT DISTINCT sessionId FROM browser_downloads").all() as unknown as Array<{ sessionId: string }>).map(row => row.sessionId));
+  }
+
   downloads(sessionId: string): BrowserSessionView["downloads"] {
     const rows = this.db.prepare("SELECT id, name, ready, error FROM browser_downloads WHERE sessionId = ? ORDER BY rowid").all(sessionId) as unknown as Array<{ id: string; name: string; ready: number; error: string | null }>;
     return rows.map(row => ({ id: row.id, name: row.name, ready: Boolean(row.ready), ...(row.error ? { error: row.error } : {}) }));

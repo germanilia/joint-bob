@@ -1,8 +1,8 @@
-import { watch, type FSWatcher } from "node:fs";
+import { statSync, watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { multiUserEnabled, runInRuntime, serviceRuntime, type RuntimeAccount } from "./account-runtime.js";
 import { listDiscoveredHarnesses } from "./harnesses/registry.js";
-import { sessionCwds, type SessionProjectPaths } from "./harnesses/shared-paths.js";
+import { sessionCwdSet, type SessionProjectPaths } from "./harnesses/shared-paths.js";
 import type { ProjectRecord } from "./types.js";
 
 const DEBOUNCE_MS = 750;
@@ -29,6 +29,10 @@ interface SharedWatch { watcher: FSWatcher; projects: Set<string>; openedAt: num
 
 export function sessionWatchDirs(project: SessionProjectPaths): string[] {
   return [...new Set(listDiscoveredHarnesses().flatMap((adapter) => adapter.sync.watchDirs?.(project) ?? [adapter.sync.transcriptRoot()]))];
+}
+/** Certainly not there. Anything unclear (no permission, a file in the way) is left for the watch itself to report. */
+function absent(dir: string): boolean {
+  try { return statSync(dir, { throwIfNoEntry: false }) === undefined; } catch { return false; }
 }
 function missing(error: unknown): boolean { const code = (error as NodeJS.ErrnoException).code; return code === "ENOENT" || code === "ENOTDIR"; }
 
@@ -93,6 +97,10 @@ export class SessionWatcher {
     for (const dir of desired) {
       if (project.directories.has(dir)) continue;
       if (!this.directories.has(dir) && (this.failures.get(dir)?.retryAt ?? 0) > Date.now()) continue;
+      // Most folders a project could have transcripts in do not exist (one per worktree per agent, well
+      // over a thousand for a project with many worktrees), and this runs on every listing. Asking
+      // whether one is there costs an eighth of trying to watch it and failing (3 ms against 25 ms for 1,400).
+      if (!this.directories.has(dir) && absent(dir)) continue;
       try {
         const shared = this.directories.get(dir) ?? this.openDirectory(dir);
         shared.projects.add(projectId);
@@ -161,7 +169,7 @@ export class SessionWatcher {
     // A create event can precede the first header write. Read ownership after debounce.
     const resolved = await Promise.all(pending.map(async ([file, adapter]) => {
       const cwd = await this.ownerCwd(adapter, file);
-      return cwd && !sessionCwds(project.paths).includes(cwd) ? null : file;
+      return cwd && !sessionCwdSet(project.paths).has(cwd) ? null : file;
     }));
     if (this.projects.get(projectId) !== project) return;
     const files = resolved.filter((file): file is string => file !== null);

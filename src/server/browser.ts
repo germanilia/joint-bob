@@ -56,7 +56,7 @@ export async function localBrowserStatus(callerNodeId?: string) {
     config: callerNodeId ? unsetBrowserConfiguration : readBrowserConfiguration(),
     clusterDefaults: readBrowserClusterDefaults().filter(entry => shared(entry.clusterId) && clusterMemberIds(db, entry.clusterId).includes(node.id)),
     capability: await browserCapability(),
-    runningCount: (await browserRuntime().list()).filter(row => row.state === "running").length,
+    runningCount: browserRuntime().runningCount(),
   };
 }
 async function memberClusterIds(): Promise<string[]> {
@@ -270,10 +270,15 @@ async function reachingGrants(grants: BrowserGrant[], nodeId: string, projectIds
  * A relayed caller reaches a session when it belongs to that caller's own conversation,
  * or to a conversation in a project shared with it whose profile is shared with it too.
  */
-export async function relayedSessionAllowed(machineNodeId: string, session: { accessNodeId?: string; appNodeId: string; projectId: string; conversationId: string; profileId?: string }): Promise<boolean> {
+export async function relayedSessionAllowed(machineNodeId: string, session: { accessNodeId?: string; appNodeId: string; projectId: string; conversationId: string; profileId?: string }, reachableProjects?: Map<string, Promise<boolean>>): Promise<boolean> {
   if ((session.accessNodeId ?? session.appNodeId) === machineNodeId) return true;
-  const project = await getProject(session.projectId);
-  if (!project || !(await clusterPeerMayAccessProject(machineNodeId, project.id))) return false;
+  // A listing asks this for hundreds of sessions of a few projects: each project is settled once per listing.
+  let reachable = reachableProjects?.get(session.projectId);
+  if (!reachable) {
+    reachable = (async () => { const project = await getProject(session.projectId); return Boolean(project && await clusterPeerMayAccessProject(machineNodeId, project.id)); })();
+    reachableProjects?.set(session.projectId, reachable);
+  }
+  if (!await reachable) return false;
   return !session.profileId || browserRuntime().profileUsable(session.profileId, { nodeId: machineNodeId, projectId: session.projectId, conversationId: session.conversationId });
 }
 const notSharedWithNode = "Browser session is not shared with this node";
@@ -397,7 +402,8 @@ export async function localBrowserOperation(input: BrowserOperation, actor: Brow
       const redacted = sessions.map(session => actor.kind === "agent" && session.profileId && !service.profileUsable(session.profileId, service.sessionAccess(session))
         ? { ...session, tabs: [], activePageId: null, loginRequest: null, downloads: [], fileChooser: false, fileChooserRequest: null, dialog: null, accessRevoked: true }
         : session);
-      const allowed = await Promise.all(redacted.map(async session => (machineNodeId ? await relayedSessionAllowed(machineNodeId, session) : actor.kind !== "human" || await actorSeesBrowserProject(session.projectId)) ? session : null));
+      const reachableProjects = new Map<string, Promise<boolean>>();
+      const allowed = await Promise.all(redacted.map(async session => (machineNodeId ? await relayedSessionAllowed(machineNodeId, session, reachableProjects) : actor.kind !== "human" || await actorSeesBrowserProject(session.projectId)) ? session : null));
       return { sessions: allowed.filter(Boolean) };
     }
     case "get": { const session = await assertAgentSession(operation.args.id); return { session: view(session) }; }

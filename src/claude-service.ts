@@ -12,7 +12,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { access, copyFile, mkdir, open, readdir, readFile, rename, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { isSyncConflictPath, sessionCwds, type SessionProjectPaths } from "./harnesses/shared-paths.js";
+import { isSyncConflictPath, sessionCwdSet, type SessionProjectPaths } from "./harnesses/shared-paths.js";
 import { claudeProjectDir, claudeProjectDirs } from "./harnesses/claude/paths.js";
 import { getScopedResourcePaths, getSettings } from "./settings.js";
 import { claudeAgentResourceArgs } from "./agent-resources.js";
@@ -429,7 +429,7 @@ async function summarizeClaudeTranscript(project: SessionProjectPaths, filePath:
   // Opening a new chat writes only the automatic setup command. It is not a
   // conversation until the user has supplied a real prompt, but it can still be opened.
   if ((!facts.prompt && !project.includeUnstarted) || facts.internal || isInternalSession(path.basename(path.dirname(path.dirname(filePath))))) return null;
-  const projectCwds = new Set(sessionCwds(project));
+  const projectCwds = sessionCwdSet(project);
   if (![...facts.cwds].some((cwd) => projectCwds.has(cwd))) return null;
   const subagentParentId = path.basename(path.dirname(filePath)) === "subagents"
     ? path.basename(path.dirname(path.dirname(filePath)))

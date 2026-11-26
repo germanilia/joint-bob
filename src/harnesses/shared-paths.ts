@@ -9,14 +9,36 @@ export interface SessionProjectPaths extends Pick<ProjectRecord, "path" | "macPa
   includeUnstarted?: boolean;
 }
 
-export function sessionCwds(project: SessionProjectPaths): string[] {
+/* A project's folders are asked for once per transcript while its conversations are listed, and a
+   project with many worktrees has hundreds of them (370 on a node with 165 worktrees): resolving
+   them again for each of a few thousand transcripts was 5% of a busy server's time. The answer is
+   kept with the project object it was made for, and made again if any of the four fields it reads
+   was replaced since. Nothing in the application changes those lists in place. */
+interface KeptCwds { path: string; macPath: string | undefined; locations: unknown; additionalPaths: unknown; list: string[]; set?: ReadonlySet<string> }
+const keptCwds = new WeakMap<object, KeptCwds>();
+function cwdsOf(project: SessionProjectPaths): KeptCwds {
+  const kept = keptCwds.get(project);
+  if (kept && kept.path === project.path && kept.macPath === project.macPath && kept.locations === project.locations && kept.additionalPaths === project.additionalPaths) return kept;
   const paths = [
     project.path,
     ...(project.macPath ? [project.macPath] : []),
     ...(project.locations ?? []).map((location) => location.path),
     ...(project.additionalPaths ?? []),
   ];
-  return [...new Set(paths.map((cwd) => path.resolve(cwd)))];
+  const made: KeptCwds = { path: project.path, macPath: project.macPath, locations: project.locations, additionalPaths: project.additionalPaths, list: [...new Set(paths.map((cwd) => path.resolve(cwd)))] };
+  keptCwds.set(project, made);
+  return made;
+}
+
+/** Every folder whose conversations belong to the project. Callers get their own list. */
+export function sessionCwds(project: SessionProjectPaths): string[] {
+  return cwdsOf(project).list.slice();
+}
+
+/** The same folders for asking "is this one of them", without a new set per question. */
+export function sessionCwdSet(project: SessionProjectPaths): ReadonlySet<string> {
+  const kept = cwdsOf(project);
+  return kept.set ??= new Set(kept.list);
 }
 
 const SYNC_CONFLICT = /\.sync-conflict-[^.]+(?=\.jsonl$)/;

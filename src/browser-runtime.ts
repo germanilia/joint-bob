@@ -175,6 +175,9 @@ export function accountLaunch(runtime: RuntimeAccount, executable: string): { ex
   return { executablePath: fileURLToPath(new URL("../scripts/multi-user/browser-as-account.sh", import.meta.url)), env };
 }
 
+/** What a listing reads once for all its sessions: profile labels, and which sessions have a login request or downloads at all. */
+interface ListedSessions { labels: Map<string, string | undefined>; withLoginRequest: Set<string>; withDownloads: Set<string> }
+
 export class BrowserRuntime {
   private readonly store = new BrowserStore();
   private readonly sessions = new Map<string, LiveSession>();
@@ -393,7 +396,17 @@ export class BrowserRuntime {
   async list(identity?: { projectId?: string; engine?: string; conversationId?: string }): Promise<BrowserSessionView[]> {
     void this.ready();
     const nodeId = (await getClusterNode()).id;
-    return Promise.all(this.store.list(identity).map(row => this.view(row.id, row, nodeId)));
+    // Asked several times a minute by every open page, over every session this node ever ran (hundreds,
+    // nearly all closed). Three lookups per session are answered once for the whole list instead; a
+    // session that is running is still asked itself, as its page may have changed since.
+    const listed: ListedSessions = { labels: new Map(), withLoginRequest: this.store.sessionsWithLoginRequest(), withDownloads: this.store.sessionsWithDownloads() };
+    return Promise.all(this.store.list(identity).map(row => this.view(row.id, row, nodeId, listed)));
+  }
+
+  /** How many sessions run now, without describing each of them. */
+  runningCount(): number {
+    void this.ready();
+    return this.store.list().filter(row => row.state === "running").length;
   }
 
   async get(id: string): Promise<BrowserSessionView> {
@@ -401,12 +414,14 @@ export class BrowserRuntime {
     return this.view(id);
   }
 
-  private async view(id: string, row = this.store.get(id), nodeId?: string): Promise<BrowserSessionView> {
+  private async view(id: string, row = this.store.get(id), nodeId?: string, listed?: ListedSessions): Promise<BrowserSessionView> {
     const live = this.sessions.get(id);
-    const profileLabel = row.profileId ? this.store.profileOrNull(row.profileId)?.label : undefined;
+    let profileLabel: string | undefined;
+    if (row.profileId && listed?.labels.has(row.profileId)) profileLabel = listed.labels.get(row.profileId);
+    else if (row.profileId) { profileLabel = this.store.profileOrNull(row.profileId)?.label; listed?.labels.set(row.profileId, profileLabel); }
     if (live) this.scheduleLoginDetection(live);
     const tabs = live ? await Promise.all([...live.pages].map(async ([id, page]) => ({ id, url: page.url(), title: live.restoring ? page.url() : await page.title().catch(() => page.url()) }))) : [];
-    return { ...row, nodeId: nodeId ?? (await getClusterNode()).id, profileLabel, tabs, loginRequest: this.store.loginRequest(id), activePageId: live?.activePageId ?? null, owner: (live ? live.human : row.restoreOnRestart && this.store.recoveryHuman(id)) ? "human" : "agent", fileChooser: Boolean(live?.chooser), fileChooserRequest: live?.chooser ? { id: live.chooser.id, pageId: live.chooser.pageId } : null, dialog: live?.dialog ? { id: live.dialog.id, pageId: live.dialog.pageId, type: live.dialog.dialog.type(), message: live.dialog.dialog.message(), defaultValue: live.dialog.dialog.defaultValue() } : null, downloads: this.store.downloads(id) };
+    return { ...row, nodeId: nodeId ?? (await getClusterNode()).id, profileLabel, tabs, loginRequest: listed && !live && !listed.withLoginRequest.has(id) ? null : this.store.loginRequest(id), activePageId: live?.activePageId ?? null, owner: (live ? live.human : row.restoreOnRestart && this.store.recoveryHuman(id)) ? "human" : "agent", fileChooser: Boolean(live?.chooser), fileChooserRequest: live?.chooser ? { id: live.chooser.id, pageId: live.chooser.pageId } : null, dialog: live?.dialog ? { id: live.dialog.id, pageId: live.dialog.pageId, type: live.dialog.dialog.type(), message: live.dialog.dialog.message(), defaultValue: live.dialog.dialog.defaultValue() } : null, downloads: listed && !live && !listed.withDownloads.has(id) ? [] : this.store.downloads(id) };
   }
 
   /** Conversation-grant gate shared by every start path. Grants are the only way a

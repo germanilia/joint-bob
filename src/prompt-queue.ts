@@ -194,6 +194,27 @@ export function listPendingSystemQueues(limit = 100): Array<{ queueKey: string; 
   } finally { if (owned) db.close(); }
 }
 
+/**
+ * Which of a project's conversations can have queued prompts at all, read once for a whole listing.
+ * A listing asked each of its conversations (three queries each, fifty conversations and more) as
+ * soon as one prompt was queued anywhere in the project, which is the usual state of a busy
+ * project. The answer errs only towards "may have": listQueuedPrompts still gives the prompts.
+ */
+export function queuedPromptCandidates(projectId: string): (sessionOrConversationId: string) => boolean {
+  const db = queueDatabase();
+  const project = resolveProjectAlias(db, projectId);
+  // Every key listQueuedPrompts can read starts with "<resolved project>:"; ";" is the character after ":".
+  const rows = db.prepare("SELECT DISTINCT queue_key FROM queued_prompts WHERE queue_key >= ? AND queue_key < ?").all(`${project}:`, `${project};`) as unknown as Array<{ queue_key: string }>;
+  if (!rows.length) return () => false;
+  const queued = new Set(rows.map((row) => row.queue_key.slice(project.length + 1)));
+  // A segment's key resolves to its conversation's (resolveQueueKey): those sessions may have prompts too.
+  const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'conversation_records'").get();
+  const segments = new Set(exists
+    ? (db.prepare("SELECT session_id FROM conversation_records WHERE project_id = ? AND conversation_id IN (SELECT value FROM json_each(?))").all(project, JSON.stringify([...queued])) as unknown as Array<{ session_id: string }>).map((row) => row.session_id)
+    : []);
+  return (id) => queued.has(id) || segments.has(id);
+}
+
 /** Whether any conversation of this project has queued prompts: lets a listing skip the per-conversation lookups. */
 export function projectHasQueuedPrompts(projectId: string): boolean {
   const db = queueDatabase();
