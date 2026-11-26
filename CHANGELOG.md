@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.342.0 — 2026-11-26
+
+- **File sync:** Removed the last Syncthing code. The one-time cleanup that took Syncthing off each machine is gone, and so are the ignore rules for Syncthing's own files (`.stfolder`, `.stignore`, `.stversions` and its half-downloaded temp files). A machine that skipped 2.341.0 keeps whatever Syncthing setup it had; delete it by hand.
+- **File sync:** The built-in ignore rules changed, so machines on 2.341.1 or older stop exchanging files with this release until they update, which they do on their own. Update every machine of a cluster together.
+
 ## 2.341.1 — 2026-11-26
 
 - **Google Antigravity:** Fixed requests disappearing when project instructions were too large. Joint Bob now supplies the full instructions separately and tells you if the request itself is too long.
