@@ -27,8 +27,11 @@ function projectFileApiUrl(route, filePath) {
   return url;
 }
 
+// A conversation in a worktree names files relative to it; the worktree can hold files the project folder lacks.
 function projectFileResolutionUrl(filePath) {
   const url = projectFileApiUrl("file-resolution", filePath);
+  const worktreeId = activeChatSession()?.worktree?.id;
+  if (worktreeId) url.searchParams.set("worktreeId", worktreeId);
   return `${url.pathname}${url.search}`;
 }
 
@@ -67,7 +70,7 @@ export async function openFileAction(path) {
   elements.fileActionDialog.showModal();
   elements.fileActionStatus.textContent = "Finding file...";
   try {
-    const body = await api(`${projectFileApiUrl("file-resolution", path).pathname}${projectFileApiUrl("file-resolution", path).search}`);
+    const body = await api(projectFileResolutionUrl(path));
     if (!elements.fileActionDialog.open || state.fileEditor.requestedPath !== path) return;
     Object.assign(state.fileEditor, { path: body.path, viewUrl: body.viewUrl, downloadUrl: body.downloadUrl, contentUrl: body.contentUrl });
     elements.fileActionPath.textContent = body.path;

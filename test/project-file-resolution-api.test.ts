@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type ChildProcess } from "node:child_process";
@@ -99,6 +99,27 @@ test("project file references resolve only within their project", async () => {
     await writeFile(path.join(otherProject, "secret.txt"), "secret\n");
     const foreign = await fetch(`${baseUrl}/api/projects/${project.id}/file?path=${encodeURIComponent(path.join(otherProject, "secret.txt"))}`, { headers });
     assert.equal(foreign.status, 404);
+
+    // A conversation in a worktree names files relative to it: a file only the worktree has opens from there, by
+    // name alone too. A worktree without the file, or one already removed after its run, falls back to the project.
+    const worktreeId = "c2ebc82a-29a7-49e3-824b-1e7a8d964c9e";
+    const worktree = path.join(root, "worktrees", project.id, worktreeId);
+    await mkdir(path.join(worktree, "src"), { recursive: true });
+    await mkdir(path.join(worktree, "tmp", "logs"), { recursive: true });
+    await writeFile(path.join(worktree, "src", "detector.ts"), "export const detector = true;\n");
+    await writeFile(path.join(worktree, "tmp", "logs", "run.log"), "ran\n");
+    const resolveIn = (requested: string, inWorktree: string) => fetch(`${baseUrl}/api/projects/${project.id}/file-resolution?path=${encodeURIComponent(requested)}&worktreeId=${encodeURIComponent(inWorktree)}`, { headers });
+    assert.equal((await fetch(`${baseUrl}/api/projects/${project.id}/file-resolution?path=src/detector.ts`, { headers })).status, 404);
+    const detector = await resolveIn("src/detector.ts", worktreeId);
+    assert.equal(detector.status, 200);
+    const detectorBody = await detector.json() as { path: string; contentUrl: string };
+    assert.equal(detectorBody.path, await realpath(path.join(worktree, "src", "detector.ts")));
+    assert.equal((await (await fetch(`${baseUrl}${detectorBody.contentUrl}`, { headers })).json() as { content: string }).content, "export const detector = true;\n");
+    assert.equal((await (await resolveIn("run.log", worktreeId)).json() as { path: string }).path, await realpath(path.join(worktree, "tmp", "logs", "run.log")));
+    assert.equal((await (await resolveIn("src/config.ts", worktreeId)).json() as { path: string }).path, "src/config.ts");
+    assert.equal((await (await resolveIn("src/config.ts", "removed-after-its-run")).json() as { path: string }).path, "src/config.ts");
+    assert.equal((await resolveIn("../notes.txt", worktreeId)).status, 403);
+    assert.equal((await resolveIn("src/config.ts", "..")).status, 400);
   } finally {
     if (previousWorktreeRoot === undefined) delete process.env.JOINT_BOB_WORKTREE_ROOT; else process.env.JOINT_BOB_WORKTREE_ROOT = previousWorktreeRoot;
     if (appServer?.listening) await new Promise<void>((resolve) => appServer?.close(() => resolve()));
