@@ -28,4 +28,4 @@ Tick some or all of them and choose **Apply selection**. Unticking an item remov
 
 ## Upgrade note
 
-Earlier releases copied skills, prompts, plugins, and MCP configuration between machines as one blanket Syncthing folder, `joint-bob-agent-resources`. Joint Bob no longer uses Syncthing and removes that folder from the local Syncthing configuration. Local files remain intact, and copies already made on other machines are not revoked. Selective sharing covers skills, and git repositories with their skills, plugins and MCP servers.
+Skills, prompts, plugins, and MCP configuration are no longer copied between machines as one blanket folder. Selective sharing covers skills, and git repositories with their skills, plugins and MCP servers.

@@ -21,12 +21,10 @@ export interface BuiltinRule {
   /** "(?d)" lines are regenerable, every other line is local. */
   class: RuleClass;
   group: RuleGroup;
-  /** Cannot be switched off: a sync tool would sync its own bookkeeping. */
+  /** Cannot be switched off: the engine would sync its own bookkeeping. */
   locked?: true;
   /** Share kinds the rule applies to; every kind when absent. */
   kinds?: readonly ShareKind[];
-  /** Not one of the project rules: bookkeeping of another sync tool. */
-  engineOnly?: true;
 }
 
 /** Bump when a rule changes meaning without its pattern changing; pattern changes already move rulesHash. */
@@ -56,7 +54,7 @@ const WORKTREES: readonly ShareKind[] = ["worktrees"];
 
 function withoutDeletable(pattern: string): string { return pattern.startsWith(DELETABLE) ? pattern.slice(DELETABLE.length) : pattern; }
 
-function rules(group: RuleGroup, patterns: readonly string[], extra: Partial<Pick<BuiltinRule, "locked" | "kinds" | "engineOnly">> = {}): BuiltinRule[] {
+function rules(group: RuleGroup, patterns: readonly string[], extra: Partial<Pick<BuiltinRule, "locked" | "kinds">> = {}): BuiltinRule[] {
   return patterns.map((pattern) => ({ id: withoutDeletable(pattern), pattern, class: pattern.startsWith(DELETABLE) ? "regenerable" : "local", group, ...extra }));
 }
 
@@ -106,18 +104,12 @@ const projectRules: BuiltinRule[] = [
   ]),
 ];
 
-/* A person may run Syncthing on a folder Joint Bob also syncs: its folder marker, ignore file, versions
-   and download temps are its own bookkeeping, and must never travel to another machine. */
-const engineOnlyRules: BuiltinRule[] = [
-  ...rules("sync-internal", [".stfolder", ".stignore", ".stversions", "(?d).syncthing.*.tmp", "(?d)~syncthing~*.tmp"], { locked: true, engineOnly: true }),
-];
-
 /* Copies of src/worktree-filters.ts (pure modules import nothing outside file-sync); a test keeps them equal. */
 export const WORKTREE_HEAVY_DIRECTORIES = [
   "target", ".next", ".nuxt", ".svelte-kit", ".angular", ".turbo", ".cache", ".parcel-cache", ".vite", ".gradle", ".m2",
   "Pods", "DerivedData", ".tox", ".nox", ".eggs", "site-packages", "dist-packages", "__pypackages__", ".nuget", "vendor", "bower_components", "jspm_packages",
   ".yarn", ".pnpm-store", ".npm", ".terraform", ".serverless", ".vercel", ".netlify", ".expo", ".dart_tool",
-  "out", "tmp", ".tmp", ".idea", ".stversions", ".stfolder",
+  "out", "tmp", ".tmp", ".idea",
 ] as const;
 export const WORKTREE_LINKED_DIRECTORIES = [
   "node_modules", ".venv", "venv", "vendor", "bower_components", "jspm_packages", "Pods", ".yarn", ".pnpm-store",
@@ -140,8 +132,7 @@ function worktreeOnlyRules(): BuiltinRule[] {
   const fresh = (pattern: string) => !seen.has(pattern) && Boolean(seen.add(pattern));
   const heavy: readonly string[] = WORKTREE_HEAVY_DIRECTORIES;
   const groups: Array<[RuleGroup, string[]]> = [
-    // Another sync tool's folder files are engine-only rules below every kind.
-    ["worktree-heavy", heavy.filter((name) => !name.startsWith(".st")).map((name) => `${DELETABLE}${name}`)],
+    ["worktree-heavy", heavy.map((name) => `${DELETABLE}${name}`)],
     ["worktree-linked", WORKTREE_LINKED_DIRECTORIES.filter((name) => !heavy.includes(name)).map((name) => `${DELETABLE}${name}`)],
     ["worktree-merge", [`${DELETABLE}.joint-bob-merge`]],
     ["worktree-binaries", WORKTREE_BINARY_EXTENSIONS.map((extension) => `${DELETABLE}(?i)*.${extension}`)],
@@ -149,7 +140,7 @@ function worktreeOnlyRules(): BuiltinRule[] {
   return groups.flatMap(([group, patterns]) => rules(group, patterns.filter(fresh), { kinds: WORKTREES }));
 }
 
-export const BUILTIN_RULES: readonly BuiltinRule[] = Object.freeze([...projectRules, ...engineOnlyRules, ...worktreeOnlyRules()]);
+export const BUILTIN_RULES: readonly BuiltinRule[] = Object.freeze([...projectRules, ...worktreeOnlyRules()]);
 
 const byId = new Map(BUILTIN_RULES.map((rule) => [rule.id, rule]));
 if (byId.size !== BUILTIN_RULES.length) throw new Error("Built-in ignore rule ids must be unique");
@@ -165,9 +156,7 @@ export function builtinRulesFor(kind: ShareKind): BuiltinRule[] {
    Only the name itself is protected; content below it is classified normally. A sync engine's download
    temp is never protected: one for a conflict copy carries ".sync-conflict-" in its name, and indexing
    it would send half a download to every peer and leave it there. */
-const SYNC_TEMP = /^(?:\.joint-bob-sync\..*\.tmp|\.syncthing\..*\.tmp|~syncthing~.*\.tmp)$/s;
-/** Half-downloaded files Syncthing left in a folder it synced before. */
-export const OTHER_TOOL_TEMP = /^(?:\.syncthing\..*\.tmp|~syncthing~.*\.tmp)$/s;
+const SYNC_TEMP = /^\.joint-bob-sync\..*\.tmp$/s;
 
 export function isNeverIgnored(name: string, kind: ShareKind): boolean {
   if (name.startsWith(".joint-bob-")) {

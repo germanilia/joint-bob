@@ -56,7 +56,6 @@ async function fixture(): Promise<{ root: string; worktrees: string; project: Pr
     "lib.egg-info/PKG-INFO": "Name: lib\n",
     ".git/HEAD": "ref: refs/heads/main\n",
     ".env": "SECRET=1\n",
-    ".stignore": "node_modules\n",
   };
   for (const [name, content] of Object.entries(files)) {
     await mkdir(path.dirname(path.join(projectPath, name)), { recursive: true });
@@ -73,7 +72,7 @@ test("a worktree copies only code and text and lists with its name and color", a
     assert.equal(worktree.name, "Slice 4");
     assert.equal(worktree.path, path.join(worktrees, project.id, worktree.id));
     for (const kept of ["src/index.ts", "README.md", "assets/icon.svg"]) assert.ok(await exists(path.join(worktree.path, kept)), `${kept} should be copied`);
-    for (const skipped of ["assets/logo.png", "data/blob.dat", "data/huge.txt", "web/.next", "rust/target", "lib.egg-info", ".git", ".stignore"]) {
+    for (const skipped of ["assets/logo.png", "data/blob.dat", "data/huge.txt", "web/.next", "rust/target", "lib.egg-info", ".git"]) {
       assert.equal(await exists(path.join(worktree.path, skipped)), false, `${skipped} should not be copied`);
     }
     for (const linked of ["node_modules", ".venv"]) {
@@ -181,8 +180,6 @@ test("sync marker files left in the worktree folder are never mistaken for workt
   try {
     const worktree = await createProjectWorktree(project, { name: "Real" }, worktrees);
     const folder = path.dirname(worktree.path);
-    await writeFile(path.join(folder, ".stignore"), "(?d)node_modules\n");
-    await mkdir(path.join(folder, ".stfolder"), { recursive: true });
     await mkdir(path.join(folder, ".creating-half-made"), { recursive: true });
     await writeFile(path.join(folder, "stray-file"), "x");
     assert.deepEqual((await listProjectWorktrees(project.id, worktrees)).map((entry) => entry.name), ["Real"]);

@@ -129,11 +129,11 @@ test("a stored list is what comparedProjects gives, and All keeps the last chose
 test("a node.db of a release that chose a sync engine per project loses those choices and its in-between phases; take-overs done or under way stay", () => {
   const db = new DatabaseSync(":memory:");
   // The two tables as that release made them, with what it could hold.
-  db.exec(`CREATE TABLE file_sync_engines(project_id TEXT PRIMARY KEY, mode TEXT NOT NULL CHECK(mode IN ('syncthing','builtin')), generation INTEGER NOT NULL, updated_at TEXT NOT NULL, origin TEXT NOT NULL);
-    CREATE TABLE file_sync_phases(project_id TEXT PRIMARY KEY, phase TEXT NOT NULL CHECK(phase IN ('syncthing','releasing','bootstrapping','builtin','restoring')), builtin_since TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL, error TEXT);
-    INSERT INTO file_sync_engines VALUES ('alpha', 'builtin', 2, '${NOW}', '${LOCAL}'), ('gamma', 'syncthing', 1, '${NOW}', '${PEER}');
+  db.exec(`CREATE TABLE file_sync_engines(project_id TEXT PRIMARY KEY, mode TEXT NOT NULL CHECK(mode IN ('other','builtin')), generation INTEGER NOT NULL, updated_at TEXT NOT NULL, origin TEXT NOT NULL);
+    CREATE TABLE file_sync_phases(project_id TEXT PRIMARY KEY, phase TEXT NOT NULL CHECK(phase IN ('other','releasing','bootstrapping','builtin','restoring')), builtin_since TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL, error TEXT);
+    INSERT INTO file_sync_engines VALUES ('alpha', 'builtin', 2, '${NOW}', '${LOCAL}'), ('gamma', 'other', 1, '${NOW}', '${PEER}');
     INSERT INTO file_sync_phases VALUES ('alpha', 'builtin', '{"project":3,"tickets":1}', '${NOW}', NULL), ('beta', 'bootstrapping', '{"project":5}', '${NOW}', 'waiting'),
-      ('gamma', 'syncthing', '{}', '${NOW}', NULL), ('delta', 'releasing', '{}', '${NOW}', NULL), ('epsilon', 'restoring', '{"project":9}', '${NOW}', 'stopped')`);
+      ('gamma', 'other', '{}', '${NOW}', NULL), ('delta', 'releasing', '{}', '${NOW}', NULL), ('epsilon', 'restoring', '{"project":9}', '${NOW}', 'stopped')`);
   ensureControlSchema(db);
   assert.deepEqual([...listPhases(db)].map(([id, record]) => [id, record.phase, record.builtinSince, record.error]), [
     ["alpha", "builtin", { project: 3, tickets: 1 }, null],

@@ -23,7 +23,7 @@ import { flags } from "./state.js";
    timer-driven walk would be the periodic rescan it does without (design §0.11). */
 
 const CONFLICT_NAME = /^(.*?)\.sync-conflict-\d{8}-\d{6}-[A-Z0-9]{7}(.*)$/;
-const SKIPPED_DIRECTORIES = new Set(["node_modules", ".venv", "venv", "dist", "build", "coverage", ".joint-bob", ".pi-mobile-web", "__pycache__", ".dev-env", ".stversions", ".stfolder"]);
+const SKIPPED_DIRECTORIES = new Set(["node_modules", ".venv", "venv", "dist", "build", "coverage", ".joint-bob", ".pi-mobile-web", "__pycache__", ".dev-env"]);
 const MAX_SCANNED_ENTRIES = 50_000;
 /* `.git` is node-local (it is in every project's ignore list), so conflict copies in it
    are leftovers from before that rule and never sync again. Only its bulky object
