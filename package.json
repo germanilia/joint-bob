@@ -72,6 +72,7 @@
     "node-diff3": "^3.2.1",
     "node-pty": "^1.2.0-beta.15",
     "pg": "^8.23.1",
+    "pi-experientiallabs": "0.3.0",
     "playwright-core": "^1.65.1",
     "web-push": "^3.6.7",
     "word-extractor": "^1.0.4",
