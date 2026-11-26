@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.3 — 2026-11-26
+
+- **Pi:** A subscription pool tries a profile that offers the selected model before moving to a different model.
+
 ## 2.343.2 — 2026-11-26
 
 - **Housekeeping:** Removed every remaining mention of the old sync tool from the repository's tests, ignore file and documents. Nothing changes for users.

@@ -445,6 +445,19 @@ async function preparePoolSwitch(session: HarnessSession, pool: TurnSubscription
   }
 }
 
+async function preferPiProfilesWithModel(pool: TurnSubscriptionPool, { provider, modelId }: HarnessModelSettings): Promise<PoolProfileContext[]> {
+  if (pool.harnessId !== "pi" || profileProviderForRuntime(provider) !== "pi") return pool.candidates;
+  const { piProfileModelKeys } = await import("../pi-service.js");
+  const { localProviderProfile } = await import("../provider-profiles/store.js");
+  const local = await getClusterNode();
+  const matches = await Promise.all(pool.candidates.map(async (candidate) => {
+    if (candidate.provider !== "pi" || candidate.poolOwnerNodeId && candidate.poolOwnerNodeId !== local.id) return false;
+    const profile = candidate.profile ?? localProviderProfile(candidate.profileId);
+    return profile ? (await piProfileModelKeys(profile)).has(`${provider}/${modelId}`) : false;
+  }));
+  return [...pool.candidates.filter((_, i) => matches[i]), ...pool.candidates.filter((_, i) => !matches[i])];
+}
+
 /**
  * Runs one prompt on a subscription pool, member by member (see runPoolAttempts). A member taking
  * over mid-turn gets a continuation prompt instead of the original, which already ran.
@@ -452,8 +465,9 @@ async function preparePoolSwitch(session: HarnessSession, pool: TurnSubscription
 export async function promptOnSubscriptionPool(session: HarnessSession, pool: TurnSubscriptionPool, initial: HarnessModelSettings,
   settingsFor: (candidate: PoolProfileContext) => HarnessModelSettings, input: HarnessPrompt, announce: (candidate: PoolProfileContext) => void): Promise<void> {
   if (!session.checkpointPoolAttempt || !session.restorePoolAttempt) throw new Error("This harness cannot safely retry a subscription pool attempt");
+  const candidates = await preferPiProfilesWithModel(pool, initial);
   let attempts = 0;
-  await runPoolAttempts(pool.candidates, profileProviderForRuntime(initial.provider), async (candidate, continuing) => {
+  await runPoolAttempts(candidates, profileProviderForRuntime(initial.provider), async (candidate, continuing) => {
     const switching = attempts++ > 0 || candidate.provider !== "pi" && candidate.provider !== profileProviderForRuntime(initial.provider);
     let started = false;
     const unsubscribe = session.subscribe((event) => {
