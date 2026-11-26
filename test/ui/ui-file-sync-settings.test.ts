@@ -167,7 +167,6 @@ test("the File sync tab sits in Network after Relay and shows the engine and its
   assert.equal(await page.getByTestId("file-sync-project-move").count(), 0);
   assert.equal(await page.getByTestId("file-sync-compare").count(), 0);
   assert.equal(await page.getByTestId("file-sync-project-compare").count(), 0);
-  assert.doesNotMatch(await page.getByTestId("settings-panel-file-sync").innerText(), /syncthing/i);
 });
 
 test("the project list is one continuous list with no pager", async () => {

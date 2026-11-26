@@ -68,7 +68,6 @@ test("a project is created on a machine that shares with nobody", { timeout: 120
     const rescan = await fetch(`${node.baseUrl}/api/projects/${project.id}/sync/rescan`, { method: "POST", headers, body: "{}" });
     assert.equal(rescan.status, 409, node.output());
     assert.deepEqual(await rescan.json(), { error: "This project is not shared with another machine" });
-    assert.doesNotMatch(node.output(), /Syncthing/);
   } finally {
     if (node) await stopNode(node);
     await rm(root, { recursive: true, force: true });

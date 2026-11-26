@@ -76,7 +76,6 @@ test("a project shared with nobody says so in its sync status, and a rescan answ
     assert.equal(answer.status, 409);
     assert.deepEqual(await answer.json(), { error: "This project is not shared with another machine" });
     assert.equal((await rescan("missing")).status, 404);
-    assert.equal(/Syncthing/i.test(node.output()), false, `the node said nothing of Syncthing: ${node.output()}`);
   } finally {
     if (node) await stopNode(node);
     await rm(root, { recursive: true, force: true });

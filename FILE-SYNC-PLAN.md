@@ -1,44 +1,44 @@
-# Built-in file sync (replacing Syncthing) — plan for review
+# Built-in file sync (replacing the old sync tool) — plan for review
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Every project shared with another machine is moved by built-in file sync, with no choice of engine. Phase P6 (Removal) is done; section 8 says what remains. Sections 3 and 7 and the Syncthing side of 10.2 describe the earlier design and the migration, which no longer exist in the code.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Every project shared with another machine is moved by built-in file sync, with no choice of engine. Phase P6 (Removal) is done; section 8 says what remains. Sections 3 and 7 and the old sync tool side of 10.2 describe the earlier design and the migration, which no longer exist in the code.
 
 Status: **draft**. Section 9 lists the decisions; D1, D5, D11, D15 and D16 were decided on 2026-10-24. This plan supersedes the file-transport decision in `CLUSTER-SHARING-DESIGN.md` §6 ("Do not build a replacement bidirectional file-sync engine"), which must be amended when this is accepted.
 
 ## 1. Goal
 
-Joint Bob moves project, ticket and worktree files between machines itself, over the transport it already uses for everything else. Syncthing is no longer installed, configured or required.
+Joint Bob moves project, ticket and worktree files between machines itself, over the transport it already uses for everything else. The old sync tool is no longer installed, configured or required.
 
-- **One identity, one network path.** Files travel over signed cluster requests, either direct or through a Joint Bob relay, like transcripts do today. There are no Syncthing device IDs, no second daemon and no public Syncthing relays or discovery.
+- **One identity, one network path.** Files travel over signed cluster requests, either direct or through a Joint Bob relay, like transcripts do today. There are no the old sync tool device IDs, no second daemon and no public the old sync tool relays or discovery.
 - **Sharing rules don't change.** The same cluster and twin policy decides which machine gets which project (`mayShareProject` in `src/server/sharing-files.ts:41`). Revocation takes effect on the next request.
 - **Precise readiness.** A machine knows exactly which version of each file every peer has. Handoffs wait for the files that are actually needed instead of polling a folder state.
 - **Joint Bob controls the order.** Worktree metadata and files a turn needs go first; bulk copies go last and are copied locally when the content already exists on the machine.
 - **A broken share never takes a node down.** File sync is reported in status and never blocks startup, health, project creation or ticket creation.
 
-## 2. Why replace Syncthing
+## 2. Why replace the old sync tool
 
 Problems seen on the Mac and the homeserver this month:
 
-| Date | What happened | Root cause in the Syncthing integration |
+| Date | What happened | Root cause in the old sync tool integration |
 |---|---|---|
-| 2026-10-06 | Homeserver at health 503 for 9 hours; three release activations rolled back | Project row saved, Syncthing folder never created; startup ignore-rule POST failed (`maintenance.ts:75`) |
+| 2026-10-06 | Homeserver at health 503 for 9 hours; three release activations rolled back | Project row saved, the old sync tool folder never created; startup ignore-rule POST failed (`maintenance.ts:75`) |
 | 2026-10-08 | No worktree synced Mac↔homeserver | One project's folder path mismatch aborted enrollment for every project with that peer |
 | 2026-10-11 | Worktrees showed up 35 minutes late; pulls ran at a few files a minute on a LAN | `smallestFirst` queue is fixed per pull iteration; `worktree.json` was file 5,411 of 44,093 |
-| 2026-10-11 | Homeserver event loop at 90–100% | Syncthing held 118k of 123k inotify watches; enrollment made ~12 REST calls per project per peer |
+| 2026-10-11 | Homeserver event loop at 90–100% | The old sync tool held 118k of 123k inotify watches; enrollment made ~12 REST calls per project per peer |
 | 2026-10-12 | Folder stuck in error on one node | First-match ignore semantics: `*.key` (not deletable) matched before `(?d).dev-env/` |
-| ongoing | Relay-only peers need a loopback tunnel hack | Syncthing dials its own addresses (`src/relay/syncthing-tunnels.ts`) |
+| ongoing | Relay-only peers need a loopback tunnel hack | The old sync tool dials its own addresses (`src/relay/old-sync-tunnels.ts`) |
 
 Structural issues:
 
-- Two daemons, two configurations and two authentication domains. Joint Bob drives Syncthing through about 15 REST calls (`src/syncthing.ts`) and can only see what Syncthing chooses to report.
-- Revocation is not enforceable while Syncthing runs independently (`CLUSTER-SHARING-DESIGN.md` §5).
-- The installer ships a pinned binary for each OS and architecture, adopts or starts a daemon, and fails the build if Syncthing isn't running (`scripts/install-service.sh:92-95`). Self-update staging goes through the same path (`scripts/supervisor-install.mjs:33`).
-- Conflict copies appear with Syncthing's naming and are then merged by a background agent (`src/server/sync-check.ts`).
+- Two daemons, two configurations and two authentication domains. Joint Bob drives the old sync tool through about 15 REST calls (`src/old-sync.ts`) and can only see what the old sync tool chooses to report.
+- Revocation is not enforceable while the old sync tool runs independently (`CLUSTER-SHARING-DESIGN.md` §5).
+- The installer ships a pinned binary for each OS and architecture, adopts or starts a daemon, and fails the build if the old sync tool isn't running (`scripts/install-service.sh:92-95`). Self-update staging goes through the same path (`scripts/supervisor-install.mjs:33`).
+- Conflict copies appear with the old sync tool's naming and are then merged by a background agent (`src/server/sync-check.ts`).
 
-## 3. What Syncthing does for Joint Bob today
+## 3. What the old sync tool does for Joint Bob today
 
 ### 3.1 Folders
 
-Each shared project has three Syncthing folders, enrolled per peer in `enrollFiles` (`src/server/sharing-files.ts:54`):
+Each shared project has three the old sync tool folders, enrolled per peer in `enrollFiles` (`src/server/sharing-files.ts:54`):
 
 | Folder | ID | Root |
 |---|---|---|
@@ -50,39 +50,39 @@ There are also legacy folders that stay paused or have their devices removed: th
 
 Measured on the Mac on 2026-10-23: 79 active folders, about 850,000 files and 117 GB. The largest folder has 255,000 files (2.8 GB) and the biggest by size is 17 GB. Some folders in that daemon are not Joint Bob's (`video-translator`, `dot-codex`, `dot-copilot`, `dot-antigravity`). The daemon must keep running for them.
 
-### 3.2 Couplings outside `src/syncthing.ts`
+### 3.2 Couplings outside `src/old-sync.ts`
 
 | Area | Where | Dependency |
 |---|---|---|
-| Startup readiness | `server/maintenance.ts:75`, `routes/core.ts:100` | `startup.syncthing` must succeed before `/api/health` is ok; webhooks, cron and quick-note dispatch wait on it |
+| Startup readiness | `server/maintenance.ts:75`, `routes/core.ts:100` | `startup.old-sync` must succeed before `/api/health` is ok; webhooks, cron and quick-note dispatch wait on it |
 | Ticket creation | `routes/tasks.ts:74` | `ensureTicketWorkspaceFolder()` runs before every `createTask` |
-| Project creation | `routes/projects.ts:110-120` | `addProject` first, then `ensureSyncthingFolder`, with no rollback |
+| Project creation | `routes/projects.ts:110-120` | `addProject` first, then `ensureold-syncFolder`, with no rollback |
 | Project move | `server/projects.ts:132-158` | Re-points the folder, and again on rollback |
-| Handoff gate | `server/cluster-helpers.ts:87-92,132-175`; `task-handoff.ts`; `routes/cluster.ts:188-252` | `assertSyncthingFolderReady`; eligibility depends on Syncthing's state values |
-| Twin state | `server/twin-sharing.ts:65-99` | `sharingFilesStatus` → `syncthingPeerCaughtUp` |
+| Handoff gate | `server/cluster-helpers.ts:87-92,132-175`; `task-handoff.ts`; `routes/cluster.ts:188-252` | `assertold-syncFolderReady`; eligibility depends on the old sync tool's state values |
+| Twin state | `server/twin-sharing.ts:65-99` | `sharingFilesStatus` → `old-syncPeerCaughtUp` |
 | Worktrees | `project-worktrees.ts:122-128` | `announce()` forces a rescan after every metadata write; `.creating-<id>` staging has no ignore rule |
 | Git | `git-catch-up.ts` | Assumes files sync and `.git` does not |
 | Conflict names | `harnesses/shared-paths.ts:22`, `harnesses/pi/recovery.ts:89`, `sync-check.ts:21`, `public/app/recents.js:19` and others | `name.sync-conflict-YYYYMMDD-HHMMSS-XXXXXXX.ext` |
 | Identity | `store.ts:371,437,792`; `cluster-project-metadata.ts:13` | `syncFolderId` is unique, matches imports and is in the signed, strict portable project metadata |
-| Relay | `relay/syncthing-tunnels.ts`, `relay/runtime.ts:669`, `relay/protocol.ts:28`, `relay/store.ts:447` | `syncthing` channel kind and tunnel table |
-| Settings | `settings.ts:28-31,237,276`; `server/schemas.ts:381` | Endpoint and encrypted API key; `syncthing` is required in every `PUT /api/settings` |
-| UI | `index.html:1419,2544`; `project-list.js:199,316`; `tasks.js:280-370`; `ownership.js:19-52` | Badges, "Rescan with Syncthing", "Waiting for Syncthing", a fixed 5 s wait before a takeover |
-| Agent prompt | `task-runs.ts:232` | "Syncthing transfers these files between nodes" |
-| Install / CI | `scripts/install-syncthing.sh`, `check-prerequisites.sh`, `versions.sh`, `.github/workflows/release.yml:56` | Binary, units `joint-bob-syncthing.service` / `com.joint-bob.syncthing`, apt install in CI |
-| Tests | `test/native-syncthing.ts` and 6 native tests; ~15 fake-REST tests; ~60 fixtures with `syncthing:{endpoint:""}` | |
+| Relay | `relay/old-sync-tunnels.ts`, `relay/runtime.ts:669`, `relay/protocol.ts:28`, `relay/store.ts:447` | `old-sync` channel kind and tunnel table |
+| Settings | `settings.ts:28-31,237,276`; `server/schemas.ts:381` | Endpoint and encrypted API key; `old-sync` is required in every `PUT /api/settings` |
+| UI | `index.html:1419,2544`; `project-list.js:199,316`; `tasks.js:280-370`; `ownership.js:19-52` | Badges, "Rescan with the old sync tool", "Waiting for the old sync tool", a fixed 5 s wait before a takeover |
+| Agent prompt | `task-runs.ts:232` | "the old sync tool transfers these files between nodes" |
+| Install / CI | `scripts/install-old-sync.sh`, `check-prerequisites.sh`, `versions.sh`, `.github/workflows/release.yml:56` | Binary, units `joint-bob-old-sync.service` / `com.joint-bob.old-sync`, apt install in CI |
+| Tests | `test/native-old-sync.ts` and 6 native tests; ~15 fake-REST tests; ~60 fixtures with `old-sync:{endpoint:""}` | |
 
-`flushSharingFiles` also exchanges **project locations** (`receiveLocations`, the `project_locations` table). That has nothing to do with Syncthing and must stay.
+`flushSharingFiles` also exchanges **project locations** (`receiveLocations`, the `project_locations` table). That has nothing to do with the old sync tool and must stay.
 
 ## 4. Scope
 
-In scope: the three per-project shares above, every caller in 3.2, migration of running clusters, and removal of Syncthing from Joint Bob.
+In scope: the three per-project shares above, every caller in 3.2, migration of running clusters, and removal of the old sync tool from Joint Bob.
 
 Not in scope:
 
 - **`.git` stays node-local.** `git-catch-up.ts` keeps moving HEAD when synced files match upstream.
 - **No file bytes in SQLite.** SQLite holds only metadata and the index.
 - **No public fallback.** If neither the direct URL nor a Joint Bob relay reaches a peer, files wait. The cluster API has the same requirement.
-- **Folders that aren't Joint Bob's.** The user's own Syncthing folders and daemon are left alone.
+- **Folders that aren't Joint Bob's.** The user's own the old sync tool folders and daemon are left alone.
 - **Legacy folders.** They are removed, not ported.
 
 ## 5. Design
@@ -91,7 +91,7 @@ The code lives in `src/file-sync/`. The parts below map to modules.
 
 ### 5.1 Shares
 
-A **share** replaces a Syncthing folder plus its device list. It is derived, never configured by hand:
+A **share** replaces the old sync tool folder plus its device list. It is derived, never configured by hand:
 
 - `{shareId, kind: project|tickets|worktrees, projectId, root}`; the peers are `sharedProjectIds(db, local, peer)` evaluated on every request.
 - `shareId` reuses today's folder IDs: `syncFolderId` for the project share and the existing ticket and worktree IDs. `syncFolderId` stays in the schema and on the wire as the share ID (D13), so older peers and imports keep working.
@@ -120,7 +120,7 @@ Disk work (scanning, hashing, index writes, applying files) runs in a **worker t
 
 ### 5.3 Ignore rules
 
-Ignore rules come in three explicit classes instead of Syncthing's first-match `(?d)` rules (`src/file-sync/ignore.ts`, porting the lists in `src/syncthing.ts:56-160`):
+Ignore rules come in three explicit classes instead of the old sync tool's first-match `(?d)` rules (`src/file-sync/ignore.ts`, porting the lists in `src/old-sync.ts:56-160`):
 
 | Class | Synced | When a peer deletes the parent directory | Examples |
 |---|---|---|---|
@@ -138,7 +138,7 @@ Ignore rules come in three explicit classes instead of Syncthing's first-match `
 - Media and other binaries stay synced in project shares, with no size limit (decided 2026-10-23). Game art, public images and screenshots are real project content. A bulk data set is excluded with a user rule instead.
 - Measured on 2026-10-23 before the change: the Mac synced 100 GB in 775k files, and only about 5 GB was code, docs and data. The rest was:
   - 59 GB of guitar_player mp3s, now a user rule;
-  - 30 GB of trees that can be regenerated (the rules added to `regenerable` above, shipped in Syncthing's project rules first);
+  - 30 GB of trees that can be regenerated (the rules added to `regenerable` above, shipped in the old sync tool's project rules first);
   - a 255k-file decompiled APK, since deleted.
 
   The first index in P1 runs against what remains.
@@ -146,12 +146,12 @@ Ignore rules come in three explicit classes instead of Syncthing's first-match `
 ### 5.4 Scanning and watching
 
 - **Full scan** happens when a share is added, at startup, after a watcher error or overflow, before a handoff, and from the "Rescan files" action. It walks the tree with the ignore rules, compares (size, `mtime_ns`, inode, `ctime_ns`) with the index, and hashes only what changed. A file modified in the last 2 s is checked again once it settles. A file that changes while it is being hashed is retried.
-- **Watcher**: `@parcel/watcher` (D4), which uses FSEvents on macOS and inotify on Linux. Ignored directories are passed as exclusions. P1 must confirm on Linux that they cost no inotify watches. It replaces Syncthing's watches rather than adding to them. Events are debounced for 1 s and then rescan only the affected directories.
+- **Watcher**: `@parcel/watcher` (D4), which uses FSEvents on macOS and inotify on Linux. Ignored directories are passed as exclusions. P1 must confirm on Linux that they cost no inotify watches. It replaces the old sync tool's watches rather than adding to them. Events are debounced for 1 s and then rescan only the affected directories.
 - **Turn end**: when an agent turn ends, the engine rescans that project's shares. This catches anything the Linux watcher missed (`shared-transcripts.ts:113` documents such misses) without a timer.
 - **Opening a project** in the UI, or viewing its sync status, rescans that project's shares.
-- **No periodic rescans** (D5, decided 2026-10-24), in line with the push-on-change rule. Syncthing today rescans every folder hourly and waits 10 s after a change before scanning. Both behaviors go away.
+- **No periodic rescans** (D5, decided 2026-10-24), in line with the push-on-change rule. The old sync tool today rescans every folder hourly and waits 10 s after a change before scanning. Both behaviors go away.
 - **Live consistency check.** Each share keeps a digest of its index: an order-independent hash of every path, its sha256 and its deleted flag. Peers compare digests when they exchange changes and at handoff. If both sides report `synced` and the digests differ, the share shows an error with the paths that differ. This check runs in production, not only in tests, and it costs nothing when nothing changes.
-- **First index**: hashing about 117 GB happens once, throttled to one file at a time with yields, and is measured in `performance.jsonl` as `fileSync.scan`. Syncthing keeps moving files during this time (section 7).
+- **First index**: hashing about 117 GB happens once, throttled to one file at a time with yields, and is measured in `performance.jsonl` as `fileSync.scan`. The old sync tool keeps moving files during this time (section 7).
 
 ### 5.5 Conflicts and deletes
 
@@ -192,7 +192,7 @@ GET  /api/cluster/v2/files/status?share                 → {cursors:{nodeId: se
   5. worktree bulk, with `.joint-bob-baseline` last.
 - **Batching**: small files go in `fetch` batches, so 10,000 small files take about 40 requests instead of 10,000.
 - **Parallelism**: up to 4 requests in flight per peer. Over a relay, each channel moves about 256 KiB per round trip (`relay/protocol.ts:15-23`), and `RelayAgent` pools up to 16 connections per peer, so parallel requests are how relay throughput scales. A dedicated `files` channel kind with a bigger window is a later option.
-- **Relay allowance**: bulk sync counts against the relay's monthly byte cap (`relay-server.ts:559`), as Syncthing's tunnel traffic does today. File bytes sent over a relay are shown in Settings → Relay.
+- **Relay allowance**: bulk sync counts against the relay's monthly byte cap (`relay-server.ts:559`), as the old sync tool's tunnel traffic does today. File bytes sent over a relay are shown in Settings → Relay.
 
 ### 5.8 Applying a change safely
 
@@ -214,27 +214,27 @@ A crash between the temp write and the rename leaves only a temp file, which is 
 
 ### 5.9 Readiness and status
 
-- **`ProjectSyncStatus` keeps its shape** (`types.ts:21-28`). `synced` means no `need` rows and every reachable peer's cursor is at its current `maxSeq`. `syncing` comes with `need` counts as `remainingFiles` and `remainingBytes`. `error` comes with per-path reasons. `paused` means the engine is off for the share. `unavailable` means the peer is not reachable. The text changes from "Syncthing …" to "Files …".
-- **Handoff gate** (replaces `assertSyncthingFolderReady`). The source rescans the project's shares, notes its `maxSeq`, and waits until the target's `status` shows a cursor at or above that value with no `need`, with a time limit and a progress display. The target puts the share at the top of its queue while a handoff is pending. This is stricter than today's check, which only looks at the local folder.
+- **`ProjectSyncStatus` keeps its shape** (`types.ts:21-28`). `synced` means no `need` rows and every reachable peer's cursor is at its current `maxSeq`. `syncing` comes with `need` counts as `remainingFiles` and `remainingBytes`. `error` comes with per-path reasons. `paused` means the engine is off for the share. `unavailable` means the peer is not reachable. The text changes from "the old sync tool …" to "Files …".
+- **Handoff gate** (replaces `assertold-syncFolderReady`). The source rescans the project's shares, notes its `maxSeq`, and waits until the target's `status` shows a cursor at or above that value with no `need`, with a time limit and a progress display. The target puts the share at the top of its queue while a handoff is pending. This is stricter than today's check, which only looks at the local folder.
 - **Twins**: `sharingFilesStatus` reads the same cursors instead of `/rest/db/completion`.
 - **Takeover**: the fixed 5 s wait in `ownership.js:19-52` becomes the same cursor check, which returns immediately when there is nothing to copy.
 - **Worktree merge guard** (open item from 2026-10-11): merging a worktree is refused while its share has `need` rows for that worktree.
-- **Startup**: `startup.syncthing` is removed from readiness. The engine starts after readiness and never affects `/api/health`.
+- **Startup**: `startup.old-sync` is removed from readiness. The engine starts after readiness and never affects `/api/health`.
 
 ### 5.10 Authorization and revocation
 
 - Every request is authenticated by node key and authorized per share. When a project is unshared, the next `index`, `fetch` or `file` request from that peer gets 403, and incoming `changed` notices from it are dropped. The removed peer keeps the copy it already has, as `CLUSTER-SHARING-DESIGN.md` §5 already states. Joint Bob now controls the transport, so stopping it is no longer best-effort.
 - The coarse relay gate (`relayPeerRequestAllowed`) is not enough on its own. Each handler checks the specific share.
-- In multi-user mode, files are written as the service account through the existing group permissions, as Syncthing does today. The file sync status and settings are admin-only (`MULTI-USER-PLAN.md`).
+- In multi-user mode, files are written as the service account through the existing group permissions, as the old sync tool does today. The file sync status and settings are admin-only (`MULTI-USER-PLAN.md`).
 
 ### 5.11 Caller changes
 
 | Today | After |
 |---|---|
 | `routes/tasks.ts:74` `ensureTicketWorkspaceFolder()` | removed |
-| `routes/projects.ts:110-120` `ensureSyncthingFolder` | removed; the share is derived |
+| `routes/projects.ts:110-120` `ensureold-syncFolder` | removed; the share is derived |
 | `server/projects.ts:132-158` move + rollback | removed; the share follows the record |
-| `maintenance.ts:75` `reconcileSyncthingProjectFolders` | removed from readiness |
+| `maintenance.ts:75` `reconcileold-syncProjectFolders` | removed from readiness |
 | `project-worktrees.ts:122` `announce()` rescan | `fileSync.changed(shareId)`: scan that path now and notify peers |
 | `cluster-helpers.ts:87-175` | `fileSync.peerCaughtUp(peer, shareIds)` / `fileSync.status(shareIds)` |
 | `sharing-files.ts` enroll / revoke / caught-up | locations exchange stays; device and folder code goes |
@@ -242,14 +242,14 @@ A crash between the temp write and the rename leaves only a temp file, which is 
 | `skill-sharing.ts:53` pause agent-resources folder | removed after cleanup (section 7.4) |
 | `routes/projects.ts:66` rescan | `fileSync.rescan(projectId)` |
 | `sync-check.ts` folder checks | reads `fileSync.status`; the conflict-copy part stays |
-| `relay/syncthing-tunnels.ts`, `relay_syncthing_tunnels` | deleted; the relay server keeps accepting the `syncthing` kind for old machines |
-| `settings.syncthing`, env vars, audit fields | optional in P0, removed in P6 |
+| `relay/old-sync-tunnels.ts`, `relay_old-sync_tunnels` | deleted; the relay server keeps accepting the `old-sync` kind for old machines |
+| `settings.old-sync`, env vars, audit fields | optional in P0, removed in P6 |
 
 ## 6. Settings and UI
 
 - **Settings → File sync** (admin): each share's state, with a page of per-peer cursors and the `need` queue, errors with reasons, shadow-mode differences during migration, and bytes sent over relays. Lists are paged, not scrolled.
-- **Project card**: same badge; "Rescan with Syncthing" becomes "Rescan files".
-- **Handoff dialog**: "Waiting for Syncthing" becomes "Copying files to <node>: 312 files, 4.1 MB left".
+- **Project card**: same badge; "Rescan with the old sync tool" becomes "Rescan files".
+- **Handoff dialog**: "Waiting for the old sync tool" becomes "Copying files to <node>: 312 files, 4.1 MB left".
 - **Settings → File sync → Ignore rules**, a tab with an "All projects" level and a project picker:
   - Built-in rules appear grouped by class, each with a switch for the selected project. Secret rules ask for confirmation first (5.3).
   - Your own rules are listed below them, with an add field.
@@ -258,58 +258,58 @@ A crash between the temp write and the rename leaves only a temp file, which is 
 - **After saving**, the tab says what happens:
   - Files a new rule covers stop syncing, and every machine keeps the copy it has.
   - Files a removed rule covered start syncing.
-- The editor ships in P0 with Syncthing as its backend. Each node writes the replicated rules into its own Syncthing ignore list. P1 reads the same settings. guitar_player's rules move in at that point.
-- The Syncthing fieldset is removed in P6.
+- The editor ships in P0 with the old sync tool as its backend. Each node writes the replicated rules into its own the old sync tool ignore list. P1 reads the same settings. guitar_player's rules move in at that point.
+- The the old sync tool fieldset is removed in P6.
 
 ## 7. Migration
 
 ### 7.1 Capability and per-project switch
 
 - Nodes advertise `fileSync: 1` in their node descriptor and `/hello`.
-- A project moves to the built-in engine only when **every** node it is shared with advertises the capability (D12). That rules out two engines writing the same directory. A project shared with a node on an older release stays on Syncthing. Matan's and Ido's relay-only Macs must update first for the projects they share.
+- A project moves to the built-in engine only when **every** node it is shared with advertises the capability (D12). That rules out two engines writing the same directory. A project shared with a node on an older release stays on the old sync tool. Matan's and Ido's relay-only Macs must update first for the projects they share.
 - The project's owner node records `fileSyncEngine: {engine, generation, updatedAt}` in the project's replicated metadata. It is last-writer-wins and versioned, so an older statement can't flip it back.
 
 ### 7.2 Shadow mode (before any write)
 
-With Syncthing still moving files, the engine scans, indexes and exchanges indexes with peers but **writes nothing**. Settings → File sync shows, per share, the files where the built-in engine's view differs from the disk on the peer. On a quiet project this should be zero; in-flight edits show up briefly. Shadow mode runs on the Mac and homeserver until the counts stay at zero. It tests scanning, hashing, ignore rules, cost and the protocol on real data with no risk to files.
+With the old sync tool still moving files, the engine scans, indexes and exchanges indexes with peers but **writes nothing**. Settings → File sync shows, per share, the files where the built-in engine's view differs from the disk on the peer. On a quiet project this should be zero; in-flight edits show up briefly. Shadow mode runs on the Mac and homeserver until the counts stay at zero. It tests scanning, hashing, ignore rules, cost and the protocol on real data with no risk to files.
 
 ### 7.3 Cutover for one project
 
-1. The owner checks that every peer's Syncthing folder is idle and caught up, using the existing `syncthingPeerCaughtUp`.
+1. The owner checks that every peer's the old sync tool folder is idle and caught up, using the existing `old-syncPeerCaughtUp`.
 2. The owner records `engine: builtin`.
-3. Each node removes Joint Bob's devices from that project's three Syncthing folders, then removes the folder configuration. Syncthing doesn't delete files when a folder is removed.
+3. Each node removes Joint Bob's devices from that project's three the old sync tool folders, then removes the folder configuration. The old sync tool doesn't delete files when a folder is removed.
 4. **Bootstrap reconciliation** from the shadow index:
    - same sha256 on both sides: the vectors are merged and nothing is transferred;
    - present on one side only: copied to the other. Absence is never read as a delete at bootstrap;
    - different content: treated as concurrent (5.5), with the loser kept as a conflict copy.
 5. The share reports `synced`.
 
-**Rollback** is possible until P6: the owner records `engine: syncthing`, and each node re-adds the folders with today's `ensureSharedProjectFolder`. Syncthing rescans and finds the same content.
+**Rollback** is possible until P6: the owner records `engine: old-sync`, and each node re-adds the folders with today's `ensureSharedProjectFolder`. The old sync tool rescans and finds the same content.
 
 ### 7.3a Automatic move (nobody picks the moment)
 
 User requirement (2026-10-25): nobody coordinates the switch with the people whose machines share a project.
 
-- File sync is on by default, and every shared project is compared unless an admin chose a list. Projects not yet indexed join one at a time, smallest first. A project's owner asks a peer with a chosen list to compare a project it wants to move; an admin there can untick it, and then the project stays on Syncthing.
-- The owner moves a project to built-in sync by itself once all three folders have matched on every machine for `autoSwitch.cleanHours` (24 h) and every 7.3 check passes. It looks again when something changes (share reports, a peer's capability or return, records, Syncthing events), plus one one-shot timer per project. There is no polling.
-- The matching time counts only while the machines can exchange files. A difference whose files are still on their way doesn't end it: a machine away, a file list not fetched yet, or Syncthing still copying. A difference that stays for 15 minutes while every machine is present and Syncthing is done does end it.
-- The other machines follow the record. A notice a peer missed is sent again at its next contact. Moving back to Syncthing doesn't need every machine online; a machine that is away follows when it returns.
-- No flapping: a move back by hand holds the project on Syncthing until someone clicks *Allow automatic move*. The hold reaches every peer, so a twin that takes over keeps it. An automatic move back (a peer that can't take files) starts the matching time over.
-- Turning file sync off on any machine (Settings, or `JOINT_BOB_FILE_SYNC=0`) needs nobody else. The machine tells the other machines at once. Its built-in projects go back to Syncthing first: the owner moves them for every machine, and a machine that owns one moves it right away. The engine keeps their files moving until then, compares nothing new, and stops once it holds no project. A full check that keeps failing waits twice as long each time, up to 30 minutes.
-- Writes on a built-in root wait only for the first folder check after the move. After that, a Syncthing outage doesn't stop built-in sync. Syncthing's event stream rechecks when its folders change. A node counts as having no Syncthing only if Joint Bob never gave it the project's folders and no Syncthing configuration exists there.
+- File sync is on by default, and every shared project is compared unless an admin chose a list. Projects not yet indexed join one at a time, smallest first. A project's owner asks a peer with a chosen list to compare a project it wants to move; an admin there can untick it, and then the project stays on the old sync tool.
+- The owner moves a project to built-in sync by itself once all three folders have matched on every machine for `autoSwitch.cleanHours` (24 h) and every 7.3 check passes. It looks again when something changes (share reports, a peer's capability or return, records, the old sync tool events), plus one one-shot timer per project. There is no polling.
+- The matching time counts only while the machines can exchange files. A difference whose files are still on their way doesn't end it: a machine away, a file list not fetched yet, or the old sync tool still copying. A difference that stays for 15 minutes while every machine is present and the old sync tool is done does end it.
+- The other machines follow the record. A notice a peer missed is sent again at its next contact. Moving back to the old sync tool doesn't need every machine online; a machine that is away follows when it returns.
+- No flapping: a move back by hand holds the project on the old sync tool until someone clicks *Allow automatic move*. The hold reaches every peer, so a twin that takes over keeps it. An automatic move back (a peer that can't take files) starts the matching time over.
+- Turning file sync off on any machine (Settings, or `JOINT_BOB_FILE_SYNC=0`) needs nobody else. The machine tells the other machines at once. Its built-in projects go back to the old sync tool first: the owner moves them for every machine, and a machine that owns one moves it right away. The engine keeps their files moving until then, compares nothing new, and stops once it holds no project. A full check that keeps failing waits twice as long each time, up to 30 minutes.
+- Writes on a built-in root wait only for the first folder check after the move. After that, the old sync tool outage doesn't stop built-in sync. The old sync tool's event stream rechecks when its folders change. A node counts as having no the old sync tool only if Joint Bob never gave it the project's folders and no the old sync tool configuration exists there.
 
-- A project's own Syncthing folder at another path than its folder on that machine blocks the move there, because its files would stay behind. Found on 2026-10-26: the Mac had given two received projects new, empty `projects/<digest>` folders, while Syncthing synced them elsewhere. The sharing pass now repoints a project whose folder is empty to Syncthing's folder, unless another project lies inside or around it.
+- A project's own the old sync tool folder at another path than its folder on that machine blocks the move there, because its files would stay behind. Found on 2026-10-26: the Mac had given two received projects new, empty `projects/<digest>` folders, while the old sync tool synced them elsewhere. The sharing pass now repoints a project whose folder is empty to the old sync tool's folder, unless another project lies inside or around it.
 
-### 7.4 Syncthing cleanup (P6)
+### 7.4 the old sync tool cleanup (P6)
 
-> **Note, 2026-11-10.** Done differently from the list below. `src/file-sync/syncthing-retirement.ts` runs once per machine and takes Joint Bob's `joint-bob-*` folders out of the local Syncthing's configuration. `.stfolder` and `.stignore` files are left on disk. The daemon is not stopped and no unit is removed, whoever installed it. The per-project switch, the checks, the automatic move and the rollback (7.1 to 7.3a) were deleted: a shared project that is not on built-in sync yet is compared and adopted (`src/file-sync/adoption.ts`).
+> **Note, 2026-11-10.** Done differently from the list below. `src/file-sync/old-sync-retirement.ts` runs once per machine and takes Joint Bob's `joint-bob-*` folders out of the local old-sync's configuration. `the old ignore file` and `old-sync-marker` files are left on disk. The daemon is not stopped and no unit is removed, whoever installed it. The per-project switch, the checks, the automatic move and the rollback (7.1 to 7.3a) were deleted: a shared project that is not on built-in sync yet is compared and adopted (`src/file-sync/adoption.ts`).
 >
-> **Note, 2026-11-26.** The rest was done in 2.341.0, in `src/file-sync/syncthing-removal.ts` (it replaced `syncthing-retirement.ts`). Once per machine, after the `joint-bob-*` folders are out, it stops and removes the `joint-bob-syncthing.service` / `com.joint-bob.syncthing` unit and deletes the runtime download, unless that Syncthing still syncs folders that are not Joint Bob's. It takes the machines Joint Bob added out of a Syncthing that stays, once they share no folder. It deletes the `.stignore` files and `.stfolder` markers in Joint Bob's folders and keeps the ignore files' text in the data folder. A Syncthing the person installed, and their own folders, are never touched. The engine records, the `syncthing`, `releasing` and `restoring` phases and the relay's `syncthing` channel kind were deleted: a project that is not taken over yet is in the `shadow` phase.
+> **Note, 2026-11-26.** The rest was done in 2.341.0, in `src/file-sync/old-sync-removal.ts` (it replaced `old-sync-retirement.ts`). Once per machine, after the `joint-bob-*` folders are out, it stops and removes the `joint-bob-old-sync.service` / `com.joint-bob.old-sync` unit and deletes the runtime download, unless that the old sync tool still syncs folders that are not Joint Bob's. It takes the machines Joint Bob added out of the old sync tool that stays, once they share no folder. It deletes the `old-sync-marker` files and `old-sync-marker` markers in Joint Bob's folders and keeps the ignore files' text in the data folder. A the old sync tool the person installed, and their own folders, are never touched. The engine records, the `old-sync`, `releasing` and `restoring` phases and the relay's `old-sync` channel kind were deleted: a project that is not taken over yet is in the `shadow` phase.
 
-- Remove every Joint Bob folder from Syncthing's configuration, including the legacy paused ones.
-- Delete `.stfolder` from project roots.
-- Move user rules from `.stignore` into project settings, then delete `.stignore` when only managed rules remain.
-- Stop and remove `joint-bob-syncthing.service` / `com.joint-bob.syncthing` only if Joint Bob installed the unit and no other folders remain in that daemon. Otherwise leave the daemon running and say so in Settings → File sync. On this Mac the daemon is Homebrew's and holds the user's own folders, so it stays.
+- Remove every Joint Bob folder from the old sync tool's configuration, including the legacy paused ones.
+- Delete `old-sync-marker` from project roots.
+- Move user rules from `old-sync-marker` into project settings, then delete `old-sync-marker` when only managed rules remain.
+- Stop and remove `joint-bob-old-sync.service` / `com.joint-bob.old-sync` only if Joint Bob installed the unit and no other folders remain in that daemon. Otherwise leave the daemon running and say so in Settings → File sync. On this Mac the daemon is Homebrew's and holds the user's own folders, so it stays.
 
 ## 8. Phases
 
@@ -317,17 +317,17 @@ Each phase ships on its own. P0 fixes known incidents even if the rest is never 
 
 | Phase | Content | Behavior change |
 |---|---|---|
-| **P0 Decouple** | `src/file-sync/` facade with the operations callers need, with Syncthing behind it as the only backend. Take `startup.syncthing` out of readiness. Ticket and project creation stop depending on Syncthing. `.creating-*` ignore rule. `settings.syncthing` optional. Ignore-rule editor with replicated rules applied through Syncthing (section 6). Benchmark script and the Syncthing baseline (10.2). | Fixes the 2026-10-06 class of outage; rules editable in the UI |
+| **P0 Decouple** | `src/file-sync/` facade with the operations callers need, with old-sync behind it as the only backend. Take `startup.old sync tool` out of readiness. Ticket and project creation stop depending on old-sync. `.creating-*` ignore rule. `settings.old-sync` optional. Ignore-rule editor with replicated rules applied through the old sync tool (section 6). Benchmark script and the old sync tool baseline (10.2). | Fixes the 2026-10-06 class of outage; rules editable in the UI |
 | **P1 Local engine** | Ignore classes, `file-sync.db`, worker-thread scanner and hasher, `@parcel/watcher`, turn-end and project-open rescans, `fileSync.scan` measurements | None (index only) |
 | **P2 Protocol + shadow** | `shares`, `index`, `changed`, `status` endpoints; cursors; return hooks; index digests and the live consistency check; the shadow-difference page | None (no writes) |
 | **P3 Transfer + apply** | `fetch`/`file`, priority queue, local clone reuse, partials, apply procedure, conflicts, tombstones, trash | Enabled for test projects only |
 | **P4 Integration** | Handoff gate, twin status, takeover wait, merge guard, badges and texts, `sync-check` on the new status, revocation tests, relay parallelism and byte accounting, agent prompt text | Built-in projects behave fully |
 | **P5 Migration** | Capability, per-project switch, bootstrap, rollback. Dogfood order: one small project → several → `joint_bob` itself (its checkout is edited from both machines at once) → all. Then relay-only peers. | Per project |
-| **P6 Removal** | Delete `src/syncthing.ts`, the tunnels, `install-syncthing.sh`, prerequisite checks, `versions.sh` entries, the CI apt step, the settings field, UI and native Syncthing tests. Run the cleanup in 7.4. Update `README.md`, `agents_readme.md`, `CLUSTER-SHARING-DESIGN.md` §6, `RELAY-PLAN.md` §4.9, `TESTING.md` and `docs/features/clusters.*`. | Syncthing gone |
+| **P6 Removal** | Delete `src/old-sync.ts`, the tunnels, `install-old-sync.sh`, prerequisite checks, `versions.sh` entries, the CI apt step, the settings field, UI and native old-sync tests. Run the cleanup in 7.4. Update `README.md`, `agents_readme.md`, `CLUSTER-SHARING-DESIGN.md` §6, `RELAY-PLAN.md` §4.9, `TESTING.md` and `docs/features/clusters.*`. | The old sync tool gone |
 
-> **P6 status, 2026-11-10: done**, in the release after 2.256.3. Deleted: `src/syncthing.ts`, the relay tunnels, the migration code, `scripts/install-syncthing.sh`, the prerequisite checks, the `versions.sh` entries, the CI apt step, the settings field, the UI and the Syncthing tests. The documents named above were updated.
+> **P6 status, 2026-11-10: done**, in the release after 2.256.3. Deleted: `src/old-sync.ts`, the relay tunnels, the migration code, `scripts/install-old-sync.sh`, the prerequisite checks, the `versions.sh` entries, the CI apt step, the settings field, the UI and the old sync tool tests. The documents named above were updated.
 >
-> What remained was removed in 2.341.0 (2026-11-26), see the note in 7.4. One module is left, `src/file-sync/syncthing-removal.ts`, which does that removal once per machine. It is to be deleted in a later release, when every machine has run it. The engine also keeps ignoring Syncthing's own folder files (`.stfolder`, `.stignore`, `.stversions` and its download temps), so that a Syncthing a person runs on the same folder never has its bookkeeping copied to another machine.
+> What remained was removed in 2.341.0 (2026-11-26), see the note in 7.4. One module is left, `src/file-sync/old-sync-removal.ts`, which does that removal once per machine. It is to be deleted in a later release, when every machine has run it. The engine also keeps ignoring the old sync tool's own folder files (`old-sync-marker`, `old-sync-marker`, `old-sync-marker` and its download temps), so that the old sync tool a person runs on the same folder never has its bookkeeping copied to another machine.
 
 Each phase passes a gate before the next one starts (10.3).
 
@@ -339,18 +339,18 @@ D1, D5, D11, D15 and D16 were decided on 2026-10-24. The others are proposals th
 |---|---|---|---|
 | D1 | Write model | **Decided:** several writers with conflict copies, as today; both machines edit the same checkout | One writer per project via project locks; simpler, but changes how people work |
 | D2 | Transfer unit | Whole files with whole-file SHA-256, local clone reuse; block deltas later if measured | 128 KiB–1 MiB blocks from the start (partial updates of big files, more code) |
-| D3 | No path | No public Syncthing-style relays or discovery; files go where the cluster API goes | Keep a public fallback (needs our own discovery service) |
+| D3 | No path | No public the old sync tool-style relays or discovery; files go where the cluster API goes | Keep a public fallback (needs our own discovery service) |
 | D4 | Watcher | `@parcel/watcher` (native, prebuilt for darwin/linux x64/arm64; `node-pty` is already native) | Node `fs.watch` (misses on Linux, one watch per file there) |
 | D5 | Rescans | **Decided:** event-driven only: start, wake, watcher error, turn end, handoff, project opened, status viewed, manual; drift is caught by the live consistency check | A daily or hourly safety rescan (a timer, against the no-polling rule) |
-| D6 | Conflict names | Keep Syncthing's format so existing code keeps working | A Joint Bob format (touches 8+ places) |
-| D7 | Trash | 7 days / 5 GB per share for remote overwrites and deletes; not for worktrees | None (Syncthing's default) |
+| D6 | Conflict names | Keep the old sync tool's format so existing code keeps working | A Joint Bob format (touches 8+ places) |
+| D7 | Trash | 7 days / 5 GB per share for remote overwrites and deletes; not for worktrees | None (the old sync tool's default) |
 | D8 | Index storage | Separate `file-sync.db` | Tables in `node.db` (simpler backups, but contention and size) |
 | D9 | Threads | Disk work in a worker thread | Main thread with yields |
 | D10 | `.git` | Stays node-local; `git-catch-up` unchanged | Sync `.git` (unsafe with two writers) |
-| D11 | User ignore rules | **Decided:** edited in Settings → File sync and stored in replicated project settings, at all-projects and per-project level; migration imports each project's existing `.stignore` user rules (on 2026-10-23: guitar_player's `/chords_generator/models` and `local_bucket` mp3s) | Keep a file in the root |
+| D11 | User ignore rules | **Decided:** edited in Settings → File sync and stored in replicated project settings, at all-projects and per-project level; migration imports each project's existing `old-sync-marker` user rules (on 2026-10-23: guitar_player's `/chords_generator/models` and `local_bucket` mp3s) | Keep a file in the root |
 | D12 | Cutover | Per project, all its peers at once, after shadow mode; rollback until P6 | Per peer pair (two engines in one directory) or one big switch |
 | D13 | `syncFolderId` | Kept as the share ID in schema and wire format | Rename (breaks signed metadata with older peers) |
-| D14 | Syncthing daemon | Leave it running if it holds other folders; remove only our own unit otherwise | Always uninstall |
+| D14 | The old sync tool daemon | Leave it running if it holds other folders; remove only our own unit otherwise | Always uninstall |
 | D15 | Secret rules | **Decided:** on by default; an admin can switch one off for one project after a confirmation naming the files that would start syncing | Locked |
 | D16 | `.gitignore` | **Decided:** a per-project option to also skip gitignored paths, off by default | On by default; not offered |
 
@@ -368,7 +368,7 @@ D1, D5, D11, D15 and D16 were decided on 2026-10-24. The others are proposals th
   - no content is lost: every version ever written is the final file, a conflict copy, or in the trash.
 
   It runs thousands of seeds in CI, and a failing seed reproduces exactly.
-- **Unit**: vector comparison; ignore classes (port the scenarios in `test/syncthing-dependency-filters.test.ts` and the 2026-10-12 `.dev-env` case); conflict names against the regexes in `sync-check.ts` and `shared-paths.ts`; path checks (`..`, absolute, NUL, symlinked parents, case collisions, NFD names); the frame parser with truncated and oversized frames.
+- **Unit**: vector comparison; ignore classes (port the scenarios in `test/old-sync-dependency-filters.test.ts` and the 2026-10-12 `.dev-env` case); conflict names against the regexes in `sync-check.ts` and `shared-paths.ts`; path checks (`..`, absolute, NUL, symlinked parents, case collisions, NFD names); the frame parser with truncated and oversized frames.
 - **Engine, in one process**: three engines on temp directories over a fake transport, in the style of `test/relay-transport.test.ts`. Covers:
   - create, modify, delete, rename;
   - concurrent edits, delete against modify;
@@ -385,30 +385,30 @@ D1, D5, D11, D15 and D16 were decided on 2026-10-24. The others are proposals th
   - the handoff gate waiting on a pending file;
   - a relay-only peer through the relay harness;
   - shadow mode reporting zero differences on an idle project;
-  - cutover and rollback with Syncthing present.
+  - cutover and rollback with the old sync tool present.
 - **Mac against Linux**: a Mac dev node paired with a Linux node in Docker. It covers names that differ only by case, NFD against NFC, and symlinks. The mi_fit cleanup on 2026-10-23 found Linux folders that differ only by case merged into one on the Mac.
-- **Replace** the native Syncthing tests (`worktree-native-sync`, `twin-native-files`, `twin-legacy-folders`, `twin-idle-enrollment`, `selected-sharing-runtime`) with built-in equivalents before P6, then drop `test/native-syncthing.ts` and the CI install.
+- **Replace** the native the old sync tool tests (`worktree-native-sync`, `twin-native-files`, `twin-legacy-folders`, `twin-idle-enrollment`, `selected-sharing-runtime`) with built-in equivalents before P6, then drop `test/native-old-sync.ts` and the CI install.
 - **In production**: the live consistency check (5.4) reports any share whose digests differ while both sides say `synced`.
 
-### 10.2 Benchmark against Syncthing
+### 10.2 Benchmark against the old sync tool
 
-> **Note, 2026-11-10.** `scripts/sync-bench.mjs` now measures built-in sync only. Its Syncthing side (`--engine syncthing`, `--setup`, `--teardown`) was removed with Syncthing, and it no longer reports bytes on the wire, which only the Syncthing probe measured.
+> **Note, 2026-11-10.** `scripts/sync-bench.mjs` now measures built-in sync only. Its old-sync side (`--engine old sync tool`, `--setup`, `--teardown`) was removed with the old sync tool, and it no longer reports bytes on the wire, which only the old sync tool probe measured.
 
-`scripts/sync-bench.mjs` runs the same scenarios against either engine between the Mac and the homeserver. It uses a dedicated benchmark project with synthetic files, so no real project is touched. Results are written as JSON and compared side by side. **The Syncthing baseline is recorded in P0, before the engine exists.**
+`scripts/sync-bench.mjs` runs the same scenarios against either engine between the Mac and the homeserver. It uses a dedicated benchmark project with synthetic files, so no real project is touched. Results are written as JSON and compared side by side. **The the old sync tool baseline is recorded in P0, before the engine exists.**
 
 | Scenario | Measured |
 |---|---|
-| Edit one small file | time until it is on the other machine. Syncthing waits at least 10 s by its settings; target ≤2 s |
+| Edit one small file | time until it is on the other machine. The old sync tool waits at least 10 s by its settings; target ≤2 s |
 | One agent turn touching 50 files | time until all have arrived |
 | New worktree of `joint_bob` | time until it is listed on the other machine; time until all files have arrived (the 2026-10-11 case took 35 min) |
 | 10,000 small files | wall time, request count |
-| One 500 MB file, then 1 MB of it changed | wall time, bytes. Syncthing sends changed blocks only, so it is expected to win the second step; the result decides whether D2 needs block transfer |
+| One 500 MB file, then 1 MB of it changed | wall time, bytes. The old sync tool sends changed blocks only, so it is expected to win the second step; the result decides whether D2 needs block transfer |
 | Delete a directory of 5,000 files | time until it is gone on the other machine |
 | The above through a Joint Bob relay | the same, plus bytes counted against the relay cap |
 
-For every scenario: bytes on the wire, CPU time and RSS of the sync process (the Syncthing daemon, or the Joint Bob worker), event-loop busy time on the homeserver (`scripts/perf-report.mjs`), and inotify watches. Two more numbers are taken once each: CPU over an idle hour, and the time from a restart until every share is indexed. `fileSync.*` operations are also logged in `performance.jsonl`.
+For every scenario: bytes on the wire, CPU time and RSS of the sync process (the old sync tool daemon, or the Joint Bob worker), event-loop busy time on the homeserver (`scripts/perf-report.mjs`), and inotify watches. Two more numbers are taken once each: CPU over an idle hour, and the time from a restart until every share is indexed. `fileSync.*` operations are also logged in `performance.jsonl`.
 
-**Pass bar**: equal or better than Syncthing on every scenario except the in-place edit of a large file. The homeserver must not be busier than with Syncthing.
+**Pass bar**: equal or better than the old sync tool on every scenario except the in-place edit of a large file. The homeserver must not be busier than with the old sync tool.
 
 ### 10.3 Phase gates
 
@@ -428,5 +428,5 @@ For every scenario: bytes on the wire, CPU time and RSS of the sync process (the
 | Mac (case-insensitive, NFD) against Linux | NFC index, collision refusal, tests for both |
 | Linux watcher misses | Turn-end and pre-handoff rescans; full rescan on overflow |
 | Relay throughput and monthly cap | Local clone reuse, batching, parallel requests, bytes shown in Settings |
-| Mixed versions in a cluster | Capability check per project; old peers keep Syncthing until P6 |
+| Mixed versions in a cluster | Capability check per project; old peers keep the old sync tool until P6 |
 | Size of the project | P0 delivers value alone; each phase is independently shippable; P1–P2 change nothing for users |

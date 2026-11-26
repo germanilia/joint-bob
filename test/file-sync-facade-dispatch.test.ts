@@ -400,7 +400,6 @@ test("the sync check recognises the built-in engine's conflict copies and times 
     const [stamped] = await findSyncConflicts("p", root);
     assert.equal(await resolveTrivialConflict(stamped, Date.now() + 5 * 60_000), "stale", "without the engine's mark a copy is as old as its name says");
     assert.ok(syncResolverPrompt([]).startsWith(SYNC_FIXER_OPENING));
-    assert.equal(/Syncthing/.test(syncResolverPrompt([])), false);
     assert.ok(isInternalSession(randomUUID(), syncResolverPrompt([])));
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -1,6 +1,6 @@
 # Ownership sync scope implementation plan
 
-> **Note, 2026-11-10.** Syncthing was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of Syncthing in this document describe the earlier design.
+> **Note, 2026-11-10.** the old sync tool was removed in the release after 2.256.3. Project files are moved by Joint Bob's built-in file sync. Mentions of the old sync tool in this document describe the earlier design.
 
 **Goal:** Ownership takeover waits for the conversation's working folder, not every worktree in its project.
 
@@ -14,7 +14,7 @@
 
 - Work on the existing, current main checkout. No new branch or worktree.
 - No production data or sync-setting changes.
-- Keep Syncthing and remote-destination grace waits, the two-minute limit, and transcript/ownership mutation logic unchanged.
+- Keep the old sync tool and remote-destination grace waits, the two-minute limit, and transcript/ownership mutation logic unchanged.
 - Validate optional worktree IDs at the HTTP boundary.
 - Keep global project sync reporting unchanged outside takeover.
 
