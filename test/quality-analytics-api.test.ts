@@ -7,7 +7,7 @@ import test from 'node:test';
 import { api, seedDevEnvironment, signIn, startDevNode, stopDevNode } from './dev-nodes.js';
 import { QualityStore } from '../src/quality-analytics.js';
 
-test('retired Quality endpoints cannot collect and Done feedback is stored without inference', { timeout: 120_000 }, async () => {
+test('retired Quality endpoints cannot collect and Done feedback is stored and queued for the learning review', { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'jb-quality-retired-'));
   const environment = await seedDevEnvironment(root, 1), node = environment.nodes[0];
   const db = openNodeDatabase(path.join(node.dataDir, 'node.db'));
@@ -27,7 +27,7 @@ test('retired Quality endpoints cannot collect and Done feedback is stored witho
     const stored = JSON.parse(row.name);
     assert.deepEqual(stored.feedback, feedback);
     assert.equal(stored.source, 'manual');
-    assert.equal(stored.status, 'complete', 'Done does not queue a built-in learning agent');
+    assert.equal(stored.status, 'pending', 'Done queues the autonomous learning review');
     assert.equal((db.prepare('SELECT count(*) count FROM quality_jobs').get() as { count: number }).count, 0, 'the old enabled flag is ignored');
     const reopened = await api(node, session, 'PUT', `/projects/${project.id}/sessions/done`, { engine: 'pi', sessionId: conversationId, done: false });
     assert.equal(reopened.status, 200);
