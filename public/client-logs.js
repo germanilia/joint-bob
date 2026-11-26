@@ -12,11 +12,14 @@
   } catch {
     entries = [];
   }
+  const errorText = (error) => {
+    const head = `${error.name}: ${error.message}`;
+    return error.stack && !error.stack.includes(error.message) ? `${head}\n${error.stack}` : error.stack || head;
+  };
   const format = (value) => {
     if (value instanceof Error) {
       // Safari's stack omits the message, so it alone said only "api@…/api.js:17:20".
-      const head = `${value.name}: ${value.message}`;
-      const stack = value.stack && !value.stack.includes(value.message) ? `${head}\n${value.stack}` : value.stack || head;
+      const stack = errorText(value);
       let fields = "";
       try { if (Object.keys(value).length) fields = ` ${JSON.stringify({ ...value })}`; } catch { /* circular fields */ }
       return `${stack}${fields}${value.cause === undefined ? "" : `\nCaused by: ${format(value.cause)}`}`;
@@ -32,7 +35,9 @@
     try { sessionStorage.setItem(key, JSON.stringify(entries)); } catch { /* storage unavailable */ }
     window.dispatchEvent(new Event("joint-bob-client-logs-changed"));
     if (level === "error" || level === "uncaught" || level === "unhandled") {
-      window.dispatchEvent(new CustomEvent("joint-bob-client-error", { detail: { kind: level, message } }));
+      // Console objects can contain transcripts or bodies. Keep their fields in this tab's logs only.
+      const diagnostic = values.map(value => value instanceof Error ? errorText(value) : typeof value === "string" ? value : "").filter(Boolean).join(" ");
+      window.dispatchEvent(new CustomEvent("joint-bob-client-error", { detail: { kind: level, message: diagnostic || "Browser error (see local logs)" } }));
     }
   };
   for (const level of ["debug", "info", "log", "warn", "error"]) {

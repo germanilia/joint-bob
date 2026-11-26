@@ -2,6 +2,7 @@ import { api, savePreferencesInBackground } from "./api.js";
 import { sendSocket } from "./chat-controls.js";
 import { elements } from "./elements.js";
 import { copyErrorReport, downloadErrorReport } from "./error-report.js";
+import { reportClientError } from "./error-reporting.js";
 import { topmostOpenDialog } from "./focus-input.js";
 import { openSettings } from "./settings.js";
 import { state } from "./state.js";
@@ -169,6 +170,15 @@ toast.error = (message) => {
   save.addEventListener("click", () => downloadErrorReport(message));
   report.append(copy, save);
   node.querySelector(".toast-message").after(report);
+  void reportClientError("toast", message).then((result) => {
+    if (!result?.offerWebhookSetup || !node.isConnected) return;
+    const setup = document.createElement("button");
+    setup.type = "button";
+    setup.textContent = "Set up error reporting";
+    setup.dataset.testid = "toast-error-webhook-setup";
+    setup.addEventListener("click", () => { dismissToast(node); void openSettings("notifications"); });
+    report.append(setup);
+  });
   return node;
 };
 

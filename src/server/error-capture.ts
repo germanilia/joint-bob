@@ -1,5 +1,4 @@
 import { createRequire } from "node:module";
-import { format } from "node:util";
 import type { NextFunction, Request, Response } from "express";
 import { reportError } from "../error-reporting.js";
 
@@ -33,7 +32,9 @@ function forward(values: unknown[]): void {
   if (forwarding) return;
   forwarding = true;
   try {
-    const [summary, ...detail] = format(...values).split("\n");
+    // Structured console arguments may contain a request body or a transcript. Keep them in local logs only.
+    const diagnostic = values.map((value) => value instanceof Error ? value.stack ?? value.message : typeof value === "string" ? value : "").filter(Boolean).join(" ");
+    const [summary, ...detail] = (diagnostic || "Backend error (see local logs)").split("\n");
     void reportError("backend", { summary, detail: detail.join("\n") });
   } finally {
     forwarding = false;
@@ -54,7 +55,7 @@ export function installBackendErrorCapture(): void {
   process.on("unhandledRejection", (reason) => console.error("Unhandled promise rejection", reason));
   process.on("uncaughtException", (error) => {
     writeError("Uncaught exception; the node is exiting", error);
-    const [summary, ...detail] = format("Uncaught exception; the node is exiting", error).split("\n");
+    const [summary, ...detail] = `Uncaught exception; the node is exiting ${error.stack ?? error.message}`.split("\n");
     const exit = setTimeout(() => process.exit(1), 3_000);
     void reportError("backend", { summary, detail: detail.join("\n") }).finally(() => { clearTimeout(exit); process.exit(1); });
   });

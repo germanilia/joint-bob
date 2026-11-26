@@ -1300,6 +1300,20 @@
             </div>
             <button class="ghost" id="errorReportingSaveButton" type="button" data-testid="error-reporting-save-button" hidden>Save error reporting</button>
           </fieldset>
+          <fieldset class="phase-settings" data-admin-only data-testid="error-webhook-settings" id="errorWebhookSettings">
+            <legend>Send errors to a webhook</legend>
+            <p class="settings-hint">Off by default. When enabled, this node sends redacted browser and backend error reports to the destination below. Long diagnostics are attached as a text file. Conversation transcripts and request bodies are not attached.</p>
+            <p class="settings-hint" id="errorWebhookDestination"></p>
+            <label class="checkbox-row"><input id="errorWebhookEnabled" type="checkbox" data-testid="error-webhook-enabled" disabled /> Send error reports</label>
+            <label>Replace webhook URL (leave blank to keep current destination)
+              <input id="errorWebhookUrl" type="password" autocomplete="off" maxlength="4096" data-testid="error-webhook-url" disabled />
+            </label>
+            <div>
+              <button class="ghost" id="errorWebhookSave" type="button" data-testid="error-webhook-save" disabled>Save webhook settings</button>
+              <button class="ghost" id="errorWebhookReset" type="button" data-testid="error-webhook-reset" hidden>Use node default</button>
+            </div>
+            <p class="settings-hint" id="errorWebhookStatus" data-testid="error-webhook-status" role="status"></p>
+          </fieldset>
         </section>
 
         <section class="settings-panel" id="settingsPanel-labels" role="tabpanel" aria-labelledby="settingsTab-labels" tabindex="0" hidden>

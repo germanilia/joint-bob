@@ -152,6 +152,53 @@ test("a disabled channel, a removed server, or a failing ntfy never throws to th
   assert.equal(published.length, 0);
 });
 
+test("webhook reports are opt-in, redact credentials, and attach long diagnostics", async (t) => {
+  const { errorWebhookSettings, loadErrorWebhookDefault, updateErrorWebhookSettings } = await import("../src/error-webhook.js");
+  const { setting } = await import("../src/settings-store.js");
+  const fallback = "https://errors.example.invalid/hooks/node/synthetic-default";
+  const original = process.env.JOINT_BOB_ERROR_WEBHOOK_URL;
+  process.env.JOINT_BOB_ERROR_WEBHOOK_URL = fallback;
+  t.after(() => {
+    loadErrorWebhookDefault();
+    if (original !== undefined) process.env.JOINT_BOB_ERROR_WEBHOOK_URL = original;
+    updateErrorWebhookSettings({ enabled: false, url: "" });
+  });
+  loadErrorWebhookDefault();
+  assert.ok(!Object.hasOwn(process.env, "JOINT_BOB_ERROR_WEBHOOK_URL"), "child processes cannot inherit the destination");
+  const requests: Request[] = [];
+  t.mock.method(globalThis, "fetch", async (url: URL, init: RequestInit) => {
+    requests.push(new Request(url, init));
+    return new Response(null, { status: 202 });
+  });
+  assert.deepEqual(errorWebhookSettings(), { enabled: false, destination: "default", origin: "https://errors.example.invalid" });
+  assert.equal(await reportError("client", { summary: "Disabled fixture" }), false);
+  assert.equal(requests.length, 0);
+  assert.throws(() => updateErrorWebhookSettings({ enabled: true, url: "http://errors.example.invalid/" }), /HTTPS/);
+  assert.throws(() => updateErrorWebhookSettings({ enabled: true, url: "https://user:pass@errors.example.invalid/" }), /HTTPS/);
+  const custom = "https://custom.example.invalid/hooks/node/synthetic-custom";
+  assert.deepEqual(updateErrorWebhookSettings({ enabled: true, url: custom }), { enabled: true, destination: "custom", origin: "https://custom.example.invalid" });
+  assert.equal(setting("errorWebhook")?.isSecret, true);
+  assert.doesNotMatch(setting("errorWebhook")!.value, /synthetic-custom/);
+  const detail = `Failed at ${custom}\n${"trace line\n".repeat(600)}end of trace`;
+  assert.equal(await reportError("client", { summary: "Fixture client error", detail }), true);
+  assert.equal(await reportError("client", { summary: "Fixture client error", detail }), false);
+  assert.equal(requests.length, 1);
+  const [request] = requests;
+  assert.equal(request.url, custom);
+  assert.equal(request.redirect, "error");
+  const { readWebhookPayload } = await import("../src/webhooks.js");
+  const parsed = await readWebhookPayload(request.headers.get("content-type")!, Buffer.from(await request.arrayBuffer()), true);
+  assert.match(parsed.text, /Fixture client error/);
+  assert.equal(parsed.attachments[0]?.name, "joint-bob-error.txt");
+  const text = parsed.attachments[0].data.toString();
+  assert.match(text, /end of trace/);
+  assert.doesNotMatch(text, /synthetic-custom/);
+  assert.deepEqual(updateErrorWebhookSettings({ enabled: true, url: "" }), { enabled: true, destination: "default", origin: "https://errors.example.invalid" });
+  assert.equal(await reportError("backend", { summary: "Fixture backend error", detail: "Short stack" }), true);
+  assert.equal(requests[1].url, fallback);
+  assert.equal((await requests[1].json()).detail, "Short stack");
+});
+
 test("a rejected async route reaches the Express error handler instead of hanging", async () => {
   const { forwardAsyncRouteErrors } = await import("../src/server/error-capture.js");
   forwardAsyncRouteErrors();

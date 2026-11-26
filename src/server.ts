@@ -28,6 +28,7 @@ import { flushSuccessionNotices } from "./server/succession.js";
 import { measureOperation } from "./server/performance-diagnostics.js";
 import { flushReplicationOutbox, flushRoutingConfigDeliveries, initializeStartupReadiness, pushRuntimeLeaseSnapshots, reconcileManagedAgentResources, reapInactiveConversations, sweepRuntimeLeases, sweepStaleConversations } from "./server/maintenance.js";
 import { runSyncCheck } from "./server/sync-check.js";
+import { loadErrorWebhookDefault } from "./error-webhook.js";
 import { installBackendErrorCapture } from "./server/error-capture.js";
 import { flushPushSubscriptionOutbox } from "./server/push-flush.js";
 import { syncNtfyServiceShares } from "./server/ntfy-share.js";
@@ -135,6 +136,7 @@ export { app, createApp, server } from "./server/state.js";
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   installServiceLogging();
+  loadErrorWebhookDefault();
   registerStoredSecretsForLogging();
   installBackendErrorCapture();
   // JOINT_BOB_DATABASE_URL is read here, at start; an unreachable PostgreSQL stops the node before it serves anything.

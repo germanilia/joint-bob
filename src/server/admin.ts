@@ -20,6 +20,7 @@ export const ADMIN_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "PUT", path: /^\/settings$/ },
   { method: "*", path: /^\/settings\/(sync-check|runtime-defaults|runtime-check|skills|retention-preview|conversation-backups)(\/|$)/ },
   { method: "*", path: /^\/terminal-policy$/ },
+  { method: "*", path: /^\/error-reporting\/webhook$/ },
   // The file sync engine's status and switch (GET /file-sync/status, PUT /file-sync/config) and its projects (GET /file-sync/projects);
   // peers use /cluster/v2/files.
   { method: "*", path: /^\/file-sync(\/|$)/ },

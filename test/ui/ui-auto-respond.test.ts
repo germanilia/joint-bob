@@ -3,12 +3,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { type Browser } from "playwright-core";
+import { type Browser, type Page } from "playwright-core";
 import { launchChrome } from "./launch-chrome.js";
-import { reach } from "./workspace-menus.js";
 import { seedDevEnvironment, startDevNode, stopDevNode } from "../dev-nodes.js";
 
-test("the auto respond dialog opens from the chat menu with the default rules and no pill while off", { timeout: 120_000 }, async () => {
+async function openAutoRespond(page: Page) {
+  const toggle = page.getByTestId("details-auto-respond-switch");
+  if (!(await toggle.isVisible())) await page.getByTestId("chat-activity-toggle").click();
+  await toggle.click();
+}
+
+test("the auto respond dialog opens from conversation details with the default rules and no pill while off", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-ui-auto-respond-"));
   const environment = await seedDevEnvironment(root, 1);
   const node = environment.nodes[0];
@@ -28,7 +33,7 @@ test("the auto respond dialog opens from the chat menu with the default rules an
     await page.getByTestId("chat-message-input").waitFor();
     assert.equal(await page.getByTestId("auto-respond-pill").isHidden(), true, "nothing is shown while it is off");
 
-    await (await reach(page, "chat-auto-respond-button")).click();
+    await openAutoRespond(page);
     await page.getByTestId("auto-respond-dialog").waitFor({ state: "visible" });
     assert.match(await page.getByTestId("auto-respond-status").innerText(), /Off/);
     assert.match(await page.getByTestId("auto-respond-instructions").inputValue(), /Answer as the user would/);
@@ -37,16 +42,16 @@ test("the auto respond dialog opens from the chat menu with the default rules an
     assert.match(await page.getByTestId("auto-respond-instructions").inputValue(), /add a way to test it/, "the default asks the agent for a way to test what it built");
     assert.equal(await page.getByTestId("auto-respond-use-tools").isChecked(), true, "the responder may check the work by default");
     await page.getByTestId("auto-respond-harness").locator("option").first().waitFor({ state: "attached" });
-    const profilePicker = page.getByTestId("auto-respond-provider-profile");
-    await profilePicker.waitFor({ state: "visible" });
-    assert.equal(await profilePicker.inputValue(), "");
-    assert.equal(await profilePicker.locator("option").first().textContent(), "Use my current profile");
+    const poolPicker = page.getByTestId("auto-respond-provider-pool");
+    await poolPicker.waitFor({ state: "visible", timeout: 5_000 });
+    assert.equal(await poolPicker.inputValue(), "");
+    assert.equal(await poolPicker.locator("option").first().textContent(), "Use my current pool");
     await page.getByTestId("auto-respond-cancel-button").click();
     await page.getByTestId("auto-respond-dialog").waitFor({ state: "hidden" });
     assert.equal(await page.getByTestId("session-auto-respond-badge").count(), 0, "the conversation row shows no badge while it is off");
 
     // Turning it on marks the conversation's row in the list, not only the toolbar.
-    await (await reach(page, "chat-auto-respond-button")).click();
+    await openAutoRespond(page);
     await page.getByTestId("auto-respond-enabled").check();
     await page.getByTestId("auto-respond-save-button").click();
     const rowBadge = page.locator(".session-card, .list-row").filter({ hasText: "Thread-Based Agent Builder" }).getByTestId("session-auto-respond-badge").first();
@@ -59,7 +64,7 @@ test("the auto respond dialog opens from the chat menu with the default rules an
     await page.getByTestId("auto-respond-pill").waitFor({ state: "visible", timeout: 20_000 });
 
     // Choosing a preset fills in its rules; editing a rule switches the preset back to Custom.
-    await (await reach(page, "chat-auto-respond-button")).click();
+    await openAutoRespond(page);
     await page.getByTestId("auto-respond-preset").selectOption("review-consent");
     assert.match(await page.getByTestId("auto-respond-instructions").inputValue(), /LGTM/);
     await page.getByTestId("auto-respond-preset").selectOption("implementation-reviewer");
@@ -73,7 +78,7 @@ test("the auto respond dialog opens from the chat menu with the default rules an
     await page.getByTestId("auto-respond-cancel-button").click();
 
     // The AI-DLC driver handles routine approval gates instead of handing every decision to the human.
-    await (await reach(page, "chat-auto-respond-button")).click();
+    await openAutoRespond(page);
     await page.getByTestId("auto-respond-preset").selectOption("aidlc-driver");
     const aidlcInstructions = await page.getByTestId("auto-respond-instructions").inputValue();
     const aidlcStopInstructions = await page.getByTestId("auto-respond-stop-instructions").inputValue();
@@ -94,7 +99,7 @@ test("the auto respond dialog opens from the chat menu with the default rules an
     await page.getByTestId("auto-respond-pill").waitFor({ state: "visible" });
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByTestId("auto-respond-pill").waitFor({ state: "visible" });
-    await (await reach(page, "chat-auto-respond-button")).click();
+    await openAutoRespond(page);
     assert.equal(await page.getByTestId("auto-respond-preset").inputValue(), "aidlc-driver");
     assert.equal(await page.getByTestId("auto-respond-instructions").inputValue(), aidlcInstructions, "delegated approval instructions survive save and reload");
     assert.equal(await page.getByTestId("auto-respond-stop-instructions").inputValue(), aidlcStopInstructions, "the saved stop rules keep genuine human-only blockers");

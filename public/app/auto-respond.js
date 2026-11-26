@@ -1,6 +1,6 @@
 import { harnessOption } from "../harness-metadata.js";
 import { api } from "./api.js";
-import { createAutomationProfilePicker } from "./provider-profile-picker.js";
+import { createAutomationPoolPicker } from "./provider-profile-picker.js";
 import { sendSocket } from "./chat-controls.js";
 import { elements } from "./elements.js";
 import { fillModelOptions, fillThinkingOptions, selectedModel } from "./git-reviewer-options.js";
@@ -9,7 +9,7 @@ import { state } from "./state.js";
 
 let defaults = null;
 const picker = { harnesses: [], models: [] };
-const profilePicker = createAutomationProfilePicker(elements.autoRespondHarness.closest("label"), "auto-respond-provider-profile", () => api("/api/provider-profiles/available?usage=automation"));
+const poolPicker = createAutomationPoolPicker(elements.autoRespondThinking.closest("label"), "auto-respond-provider-pool", () => api("/api/provider-profiles/pools"));
 
 const PRESETS = {
   "review-consent": {
@@ -132,7 +132,7 @@ export async function openAutoRespond({ system = false } = {}) {
   elements.autoRespondHarness.value = picker.harnesses.some((harness) => harness.id === (saved?.harnessId ?? state.engine)) ? (saved?.harnessId ?? state.engine) : picker.harnesses[0]?.id ?? "";
   fillPickers(savedPick);
   elements.saveAutoRespondButton.disabled = true;
-  try { await profilePicker.refresh(saved?.providerProfileId); }
+  try { await poolPicker.refresh(saved); }
   finally { elements.saveAutoRespondButton.disabled = false; }
 }
 
@@ -154,6 +154,7 @@ function showSystemControl() {
   const system = elements.autoRespondSystemControl.checked;
   elements.autoRespondSystemExtra.hidden = !system;
   elements.autoRespondMaxMinutes.closest("label").hidden = !system;
+  poolPicker.element.hidden = system;
   for (const field of [elements.autoRespondPreset, elements.autoRespondHarness, elements.autoRespondModel, elements.autoRespondThinking, elements.autoRespondInstructions, elements.autoRespondStopInstructions, elements.autoRespondUseTools]) {
     field.closest("label").hidden = system;
   }
@@ -180,11 +181,11 @@ function save(event) {
   if (!harness) { toast.error("Choose a harness"); return; }
   const { provider, modelId } = selectedModel(elements.autoRespondModel);
   const limit = elements.autoRespondLimit.value.trim();
-  let providerProfileId;
-  try { providerProfileId = profilePicker.value(); }
+  let assignment;
+  try { assignment = poolPicker.value(); }
   catch (error) { toast.error(error.message); return; }
   const config = {
-    providerProfileId,
+    ...assignment,
     harnessId: harness.id,
     provider: provider || harness.configuration?.fixedProvider || harness.defaults.provider,
     modelId,

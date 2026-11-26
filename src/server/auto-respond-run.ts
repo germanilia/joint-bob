@@ -32,7 +32,8 @@ export async function runAutoResponder(input: AutoRespondRunInput): Promise<stri
   const accountId = input.creatorAccountId;
   if (!accountId) throw new Error("Auto responder creator is missing; save its settings again");
   validateAutoRespondProfile(accountId, input.config);
-  return withAutomationProfile({ accountId, profileId: input.config.providerProfileId ?? null }, () => executeAutoResponder(input));
+  const { providerProfileId, providerPoolId } = input.config;
+  return withAutomationProfile({ accountId, profileId: providerProfileId ?? null, ...(providerPoolId ? { poolId: providerPoolId } : {}) }, () => executeAutoResponder(input));
 }
 
 async function executeAutoResponder(input: AutoRespondRunInput): Promise<string> {

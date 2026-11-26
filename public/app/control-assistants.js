@@ -71,7 +71,7 @@ async function deleteAssistant(card) {
   assistants = assistants.filter((candidate) => candidate.id !== card.id);
   renderAll();
   syncAssistantChat(assistants);
-  toast.info(`Deleted ${card.name}`);
+  toast(`Deleted ${card.name}`);
 }
 
 // ── A card ──────────────────────────────────────────────────────────────────────────────────────────────
