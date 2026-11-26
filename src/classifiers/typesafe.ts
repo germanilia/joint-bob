@@ -75,7 +75,7 @@ function normalizedOptions(context: string | DifficultyClassifierContext): Array
 function questionFor(context: string | DifficultyClassifierContext): Record<string, unknown> {
   const options = normalizedOptions(context);
   const instructions = options.length
-    ? "Which configured option best fits this software development request? Choose `none` when none of the options fits."
+    ? "Classify the work requested by the latest User message, reading earlier messages for context. A short reply (yes, an option letter, 'do both', 'continue') asks for the work the previous Assistant message proposed or asked about. Which configured option best fits? Choose `none` only when none fits."
     : "How complex is this software development request for a coding agent to execute, based on the work it describes?";
   if (!options.length) return { type: "score", instructions, criteria: DIFFICULTY_RUBRIC };
   const criteria = Object.fromEntries(options.map(({ level, description }) => [`level_${level}`, description]));

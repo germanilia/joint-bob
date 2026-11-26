@@ -134,7 +134,7 @@ test("classifyWithTypesafe offers only configured levels and an escape choice", 
   assert.equal(classification?.level, 6);
   const question = (captured as { questions: { complexity: { type: string; instructions: string; criteria: Record<string, unknown> } } }).questions.complexity;
   assert.equal(question.type, "choice");
-  assert.equal(question.instructions, "Which configured option best fits this software development request? Choose `none` when none of the options fits.");
+  assert.equal(question.instructions, "Classify the work requested by the latest User message, reading earlier messages for context. A short reply (yes, an option letter, 'do both', 'continue') asks for the work the previous Assistant message proposed or asked about. Which configured option best fits? Choose `none` only when none fits.");
   assert.deepEqual(question.criteria, {
     level_2: "Tiny obvious fix",
     level_3: "Localized routine edit",

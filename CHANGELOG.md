@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.340.13 — 2026-11-26
+
+- **Model routing:** The classifier now judges the latest message in the light of the conversation, and the task categories describe everyday use (status questions, shipping work, approving a plan, troubleshooting). Short replies such as "yes" or "do both" are routed instead of falling back to the conversation's default model.
+
 ## 2.340.12 — 2026-11-25
 
 - Pi now discovers profile-specific chat models from installed provider extensions such as Experiential Labs and lets you select and resume them in Joint Bob.
