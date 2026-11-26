@@ -5,7 +5,6 @@ import { mayReceiveResource } from "../cluster-sharing-policy.js";
 import { projectWorktreeRoot } from "../project-worktrees.js";
 import { replicationPeers } from "../server/replication-v2.js";
 import { ticketWorkspaceRoot } from "../task-workspaces.js";
-import { OTHER_TOOL_TEMP } from "./builtin-rules.js";
 import { listPhases, phaseOf, projectOwnerNode, setPhase } from "./control.js";
 import { compileRules, effectiveRules } from "./ignore.js";
 import type { OpArgs, OpName, OpResults, ShareSpec, ShareStatus } from "./protocol.js";
@@ -53,8 +52,6 @@ export interface AdoptionDeps {
   db: DatabaseSync;
   nodeId: string;
   engine: AdoptionEngine;
-  /** What else still writes the projects' folders here, in plain words; undefined once nothing does. Asked again at each retry. */
-  heldBy?: () => Promise<string | undefined>;
   roots?: (projectId: string) => Record<ShareKind, string> | undefined;
   log?: (key: string, message: string) => void;
   clock?: Clock;
@@ -116,26 +113,6 @@ export function projectRoots(db: DatabaseSync, projectId: string): Record<ShareK
 
 export function projectDifferences(statuses: readonly ShareStatus[]): number {
   return statuses.reduce((sum, status) => sum + status.peers.reduce((count, peer) => count + peer.differences, 0), 0);
-}
-
-/** Deletes leftover download temps under `root`, never following links and skipping folders the engine ignores. */
-export async function removeLeftoverTemps(root: string, ignoredDirectory: (relative: string) => boolean = () => false): Promise<number> {
-  let removed = 0;
-  let visited = 0;
-  const walk = async (relative: string): Promise<void> => {
-    let directory;
-    try { directory = await opendir(path.join(root, relative)); } catch { return; }
-    for await (const entry of directory) {
-      // A large tree is walked a slice at a time: requests keep their turn on the main thread.
-      if (++visited % 500 === 0) await new Promise((resolve) => setImmediate(resolve));
-      const child = relative ? `${relative}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) { if (!ignoredDirectory(child)) await walk(child); continue; }
-      if (!entry.isFile() || !OTHER_TOOL_TEMP.test(entry.name)) continue;
-      try { await rm(path.join(root, child)); removed++; } catch { /* gone already, or not ours to remove */ }
-    }
-  };
-  await walk("");
-  return removed;
 }
 
 function kindLabel(kind: ShareKind): string { return kind === "project" ? "files" : kind === "tickets" ? "ticket folders" : "worktrees"; }
@@ -235,12 +212,6 @@ export class Adoption {
     if (phaseOf(this.db, projectId)?.phase === "builtin") { this.settled(projectId); return; }
     if (!this.roots(projectId) || !projectPeers(this.db, this.local, projectId).length) { this.settled(projectId); return; }
     if (this.waiting(projectId)) return;
-    const holder = await this.deps.heldBy?.();
-    if (holder) {
-      this.messages.set(projectId, holder);
-      this.wait(projectId);
-      return;
-    }
     if (phaseOf(this.db, projectId)?.phase !== "bootstrapping") this.updatePhase(projectId, "bootstrapping", { builtinSince: {}, error: null });
     const outcome = await this.bootstrap(projectId);
     if (outcome === "wait") { this.wait(projectId); return; }
@@ -263,8 +234,6 @@ export class Adoption {
         // A node that never held a ticket or worktree gets the empty folder now. A missing project folder is not
         // made: it may be on a disk that is not mounted.
         if (spec.kind !== "project") await mkdir(spec.root, { recursive: true }).catch(() => undefined);
-        const matcher = compileRules(effectiveRules(spec.kind, spec.rules));
-        await removeLeftoverTemps(spec.root, (relative) => matcher.classify(relative, true) !== null);
         const scanned = await engine.call("scan", { share: spec.key, scope: "full", reason: "switch" }, { timeoutMs: SCAN_TIMEOUT_MS });
         if (scanned.error) { this.messages.set(projectId, `Checking both machines' files: this machine could not read its ${kindLabel(spec.kind)} (${scanned.error})`); return "wait"; }
         this.scanned.add(spec.key);

@@ -41,12 +41,12 @@ test("the admin gate matches a route however its path is spelled", () => {
 
 test("a person's processes inherit none of the service's keys, tokens or passwords", () => {
   const runtime = { key: "account:test", name: "jb-test", home: "/home/jb-test" };
-  const inherited = { JOINT_BOB_SECRET_KEY: "at-rest-key", JOINT_BOB_INITIAL_PASSWORD: "first", JOINT_BOB_SYNCTHING_API_KEY: "sync", GH_TOKEN: "service-gh", AWS_SECRET_ACCESS_KEY: "aws", SOME_ADMIN_VARIABLE: "x", JOINT_BOB_PLAIN_SETTING: "kept", LANG: "en_US.UTF-8" };
+  const inherited = { JOINT_BOB_SECRET_KEY: "at-rest-key", JOINT_BOB_INITIAL_PASSWORD: "first", JOINT_BOB_EXAMPLE_API_KEY: "sync", GH_TOKEN: "service-gh", AWS_SECRET_ACCESS_KEY: "aws", SOME_ADMIN_VARIABLE: "x", JOINT_BOB_PLAIN_SETTING: "kept", LANG: "en_US.UTF-8" };
   const before = { ...process.env };
   Object.assign(process.env, inherited);
   try {
     const result = runtimeEnvironment(runtime, { ...process.env, GH_TOKEN: "this-run-token", RUN_SECRET_VALUE: "for-this-run", JOINT_BOB_DATA_DIR: "/service/data" });
-    for (const name of ["JOINT_BOB_SECRET_KEY", "JOINT_BOB_INITIAL_PASSWORD", "JOINT_BOB_SYNCTHING_API_KEY", "AWS_SECRET_ACCESS_KEY", "SOME_ADMIN_VARIABLE", "JOINT_BOB_DATA_DIR"]) {
+    for (const name of ["JOINT_BOB_SECRET_KEY", "JOINT_BOB_INITIAL_PASSWORD", "JOINT_BOB_EXAMPLE_API_KEY", "AWS_SECRET_ACCESS_KEY", "SOME_ADMIN_VARIABLE", "JOINT_BOB_DATA_DIR"]) {
       assert.equal(result[name], undefined, `${name} stays with the service`);
     }
     assert.equal(result.GH_TOKEN, "this-run-token", "a value set for this run is the person's own");

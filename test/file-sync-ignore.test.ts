@@ -54,7 +54,7 @@ function everyPrefix(files: string[], prefixes: string[]): string[] {
 }
 
 /** The rules of project and ticket folders that every sync tool applied: all but the engine's own and the worktree-only ones. */
-const projectPatterns = BUILTIN_RULES.filter((rule) => !rule.kinds && !rule.engineOnly).map((rule) => rule.pattern);
+const projectPatterns = BUILTIN_RULES.filter((rule) => !rule.kinds).map((rule) => rule.pattern);
 
 test("the built-in table holds the project list line for line", () => {
   assert.deepEqual(projectPatterns, managedIgnorePatterns);
@@ -63,14 +63,14 @@ test("the built-in table holds the project list line for line", () => {
 test("the worktree list is the project list with everything regenerable, then the worktree-only rules", () => {
   const expected = [...new Set([
     ...managedIgnorePatterns.map((rule) => rule.startsWith("(?d)") ? rule : `(?d)${rule}`),
-    ...worktreeHeavyDirectories.filter((name) => !name.startsWith(".st")).map((name) => `(?d)${name}`),
+    ...worktreeHeavyDirectories.map((name) => `(?d)${name}`),
     ...worktreeLinkedDirectories.filter((name) => !(worktreeHeavyDirectories as readonly string[]).includes(name)).map((name) => `(?d)${name}`),
     "(?d).joint-bob-merge",
     ...worktreeBinaryExtensions.map((extension) => `(?d)(?i)*.${extension}`),
   ])];
   const worktreePatterns = [...new Set([
     ...projectPatterns.map((rule) => rule.startsWith("(?d)") ? rule : `(?d)${rule}`),
-    ...BUILTIN_RULES.filter((rule) => rule.kinds?.includes("worktrees") && !rule.engineOnly).map((rule) => rule.pattern),
+    ...BUILTIN_RULES.filter((rule) => rule.kinds?.includes("worktrees")).map((rule) => rule.pattern),
   ])];
   assert.deepEqual(worktreePatterns, expected);
 });
@@ -89,12 +89,12 @@ test("every built-in rule takes its id and class from its pattern", () => {
   assert.equal(new Set(BUILTIN_RULES.map((rule) => rule.id)).size, BUILTIN_RULES.length, "ids are unique");
 });
 
-test("exactly the sync-internal rules are locked, and they cover git, app data, an older sync tool's files and half-written files", () => {
+test("exactly the sync-internal rules are locked, and they cover git, app data and half-written files", () => {
   const locked = BUILTIN_RULES.filter((rule) => rule.locked).map((rule) => rule.id);
   assert.deepEqual(BUILTIN_RULES.filter((rule) => rule.group === "sync-internal").map((rule) => rule.id), locked);
   for (const [id, ruleClass] of [
-    [".git", "local"], [".joint-bob/", "local"], [".joint-bob-worktrees", "local"], [".stfolder", "local"], [".stignore", "local"], [".stversions", "local"],
-    [".syncthing.*.tmp", "regenerable"], ["~syncthing~*.tmp", "regenerable"], [".creating-*", "regenerable"],
+    [".git", "local"], [".joint-bob/", "local"], [".joint-bob-worktrees", "local"],
+    [".creating-*", "regenerable"],
     ["*.????????-????-????-????-????????????.tmp", "regenerable"], [".joint-bob-sync.*.tmp", "regenerable"], [".test-build-*", "regenerable"],
   ] as const) {
     assert.equal(builtinRule(id)?.locked, true, `${id} is locked`);
@@ -152,15 +152,6 @@ test("Joint Bob's half-written file names are regenerable", () => {
   expectClasses(matcher("project"), [[`.creating-${uuid}`, true, "regenerable"], [`.creating-${uuid}/src/secret.key`, false, "regenerable"]]);
 });
 
-test("the temp and folder files an older sync tool left behind never sync: temps regenerable, folder files local", () => {
-  expectClasses(matcher("project"), [
-    [".syncthing.notes.md.tmp", false, "regenerable"], ["src/.syncthing.main.ts.tmp", false, "regenerable"],
-    ["~syncthing~notes.md.tmp", false, "regenerable"], ["src/~syncthing~main.ts.tmp", false, "regenerable"],
-    [".stfolder", true, "local"], [".stignore", false, "local"], [".stversions/notes~20261006.md", false, "local"],
-    ["syncthing.notes.md.tmp", false, null],
-  ]);
-});
-
 test("AI-DLC runtime state is regenerable at every depth while other .aidlc names sync", () => {
   expectClasses(matcher("project"), [
     ["aidlc/.aidlc-state.json", false, "regenerable"], ["tools/aidlc/.aidlc-lock", false, "regenerable"],
@@ -193,7 +184,7 @@ test("secrets are local in project and ticket shares", () => {
 test("worktree shares make every built-in regenerable, secrets and git included", () => {
   expectClasses(matcher("worktrees"), [
     ["feature/.env", false, "regenerable"], ["feature/certs/server.pem", false, "regenerable"], ["feature/.git", false, "regenerable"],
-    ["feature/.joint-bob/state.json", false, "regenerable"], ["feature/.stfolder", true, "regenerable"], ["feature/id_rsa", false, "regenerable"],
+    ["feature/.joint-bob/state.json", false, "regenerable"], ["feature/id_rsa", false, "regenerable"],
   ]);
 });
 
@@ -286,7 +277,6 @@ test("a sync engine's download temp of a conflict copy is never protected by the
   for (const kind of ["project", "tickets", "worktrees"] as const) {
     expectClasses(matcher(kind), [
       [`.joint-bob-sync.${copy}.0123456789abcdef.tmp`, false, "regenerable"], [`web/.joint-bob-sync.${copy}.0123456789abcdef.tmp`, false, "regenerable"],
-      [`.syncthing.${copy}.tmp`, false, "regenerable"], [`~syncthing~${copy}.tmp`, false, "regenerable"],
       [copy, false, null],
     ]);
   }
@@ -338,9 +328,9 @@ test("(?i) folds case and patterns are otherwise case-sensitive", () => {
 });
 
 test("parseUserRules drops comments and blank lines and reports #include and invalid patterns", () => {
-  const parsed = parseUserRules(["", "  // comment", "# comment", "#include more.stignore", " *.csv ", "*.csv", "[abc", "{a,b", "!", "(?d)(?i)", "!(?i)/Keep/"]);
+  const parsed = parseUserRules(["", "  // comment", "# comment", "#include more.ignore", " *.csv ", "*.csv", "[abc", "{a,b", "!", "(?d)(?i)", "!(?i)/Keep/"]);
   assert.deepEqual(parsed.rules.map((rule) => rule.line), ["*.csv", "!(?i)/Keep/"]);
-  assert.deepEqual(parsed.unsupported, ["#include more.stignore"]);
+  assert.deepEqual(parsed.unsupported, ["#include more.ignore"]);
   assert.deepEqual(parsed.errors.map((error) => error.line), ["[abc", "{a,b", "!", "(?d)(?i)"]);
   assert.deepEqual(parsed.rules[1], { line: "!(?i)/Keep/", negate: true, foldCase: true, deletable: false, anchored: true, dirOnly: true, childrenOnly: false, body: "Keep", source: "Keep" });
 });
@@ -402,7 +392,7 @@ const vocabulary = [
   "src", "lib", "node_modules", ".git", "a.key", ".dev-env", "logs", "x.log", ".env", ".env.local", "cache", ".yarn", ".cache", "pip", "aidlc",
   ".aidlc-x", "spaces", "s1", "intents", "i1", ".joint-bob-worktree", ".joint-bob-baseline", ".joint-bob-merge", ".joint-bob", ".joint-bob-attachments",
   "x.sync-conflict-20261006-173252-5CHB2CY.log", "target", "vendor", "x.PNG", "test_database_1.db", "a.db-wal", ".creating-1", ".pi", "foo-worktrees",
-  ".claude", "worktrees", "local_bucket", "a.mp3", "chords_generator", "models", "keep", "data", "README.md", `x.${uuid}.tmp`, ".stversions", "Pkg.WHL",
+  ".claude", "worktrees", "local_bucket", "a.mp3", "chords_generator", "models", "keep", "data", "README.md", `x.${uuid}.tmp`, "Pkg.WHL",
   "build", "dist", "main.ts", "id_rsa", "uploads", ".pytest_cache", "test-results",
 ];
 

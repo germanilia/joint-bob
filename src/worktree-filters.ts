@@ -8,9 +8,8 @@ export const worktreeHeavyDirectories = [
   "target", ".next", ".nuxt", ".svelte-kit", ".angular", ".turbo", ".cache", ".parcel-cache", ".vite", ".gradle", ".m2",
   "Pods", "DerivedData", ".tox", ".nox", ".eggs", "site-packages", "dist-packages", "__pypackages__", ".nuget", "vendor", "bower_components", "jspm_packages",
   ".yarn", ".pnpm-store", ".npm", ".terraform", ".serverless", ".vercel", ".netlify", ".expo", ".dart_tool",
-  "out", "tmp", ".tmp", ".idea", ".stversions", ".stfolder",
+  "out", "tmp", ".tmp", ".idea",
 ] as const;
-export const worktreeHeavyFiles = [".stignore"] as const;
 
 /** Installed dependencies a worktree links to in the project instead of copying. Build outputs
     stay out: a worktree build writing through a link would overwrite the project's own build. */

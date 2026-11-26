@@ -12,7 +12,6 @@ import { FILE_SYNC_SWITCH_PROTOCOL, type ConfigureArgs, type CoreEvent, type Dif
 import { ShareStatusStore } from "./status.js";
 import { parseShareKey, type Phase } from "./types.js";
 import type { Adoption, AdoptionEngine, FileSyncProject } from "./adoption.js";
-import { forgetSavedConnection, removeSyncthing, savedConnection, WAITING_FOR_SYNCTHING } from "./syncthing-removal.js";
 // app-integration (P4)
 import path from "node:path";
 import type { ShareKind } from "./types.js";
@@ -676,44 +675,6 @@ async function announceSwitch(): Promise<void> {
   catch (error) { warnOnChange("fileSync:hello", `File sync could not tell the other machines it was turned ${readFileSyncConfig(await controlDatabase()).enabled ? "on" : "off"}: ${messageOf(error)}`); }
 }
 
-/* An earlier release's sync tool is taken off this machine once (syncthing-removal.ts). Until it has let
-   go of Joint Bob's folders no project is taken over: `foldersHeldBy` says what a take-over waits for,
-   or undefined once nothing but built-in sync writes them. One request at a time. */
-let releasing: Promise<string | undefined> | undefined;
-const RELEASE_BOOT_GRACE_MS = 3 * 60_000, RELEASE_ASK_MS = 10 * 60_000, RELEASE_ASKS = 6;
-let releaseAsks = 0;
-function foldersHeldBy(db: DatabaseSync): Promise<string | undefined> {
-  // A test node must never reach for the sync tool of the machine the tests run on.
-  if (process.env.NODE_ENV === "test" || fileSyncTestPhasesEnabled()) return Promise.resolve(undefined);
-  return releasing ??= (async () => {
-    try {
-      const [{ projectRoots }, { ticketWorkspaceRoot }, { agentResourcesRoot }, { resolveDataDirectory }] = await Promise.all([loadAdoption(), import("../task-workspaces.js"), import("../agent-resources.js"), import("../data-directory.js")]);
-      // Every folder Joint Bob syncs or once synced here: each project's three, the removed board's, and the shared skills'.
-      const roots = (): string[] => [
-        ...(db.prepare("SELECT id FROM projects").all() as Array<{ id: string }>).flatMap((project) => Object.values(projectRoots(db, project.id) ?? {})),
-        ticketWorkspaceRoot(), agentResourcesRoot(),
-      ];
-      const outcome = await removeSyncthing({
-        db, stored: savedConnection, forget: forgetSavedConnection, roots,
-        backupFile: path.join(resolveDataDirectory(), "removed-sync-ignore-files.txt"),
-      });
-      if (outcome === "done") return undefined;
-      if (outcome === "waiting") return WAITING_FOR_SYNCTHING;
-      // It does not answer. Right after a boot it may only be starting, beside this node: projects wait a few minutes
-      // for it. After that nothing writes their folders, and it is asked again a few times in case it starts later.
-      if (releaseAsks < RELEASE_ASKS) {
-        releaseAsks++;
-        const timer = setTimeout(() => { void foldersHeldBy(db).then(() => adoptionKick()); }, RELEASE_ASK_MS);
-        timer.unref();
-      }
-      return process.uptime() * 1000 > RELEASE_BOOT_GRACE_MS ? undefined : WAITING_FOR_SYNCTHING;
-    } catch (error) {
-      warnOnChange("fileSync:release", `Joint Bob could not take its folders away from the sync tool an earlier release used on this machine: ${messageOf(error)}`);
-      return WAITING_FOR_SYNCTHING;
-    }
-  })().finally(() => { releasing = undefined; });
-}
-
 function startAdoption(current: Engine): void {
   // Tests that set phases directly (JOINT_BOB_FILE_SYNC_TEST_PHASES) drive them without the machine.
   if (fileSyncTestPhasesEnabled()) return;
@@ -722,10 +683,8 @@ function startAdoption(current: Engine): void {
       const module = await loadAdoption();
       if (engine !== current) return;
       adoption?.machine.stop();
-      const machine = new module.Adoption({ db: current.db, nodeId: current.nodeId, engine: adoptionEngine(current), heldBy: () => foldersHeldBy(current.db), log: warnOnChange });
+      const machine = new module.Adoption({ db: current.db, nodeId: current.nodeId, engine: adoptionEngine(current), log: warnOnChange });
       adoption = { engine: current, machine };
-      // Also where nothing waits to be taken over: what an earlier release's sync tool left on this machine goes once.
-      void foldersHeldBy(current.db);
       neutral(() => machine.kick());
     } catch (error) {
       warnOnChange("fileSync:adopt", `File sync could not go on taking over this machine's shared projects: ${messageOf(error)}`);

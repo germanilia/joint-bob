@@ -231,8 +231,6 @@ async function runPair(t: TestContext, mode: "direct" | "relay", options: { unre
     b.root = listed.body.projects?.find((candidate) => candidate.id === projectId)?.path ?? "";
     assert.ok(b.root && b.root !== a.root, `B lists the project with its own folder: ${JSON.stringify(listed.body)}`);
     await writeFiles(b.root, { ...base, ...ignored, "only-b.txt": "only on B\n", "dir-b/nested.txt": "nested on B\n", "differs.txt": "B's version\n" });
-    // A leftover of the older tool's download cut short: the take-over removes it.
-    await writeFile(path.join(b.root, ".syncthing.README.md.tmp"), "partial");
     const before = [inodes(a.root), inodes(b.root)];
 
     // No route sets a phase by hand on a node without the test switch (file-sync-builtin-nodes.test.ts uses it).
@@ -292,8 +290,6 @@ async function runPair(t: TestContext, mode: "direct" | "relay", options: { unre
       for (const file of [...Object.keys(base), ...Object.keys(ignored)]) assert.equal(now.get(file), before[index].get(file), `${side.label}: ${file} was not written again`);
     }
     assert.equal(existsSync(path.join(a.root, "node_modules", "pkg", "index.js")) && existsSync(path.join(b.root, ".git", "HEAD")), true);
-    assert.equal(existsSync(path.join(b.root, ".syncthing.README.md.tmp")), false, "the leftover temp is gone");
-    assert.equal(existsSync(path.join(a.root, ".syncthing.README.md.tmp")), false, "and was never synced");
     for (const [index, answer] of [afterA, afterB].entries()) {
       for (const kind of KINDS) {
         const share = shareOf(answer, projectId, kind);

@@ -10,7 +10,7 @@ import { pinClusterPublicKey } from "../src/cluster-identity.js";
 import { ensurePeerEndpointSchema, recordPeerEndpoint } from "../src/cluster-peer-endpoints.js";
 import { ensureResourceSharingSchema } from "../src/cluster-sharing.js";
 import { addSharingMember, createSharingCluster, getSharingCluster, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
-import { Adoption, adoptionPhase, projectDifferences, projectPeers, removeLeftoverTemps, type AdoptionDeps, type AdoptionEngine } from "../src/file-sync/adoption.js";
+import { Adoption, adoptionPhase, projectDifferences, projectPeers, type AdoptionDeps, type AdoptionEngine } from "../src/file-sync/adoption.js";
 import { ensureControlSchema, phaseOf, setPhase } from "../src/file-sync/control.js";
 import { FirstIndexQueue } from "../src/file-sync/first-index.js";
 import type { OpArgs, OpName, ShareSpec, ShareStatus } from "../src/file-sync/protocol.js";
@@ -27,7 +27,7 @@ const NOW = "2026-10-25T00:00:00.000Z";
 const HASH = "a".repeat(64);
 const PROJECT = "alpha";
 const SHARES = SHARE_KINDS.map((kind) => `${kind}:${PROJECT}`);
-const RELEASE_MESSAGE = "Waiting for another sync tool on this machine to let go of Joint Bob's folders";
+const NOT_RUNNING = "Waiting for file sync to start on this machine";
 
 class FakeClock implements Clock {
   at = Date.parse(NOW);
@@ -71,6 +71,8 @@ interface Fixture {
 /** The running engine as adoption.ts sees it: the project's three shares in its phase here, reports the test edits, op calls recorded. */
 class FakeEngine {
   running_ = true;
+  /** How often a take-over step asked the worker to take the desired state. */
+  applyCalls = 0;
   accept = true;
   /** False: no peer is eligible right now, so nothing is derived for the project. */
   derived = true;
@@ -96,7 +98,7 @@ class FakeEngine {
   api(): AdoptionEngine {
     return {
       running: () => this.running_,
-      apply: async () => { if (this.accept) this.applied.push(this.phase()); return this.accept; },
+      apply: async () => { this.applyCalls++; if (this.accept) this.applied.push(this.phase()); return this.accept; },
       specs: (projectId) => this.specs(projectId),
       statuses: (projectId) => this.specs(projectId).map((spec) => this.report(spec.kind, projectId)),
       call: (async <K extends OpName>(op: K, args: OpArgs[K]) => {
@@ -203,13 +205,6 @@ const TAKEN = { project: 7, tickets: 7, worktrees: 7 };
 test("a shared project with no phase is taken over: bootstrapping, each folder scanned in full and decided once, then builtin", async () => {
   const f = await fixture();
   try {
-    // Leftovers of an older sync tool's download cut short go; files that only look alike stay; ignored folders are not walked.
-    await writeFile(path.join(f.dir, "real-alpha", ".syncthing.notes.md.tmp"), "partial");
-    await writeFile(path.join(f.dir, "real-alpha", "~syncthing~draft.txt.tmp"), "partial");
-    await writeFile(path.join(f.dir, "real-alpha", "keep.tmp"), "mine");
-    await writeFile(path.join(f.dir, "real-alpha", ".syncthing.notes.md"), "mine");
-    await mkdir(path.join(f.dir, "real-alpha", "node_modules"));
-    await writeFile(path.join(f.dir, "real-alpha", "node_modules", ".syncthing.x.tmp"), "ignored tree");
     assert.equal(phaseOf(f.db, PROJECT), undefined);
     // What the phase row held each time the worker was asked to decide a folder.
     const seen: Array<{ share: string; phase?: Phase; since: Record<string, number> }> = [];
@@ -230,8 +225,6 @@ test("a shared project with no phase is taken over: bootstrapping, each folder s
     // The worker saw the project as not written here before it was builtin, and builtin only after every folder was decided.
     assert.deepEqual([...new Set(f.engine.applied)], ["bootstrapping", "builtin"]);
     assert.equal(f.engine.applied.at(-1), "builtin", "the worker is told the new phase");
-    assert.deepEqual((await readdir(path.join(f.dir, "real-alpha"))).sort(), [".syncthing.notes.md", "keep.tmp", "node_modules"]);
-    assert.equal(existsSync(path.join(f.dir, "real-alpha", "node_modules", ".syncthing.x.tmp")), true);
     assert.ok(existsSync(f.roots.tickets) && existsSync(f.roots.worktrees), "a node that never held a ticket or worktree gets the empty folders");
     assert.equal(machine.message(PROJECT), undefined);
     assert.deepEqual([machine.pendingTimers(), f.clock.live(), f.logs], [[], 0, []]);
@@ -272,33 +265,32 @@ test("a project shared with nobody is left alone: no phase, nothing asked of the
   } finally { await f.cleanup(); }
 });
 
-test("while heldBy() names something the project waits untouched with that reason and one retry timer, and goes on when it names nothing", async () => {
+test("while the worker does not take the desired state the project waits with one retry timer and goes on when it does", async () => {
   const f = await fixture();
   try {
-    let released = false, asked = 0;
-    const machine = f.machine({ heldBy: async () => { asked++; return released ? undefined : RELEASE_MESSAGE; } });
+    f.engine.accept = false;
+    const machine = f.machine();
     machine.kick();
     await machine.idle();
-    assert.equal(phaseOf(f.db, PROJECT), undefined, "nothing is written while something else may still write the folders");
-    assert.deepEqual([machine.message(PROJECT), machine.pendingTimers(), f.clock.live(), asked], [RELEASE_MESSAGE, [PROJECT], 1, 1]);
-    assert.deepEqual([f.engine.calls, f.engine.applied], [[], []]);
-    assert.equal(machine.project(PROJECT).phaseMessage, RELEASE_MESSAGE);
+    assert.equal(phaseOf(f.db, PROJECT)!.phase, "bootstrapping");
+    assert.deepEqual([machine.pendingTimers(), f.clock.live(), f.engine.applyCalls], [[PROJECT], 1, 1]);
+    assert.deepEqual(f.engine.calls, [], "no folder is scanned or decided meanwhile");
     // A kick while it waits does not ask again before the timer.
     machine.kick();
     await machine.idle();
-    assert.equal(asked, 1);
+    assert.equal(f.engine.applyCalls, 1);
     // The retries back off: 1 s, then 2 s.
     f.clock.advance(1_000);
     await machine.idle();
-    assert.equal(asked, 2);
+    assert.equal(f.engine.applyCalls, 2);
     f.clock.advance(1_000);
     await machine.idle();
-    assert.equal(asked, 2, "the second wait is twice as long");
+    assert.equal(f.engine.applyCalls, 2, "the second wait is twice as long");
     assert.deepEqual([machine.pendingTimers(), f.clock.live()], [[PROJECT], 1]);
-    released = true;
+    f.engine.accept = true;
     f.clock.advance(1_000);
     await machine.idle();
-    assert.equal(asked, 3);
+    assert.equal(f.engine.applyCalls, 4, "the third try, and the one that hands the worker the finished phase");
     assert.equal(phaseOf(f.db, PROJECT)!.phase, "builtin");
     assert.deepEqual([machine.message(PROJECT), machine.pendingTimers(), f.clock.live()], [undefined, [], 0]);
   } finally { await f.cleanup(); }
@@ -307,15 +299,15 @@ test("while heldBy() names something the project waits untouched with that reaso
 test("the retry delay doubles up to its cap", async () => {
   const f = await fixture();
   try {
-    let asked = 0;
-    const machine = f.machine({ heldBy: async () => { asked++; return RELEASE_MESSAGE; } });
+    f.engine.accept = false;
+    const machine = f.machine();
     machine.kick();
     await machine.idle();
     const delays: number[] = [];
     for (let round = 0; round < 6; round++) {
-      const before = asked;
+      const before = f.engine.applyCalls;
       let waited = 0;
-      while (asked === before) { f.clock.advance(500); waited += 500; await machine.idle(); assert.ok(waited <= 20_000); }
+      while (f.engine.applyCalls === before) { f.clock.advance(500); waited += 500; await machine.idle(); assert.ok(waited <= 20_000); }
       delays.push(waited);
     }
     assert.deepEqual(delays, [1_000, 2_000, 4_000, 8_000, 8_000, 8_000]);
@@ -503,17 +495,19 @@ test("the listing shows every shared project with its phase, what it waits for a
     addUnshared(f.db, path.join(f.dir, "solo"));
     f.engine.tweak.project = { peers: [{ ...status("project", "shadow").peers[0], differences: 2 }] };
     f.engine.tweak.worktrees = { peers: [{ ...status("worktrees", "shadow").peers[0], differences: 1 }] };
-    const machine = f.machine({ heldBy: async () => RELEASE_MESSAGE });
+    f.engine.running_ = false;
+    const machine = f.machine();
     const before = { projectId: PROJECT, name: "Project alpha", owner: true, phase: "bootstrapping", phaseMessage: null, phaseError: null, differences: 3, shares: ["project", "tickets", "worktrees"], waiting: false };
     assert.deepEqual(machine.projects(), [before], "the project shared with nobody is not listed");
     machine.kick();
     await machine.idle();
-    assert.deepEqual(machine.projects(), [{ ...before, phaseMessage: RELEASE_MESSAGE }]);
+    assert.deepEqual(machine.projects(), [{ ...before, phaseMessage: NOT_RUNNING }]);
     assert.deepEqual(machine.project(PROJECT), machine.projects()[0]);
     assert.deepEqual(machine.roots(PROJECT), f.roots);
     assert.equal(projectDifferences(f.engine.api().statuses(PROJECT)), 3);
     assert.equal(projectDifferences([]), 0);
 
+    f.engine.running_ = true;
     const taken = f.machine();
     taken.kick();
     await taken.idle();
@@ -532,11 +526,11 @@ test("the listing shows every shared project with its phase, what it waits for a
 test("stop() cancels the retry timers, and a stopped machine starts nothing", async () => {
   const f = await fixture();
   try {
-    let asked = 0;
-    const machine = f.machine({ heldBy: async () => { asked++; return RELEASE_MESSAGE; } });
+    f.engine.accept = false;
+    const machine = f.machine();
     machine.kick();
     await machine.idle();
-    assert.deepEqual([machine.pendingTimers(), f.clock.live()], [[PROJECT], 1]);
+    assert.deepEqual([machine.pendingTimers(), f.clock.live(), f.engine.applyCalls], [[PROJECT], 1, 1]);
     machine.stop();
     assert.deepEqual([machine.pendingTimers(), f.clock.live()], [[], 0]);
     f.clock.advance(60_000);
@@ -544,22 +538,24 @@ test("stop() cancels the retry timers, and a stopped machine starts nothing", as
     machine.kick(PROJECT);
     machine.shareChanged(f.engine.report("project"));
     await machine.idle();
-    assert.deepEqual([asked, f.engine.calls, phaseOf(f.db, PROJECT), f.clock.live()], [1, [], undefined, 0]);
+    assert.deepEqual([f.engine.applyCalls, f.engine.calls, phaseOf(f.db, PROJECT)?.phase, f.clock.live()], [1, [], "bootstrapping", 0]);
   } finally { await f.cleanup(); }
 });
 
 test("a kick that arrives while a step runs is not lost: the step runs once more when it ends", async () => {
   const f = await fixture();
   try {
-    let release!: (value: string | undefined) => void;
-    let asked = 0;
-    const machine = f.machine({ heldBy: () => { asked++; return asked === 1 ? new Promise<string | undefined>((resolve) => { release = resolve; }) : Promise.resolve(undefined); } });
+    let release!: () => void;
+    let held = false;
+    f.engine.hook = (op) => { if (op === "scan" && !held) { held = true; return new Promise<void>((resolve) => { release = resolve; }); } };
+    const machine = f.machine();
     machine.kick();
     machine.kick();
     machine.kick(PROJECT);
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(asked, 1, "one step per project at a time");
-    release(undefined);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(f.engine.ops("scan").length, 1, "one step per project at a time");
+    release();
     await machine.idle();
     assert.equal(phaseOf(f.db, PROJECT)!.phase, "builtin");
     assert.deepEqual(f.engine.ops("bootstrap"), SHARES);
@@ -625,29 +621,6 @@ test("projects are taken over one at a time, lowest id first, and one that waits
     assert.equal(phaseOf(waiting.db, PROJECT)!.phase, "builtin");
     assert.deepEqual([machine.pendingTimers(), waiting.clock.live()], [[], 0]);
   } finally { await waiting.cleanup(); }
-});
-
-test("leftover download temps go by name only, without following links", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "file-sync-temps-"));
-  const outside = await mkdtemp(path.join(os.tmpdir(), "file-sync-temps-outside-"));
-  try {
-    await mkdir(path.join(dir, "a", "b"), { recursive: true });
-    await mkdir(path.join(dir, "skipped"));
-    await writeFile(path.join(dir, "a", "b", ".syncthing.x.tmp"), "");
-    await writeFile(path.join(dir, "a", "~syncthing~y.tmp"), "");
-    await writeFile(path.join(dir, "a", "syncthing.z.tmp"), "");
-    await writeFile(path.join(dir, "skipped", ".syncthing.q.tmp"), "");
-    await writeFile(path.join(outside, ".syncthing.elsewhere.tmp"), "");
-    await symlink(outside, path.join(dir, "link"));
-    assert.equal(await removeLeftoverTemps(dir, (relative) => relative === "skipped"), 2);
-    assert.deepEqual((await readdir(path.join(dir, "a"), { recursive: true })).sort(), ["b", "syncthing.z.tmp"]);
-    assert.equal(existsSync(path.join(outside, ".syncthing.elsewhere.tmp")), true);
-    assert.equal(existsSync(path.join(dir, "skipped", ".syncthing.q.tmp")), true, "a folder the engine ignores is not walked");
-    assert.equal(await removeLeftoverTemps(path.join(dir, "missing")), 0);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-    await rm(outside, { recursive: true, force: true });
-  }
 });
 
 test("the worker reports builtin_since for the take-over, its own and each peer's", async (t) => {

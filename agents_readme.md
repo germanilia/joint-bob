@@ -8,13 +8,12 @@ Choose one deployment route with the human, install Joint Bob as a native user s
 
 ## File synchronization
 
-Joint Bob moves files between machines itself. File sync is part of the Joint Bob server: there is nothing to install, start, or configure for it, and no account. Do not install Syncthing for Joint Bob.
+Joint Bob moves files between machines itself. File sync is part of the Joint Bob server: there is nothing to install, start, or configure for it, and no account.
 
 When a project is shared, its files, worktrees, and ticket workspaces go only to the nodes allowed to see it. Files and everything else travel over the same signed Joint Bob connections: cluster membership, conversation transcripts, and application events too. Node SQLite databases and engine configuration and authentication remain node-local. A secret account marked to replicate reaches twins, and cluster members only for shared projects it is attached to.
 
 There is one network path. Every cluster node needs a stable, mutually reachable private HTTPS origin for Joint Bob, or a relay it has joined.
 
-A machine upgraded from an earlier release may still run a Syncthing its owner installed. Joint Bob does not use it. Once, by itself, Joint Bob takes its own `joint-bob-*` folders out of it and removes what an earlier installer set up: its Syncthing service, the copy it downloaded, and the `.stignore` files in Joint Bob's folders. It never stops a Syncthing that still syncs the person's own folders. Leave such a Syncthing alone unless the human asks.
 
 ## Present the deployment options
 

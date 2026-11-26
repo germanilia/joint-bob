@@ -14,13 +14,12 @@ import { captureBaseline, copyAllowed, listTreeEntries, TICKET_BASELINE_DIR, TIC
 import { prepareTicketMerge, readBaseline } from "./ticket-merge-ops.js";
 import { PROJECT_COLORS, type ProjectColor, type ProjectRecord } from "./types.js";
 import { exportWorktreeBase, ignoredPaths, type WorktreeChanges, type WorktreeFileChange } from "./worktree-git.js";
-import { WORKTREE_META_DIR, worktreeBinaryExtensions, worktreeHeavyDirectories, worktreeHeavyFiles, worktreeLinkedDirectories } from "./worktree-filters.js";
+import { WORKTREE_META_DIR, worktreeBinaryExtensions, worktreeHeavyDirectories, worktreeLinkedDirectories } from "./worktree-filters.js";
 
 export { WORKTREE_META_DIR } from "./worktree-filters.js";
 export { integrateProjectWorktree } from "./worktree-integration.js";
 const binaryExtensions = new Set(worktreeBinaryExtensions.map((extension) => `.${extension}`));
 const heavyDirectories = new Set<string>([...worktreeHeavyDirectories, WORKTREE_META_DIR, TICKET_MERGE_DIR]);
-const heavyFiles = new Set<string>(worktreeHeavyFiles);
 
 const MAX_FILE_BYTES = 1024 * 1024;
 /** An ignored folder bigger than this is a build output, cache or tool workspace, not local configuration. */
@@ -92,7 +91,7 @@ function isHeavyPath(relative: string): boolean {
   const segments = relative.split(path.sep);
   if (segments.some((segment) => heavyDirectories.has(segment) || segment.endsWith(".egg-info"))) return true;
   const name = segments[segments.length - 1];
-  return heavyFiles.has(name) || binaryExtensions.has(path.extname(name).toLowerCase());
+  return binaryExtensions.has(path.extname(name).toLowerCase());
 }
 
 /** Code and text only: the ticket exclusions, heavy trees, binaries and files over 1 MiB. */
