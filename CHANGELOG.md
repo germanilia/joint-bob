@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.344.0 — 2026-11-26
+
+- **Assistant Teams:** Team agents now run in Auto mode by default so Bob picks the right model for each step unless a specific model is pinned.
+- **Assistant Teams:** Chiefs can now propose splitting a busy team role into multiple focused roles (with optional secret, login, and skill inheritance) alongside adding, updating, or removing members, all subject to human approval.
+- **Assistant Teams:** Team members can now propose recurring schedules and webhooks that route to the Chief for review and one-step activation, visible in the team workspace.
 ## 2.343.10 — 2026-11-26
 
 - **Performance:** Opening a conversation and listing conversations no longer get slower with every worktree a project has. A project's worktree folders were read one small file at a time on every listing and every open (about 870 reads in a row for a project with 165 worktrees: 17 s for one open on a busy server). They are now read side by side and kept until one of them changes (0.2 s in the same test).
