@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.2 — 2026-11-26
+
+- **Housekeeping:** Removed every remaining mention of the old sync tool from the repository's tests, ignore file and documents. Nothing changes for users.
+
 ## 2.343.1 — 2026-11-26
 
 - **Model picker:** Search by model name, ID, or provider. Pi lists only models available through the conversation's sign-in or assigned pool.
