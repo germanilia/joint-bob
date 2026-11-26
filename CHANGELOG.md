@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.1 — 2026-11-26
+
+- **Model picker:** Search by model name, ID, or provider. Pi lists only models available through the conversation's sign-in or assigned pool.
+
 ## 2.343.0 — 2026-11-26
 
 - **Learning:** Every conversation marked done is learned from again, with no approval step. Good and Bad ratings guide the review. "Not important" now means Bob decides whether the conversation went well or badly, and still learns from it.

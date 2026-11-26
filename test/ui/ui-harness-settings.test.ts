@@ -247,6 +247,14 @@ test("model picker renders provider presentation metadata", { timeout: 120_000 }
   const headings = page.locator("#modelDialogList .model-dialog-group");
   assert.deepEqual(await headings.allTextContents(), ["GPT", "Independent"]);
   assert.deepEqual(await headings.locator("svg").evaluateAll((icons) => icons.map((icon) => icon.outerHTML)), [iconMarkup.openai, iconMarkup.custom]);
+  const matches = await page.evaluate(async () => {
+    const search = document.querySelector<HTMLInputElement>("#modelDialogSearchInput");
+    if (!search) return null;
+    search.value = "Independent";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    return [...document.querySelectorAll<HTMLButtonElement>("#modelDialogList [data-model-key]")].map((row) => row.dataset.modelKey);
+  });
+  assert.deepEqual(matches, ["fixture-provider/fixture"]);
   await page.getByTestId("model-option-fixture-provider-fixture").click();
   await page.locator("#modelDialog[open]").waitFor({ state: "hidden" });
 

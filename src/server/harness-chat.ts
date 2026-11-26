@@ -1343,8 +1343,56 @@ function markRoutingManual(connection: HarnessChatConnection): void {
   publishRoutingMode(connection);
 }
 
+export async function listConversationPiModels(request: Omit<SubscriptionPoolRequest, "engine" | "provider">) {
+  const models = await listHarnessModels("pi");
+  const { piProfileModelKeys } = await import("../pi-service.js");
+  const { localProviderProfile } = await import("../provider-profiles/store.js");
+  const local = await getClusterNode();
+  const catalogs = new Map<string, ReturnType<typeof piProfileModelKeys>>();
+  const catalogFor = (profile: import("../provider-profiles/store.js").ProviderProfile) => {
+    let catalog = catalogs.get(profile.id);
+    if (!catalog) { catalog = piProfileModelKeys(profile); catalogs.set(profile.id, catalog); }
+    return catalog;
+  };
+  const providers = [...new Set(models.map((model) => model.provider))];
+  const allowed = await Promise.all(providers.map(async (provider) => {
+    const preferred = profileProviderForRuntime(provider);
+    const pool = await resolveSubscriptionPool({ ...request, engine: "pi", provider });
+    const offered = models.filter((model) => model.provider === provider);
+    if (!pool) {
+      const profile = await projectProviderProfile(request.projectId, request.conversationId, provider, "pi", { allowMissingSignIn: true });
+      const keys = profile && await catalogFor(profile);
+      return offered.filter((model) => keys?.has(`${provider}/${model.id}`));
+    }
+    const keys = new Set<string>();
+    for (const candidate of pool.candidates) {
+      if (candidate.provider !== preferred && candidate.provider !== "pi") continue;
+      // Remote subscription hosts can serve their own provider; Pi profiles never run remotely.
+      if (candidate.poolOwnerNodeId && candidate.poolOwnerNodeId !== local.id) {
+        if (candidate.provider !== "pi") return offered;
+        continue;
+      }
+      const profile = candidate.profile ?? localProviderProfile(candidate.profileId);
+      if (profile) for (const key of await catalogFor(profile)) keys.add(key);
+    }
+    return offered.filter((model) => keys.has(`${provider}/${model.id}`));
+  }));
+  const visible = new Set(allowed.flat());
+  return models.filter((model) => visible.has(model));
+}
+
+function chatPiModels(connection: HarnessChatConnection) {
+  return withPromptProfile(connection, connection, () => listConversationPiModels({
+    projectId: connection.project.id, workspaceId: connection.project.type!, conversationId: connection.conversationId,
+    accountId: actingAccount()?.accountId, usage: "interactive", fixedProfile: false,
+  }));
+}
+
 async function models(connection: HarnessChatConnection): Promise<void> {
-  const groups = await Promise.all(listHarnesses().filter((adapter) => adapter.models).map(async (adapter) => (await listHarnessModels(adapter.id)).map((model) => ({ ...model, harnessId: adapter.id }))));
+  const groups = await Promise.all(listHarnesses().filter((adapter) => adapter.models).map(async (adapter) => {
+    const listed = adapter.id === "pi" ? await chatPiModels(connection) : await listHarnessModels(adapter.id);
+    return listed.map((model) => ({ ...model, harnessId: adapter.id }));
+  }));
   send(connection.socket, { type: "models", models: groups.flat() });
 }
 
@@ -1453,6 +1501,9 @@ async function controls(connection: HarnessChatConnection, message: ReturnType<t
     }
     const provider = message.provider ?? getHarness(connection.engine).configuration?.fixedProvider;
     if (!provider || !message.modelId) throw new Error("Model is required");
+    if (connection.engine === "pi" && !(await chatPiModels(connection)).some((model) => model.provider === provider && model.id === message.modelId)) {
+      throw new Error(`Model is not available with this conversation's connections: ${provider}/${message.modelId}`);
+    }
     const current = connection.shared.session.settings();
     let settings = { ...current, provider, modelId: message.modelId };
     if (message.level) settings.reasoning = message.level;
@@ -1473,7 +1524,7 @@ async function controls(connection: HarnessChatConnection, message: ReturnType<t
     recordQueueSettings(queueKey(connection), currentSettings(connection)); markRoutingManual(connection); sendHarnessStatus(connection.shared); return true;
   }
   if (message.type === "cycleModel") {
-    const available = await listHarnessModels(connection.engine);
+    const available = connection.engine === "pi" ? await chatPiModels(connection) : await listHarnessModels(connection.engine);
     if (!available.length) throw new Error("No models are available");
     const settings = connection.shared.session.settings();
     const index = available.findIndex((model) => model.provider === settings.provider && model.id === settings.modelId);

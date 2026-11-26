@@ -54,8 +54,9 @@ test("dynamic Pi models are listed and selectable using only the active profile'
     const file = openAIAuthPath(profile);
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, JSON.stringify({ [provider]: { type: "api_key", key } }));
+    return profile;
   };
-  await configured("fixture-alice", "model-a");
+  const aliceProfile = await configured("fixture-alice", "model-a");
   await configured("fixture-bob", "model-b");
   const modelsFor = (account: string) => runAsAccount(actor(account), async () => (await listAvailableModels()).filter((model) => model.provider === provider));
   const [alice, bob, unauthenticated] = await Promise.all([modelsFor("fixture-alice"), modelsFor("fixture-bob"), modelsFor("fixture-unsigned")]);
@@ -66,6 +67,18 @@ test("dynamic Pi models are listed and selectable using only the active profile'
   assert.equal(alice[0].pricing?.rates.input, 1);
   assert.equal(await runAsAccount(actor("fixture-bob"), () => modelIsRunnable(provider, "model-a")), false);
   assert.equal((await runAsAccount(actor("fixture-alice"), () => catalogModelSummary(provider, "model-a")))?.id, "model-a");
+
+  await configured("fixture-alice", "model-outside-pool");
+  const { addProject } = await import("../src/store.js");
+  const { createSubscriptionPool, setSubscriptionPoolChoice } = await import("../src/provider-profiles/pools.js");
+  const { listConversationPiModels } = await import("../src/server/harness-chat.js");
+  const project = await addProject("Pool model fixture", path.join(pkg, "project"), { writeInstructions: false });
+  const pool = createSubscriptionPool("fixture-alice", { name: "One Pi profile", profileIds: [aliceProfile.id], fallbackModels: {} });
+  setSubscriptionPoolChoice("fixture-alice", { scope: "project", scopeId: project.id, poolId: pool.id });
+  const forConversation = await runAsAccount(actor("fixture-alice"), () => listConversationPiModels({
+    projectId: project.id, workspaceId: project.type!, conversationId: "fixture-conversation", accountId: "fixture-alice", usage: "interactive",
+  }));
+  assert.deepEqual(forConversation.filter((model) => model.provider === provider).map((model) => model.id), ["model-a"]);
 
   let key: string | undefined;
   const runtime = await createSessionModelRuntime(async (id) => id === provider && key ? { type: "api_key", key } : undefined,

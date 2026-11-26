@@ -296,6 +296,30 @@ function preferredModel(available: readonly AvailableModel[]): AvailableModel | 
   );
 }
 
+/** Models this particular Pi profile can run, without unioning other profiles' catalogs. */
+export async function piProfileModelKeys(profile: import("./provider-profiles/store.js").ProviderProfile): Promise<Set<string>> {
+  await ensurePiProviderCatalog();
+  const { openAIAuthPath } = await import("./provider-profiles/service.js");
+  if (profile.provider !== "pi") {
+    const provider = profile.provider === "claude" ? "anthropic" : profile.provider;
+    return new Set(readStoredCredential(provider, openAIAuthPath(profile))?.type === "oauth"
+      ? modelRuntime.getModels(provider).map((model) => `${provider}/${model.id}`) : []);
+  }
+  return new Set((await availablePiProfileModels(profile)).map(({ provider, id }) => `${provider}/${id}`));
+}
+
+async function availablePiProfileModels(profile: import("./provider-profiles/store.js").ProviderProfile) {
+  const { profileModelRuntime } = await import("./provider-profiles/service.js");
+  const models = [...await (await profileModelRuntime(profile)).getAvailable()];
+  const signedInProviders = new Set(models.map((model) => model.provider));
+  for (const { provider, model } of SUPPLEMENTAL_MODELS) {
+    if (!signedInProviders.has(provider)) continue;
+    const configured = modelRuntime.getModel(provider, model.id);
+    if (configured) models.push(configured);
+  }
+  return models;
+}
+
 async function availableModelsWithProfiles() {
   await ensurePiProviderCatalog();
   const available = [...await modelRuntime.getAvailable()];
@@ -313,19 +337,9 @@ async function availableModelsWithProfiles() {
       available.push(...modelRuntime.getModels(piProvider));
     }
   }
-  const { profileModelRuntime } = await import("./provider-profiles/service.js");
   const seen = new Set(available.map((model) => `${model.provider}/${model.id}`));
   for (const profile of profiles.filter((item) => item.provider === "pi")) {
-    const signedInModels = [...await (await profileModelRuntime(profile)).getAvailable()];
-    // The isolated profile runtime checks sign-in without loading local model configuration.
-    // Offer supplements from the execution catalog only for providers with an authenticated profile.
-    const signedInProviders = new Set(signedInModels.map((model) => model.provider));
-    for (const { provider, model } of SUPPLEMENTAL_MODELS) {
-      if (!signedInProviders.has(provider)) continue;
-      const configured = modelRuntime.getModel(provider, model.id);
-      if (configured) signedInModels.push(configured);
-    }
-    for (const model of signedInModels) {
+    for (const model of await availablePiProfileModels(profile)) {
       const key = `${model.provider}/${model.id}`;
       if (!seen.has(key)) { seen.add(key); available.push(model); }
     }

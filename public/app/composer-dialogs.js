@@ -67,8 +67,7 @@ async function saveRoutingClassifier(classifierId) {
 export function openQueuedModelPicker(activeKey, onSelect) {
   const model = state.models.find((candidate) => `${candidate.provider}/${candidate.id}` === activeKey);
   queuedModelSelection = { activeKey, onSelect, harness: model?.harnessId || state.engine };
-  renderModelDialog();
-  elements.modelDialog.showModal();
+  showModelDialog();
 }
 
 export function queuedReasoningLevels(provider, modelId) {
@@ -93,7 +92,7 @@ function renderQueuedModels() {
   });
   harnessLabel.append(harness);
   elements.modelDialogList.append(harnessLabel);
-  const available = state.models.filter((model) => model.harnessId === selection.harness);
+  const available = modelsMatchingSearch(selection.harness);
   const models = [{ provider: "", id: "", label: "Inherit conversation settings" }, ...available];
   elements.modelDialogTitle.textContent = "Queued message harness and model";
   for (const model of models) elements.modelDialogList.append(modelOptionButton({
@@ -104,7 +103,7 @@ function renderQueuedModels() {
   if (!available.length) {
     const empty = document.createElement("span");
     empty.className = "model-shortcuts-empty";
-    empty.textContent = "No configured models for this harness";
+    empty.textContent = elements.modelDialogSearchInput.value.trim() ? "No matching models" : "No eligible models for this harness";
     elements.modelDialogList.append(empty);
   }
 }
@@ -324,8 +323,15 @@ function openToolsDialog() {
 
 function openModelDialog() {
   queuedModelSelection = null;
+  showModelDialog();
+}
+
+function showModelDialog() {
+  elements.modelDialogSearchInput.value = "";
   renderModelDialog();
   elements.modelDialog.showModal();
+  elements.modelDialogSearchInput.focus();
+  sendSocket({ type: "models" });
 }
 
 export function composerCommandHandlers() {
@@ -586,9 +592,17 @@ function appendModel(model) {
   }));
 }
 
+function modelsMatchingSearch(harness) {
+  const input = elements.modelDialogSearchInput.value;
+  const query = isRowSelectorQuery(input) ? "" : normalizedQuery(input);
+  const terms = query.split(/\s+/);
+  return state.models.filter((model) => model.harnessId === harness && terms.every((term) =>
+    normalizedQuery([model.label, model.id, model.provider, model.providerLabel].join(" ")).includes(term)));
+}
+
 function renderModelDialog() {
   const descriptor = state.harnesses.find(({ id }) => id === state.engine);
-  const models = state.models.filter((model) => model.harnessId === state.engine);
+  const models = modelsMatchingSearch(state.engine);
   elements.modelDialogTitle.textContent = `${descriptor.label} model`;
   elements.modelDialogList.replaceChildren(); modelShortcuts = [];
   if (queuedModelSelection) { renderQueuedModels(); return; }
@@ -623,7 +637,7 @@ function renderModelDialog() {
     if (state.routingClassifiers === null) void loadRoutingClassifiers().then(() => { if (elements.modelDialog.open) renderModelDialog(); });
   }
   if (!models.length) {
-    const empty = document.createElement("span"); empty.className = "model-shortcuts-empty"; empty.textContent = "No configured models"; elements.modelDialogList.append(empty); return;
+    const empty = document.createElement("span"); empty.className = "model-shortcuts-empty"; empty.textContent = elements.modelDialogSearchInput.value.trim() ? "No matching models" : "No eligible models for this conversation"; elements.modelDialogList.append(empty); return;
   }
   const providers = [...new Set(models.map(({ provider }) => provider))];
   for (const provider of providers) {
@@ -643,6 +657,7 @@ elements.skillsDialogSearchInput.addEventListener("input", () => renderSkillsDia
 elements.closeSkillsDialogButton.addEventListener("click", () => elements.skillsDialog.close());
 elements.closeToolsDialogButton.addEventListener("click", () => elements.toolsDialog.close());
 elements.modelButton.addEventListener("click", openModelDialog);
+elements.modelDialogSearchInput.addEventListener("input", renderModelDialog);
 attachDigitShortcuts(elements.skillsDialog, () => skillShortcuts, (skill) => chooseSkill(skill));
 attachDigitShortcuts(elements.toolsDialog, () => toolShortcuts, (checkbox) => checkbox.click());
 attachDigitShortcuts(elements.modelDialog, () => modelShortcuts, (onSelect) => {

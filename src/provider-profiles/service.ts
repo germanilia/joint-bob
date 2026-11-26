@@ -87,7 +87,7 @@ export async function piTurnsOnPool(projectId: string, conversationId: string | 
   });
 }
 
-export async function projectProviderProfile(projectId: string, conversationId: string | undefined, provider: string, engine: "claude" | "pi" | "kiro" | "antigravity" = "claude"): Promise<ProviderProfile | undefined> {
+export async function projectProviderProfile(projectId: string, conversationId: string | undefined, provider: string, engine: "claude" | "pi" | "kiro" | "antigravity" = "claude", options?: { allowMissingSignIn: boolean }): Promise<ProviderProfile | undefined> {
   const targetProvider = provider === "anthropic" ? "claude" : provider;
   const poolProfile = poolProfileContext();
   if (poolProfile) {
@@ -124,7 +124,7 @@ export async function projectProviderProfile(projectId: string, conversationId: 
   const profile = machine ? undefined : (subscription ? resolveProviderProfile(owner, targetProvider, scope, automation ? "automation" : "interactive")?.profile : undefined)
     ?? (engine === "pi" ? onlyPiProfileHolding(owner, provider) : undefined);
   if (!subscription) return profile;
-  if (!profile && owner !== adminAccountId()) throw new Error("Select your own subscription profile on this node. No other user's account was used.");
+  if (!profile && owner !== adminAccountId() && !options?.allowMissingSignIn) throw new Error("Select your own subscription profile on this node. No other user's account was used.");
   return profile;
 }
 function clusterPoolSupportsEngine(assignment: { poolOwnerNodeId?: string; manifest?: { members: Array<{ provider: ProfileProvider }> } | null }, localNodeId: string, engine: "claude" | "pi" | "kiro" | "antigravity"): boolean {

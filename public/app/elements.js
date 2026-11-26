@@ -144,6 +144,7 @@ export const elements = {
   projectColorSwatches: document.querySelector("#projectColorSwatches"),
   modelDialog: document.querySelector("#modelDialog"),
   modelDialogTitle: document.querySelector("#modelDialogTitle"),
+  modelDialogSearchInput: document.querySelector("#modelDialogSearchInput"),
   modelDialogList: document.querySelector("#modelDialogList"),
   chatModeControl: document.querySelector("#chatModeControl"),
   chatModeLabel: document.querySelector("#chatModeLabel"),
