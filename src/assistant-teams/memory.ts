@@ -108,6 +108,17 @@ async function write(member:TeamMember,raw:WriteInput,learned?:StoredTeamMessage
  return commit(member,input.topic,input.expectedRevision,text,input.sourceMessageIds,learned,owner);
 }
 export function writeTeamMemory(member:TeamMember,input:WriteInput,role:string|null=null):Promise<{revision:number}>{return serialize(member.teamId,()=>write(member,input,undefined,role));}
+export const teamMemoryDeleteSchema=z.object({topic:z.string().regex(TOPIC_NAME),expectedRevision:z.number().int().positive(),scope:z.enum(['team','member']).default('team')}).strict();
+export function deleteTeamMemory(member:TeamMember,topic:string,expectedRevision:number,role:string|null=null):Promise<{revision:number}>{
+ return serialize(member.teamId,async()=>{
+  await memberCheck(member);
+  if(!TOPIC_NAME.test(topic))throw new TeamError('Invalid topic',400);
+  if(!Number.isSafeInteger(expectedRevision)||expectedRevision<1)throw new TeamError('Invalid revision',400);
+  const existing=await current(member.teamId,topic,role);
+  if(!existing||existing.after_text===null)throw new TeamError('Memory topic not found',404);
+  return commit(member,topic,expectedRevision,null,[],undefined,role);
+ });
+}
 export async function readTeamMemory(teamId:string,subjectId:string):Promise<string>{
  await getTeam(teamId);if(!TOPIC_NAME.test(subjectId))throw new TeamError('Invalid topic',400);
  return (await current(teamId,subjectId))?.after_text??'';
@@ -132,10 +143,12 @@ export async function readTeamMemoryTopic(member:TeamMember,topic:string,role:st
  return {text,revision:row?.revision??0,description:parsed?.description??'',body:parsed?stripFrontmatter(parsed.body):''};
 }
 function page(offset:number,limit:number){if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new TeamError('Invalid memory page (limit 1–100)',400);}
-export async function listTeamMemoryTopics(member:TeamMember,offset=0,limit=50,role:string|null=null){
+export async function listTeamMemoryTopics(member:TeamMember,offset=0,limit=50,role:string|null|'all'=null){
  await memberCheck(member);page(offset,limit);const db=await database();
- const rows=db.prepare(`SELECT c.* FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic AND n.role IS c.role) AND after_text IS NOT NULL AND (role IS NULL OR role IS ?) ORDER BY role IS NOT NULL, topic LIMIT ? OFFSET ?`).all(member.teamId,role,limit,offset) as unknown as Change[];
- return rows.map(c=>({...parseTopic(c.topic,c.after_text!),revision:c.revision,links:topicLinks(c.after_text!),scope:c.role===null?'team':'member'}));
+ const rows=(role==='all'
+  ? db.prepare(`SELECT c.* FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic AND n.role IS c.role) AND after_text IS NOT NULL ORDER BY role IS NOT NULL, role, topic LIMIT ? OFFSET ?`).all(member.teamId,limit,offset)
+  : db.prepare(`SELECT c.* FROM assistant_team_memory_changes c WHERE team_id=? AND revision=(SELECT MAX(revision) FROM assistant_team_memory_changes n WHERE n.team_id=c.team_id AND n.topic=c.topic AND n.role IS c.role) AND after_text IS NOT NULL AND (role IS NULL OR role IS ?) ORDER BY role IS NOT NULL, topic LIMIT ? OFFSET ?`).all(member.teamId,role,limit,offset)) as unknown as Change[];
+ return rows.map(c=>({...parseTopic(c.topic,c.after_text!),revision:c.revision,links:topicLinks(c.after_text!),scope:c.role===null?'team':'member',role:c.role}));
 }
 export async function listTeamMemoryChanges(member:TeamMember,offset=0,limit=50){await memberCheck(member);page(offset,limit);return (await database()).prepare('SELECT * FROM assistant_team_memory_changes WHERE team_id=? ORDER BY rowid DESC LIMIT ? OFFSET ?').all(member.teamId,limit,offset) as unknown as Change[];}
 export function revertTeamMemory(member:TeamMember,changeId:string,expectedRevision:number){return serialize(member.teamId,async()=>{

@@ -96,7 +96,7 @@ test('exact inquiry reply and current membership; delegated receipts are interna
  await beginPersonalAssistantTurn(f.team.executorAccountId,resolved.profile.id,parent.requestId,`pi:${resolved.destination.sessionId}`,'fixture','assistant');
  promptStarted(f.team.projectId,resolved.destination.sessionId,parent.requestId);
  const identity={account:{accountId:f.member.accountId,username:f.member.username,role:null,homeNodeId:f.member.homeNodeId,isRemoteLogin:false},projectId:f.team.projectId,conversationId:resolved.destination.sessionId,engine:'pi' as const};
- assert.deepEqual((await listTeamTools(identity)).map(t=>t.name),['team_list_agents','team_inspect_agent','team_node_catalog','team_list_proposals','team_delegate','team_read_assignment','team_propose_changes','team_memory_read','team_memory_list','team_memory_write']);
+ assert.deepEqual((await listTeamTools(identity)).map(t=>t.name),['team_list_agents','team_inspect_agent','team_node_catalog','team_list_proposals','team_delegate','team_read_assignment','team_propose_changes','team_memory_read','team_memory_list','team_memory_write','team_memory_delete']);
  const child=await delegateTeamAssignment(parent.id,'qa','Check it');
  assert.deepEqual(await delegateTeamAssignment(parent.id,'qa','Check it'),child);
  assert.equal(child.destination.kind,'bob');assert.match((await readTeamWork(f.team.id)).find(w=>w.assignmentId===child.id)!.message,/INTERNAL ONLY/);

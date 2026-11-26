@@ -218,7 +218,7 @@ function apply() {
     moveInto(tabs, document.querySelector(".ws-places"), { before: document.querySelector(".ws-places > [data-usage-open]") });
     moveInto(elements.openControlCenterButton, document.getElementById("workspaceSide"));
     if (!memoryButton.isConnected) elements.controlChatSettingsButton.before(memoryButton);
-    moveInto(document.querySelector(".team-context-label"), chatHead, { before: elements.controlChatSettingsButton });
+    moveInto(document.querySelector(".team-sidebar-section"), document.getElementById("workspaceSide"));
     if (giveBack.parentElement !== popupBar) moveInto(giveBack, popupBar);
     popupBar.append(document.getElementById("controlPopupClose"));
     placePopup();
@@ -307,17 +307,26 @@ function nameHead() {
   // Read when called: apply() runs while this module is still loading.
   const PAGE_NAMES = { "my-dashboard": "Dashboard", automations: "Automations", memory: "Bob's memory", dashboards: "Dashboards", assistants: "Assistants" };
   if (!body.classList.contains("bob-desk")) { heading.textContent = "Control center"; return; }
+  if (body.classList.contains("team-context-active")) {
+    heading.textContent = body.dataset.teamName || "Assistant Team";
+    tag.textContent = body.dataset.teamSubtitle || "Chief-led assistant team";
+    tag.hidden = false;
+    return;
+  }
   const view = currentControlView();
   heading.textContent = PAGE_NAMES[view] ?? "Bob";
+  tag.textContent = pause.getAttribute("aria-checked") === "false" ? "Paused · agents wait for you" : "Acts as you in every project";
   tag.hidden = view !== "live";
 }
 window.addEventListener("control-view-changed", nameHead);
+window.addEventListener("team-context-changed", nameHead);
 
 /* ---------- Bob's own view: his chat alone, in the middle, like a conversation ---------- */
 
 // "Bob" in the left column always opens his chat. It runs before the button's own handler (layout.js opens the control
 // center), so the view the opening restores is his.
 elements.openControlCenterButton.addEventListener("click", () => {
+  if (body.classList.contains("team-context-active")) window.dispatchEvent(new CustomEvent("exit-team-context"));
   state.controlCenter.view = "live";
   if (!body.classList.contains("view-control")) return;
   showControlView("live");
@@ -329,7 +338,7 @@ elements.openControlCenterButton.addEventListener("click", () => {
 // (bob-page.css, body.bob-chat-page). It opens unfolded, and goes back to the folded "Ask Bob" button when another view is opened.
 let unfoldedByView = false;
 function syncBobChatPage() {
-  const on = !body.classList.contains("focus-ui") && body.classList.contains("view-control") && currentControlView() === "live";
+  const on = !body.classList.contains("focus-ui") && body.classList.contains("view-control") && !body.classList.contains("team-context-active") && currentControlView() === "live";
   body.classList.toggle("bob-chat-page", on);
   const folded = state.controlCenter.collapsed.includes("chat");
   if (on && folded) { unfoldedByView = true; toggleFolded("chat"); applyFolds(); }
@@ -338,3 +347,4 @@ function syncBobChatPage() {
 window.addEventListener("control-view-changed", syncBobChatPage);
 window.addEventListener("control-center-activated", syncBobChatPage);
 window.addEventListener("app-view-changed", syncBobChatPage);
+window.addEventListener("team-context-changed", syncBobChatPage);

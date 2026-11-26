@@ -1,45 +1,184 @@
-.team-control { padding: 16px; overflow: auto; min-width: 0; }
+/* Assistant Teams workspace, sidebar, master-detail views, and in-context modals. */
+.team-control { padding: 18px 20px; overflow: auto; min-width: 0; }
 .team-context-label { display: flex; gap: 8px; align-items: center; padding: 6px 14px; }
-.team-context-label select { max-width: min(100%, 340px); min-height: 44px; }
+.team-context-label select { max-width: min(100%, 340px); min-height: 40px; }
 .team-settings-area { border-top: 1px solid var(--line); margin-top: 16px; }
-.team-pager { display: flex; align-items: center; gap: 12px; }
-.team-control > select { max-width: 100%; min-height: 44px; }
-.team-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.team-card, .team-record { border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-wrap: anywhere; min-width: 0; }
-.team-field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
-.team-field input, .team-field textarea { min-width: 0; width: 100%; }
-.team-field textarea { min-height: 120px; }
+.team-muted { color: var(--muted); font-size: 13px; margin: 2px 0; }
+.team-error-inline { color: var(--danger); font-size: 13px; margin: 6px 0; }
+.team-status-inline { color: var(--accent); font-size: 13px; margin: 6px 0; }
+.team-section-eyebrow { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; margin: 12px 0 6px; }
+.team-section-title { margin: 16px 0 8px; font-size: 15px; font-weight: 650; }
+.team-inline-code { padding: 1px 6px; border-radius: 6px; background: var(--field); font-size: 12.5px; font-family: var(--mono, monospace); }
+.team-inline-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+
+/* First-class Teams section in desktop sidebar */
+.team-sidebar-section { display: none; }
+.team-sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px 4px; }
+.team-sidebar-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--muted); }
+.team-sidebar-list { display: flex; flex-direction: column; gap: 3px; }
+.team-sidebar-empty { margin: 4px 8px; font-size: 12px; color: var(--muted); }
+.team-sidebar-pill {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit;
+}
+.team-sidebar-pill:hover { background: color-mix(in srgb, var(--paper-raised) 65%, transparent); }
+.team-sidebar-pill.active { background: var(--panel); box-shadow: var(--shadow-soft); }
+.team-sidebar-copy { display: flex; flex-direction: column; min-width: 0; }
+.team-sidebar-copy strong { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-sidebar-copy small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-sidebar-new { margin-top: 4px; justify-content: flex-start; font-size: 12.5px; color: var(--accent); border-radius: 10px; }
+
+.team-live-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--accent); opacity: 0.7; }
+.team-live-dot.working { opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* Persistent 4-tab bar inside Team Workspace */
+.team-workspace-tabs {
+  display: flex; align-items: center; gap: 6px; padding: 10px 18px 0; border-bottom: 1px solid var(--line);
+  background: var(--panel); flex: none; overflow-x: auto;
+}
+.team-workspace-tabs[hidden] { display: none; }
+.team-ws-tab {
+  display: inline-flex; align-items: center; gap: 7px; padding: 9px 12px; border: 0; border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0; background: transparent; color: var(--muted); font: 600 13.5px/1.2 var(--sans); cursor: pointer; white-space: nowrap;
+}
+.team-ws-tab:hover { color: var(--text); }
+.team-ws-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.team-tab-badge { padding: 1px 7px; border-radius: 999px; font-size: 11.5px; background: var(--field); color: var(--muted); }
+.team-tab-badge.is-live { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.team-back-btn { margin-left: auto; font-size: 12.5px; }
+
+/* Master-detail layout (Members & Work, Memory CRUD) */
+.team-split { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.team-rail { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.team-rail-hint { margin: 0 0 6px; font-size: 12.5px; color: var(--muted); }
+.team-member-item {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--field); color: var(--text); text-align: left; cursor: pointer; font: inherit;
+}
+.team-member-item:hover { border-color: var(--line-strong); }
+.team-member-item.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
+.team-member-item-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.team-member-item-top code { font-size: 12px; padding: 1px 5px; border-radius: 5px; background: var(--panel); }
+.team-working-line { color: var(--accent); font-size: 12px; }
+
+.team-detail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.team-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.team-detail-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.team-detail-title-row h2 { margin: 0; font-size: 20px; }
+.team-detail-section { display: flex; flex-direction: column; gap: 8px; }
+.team-empty-box { padding: 14px; border: 1px dashed var(--line-strong); border-radius: 10px; color: var(--muted); font-size: 13px; }
+
+/* Cards, pills, activity & delegation chain */
+.team-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.team-card, .team-record, .team-work-card, .team-proposal-card {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--panel); overflow-wrap: anywhere; min-width: 0;
+}
+.team-work-card.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.team-proposal-card { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.team-row-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.team-row-meta, .team-row-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.team-short-id { font-size: 12px; color: var(--muted); }
+.team-request-text, .team-work-prompt { margin: 6px 0; font-weight: 500; }
+
+.team-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 650; background: var(--field); color: var(--muted); }
+.team-pill.state-done, .team-pill.state-completed, .team-pill.state-applied { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.team-pill.state-running, .team-pill.state-queued, .team-pill.state-accepted { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
+.team-pill.state-stopped, .team-pill.state-failed, .team-pill.state-needs_you, .team-pill.state-waiting_for_human { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+
+.team-delegation-chain { display: flex; flex-direction: column; gap: 6px; width: 100%; margin: 6px 0; }
+.team-assignment-chip { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border-radius: 8px; background: var(--field); flex-wrap: wrap; }
+.team-assignment-info { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.team-answer-box { width: 100%; margin-top: 6px; }
+.team-memory-read { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 13.5px; line-height: 1.5; }
+
+/* Forms & controls */
+.team-field { display: flex; flex-direction: column; gap: 5px; margin: 6px 0; }
+.team-field > span { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.team-field input, .team-field textarea, .team-field select { min-width: 0; width: 100%; }
+.team-field textarea { min-height: 110px; font-family: inherit; }
+.team-inline-field { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.team-inline-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .team-settings { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
-.team-control details { margin-top: 16px; }
-.team-control summary { cursor: pointer; min-height: 44px; }
-.team-control button { min-height: 44px; }
+.team-settings-stack { display: flex; flex-direction: column; gap: 14px; max-width: 780px; }
+.team-work { display: flex; flex-direction: column; gap: 10px; max-width: 920px; }
+.team-work-form { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.team-work-list { display: flex; flex-direction: column; gap: 10px; }
+.team-work-row { display: flex; flex-direction: column; gap: 6px; }
+.team-check-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.team-check-row { display: flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13.5px; }
+.team-check-copy { display: flex; flex-direction: column; }
+.team-conn-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); flex-wrap: wrap; }
+.team-conn-list { display: flex; flex-direction: column; gap: 8px; }
+.team-roster-manage, .team-changes-details { margin-top: 16px; }
+.team-learning-line { margin-top: 14px; }
 .team-telegram svg { display: block; width: 220px; max-width: 100%; }
-.team-page { max-width: 100%; height: min(55dvh, 560px); overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
-.team-page .team-record { flex: none; }
-.team-page .team-record-tall { max-height: 100%; overflow: auto; }
-.team-cards [hidden], .team-pager[hidden] { display: none; }
-.team-memory-editor-pane { max-height: min(70dvh, 640px); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
-.team-memory-editor-pane .team-editor { display: flex; flex-direction: column; align-items: stretch; }
-.team-memory-read { overflow-wrap: anywhere; white-space: pre-wrap; }
-.team-learning { padding: 12px; border: 1px solid var(--border); overflow-wrap: anywhere; }
-.team-pager { flex-wrap: wrap; }
-.team-phone-entry, .team-phone-context, .team-phone-nav { display: none; }
+.team-new-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* In-context modals (Execution Detail, Service Connections, 4-Step Chief Wizard) */
+.team-modal-dialog {
+  width: min(860px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); padding: 0; border: 1px solid var(--line-strong);
+  border-radius: 18px; background: var(--panel); color: var(--text); box-shadow: 0 24px 64px rgb(0 0 0 / 45%);
+}
+.team-wizard-dialog { width: min(940px, calc(100vw - 32px)); }
+.team-modal-dialog::backdrop { background: rgb(0 0 0 / 55%); backdrop-filter: blur(2px); }
+.team-modal-card { display: flex; flex-direction: column; max-height: calc(100dvh - 44px); }
+.team-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.team-modal-titles h2 { margin: 0; font-size: 19px; }
+.team-modal-sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.team-modal-body { padding: 16px 20px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.team-modal-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.team-modal-tab { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 600; }
+.team-modal-tab.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.team-conn-section, .team-conn-form { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); }
+.team-conn-section h3, .team-conn-form h3 { margin: 0; font-size: 14px; }
+.team-preset-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Execution trace steps */
+.team-trace-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.team-trace-section h3 { margin: 0 0 6px; font-size: 13.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.team-trace-pre { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--field); border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; max-height: 280px; overflow: auto; }
+.team-trace-steps { display: flex; flex-direction: column; gap: 8px; }
+.team-trace-step { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); }
+.team-trace-step.is-error { border-color: var(--danger); }
+.team-trace-step-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.team-trace-idx { color: var(--muted); font-size: 12px; font-weight: 700; }
+.team-trace-tool { font-weight: 700; color: var(--accent); }
+.team-trace-target { color: var(--text); font-size: 12.5px; overflow-wrap: anywhere; }
+.team-trace-dur { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+/* 4-Step Chief Wizard */
+.team-wizard-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--field); }
+.team-wizard-step { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); text-align: left; cursor: pointer; }
+.team-wizard-step:disabled { opacity: 0.5; cursor: not-allowed; }
+.team-wizard-step.active { border-color: var(--accent); color: var(--text); }
+.team-wizard-step.done .team-wizard-num { background: var(--accent); color: var(--btn-fg, #fff); }
+.team-wizard-num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--field); font-size: 12px; font-weight: 700; flex: none; }
+.team-wizard-step-copy { display: flex; flex-direction: column; min-width: 0; }
+.team-wizard-step-copy strong { font-size: 12.5px; }
+.team-wizard-step-copy small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-wizard-pane { display: flex; flex-direction: column; gap: 12px; }
+.team-wizard-pane h3 { margin: 0; font-size: 17px; }
+.team-wizard-clusters { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.team-cluster-card { display: flex; flex-direction: column; gap: 3px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--text); text-align: left; cursor: pointer; }
+.team-cluster-card.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.team-wizard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.team-wizard-bob-toggle { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
+.team-wizard-roster { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.team-wizard-feed { display: flex; flex-direction: column; gap: 10px; max-height: 300px; overflow: auto; }
+.team-wizard-msg { display: flex; flex-direction: column; gap: 6px; }
+.team-wizard-msg-user { align-self: flex-end; max-width: 85%; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 16%, var(--field)); font-size: 13.5px; }
+.team-wizard-msg-chief { align-self: flex-start; max-width: 92%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--field); white-space: pre-wrap; font-size: 13.5px; }
+.team-wizard-composer { display: flex; flex-direction: column; gap: 8px; }
+.team-wizard-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+
+.team-phone-entry, .team-phone-context { display: none; }
 @media (max-width: 1023px) {
   body.view-control.team-context-active.team-phone-live #controlViews { display: flex; position: absolute; inset: 0; z-index: 6; background: var(--panel); }
   .control-chat-head:has(.team-phone-entry) { flex-wrap: wrap; }
   .control-chat-head .team-phone-entry { display: inline-flex; flex: 0 0 100%; width: fit-content; font-size: 12px; }
   body:is(.control-phone-view, .team-phone-live) #controlViews > .team-phone-context { display: flex; flex: none; align-items: center; padding: 6px 12px; gap: 8px; }
-  .team-phone-context select { flex: 1; min-width: 0; min-height: 44px; }
-  body.team-context-active:is(.control-phone-view, .team-phone-live) #controlViews > .team-phone-nav { display: flex; flex: none; gap: 6px; padding: 4px 12px; }
-  .team-phone-nav button { min-height: 44px; }
-  .team-control { overflow: auto; }
+  .team-phone-context select { flex: 1; min-width: 0; min-height: 40px; }
 }
-@media (max-width: 760px) { .team-cards { grid-template-columns: minmax(0, 1fr); } }
-.team-work { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-.team-work-form { display: flex; flex-direction: column; gap: 4px; max-width: 640px; }
-.team-work-form select, .team-work-form textarea { width: 100%; min-width: 0; }
-.team-work-list { display: flex; flex-direction: column; gap: 8px; }
-.team-work-row { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.team-work-row[data-state="stopped"] { border-color: var(--danger, currentColor); }
-
-.team-new-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 820px) {
+  .team-split, .team-wizard-grid, .team-wizard-steps { grid-template-columns: minmax(0, 1fr); }
+}

@@ -19,16 +19,25 @@ import { saveTeamMembers, teamCoordinator, TEAM_ROLE_PATTERN } from '../../assis
 import { WebhookResourceError } from '../../webhook-resources.js';
 import { watchTeamRequest } from '../team-notices.js';
 import { applyTeamNotice, requestViewSchema } from '../team-follows.js';
+import { invalidateTeamHubCache } from '../team-hub.js';
+import { registerAssistantTeamUxRoutes } from './assistant-team-ux.js';
 
 const id = z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/);
 const clusterId = z.string().uuid();
-const settings = z.object({ askThreshold: z.number().finite(), actThreshold: z.number().finite() }).strict();
+const teamNameSchema = z.string().trim().max(80).nullable().optional();
+const settings = z.object({
+  askThreshold: z.number().finite(),
+  actThreshold: z.number().finite(),
+  allowBob: z.boolean().optional(),
+  voiceProvider: z.enum(['kokoro', 'elevenlabs']).optional(),
+  kokoroVoice: z.string().min(1).max(40).optional(),
+}).strict();
 const revision = z.number().int().positive();
 const operations = {
   list: z.object({}).strict(),
-  create: z.object({}).strict(),
+  create: z.object({ name: teamNameSchema, allowBob: z.boolean().optional() }).strict(),
   get: z.object({ teamId: id }).strict(),
-  settings: z.object({ teamId: id, settings, expectedRevision: revision }).strict(),
+  settings: z.object({ teamId: id, settings, expectedRevision: revision, name: teamNameSchema }).strict(),
   // Steering a team from another machine (a member's Bob or app): its members, its requests, and work for it.
   roster: z.object({ teamId: id }).strict(),
   requests: z.object({ teamId: id, limit: z.number().int().min(1).max(100).optional() }).strict(),
@@ -55,11 +64,13 @@ export async function operate(member: ClusterMember, operation: Operation, body:
   const snapshotRevision = await teamMembershipRevision(member.clusterId);
   if (operation === 'list') return { teams: await listTeams(member), snapshotRevision };
   if (operation === 'create') {
+    const createInput = operations.create.parse(input);
     const existing = (await listTeams(member))[0];
     if (existing) throw new TeamError('Team already exists for this cluster and host', 409);
     const executorAccountId = await resolveTeamExecutor();
     const projectId = await prepareTeamProject(member);
-    const team = await createTeam(member, { projectId, executorAccountId });
+    const team = await createTeam(member, { projectId, executorAccountId, name: createInput.name, allowBob: createInput.allowBob });
+    invalidateTeamHubCache();
     return { team, snapshotRevision };
   }
   const target = input as { teamId: string };
@@ -87,7 +98,9 @@ export async function operate(member: ClusterMember, operation: Operation, body:
     return { proposal: await decideTeamProposal(actor, parsed.proposalId, parsed.decision), snapshotRevision };
   }
   const update = operations.settings.parse(input);
-  return { team: await saveTeamSettings(actor, update.settings, update.expectedRevision), snapshotRevision };
+  const updatedTeam = await saveTeamSettings(actor, update.settings, update.expectedRevision, update.name);
+  invalidateTeamHubCache();
+  return { team: updatedTeam, snapshotRevision };
 }
 /** Deletes the team, then the project and workspace made for it, and its folders. Its conversations go with the project. */
 async function removeTeam(actor: TeamMember): Promise<void> {
@@ -110,8 +123,8 @@ app.get('/api/assistant-teams', route(async (request, response) => {
   return operate(await requireClusterMember(session(response), input.clusterId), 'list', {});
 }));
 app.post('/api/assistant-teams', route(async (request, response) => {
-  const input = z.object({ clusterId }).strict().parse(request.body);
-  const result = await operate(await requireClusterMember(session(response), input.clusterId), 'create', {});
+  const input = z.object({ clusterId, name: teamNameSchema, allowBob: z.boolean().optional() }).strict().parse(request.body);
+  const result = await operate(await requireClusterMember(session(response), input.clusterId), 'create', { ...(input.name !== undefined ? { name: input.name } : {}), ...(input.allowBob !== undefined ? { allowBob: input.allowBob } : {}) });
   response.status(201); return result;
 }));
 app.get('/api/assistant-teams/:id', route(async (request, response) => {
@@ -123,7 +136,7 @@ app.delete('/api/assistant-teams/:id', route(async (_request, response) => {
   return operate(await requireTeamMember(session(response), teamId), 'delete', { teamId });
 }));
 app.put('/api/assistant-teams/:id/settings', route(async (request, response) => {
-  const input = z.object({ settings, expectedRevision: revision }).strict().parse(request.body);
+  const input = z.object({ settings, expectedRevision: revision, name: teamNameSchema }).strict().parse(request.body);
   const teamId = id.parse(request.params.id);
   return operate(await requireTeamMember(session(response), teamId), 'settings', { ...input, teamId });
 }));
@@ -180,6 +193,7 @@ app.put('/api/assistant-teams/:id/members', route(async (request, response) => {
     if (!current.has(profile.id) && profile.accountId !== session(response).accountId) throw new TeamError('Only its owner can add an assistant to a team', 403);
   }
   const saved = await saveTeamMembers(teamId, body.members, body.coordinatorRole, body.expectedRevision);
+  invalidateTeamHubCache();
   void (await import('../../assistant-teams/telegram-commands.js')).refreshTeamCommands(teamId).catch(error => console.warn('Telegram commands were not updated:', error instanceof Error ? error.message : error));
   return { revision: saved };
 }));
@@ -239,10 +253,14 @@ app.post('/api/assistant-teams/:id/proposals/:proposalId/decide', route(async (r
 }));
 
 const memoryPage = z.object({ offset: z.coerce.number().int().nonnegative().default(0), limit: z.coerce.number().int().min(1).max(100).default(50) }).strict();
+const memoryTopicsQuery = memoryPage.extend({ scope: z.enum(['all', 'team', 'member']).optional(), role: roleSchema.optional() }).strict();
+const memoryTopicQuery = z.object({ role: roleSchema.optional() }).strict();
 app.get('/api/assistant-teams/:id/memory/topics', route(async (request, response) => {
   const member = await requireTeamMember(session(response), id.parse(request.params.id));
-  const p = memoryPage.parse(request.query);
-  return { topics: await (await import('../../assistant-teams/memory.js')).listTeamMemoryTopics(member, p.offset, p.limit) };
+  const p = memoryTopicsQuery.parse(request.query);
+  const roleFilter: string | null | 'all' = p.scope === 'all' ? 'all' : p.role ?? null;
+  const topics = await (await import('../../assistant-teams/memory.js')).listTeamMemoryTopics(member, p.offset, p.limit, roleFilter);
+  return { topics: p.scope === 'member' ? topics.filter(t => t.scope === 'member') : topics };
 }));
 app.get('/api/assistant-teams/:id/memory/changes', route(async (request, response) => {
   const member = await requireTeamMember(session(response), id.parse(request.params.id));
@@ -255,13 +273,20 @@ app.get('/api/assistant-teams/:id/memory/status', route(async (request, response
 }));
 app.get('/api/assistant-teams/:id/memory/topics/:topic', route(async (request, response) => {
   const member = await requireTeamMember(session(response), id.parse(request.params.id));
-  return (await import('../../assistant-teams/memory.js')).readTeamMemoryTopic(member, String(request.params.topic));
+  const { role } = memoryTopicQuery.parse(request.query);
+  return (await import('../../assistant-teams/memory.js')).readTeamMemoryTopic(member, String(request.params.topic), role ?? null);
 }));
 app.put('/api/assistant-teams/:id/memory/topics/:topic', route(async (request, response) => {
   const member = await requireTeamMember(session(response), id.parse(request.params.id));
   const memory = await import('../../assistant-teams/memory.js');
-  const body = memory.teamMemoryWriteSchema.omit({ topic: true }).parse(request.body);
-  return memory.writeTeamMemory(member, { ...body, topic: String(request.params.topic) });
+  const body = memory.teamMemoryWriteSchema.omit({ topic: true }).extend({ role: roleSchema.nullable().optional() }).strict().parse(request.body);
+  const targetRole = body.scope === 'member' ? (body.role ?? null) : null;
+  return memory.writeTeamMemory(member, { expectedRevision: body.expectedRevision, description: body.description, body: body.body, sourceMessageIds: body.sourceMessageIds, scope: body.scope, topic: String(request.params.topic) }, targetRole);
+}));
+app.delete('/api/assistant-teams/:id/memory/topics/:topic', route(async (request, response) => {
+  const member = await requireTeamMember(session(response), id.parse(request.params.id));
+  const body = z.object({ expectedRevision: z.number().int().positive(), role: roleSchema.nullable().optional() }).strict().parse(request.body);
+  return (await import('../../assistant-teams/memory.js')).deleteTeamMemory(member, String(request.params.topic), body.expectedRevision, body.role ?? null);
 }));
 app.post('/api/assistant-teams/:id/memory/changes/:changeId/revert', route(async (request, response) => {
   const member = await requireTeamMember(session(response), id.parse(request.params.id));
@@ -339,3 +364,5 @@ app.post('/api/cluster/v2/assistant-teams/:operation', route(async (request, res
   operations[operation].parse(body);
   return operate(await requirePeerClusterMember(String(response.locals.machineNodeId), member), operation, body);
 }));
+
+registerAssistantTeamUxRoutes();
