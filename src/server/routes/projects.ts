@@ -10,7 +10,6 @@ import { actorOwns } from "../../ownership.js";
 import { grantProjectFolder } from "../multi-user-setup.js";
 import { actingAccount, asNode } from "../../account-context.js";
 import { listHarnessSessions } from "../../harnesses.js";
-import { randomUUID } from "node:crypto";
 import type { HarnessId, ProjectRecord } from "../../types.js";
 import { terminalAccessSettings, terminalAllowedFor } from "../../settings.js";
 import { cleanupDoneWorktrees } from "../worktree-cleanup.js";
@@ -21,6 +20,8 @@ import { getClusterNode } from "../../cluster.js";
 import { listRuntimePeers, runtimeFetch } from "../runtime-peers.js";
 import { listHarnessCommands } from "../../commands.js";
 import { ensureManagedHome, managedProjectPath } from "../../managed-home.js";
+import type { CloseoutRecord } from "../../conversation-closeout.js";
+import { beginConversationCloseout, finishConversationCloseout } from "../conversation-closeout.js";
 import { setProjectName, setSessionClassification, setSessionColor, setSessionDone, setSessionFeedback, sessionFeedbackOverrides, setSessionTitle } from "../../names.js";
 import { importProjectDirectory, ProjectDirectoryImportError } from "../../project-directory-import.js";
 import { setProjectLock } from "../../project-locks.js";
@@ -304,20 +305,26 @@ export async function markConversationDoneAsActor(projectId: string, raw: unknow
   if (await conversationOfAnotherProject(project, payload.engine, payload.sessionId)) throw new NotFoundError("Conversation not found");
   // Like classification, a conversation can be closed out before its transcript exists.
   if (payload.done) {
-    await setSessionFeedback(payload.sessionId, { revision: randomUUID(), projectId: project.id, engine: payload.engine,
-      source: "manual", feedback: payload.feedback ?? { rating: "unimportant", description: "" }, status: "complete" });
-    await setSessionDone(payload.sessionId, true);
+    // Every conversation closed out is learned from; without a rating the decision model decides good or bad.
+    const record = await beginConversationCloseout(project, payload.engine, payload.sessionId, payload.feedback ?? { rating: "unimportant", description: "" });
+    // The mark is durable now. Learning, filesystem scans and peer checks must not delay its reply.
+    setImmediate(() => { void learnThenCleanup(project, payload.sessionId, record); });
   } else {
     await setSessionFeedback(payload.sessionId, null);
     await setSessionDone(payload.sessionId, false);
   }
-  // The mark is durable now. Filesystem scans and peer checks must not delay its reply.
-  if (payload.done) setImmediate(() => { void cleanupDone(project); });
   broadcastToProject(project.id, { type: "sessionsChanged" });
   return { deletedWorktreeIds: [], retainedWorktrees: {} };
 }
 
 const feedbackPending = async (projectId: string): Promise<boolean> => Object.values(await sessionFeedbackOverrides()).some((record) => record.projectId === projectId && record.status !== "complete");
+
+/** A failed review stays on the conversation as an error, which the hourly sweep retries. */
+const learnThenCleanup = async (project: ProjectRecord, id: string, record: CloseoutRecord): Promise<void> => {
+  try { await withProjectRuntime(project.id, () => finishConversationCloseout(project, id, record)); }
+  catch (error) { console.warn(`Conversation feedback failed for ${id}`, error); }
+  await cleanupDone(project);
+};
 
 const cleanupDone = async (project: ProjectRecord): Promise<void> => {
   try {

@@ -14,16 +14,18 @@ export const closeoutRecordSchema = z.object({
   error: z.string().optional(),
 }).strict();
 export type CloseoutRecord = z.infer<typeof closeoutRecordSchema>;
+/** A project lesson goes to the project's knowledge; a general one to Joint Bob's, which ships with the app. */
+export type LessonScope = "project" | "general";
+export type LearnedRule = ProposedRule & { scope: LessonScope };
 export interface CloseoutDeps {
-  classify(): Promise<CloseoutFeedback["rating"]>;
-  describe(rating: "good" | "bad", description: string): Promise<{ description: string; rules: ProposedRule[] }>;
-  select(rating: "good" | "bad", description: string, rules: ProposedRule[]): Promise<number[]>;
+  classify(): Promise<"good" | "bad">;
+  describe(rating: "good" | "bad", description: string): Promise<{ description: string; rules: LearnedRule[] }>;
+  select(rating: "good" | "bad", description: string, rules: LearnedRule[]): Promise<number[]>;
 }
 
-/** Human ratings are authoritative; neither agent is asked anything for an unimportant conversation. */
-export async function closeoutAssessment(feedback: CloseoutFeedback | null, deps: CloseoutDeps) {
-  const rating = feedback ? feedback.rating : await deps.classify();
-  if (rating === "unimportant") return { rating, description: "", rules: [] as ProposedRule[] };
+/** Every conversation is reviewed. A Good or Bad rating is authoritative; "not important" leaves the rating to the decision model. */
+export async function closeoutAssessment(feedback: CloseoutFeedback | null, deps: CloseoutDeps): Promise<{ rating: "good" | "bad"; description: string; rules: LearnedRule[] }> {
+  const rating = feedback && feedback.rating !== "unimportant" ? feedback.rating : await deps.classify();
   const draft = await deps.describe(rating, feedback?.description ?? "");
   const description = feedback?.description || draft.description;
   const selected = draft.rules.length ? await deps.select(rating, description, draft.rules) : [];

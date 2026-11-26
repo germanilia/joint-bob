@@ -1,7 +1,9 @@
 import { z } from "zod";
 import {
-  KnowledgeError, addRule, deleteProposal, listProposals, normalizedRuleText, readNotes, readProposal, readSubject, readSubjects, removeRule, writeNote,
+  KnowledgeError, addRule, deleteProposal, forgetRule, listProposals, normalizedRuleText, projectShelf, readNotes, readProposal, readSubject, readSubjects, readSubjectsIn, removeRule, writeNote,
 } from "../../project-knowledge.js";
+import { generalShelf, installedGeneralSubjects } from "../../general-knowledge.js";
+import { jointBobSourceProject } from "../conversation-closeout.js";
 import { getProject, projectVisible } from "../../store.js";
 import type { ProjectRecord } from "../../types.js";
 import { sendError } from "../http-auth.js";
@@ -19,8 +21,23 @@ async function visibleProject(projectId: string): Promise<ProjectRecord> {
   return project;
 }
 
-function knowledgeView(root: string) {
-  return { subjects: readSubjects(root), proposals: listProposals(root) };
+const removeSchema = z.object({
+  scope: z.enum(["project", "general"]),
+  subject: z.string().trim().min(1).max(60),
+  ruleId: z.string().trim().min(1).max(60),
+}).strict();
+
+/**
+ * The project's rules, its pending proposals, and Joint Bob's general rules: the editable copy in this machine's
+ * Joint Bob source when it has one, otherwise the copy that shipped (which cannot be changed here).
+ */
+async function knowledgeView(root: string) {
+  const source = await jointBobSourceProject();
+  return {
+    subjects: readSubjects(root), proposals: listProposals(root),
+    general: source ? readSubjectsIn(generalShelf(source.path).directory) : installedGeneralSubjects(),
+    generalRemovable: source !== null,
+  };
 }
 
 function sendKnowledgeError(response: Parameters<typeof sendError>[0], error: unknown): boolean {
@@ -32,7 +49,7 @@ function sendKnowledgeError(response: Parameters<typeof sendError>[0], error: un
 /** The project's rules by subject and the rule proposals waiting for a person. */
 app.get("/api/projects/:projectId/knowledge", async (request, response, next) => {
   try {
-    response.json(knowledgeView((await visibleProject(request.params.projectId)).path));
+    response.json(await knowledgeView((await visibleProject(request.params.projectId)).path));
   } catch (error) { if (!sendKnowledgeError(response, error)) next(error); }
 });
 
@@ -56,7 +73,7 @@ app.post("/api/projects/:projectId/knowledge/proposals/:id/accept", async (reque
       removeRule(project.path, proposal.subject, proposal.ruleId!);
     }
     deleteProposal(project.path, proposal.id);
-    response.json(knowledgeView(project.path));
+    response.json(await knowledgeView(project.path));
   } catch (error) { if (!sendKnowledgeError(response, error)) next(error); }
 });
 
@@ -70,6 +87,25 @@ app.post("/api/projects/:projectId/knowledge/proposals/:id/dismiss", async (requ
     const note = readNotes(project.path).find((candidate) => candidate.conversationId === proposal.source);
     if (note && proposal.action === "add") writeNote(project.path, { ...note, dismissed: [...new Set([...note.dismissed, normalizedRuleText(proposal.text)])] });
     deleteProposal(project.path, proposal.id);
-    response.json(knowledgeView(project.path));
+    response.json(await knowledgeView(project.path));
+  } catch (error) { if (!sendKnowledgeError(response, error)) next(error); }
+});
+
+/** Removes a learned rule, so a person can undo what learning installed. A removed rule is not learned again. */
+app.post("/api/projects/:projectId/knowledge/rules/remove", async (request, response, next) => {
+  try {
+    const target = removeSchema.parse(request.body ?? {});
+    const project = await visibleProject(request.params.projectId);
+    await assertProjectEditable(project);
+    let removed: boolean;
+    if (target.scope === "project") removed = forgetRule(projectShelf(project.path), target.subject, target.ruleId);
+    else {
+      const source = await jointBobSourceProject();
+      if (!source) throw new KnowledgeError(409, "This machine has no Joint Bob source; remove general rules on a machine that has it");
+      await assertProjectEditable(source);
+      removed = forgetRule(generalShelf(source.path), target.subject, target.ruleId);
+    }
+    if (!removed) throw new KnowledgeError(404, "Rule not found");
+    response.json(await knowledgeView(project.path));
   } catch (error) { if (!sendKnowledgeError(response, error)) next(error); }
 });

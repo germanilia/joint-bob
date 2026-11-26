@@ -12,6 +12,7 @@
   "files": [
     "bin",
     "deploy",
+    "general-knowledge",
     "public",
     "scripts",
     "src",

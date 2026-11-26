@@ -75,7 +75,7 @@ function reportLearning() {
     if (state.activeProjectId !== projectId) continue;
     const feedback = state.sessions.find((session) => (session.conversationId || session.id) === id)?.feedback;
     if (feedback?.status === "error") toast.error(`Conversation is done, but learning failed: ${feedback.error}`);
-    else if (feedback?.status === "complete") toast("Feedback reviewed. Any new rule proposals are in Project knowledge.");
+    else if (feedback?.status === "complete") toast("Feedback reviewed. Anything learned is in the project's knowledge.");
     else continue;
     learning.delete(id);
   }
@@ -622,7 +622,7 @@ async function toggleSessionDone(session) {
   const active = activeChatSession();
   const closeActive = done && active && (active.conversationId || active.id) === (session.conversationId || session.id);
   if (closeActive) clearActiveSession();
-  toast(done ? (feedback.rating === "unimportant" ? "Conversation marked done" : "Conversation marked done; learning from it in the background") : "Conversation reopened");
+  toast(done ? "Conversation marked done; learning from it in the background" : "Conversation reopened");
   // Done is the review: it stops waiting for review at once, and stays reviewed if it is reopened later.
   const reviews = done && session.reviewState === "needs_review" && !session.running;
   if (reviews) {
@@ -644,7 +644,7 @@ async function toggleSessionDone(session) {
     }
     throw new Error(`${done ? "Could not mark the conversation done" : "Could not reopen the conversation"}: ${error.message}`);
   }
-  if (done && feedback.rating !== "unimportant") learning.set(session.conversationId || session.id, projectId);
+  if (done) learning.set(session.conversationId || session.id, projectId);
   if (state.activeProjectId === projectId) void refreshSessionsQuietly();
 }
 

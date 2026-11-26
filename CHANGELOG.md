@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Learning:** Every conversation marked done is learned from again, with no approval step. Good and Bad ratings guide the review. "Not important" now means Bob decides whether the conversation went well or badly, and still learns from it.
+- **Learning:** Lessons are installed straight away instead of waiting in Rule suggestions. Project lessons go to the project's `.agents/knowledge/`. General lessons go to Joint Bob's `general-knowledge/` folder, ship with the next release, and reach every agent in every project. Each rule names the conversation it came from, so it can be reviewed and removed.
+- **Learning:** Reviews interrupted by a restart, or failed, are retried every hour by the machine that ran them, and never run on two machines.
+- **Learning:** The Activity panel's Rules section lists every learned rule, project and general, with its evidence and a Remove button. A removed rule is not learned again.
+- **Learning:** Closing many conversations at once queues their reviews one at a time.
+
 ## 2.342.0 — 2026-11-26
 
 - **File sync:** Removed the last Syncthing code. The one-time cleanup that took Syncthing off each machine is gone, and so are the ignore rules for Syncthing's own files (`.stfolder`, `.stignore`, `.stversions` and its half-downloaded temp files). A machine that skipped 2.341.0 keeps whatever Syncthing setup it had; delete it by hand.

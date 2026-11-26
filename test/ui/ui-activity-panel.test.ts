@@ -244,7 +244,7 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   assert.deepEqual(await stats.locator(".activity-stat").evaluateAll((boxes) => boxes.map((box) => box.textContent)), ["1turn", "3steps", "0failed", "10sagent time"]);
   assert.deepEqual(await page.getByTestId("activity-stats-tools").getByTestId("activity-usage-row").evaluateAll((rows) => rows.map((row) => row.querySelector(".activity-usage-name")?.textContent + " " + row.querySelector(".activity-usage-count")?.textContent)), ["Bash 1", "Read 1", "Skill 1"]);
   assert.deepEqual(await page.getByTestId("activity-stats-skills").getByTestId("activity-usage-row").evaluateAll((rows) => rows.map((row) => row.querySelector(".activity-usage-name")?.textContent)), ["cert-tools"]);
-  assert.equal(await page.getByTestId("activity-rules-body").innerText(), "No rule suggestions for this project.");
+  assert.equal(await page.getByTestId("activity-rules-body").innerText(), "Nothing learned in this project yet.");
   // Steps can still collapse and reopen.
   await page.getByTestId("activity-steps-toggle").click();
   assert.equal(await page.getByTestId("activity-list").isVisible(), false);
@@ -271,21 +271,20 @@ test("tool calls live in the activity panel, the thread keeps a marker, and the 
   assert.match(await page.getByTestId("activity-summary-text").innerText(), /Rotate the staging certificates/);
   assert.match(await page.getByTestId("activity-summary-status").innerText(), /1 turn/);
   // Headings and long code wrap inside the panel: nothing scrolls sideways.
-  // The writer's rule proposal shows in its own section, with the evidence behind it.
-  const rule = page.getByTestId("activity-rule");
+  // The writer's rule is installed without a person and listed in its own section, with the evidence behind it.
+  const rule = page.getByTestId("activity-learned-rule");
   await rule.first().waitFor();
   assert.equal(await rule.count(), 1);
-  assert.equal(await rule.getByTestId("activity-rule-text").inputValue(), "Renew staging certificates with the renew script, not by hand");
-  assert.match(await rule.innerText(), /certs[\s\S]*two conversations repeated the steps/i);
-  assert.equal(await page.getByTestId("activity-rules-status").innerText(), "1");
-  // Nothing is written until someone accepts; accepting writes the edited rule into the project folder.
+  assert.match(await rule.innerText(), /Project[\s\S]*certs[\s\S]*Renew staging certificates with the renew script, not by hand[\s\S]*two conversations repeated the steps/i);
+  assert.equal(await page.getByTestId("activity-rules-status").innerText(), "", "nothing waits for a person");
   const knowledgeFile = path.join(projectNamed(node, PROJECT_NAME).path, ".agents/knowledge/certs.md");
-  await assert.rejects(readFile(knowledgeFile), { code: "ENOENT" });
-  await rule.getByTestId("activity-rule-text").fill("Renew staging certificates with scripts/renew.sh, never by hand.");
-  await rule.getByTestId("activity-rule-accept").click();
-  await page.getByTestId("activity-rules-body").getByText("No rule suggestions for this project.").waitFor();
-  assert.match(await readFile(knowledgeFile, "utf8"), /Renew staging certificates with scripts\/renew\.sh, never by hand\./);
+  assert.match(await readFile(knowledgeFile, "utf8"), /Renew staging certificates with the renew script, not by hand/);
   assert.match(await readFile(path.join(projectNamed(node, PROJECT_NAME).path, ".agents/knowledge/INDEX.md"), "utf8"), /\[certs\]\(certs\.md\)/);
+  // Remove undoes it, and the lesson is remembered so it is not learned again.
+  await rule.getByTestId("activity-learned-remove").click();
+  await page.getByTestId("activity-rules-body").getByText("Nothing learned in this project yet.").waitFor();
+  await assert.rejects(readFile(knowledgeFile), { code: "ENOENT" });
+  assert.match(await readFile(path.join(projectNamed(node, PROJECT_NAME).path, ".agents/knowledge/removed-rules.json"), "utf8"), /renew staging certificates with the renew script, not by hand/);
   // Statistics and rule suggestions collapse to their headers like the summary.
   await page.getByTestId("activity-stats-toggle").click();
   assert.equal(await stats.isVisible(), false);
