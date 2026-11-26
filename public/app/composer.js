@@ -84,22 +84,25 @@ function hasModifier(event) {
   return event.shiftKey || event.altKey || event.metaKey || event.ctrlKey;
 }
 
+const inputMeasure = document.createElement("textarea");
+inputMeasure.rows = 1;
+inputMeasure.className = "composer-measure";
+inputMeasure.disabled = true;
+inputMeasure.setAttribute("aria-hidden", "true");
+elements.messageInput.after(inputMeasure);
+
 function autoGrowInput() {
   const input = elements.messageInput;
-  // Measuring folds the box to one line for a moment. The transcript above takes that room, and a transcript at its
-  // bottom is moved by the browser to fill it: with a draft of three lines or more every key moved the conversation
-  // and took it off the bottom. Its place is put back once the box has its height (chat-transcript.js keeps a
-  // following reader at the bottom when the height really changes).
-  const pane = elements.messages;
-  const paneTop = pane.scrollTop;
-  input.style.overflowY = "hidden";
-  input.style.height = "auto";
   const style = getComputedStyle(input);
-  const height = Math.ceil(input.scrollHeight + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth));
+  // Measure wrapping outside the flex row, so typing a character does not shrink and relayout the transcript.
+  if (inputMeasure.style.width !== style.width) inputMeasure.style.width = style.width;
+  inputMeasure.value = input.value;
+  const height = Math.ceil(inputMeasure.scrollHeight + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth));
   const maxHeight = matchMedia("(min-width: 1024px)").matches ? Math.min(innerHeight * 0.4, 360) : 160;
-  input.style.height = `${Math.min(height, maxHeight)}px`;
-  input.style.overflowY = height > maxHeight ? "auto" : "hidden";
-  if (pane.scrollTop !== paneTop) pane.scrollTop = paneTop;
+  const nextHeight = `${Math.min(height, maxHeight)}px`;
+  const overflowY = height > maxHeight ? "auto" : "hidden";
+  if (input.style.height !== nextHeight) input.style.height = nextHeight;
+  if (input.style.overflowY !== overflowY) input.style.overflowY = overflowY;
 }
 
 let inputWidth = 0;

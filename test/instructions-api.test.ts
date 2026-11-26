@@ -3,6 +3,31 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { api, pairTwinNodes, seedDevEnvironment, signIn, startDevNode, stopDevNode } from "./dev-nodes.js";
+
+test("read and save project instructions on a paired execution node", { timeout: 90_000 }, async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joint-bob-remote-instructions-"));
+  const servers: Awaited<ReturnType<typeof startDevNode>>[] = [];
+  t.after(async () => {
+    await Promise.all(servers.map(stopDevNode));
+    await rm(root, { recursive: true, force: true });
+  });
+  const environment = await seedDevEnvironment(root, 2);
+  const [remote, local] = environment.nodes;
+  for (const node of environment.nodes) servers.push(await startDevNode(environment, node));
+  await pairTwinNodes(environment);
+  const session = await signIn(environment, local);
+  const project = remote.projects[0];
+  const file = path.join(project.path, "AGENTS.md");
+  await writeFile(file, "REMOTE RULES");
+  const url = `/projects/${project.id}/instructions/content?nodeId=${remote.nodeId}`;
+  const read = await api<{ content: string; version: string }>(local, session, "GET", url);
+  assert.equal(read.status, 200, JSON.stringify(read.body));
+  assert.equal(read.body.content, "REMOTE RULES");
+  const saved = await api(local, session, "PUT", url, { content: "UPDATED REMOTE RULES", version: read.body.version });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(await readFile(file, "utf8"), "UPDATED REMOTE RULES");
+});
 
 function cookie(response: Response): string {
   const value = response.headers.get("set-cookie");

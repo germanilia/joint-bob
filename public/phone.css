@@ -324,7 +324,7 @@
     flex: 0 0 44px; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0;
     border: 0; border-radius: 50%; background: transparent; box-shadow: none; color: var(--muted);
   }
-  body.focus-ui.view-chat #chatPanel #messageInput {
+  body.focus-ui.view-chat #chatPanel :is(#messageInput, .composer-measure) {
     min-height: 44px; padding: 10px 6px; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 16px;
   }
   body.focus-ui.view-chat #chatPanel #sendButton {

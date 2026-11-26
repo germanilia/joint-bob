@@ -1985,6 +1985,7 @@ textarea.activity-rule-text { min-height: 54px; }
 .attach-button { font-size: 20px; min-width: 42px; width: 42px; min-height: 44px; border-radius: var(--radius-ctl); }
 textarea { flex: 1; resize: none; max-height: 160px; min-height: 46px; border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; font-size: 16px; background-color: var(--panel); }
 #messageInput { overflow-x: hidden; }
+.composer-measure { position: absolute; inset: 0 auto auto 0; visibility: hidden; pointer-events: none; overflow: hidden; }
 .send { display: inline-grid; place-items: center; min-width: 46px; width: 46px; min-height: 46px; padding: 0; border-radius: 14px; color: var(--on-ink); background: var(--accent); border-color: transparent; }
 .send:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
 .send svg { width: 20px; height: 20px; }
