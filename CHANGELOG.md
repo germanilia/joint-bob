@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.343.8 — 2026-11-26
+
+- **Conversations:** Marking a conversation Done no longer fails with "learning failed: Unrecognized key" when the drafted lessons carry an extra field. The extra field is ignored, and the lessons are still reviewed and learned.
+
 ## 2.343.7 — 2026-11-26
 
 - **Files:** Opening a file that lives on another machine while that machine is not answering now says so and suggests trying again, instead of failing with "fetch failed" and sending an error report.
